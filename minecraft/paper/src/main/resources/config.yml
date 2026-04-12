@@ -1,0 +1,12 @@
+takaro:
+  websocket:
+    url: ""
+  authentication:
+    identity_token: ""
+    registration_token: ""
+  reconnect:
+    enabled: true
+    delay: 5000
+    max_delay: 300000
+    backoff_multiplier: 1.5
+  debug: false

@@ -1,0 +1,28 @@
+# Runtime data
+_data/
+
+# Environment
+.env
+
+# Gradle
+.gradle/
+build/
+*/build/
+
+# Fabric
+run/
+
+# Bot
+bot/node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,92 @@
+services:
+  paper:
+    image: itzg/minecraft-server
+    container_name: minecraft-paper
+    env_file: ../.env
+    ports:
+      - "25565:25565"
+      - "25575:25575"
+    environment:
+      EULA: "TRUE"
+      TYPE: PAPER
+      VERSION: "1.21.11"
+      MEMORY: 2G
+      ENABLE_RCON: "true"
+      RCON_PASSWORD: "${RCON_PASSWORD:-takaro123}"
+      RCON_PORT: 25575
+      ONLINE_MODE: "false"
+      TAKARO_WS_URL: "${TAKARO_WS_URL}"
+      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN}"
+      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_TOKEN:-takaro-paper-dev}"
+      TAKARO_DEBUG: "${TAKARO_DEBUG:-false}"
+    volumes:
+      - ./_data/paper:/data
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+
+  neoforge:
+    image: itzg/minecraft-server
+    container_name: minecraft-neoforge
+    env_file: ../.env
+    ports:
+      - "25566:25565"
+      - "25576:25575"
+    environment:
+      EULA: "TRUE"
+      TYPE: NEOFORGE
+      VERSION: "1.21.11"
+      NEOFORGE_VERSION: "beta"
+      MEMORY: 2G
+      ENABLE_RCON: "true"
+      RCON_PASSWORD: "${RCON_PASSWORD:-takaro123}"
+      RCON_PORT: 25575
+      ONLINE_MODE: "false"
+      TAKARO_WS_URL: "${TAKARO_WS_URL}"
+      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN}"
+      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_TOKEN:-takaro-neoforge-dev}"
+      TAKARO_DEBUG: "${TAKARO_DEBUG:-false}"
+    volumes:
+      - ./_data/neoforge:/data
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+
+  fabric:
+    image: itzg/minecraft-server
+    container_name: minecraft-fabric
+    env_file: ../.env
+    ports:
+      - "25567:25565"
+      - "25577:25575"
+    environment:
+      EULA: "TRUE"
+      TYPE: FABRIC
+      VERSION: "1.21.11"
+      MODRINTH_PROJECTS: "fabric-api"
+      MEMORY: 2G
+      ENABLE_RCON: "true"
+      RCON_PASSWORD: "${RCON_PASSWORD:-takaro123}"
+      RCON_PORT: 25575
+      ONLINE_MODE: "false"
+      TAKARO_WS_URL: "${TAKARO_WS_URL}"
+      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN}"
+      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_TOKEN:-takaro-fabric-dev}"
+      TAKARO_DEBUG: "${TAKARO_DEBUG:-false}"
+    volumes:
+      - ./_data/fabric:/data
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+
+  bot:
+    build: ./bot
+    container_name: minecraft-bot
+    env_file: ../.env
+    ports:
+      - "3001:3001"
+    environment:
+      BOT_SERVERS: "paper:paper:25565,neoforge:neoforge:25565,fabric:fabric:25565"
+      BOT_USERNAME: "TakaroBot"
+      BOT_API_PORT: "3001"
+    restart: unless-stopped

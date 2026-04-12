@@ -1,0 +1,168 @@
+name: Rust Connector
+
+on:
+  push:
+    branches: [main]
+    paths: ['rust/**']
+    tags: ['rust-v*']
+  pull_request:
+    paths: ['rust/**']
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shellcheck
+        run: shellcheck -e SC1091 rust/scripts/*.sh rust/start.sh
+
+  compile-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Rust game DLLs
+        uses: actions/cache@v4
+        id: dll-cache
+        with:
+          path: /tmp/managed-dlls/game
+          key: rust-dedicated-managed-v1
+
+      - name: Download Rust server DLLs
+        if: steps.dll-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y lib32gcc-s1
+
+          mkdir -p /tmp/steamcmd
+          curl -sL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
+            | tar -xzf - -C /tmp/steamcmd
+
+          /tmp/steamcmd/steamcmd.sh \
+            +force_install_dir /tmp/rust \
+            +login anonymous \
+            +app_update 258550 validate \
+            +quit
+
+          mkdir -p /tmp/managed-dlls/game
+          cp /tmp/rust/RustDedicated_Data/Managed/*.dll /tmp/managed-dlls/game/
+
+      - name: Download Carbon
+        run: |
+          curl -sL https://github.com/CarbonCommunity/Carbon/releases/download/production_build/Carbon.Linux.Release.tar.gz \
+            -o /tmp/carbon.tar.gz
+          mkdir -p /tmp/carbon
+          tar -xzf /tmp/carbon.tar.gz -C /tmp/carbon
+
+      - name: Compile plugin
+        run: |
+          GAME=/tmp/managed-dlls/game
+          CARBON=/tmp/carbon/carbon/managed
+
+          mkdir -p /tmp/compile-check/src
+
+          cp rust/plugin/TakaroConnector.cs /tmp/compile-check/src/
+
+          GAME_REFS=""
+          for dll in "$GAME"/*.dll; do
+            name=$(basename "$dll" .dll)
+            case "$name" in
+              System.*|mscorlib|netstandard|Microsoft.*) continue ;;
+            esac
+            GAME_REFS="$GAME_REFS<Reference Include=\"$name\" HintPath=\"$dll\" Publicize=\"true\" />"
+          done
+          CARBON_REFS=""
+          for dll in "$CARBON"/*.dll; do
+            name=$(basename "$dll" .dll)
+            CARBON_REFS="$CARBON_REFS<Reference Include=\"$name\" HintPath=\"$dll\" />"
+          done
+
+          cat > /tmp/compile-check/compile-check.csproj << PROJ
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFramework>netstandard2.1</TargetFramework>
+              <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+              <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+              <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+              <NoWarn>CS1685</NoWarn>
+            </PropertyGroup>
+            <ItemGroup>
+              <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.2" PrivateAssets="all" />
+              $GAME_REFS
+              $CARBON_REFS
+            </ItemGroup>
+          </Project>
+          PROJ
+
+          dotnet build /tmp/compile-check/compile-check.csproj
+
+  docker-build:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t takaro-rust-test rust/
+
+  release:
+    needs: [shellcheck, compile-check]
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      startsWith(github.ref, 'refs/tags/rust-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set release info
+        id: release_info
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/rust-v* ]]; then
+            VERSION="${GITHUB_REF_NAME#rust-v}"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "tag_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "release_name=Rust Connector v${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "is_tag=true" >> "$GITHUB_OUTPUT"
+          else
+            SHORT_SHA="${GITHUB_SHA::7}"
+            DATE=$(date -u +%Y-%m-%d)
+            echo "version=" >> "$GITHUB_OUTPUT"
+            echo "tag_name=rust-pre-${DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+            echo "release_name=Rust Connector pre-release ${DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "is_tag=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit version bump
+        if: steps.release_info.outputs.is_tag == 'true'
+        env:
+          VERSION: ${{ steps.release_info.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          sed -i "s/\[Info(\"TakaroConnector\", \"Takaro\", \"[^\"]*\")\]/[Info(\"TakaroConnector\", \"Takaro\", \"$VERSION\")]/" rust/plugin/TakaroConnector.cs
+          git add rust/plugin/TakaroConnector.cs
+          if ! git diff --cached --quiet; then
+            git commit -m "release: rust-v${VERSION}"
+            git push origin main
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_info.outputs.tag_name }}
+          name: ${{ steps.release_info.outputs.release_name }}
+          prerelease: ${{ steps.release_info.outputs.prerelease }}
+          files: rust/plugin/TakaroConnector.cs
+          generate_release_notes: true

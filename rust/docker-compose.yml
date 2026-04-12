@@ -1,0 +1,26 @@
+services:
+  rust:
+    build: .
+    container_name: rust-carbon
+    env_file: ../.env
+    ports:
+      - "28015:28015/udp"
+      - "127.0.0.1:28016:28016"
+    environment:
+      RUST_SERVER_NAME: "${RUST_SERVER_NAME:-Takaro Dev}"
+      RUST_SERVER_SEED: "${RUST_SERVER_SEED:-12345}"
+      RUST_SERVER_WORLDSIZE: "${RUST_SERVER_WORLDSIZE:-1000}"
+      RUST_SERVER_MAXPLAYERS: "${RUST_SERVER_MAXPLAYERS:-10}"
+      RCON_PASSWORD: "${RCON_PASSWORD:-takaro123}"
+      TAKARO_WS_URL: "${TAKARO_WS_URL}"
+      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN}"
+      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_TOKEN:-takaro-rust-dev}"
+      TAKARO_DEBUG: "${TAKARO_DEBUG:-false}"
+      RUST_SERVER_PORT: "${RUST_SERVER_PORT:-28015}"
+      RUST_RCON_PORT: "${RUST_RCON_PORT:-28016}"
+      RUST_SERVER_IDENTITY: "${RUST_SERVER_IDENTITY:-takaro}"
+    volumes:
+      - ./_data/plugins:/rust/carbon/plugins
+      - ./_data/server:/rust/server
+      - ./_data/carbon-logs:/rust/carbon/logs
+    restart: unless-stopped
