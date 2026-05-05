@@ -1,0 +1,18 @@
+{
+  "Group": "",
+  "Name": "TakaroConfig",
+  "Version": "1.1.0",
+  "Description": "Integrates Hytale server with Takaro platform for advanced game server management",
+  "Authors": [
+    {
+      "Name": "Takaro Team",
+      "Url": "https://github.com/gettakaro"
+    }
+  ],
+  "Website": "https://github.com/gettakaro/Hytale-Takaro-Integration",
+  "Main": "dev.takaro.hytale.TakaroPlugin",
+  "ServerVersion": "*",
+  "Dependencies": {},
+  "OptionalDependencies": {},
+  "DisabledByDefault": false
+}
