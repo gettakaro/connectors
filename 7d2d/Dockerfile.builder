@@ -2,6 +2,15 @@ FROM mono:6.12.0.182-slim
 
 WORKDIR /app
 
+# Debian buster is EOL — repoint apt to archive.debian.org and disable
+# Valid-Until check (archived Release files are signed but expired).
+# Mono apt repo (download.mono-project.com) still serves stable-buster, leave it.
+RUN sed -i 's|http://deb.debian.org|http://archive.debian.org|g; \
+            s|http://security.debian.org|http://archive.debian.org|g; \
+            /buster-updates/d' /etc/apt/sources.list && \
+    echo 'Acquire::Check-Valid-Until "false";' \
+      > /etc/apt/apt.conf.d/99-archive-valid
+
 RUN apt-get update && \
   apt-get install -y nuget curl unzip git && \
   apt-get clean && \
