@@ -1,0 +1,110 @@
+name: 7D2D Connector
+
+on:
+  push:
+    branches: [main]
+    paths: ['7d2d/**']
+    tags: ['7d2d-v*']
+  pull_request:
+    paths: ['7d2d/**']
+
+jobs:
+  codestyle:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 7d2d
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+
+      - name: Install CSharpier
+        run: dotnet tool restore
+
+      - name: Check formatting
+        run: dotnet csharpier --check .
+
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 7d2d
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x ./scripts/*.sh
+
+      - name: Set up environment
+        run: ./scripts/setup-environment.sh
+
+      - name: Build mod
+        run: ./scripts/build-mod.sh
+
+      - name: List build outputs
+        run: find _data/build -type f | sort
+
+      - name: Create mod package
+        run: |
+          mkdir -p dist
+          cp -r _data/build/Mods/Takaro/* ./dist/
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: takaro-7d2d-mod
+          path: 7d2d/dist
+
+  release:
+    needs: [codestyle, build]
+    if: >
+      startsWith(github.ref, 'refs/tags/7d2d-v') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Set release info
+        id: release_info
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/7d2d-v* ]]; then
+            VERSION="${GITHUB_REF_NAME#7d2d-v}"
+            echo "tag_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "release_name=7D2D Connector v${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            SHORT_SHA="${GITHUB_SHA::7}"
+            DATE=$(date -u +%Y-%m-%d)
+            echo "tag_name=7d2d-pre-${DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+            echo "release_name=7D2D Connector pre-release ${DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: takaro-7d2d-mod
+          path: dist
+
+      - name: Zip mod artifact
+        run: |
+          cd dist
+          zip -r takaro-7d2d-mod.zip *
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_info.outputs.tag_name }}
+          name: ${{ steps.release_info.outputs.release_name }}
+          prerelease: ${{ steps.release_info.outputs.prerelease }}
+          files: dist/takaro-7d2d-mod.zip
+          generate_release_notes: true

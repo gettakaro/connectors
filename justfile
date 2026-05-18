@@ -12,6 +12,11 @@ release-minecraft version:
     git tag "minecraft-v{{version}}"
     git push origin "minecraft-v{{version}}"
 
+# Create a full release for the 7D2D connector
+release-7d2d version:
+    git tag "7d2d-v{{version}}"
+    git push origin "7d2d-v{{version}}"
+
 # === Rust Connector ===
 
 # Start the Rust dev server
@@ -67,3 +72,29 @@ minecraft-reload platform:
 # Start the Minecraft test bot
 minecraft-bot-up *args:
     cd minecraft && docker compose up bot {{args}}
+
+# === 7D2D Connector ===
+
+# Prepare 7D2D build dependencies and game binaries
+sevend2d-setup:
+    cd 7d2d && ./scripts/setup-environment.sh
+
+# Build the 7D2D mod
+sevend2d-build:
+    cd 7d2d && ./scripts/build-mod.sh
+
+# Build and deploy the 7D2D mod to the local test server
+sevend2d-build-deploy:
+    cd 7d2d && ./scripts/build-mod.sh deploy
+
+# Start the 7D2D dev services
+sevend2d-up *args:
+    cd 7d2d && docker compose up {{args}}
+
+# Stop the 7D2D dev services
+sevend2d-down *args:
+    cd 7d2d && docker compose down {{args}}
+
+# View 7D2D service logs
+sevend2d-logs *args='--tail 100 -f':
+    cd 7d2d && docker compose logs {{args}}
