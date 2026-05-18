@@ -12,10 +12,7 @@ namespace Takaro
 {
     public class API : IModApi
     {
-        private readonly List<IService> Services = new List<IService>
-        {
-            LogService.Instance
-        };
+        private readonly List<IService> Services = new List<IService> { LogService.Instance };
 
         public const string ModPrefix = "Takaro";
         public static readonly string BasePath = Directory.GetCurrentDirectory() + "/Takaro";
@@ -24,9 +21,9 @@ namespace Takaro
         public void InitMod(Mod mod)
         {
             ServiceRegistry.InitServices();
-            
+
             LogService.Instance.Info("Initializing mod");
-            
+
             if (!Directory.Exists(BasePath))
                 Directory.CreateDirectory(BasePath);
 
@@ -49,7 +46,7 @@ namespace Takaro
 
             LogService.Instance.Info("Mod initialized successfully");
         }
-        
+
         private static void GameStartDoneHandler(ref ModEvents.SGameStartDoneData data)
         {
             var harmony = new Harmony("com.takaro.patch");
@@ -83,7 +80,9 @@ namespace Takaro
         {
             if (data.ClientInfo != null && !data.GameShuttingDown)
             {
-                LogService.Instance.Debug($"Player disconnected: {data.ClientInfo.playerName} ({data.ClientInfo.PlatformId})");
+                LogService.Instance.Debug(
+                    $"Player disconnected: {data.ClientInfo.playerName} ({data.ClientInfo.PlatformId})"
+                );
                 _webSocketClient?.SendPlayerDisconnected(data.ClientInfo);
             }
         }
@@ -102,7 +101,10 @@ namespace Takaro
                     {
                         // Get killer information
                         ClientInfo attackerInfo = null;
-                        if (data.KillingEntity != null && data.KillingEntity.entityType == EntityType.Player)
+                        if (
+                            data.KillingEntity != null
+                            && data.KillingEntity.entityType == EntityType.Player
+                        )
                         {
                             attackerInfo = ConsoleHelper.ParseParamIdOrName(
                                 data.KillingEntity.entityId.ToString()
@@ -110,13 +112,22 @@ namespace Takaro
                         }
 
                         Vector3 deathPosition = data.KilledEntitiy.position;
-                        LogService.Instance.Debug($"Player death: {killedPlayerInfo.playerName} died at {deathPosition}");
-                        
-                        _webSocketClient?.SendPlayerDeath(killedPlayerInfo, attackerInfo, deathPosition);
+                        LogService.Instance.Debug(
+                            $"Player death: {killedPlayerInfo.playerName} died at {deathPosition}"
+                        );
+
+                        _webSocketClient?.SendPlayerDeath(
+                            killedPlayerInfo,
+                            attackerInfo,
+                            deathPosition
+                        );
                     }
                 }
                 // Handle entity kill events (player killing something else)
-                else if (data.KillingEntity != null && data.KillingEntity.entityType == EntityType.Player)
+                else if (
+                    data.KillingEntity != null
+                    && data.KillingEntity.entityType == EntityType.Player
+                )
                 {
                     ClientInfo killerInfo = ConsoleHelper.ParseParamIdOrName(
                         data.KillingEntity.entityId.ToString()
@@ -158,7 +169,8 @@ namespace Takaro
                             if (heldItemValue != null && !heldItemValue.IsEmpty())
                             {
                                 ItemClass itemClass = heldItemValue.ItemClass;
-                                weapon = itemClass?.GetLocalizedItemName() ?? itemClass?.GetItemName();
+                                weapon =
+                                    itemClass?.GetLocalizedItemName() ?? itemClass?.GetItemName();
                             }
                         }
                     }
@@ -167,7 +179,12 @@ namespace Takaro
                         LogService.Instance.Warn($"Could not get weapon info: {ex.Message}");
                     }
 
-                    _webSocketClient?.SendEntityKilled(killerInfo, ea.EntityName, entityType, weapon);
+                    _webSocketClient?.SendEntityKilled(
+                        killerInfo,
+                        ea.EntityName,
+                        entityType,
+                        weapon
+                    );
                 }
             }
         }
@@ -182,7 +199,9 @@ namespace Takaro
                 || data.RespawnType == RespawnType.EnterMultiplayer
             )
             {
-                LogService.Instance.Debug($"Player connected: {data.ClientInfo.playerName} ({data.ClientInfo.PlatformId})");
+                LogService.Instance.Debug(
+                    $"Player connected: {data.ClientInfo.playerName} ({data.ClientInfo.PlatformId})"
+                );
                 _webSocketClient?.SendPlayerConnected(data.ClientInfo);
             }
         }
@@ -216,17 +235,31 @@ namespace Takaro
                 _webSocketClient?.SendLogEvent(formattedMessage);
             }
         }
-        
+
         [HarmonyPatch(typeof(NetPackageChat), "ProcessPackage")]
         public class NetPackageChat_ProcessPackage_Patch
         {
-            private static bool Prefix(NetPackageChat __instance, World _world, GameManager _callbacks, string ___msg)
+            private static bool Prefix(
+                NetPackageChat __instance,
+                World _world,
+                GameManager _callbacks,
+                string ___msg
+            )
             {
-                ClientInfo cInfo = SingletonMonoBehaviour<ConnectionManager>.Instance.Clients.ForEntityId(__instance.senderEntityId);
+                ClientInfo cInfo =
+                    SingletonMonoBehaviour<ConnectionManager>.Instance.Clients.ForEntityId(
+                        __instance.senderEntityId
+                    );
                 if (cInfo != null)
                 {
                     LogService.Instance.Debug($"Chat message: {cInfo.playerName}: {___msg}");
-                    WebSocketClient.Instance?.SendChatMessage(cInfo, __instance.chatType, __instance.senderEntityId, ___msg, __instance.recipientEntityIds);
+                    WebSocketClient.Instance?.SendChatMessage(
+                        cInfo,
+                        __instance.chatType,
+                        __instance.senderEntityId,
+                        ___msg,
+                        __instance.recipientEntityIds
+                    );
                 }
                 return true;
             }

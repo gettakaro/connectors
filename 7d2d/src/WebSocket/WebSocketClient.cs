@@ -4,12 +4,12 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Takaro.Config;
-using WebSocketSharp;
-using UnityEngine;
-using System.Threading.Tasks;
 using Takaro.Services;
+using UnityEngine;
+using WebSocketSharp;
 
 namespace Takaro.WebSocket
 {
@@ -64,12 +64,12 @@ namespace Takaro.WebSocket
         public string Quality { get; set; }
     }
 
-    public class TakaroExecuteCommandArgs 
+    public class TakaroExecuteCommandArgs
     {
         public string Command { get; set; }
     }
 
-    public class TakaroSendMessageArgs 
+    public class TakaroSendMessageArgs
     {
         public string Message { get; set; }
         public TakaroSendMessageRecipientArgs Recipient { get; set; }
@@ -110,7 +110,6 @@ namespace Takaro.WebSocket
         public float Y { get; set; }
         public float Z { get; set; }
     }
-
 
     public class WebSocketClient
     {
@@ -314,92 +313,96 @@ namespace Takaro.WebSocket
 
                 try
                 {
-                                    // Handle different message types
-                switch (action)
-                {
-                    case "testReachability":
-                        HandleTestReachability(requestId);
-                        break;
-                    case "getPlayers":
-                        HandleGetPlayers(requestId);
-                        break;
-                    case "getPlayer":
-                        var playerArgs = WebSocketArgs<TakaroPlayerReferenceArgs>.Parse(args);
-                        if (playerArgs == null || string.IsNullOrEmpty(playerArgs.GameId))
-                        {
-                            SendErrorResponse(requestId, "Invalid or missing gameId parameter");
-                            return;
-                        }
-                        HandleGetPlayer(requestId, playerArgs.GameId);
-                        break;
-                    case "getPlayerLocation":
-                        var locationArgs = WebSocketArgs<TakaroPlayerReferenceArgs>.Parse(args);
-                        if (locationArgs == null || string.IsNullOrEmpty(locationArgs.GameId))
-                        {
-                            SendErrorResponse(requestId, "Invalid or missing gameId parameter");
-                            return;
-                        }
-                        HandleGetPlayerLocation(requestId, locationArgs.GameId);
-                        break;
-                    case "getPlayerInventory":
-                        var inventoryArgs = WebSocketArgs<TakaroPlayerReferenceArgs>.Parse(args);
-                        if (inventoryArgs == null || string.IsNullOrEmpty(inventoryArgs.GameId))
-                        {
-                            SendErrorResponse(requestId, "Invalid or missing gameId parameter");
-                            return;
-                        }
-                        HandleGetPlayerInventory(requestId, inventoryArgs.GameId);
-                        break;
-                    case "listItems":
-                        HandleListItems(requestId);
-                        break;
-                    case "listBans":
-                        HandleListBans(requestId);
-                        break;
-                    case "giveItem":
-                        var giveItemArgs = WebSocketArgs<TakaroGiveItemArgs>.Parse(args);
-                        HandleGiveItem(requestId, giveItemArgs);
-                        break;
-                    case "executeConsoleCommand":
-                        var executeCommandArgs = WebSocketArgs<TakaroExecuteCommandArgs>.Parse(args);
-                        _ = HandleExecuteCommand(requestId, executeCommandArgs);
-                        break;
-                    case "sendMessage":
-                        var sendMessageArgs = WebSocketArgs<TakaroSendMessageArgs>.Parse(args);
-                        HandleSendMessage(requestId, sendMessageArgs);
-                        break;
-                    case "kickPlayer":
-                        var kickPlayerArgs = WebSocketArgs<TakaroKickPlayerArgs>.Parse(args);
-                        HandleKickPlayer(requestId, kickPlayerArgs);
-                        break;
-                    case "banPlayer":
-                        var banPlayerArgs = WebSocketArgs<TakaroBanPlayerArgs>.Parse(args);
-                        HandleBanPlayer(requestId, banPlayerArgs);
-                        break;
-                    case "unbanPlayer":
-                        var unbanPlayerArgs = WebSocketArgs<TakaroUnbanPlayerArgs>.Parse(args);
-                        HandleUnbanPlayer(requestId, unbanPlayerArgs);
-                        break;
-                    case "teleportPlayer":
-                        var teleportPlayerArgs = WebSocketArgs<TakaroTeleportPlayerArgs>.Parse(args);
-                        HandleTeleportPlayer(requestId, teleportPlayerArgs);
-                        break;
-                    case "shutdown":
-                        _ = HandleShutdown(requestId);
-                        break;
-                    default:
-                        LogService.Instance.Warn($"Unknown message type: {action}");
-                        SendErrorResponse(requestId, $"Unknown message type: {action}");
-                        break;
-                }
+                    // Handle different message types
+                    switch (action)
+                    {
+                        case "testReachability":
+                            HandleTestReachability(requestId);
+                            break;
+                        case "getPlayers":
+                            HandleGetPlayers(requestId);
+                            break;
+                        case "getPlayer":
+                            var playerArgs = WebSocketArgs<TakaroPlayerReferenceArgs>.Parse(args);
+                            if (playerArgs == null || string.IsNullOrEmpty(playerArgs.GameId))
+                            {
+                                SendErrorResponse(requestId, "Invalid or missing gameId parameter");
+                                return;
+                            }
+                            HandleGetPlayer(requestId, playerArgs.GameId);
+                            break;
+                        case "getPlayerLocation":
+                            var locationArgs = WebSocketArgs<TakaroPlayerReferenceArgs>.Parse(args);
+                            if (locationArgs == null || string.IsNullOrEmpty(locationArgs.GameId))
+                            {
+                                SendErrorResponse(requestId, "Invalid or missing gameId parameter");
+                                return;
+                            }
+                            HandleGetPlayerLocation(requestId, locationArgs.GameId);
+                            break;
+                        case "getPlayerInventory":
+                            var inventoryArgs = WebSocketArgs<TakaroPlayerReferenceArgs>.Parse(
+                                args
+                            );
+                            if (inventoryArgs == null || string.IsNullOrEmpty(inventoryArgs.GameId))
+                            {
+                                SendErrorResponse(requestId, "Invalid or missing gameId parameter");
+                                return;
+                            }
+                            HandleGetPlayerInventory(requestId, inventoryArgs.GameId);
+                            break;
+                        case "listItems":
+                            HandleListItems(requestId);
+                            break;
+                        case "listBans":
+                            HandleListBans(requestId);
+                            break;
+                        case "giveItem":
+                            var giveItemArgs = WebSocketArgs<TakaroGiveItemArgs>.Parse(args);
+                            HandleGiveItem(requestId, giveItemArgs);
+                            break;
+                        case "executeConsoleCommand":
+                            var executeCommandArgs = WebSocketArgs<TakaroExecuteCommandArgs>.Parse(
+                                args
+                            );
+                            _ = HandleExecuteCommand(requestId, executeCommandArgs);
+                            break;
+                        case "sendMessage":
+                            var sendMessageArgs = WebSocketArgs<TakaroSendMessageArgs>.Parse(args);
+                            HandleSendMessage(requestId, sendMessageArgs);
+                            break;
+                        case "kickPlayer":
+                            var kickPlayerArgs = WebSocketArgs<TakaroKickPlayerArgs>.Parse(args);
+                            HandleKickPlayer(requestId, kickPlayerArgs);
+                            break;
+                        case "banPlayer":
+                            var banPlayerArgs = WebSocketArgs<TakaroBanPlayerArgs>.Parse(args);
+                            HandleBanPlayer(requestId, banPlayerArgs);
+                            break;
+                        case "unbanPlayer":
+                            var unbanPlayerArgs = WebSocketArgs<TakaroUnbanPlayerArgs>.Parse(args);
+                            HandleUnbanPlayer(requestId, unbanPlayerArgs);
+                            break;
+                        case "teleportPlayer":
+                            var teleportPlayerArgs = WebSocketArgs<TakaroTeleportPlayerArgs>.Parse(
+                                args
+                            );
+                            HandleTeleportPlayer(requestId, teleportPlayerArgs);
+                            break;
+                        case "shutdown":
+                            _ = HandleShutdown(requestId);
+                            break;
+                        default:
+                            LogService.Instance.Warn($"Unknown message type: {action}");
+                            SendErrorResponse(requestId, $"Unknown message type: {action}");
+                            break;
+                    }
                 }
                 catch (System.Exception)
                 {
                     SendErrorResponse(requestId, "Error processing request");
                     throw;
                 }
-
-
             }
             catch (Exception ex)
             {
@@ -684,15 +687,16 @@ namespace Takaro.WebSocket
         private void HandleListItems(string requestId)
         {
             List<TakaroItem> allItems = new List<TakaroItem>();
-            for (int i = 0; i < ItemClass.itemNames.Count; i++) {
-				string itemName = ItemClass.itemNames [i];
+            for (int i = 0; i < ItemClass.itemNames.Count; i++)
+            {
+                string itemName = ItemClass.itemNames[i];
                 ItemClass item = ItemClass.nameToItem[itemName];
-                if (item == null) {
+                if (item == null)
+                {
                     continue;
                 }
                 allItems.Add(Shared.TransformItemToTakaroItem(item));
-
-			}
+            }
             WebSocketMessage message = WebSocketMessage.Create(
                 WebSocketMessage.MessageTypes.Response,
                 allItems.ToArray(),
@@ -704,21 +708,30 @@ namespace Takaro.WebSocket
         private void HandleListBans(string requestId)
         {
             List<TakaroBan> bans = new List<TakaroBan>();
-            
+
             try
             {
                 // Try modern BlockedPlayerList first, fallback to AdminTools
                 if (Platform.BlockedPlayerList.Instance != null)
                 {
                     // Get all blocked players using the proper BlockedPlayerList API
-                    foreach (var blockedEntry in Platform.BlockedPlayerList.Instance.GetEntriesOrdered(true, false))
+                    foreach (
+                        var blockedEntry in Platform.BlockedPlayerList.Instance.GetEntriesOrdered(
+                            true,
+                            false
+                        )
+                    )
                     {
-                        if (blockedEntry?.PlayerData == null) continue;
+                        if (blockedEntry?.PlayerData == null)
+                            continue;
 
                         TakaroPlayer takaroPlayer = new TakaroPlayer
                         {
                             // Use the CrossPlatform ID as the primary GameId (without EOS_ prefix)
-                            GameId = blockedEntry.PlayerData.PrimaryId.CombinedString.Replace("EOS_", ""),
+                            GameId = blockedEntry.PlayerData.PrimaryId.CombinedString.Replace(
+                                "EOS_",
+                                ""
+                            ),
                             Name = blockedEntry.PlayerData.PlayerName.Text
                         };
 
@@ -730,8 +743,10 @@ namespace Takaro.WebSocket
                         }
 
                         // Check if there's a different native platform ID
-                        if (blockedEntry.PlayerData.NativeId != null && 
-                            blockedEntry.PlayerData.NativeId.CombinedString != primaryId)
+                        if (
+                            blockedEntry.PlayerData.NativeId != null
+                            && blockedEntry.PlayerData.NativeId.CombinedString != primaryId
+                        )
                         {
                             string nativeId = blockedEntry.PlayerData.NativeId.CombinedString;
                             if (nativeId.StartsWith("Steam_"))
@@ -756,12 +771,16 @@ namespace Takaro.WebSocket
                 else
                 {
                     // Fallback to AdminTools blacklist system
-                    PersistentPlayerList playerList = GameManager.Instance.GetPersistentPlayerList();
+                    PersistentPlayerList playerList =
+                        GameManager.Instance.GetPersistentPlayerList();
                     foreach (var ban in GameManager.Instance.adminTools.Blacklist.GetBanned())
                     {
                         // Support all platform types, not just EOS
-                        PersistentPlayerData playerData = playerList.GetPlayerData(ban.UserIdentifier);
-                        if (playerData == null) continue;
+                        PersistentPlayerData playerData = playerList.GetPlayerData(
+                            ban.UserIdentifier
+                        );
+                        if (playerData == null)
+                            continue;
 
                         TakaroPlayer takaroPlayer = new TakaroPlayer
                         {
@@ -815,39 +834,44 @@ namespace Takaro.WebSocket
                 SendErrorResponse(requestId, "Invalid or missing parameters");
                 return;
             }
-            
+
             ClientInfo cInfo = Shared.GetClientInfoFromGameId(args.GameId);
             if (cInfo == null)
             {
                 SendErrorResponse(requestId, "Player not found");
                 return;
             }
-            
+
             ItemValue itemValue = ItemClass.GetItem(args.Item);
             if (itemValue == null || itemValue.type == ItemValue.None.type)
             {
                 SendErrorResponse(requestId, "Item not found");
                 return;
             }
-            
-            if(!GameManager.Instance.World.Players.dict.TryGetValue(cInfo.entityId, out EntityPlayer player))
+
+            if (
+                !GameManager.Instance.World.Players.dict.TryGetValue(
+                    cInfo.entityId,
+                    out EntityPlayer player
+                )
+            )
             {
                 SendErrorResponse(requestId, "Player entity not found");
                 return;
             }
-            
-            if(!player.IsSpawned())
+
+            if (!player.IsSpawned())
             {
                 SendErrorResponse(requestId, "Player is not spawned");
                 return;
             }
-            
-            if(player.IsDead())
+
+            if (player.IsDead())
             {
                 SendErrorResponse(requestId, "Player is dead");
                 return;
             }
-            
+
             if (args.Amount <= 0)
             {
                 SendErrorResponse(requestId, "Invalid item amount");
@@ -858,9 +882,11 @@ namespace Takaro.WebSocket
             ushort quality = Constants.cItemMaxQuality;
             if (!string.IsNullOrEmpty(args.Quality))
             {
-                if (ushort.TryParse(args.Quality, out ushort parsedQuality) && 
-                    parsedQuality >= 0 && 
-                    parsedQuality <= Constants.cItemMaxQuality)
+                if (
+                    ushort.TryParse(args.Quality, out ushort parsedQuality)
+                    && parsedQuality >= 0
+                    && parsedQuality <= Constants.cItemMaxQuality
+                )
                 {
                     quality = parsedQuality;
                 }
@@ -870,10 +896,10 @@ namespace Takaro.WebSocket
                     return;
                 }
             }
-            
+
             // Create a new ItemValue with appropriate quality
             ItemValue iv = new ItemValue(itemValue.type, true);
-            
+
             // Handle quality for items with sub-items or that have quality
             if (ItemClass.list[iv.type].HasSubItems)
             {
@@ -888,26 +914,33 @@ namespace Takaro.WebSocket
             {
                 iv.Quality = quality;
             }
-            
+
             // Create the item stack with the specified amount
             ItemStack itemStack = new ItemStack(iv, args.Amount);
             World world = GameManager.Instance.World;
-            EntityItem entityItem = (EntityItem)EntityFactory.CreateEntity(new EntityCreationData
-            {
-                entityClass = EntityClass.FromString("item"),
-                id = EntityFactory.nextEntityID++,
-                itemStack = itemStack,
-                pos = world.Players.dict[cInfo.entityId].position,
-                rot = new Vector3(20f, 0f, 20f),
-                lifetime = 60f,
-                belongsPlayerId = cInfo.entityId
-            });
+            EntityItem entityItem = (EntityItem)
+                EntityFactory.CreateEntity(
+                    new EntityCreationData
+                    {
+                        entityClass = EntityClass.FromString("item"),
+                        id = EntityFactory.nextEntityID++,
+                        itemStack = itemStack,
+                        pos = world.Players.dict[cInfo.entityId].position,
+                        rot = new Vector3(20f, 0f, 20f),
+                        lifetime = 60f,
+                        belongsPlayerId = cInfo.entityId
+                    }
+                );
             world.SpawnEntityInWorld(entityItem);
-            cInfo.SendPackage(NetPackageManager.GetPackage<NetPackageEntityCollect>().Setup(entityItem.entityId, cInfo.entityId));
+            cInfo.SendPackage(
+                NetPackageManager
+                    .GetPackage<NetPackageEntityCollect>()
+                    .Setup(entityItem.entityId, cInfo.entityId)
+            );
             world.RemoveEntity(entityItem.entityId, EnumRemoveEntityReason.Despawned);
             WebSocketMessage message = WebSocketMessage.Create(
                 WebSocketMessage.MessageTypes.Response,
-                new Dictionary<string, object> {},
+                new Dictionary<string, object> { },
                 requestId
             );
             SendMessage(message);
@@ -922,7 +955,8 @@ namespace Takaro.WebSocket
             }
 
             // If a GameId is provided, send the message to that player as a whisper
-            if(args.Recipient != null && args.Recipient.GameId != null) {
+            if (args.Recipient != null && args.Recipient.GameId != null)
+            {
                 ClientInfo cInfo = Shared.GetClientInfoFromGameId(args.Recipient.GameId);
                 if (cInfo == null)
                 {
@@ -930,15 +964,35 @@ namespace Takaro.WebSocket
                     return;
                 }
 
-                cInfo.SendPackage (NetPackageManager.GetPackage<NetPackageChat> ().Setup (EChatType.Whisper, -1,args.Message, null, EMessageSender.Server, GeneratedTextManager.BbCodeSupportMode.Supported));
-            // Otherwise, send a global message
-            } else {
-                GameManager.Instance.ChatMessageServer(null, EChatType.Global, -1, args.Message, null, EMessageSender.Server);
+                cInfo.SendPackage(
+                    NetPackageManager
+                        .GetPackage<NetPackageChat>()
+                        .Setup(
+                            EChatType.Whisper,
+                            -1,
+                            args.Message,
+                            null,
+                            EMessageSender.Server,
+                            GeneratedTextManager.BbCodeSupportMode.Supported
+                        )
+                );
+                // Otherwise, send a global message
+            }
+            else
+            {
+                GameManager.Instance.ChatMessageServer(
+                    null,
+                    EChatType.Global,
+                    -1,
+                    args.Message,
+                    null,
+                    EMessageSender.Server
+                );
             }
 
             WebSocketMessage message = WebSocketMessage.Create(
                 WebSocketMessage.MessageTypes.Response,
-                new Dictionary<string, object> {},
+                new Dictionary<string, object> { },
                 requestId
             );
             SendMessage(message);
@@ -953,15 +1007,12 @@ namespace Takaro.WebSocket
             }
             var tcs = new TaskCompletionSource<string>();
             var cr = new CommandResult(args.Command, tcs);
-            SdtdConsole.Instance.ExecuteAsync (args.Command, cr);
+            SdtdConsole.Instance.ExecuteAsync(args.Command, cr);
             string result = await tcs.Task;
 
             WebSocketMessage message = WebSocketMessage.Create(
                 WebSocketMessage.MessageTypes.Response,
-                new Dictionary<string, object> { 
-                    { "rawResult", result },
-                    {"success", true}
-                     },
+                new Dictionary<string, object> { { "rawResult", result }, { "success", true } },
                 requestId
             );
             SendMessage(message);
@@ -998,11 +1049,13 @@ namespace Takaro.WebSocket
 
                 GameUtils.KickPlayerForClientInfo(cInfo, kickData);
 
-                LogService.Instance.Debug($"Kicked player {cInfo.playerName} ({args.Player.GameId}): {kickReason}");
+                LogService.Instance.Debug(
+                    $"Kicked player {cInfo.playerName} ({args.Player.GameId}): {kickReason}"
+                );
 
                 WebSocketMessage message = WebSocketMessage.Create(
                     WebSocketMessage.MessageTypes.Response,
-                    new Dictionary<string, object> 
+                    new Dictionary<string, object>
                     {
                         { "success", true },
                         { "playerName", cInfo.playerName },
@@ -1014,7 +1067,9 @@ namespace Takaro.WebSocket
             }
             catch (Exception ex)
             {
-                LogService.Instance.Error($"Error kicking player {args.Player.GameId}: {ex.Message}");
+                LogService.Instance.Error(
+                    $"Error kicking player {args.Player.GameId}: {ex.Message}"
+                );
                 SendErrorResponse(requestId, $"Failed to kick player: {ex.Message}");
             }
         }
@@ -1031,12 +1086,14 @@ namespace Takaro.WebSocket
             {
                 // First, try to find if the player is currently online
                 ClientInfo cInfo = Shared.GetClientInfoFromGameId(args.Player.GameId);
-                
+
                 // Get persistent player data - this works for both online and offline players
-                PlatformUserIdentifierAbs userId = PlatformUserIdentifierAbs.FromCombinedString($"EOS_{args.Player.GameId}");
+                PlatformUserIdentifierAbs userId = PlatformUserIdentifierAbs.FromCombinedString(
+                    $"EOS_{args.Player.GameId}"
+                );
                 PersistentPlayerList playerList = GameManager.Instance.GetPersistentPlayerList();
                 PersistentPlayerData playerData = playerList.GetPlayerData(userId);
-                
+
                 if (playerData == null)
                 {
                     SendErrorResponse(requestId, "Player not found in persistent data");
@@ -1044,8 +1101,10 @@ namespace Takaro.WebSocket
                 }
 
                 string playerName = playerData.PlayerName.playerName.Text;
-                string banReason = string.IsNullOrEmpty(args.Reason) ? "Banned by admin" : args.Reason;
-                
+                string banReason = string.IsNullOrEmpty(args.Reason)
+                    ? "Banned by admin"
+                    : args.Reason;
+
                 // Parse the expiration date from args
                 DateTime banUntil = DateTime.MaxValue; // Default to permanent ban
                 if (!string.IsNullOrEmpty(args.ExpiresAt))
@@ -1053,7 +1112,11 @@ namespace Takaro.WebSocket
                     try
                     {
                         // Parse ISO 8601 date format
-                        banUntil = DateTime.Parse(args.ExpiresAt, null, System.Globalization.DateTimeStyles.RoundtripKind);
+                        banUntil = DateTime.Parse(
+                            args.ExpiresAt,
+                            null,
+                            System.Globalization.DateTimeStyles.RoundtripKind
+                        );
                         // Ensure the date is in UTC
                         if (banUntil.Kind != DateTimeKind.Utc)
                         {
@@ -1063,11 +1126,13 @@ namespace Takaro.WebSocket
                     }
                     catch (Exception parseEx)
                     {
-                        LogService.Instance.Warn($"Failed to parse ban expiration date '{args.ExpiresAt}': {parseEx.Message}. Using permanent ban.");
+                        LogService.Instance.Warn(
+                            $"Failed to parse ban expiration date '{args.ExpiresAt}': {parseEx.Message}. Using permanent ban."
+                        );
                         banUntil = DateTime.MaxValue;
                     }
                 }
-                
+
                 bool banSuccess = false;
                 string banMethod = "";
 
@@ -1077,21 +1142,28 @@ namespace Takaro.WebSocket
                     // Timed ban - must use AdminTools.Blacklist (BlockedPlayerList doesn't support expiration)
                     try
                     {
-                        GameManager.Instance.adminTools.Blacklist.AddBan("Admin Ban", userId, banUntil, banReason);
+                        GameManager.Instance.adminTools.Blacklist.AddBan(
+                            "Admin Ban",
+                            userId,
+                            banUntil,
+                            banReason
+                        );
                         banSuccess = true;
                         banMethod = "AdminTools.Blacklist (timed)";
                     }
                     catch (Exception adminEx)
                     {
-                        LogService.Instance.Warn($"AdminTools blacklist failed for timed ban: {adminEx.Message}");
+                        LogService.Instance.Warn(
+                            $"AdminTools blacklist failed for timed ban: {adminEx.Message}"
+                        );
                     }
                 }
                 else if (Platform.BlockedPlayerList.Instance != null)
                 {
                     // Permanent ban - try modern BlockedPlayerList first
                     var listEntry = Platform.BlockedPlayerList.Instance.AddOrUpdatePlayer(
-                        playerData.PlayerData, 
-                        DateTime.UtcNow, 
+                        playerData.PlayerData,
+                        DateTime.UtcNow,
                         true, // blocked = true
                         false // ignoreLimit = false
                     );
@@ -1102,13 +1174,18 @@ namespace Takaro.WebSocket
                         banMethod = "BlockedPlayerList (permanent)";
                     }
                 }
-                
+
                 if (!banSuccess)
                 {
                     // Final fallback to AdminTools blacklist system
                     try
                     {
-                        GameManager.Instance.adminTools.Blacklist.AddBan("Admin Ban", userId, banUntil, banReason);
+                        GameManager.Instance.adminTools.Blacklist.AddBan(
+                            "Admin Ban",
+                            userId,
+                            banUntil,
+                            banReason
+                        );
                         banSuccess = true;
                         banMethod = "AdminTools.Blacklist";
                     }
@@ -1120,7 +1197,10 @@ namespace Takaro.WebSocket
 
                 if (!banSuccess)
                 {
-                    SendErrorResponse(requestId, "Failed to ban player - both BlockedPlayerList and AdminTools unavailable");
+                    SendErrorResponse(
+                        requestId,
+                        "Failed to ban player - both BlockedPlayerList and AdminTools unavailable"
+                    );
                     return;
                 }
 
@@ -1136,18 +1216,23 @@ namespace Takaro.WebSocket
                     GameUtils.KickPlayerForClientInfo(cInfo, kickData);
                 }
 
-                LogService.Instance.Debug($"Banned player {playerName} ({args.Player.GameId}) using {banMethod}: {banReason}, expires: {(banUntil == DateTime.MaxValue ? "never" : banUntil.ToString("o"))}");
+                LogService.Instance.Debug(
+                    $"Banned player {playerName} ({args.Player.GameId}) using {banMethod}: {banReason}, expires: {(banUntil == DateTime.MaxValue ? "never" : banUntil.ToString("o"))}"
+                );
 
                 WebSocketMessage message = WebSocketMessage.Create(
                     WebSocketMessage.MessageTypes.Response,
-                    new Dictionary<string, object> 
+                    new Dictionary<string, object>
                     {
                         { "success", true },
                         { "playerName", playerName },
                         { "reason", banReason },
                         { "wasOnline", cInfo != null },
                         { "method", banMethod },
-                        { "expiresAt", banUntil == DateTime.MaxValue ? null : banUntil.ToString("o") }
+                        {
+                            "expiresAt",
+                            banUntil == DateTime.MaxValue ? null : banUntil.ToString("o")
+                        }
                     },
                     requestId
                 );
@@ -1155,7 +1240,9 @@ namespace Takaro.WebSocket
             }
             catch (Exception ex)
             {
-                LogService.Instance.Error($"Error banning player {args.Player.GameId}: {ex.Message}");
+                LogService.Instance.Error(
+                    $"Error banning player {args.Player.GameId}: {ex.Message}"
+                );
                 SendErrorResponse(requestId, $"Failed to ban player: {ex.Message}");
             }
         }
@@ -1170,7 +1257,9 @@ namespace Takaro.WebSocket
 
             try
             {
-                PlatformUserIdentifierAbs userId = PlatformUserIdentifierAbs.FromCombinedString($"EOS_{args.Player.GameId}");
+                PlatformUserIdentifierAbs userId = PlatformUserIdentifierAbs.FromCombinedString(
+                    $"EOS_{args.Player.GameId}"
+                );
                 bool unbanSuccess = false;
                 string playerName = "";
                 string unbanMethod = "";
@@ -1178,13 +1267,15 @@ namespace Takaro.WebSocket
                 // Try modern BlockedPlayerList first, fallback to AdminTools
                 if (Platform.BlockedPlayerList.Instance != null)
                 {
-                    var blockedEntry = Platform.BlockedPlayerList.Instance.GetPlayerStateInfo(userId);
-                    
+                    var blockedEntry = Platform.BlockedPlayerList.Instance.GetPlayerStateInfo(
+                        userId
+                    );
+
                     if (blockedEntry != null && blockedEntry.Blocked)
                     {
                         // Use the SetBlockState method to unban the player
                         var result = blockedEntry.SetBlockState(false);
-                        
+
                         if (result.Item1) // result.Item1 is success bool
                         {
                             unbanSuccess = true;
@@ -1193,7 +1284,7 @@ namespace Takaro.WebSocket
                         }
                     }
                 }
-                
+
                 if (!unbanSuccess)
                 {
                     // Fallback to AdminTools blacklist system
@@ -1202,14 +1293,21 @@ namespace Takaro.WebSocket
                         // Check if player is banned in AdminTools blacklist
                         DateTime bannedUntil;
                         string banReason;
-                        if (GameManager.Instance.adminTools.Blacklist.IsBanned(userId, out bannedUntil, out banReason))
+                        if (
+                            GameManager.Instance.adminTools.Blacklist.IsBanned(
+                                userId,
+                                out bannedUntil,
+                                out banReason
+                            )
+                        )
                         {
                             GameManager.Instance.adminTools.Blacklist.RemoveBan(userId);
                             unbanSuccess = true;
                             unbanMethod = "AdminTools.Blacklist";
-                            
+
                             // Get player name from persistent data
-                            PersistentPlayerList playerList = GameManager.Instance.GetPersistentPlayerList();
+                            PersistentPlayerList playerList =
+                                GameManager.Instance.GetPersistentPlayerList();
                             PersistentPlayerData playerData = playerList.GetPlayerData(userId);
                             if (playerData != null)
                             {
@@ -1233,11 +1331,13 @@ namespace Takaro.WebSocket
                     return;
                 }
 
-                LogService.Instance.Debug($"Unbanned player {playerName} ({args.Player.GameId}) using {unbanMethod}");
+                LogService.Instance.Debug(
+                    $"Unbanned player {playerName} ({args.Player.GameId}) using {unbanMethod}"
+                );
 
                 WebSocketMessage message = WebSocketMessage.Create(
                     WebSocketMessage.MessageTypes.Response,
-                    new Dictionary<string, object> 
+                    new Dictionary<string, object>
                     {
                         { "success", true },
                         { "playerName", playerName },
@@ -1249,7 +1349,9 @@ namespace Takaro.WebSocket
             }
             catch (Exception ex)
             {
-                LogService.Instance.Error($"Error unbanning player {args.Player.GameId}: {ex.Message}");
+                LogService.Instance.Error(
+                    $"Error unbanning player {args.Player.GameId}: {ex.Message}"
+                );
                 SendErrorResponse(requestId, $"Failed to unban player: {ex.Message}");
             }
         }
@@ -1272,7 +1374,12 @@ namespace Takaro.WebSocket
                 }
 
                 // Get the player entity
-                if (!GameManager.Instance.World.Players.dict.TryGetValue(cInfo.entityId, out EntityPlayer player))
+                if (
+                    !GameManager.Instance.World.Players.dict.TryGetValue(
+                        cInfo.entityId,
+                        out EntityPlayer player
+                    )
+                )
                 {
                     SendErrorResponse(requestId, "Player entity not found");
                     return;
@@ -1298,17 +1405,24 @@ namespace Takaro.WebSocket
                 CheckWorldBounds(cInfo, ref targetPosition);
 
                 // Log the teleportation attempt
-                LogService.Instance.Debug($"Teleporting player {cInfo.playerName} ({args.Player.GameId}) to ({args.X}, {args.Y}, {args.Z})");
+                LogService.Instance.Debug(
+                    $"Teleporting player {cInfo.playerName} ({args.Player.GameId}) to ({args.X}, {args.Y}, {args.Z})"
+                );
 
                 // Perform the teleportation using the network packet system (like ServerTools)
-                cInfo.SendPackage(NetPackageManager.GetPackage<NetPackageTeleportPlayer>().Setup(
-                    targetPosition, null, false));
+                cInfo.SendPackage(
+                    NetPackageManager
+                        .GetPackage<NetPackageTeleportPlayer>()
+                        .Setup(targetPosition, null, false)
+                );
 
-                LogService.Instance.Debug($"Successfully teleported player {cInfo.playerName} to ({targetPosition.x}, {targetPosition.y}, {targetPosition.z})");
+                LogService.Instance.Debug(
+                    $"Successfully teleported player {cInfo.playerName} to ({targetPosition.x}, {targetPosition.y}, {targetPosition.z})"
+                );
 
                 WebSocketMessage message = WebSocketMessage.Create(
                     WebSocketMessage.MessageTypes.Response,
-                    new Dictionary<string, object> 
+                    new Dictionary<string, object>
                     {
                         { "success", true },
                         { "playerName", cInfo.playerName },
@@ -1322,7 +1436,9 @@ namespace Takaro.WebSocket
             }
             catch (Exception ex)
             {
-                LogService.Instance.Error($"Error teleporting player {args.Player.GameId}: {ex.Message}");
+                LogService.Instance.Error(
+                    $"Error teleporting player {args.Player.GameId}: {ex.Message}"
+                );
                 SendErrorResponse(requestId, $"Failed to teleport player: {ex.Message}");
             }
         }
@@ -1331,7 +1447,10 @@ namespace Takaro.WebSocket
         {
             float x = position.x;
             float z = position.z;
-            float positiveX, positiveY, negativeX, negativeY;
+            float positiveX,
+                positiveY,
+                negativeX,
+                negativeY;
 
             string gameWorld = GamePrefs.GetString(EnumGamePrefs.GameWorld);
             if (gameWorld.ToLower() == "navezgane")
@@ -1375,7 +1494,9 @@ namespace Takaro.WebSocket
 
             if (outside)
             {
-                LogService.Instance.Warn($"Teleport coordinates ({position.x}, {position.z}) were outside world bounds, adjusted to ({x}, {z})");
+                LogService.Instance.Warn(
+                    $"Teleport coordinates ({position.x}, {position.z}) were outside world bounds, adjusted to ({x}, {z})"
+                );
                 position = new Vector3(x, position.y, z);
             }
         }
@@ -1389,7 +1510,7 @@ namespace Takaro.WebSocket
 
                 // Use the proper vanilla 7D2D shutdown command
                 string shutdownCommand = "shutdown";
-                
+
                 LogService.Instance.Info($"Initiating immediate server shutdown: {reason}");
 
                 // Execute the shutdown command asynchronously
@@ -1398,7 +1519,9 @@ namespace Takaro.WebSocket
                 SdtdConsole.Instance.ExecuteAsync(shutdownCommand, cr);
                 string result = await tcs.Task;
 
-                LogService.Instance.Info($"Shutdown command executed successfully. Server will shutdown immediately");
+                LogService.Instance.Info(
+                    $"Shutdown command executed successfully. Server will shutdown immediately"
+                );
 
                 // Return null payload as per Takaro specification
                 WebSocketMessage message = WebSocketMessage.CreateResponse(requestId, null);
@@ -1421,10 +1544,7 @@ namespace Takaro.WebSocket
 
             WebSocketMessage message = WebSocketMessage.Create(
                 WebSocketMessage.MessageTypes.GameEvent,
-                new Dictionary<string, object> { 
-                    { "type", type },
-                    { "data", data }
-                 }
+                new Dictionary<string, object> { { "type", type }, { "data", data } }
             );
 
             SendMessage(message);
@@ -1433,7 +1553,8 @@ namespace Takaro.WebSocket
         // Public methods to send game events
         public void SendPlayerConnected(ClientInfo cInfo)
         {
-            if (cInfo == null) return;
+            if (cInfo == null)
+                return;
 
             SendGameEvent(
                 "player-connected",
@@ -1449,7 +1570,7 @@ namespace Takaro.WebSocket
             if (cInfo == null)
                 return;
 
-        SendGameEvent(
+            SendGameEvent(
                 "player-disconnected",
                 new Dictionary<string, object>
                 {
@@ -1458,9 +1579,16 @@ namespace Takaro.WebSocket
             );
         }
 
-        public void SendChatMessage(ClientInfo cInfo, EChatType type, int _senderId, string msg, List<int> recipientEntityIds)
+        public void SendChatMessage(
+            ClientInfo cInfo,
+            EChatType type,
+            int _senderId,
+            string msg,
+            List<int> recipientEntityIds
+        )
         {
-            if (cInfo == null) return;
+            if (cInfo == null)
+                return;
 
             string channel = "unknown";
 
@@ -1477,7 +1605,7 @@ namespace Takaro.WebSocket
                     break;
                 case EChatType.Party:
                     channel = "team";
-                    break;                    
+                    break;
                 default:
                     channel = "unknown";
                     break;
@@ -1494,7 +1622,12 @@ namespace Takaro.WebSocket
             );
         }
 
-        public void SendEntityKilled(ClientInfo killerInfo, string entityName, string entityType, string weapon = null)
+        public void SendEntityKilled(
+            ClientInfo killerInfo,
+            string entityName,
+            string entityType,
+            string weapon = null
+        )
         {
             if (killerInfo == null)
                 return;
@@ -1514,7 +1647,11 @@ namespace Takaro.WebSocket
             SendGameEvent("entity-killed", eventData);
         }
 
-        public void SendPlayerDeath(ClientInfo deadPlayerInfo, ClientInfo attackerInfo, Vector3 deathPosition)
+        public void SendPlayerDeath(
+            ClientInfo deadPlayerInfo,
+            ClientInfo attackerInfo,
+            Vector3 deathPosition
+        )
         {
             if (deadPlayerInfo == null)
                 return;
@@ -1522,7 +1659,9 @@ namespace Takaro.WebSocket
             var eventData = new Dictionary<string, object>
             {
                 { "player", Shared.TransformClientInfoToTakaroPlayer(deadPlayerInfo) },
-                { "position", new Dictionary<string, object>
+                {
+                    "position",
+                    new Dictionary<string, object>
                     {
                         { "x", deathPosition.x },
                         { "y", deathPosition.y },
@@ -1545,10 +1684,7 @@ namespace Takaro.WebSocket
             if (string.IsNullOrEmpty(logMessage))
                 return;
 
-            SendGameEvent("log", new Dictionary<string, object>
-            {
-                { "msg", logMessage }
-            });
+            SendGameEvent("log", new Dictionary<string, object> { { "msg", logMessage } });
         }
 
         #endregion

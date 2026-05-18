@@ -7,13 +7,16 @@ namespace Takaro
 {
     public static class ServiceRegistry
     {
-        private static readonly Lazy<List<IService>> _services = new Lazy<List<IService>>(() => new List<IService>
-        {
-            // Register new Services here
-            LogService.Instance,
-        });
+        private static readonly Lazy<List<IService>> _services = new Lazy<List<IService>>(
+            () =>
+                new List<IService>
+                {
+                    // Register new Services here
+                    LogService.Instance,
+                }
+        );
         private static IEnumerable<IService> Services => _services.Value;
-        
+
         public static void InitServices()
         {
             foreach (IService service in Services)
@@ -29,5 +32,4 @@ namespace Takaro
                 }
         }
     }
-
 }

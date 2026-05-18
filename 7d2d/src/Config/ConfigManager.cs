@@ -48,8 +48,7 @@ namespace Takaro.Config
                 if (!File.Exists(ConfigFilePath))
                 {
                     LogService.Instance.Warn(
-                        "Config file not found. Creating default config at "
-                            + ConfigFilePath
+                        "Config file not found. Creating default config at " + ConfigFilePath
                     );
                     CreateDefaultConfig();
                 }
@@ -189,7 +188,9 @@ namespace Takaro.Config
                 }
                 else
                 {
-                    LogService.Instance.Error("Could not find IdentityToken node in config to update");
+                    LogService.Instance.Error(
+                        "Could not find IdentityToken node in config to update"
+                    );
                 }
             }
             catch (Exception ex)

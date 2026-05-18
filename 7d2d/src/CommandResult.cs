@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using System.Text;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace Takaro
 {
-
     public class CommandResult : IConsoleConnection
     {
         private readonly TaskCompletionSource<string> _tcs;
@@ -34,7 +33,14 @@ namespace Takaro
             // Empty implementation
         }
 
-        public void SendLog(string formattedMessage, string plainMessage, string trace, LogType type, DateTime timestamp, long uptime)
+        public void SendLog(
+            string formattedMessage,
+            string plainMessage,
+            string trace,
+            LogType type,
+            DateTime timestamp,
+            long uptime
+        )
         {
             // Empty implementation
         }

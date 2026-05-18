@@ -105,10 +105,7 @@ namespace Takaro.WebSocket
         {
             return new WebSocketMessage(
                 MessageTypes.Error,
-                new Dictionary<string, object>
-                {
-                    { "error", errorMessage }
-                },
+                new Dictionary<string, object> { { "error", errorMessage } },
                 requestId
             );
         }
