@@ -1,0 +1,8 @@
+*.cache
+.vs
+
+bin
+dist
+lib
+obj
+_data
