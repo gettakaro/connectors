@@ -36,6 +36,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache 7D2D managed DLLs
+        uses: actions/cache@v4
+        id: binaries-cache
+        with:
+          path: 7d2d/_data/7dtd-binaries
+          key: 7d2d-managed-v1
+
       - name: Make scripts executable
         run: chmod +x ./scripts/*.sh
 

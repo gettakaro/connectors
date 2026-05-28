@@ -13,9 +13,34 @@ mkdir -p ./_data/{7dtd-binaries,build,game-files,lib,ServerFiles}
 # Make everything world-writable
 chmod -R 777 ./_data
 
-# Download 7D2D dedicated server files via SteamCMD
+# Skip everything if the binaries are already in place (CI cache hit, or a
+# repeat local run). The mod build only needs _data/7dtd-binaries/.
+if [ -f "./_data/7dtd-binaries/Assembly-CSharp.dll" ] && \
+   [ -f "./_data/7dtd-binaries/websocket-sharp.dll" ]; then
+  echo "Binaries already present at ./_data/7dtd-binaries/ — skipping setup."
+  exit 0
+fi
+
+# Download 7D2D dedicated server files via SteamCMD (with retry).
+# "Missing configuration" is a known transient SteamCMD failure where the
+# dependency app-manifest fetch races with the self-update; it typically
+# clears on a second or third attempt.
 echo "Downloading 7D2D server files via SteamCMD..."
-docker compose run --rm steamcmd
+attempts=3
+for i in $(seq 1 "$attempts"); do
+  echo "SteamCMD attempt $i/$attempts"
+  if docker compose run --rm steamcmd; then
+    break
+  fi
+  if [ "$i" -lt "$attempts" ]; then
+    wait=$((i * 30))
+    echo "SteamCMD failed; retrying in ${wait}s..."
+    sleep "$wait"
+  else
+    echo "SteamCMD failed after $attempts attempts" >&2
+    exit 1
+  fi
+done
 
 # Verify that the server files were downloaded
 # SteamCMD can sometimes fail silently, this makes the error obvious
