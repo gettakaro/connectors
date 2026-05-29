@@ -784,7 +784,7 @@ namespace Oxide.Plugins
             return null;
         }
 
-        private void OnPlayerDeath(BasePlayer player, HitInfo info)
+        private void OnPlayerDeath(BasePlayer player, object info)
         {
             if (player == null) return;
 
@@ -793,7 +793,7 @@ namespace Oxide.Plugins
                 ["player"] = PlayerToJson(player)
             };
 
-            var attacker = info?.InitiatorPlayer;
+            var attacker = GetHitInfoInitiatorPlayer(info);
             if (attacker != null && attacker != player)
             {
                 data["attacker"] = PlayerToJson(attacker);
@@ -810,16 +810,14 @@ namespace Oxide.Plugins
             SendGameEvent("player-death", data);
         }
 
-        private void OnEntityDeath(BaseCombatEntity entity, HitInfo info)
+        private void OnEntityDeath(BaseCombatEntity entity, object info)
         {
             if (entity == null || entity is BasePlayer) return;
 
-            var attacker = info?.InitiatorPlayer;
+            var attacker = GetHitInfoInitiatorPlayer(info);
             if (attacker == null) return;
 
-            var weapon = info?.Weapon?.GetItem()?.info?.shortname
-                         ?? info?.WeaponPrefab?.ShortPrefabName
-                         ?? "";
+            var weapon = GetHitInfoWeaponShortName(info);
             var data = new JObject
             {
                 ["player"] = PlayerToJson(attacker),
@@ -827,6 +825,55 @@ namespace Oxide.Plugins
                 ["weapon"] = weapon
             };
             SendGameEvent("entity-killed", data);
+        }
+
+        private BasePlayer GetHitInfoInitiatorPlayer(object info)
+        {
+            if (info == null) return null;
+
+            try
+            {
+                return GetMemberValue(info, "InitiatorPlayer") as BasePlayer;
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Unable to read HitInfo.InitiatorPlayer: {ex.Message}");
+                return null;
+            }
+        }
+
+        private string GetHitInfoWeaponShortName(object info)
+        {
+            if (info == null) return "";
+
+            try
+            {
+                var weapon = GetMemberValue(info, "Weapon");
+                var item = weapon?.GetType().GetMethod("GetItem", Type.EmptyTypes)?.Invoke(weapon, null);
+                var itemInfo = GetMemberValue(item, "info");
+                var shortName = GetMemberValue(itemInfo, "shortname") as string;
+                if (!string.IsNullOrEmpty(shortName)) return shortName;
+
+                var weaponPrefab = GetMemberValue(info, "WeaponPrefab");
+                return GetMemberValue(weaponPrefab, "ShortPrefabName") as string ?? "";
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Unable to read HitInfo weapon: {ex.Message}");
+                return "";
+            }
+        }
+
+        private object GetMemberValue(object instance, string name)
+        {
+            if (instance == null) return null;
+
+            var type = instance.GetType();
+            var property = type.GetProperty(name);
+            if (property != null) return property.GetValue(instance, null);
+
+            var field = type.GetField(name);
+            return field?.GetValue(instance);
         }
 
         private void OnServerMessage(string message, string username, string color, ulong userid)
