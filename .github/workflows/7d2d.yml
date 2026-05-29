@@ -29,9 +29,9 @@ jobs:
       run:
         working-directory: 7d2d
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
       - name: Install CSharpier
         run: dotnet tool restore
       - name: Check formatting
@@ -43,20 +43,20 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       # All release/comment operations act as takaro-ci-bot[bot] (not github-actions[bot]).
       # Skipped on fork PRs, which can't access the App secrets and don't publish builds.
       - name: Generate token
         id: app-token
         if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
         with:
           app-id: ${{ secrets.TAKARO_CI_APP_ID }}
           private-key: ${{ secrets.TAKARO_CI_APP_PRIV_KEY }}
 
       - name: Cache 7D2D managed DLLs
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         id: binaries-cache
         with:
           path: 7d2d/_data/7dtd-binaries

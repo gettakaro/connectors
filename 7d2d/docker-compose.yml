@@ -3,7 +3,7 @@ name: takaro-7d2d
 services:
   # SteamCMD service for downloading game files
   steamcmd:
-    image: cm2network/steamcmd:latest
+    image: cm2network/steamcmd:latest@sha256:45f6515d6c4dcde659c9ad6872bdbeacd1bf5c4e7f241829c4d2f28fb5eda581
     user: "${UID:-1000}:${GID:-1000}"
     volumes:
       - ./_data/game-files:/game
@@ -25,7 +25,7 @@ services:
 
   # Game server service (for reference/testing)
   7dtdserver:
-    image: vinanrra/7dtd-server
+    image: vinanrra/7dtd-server@sha256:031db5172863fed093afafa9b183180896f1d40424a4d9bbb17627ec0e0e4f35
     environment:
       - START_MODE=3
       - PUID=1000

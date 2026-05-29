@@ -1,4 +1,4 @@
-FROM mono:6.12.0.182-slim
+FROM mono:6.12.0.182-slim@sha256:eb9a8d42dc58090cdb0d39b36422d9560f33e9d2cce22f4c888da263cee46c45
 
 WORKDIR /app
 
