@@ -3,18 +3,29 @@ name: Minecraft Connector
 on:
   push:
     branches: [main]
-    paths: ['minecraft/**']
-    tags: ['minecraft-v*']
+    paths: ['minecraft/**', 'scripts/**', '.github/workflows/minecraft.yml']
   pull_request:
-    paths: ['minecraft/**']
+    paths: ['minecraft/**', 'scripts/**', '.github/workflows/minecraft.yml']
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+
+# Serialize same-ref runs so consecutive main pushes don't race on the rolling
+# minecraft-dev release. Release runs (caller's workflow name) are in a different group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  package:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: minecraft
-
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -25,86 +36,37 @@ jobs:
           java-version: 21
           cache: gradle
 
-      - name: Build and test
+      - name: Resolve release params
+        id: params
         env:
-          GITHUB_REF: ${{ github.ref }}
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-          GITHUB_SHA: ${{ github.sha }}
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/minecraft-v* ]]; then
-            VERSION="${GITHUB_REF_NAME#minecraft-v}"
-            ./gradlew build -Pversion="${VERSION}"
-          elif [[ "$GITHUB_REF" == refs/heads/main ]]; then
-            SHORT_SHA="${GITHUB_SHA::7}"
-            ./gradlew build -Pversion="SNAPSHOT-${SHORT_SHA}"
-          else
-            ./gradlew build
-          fi
+          EVENT: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          IN_TAG: ${{ inputs.tag }}
+        run: scripts/release-params.sh minecraft >> "$GITHUB_OUTPUT"
 
-      - name: Upload Paper JAR
-        uses: actions/upload-artifact@v4
-        with:
-          name: paper-plugin
-          path: minecraft/paper/build/libs/takaro-paper-*.jar
-          if-no-files-found: error
+      - name: Build release artifacts
+        run: minecraft/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
 
-      - name: Upload NeoForge JAR
-        uses: actions/upload-artifact@v4
-        with:
-          name: neoforge-mod
-          path: minecraft/neoforge/build/libs/takaro-neoforge-*.jar
-          if-no-files-found: error
-
-      - name: Upload Fabric JAR
-        uses: actions/upload-artifact@v4
-        with:
-          name: fabric-mod
-          path: |
-            minecraft/fabric/build/libs/takaro-fabric-*.jar
-            !minecraft/fabric/build/libs/*-dev-shadow*
-          if-no-files-found: error
-
-  release:
-    needs: build
-    if: >
-      startsWith(github.ref, 'refs/tags/minecraft-v') ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Set release info
-        id: release_info
+      - name: Publish stable release assets
+        if: ${{ steps.params.outputs.publish == 'stable' }}
         env:
-          GITHUB_REF: ${{ github.ref }}
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-          GITHUB_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/publish-release.sh upload "${{ steps.params.outputs.tag }}" "$RUNNER_TEMP"/dist/*.jar
+
+      - name: Publish rolling dev build
+        if: ${{ steps.params.outputs.publish == 'rolling' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/minecraft-v* ]]; then
-            VERSION="${GITHUB_REF_NAME#minecraft-v}"
-            echo "tag_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-            echo "release_name=Minecraft Connector v${VERSION}" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          else
-            SHORT_SHA="${GITHUB_SHA::7}"
-            DATE=$(date -u +%Y-%m-%d)
-            echo "tag_name=minecraft-pre-${DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-            echo "release_name=Minecraft Connector pre-release ${DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          fi
+          scripts/publish-release.sh rolling minecraft-dev \
+            "Minecraft Connector — latest dev build" \
+            "Rolling development build (\`${{ steps.params.outputs.version }}\`), updated on every push to main. Not for production." \
+            "$RUNNER_TEMP"/dist/*.jar
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload PR build artifacts
+        if: ${{ steps.params.outputs.publish == 'none' }}
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.release_info.outputs.tag_name }}
-          name: ${{ steps.release_info.outputs.release_name }}
-          prerelease: ${{ steps.release_info.outputs.prerelease }}
-          files: |
-            paper-plugin/*.jar
-            neoforge-mod/*.jar
-            fabric-mod/*.jar
-          generate_release_notes: true
+          name: minecraft-jars
+          path: ${{ runner.temp }}/dist/*.jar
+          if-no-files-found: error

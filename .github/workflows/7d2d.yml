@@ -3,36 +3,44 @@ name: 7D2D Connector
 on:
   push:
     branches: [main]
-    paths: ['7d2d/**']
-    tags: ['7d2d-v*']
+    paths: ['7d2d/**', 'scripts/**', '.github/workflows/7d2d.yml']
   pull_request:
-    paths: ['7d2d/**']
+    paths: ['7d2d/**', 'scripts/**', '.github/workflows/7d2d.yml']
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+
+# Serialize same-ref runs so consecutive main pushes don't race on the rolling
+# 7d2d-dev release. Release runs (caller's workflow name) are in a different group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   codestyle:
+    if: ${{ !inputs.tag }}
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: 7d2d
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
-
       - name: Install CSharpier
         run: dotnet tool restore
-
       - name: Check formatting
         run: dotnet csharpier --check .
 
-  build:
+  package:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: 7d2d
-
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -44,74 +52,42 @@ jobs:
           key: 7d2d-managed-v1
 
       - name: Make scripts executable
-        run: chmod +x ./scripts/*.sh
+        run: chmod +x 7d2d/scripts/*.sh scripts/*.sh
 
       - name: Set up environment
-        run: ./scripts/setup-environment.sh
+        run: 7d2d/scripts/setup-environment.sh
 
-      - name: Build mod
-        run: ./scripts/build-mod.sh
+      - name: Resolve release params
+        id: params
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          IN_TAG: ${{ inputs.tag }}
+        run: scripts/release-params.sh 7d2d >> "$GITHUB_OUTPUT"
 
-      - name: List build outputs
-        run: find _data/build -type f | sort
+      - name: Build release artifact
+        run: 7d2d/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
 
-      - name: Create mod package
+      - name: Publish stable release assets
+        if: ${{ steps.params.outputs.publish == 'stable' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/publish-release.sh upload "${{ steps.params.outputs.tag }}" "$RUNNER_TEMP/dist/takaro-7d2d-mod.zip"
+
+      - name: Publish rolling dev build
+        if: ${{ steps.params.outputs.publish == 'rolling' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p dist
-          cp -r _data/build/Mods/Takaro/* ./dist/
+          scripts/publish-release.sh rolling 7d2d-dev \
+            "7D2D Connector — latest dev build" \
+            "Rolling development build (\`${{ steps.params.outputs.version }}\`), updated on every push to main. Not for production." \
+            "$RUNNER_TEMP/dist/takaro-7d2d-mod.zip"
 
-      - name: Upload build artifact
+      - name: Upload PR build artifact
+        if: ${{ steps.params.outputs.publish == 'none' }}
         uses: actions/upload-artifact@v4
         with:
           name: takaro-7d2d-mod
-          path: 7d2d/dist
-
-  release:
-    needs: [codestyle, build]
-    if: >
-      startsWith(github.ref, 'refs/tags/7d2d-v') ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Set release info
-        id: release_info
-        env:
-          GITHUB_REF: ${{ github.ref }}
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-          GITHUB_SHA: ${{ github.sha }}
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/7d2d-v* ]]; then
-            VERSION="${GITHUB_REF_NAME#7d2d-v}"
-            echo "tag_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-            echo "release_name=7D2D Connector v${VERSION}" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          else
-            SHORT_SHA="${GITHUB_SHA::7}"
-            DATE=$(date -u +%Y-%m-%d)
-            echo "tag_name=7d2d-pre-${DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-            echo "release_name=7D2D Connector pre-release ${DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: takaro-7d2d-mod
-          path: dist
-
-      - name: Zip mod artifact
-        run: |
-          cd dist
-          zip -r takaro-7d2d-mod.zip *
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.release_info.outputs.tag_name }}
-          name: ${{ steps.release_info.outputs.release_name }}
-          prerelease: ${{ steps.release_info.outputs.prerelease }}
-          files: dist/takaro-7d2d-mod.zip
-          generate_release_notes: true
+          path: ${{ runner.temp }}/dist/takaro-7d2d-mod.zip
+          if-no-files-found: error

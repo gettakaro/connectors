@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "separate-pull-requests": true,
+  "include-component-in-tag": true,
+  "tag-separator": "-",
+  "packages": {
+    "rust": {
+      "release-type": "simple",
+      "component": "rust",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        { "type": "generic", "path": "plugin/TakaroConnector.cs" }
+      ]
+    },
+    "minecraft": {
+      "release-type": "simple",
+      "component": "minecraft",
+      "changelog-path": "CHANGELOG.md"
+    },
+    "7d2d": {
+      "release-type": "simple",
+      "component": "7d2d",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        { "type": "generic", "path": "ModInfo.xml" }
+      ]
+    }
+  }
+}

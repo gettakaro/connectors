@@ -2,20 +2,26 @@
 
 # === Release ===
 
-# Create a full release for the Rust connector
-release-rust version:
-    git tag "rust-v{{version}}"
-    git push origin "rust-v{{version}}"
+# Releases are automated by release-please from Conventional Commits. A per-connector
+# "Release PR" is maintained on `main`; merging it bumps the version, tags
+# <connector>-v*, updates the CHANGELOG, and publishes a GitHub Release with artifacts.
+# To force a specific version, add a `Release-As: X.Y.Z` footer to a commit on main.
 
-# Create a full release for the Minecraft connector
-release-minecraft version:
-    git tag "minecraft-v{{version}}"
-    git push origin "minecraft-v{{version}}"
+# Print the rolling dev-build version for a connector (rust, minecraft, 7d2d)
+dev-version connector:
+    ./scripts/dev-version.sh {{connector}}
 
-# Create a full release for the 7D2D connector
-release-7d2d version:
-    git tag "7d2d-v{{version}}"
-    git push origin "7d2d-v{{version}}"
+# Build the Rust connector release artifact locally into <out-dir>
+build-release-rust version out-dir='dist':
+    ./rust/scripts/build-release.sh {{version}} {{out-dir}}
+
+# Build the Minecraft connector release artifacts locally into <out-dir>
+build-release-minecraft version out-dir='dist':
+    ./minecraft/scripts/build-release.sh {{version}} {{out-dir}}
+
+# Build the 7D2D connector release artifact locally into <out-dir>
+build-release-7d2d version out-dir='dist':
+    ./7d2d/scripts/build-release.sh {{version}} {{out-dir}}
 
 # === Rust Connector ===
 

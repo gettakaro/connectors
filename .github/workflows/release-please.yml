@@ -1,0 +1,62 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      rust_released: ${{ steps.rp.outputs['rust--release_created'] }}
+      rust_tag: ${{ steps.rp.outputs['rust--tag_name'] }}
+      rust_version: ${{ steps.rp.outputs['rust--version'] }}
+      minecraft_released: ${{ steps.rp.outputs['minecraft--release_created'] }}
+      minecraft_tag: ${{ steps.rp.outputs['minecraft--tag_name'] }}
+      minecraft_version: ${{ steps.rp.outputs['minecraft--version'] }}
+      sevend2d_released: ${{ steps.rp.outputs['7d2d--release_created'] }}
+      sevend2d_tag: ${{ steps.rp.outputs['7d2d--tag_name'] }}
+      sevend2d_version: ${{ steps.rp.outputs['7d2d--version'] }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: rp
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # When a connector's Release PR is merged, release-please creates its tag + GitHub
+  # Release; these jobs build the artifacts and attach them to that release in the
+  # same run (no cross-workflow tag trigger needed — sidesteps the GITHUB_TOKEN trap).
+  release-rust:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.rust_released == 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/rust.yml
+    with:
+      version: ${{ needs.release-please.outputs.rust_version }}
+      tag: ${{ needs.release-please.outputs.rust_tag }}
+
+  release-minecraft:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.minecraft_released == 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/minecraft.yml
+    with:
+      version: ${{ needs.release-please.outputs.minecraft_version }}
+      tag: ${{ needs.release-please.outputs.minecraft_tag }}
+
+  release-7d2d:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.sevend2d_released == 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/7d2d.yml
+    with:
+      version: ${{ needs.release-please.outputs.sevend2d_version }}
+      tag: ${{ needs.release-please.outputs.sevend2d_tag }}

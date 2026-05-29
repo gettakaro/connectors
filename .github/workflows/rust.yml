@@ -3,20 +3,28 @@ name: Rust Connector
 on:
   push:
     branches: [main]
-    paths: ['rust/**']
-    tags: ['rust-v*']
+    paths: ['rust/**', 'scripts/**', '.github/workflows/rust.yml']
   pull_request:
-    paths: ['rust/**']
+    paths: ['rust/**', 'scripts/**', '.github/workflows/rust.yml']
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+
+# Serialize same-ref runs so consecutive main pushes don't race on the rolling
+# rust-dev release (delete+recreate). Release runs use the caller's workflow name,
+# so they fall in a different group and are unaffected.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  shellcheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Shellcheck
-        run: shellcheck -e SC1091 rust/scripts/*.sh rust/start.sh
-
   compile-check:
+    if: ${{ !inputs.tag }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -98,71 +106,43 @@ jobs:
           dotnet build /tmp/compile-check/compile-check.csproj
 
   docker-build:
-    if: github.event_name == 'pull_request'
+    if: ${{ !inputs.tag && github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker image
         run: docker build -t takaro-rust-test rust/
 
-  release:
-    needs: [shellcheck, compile-check]
-    if: >
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      startsWith(github.ref, 'refs/tags/rust-v')
+  package:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Set release info
-        id: release_info
+      - name: Resolve release params
+        id: params
         env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-          GITHUB_REF: ${{ github.ref }}
-          GITHUB_SHA: ${{ github.sha }}
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/rust-v* ]]; then
-            VERSION="${GITHUB_REF_NAME#rust-v}"
-            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-            echo "tag_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-            echo "release_name=Rust Connector v${VERSION}" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-            echo "is_tag=true" >> "$GITHUB_OUTPUT"
-          else
-            SHORT_SHA="${GITHUB_SHA::7}"
-            DATE=$(date -u +%Y-%m-%d)
-            echo "version=" >> "$GITHUB_OUTPUT"
-            echo "tag_name=rust-pre-${DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-            echo "release_name=Rust Connector pre-release ${DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-            echo "is_tag=false" >> "$GITHUB_OUTPUT"
-          fi
+          EVENT: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          IN_TAG: ${{ inputs.tag }}
+        run: scripts/release-params.sh rust >> "$GITHUB_OUTPUT"
 
-      - name: Commit version bump
-        if: steps.release_info.outputs.is_tag == 'true'
+      - name: Build release artifact
+        run: rust/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
+
+      - name: Publish stable release assets
+        if: ${{ steps.params.outputs.publish == 'stable' }}
         env:
-          VERSION: ${{ steps.release_info.outputs.version }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git checkout main
-          sed -i "s/\[Info(\"TakaroConnector\", \"Takaro\", \"[^\"]*\")\]/[Info(\"TakaroConnector\", \"Takaro\", \"$VERSION\")]/" rust/plugin/TakaroConnector.cs
-          git add rust/plugin/TakaroConnector.cs
-          if ! git diff --cached --quiet; then
-            git commit -m "release: rust-v${VERSION}"
-            git push origin main
-          fi
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/publish-release.sh upload "${{ steps.params.outputs.tag }}" "$RUNNER_TEMP/dist/TakaroConnector.cs"
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.release_info.outputs.tag_name }}
-          name: ${{ steps.release_info.outputs.release_name }}
-          prerelease: ${{ steps.release_info.outputs.prerelease }}
-          files: rust/plugin/TakaroConnector.cs
-          generate_release_notes: true
+      - name: Publish rolling dev build
+        if: ${{ steps.params.outputs.publish == 'rolling' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scripts/publish-release.sh rolling rust-dev \
+            "Rust Connector — latest dev build" \
+            "Rolling development build (\`${{ steps.params.outputs.version }}\`), updated on every push to main. Not for production." \
+            "$RUNNER_TEMP/dist/TakaroConnector.cs"
