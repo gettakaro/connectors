@@ -58,3 +58,4 @@ just sevend2d-logs
 - Always use non-interactive verify: `/verify --mode=report-only --scope=branch`
 - Use `docker compose` (not `docker-compose`)
 - `7d2d/` does not use the shared root `.env`; its runtime config is generated in `7d2d/Config.xml`
+- PR titles MUST follow Conventional Commits — the `pr-title` check (`scripts/check-commit-title.sh`) enforces it and fails otherwise. Allowed types: `feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert` (append `!` for breaking). Example: `ci: open release PRs for every commit type`. Validate locally with `bash scripts/check-commit-title.sh "<title>"`.
