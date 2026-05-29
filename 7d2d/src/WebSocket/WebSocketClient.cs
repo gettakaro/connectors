@@ -1520,7 +1520,7 @@ namespace Takaro.WebSocket
                 string result = await tcs.Task;
 
                 LogService.Instance.Info(
-                    $"Shutdown command executed successfully. Server will shutdown immediately"
+                    $"Shutdown command executed successfully. Server will shut down immediately"
                 );
 
                 // Return null payload as per Takaro specification
