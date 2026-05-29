@@ -21,7 +21,6 @@
     "7d2d": {
       "release-type": "simple",
       "component": "7d2d",
-      "release-as": "0.1.0",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         { "type": "generic", "path": "ModInfo.xml" }
