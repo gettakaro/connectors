@@ -48,6 +48,7 @@ jobs:
       contents: write
       pull-requests: write
     uses: ./.github/workflows/rust.yml
+    secrets: inherit
     with:
       version: ${{ needs.release-please.outputs.rust_version }}
       tag: ${{ needs.release-please.outputs.rust_tag }}
@@ -59,6 +60,7 @@ jobs:
       contents: write
       pull-requests: write
     uses: ./.github/workflows/minecraft.yml
+    secrets: inherit
     with:
       version: ${{ needs.release-please.outputs.minecraft_version }}
       tag: ${{ needs.release-please.outputs.minecraft_tag }}
@@ -70,6 +72,7 @@ jobs:
       contents: write
       pull-requests: write
     uses: ./.github/workflows/7d2d.yml
+    secrets: inherit
     with:
       version: ${{ needs.release-please.outputs.sevend2d_version }}
       tag: ${{ needs.release-please.outputs.sevend2d_tag }}

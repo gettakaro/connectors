@@ -121,6 +121,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # All release/comment operations act as takaro-ci-bot[bot] (not github-actions[bot]).
+      # Skipped on fork PRs, which can't access the App secrets and don't publish builds.
+      - name: Generate token
+        id: app-token
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.TAKARO_CI_APP_ID }}
+          private-key: ${{ secrets.TAKARO_CI_APP_PRIV_KEY }}
+
       - name: Resolve release params
         id: params
         env:
@@ -137,13 +147,13 @@ jobs:
       - name: Publish stable release assets
         if: ${{ steps.params.outputs.publish == 'stable' }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: scripts/publish-release.sh upload "${{ steps.params.outputs.tag }}" "$RUNNER_TEMP/dist/TakaroConnector.cs"
 
       - name: Publish rolling dev build
         if: ${{ steps.params.outputs.publish == 'rolling' }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           scripts/publish-release.sh rolling rust-dev \
             "Rust Connector — latest dev build" \
@@ -155,7 +165,7 @@ jobs:
       - name: Publish PR build
         if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           scripts/publish-release.sh rolling "${{ steps.params.outputs.tag }}" \
             "Rust Connector — build for PR #${{ github.event.pull_request.number }}" \
@@ -165,7 +175,7 @@ jobs:
       - name: Comment PR build
         if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           scripts/comment-pr-build.sh rust \
             "${{ github.event.pull_request.number }}" \
