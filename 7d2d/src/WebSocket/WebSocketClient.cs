@@ -612,7 +612,7 @@ namespace Takaro.WebSocket
                 {
                     { "x", pos.x },
                     { "y", pos.y },
-                    { "z", pos.z }
+                    { "z", pos.z },
                 },
                 requestId
             );
@@ -732,7 +732,7 @@ namespace Takaro.WebSocket
                                 "EOS_",
                                 ""
                             ),
-                            Name = blockedEntry.PlayerData.PlayerName.Text
+                            Name = blockedEntry.PlayerData.PlayerName.Text,
                         };
 
                         // Set platform-specific IDs based on the platform type
@@ -763,7 +763,7 @@ namespace Takaro.WebSocket
                         {
                             Player = takaroPlayer,
                             Reason = "Blocked", // BlockedPlayerList doesn't store reasons, use default
-                            ExpiresAt = null // BlockedPlayerList doesn't store expiration, permanent bans
+                            ExpiresAt = null, // BlockedPlayerList doesn't store expiration, permanent bans
                         };
                         bans.Add(takaroBan);
                     }
@@ -785,7 +785,7 @@ namespace Takaro.WebSocket
                         TakaroPlayer takaroPlayer = new TakaroPlayer
                         {
                             GameId = ban.UserIdentifier.CombinedString.Replace("EOS_", ""),
-                            Name = playerData.PlayerName.playerName.Text
+                            Name = playerData.PlayerName.playerName.Text,
                         };
 
                         // Set platform-specific IDs
@@ -807,7 +807,7 @@ namespace Takaro.WebSocket
                         {
                             Player = takaroPlayer,
                             Reason = ban.BanReason,
-                            ExpiresAt = ban.BannedUntil.ToString("o")
+                            ExpiresAt = ban.BannedUntil.ToString("o"),
                         };
                         bans.Add(takaroBan);
                     }
@@ -928,7 +928,7 @@ namespace Takaro.WebSocket
                         pos = world.Players.dict[cInfo.entityId].position,
                         rot = new Vector3(20f, 0f, 20f),
                         lifetime = 60f,
-                        belongsPlayerId = cInfo.entityId
+                        belongsPlayerId = cInfo.entityId,
                     }
                 );
             world.SpawnEntityInWorld(entityItem);
@@ -1059,7 +1059,7 @@ namespace Takaro.WebSocket
                     {
                         { "success", true },
                         { "playerName", cInfo.playerName },
-                        { "reason", kickReason }
+                        { "reason", kickReason },
                     },
                     requestId
                 );
@@ -1232,7 +1232,7 @@ namespace Takaro.WebSocket
                         {
                             "expiresAt",
                             banUntil == DateTime.MaxValue ? null : banUntil.ToString("o")
-                        }
+                        },
                     },
                     requestId
                 );
@@ -1341,7 +1341,7 @@ namespace Takaro.WebSocket
                     {
                         { "success", true },
                         { "playerName", playerName },
-                        { "method", unbanMethod }
+                        { "method", unbanMethod },
                     },
                     requestId
                 );
@@ -1428,7 +1428,7 @@ namespace Takaro.WebSocket
                         { "playerName", cInfo.playerName },
                         { "x", targetPosition.x },
                         { "y", targetPosition.y },
-                        { "z", targetPosition.z }
+                        { "z", targetPosition.z },
                     },
                     requestId
                 );
@@ -1617,7 +1617,7 @@ namespace Takaro.WebSocket
                 {
                     { "player", Shared.TransformClientInfoToTakaroPlayer(cInfo) },
                     { "msg", msg },
-                    { "channel", channel }
+                    { "channel", channel },
                 }
             );
         }
@@ -1635,7 +1635,7 @@ namespace Takaro.WebSocket
             var eventData = new Dictionary<string, object>
             {
                 { "player", Shared.TransformClientInfoToTakaroPlayer(killerInfo) },
-                { "entity", entityType }
+                { "entity", entityType },
             };
 
             // Add weapon information if available
@@ -1665,9 +1665,9 @@ namespace Takaro.WebSocket
                     {
                         { "x", deathPosition.x },
                         { "y", deathPosition.y },
-                        { "z", deathPosition.z }
+                        { "z", deathPosition.z },
                     }
-                }
+                },
             };
 
             // Add attacker information if available
