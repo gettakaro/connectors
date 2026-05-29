@@ -41,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -63,6 +64,8 @@ jobs:
           EVENT: ${{ github.event_name }}
           IN_VERSION: ${{ inputs.version }}
           IN_TAG: ${{ inputs.tag }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEV_SHA: ${{ github.event.pull_request.head.sha }}
         run: scripts/release-params.sh 7d2d >> "$GITHUB_OUTPUT"
 
       - name: Build release artifact
@@ -84,10 +87,25 @@ jobs:
             "Rolling development build (\`${{ steps.params.outputs.version }}\`), updated on every push to main. Not for production." \
             "$RUNNER_TEMP/dist/takaro-7d2d-mod.zip"
 
-      - name: Upload PR build artifact
-        if: ${{ steps.params.outputs.publish == 'none' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: takaro-7d2d-mod
-          path: ${{ runner.temp }}/dist/takaro-7d2d-mod.zip
-          if-no-files-found: error
+      # Fork PRs get a read-only token, so they can't publish a release or comment;
+      # they build for validation only (no downloadable artifact — accepted limitation).
+      - name: Publish PR build
+        if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scripts/publish-release.sh rolling "${{ steps.params.outputs.tag }}" \
+            "7D2D Connector — build for PR #${{ github.event.pull_request.number }}" \
+            "Disposable build (\`${{ steps.params.outputs.version }}\`) for PR #${{ github.event.pull_request.number }}. Replaced on every push, deleted when the PR closes. Not for production." \
+            "$RUNNER_TEMP/dist/takaro-7d2d-mod.zip"
+
+      - name: Comment PR build
+        if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scripts/comment-pr-build.sh 7d2d \
+            "${{ github.event.pull_request.number }}" \
+            "${{ steps.params.outputs.tag }}" \
+            "${{ steps.params.outputs.version }}" \
+            "$RUNNER_TEMP/dist/takaro-7d2d-mod.zip"

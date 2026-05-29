@@ -9,6 +9,12 @@ CONNECTOR="${1:?usage: dev-version.sh <rust|minecraft|7d2d>}"
 MANIFEST=".release-please-manifest.json"
 
 BASE=$(jq -er --arg c "$CONNECTOR" '.[$c]' "$MANIFEST")
-SHA=$(git rev-parse --short HEAD)
+# DEV_SHA lets callers (CI on pull_request) pin the label to the PR head commit instead of
+# the ephemeral merge-commit that gets checked out. Local runs fall back to HEAD.
+if [ -n "${DEV_SHA:-}" ]; then
+  SHA="${DEV_SHA:0:7}"
+else
+  SHA=$(git rev-parse --short HEAD)
+fi
 
 echo "${BASE}-dev.${SHA}"

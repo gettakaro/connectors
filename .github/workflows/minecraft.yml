@@ -26,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -42,6 +43,8 @@ jobs:
           EVENT: ${{ github.event_name }}
           IN_VERSION: ${{ inputs.version }}
           IN_TAG: ${{ inputs.tag }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEV_SHA: ${{ github.event.pull_request.head.sha }}
         run: scripts/release-params.sh minecraft >> "$GITHUB_OUTPUT"
 
       - name: Build release artifacts
@@ -63,10 +66,25 @@ jobs:
             "Rolling development build (\`${{ steps.params.outputs.version }}\`), updated on every push to main. Not for production." \
             "$RUNNER_TEMP"/dist/*.jar
 
-      - name: Upload PR build artifacts
-        if: ${{ steps.params.outputs.publish == 'none' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: minecraft-jars
-          path: ${{ runner.temp }}/dist/*.jar
-          if-no-files-found: error
+      # Fork PRs get a read-only token, so they can't publish a release or comment;
+      # they build for validation only (no downloadable artifact — accepted limitation).
+      - name: Publish PR build
+        if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scripts/publish-release.sh rolling "${{ steps.params.outputs.tag }}" \
+            "Minecraft Connector — build for PR #${{ github.event.pull_request.number }}" \
+            "Disposable build (\`${{ steps.params.outputs.version }}\`) for PR #${{ github.event.pull_request.number }}. Replaced on every push, deleted when the PR closes. Not for production." \
+            "$RUNNER_TEMP"/dist/*.jar
+
+      - name: Comment PR build
+        if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scripts/comment-pr-build.sh minecraft \
+            "${{ github.event.pull_request.number }}" \
+            "${{ steps.params.outputs.tag }}" \
+            "${{ steps.params.outputs.version }}" \
+            "$RUNNER_TEMP"/dist/*.jar

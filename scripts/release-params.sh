@@ -8,8 +8,9 @@
 #
 # Modes:
 #   stable  - called by release-please for a real release (IN_TAG provided)
+#   pr      - a pull_request build -> publish the disposable pr-<num>-<connector> pre-release
 #   rolling - a normal push to main -> update the rolling <connector>-dev pre-release
-#   none    - pull_request, or a release-please release commit (build only, no publish)
+#   none    - a release-please release commit on main (build only, no publish)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -19,6 +20,10 @@ if [ -n "${IN_TAG:-}" ]; then
   VERSION="${IN_VERSION:?IN_VERSION must be set when IN_TAG is set}"
   TAG="${IN_TAG}"
   PUBLISH="stable"
+elif [ "${EVENT:-}" = "pull_request" ]; then
+  VERSION="$(scripts/dev-version.sh "$CONNECTOR")"
+  TAG="pr-${PR_NUMBER:?PR_NUMBER must be set for pull_request builds}-${CONNECTOR}"
+  PUBLISH="pr"
 elif [ "${EVENT:-}" = "push" ] && ! (git log -1 --pretty=%s | grep -qiE '^chore.*release'); then
   VERSION="$(scripts/dev-version.sh "$CONNECTOR")"
   TAG="${CONNECTOR}-dev"
