@@ -2,8 +2,12 @@ plugins {
     java
 }
 
+val versionFromFile = rootProject.file("version.txt").takeIf { it.exists() }?.readText()?.trim()
+
 allprojects {
-    version = findProperty("version")?.toString()?.takeIf { it != "unspecified" } ?: "1.0.0-SNAPSHOT"
+    version = findProperty("version")?.toString()?.takeIf { it != "unspecified" }
+        ?: versionFromFile
+        ?: "1.0.0-SNAPSHOT"
 }
 
 subprojects {

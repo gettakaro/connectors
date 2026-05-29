@@ -1,0 +1,20 @@
+name: PR Build Cleanup
+
+# When a PR closes (merged or not), delete its disposable pr-<num>-<connector>
+# pre-releases and tags. No path filter — runs on every close so nothing is left behind.
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Delete per-PR builds
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: scripts/cleanup-pr-builds.sh "$PR_NUMBER"
