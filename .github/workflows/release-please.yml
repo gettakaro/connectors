@@ -22,9 +22,19 @@ jobs:
       sevend2d_tag: ${{ steps.rp.outputs['7d2d--tag_name'] }}
       sevend2d_version: ${{ steps.rp.outputs['7d2d--version'] }}
     steps:
+      # Author Release PRs as takaro-ci-bot[bot] instead of GITHUB_TOKEN. PRs/commits made
+      # with GITHUB_TOKEN don't fire downstream events, so the required `conventional-title`
+      # check never ran on Release PRs and they couldn't merge. An App token triggers it.
+      - name: Generate token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.TAKARO_CI_APP_ID }}
+          private-key: ${{ secrets.TAKARO_CI_APP_PRIV_KEY }}
       - uses: googleapis/release-please-action@v4
         id: rp
         with:
+          token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
