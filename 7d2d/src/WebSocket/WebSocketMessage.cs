@@ -140,7 +140,7 @@ namespace Takaro.WebSocket
                 new Dictionary<string, object>
                 {
                     { "registrationToken", registrationToken },
-                    { "identityToken", identityToken }
+                    { "identityToken", identityToken },
                 }
             );
         }

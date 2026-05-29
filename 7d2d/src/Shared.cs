@@ -79,7 +79,10 @@ namespace Takaro
                 Name = clientInfo.playerName,
                 Ip = clientInfo.ip,
                 Ping = clientInfo.ping,
-                EpicOnlineServicesId = clientInfo.CrossplatformId.CombinedString.Replace("EOS_", "")
+                EpicOnlineServicesId = clientInfo.CrossplatformId.CombinedString.Replace(
+                    "EOS_",
+                    ""
+                ),
             };
 
             if (clientInfo.PlatformId != null && clientInfo.PlatformId.CombinedString != null)
