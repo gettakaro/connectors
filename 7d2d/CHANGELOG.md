@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.0...7d2d-v0.1.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* **7d2d:** correct grammar in shutdown log message ([#12](https://github.com/gettakaro/connectors/issues/12)) ([8fa279f](https://github.com/gettakaro/connectors/commit/8fa279f4f901532674f4d5defd260f390000d407))
+
 ## 0.1.0 (2026-05-29)
 
 

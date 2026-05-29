@@ -4,6 +4,6 @@
 	<DisplayName value="Takaro" />
 	<Description value="Takaro companion mod" />
 	<Author value="Takaro" />
-	<Version value="0.1.0" /> <!-- x-release-please-version -->
+	<Version value="0.1.1" /> <!-- x-release-please-version -->
 	<Website value="https://takaro.io"/>
 </xml>
