@@ -9,7 +9,7 @@ java-websocket = "1.6.0"
 gson = "2.14.0"
 log4j = "2.24.3"
 
-shadow = "9.3.2"
+shadow = "9.4.2"
 fabric-loom = "1.15-SNAPSHOT"
 neoforge-moddev = "2.0.140"
 
