@@ -28,3 +28,8 @@ previous dev builds are not retained.
 **Dev version** — The version a dev build reports: the last released version with a
 `-dev.<short-commit>` suffix (e.g. `0.0.2-dev.30baac9`). Sorts below the corresponding
 stable release.
+
+**Game-coupled dependency** — A minecraft build dependency pinned to a specific supported
+game version (`paper-api`, `fabric-api`, `fabric-loom`, `neoforge`, and the game version
+itself). Bumping one is a deliberate "raise the supported game version" decision, made and
+tested by a human across the whole set — never an automated update.

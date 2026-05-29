@@ -1,0 +1,70 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommitTypeAll(chore)",
+    "helpers:pinGitHubActionDigests",
+    "docker:pinDigests"
+  ],
+  "platformAutomerge": true,
+  "automergeStrategy": "squash",
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "lockFileMaintenance": { "enabled": true },
+  "packageRules": [
+    {
+      "description": "Unresolvable Minecraft game artifact — managed by hand",
+      "matchDepNames": ["com.mojang:minecraft"],
+      "enabled": false
+    },
+    {
+      "description": "Game-version-coupled platform deps: one grouped, human-merged PR",
+      "matchDepNames": [
+        "io.papermc.paper:paper-api",
+        "net.fabricmc:fabric-loader",
+        "net.fabricmc.fabric-api:fabric-api",
+        "net.neoforged:neoforge",
+        "net.neoforged.moddev",
+        "fabric-loom"
+      ],
+      "groupName": "minecraft platform",
+      "automerge": false
+    },
+    {
+      "description": "All GitHub Actions in one PR; automerge low-risk",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+      "automerge": true
+    },
+    {
+      "description": "Minecraft bot npm devDependencies grouped + automerged",
+      "matchFileNames": ["minecraft/bot/package.json"],
+      "matchDepTypes": ["devDependencies"],
+      "groupName": "minecraft bot dev dependencies",
+      "automerge": true
+    },
+    {
+      "description": "Docker base-image digest/patch updates automerge",
+      "matchManagers": ["dockerfile", "docker-compose"],
+      "matchUpdateTypes": ["digest", "pin", "patch"],
+      "automerge": true
+    },
+    {
+      "description": "Formatter/build tooling — format/build check is sufficient validation",
+      "matchDepNames": ["csharpier", "com.gradleup.shadow"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      "description": "Gradle wrapper automerge",
+      "matchDepTypes": ["gradle-wrapper"],
+      "automerge": true
+    },
+    {
+      "description": "Lockfile maintenance automerge",
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "automerge": true
+    }
+  ]
+}
