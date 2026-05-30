@@ -736,10 +736,13 @@ namespace Takaro.WebSocket
                         if (string.IsNullOrEmpty(banId) || seenBanIds.Contains(banId))
                             continue;
 
-                        PersistentPlayerData playerData = playerList?.GetPlayerData(ban.UserIdentifier);
-                        string playerName = playerData != null
-                            ? playerData.PlayerName.playerName.Text
-                            : $"Player_{banId.Replace("EOS_", "")}";
+                        PersistentPlayerData playerData = playerList?.GetPlayerData(
+                            ban.UserIdentifier
+                        );
+                        string playerName =
+                            playerData != null
+                                ? playerData.PlayerName.playerName.Text
+                                : $"Player_{banId.Replace("EOS_", "")}";
 
                         TakaroPlayer takaroPlayer = new TakaroPlayer
                         {
@@ -851,7 +854,6 @@ namespace Takaro.WebSocket
                 SendErrorResponse(requestId, $"Failed to list bans: {ex.Message}");
             }
         }
-
 
         private void HandleGiveItem(string requestId, TakaroGiveItemArgs args)
         {

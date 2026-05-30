@@ -23,6 +23,10 @@ def method_body(source: str, signature: str) -> str:
     raise AssertionError(f'Could not extract body for {signature}')
 
 
+def compact(source: str) -> str:
+    return ''.join(source.split())
+
+
 class SevenD2DConnectorRegressionTests(unittest.TestCase):
     def test_list_bans_reads_blocked_players_and_admin_blacklist(self):
         body = method_body(WEBSOCKET, 'private void HandleListBans(string requestId)')
@@ -36,7 +40,7 @@ class SevenD2DConnectorRegressionTests(unittest.TestCase):
         self.assertIn('seenBanIds.Add(nativeId)', body)
         self.assertIn('ban.BanReason', body)
         self.assertIn('GameManager.Instance?.adminTools?.Blacklist != null', body)
-        self.assertIn('playerList?.GetPlayerData(ban.UserIdentifier)', body)
+        self.assertIn('playerList?.GetPlayerData(ban.UserIdentifier)', compact(body))
         self.assertIn('ban.BannedUntil.ToString("o")', body)
 
     def test_reconnect_is_indefinite_with_backoff_cap(self):
