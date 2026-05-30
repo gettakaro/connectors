@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.2](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.1...7d2d-v0.1.2) (2026-05-30)
+
+
+### Miscellaneous Chores
+
+* **deps:** pin dependencies ([be404f6](https://github.com/gettakaro/connectors/commit/be404f652951b72ca7dee4c20933fda5f420741c))
+* **deps:** update dependency csharpier to v0.30.6 ([512a37f](https://github.com/gettakaro/connectors/commit/512a37f9ee49653d6b4a4a49dc2b4b936714e378))
+* **deps:** update vinanrra/7dtd-server docker digest to ceecd5a ([#41](https://github.com/gettakaro/connectors/issues/41)) ([3529c99](https://github.com/gettakaro/connectors/commit/3529c997786508e75c9fdea379c451392080d809))
+
 ## [0.1.1](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.0...7d2d-v0.1.1) (2026-05-29)
 
 
