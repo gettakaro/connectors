@@ -218,22 +218,12 @@ namespace Takaro
 
         private void HandleLogMessage(string logString, string stackTrace, LogType type)
         {
-            // Filter log messages to only send relevant ones to Takaro
-            // Avoid infinite loops by not sending our own Takaro log messages
+            // Forward raw server log lines to Takaro while avoiding feedback loops from
+            // the connector's own LogService output.
             if (string.IsNullOrEmpty(logString) || logString.Contains($"[{ModPrefix}]"))
                 return;
 
-            // Only send Error and Warning level messages to reduce noise
-            if (type == LogType.Error || type == LogType.Warning)
-            {
-                string formattedMessage = $"[{type}] {logString}";
-                if (!string.IsNullOrEmpty(stackTrace) && type == LogType.Error)
-                {
-                    formattedMessage += $"\nStack Trace: {stackTrace}";
-                }
-
-                _webSocketClient?.SendLogEvent(formattedMessage);
-            }
+            _webSocketClient?.SendLogEvent(logString);
         }
 
         [HarmonyPatch(typeof(NetPackageChat), "ProcessPackage")]
