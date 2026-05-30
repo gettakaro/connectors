@@ -25,7 +25,7 @@ services:
 
   # Game server service (for reference/testing)
   7dtdserver:
-    image: vinanrra/7dtd-server@sha256:031db5172863fed093afafa9b183180896f1d40424a4d9bbb17627ec0e0e4f35
+    image: vinanrra/7dtd-server@sha256:ceecd5af71597fd586f42053600f772db87be06511ce3d3cc5556a553c47ba53
     environment:
       - START_MODE=3
       - PUID=1000
