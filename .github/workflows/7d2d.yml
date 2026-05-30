@@ -56,7 +56,7 @@ jobs:
           private-key: ${{ secrets.TAKARO_CI_APP_PRIV_KEY }}
 
       - name: Cache 7D2D managed DLLs
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         id: binaries-cache
         with:
           path: 7d2d/_data/7dtd-binaries
