@@ -8,7 +8,7 @@
     "start": "node src/index.js"
   },
   "dependencies": {
-    "express": "^4.21.0",
+    "express": "^5.0.0",
     "mineflayer": "^4.23.0"
   }
 }
