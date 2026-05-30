@@ -10,7 +10,7 @@ namespace Takaro.Config
         private static ConfigManager _instance;
         private static readonly object _lock = new object();
         private static readonly string ConfigFilePath = Path.Combine(API.BasePath, "Config.xml");
-        public string WebSocketUrl { get; private set; } = "wss://your-takaro-websocket-server.com";
+        public string WebSocketUrl { get; private set; } = "wss://connect.takaro.io/";
         public string IdentityToken { get; private set; } = "";
         public string RegistrationToken { get; private set; } = "";
         public bool WebSocketEnabled { get; private set; } = true;
