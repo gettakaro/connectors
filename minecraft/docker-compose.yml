@@ -1,6 +1,6 @@
 services:
   paper:
-    image: itzg/minecraft-server@sha256:bf790e496056c8ff0ae11e750e8e87e06d0a204f2f94796fcef85a6b0133fc1f
+    image: itzg/minecraft-server@sha256:aedec598f54914646016736da9336d20b0a90f7647436111d0ab3c5f8deb482f
     container_name: minecraft-paper
     env_file: ../.env
     ports:
@@ -26,7 +26,7 @@ services:
     stdin_open: true
 
   neoforge:
-    image: itzg/minecraft-server@sha256:bf790e496056c8ff0ae11e750e8e87e06d0a204f2f94796fcef85a6b0133fc1f
+    image: itzg/minecraft-server@sha256:aedec598f54914646016736da9336d20b0a90f7647436111d0ab3c5f8deb482f
     container_name: minecraft-neoforge
     env_file: ../.env
     ports:
@@ -53,7 +53,7 @@ services:
     stdin_open: true
 
   fabric:
-    image: itzg/minecraft-server@sha256:bf790e496056c8ff0ae11e750e8e87e06d0a204f2f94796fcef85a6b0133fc1f
+    image: itzg/minecraft-server@sha256:aedec598f54914646016736da9336d20b0a90f7647436111d0ab3c5f8deb482f
     container_name: minecraft-fabric
     env_file: ../.env
     ports:
