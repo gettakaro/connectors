@@ -2,7 +2,7 @@
 minecraft = "1.21.11"
 paper-api = "1.21.11-R0.1-SNAPSHOT"
 neoforge-version = "21.11.38-beta"
-fabric-loader = "0.19.2"
+fabric-loader = "0.19.3"
 fabric-api = "0.141.4+1.21.11"
 
 java-websocket = "1.6.0"
@@ -10,7 +10,7 @@ gson = "2.14.0"
 log4j = "2.26.0"
 
 shadow = "9.4.2"
-fabric-loom = "1.16.2"
+fabric-loom = "1.16.3"
 neoforge-moddev = "2.0.141"
 
 [libraries]
