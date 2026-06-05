@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.0.3](https://github.com/gettakaro/connectors/compare/minecraft-v0.0.2...minecraft-v0.0.3) (2026-06-05)
+
+
+### Miscellaneous Chores
+
+* **deps:** update itzg/minecraft-server docker digest to 90c8f84 ([#62](https://github.com/gettakaro/connectors/issues/62)) ([16531cc](https://github.com/gettakaro/connectors/commit/16531ccb1d0aae4081a257652945c16c63e41dea))
+* **deps:** update itzg/minecraft-server docker digest to aedec59 ([#58](https://github.com/gettakaro/connectors/issues/58)) ([3007a0e](https://github.com/gettakaro/connectors/commit/3007a0e3fe98778619a33eb8c1e5b8326f55c1c9))
+* **deps:** update itzg/minecraft-server docker digest to bf790e4 ([#53](https://github.com/gettakaro/connectors/issues/53)) ([519410e](https://github.com/gettakaro/connectors/commit/519410e0341f1596555c6fd36d51663f6f6baf78))
+* **deps:** update itzg/minecraft-server docker digest to f29173c ([#64](https://github.com/gettakaro/connectors/issues/64)) ([2231382](https://github.com/gettakaro/connectors/commit/22313822a7476837a8a054887c8e11da47f9a877))
+* **deps:** update minecraft platform ([#32](https://github.com/gettakaro/connectors/issues/32)) ([18c822b](https://github.com/gettakaro/connectors/commit/18c822b80feaa21dccd8d1e2cbfcccee6c7d23cc))
+
 ## [0.0.2](https://github.com/gettakaro/connectors/compare/minecraft-v0.0.1...minecraft-v0.0.2) (2026-05-30)
 
 
