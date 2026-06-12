@@ -2,219 +2,115 @@
 
 ## Executive Summary
 
-This document provides a comprehensive analysis of the current mod-7d2d implementation against the [official Takaro specification](https://docs.edge.takaro.dev/advanced/adding-support-for-a-new-game/).
+This document tracks the mod-7d2d implementation against the [official Takaro specification](https://docs.takaro.io/advanced/adding-support-for-a-new-game).
 
-**Implementation Completeness: 100% (15/15 core functions + 100% events)**
+**Implementation Completeness: 100% (15/15 core functions + 6/6 events)**
 
 ## 📊 Quick Status Overview
 
 | Category | Status | Progress |
 |----------|--------|----------|
 | Core Functions | 15/15 Complete | 100% ✅ |
-| Admin Functions | 0/5 Complete | 0% ❌ |
 | Game Events | 6/6 Complete | 100% ✅ |
 | Infrastructure | Complete | 100% ✅ |
-| Future Features | 0/2 Complete | 0% 🔮 |
+| Future Features (`listEntities`, `listLocations`) | 0/2 Complete | 🔮 |
 
 ---
 
-## 🔧 Required Functions Implementation Status
+## 🏗️ Architecture
 
-### ✅ IMPLEMENTED (14/17)
+The mod is built around an **event-driven state mirror** so that Takaro can
+hammer the connector with read requests without touching the game simulation.
 
-#### Core Player Management
-- **`getPlayer`** ✅ `src/WebSocket/WebSocketClient.cs:517`
-  - Returns TakaroPlayer with gameId, name, IP, ping, platform IDs
-  - Handles EOS/Steam/Xbox platform identification
-  
-- **`getPlayers`** ✅ `src/WebSocket/WebSocketClient.cs:494`
-  - Lists all online players
-  - Transforms ClientInfo to TakaroPlayer objects
-  
-- **`getPlayerLocation`** ✅ `src/WebSocket/WebSocketClient.cs:537`
-  - Returns x, y, z coordinates
-  - Handles player entity lookup
-  
-- **`getPlayerInventory`** ✅ `src/WebSocket/WebSocketClient.cs:567`
-  - Processes inventory, bag, and equipped items
-  - Includes item quality and amounts
+```
+        Game main thread                              Background threads
+┌─────────────────────────────────────┐   ┌────────────────────────────────────────┐
+│ ModEvents handlers + Harmony chat   │   │ WebSocketTransport (websocket-sharp)   │
+│ ModEvents.GameUpdate ──► dispatcher │   │   recv → RequestRouter                 │
+│ pump + PositionSampler (~3s)        │   │   ReadHandlers  → LiteDB (mirror)      │
+│ cheap POCO snapshots → enqueue ─────┼──►│   ActionHandlers→ MainThreadDispatcher │
+└─────────────────────────────────────┘   │                  (await TCS)           │
+                                          │ DbWriter thread → LiteDatabase         │
+                                          └────────────────────────────────────────┘
+```
 
-#### Item Management
-- **`giveItem`** ✅ `src/WebSocket/WebSocketClient.cs:691`
-  - Supports quality specification
-  - Handles item spawning and collection
-  - Validates player state (spawned, alive)
-  
-- **`listItems`** ✅ `src/WebSocket/WebSocketClient.cs:632`
-  - Returns all available game items
-  - Includes localized names and descriptions
+**Threading invariants:**
 
-#### Communication & Commands
-- **`executeConsoleCommand`** ✅ `src/WebSocket/WebSocketClient.cs:827`
-  - Async command execution with result capture
-  - Uses TaskCompletionSource for proper async handling
-  
-- **`sendMessage`** ✅ `src/WebSocket/WebSocketClient.cs:796`
-  - Supports global and whisper modes
-  - Proper recipient targeting
+1. The WebSocket thread never touches game APIs. Read requests are answered
+   from the LiteDB mirror; action requests are marshalled onto the game main
+   thread via `MainThreadDispatcher` and awaited.
+2. The game main thread never does DB I/O. Event handlers and the sampler
+   capture plain POCO snapshots and enqueue them; the `DbWriter` background
+   thread performs all LiteDB writes.
+3. One shared **in-memory** `LiteDatabase` (LiteDB 5, `:memory:`): the
+   DbWriter thread writes, the WebSocket thread reads. All access holds
+   `Database.SyncRoot` — LiteDB's engine is not reliably safe under concurrent
+   reads and writes, and both sides run off the game thread so the lock never
+   blocks the game.
 
-#### Player Actions
-- **`kickPlayer`** ✅ `src/WebSocket/WebSocketClient.cs:893`
-  - Uses GameUtils.KickPlayerForClientInfo discovered via decompilation
-  - Supports optional reason parameter
-  - Proper error handling and logging
+**Mirror lifecycle:** the database is **in-memory and ephemeral** — rebuilt
+from game truth on every boot. Nothing in the mirror has value across
+restarts: reads only serve online players, and items/bans are reseeded at
+`GameStartDone`. (The memory backend also sidesteps LiteDB 5 disk-engine
+failures under Mono — "ReadFull must read PAGE_SIZE bytes" during
+WAL/checkpoint.) Seeding happens *before* the WebSocket connects, so requests
+never observe a cold mirror.
 
-- **`teleportPlayer`** ✅ `src/WebSocket/WebSocketClient.cs:1252`
-  - Uses EntityPlayer.Teleport method discovered via decompilation
-  - Supports x, y, z coordinate teleportation
-  - Includes world bounds validation (Navezgane and RWG support)
-  - Validates player state (spawned, alive)
-  - Comprehensive error handling and logging
+### Per-endpoint data flow
 
-#### Ban Management
-- **`banPlayer`** ✅ `src/WebSocket/WebSocketClient.cs:945`
-  - Uses Platform.BlockedPlayerList.Instance for persistent bans
-  - Supports all platform types (Steam, EOS, Xbox)
-  - Automatically kicks online players when banned
-  - Comprehensive error handling and validation
-  - **FIXED**: Now properly parses and respects `expiresAt` field for temporary bans
-  
-- **`unbanPlayer`** ✅ `src/WebSocket/WebSocketClient.cs:1026`
-  - Uses BlockedPlayerList.SetBlockState(false) for proper unbanning
-  - Platform-agnostic player lookup
-  - Validates player is actually banned before unbanning
-  
-- **`listBans`** ✅ `src/WebSocket/WebSocketClient.cs:662`
-  - **FIXED**: Now supports all platform types using BlockedPlayerList.Instance
-  - **ENHANCED**: Works with Steam, EOS, and Xbox platform IDs
-  - **IMPROVED**: Uses proper BlockedPlayerList API instead of adminTools.Blacklist
-
-#### System Functions
-- **`testReachability`** ✅ `src/WebSocket/WebSocketClient.cs:484`
-  - Simple connectivity test
-  - Returns `connectable: true`
-
-### ✅ COMPLETED: ALL CORE FUNCTIONS (15/15)
-
-#### System Management  
-- **`shutdown`** ✅ `src/WebSocket/WebSocketClient.cs:1382`
-  - Server shutdown with 1-minute default delay
-  - **FIXED**: Uses proper vanilla 7D2D `shutdown` command instead of non-existent `stopserver`
-  - No arguments accepted (strictly spec-compliant)
-  - Returns null payload (strictly spec-compliant)
-  - Comprehensive error handling
-
-🎉 **MILESTONE ACHIEVED**: 100% Core Function Completion!
-
-### 🔮 FUTURE ENHANCEMENTS (2/17)
-
-#### Entity & Location Management
-- **`listEntities`** 🔮 **FUTURE FEATURE**
-  - Would return nearby entities (zombies, animals, etc.)
-  - Useful for proximity-based features
-  - Not critical for basic server management
-  
-- **`listLocations`** 🔮 **FUTURE FEATURE**
-  - Would return named locations or landmarks
-  - Nice-to-have for teleportation and navigation
-  - Can be implemented after core functionality
+| Action | Served from | Updated by | Staleness bound |
+|---|---|---|---|
+| `testReachability` | constant | — | 0 |
+| `getPlayers`, `getPlayer` | `players` collection (Online=true) | spawn/disconnect events; sampler refreshes ping | identity exact; ping ≤3s |
+| `getPlayerLocation` | `players.X/Y/Z` | PositionSampler (~3s) | ≤3s |
+| `getPlayerInventory` | `inventories` collection | join + `ModEvents.SavePlayerData` | client playerdata sync interval (~30s) — identical to a live read of `cInfo.latestPlayerData`, which is also just the last-received PlayerDataFile |
+| `listItems` | `items` collection | seeded once at GameStartDone (static) | 0 |
+| `listBans` | `bans` collection | seed; refreshed after Takaro ban/unban; 60s resync catches console bans | ≤60s for console-issued bans |
+| `giveItem`, `sendMessage`, `kickPlayer`, `banPlayer`, `unbanPlayer`, `teleportPlayer` | live game APIs inside a main-thread dispatcher closure | — | live |
+| `executeConsoleCommand`, `shutdown` | `SdtdConsole.ExecuteAsync` (async by design) | — | live |
 
 ---
 
-## 📡 Game Events Implementation Status
+## 🔧 Core Functions (15/15)
 
-### ✅ IMPLEMENTED EVENTS (6/6) - 100% COMPLETE!
+Read requests (mirror-backed, `src/WebSocket/ReadHandlers.cs`):
 
-- **`player-connected`** ✅ `src/WebSocket/WebSocketClient.cs:1433`
-  - Triggered on player spawn in multiplayer
-  - Sends complete player object
-  
-- **`player-disconnected`** ✅ `src/WebSocket/WebSocketClient.cs:1446`
-  - Proper disconnect detection
-  - Excludes shutdown disconnects
-  
-- **`chat-message`** ✅ `src/WebSocket/WebSocketClient.cs:1460`
-  - Supports multiple chat types (global, whisper, team)
-  - Includes player info and message content
+- **`testReachability`** ✅ — returns `connectable: true`
+- **`getPlayers`** ✅ — online players from the mirror
+- **`getPlayer`** ✅ — single player lookup by gameId
+- **`getPlayerLocation`** ✅ — last sampled position, integer coordinates
+- **`getPlayerInventory`** ✅ — inventory/bag/equipment from the last received PlayerDataFile
+- **`listItems`** ✅ — full item catalog with localized names/descriptions
+- **`listBans`** ✅ — merged AdminTools.Blacklist (timed bans w/ reason+expiry) and Platform.BlockedPlayerList (permanent blocks)
 
-- **`entity-killed`** ✅ `src/WebSocket/WebSocketClient.cs:1496`
-  - **UPDATED**: Now follows Takaro specification format
-  - **Enhanced**: Includes weapon information when available
-  - **Proper Structure**: Uses player object and entity type
-  
-- **`player-death`** ✅ `src/WebSocket/WebSocketClient.cs:1516`
-  - **NEW**: Captures player death events with full context
-  - **Includes**: Death position (x,y,z coordinates)
-  - **Tracks**: Attacker information when available (PvP deaths)
-  - **Format**: Compliant with Takaro specification
-  
-- **`log`** ✅ `src/API.cs:201`
-  - **NEW**: Captures server log events and forwards to Takaro
-  - **Filtered**: Only sends Error and Warning level messages
-  - **Protected**: Avoids infinite loops by filtering Takaro messages
-  - **Enhanced**: Includes stack traces for error messages
+Action requests (main-thread dispatched, `src/WebSocket/ActionHandlers.cs`):
 
-🎉 **MILESTONE ACHIEVED**: 100% Event System Completion!
+- **`giveItem`** ✅ — quality support, player state validation (spawned, alive)
+- **`sendMessage`** ✅ — global and whisper modes
+- **`executeConsoleCommand`** ✅ — async execution with result capture
+- **`kickPlayer`** ✅ — `GameUtils.KickPlayerForClientInfo` with optional reason
+- **`banPlayer`** ✅ — timed bans via AdminTools.Blacklist, permanent via BlockedPlayerList; kicks online players; refreshes the bans mirror
+- **`unbanPlayer`** ✅ — BlockedPlayerList first, AdminTools fallback; refreshes the bans mirror
+- **`teleportPlayer`** ✅ — NetPackageTeleportPlayer with world-bounds clamping
+- **`shutdown`** ✅ — vanilla `shutdown` command, null payload per spec
+
+### 🔮 Future enhancements
+
+- **`listEntities`** — nearby entities; not critical for server management
+- **`listLocations`** — named locations/landmarks
 
 ---
 
-## 🏗️ Infrastructure Assessment
+## 📡 Game Events (6/6)
 
-### ✅ PROPERLY IMPLEMENTED
+All published via `src/WebSocket/GameEventPublisher.cs` (non-blocking outbound queue):
 
-#### Connection & Authentication
-- **WebSocket Connection**: Connects to correct endpoint (`wss://connect.takaro.io/`)
-- **Authentication**: Identity + Registration token system
-- **Reconnection Logic**: Automatic reconnect with backoff
-- **Heartbeat**: 30-second ping interval
-
-#### Data Structures
-- **Player Objects**: Compliant with required fields (gameId, name)
-- **Platform IDs**: Supports Steam, EOS, Xbox identification
-- **Request/Response**: Proper requestId matching
-- **JSON Messaging**: Standardized payload structure
-
-#### Configuration
-- **Config Management**: XML-based with auto-generation
-- **Token Generation**: UUID-based identity tokens
-- **Error Handling**: Comprehensive exception handling
-
-### ⚠️ AREAS FOR IMPROVEMENT
-
-#### Code Quality
-- **Error Responses**: Could be more standardized
-- **Logging**: Some debug logs could be reduced in production
-- **Documentation**: Method documentation could be enhanced
-
-#### Platform Support
-- **Platform ID Format**: Verify compliance with `platform:identifier` spec
-- **Multi-platform**: listBans should support all platform types
-
----
-
-## 🎯 Completion Roadmap
-
-### ✅ COMPLETED IN THIS UPDATE:
-- **`player-death` event** ✅ - Full implementation with death position and attacker tracking
-- **`log` event** ✅ - Server log capture with filtering for Error/Warning messages
-- **`entity-killed` event fix** ✅ - Updated to match Takaro specification format with weapon tracking
-
-### ✅ COMPLETED IN PREVIOUS UPDATES:
-- **`shutdown` bug fix** ✅ - Fixed to use proper vanilla 7D2D `shutdown` command instead of non-existent `stopserver`
-- **`banPlayer`** ✅ - Full ban management with Platform.BlockedPlayerList.Instance
-- **`unbanPlayer`** ✅ - Proper unbanning with validation
-- **`listBans`** ✅ - Fixed platform support for all player types (Steam, EOS, Xbox)
-- **`banPlayer` bug fix** ✅ - Fixed ban expiration time being ignored (was hardcoding DateTime.MaxValue)
-
-### Phase 3: Polish & Optimization (LOW PRIORITY)
-1. Enhanced error handling
-2. Performance optimizations
-3. Documentation improvements
-4. Code cleanup and refactoring
-
-### Future Phases: Optional Enhancements
-1. **`listEntities`** - Entity management (when needed)
-2. **`listLocations`** - Location support (when needed)
+- **`player-connected`** ✅ — `PlayerSpawnedInWorld` (join/enter types)
+- **`player-disconnected`** ✅ — `PlayerDisconnected`, excludes shutdown disconnects
+- **`chat-message`** ✅ — Harmony patch on `NetPackageChat.ProcessPackage`; global/whisper/friends/team channels
+- **`entity-killed`** ✅ — non-player kills with entity type and weapon when available
+- **`player-death`** ✅ — death position and attacker info when available
+- **`log`** ✅ — Unity `Application.logMessageReceived`, filtered against feedback loops
 
 ---
 
@@ -222,14 +118,29 @@ This document provides a comprehensive analysis of the current mod-7d2d implemen
 
 ```
 src/
-├── API.cs                     # Main mod entry point and event handlers
-├── Shared.cs                  # Data transformation utilities
-├── CommandResult.cs           # Async command execution helper
-├── Config/
-│   └── ConfigManager.cs       # Configuration management
+├── API.cs                      # Mod entry point: ModEvents wiring, Harmony chat patch
+├── Shared.cs                   # DTOs (TakaroPlayer/Item/Ban) and transforms
+├── CommandResult.cs            # IConsoleConnection → TaskCompletionSource bridge
+├── ServiceRegistry.cs          # Ordered service init/destroy
+├── Interfaces/IService.cs
+├── Commands/Debug.cs           # takaro-debug console command
+├── Config/ConfigManager.cs     # Config.xml management
+├── Persistence/
+│   ├── Database.cs             # In-memory LiteDB instance, collections, access lock
+│   └── Records.cs              # PlayerRecord, InventoryRecord, BanRecord, ItemRecord
+├── Services/
+│   ├── LogService.cs           # File + console logging
+│   ├── DbWriter.cs             # Background writer thread (all DB writes)
+│   ├── MainThreadDispatcher.cs # WS thread → game main thread marshalling
+│   ├── StateMirror.cs          # Mirror reads (WS thread) + snapshot writes (main thread)
+│   └── PositionSampler.cs      # ~3s position/ping sampling + 60s ban resync
 └── WebSocket/
-    ├── WebSocketClient.cs     # Main WebSocket implementation
-    └── WebSocketMessage.cs    # Message structure definitions
+    ├── WebSocketTransport.cs   # Connection, identify, heartbeat, reconnect, send queue
+    ├── RequestRouter.cs        # Message parsing, dispatch, error boundary
+    ├── ReadHandlers.cs         # Mirror-backed read requests
+    ├── ActionHandlers.cs       # Main-thread-dispatched action requests
+    ├── GameEventPublisher.cs   # Game event publishing
+    └── WebSocketMessage.cs     # Message envelope
 ```
 
 ---
@@ -237,53 +148,17 @@ src/
 ## 🔍 Key Implementation Details
 
 ### Player Identification
-- Uses EOS CrossplatformId as primary gameId
-- Strips `EOS_` prefix for Takaro compatibility
+- Uses EOS CrossplatformId as primary gameId (`EOS_` prefix stripped)
 - Supports Steam (`Steam_`), Xbox (`XBL_`) platform IDs
 
-### Item System
-- Leverages 7D2D's ItemClass system
-- Supports quality levels (0-600)
-- Handles item spawning and collection
+### Connection & Authentication
+- WebSocket endpoint from `Config.xml` (default `wss://connect.takaro.io/`)
+- Identity + registration token system; identity token auto-generated (UUID)
+- Reconnect with exponential backoff (cap 300s); 30s heartbeat
+- Outbound messages drained by a dedicated sender thread — event publishing
+  from the game thread never blocks on socket I/O
 
-### Event Handling
-- Hooks into 7D2D's ModEvents system
-- Filters relevant events (excludes shutdown, etc.)
-- Transforms game data to Takaro format
-
-### Error Handling
-- WebSocket reconnection with exponential backoff
-- Graceful handling of missing players/entities
-- Comprehensive exception logging
-
----
-
-## 📊 Detailed Function Comparison
-
-| Function | Spec Required | Implemented | File Location | Status |
-|----------|---------------|-------------|---------------|---------|
-| getPlayer | ✅ | ✅ | WebSocketClient.cs:517 | Complete |
-| getPlayers | ✅ | ✅ | WebSocketClient.cs:494 | Complete |
-| getPlayerLocation | ✅ | ✅ | WebSocketClient.cs:537 | Complete |
-| getPlayerInventory | ✅ | ✅ | WebSocketClient.cs:567 | Complete |
-| giveItem | ✅ | ✅ | WebSocketClient.cs:691 | Complete |
-| listItems | ✅ | ✅ | WebSocketClient.cs:632 | Complete |
-| listEntities | ✅ | 🔮 | - | Future |
-| listLocations | ✅ | 🔮 | - | Future |
-| executeConsoleCommand | ✅ | ✅ | WebSocketClient.cs:827 | Complete |
-| sendMessage | ✅ | ✅ | WebSocketClient.cs:796 | Complete |
-| teleportPlayer | ✅ | ✅ | WebSocketClient.cs:1252 | Complete |
-| testReachability | ✅ | ✅ | WebSocketClient.cs:484 | Complete |
-| kickPlayer | ✅ | ✅ | WebSocketClient.cs:893 | Complete |
-| banPlayer | ✅ | ✅ | WebSocketClient.cs:945 | Complete |
-| unbanPlayer | ✅ | ✅ | WebSocketClient.cs:1026 | Complete |
-| listBans | ✅ | ✅ | WebSocketClient.cs:662 | Complete |
-| shutdown | ✅ | ✅ | WebSocketClient.cs:1388 | Complete |
-
-## 📈 Next Steps
-
-1. **Short-term**: Add missing events (log, player-death) and fix entity-killed format
-2. **Medium-term**: Optimize and refactor for production readiness
-3. **Future**: Consider implementing listEntities and listLocations if needed
-
-**Current Status**: 🎉 **100% Specification Compliance** - All 15 core functions and 6 game events implemented with strict adherence to Takaro specification!
+### Dependencies
+- `websocket-sharp` (built from source) and `LiteDB 5.0.21` (NuGet, net45
+  target) are fetched by the `deps` docker-compose service into
+  `_data/7dtd-binaries/` and ship in the mod folder alongside `Takaro.dll`

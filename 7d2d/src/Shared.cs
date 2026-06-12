@@ -1,4 +1,5 @@
 using Newtonsoft.Json;
+using Takaro.Persistence;
 
 namespace Takaro
 {
@@ -58,6 +59,26 @@ namespace Takaro
 
     public static class Shared
     {
+        // Takaro gameId is the EOS ID (CrossPlatform ID) without the EOS_ prefix
+        public static string GameIdFromClientInfo(ClientInfo clientInfo)
+        {
+            return clientInfo.CrossplatformId.CombinedString.Replace("EOS_", "");
+        }
+
+        public static TakaroPlayer TransformPlayerRecordToTakaroPlayer(PlayerRecord record)
+        {
+            return new TakaroPlayer
+            {
+                GameId = record.GameId,
+                Name = record.Name,
+                Ip = record.Ip,
+                Ping = record.Ping,
+                SteamId = record.SteamId,
+                XboxLiveId = record.XboxLiveId,
+                EpicOnlineServicesId = record.EpicOnlineServicesId,
+            };
+        }
+
         public static ClientInfo GetClientInfoFromGameId(string gameId)
         {
             PlatformUserIdentifierAbs userId = PlatformUserIdentifierAbs.FromCombinedString(
