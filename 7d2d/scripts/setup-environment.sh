@@ -16,7 +16,9 @@ chmod -R 777 ./_data
 # Skip everything if the binaries are already in place (CI cache hit, or a
 # repeat local run). The mod build only needs _data/7dtd-binaries/.
 if [ -f "./_data/7dtd-binaries/Assembly-CSharp.dll" ] && \
-   [ -f "./_data/7dtd-binaries/websocket-sharp.dll" ]; then
+   [ -f "./_data/7dtd-binaries/websocket-sharp.dll" ] && \
+   [ -f "./_data/7dtd-binaries/LiteDB.dll" ] && \
+   [ -f "./_data/7dtd-binaries/System.Buffers.dll" ]; then
   echo "Binaries already present at ./_data/7dtd-binaries/ — skipping setup."
   exit 0
 fi

@@ -55,4 +55,12 @@ services:
         cd /tmp/websocket-sharp &&
         xbuild /p:Configuration=Release websocket-sharp.sln &&
         cp /tmp/websocket-sharp/Example/bin/Release/websocket-sharp.dll /binaries/ &&
-        cp /tmp/websocket-sharp/Example/bin/Release/websocket-sharp.dll /app/lib/"
+        cp /tmp/websocket-sharp/Example/bin/Release/websocket-sharp.dll /app/lib/ &&
+        curl -fsSL https://globalcdn.nuget.org/packages/litedb.5.0.21.nupkg -o /tmp/litedb.nupkg &&
+        unzip -o /tmp/litedb.nupkg 'lib/net45/LiteDB.dll' -d /tmp/litedb &&
+        cp /tmp/litedb/lib/net45/LiteDB.dll /binaries/ &&
+        cp /tmp/litedb/lib/net45/LiteDB.dll /app/lib/ &&
+        curl -fsSL https://globalcdn.nuget.org/packages/system.buffers.4.5.1.nupkg -o /tmp/buffers.nupkg &&
+        unzip -o /tmp/buffers.nupkg 'lib/net461/System.Buffers.dll' -d /tmp/buffers &&
+        cp /tmp/buffers/lib/net461/System.Buffers.dll /binaries/ &&
+        cp /tmp/buffers/lib/net461/System.Buffers.dll /app/lib/"
