@@ -54,6 +54,12 @@
       <HintPath>_data\7dtd-binaries\mscorlib.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="LiteDB">
+      <HintPath>_data\7dtd-binaries\LiteDB.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Buffers">
+      <HintPath>_data\7dtd-binaries\System.Buffers.dll</HintPath>
+    </Reference>
     <Reference Include="Newtonsoft.Json">
       <HintPath>_data\7dtd-binaries\Newtonsoft.Json.dll</HintPath>
     </Reference>
@@ -85,10 +91,20 @@
     <Compile Include="src\API.cs" />
     <Compile Include="src\Commands\Debug.cs" />
     <Compile Include="src\Interfaces\IService.cs" />
+    <Compile Include="src\Persistence\Database.cs" />
+    <Compile Include="src\Persistence\Records.cs" />
     <Compile Include="src\ServiceRegistry.cs" />
+    <Compile Include="src\Services\DbWriter.cs" />
     <Compile Include="src\Services\LogService.cs" />
-    <Compile Include="src\WebSocket\WebSocketClient.cs" />
+    <Compile Include="src\Services\MainThreadDispatcher.cs" />
+    <Compile Include="src\Services\PositionSampler.cs" />
+    <Compile Include="src\Services\StateMirror.cs" />
+    <Compile Include="src\WebSocket\ActionHandlers.cs" />
+    <Compile Include="src\WebSocket\GameEventPublisher.cs" />
+    <Compile Include="src\WebSocket\ReadHandlers.cs" />
+    <Compile Include="src\WebSocket\RequestRouter.cs" />
     <Compile Include="src\WebSocket\WebSocketMessage.cs" />
+    <Compile Include="src\WebSocket\WebSocketTransport.cs" />
     <Compile Include="src\Config\ConfigManager.cs" />
     <Compile Include="src\Shared.cs" />
     <Compile Include="src\CommandResult.cs" />
