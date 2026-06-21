@@ -49,6 +49,11 @@
       "release-type": "simple",
       "component": "conan-exiles",
       "changelog-path": "CHANGELOG.md"
+    },
+    "terraria": {
+      "release-type": "simple",
+      "component": "terraria",
+      "changelog-path": "CHANGELOG.md"
     }
   }
 }

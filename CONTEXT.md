@@ -6,8 +6,9 @@ no implementation details.
 ## Terms
 
 **Connector** — A self-contained plugin that connects one game server to Takaro via the
-Generic Connector Protocol. There are three: `rust`, `minecraft`, and `7d2d`. Each is
-versioned and released independently.
+Generic Connector Protocol, or a server-side helper plugin used by a connector for
+game-owned events and actions. Current components include `rust`, `minecraft`, `7d2d`,
+`valheim`, `conan-exiles`, and `terraria`. Each is versioned and released independently.
 
 **Stable release** — A published, semver-versioned build of a single connector
 (`<connector>-vX.Y.Z`), intended for production use. Created by merging that connector's
