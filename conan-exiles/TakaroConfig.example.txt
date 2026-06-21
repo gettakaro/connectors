@@ -1,0 +1,28 @@
+# Takaro connection
+registrationToken=replace-with-takaro-registration-token
+identityToken=
+serverName=Conan Exiles Server
+takaroWsUrl=wss://connect.takaro.io/
+
+# Conan Exiles RCON
+rconHost=127.0.0.1
+rconPort=25575
+rconPassword=replace-with-rcon-password
+
+# Bridge runtime
+httpPort=3010
+pollIntervalMs=10000
+enableLogEvents=true
+
+# Optional read-only Conan save database. Enables real getPlayerLocation,
+# getPlayerInventory, listItems, listEntities, and listLocations reads.
+databasePath=
+
+# Optional compact Conan item catalog generated from DevKit ItemTable exports.
+# Enables display-name/code lookup for giveItem, getPlayerInventory, and listItems.
+itemCatalogPath=
+
+# Comma-separated absolute paths are safest on hosted servers.
+# Typical self-hosted path:
+# C:\Program Files (x86)\Steam\steamapps\common\Conan Exiles Dedicated Server\ConanSandbox\Saved\Logs\ConanSandbox.log
+logFiles=

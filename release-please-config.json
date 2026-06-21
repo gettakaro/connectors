@@ -44,6 +44,11 @@
       "release-type": "simple",
       "component": "valheim",
       "changelog-path": "CHANGELOG.md"
+    },
+    "conan-exiles": {
+      "release-type": "simple",
+      "component": "conan-exiles",
+      "changelog-path": "CHANGELOG.md"
     }
   }
 }
