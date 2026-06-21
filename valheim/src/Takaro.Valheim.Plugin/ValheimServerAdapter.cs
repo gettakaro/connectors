@@ -37,12 +37,6 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default)
     {
-        if (ValheimChatEventBridge.TryGetLocationSnapshot(identifier, out var snapshot))
-        {
-            logger.LogInfo($"Takaro Valheim getPlayerLocation returned cached client snapshot for '{identifier}'.");
-            return Task.FromResult(TakaroActionResult.Ok(snapshot));
-        }
-
         if (TryFindPlayerInfo(identifier, out var player) && player.m_publicPosition)
         {
             return Task.FromResult(TakaroActionResult.Ok(new
@@ -60,12 +54,6 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default)
     {
-        if (ValheimChatEventBridge.TryGetInventorySnapshot(identifier, out var snapshot))
-        {
-            logger.LogInfo($"Takaro Valheim getPlayerInventory returned {snapshot.Count} cached client snapshot item stack(s) for '{identifier}'.");
-            return Task.FromResult(TakaroActionResult.Ok(snapshot));
-        }
-
         if (!TryFindPlayerComponent(identifier, out var player))
         {
             logger.LogInfo($"Takaro Valheim getPlayerInventory found no server-side Player component for '{identifier}', returning empty inventory.");
@@ -89,12 +77,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default)
     {
-        if (ZRoutedRpc.instance is null)
-        {
-            return Task.FromResult(TakaroActionResult.Error("rpc_unavailable", "Valheim routed RPC is not available yet."));
-        }
-
-        if (!TryResolvePlayer(identifier, out _, out var peer, out var player) || peer is null || player is null)
+        if (!TryResolvePlayer(identifier, out _, out _, out var player) || player is null)
         {
             return Task.FromResult(TakaroActionResult.Error("player_not_found", $"Valheim player '{identifier}' is not online."));
         }
@@ -104,9 +87,30 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             return Task.FromResult(TakaroActionResult.Error("item_not_found", $"Valheim item '{itemCode}' was not found."));
         }
 
-        ZRoutedRpc.instance.InvokeRoutedRPC(peer.m_uid, "TakaroGiveItem", itemCode, amount, quality ?? string.Empty);
-        logger.LogInfo($"Takaro Valheim routed giveItem to {player.Name} ({player.GameId}): item={itemCode}, amount={amount}, quality={quality ?? "<default>"}.");
-        return Task.FromResult(TakaroActionResult.Ok(new { queued = true, player, item = new { code = itemCode, amount, quality } }));
+        if (!TryFindPlayerComponent(identifier, out var playerComponent))
+        {
+            return Task.FromResult(TakaroActionResult.Error(
+                "player_component_unavailable",
+                "Valheim dedicated server did not expose a server-side Player component for this player; the connector does not use a client-side mod."));
+        }
+
+        var qualityLevel = ParseQuality(quality);
+        var addedItem = playerComponent.GetInventory().AddItem(
+            itemCode,
+            Math.Max(1, amount),
+            qualityLevel,
+            0,
+            0L,
+            "Takaro",
+            pickedUp: true);
+
+        if (addedItem is null)
+        {
+            return Task.FromResult(TakaroActionResult.Error("inventory_full", $"Valheim player '{identifier}' inventory could not accept '{itemCode}'."));
+        }
+
+        logger.LogInfo($"Takaro Valheim gave item to {player.Name} ({player.GameId}) server-side: item={itemCode}, amount={amount}, quality={qualityLevel}.");
+        return Task.FromResult(TakaroActionResult.Ok(new { player, item = new { code = itemCode, amount = Math.Max(1, amount), quality = qualityLevel.ToString() } }));
     }
 
     public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, CancellationToken cancellationToken = default)
@@ -235,19 +239,25 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default)
     {
-        if (ZRoutedRpc.instance is null)
-        {
-            return Task.FromResult(TakaroActionResult.Error("rpc_unavailable", "Valheim routed RPC is not available yet."));
-        }
-
-        if (!TryResolvePlayer(identifier, out _, out var peer, out var player) || peer is null || player is null)
+        if (!TryResolvePlayer(identifier, out _, out _, out var player) || player is null)
         {
             return Task.FromResult(TakaroActionResult.Error("player_not_found", $"Valheim player '{identifier}' is not online."));
         }
 
-        ZRoutedRpc.instance.InvokeRoutedRPC(peer.m_uid, "TakaroTeleportPlayer", (float)position.X, (float)position.Y, (float)position.Z);
-        logger.LogInfo($"Takaro Valheim routed teleportPlayer to {player.Name} ({player.GameId}): x={position.X}, y={position.Y}, z={position.Z}.");
-        return Task.FromResult(TakaroActionResult.Ok(new { queued = true, player, position }));
+        if (!TryFindPlayerComponent(identifier, out var playerComponent))
+        {
+            return Task.FromResult(TakaroActionResult.Error(
+                "player_component_unavailable",
+                "Valheim dedicated server did not expose a server-side Player component for this player; the connector does not use a client-side mod."));
+        }
+
+        playerComponent.TeleportTo(
+            new Vector3((float)position.X, (float)position.Y, (float)position.Z),
+            Quaternion.identity,
+            distantTeleport: true);
+
+        logger.LogInfo($"Takaro Valheim teleported {player.Name} ({player.GameId}) server-side: x={position.X}, y={position.Y}, z={position.Z}.");
+        return Task.FromResult(TakaroActionResult.Ok(new { player, position }));
     }
 
     public Task<TakaroActionResult> KickPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default)
@@ -445,11 +455,6 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     private static void SendClientMessage(ZNetPeer peer, string message)
     {
-        ZRoutedRpc.instance.InvokeRoutedRPC(
-            peer.m_uid,
-            "TakaroServerMessage",
-            message);
-
         SendPlayerMessage(peer, MessageHud.MessageType.Center, message);
         SendPlayerMessage(peer, MessageHud.MessageType.TopLeft, message);
 
@@ -579,6 +584,9 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     private static bool ItemExists(string itemCode) =>
         ZNetScene.instance?.m_prefabs?.Any(prefab => Matches(prefab.name, itemCode) && prefab.GetComponent<ItemDrop>() != null) == true
         || ObjectDB.instance?.GetItemPrefab(itemCode) != null;
+
+    private static int ParseQuality(string? quality) =>
+        int.TryParse(quality, out var parsed) && parsed > 0 ? parsed : 1;
 
     private static string DisplayName(string? rawName, string fallback)
     {
