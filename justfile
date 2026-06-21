@@ -7,7 +7,7 @@
 # <connector>-v*, updates the CHANGELOG, and publishes a GitHub Release with artifacts.
 # To force a specific version, add a `Release-As: X.Y.Z` footer to a commit on main.
 
-# Print the rolling dev-build version for a connector (rust, minecraft, 7d2d, valheim, conan-exiles)
+# Print the rolling dev-build version for a connector (rust, minecraft, 7d2d, valheim, conan-exiles, terraria)
 dev-version connector:
     ./scripts/dev-version.sh {{connector}}
 
@@ -26,6 +26,20 @@ build-release-7d2d version out-dir='dist':
 # Build the Conan Exiles connector release artifact locally into <out-dir>
 build-release-conan version out-dir='dist':
     ./conan-exiles/scripts/build-release.sh {{version}} {{out-dir}}
+
+# Build the Terraria TShock plugin release artifact locally into <out-dir>
+build-release-terraria version out-dir='dist':
+    ./terraria/scripts/build-release.sh {{version}} {{out-dir}}
+
+# === Terraria Plugin ===
+
+# Prepare TShock reference assemblies
+terraria-setup:
+    cd terraria && ./scripts/setup-environment.sh
+
+# Build the Terraria TShock plugin
+terraria-build:
+    cd terraria && ./scripts/build-mod.sh
 
 # === Rust Connector ===
 

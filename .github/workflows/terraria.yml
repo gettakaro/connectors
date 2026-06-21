@@ -1,0 +1,98 @@
+name: Terraria Plugin
+
+on:
+  push:
+    branches: [main]
+    paths: ['terraria/**', 'scripts/**', '.github/workflows/terraria.yml']
+  pull_request:
+    paths: ['terraria/**', 'scripts/**', '.github/workflows/terraria.yml']
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Generate token
+        id: app-token
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.TAKARO_CI_APP_ID }}
+          private-key: ${{ secrets.TAKARO_CI_APP_PRIV_KEY }}
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Make scripts executable
+        run: chmod +x terraria/scripts/*.sh scripts/*.sh
+
+      - name: Set up TShock references
+        run: terraria/scripts/setup-environment.sh
+
+      - name: Resolve release params
+        id: params
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          IN_TAG: ${{ inputs.tag }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEV_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/release-params.sh terraria >> "$GITHUB_OUTPUT"
+
+      - name: Build release artifact
+        run: terraria/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
+
+      - name: Publish stable release assets
+        if: ${{ steps.params.outputs.publish == 'stable' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: scripts/publish-release.sh upload "${{ steps.params.outputs.tag }}" "$RUNNER_TEMP/dist/takaro-terraria-plugin.zip"
+
+      - name: Publish rolling dev build
+        if: ${{ steps.params.outputs.publish == 'rolling' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          scripts/publish-release.sh rolling terraria-dev \
+            "Terraria Plugin - latest dev build" \
+            "Rolling development build (\`${{ steps.params.outputs.version }}\`), updated on every push to main. Not for production." \
+            "$RUNNER_TEMP/dist/takaro-terraria-plugin.zip"
+
+      - name: Publish PR build
+        if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          scripts/publish-release.sh rolling "${{ steps.params.outputs.tag }}" \
+            "Terraria Plugin - build for PR #${{ github.event.pull_request.number }}" \
+            "Disposable build (\`${{ steps.params.outputs.version }}\`) for PR #${{ github.event.pull_request.number }}. Replaced on every push, deleted when the PR closes. Not for production." \
+            "$RUNNER_TEMP/dist/takaro-terraria-plugin.zip"
+
+      - name: Comment PR build
+        if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          scripts/comment-pr-build.sh terraria \
+            "${{ github.event.pull_request.number }}" \
+            "${{ steps.params.outputs.tag }}" \
+            "${{ steps.params.outputs.version }}" \
+            "$RUNNER_TEMP/dist/takaro-terraria-plugin.zip"
