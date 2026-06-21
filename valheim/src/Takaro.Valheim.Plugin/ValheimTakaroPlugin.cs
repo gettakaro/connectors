@@ -83,6 +83,8 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             ("Chat.RPC_ChatMessage", AccessTools.Method(typeof(Chat), "RPC_ChatMessage")),
             ("Talker.RPC_Say", AccessTools.Method(typeof(Talker), "RPC_Say")),
             ("ZRoutedRpc.RPC_RoutedRPC", AccessTools.Method(typeof(ZRoutedRpc), "RPC_RoutedRPC")),
+            ("ZRoutedRpc.RouteRPC", AccessTools.Method(typeof(ZRoutedRpc), "RouteRPC")),
+            ("ZRoutedRpc.HandleRoutedRPC", AccessTools.Method(typeof(ZRoutedRpc), "HandleRoutedRPC")),
             ("Chat.SendText", AccessTools.Method(typeof(Chat), "SendText")),
             ("Player.Update", AccessTools.Method(typeof(Player), "Update")),
             ("Player.OnDeath", AccessTools.Method(typeof(Player), "OnDeath")),

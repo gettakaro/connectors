@@ -1006,6 +1006,18 @@ internal static class TakaroRoutedRpcPatch
     }
 }
 
+[HarmonyPatch(typeof(ZRoutedRpc), "RouteRPC")]
+internal static class TakaroRoutedRpcRoutePatch
+{
+    private static void Prefix(ZRoutedRpc.RoutedRPCData rpcData)
+    {
+        if (ZNet.instance is not null && ZNet.instance.IsDedicated())
+        {
+            ValheimChatEventBridge.ObserveRoutedRpcData(rpcData, "RouteRPC");
+        }
+    }
+}
+
 [HarmonyPatch(typeof(ZRoutedRpc), "HandleRoutedRPC")]
 internal static class TakaroRoutedRpcHandlePatch
 {
