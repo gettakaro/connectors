@@ -784,7 +784,7 @@ internal static class ValheimChatEventBridge
         try
         {
             var bytes = package.GetArray() ?? [];
-            var hex = Convert.ToHexString(bytes.Take(96).ToArray());
+            var hex = BitConverter.ToString(bytes.Take(96).ToArray()).Replace("-", string.Empty);
             var ascii = new string(bytes.Take(160).Select(value => value >= 32 && value <= 126 ? (char)value : '.').ToArray());
             var strings = ExtractPrintableStrings(bytes, 3).Take(8).ToArray();
             return $"size={package.Size()}, pos={originalPosition}, hex96={hex}, ascii={ascii}, strings=[{string.Join("|", strings)}]";
