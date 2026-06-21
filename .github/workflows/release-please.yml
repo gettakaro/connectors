@@ -21,6 +21,9 @@ jobs:
       sevend2d_released: ${{ steps.rp.outputs['7d2d--release_created'] }}
       sevend2d_tag: ${{ steps.rp.outputs['7d2d--tag_name'] }}
       sevend2d_version: ${{ steps.rp.outputs['7d2d--version'] }}
+      valheim_released: ${{ steps.rp.outputs['valheim--release_created'] }}
+      valheim_tag: ${{ steps.rp.outputs['valheim--tag_name'] }}
+      valheim_version: ${{ steps.rp.outputs['valheim--version'] }}
     steps:
       # Author Release PRs as takaro-ci-bot[bot] instead of GITHUB_TOKEN. PRs/commits made
       # with GITHUB_TOKEN don't fire downstream events, so the required `conventional-title`
@@ -76,3 +79,15 @@ jobs:
     with:
       version: ${{ needs.release-please.outputs.sevend2d_version }}
       tag: ${{ needs.release-please.outputs.sevend2d_tag }}
+
+  release-valheim:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.valheim_released == 'true' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/valheim.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.release-please.outputs.valheim_version }}
+      tag: ${{ needs.release-please.outputs.valheim_tag }}

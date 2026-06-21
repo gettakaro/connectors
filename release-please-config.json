@@ -39,6 +39,11 @@
       "extra-files": [
         { "type": "generic", "path": "ModInfo.xml" }
       ]
+    },
+    "valheim": {
+      "release-type": "simple",
+      "component": "valheim",
+      "changelog-path": "CHANGELOG.md"
     }
   }
 }
