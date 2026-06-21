@@ -11,13 +11,18 @@ internal static class ValheimChatEventBridge
 {
     private static readonly int ChatMessageHash = "ChatMessage".GetStableHashCode();
     private static readonly int SayHash = "Say".GetStableHashCode();
+    private static readonly int ZdoDataHash = "ZDOData".GetStableHashCode();
+    private static readonly int ServerHandshakeHash = "ServerHandshake".GetStableHashCode();
+    private static readonly int ServerSyncedPlayerDataHash = "ServerSyncedPlayerData".GetStableHashCode();
     private static readonly object Sync = new();
     private static readonly Dictionary<string, DateTimeOffset> RecentEvents = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, DateTimeOffset> RecentEntityDeaths = new(StringComparer.Ordinal);
+    private static readonly Dictionary<int, int> RoutedRpcDiagnostics = new();
     private static readonly InventorySnapshotCache InventorySnapshots = new();
     private static readonly LocationSnapshotCache LocationSnapshots = new();
     private static readonly System.Reflection.FieldInfo? LastHitField = AccessTools.Field(typeof(Character), "m_lastHit");
-    private static int routedDiagnosticsRemaining = 40;
+    private static int routedDiagnosticsRemaining = 5000;
+    private static int zRpcDiagnosticsRemaining = 1000;
     private static ZRoutedRpc? registeredRpc;
     private static TakaroWebSocketRunner? runner;
     private static Action<string> log = _ => { };
@@ -29,6 +34,7 @@ internal static class ValheimChatEventBridge
         runner = activeRunner;
         log = logger ?? (_ => { });
         log($"Takaro Valheim chat hash diagnostics: ChatMessage={ChatMessageHash}, Say={SayHash}.");
+        log($"Takaro Valheim chat hash candidates: RPC_ChatMessage={"RPC_ChatMessage".GetStableHashCode()}, RPC_Say={"RPC_Say".GetStableHashCode()}, SendText={"SendText".GetStableHashCode()}, ChatMessageToAll={"ChatMessageToAll".GetStableHashCode()}, NewChatMessage={"NewChatMessage".GetStableHashCode()}.");
     }
 
     public static void Shutdown()
@@ -39,6 +45,7 @@ internal static class ValheimChatEventBridge
         {
             RecentEvents.Clear();
             RecentEntityDeaths.Clear();
+            RoutedRpcDiagnostics.Clear();
         }
     }
 
@@ -147,11 +154,28 @@ internal static class ValheimChatEventBridge
         {
             var data = new ZRoutedRpc.RoutedRPCData();
             data.Deserialize(package);
+            ObserveRoutedRpcData(data, "RPC_RoutedRPC");
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim could not inspect routed chat packet: {ex.Message}");
+        }
+        finally
+        {
+            package.SetPos(originalPosition);
+        }
+    }
+
+    public static void ObserveRoutedRpcData(ZRoutedRpc.RoutedRPCData data, string source)
+    {
+        var originalPosition = data.m_parameters.GetPos();
+        try
+        {
             data.m_parameters.SetPos(0);
 
             if (data.m_methodHash == ChatMessageHash)
             {
-                log("Takaro Valheim observed routed ChatMessage packet.");
+                log($"Takaro Valheim observed routed ChatMessage packet at {source}.");
                 _ = data.m_parameters.ReadVector3();
                 var chatType = data.m_parameters.ReadInt();
                 var userInfo = new UserInfo();
@@ -163,7 +187,7 @@ internal static class ValheimChatEventBridge
 
             if (data.m_methodHash == SayHash)
             {
-                log("Takaro Valheim observed routed Say packet.");
+                log($"Takaro Valheim observed routed Say packet at {source}.");
                 var chatType = data.m_parameters.ReadInt();
                 var userInfo = new UserInfo();
                 userInfo.Deserialize(ref data.m_parameters);
@@ -172,19 +196,18 @@ internal static class ValheimChatEventBridge
                 return;
             }
 
-            if (routedDiagnosticsRemaining > 0)
+            if (ShouldLogRoutedRpc(data.m_methodHash))
             {
-                routedDiagnosticsRemaining--;
-                log($"Takaro Valheim observed routed RPC hash={data.m_methodHash}, sender={data.m_senderPeerID}, targetPeer={data.m_targetPeerID}, targetZdo={data.m_targetZDO}.");
+                log($"Takaro Valheim observed routed RPC at {source}: hash={data.m_methodHash}, sender={data.m_senderPeerID}, targetPeer={data.m_targetPeerID}, targetZdo={data.m_targetZDO}, payload={DescribePackage(data.m_parameters)}.");
             }
         }
         catch (Exception ex)
         {
-            log($"Takaro Valheim could not inspect routed chat packet: {ex.Message}");
+            log($"Takaro Valheim could not inspect routed chat data at {source}: {ex.Message}");
         }
         finally
         {
-            package.SetPos(originalPosition);
+            data.m_parameters.SetPos(originalPosition);
         }
     }
 
@@ -759,6 +782,115 @@ internal static class ValheimChatEventBridge
             _ => "global"
         };
 
+    private static bool ShouldLogRoutedRpc(int methodHash)
+    {
+        if (routedDiagnosticsRemaining <= 0)
+        {
+            return false;
+        }
+
+        lock (Sync)
+        {
+            routedDiagnosticsRemaining--;
+            RoutedRpcDiagnostics.TryGetValue(methodHash, out var count);
+            count++;
+            RoutedRpcDiagnostics[methodHash] = count;
+            return count <= 20 || count % 100 == 0;
+        }
+    }
+
+    private static string DescribePackage(ZPackage package)
+    {
+        var originalPosition = package.GetPos();
+        try
+        {
+            var bytes = package.GetArray() ?? [];
+            var hex = BitConverter.ToString(bytes.Take(96).ToArray()).Replace("-", string.Empty);
+            var ascii = new string(bytes.Take(160).Select(value => value >= 32 && value <= 126 ? (char)value : '.').ToArray());
+            var strings = ExtractPrintableStrings(bytes, 3).Take(8).ToArray();
+            return $"size={package.Size()}, pos={originalPosition}, hex96={hex}, ascii={ascii}, strings=[{string.Join("|", strings)}]";
+        }
+        catch (Exception ex)
+        {
+            return $"unavailable:{ex.Message}";
+        }
+        finally
+        {
+            package.SetPos(originalPosition);
+        }
+    }
+
+    public static void ObserveZRpcPackage(ZPackage package)
+    {
+        var originalPosition = package.GetPos();
+        try
+        {
+            var bytes = package.GetArray() ?? [];
+            var firstInt = bytes.Length >= 4 ? BitConverter.ToInt32(bytes, 0) : 0;
+            var strings = ExtractPrintableStrings(bytes, 2).Take(12).ToArray();
+            if ((firstInt == ZdoDataHash || firstInt == ServerSyncedPlayerDataHash || firstInt == ServerHandshakeHash || firstInt == 0)
+                && !strings.Any(value => value.IndexOf("harambe", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                return;
+            }
+
+            lock (Sync)
+            {
+                if (zRpcDiagnosticsRemaining <= 0)
+                {
+                    return;
+                }
+
+                zRpcDiagnosticsRemaining--;
+            }
+
+            log($"Takaro Valheim observed raw ZRpc package: size={package.Size()}, pos={originalPosition}, firstInt={firstInt}, payload={DescribePackage(package)}, strings=[{string.Join("|", strings)}].");
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim could not inspect raw ZRpc package: {ex.Message}");
+        }
+        finally
+        {
+            package.SetPos(originalPosition);
+        }
+    }
+
+    private static IEnumerable<string> ExtractPrintableStrings(byte[] bytes, int minLength)
+    {
+        var buffer = new List<char>();
+        foreach (var value in bytes)
+        {
+            if (value >= 32 && value <= 126)
+            {
+                buffer.Add((char)value);
+                continue;
+            }
+
+            if (buffer.Count >= minLength)
+            {
+                yield return new string(buffer.ToArray());
+            }
+
+            buffer.Clear();
+        }
+
+        if (buffer.Count >= minLength)
+        {
+            yield return new string(buffer.ToArray());
+        }
+    }
+
+    public static void LogChatPatchHit(string source, long sender, int chatType, UserInfo userInfo, string text, bool dedicated)
+    {
+        log($"Takaro Valheim chat patch hit: source={source}, dedicated={dedicated}, sender={sender}, userName={FirstNonEmpty(userInfo.Name, userInfo.GetDisplayName(), "<empty>")}, userId={userInfo.UserId}, channel={ChannelName(chatType)}, msgLength={(text ?? string.Empty).Length}.");
+    }
+
+    public static void LogLocalSendTextPatchHit(Talker.Type type, string text)
+    {
+        log($"Takaro Valheim Chat.SendText postfix hit: dedicated={IsDedicatedServer()}, channel={ChannelName((int)type)}, msgLength={(text ?? string.Empty).Length}.");
+    }
+
     private static string FirstNonEmpty(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "unknown";
 
@@ -874,11 +1006,24 @@ internal static class ValheimChatEventBridge
     }
 }
 
+[HarmonyPatch(typeof(ZRpc), "HandlePackage")]
+internal static class TakaroZRpcHandlePackagePatch
+{
+    private static void Prefix(ZPackage package)
+    {
+        if (ZNet.instance is not null && ZNet.instance.IsDedicated())
+        {
+            ValheimChatEventBridge.ObserveZRpcPackage(package);
+        }
+    }
+}
+
 [HarmonyPatch(typeof(Chat), "RPC_ChatMessage")]
 internal static class TakaroChatRpcChatMessagePatch
 {
-    private static bool Prefix(long sender, int type, UserInfo userInfo, string text)
+    private static bool Prefix(long sender, Vector3 position, int type, UserInfo userInfo, string text)
     {
+        ValheimChatEventBridge.LogChatPatchHit("Chat.RPC_ChatMessage", sender, type, userInfo, text, IsDedicatedServer());
         ValheimChatEventBridge.Emit(sender, type, userInfo, text);
         return !IsDedicatedServer();
     }
@@ -892,6 +1037,7 @@ internal static class TakaroTalkerRpcSayPatch
 {
     private static bool Prefix(long sender, int ctype, UserInfo user, string text)
     {
+        ValheimChatEventBridge.LogChatPatchHit("Talker.RPC_Say", sender, ctype, user, text, IsDedicatedServer());
         ValheimChatEventBridge.Emit(sender, ctype, user, text);
         return !IsDedicatedServer();
     }
@@ -903,7 +1049,7 @@ internal static class TakaroTalkerRpcSayPatch
 [HarmonyPatch(typeof(ZRoutedRpc), "RPC_RoutedRPC")]
 internal static class TakaroRoutedRpcPatch
 {
-    private static void Prefix(ZPackage pkg)
+    private static void Prefix(ZRpc rpc, ZPackage pkg)
     {
         if (ZNet.instance is not null && ZNet.instance.IsDedicated())
         {
@@ -912,11 +1058,38 @@ internal static class TakaroRoutedRpcPatch
     }
 }
 
+[HarmonyPatch(typeof(ZRoutedRpc), "RouteRPC")]
+internal static class TakaroRoutedRpcRoutePatch
+{
+    private static void Prefix(ZRoutedRpc.RoutedRPCData rpcData)
+    {
+        if (ZNet.instance is not null && ZNet.instance.IsDedicated())
+        {
+            ValheimChatEventBridge.ObserveRoutedRpcData(rpcData, "RouteRPC");
+        }
+    }
+}
+
+[HarmonyPatch(typeof(ZRoutedRpc), "HandleRoutedRPC")]
+internal static class TakaroRoutedRpcHandlePatch
+{
+    private static void Prefix(ZRoutedRpc.RoutedRPCData data)
+    {
+        if (ZNet.instance is not null && ZNet.instance.IsDedicated())
+        {
+            ValheimChatEventBridge.ObserveRoutedRpcData(data, "HandleRoutedRPC");
+        }
+    }
+}
+
 [HarmonyPatch(typeof(Chat), "SendText")]
 internal static class TakaroChatSendTextPatch
 {
-    private static void Postfix(Talker.Type type, string text) =>
+    private static void Postfix(Talker.Type type, string text)
+    {
+        ValheimChatEventBridge.LogLocalSendTextPatchHit(type, text);
         ValheimChatEventBridge.ForwardLocalChat(type, text);
+    }
 }
 
 [HarmonyPatch(typeof(Player), "Update")]
