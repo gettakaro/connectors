@@ -78,35 +78,51 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void PluginBridgeRegistersLocationAndDeathRoutedRpc()
+    public void PluginBridgeUsesServerOnlyChatAndEntityHooks()
     {
         var source = ReadPluginSource("ValheimChatEventBridge.cs");
 
-        StringAssert.Contains(source, "\"TakaroClientLocationSnapshot\"");
-        StringAssert.Contains(source, "\"TakaroPlayerDeath\"");
-        StringAssert.Contains(source, "TrySendLocalLocationSnapshot(force: true)");
-    }
-
-    [TestMethod]
-    public void PluginBridgeHooksDeathEvents()
-    {
-        var source = ReadPluginSource("ValheimChatEventBridge.cs");
-
-        StringAssert.Contains(source, "TakaroPlayerOnDeathPatch");
-        StringAssert.Contains(source, "EventFactory.PlayerDeath");
+        StringAssert.Contains(source, "TakaroChatRpcChatMessagePatch");
+        StringAssert.Contains(source, "TakaroTalkerRpcSayPatch");
+        StringAssert.Contains(source, "TakaroRoutedRpcPatch");
         StringAssert.Contains(source, "TakaroCharacterOnDeathPatch");
         StringAssert.Contains(source, "EventFactory.EntityKilled");
     }
 
     [TestMethod]
-    public void PluginBridgeForwardsClientOwnedEntityDeathsToServer()
+    public void PluginBridgeDoesNotDeclareClientSideRpcContracts()
     {
         var source = ReadPluginSource("ValheimChatEventBridge.cs");
 
-        StringAssert.Contains(source, "\"TakaroEntityKilled\"");
-        StringAssert.Contains(source, "RPC_TakaroEntityKilled");
-        StringAssert.Contains(source, "ForwardLocalEntityKilled");
-        StringAssert.Contains(source, "InvokeRoutedRPC(\"TakaroEntityKilled\"");
+        Assert.IsFalse(source.Contains("TakaroClientLocationSnapshot", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TakaroClientInventorySnapshot", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TakaroPlayerDeath", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TakaroEntityKilled", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("Player.m_localPlayer", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void PluginAdapterDoesNotRouteActionsThroughCustomClientRpc()
+    {
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
+
+        Assert.IsFalse(source.Contains("TakaroGiveItem", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TakaroTeleportPlayer", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TakaroServerMessage", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TryGetLocationSnapshot", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TryGetInventorySnapshot", StringComparison.Ordinal));
+        StringAssert.Contains(source, "player_component_unavailable");
+    }
+
+    [TestMethod]
+    public void PluginDoesNotStartOnClientProcesses()
+    {
+        var source = ReadPluginSource("ValheimTakaroPlugin.cs");
+
+        StringAssert.Contains(source, "only runs on dedicated Valheim servers");
+        Assert.IsFalse(source.Contains("client bridge started", StringComparison.Ordinal));
+        Assert.IsTrue(source.IndexOf("if (!IsDedicatedServerProcess())", StringComparison.Ordinal)
+            < source.IndexOf("harmony = new Harmony", StringComparison.Ordinal));
     }
 
     private static string ReadPluginSource(string fileName)
