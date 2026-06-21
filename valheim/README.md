@@ -58,6 +58,28 @@ From inside `valheim/`:
 
 The release artifact is `takaro-valheim-plugin.zip`.
 
+## Server-Only Support Matrix
+
+Supported without a client mod:
+
+- Connector health: `testReachability`
+- Online players: `getPlayers`, `getPlayer`
+- Takaro-to-Valheim messaging: `sendMessage`
+- Server/admin data: `listItems`, `listEntities`, `listLocations`, `listBans`
+- Server/admin actions: `executeConsoleCommand`, `kickPlayer`, `banPlayer`,
+  `unbanPlayer`, `shutdown`
+
+Limited by Valheim dedicated-server state:
+
+- `getPlayerLocation` works only when Valheim exposes the player's public
+  position to the server. Otherwise it returns `player_position_unavailable`.
+- `getPlayerInventory`, `giveItem`, and `teleportPlayer` require a live
+  server-side `Player` component. If Valheim does not expose that component,
+  they return `player_component_unavailable`.
+- Inbound player chat is best-effort from server-observable Valheim RPCs. It
+  did not emit a Takaro chat event in the current one-client local dedicated
+  server smoke test.
+
 ## Known Caveats
 
 - `listLocations` is implemented and live-smoked, but dashboard consumers should
@@ -65,7 +87,5 @@ The release artifact is `takaro-valheim-plugin.zip`.
   `position` plus `radius`/`sizeX` format.
 - Destructive admin actions such as bans, kicks, and shutdown should be tested
   on a disposable server before production use.
-- `giveItem`, `getPlayerInventory`, and `teleportPlayer` use only server-side
-  Valheim state. If the dedicated server does not expose a live `Player`
-  component for the target player, the connector returns a clear action error
-  instead of relying on a client-side mod.
+- The connector intentionally does not install or require anything on player
+  clients.

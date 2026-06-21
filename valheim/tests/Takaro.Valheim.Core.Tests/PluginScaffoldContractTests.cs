@@ -115,6 +115,20 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
+    public void PluginAdapterReturnsExplicitErrorsForUnavailableServerOnlyPlayerState()
+    {
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
+        var locationMethod = SliceMethod(source, "public Task<TakaroActionResult> GetPlayerLocationAsync", "public Task<TakaroActionResult> GetPlayerInventoryAsync");
+        var inventoryMethod = SliceMethod(source, "public Task<TakaroActionResult> GetPlayerInventoryAsync", "public Task<TakaroActionResult> GiveItemAsync");
+
+        StringAssert.Contains(locationMethod, "player_position_unavailable");
+        Assert.IsFalse(locationMethod.Contains("new TakaroPosition(0, 0, 0", StringComparison.Ordinal));
+
+        StringAssert.Contains(inventoryMethod, "player_component_unavailable");
+        Assert.IsFalse(inventoryMethod.Contains("Array.Empty<object>()", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void PluginDoesNotStartOnClientProcesses()
     {
         var source = ReadPluginSource("ValheimTakaroPlugin.cs");

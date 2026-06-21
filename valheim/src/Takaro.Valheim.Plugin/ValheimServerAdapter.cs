@@ -37,7 +37,12 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default)
     {
-        if (TryFindPlayerInfo(identifier, out var player) && player.m_publicPosition)
+        if (!TryFindPlayerInfo(identifier, out var player))
+        {
+            return Task.FromResult(TakaroActionResult.Error("player_not_found", $"Valheim player '{identifier}' is not online."));
+        }
+
+        if (player.m_publicPosition)
         {
             return Task.FromResult(TakaroActionResult.Ok(new
             {
@@ -48,16 +53,25 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             }));
         }
 
-        logger.LogInfo($"Takaro Valheim getPlayerLocation has no public position for '{identifier}', returning origin.");
-        return Task.FromResult(TakaroActionResult.Ok(new TakaroPosition(0, 0, 0, "valheim")));
+        logger.LogInfo($"Takaro Valheim getPlayerLocation has no public position for '{identifier}'; returning server-only limitation error.");
+        return Task.FromResult(TakaroActionResult.Error(
+            "player_position_unavailable",
+            "Valheim dedicated server did not expose this player's position. The connector does not use a client-side mod."));
     }
 
     public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default)
     {
+        if (!TryResolvePlayer(identifier, out _, out _, out var resolvedPlayer) || resolvedPlayer is null)
+        {
+            return Task.FromResult(TakaroActionResult.Error("player_not_found", $"Valheim player '{identifier}' is not online."));
+        }
+
         if (!TryFindPlayerComponent(identifier, out var player))
         {
-            logger.LogInfo($"Takaro Valheim getPlayerInventory found no server-side Player component for '{identifier}', returning empty inventory.");
-            return Task.FromResult(TakaroActionResult.Ok(Array.Empty<object>()));
+            logger.LogInfo($"Takaro Valheim getPlayerInventory found no server-side Player component for '{identifier}'; returning server-only limitation error.");
+            return Task.FromResult(TakaroActionResult.Error(
+                "player_component_unavailable",
+                "Valheim dedicated server did not expose a server-side Player component for this player; the connector does not use a client-side mod."));
         }
 
         var items = player.GetInventory().GetAllItems()
