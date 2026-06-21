@@ -177,7 +177,7 @@ internal static class ValheimChatEventBridge
 
             if (ShouldLogRoutedRpc(data.m_methodHash))
             {
-                log($"Takaro Valheim observed routed RPC hash={data.m_methodHash}, sender={data.m_senderPeerID}, targetPeer={data.m_targetPeerID}, targetZdo={data.m_targetZDO}.");
+                log($"Takaro Valheim observed routed RPC hash={data.m_methodHash}, sender={data.m_senderPeerID}, targetPeer={data.m_targetPeerID}, targetZdo={data.m_targetZDO}, payload={DescribePackage(data.m_parameters)}.");
             }
         }
         catch (Exception ex)
@@ -775,6 +775,52 @@ internal static class ValheimChatEventBridge
             count++;
             RoutedRpcDiagnostics[methodHash] = count;
             return count <= 20 || count % 100 == 0;
+        }
+    }
+
+    private static string DescribePackage(ZPackage package)
+    {
+        var originalPosition = package.GetPos();
+        try
+        {
+            var bytes = package.GetArray() ?? [];
+            var hex = Convert.ToHexString(bytes.Take(96).ToArray());
+            var ascii = new string(bytes.Take(160).Select(value => value >= 32 && value <= 126 ? (char)value : '.').ToArray());
+            var strings = ExtractPrintableStrings(bytes, 3).Take(8).ToArray();
+            return $"size={package.Size()}, pos={originalPosition}, hex96={hex}, ascii={ascii}, strings=[{string.Join("|", strings)}]";
+        }
+        catch (Exception ex)
+        {
+            return $"unavailable:{ex.Message}";
+        }
+        finally
+        {
+            package.SetPos(originalPosition);
+        }
+    }
+
+    private static IEnumerable<string> ExtractPrintableStrings(byte[] bytes, int minLength)
+    {
+        var buffer = new List<char>();
+        foreach (var value in bytes)
+        {
+            if (value >= 32 && value <= 126)
+            {
+                buffer.Add((char)value);
+                continue;
+            }
+
+            if (buffer.Count >= minLength)
+            {
+                yield return new string(buffer.ToArray());
+            }
+
+            buffer.Clear();
+        }
+
+        if (buffer.Count >= minLength)
+        {
+            yield return new string(buffer.ToArray());
         }
     }
 
