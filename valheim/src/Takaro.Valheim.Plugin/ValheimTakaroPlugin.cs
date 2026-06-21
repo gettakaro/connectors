@@ -4,6 +4,7 @@ using Takaro.Valheim.Core;
 using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
+using System.Reflection;
 using UnityEngine;
 
 namespace Takaro.Valheim.Plugin;
@@ -23,6 +24,7 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
     {
         harmony = new Harmony(PluginGuid);
         harmony.PatchAll(typeof(ValheimChatEventBridge).Assembly);
+        LogHarmonyPatchState();
 
         if (!IsDedicatedServerProcess())
         {
@@ -73,6 +75,36 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
     private static bool IsDedicatedServerProcess() =>
         Application.isBatchMode
         || Environment.GetCommandLineArgs().Any(arg => arg.IndexOf("valheim_server", StringComparison.OrdinalIgnoreCase) >= 0);
+
+    private void LogHarmonyPatchState()
+    {
+        var targets = new (string Name, MethodBase? Method)[]
+        {
+            ("Chat.RPC_ChatMessage", AccessTools.Method(typeof(Chat), "RPC_ChatMessage")),
+            ("Talker.RPC_Say", AccessTools.Method(typeof(Talker), "RPC_Say")),
+            ("ZRoutedRpc.RPC_RoutedRPC", AccessTools.Method(typeof(ZRoutedRpc), "RPC_RoutedRPC")),
+            ("Chat.SendText", AccessTools.Method(typeof(Chat), "SendText")),
+            ("Player.Update", AccessTools.Method(typeof(Player), "Update")),
+            ("Player.OnDeath", AccessTools.Method(typeof(Player), "OnDeath")),
+            ("Character.OnDeath", AccessTools.Method(typeof(Character), "OnDeath"))
+        };
+
+        foreach (var target in targets)
+        {
+            if (target.Method is null)
+            {
+                Logger.LogWarning($"Takaro Valheim Harmony target missing: {target.Name}.");
+                continue;
+            }
+
+            var patchInfo = Harmony.GetPatchInfo(target.Method);
+            var ownerCount = patchInfo is null
+                ? 0
+                : patchInfo.Prefixes.Concat(patchInfo.Postfixes).Concat(patchInfo.Transpilers).Concat(patchInfo.Finalizers)
+                    .Count(patch => patch.owner == PluginGuid);
+            Logger.LogInfo($"Takaro Valheim Harmony target {target.Name}: method={target.Method.DeclaringType?.FullName}.{target.Method.Name}, takaroPatchCount={ownerCount}.");
+        }
+    }
 }
 #else
 namespace Takaro.Valheim.Plugin;

@@ -14,10 +14,11 @@ internal static class ValheimChatEventBridge
     private static readonly object Sync = new();
     private static readonly Dictionary<string, DateTimeOffset> RecentEvents = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, DateTimeOffset> RecentEntityDeaths = new(StringComparer.Ordinal);
+    private static readonly Dictionary<int, int> RoutedRpcDiagnostics = new();
     private static readonly InventorySnapshotCache InventorySnapshots = new();
     private static readonly LocationSnapshotCache LocationSnapshots = new();
     private static readonly System.Reflection.FieldInfo? LastHitField = AccessTools.Field(typeof(Character), "m_lastHit");
-    private static int routedDiagnosticsRemaining = 40;
+    private static int routedDiagnosticsRemaining = 5000;
     private static ZRoutedRpc? registeredRpc;
     private static TakaroWebSocketRunner? runner;
     private static Action<string> log = _ => { };
@@ -29,6 +30,7 @@ internal static class ValheimChatEventBridge
         runner = activeRunner;
         log = logger ?? (_ => { });
         log($"Takaro Valheim chat hash diagnostics: ChatMessage={ChatMessageHash}, Say={SayHash}.");
+        log($"Takaro Valheim chat hash candidates: RPC_ChatMessage={"RPC_ChatMessage".GetStableHashCode()}, RPC_Say={"RPC_Say".GetStableHashCode()}, SendText={"SendText".GetStableHashCode()}, ChatMessageToAll={"ChatMessageToAll".GetStableHashCode()}, NewChatMessage={"NewChatMessage".GetStableHashCode()}.");
     }
 
     public static void Shutdown()
@@ -39,6 +41,7 @@ internal static class ValheimChatEventBridge
         {
             RecentEvents.Clear();
             RecentEntityDeaths.Clear();
+            RoutedRpcDiagnostics.Clear();
         }
     }
 
@@ -172,9 +175,8 @@ internal static class ValheimChatEventBridge
                 return;
             }
 
-            if (routedDiagnosticsRemaining > 0)
+            if (ShouldLogRoutedRpc(data.m_methodHash))
             {
-                routedDiagnosticsRemaining--;
                 log($"Takaro Valheim observed routed RPC hash={data.m_methodHash}, sender={data.m_senderPeerID}, targetPeer={data.m_targetPeerID}, targetZdo={data.m_targetZDO}.");
             }
         }
@@ -759,6 +761,33 @@ internal static class ValheimChatEventBridge
             _ => "global"
         };
 
+    private static bool ShouldLogRoutedRpc(int methodHash)
+    {
+        if (routedDiagnosticsRemaining <= 0)
+        {
+            return false;
+        }
+
+        lock (Sync)
+        {
+            routedDiagnosticsRemaining--;
+            RoutedRpcDiagnostics.TryGetValue(methodHash, out var count);
+            count++;
+            RoutedRpcDiagnostics[methodHash] = count;
+            return count <= 20 || count % 100 == 0;
+        }
+    }
+
+    public static void LogChatPatchHit(string source, long sender, int chatType, UserInfo userInfo, string text, bool dedicated)
+    {
+        log($"Takaro Valheim chat patch hit: source={source}, dedicated={dedicated}, sender={sender}, userName={FirstNonEmpty(userInfo.Name, userInfo.GetDisplayName(), "<empty>")}, userId={userInfo.UserId}, channel={ChannelName(chatType)}, msgLength={(text ?? string.Empty).Length}.");
+    }
+
+    public static void LogLocalSendTextPatchHit(Talker.Type type, string text)
+    {
+        log($"Takaro Valheim Chat.SendText postfix hit: dedicated={IsDedicatedServer()}, channel={ChannelName((int)type)}, msgLength={(text ?? string.Empty).Length}.");
+    }
+
     private static string FirstNonEmpty(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "unknown";
 
@@ -879,6 +908,7 @@ internal static class TakaroChatRpcChatMessagePatch
 {
     private static bool Prefix(long sender, int type, UserInfo userInfo, string text)
     {
+        ValheimChatEventBridge.LogChatPatchHit("Chat.RPC_ChatMessage", sender, type, userInfo, text, IsDedicatedServer());
         ValheimChatEventBridge.Emit(sender, type, userInfo, text);
         return !IsDedicatedServer();
     }
@@ -892,6 +922,7 @@ internal static class TakaroTalkerRpcSayPatch
 {
     private static bool Prefix(long sender, int ctype, UserInfo user, string text)
     {
+        ValheimChatEventBridge.LogChatPatchHit("Talker.RPC_Say", sender, ctype, user, text, IsDedicatedServer());
         ValheimChatEventBridge.Emit(sender, ctype, user, text);
         return !IsDedicatedServer();
     }
@@ -915,8 +946,11 @@ internal static class TakaroRoutedRpcPatch
 [HarmonyPatch(typeof(Chat), "SendText")]
 internal static class TakaroChatSendTextPatch
 {
-    private static void Postfix(Talker.Type type, string text) =>
+    private static void Postfix(Talker.Type type, string text)
+    {
+        ValheimChatEventBridge.LogLocalSendTextPatchHit(type, text);
         ValheimChatEventBridge.ForwardLocalChat(type, text);
+    }
 }
 
 [HarmonyPatch(typeof(Player), "Update")]
