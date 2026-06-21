@@ -952,7 +952,7 @@ internal static class ValheimChatEventBridge
 [HarmonyPatch(typeof(Chat), "RPC_ChatMessage")]
 internal static class TakaroChatRpcChatMessagePatch
 {
-    private static bool Prefix(long sender, int type, UserInfo userInfo, string text)
+    private static bool Prefix(long sender, Vector3 position, int type, UserInfo userInfo, string text)
     {
         ValheimChatEventBridge.LogChatPatchHit("Chat.RPC_ChatMessage", sender, type, userInfo, text, IsDedicatedServer());
         ValheimChatEventBridge.Emit(sender, type, userInfo, text);
@@ -980,7 +980,7 @@ internal static class TakaroTalkerRpcSayPatch
 [HarmonyPatch(typeof(ZRoutedRpc), "RPC_RoutedRPC")]
 internal static class TakaroRoutedRpcPatch
 {
-    private static void Prefix(ZPackage pkg)
+    private static void Prefix(ZRpc rpc, ZPackage pkg)
     {
         if (ZNet.instance is not null && ZNet.instance.IsDedicated())
         {
