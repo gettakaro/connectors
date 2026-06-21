@@ -24,6 +24,9 @@ jobs:
       valheim_released: ${{ steps.rp.outputs['valheim--release_created'] }}
       valheim_tag: ${{ steps.rp.outputs['valheim--tag_name'] }}
       valheim_version: ${{ steps.rp.outputs['valheim--version'] }}
+      conan_exiles_released: ${{ steps.rp.outputs['conan-exiles--release_created'] }}
+      conan_exiles_tag: ${{ steps.rp.outputs['conan-exiles--tag_name'] }}
+      conan_exiles_version: ${{ steps.rp.outputs['conan-exiles--version'] }}
     steps:
       # Author Release PRs as takaro-ci-bot[bot] instead of GITHUB_TOKEN. PRs/commits made
       # with GITHUB_TOKEN don't fire downstream events, so the required `conventional-title`
@@ -91,3 +94,15 @@ jobs:
     with:
       version: ${{ needs.release-please.outputs.valheim_version }}
       tag: ${{ needs.release-please.outputs.valheim_tag }}
+
+  release-conan-exiles:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.conan_exiles_released == 'true' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/conan-exiles.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.release-please.outputs.conan_exiles_version }}
+      tag: ${{ needs.release-please.outputs.conan_exiles_tag }}

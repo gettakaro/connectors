@@ -7,7 +7,7 @@
 # <connector>-v*, updates the CHANGELOG, and publishes a GitHub Release with artifacts.
 # To force a specific version, add a `Release-As: X.Y.Z` footer to a commit on main.
 
-# Print the rolling dev-build version for a connector (rust, minecraft, 7d2d)
+# Print the rolling dev-build version for a connector (rust, minecraft, 7d2d, valheim, conan-exiles)
 dev-version connector:
     ./scripts/dev-version.sh {{connector}}
 
@@ -22,6 +22,10 @@ build-release-minecraft version out-dir='dist':
 # Build the 7D2D connector release artifact locally into <out-dir>
 build-release-7d2d version out-dir='dist':
     ./7d2d/scripts/build-release.sh {{version}} {{out-dir}}
+
+# Build the Conan Exiles connector release artifact locally into <out-dir>
+build-release-conan version out-dir='dist':
+    ./conan-exiles/scripts/build-release.sh {{version}} {{out-dir}}
 
 # === Rust Connector ===
 
@@ -104,3 +108,17 @@ sevend2d-down *args:
 # View 7D2D service logs
 sevend2d-logs *args='--tail 100 -f':
     cd 7d2d && docker compose logs {{args}}
+
+# === Conan Exiles Connector ===
+
+# Install Conan Exiles connector dependencies
+conan-install:
+    cd conan-exiles && npm ci
+
+# Run Conan Exiles connector tests
+conan-test:
+    cd conan-exiles && npm test
+
+# Build the Conan Exiles connector
+conan-build:
+    cd conan-exiles && npm run build

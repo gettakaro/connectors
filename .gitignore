@@ -15,6 +15,11 @@ run/
 # Bot
 bot/node_modules/
 
+# Node sidecars
+node_modules/
+conan-exiles/dist/
+conan-exiles/logs/
+
 # IDE
 .idea/
 .vscode/
