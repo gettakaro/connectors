@@ -153,7 +153,9 @@ public sealed class TakaroWebSocketRunner : IDisposable
             if (ContainsIgnoreCase(message, "\"type\":\"connected\"")
                 || ContainsIgnoreCase(message, "\"type\": \"connected\""))
             {
-                log("Takaro Valheim WebSocket acknowledged by Takaro.");
+                log("Takaro Valheim WebSocket acknowledged by Takaro; sending identify.");
+                await SendAsync(socket, TakaroProtocol.CreateIdentify(config), cancellationToken);
+                log("Takaro Valheim identify sent.");
                 continue;
             }
 
