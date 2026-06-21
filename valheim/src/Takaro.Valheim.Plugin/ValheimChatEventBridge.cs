@@ -11,6 +11,9 @@ internal static class ValheimChatEventBridge
 {
     private static readonly int ChatMessageHash = "ChatMessage".GetStableHashCode();
     private static readonly int SayHash = "Say".GetStableHashCode();
+    private static readonly int ZdoDataHash = "ZDOData".GetStableHashCode();
+    private static readonly int ServerHandshakeHash = "ServerHandshake".GetStableHashCode();
+    private static readonly int ServerSyncedPlayerDataHash = "ServerSyncedPlayerData".GetStableHashCode();
     private static readonly object Sync = new();
     private static readonly Dictionary<string, DateTimeOffset> RecentEvents = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, DateTimeOffset> RecentEntityDeaths = new(StringComparer.Ordinal);
@@ -822,6 +825,15 @@ internal static class ValheimChatEventBridge
         var originalPosition = package.GetPos();
         try
         {
+            var bytes = package.GetArray() ?? [];
+            var firstInt = bytes.Length >= 4 ? BitConverter.ToInt32(bytes, 0) : 0;
+            var strings = ExtractPrintableStrings(bytes, 2).Take(12).ToArray();
+            if ((firstInt == ZdoDataHash || firstInt == ServerSyncedPlayerDataHash || firstInt == ServerHandshakeHash || firstInt == 0)
+                && !strings.Any(value => value.IndexOf("harambe", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                return;
+            }
+
             lock (Sync)
             {
                 if (zRpcDiagnosticsRemaining <= 0)
@@ -832,9 +844,6 @@ internal static class ValheimChatEventBridge
                 zRpcDiagnosticsRemaining--;
             }
 
-            var bytes = package.GetArray() ?? [];
-            var firstInt = bytes.Length >= 4 ? BitConverter.ToInt32(bytes, 0) : 0;
-            var strings = ExtractPrintableStrings(bytes, 2).Take(12).ToArray();
             log($"Takaro Valheim observed raw ZRpc package: size={package.Size()}, pos={originalPosition}, firstInt={firstInt}, payload={DescribePackage(package)}, strings=[{string.Join("|", strings)}].");
         }
         catch (Exception ex)
