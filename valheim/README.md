@@ -2,6 +2,9 @@
 
 This source tree contains the Valheim Takaro connector.
 
+The connector is a dedicated-server plugin. It is installed on the Valheim
+dedicated server only; no player/client-side mod is required or supported.
+
 ## Shape
 
 - `src/Takaro.Valheim.Core` contains game-independent Takaro protocol, config, player, and request handling code.
@@ -46,14 +49,7 @@ The default WebSocket URL is `wss://connect.takaro.io/`.
 
 ## Release Build
 
-From the monorepo root:
-
-```bash
-just valheim-setup
-just build-release-valheim 0.1.0
-```
-
-Or from inside `valheim/`:
+From inside `valheim/`:
 
 ```bash
 ./scripts/setup-environment.sh
@@ -62,6 +58,28 @@ Or from inside `valheim/`:
 
 The release artifact is `takaro-valheim-plugin.zip`.
 
+## Server-Only Support Matrix
+
+Supported without a client mod:
+
+- Connector health: `testReachability`
+- Online players: `getPlayers`, `getPlayer`
+- Takaro-to-Valheim messaging: `sendMessage`
+- Server/admin data: `listItems`, `listEntities`, `listLocations`, `listBans`
+- Server/admin actions: `executeConsoleCommand`, `kickPlayer`, `banPlayer`,
+  `unbanPlayer`, `shutdown`
+
+Limited by Valheim dedicated-server state:
+
+- `getPlayerLocation` works only when Valheim exposes the player's public
+  position to the server. Otherwise it returns `player_position_unavailable`.
+- `getPlayerInventory`, `giveItem`, and `teleportPlayer` require a live
+  server-side `Player` component. If Valheim does not expose that component,
+  they return `player_component_unavailable`.
+- Inbound player chat is best-effort from server-observable Valheim RPCs. It
+  did not emit a Takaro chat event in the current one-client local dedicated
+  server smoke test.
+
 ## Known Caveats
 
 - `listLocations` is implemented and live-smoked, but dashboard consumers should
@@ -69,3 +87,5 @@ The release artifact is `takaro-valheim-plugin.zip`.
   `position` plus `radius`/`sizeX` format.
 - Destructive admin actions such as bans, kicks, and shutdown should be tested
   on a disposable server before production use.
+- The connector intentionally does not install or require anything on player
+  clients.

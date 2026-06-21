@@ -21,15 +21,14 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
 
     private void Awake()
     {
-        harmony = new Harmony(PluginGuid);
-        harmony.PatchAll(typeof(ValheimChatEventBridge).Assembly);
-
         if (!IsDedicatedServerProcess())
         {
-            ValheimChatEventBridge.Initialize(null, Logger.LogInfo);
-            Logger.LogInfo("Takaro Valheim client bridge started.");
+            Logger.LogInfo("Takaro Valheim connector only runs on dedicated Valheim servers; skipping client process.");
             return;
         }
+
+        harmony = new Harmony(PluginGuid);
+        harmony.PatchAll(typeof(ValheimChatEventBridge).Assembly);
 
         var values = new Dictionary<string, string>
         {
@@ -57,8 +56,13 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
         Logger.LogInfo("Takaro Valheim connector started.");
     }
 
-    private void Update() =>
-        ValheimChatEventBridge.Update();
+    private void Update()
+    {
+        if (runner is not null)
+        {
+            ValheimChatEventBridge.Update();
+        }
+    }
 
     private void OnDestroy()
     {

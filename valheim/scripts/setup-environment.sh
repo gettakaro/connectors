@@ -22,23 +22,73 @@ if [ ! -x "$STEAMCMD" ]; then
 fi
 
 echo "Downloading/updating Valheim dedicated server..."
-"$STEAMCMD" \
-  +@sSteamCmdForcePlatformType linux \
-  +force_install_dir "$(pwd)/$SERVER_DIR" \
-  +login anonymous \
-  +app_update 896660 validate \
-  +quit
+install_valheim_server() {
+  local platforms
+  local platform
+  local attempt
+  local exit_code=0
+
+  read -r -a platforms <<< "${VALHEIM_STEAM_PLATFORMS:-linux windows}"
+
+  for platform in "${platforms[@]}"; do
+    for attempt in 1 2 3; do
+      if "$STEAMCMD" \
+        +@sSteamCmdForcePlatformType "$platform" \
+        +force_install_dir "$(pwd)/$SERVER_DIR" \
+        +login anonymous \
+        +app_update 896660 validate \
+        +quit; then
+        exit_code=0
+      else
+        exit_code=$?
+      fi
+
+      if [ -d "$SERVER_DIR/valheim_server_Data/Managed" ]; then
+        echo "Valheim dedicated server references installed for Steam platform '$platform'."
+        return 0
+      fi
+
+      if [ "$exit_code" -eq 0 ]; then
+        exit_code=1
+      fi
+
+      if [ "$attempt" -lt 3 ]; then
+        echo "SteamCMD Valheim install attempt $attempt for platform '$platform' failed with exit code $exit_code; retrying..."
+        rm -rf "$HOME/Steam/appcache" "$STEAMCMD_DIR/appcache"
+        sleep $((attempt * 10))
+      fi
+    done
+
+    if [ "$platform" = "linux" ]; then
+      echo "Linux Valheim server references were not available; trying Windows Steam depot for compile references..."
+      rm -rf "$SERVER_DIR"
+      mkdir -p "$SERVER_DIR"
+    fi
+  done
+
+  if [ -d "$SERVER_DIR/valheim_server_Data/Managed" ]; then
+    return 0
+  fi
+
+  return "$exit_code"
+}
+
+install_valheim_server
+
+curl_retry() {
+  curl --retry 5 --retry-delay 2 --retry-all-errors "$@"
+}
 
 download_thunderstore_package() {
   local api_url="$1"
   local out_zip="$2"
   local download_url
-  download_url="$(curl -fsSL "$api_url" | jq -r '.latest.download_url')"
+  download_url="$(curl_retry -fsSL "$api_url" | jq -r '.latest.download_url')"
   if [ -z "$download_url" ] || [ "$download_url" = "null" ]; then
     echo "Could not resolve Thunderstore download URL from $api_url" >&2
     exit 1
   fi
-  curl -fsSL "$download_url" -o "$out_zip"
+  curl_retry -fsSL "$download_url" -o "$out_zip"
 }
 
 echo "Downloading BepInExPack Valheim..."
