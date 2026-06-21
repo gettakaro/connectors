@@ -19,6 +19,7 @@ internal static class ValheimChatEventBridge
     private static readonly LocationSnapshotCache LocationSnapshots = new();
     private static readonly System.Reflection.FieldInfo? LastHitField = AccessTools.Field(typeof(Character), "m_lastHit");
     private static int routedDiagnosticsRemaining = 5000;
+    private static int zRpcDiagnosticsRemaining = 1000;
     private static ZRoutedRpc? registeredRpc;
     private static TakaroWebSocketRunner? runner;
     private static Action<string> log = _ => { };
@@ -816,6 +817,36 @@ internal static class ValheimChatEventBridge
         }
     }
 
+    public static void ObserveZRpcPackage(ZPackage package)
+    {
+        var originalPosition = package.GetPos();
+        try
+        {
+            lock (Sync)
+            {
+                if (zRpcDiagnosticsRemaining <= 0)
+                {
+                    return;
+                }
+
+                zRpcDiagnosticsRemaining--;
+            }
+
+            var bytes = package.GetArray() ?? [];
+            var firstInt = bytes.Length >= 4 ? BitConverter.ToInt32(bytes, 0) : 0;
+            var strings = ExtractPrintableStrings(bytes, 2).Take(12).ToArray();
+            log($"Takaro Valheim observed raw ZRpc package: size={package.Size()}, pos={originalPosition}, firstInt={firstInt}, payload={DescribePackage(package)}, strings=[{string.Join("|", strings)}].");
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim could not inspect raw ZRpc package: {ex.Message}");
+        }
+        finally
+        {
+            package.SetPos(originalPosition);
+        }
+    }
+
     private static IEnumerable<string> ExtractPrintableStrings(byte[] bytes, int minLength)
     {
         var buffer = new List<char>();
@@ -963,6 +994,18 @@ internal static class ValheimChatEventBridge
         public TakaroPosition? Position { get; }
 
         public string? Weapon { get; }
+    }
+}
+
+[HarmonyPatch(typeof(ZRpc), "HandlePackage")]
+internal static class TakaroZRpcHandlePackagePatch
+{
+    private static void Prefix(ZPackage package)
+    {
+        if (ZNet.instance is not null && ZNet.instance.IsDedicated())
+        {
+            ValheimChatEventBridge.ObserveZRpcPackage(package);
+        }
     }
 }
 
