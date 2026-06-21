@@ -30,21 +30,36 @@ echo "Building Valheim connector v${VERSION}..."
 
 dotnet restore Takaro.Valheim.sln
 dotnet test Takaro.Valheim.sln --no-restore -v minimal
-dotnet build src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj \
+PUBLISH_DIR="$(mktemp -d)"
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$PUBLISH_DIR" "$STAGE"' EXIT
+
+dotnet publish src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj \
   -c Release \
   -f net472 \
+  --no-restore \
+  -o "$PUBLISH_DIR" \
   -p:EnableValheimPluginBuild=true \
   -p:BepInExReferencePath="$BEPINEX_REFERENCE_PATH" \
   -p:JotunnReferencePath="$JOTUNN_REFERENCE_PATH" \
   -p:ValheimReferencePath="$VALHEIM_REFERENCE_PATH"
 
-STAGE="$(mktemp -d)"
-trap 'rm -rf "$STAGE"' EXIT
-
 PLUGIN_DIR="$STAGE/TakaroValheim"
 mkdir -p "$PLUGIN_DIR"
-cp src/Takaro.Valheim.Plugin/bin/Release/net472/TakaroValheim.dll "$PLUGIN_DIR/"
-cp src/Takaro.Valheim.Plugin/bin/Release/net472/Takaro.Valheim.Core.dll "$PLUGIN_DIR/"
+cp "$PUBLISH_DIR"/*.dll "$PLUGIN_DIR/"
+
+# The game server already provides Valheim, Unity, BepInEx, Harmony, and Jotunn
+# assemblies. Do not bundle those host/reference DLLs, but keep NuGet runtime
+# dependencies such as System.Text.Json that are required on .NET Framework 4.7.2.
+rm -f \
+  "$PLUGIN_DIR/0Harmony.dll" \
+  "$PLUGIN_DIR/BepInEx.dll" \
+  "$PLUGIN_DIR/Jotunn.dll" \
+  "$PLUGIN_DIR/assembly_valheim.dll" \
+  "$PLUGIN_DIR/assembly_utils.dll" \
+  "$PLUGIN_DIR/Splatform.dll" \
+  "$PLUGIN_DIR/UnityEngine.dll" \
+  "$PLUGIN_DIR/UnityEngine.CoreModule.dll"
 
 cat > "$PLUGIN_DIR/README.txt" << EOF
 Takaro Valheim Connector ${VERSION}
