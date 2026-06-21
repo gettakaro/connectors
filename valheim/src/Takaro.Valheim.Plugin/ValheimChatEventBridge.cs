@@ -150,11 +150,28 @@ internal static class ValheimChatEventBridge
         {
             var data = new ZRoutedRpc.RoutedRPCData();
             data.Deserialize(package);
+            ObserveRoutedRpcData(data, "RPC_RoutedRPC");
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim could not inspect routed chat packet: {ex.Message}");
+        }
+        finally
+        {
+            package.SetPos(originalPosition);
+        }
+    }
+
+    public static void ObserveRoutedRpcData(ZRoutedRpc.RoutedRPCData data, string source)
+    {
+        var originalPosition = data.m_parameters.GetPos();
+        try
+        {
             data.m_parameters.SetPos(0);
 
             if (data.m_methodHash == ChatMessageHash)
             {
-                log("Takaro Valheim observed routed ChatMessage packet.");
+                log($"Takaro Valheim observed routed ChatMessage packet at {source}.");
                 _ = data.m_parameters.ReadVector3();
                 var chatType = data.m_parameters.ReadInt();
                 var userInfo = new UserInfo();
@@ -166,7 +183,7 @@ internal static class ValheimChatEventBridge
 
             if (data.m_methodHash == SayHash)
             {
-                log("Takaro Valheim observed routed Say packet.");
+                log($"Takaro Valheim observed routed Say packet at {source}.");
                 var chatType = data.m_parameters.ReadInt();
                 var userInfo = new UserInfo();
                 userInfo.Deserialize(ref data.m_parameters);
@@ -177,16 +194,16 @@ internal static class ValheimChatEventBridge
 
             if (ShouldLogRoutedRpc(data.m_methodHash))
             {
-                log($"Takaro Valheim observed routed RPC hash={data.m_methodHash}, sender={data.m_senderPeerID}, targetPeer={data.m_targetPeerID}, targetZdo={data.m_targetZDO}, payload={DescribePackage(data.m_parameters)}.");
+                log($"Takaro Valheim observed routed RPC at {source}: hash={data.m_methodHash}, sender={data.m_senderPeerID}, targetPeer={data.m_targetPeerID}, targetZdo={data.m_targetZDO}, payload={DescribePackage(data.m_parameters)}.");
             }
         }
         catch (Exception ex)
         {
-            log($"Takaro Valheim could not inspect routed chat packet: {ex.Message}");
+            log($"Takaro Valheim could not inspect routed chat data at {source}: {ex.Message}");
         }
         finally
         {
-            package.SetPos(originalPosition);
+            data.m_parameters.SetPos(originalPosition);
         }
     }
 
@@ -985,6 +1002,18 @@ internal static class TakaroRoutedRpcPatch
         if (ZNet.instance is not null && ZNet.instance.IsDedicated())
         {
             ValheimChatEventBridge.ObserveRoutedRpc(pkg);
+        }
+    }
+}
+
+[HarmonyPatch(typeof(ZRoutedRpc), "HandleRoutedRPC")]
+internal static class TakaroRoutedRpcHandlePatch
+{
+    private static void Prefix(ZRoutedRpc.RoutedRPCData data)
+    {
+        if (ZNet.instance is not null && ZNet.instance.IsDedicated())
+        {
+            ValheimChatEventBridge.ObserveRoutedRpcData(data, "HandleRoutedRPC");
         }
     }
 }
