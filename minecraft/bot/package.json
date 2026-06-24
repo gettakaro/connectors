@@ -1,0 +1,14 @@
+{
+  "name": "takaro-minecraft-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mineflayer test bot with HTTP API for Takaro connector testing",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "express": "^5.0.0",
+    "mineflayer": "^4.23.0"
+  }
+}

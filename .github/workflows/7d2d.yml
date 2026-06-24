@@ -1,0 +1,121 @@
+name: 7D2D Connector
+
+on:
+  push:
+    branches: [main]
+    paths: ['7d2d/**', 'scripts/**', '.github/workflows/7d2d.yml']
+  pull_request:
+    paths: ['7d2d/**', 'scripts/**', '.github/workflows/7d2d.yml']
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+
+# Serialize same-ref runs so consecutive main pushes don't race on the rolling
+# 7d2d-dev release. Release runs (caller's workflow name) are in a different group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codestyle:
+    if: ${{ !inputs.tag }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 7d2d
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5
+      - name: Install CSharpier
+        run: dotnet tool restore
+      - name: Check formatting
+        run: dotnet csharpier --check .
+
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      # All release/comment operations act as takaro-ci-bot[bot] (not github-actions[bot]).
+      # Skipped on fork PRs, which can't access the App secrets and don't publish builds.
+      - name: Generate token
+        id: app-token
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.TAKARO_CI_APP_ID }}
+          private-key: ${{ secrets.TAKARO_CI_APP_PRIV_KEY }}
+
+      - name: Cache 7D2D managed DLLs
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        id: binaries-cache
+        with:
+          path: 7d2d/_data/7dtd-binaries
+          key: 7d2d-managed-v1
+
+      - name: Make scripts executable
+        run: chmod +x 7d2d/scripts/*.sh scripts/*.sh
+
+      - name: Set up environment
+        run: 7d2d/scripts/setup-environment.sh
+
+      - name: Resolve release params
+        id: params
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          IN_TAG: ${{ inputs.tag }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEV_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/release-params.sh 7d2d >> "$GITHUB_OUTPUT"
+
+      - name: Build release artifact
+        run: 7d2d/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
+
+      - name: Publish stable release assets
+        if: ${{ steps.params.outputs.publish == 'stable' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: scripts/publish-release.sh upload "${{ steps.params.outputs.tag }}" "$RUNNER_TEMP/dist/takaro-7d2d-mod.zip"
+
+      - name: Publish rolling dev build
+        if: ${{ steps.params.outputs.publish == 'rolling' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          scripts/publish-release.sh rolling 7d2d-dev \
+            "7D2D Connector — latest dev build" \
+            "Rolling development build (\`${{ steps.params.outputs.version }}\`), updated on every push to main. Not for production." \
+            "$RUNNER_TEMP/dist/takaro-7d2d-mod.zip"
+
+      # Fork PRs get a read-only token, so they can't publish a release or comment;
+      # they build for validation only (no downloadable artifact — accepted limitation).
+      - name: Publish PR build
+        if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          scripts/publish-release.sh rolling "${{ steps.params.outputs.tag }}" \
+            "7D2D Connector — build for PR #${{ github.event.pull_request.number }}" \
+            "Disposable build (\`${{ steps.params.outputs.version }}\`) for PR #${{ github.event.pull_request.number }}. Replaced on every push, deleted when the PR closes. Not for production." \
+            "$RUNNER_TEMP/dist/takaro-7d2d-mod.zip"
+
+      - name: Comment PR build
+        if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          scripts/comment-pr-build.sh 7d2d \
+            "${{ github.event.pull_request.number }}" \
+            "${{ steps.params.outputs.tag }}" \
+            "${{ steps.params.outputs.version }}" \
+            "$RUNNER_TEMP/dist/takaro-7d2d-mod.zip"

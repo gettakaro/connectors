@@ -1,0 +1,32 @@
+name: PR Build Cleanup
+
+# When a PR closes (merged or not), delete its disposable pr-<num>-<connector>
+# pre-releases and tags. No path filter — runs on every close so nothing is left behind.
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    # Fork PRs never published a build (no secrets), so there's nothing to clean up — and
+    # skipping them keeps the App-token generation below from running without its secrets.
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      # Delete builds as takaro-ci-bot[bot], consistent with how they were published.
+      - name: Generate token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.TAKARO_CI_APP_ID }}
+          private-key: ${{ secrets.TAKARO_CI_APP_PRIV_KEY }}
+
+      - name: Delete per-PR builds
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: scripts/cleanup-pr-builds.sh "$PR_NUMBER"

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "takaro",
+  "version": "${version}",
+  "name": "Takaro Minecraft Connector",
+  "description": "Takaro game server connector for Fabric",
+  "environment": "server",
+  "entrypoints": {
+    "server": [
+      "io.takaro.minecraft.fabric.TakaroFabricMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric-api": "*",
+    "minecraft": ">=1.21.11"
+  }
+}

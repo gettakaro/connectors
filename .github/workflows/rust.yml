@@ -1,0 +1,184 @@
+name: Rust Connector
+
+on:
+  push:
+    branches: [main]
+    paths: ['rust/**', 'scripts/**', '.github/workflows/rust.yml']
+  pull_request:
+    paths: ['rust/**', 'scripts/**', '.github/workflows/rust.yml']
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+
+# Serialize same-ref runs so consecutive main pushes don't race on the rolling
+# rust-dev release (delete+recreate). Release runs use the caller's workflow name,
+# so they fall in a different group and are unaffected.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile-check:
+    if: ${{ !inputs.tag }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Cache Rust game DLLs
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        id: dll-cache
+        with:
+          path: /tmp/managed-dlls/game
+          key: rust-dedicated-managed-v1
+
+      - name: Download Rust server DLLs
+        if: steps.dll-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y lib32gcc-s1
+
+          mkdir -p /tmp/steamcmd
+          curl -sL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
+            | tar -xzf - -C /tmp/steamcmd
+
+          /tmp/steamcmd/steamcmd.sh \
+            +force_install_dir /tmp/rust \
+            +login anonymous \
+            +app_update 258550 validate \
+            +quit
+
+          mkdir -p /tmp/managed-dlls/game
+          cp /tmp/rust/RustDedicated_Data/Managed/*.dll /tmp/managed-dlls/game/
+
+      - name: Download Carbon
+        run: |
+          curl -sL https://github.com/CarbonCommunity/Carbon/releases/download/production_build/Carbon.Linux.Release.tar.gz \
+            -o /tmp/carbon.tar.gz
+          mkdir -p /tmp/carbon
+          tar -xzf /tmp/carbon.tar.gz -C /tmp/carbon
+
+      - name: Compile plugin
+        run: |
+          GAME=/tmp/managed-dlls/game
+          CARBON=/tmp/carbon/carbon/managed
+
+          mkdir -p /tmp/compile-check/src
+
+          cp rust/plugin/TakaroConnector.cs /tmp/compile-check/src/
+
+          GAME_REFS=""
+          for dll in "$GAME"/*.dll; do
+            name=$(basename "$dll" .dll)
+            case "$name" in
+              System.*|mscorlib|netstandard|Microsoft.*) continue ;;
+            esac
+            GAME_REFS="$GAME_REFS<Reference Include=\"$name\" HintPath=\"$dll\" Publicize=\"true\" />"
+          done
+          CARBON_REFS=""
+          for dll in "$CARBON"/*.dll; do
+            name=$(basename "$dll" .dll)
+            CARBON_REFS="$CARBON_REFS<Reference Include=\"$name\" HintPath=\"$dll\" />"
+          done
+
+          cat > /tmp/compile-check/compile-check.csproj << PROJ
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFramework>netstandard2.1</TargetFramework>
+              <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+              <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+              <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+              <NoWarn>CS1685</NoWarn>
+            </PropertyGroup>
+            <ItemGroup>
+              <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.2" PrivateAssets="all" />
+              $GAME_REFS
+              $CARBON_REFS
+            </ItemGroup>
+          </Project>
+          PROJ
+
+          dotnet build /tmp/compile-check/compile-check.csproj
+
+  docker-build:
+    if: ${{ !inputs.tag && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Build Docker image
+        run: docker build -t takaro-rust-test rust/
+
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      # All release/comment operations act as takaro-ci-bot[bot] (not github-actions[bot]).
+      # Skipped on fork PRs, which can't access the App secrets and don't publish builds.
+      - name: Generate token
+        id: app-token
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.TAKARO_CI_APP_ID }}
+          private-key: ${{ secrets.TAKARO_CI_APP_PRIV_KEY }}
+
+      - name: Resolve release params
+        id: params
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          IN_TAG: ${{ inputs.tag }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEV_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/release-params.sh rust >> "$GITHUB_OUTPUT"
+
+      - name: Build release artifact
+        run: rust/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
+
+      - name: Publish stable release assets
+        if: ${{ steps.params.outputs.publish == 'stable' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: scripts/publish-release.sh upload "${{ steps.params.outputs.tag }}" "$RUNNER_TEMP/dist/TakaroConnector.cs"
+
+      - name: Publish rolling dev build
+        if: ${{ steps.params.outputs.publish == 'rolling' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          scripts/publish-release.sh rolling rust-dev \
+            "Rust Connector — latest dev build" \
+            "Rolling development build (\`${{ steps.params.outputs.version }}\`), updated on every push to main. Not for production." \
+            "$RUNNER_TEMP/dist/TakaroConnector.cs"
+
+      # Fork PRs get a read-only token, so they can't publish a release or comment;
+      # they build for validation only (no downloadable artifact — accepted limitation).
+      - name: Publish PR build
+        if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          scripts/publish-release.sh rolling "${{ steps.params.outputs.tag }}" \
+            "Rust Connector — build for PR #${{ github.event.pull_request.number }}" \
+            "Disposable build (\`${{ steps.params.outputs.version }}\`) for PR #${{ github.event.pull_request.number }}. Replaced on every push, deleted when the PR closes. Not for production." \
+            "$RUNNER_TEMP/dist/TakaroConnector.cs"
+
+      - name: Comment PR build
+        if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          scripts/comment-pr-build.sh rust \
+            "${{ github.event.pull_request.number }}" \
+            "${{ steps.params.outputs.tag }}" \
+            "${{ steps.params.outputs.version }}" \
+            "$RUNNER_TEMP/dist/TakaroConnector.cs"

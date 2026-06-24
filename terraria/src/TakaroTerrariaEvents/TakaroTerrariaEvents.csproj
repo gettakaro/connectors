@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>TakaroTerrariaEvents</AssemblyName>
+    <RootNamespace>TakaroTerrariaEvents</RootNamespace>
+    <TShockReferencePath Condition="'$(TShockReferencePath)' == ''">$(MSBuildProjectDirectory)/../../_data/refs</TShockReferencePath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="TShockAPI" HintPath="$(TShockReferencePath)/TShockAPI.dll" Private="false" />
+    <Reference Include="TerrariaServer" HintPath="$(TShockReferencePath)/TerrariaServer.dll" Private="false" />
+    <Reference Include="OTAPI" HintPath="$(TShockReferencePath)/OTAPI.dll" Private="false" />
+  </ItemGroup>
+</Project>

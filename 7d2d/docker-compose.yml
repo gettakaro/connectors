@@ -1,0 +1,66 @@
+name: takaro-7d2d
+
+services:
+  # SteamCMD service for downloading game files
+  steamcmd:
+    image: cm2network/steamcmd:latest@sha256:45f6515d6c4dcde659c9ad6872bdbeacd1bf5c4e7f241829c4d2f28fb5eda581
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      - ./_data/game-files:/game
+    command: >
+      bash -c "/home/steam/steamcmd/steamcmd.sh +force_install_dir /game +login anonymous +app_update 294420 validate +quit"
+
+
+  # Builder service for compiling the mod
+  builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.builder
+    volumes:
+      - ./:/app
+      - ./_data/7dtd-binaries:/app/_data/7dtd-binaries
+      - ./_data/build:/app/bin
+      - ./_data/lib:/app/lib
+    command: ["bash", "-c", "echo 'Builder container ready' && tail -f /dev/null"]
+
+  # Game server service (for reference/testing)
+  7dtdserver:
+    image: vinanrra/7dtd-server@sha256:2e5349ee7589a0a8623d6fcd4dfe9e1e922323f8a75fb4d9cc45db09e5c25943
+    environment:
+      - START_MODE=3
+      - PUID=1000
+      - PGID=1000
+      - TimeZone=Europe/Brussels
+      - VERSION=stable
+    volumes:
+      - ./_data/ServerFiles:/home/sdtdserver/serverfiles/
+      - ./_data/7DaysToDie:/home/sdtdserver/.local/share/7DaysToDie/
+      - ./_data/7d2d-log:/home/sdtdserver/log/
+    ports:
+      - "26900-26902:26900-26902/udp"
+      - "26900:26900/tcp"
+      - "8080-8083:8080-8083/tcp"
+
+  # Dependency service for fetching and building dependencies
+  deps:
+    build:
+      context: .
+      dockerfile: Dockerfile.builder
+    volumes:
+      - ./_data/7dtd-binaries:/binaries
+      - ./_data/lib:/app/lib
+    command: >
+      bash -c "
+        git clone https://github.com/sta/websocket-sharp.git /tmp/websocket-sharp &&
+        cd /tmp/websocket-sharp &&
+        xbuild /p:Configuration=Release websocket-sharp.sln &&
+        cp /tmp/websocket-sharp/Example/bin/Release/websocket-sharp.dll /binaries/ &&
+        cp /tmp/websocket-sharp/Example/bin/Release/websocket-sharp.dll /app/lib/ &&
+        curl -fsSL https://globalcdn.nuget.org/packages/litedb.5.0.21.nupkg -o /tmp/litedb.nupkg &&
+        unzip -o /tmp/litedb.nupkg 'lib/net45/LiteDB.dll' -d /tmp/litedb &&
+        cp /tmp/litedb/lib/net45/LiteDB.dll /binaries/ &&
+        cp /tmp/litedb/lib/net45/LiteDB.dll /app/lib/ &&
+        curl -fsSL https://globalcdn.nuget.org/packages/system.buffers.4.5.1.nupkg -o /tmp/buffers.nupkg &&
+        unzip -o /tmp/buffers.nupkg 'lib/net461/System.Buffers.dll' -d /tmp/buffers &&
+        cp /tmp/buffers/lib/net461/System.Buffers.dll /binaries/ &&
+        cp /tmp/buffers/lib/net461/System.Buffers.dll /app/lib/"
