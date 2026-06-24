@@ -2,6 +2,9 @@
 
 This source tree contains the Valheim Takaro connector.
 
+The connector is server-side only: install it on the Valheim dedicated server.
+It does not require, ship, or support a player/client-side mod.
+
 ## Shape
 
 - `src/Takaro.Valheim.Core` contains game-independent Takaro protocol, config, player, and request handling code.
