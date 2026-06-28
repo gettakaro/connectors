@@ -10,6 +10,7 @@ internal static class ValheimChatEventBridge
 {
     private static readonly int ChatMessageHash = "ChatMessage".GetStableHashCode();
     private static readonly int SayHash = "Say".GetStableHashCode();
+    private static readonly HashSet<int> UndecodedDedicatedServerChatHashes = [199378019];
     private static readonly object Sync = new();
     private static readonly Dictionary<string, DateTimeOffset> RecentEvents = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, DateTimeOffset> RecentEntityDeaths = new(StringComparer.Ordinal);
@@ -51,7 +52,19 @@ internal static class ValheimChatEventBridge
 
     public static void Emit(long senderId, int chatType, UserInfo userInfo, string text)
     {
-        if (string.IsNullOrWhiteSpace(text) || IsDuplicate(senderId, chatType, userInfo, text))
+        if (!IsSafeChatText(text))
+        {
+            log("Takaro Valheim dropped malformed chat event: empty or unsafe text payload.");
+            return;
+        }
+
+        if (!TryResolveChatPlayer(senderId, userInfo, out var player))
+        {
+            log("Takaro Valheim dropped malformed chat event: could not resolve a safe player identity.");
+            return;
+        }
+
+        if (IsDuplicate(senderId, chatType, userInfo, text))
         {
             return;
         }
@@ -62,12 +75,6 @@ internal static class ValheimChatEventBridge
             return;
         }
 
-        var player = PlayerMapper.ToTakaroPlayer(new ValheimPlayer(
-            FirstNonEmpty(userInfo.Name, userInfo.GetDisplayName(), senderId.ToString()),
-            FirstNonEmpty(userInfo.UserId.ToString(), senderId.ToString()),
-            null,
-            null,
-            null));
         var evt = EventFactory.ChatMessage(player, ChannelName(chatType), DateTimeOffset.UtcNow, text);
         log($"Takaro Valheim chat event captured: player={player.Name}, channel={ChannelName(chatType)}, msgLength={text.Length}.");
 
@@ -97,8 +104,24 @@ internal static class ValheimChatEventBridge
         {
             var data = new ZRoutedRpc.RoutedRPCData();
             data.Deserialize(package);
-            data.m_parameters.SetPos(0);
+            ObserveRoutedRpcData(data);
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim could not inspect routed chat packet: {ex.Message}");
+        }
+        finally
+        {
+            package.SetPos(originalPosition);
+        }
+    }
 
+    public static void ObserveRoutedRpcData(ZRoutedRpc.RoutedRPCData data)
+    {
+        var originalPosition = data.m_parameters.GetPos();
+        try
+        {
+            data.m_parameters.SetPos(0);
             if (data.m_methodHash == ChatMessageHash)
             {
                 log("Takaro Valheim observed routed ChatMessage packet.");
@@ -122,6 +145,12 @@ internal static class ValheimChatEventBridge
                 return;
             }
 
+            if (UndecodedDedicatedServerChatHashes.Contains(data.m_methodHash))
+            {
+                LogUndecodedDedicatedChatPacket(data);
+                return;
+            }
+
             if (routedDiagnosticsRemaining > 0)
             {
                 routedDiagnosticsRemaining--;
@@ -130,11 +159,54 @@ internal static class ValheimChatEventBridge
         }
         catch (Exception ex)
         {
-            log($"Takaro Valheim could not inspect routed chat packet: {ex.Message}");
+            log($"Takaro Valheim could not inspect routed chat data: {ex.Message}");
         }
         finally
         {
-            package.SetPos(originalPosition);
+            data.m_parameters.SetPos(originalPosition);
+        }
+    }
+
+    private static void LogUndecodedDedicatedChatPacket(ZRoutedRpc.RoutedRPCData data)
+    {
+        if (routedDiagnosticsRemaining <= 0)
+        {
+            return;
+        }
+
+        routedDiagnosticsRemaining--;
+        log($"Takaro Valheim observed undecoded dedicated-server chat candidate hash={data.m_methodHash}, sender={data.m_senderPeerID}, targetPeer={data.m_targetPeerID}, targetZdo={data.m_targetZDO}; not emitting until payload layout is known.");
+        TryLogDedicatedChatCandidate(data, "int+UserInfo+string", package =>
+        {
+            var chatType = package.ReadInt();
+            var userInfo = new UserInfo();
+            userInfo.Deserialize(ref package);
+            var text = package.ReadString();
+            return $"type={chatType}, user='{SafeForLog(userInfo.Name)}'/'{SafeForLog(userInfo.GetDisplayName())}', text='{SafeForLog(text)}', safe={IsSafeChatText(text)}";
+        });
+        TryLogDedicatedChatCandidate(data, "string+string", package =>
+        {
+            var first = package.ReadString();
+            var second = package.ReadString();
+            return $"first='{SafeForLog(first)}', second='{SafeForLog(second)}', secondSafe={IsSafeChatText(second)}";
+        });
+    }
+
+    private static void TryLogDedicatedChatCandidate(ZRoutedRpc.RoutedRPCData data, string shape, Func<ZPackage, string> reader)
+    {
+        var originalPosition = data.m_parameters.GetPos();
+        try
+        {
+            data.m_parameters.SetPos(0);
+            log($"Takaro Valheim dedicated chat candidate {shape}: {reader(data.m_parameters)}.");
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim dedicated chat candidate {shape} failed: {ex.Message}.");
+        }
+        finally
+        {
+            data.m_parameters.SetPos(originalPosition);
         }
     }
 
@@ -227,6 +299,27 @@ internal static class ValheimChatEventBridge
         return PlayerMapper.Find(players, identifier!);
     }
 
+    private static bool TryResolveChatPlayer(long senderId, UserInfo userInfo, out TakaroPlayer player)
+    {
+        if (ContainsUnsafeChatIdentity(userInfo.Name) || ContainsUnsafeChatIdentity(userInfo.GetDisplayName()))
+        {
+            player = null!;
+            return false;
+        }
+
+        var playerId = FirstSafeNonEmpty(userInfo.UserId.ToString(), senderId.ToString());
+        var playerName = FirstSafeNonEmpty(userInfo.Name, userInfo.GetDisplayName(), playerId);
+        if (!IsSafeChatIdentity(playerName) || !IsSafeChatIdentity(playerId))
+        {
+            player = null!;
+            return false;
+        }
+
+        var existing = FindTakaroPlayer(playerId) ?? FindTakaroPlayer(playerName);
+        player = existing ?? PlayerMapper.ToTakaroPlayer(new ValheimPlayer(playerName, playerId, null, null, null));
+        return true;
+    }
+
     private static bool TryMapCharacterToTakaroPlayer(Character? character, out TakaroPlayer? player)
     {
         if (character is null)
@@ -294,6 +387,36 @@ internal static class ValheimChatEventBridge
     private static string FirstNonEmpty(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "unknown";
 
+    private static string FirstSafeNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value) && IsSafeChatIdentity(value!)) ?? "unknown";
+
+    private static bool IsSafeChatText(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value!.Length <= 512
+        && !value.Any(IsUnsafeChatCharacter);
+
+    private static bool IsSafeChatIdentity(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value!.Length <= 128
+        && !value.Any(IsUnsafeChatCharacter);
+
+    private static bool ContainsUnsafeChatIdentity(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && !IsSafeChatIdentity(value);
+
+    private static bool IsUnsafeChatCharacter(char value) =>
+        value == '\0' || value == '\uFFFD' || (char.IsControl(value) && value is not '\t' and not '\r' and not '\n');
+
+    private static string SafeForLog(string? value)
+    {
+        if (value is null)
+        {
+            return "<null>";
+        }
+
+        var sanitized = new string(value.Select(ch => IsUnsafeChatCharacter(ch) ? '?' : ch).Take(80).ToArray());
+        return value.Length > sanitized.Length ? sanitized + "…" : sanitized;
+    }
+
     private static bool Matches(string? value, string? needle) =>
         !string.IsNullOrWhiteSpace(value)
         && !string.IsNullOrWhiteSpace(needle)
@@ -352,10 +475,10 @@ internal static class ValheimChatEventBridge
 [HarmonyPatch(typeof(Chat), "RPC_ChatMessage")]
 internal static class TakaroChatRpcChatMessagePatch
 {
-    private static bool Prefix(long sender, int type, UserInfo userInfo, string text)
+    private static bool Prefix(long sender, Vector3 position, int type, UserInfo userInfo, string text)
     {
         ValheimChatEventBridge.Emit(sender, type, userInfo, text);
-        return !IsDedicatedServer();
+        return true;
     }
 
     private static bool IsDedicatedServer() =>
@@ -368,7 +491,7 @@ internal static class TakaroTalkerRpcSayPatch
     private static bool Prefix(long sender, int ctype, UserInfo user, string text)
     {
         ValheimChatEventBridge.Emit(sender, ctype, user, text);
-        return !IsDedicatedServer();
+        return true;
     }
 
     private static bool IsDedicatedServer() =>
@@ -383,6 +506,18 @@ internal static class TakaroRoutedRpcPatch
         if (ZNet.instance is not null && ZNet.instance.IsDedicated())
         {
             ValheimChatEventBridge.ObserveRoutedRpc(pkg);
+        }
+    }
+}
+
+[HarmonyPatch(typeof(ZRoutedRpc), "RouteRPC")]
+internal static class TakaroRouteRpcPatch
+{
+    private static void Prefix(ZRoutedRpc.RoutedRPCData rpcData)
+    {
+        if (ZNet.instance is not null && ZNet.instance.IsDedicated())
+        {
+            ValheimChatEventBridge.ObserveRoutedRpcData(rpcData);
         }
     }
 }

@@ -107,6 +107,24 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(source, "EmitEntityKilled");
     }
 
+    [TestMethod]
+    public void PluginBridgeDoesNotEmitMalformedChatPayloads()
+    {
+        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+        var emitMethod = SliceMethod(source, "public static void Emit(long senderId", "public static void EmitLog");
+
+        StringAssert.Contains(emitMethod, "IsSafeChatText(text)");
+        StringAssert.Contains(emitMethod, "TryResolveChatPlayer");
+        StringAssert.Contains(source, "ContainsUnsafeChatIdentity(userInfo.Name)");
+        StringAssert.Contains(source, "ContainsUnsafeChatIdentity(userInfo.GetDisplayName())");
+        StringAssert.Contains(source, "Takaro Valheim dropped malformed chat event");
+        StringAssert.Contains(source, "not emitting until payload layout is known");
+        StringAssert.Contains(source, "LogUndecodedDedicatedChatPacket(data);");
+        StringAssert.Contains(source, "Prefix(ZRoutedRpc.RoutedRPCData rpcData)");
+        StringAssert.Contains(source, "ObserveRoutedRpcData(rpcData)");
+        Assert.IsFalse(source.Contains("DedicatedServerSayLikeHashes.Contains(data.m_methodHash)"), "Unknown routed hashes must not be decoded as Say without payload proof.");
+    }
+
     private static string ReadPluginSource(string fileName)
     {
         var sourcePath = Path.GetFullPath(Path.Combine(
