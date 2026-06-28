@@ -78,13 +78,14 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void PluginBridgeRegistersLocationAndDeathRoutedRpc()
+    public void PluginBridgeIsServerSideOnly()
     {
-        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+        var pluginSource = ReadPluginSource("ValheimTakaroPlugin.cs");
+        var bridgeSource = ReadPluginSource("ValheimChatEventBridge.cs");
 
-        StringAssert.Contains(source, "\"TakaroClientLocationSnapshot\"");
-        StringAssert.Contains(source, "\"TakaroPlayerDeath\"");
-        StringAssert.Contains(source, "TrySendLocalLocationSnapshot(force: true)");
+        StringAssert.Contains(pluginSource, "connector is server-side only");
+        Assert.IsFalse(bridgeSource.Contains("TakaroClient", StringComparison.Ordinal), "Valheim connector must not register client-side Takaro RPCs.");
+        Assert.IsFalse(bridgeSource.Contains("ForwardLocal", StringComparison.Ordinal), "Valheim connector must not forward client-side events.");
     }
 
     [TestMethod]
@@ -92,21 +93,36 @@ public sealed class PluginScaffoldContractTests
     {
         var source = ReadPluginSource("ValheimChatEventBridge.cs");
 
-        StringAssert.Contains(source, "TakaroPlayerOnDeathPatch");
-        StringAssert.Contains(source, "EventFactory.PlayerDeath");
         StringAssert.Contains(source, "TakaroCharacterOnDeathPatch");
         StringAssert.Contains(source, "EventFactory.EntityKilled");
     }
 
     [TestMethod]
-    public void PluginBridgeForwardsClientOwnedEntityDeathsToServer()
+    public void PluginBridgeDoesNotForwardClientOwnedEntityDeathsToServer()
     {
         var source = ReadPluginSource("ValheimChatEventBridge.cs");
 
-        StringAssert.Contains(source, "\"TakaroEntityKilled\"");
-        StringAssert.Contains(source, "RPC_TakaroEntityKilled");
-        StringAssert.Contains(source, "ForwardLocalEntityKilled");
-        StringAssert.Contains(source, "InvokeRoutedRPC(\"TakaroEntityKilled\"");
+        Assert.IsFalse(source.Contains("RPC_TakaroEntityKilled", StringComparison.Ordinal), "Valheim connector must not rely on client-side entity kill forwarding.");
+        Assert.IsFalse(source.Contains("ForwardLocalEntityKilled", StringComparison.Ordinal), "Valheim connector must not forward client-side entity kills.");
+        StringAssert.Contains(source, "EmitEntityKilled");
+    }
+
+    [TestMethod]
+    public void PluginBridgeDoesNotEmitMalformedChatPayloads()
+    {
+        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+        var emitMethod = SliceMethod(source, "public static void Emit(long senderId", "public static void EmitLog");
+
+        StringAssert.Contains(emitMethod, "IsSafeChatText(text)");
+        StringAssert.Contains(emitMethod, "TryResolveChatPlayer");
+        StringAssert.Contains(source, "ContainsUnsafeChatIdentity(userInfo.Name)");
+        StringAssert.Contains(source, "ContainsUnsafeChatIdentity(userInfo.GetDisplayName())");
+        StringAssert.Contains(source, "Takaro Valheim dropped malformed chat event");
+        StringAssert.Contains(source, "not emitting until payload layout is known");
+        StringAssert.Contains(source, "LogUndecodedDedicatedChatPacket(data);");
+        StringAssert.Contains(source, "Prefix(ZRoutedRpc.RoutedRPCData rpcData)");
+        StringAssert.Contains(source, "ObserveRoutedRpcData(rpcData)");
+        Assert.IsFalse(source.Contains("DedicatedServerSayLikeHashes.Contains(data.m_methodHash)"), "Unknown routed hashes must not be decoded as Say without payload proof.");
     }
 
     private static string ReadPluginSource(string fileName)
