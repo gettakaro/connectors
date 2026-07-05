@@ -9,7 +9,6 @@ using UnityEngine;
 namespace Takaro.Valheim.Plugin;
 
 [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
-[BepInDependency(Jotunn.Main.ModGuid)]
 public sealed class ValheimTakaroPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.takaro.valheim";
@@ -26,8 +25,14 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
 
         if (!IsDedicatedServerProcess())
         {
-            ValheimChatEventBridge.Initialize(null, Logger.LogInfo);
-            Logger.LogInfo("Takaro Valheim client bridge started.");
+            var commandPrefixes = ParseList(Bind(
+                "Takaro",
+                "clientCommandPrefixes",
+                "$",
+                "Semicolon-separated chat prefixes forwarded from the Valheim client to the Takaro server plugin.").Value);
+
+            ValheimChatEventBridge.InitializeClient(Logger.LogInfo, commandPrefixes);
+            Logger.LogInfo("Takaro Valheim client command bridge started.");
             return;
         }
 
@@ -70,6 +75,11 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
     private ConfigEntry<string> Bind(string section, string key, string defaultValue, string description) =>
         Config.Bind(section, key, defaultValue, description);
 
+    private static IEnumerable<string> ParseList(string value) =>
+        value.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(item => item.Trim())
+            .Where(item => !string.IsNullOrWhiteSpace(item));
+
     private static bool IsDedicatedServerProcess() =>
         Application.isBatchMode
         || Environment.GetCommandLineArgs().Any(arg => arg.IndexOf("valheim_server", StringComparison.OrdinalIgnoreCase) >= 0);
@@ -84,6 +94,6 @@ public sealed class ValheimTakaroPlugin
     public const string PluginVersion = "0.1.0";
 
     public static string BuildMode =>
-        "Reference-free scaffold. Build with EnableValheimPluginBuild=true and Valheim/BepInEx/Jotunn references for the real plugin.";
+        "Reference-free scaffold. Build with EnableValheimPluginBuild=true and Valheim/BepInEx references for the real plugin.";
 }
 #endif

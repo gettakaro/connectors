@@ -78,13 +78,39 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void PluginBridgeRegistersLocationAndDeathRoutedRpc()
+    public void PluginAdapterUsesServerSideGiveItemAndTeleport()
+    {
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
+        var giveItemMethod = SliceMethod(source, "public Task<TakaroActionResult> GiveItemAsync", "public Task<TakaroActionResult> SendMessageAsync");
+        var teleportMethod = SliceMethod(source, "public Task<TakaroActionResult> TeleportPlayerAsync", "public Task<TakaroActionResult> KickPlayerAsync");
+
+        StringAssert.Contains(giveItemMethod, "ItemDrop.DropItem");
+        StringAssert.Contains(giveItemMethod, "TryResolveServerKnownPosition");
+        StringAssert.Contains(giveItemMethod, "SendHudMessage");
+        Assert.IsFalse(giveItemMethod.Contains("\"TakaroGiveItem\"", StringComparison.Ordinal));
+
+        StringAssert.Contains(teleportMethod, "\"RPC_TeleportTo\"");
+        StringAssert.Contains(teleportMethod, "peer.m_characterID");
+        Assert.IsFalse(teleportMethod.Contains("\"TakaroTeleportPlayer\"", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void PluginBridgeOnlyUsesClientBridgeForCommandIngress()
     {
         var source = ReadPluginSource("ValheimChatEventBridge.cs");
 
-        StringAssert.Contains(source, "\"TakaroClientLocationSnapshot\"");
-        StringAssert.Contains(source, "\"TakaroPlayerDeath\"");
-        StringAssert.Contains(source, "TrySendLocalLocationSnapshot(force: true)");
+        StringAssert.Contains(source, "\"TakaroClientChatCommand\"");
+        StringAssert.Contains(source, "ForwardLocalChatCommand");
+        StringAssert.Contains(source, "StartsWithCommandPrefix");
+        StringAssert.Contains(source, "TakaroTalkerSayCommandPatch");
+        StringAssert.Contains(source, "[HarmonyPatch(typeof(Talker), \"Say\")]");
+        StringAssert.Contains(source, "clientStateBridgeEnabled = false");
+
+        Assert.IsFalse(source.Contains("\"TakaroClientChatMessage\"", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("ForwardLocalChat(", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("[HarmonyPatch(typeof(Chat), \"SendText\")]", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("\"TakaroGiveItem\"", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("\"TakaroTeleportPlayer\"", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -107,6 +133,23 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(source, "RPC_TakaroEntityKilled");
         StringAssert.Contains(source, "ForwardLocalEntityKilled");
         StringAssert.Contains(source, "InvokeRoutedRPC(\"TakaroEntityKilled\"");
+    }
+
+    [TestMethod]
+    public void PluginEntrypointDoesNotRequireJotunnForOptionalClientCommandBridge()
+    {
+        var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
+        var project = ReadPluginSource("Takaro.Valheim.Plugin.csproj");
+
+        Assert.IsFalse(entrypoint.Contains("BepInDependency(Jotunn.Main.ModGuid)", StringComparison.Ordinal));
+        Assert.IsFalse(entrypoint.Contains("Jotunn", StringComparison.Ordinal));
+        Assert.IsFalse(project.Contains("<Reference Include=\"Jotunn\">", StringComparison.Ordinal));
+        Assert.IsFalse(project.Contains("JotunnReferencePath", StringComparison.Ordinal));
+
+        StringAssert.Contains(entrypoint, "clientCommandPrefixes");
+        StringAssert.Contains(entrypoint, "ValheimChatEventBridge.InitializeClient");
+        StringAssert.Contains(entrypoint, "Takaro Valheim client command bridge started.");
+        Assert.IsFalse(entrypoint.Contains("ValheimChatEventBridge.Initialize(null, Logger.LogInfo);", StringComparison.Ordinal));
     }
 
     private static string ReadPluginSource(string fileName)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the Valheim connector at <version> and packages the BepInEx plugin DLLs
-# into <out-dir>/takaro-valheim-plugin.zip. Requires Valheim, BepInEx, and Jotunn
+# into <out-dir>/takaro-valheim-plugin.zip. Requires Valheim and BepInEx
 # reference assemblies; run ./scripts/setup-environment.sh first for local defaults.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -11,19 +11,17 @@ OUT_DIR="${2:?usage: build-release.sh <version> <out-dir>}"
 DATA_DIR="${VALHEIM_DATA_DIR:-_data}"
 VALHEIM_REFERENCE_PATH="${VALHEIM_REFERENCE_PATH:-${DATA_DIR}/server/valheim_server_Data/Managed}"
 BEPINEX_REFERENCE_PATH="${BEPINEX_REFERENCE_PATH:-${DATA_DIR}/deps/bepinex/BepInExPack_Valheim/BepInEx/core}"
-JOTUNN_REFERENCE_PATH="${JOTUNN_REFERENCE_PATH:-${DATA_DIR}/deps/jotunn/plugins}"
 
-for path in "$VALHEIM_REFERENCE_PATH" "$BEPINEX_REFERENCE_PATH" "$JOTUNN_REFERENCE_PATH"; do
+for path in "$VALHEIM_REFERENCE_PATH" "$BEPINEX_REFERENCE_PATH"; do
   [ -d "$path" ] || {
     echo "Missing reference path: $path" >&2
-    echo "Run valheim/scripts/setup-environment.sh or set VALHEIM_REFERENCE_PATH, BEPINEX_REFERENCE_PATH, and JOTUNN_REFERENCE_PATH." >&2
+    echo "Run valheim/scripts/setup-environment.sh or set VALHEIM_REFERENCE_PATH and BEPINEX_REFERENCE_PATH." >&2
     exit 1
   }
 done
 
 VALHEIM_REFERENCE_PATH="$(realpath "$VALHEIM_REFERENCE_PATH")"
 BEPINEX_REFERENCE_PATH="$(realpath "$BEPINEX_REFERENCE_PATH")"
-JOTUNN_REFERENCE_PATH="$(realpath "$JOTUNN_REFERENCE_PATH")"
 
 mkdir -p "$OUT_DIR"
 echo "Building Valheim connector v${VERSION}..."
@@ -41,20 +39,18 @@ dotnet publish src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj \
   -o "$PUBLISH_DIR" \
   -p:EnableValheimPluginBuild=true \
   -p:BepInExReferencePath="$BEPINEX_REFERENCE_PATH" \
-  -p:JotunnReferencePath="$JOTUNN_REFERENCE_PATH" \
   -p:ValheimReferencePath="$VALHEIM_REFERENCE_PATH"
 
 PLUGIN_DIR="$STAGE/TakaroValheim"
 mkdir -p "$PLUGIN_DIR"
 cp "$PUBLISH_DIR"/*.dll "$PLUGIN_DIR/"
 
-# The game server already provides Valheim, Unity, BepInEx, Harmony, and Jotunn
+# The game server already provides Valheim, Unity, BepInEx, and Harmony
 # assemblies. Do not bundle those host/reference DLLs, but keep NuGet runtime
 # dependencies such as System.Text.Json that are required on .NET Framework 4.7.2.
 rm -f \
   "$PLUGIN_DIR/0Harmony.dll" \
   "$PLUGIN_DIR/BepInEx.dll" \
-  "$PLUGIN_DIR/Jotunn.dll" \
   "$PLUGIN_DIR/assembly_valheim.dll" \
   "$PLUGIN_DIR/assembly_utils.dll" \
   "$PLUGIN_DIR/Splatform.dll" \
@@ -65,10 +61,15 @@ cat > "$PLUGIN_DIR/README.txt" << EOF
 Takaro Valheim Connector ${VERSION}
 
 Install:
-1. Install BepInExPack Valheim and Jotunn on the Valheim dedicated server.
+1. Install BepInExPack Valheim on the Valheim dedicated server.
 2. Copy this folder into BepInEx/plugins/TakaroValheim.
 3. Start the server once, then configure BepInEx/config/com.takaro.valheim.cfg.
 4. Set registrationToken to the token from your Takaro game server connector setup.
+
+Optional client command bridge:
+- Copy this same folder into the Valheim client BepInEx/plugins/TakaroValheim directory.
+- The client side only forwards configured command prefixes, default $, to the server plugin.
+- It does not connect directly to Takaro and does not forward inventory, location, death, or general chat state.
 
 Do not commit live registration tokens.
 EOF

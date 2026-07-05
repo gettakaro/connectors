@@ -31,10 +31,6 @@
       <HintPath>$(BepInExReferencePath)\BepInEx.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="Jotunn">
-      <HintPath>$(JotunnReferencePath)\Jotunn.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
     <Reference Include="assembly_valheim">
       <HintPath>$(ValheimReferencePath)\assembly_valheim.dll</HintPath>
       <Private>false</Private>

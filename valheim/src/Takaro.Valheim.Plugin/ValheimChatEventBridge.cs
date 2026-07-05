@@ -11,9 +11,11 @@ internal static class ValheimChatEventBridge
 {
     private static readonly int ChatMessageHash = "ChatMessage".GetStableHashCode();
     private static readonly int SayHash = "Say".GetStableHashCode();
+    private static readonly int OnDeathHash = "OnDeath".GetStableHashCode();
     private static readonly object Sync = new();
     private static readonly Dictionary<string, DateTimeOffset> RecentEvents = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, DateTimeOffset> RecentEntityDeaths = new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, DateTimeOffset> RecentPlayerDeaths = new(StringComparer.Ordinal);
     private static readonly InventorySnapshotCache InventorySnapshots = new();
     private static readonly LocationSnapshotCache LocationSnapshots = new();
     private static readonly System.Reflection.FieldInfo? LastHitField = AccessTools.Field(typeof(Character), "m_lastHit");
@@ -21,6 +23,9 @@ internal static class ValheimChatEventBridge
     private static ZRoutedRpc? registeredRpc;
     private static TakaroWebSocketRunner? runner;
     private static Action<string> log = _ => { };
+    private static string[] clientCommandPrefixes = ["$"];
+    private static bool clientCommandBridgeEnabled;
+    private static bool clientStateBridgeEnabled;
     private static DateTimeOffset nextInventorySnapshotAt = DateTimeOffset.MinValue;
     private static DateTimeOffset nextLocationSnapshotAt = DateTimeOffset.MinValue;
 
@@ -28,17 +33,32 @@ internal static class ValheimChatEventBridge
     {
         runner = activeRunner;
         log = logger ?? (_ => { });
-        log($"Takaro Valheim chat hash diagnostics: ChatMessage={ChatMessageHash}, Say={SayHash}.");
+        clientCommandBridgeEnabled = false;
+        clientStateBridgeEnabled = false;
+        log($"Takaro Valheim chat hash diagnostics: ChatMessage={ChatMessageHash}, Say={SayHash}, OnDeath={OnDeathHash}.");
+    }
+
+    public static void InitializeClient(Action<string>? logger, IEnumerable<string>? commandPrefixes)
+    {
+        runner = null;
+        log = logger ?? (_ => { });
+        clientCommandPrefixes = NormalizeCommandPrefixes(commandPrefixes).ToArray();
+        clientCommandBridgeEnabled = true;
+        clientStateBridgeEnabled = false;
+        log($"Takaro Valheim client command bridge ready for prefix(es): {string.Join(", ", clientCommandPrefixes)}.");
     }
 
     public static void Shutdown()
     {
         runner = null;
         registeredRpc = null;
+        clientCommandBridgeEnabled = false;
+        clientStateBridgeEnabled = false;
         lock (Sync)
         {
             RecentEvents.Clear();
             RecentEntityDeaths.Clear();
+            RecentPlayerDeaths.Clear();
         }
     }
 
@@ -51,28 +71,13 @@ internal static class ValheimChatEventBridge
         }
 
         registeredRpc = routedRpc;
-        if (IsDedicatedServer())
-        {
-            routedRpc.Register<int, string>("TakaroClientChatMessage", RPC_TakaroClientChatMessage);
-            routedRpc.Register<string>("TakaroClientInventorySnapshot", RPC_TakaroClientInventorySnapshot);
-            routedRpc.Register<string>("TakaroClientLocationSnapshot", RPC_TakaroClientLocationSnapshot);
-            routedRpc.Register<string>("TakaroPlayerDeath", RPC_TakaroPlayerDeath);
-            routedRpc.Register<string>("TakaroEntityKilled", RPC_TakaroEntityKilled);
-            log("Takaro Valheim registered server chat, inventory, location, death, and entity-kill bridge RPCs.");
-        }
-        else
-        {
-            routedRpc.Register<string>("TakaroServerMessage", RPC_TakaroServerMessage);
-            routedRpc.Register<string, int, string>("TakaroGiveItem", RPC_TakaroGiveItem);
-            routedRpc.Register<float, float, float>("TakaroTeleportPlayer", RPC_TakaroTeleportPlayer);
-            log("Takaro Valheim registered client message bridge RPC.");
-        }
-
         if (!IsDedicatedServer())
         {
-            TrySendLocalInventorySnapshot(force: true);
-            TrySendLocalLocationSnapshot(force: true);
+            return;
         }
+
+        routedRpc.Register<int, string>("TakaroClientChatCommand", RPC_TakaroClientChatCommand);
+        log("Takaro Valheim server-side RPC observer ready.");
     }
 
     public static void Emit(long senderId, int chatType, UserInfo userInfo, string text)
@@ -116,24 +121,6 @@ internal static class ValheimChatEventBridge
             failureLogPrefix: "Takaro Valheim log event send failed");
     }
 
-    public static void ForwardLocalChat(Talker.Type type, string text)
-    {
-        if (IsDedicatedServer() || string.IsNullOrWhiteSpace(text) || ZRoutedRpc.instance is null)
-        {
-            return;
-        }
-
-        try
-        {
-            ZRoutedRpc.instance.InvokeRoutedRPC("TakaroClientChatMessage", (int)type, text);
-            log($"Takaro Valheim forwarded local chat to server: channel={ChannelName((int)type)}, msgLength={text.Length}.");
-        }
-        catch (Exception ex)
-        {
-            log($"Takaro Valheim local chat forward failed: {ex.Message}");
-        }
-    }
-
     public static bool TryGetInventorySnapshot(string identifier, out IReadOnlyList<TakaroInventoryItem> items) =>
         InventorySnapshots.TryGet(identifier, out items);
 
@@ -172,6 +159,13 @@ internal static class ValheimChatEventBridge
                 return;
             }
 
+            if (data.m_methodHash == OnDeathHash)
+            {
+                log($"Takaro Valheim observed routed OnDeath packet: sender={data.m_senderPeerID}, targetPeer={data.m_targetPeerID}, targetZdo={data.m_targetZDO}.");
+                EmitPlayerDeathFromRoutedRpc(data.m_senderPeerID, data.m_targetZDO);
+                return;
+            }
+
             if (routedDiagnosticsRemaining > 0)
             {
                 routedDiagnosticsRemaining--;
@@ -186,18 +180,6 @@ internal static class ValheimChatEventBridge
         {
             package.SetPos(originalPosition);
         }
-    }
-
-    private static void RPC_TakaroClientChatMessage(long sender, int chatType, string text)
-    {
-        if (!IsDedicatedServer())
-        {
-            return;
-        }
-
-        var userInfo = ResolveUserInfo(sender);
-        log($"Takaro Valheim received bridged client chat: sender={sender}, player={userInfo.Name}, channel={ChannelName(chatType)}, msgLength={text.Length}.");
-        Emit(sender, chatType, userInfo, text);
     }
 
     private static void RPC_TakaroClientInventorySnapshot(long sender, string inventoryJson)
@@ -231,6 +213,18 @@ internal static class ValheimChatEventBridge
         {
             log($"Takaro Valheim inventory snapshot receive failed: {ex.Message}");
         }
+    }
+
+    private static void RPC_TakaroClientChatCommand(long sender, int chatType, string text)
+    {
+        if (!IsDedicatedServer() || string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        var userInfo = ResolveUserInfo(sender);
+        log($"Takaro Valheim client command received: sender={sender}, msgLength={text.Length}.");
+        Emit(sender, chatType, userInfo, text);
     }
 
     private static void RPC_TakaroClientLocationSnapshot(long sender, string locationJson)
@@ -353,81 +347,6 @@ internal static class ValheimChatEventBridge
         }
     }
 
-    private static void RPC_TakaroServerMessage(long sender, string text)
-    {
-        try
-        {
-            Chat.instance?.AddString("Takaro", text, Talker.Type.Normal);
-            MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, $"Takaro: {text}");
-            MessageHud.instance?.ShowMessage(MessageHud.MessageType.TopLeft, $"Takaro: {text}");
-            log($"Takaro Valheim displayed server message from bridge: sender={sender}, msgLength={text.Length}.");
-        }
-        catch (Exception ex)
-        {
-            log($"Takaro Valheim client message display failed: {ex.Message}");
-        }
-    }
-
-    private static void RPC_TakaroGiveItem(long sender, string itemCode, int amount, string quality)
-    {
-        try
-        {
-            var player = Player.m_localPlayer;
-            if (player is null)
-            {
-                log($"Takaro Valheim giveItem failed: no local player. sender={sender}, item={itemCode}, amount={amount}.");
-                return;
-            }
-
-            var itemPrefab = ObjectDB.instance?.GetItemPrefab(itemCode);
-            if (itemPrefab is null)
-            {
-                log($"Takaro Valheim giveItem failed: item not found. sender={sender}, item={itemCode}, amount={amount}.");
-                player.Message(MessageHud.MessageType.Center, $"Takaro item not found: {itemCode}");
-                return;
-            }
-
-            var qualityLevel = ParseQuality(quality);
-            var added = player.GetInventory().AddItem(itemCode, Math.Max(1, amount), qualityLevel, 0, 0L, "Takaro", pickedUp: true);
-            if (added is null)
-            {
-                log($"Takaro Valheim giveItem failed: inventory full. sender={sender}, item={itemCode}, amount={amount}.");
-                player.Message(MessageHud.MessageType.Center, $"Takaro could not give {itemCode}: inventory full");
-                return;
-            }
-
-            player.Message(MessageHud.MessageType.TopLeft, $"Takaro gave {amount} x {DisplayItemName(itemPrefab, itemCode)}");
-            log($"Takaro Valheim giveItem applied locally: sender={sender}, item={itemCode}, amount={amount}, quality={qualityLevel}.");
-            TrySendLocalInventorySnapshot(force: true);
-        }
-        catch (Exception ex)
-        {
-            log($"Takaro Valheim giveItem client RPC failed: {ex.Message}");
-        }
-    }
-
-    private static void RPC_TakaroTeleportPlayer(long sender, float x, float y, float z)
-    {
-        try
-        {
-            var player = Player.m_localPlayer;
-            if (player is null)
-            {
-                log($"Takaro Valheim teleportPlayer failed: no local player. sender={sender}, x={x}, y={y}, z={z}.");
-                return;
-            }
-
-            var queued = player.TeleportTo(new Vector3(x, y, z), Quaternion.identity, distantTeleport: true);
-            player.Message(MessageHud.MessageType.TopLeft, queued ? "Takaro teleport queued" : "Takaro teleport could not start");
-            log($"Takaro Valheim teleportPlayer applied locally: sender={sender}, x={x}, y={y}, z={z}, queued={queued}.");
-            TrySendLocalLocationSnapshot(force: true);
-        }
-        catch (Exception ex)
-        {
-            log($"Takaro Valheim teleportPlayer client RPC failed: {ex.Message}");
-        }
-    }
-
     private static async Task SendAsync(TakaroWebSocketRunner activeRunner, object evt)
     {
         await SendGameEventAsync(
@@ -461,7 +380,7 @@ internal static class ValheimChatEventBridge
 
     internal static void TrySendLocalInventorySnapshot(bool force = false)
     {
-        if (IsDedicatedServer() || ZRoutedRpc.instance is null)
+        if (IsDedicatedServer() || !clientStateBridgeEnabled || ZRoutedRpc.instance is null)
         {
             return;
         }
@@ -504,7 +423,7 @@ internal static class ValheimChatEventBridge
 
     internal static void TrySendLocalLocationSnapshot(bool force = false)
     {
-        if (IsDedicatedServer() || ZRoutedRpc.instance is null)
+        if (IsDedicatedServer() || !clientStateBridgeEnabled || ZRoutedRpc.instance is null)
         {
             return;
         }
@@ -538,7 +457,7 @@ internal static class ValheimChatEventBridge
 
     internal static void ForwardLocalPlayerDeath(Player player)
     {
-        if (IsDedicatedServer() || ZRoutedRpc.instance is null || Player.m_localPlayer != player)
+        if (IsDedicatedServer() || !clientStateBridgeEnabled || ZRoutedRpc.instance is null || Player.m_localPlayer != player)
         {
             return;
         }
@@ -568,6 +487,7 @@ internal static class ValheimChatEventBridge
     internal static void ForwardLocalEntityKilled(Character character)
     {
         if (IsDedicatedServer()
+            || !clientStateBridgeEnabled
             || ZRoutedRpc.instance is null
             || character is Player
             || character.GetComponent<Player>() != null
@@ -601,6 +521,27 @@ internal static class ValheimChatEventBridge
         catch (Exception ex)
         {
             log($"Takaro Valheim local entity kill forward failed: {ex.Message}");
+        }
+    }
+
+    internal static void ForwardLocalChatCommand(Talker.Type type, string text)
+    {
+        if (IsDedicatedServer()
+            || !clientCommandBridgeEnabled
+            || ZRoutedRpc.instance is null
+            || !StartsWithCommandPrefix(text))
+        {
+            return;
+        }
+
+        try
+        {
+            ZRoutedRpc.instance.InvokeRoutedRPC("TakaroClientChatCommand", (int)type, text);
+            log($"Takaro Valheim forwarded local command chat to server: type={type}, msgLength={text.Length}.");
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim local command chat forward failed: {ex.Message}");
         }
     }
 
@@ -645,6 +586,94 @@ internal static class ValheimChatEventBridge
         {
             log($"Takaro Valheim entity death emit failed: {ex.Message}");
             EmitLog("error", $"Entity death emit failed: {ex.Message}");
+        }
+    }
+
+    internal static void EmitPlayerDeathFromServer(Player player)
+    {
+        if (!IsDedicatedServer() || !ShouldEmitPlayerDeath(player))
+        {
+            return;
+        }
+
+        var activeRunner = runner;
+        if (activeRunner is null || !TryMapCharacterToTakaroPlayer(player, out var takaroPlayer) || takaroPlayer is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var position = player.transform.position;
+            var hit = GetLastHit(player);
+            var attacker = TryMapCharacterToTakaroPlayer(hit?.GetAttacker(), out var mappedAttacker)
+                ? mappedAttacker
+                : null;
+            var evt = EventFactory.PlayerDeath(
+                takaroPlayer,
+                DateTimeOffset.UtcNow,
+                new TakaroPosition(position.x, position.y, position.z, "valheim"),
+                attacker,
+                hit is null ? null : hit.m_skill.ToString());
+
+            _ = SendGameEventAsync(
+                activeRunner,
+                "player-death",
+                evt,
+                $"Takaro Valheim server-side player-death event sent for {takaroPlayer.Name} ({takaroPlayer.GameId}).",
+                "Takaro Valheim server-side player-death event send failed");
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim server-side player-death emit failed: {ex.Message}");
+            EmitLog("error", $"Player death emit failed: {ex.Message}");
+        }
+    }
+
+    internal static void EmitPlayerDeathFromRoutedRpc(long senderPeerId, ZDOID targetZdo)
+    {
+        if (!IsDedicatedServer() || targetZdo.IsNone())
+        {
+            return;
+        }
+
+        if (!TryMapPlayerZdoToTakaroPlayer(targetZdo, senderPeerId, out var takaroPlayer, out var position) || takaroPlayer is null)
+        {
+            log($"Takaro Valheim could not map routed OnDeath target to player: sender={senderPeerId}, targetZdo={targetZdo}.");
+            return;
+        }
+
+        if (!ShouldEmitPlayerDeath(targetZdo.ToString()))
+        {
+            return;
+        }
+
+        var activeRunner = runner;
+        if (activeRunner is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var evt = EventFactory.PlayerDeath(
+                takaroPlayer,
+                DateTimeOffset.UtcNow,
+                position,
+                attacker: null,
+                weapon: null);
+
+            _ = SendGameEventAsync(
+                activeRunner,
+                "player-death",
+                evt,
+                $"Takaro Valheim routed player-death event sent for {takaroPlayer.Name} ({takaroPlayer.GameId}).",
+                "Takaro Valheim routed player-death event send failed");
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim routed player-death emit failed: {ex.Message}");
+            EmitLog("error", $"Routed player death emit failed: {ex.Message}");
         }
     }
 
@@ -719,6 +748,61 @@ internal static class ValheimChatEventBridge
         return player is not null;
     }
 
+    private static bool TryMapPlayerZdoToTakaroPlayer(ZDOID characterId, long senderPeerId, out TakaroPlayer? player, out TakaroPosition position)
+    {
+        player = null;
+        position = new TakaroPosition(0, 0, 0, "valheim");
+
+        var znet = ZNet.instance;
+        if (znet is null)
+        {
+            return false;
+        }
+
+        var playerInfo = default(ZNet.PlayerInfo);
+        var foundPlayerInfo = false;
+        foreach (var candidate in znet.GetPlayerList())
+        {
+            if (!candidate.m_characterID.Equals(characterId))
+            {
+                continue;
+            }
+
+            playerInfo = candidate;
+            foundPlayerInfo = true;
+            break;
+        }
+
+        if (!foundPlayerInfo)
+        {
+            return false;
+        }
+
+        var peer = znet.GetPeer(senderPeerId)
+            ?? znet.GetPeers().FirstOrDefault(candidate =>
+                candidate.m_characterID.Equals(characterId)
+                || Matches(candidate.m_playerName, playerInfo.m_name)
+                || Matches(candidate.m_playerName, playerInfo.m_serverAssignedDisplayName));
+
+        var rawPosition = Vector3.zero;
+        if (peer is not null && peer.IsReady() && peer.m_refPos != Vector3.zero)
+        {
+            rawPosition = peer.m_refPos;
+        }
+        else if (playerInfo.m_publicPosition)
+        {
+            rawPosition = playerInfo.m_position;
+        }
+        else
+        {
+            rawPosition = ZDOMan.instance?.GetZDO(characterId)?.GetPosition() ?? Vector3.zero;
+        }
+
+        player = ToTakaroPlayer(playerInfo);
+        position = new TakaroPosition(rawPosition.x, rawPosition.y, rawPosition.z, "valheim");
+        return true;
+    }
+
     private static TakaroPlayer ToTakaroPlayer(ZNet.PlayerInfo player)
     {
         var playerId = FirstNonEmpty(player.m_userInfo.m_id.ToString(), player.m_characterID.ToString());
@@ -765,26 +849,25 @@ internal static class ValheimChatEventBridge
     private static string? FirstNonEmptyOrNull(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
+    private static IEnumerable<string> NormalizeCommandPrefixes(IEnumerable<string>? prefixes)
+    {
+        var normalized = (prefixes ?? ["$"])
+            .Select(prefix => prefix.Trim())
+            .Where(prefix => !string.IsNullOrWhiteSpace(prefix))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return normalized.Length == 0 ? ["$"] : normalized;
+    }
+
+    private static bool StartsWithCommandPrefix(string? text) =>
+        !string.IsNullOrWhiteSpace(text)
+        && clientCommandPrefixes.Any(prefix => text!.StartsWith(prefix, StringComparison.Ordinal));
+
     private static bool Matches(string? value, string? needle) =>
         !string.IsNullOrWhiteSpace(value)
         && !string.IsNullOrWhiteSpace(needle)
         && value!.Equals(needle, StringComparison.OrdinalIgnoreCase);
-
-    private static int ParseQuality(string quality) =>
-        int.TryParse(quality, out var parsed) && parsed > 0 ? parsed : 1;
-
-    private static string DisplayItemName(GameObject itemPrefab, string fallback)
-    {
-        var itemDrop = itemPrefab.GetComponent<ItemDrop>();
-        if (itemDrop is null)
-        {
-            return fallback;
-        }
-
-        var rawName = itemDrop.m_itemData.m_shared.m_name;
-        var displayName = string.IsNullOrWhiteSpace(rawName) ? fallback : rawName.Trim().Trim('$');
-        return string.IsNullOrWhiteSpace(displayName) ? fallback : displayName;
-    }
 
     private static string DisplayName(string? rawName, string fallback)
     {
@@ -827,6 +910,37 @@ internal static class ValheimChatEventBridge
             }
 
             RecentEntityDeaths[key] = now;
+            return true;
+        }
+    }
+
+    private static bool ShouldEmitPlayerDeath(Player player)
+    {
+        var zdoId = player.GetZDOID();
+        var key = zdoId.IsNone()
+            ? $"{player.GetPlayerName()}|{player.transform.position.x:F1}|{player.transform.position.y:F1}|{player.transform.position.z:F1}"
+            : zdoId.ToString();
+
+        return ShouldEmitPlayerDeath(key);
+    }
+
+    private static bool ShouldEmitPlayerDeath(string key)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        lock (Sync)
+        {
+            foreach (var staleKey in RecentPlayerDeaths.Where(entry => now - entry.Value > TimeSpan.FromSeconds(5)).Select(entry => entry.Key).ToArray())
+            {
+                RecentPlayerDeaths.Remove(staleKey);
+            }
+
+            if (RecentPlayerDeaths.ContainsKey(key))
+            {
+                return false;
+            }
+
+            RecentPlayerDeaths[key] = now;
             return true;
         }
     }
@@ -887,6 +1001,13 @@ internal static class TakaroChatRpcChatMessagePatch
         ZNet.instance is not null && ZNet.instance.IsDedicated();
 }
 
+[HarmonyPatch(typeof(Talker), "Say")]
+internal static class TakaroTalkerSayCommandPatch
+{
+    private static void Postfix(Talker.Type type, string text) =>
+        ValheimChatEventBridge.ForwardLocalChatCommand(type, text);
+}
+
 [HarmonyPatch(typeof(Talker), "RPC_Say")]
 internal static class TakaroTalkerRpcSayPatch
 {
@@ -912,13 +1033,6 @@ internal static class TakaroRoutedRpcPatch
     }
 }
 
-[HarmonyPatch(typeof(Chat), "SendText")]
-internal static class TakaroChatSendTextPatch
-{
-    private static void Postfix(Talker.Type type, string text) =>
-        ValheimChatEventBridge.ForwardLocalChat(type, text);
-}
-
 [HarmonyPatch(typeof(Player), "Update")]
 internal static class TakaroPlayerUpdatePatch
 {
@@ -937,6 +1051,13 @@ internal static class TakaroPlayerOnDeathPatch
 {
     private static void Postfix(Player __instance) =>
         ValheimChatEventBridge.ForwardLocalPlayerDeath(__instance);
+}
+
+[HarmonyPatch(typeof(Player), "RPC_OnDeath")]
+internal static class TakaroPlayerRpcOnDeathPatch
+{
+    private static void Postfix(Player __instance) =>
+        ValheimChatEventBridge.EmitPlayerDeathFromServer(__instance);
 }
 
 [HarmonyPatch(typeof(Character), "OnDeath")]
