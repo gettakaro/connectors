@@ -71,6 +71,7 @@ function loadRcon(): RconConfig {
     port: process.env.TAKARO_CONAN_RCON_PORT,
     password: process.env.TAKARO_CONAN_RCON_PASSWORD,
     timeoutMs: process.env.TAKARO_CONAN_RCON_TIMEOUT_MS,
+    commandGapMs: process.env.TAKARO_CONAN_RCON_COMMAND_GAP_MS,
   };
 
   if (envConfig.host && envConfig.port && envConfig.password) {
@@ -79,6 +80,7 @@ function loadRcon(): RconConfig {
       port: parseNumber(envConfig.port, 25575),
       password: envConfig.password,
       timeoutMs: parseNumber(envConfig.timeoutMs, 5000),
+      commandGapMs: parseNumber(envConfig.commandGapMs, 1000),
     };
   }
 

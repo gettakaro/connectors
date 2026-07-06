@@ -6,6 +6,7 @@ import { HealthServer } from './health/server.js';
 import { logger } from './logger.js';
 import { LogTailer } from './logs/logTailer.js';
 import { ModCommandBridge } from './mod/commandBridge.js';
+import { validateStrictModEvent } from './mod/strictEventValidation.js';
 import { RconCommandQueue } from './rcon/commandQueue.js';
 import { sendRconCommand } from './rcon/client.js';
 import { loadConanItemCatalog } from './conan/itemCatalog.js';
@@ -22,12 +23,14 @@ async function main(): Promise<void> {
   logger.info(`Conan save DB: ${config.databasePath ? 'configured' : 'not configured'}`);
   logger.info(`Conan item catalog: ${config.itemCatalogPath ? 'configured' : 'built-in seed only'}`);
   logger.info(`Health: http://127.0.0.1:${config.httpPort}/health`);
+  logger.info(`Mod source attribution required: ${config.requireModSourceAttribution}`);
 
-  const takaro = new TakaroWsClient(config.takaroWsUrl, {
-    identityToken: config.identityToken,
+  const identifyPayload = {
+    identityToken: config.identityToken ?? config.serverName,
     registrationToken: config.registrationToken,
     name: config.serverName,
-  });
+  };
+  const takaro = new TakaroWsClient(config.takaroWsUrl, identifyPayload);
 
   const rconQueue = new RconCommandQueue((command) =>
     sendRconCommand({
@@ -37,7 +40,7 @@ async function main(): Promise<void> {
       command,
       timeoutMs: config.rcon.timeoutMs,
     }),
-    300,
+    config.rcon.commandGapMs,
   );
 
   const emit = (type: GameEventType, data: unknown): void => {
@@ -45,12 +48,17 @@ async function main(): Promise<void> {
     takaro.sendGameEvent(type, data);
   };
 
+  let adapter: ConanAdapter;
   const modBridge = new ModCommandBridge({
+    requireSourceAttribution: config.requireModSourceAttribution,
+    validateGameEvent: config.requireModSourceAttribution
+      ? async (type, data) => validateStrictModEvent(type, data, () => adapter.getKnownPlayersForEvents())
+      : undefined,
     emitGameEvent: (type, data) => emit(type, data),
   });
   const itemCatalog = loadConanItemCatalog(config.itemCatalogPath);
   const saveDb = new ConanSaveDbReader(config.databasePath, itemCatalog);
-  const adapter = new ConanAdapter((command) => rconQueue.run(command), modBridge, saveDb, itemCatalog);
+  adapter = new ConanAdapter((command) => rconQueue.run(command), modBridge, saveDb, itemCatalog);
 
   const playerPoller = new PlayerPoller(
     () => adapter.getPlayers(),
@@ -73,9 +81,10 @@ async function main(): Promise<void> {
     : [];
 
   const health = new HealthServer(config.httpPort, () => ({
-    ok: true,
+    ok: takaro.identified() && !takaro.getLastIdentifyError(),
     takaroIdentified: takaro.identified(),
     gameServerId: takaro.getGameServerId(),
+    takaroIdentifyError: takaro.getLastIdentifyError(),
     rconConfigured: Boolean(config.rcon.host && config.rcon.port && config.rcon.password),
     logTailers: logTailers.length,
     modBridge: modBridge.status(),

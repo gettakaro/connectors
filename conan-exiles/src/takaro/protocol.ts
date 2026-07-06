@@ -57,7 +57,7 @@ export interface WsMessage {
 }
 
 export interface IdentifyPayload {
-  identityToken: string;
+  identityToken?: string;
   registrationToken: string;
   name: string;
 }

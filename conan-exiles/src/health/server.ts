@@ -4,6 +4,7 @@ export interface HealthStatus {
   ok: boolean;
   takaroIdentified: boolean;
   gameServerId: string | null;
+  takaroIdentifyError?: unknown;
   rconConfigured: boolean;
   logTailers: number;
   modBridge?: unknown;

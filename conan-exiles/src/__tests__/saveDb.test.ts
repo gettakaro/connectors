@@ -18,8 +18,8 @@ test('reads Conan player position, inventory, item templates, and actor classes 
       create table actor_position (class text, map text, id bigint, x double precision, y double precision, z double precision, sx double precision, sy double precision, sz double precision, rx double precision, ry double precision, rz double precision, rw double precision);
       create table item_inventory (item_id bigint, owner_id bigint, inv_type bigint, template_id bigint, data blob);
     `);
-    db.prepare('insert into account values (?, ?, ?, ?)').run(1, 'A-USER', 1, '76561198000000001');
-    db.prepare('insert into characters values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run('1', 109, 'TestExile', 9, null, null, 1, '', 1, '', 1);
+    db.prepare('insert into account values (?, ?, ?, ?)').run(1, 'A-USER', 1, '76561198000735875');
+    db.prepare('insert into characters values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run('1', 109, 'werwerwer', 9, null, null, 1, '', 1, '', 1);
     db.prepare('insert into actor_position values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run('BasePlayerChar_C', 'ConanSandbox', 109, 10, 20, 30, 1, 1, 1, 0, 0, 0, 1);
     db.prepare('insert into actor_position values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run('/Game/Foo/BP_Wolf.BP_Wolf_C', 'ConanSandbox', 200, 1, 2, 3, 1, 1, 1, 0, 0, 0, 1);
     db.prepare('insert into item_inventory values (?, ?, ?, ?, ?)').run(3, 109, 1, 10001, Buffer.from('/Script/ConanSandbox.GameItemResource'));
@@ -36,13 +36,13 @@ test('reads Conan player position, inventory, item templates, and actor classes 
 
   const reader = new ConanSaveDbReader(dbPath);
 
-  assert.deepEqual(reader.getPlayerLocation('steam:76561198000000001'), {
+  assert.deepEqual(reader.getPlayerLocation('steam:76561198000735875'), {
     x: 10,
     y: 20,
     z: 30,
     dimension: 'ConanSandbox',
   });
-  assert.deepEqual(reader.getPlayerInventory('TestExile'), [
+  assert.deepEqual(reader.getPlayerInventory('werwerwer'), [
     {
       code: 'Stone',
       name: 'Stone',
@@ -77,7 +77,7 @@ test('reads Conan player position, inventory, item templates, and actor classes 
   assert.deepEqual(reader.listPlayerLocations(), [
     {
       code: 'player:109',
-      name: 'TestExile',
+      name: 'werwerwer',
       x: 10,
       y: 20,
       z: 30,
@@ -98,8 +98,8 @@ test('uses item catalog names and codes for save DB inventory and listItems', ()
       create table characters (playerId text, id bigint, char_name text, level integer, rank integer, guild bigint, isAlive boolean, killerName text, lastTimeOnline integer, killerId text, lastServerTimeOnline real);
       create table item_inventory (item_id bigint, owner_id bigint, inv_type bigint, template_id bigint, data blob);
     `);
-    db.prepare('insert into account values (?, ?, ?, ?)').run(1, 'A-USER', 1, '76561198000000001');
-    db.prepare('insert into characters values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run('1', 109, 'TestExile', 9, null, null, 1, '', 1, '', 1);
+    db.prepare('insert into account values (?, ?, ?, ?)').run(1, 'A-USER', 1, '76561198000735875');
+    db.prepare('insert into characters values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run('1', 109, 'werwerwer', 9, null, null, 1, '', 1, '', 1);
     db.prepare('insert into item_inventory values (?, ?, ?, ?, ?)').run(1, 109, 1, 41001, Buffer.from('/Script/ConanSandbox.GameItemResource'));
   } finally {
     db.close();
@@ -115,7 +115,7 @@ test('uses item catalog names and codes for save DB inventory and listItems', ()
   );
   const reader = new ConanSaveDbReader(dbPath, catalog);
 
-  assert.deepEqual(reader.getPlayerInventory('TestExile'), [
+  assert.deepEqual(reader.getPlayerInventory('werwerwer'), [
     {
       code: 'Iron_Ore',
       name: 'Iron Ore',

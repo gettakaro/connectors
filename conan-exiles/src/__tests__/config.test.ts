@@ -24,18 +24,20 @@ rconPassword=secret
   const config = loadConfig(file);
 
   assert.equal(config.registrationToken, 'reg-token');
-  assert.equal(config.identityToken, 'Conan Test');
+  assert.equal(config.identityToken, null);
   assert.equal(config.serverName, 'Conan Test');
   assert.equal(config.takaroWsUrl, 'wss://connect.takaro.io/');
   assert.equal(config.rcon.host, '127.0.0.1');
   assert.equal(config.rcon.port, 25575);
   assert.equal(config.rcon.password, 'secret');
+  assert.equal(config.rcon.commandGapMs, 1000);
   assert.equal(config.httpPort, 3010);
   assert.equal(config.databasePath, null);
   assert.equal(config.itemCatalogPath, null);
   assert.equal(config.pollIntervalMs, 10000);
   assert.equal(config.enableLogEvents, true);
   assert.deepEqual(config.logFiles, []);
+  assert.equal(config.requireModSourceAttribution, false);
 
   rmSync(path.dirname(file), { recursive: true, force: true });
 });
@@ -50,27 +52,32 @@ takaroWsUrl=ws://localhost:8080
 rconHost=192.168.1.5
 rconPort=26000
 rconPassword=secret=value
+rconCommandGapMs=0
 httpPort=4000
 pollIntervalMs=5000
 enableLogEvents=false
 logFiles=/tmp/ConanSandbox.log, /tmp/RconCommandLog.log
 databasePath=/tmp/game_0.db
 itemCatalogPath=/tmp/conan-items.json
+requireModSourceAttribution=true
 `);
 
   const config = loadConfig(file);
 
   assert.equal(config.identityToken, 'identity-token');
+  assert.equal(config.registrationToken, 'reg-token');
   assert.equal(config.takaroWsUrl, 'ws://localhost:8080');
   assert.equal(config.rcon.host, '192.168.1.5');
   assert.equal(config.rcon.port, 26000);
   assert.equal(config.rcon.password, 'secret=value');
+  assert.equal(config.rcon.commandGapMs, 0);
   assert.equal(config.httpPort, 4000);
   assert.equal(config.pollIntervalMs, 5000);
   assert.equal(config.enableLogEvents, false);
   assert.deepEqual(config.logFiles, ['/tmp/ConanSandbox.log', '/tmp/RconCommandLog.log']);
   assert.equal(config.databasePath, '/tmp/game_0.db');
   assert.equal(config.itemCatalogPath, '/tmp/conan-items.json');
+  assert.equal(config.requireModSourceAttribution, true);
 
   rmSync(path.dirname(file), { recursive: true, force: true });
 });
@@ -79,6 +86,20 @@ test('throws when required config is missing', () => {
   const file = withConfig('registrationToken=reg-token\n');
 
   assert.throws(() => loadConfig(file), /Missing required config: serverName/);
+
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('requires registration token for Takaro identify', () => {
+  const file = withConfig(`
+identityToken=identity-token
+serverName=Conan Test
+rconHost=127.0.0.1
+rconPort=25575
+rconPassword=secret
+`);
+
+  assert.throws(() => loadConfig(file), /Missing required config: registrationToken/);
 
   rmSync(path.dirname(file), { recursive: true, force: true });
 });
