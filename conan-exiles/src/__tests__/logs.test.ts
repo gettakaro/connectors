@@ -44,7 +44,7 @@ test('parses best-effort chat lines as chat-message and log events', () => {
 
 test('parses live Conan ChatWindow lines as chat-message events', () => {
   assert.deepEqual(
-    parseLogLine('[2026.06.20-21.06.10:804][802]ChatWindow: Character TestExile (uid 109, player 76561198000000001) said: hey'),
+    parseLogLine('[2026.06.20-21.06.10:804][802]ChatWindow: Character werwerwer (uid 109, player 76561198000735875) said: hey'),
     [
       {
         type: 'chat-message',
@@ -53,17 +53,17 @@ test('parses live Conan ChatWindow lines as chat-message events', () => {
           channel: 'global',
           timestamp: '2026-06-20T21:06:10.804Z',
           player: {
-            gameId: '76561198000000001',
-            name: 'TestExile',
-            steamId: '76561198000000001',
-            platformId: 'steam:76561198000000001',
+            gameId: '76561198000735875',
+            name: 'werwerwer',
+            steamId: '76561198000735875',
+            platformId: 'steam:76561198000735875',
           },
         },
       },
       {
         type: 'log',
         data: {
-          msg: '[2026.06.20-21.06.10:804][802]ChatWindow: Character TestExile (uid 109, player 76561198000000001) said: hey',
+          msg: '[2026.06.20-21.06.10:804][802]ChatWindow: Character werwerwer (uid 109, player 76561198000735875) said: hey',
           timestamp: '2026-06-20T21:06:10.804Z',
         },
       },
@@ -73,7 +73,7 @@ test('parses live Conan ChatWindow lines as chat-message events', () => {
 
 test('parses Enhanced Pippi ChatWindow lines as chat-message events', () => {
   assert.deepEqual(
-    parseLogLine('[2026.06.21-07.53.06:817][Pippi]ChatWindow: Character TestExile said: hey back'),
+    parseLogLine('[2026.06.21-07.53.06:817][Pippi]ChatWindow: Character werwerwer said: hey back'),
     [
       {
         type: 'chat-message',
@@ -82,15 +82,15 @@ test('parses Enhanced Pippi ChatWindow lines as chat-message events', () => {
           channel: 'global',
           timestamp: '2026-06-21T07:53:06.817Z',
           player: {
-            gameId: 'TestExile',
-            name: 'TestExile',
+            gameId: 'werwerwer',
+            name: 'werwerwer',
           },
         },
       },
       {
         type: 'log',
         data: {
-          msg: '[2026.06.21-07.53.06:817][Pippi]ChatWindow: Character TestExile said: hey back',
+          msg: '[2026.06.21-07.53.06:817][Pippi]ChatWindow: Character werwerwer said: hey back',
           timestamp: '2026-06-21T07:53:06.817Z',
         },
       },
@@ -100,15 +100,15 @@ test('parses Enhanced Pippi ChatWindow lines as chat-message events', () => {
 
 test('parses Conan player death lines as player-death events', () => {
   const line =
-    '[2026.06.21-08.34.22:555][987]ConanSandbox: Warning: KillCharacterWithRagdoll_Implementation. KillerNameInput: TestExile CauseOfDeath: Thirst. IsThrall: 0 Name: BasePlayerChar_C_2147234785 CharacterName: TestExile';
+    '[2026.06.21-08.34.22:555][987]ConanSandbox: Warning: KillCharacterWithRagdoll_Implementation. KillerNameInput: werwerwer CauseOfDeath: Thirst. IsThrall: 0 Name: BasePlayerChar_C_2147234785 CharacterName: werwerwer';
 
   assert.deepEqual(parseLogLine(line), [
     {
       type: 'player-death',
       data: {
         player: {
-          gameId: 'TestExile',
-          name: 'TestExile',
+          gameId: 'werwerwer',
+          name: 'werwerwer',
         },
         msg: 'Thirst',
         timestamp: '2026-06-21T08:34:22.555Z',
@@ -126,15 +126,15 @@ test('parses Conan player death lines as player-death events', () => {
 
 test('parses real Conan suicide lines as player-death without attacker', () => {
   const line =
-    '[2026.06.21-18.30.16:203][437]ConanSandbox: Warning: KillCharacterWithRagdoll_Implementation. KillerNameInput: yourself CauseOfDeath: Suicide. IsThrall: 0 Name: BasePlayerChar_C_2147164501 CharacterName: TestExile';
+    '[2026.06.21-18.30.16:203][437]ConanSandbox: Warning: KillCharacterWithRagdoll_Implementation. KillerNameInput: yourself CauseOfDeath: Suicide. IsThrall: 0 Name: BasePlayerChar_C_2147164501 CharacterName: werwerwer';
 
   assert.deepEqual(parseLogLine(line), [
     {
       type: 'player-death',
       data: {
         player: {
-          gameId: 'TestExile',
-          name: 'TestExile',
+          gameId: 'werwerwer',
+          name: 'werwerwer',
         },
         msg: 'Suicide',
         timestamp: '2026-06-21T18:30:16.203Z',
@@ -182,20 +182,20 @@ test('treats Conan NPC-vs-NPC death lines as log-only events', () => {
 
 test('parses Conan player-attributed NPC death lines as entity-killed events', () => {
   const line =
-    '[2026.06.21-08.52.16:841][950]ConanSandbox: Warning: KillCharacterWithRagdoll_Implementation. KillerNameInput: TestExile CauseOfDeath: Fatality. IsThrall: 0 Name: BP_NPC_Wildlife_Spider_Green_C_2147226326 CharacterName: Spider';
+    '[2026.06.21-08.52.16:841][950]ConanSandbox: Warning: KillCharacterWithRagdoll_Implementation. KillerNameInput: werwerwer CauseOfDeath: Fatality. IsThrall: 0 Name: BP_NPC_Wildlife_Spider_Green_C_2147226326 CharacterName: Spider';
 
   assert.deepEqual(parseLogLine(line), [
     {
       type: 'entity-killed',
       data: {
         player: {
-          gameId: 'TestExile',
-          name: 'TestExile',
+          gameId: 'werwerwer',
+          name: 'werwerwer',
         },
         entity: 'Spider',
         weapon: 'Fatality',
         timestamp: '2026-06-21T08:52:16.841Z',
-        msg: 'TestExile killed Spider',
+        msg: 'werwerwer killed Spider',
       },
     },
     {
@@ -210,12 +210,12 @@ test('parses Conan player-attributed NPC death lines as entity-killed events', (
 
 test('treats Enhanced Pippi duplicate channel lines as log-only events', () => {
   assert.deepEqual(
-    parseLogLine('[2026.06.21-08.36.10:686][Pippi]PippiChat: TestExile said in channel [Global]: hey'),
+    parseLogLine('[2026.06.21-08.36.10:686][Pippi]PippiChat: werwerwer said in channel [Global]: hey'),
     [
       {
         type: 'log',
         data: {
-          msg: '[2026.06.21-08.36.10:686][Pippi]PippiChat: TestExile said in channel [Global]: hey',
+          msg: '[2026.06.21-08.36.10:686][Pippi]PippiChat: werwerwer said in channel [Global]: hey',
           timestamp: '2026-06-21T08:36:10.686Z',
         },
       },

@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "goal": "Takaro-controlled Conan Exiles server/client mod path replacing Pippi chat bridge with every supportable Takaro connector feature validated",
+  "statuses": {
+    "connector-live-supported": "Feature is supported by the Conan sidecar/RCON/save-DB/log runtime and can remain outside the TakaroConan chat mod.",
+    "takaro-mod-required": "Feature must be re-proven through the TakaroConan mod because current proof depends on Pippi or the host poller.",
+    "schema-fallback": "Feature intentionally returns a Takaro DTO-compatible fallback because Conan does not expose the underlying data.",
+    "unsupported": "Feature is intentionally unsupported with a structured error.",
+    "approval-gated-live-supported": "Feature is supported but destructive or disruptive; proof requires explicit approval or disposable server state."
+  },
+  "actions": {
+    "testReachability": {
+      "goalStatus": "connector-live-supported",
+      "finalProofGate": "safe live MCP/API verifier",
+      "reason": "RCON help verifies reachability and is independent of the Pippi chat renderer."
+    },
+    "getPlayers": {
+      "goalStatus": "connector-live-supported",
+      "finalProofGate": "safe live MCP/API verifier",
+      "reason": "RCON listplayers is independent of the Pippi chat renderer."
+    },
+    "getPlayer": {
+      "goalStatus": "connector-live-supported",
+      "finalProofGate": "source tests plus MCP player lookup when player is online",
+      "reason": "Single-player lookup derives from the same RCON identity source as getPlayers."
+    },
+    "getPlayerLocation": {
+      "goalStatus": "connector-live-supported",
+      "finalProofGate": "source tests plus optional live MCP player location when player is online",
+      "reason": "Save DB location reads are independent of the chat renderer."
+    },
+    "getPlayerInventory": {
+      "goalStatus": "connector-live-supported",
+      "finalProofGate": "source tests plus optional live MCP inventory when player save data is available",
+      "reason": "Save DB inventory reads are independent of the chat renderer."
+    },
+    "listItems": {
+      "goalStatus": "connector-live-supported",
+      "finalProofGate": "source tests and save DB live verifier",
+      "reason": "Item discovery reads configured Conan save DB."
+    },
+    "listEntities": {
+      "goalStatus": "connector-live-supported",
+      "finalProofGate": "source tests and save DB live verifier",
+      "reason": "Entity discovery reads configured Conan save DB."
+    },
+    "listLocations": {
+      "goalStatus": "connector-live-supported",
+      "finalProofGate": "source tests and save DB live verifier",
+      "reason": "Location discovery reads configured Conan save DB."
+    },
+    "listBans": {
+      "goalStatus": "connector-live-supported",
+      "finalProofGate": "safe live MCP/API verifier",
+      "reason": "RCON listbans is independent of the Pippi chat renderer."
+    },
+    "getMapInfo": {
+      "goalStatus": "schema-fallback",
+      "finalProofGate": "safe live MCP/API verifier",
+      "reason": "Conan map metadata is not exposed; disabled map info is the intentional Takaro DTO-compatible fallback."
+    },
+    "getMapTile": {
+      "goalStatus": "unsupported",
+      "finalProofGate": "safe live MCP/API verifier",
+      "reason": "Conan map tile rendering is not exposed by the current runtime."
+    },
+    "executeConsoleCommand": {
+      "goalStatus": "connector-live-supported",
+      "finalProofGate": "safe live MCP/API verifier",
+      "reason": "Raw command execution routes to RCON and is independent of the chat renderer."
+    },
+    "sendMessage": {
+      "goalStatus": "takaro-mod-required",
+      "finalProofGate": "TakaroConan live mod gate",
+      "reason": "Current live proof uses Pippi server/directmessage through the host poller; final proof must show TakaroConan renders server-wide and targeted normal chat without Pippi."
+    },
+    "giveItem": {
+      "goalStatus": "approval-gated-live-supported",
+      "finalProofGate": "explicit approval or disposable server mutation smoke",
+      "reason": "Conan supports SpawnItem through RCON con relay, but it mutates player inventory."
+    },
+    "teleportPlayer": {
+      "goalStatus": "approval-gated-live-supported",
+      "finalProofGate": "explicit approval or disposable server mutation smoke",
+      "reason": "Conan supports TeleportPlayer through RCON con relay, but it mutates player location."
+    },
+    "kickPlayer": {
+      "goalStatus": "approval-gated-live-supported",
+      "finalProofGate": "explicit approval or disposable server moderation smoke",
+      "reason": "Conan supports kickplayer, but it disconnects a real player."
+    },
+    "banPlayer": {
+      "goalStatus": "approval-gated-live-supported",
+      "finalProofGate": "explicit approval or disposable server moderation smoke",
+      "reason": "Conan supports banplayer, but it changes moderation state."
+    },
+    "unbanPlayer": {
+      "goalStatus": "approval-gated-live-supported",
+      "finalProofGate": "explicit approval or disposable server moderation smoke",
+      "reason": "Conan supports unbanplayer and cleanup was live-tested, but it changes moderation state."
+    },
+    "shutdown": {
+      "goalStatus": "approval-gated-live-supported",
+      "finalProofGate": "explicit approval or disposable server shutdown smoke",
+      "reason": "Conan supports shutdown over RCON, but it stops the dedicated server."
+    }
+  },
+  "events": {
+    "player-connected": {
+      "goalStatus": "connector-live-supported",
+      "finalProofGate": "safe live MCP/API verifier plus log/event loop",
+      "reason": "Player polling from RCON listplayers is independent of the Pippi chat renderer."
+    },
+    "player-disconnected": {
+      "goalStatus": "connector-live-supported",
+      "finalProofGate": "safe live MCP/API verifier plus reconnect/disconnect smoke",
+      "reason": "Disconnect deltas derive from RCON listplayers."
+    },
+    "chat-message": {
+      "goalStatus": "takaro-mod-required",
+      "finalProofGate": "TakaroConan live mod gate",
+      "reason": "Current live proof uses Pippi ChatWindow logs; final proof must show /mod/event source TakaroConan with stable player identity."
+    },
+    "player-death": {
+      "goalStatus": "connector-live-supported",
+      "finalProofGate": "source tests plus log tailer evidence",
+      "reason": "Conan death lines are parsed from server logs independent of the chat renderer."
+    },
+    "entity-killed": {
+      "goalStatus": "connector-live-supported",
+      "finalProofGate": "source tests plus log tailer evidence",
+      "reason": "Conan entity-killed lines are parsed from server logs independent of the chat renderer."
+    },
+    "log": {
+      "goalStatus": "connector-live-supported",
+      "finalProofGate": "safe live MCP/API verifier plus log tailer evidence",
+      "reason": "Raw log events are produced by configured log tailers."
+    }
+  }
+}

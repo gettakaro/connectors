@@ -1,0 +1,74 @@
+{
+  "artifact": "TakaroConan.pak",
+  "sha256": "<fill-after-build>",
+  "sizeBytes": 0,
+  "builtAt": "<UTC timestamp>",
+  "buildHost": "<machine or CI name>",
+  "buildReport": "BUILD_REPORT.md",
+  "devkit": {
+    "distribution": "Conan Exiles DevKit",
+    "branch": "<live/testlive/enhanced>",
+    "version": "<fill-from-DevKit>",
+    "installPath": "<redacted path is acceptable>"
+  },
+  "source": {
+    "repo": "gettakaro/connectors",
+    "commit": "<git commit or workspace snapshot>",
+    "handoffPath": "conan-exiles/mod/TakaroConanBridge/devkit-handoff",
+    "modName": "TakaroConan",
+    "implementationPlan": "IMPLEMENTATION_PLAN.md",
+    "sourceContract": "BUILD_SOURCE_CONTRACT.json",
+    "sourceEvidence": "SOURCE_EVIDENCE.md"
+  },
+  "sourceEvidence": {
+    "report": "SOURCE_EVIDENCE.md",
+    "sourceContract": "BUILD_SOURCE_CONTRACT.json",
+    "devkitSourceReturned": true,
+    "modControllerDocumented": true,
+    "serverBridgeAssetDocumented": true,
+    "clientMarkerAssetDocumented": true,
+    "serverAuthorityPollingDocumented": true,
+    "explicitSourceAttributionDocumented": true,
+    "noUserAgentSourceAttributionDocumented": true,
+    "stableInboundIdentityDocumented": true,
+    "bridgeContractSmokeDocumented": true,
+    "clientMarkerNoPollingDocumented": true,
+    "noPippiReferencesDocumented": true
+  },
+  "assets": {
+    "modController": "Content/Mods/TakaroConan/TakaroConan_ModController",
+    "bridgeComponent": "Content/Mods/TakaroConan/BP_TakaroBridgeComponent",
+    "clientMarkerComponent": "Content/Mods/TakaroConan/BP_TakaroClientMarkerComponent"
+  },
+  "runtimeContract": {
+    "sourceName": "TakaroConan",
+    "bridgeBaseUrl": "http://127.0.0.1:3010",
+    "serverAuthorityPollingOnly": true,
+    "clientMarkerNoSecrets": true,
+    "clientMarkerDoesNotPoll": true,
+    "explicitSourceAttributionRequired": true,
+    "userAgentSourceAttributionAllowed": false,
+    "inboundChatRequiresStableIdentity": true,
+    "pollEndpoint": "/mod/poll",
+    "resultEndpoint": "/mod/result",
+    "eventEndpoint": "/mod/event",
+    "supportsServerWideChat": true,
+    "supportsTargetedChat": true,
+    "supportsInboundChat": true,
+    "usesPippiRconChatCommands": false
+  },
+  "security": {
+    "containsTakaroCloudToken": false,
+    "containsRegistrationToken": false,
+    "containsRconPassword": false,
+    "containsPippiAssets": false
+  },
+  "validation": {
+    "compiledInDevKit": false,
+    "cookedInDevKit": false,
+    "validateTakaroPakPassed": false,
+    "installedOnServer": false,
+    "installedOnClient": false,
+    "liveAuditPassed": false
+  }
+}

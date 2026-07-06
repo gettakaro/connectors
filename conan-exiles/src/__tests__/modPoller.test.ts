@@ -11,7 +11,7 @@ test('mod command poller renders sendMessage commands and posts success results'
       action: 'sendMessage',
       args: {
         message: 'hello from Takaro',
-        recipient: '76561198000000001',
+        recipient: '76561198000735875',
         senderNameOverride: 'Takaro',
       },
     },
@@ -32,7 +32,7 @@ test('mod command poller renders sendMessage commands and posts success results'
     {
       requestId: 'req-1',
       message: 'hello from Takaro',
-      recipient: '76561198000000001',
+      recipient: '76561198000735875',
       senderNameOverride: 'Takaro',
     },
   ]);
@@ -129,27 +129,27 @@ test('Pippi RCON renderer maps recipient platform IDs to character names', async
       if (command === 'listplayers') {
         return [
           'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name',
-          '  0 | TestExile | Tester#1000 | A-TESTUSER | 76561198000000001 |         STEAM',
+          '  0 | werwerwer | Limon#67642 | A-1HFFLI28NN | 76561198000735875 |         STEAM',
         ].join('\n');
       }
-      return 'Sent message "restart in 5" to player "TestExile"';
+      return 'Sent message "restart in 5" to player "werwerwer"';
     },
   });
 
   const result = await renderer.sendMessage({
     requestId: 'req-pippi-target',
     message: 'restart in 5',
-    recipient: 'steam:76561198000000001',
+    recipient: 'steam:76561198000735875',
     senderNameOverride: null,
   });
 
-  assert.deepEqual(commands, ['listplayers', 'directmessage Takaro TestExile restart in 5']);
+  assert.deepEqual(commands, ['listplayers', 'directmessage Takaro werwerwer restart in 5']);
   assert.deepEqual(result, {
     success: true,
     sent: true,
     mod: 'pippi',
-    commands: ['directmessage Takaro TestExile restart in 5'],
-    responses: ['Sent message "restart in 5" to player "TestExile"'],
+    commands: ['directmessage Takaro werwerwer restart in 5'],
+    responses: ['Sent message "restart in 5" to player "werwerwer"'],
   });
 });
 

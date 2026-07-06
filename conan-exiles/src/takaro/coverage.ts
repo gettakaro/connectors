@@ -1,5 +1,8 @@
 import type { GameEventType, GameServerAction } from './protocol.js';
 
+// These statuses describe connector-boundary capability support, not final
+// TakaroConan replacement proof. The final server/client mod goal is tracked
+// separately in takaro-mod/API_GOAL_MATRIX.json and the live receipt gates.
 export type ActionCoverageStatus = 'live-supported' | 'schema-fallback' | 'unsupported';
 export type EventCoverageStatus = 'live-supported' | 'unsupported';
 
@@ -21,7 +24,7 @@ export const ACTION_COVERAGE: Record<GameServerAction, ActionCoverage> = {
   getPlayer: {
     status: 'live-supported',
     responseShape: 'public Takaro player DTO or null',
-    liveVerification: 'MCP gameserverGetPlayers, then gameserverGetPlayer with a returned gameId',
+    liveVerification: 'npm run verify:live parses RCON listplayers for a concrete candidate because current MCP has no getPlayer wrapper; null path covered by source tests',
     reason: 'Conan listplayers exposes enough identity data for online players.',
   },
   getPlayers: {
@@ -33,7 +36,7 @@ export const ACTION_COVERAGE: Record<GameServerAction, ActionCoverage> = {
   getPlayerLocation: {
     status: 'live-supported',
     responseShape: '{ x: number, y: number, z: number, dimension?: string }',
-    liveVerification: 'MCP player location actions read actor_position from configured Conan game_0.db',
+    liveVerification: 'npm run verify:live reads actor_position from configured Conan game_0.db because current MCP has no getPlayerLocation wrapper',
     reason: 'Conan persists character coordinates in the save database actor_position table.',
   },
   testReachability: {
@@ -51,31 +54,31 @@ export const ACTION_COVERAGE: Record<GameServerAction, ActionCoverage> = {
   listBans: {
     status: 'live-supported',
     responseShape: 'Takaro ban DTO array',
-    liveVerification: 'MCP gameserverListBans',
-    reason: 'Conan listbans is available through RCON and empty-server output was live validated.',
+    liveVerification: 'MCP gameserverListBans was live validated for populated and empty ban lists',
+    reason: 'Conan listbans is available through RCON and live QA validated both populated and empty output.',
   },
   listItems: {
     status: 'live-supported',
     responseShape: 'discovered Takaro item DTO array',
-    liveVerification: 'MCP list item actions read the configured item catalog and distinct template_id values from Conan game_0.db item_inventory',
-    reason: 'Conan persists seen item template IDs in the save database item_inventory table; an optional item catalog adds readable names and aliases.',
+    liveVerification: 'npm run verify:live reads distinct template_id values from configured Conan game_0.db item_inventory because current MCP has no listItems wrapper',
+    reason: 'Conan persists seen item template IDs in the save database item_inventory table; friendly names are not exposed.',
   },
   listEntities: {
     status: 'live-supported',
     responseShape: 'discovered Takaro entity DTO array',
-    liveVerification: 'MCP list entity actions read distinct actor classes from configured Conan game_0.db actor_position',
+    liveVerification: 'npm run verify:live reads distinct actor classes from configured Conan game_0.db actor_position because current MCP has no listEntities wrapper',
     reason: 'Conan persists actor classes in the save database actor_position table.',
   },
   listLocations: {
     status: 'live-supported',
     responseShape: 'saved player location DTO array',
-    liveVerification: 'MCP list location actions read character positions from configured Conan game_0.db',
+    liveVerification: 'npm run verify:live reads character positions from configured Conan game_0.db because current MCP has no listLocations wrapper',
     reason: 'Conan persists player locations in the save database actor_position table.',
   },
   getPlayerInventory: {
     status: 'live-supported',
     responseShape: 'Takaro item DTO array with Conan template IDs',
-    liveVerification: 'MCP get inventory actions read item_inventory rows from configured Conan game_0.db',
+    liveVerification: 'npm run verify:live reads item_inventory rows from configured Conan game_0.db because current MCP has no getPlayerInventory wrapper',
     reason: 'Conan persists character inventory rows in the save database item_inventory table.',
   },
   getMapInfo: {
@@ -93,44 +96,44 @@ export const ACTION_COVERAGE: Record<GameServerAction, ActionCoverage> = {
   giveItem: {
     status: 'live-supported',
     responseShape: '{ success: true, rawResult: string }',
-    liveVerification: 'MCP gameserverGiveItem routes to Conan con <online player> SpawnItem <item> <amount>',
+    liveVerification: 'Historical MCP gameserverGiveItem routes to Conan con <online player> SpawnItem <item> <amount>; repeat only with approval or disposable player state',
     reason: 'Conan RCON exposes con <id> <client command>; online players accept SpawnItem through that relay.',
   },
   sendMessage: {
     status: 'live-supported',
     responseShape: 'chat bridge renderer result',
-    liveVerification: 'MCP gameserverSendMessage reaches Enhanced Pippi server/directmessage through the helper',
-    reason: 'The optional helper polls /mod/poll and renders normal in-game chat through Enhanced Pippi.',
+    liveVerification: 'Historical connector proof is Pippi-backed; final TakaroConan goal requires validate-takaro-mod-live.sh with current-marker player-visible proof and no Pippi/RCON renderer',
+    reason: 'The sidecar action is implemented through the /mod/poll bridge; final ownership must be a TakaroConan server+client mod, not Enhanced Pippi.',
   },
   teleportPlayer: {
     status: 'live-supported',
     responseShape: '{ success: true, rawResult: string }',
-    liveVerification: 'MCP gameserverTeleportPlayer routes to Conan con <online player> TeleportPlayer <x> <y> <z>',
+    liveVerification: 'Historical MCP gameserverTeleportPlayer routes to Conan con <online player> TeleportPlayer <x> <y> <z>; repeat only with approval or disposable player state',
     reason: 'Conan RCON exposes con <id> <client command>; online players accept TeleportPlayer through that relay.',
   },
   kickPlayer: {
     status: 'live-supported',
     responseShape: '{ success: true, rawResult: string }',
-    liveVerification: 'MCP gameserverKickPlayer routes to Conan kickplayer after explicit live-test approval',
+    liveVerification: 'Historical MCP gameserverKickPlayer sent RCON kickplayer platformid <steam64> and the player disconnected while listBans stayed empty; repeat only with approval',
     reason: 'Conan RCON exposes kickplayer.',
   },
   banPlayer: {
     status: 'live-supported',
     responseShape: '{ success: true, rawResult: string }',
-    liveVerification: 'RCON help banplayer; avoid live mutation without approval',
+    liveVerification: 'Historical MCP gameserverBanPlayer sent RCON banplayer platformid <steam64> and gameserverListBans returned the banned Steam ID; repeat only with approval and cleanup',
     reason: 'Conan RCON exposes banplayer.',
   },
   unbanPlayer: {
     status: 'live-supported',
     responseShape: '{ success: true, rawResult: string }',
-    liveVerification: 'RCON help unbanplayer; use only against a known test ban',
+    liveVerification: 'Historical MCP cleanup verified Conan requires RCON unbanplayer <steam64>; gameserverListBans returned [] afterward; repeat only with approval',
     reason: 'Conan RCON exposes unbanplayer.',
   },
   shutdown: {
     status: 'live-supported',
     responseShape: '{ success: true, rawResult: string }',
-    liveVerification: 'RCON help shutdown; avoid live shutdown without approval',
-    reason: 'Conan RCON exposes shutdown.',
+    liveVerification: 'Historical MCP gameserverShutdown sends RCON shutdown; Conan exits asynchronously after a delay; repeat only during an approved restart window',
+    reason: 'Conan accepts shutdown over RCON and live QA observed the server log close after the command.',
   },
 };
 
@@ -150,8 +153,8 @@ export const EVENT_COVERAGE: Record<GameEventType, EventCoverage> = {
   'chat-message': {
     status: 'live-supported',
     payloadShape: 'Takaro chat-message payload with player identity when resolvable',
-    liveVerification: 'Live Pippi ChatWindow log advances Takaro chat-message analytics with no validation errors',
-    reason: 'Enhanced Pippi ChatWindow logs plus listplayers enrichment provide inbound chat identity.',
+    liveVerification: 'Historical connector proof is Pippi-log-backed; final TakaroConan goal requires /mod/event chat-message proof with current inbound marker and stable Steam/platform identity',
+    reason: 'The event bridge accepts /mod/event chat-message payloads; final ownership must be a TakaroConan server+client mod, not Enhanced Pippi logs.',
   },
   'player-death': {
     status: 'live-supported',

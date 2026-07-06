@@ -10,20 +10,20 @@ test('enriches Pippi character chat events with the matching online player ident
       channel: 'global',
       timestamp: '2026-06-21T08:38:41.754Z',
       player: {
-        gameId: 'TestExile',
-        name: 'TestExile',
+        gameId: 'werwerwer',
+        name: 'werwerwer',
       },
     },
   };
 
   const enriched = await enrichChatMessageEvent(event, async () => [
     {
-      gameId: '76561198000000001',
-      name: 'Tester#1000',
-      characterName: 'TestExile',
+      gameId: '76561198000735875',
+      name: 'Limon#67642',
+      characterName: 'werwerwer',
       rconId: '0',
-      steamId: '76561198000000001',
-      platformId: 'steam:76561198000000001',
+      steamId: '76561198000735875',
+      platformId: 'steam:76561198000735875',
       online: true,
     },
   ]);
@@ -35,10 +35,10 @@ test('enriches Pippi character chat events with the matching online player ident
       channel: 'global',
       timestamp: '2026-06-21T08:38:41.754Z',
       player: {
-        gameId: '76561198000000001',
-        name: 'Tester#1000',
-        steamId: '76561198000000001',
-        platformId: 'steam:76561198000000001',
+        gameId: '76561198000735875',
+        name: 'Limon#67642',
+        steamId: '76561198000735875',
+        platformId: 'steam:76561198000735875',
       },
     },
   });
@@ -66,8 +66,8 @@ test('enriches player death events with the matching online player identity', as
     type: 'player-death' as const,
     data: {
       player: {
-        gameId: 'TestExile',
-        name: 'TestExile',
+        gameId: 'werwerwer',
+        name: 'werwerwer',
       },
       msg: 'Thirst',
       timestamp: '2026-06-21T08:34:22.555Z',
@@ -76,12 +76,12 @@ test('enriches player death events with the matching online player identity', as
 
   const enriched = await enrichLogEvent(event, async () => [
     {
-      gameId: '76561198000000001',
-      name: 'Tester#1000',
-      characterName: 'TestExile',
+      gameId: '76561198000735875',
+      name: 'Limon#67642',
+      characterName: 'werwerwer',
       rconId: '0',
-      steamId: '76561198000000001',
-      platformId: 'steam:76561198000000001',
+      steamId: '76561198000735875',
+      platformId: 'steam:76561198000735875',
       online: true,
     },
   ]);
@@ -90,10 +90,10 @@ test('enriches player death events with the matching online player identity', as
     type: 'player-death',
     data: {
       player: {
-        gameId: '76561198000000001',
-        name: 'Tester#1000',
-        steamId: '76561198000000001',
-        platformId: 'steam:76561198000000001',
+        gameId: '76561198000735875',
+        name: 'Limon#67642',
+        steamId: '76561198000735875',
+        platformId: 'steam:76561198000735875',
       },
       msg: 'Thirst',
       timestamp: '2026-06-21T08:34:22.555Z',
@@ -106,24 +106,24 @@ test('enriches entity killed events with the matching online player identity', a
     type: 'entity-killed' as const,
     data: {
       player: {
-        gameId: 'TestExile',
-        name: 'TestExile',
+        gameId: 'werwerwer',
+        name: 'werwerwer',
       },
       entity: 'Spider',
       weapon: 'Fatality',
       timestamp: '2026-06-21T08:52:16.841Z',
-      msg: 'TestExile killed Spider',
+      msg: 'werwerwer killed Spider',
     },
   };
 
   const enriched = await enrichLogEvent(event, async () => [
     {
-      gameId: '76561198000000001',
-      name: 'Tester#1000',
-      characterName: 'TestExile',
+      gameId: '76561198000735875',
+      name: 'Limon#67642',
+      characterName: 'werwerwer',
       rconId: '0',
-      steamId: '76561198000000001',
-      platformId: 'steam:76561198000000001',
+      steamId: '76561198000735875',
+      platformId: 'steam:76561198000735875',
       online: true,
     },
   ]);
@@ -132,15 +132,15 @@ test('enriches entity killed events with the matching online player identity', a
     type: 'entity-killed',
     data: {
       player: {
-        gameId: '76561198000000001',
-        name: 'Tester#1000',
-        steamId: '76561198000000001',
-        platformId: 'steam:76561198000000001',
+        gameId: '76561198000735875',
+        name: 'Limon#67642',
+        steamId: '76561198000735875',
+        platformId: 'steam:76561198000735875',
       },
       entity: 'Spider',
       weapon: 'Fatality',
       timestamp: '2026-06-21T08:52:16.841Z',
-      msg: 'TestExile killed Spider',
+      msg: 'werwerwer killed Spider',
     },
   });
 });

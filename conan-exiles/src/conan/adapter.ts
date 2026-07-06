@@ -46,8 +46,13 @@ export class ConanAdapter {
           return { connectable: false, reason: errorMessage(err) };
         }
       }
-      case 'getPlayers':
-        return this.safeArray(async () => (await this.refreshPlayers()).map((player) => publicPlayer(player)));
+      case 'getPlayers': {
+        try {
+          return (await this.refreshPlayers()).map((player) => publicPlayer(player));
+        } catch (err) {
+          throw new Error(`RCON listplayers failed: ${errorMessage(err)}`);
+        }
+      }
       case 'getPlayer':
         return this.getPlayer(args);
       case 'getPlayerLocation':
@@ -73,9 +78,14 @@ export class ConanAdapter {
       case 'banPlayer':
         return this.success(await this.execute(`banplayer ${identifierArgs(args)}${reasonSuffix(args)}`));
       case 'unbanPlayer':
-        return this.success(await this.execute(`unbanplayer ${identifierArgs(args)}`));
-      case 'listBans':
-        return this.safeArray(async () => parseListBans(await this.execute('listbans')));
+        return this.success(await this.execute(`unbanplayer ${unbanIdentifierArg(args)}`));
+      case 'listBans': {
+        try {
+          return parseListBans(await this.execute('listbans'));
+        } catch (err) {
+          throw new Error(`RCON listbans failed: ${errorMessage(err)}`);
+        }
+      }
       case 'shutdown':
         return this.success(await this.execute('shutdown'));
       default:
@@ -400,6 +410,34 @@ function identifierArgs(args: Record<string, unknown>): string {
 
   const name = firstString(records, ['name', 'playerName']);
   if (name) return `name ${quote(name)}`;
+
+  throw new Error('Missing player identifier');
+}
+
+function unbanIdentifierArg(args: Record<string, unknown>): string {
+  const records = identifierRecords(args);
+
+  const platformId = firstString(records, ['platformId']);
+  if (platformId) {
+    const identifier = conanPlatformIdentifier(platformId);
+    requireCleanConsoleToken(identifier);
+    return identifier;
+  }
+
+  const steamId = firstString(records, ['steamId']);
+  if (steamId) {
+    requireCleanConsoleToken(steamId);
+    return steamId;
+  }
+
+  const gameId = firstString(records, ['gameId', 'userId']);
+  if (gameId) {
+    requireCleanConsoleToken(gameId);
+    return gameId;
+  }
+
+  const name = firstString(records, ['name', 'playerName']);
+  if (name) return quote(name);
 
   throw new Error('Missing player identifier');
 }
