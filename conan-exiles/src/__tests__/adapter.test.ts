@@ -22,35 +22,35 @@ test('dispatches getPlayers through listplayers parser', async () => {
 test('strips connector-only character names from Takaro player action responses', async () => {
   const adapter = new ConanAdapter(
     fakeExecutor({
-      listplayers: 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | TestExile | Tester#1000 | A-TESTUSER | 76561198000000001 |         STEAM',
+      listplayers: 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | werwerwer | Limon#67642 | A-1HFFLI28NN | 76561198000735875 |         STEAM',
     }),
   );
 
   assert.deepEqual(await adapter.handleAction('getPlayers', {}), [
     {
-      gameId: '76561198000000001',
-      name: 'Tester#1000',
-      steamId: '76561198000000001',
-      platformId: 'steam:76561198000000001',
+      gameId: '76561198000735875',
+      name: 'Limon#67642',
+      steamId: '76561198000735875',
+      platformId: 'steam:76561198000735875',
       online: true,
     },
   ]);
-  assert.deepEqual(await adapter.handleAction('getPlayer', { gameId: '76561198000000001' }), {
-    gameId: '76561198000000001',
-    name: 'Tester#1000',
-    steamId: '76561198000000001',
-    platformId: 'steam:76561198000000001',
+  assert.deepEqual(await adapter.handleAction('getPlayer', { gameId: '76561198000735875' }), {
+    gameId: '76561198000735875',
+    name: 'Limon#67642',
+    steamId: '76561198000735875',
+    platformId: 'steam:76561198000735875',
     online: true,
   });
 
   assert.deepEqual(await adapter.getPlayers(), [
     {
-      gameId: '76561198000000001',
-      name: 'Tester#1000',
+      gameId: '76561198000735875',
+      name: 'Limon#67642',
       rconId: '0',
-      characterName: 'TestExile',
-      steamId: '76561198000000001',
-      platformId: 'steam:76561198000000001',
+      characterName: 'werwerwer',
+      steamId: '76561198000735875',
+      platformId: 'steam:76561198000735875',
       online: true,
     },
   ]);
@@ -59,7 +59,7 @@ test('strips connector-only character names from Takaro player action responses'
 test('keeps last known players for log event enrichment when Conan listplayers is temporarily empty', async () => {
   const adapter = new ConanAdapter(sequenceExecutor({
     listplayers: [
-      'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | TestExile | Tester#1000 | A-TESTUSER | 76561198000000001 |         STEAM',
+      'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | werwerwer | Limon#67642 | A-1HFFLI28NN | 76561198000735875 |         STEAM',
       'No players connected',
     ],
   }));
@@ -68,12 +68,12 @@ test('keeps last known players for log event enrichment when Conan listplayers i
 
   assert.deepEqual(await adapter.getKnownPlayersForEvents(), [
     {
-      gameId: '76561198000000001',
-      name: 'Tester#1000',
+      gameId: '76561198000735875',
+      name: 'Limon#67642',
       rconId: '0',
-      characterName: 'TestExile',
-      steamId: '76561198000000001',
-      platformId: 'steam:76561198000000001',
+      characterName: 'werwerwer',
+      steamId: '76561198000735875',
+      platformId: 'steam:76561198000735875',
       online: true,
     },
   ]);
@@ -84,13 +84,13 @@ test('routes giveItem through Conan online-player console SpawnItem command', as
   const adapter = new ConanAdapter(async (command) => {
     calls.push(command);
     if (command === 'listplayers') {
-      return 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | TestExile | Tester#1000 | A-TESTUSER | 76561198000000001 |         STEAM';
+      return 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | werwerwer | Limon#67642 | A-1HFFLI28NN | 76561198000735875 |         STEAM';
     }
     return `Successfully executed: ${command}`;
   });
 
   const result = await adapter.handleAction('giveItem', {
-    player: { gameId: '76561198000000001' },
+    player: { gameId: '76561198000735875' },
     name: 'Stone',
     amount: 3,
   });
@@ -113,7 +113,7 @@ test('routes giveItem catalog names and aliases through numeric Conan template i
     async (command) => {
       calls.push(command);
       if (command === 'listplayers') {
-        return 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | TestExile | Tester#1000 | A-TESTUSER | 76561198000000001 |         STEAM';
+        return 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | werwerwer | Limon#67642 | A-1HFFLI28NN | 76561198000735875 |         STEAM';
       }
       return `Successfully executed: ${command}`;
     },
@@ -123,7 +123,7 @@ test('routes giveItem catalog names and aliases through numeric Conan template i
   );
 
   const result = await adapter.handleAction('giveItem', {
-    player: { gameId: '76561198000000001' },
+    player: { gameId: '76561198000735875' },
     name: 'Iron Ore',
     amount: 2,
   });
@@ -146,7 +146,7 @@ test('routes giveItem nested item objects through catalog item codes', async () 
     async (command) => {
       calls.push(command);
       if (command === 'listplayers') {
-        return 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | TestExile | Tester#1000 | A-TESTUSER | 76561198000000001 |         STEAM';
+        return 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | werwerwer | Limon#67642 | A-1HFFLI28NN | 76561198000735875 |         STEAM';
       }
       return `Successfully executed: ${command}`;
     },
@@ -156,7 +156,7 @@ test('routes giveItem nested item objects through catalog item codes', async () 
   );
 
   const result = await adapter.handleAction('giveItem', {
-    player: { gameId: '76561198000000001' },
+    player: { gameId: '76561198000735875' },
     item: { code: '51706', name: 'Abysmal Blade' },
     amount: 2,
   });
@@ -170,13 +170,13 @@ test('routes fallback Conan item labels through numeric Conan template ids', asy
   const adapter = new ConanAdapter(async (command) => {
     calls.push(command);
     if (command === 'listplayers') {
-      return 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | TestExile | Tester#1000 | A-TESTUSER | 76561198000000001 |         STEAM';
+      return 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | werwerwer | Limon#67642 | A-1HFFLI28NN | 76561198000735875 |         STEAM';
     }
     return `Successfully executed: ${command}`;
   });
 
   await adapter.handleAction('giveItem', {
-    player: { gameId: '76561198000000001' },
+    player: { gameId: '76561198000735875' },
     name: 'Conan item 52562',
     amount: 1,
   });
@@ -188,13 +188,13 @@ test('merges Takaro-granted items into inventory until Conan save DB catches up'
   let savedStoneAmount = 2;
   const adapter = new ConanAdapter(async (command) => {
     if (command === 'listplayers') {
-      return 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | TestExile | Tester#1000 | A-TESTUSER | 76561198000000001 |         STEAM';
+      return 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | werwerwer | Limon#67642 | A-1HFFLI28NN | 76561198000735875 |         STEAM';
     }
     return `Successfully executed: ${command}`;
   }, undefined, {
     getPlayerLocation: () => null,
     getPlayerInventory: (identifier: string) =>
-      identifier === 'steam:76561198000000001'
+      identifier === 'steam:76561198000735875'
         ? [{ code: 'Stone', name: 'Stone', amount: savedStoneAmount, quality: '1' }]
         : [],
     listItems: () => [],
@@ -204,8 +204,8 @@ test('merges Takaro-granted items into inventory until Conan save DB catches up'
 
   await adapter.handleAction('giveItem', {
     player: {
-      playerId: '11111111-1111-4111-8111-111111111111',
-      player: { platformId: 'steam:76561198000000001' },
+      playerId: '0515d777-8dc2-48b1-b035-b40dacd762c5',
+      player: { platformId: 'steam:76561198000735875' },
     },
     name: 'Stone',
     amount: 1,
@@ -214,8 +214,8 @@ test('merges Takaro-granted items into inventory until Conan save DB catches up'
   assert.deepEqual(
     await adapter.handleAction('getPlayerInventory', {
       player: {
-        playerId: '11111111-1111-4111-8111-111111111111',
-        player: { platformId: 'steam:76561198000000001' },
+        playerId: '0515d777-8dc2-48b1-b035-b40dacd762c5',
+        player: { platformId: 'steam:76561198000735875' },
       },
     }),
     [
@@ -229,7 +229,7 @@ test('merges Takaro-granted items into inventory until Conan save DB catches up'
   );
 
   savedStoneAmount = 3;
-  assert.deepEqual(await adapter.handleAction('getPlayerInventory', { player: { platformId: 'steam:76561198000000001' } }), [
+  assert.deepEqual(await adapter.handleAction('getPlayerInventory', { player: { platformId: 'steam:76561198000735875' } }), [
     {
       code: 'Stone',
       name: 'Stone',
@@ -245,11 +245,11 @@ test('tries every Takaro player identifier when reading Conan save DB fields', a
   const saveDb = {
     getPlayerLocation: (identifier: string) => {
       locationLookups.push(identifier);
-      return identifier === 'steam:76561198000000001' ? { x: 1, y: 2, z: 3, dimension: 'ConanSandbox' } : null;
+      return identifier === 'steam:76561198000735875' ? { x: 1, y: 2, z: 3, dimension: 'ConanSandbox' } : null;
     },
     getPlayerInventory: (identifier: string) => {
       inventoryLookups.push(identifier);
-      return identifier === 'steam:76561198000000001'
+      return identifier === 'steam:76561198000735875'
         ? [{ code: 'Stone', name: 'Stone', amount: 2, quality: '1' }]
         : [];
     },
@@ -260,9 +260,9 @@ test('tries every Takaro player identifier when reading Conan save DB fields', a
   const adapter = new ConanAdapter(fakeExecutor({}), undefined, saveDb as never);
   const args = {
     player: {
-      playerId: '11111111-1111-4111-8111-111111111111',
+      playerId: '0515d777-8dc2-48b1-b035-b40dacd762c5',
       player: {
-        platformId: 'steam:76561198000000001',
+        platformId: 'steam:76561198000735875',
       },
     },
   };
@@ -276,8 +276,8 @@ test('tries every Takaro player identifier when reading Conan save DB fields', a
   assert.deepEqual(await adapter.handleAction('getPlayerInventory', args), [
     { code: 'Stone', name: 'Stone', amount: 2, quality: '1' },
   ]);
-  assert.deepEqual(locationLookups, ['11111111-1111-4111-8111-111111111111', 'steam:76561198000000001']);
-  assert.deepEqual(inventoryLookups, ['11111111-1111-4111-8111-111111111111', 'steam:76561198000000001']);
+  assert.deepEqual(locationLookups, ['0515d777-8dc2-48b1-b035-b40dacd762c5', 'steam:76561198000735875']);
+  assert.deepEqual(inventoryLookups, ['0515d777-8dc2-48b1-b035-b40dacd762c5', 'steam:76561198000735875']);
 });
 
 test('expands single-player Takaro UUID-only reads to Conan player aliases', async () => {
@@ -287,11 +287,11 @@ test('expands single-player Takaro UUID-only reads to Conan player aliases', asy
   const saveDb = {
     getPlayerLocation: (identifier: string) => {
       locationLookups.push(identifier);
-      return identifier === 'steam:76561198000000001' ? { x: 1, y: 2, z: 3, dimension: 'ConanSandbox' } : null;
+      return identifier === 'steam:76561198000735875' ? { x: 1, y: 2, z: 3, dimension: 'ConanSandbox' } : null;
     },
     getPlayerInventory: (identifier: string) => {
       inventoryLookups.push(identifier);
-      return identifier === 'steam:76561198000000001'
+      return identifier === 'steam:76561198000735875'
         ? [{ code: '52562', name: 'Cimmerian Steel Pauldron', amount: 3, quality: '1' }]
         : [];
     },
@@ -302,11 +302,11 @@ test('expands single-player Takaro UUID-only reads to Conan player aliases', asy
   const adapter = new ConanAdapter(async (command) => {
     calls.push(command);
     if (command === 'listplayers') {
-      return 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | TestExile | Tester#1000 | A-TESTUSER | 76561198000000001 |         STEAM';
+      return 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | werwerwer | Limon#67642 | A-1HFFLI28NN | 76561198000735875 |         STEAM';
     }
     return 'ok';
   }, undefined, saveDb as never);
-  const args = { playerId: '11111111-1111-4111-8111-111111111111' };
+  const args = { playerId: '0515d777-8dc2-48b1-b035-b40dacd762c5' };
 
   assert.deepEqual(await adapter.handleAction('getPlayerLocation', args), {
     x: 1,
@@ -318,8 +318,8 @@ test('expands single-player Takaro UUID-only reads to Conan player aliases', asy
     { code: '52562', name: 'Cimmerian Steel Pauldron', amount: 3, quality: '1' },
   ]);
   assert.deepEqual(calls, ['listplayers', 'listplayers']);
-  assert.deepEqual(locationLookups, ['11111111-1111-4111-8111-111111111111', '76561198000000001', 'steam:76561198000000001']);
-  assert.deepEqual(inventoryLookups, ['11111111-1111-4111-8111-111111111111', '76561198000000001', 'steam:76561198000000001']);
+  assert.deepEqual(locationLookups, ['0515d777-8dc2-48b1-b035-b40dacd762c5', '76561198000735875', 'steam:76561198000735875']);
+  assert.deepEqual(inventoryLookups, ['0515d777-8dc2-48b1-b035-b40dacd762c5', '76561198000735875', 'steam:76561198000735875']);
 });
 
 test('routes teleportPlayer through Conan online-player console TeleportPlayer command', async () => {
@@ -327,13 +327,13 @@ test('routes teleportPlayer through Conan online-player console TeleportPlayer c
   const adapter = new ConanAdapter(async (command) => {
     calls.push(command);
     if (command === 'listplayers') {
-      return 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | TestExile | Tester#1000 | A-TESTUSER | 76561198000000001 |         STEAM';
+      return 'Idx | Char name | Player name |      User ID |       Platform ID | Platform Name\n  0 | werwerwer | Limon#67642 | A-1HFFLI28NN | 76561198000735875 |         STEAM';
     }
     return `Successfully executed: ${command}`;
   });
 
   const result = await adapter.handleAction('teleportPlayer', {
-    player: { platformId: 'steam:76561198000000001' },
+    player: { platformId: 'steam:76561198000735875' },
     x: 1,
     y: 2.5,
     z: -3,
@@ -375,12 +375,12 @@ test('sendMessage routes through Conan chat bridge with recipient identifiers', 
     opts: {
       senderNameOverride: 'Takaro',
       recipient: {
-        steamId: '76561198000000001',
+        steamId: '76561198000735875',
       },
     },
   });
 
-  assert.deepEqual(calls, ['Takaro:76561198000000001:Restart in 5 minutes']);
+  assert.deepEqual(calls, ['Takaro:76561198000735875:Restart in 5 minutes']);
   assert.deepEqual(result, { success: true, sent: true });
 });
 
@@ -398,8 +398,33 @@ test('dispatches moderation commands with identifiers and reasons', async () => 
   assert.deepEqual(calls, [
     'kickplayer platformid 76561198000000001 "rule break"',
     'banplayer platformid 76561198000000002 "spam"',
-    'unbanplayer platformid 76561198000000003',
+    'unbanplayer 76561198000000003',
   ]);
+});
+
+test('routes unbanPlayer through Conan plain platform identifiers', async () => {
+  const calls: string[] = [];
+  const adapter = new ConanAdapter(async (command) => {
+    calls.push(command);
+    return 'Player 76561198000735875 unbanned.';
+  });
+
+  await adapter.handleAction('unbanPlayer', { platformId: 'steam:76561198000735875' });
+
+  assert.deepEqual(calls, ['unbanplayer 76561198000735875']);
+});
+
+test('routes shutdown through Conan RCON shutdown command', async () => {
+  const calls: string[] = [];
+  const adapter = new ConanAdapter(async (command) => {
+    calls.push(command);
+    return 'Server shutdown initiated.';
+  });
+
+  const result = await adapter.handleAction('shutdown', {});
+
+  assert.deepEqual(calls, ['shutdown']);
+  assert.deepEqual(result, { success: true, rawResult: 'Server shutdown initiated.' });
 });
 
 test('strips Takaro platform prefixes before sending Conan platform identifiers', async () => {
@@ -409,9 +434,9 @@ test('strips Takaro platform prefixes before sending Conan platform identifiers'
     return 'ok';
   });
 
-  await adapter.handleAction('banPlayer', { platformId: 'steam:76561198000000001', reason: 'contract test' });
+  await adapter.handleAction('banPlayer', { platformId: 'steam:76561198000735875', reason: 'contract test' });
 
-  assert.deepEqual(calls, ['banplayer platformid 76561198000000001 "contract test"']);
+  assert.deepEqual(calls, ['banplayer platformid 76561198000735875 "contract test"']);
 });
 
 test('uses nested Takaro player platform identifiers for moderation actions', async () => {
@@ -423,16 +448,16 @@ test('uses nested Takaro player platform identifiers for moderation actions', as
 
   await adapter.handleAction('kickPlayer', {
     player: {
-      gameId: '76561198000000001',
-      playerId: '11111111-1111-4111-8111-111111111111',
+      gameId: '76561198000735875',
+      playerId: '0515d777-8dc2-48b1-b035-b40dacd762c5',
       player: {
-        platformId: 'steam:76561198000000001',
+        platformId: 'steam:76561198000735875',
       },
     },
     reason: 'nested player contract test',
   });
 
-  assert.deepEqual(calls, ['kickplayer platformid 76561198000000001 "nested player contract test"']);
+  assert.deepEqual(calls, ['kickplayer platformid 76561198000735875 "nested player contract test"']);
 });
 
 test('returns structured errors for unsupported command-style actions', async () => {
@@ -470,32 +495,32 @@ test('returns Takaro schema-compatible fallbacks for unsupported DTO-constrained
 test('uses Conan save DB reader for player location and inventory actions', async () => {
   const saveDb = {
     getPlayerLocation: (identifier: string) => {
-      assert.equal(identifier, '76561198000000001');
+      assert.equal(identifier, '76561198000735875');
       return { x: 1, y: 2, z: 3, dimension: 'ConanSandbox' };
     },
     getPlayerInventory: (identifier: string) => {
-      assert.equal(identifier, 'steam:76561198000000001');
+      assert.equal(identifier, 'steam:76561198000735875');
       return [{ code: '1001', name: 'Conan item 1001', amount: 1, quality: '1' }];
     },
     listItems: () => [{ code: '1001', name: 'Conan item 1001' }],
     listEntities: () => [{ code: 'BasePlayerChar_C', name: 'BasePlayerChar' }],
-    listPlayerLocations: () => [{ code: 'player:109', name: 'TestExile', x: 1, y: 2, z: 3, dimension: 'ConanSandbox' }],
+    listPlayerLocations: () => [{ code: 'player:109', name: 'werwerwer', x: 1, y: 2, z: 3, dimension: 'ConanSandbox' }],
   };
   const adapter = new ConanAdapter(fakeExecutor({}), undefined, saveDb as never);
 
-  assert.deepEqual(await adapter.handleAction('getPlayerLocation', { player: { gameId: '76561198000000001' } }), {
+  assert.deepEqual(await adapter.handleAction('getPlayerLocation', { player: { gameId: '76561198000735875' } }), {
     x: 1,
     y: 2,
     z: 3,
     dimension: 'ConanSandbox',
   });
-  assert.deepEqual(await adapter.handleAction('getPlayerInventory', { player: { platformId: 'steam:76561198000000001' } }), [
+  assert.deepEqual(await adapter.handleAction('getPlayerInventory', { player: { platformId: 'steam:76561198000735875' } }), [
     { code: '1001', name: 'Conan item 1001', amount: 1, quality: '1' },
   ]);
   assert.deepEqual(await adapter.handleAction('listItems', {}), [{ code: '1001', name: 'Conan item 1001' }]);
   assert.deepEqual(await adapter.handleAction('listEntities', {}), [{ code: 'BasePlayerChar_C', name: 'BasePlayerChar' }]);
   assert.deepEqual(await adapter.handleAction('listLocations', {}), [
-    { code: 'player:109', name: 'TestExile', x: 1, y: 2, z: 3, dimension: 'ConanSandbox' },
+    { code: 'player:109', name: 'werwerwer', x: 1, y: 2, z: 3, dimension: 'ConanSandbox' },
   ]);
 });
 
@@ -525,13 +550,13 @@ test('returns unreachable DTO when reachability RCON check fails', async () => {
   });
 });
 
-test('returns empty player and ban arrays when RCON list commands fail', async () => {
+test('rejects RCON-backed list actions when list commands fail', async () => {
   const adapter = new ConanAdapter(async () => {
     throw new Error('RCON connection closed before response');
   });
 
-  assert.deepEqual(await adapter.handleAction('getPlayers', {}), []);
-  assert.deepEqual(await adapter.handleAction('listBans', {}), []);
+  await assert.rejects(() => adapter.handleAction('getPlayers', {}), /RCON listplayers failed: RCON connection closed before response/);
+  await assert.rejects(() => adapter.handleAction('listBans', {}), /RCON listbans failed: RCON connection closed before response/);
 });
 
 function fakeExecutor(responses: Record<string, string>): (command: string) => Promise<string> {

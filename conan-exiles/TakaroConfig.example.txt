@@ -8,11 +8,15 @@ takaroWsUrl=wss://connect.takaro.io/
 rconHost=127.0.0.1
 rconPort=25575
 rconPassword=replace-with-rcon-password
+rconCommandGapMs=1000
 
 # Bridge runtime
 httpPort=3010
 pollIntervalMs=10000
 enableLogEvents=true
+# Final TakaroConan mod validation should enable this so /mod/poll,
+# /mod/result, and /mod/event must identify their source explicitly.
+requireModSourceAttribution=false
 
 # Optional read-only Conan save database. Enables real getPlayerLocation,
 # getPlayerInventory, listItems, listEntities, and listLocations reads.

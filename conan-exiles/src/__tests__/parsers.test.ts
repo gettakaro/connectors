@@ -52,17 +52,17 @@ test('parses live empty listplayers output as no players', () => {
 test('parses live table listplayers output with Conan user and platform IDs', () => {
   const players = parseListPlayers(`
 Idx | Char name | Player name |      User ID |       Platform ID | Platform Name
-  0 | TestExile | Tester#1000 | A-TESTUSER | 76561198000000001 |         STEAM
+  0 | werwerwer | Limon#67642 | A-1HFFLI28NN | 76561198000735875 |         STEAM
 `);
 
   assert.deepEqual(players, [
     {
-      gameId: '76561198000000001',
-      name: 'Tester#1000',
+      gameId: '76561198000735875',
+      name: 'Limon#67642',
       rconId: '0',
-      characterName: 'TestExile',
-      steamId: '76561198000000001',
-      platformId: 'steam:76561198000000001',
+      characterName: 'werwerwer',
+      steamId: '76561198000735875',
+      platformId: 'steam:76561198000735875',
       online: true,
     },
   ]);

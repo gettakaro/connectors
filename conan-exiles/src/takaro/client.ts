@@ -9,6 +9,8 @@ export class TakaroWsClient extends EventEmitter {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private reconnectAttempts = 0;
   private shuttingDown = false;
+  private reconnectDisabled = false;
+  private lastIdentifyError: { at: string; message: string; raw: unknown } | null = null;
 
   constructor(
     private readonly url: string,
@@ -20,7 +22,7 @@ export class TakaroWsClient extends EventEmitter {
   }
 
   connect(): void {
-    if (this.shuttingDown) return;
+    if (this.shuttingDown || this.reconnectDisabled) return;
     logger.info(`Connecting to Takaro at ${this.url}`);
     this.ws = new WebSocket(this.url);
 
@@ -63,6 +65,10 @@ export class TakaroWsClient extends EventEmitter {
     return this.gameServerId;
   }
 
+  getLastIdentifyError(): { at: string; message: string; raw: unknown } | null {
+    return this.lastIdentifyError;
+  }
+
   send(message: WsMessage): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       logger.warn(`Cannot send ${message.type}: Takaro WebSocket is not open`);
@@ -85,7 +91,7 @@ export class TakaroWsClient extends EventEmitter {
   }
 
   private scheduleReconnect(): void {
-    if (this.shuttingDown) return;
+    if (this.shuttingDown || this.reconnectDisabled) return;
     const delay = Math.min(this.maxReconnectMs, this.baseReconnectMs * 2 ** this.reconnectAttempts);
     this.reconnectAttempts += 1;
     this.reconnectTimer = setTimeout(() => this.connect(), delay);
@@ -99,11 +105,21 @@ export class TakaroWsClient extends EventEmitter {
       case 'identifyResponse': {
         const payload = message.payload as { gameServerId?: string; error?: unknown } | undefined;
         if (payload?.error) {
-          logger.error(`Takaro identify failed: ${JSON.stringify(payload.error)}`);
+          const message = identifyErrorMessage(payload.error);
+          this.lastIdentifyError = {
+            at: new Date().toISOString(),
+            message,
+            raw: payload.error,
+          };
+          this.reconnectDisabled = true;
+          logger.error(`Takaro identify failed: ${JSON.stringify(payload.error)}; reconnect disabled until credentials are updated`);
+          this.ws?.close();
+          this.emit('identifyFailed', this.lastIdentifyError);
           break;
         }
         if (payload?.gameServerId) {
           this.gameServerId = payload.gameServerId;
+          this.lastIdentifyError = null;
           logger.info(`Identified with Takaro as gameServerId=${payload.gameServerId}`);
           this.emit('identified', payload.gameServerId);
         }
@@ -122,4 +138,11 @@ export class TakaroWsClient extends EventEmitter {
         logger.debug(`Unhandled Takaro message type=${message.type}`);
     }
   }
+}
+
+function identifyErrorMessage(error: unknown): string {
+  if (!error || typeof error !== 'object') return String(error);
+  const maybeMessage = (error as { message?: unknown }).message;
+  if (typeof maybeMessage === 'string' && maybeMessage) return maybeMessage;
+  return JSON.stringify(error);
 }

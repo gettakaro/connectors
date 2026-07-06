@@ -6,11 +6,12 @@ export interface RconConfig {
   port: number;
   password: string;
   timeoutMs: number;
+  commandGapMs: number;
 }
 
 export interface BridgeConfig {
   registrationToken: string;
-  identityToken: string;
+  identityToken: string | null;
   serverName: string;
   takaroWsUrl: string;
   rcon: RconConfig;
@@ -20,6 +21,7 @@ export interface BridgeConfig {
   pollIntervalMs: number;
   enableLogEvents: boolean;
   logFiles: string[];
+  requireModSourceAttribution: boolean;
 }
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
@@ -58,10 +60,12 @@ export function loadConfig(configPath = process.env.BRIDGE_CONFIG || 'TakaroConf
 
   const values = parseKeyValues(fs.readFileSync(configPath, 'utf8'));
   const serverName = requireValue(values, 'serverName');
+  const registrationToken = requireValue(values, 'registrationToken');
+  const identityToken = values.identityToken || null;
 
   return {
-    registrationToken: requireValue(values, 'registrationToken'),
-    identityToken: values.identityToken || serverName,
+    registrationToken,
+    identityToken,
     serverName,
     takaroWsUrl: values.takaroWsUrl || 'wss://connect.takaro.io/',
     rcon: {
@@ -69,6 +73,7 @@ export function loadConfig(configPath = process.env.BRIDGE_CONFIG || 'TakaroConf
       port: parseNumber(requireValue(values, 'rconPort'), 25575),
       password: requireValue(values, 'rconPassword'),
       timeoutMs: parseNumber(values.rconTimeoutMs, 5000),
+      commandGapMs: parseNumber(values.rconCommandGapMs, 1000),
     },
     databasePath: values.databasePath || values.conanDbPath || null,
     itemCatalogPath: values.itemCatalogPath || null,
@@ -79,5 +84,6 @@ export function loadConfig(configPath = process.env.BRIDGE_CONFIG || 'TakaroConf
       .split(',')
       .map((entry) => entry.trim())
       .filter(Boolean),
+    requireModSourceAttribution: parseBoolean(values.requireModSourceAttribution, false),
   };
 }
