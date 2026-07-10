@@ -40,24 +40,6 @@ public static class EventFactory
         return data;
     }
 
-    public static object EntityKilled(
-        TakaroEntity entity,
-        DateTimeOffset timestamp,
-        TakaroPosition position,
-        TakaroPlayer? killer,
-        string? weapon = null)
-    {
-        var data = new Dictionary<string, object?>
-        {
-            ["player"] = killer ?? new TakaroPlayer("unknown", "unknown", null, null, null, null),
-            ["entity"] = entity.Code,
-            ["timestamp"] = timestamp,
-            ["weapon"] = string.IsNullOrWhiteSpace(weapon) ? "Unknown" : weapon
-        };
-
-        return data;
-    }
-
     public static object Log(string level, string message, DateTimeOffset timestamp) =>
         new LogEventData(message, timestamp);
 

@@ -101,7 +101,6 @@ public static class ValheimEventAcceptancePolicy
             (ValheimEventType.Log, ValheimEventObservationSource.Connector) => true,
             (ValheimEventType.PlayerConnected, ValheimEventObservationSource.ServerPlayerSnapshot) => true,
             (ValheimEventType.PlayerDisconnected, ValheimEventObservationSource.ServerPlayerSnapshot) => true,
-            (ValheimEventType.EntityKilled, ValheimEventObservationSource.ServerCharacterState) => true,
             _ => false
         };
 }

@@ -97,6 +97,56 @@ public sealed class RequestDispatcherTests
         Assert.AreEqual(0, adapter.Calls.Count);
     }
 
+    [DataTestMethod]
+    [DataRow("1.5")]
+    [DataRow("-1")]
+    [DataRow("0")]
+    [DataRow("2147483648")]
+    [DataRow("\"ten\"")]
+    [DataRow("null")]
+    public async Task RejectsMalformedSuppliedGiveItemAmountInsteadOfDefaulting(string amountJson)
+    {
+        var adapter = new FakeAdapter();
+        var dispatcher = new TakaroRequestDispatcher(adapter);
+        using var args = JsonDocument.Parse($$"""{"gameId":"Steam_1","item":"Wood","amount":{{amountJson}}}""");
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest("give-invalid", "giveItem", args.RootElement));
+
+        Assert.IsFalse(response.Success, amountJson);
+        Assert.AreEqual("invalid_args", response.ErrorCode, amountJson);
+        Assert.AreEqual(0, adapter.Calls.Count, amountJson);
+    }
+
+    [TestMethod]
+    public async Task MissingGiveItemAmountDefaultsToOne()
+    {
+        var adapter = new FakeAdapter();
+        var dispatcher = new TakaroRequestDispatcher(adapter);
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest(
+            "give-default",
+            "giveItem",
+            JsonDocument.Parse("""{"gameId":"Steam_1","item":"Wood"}""").RootElement));
+
+        Assert.IsTrue(response.Success);
+        CollectionAssert.AreEqual(new[] { "give:Steam_1:Wood:1:<quality>" }, adapter.Calls);
+    }
+
+    [TestMethod]
+    public async Task MaximumGiveItemAmountIsAccepted()
+    {
+        var adapter = new FakeAdapter();
+        var dispatcher = new TakaroRequestDispatcher(adapter);
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest(
+            "give-max",
+            "giveItem",
+            JsonDocument.Parse($$"""{"gameId":"Steam_1","item":"Wood","amount":{{GiveItemPolicy.MaxAmount}}}""").RootElement));
+
+        Assert.IsTrue(response.Success);
+        CollectionAssert.AreEqual(new[] { $"give:Steam_1:Wood:{GiveItemPolicy.MaxAmount}:<quality>" }, adapter.Calls);
+    }
+
     [TestMethod]
     public async Task DispatchesTeleportPlayerThroughAdapter()
     {

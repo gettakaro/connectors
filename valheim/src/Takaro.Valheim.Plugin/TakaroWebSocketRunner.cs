@@ -122,7 +122,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
                     }
 
                     await SendAsync(socket, TakaroProtocol.CreateGameEvent(evt.Type, evt.Data), cancellationToken);
-                    log($"Takaro Valheim {evt.Type} event sent for {evt.Player.Name} ({evt.Player.GameId}).");
+                    log($"Takaro Valheim {evt.Type} lifecycle frame written for {evt.Player.Name} ({evt.Player.GameId}); Takaro persistence is not acknowledged by the Generic Connector transport.");
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -189,7 +189,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
             var request = TakaroProtocol.ParseRequest(message);
             log($"Takaro Valheim request received: action={request.Action}, requestId={request.RequestId}.");
             var response = await dispatcher.DispatchAsync(request, cancellationToken);
-            await SendAsync(socket, TakaroProtocol.CreateResponse(request.RequestId, response), cancellationToken);
+            await SendAsync(socket, TakaroProtocol.CreateResponse(request.RequestId, request.Action, response), cancellationToken);
             log($"Takaro Valheim response sent: action={request.Action}, success={response.Success}.");
         }
     }

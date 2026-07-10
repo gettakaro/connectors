@@ -44,50 +44,6 @@ public static class LocationFactory
     }
 }
 
-public sealed class LocationSnapshotCache
-{
-    private readonly Dictionary<string, LocationSnapshot> snapshotsByAlias = new(StringComparer.OrdinalIgnoreCase);
-
-    public bool Store(TakaroPlayer player, TakaroPosition position, DateTimeOffset timestamp)
-    {
-        var aliases = Aliases(player).ToArray();
-        if (aliases.Any(alias =>
-                snapshotsByAlias.TryGetValue(alias, out var existing) && timestamp < existing.Timestamp))
-        {
-            return false;
-        }
-
-        var snapshot = new LocationSnapshot(position, timestamp);
-        foreach (var alias in aliases)
-        {
-            snapshotsByAlias[alias] = snapshot;
-        }
-
-        return true;
-    }
-
-    public bool TryGet(string identifier, out TakaroPosition position)
-    {
-        if (snapshotsByAlias.TryGetValue(identifier, out var snapshot))
-        {
-            position = snapshot.Position;
-            return true;
-        }
-
-        position = new TakaroPosition(0, 0, 0, "valheim");
-        return false;
-    }
-
-    private static IEnumerable<string> Aliases(TakaroPlayer player) =>
-        new[] { player.GameId, player.Name, player.SteamId, player.PlatformId }
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => value!);
-
-    private sealed record LocationSnapshot(
-        TakaroPosition Position,
-        DateTimeOffset Timestamp);
-}
-
 public sealed class ConsoleCommandPolicy
 {
     public static ConsoleCommandPolicy Default { get; } = new(new[] { "help" }, Array.Empty<string>());
@@ -141,54 +97,4 @@ public sealed class ConsoleCommandPolicy
         return command.Equals(prefix, StringComparison.OrdinalIgnoreCase)
             || command.StartsWith(prefix + " ", StringComparison.OrdinalIgnoreCase);
     }
-}
-
-public sealed class InventorySnapshotCache
-{
-    private readonly Dictionary<string, InventorySnapshot> snapshotsByAlias = new(StringComparer.OrdinalIgnoreCase);
-
-    public bool Store(TakaroPlayer player, IReadOnlyList<TakaroInventoryItem> items, DateTimeOffset timestamp)
-    {
-        var aliases = Aliases(player).ToArray();
-        if (aliases.Any(alias =>
-                snapshotsByAlias.TryGetValue(alias, out var existing) && timestamp < existing.Timestamp))
-        {
-            return false;
-        }
-
-        if (items.Count == 0 && aliases.Any(alias =>
-                snapshotsByAlias.TryGetValue(alias, out var existing) && existing.Items.Count > 0))
-        {
-            return false;
-        }
-
-        var snapshot = new InventorySnapshot(items.ToArray(), timestamp);
-        foreach (var alias in aliases)
-        {
-            snapshotsByAlias[alias] = snapshot;
-        }
-
-        return true;
-    }
-
-    public bool TryGet(string identifier, out IReadOnlyList<TakaroInventoryItem> items)
-    {
-        if (snapshotsByAlias.TryGetValue(identifier, out var snapshot))
-        {
-            items = snapshot.Items;
-            return true;
-        }
-
-        items = Array.Empty<TakaroInventoryItem>();
-        return false;
-    }
-
-    private static IEnumerable<string> Aliases(TakaroPlayer player) =>
-        new[] { player.GameId, player.Name, player.SteamId, player.PlatformId }
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => value!);
-
-    private sealed record InventorySnapshot(
-        IReadOnlyList<TakaroInventoryItem> Items,
-        DateTimeOffset Timestamp);
 }

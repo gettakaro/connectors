@@ -5,7 +5,7 @@
     "getPlayers": "live-supported",
     "getPlayer": "unsupported",
     "getPlayerLocation": "live-supported",
-    "getPlayerInventory": "unsupported",
+    "getPlayerInventory": "schema-fallback",
     "giveItem": "live-supported",
     "sendMessage": "live-supported",
     "executeConsoleCommand": "live-supported",
@@ -21,22 +21,23 @@
   },
   "events": {
     "log": "live-supported",
-    "player-connected": "live-supported",
-    "player-disconnected": "live-supported",
+    "player-connected": "schema-fallback",
+    "player-disconnected": "schema-fallback",
     "chat-message": "unsupported",
     "player-death": "unsupported",
     "entity-killed": "unsupported"
   },
   "notes": [
     "The connector and all Takaro configuration belong on the dedicated server. No Takaro client plugin or custom client RPC is supported.",
-    "Live-supported records historical dedicated-server evidence from 2026-06-21 and 2026-06-22; it does not claim that a fresh 2026-07-10 runtime validation has completed.",
+    "Live-supported records dedicated-server evidence through source commit 20b505b on 2026-07-10. Later source must be revalidated before inheriting those claims.",
     "getPlayer is implemented by filtering the dedicated server player list, but its final Takaro response shape has not been independently live-proven, so it remains unsupported.",
-    "getPlayerLocation uses a ready peer reference position and then Valheim public-position data. It returns player_position_unavailable rather than a fabricated origin.",
-    "getPlayerInventory returns player_component_unavailable because a dedicated server does not expose remote client inventory components.",
+    "getPlayerLocation uses a ready peer reference position and then Valheim public-position data. An unavailable result keeps success=false while carrying a Takaro-valid x=0,y=0,z=0,dimension=unavailable fallback payload; it is never claimed as a real position.",
+    "getPlayerInventory keeps success=false with an empty-array schema fallback because a dedicated server does not expose remote client inventory components.",
     "giveItem creates server-owned world drops near the player's server-known position. These are collectible world objects, not a private inventory grant.",
     "teleportPlayer routes Valheim's built-in RPC_TeleportTo to the server-known character ZDO owner.",
     "Inbound vanilla-client chat is unsupported and tracked by https://github.com/gettakaro/connectors/issues/69.",
     "Routed ChatMessage, Say, and OnDeath packets are diagnostic-only because packet-supplied identity and death state are not server-owned. Chat-message and player-death remain unsupported.",
-    "The server-only entity-killed path exists in code, but prior live evidence depended on rejected client forwarding and must be re-proven before promotion."
+    "Player lifecycle frames are derived from dedicated-server player snapshots, but exact turn-2 Takaro eventSearch persisted zero lifecycle events. They remain schema-fallback pending post-fix live persistence proof.",
+    "Entity-killed is unsupported and has no active emitter or Harmony death patch."
   ]
 }

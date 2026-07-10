@@ -30,9 +30,9 @@ public sealed class ValheimEventAcceptancePolicyTests
     }
 
     [TestMethod]
-    public void AcceptsEntityDeathsFromServerCharacterState()
+    public void RejectsUnsupportedEntityDeathsFromServerCharacterState()
     {
-        Assert.IsTrue(ValheimEventAcceptancePolicy.CanEmit(
+        Assert.IsFalse(ValheimEventAcceptancePolicy.CanEmit(
             "entity-killed",
             ValheimEventObservationSource.ServerCharacterState));
     }

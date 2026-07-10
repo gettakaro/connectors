@@ -222,6 +222,57 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
+    public void DestroyZdoIsNotTreatedAsAChatDiagnosticCandidate()
+    {
+        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+
+        Assert.IsFalse(source.Contains("199378019", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("UndecodedDedicatedServerChatHashes", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("dedicated chat candidate", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public void DestroyZdoHousekeepingDoesNotConsumeGenericRpcDiagnostics()
+    {
+        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+
+        StringAssert.Contains(source, "DestroyZdoHash = \"DestroyZDO\".GetStableHashCode()");
+        var ignore = source.IndexOf("data.m_methodHash == DestroyZdoHash", StringComparison.Ordinal);
+        var genericDiagnostic = source.IndexOf("if (routedDiagnosticsRemaining > 0)", StringComparison.Ordinal);
+        Assert.IsTrue(ignore >= 0 && ignore < genericDiagnostic);
+    }
+
+    [TestMethod]
+    public void UnsupportedEntityKilledEventHasNoPluginEmitterOrHarmonyPatch()
+    {
+        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+
+        Assert.IsFalse(source.Contains("EmitEntityKilled", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TakaroCharacterOnDeathPatch", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("entity-killed event sent", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void LifecycleTransportLogsFrameWriteWithoutClaimingPersistence()
+    {
+        var source = ReadPluginSource("TakaroWebSocketRunner.cs");
+
+        StringAssert.Contains(source, "lifecycle frame written");
+        Assert.IsFalse(source.Contains("event sent for", StringComparison.Ordinal));
+        StringAssert.Contains(source, "TakaroProtocol.CreateResponse(request.RequestId, request.Action, response)");
+    }
+
+    [TestMethod]
+    public void ObsoleteClientSnapshotCachesAndTestsAreRemoved()
+    {
+        var inventory = ReadValheimFile("src/Takaro.Valheim.Core/Inventory.cs");
+        Assert.IsFalse(inventory.Contains("LocationSnapshotCache", StringComparison.Ordinal));
+        Assert.IsFalse(inventory.Contains("InventorySnapshotCache", StringComparison.Ordinal));
+        Assert.IsFalse(File.Exists(ValheimPath("tests/Takaro.Valheim.Core.Tests/LocationSnapshotCacheTests.cs")));
+        Assert.IsFalse(File.Exists(ValheimPath("tests/Takaro.Valheim.Core.Tests/InventorySnapshotCacheTests.cs")));
+    }
+
+    [TestMethod]
     public void PluginUsesCoreRuntimeAndWorldDropPolicies()
     {
         var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
@@ -284,6 +335,9 @@ public sealed class PluginScaffoldContractTests
 
         return File.ReadAllText(sourcePath);
     }
+
+    private static string ValheimPath(string relativePath) =>
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../", relativePath));
 
     private static string SliceMethod(string source, string startMarker, string endMarker)
     {

@@ -6,45 +6,60 @@ namespace Takaro.Valheim.Core.Tests;
 public sealed class QaLedgerContractTests
 {
     [TestMethod]
-    public void LedgerRecordsServerCorePassWithoutClaimingLivePlayerProof()
+    public void LedgerUsesRequiredVerdictAndPinsTurnTwoArtifactEvidence()
     {
         var ledger = ReadLedger();
 
-        StringAssert.Contains(ledger, "BUILD/SERVER-CORE PASS; LIVE-PLAYER BLOCKED");
-        Assert.IsFalse(ledger.Contains("PASS WITH GAPS", StringComparison.Ordinal));
-        StringAssert.Contains(ledger, "testReachability");
-        StringAssert.Contains(ledger, "executeConsoleCommand `help`");
-        StringAssert.Contains(ledger, "listBans");
-        StringAssert.Contains(ledger, "teleports`, `Waypoints`, and `serverMessages");
-        StringAssert.Contains(ledger, "server message routed to 0 peer(s)");
+        StringAssert.Contains(ledger, "## Verdict: PASS WITH GAPS");
+        StringAssert.Contains(ledger, "20b505b2fcc5e58a6bdb0ec3bf4d26bda6a5f096");
+        StringAssert.Contains(ledger, "4142c2399a660bbda32200e1e18e79e75bb1d3f5b478cf8387681b9a80c1d1ac");
+        StringAssert.Contains(ledger, "0a70626f6908669846b8bbfc2d2aa93e44a5902dccc44fba259bb6d0f5c505cc");
+        StringAssert.Contains(ledger, "Turn-3 source is not live-validated by this ledger");
     }
 
     [TestMethod]
-    public void LedgerRecordsTheExactVanillaClientAutomationBlocker()
-    {
-        var ledger = ReadLedger();
-
-        StringAssert.Contains(ledger, "fixed click `(610,598)` did not transition from the main menu");
-        StringAssert.Contains(ledger, "No player data");
-        StringAssert.Contains(ledger, "characters/hehe.fch");
-        StringAssert.Contains(ledger, "no handshake, character ZDO, player-connected event, or nonempty getPlayers result");
-        StringAssert.Contains(ledger, "UI automation/profile state outside this connector branch");
-    }
-
-    [TestMethod]
-    public void LedgerKeepsPlayerBoundAndDestructiveChecksExplicitlyBlockedOrSkipped()
+    public void LedgerRecordsExactPlayerActionAndCatalogEvidence()
     {
         var ledger = ReadLedger();
 
         foreach (var marker in new[]
                  {
-                     "getPlayerLocation",
-                     "giveItem",
-                     "teleportPlayer",
-                     "player-visible messaging",
-                     "lifecycle/death",
-                     "listItems/listEntities/listLocations",
-                     "kickPlayer`, `banPlayer`, `unbanPlayer`, and `shutdown` were skipped"
+                     "vanilla `isModded:false`",
+                     "14:35:34",
+                     "14:40:14",
+                     "14:40:26",
+                     "`getPlayers`: `0 -> 1 -> 0`",
+                     "Wood x1",
+                     "amount `1001`",
+                     "`135,33,-2 -> 140,33,-2`",
+                     "`listItems`: 821",
+                     "`listEntities`: 101",
+                     "`listLocations`: BLOCKED",
+                     "14:51:25"
+                 })
+        {
+            StringAssert.Contains(ledger, marker);
+        }
+    }
+
+    [TestMethod]
+    public void LedgerSeparatesTransportAttemptsFromTakaroPersistenceAndModuleProof()
+    {
+        var ledger = ReadLedger();
+
+        foreach (var marker in new[]
+                 {
+                     "eventSearch",
+                     "zero persisted lifecycle events",
+                     "two `serverMessages` cron deliveries",
+                     "cronjob-executed",
+                     "commandTrigger",
+                     "404",
+                     "No hooks were installed",
+                     "Destructive actions",
+                     "/tmp/valheim-turn2-visible-direct-window.png",
+                     "/tmp/valheim-turn2-giveitem-visible.png",
+                     "/tmp/valheim-turn2-module-cron-visible.png"
                  })
         {
             StringAssert.Contains(ledger, marker);

@@ -1,117 +1,92 @@
 # Valheim Server-Only Validation Ledger
 
-- Live validation window: `2026-07-10T13:44:08+02:00` to approximately `2026-07-10T13:55:24+02:00`
-- Live artifact source commit: `2cbc6df7b7cf3c4293d3f65b78def1b61d2fca5d`
-- Takaro game server ID: `4dadfdf6-18a3-41f1-ae2c-b94200dea9ab`
-- Verdict: **BUILD/SERVER-CORE PASS; LIVE-PLAYER BLOCKED**
+## Verdict: PASS WITH GAPS
 
-The turn-1 source, real plugin build, release archive, dedicated-server load, Takaro identify, MCP path, and safe server-core requests passed. Vanilla-client automation did not create or join a player, so this ledger claims no player-bound, catalog, lifecycle/death, hook/command, or player-visible proof. The immediate join blocker is UI automation/profile state outside this connector branch, not a connector failure.
+Source commit `20b505b2fcc5e58a6bdb0ec3bf4d26bda6a5f096` passed build/package gates and a live dedicated-server run with a vanilla player. Player actions, catalogs, visible messaging, and cron delivery were proven. Client-owned inventory remains a schema fallback; inbound chat, death, and entity-killed remain unsupported; lifecycle frames were written but exact Takaro persistence was not proven.
 
-The feedback fixes made after this live window have local executable coverage but were not redeployed for another live-player run. The hashes below identify the exact pre-feedback artifact that produced the retained runtime evidence.
+Turn-3 source is not live-validated by this ledger. Later commits may cite the executable tests here, but must not inherit the live verdict until their own artifact is deployed and exercised.
 
-## Artifact and Client Boundary
+## Runtime Boundary
+
+- Architecture: dedicated-server-only BepInEx plugin; no client DLL, bridge, snapshot, or custom Takaro RPC.
+- Game server ID: `4dadfdf6-18a3-41f1-ae2c-b94200dea9ab`.
+- Live window: `2026-07-10T14:35:34+02:00` through `2026-07-10T14:51:25+02:00`.
+- Client proof: vanilla `isModded:false`; no `TakaroValheim.dll` under the client BepInEx plugin tree.
+- Primary surfaces: Takaro MCP actions/searches, dedicated-server BepInEx log, and player-visible screenshots. Secrets and raw authenticated payloads are intentionally omitted.
+
+## Reproducible Artifact Identity
 
 | Artifact | SHA-256 | Result |
 | --- | --- | --- |
-| Release zip | `57c4b04dd5eabea18da2b625c8dae9b14b0d338514eabf19e0aa91b702142110` | Built and inspected |
-| Plugin DLL inside release zip | `a1e6e8bf42b10b36b36fab6ef7f83fc2d9b348171129412921982a3c0b9fea8e` | Server-only turn-1 DLL |
-| Deployed server `TakaroValheim.dll` | `a1e6e8bf42b10b36b36fab6ef7f83fc2d9b348171129412921982a3c0b9fea8e` | Exact match with zip DLL |
+| Release zip | `4142c2399a660bbda32200e1e18e79e75bb1d3f5b478cf8387681b9a80c1d1ac` | PASS: built from commit `20b505b` |
+| DLL inside release zip | `0a70626f6908669846b8bbfc2d2aa93e44a5902dccc44fba259bb6d0f5c505cc` | PASS |
+| Deployed server DLL | `0a70626f6908669846b8bbfc2d2aa93e44a5902dccc44fba259bb6d0f5c505cc` | PASS: exact artifact match |
 
-Before the run, the old client plugin was moved outside the plugin tree to `/home/hendrik/.local/state/takaro-valheim-backups/20260710-server-only-consolidation-predeploy/client/TakaroValheim`. This read-only boundary check then returned no hits:
-
-```bash
-find /home/hendrik/.local/share/Steam/steamapps/common/Valheim/BepInEx/plugins \
-  -type f -name TakaroValheim.dll
-```
-
-The Steam-launched client had no Takaro DLL and produced no BepInEx Takaro load markers. No unrelated client mod was removed.
-
-## Build and Package Gates
-
-Turn 1 ran these implementation gates from the isolated connector worktree:
+Replayable build commands:
 
 ```bash
 dotnet test valheim/Takaro.Valheim.sln --no-restore -v minimal
-bash -n valheim/scripts/setup-environment.sh valheim/scripts/build-release.sh
-git diff --check origin/main...HEAD
-bash scripts/check-commit-title.sh "fix(valheim): consolidate server-only connector"
+bash valheim/tests/setup-environment-behavior.sh
 dotnet build valheim/src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj \
-  -f net472 \
-  -p:EnableValheimPluginBuild=true \
+  -f net472 -p:EnableValheimPluginBuild=true \
   -p:BepInExReferencePath=/home/hendrik/valheim-dedicated-server/BepInEx/core \
-  -p:ValheimReferencePath=/home/hendrik/valheim-dedicated-server/valheim_server_Data/Managed \
-  -v minimal
+  -p:ValheimReferencePath=/home/hendrik/valheim-dedicated-server/valheim_server_Data/Managed
 VALHEIM_REFERENCE_PATH=/home/hendrik/valheim-dedicated-server/valheim_server_Data/Managed \
 BEPINEX_REFERENCE_PATH=/home/hendrik/valheim-dedicated-server/BepInEx/core \
-bash valheim/scripts/build-release.sh 0.0.0-dev /tmp/valheim-server-only-release
-unzip -l /tmp/valheim-server-only-release/takaro-valheim-plugin.zip
+bash valheim/scripts/build-release.sh 0.0.0-dev /tmp/valheim-turn2-release
 ```
 
-Turn-1 results were `68` tests passed, shell syntax and branch/title gates passed, the real `net472` build completed with zero warnings and errors, and the package contained the plugin, Core library, required NuGet runtime DLLs, and README. It contained no tests, client guide/artifact, removed optional dependency, or banned custom client RPC marker.
+## Timestamped Runtime Trace
 
-## Dedicated Server and Takaro Core
-
-Primary retained server evidence is `/home/hendrik/valheim-dedicated-server/BepInEx/LogOutput.log`. The bounded exercise transcript is `/tmp/codex-valheim-exercise-20260710.log` (mtime approximately `13:55:24+02:00`). Neither is treated as a committed artifact, and no secret-bearing raw log is reproduced here.
-
-The dedicated server loaded `Takaro Valheim 0.1.0`, identified twice as game server `4dadfdf6-18a3-41f1-ae2c-b94200dea9ab`, and logged `Game server connected` at line `214` around `13:44:26+02:00`. The local MCP authenticated and listened on `127.0.0.1:3000`.
-
-Runtime inventory recorded during the validation:
-
-- BepInEx `5.4.23.3` / BepInExPack Valheim `5.4.2333`;
-- Unity `6000.0.61f1`;
-- Valheim dedicated server `l-0.221.12`, network version `36`;
-- local .NET SDK `8.0.128`.
-
-Safe live results:
-
-| Check | Result | Evidence boundary |
+| Time (Europe/Brussels) | Observation | Verdict |
 | --- | --- | --- |
-| `testReachability` | **PASS**: `{connectable:true}` | Connector request/response succeeded in server log |
-| `getPlayers` | **PASS**: `[]` | Correct empty server list; not player proof |
-| executeConsoleCommand `help` | **PASS** | Request/response succeeded at server-log lines `343-346` |
-| `listBans` | **PASS**: `[]` | Request/response succeeded at lines `347-349` |
-| installed modules | **PASS** | Current query returned `teleports`, `Waypoints`, and `serverMessages` |
+| `14:35:34` | Connector transport handshake completed and the dedicated server identified to Takaro. | PASS |
+| `14:40:14` | Vanilla player `Hehe` was mapped and the server snapshot produced a player-connected frame. | PASS at server boundary; Takaro persistence unproven |
+| `14:40:26` | Valheim supplied the player character ZDO; player-bound actions became ready. | PASS |
+| `14:51:25` | Vanilla client disconnected; server player count returned to zero and a player-disconnected frame was written. | PASS at server boundary; Takaro persistence unproven |
 
-## Module and Cron Evidence
+`getPlayers`: `0 -> 1 -> 0`. `getPlayerLocation` succeeded while the player was ready. Before the character position was ready and after disconnect, commit `20b505b` returned schema-invalid error objects; this ledger records that defect rather than treating the failures as position proof.
 
-The `serverMessages` cron reached the connector with request ID `74519227-9812-4c0f-b50f-c575a84772cd`. Server-log lines `486-488` record `server message routed to 0 peer(s)` followed by a successful response.
+## Action Coverage
 
-This proves Takaro cron scheduling and delivery to the connector, but no client was connected:
+| Action | Evidence | QA result |
+| --- | --- | --- |
+| `testReachability` | MCP returned `connectable:true`. | PASS |
+| `getPlayers` | MCP observed `0 -> 1 -> 0` across join/disconnect. | PASS |
+| `getPlayerLocation` | Live non-origin position succeeded after character readiness. | PASS for ready player; unavailable wire shape required turn-3 correction |
+| `getPlayerInventory` | Dedicated server had no remote `Player` inventory; repeated Takaro errors said `Expected array ... got object`. | SCHEMA-FALLBACK REQUIRED |
+| `sendMessage` | Global and direct messages rendered in the vanilla client. | PASS |
+| `giveItem` | Wood x1 created a real world drop that the player picked up; amount `1001` returned `success=False` and created no extra drop. | PASS |
+| `teleportPlayer` | Server-owned position changed `135,33,-2 -> 140,33,-2` through base-game teleport. | PASS |
+| `listItems` | Takaro catalog search contained `821` items. | PASS |
+| `listEntities` | Takaro catalog search contained `101` entities. | PASS |
+| `listLocations` | BLOCKED: no current Takaro MCP route exposed this action during the run. | BLOCKED, not grouped with the proven catalogs |
+| Moderation and shutdown | Destructive actions (`kickPlayer`, `banPlayer`, `unbanPlayer`, `shutdown`) were not run against the non-disposable player/server. | SKIPPED, approval-gated |
 
-- cron-to-connector plumbing: **PASS**;
-- connector `sendMessage` handling: **PASS/PARTIAL** with zero recipients;
-- player-visible delivery: **BLOCKED**;
-- harmless installed-module hook/command execution with a player: **BLOCKED**.
+Exact persisted catalog totals were `listItems`: 821 and `listEntities`: 101. `listLocations`: BLOCKED because the current MCP surface had no route.
 
-## Exact Vanilla-Client Blocker
+## Event and Transport Evidence
 
-The unmodded Steam-launched client reached the main menu, but the fixed click `(610,598)` did not transition from the main menu to character selection. `Player.log` at approximately `13:49:53+02:00` records a failed load of `/characters/odin.fch.new.fch` followed by `No player data`; the existing profile is `characters/hehe.fch`.
+The server log recorded player-connected and player-disconnected lifecycle frames, but the exact post-disconnect Takaro MCP `eventSearch` window returned zero persisted lifecycle events. The same server/window query returned other events, so send-attempt logs are not persistence proof. The connector transport has no positive game-event acknowledgement; lifecycle stays `schema-fallback` until a post-unavailable-shape-fix live run returns the records from Takaro.
 
-The server consequently observed no handshake, character ZDO, player-connected event, or nonempty getPlayers result. Fixed-coordinate automation never reached a state where connector player behavior could be exercised. This is the exact external blocker; the ledger does not reinterpret a menu click or empty player list as player-bound proof.
+- `chat-message`: UNSUPPORTED; vanilla inbound chat has no trusted dedicated-server route.
+- `player-death`: UNSUPPORTED; routed packet identity/death state is not trusted server-owned proof.
+- `entity-killed`: UNSUPPORTED; the accepted server-only branch does not emit it.
 
-## Blocked, Unsupported, and Skipped Checks
+## Module Automation
 
-Blocked by the absent live player:
+The live run proved two `serverMessages` cron deliveries: both reached `sendMessage`, were routed to one peer, rendered visibly, and had Takaro `cronjob-executed` persistence. This proves scheduling, connector delivery, and player-visible output.
 
-- `getPlayer`, `getPlayerLocation`, `giveItem`, and `teleportPlayer`;
-- player-visible messaging and visible `serverMessages` cron delivery;
-- player lifecycle/death and character-ZDO paths;
-- harmless installed-module hook/command execution;
-- current `listItems/listEntities/listLocations` catalog paths in the same bounded exercise.
+The pre-connector `commandTrigger` probe returned `404`; this is recorded as an external module/API route failure, not connector command proof. No hooks were installed, so hook execution is BLOCKED and not claimed.
 
-Intentionally unsupported or conservatively unclaimed:
+## Visual Evidence
 
-- `getPlayerInventory`, because remote inventory state is client-owned;
-- inbound `chat-message`, tracked by issue `#69`;
-- routed `player-death`, because packet identity/death state is not trusted server-owned proof;
-- `entity-killed`, until the server-owned observer is re-proven.
+- Global/direct delivery: `/tmp/valheim-turn2-visible-direct-window.png`
+- World-drop delivery: `/tmp/valheim-turn2-giveitem-visible.png`
+- Module cron delivery: `/tmp/valheim-turn2-module-cron-visible.png`
 
-Fresh `kickPlayer`, `banPlayer`, `unbanPlayer`, and `shutdown` were skipped because they are destructive and had no approval/disposable live-player target. No token, identity token, raw MCP session, or unfiltered secret-bearing config/log content was printed.
+These files are local evidence paths, not committed release assets.
 
-## Cleanup and Remaining Gate
+## Final Gate
 
-Cleanup passed: temporary client, server, MCP, and tmux sessions were stopped, and the verifier changed no connector code or persistent runtime configuration.
-
-A future player-bound run must select the valid `hehe` profile (or otherwise repair the external profile/UI automation), join the current dedicated server, confirm a handshake and nonempty player list, then exercise the blocked safe actions and player-visible module delivery. Destructive actions remain approval-gated.
-
-Final status remains **BUILD/SERVER-CORE PASS; LIVE-PLAYER BLOCKED**.
+Deploy the turn-3 artifact server-side only, repeat unavailable inventory/location polling, reconnect/disconnect the vanilla player, and require: no Takaro DTO validation errors; exact `eventSearch` lifecycle records before promotion; continued visible messaging/item/teleport proof; client plugin absence; and no unsupported event emission. Destructive actions remain approval-gated.

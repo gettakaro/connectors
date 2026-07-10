@@ -16,7 +16,7 @@ create_required_assemblies() {
   local assembly
   mkdir -p "$managed_dir"
   for assembly in "${REQUIRED_ASSEMBLIES[@]}"; do
-    : > "$managed_dir/$assembly"
+    printf 'test-reference\n' > "$managed_dir/$assembly"
   done
 }
 
@@ -49,7 +49,7 @@ steamcmd_stub() {
   fi
 
   case "$STUB_SCENARIO" in
-    first_success)
+    first_success|empty_bepinex)
       create_required_assemblies
       return 0
       ;;
@@ -69,7 +69,16 @@ steamcmd_stub() {
       ;;
     missing_required)
       mkdir -p "$STUB_SERVER_DIR/valheim_server_Data/Managed"
-      : > "$STUB_SERVER_DIR/valheim_server_Data/Managed/assembly_valheim.dll"
+      printf 'test-reference\n' > "$STUB_SERVER_DIR/valheim_server_Data/Managed/assembly_valheim.dll"
+      return 0
+      ;;
+    empty_required)
+      local managed_dir="$STUB_SERVER_DIR/valheim_server_Data/Managed"
+      local assembly
+      mkdir -p "$managed_dir"
+      for assembly in "${REQUIRED_ASSEMBLIES[@]}"; do
+        : > "$managed_dir/$assembly"
+      done
       return 0
       ;;
     always_fail)
@@ -120,8 +129,13 @@ unzip_stub() {
   done
 
   mkdir -p "$destination/BepInExPack_Valheim/BepInEx/core"
-  : > "$destination/BepInExPack_Valheim/BepInEx/core/BepInEx.dll"
-  : > "$destination/BepInExPack_Valheim/BepInEx/core/0Harmony.dll"
+  if [ "$STUB_SCENARIO" = "empty_bepinex" ]; then
+    : > "$destination/BepInExPack_Valheim/BepInEx/core/BepInEx.dll"
+    : > "$destination/BepInExPack_Valheim/BepInEx/core/0Harmony.dll"
+  else
+    printf 'test-reference\n' > "$destination/BepInExPack_Valheim/BepInEx/core/BepInEx.dll"
+    printf 'test-reference\n' > "$destination/BepInExPack_Valheim/BepInEx/core/0Harmony.dll"
+  fi
 }
 
 case "$COMMAND_NAME" in
@@ -223,6 +237,15 @@ assert_file() {
   fi
 }
 
+assert_nonempty_file() {
+  local path="$1"
+  local message="$2"
+  if [ ! -s "$path" ]; then
+    printf 'ASSERT: %s (missing or empty %s)\n' "$message" "$path" >&2
+    return 1
+  fi
+}
+
 assert_output_contains() {
   local needle="$1"
   local message="$2"
@@ -236,7 +259,8 @@ test_first_attempt_success() {
   run_setup first-success first_success
   assert_equals 0 "$RUN_STATUS" "first successful SteamCMD run should complete setup" || return 1
   assert_equals 1 "$(call_count)" "success should not retry" || return 1
-  assert_file "$RUN_CASE_DIR/server/valheim_server_Data/Managed/UnityEngine.CoreModule.dll" "required assemblies should be installed" || return 1
+  assert_nonempty_file "$RUN_CASE_DIR/server/valheim_server_Data/Managed/UnityEngine.CoreModule.dll" "required assemblies should be nonempty" || return 1
+  assert_nonempty_file "$RUN_CASE_DIR/deps/bepinex/BepInExPack_Valheim/BepInEx/core/BepInEx.dll" "BepInEx reference should be nonempty" || return 1
 }
 
 test_retry_recovery_clears_cache() {
@@ -285,6 +309,18 @@ test_missing_required_dlls_exhausts_all_attempts() {
   assert_equals 6 "$(call_count)" "missing DLLs should retry and fall back" || return 1
 }
 
+test_empty_required_dlls_exhaust_all_attempts() {
+  run_setup empty-required empty_required
+  assert_nonzero "$RUN_STATUS" "zero-byte Valheim DLLs must not satisfy reference validation" || return 1
+  assert_equals 6 "$(call_count)" "empty DLLs should retry and fall back" || return 1
+}
+
+test_empty_bepinex_dlls_fail_setup() {
+  run_setup empty-bepinex empty_bepinex
+  assert_nonzero "$RUN_STATUS" "zero-byte BepInEx DLLs must not satisfy reference validation" || return 1
+  assert_output_contains "required BepInEx assembly" "BepInEx failure should name the missing or empty reference" || return 1
+}
+
 test_exhaustion_reports_recovery_context() {
   run_setup exhausted always_fail
   assert_nonzero "$RUN_STATUS" "exhausted SteamCMD attempts should fail" || return 1
@@ -301,6 +337,8 @@ for test_case in \
   test_failed_steamcmd_does_not_accept_stale_managed_directory \
   test_linux_windows_fallback_preserves_caller_server_data \
   test_missing_required_dlls_exhausts_all_attempts \
+  test_empty_required_dlls_exhaust_all_attempts \
+  test_empty_bepinex_dlls_fail_setup \
   test_exhaustion_reports_recovery_context; do
   if "$test_case"; then
     printf 'PASS %s\n' "$test_case"

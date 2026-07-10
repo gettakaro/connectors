@@ -182,11 +182,14 @@ public sealed class TakaroRequestDispatcher
     private static int? OptionalPositiveInt(JsonElement args, string property)
     {
         if (args.ValueKind != JsonValueKind.Object
-            || !args.TryGetProperty(property, out var value)
-            || value.ValueKind != JsonValueKind.Number
-            || !value.TryGetInt32(out var number))
+            || !args.TryGetProperty(property, out var value))
         {
             return null;
+        }
+
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var number))
+        {
+            throw new ArgumentException($"Expected integer argument '{property}'.");
         }
 
         if (number <= 0)

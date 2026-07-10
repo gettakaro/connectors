@@ -51,7 +51,7 @@ The registry uses only three statuses:
 | `getPlayers` | `live-supported` | Reads the Valheim dedicated-server player list. |
 | `getPlayer` | `unsupported` | Filtering exists, but the final Takaro response shape still needs independent live proof. |
 | `getPlayerLocation` | `live-supported` | Uses the ready peer reference position, then public-position data; otherwise returns `player_position_unavailable`. |
-| `getPlayerInventory` | `unsupported` | Returns `player_component_unavailable`; remote inventories are client-owned state. |
+| `getPlayerInventory` | `schema-fallback` | Keeps the internal `player_component_unavailable` failure and sends an empty-array wire fallback; remote inventories are client-owned state. |
 | `giveItem` | `live-supported` | Creates stack-split world drops near the player's server-known position. |
 | `sendMessage` | `live-supported` | Uses Valheim's built-in routed HUD message calls without a custom client RPC. |
 | `executeConsoleCommand` | `live-supported` | Runs only exact or prefix-allowlisted commands. |
@@ -70,11 +70,11 @@ The registry uses only three statuses:
 | Event | Status | Dedicated-server behavior |
 | --- | --- | --- |
 | `log` | `live-supported` | Emits connector log events. |
-| `player-connected` | `live-supported` | Derived from dedicated-server player-list lifecycle polling. |
-| `player-disconnected` | `live-supported` | Derived from dedicated-server player-list lifecycle polling. |
+| `player-connected` | `schema-fallback` | A dedicated-server snapshot frame is written, but turn-2 Takaro event search persisted no lifecycle event; re-proof is pending. |
+| `player-disconnected` | `schema-fallback` | A dedicated-server snapshot frame is written, but turn-2 Takaro event search persisted no lifecycle event; re-proof is pending. |
 | `chat-message` | `unsupported` | Vanilla-client inbound chat has no proven dedicated-server route; tracked in [issue #69](https://github.com/gettakaro/connectors/issues/69). |
 | `player-death` | `unsupported` | Routed `OnDeath` payloads are diagnostic-only; packet sender/target identity and actual death state are not server-owned proof. |
-| `entity-killed` | `unsupported` | A server-side observer exists, but prior proof used rejected client forwarding and cannot promote this path. |
+| `entity-killed` | `unsupported` | No emitter or death Harmony patch is active; prior proof used rejected client forwarding. |
 
 ## Server-Owned Action Semantics
 
@@ -82,7 +82,7 @@ The registry uses only three statuses:
 
 `teleportPlayer` requires a server-known character ZDO ID. It uses Valheim's built-in teleport RPC and returns `character_unavailable` when that identity is missing.
 
-`getPlayerInventory` never fabricates an empty inventory. `getPlayerLocation` never fabricates origin coordinates. Missing server-owned state returns structured errors.
+The adapter retains structured unavailable errors internally. At the WebSocket boundary, Takaro still requires action-specific DTO shapes: unavailable inventory uses an empty array and unavailable location uses `{x:0,y:0,z:0,dimension:"unavailable"}` while the response envelope keeps `success:false`, `errorCode`, and `message`. These are explicit schema fallbacks, never successful game-state claims.
 
 Outbound messages and item confirmations use base-game `Message` and `ShowMessage` calls. They do not require a Takaro client plugin and are not treated as inbound chat.
 

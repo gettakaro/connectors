@@ -51,6 +51,20 @@ public static class TakaroProtocol
         }, JsonOptions);
     }
 
+    public static string CreateResponse(string requestId, string action, TakaroActionResult result)
+    {
+        var responsePayload = NormalizeActionResponsePayload(action, result);
+        return JsonSerializer.Serialize(new
+        {
+            type = "response",
+            requestId,
+            payload = responsePayload,
+            success = result.Success,
+            errorCode = result.ErrorCode,
+            message = result.Message
+        }, JsonOptions);
+    }
+
     public static string CreateGameEvent(string eventType, object data)
     {
         return JsonSerializer.Serialize(new
@@ -117,5 +131,20 @@ public static class TakaroProtocol
         }
 
         return payload;
+    }
+
+    private static object? NormalizeActionResponsePayload(string action, TakaroActionResult result)
+    {
+        if (result.Success)
+        {
+            return result.Payload;
+        }
+
+        return action switch
+        {
+            "getPlayerInventory" => Array.Empty<TakaroInventoryItem>(),
+            "getPlayerLocation" => new TakaroPosition(0, 0, 0, "unavailable"),
+            _ => NormalizeResponsePayload(result)
+        };
     }
 }

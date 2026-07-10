@@ -62,7 +62,9 @@ public sealed class CapabilityRegistryTests
         using var registry = ReadRegistry();
         var root = registry.RootElement;
 
-        Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
+        Assert.AreEqual("schema-fallback", root.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
+        Assert.AreEqual("schema-fallback", root.GetProperty("events").GetProperty("player-connected").GetString());
+        Assert.AreEqual("schema-fallback", root.GetProperty("events").GetProperty("player-disconnected").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("chat-message").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("player-death").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("entity-killed").GetString());

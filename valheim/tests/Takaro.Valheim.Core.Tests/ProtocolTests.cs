@@ -70,6 +70,66 @@ public sealed class ProtocolTests
     }
 
     [TestMethod]
+    public void CreateActionResponseKeepsSuccessMetadataOutsideSchemaPayload()
+    {
+        var response = JsonDocument.Parse(TakaroProtocol.CreateResponse(
+            "req-success",
+            "getPlayerLocation",
+            TakaroActionResult.Ok(new TakaroPosition(12, 34, 56, "valheim")))).RootElement;
+
+        Assert.IsTrue(response.GetProperty("success").GetBoolean());
+        Assert.AreEqual(12, response.GetProperty("payload").GetProperty("x").GetInt32());
+        Assert.AreEqual(JsonValueKind.Null, response.GetProperty("errorCode").ValueKind);
+    }
+
+    [TestMethod]
+    public void CreateActionResponseUsesArrayFallbackForUnavailableInventory()
+    {
+        var response = JsonDocument.Parse(TakaroProtocol.CreateResponse(
+            "req-inventory",
+            "getPlayerInventory",
+            TakaroActionResult.Error("player_component_unavailable", "Remote inventory is client-owned."))).RootElement;
+
+        Assert.IsFalse(response.GetProperty("success").GetBoolean());
+        Assert.AreEqual("player_component_unavailable", response.GetProperty("errorCode").GetString());
+        Assert.AreEqual(JsonValueKind.Array, response.GetProperty("payload").ValueKind);
+        Assert.AreEqual(0, response.GetProperty("payload").GetArrayLength());
+    }
+
+    [TestMethod]
+    public void CreateActionResponseKeepsSuccessfulInventoryAsArray()
+    {
+        var items = new[] { new TakaroInventoryItem("Wood", "Wood", 1, "1") };
+        var response = JsonDocument.Parse(TakaroProtocol.CreateResponse(
+            "req-inventory-success",
+            "getPlayerInventory",
+            TakaroActionResult.Ok(items))).RootElement;
+
+        Assert.IsTrue(response.GetProperty("success").GetBoolean());
+        Assert.AreEqual(JsonValueKind.Array, response.GetProperty("payload").ValueKind);
+        Assert.AreEqual("Wood", response.GetProperty("payload")[0].GetProperty("code").GetString());
+    }
+
+    [DataTestMethod]
+    [DataRow("player_position_unavailable")]
+    [DataRow("player_not_found")]
+    public void CreateActionResponseUsesTypedPositionFallbackForUnavailableLocation(string errorCode)
+    {
+        var response = JsonDocument.Parse(TakaroProtocol.CreateResponse(
+            "req-location",
+            "getPlayerLocation",
+            TakaroActionResult.Error(errorCode, "No current server-owned position."))).RootElement;
+
+        Assert.IsFalse(response.GetProperty("success").GetBoolean());
+        Assert.AreEqual(errorCode, response.GetProperty("errorCode").GetString());
+        var payload = response.GetProperty("payload");
+        Assert.AreEqual(0, payload.GetProperty("x").GetDouble());
+        Assert.AreEqual(0, payload.GetProperty("y").GetDouble());
+        Assert.AreEqual(0, payload.GetProperty("z").GetDouble());
+        Assert.AreEqual("unavailable", payload.GetProperty("dimension").GetString());
+    }
+
+    [TestMethod]
     public void CreateIdentifyUsesKnownConnectorPayloadShape()
     {
         var config = new ConnectorConfig(

@@ -18,6 +18,10 @@ REQUIRED_VALHEIM_ASSEMBLIES=(
   UnityEngine.dll
   UnityEngine.CoreModule.dll
 )
+REQUIRED_BEPINEX_ASSEMBLIES=(
+  BepInEx.dll
+  0Harmony.dll
+)
 
 BEPINEX_API="${BEPINEX_API:-https://thunderstore.io/api/experimental/package/denikson/BepInExPack_Valheim/}"
 
@@ -46,8 +50,21 @@ validate_managed_assemblies() {
 
   [ -d "$managed_dir" ] || return 1
   for assembly in "${REQUIRED_VALHEIM_ASSEMBLIES[@]}"; do
-    if [ ! -f "$managed_dir/$assembly" ]; then
-      echo "SteamCMD did not install required Valheim assembly: $managed_dir/$assembly" >&2
+    if [ ! -s "$managed_dir/$assembly" ]; then
+      echo "SteamCMD did not install a nonempty required Valheim assembly: $managed_dir/$assembly" >&2
+      return 1
+    fi
+  done
+}
+
+validate_bepinex_assemblies() {
+  local core_dir="$1"
+  local assembly
+
+  [ -d "$core_dir" ] || return 1
+  for assembly in "${REQUIRED_BEPINEX_ASSEMBLIES[@]}"; do
+    if [ ! -s "$core_dir/$assembly" ]; then
+      echo "Downloaded package is missing a nonempty required BepInEx assembly: $core_dir/$assembly" >&2
       return 1
     fi
   done
@@ -133,6 +150,7 @@ rm -rf "$DEPS_DIR/bepinex"
 mkdir -p "$DEPS_DIR/bepinex"
 download_thunderstore_package "$BEPINEX_API" "$DEPS_DIR/bepinex.zip"
 unzip -q "$DEPS_DIR/bepinex.zip" -d "$DEPS_DIR/bepinex"
+validate_bepinex_assemblies "$DEPS_DIR/bepinex/BepInExPack_Valheim/BepInEx/core"
 
 echo "Reference assemblies ready:"
 echo "  Valheim: $SERVER_DIR/valheim_server_Data/Managed"
