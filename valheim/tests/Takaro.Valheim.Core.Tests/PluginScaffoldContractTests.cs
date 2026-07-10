@@ -9,6 +9,20 @@ namespace Takaro.Valheim.Core.Tests;
 public sealed class PluginScaffoldContractTests
 {
     [TestMethod]
+    public async Task ReferenceFreeScaffoldReturnsExplicitUnavailablePlayerState()
+    {
+        var adapter = new ValheimServerAdapter();
+
+        var location = await adapter.GetPlayerLocationAsync("Steam_1");
+        var inventory = await adapter.GetPlayerInventoryAsync("Steam_1");
+
+        Assert.IsFalse(location.Success);
+        Assert.AreEqual("player_position_unavailable", location.ErrorCode);
+        Assert.IsFalse(inventory.Success);
+        Assert.AreEqual("player_component_unavailable", inventory.ErrorCode);
+    }
+
+    [TestMethod]
     public async Task ListOnlyActionsReturnBareArraysFromPluginAdapter()
     {
         var dispatcher = new TakaroRequestDispatcher(new ValheimServerAdapter());
@@ -141,6 +155,41 @@ public sealed class PluginScaffoldContractTests
         Assert.IsFalse(location.Contains("new TakaroPosition(0, 0, 0", StringComparison.Ordinal));
         StringAssert.Contains(inventory, "player_component_unavailable");
         Assert.IsFalse(inventory.Contains("Array.Empty<object>()", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void PluginAdapterUsesServerOwnedGiveAndTeleportPaths()
+    {
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
+        var give = SliceMethod(
+            source,
+            "public Task<TakaroActionResult> GiveItemAsync",
+            "public Task<TakaroActionResult> SendMessageAsync");
+        var teleport = SliceMethod(
+            source,
+            "public Task<TakaroActionResult> TeleportPlayerAsync",
+            "public Task<TakaroActionResult> KickPlayerAsync");
+
+        StringAssert.Contains(give, "ItemDrop");
+        StringAssert.Contains(give, "Instantiate");
+        StringAssert.Contains(teleport, "RPC_TeleportTo");
+        Assert.IsFalse(give.Contains("TakaroGiveItem", StringComparison.Ordinal));
+        Assert.IsFalse(teleport.Contains("TakaroTeleportPlayer", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void PluginAdapterValidatesServerOwnedGiveRequests()
+    {
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
+        var give = SliceMethod(
+            source,
+            "public Task<TakaroActionResult> GiveItemAsync",
+            "public Task<TakaroActionResult> SendMessageAsync");
+
+        StringAssert.Contains(give, "amount <= 0");
+        StringAssert.Contains(give, "invalid_amount");
+        StringAssert.Contains(give, "invalid_quality");
+        StringAssert.Contains(give, "position_unavailable");
     }
 
     private static string ReadPluginSource(string fileName)

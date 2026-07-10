@@ -37,39 +37,45 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default)
     {
-        if (ValheimChatEventBridge.TryGetLocationSnapshot(identifier, out var snapshot))
+        if (!TryResolvePlayer(identifier, out var playerInfo, out var peer, out _))
         {
-            logger.LogInfo($"Takaro Valheim getPlayerLocation returned cached client snapshot for '{identifier}'.");
-            return Task.FromResult(TakaroActionResult.Ok(snapshot));
+            return Task.FromResult(TakaroActionResult.Error(
+                "player_not_found",
+                $"Valheim player '{identifier}' is not online."));
         }
 
-        if (TryFindPlayerInfo(identifier, out var player) && player.m_publicPosition)
+        if (TryResolveServerKnownPosition(playerInfo, peer, out var position))
         {
             return Task.FromResult(TakaroActionResult.Ok(new
             {
-                x = player.m_position.x,
-                y = player.m_position.y,
-                z = player.m_position.z,
+                x = position.x,
+                y = position.y,
+                z = position.z,
                 dimension = "valheim"
             }));
         }
 
-        logger.LogInfo($"Takaro Valheim getPlayerLocation has no public position for '{identifier}', returning origin.");
-        return Task.FromResult(TakaroActionResult.Ok(new TakaroPosition(0, 0, 0, "valheim")));
+        logger.LogInfo($"Takaro Valheim getPlayerLocation has no server-known position for '{identifier}'.");
+        return Task.FromResult(TakaroActionResult.Error(
+            "player_position_unavailable",
+            $"Valheim does not expose a server-known position for player '{identifier}'."));
     }
 
     public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default)
     {
-        if (ValheimChatEventBridge.TryGetInventorySnapshot(identifier, out var snapshot))
+        if (!TryResolvePlayer(identifier, out _, out _, out _))
         {
-            logger.LogInfo($"Takaro Valheim getPlayerInventory returned {snapshot.Count} cached client snapshot item stack(s) for '{identifier}'.");
-            return Task.FromResult(TakaroActionResult.Ok(snapshot));
+            return Task.FromResult(TakaroActionResult.Error(
+                "player_not_found",
+                $"Valheim player '{identifier}' is not online."));
         }
 
         if (!TryFindPlayerComponent(identifier, out var player))
         {
-            logger.LogInfo($"Takaro Valheim getPlayerInventory found no server-side Player component for '{identifier}', returning empty inventory.");
-            return Task.FromResult(TakaroActionResult.Ok(Array.Empty<object>()));
+            logger.LogInfo($"Takaro Valheim getPlayerInventory found no server-side Player component for '{identifier}'.");
+            return Task.FromResult(TakaroActionResult.Error(
+                "player_component_unavailable",
+                $"Valheim does not expose a server-side Player inventory component for remote player '{identifier}'."));
         }
 
         var items = player.GetInventory().GetAllItems()
@@ -94,19 +100,62 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             return Task.FromResult(TakaroActionResult.Error("rpc_unavailable", "Valheim routed RPC is not available yet."));
         }
 
-        if (!TryResolvePlayer(identifier, out _, out var peer, out var player) || peer is null || player is null)
+        if (amount <= 0)
+        {
+            return Task.FromResult(TakaroActionResult.Error(
+                "invalid_amount",
+                $"Valheim item amount must be positive, got {amount}."));
+        }
+
+        if (!TryResolvePlayer(identifier, out var playerInfo, out var peer, out var player) || peer is null || player is null)
         {
             return Task.FromResult(TakaroActionResult.Error("player_not_found", $"Valheim player '{identifier}' is not online."));
         }
 
-        if (!ItemExists(itemCode))
+        if (!TryResolveServerKnownPosition(playerInfo, peer, out var position))
+        {
+            return Task.FromResult(TakaroActionResult.Error(
+                "position_unavailable",
+                $"Valheim has no server-known position for player '{identifier}'."));
+        }
+
+        if (!TryFindItemDropPrefab(itemCode, out var prefab, out var itemDrop))
         {
             return Task.FromResult(TakaroActionResult.Error("item_not_found", $"Valheim item '{itemCode}' was not found."));
         }
 
-        ZRoutedRpc.instance.InvokeRoutedRPC(peer.m_uid, "TakaroGiveItem", itemCode, amount, quality ?? string.Empty);
-        logger.LogInfo($"Takaro Valheim routed giveItem to {player.Name} ({player.GameId}): item={itemCode}, amount={amount}, quality={quality ?? "<default>"}.");
-        return Task.FromResult(TakaroActionResult.Ok(new { queued = true, player, item = new { code = itemCode, amount, quality } }));
+        if (!TryResolveQuality(quality, itemDrop, out var qualityLevel, out var qualityError))
+        {
+            return Task.FromResult(TakaroActionResult.Error("invalid_quality", qualityError!));
+        }
+
+        var maxStack = itemDrop.m_itemData.m_shared?.m_maxStackSize > 0
+            ? itemDrop.m_itemData.m_shared.m_maxStackSize
+            : amount;
+        var remaining = amount;
+        var dropCount = 0;
+        while (remaining > 0)
+        {
+            var stack = Math.Min(remaining, maxStack);
+            var offset = new Vector3((dropCount % 3) - 1, 1.25f, dropCount / 3);
+            InstantiateItemDrop(prefab, itemDrop, stack, qualityLevel, position + offset);
+            remaining -= stack;
+            dropCount++;
+        }
+
+        var itemName = DisplayName(itemDrop.m_itemData.m_shared?.m_name, prefab.name);
+        SendChatMessage(peer, $"Takaro dropped {amount}x {itemName} near you.", position);
+        SendHudMessage(peer, $"Dropped {amount}x {itemName} near you.");
+
+        logger.LogInfo($"Takaro Valheim dropped {amount}x {prefab.name} for {player.Name} ({player.GameId}) at x={position.x}, y={position.y}, z={position.z}.");
+        return Task.FromResult(TakaroActionResult.Ok(new
+        {
+            dropped = true,
+            stacks = dropCount,
+            player,
+            item = new { code = prefab.name, name = itemName, amount, quality = qualityLevel.ToString() },
+            position = new TakaroPosition(position.x, position.y, position.z, "valheim")
+        }));
     }
 
     public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, CancellationToken cancellationToken = default)
@@ -245,8 +294,22 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             return Task.FromResult(TakaroActionResult.Error("player_not_found", $"Valheim player '{identifier}' is not online."));
         }
 
-        ZRoutedRpc.instance.InvokeRoutedRPC(peer.m_uid, "TakaroTeleportPlayer", (float)position.X, (float)position.Y, (float)position.Z);
-        logger.LogInfo($"Takaro Valheim routed teleportPlayer to {player.Name} ({player.GameId}): x={position.X}, y={position.Y}, z={position.Z}.");
+        if (peer.m_characterID.IsNone())
+        {
+            return Task.FromResult(TakaroActionResult.Error(
+                "character_unavailable",
+                $"Valheim player '{identifier}' has no server-known character id."));
+        }
+
+        var target = new Vector3((float)position.X, (float)position.Y, (float)position.Z);
+        ZRoutedRpc.instance.InvokeRoutedRPC(
+            peer.m_uid,
+            peer.m_characterID,
+            "RPC_TeleportTo",
+            target,
+            Quaternion.identity,
+            true);
+        logger.LogInfo($"Takaro Valheim routed base-game teleportPlayer to {player.Name} ({player.GameId}): x={position.X}, y={position.Y}, z={position.Z}.");
         return Task.FromResult(TakaroActionResult.Ok(new { queued = true, player, position }));
     }
 
@@ -445,11 +508,6 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     private static void SendClientMessage(ZNetPeer peer, string message)
     {
-        ZRoutedRpc.instance.InvokeRoutedRPC(
-            peer.m_uid,
-            "TakaroServerMessage",
-            message);
-
         SendPlayerMessage(peer, MessageHud.MessageType.Center, message);
         SendPlayerMessage(peer, MessageHud.MessageType.TopLeft, message);
 
@@ -552,6 +610,124 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         return false;
     }
 
+    private static bool TryResolveServerKnownPosition(ZNet.PlayerInfo playerInfo, ZNetPeer? peer, out Vector3 position)
+    {
+        if (peer is not null && peer.IsReady() && peer.m_refPos != Vector3.zero)
+        {
+            position = peer.m_refPos;
+            return true;
+        }
+
+        if (playerInfo.m_publicPosition)
+        {
+            position = playerInfo.m_position;
+            return true;
+        }
+
+        position = Vector3.zero;
+        return false;
+    }
+
+    private static bool TryFindItemDropPrefab(string itemCode, out GameObject prefab, out ItemDrop itemDrop)
+    {
+        prefab = null!;
+        itemDrop = null!;
+
+        var scene = ZNetScene.instance;
+        if (scene is null)
+        {
+            return false;
+        }
+
+        var candidates = new[]
+            {
+                scene.GetPrefab(itemCode),
+                ObjectDB.instance?.GetItemPrefab(itemCode)
+            }
+            .Concat(scene.m_prefabs ?? [])
+            .Where(candidate => candidate is not null)
+            .Cast<GameObject>();
+
+        foreach (var candidate in candidates)
+        {
+            if (candidate.TryGetComponent<ItemDrop>(out var candidateDrop)
+                && ItemMatches(candidate, candidateDrop, itemCode))
+            {
+                prefab = candidate;
+                itemDrop = candidateDrop;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ItemMatches(GameObject prefab, ItemDrop itemDrop, string itemCode)
+    {
+        var rawName = itemDrop.m_itemData.m_shared?.m_name;
+        return Matches(prefab.name, itemCode)
+            || Matches(DisplayName(rawName, prefab.name), itemCode)
+            || Matches(rawName, itemCode);
+    }
+
+    private static bool TryResolveQuality(string? quality, ItemDrop itemDrop, out int qualityLevel, out string? error)
+    {
+        var maxQuality = itemDrop.m_itemData.m_shared?.m_maxQuality > 0
+            ? itemDrop.m_itemData.m_shared.m_maxQuality
+            : 1;
+        if (string.IsNullOrWhiteSpace(quality))
+        {
+            qualityLevel = ClampQuality(itemDrop.m_itemData.m_quality, maxQuality);
+            error = null;
+            return true;
+        }
+
+        if (!int.TryParse(quality, out var parsed) || parsed <= 0)
+        {
+            qualityLevel = 1;
+            error = $"Valheim item quality must be a positive integer, got '{quality}'.";
+            return false;
+        }
+
+        qualityLevel = ClampQuality(parsed, maxQuality);
+        error = null;
+        return true;
+    }
+
+    private static int ClampQuality(int quality, int maxQuality) =>
+        Math.Min(Math.Max(quality, 1), Math.Max(maxQuality, 1));
+
+    private static void InstantiateItemDrop(
+        GameObject prefab,
+        ItemDrop itemDrop,
+        int stack,
+        int qualityLevel,
+        Vector3 position)
+    {
+        var itemData = itemDrop.m_itemData.Clone();
+        itemData.m_dropPrefab = prefab;
+        itemData.m_quality = qualityLevel;
+        itemData.m_stack = stack;
+        ItemDrop.DropItem(itemData, stack, position, Quaternion.identity);
+    }
+
+    private static void SendChatMessage(ZNetPeer peer, string message, Vector3 position)
+    {
+        var userInfo = new UserInfo
+        {
+            Name = "Takaro",
+            UserId = default
+        };
+
+        ZRoutedRpc.instance.InvokeRoutedRPC(
+            peer.m_uid,
+            "ChatMessage",
+            position == Vector3.zero ? peer.m_refPos : position,
+            (int)Talker.Type.Shout,
+            userInfo,
+            message);
+    }
+
     private static string FirstNonEmpty(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "unknown";
 
@@ -575,10 +751,6 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         var steamId = ExtractSteamId(value);
         return string.IsNullOrWhiteSpace(steamId) ? null : $"steam:{steamId}";
     }
-
-    private static bool ItemExists(string itemCode) =>
-        ZNetScene.instance?.m_prefabs?.Any(prefab => Matches(prefab.name, itemCode) && prefab.GetComponent<ItemDrop>() != null) == true
-        || ObjectDB.instance?.GetItemPrefab(itemCode) != null;
 
     private static string DisplayName(string? rawName, string fallback)
     {
@@ -606,10 +778,14 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         Task.FromResult<TakaroPlayer?>(null);
 
     public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default) =>
-        Task.FromResult(TakaroActionResult.Ok(new { x = 0, y = 0, z = 0 }));
+        Task.FromResult(TakaroActionResult.Error(
+            "player_position_unavailable",
+            "Reference-free scaffold has no server-owned player position."));
 
     public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default) =>
-        Task.FromResult(TakaroActionResult.Ok(Array.Empty<object>()));
+        Task.FromResult(TakaroActionResult.Error(
+            "player_component_unavailable",
+            "Reference-free scaffold has no server-owned Player inventory component."));
 
     public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default) =>
         Task.FromResult(TakaroActionResult.Error("scaffold_mode", "Build with Valheim references to enable item giving."));
