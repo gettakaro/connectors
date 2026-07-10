@@ -13,8 +13,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private readonly Action<string> log;
     private readonly CancellationTokenSource shutdown = new();
     private readonly SemaphoreSlim sendLock = new(1, 1);
-    private readonly PlayerLifecycleEventTracker playerLifecycle = new();
-    private readonly PlayerLifecyclePresenceFilter lifecyclePresence = new();
+    private readonly PlayerLifecyclePollCoordinator lifecycleCoordinator = new();
     private readonly SuppressedResponseLogLimiter suppressedResponseLogs = new(TimeSpan.FromMinutes(1));
     private static readonly TimeSpan PlayerLifecyclePollInterval = TimeSpan.FromSeconds(5);
     private ClientWebSocket? socket;
@@ -132,10 +131,10 @@ public sealed class TakaroWebSocketRunner : IDisposable
                     }
                 }
 
-                var trackablePlayers = lifecyclePresence.SelectTrackable(
+                var events = lifecycleCoordinator.Update(
                     onlinePlayers,
-                    playersWithObservedPositions);
-                var events = playerLifecycle.Update(trackablePlayers, DateTimeOffset.UtcNow);
+                    playersWithObservedPositions,
+                    DateTimeOffset.UtcNow);
                 foreach (var evt in events)
                 {
                     if (!ValheimEventAcceptancePolicy.CanEmit(

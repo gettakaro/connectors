@@ -1,10 +1,36 @@
 # Valheim Server-Only Validation Ledger
 
-## Verdict: PASS WITH GAPS (turn-6 artifact/runtime and exerciser passed; exact Codex review quota-blocked; turn-7 branch verification continues)
+## Verdict: FAIL (turn-7 prerelease artifact was rejected by BepInEx; turn-8 branch verification is pending)
 
-Turn 6 live-validated source commit `20bed2475ad558646c4c7cfccb20a185e516a429` on the dedicated server with no Takaro client plugin. The exact artifact boundary, pre-ready failure behavior, vanilla-player lifecycle, last-known real position, inventory non-mutation, and explicit unsupported map actions passed. The exerciser passed and runtime cleanup complete. The exact-turn independent Codex invocation remained quota-blocked until 20:22, so this is still `PASS WITH GAPS`, not a release-ready claim.
+Turn 7 verified exact source commit `36730faec109f9975865492d9cc619ab12f5fc7f`. Its prerelease artifact did not load, so the latest branch verdict is `FAIL` even though a numeric-version control from the same commit live-proved the connector runtime. Turn-8 source changes do not inherit that control artifact's runtime proof. Turn-8 branch verification is pending; PR creation, GitHub Actions, merge, and release refresh remain orchestrator work.
 
-Turn-7 branch verification continues after review-driven source changes. Those changes do not inherit turn-6 runtime proof. PR creation, GitHub Actions, merge, and release refresh remain orchestrator work.
+Turn 6 remains the latest exact artifact whose full safe exerciser passed. Its independent Codex invocation was quota-blocked, so the historical turn-6 result remains `PASS WITH GAPS`, not a release-ready claim.
+
+## Turn-7 Failed Artifact and Numeric Control
+
+| Evidence | Exact value | Result |
+| --- | --- | --- |
+| Source commit | `36730faec109f9975865492d9cc619ab12f5fc7f` | Exact clean turn-7 HEAD |
+| Prerelease version | `7.8.9-rc.2+verify7` | Full SemVer was incorrectly passed to the BepInEx loader attribute |
+| Failed release zip SHA-256 | `5d24cf113e1235c6b51844a5d3f4cbe2380be0e0105888aa92d191753bbfda88` | Exact verifier artifact |
+| Failed plugin DLL SHA-256 | `bb74d96f6606736d66956b7cbe3746b5731c0921e38c07c4540f0022e0d6231a` | Exact packaged/deployed DLL |
+| Prerelease runtime | BepInEx logged `because its version is invalid` | FAIL: plugin skipped; zero Takaro identify lines |
+| Independent review | `Codex review: BLOCKED by quota until 20:22` | BLOCKED, not passed |
+
+The numeric-version control `7.8.9` from the same source commit loaded and identified game server `4dadfdf6-18a3-41f1-ae2c-b94200dea9ab`. A vanilla client joined without a Takaro client plugin, the server-owned location persisted as `140/33/-2`, and Takaro persisted lifecycle events `247a346b-c69d-47b1-b9c9-d28cc4a74d60` (`player-connected`) and `aae4df31-7660-4447-8103-8447eb639518` (`player-disconnected`). Safe unsupported/invalid-input and inventory non-mutation checks passed. Destructive kick, ban, unban, and shutdown actions remained skipped and approval-gated.
+
+This control isolates the turn-7 failure to release metadata; it does not make the failed prerelease artifact releasable. Turn 8 separates numeric BepInEx metadata from full package SemVer and requires fresh independent verification.
+
+### Turn-8 local build evidence (not independent or live proof)
+
+Turn-8 player gates passed `172/172` tests, `24/24` setup scenarios, Bash/JSON/diff/title checks, and a real `net472` build with zero warnings and zero errors. ShellCheck was unavailable locally. Two release packages were built against real dedicated-server references:
+
+| Version | ZIP SHA-256 | Plugin DLL SHA-256 | Core DLL SHA-256 | Metadata result |
+| --- | --- | --- | --- | --- |
+| `1.0.0` | `e4ae818224acd7c36e31722480e412638fd01c1f49ee9354e3178bfb4a11f8c7` | `9544033124bb5c5e53eb3f3232d29f36361cfbb30efe8cf21cd4b79796324435` | `373819238d3e871fbcab261c4b90fb6704eb9ebf4867c66c270698b3374e5408` | BepInEx `1.0.0`; informational `1.0.0`; assembly `1.0.0.0` |
+| `7.8.9-rc.2+verify8` | `41d27290de50fc5075ef8e340da8a21761956eed1f0d011791e1edeaad5db56c` | `03bae4a2c2dc06447c4aff0207be2a0397d623272eeaf8617c465290784ba195` | `4766c9fa9757d74b4b45990f94d4808e178ea362b06a147c08b70978ed3f166f` | BepInEx `7.8.9`; informational `7.8.9-rc.2+verify8`; assembly `7.8.9.0` |
+
+A non-loading `System.Reflection.Metadata` probe read the actual packaged `BepInPlugin` custom attribute and passed its loader value through `System.Version`. Both manifests and packaged READMEs retained the exact full SemVer. Package inspection found no client artifact, Jotunn dependency, test payload, or banned custom client RPC marker. These are local player checks only; the turn-8 verifier must still live-load its own exact prerelease artifact.
 
 ## Turn-6 Artifact-Pinned Evidence
 
@@ -234,6 +260,6 @@ These files are local evidence paths, not committed release assets.
 
 ## Final Gate
 
-Task 7 is complete for the exact turn-6 commit and artifact above. Turn-7 player gates passed `166/166` tests, `20/20` setup scenarios, Bash/JSON checks, and a real `net472` build with zero warnings or errors. A non-default `2.3.4-rc.1+turn7` package carried that exact version in BepInEx, plugin/core assembly informational metadata, README, and manifest; its zip SHA-256 was `b441e53c02c5e2513f5559259b0724a5475a590f23565a0e5a206c7797382153` and plugin DLL SHA-256 was `6bc4d802442dcbbe7db9afb8889530d445d8f6671fcb9a6f5c6c313f647b31de`. These are turn-7 build checks, not new live evidence.
+Task 7 is complete for the exact turn-6 commit and artifact above. Turn-7 local player gates passed `166/166` tests, `20/20` setup scenarios, Bash/JSON checks, and a real `net472` build with zero warnings or errors, but those checks missed loader compatibility. The exact `7.8.9-rc.2+verify7` verifier artifact was then rejected by BepInEx, so the turn-7 exerciser and overall branch verdict are `FAIL`. The separate numeric-version control evidence is recorded above and is not substituted for the failed artifact.
 
-Turn-7 independent branch verification continues under Task 8 before PR handoff. PR creation, GitHub Actions, superseded-PR closure, merge, and release refresh remain pending orchestrator work. Destructive actions remain approval-gated and are not required for this server-only validation ledger.
+Turn-8 branch verification is pending under Task 8 before PR handoff. PR creation, GitHub Actions, superseded-PR closure, merge, and release refresh remain pending orchestrator work. Destructive actions remain approval-gated and are not required for this server-only validation ledger.

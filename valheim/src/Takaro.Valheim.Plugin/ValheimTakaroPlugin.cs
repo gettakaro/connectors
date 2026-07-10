@@ -14,7 +14,8 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.takaro.valheim";
     public const string PluginName = "Takaro Valheim";
-    public const string PluginVersion = TakaroBuildVersion.Value;
+    public const string PluginVersion = TakaroBuildVersion.BepInExVersion;
+    public const string ReleaseVersion = TakaroBuildVersion.ReleaseVersion;
 
     private TakaroWebSocketRunner? runner;
     private Harmony? harmony;
@@ -86,7 +87,8 @@ public sealed class ValheimTakaroPlugin
 {
     public const string PluginGuid = "com.takaro.valheim";
     public const string PluginName = "Takaro Valheim";
-    public const string PluginVersion = TakaroBuildVersion.Value;
+    public const string PluginVersion = TakaroBuildVersion.BepInExVersion;
+    public const string ReleaseVersion = TakaroBuildVersion.ReleaseVersion;
 
     public static string BuildMode =>
         "Reference-free scaffold. Build with EnableValheimPluginBuild=true and Valheim/BepInEx references for the real plugin.";

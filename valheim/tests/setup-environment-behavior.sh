@@ -141,6 +141,11 @@ curl_stub() {
   done
 
   if [ "$is_steamcmd_download" = true ]; then
+    local download_count=0
+    if [ -f "$STUB_STATE_DIR/steamcmd-download-count" ]; then
+      read -r download_count < "$STUB_STATE_DIR/steamcmd-download-count"
+    fi
+    printf '%s\n' "$((download_count + 1))" > "$STUB_STATE_DIR/steamcmd-download-count"
     if [ -n "$output" ]; then
       mkdir -p "$(dirname "$output")"
       printf 'PARTIAL_RETRY_BYTES' > "$output"
@@ -242,7 +247,32 @@ unzip_stub() {
   fi
 }
 
+write_poisoned_steamcmd_destination() {
+  local destination="$1"
+  mkdir -p "$destination"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    ': > "$STUB_STATE_DIR/poisoned-steamcmd-ran"' \
+    'exit 91' > "$destination/steamcmd.sh"
+  chmod +x "$destination/steamcmd.sh"
+}
+
 cp_stub() {
+  local destination="${*: -1}"
+  if [ "$STUB_SCENARIO" = "steamcmd_partial_publish_failure" ] \
+    && [ "${destination%/}" = "$STUB_STEAMCMD_DIR" ]; then
+    write_poisoned_steamcmd_destination "$STUB_STEAMCMD_DIR"
+    printf 'simulated partial SteamCMD publish failure\n' >&2
+    return 68
+  fi
+  if [ "$STUB_SCENARIO" = "steamcmd_partial_publish_interrupt" ] \
+    && [ "${destination%/}" = "$STUB_STEAMCMD_DIR" ]; then
+    write_poisoned_steamcmd_destination "$STUB_STEAMCMD_DIR"
+    : > "$STUB_STATE_DIR/steamcmd-publish-interrupt-attempted"
+    kill -TERM "$PPID"
+    /bin/sleep 0.2
+    return 72
+  fi
   if [ "$STUB_SCENARIO" = "steamcmd_publish_failure" ]; then
     printf 'simulated SteamCMD publish failure\n' >&2
     return 68
@@ -251,6 +281,22 @@ cp_stub() {
 }
 
 mv_stub() {
+  if [ "$STUB_SCENARIO" = "steamcmd_partial_publish_failure" ] \
+    && [[ "${1:-}" == "$STUB_STEAMCMD_DIR".stage.* ]] \
+    && [ "${2:-}" = "$STUB_STEAMCMD_DIR" ]; then
+    write_poisoned_steamcmd_destination "$STUB_STEAMCMD_DIR"
+    printf 'simulated partial atomic SteamCMD publication failure\n' >&2
+    return 72
+  fi
+  if [ "$STUB_SCENARIO" = "steamcmd_partial_publish_interrupt" ] \
+    && [[ "${1:-}" == "$STUB_STEAMCMD_DIR".stage.* ]] \
+    && [ "${2:-}" = "$STUB_STEAMCMD_DIR" ]; then
+    write_poisoned_steamcmd_destination "$STUB_STEAMCMD_DIR"
+    : > "$STUB_STATE_DIR/steamcmd-publish-interrupt-attempted"
+    kill -TERM "$PPID"
+    /bin/sleep 0.2
+    return 73
+  fi
   if [ "$STUB_SCENARIO" = "valheim_first_rename_interrupt" ] \
     && [ "${1:-}" = "$STUB_SERVER_DIR" ] \
     && [[ "${2:-}" == "$STUB_SERVER_DIR".backup.* ]]; then
@@ -614,6 +660,75 @@ test_failed_steamcmd_publish_cleans_archive_and_extract_directory() {
   fi
 }
 
+test_partial_steamcmd_publication_is_removed_before_next_run() {
+  run_setup steamcmd-partial-publish steamcmd_partial_publish_failure "linux windows" false
+  assert_nonzero "$RUN_STATUS" "partial SteamCMD publication must fail setup" || return 1
+  if [ -e "$RUN_CASE_DIR/steamcmd/steamcmd.sh" ]; then
+    printf 'ASSERT: failed SteamCMD publication left an executable final destination\n' >&2
+    return 1
+  fi
+  if find "$RUN_CASE_DIR" -maxdepth 1 \
+      \( -name 'steamcmd.stage.*' -o -name 'steamcmd.backup.*' -o -name 'steamcmd.download.*' \) \
+      -print -quit | grep -q .; then
+    printf 'ASSERT: failed SteamCMD publication left sibling temporary state\n' >&2
+    return 1
+  fi
+
+  run_setup steamcmd-partial-publish first_success "linux windows" false
+  assert_equals 0 "$RUN_STATUS" "the next run must reinstall instead of trusting a partial executable" || return 1
+  assert_file "$RUN_CASE_DIR/steamcmd/.takaro-steamcmd-complete" "successful atomic publication should write its completion marker" || return 1
+  if [ -f "$RUN_CASE_DIR/state/poisoned-steamcmd-ran" ]; then
+    printf 'ASSERT: a poisoned partial SteamCMD executable was trusted on retry\n' >&2
+    return 1
+  fi
+}
+
+test_signal_during_partial_steamcmd_publication_cleans_destination() {
+  run_setup steamcmd-partial-interrupt steamcmd_partial_publish_interrupt "linux windows" false
+  assert_nonzero "$RUN_STATUS" "interrupted SteamCMD publication must fail setup" || return 1
+  assert_file "$RUN_CASE_DIR/state/steamcmd-publish-interrupt-attempted" "test must reach the partial SteamCMD publication boundary" || return 1
+  if [ -e "$RUN_CASE_DIR/steamcmd/steamcmd.sh" ]; then
+    printf 'ASSERT: interrupted SteamCMD publication left an executable final destination\n' >&2
+    return 1
+  fi
+  if find "$RUN_CASE_DIR" -maxdepth 1 \
+      \( -name 'steamcmd.stage.*' -o -name 'steamcmd.backup.*' -o -name 'steamcmd.download.*' \) \
+      -print -quit | grep -q .; then
+    printf 'ASSERT: interrupted SteamCMD publication left sibling temporary state\n' >&2
+    return 1
+  fi
+}
+
+test_markerless_steamcmd_executable_is_repaired_without_losing_unrelated_files() {
+  local case_dir="$TMP_ROOT/steamcmd-markerless-repair"
+  mkdir -p "$case_dir/steamcmd"
+  write_poisoned_steamcmd_destination "$case_dir/steamcmd"
+  printf '%s\n' 'keep me' > "$case_dir/steamcmd/unrelated.txt"
+
+  run_setup steamcmd-markerless-repair first_success "linux windows" false
+  assert_equals 0 "$RUN_STATUS" "a markerless executable must be repaired instead of trusted" || return 1
+  assert_file "$RUN_CASE_DIR/steamcmd/.takaro-steamcmd-complete" "repaired SteamCMD install should have a completion marker" || return 1
+  assert_file "$RUN_CASE_DIR/steamcmd/unrelated.txt" "repair should preserve unrelated caller files" || return 1
+  assert_equals "keep me" "$(cat "$RUN_CASE_DIR/steamcmd/unrelated.txt")" "repair should preserve unrelated file contents" || return 1
+  if [ -f "$RUN_CASE_DIR/state/poisoned-steamcmd-ran" ]; then
+    printf 'ASSERT: markerless SteamCMD executable was invoked before repair\n' >&2
+    return 1
+  fi
+}
+
+test_complete_cached_steamcmd_install_is_reused() {
+  run_setup steamcmd-complete-cache first_success "linux windows" false
+  assert_equals 0 "$RUN_STATUS" "initial managed SteamCMD setup should succeed" || return 1
+  assert_file "$RUN_CASE_DIR/steamcmd/.takaro-steamcmd-complete" "managed SteamCMD setup should publish a completion marker" || return 1
+  assert_equals 1 "$(cat "$RUN_CASE_DIR/state/steamcmd-download-count")" "initial setup should download SteamCMD once" || return 1
+
+  rm -rf "$RUN_CASE_DIR/server/valheim_server_Data/Managed"
+  rm -f "$RUN_CASE_DIR/state/count" "$RUN_CASE_DIR/state/platforms"
+  run_setup steamcmd-complete-cache first_success "linux windows" false
+  assert_equals 0 "$RUN_STATUS" "a complete cached SteamCMD install should remain usable" || return 1
+  assert_equals 1 "$(cat "$RUN_CASE_DIR/state/steamcmd-download-count")" "complete cached install should not be downloaded again" || return 1
+}
+
 test_exhaustion_reports_recovery_context() {
   run_setup exhausted always_fail
   assert_nonzero "$RUN_STATUS" "exhausted SteamCMD attempts should fail" || return 1
@@ -644,6 +759,10 @@ for test_case in \
   test_steamcmd_download_is_completed_before_tar_reads_it \
   test_failed_steamcmd_download_cleans_partial_archive \
   test_failed_steamcmd_publish_cleans_archive_and_extract_directory \
+  test_partial_steamcmd_publication_is_removed_before_next_run \
+  test_signal_during_partial_steamcmd_publication_cleans_destination \
+  test_markerless_steamcmd_executable_is_repaired_without_losing_unrelated_files \
+  test_complete_cached_steamcmd_install_is_reused \
   test_exhaustion_reports_recovery_context; do
   if "$test_case"; then
     printf 'PASS %s\n' "$test_case"

@@ -7,35 +7,21 @@ cd "$(dirname "$0")/.."
 
 VERSION="${1:?usage: build-release.sh <version> <out-dir>}"
 OUT_DIR="${2:?usage: build-release.sh <version> <out-dir>}"
-SEMVER_PATTERN='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+source scripts/release-version.sh
 
-is_valid_semver() {
-  local candidate="$1"
-  local release_and_prerelease
-  local prerelease
-  local identifier
-  local -a identifiers
-
-  [[ "$candidate" =~ $SEMVER_PATTERN ]] || return 1
-  release_and_prerelease="${candidate%%+*}"
-  if [[ "$release_and_prerelease" == *-* ]]; then
-    prerelease="${release_and_prerelease#*-}"
-    IFS='.' read -r -a identifiers <<< "$prerelease"
-    for identifier in "${identifiers[@]}"; do
-      if [[ "$identifier" =~ ^[0-9]+$ && ${#identifier} -gt 1 && "$identifier" == 0* ]]; then
-        return 1
-      fi
-    done
+if resolve_valheim_release_version "$VERSION"; then
+  :
+else
+  resolution_status=$?
+  if [ "$resolution_status" -eq 2 ]; then
+    echo "Unsupported semantic version: $VERSION" >&2
+    echo "Major, minor, and patch cannot exceed 65534 because BepInEx and .NET assembly metadata require bounded numeric components." >&2
+  else
+    echo "Invalid semantic version: $VERSION" >&2
+    echo "Expected SemVer such as 1.2.3, 1.2.3-rc.1, or 1.2.3+build.4." >&2
   fi
-}
-
-if ! is_valid_semver "$VERSION"; then
-  echo "Invalid semantic version: $VERSION" >&2
-  echo "Expected SemVer such as 1.2.3, 1.2.3-rc.1, or 1.2.3+build.4." >&2
   exit 2
 fi
-CORE_VERSION="${VERSION%%[-+]*}"
-ASSEMBLY_VERSION="${CORE_VERSION}.0"
 
 DATA_DIR="${VALHEIM_DATA_DIR:-_data}"
 VALHEIM_REFERENCE_PATH="${VALHEIM_REFERENCE_PATH:-${DATA_DIR}/server/valheim_server_Data/Managed}"
@@ -53,7 +39,7 @@ VALHEIM_REFERENCE_PATH="$(realpath "$VALHEIM_REFERENCE_PATH")"
 BEPINEX_REFERENCE_PATH="$(realpath "$BEPINEX_REFERENCE_PATH")"
 
 mkdir -p "$OUT_DIR"
-echo "Building Valheim connector v${VERSION}..."
+echo "Building Valheim connector v${VALHEIM_RELEASE_VERSION}..."
 
 dotnet restore Takaro.Valheim.sln
 dotnet test Takaro.Valheim.sln --no-restore -v minimal
@@ -69,12 +55,13 @@ dotnet publish src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj \
   -p:EnableValheimPluginBuild=true \
   -p:BepInExReferencePath="$BEPINEX_REFERENCE_PATH" \
   -p:ValheimReferencePath="$VALHEIM_REFERENCE_PATH" \
-  -p:TakaroValheimPluginVersion="$VERSION" \
-  -p:Version="$VERSION" \
-  -p:PackageVersion="$VERSION" \
-  -p:AssemblyVersion="$ASSEMBLY_VERSION" \
-  -p:FileVersion="$ASSEMBLY_VERSION" \
-  -p:InformationalVersion="$VERSION" \
+  -p:TakaroValheimReleaseVersion="$VALHEIM_RELEASE_VERSION" \
+  -p:TakaroValheimBepInExVersion="$VALHEIM_BEPINEX_VERSION" \
+  -p:Version="$VALHEIM_RELEASE_VERSION" \
+  -p:PackageVersion="$VALHEIM_RELEASE_VERSION" \
+  -p:AssemblyVersion="$VALHEIM_ASSEMBLY_VERSION" \
+  -p:FileVersion="$VALHEIM_ASSEMBLY_VERSION" \
+  -p:InformationalVersion="$VALHEIM_RELEASE_VERSION" \
   -p:IncludeSourceRevisionInInformationalVersion=false
 
 PLUGIN_DIR="$STAGE/TakaroValheim"
@@ -94,7 +81,7 @@ rm -f \
   "$PLUGIN_DIR/UnityEngine.CoreModule.dll"
 
 cat > "$PLUGIN_DIR/README.txt" << EOF
-Takaro Valheim Connector ${VERSION}
+Takaro Valheim Connector ${VALHEIM_RELEASE_VERSION}
 
 Install:
 1. Install BepInExPack Valheim on the dedicated server. Do not install this plugin on clients.
@@ -109,7 +96,7 @@ EOF
 cat > "$PLUGIN_DIR/manifest.json" << EOF
 {
   "name": "TakaroValheim",
-  "version": "${VERSION}",
+  "version": "${VALHEIM_RELEASE_VERSION}",
   "architecture": "dedicated-server-only-bepinex-plugin"
 }
 EOF

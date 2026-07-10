@@ -90,6 +90,23 @@ public sealed class PlayerLifecyclePresenceFilter
     }
 }
 
+public sealed class PlayerLifecyclePollCoordinator
+{
+    private readonly PlayerLifecyclePresenceFilter presence = new();
+    private readonly PlayerLifecycleEventTracker lifecycle = new();
+
+    public IReadOnlyList<TakaroPlayerLifecycleEvent> Update(
+        IReadOnlyCollection<TakaroPlayer> onlinePlayers,
+        IReadOnlyCollection<string> playersWithObservedPositions,
+        DateTimeOffset timestamp)
+    {
+        var trackablePlayers = presence.SelectTrackable(
+            onlinePlayers,
+            playersWithObservedPositions);
+        return lifecycle.Update(trackablePlayers, timestamp);
+    }
+}
+
 public sealed class PlayerLifecycleEventTracker
 {
     private readonly Dictionary<string, TakaroPlayer> previousPlayers = new(StringComparer.OrdinalIgnoreCase);

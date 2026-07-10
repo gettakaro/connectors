@@ -6,9 +6,10 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>TakaroValheim</AssemblyName>
     <EnableValheimPluginBuild Condition="'$(EnableValheimPluginBuild)' == ''">false</EnableValheimPluginBuild>
-    <TakaroValheimPluginVersion Condition="'$(TakaroValheimPluginVersion)' == ''">0.1.0</TakaroValheimPluginVersion>
-    <Version>$(TakaroValheimPluginVersion)</Version>
-    <PackageVersion>$(TakaroValheimPluginVersion)</PackageVersion>
+    <TakaroValheimReleaseVersion Condition="'$(TakaroValheimReleaseVersion)' == ''">0.1.0</TakaroValheimReleaseVersion>
+    <TakaroValheimBepInExVersion Condition="'$(TakaroValheimBepInExVersion)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(TakaroValheimReleaseVersion)', '[-+].*$', ''))</TakaroValheimBepInExVersion>
+    <Version>$(TakaroValheimReleaseVersion)</Version>
+    <PackageVersion>$(TakaroValheimReleaseVersion)</PackageVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(EnableValheimPluginBuild)' == 'true'">
@@ -62,7 +63,7 @@
     </PropertyGroup>
     <WriteLinesToFile
       File="$(TakaroBuildVersionFile)"
-      Lines="namespace Takaro.Valheim.Plugin { internal static class TakaroBuildVersion { public const string Value = &quot;$(TakaroValheimPluginVersion)&quot;%3B } }"
+      Lines="namespace Takaro.Valheim.Plugin { internal static class TakaroBuildVersion { public const string ReleaseVersion = &quot;$(TakaroValheimReleaseVersion)&quot;%3B public const string BepInExVersion = &quot;$(TakaroValheimBepInExVersion)&quot;%3B } }"
       Overwrite="true" />
     <ItemGroup>
       <Compile Include="$(TakaroBuildVersionFile)" />

@@ -169,7 +169,7 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(source, "SuppressedResponseLogLimiter");
         Assert.IsTrue(
             source.IndexOf("GetPlayerLocationAsync(player.GameId", StringComparison.Ordinal)
-                < source.IndexOf("playerLifecycle.Update", StringComparison.Ordinal),
+                < source.IndexOf("lifecycleCoordinator.Update", StringComparison.Ordinal),
             "Lifecycle tracking must see only players with real server-owned positions.");
     }
 

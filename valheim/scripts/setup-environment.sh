@@ -35,6 +35,41 @@ mkdir -p "$STEAMCMD_DIR" "$(dirname "$SERVER_DIR")" "$DEPS_DIR"
 ACTIVE_SERVER_STAGE=""
 ACTIVE_SERVER_BACKUP=""
 ACTIVE_SERVER_FINAL=""
+ACTIVE_STEAMCMD_ARCHIVE=""
+ACTIVE_STEAMCMD_STAGE=""
+ACTIVE_STEAMCMD_BACKUP=""
+ACTIVE_STEAMCMD_FINAL=""
+ACTIVE_STEAMCMD_FINAL_WITHOUT_BACKUP=false
+STEAMCMD_COMPLETION_MARKER="${STEAMCMD_DIR}/.takaro-steamcmd-complete"
+
+cleanup_steamcmd_publication_state() {
+  if [ -n "$ACTIVE_STEAMCMD_BACKUP" ] && [ -e "$ACTIVE_STEAMCMD_BACKUP" ]; then
+    if [ -n "$ACTIVE_STEAMCMD_FINAL" ]; then
+      if [ -e "$ACTIVE_STEAMCMD_FINAL" ] && ! rm -rf "$ACTIVE_STEAMCMD_FINAL"; then
+        echo "Interrupted SteamCMD publication could not remove the uncommitted replacement; the previous install remains preserved at $ACTIVE_STEAMCMD_BACKUP." >&2
+      elif mv "$ACTIVE_STEAMCMD_BACKUP" "$ACTIVE_STEAMCMD_FINAL"; then
+        ACTIVE_STEAMCMD_BACKUP=""
+      else
+        echo "Interrupted SteamCMD publication could not restore the previous install; it remains preserved at $ACTIVE_STEAMCMD_BACKUP." >&2
+      fi
+    fi
+  elif [ "$ACTIVE_STEAMCMD_FINAL_WITHOUT_BACKUP" = true ] \
+    && [ -n "$ACTIVE_STEAMCMD_FINAL" ] \
+    && [ -e "$ACTIVE_STEAMCMD_FINAL" ]; then
+    rm -rf "$ACTIVE_STEAMCMD_FINAL"
+  fi
+
+  if [ -n "$ACTIVE_STEAMCMD_ARCHIVE" ]; then
+    rm -f "$ACTIVE_STEAMCMD_ARCHIVE"
+    ACTIVE_STEAMCMD_ARCHIVE=""
+  fi
+  if [ -n "$ACTIVE_STEAMCMD_STAGE" ]; then
+    rm -rf "$ACTIVE_STEAMCMD_STAGE"
+    ACTIVE_STEAMCMD_STAGE=""
+  fi
+  ACTIVE_STEAMCMD_FINAL=""
+  ACTIVE_STEAMCMD_FINAL_WITHOUT_BACKUP=false
+}
 
 cleanup_server_publication_state() {
   if [ -n "$ACTIVE_SERVER_BACKUP" ] && [ -e "$ACTIVE_SERVER_BACKUP" ]; then
@@ -57,6 +92,7 @@ cleanup_server_publication_state() {
 
 cleanup_on_exit() {
   local status=$?
+  cleanup_steamcmd_publication_state
   cleanup_server_publication_state
   trap - EXIT
   exit "$status"
@@ -69,43 +105,104 @@ curl_retry() {
   curl --retry 5 --retry-delay 2 --retry-all-errors "$@"
 }
 
+publish_steamcmd_install() {
+  local stage_dir="$1"
+  local final_dir="$2"
+  local backup_dir="${final_dir}.backup.$$.${RANDOM}"
+  local publish_status
+
+  ACTIVE_STEAMCMD_FINAL="$final_dir"
+  ACTIVE_STEAMCMD_FINAL_WITHOUT_BACKUP=false
+  if [ -e "$final_dir" ]; then
+    ACTIVE_STEAMCMD_BACKUP="$backup_dir"
+    if mv "$final_dir" "$backup_dir"; then
+      :
+    else
+      publish_status=$?
+      echo "Could not move the existing SteamCMD install aside for atomic publication: $final_dir" >&2
+      cleanup_steamcmd_publication_state
+      return "$publish_status"
+    fi
+  else
+    ACTIVE_STEAMCMD_FINAL_WITHOUT_BACKUP=true
+  fi
+
+  if mv "$stage_dir" "$final_dir"; then
+    :
+  else
+    publish_status=$?
+    echo "Could not atomically publish the completed SteamCMD install to $final_dir; restoring the previous state." >&2
+    cleanup_steamcmd_publication_state
+    return "$publish_status"
+  fi
+
+  ACTIVE_STEAMCMD_STAGE=""
+  backup_dir="$ACTIVE_STEAMCMD_BACKUP"
+  ACTIVE_STEAMCMD_BACKUP=""
+  ACTIVE_STEAMCMD_FINAL=""
+  ACTIVE_STEAMCMD_FINAL_WITHOUT_BACKUP=false
+  if [ -n "$backup_dir" ]; then
+    rm -rf "$backup_dir"
+  fi
+}
+
 install_steamcmd() {
   local steamcmd_archive
-  local steamcmd_extract_dir
+  local steamcmd_stage_dir
   local install_status=0
 
-  if ! steamcmd_archive="$(mktemp "$STEAMCMD_DIR/steamcmd.XXXXXX.tar.gz")"; then
-    echo "Could not create a temporary SteamCMD archive under $STEAMCMD_DIR." >&2
+  if ! steamcmd_archive="$(mktemp "${STEAMCMD_DIR}.download.XXXXXX.tar.gz")"; then
+    echo "Could not create a sibling temporary SteamCMD archive for $STEAMCMD_DIR." >&2
     return 1
   fi
-  if ! steamcmd_extract_dir="$(mktemp -d "$STEAMCMD_DIR/steamcmd-extract.XXXXXX")"; then
+  ACTIVE_STEAMCMD_ARCHIVE="$steamcmd_archive"
+  if ! steamcmd_stage_dir="$(mktemp -d "${STEAMCMD_DIR}.stage.XXXXXX")"; then
     rm -f "$steamcmd_archive"
-    echo "Could not create a temporary SteamCMD extraction directory under $STEAMCMD_DIR." >&2
+    ACTIVE_STEAMCMD_ARCHIVE=""
+    echo "Could not create a sibling SteamCMD staging directory for $STEAMCMD_DIR." >&2
     return 1
+  fi
+  ACTIVE_STEAMCMD_STAGE="$steamcmd_stage_dir"
+
+  if [ -d "$STEAMCMD_DIR" ] && ! cp -a "$STEAMCMD_DIR/." "$steamcmd_stage_dir/"; then
+    echo "Could not preserve existing files while staging the SteamCMD repair." >&2
+    install_status=1
   fi
 
-  if ! curl_retry -fsSL \
+  if [ "$install_status" -eq 0 ] && ! curl_retry -fsSL \
     https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
     -o "$steamcmd_archive"; then
     echo "SteamCMD archive download failed before extraction." >&2
     install_status=1
-  elif ! tar -xzf "$steamcmd_archive" -C "$steamcmd_extract_dir"; then
+  elif [ "$install_status" -eq 0 ] && ! tar -xzf "$steamcmd_archive" -C "$steamcmd_stage_dir"; then
     echo "Downloaded SteamCMD archive could not be extracted." >&2
     install_status=1
-  elif [ ! -x "$steamcmd_extract_dir/steamcmd.sh" ]; then
+  elif [ "$install_status" -eq 0 ] && [ ! -x "$steamcmd_stage_dir/steamcmd.sh" ]; then
     echo "Downloaded SteamCMD archive is missing executable steamcmd.sh." >&2
     install_status=1
-  elif ! cp -a "$steamcmd_extract_dir/." "$STEAMCMD_DIR/"; then
-    echo "Downloaded SteamCMD files could not be published under $STEAMCMD_DIR." >&2
+  elif [ "$install_status" -eq 0 ] && ! : > "$steamcmd_stage_dir/.takaro-steamcmd-complete"; then
+    echo "Could not mark the staged SteamCMD install complete." >&2
+    install_status=1
+  elif [ "$install_status" -eq 0 ] && ! publish_steamcmd_install "$steamcmd_stage_dir" "$STEAMCMD_DIR"; then
     install_status=1
   fi
 
-  rm -f "$steamcmd_archive"
-  rm -rf "$steamcmd_extract_dir"
+  cleanup_steamcmd_publication_state
   return "$install_status"
 }
 
-if [ ! -x "$STEAMCMD" ]; then
+steamcmd_install_is_complete() {
+  if [ "$STEAMCMD" = "$STEAMCMD_DIR/steamcmd.sh" ]; then
+    [ -x "$STEAMCMD" ] && [ -f "$STEAMCMD_COMPLETION_MARKER" ]
+  else
+    [ -x "$STEAMCMD" ]
+  fi
+}
+
+if ! steamcmd_install_is_complete; then
+  if [ -x "$STEAMCMD" ] && [ "$STEAMCMD" = "$STEAMCMD_DIR/steamcmd.sh" ]; then
+    echo "Repairing markerless or incomplete managed SteamCMD install..."
+  fi
   echo "Downloading SteamCMD..."
   if ! install_steamcmd; then
     exit 1

@@ -10,11 +10,11 @@ public sealed class QaLedgerContractTests
     {
         var ledger = ReadLedger();
 
-        StringAssert.Contains(ledger, "## Verdict: PASS WITH GAPS");
+        StringAssert.Contains(ledger, "## Verdict: FAIL");
         StringAssert.Contains(ledger, "20bed2475ad558646c4c7cfccb20a185e516a429");
         StringAssert.Contains(ledger, "d322af0b405fbc901a48f5a5f0c1b9c1f052167ab05295acdc53896395a97186");
         StringAssert.Contains(ledger, "028eb5dfda9e52eb9998d3c538c4189e6332e761ad563a23ba8b76cdecc61755");
-        StringAssert.Contains(ledger, "Turn-7 branch verification continues");
+        StringAssert.Contains(ledger, "Turn-8 branch verification is pending");
         Assert.IsFalse(ledger.Contains("Turn-6 source is pending", StringComparison.Ordinal));
     }
 
@@ -40,7 +40,32 @@ public sealed class QaLedgerContractTests
                      "Codex review: BLOCKED by quota until 20:22",
                      "/tmp/valheim-turn6-evidence",
                      "cleanup complete",
-                     "Turn-7 branch verification continues"
+                     "Turn-8 branch verification is pending"
+                 })
+        {
+            StringAssert.Contains(ledger, marker);
+        }
+    }
+
+    [TestMethod]
+    public void LedgerPinsTurnSevenFailedArtifactAndNumericControlEvidence()
+    {
+        var ledger = ReadLedger();
+
+        foreach (var marker in new[]
+                 {
+                     "36730faec109f9975865492d9cc619ab12f5fc7f",
+                     "7.8.9-rc.2+verify7",
+                     "5d24cf113e1235c6b51844a5d3f4cbe2380be0e0105888aa92d191753bbfda88",
+                     "bb74d96f6606736d66956b7cbe3746b5731c0921e38c07c4540f0022e0d6231a",
+                     "because its version is invalid",
+                     "numeric-version control",
+                     "7.8.9",
+                     "140/33/-2",
+                     "247a346b-c69d-47b1-b9c9-d28cc4a74d60",
+                     "aae4df31-7660-4447-8103-8447eb639518",
+                     "Codex review: BLOCKED by quota until 20:22",
+                     "Turn-8 branch verification is pending"
                  })
         {
             StringAssert.Contains(ledger, marker);
