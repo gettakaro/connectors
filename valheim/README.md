@@ -40,7 +40,7 @@ The default WebSocket endpoint is `wss://connect.takaro.io/`. The plugin disable
 The registry uses only three statuses:
 
 - `live-supported`: the server-owned path has historical live evidence.
-- `schema-fallback`: a reserved status for a schema-valid result that is not yet backed by proven game state.
+- `schema-fallback`: the connector action/schema is available or live-proven, but Takaro's standard route cannot yet expose it end to end.
 - `unsupported`: the path is unavailable or lacks valid server-only proof.
 
 ### Actions
@@ -57,7 +57,7 @@ The registry uses only three statuses:
 | `executeConsoleCommand` | `live-supported` | Runs only exact or prefix-allowlisted commands. |
 | `listItems` | `live-supported` | Lists item prefabs visible to the server. |
 | `listEntities` | `live-supported` | Lists non-player character prefabs visible to the server. |
-| `listLocations` | `live-supported` | Reads `ZoneSystem.GetLocationList()` and emits current `ILocationDTO` objects with `name`, optional `code`, and nested `position`. |
+| `listLocations` | `schema-fallback` | The official raw Generic Connector action/schema live-returned 11,293 nested `ILocationDTO` objects, but the standard Takaro route at `0c63cf1c` throws `NotImplementedError` before requesting them. |
 | `teleportPlayer` | `live-supported` | Routes Valheim's built-in `RPC_TeleportTo` to the server-known character ZDO. |
 | `kickPlayer` | `live-supported` | Sends Valheim's built-in `Kicked` RPC without directly disconnecting the peer. |
 | `banPlayer` | `live-supported` | Writes through Valheim's official ban behavior and then sends `Kicked` when online. |
@@ -86,11 +86,13 @@ Player location never returns a fabricated origin. A live peer/public observatio
 
 Remote inventory is permanently unsupported at the dedicated-server boundary. Its DTO must be an array, so there is no place for the same payload error. Returning `[]` would falsely persist an empty inventory. The connector therefore sends no response frame, logs that suppression at most once per minute per failure, and relies on Takaro's current 10-second pending-request timeout. This is an explicit compatibility limitation and a deliberate exception to the protocol's normal always-respond guidance.
 
+Other failure-capable actions return immediately. At Takaro source commit `0c63cf1c`, validation-free actions such as `giveItem`, messaging, teleport, moderation, and shutdown accept `{ error: "code: message" }`, which `Generic.requestFromServer` rejects without waiting for a timeout. Validated object actions add only their required DTO fields before the same payload error; `testReachability` instead returns `connectable:false` with an actionable reason because that route bypasses the Generic error check. Array-validated actions cannot carry a top-level JSON error; their ordinary server-owned paths return arrays, and any actual failed array path is suppressed rather than fabricating an empty result.
+
 Outbound messages and item confirmations use base-game `Message` and `ShowMessage` calls. They do not require a Takaro client plugin and are not treated as inbound chat.
 
 ## Evidence Boundary
 
-Historical dedicated-server evidence from June 21-22, 2026 covers several entries marked `live-supported`, including vanilla-client player location, world-drop item delivery, built-in teleport, moderation, and delayed shutdown. The July 10 turn-3 run additionally persisted two complete player connect/disconnect cycles, returned 11,293 raw server locations, and re-proved core player actions without any client plugin.
+Historical dedicated-server evidence from June 21-22, 2026 covers several entries marked `live-supported`, including vanilla-client player location, world-drop item delivery, built-in teleport, moderation, and delayed shutdown. The July 10 turn-3 run additionally persisted two complete player connect/disconnect cycles. Turn 4 re-proved a vanilla `Hehe` handshake, real position and teleport, lifecycle persistence, visible messaging/item/cron behavior, and an official raw `listLocations` response containing 11,293 nested locations without any client plugin. The standard Takaro `listLocations` route remained unavailable, so that action is `schema-fallback`, not `live-supported`.
 
 That historical evidence is not a fresh validation of this branch. Current source/build checks and any new runtime evidence belong in [the 2026-07-10 server-only validation ledger](qa/2026-07-10-server-only-validation.md). Routed-packet chat/player-death and client-forwarded entity-kill evidence are explicitly excluded from trusted event claims.
 
@@ -122,3 +124,5 @@ From `valheim/`:
 ```
 
 The release artifact is `takaro-valheim-plugin.zip`. It contains the dedicated-server plugin, core library, and required runtime dependencies; host-provided game, Unity, BepInEx, and Harmony assemblies are excluded.
+
+Environment setup downloads SteamCMD completely to a unique temporary archive before extraction and removes temporary files on both success and failure. Required Valheim and BepInEx references must have managed PE/CLI structure (`MZ` plus CLR metadata), so empty or arbitrary text files cannot satisfy setup validation.

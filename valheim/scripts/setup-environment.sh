@@ -31,10 +31,47 @@ curl_retry() {
   curl --retry 5 --retry-delay 2 --retry-all-errors "$@"
 }
 
+install_steamcmd() {
+  local steamcmd_archive
+  local steamcmd_extract_dir
+  local install_status=0
+
+  if ! steamcmd_archive="$(mktemp "$STEAMCMD_DIR/steamcmd.XXXXXX.tar.gz")"; then
+    echo "Could not create a temporary SteamCMD archive under $STEAMCMD_DIR." >&2
+    return 1
+  fi
+  if ! steamcmd_extract_dir="$(mktemp -d "$STEAMCMD_DIR/steamcmd-extract.XXXXXX")"; then
+    rm -f "$steamcmd_archive"
+    echo "Could not create a temporary SteamCMD extraction directory under $STEAMCMD_DIR." >&2
+    return 1
+  fi
+
+  if ! curl_retry -fsSL \
+    https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
+    -o "$steamcmd_archive"; then
+    echo "SteamCMD archive download failed before extraction." >&2
+    install_status=1
+  elif ! tar -xzf "$steamcmd_archive" -C "$steamcmd_extract_dir"; then
+    echo "Downloaded SteamCMD archive could not be extracted." >&2
+    install_status=1
+  elif [ ! -x "$steamcmd_extract_dir/steamcmd.sh" ]; then
+    echo "Downloaded SteamCMD archive is missing executable steamcmd.sh." >&2
+    install_status=1
+  elif ! cp -a "$steamcmd_extract_dir/." "$STEAMCMD_DIR/"; then
+    echo "Downloaded SteamCMD files could not be published under $STEAMCMD_DIR." >&2
+    install_status=1
+  fi
+
+  rm -f "$steamcmd_archive"
+  rm -rf "$steamcmd_extract_dir"
+  return "$install_status"
+}
+
 if [ ! -x "$STEAMCMD" ]; then
   echo "Downloading SteamCMD..."
-  curl_retry -fsSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
-    | tar -xzf - -C "$STEAMCMD_DIR"
+  if ! install_steamcmd; then
+    exit 1
+  fi
 fi
 
 clear_steam_cache() {
@@ -50,8 +87,8 @@ validate_managed_assemblies() {
 
   [ -d "$managed_dir" ] || return 1
   for assembly in "${REQUIRED_VALHEIM_ASSEMBLIES[@]}"; do
-    if [ ! -s "$managed_dir/$assembly" ]; then
-      echo "SteamCMD did not install a nonempty required Valheim assembly: $managed_dir/$assembly" >&2
+    if ! is_managed_pe_assembly "$managed_dir/$assembly"; then
+      echo "SteamCMD required Valheim assembly is not a managed PE/CLI assembly: $managed_dir/$assembly" >&2
       return 1
     fi
   done
@@ -63,11 +100,24 @@ validate_bepinex_assemblies() {
 
   [ -d "$core_dir" ] || return 1
   for assembly in "${REQUIRED_BEPINEX_ASSEMBLIES[@]}"; do
-    if [ ! -s "$core_dir/$assembly" ]; then
-      echo "Downloaded package is missing a nonempty required BepInEx assembly: $core_dir/$assembly" >&2
+    if ! is_managed_pe_assembly "$core_dir/$assembly"; then
+      echo "Downloaded required BepInEx assembly is not a managed PE/CLI assembly: $core_dir/$assembly" >&2
       return 1
     fi
   done
+}
+
+is_managed_pe_assembly() {
+  local assembly_path="$1"
+  local size
+  local header
+
+  [ -f "$assembly_path" ] || return 1
+  size="$(wc -c < "$assembly_path")"
+  [ "$size" -ge 64 ] || return 1
+  header="$(LC_ALL=C dd if="$assembly_path" bs=1 count=2 2>/dev/null)"
+  [ "$header" = "MZ" ] || return 1
+  LC_ALL=C grep -aFq 'BSJB' "$assembly_path"
 }
 
 install_valheim_server() {

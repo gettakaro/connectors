@@ -67,4 +67,62 @@ public sealed class PlayerPositionCacheTests
 
         Assert.IsFalse(cache.TryGet("Steam_1", Now, out _));
     }
+
+    [TestMethod]
+    public async Task ParallelReadsWritesExpiryAndClearRemainSafe()
+    {
+        var cache = new PlayerPositionCache(TimeSpan.FromMilliseconds(25));
+        var start = new ManualResetEventSlim(false);
+        var workers = Enumerable.Range(0, 16).Select(worker => Task.Run(() =>
+        {
+            start.Wait();
+            for (var iteration = 0; iteration < 10_000; iteration++)
+            {
+                var playerNumber = (worker + iteration) % 64;
+                var player = new TakaroPlayer(
+                    $"Steam_{playerNumber}",
+                    $"Viking_{playerNumber}",
+                    playerNumber.ToString(),
+                    $"steam:{playerNumber}",
+                    null,
+                    null);
+                var observedAt = Now.AddMilliseconds(iteration);
+                cache.Remember(player, new TakaroPosition(playerNumber + 1, worker + 1, iteration + 1, "valheim"), observedAt);
+                cache.TryGet(player.GameId, observedAt.AddMilliseconds(iteration % 30), out _);
+
+                if (iteration % 257 == 0)
+                {
+                    cache.Clear();
+                }
+            }
+        })).ToArray();
+
+        start.Set();
+        await Task.WhenAll(workers);
+
+        cache.Clear();
+        Assert.IsFalse(cache.TryGet("Steam_1", Now.AddDays(1), out _));
+    }
+
+    [TestMethod]
+    public async Task ConcurrentExpiryPrunesOnlyExpiredObservationsAndClearRemainsAuthoritative()
+    {
+        var cache = new PlayerPositionCache(TimeSpan.FromSeconds(30));
+        var stale = new TakaroPlayer("Steam_stale", "Stale", "stale", "steam:stale", null, null);
+        var fresh = new TakaroPlayer("Steam_fresh", "Fresh", "fresh", "steam:fresh", null, null);
+        cache.Remember(stale, new TakaroPosition(1, 2, 3, "valheim"), Now.AddMinutes(-1));
+        cache.Remember(fresh, new TakaroPosition(4, 5, 6, "valheim"), Now);
+
+        await Task.WhenAll(
+            Task.Run(() => Parallel.For(0, 2_000, iteration => cache.TryGet(stale.GameId, Now, out _))),
+            Task.Run(() => Parallel.For(0, 2_000, iteration => cache.Remember(fresh, new TakaroPosition(4, 5, 6, "valheim"), Now))),
+            Task.Run(() => Parallel.For(0, 2_000, iteration => cache.TryGet(fresh.Name, Now, out _))));
+
+        Assert.IsFalse(cache.TryGet(stale.Name, Now, out _));
+        Assert.IsTrue(cache.TryGet(fresh.GameId, Now, out var position));
+        Assert.AreEqual(4, position.X);
+
+        cache.Clear();
+        Assert.IsFalse(cache.TryGet(fresh.GameId, Now, out _));
+    }
 }

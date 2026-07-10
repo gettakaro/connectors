@@ -28,7 +28,7 @@ Server-owned implementations retained from the validated local work are:
 - allowlisted console commands, moderation, bans, and shutdown;
 - server-observable player lifecycle events.
 
-Remote inventory and ordinary player-originated chat remain unavailable from a vanilla client at the proven server boundary. Player-death and entity-killed are also unsupported because no trustworthy server-only emitter exists. The connector emits none of those events. It returns only real current or fresh server-observed player positions; current Takaro rejects a schema-valid `payload.error` when position is unavailable. Inventory emits no response frame because its required array DTO cannot carry that error and `[]` would fabricate state.
+Remote inventory and ordinary player-originated chat remain unavailable from a vanilla client at the proven server boundary. Player-death and entity-killed are also unsupported because no trustworthy server-only emitter exists. The connector emits none of those events. It returns only real current or fresh server-observed player positions; current Takaro rejects a schema-valid `payload.error` when position is unavailable. Inventory emits no response frame because its required array DTO cannot carry that error and `[]` would fabricate state. Other failure-capable actions return an immediate, action-specific payload error: validated objects include only their pinned required fields, validation-free actions use `{error}`, and reachability uses `connectable:false` plus an actionable reason.
 
 ## Consolidation Strategy
 
@@ -46,14 +46,14 @@ After the replacement PR is green, the superseded implementation/debug PRs can b
 Every Generic Connector action and event must be documented in the Valheim README with one of these outcomes:
 
 - `live-supported`: implemented through a server-owned path with retained live evidence;
-- `schema-fallback`: reserved for an accepted result shape that is explicitly not proven game state;
+- `schema-fallback`: the raw connector action/schema is available or live-proven but Takaro's standard route cannot expose it end to end;
 - `unsupported`: fails or does not emit because no server-only path is proven.
 
 Automated tests must prevent the reintroduction of client plugin activation, client RPC names, fake origin success, and fake empty-inventory success.
 
 ## Packaging And CI
 
-The environment setup script will use bounded retries for transient SteamCMD/Thunderstore failures, verify downloaded reference files, and use the proven Windows-depot reference fallback when the Linux dedicated-server depot reports `Missing configuration`. Release packaging must contain the real `net472` plugin and required runtime dependencies while excluding tests and client-only artifacts.
+The environment setup script will use bounded retries for transient SteamCMD/Thunderstore failures, download SteamCMD to a unique temporary archive before extraction, remove partial files on every path, validate managed PE/CLI reference structure, and use the proven Windows-depot reference fallback when the Linux dedicated-server depot reports `Missing configuration`. Release packaging must contain the real `net472` plugin and required runtime dependencies while excluding tests and client-only artifacts.
 
 ## Verification
 
@@ -62,7 +62,7 @@ Verification proceeds from cheapest to strongest evidence:
 1. Red-green tests for server-only guards, exact Takaro consumer failure behavior, player-position freshness, server-owned give/teleport paths, unsupported event suppression, and setup-script behavior.
 2. Full Valheim solution tests, shell syntax/static checks, real `net472` build, and release package inspection.
 3. Branch-wide independent verification.
-4. Non-destructive live dedicated-server proof with no Takaro client plugin: startup/identity, reachability, players, location, outbound messaging, give-item world drop, teleport, catalogs, `listLocations`, and server-observable events.
+4. Non-destructive live dedicated-server proof with no Takaro client plugin: startup/identity, reachability, players, location, outbound messaging, give-item world drop, teleport, catalogs, raw `listLocations`, the availability of Takaro's standard `listLocations` route, and server-observable events.
 5. Installed-module checks for current module inventory, safe hooks/commands where supported, and `serverMessages` cron delivery, backed by Takaro and server logs.
 6. GitHub Actions must be green before the PR is considered ready.
 

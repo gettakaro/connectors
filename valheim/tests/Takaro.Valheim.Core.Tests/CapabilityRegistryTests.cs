@@ -63,11 +63,29 @@ public sealed class CapabilityRegistryTests
         var root = registry.RootElement;
 
         Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
+        Assert.AreEqual("schema-fallback", root.GetProperty("actions").GetProperty("listLocations").GetString());
         Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("player-connected").GetString());
         Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("player-disconnected").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("chat-message").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("player-death").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("entity-killed").GetString());
+    }
+
+    [TestMethod]
+    public void ListLocationsSeparatesRawConnectorProofFromUnavailableStandardTakaroRoute()
+    {
+        using var document = ReadRegistry();
+        var notes = document.RootElement.GetProperty("notes")
+            .EnumerateArray()
+            .Select(note => note.GetString() ?? string.Empty)
+            .ToArray();
+        var readme = ReadValheimFile("README.md");
+
+        Assert.IsTrue(notes.Any(note => note.Contains("raw Generic Connector action", StringComparison.Ordinal)));
+        Assert.IsTrue(notes.Any(note => note.Contains("standard Takaro route", StringComparison.Ordinal)));
+        StringAssert.Contains(readme, "| `listLocations` | `schema-fallback`");
+        StringAssert.Contains(readme, "official raw Generic Connector action/schema");
+        StringAssert.Contains(readme, "standard Takaro route");
     }
 
     [TestMethod]

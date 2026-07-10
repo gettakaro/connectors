@@ -1,14 +1,47 @@
 # Valheim Server-Only Validation Ledger
 
-## Verdict: PASS WITH GAPS (turn-3 runtime; turn-4 pending)
+## Verdict: PASS WITH GAPS (turn-4 build/server core; failure wire blocked; turn-5 pending)
 
-Source commit `20b505b2fcc5e58a6bdb0ec3bf4d26bda6a5f096` passed build/package gates and a live dedicated-server run with a vanilla player. Player actions, catalogs, visible messaging, and cron delivery were proven. Client-owned inventory remains a schema fallback; inbound chat, death, and entity-killed remain unsupported; lifecycle frames were written but exact Takaro persistence was not proven.
+Turn 4 live-validated source commit `75224f2cc9540f9e40baa6178e4ffb70d247b892` on the dedicated server with no Takaro client plugin. Build, server startup/identity, vanilla-player presence, real position/teleport, lifecycle persistence, visible actions, catalogs, nested raw locations, and cron delivery passed. The run also confirmed one release blocker: invalid `giveItem` failures were over-suppressed, so Takaro timed out instead of receiving an immediate actionable payload error. The verdict therefore does not claim release readiness.
 
-Turn 3 then deployed source commit `d0195b677c43a766daae55a226be4af73ef24a10`. It removed schema validation errors and re-proved the core server-only path, including four persisted lifecycle events, but exposed the false-success fallback defect for unavailable inventory/location and a flat `listLocations` DTO. Those failures are recorded below rather than folded into a success claim.
+Turn-5 source is not live-validated by this ledger. It changes response failure handling, position-cache synchronization, SteamCMD staging, managed-reference validation, and the `listLocations` status. Those changes require a fresh build/deploy/runtime run before inheriting turn-4 live evidence.
 
-Turn-4 source is not live-validated by this ledger. Its consumer-contract, no-fabricated-inventory, position-cache, and nested-location corrections must be rebuilt, deployed, and exercised before inheriting a live verdict.
+## Turn-4 Artifact-Pinned Evidence
+
+### Artifact, build, and boundary
+
+| Evidence | Exact value | Result |
+| --- | --- | --- |
+| Source commit | `75224f2cc9540f9e40baa6178e4ffb70d247b892` | Exact clean turn-4 HEAD |
+| Release zip SHA-256 | `35238e55dd4353374cba26565c2e5daa66de70d5c4d22a5823941d515ea34b6b` | Deployed build input |
+| Packaged/deployed DLL SHA-256 | `58e6615b1c078d0f85e86beac9d65eed3d949d3b5e9bf117334421e72db8fb02` | Exact match |
+| Unit/contract tests | `121/121` | PASS |
+| Setup behavior harness | `8/8` | PASS at turn-4 source |
+| Independent Codex review | `Codex review: COMPLETED` | Hard gate completed |
+
+The Takaro DLL remained absent from the client. Vanilla player `Hehe` completed the base-game handshake and received a character ZDO; no client snapshot, Takaro RPC, or client-owned state path was used. Client-launch recovery before that successful join was an external automation concern and is not counted as connector proof or a connector defect.
+
+### Player actions and state integrity
+
+- Unavailable pre-ready location returned required numeric coordinates plus `payload.error`; it did not write a fake origin.
+- Unsupported inventory emitted no response and did not write a fake empty inventory.
+- The player had a real server-owned location at `80/36/-2`; `teleportPlayer` changed it to `85/36/-2` through the built-in Valheim RPC.
+- Global/direct messaging, a valid visible world drop, and teleport were visible in `/tmp/valheim-turn4-visible-actions.png`.
+- Invalid `giveItem` amount `1001` and fractional amount `1.5` reached `invalid_args`, but the connector suppressed their frames. Takaro timed out after approximately 10.3 seconds and returned a generic 400. This was the turn-4 release blocker, not a passing negative-path test.
+
+### Lifecycle, catalogs, and modules
+
+- Persisted `player-connected`: `e93ed6d1-29f1-49f7-9bf7-43d4d625f395`.
+- Persisted `player-disconnected`: `aee52332-392f-449b-ba92-521ef66b3b71`.
+- Raw catalogs returned `listItems`: 821 and `listEntities`: 101.
+- The official raw Generic Connector `listLocations` action returned 11,293 nested locations in 1,815,046 bytes. `/tmp/valheim-turn4-evidence/raw-harness-result.json` records that every location used nested `position` and none used flat coordinates.
+- Takaro source `0c63cf1c` still throws `NotImplementedError` from the standard Generic `listLocations` route before requesting the connector. The raw action/schema is live-proven, but end-to-end standard routing is not; the capability is therefore `schema-fallback`.
+- A visible online `serverMessages` cron persisted `cronjob-executed` event `dd7fabcb-bd18-491c-8ea3-c9d2147be33f`; visual proof is `/tmp/valheim-turn4-module-cron-visible.png`.
+- Chat, player-death, and entity-killed remained unsupported with no accepted emitter. Destructive kick/ban/unban/shutdown checks remained approval-gated and skipped.
 
 ## Turn-3 Artifact-Pinned Evidence
+
+Turn 3 deployed source commit `d0195b677c43a766daae55a226be4af73ef24a10`. It removed schema validation errors and re-proved the core server-only path, including four persisted lifecycle events, but exposed the false-success fallback defect for unavailable inventory/location and a flat `listLocations` DTO. Those failures are retained below as historical evidence rather than folded into the turn-4 result.
 
 ### Artifact and boundary
 
@@ -140,4 +173,4 @@ These files are local evidence paths, not committed release assets.
 
 ## Final Gate
 
-Build and deploy the turn-4 artifact server-side only. Require: unavailable location rejects without mutating position; inventory times out without persisting `[]`; a ready and freshly disconnected player returns only a real observed position; `listLocations` passes the nested DTO route; persisted lifecycle still works; visible messaging/item/teleport remain intact; the client plugin stays absent; and unsupported chat/death/entity events remain absent. Destructive actions remain approval-gated.
+Build and deploy the turn-5 artifact server-side only. Require: invalid `giveItem` inputs return one immediate actionable `payload.error`; unavailable location rejects without mutating position; inventory times out without persisting `[]`; a ready and freshly disconnected player returns only a real observed position; the raw `listLocations` action remains nested while the standard Takaro route is reported separately; persisted lifecycle still works; visible messaging/item/teleport remain intact; the client plugin stays absent; and unsupported chat/death/entity events remain absent. Destructive actions remain approval-gated.

@@ -16,8 +16,16 @@ create_required_assemblies() {
   local assembly
   mkdir -p "$managed_dir"
   for assembly in "${REQUIRED_ASSEMBLIES[@]}"; do
-    printf 'test-reference\n' > "$managed_dir/$assembly"
+    create_managed_assembly_fixture "$managed_dir/$assembly"
   done
+}
+
+create_managed_assembly_fixture() {
+  local output="$1"
+  mkdir -p "$(dirname "$output")"
+  # Small deterministic fixture with the two structural markers used by portable
+  # setup validation: DOS/PE MZ header and CLR metadata signature.
+  printf 'MZ%0126dBSJB' 0 > "$output"
 }
 
 steamcmd_stub() {
@@ -49,7 +57,7 @@ steamcmd_stub() {
   fi
 
   case "$STUB_SCENARIO" in
-    first_success|empty_bepinex)
+    first_success|empty_bepinex|corrupt_bepinex)
       create_required_assemblies
       return 0
       ;;
@@ -69,7 +77,16 @@ steamcmd_stub() {
       ;;
     missing_required)
       mkdir -p "$STUB_SERVER_DIR/valheim_server_Data/Managed"
-      printf 'test-reference\n' > "$STUB_SERVER_DIR/valheim_server_Data/Managed/assembly_valheim.dll"
+      create_managed_assembly_fixture "$STUB_SERVER_DIR/valheim_server_Data/Managed/assembly_valheim.dll"
+      return 0
+      ;;
+    corrupt_required)
+      local corrupt_dir="$STUB_SERVER_DIR/valheim_server_Data/Managed"
+      local corrupt_assembly
+      mkdir -p "$corrupt_dir"
+      for corrupt_assembly in "${REQUIRED_ASSEMBLIES[@]}"; do
+        printf 'not a managed assembly\n' > "$corrupt_dir/$corrupt_assembly"
+      done
       return 0
       ;;
     empty_required)
@@ -93,6 +110,38 @@ steamcmd_stub() {
 
 curl_stub() {
   local output=""
+  local is_steamcmd_download=false
+  local previous=""
+  local argument
+  for argument in "$@"; do
+    if [ "$previous" = "-o" ]; then
+      output="$argument"
+    fi
+    if [[ "$argument" == *steamcmd_linux.tar.gz ]]; then
+      is_steamcmd_download=true
+    fi
+    previous="$argument"
+  done
+
+  if [ "$is_steamcmd_download" = true ]; then
+    if [ -n "$output" ]; then
+      mkdir -p "$(dirname "$output")"
+      printf 'PARTIAL_RETRY_BYTES' > "$output"
+      if [ "$STUB_SCENARIO" = "steamcmd_download_failure" ]; then
+        return 66
+      fi
+      printf 'COMPLETE_ARCHIVE' > "$output"
+      printf '%s\n' "$output" > "$STUB_STATE_DIR/curl-output"
+      return 0
+    fi
+
+    # A retried stream can contain bytes from the failed transfer followed by the
+    # completed transfer. Piping this directly to tar must fail the regression.
+    printf 'PARTIAL_RETRY_BYTESCOMPLETE_ARCHIVE'
+    return 0
+  fi
+
+  previous=""
   while [ "$#" -gt 0 ]; do
     if [ "$1" = "-o" ]; then
       shift
@@ -108,6 +157,38 @@ curl_stub() {
   else
     printf '%s\n' '{"latest":{"download_url":"https://example.invalid/bepinex.zip"}}'
   fi
+}
+
+tar_stub() {
+  local archive=""
+  local destination=""
+  local previous=""
+  local argument
+  local archive_contents
+
+  for argument in "$@"; do
+    if [ "$previous" = "-xzf" ]; then
+      archive="$argument"
+    elif [ "$previous" = "-C" ]; then
+      destination="$argument"
+    fi
+    previous="$argument"
+  done
+
+  if [ -z "$archive" ] || [ "$archive" = "-" ]; then
+    archive_contents="$(cat)"
+  else
+    archive_contents="$(cat "$archive")"
+  fi
+  printf '%s' "$archive_contents" > "$STUB_STATE_DIR/tar-input"
+
+  if [ "$archive_contents" != "COMPLETE_ARCHIVE" ]; then
+    printf 'tar received a partial or concatenated SteamCMD archive\n' >&2
+    return 67
+  fi
+
+  mkdir -p "$destination"
+  ln -sf "$SELF" "$destination/steamcmd.sh"
 }
 
 jq_stub() {
@@ -132,10 +213,21 @@ unzip_stub() {
   if [ "$STUB_SCENARIO" = "empty_bepinex" ]; then
     : > "$destination/BepInExPack_Valheim/BepInEx/core/BepInEx.dll"
     : > "$destination/BepInExPack_Valheim/BepInEx/core/0Harmony.dll"
+  elif [ "$STUB_SCENARIO" = "corrupt_bepinex" ]; then
+    printf 'not a managed assembly\n' > "$destination/BepInExPack_Valheim/BepInEx/core/BepInEx.dll"
+    printf 'not a managed assembly\n' > "$destination/BepInExPack_Valheim/BepInEx/core/0Harmony.dll"
   else
-    printf 'test-reference\n' > "$destination/BepInExPack_Valheim/BepInEx/core/BepInEx.dll"
-    printf 'test-reference\n' > "$destination/BepInExPack_Valheim/BepInEx/core/0Harmony.dll"
+    create_managed_assembly_fixture "$destination/BepInExPack_Valheim/BepInEx/core/BepInEx.dll"
+    create_managed_assembly_fixture "$destination/BepInExPack_Valheim/BepInEx/core/0Harmony.dll"
   fi
+}
+
+cp_stub() {
+  if [ "$STUB_SCENARIO" = "steamcmd_publish_failure" ]; then
+    printf 'simulated SteamCMD publish failure\n' >&2
+    return 68
+  fi
+  /bin/cp "$@"
 }
 
 case "$COMMAND_NAME" in
@@ -153,6 +245,14 @@ case "$COMMAND_NAME" in
     ;;
   unzip)
     unzip_stub "$@"
+    exit $?
+    ;;
+  tar)
+    tar_stub "$@"
+    exit $?
+    ;;
+  cp)
+    cp_stub "$@"
     exit $?
     ;;
   sleep)
@@ -173,14 +273,22 @@ run_setup() {
   local name="$1"
   local scenario="$2"
   local platforms="${3:-linux windows}"
+  local preinstall_steamcmd="${4:-true}"
   local case_dir="$TMP_ROOT/$name"
   local bin_dir="$case_dir/bin"
   local command
+  local steamcmd_path
 
   mkdir -p "$bin_dir" "$case_dir/home" "$case_dir/data" "$case_dir/server" "$case_dir/steamcmd" "$case_dir/deps" "$case_dir/state"
-  for command in steamcmd.sh curl jq unzip sleep; do
+  for command in curl jq unzip tar cp sleep; do
     ln -s "$SELF" "$bin_dir/$command"
   done
+  if [ "$preinstall_steamcmd" = true ]; then
+    ln -s "$SELF" "$bin_dir/steamcmd.sh"
+    steamcmd_path="$bin_dir/steamcmd.sh"
+  else
+    steamcmd_path="$case_dir/steamcmd/steamcmd.sh"
+  fi
 
   RUN_OUTPUT="$case_dir/output.log"
   RUN_CASE_DIR="$case_dir"
@@ -191,7 +299,7 @@ run_setup() {
     STEAMCMD_DIR="$case_dir/steamcmd" \
     VALHEIM_SERVER_DIR="$case_dir/server" \
     VALHEIM_DEPS_DIR="$case_dir/deps" \
-    STEAMCMD="$bin_dir/steamcmd.sh" \
+    STEAMCMD="$steamcmd_path" \
     VALHEIM_STEAM_PLATFORMS="$platforms" \
     STUB_SCENARIO="$scenario" \
     STUB_STATE_DIR="$case_dir/state" \
@@ -315,10 +423,60 @@ test_empty_required_dlls_exhaust_all_attempts() {
   assert_equals 6 "$(call_count)" "empty DLLs should retry and fall back" || return 1
 }
 
+test_corrupt_required_dlls_exhaust_all_attempts() {
+  run_setup corrupt-required corrupt_required
+  assert_nonzero "$RUN_STATUS" "non-managed Valheim DLL text must not satisfy reference validation" || return 1
+  assert_equals 6 "$(call_count)" "corrupt DLLs should retry and fall back" || return 1
+  assert_output_contains "managed PE/CLI assembly" "Valheim corruption failure should be actionable" || return 1
+}
+
 test_empty_bepinex_dlls_fail_setup() {
   run_setup empty-bepinex empty_bepinex
   assert_nonzero "$RUN_STATUS" "zero-byte BepInEx DLLs must not satisfy reference validation" || return 1
   assert_output_contains "required BepInEx assembly" "BepInEx failure should name the missing or empty reference" || return 1
+}
+
+test_corrupt_bepinex_dlls_fail_setup() {
+  run_setup corrupt-bepinex corrupt_bepinex
+  assert_nonzero "$RUN_STATUS" "non-managed BepInEx DLL text must not satisfy reference validation" || return 1
+  assert_output_contains "managed PE/CLI assembly" "BepInEx corruption failure should be actionable" || return 1
+}
+
+test_steamcmd_download_is_completed_before_tar_reads_it() {
+  run_setup steamcmd-download first_success "linux windows" false
+  assert_equals 0 "$RUN_STATUS" "completed SteamCMD archive should install and run" || return 1
+  assert_file "$RUN_CASE_DIR/state/tar-input" "tar should receive an archive file" || return 1
+  assert_equals "COMPLETE_ARCHIVE" "$(cat "$RUN_CASE_DIR/state/tar-input")" "tar must see only the completed retry result" || return 1
+  if find "$RUN_CASE_DIR/steamcmd" -maxdepth 1 -name 'steamcmd.*.tar.gz' -print -quit | grep -q .; then
+    printf 'ASSERT: successful SteamCMD archive temporary file was not cleaned up\n' >&2
+    return 1
+  fi
+  if find "$RUN_CASE_DIR/steamcmd" -maxdepth 1 -type d -name 'steamcmd-extract.*' -print -quit | grep -q .; then
+    printf 'ASSERT: successful SteamCMD extraction directory was not cleaned up\n' >&2
+    return 1
+  fi
+}
+
+test_failed_steamcmd_download_cleans_partial_archive() {
+  run_setup steamcmd-download-failure steamcmd_download_failure "linux windows" false
+  assert_nonzero "$RUN_STATUS" "failed SteamCMD download must fail setup before extraction" || return 1
+  if [ -f "$RUN_CASE_DIR/state/tar-input" ]; then
+    printf 'ASSERT: tar must not inspect a failed SteamCMD download\n' >&2
+    return 1
+  fi
+  if find "$RUN_CASE_DIR/steamcmd" -maxdepth 1 -name 'steamcmd.*.tar.gz' -print -quit | grep -q .; then
+    printf 'ASSERT: failed SteamCMD archive temporary file was not cleaned up\n' >&2
+    return 1
+  fi
+}
+
+test_failed_steamcmd_publish_cleans_archive_and_extract_directory() {
+  run_setup steamcmd-publish-failure steamcmd_publish_failure "linux windows" false
+  assert_nonzero "$RUN_STATUS" "failed SteamCMD publish must fail setup" || return 1
+  if find "$RUN_CASE_DIR/steamcmd" -maxdepth 1 \( -name 'steamcmd.*.tar.gz' -o -name 'steamcmd-extract.*' \) -print -quit | grep -q .; then
+    printf 'ASSERT: failed SteamCMD publish left temporary archive or extraction state\n' >&2
+    return 1
+  fi
 }
 
 test_exhaustion_reports_recovery_context() {
@@ -338,7 +496,12 @@ for test_case in \
   test_linux_windows_fallback_preserves_caller_server_data \
   test_missing_required_dlls_exhausts_all_attempts \
   test_empty_required_dlls_exhaust_all_attempts \
+  test_corrupt_required_dlls_exhaust_all_attempts \
   test_empty_bepinex_dlls_fail_setup \
+  test_corrupt_bepinex_dlls_fail_setup \
+  test_steamcmd_download_is_completed_before_tar_reads_it \
+  test_failed_steamcmd_download_cleans_partial_archive \
+  test_failed_steamcmd_publish_cleans_archive_and_extract_directory \
   test_exhaustion_reports_recovery_context; do
   if "$test_case"; then
     printf 'PASS %s\n' "$test_case"

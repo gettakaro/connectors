@@ -6,15 +6,15 @@ namespace Takaro.Valheim.Core.Tests;
 public sealed class QaLedgerContractTests
 {
     [TestMethod]
-    public void LedgerUsesRequiredVerdictAndPinsTurnTwoArtifactEvidence()
+    public void LedgerUsesRequiredVerdictAndPinsCurrentEvidenceBoundary()
     {
         var ledger = ReadLedger();
 
         StringAssert.Contains(ledger, "## Verdict: PASS WITH GAPS");
-        StringAssert.Contains(ledger, "20b505b2fcc5e58a6bdb0ec3bf4d26bda6a5f096");
-        StringAssert.Contains(ledger, "4142c2399a660bbda32200e1e18e79e75bb1d3f5b478cf8387681b9a80c1d1ac");
-        StringAssert.Contains(ledger, "0a70626f6908669846b8bbfc2d2aa93e44a5902dccc44fba259bb6d0f5c505cc");
-        StringAssert.Contains(ledger, "Turn-4 source is not live-validated by this ledger");
+        StringAssert.Contains(ledger, "75224f2cc9540f9e40baa6178e4ffb70d247b892");
+        StringAssert.Contains(ledger, "35238e55dd4353374cba26565c2e5daa66de70d5c4d22a5823941d515ea34b6b");
+        StringAssert.Contains(ledger, "58e6615b1c078d0f85e86beac9d65eed3d949d3b5e9bf117334421e72db8fb02");
+        StringAssert.Contains(ledger, "Turn-5 source is not live-validated by this ledger");
     }
 
     [TestMethod]
@@ -38,7 +38,40 @@ public sealed class QaLedgerContractTests
                      "f55c8b39-fc2c-442f-a4e2-be81a7851f4e",
                      "5ea168d7-1ae1-4d73-a7dc-5731b02957e5",
                      "command-executed analytics remained at zero",
-                     "Turn-4 source is not live-validated"
+                     "Turn-5 source is not live-validated"
+                 })
+        {
+            StringAssert.Contains(ledger, marker);
+        }
+    }
+
+    [TestMethod]
+    public void LedgerPinsTurnFourArtifactRuntimeAndKnownFailureWithoutClaimingTurnFiveLive()
+    {
+        var ledger = ReadLedger();
+
+        foreach (var marker in new[]
+                 {
+                     "35238e55",
+                     "34b6b",
+                     "58e6615b",
+                     "fb02",
+                     "121/121",
+                     "8/8",
+                     "Codex review: COMPLETED",
+                     "Vanilla player `Hehe`",
+                     "80/36/-2",
+                     "85/36/-2",
+                     "e93ed6d1-29f1-49f7-9bf7-43d4d625f395",
+                     "aee52332-392f-449b-ba92-521ef66b3b71",
+                     "11,293",
+                     "1,815,046",
+                     "dd7fabcb-bd18-491c-8ea3-c9d2147be33f",
+                     "/tmp/valheim-turn4-visible-actions.png",
+                     "/tmp/valheim-turn4-evidence/raw-harness-result.json",
+                     "invalid `giveItem`",
+                     "timed out",
+                     "Turn-5 source is not live-validated"
                  })
         {
             StringAssert.Contains(ledger, marker);

@@ -4,6 +4,7 @@ public sealed class PlayerPositionCache
 {
     private readonly TimeSpan freshness;
     private readonly Dictionary<string, Observation> observations = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object syncRoot = new();
 
     public PlayerPositionCache(TimeSpan freshness)
     {
@@ -29,9 +30,12 @@ public sealed class PlayerPositionCache
         }
 
         var observation = new Observation(position, observedAt);
-        foreach (var alias in aliases)
+        lock (syncRoot)
         {
-            observations[alias] = observation;
+            foreach (var alias in aliases)
+            {
+                observations[alias] = observation;
+            }
         }
 
         return true;
@@ -39,32 +43,52 @@ public sealed class PlayerPositionCache
 
     public bool TryGet(string? playerIdentifier, DateTimeOffset now, out TakaroPosition position)
     {
-        if (string.IsNullOrWhiteSpace(playerIdentifier)
-            || !observations.TryGetValue(playerIdentifier!.Trim(), out var observation))
+        if (string.IsNullOrWhiteSpace(playerIdentifier))
         {
             position = default!;
             return false;
         }
 
-        if (now - observation.ObservedAt > freshness)
+        lock (syncRoot)
         {
-            foreach (var alias in observations
-                         .Where(entry => ReferenceEquals(entry.Value, observation))
-                         .Select(entry => entry.Key)
-                         .ToArray())
+            if (!observations.TryGetValue(playerIdentifier!.Trim(), out var observation))
             {
-                observations.Remove(alias);
+                position = default!;
+                return false;
             }
 
-            position = default!;
-            return false;
-        }
+            if (now - observation.ObservedAt > freshness)
+            {
+                var expiredAliases = new List<string>();
+                foreach (var entry in observations)
+                {
+                    if (ReferenceEquals(entry.Value, observation))
+                    {
+                        expiredAliases.Add(entry.Key);
+                    }
+                }
 
-        position = observation.Position;
-        return true;
+                foreach (var alias in expiredAliases)
+                {
+                    observations.Remove(alias);
+                }
+
+                position = default!;
+                return false;
+            }
+
+            position = observation.Position;
+            return true;
+        }
     }
 
-    public void Clear() => observations.Clear();
+    public void Clear()
+    {
+        lock (syncRoot)
+        {
+            observations.Clear();
+        }
+    }
 
     private static IEnumerable<string> PlayerAliases(TakaroPlayer player) =>
         new[] { player.GameId, player.PlatformId, player.SteamId, player.Name }

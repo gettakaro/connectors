@@ -309,6 +309,7 @@ Expected: FAIL because the registry does not exist.
 Use an object with `architecture`, `actions`, `events`, and `notes`. Classify only proven server-owned paths as `live-supported`. Required conservative classifications include:
 
 - `getPlayerInventory`: `unsupported`; the dedicated server has no remote inventory path, and the wire deliberately emits no response rather than a false empty array;
+- `listLocations`: `schema-fallback` when the official raw Generic Connector action/schema is live-proven but the pinned standard Takaro route remains `NotImplemented`;
 - `chat-message`: `unsupported` until vanilla-client input is observed at the dedicated server and in Takaro;
 - `player-death` and `entity-killed`: `unsupported` with no active emitter;
 - `player-connected` and `player-disconnected`: `live-supported` after turn-3 Takaro searches persisted two complete cycles;
@@ -402,7 +403,7 @@ Use the local test server without printing registration/identity tokens. Confirm
 
 **Step 3: Run non-destructive connector checks**
 
-Use Takaro MCP plus dedicated-server logs for reachability, players/getPlayer, real location plus unavailable-location rejection, inventory timeout without state mutation, outbound message, world-drop `giveItem`, teleport, list items/entities/locations, allowlisted console behavior, persisted lifecycle searches, and zero unsupported death/entity emissions. Resolve the Takaro player UUID before `gameserverGiveItem`.
+Use Takaro MCP plus dedicated-server logs for reachability, players/getPlayer, real location plus unavailable-location rejection, inventory timeout without state mutation, outbound message, world-drop `giveItem`, teleport, list items/entities, the official raw Generic Connector `listLocations` action, the separate standard Takaro `listLocations` route, allowlisted console behavior, persisted lifecycle searches, and zero unsupported death/entity emissions. Resolve the Takaro player UUID before `gameserverGiveItem`.
 
 **Step 4: Run installed-module checks**
 

@@ -11,7 +11,7 @@
     "executeConsoleCommand": "live-supported",
     "listItems": "live-supported",
     "listEntities": "live-supported",
-    "listLocations": "live-supported",
+    "listLocations": "schema-fallback",
     "teleportPlayer": "live-supported",
     "kickPlayer": "live-supported",
     "banPlayer": "live-supported",
@@ -29,7 +29,7 @@
   },
   "notes": [
     "The connector and all Takaro configuration belong on the dedicated server. No Takaro client plugin or custom client RPC is supported.",
-    "Live-supported records retained dedicated-server evidence, including the turn-3 artifact run on 2026-07-10. Turn-4 wire and DTO corrections still require their own post-build live rerun.",
+    "Live-supported records retain dedicated-server evidence through the turn-4 artifact run on 2026-07-10. Turn-5 response, cache, and setup hardening still requires its own post-build live rerun.",
     "getPlayer is implemented by filtering the dedicated server player list, but its final Takaro response shape has not been independently live-proven, so it remains unsupported.",
     "getPlayerLocation uses only a real ready-peer/public observation or a fresh 30-second player-keyed last-known observation. If neither exists, a required-coordinate payload with error is rejected by current Takaro Generic.requestFromServer rather than returned as a position.",
     "getPlayerInventory is permanently unsupported because a dedicated server does not expose remote client inventory components. No response frame is sent: an empty array would be persisted as real state, so current Takaro rejects by its bounded pending-request timeout.",
@@ -38,7 +38,7 @@
     "Inbound vanilla-client chat is unsupported and tracked by https://github.com/gettakaro/connectors/issues/69.",
     "Routed ChatMessage, Say, and OnDeath packets are diagnostic-only because packet-supplied identity and death state are not server-owned. Chat-message and player-death remain unsupported.",
     "Player lifecycle frames are derived from dedicated-server player snapshots. Turn-3 Takaro eventSearch persisted two player-connected and two player-disconnected events; transport logs still claim only that a frame was written, not persistence acknowledgement.",
-    "listLocations returned 11293 server-owned locations in turn 3. The current implementation maps them to ILocationDTO name/code plus nested position; that corrected DTO shape is consumer-contract tested and awaits the turn-4 live rerun.",
+    "listLocations is schema-fallback: turn 4 live-proved the official raw Generic Connector action/schema with 11293 nested server-owned locations in a 1815046-byte response, but Takaro 0c63cf1c Generic.listLocations throws NotImplementedError, so the standard Takaro route is unavailable pending upstream support.",
     "Entity-killed is unsupported and has no active emitter or Harmony death patch."
   ]
 }
