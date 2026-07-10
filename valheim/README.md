@@ -1,39 +1,27 @@
 # Valheim Takaro Connector
 
-This source tree contains the Valheim Takaro connector.
+The Valheim connector is a dedicated-server-only BepInEx plugin implementing the Takaro Generic Connector Protocol. Install it only on the Valheim dedicated server. A Takaro client mod, client snapshot bridge, and custom client action RPCs are not supported.
 
-## Shape
+## Project Shape
 
-- `src/Takaro.Valheim.Core` contains game-independent Takaro protocol, config, player, and request handling code.
-- `src/Takaro.Valheim.Plugin` contains the BepInEx/Jotunn plugin adapter for Valheim dedicated servers.
-- `tests/Takaro.Valheim.Core.Tests` verifies the core behavior without requiring Valheim assemblies.
+- `src/Takaro.Valheim.Core` contains the game-independent protocol, configuration, models, and request dispatcher.
+- `src/Takaro.Valheim.Plugin` contains the dedicated-server BepInEx adapter.
+- `tests/Takaro.Valheim.Core.Tests` contains protocol, behavior, packaging, and capability-registry tests.
+- `capabilities.json` is the machine-readable support registry.
 
-## Local Development
+## Installation
 
-Run the core tests and reference-free plugin scaffold build:
+1. Install BepInExPack Valheim on the dedicated server.
+2. Copy the `TakaroValheim` release folder into `BepInEx/plugins/` on that server.
+3. Start the server once and edit `BepInEx/config/com.takaro.valheim.cfg`.
+4. Set the registration token from the Takaro game-server connector setup.
+5. Keep the Valheim client free of `TakaroValheim.dll`.
 
-```bash
-dotnet test Takaro.Valheim.sln
-```
+Never commit registration or identity tokens.
 
-The plugin project builds in reference-free scaffold mode by default. A real Valheim plugin build requires local BepInEx, Jotunn, and Valheim dedicated-server assemblies:
+## Runtime Configuration
 
-```bash
-dotnet build src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj \
-  -p:EnableValheimPluginBuild=true \
-  -p:TargetFramework=net472 \
-  -p:BepInExReferencePath=/path/to/BepInEx/core \
-  -p:JotunnReferencePath=/path/to/BepInEx/plugins \
-  -p:ValheimReferencePath=/path/to/valheim_server_Data/Managed
-```
-
-Smoke validation used BepInExPack Valheim `5.4.2333`, Jotunn `2.29.1`, and Valheim dedicated server `l-0.221.12`.
-
-Production Takaro registration smoke validation connected to `wss://connect.takaro.io/`, sent `identify`, and received identification confirmation. Do not commit live registration or identity tokens to this repository.
-
-## Runtime Config
-
-The plugin reads BepInEx config values equivalent to:
+The plugin reads these BepInEx settings:
 
 - `registrationToken`
 - `serverName`
@@ -41,8 +29,85 @@ The plugin reads BepInEx config values equivalent to:
 - `takaroWsUrl`
 - `logLevel`
 - `enableLogEvents`
+- `commandAllowlistExact`
+- `commandAllowlistPrefixes`
 
-The default WebSocket URL is `wss://connect.takaro.io/`.
+The default WebSocket endpoint is `wss://connect.takaro.io/`. The plugin disables itself before Harmony patching or connector startup when it detects a non-dedicated process.
+
+## Capability Status
+
+The registry uses only three statuses:
+
+- `live-supported`: the server-owned path has historical live evidence.
+- `schema-fallback`: the connector returns a Takaro-compatible shape without a proven game-backed implementation.
+- `unsupported`: the path is unavailable or lacks valid server-only proof.
+
+### Actions
+
+| Action | Status | Dedicated-server behavior |
+| --- | --- | --- |
+| `testReachability` | `live-supported` | Reports connector reachability. |
+| `getPlayers` | `live-supported` | Reads the Valheim dedicated-server player list. |
+| `getPlayer` | `unsupported` | Filtering exists, but the final Takaro response shape still needs independent live proof. |
+| `getPlayerLocation` | `live-supported` | Uses the ready peer reference position, then public-position data; otherwise returns `player_position_unavailable`. |
+| `getPlayerInventory` | `unsupported` | Returns `player_component_unavailable`; remote inventories are client-owned state. |
+| `giveItem` | `live-supported` | Creates stack-split world drops near the player's server-known position. |
+| `sendMessage` | `live-supported` | Uses Valheim's built-in routed HUD message calls without a custom client RPC. |
+| `executeConsoleCommand` | `live-supported` | Runs only exact or prefix-allowlisted commands. |
+| `listItems` | `live-supported` | Lists item prefabs visible to the server. |
+| `listEntities` | `live-supported` | Lists non-player character prefabs visible to the server. |
+| `listLocations` | `live-supported` | Reads named world locations from `ZoneSystem.GetLocationList()`. |
+| `teleportPlayer` | `live-supported` | Routes Valheim's built-in `RPC_TeleportTo` to the server-known character ZDO. |
+| `kickPlayer` | `live-supported` | Sends Valheim's built-in `Kicked` RPC without directly disconnecting the peer. |
+| `banPlayer` | `live-supported` | Writes through Valheim's official ban behavior and then sends `Kicked` when online. |
+| `unbanPlayer` | `live-supported` | Removes matching official ban identifiers and known aliases. |
+| `listBans` | `live-supported` | Reads Valheim's official ban entries. |
+| `shutdown` | `live-supported` | Schedules `Application.Quit()` after the Takaro response can flush. |
+
+### Events
+
+| Event | Status | Dedicated-server behavior |
+| --- | --- | --- |
+| `log` | `live-supported` | Emits connector log events. |
+| `player-connected` | `live-supported` | Derived from dedicated-server player-list lifecycle polling. |
+| `player-disconnected` | `live-supported` | Derived from dedicated-server player-list lifecycle polling. |
+| `chat-message` | `unsupported` | Vanilla-client inbound chat has no proven dedicated-server route; tracked in [issue #69](https://github.com/gettakaro/connectors/issues/69). |
+| `player-death` | `live-supported` | Observes Valheim's built-in routed `OnDeath` packet and maps its target ZDO to the server player list. |
+| `entity-killed` | `unsupported` | A server-side observer exists, but prior proof used rejected client forwarding and cannot promote this path. |
+
+## Server-Owned Action Semantics
+
+`giveItem` is a world-drop operation, not a private inventory mutation. Other players can collect the spawned objects. The adapter validates amount and quality, resolves prefab codes or display/name tokens, splits oversized stacks, and returns an error when no server-owned player position is known.
+
+`teleportPlayer` requires a server-known character ZDO ID. It uses Valheim's built-in teleport RPC and returns `character_unavailable` when that identity is missing.
+
+`getPlayerInventory` never fabricates an empty inventory. `getPlayerLocation` never fabricates origin coordinates. Missing server-owned state returns structured errors.
+
+Outbound messages and item confirmations use base-game `Message` and `ShowMessage` calls. They do not require a Takaro client plugin and are not treated as inbound chat.
+
+## Evidence Boundary
+
+Historical dedicated-server evidence from June 21-22, 2026 covers the entries marked `live-supported`, including vanilla-client player location, world-drop item delivery, built-in teleport, player death, moderation, and delayed shutdown.
+
+That historical evidence is not a fresh validation of this branch. Current source/build checks and any new runtime evidence belong in [the 2026-07-10 server-only validation ledger](qa/2026-07-10-server-only-validation.md). Client-forwarded chat and entity-kill evidence is explicitly excluded.
+
+## Local Development
+
+Run the reference-free build and tests:
+
+```bash
+dotnet test Takaro.Valheim.sln
+```
+
+Build the real plugin against dedicated-server references:
+
+```bash
+dotnet build src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj \
+  -f net472 \
+  -p:EnableValheimPluginBuild=true \
+  -p:BepInExReferencePath=/path/to/BepInEx/core \
+  -p:ValheimReferencePath=/path/to/valheim_server_Data/Managed
+```
 
 ## Release Build
 
@@ -53,19 +118,11 @@ just valheim-setup
 just build-release-valheim 0.1.0
 ```
 
-Or from inside `valheim/`:
+Or from `valheim/`:
 
 ```bash
 ./scripts/setup-environment.sh
 ./scripts/build-release.sh 0.1.0 dist
 ```
 
-The release artifact is `takaro-valheim-plugin.zip`.
-
-## Known Caveats
-
-- `listLocations` is implemented and live-smoked, but dashboard consumers should
-  verify the final location DTO shape against Takaro's expected nested
-  `position` plus `radius`/`sizeX` format.
-- Destructive admin actions such as bans, kicks, and shutdown should be tested
-  on a disposable server before production use.
+The release artifact is `takaro-valheim-plugin.zip`. It contains the dedicated-server plugin, core library, and required runtime dependencies; host-provided game, Unity, BepInEx, and Harmony assemblies are excluded.
