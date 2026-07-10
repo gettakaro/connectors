@@ -9,7 +9,6 @@ using UnityEngine;
 namespace Takaro.Valheim.Plugin;
 
 [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
-[BepInDependency(Jotunn.Main.ModGuid)]
 public sealed class ValheimTakaroPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.takaro.valheim";
@@ -84,6 +83,6 @@ public sealed class ValheimTakaroPlugin
     public const string PluginVersion = "0.1.0";
 
     public static string BuildMode =>
-        "Reference-free scaffold. Build with EnableValheimPluginBuild=true and Valheim/BepInEx/Jotunn references for the real plugin.";
+        "Reference-free scaffold. Build with EnableValheimPluginBuild=true and Valheim/BepInEx references for the real plugin.";
 }
 #endif

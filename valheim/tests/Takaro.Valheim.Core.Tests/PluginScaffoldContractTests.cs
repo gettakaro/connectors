@@ -192,12 +192,46 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(give, "position_unavailable");
     }
 
+    [TestMethod]
+    public void ServerOnlyPluginHasNoJotunnDependencyAndRetriesReferenceSetup()
+    {
+        var project = ReadValheimFile("src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj");
+        var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
+        var setup = ReadValheimFile("scripts/setup-environment.sh");
+        var release = ReadValheimFile("scripts/build-release.sh");
+        var combined = string.Join('\n', project, entrypoint, setup, release);
+
+        foreach (var marker in new[] { "Jotunn", "JOTUNN_REFERENCE_PATH", "BepInDependency" })
+        {
+            Assert.IsFalse(combined.Contains(marker, StringComparison.OrdinalIgnoreCase), marker);
+        }
+
+        StringAssert.Contains(setup, "VALHEIM_STEAM_PLATFORMS");
+        StringAssert.Contains(setup, "linux windows");
+        StringAssert.Contains(setup, "MAX_ATTEMPTS");
+        StringAssert.Contains(setup, "valheim_server_Data/Managed");
+        StringAssert.Contains(setup, "appcache");
+        StringAssert.Contains(setup, "--retry 5");
+        StringAssert.Contains(setup, "--retry-delay 2");
+        StringAssert.Contains(setup, "--retry-all-errors");
+    }
+
     private static string ReadPluginSource(string fileName)
     {
         var sourcePath = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory,
             "../../../../../src/Takaro.Valheim.Plugin",
             fileName));
+
+        return File.ReadAllText(sourcePath);
+    }
+
+    private static string ReadValheimFile(string relativePath)
+    {
+        var sourcePath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "../../../../../",
+            relativePath));
 
         return File.ReadAllText(sourcePath);
     }
