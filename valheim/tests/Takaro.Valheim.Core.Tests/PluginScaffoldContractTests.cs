@@ -78,35 +78,69 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void PluginBridgeRegistersLocationAndDeathRoutedRpc()
+    public void PluginDoesNotStartOnClientProcesses()
     {
-        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+        var source = ReadPluginSource("ValheimTakaroPlugin.cs");
 
-        StringAssert.Contains(source, "\"TakaroClientLocationSnapshot\"");
-        StringAssert.Contains(source, "\"TakaroPlayerDeath\"");
-        StringAssert.Contains(source, "TrySendLocalLocationSnapshot(force: true)");
+        StringAssert.Contains(source, "if (!IsDedicatedServerProcess())");
+        StringAssert.Contains(source, "only runs on dedicated Valheim servers");
+        Assert.IsTrue(
+            source.IndexOf("if (!IsDedicatedServerProcess())", StringComparison.Ordinal)
+                < source.IndexOf("harmony = new Harmony", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("client bridge started", StringComparison.OrdinalIgnoreCase));
     }
 
     [TestMethod]
-    public void PluginBridgeHooksDeathEvents()
+    public void PluginBridgeDoesNotDeclareClientSideRpcContracts()
     {
         var source = ReadPluginSource("ValheimChatEventBridge.cs");
 
-        StringAssert.Contains(source, "TakaroPlayerOnDeathPatch");
-        StringAssert.Contains(source, "EventFactory.PlayerDeath");
-        StringAssert.Contains(source, "TakaroCharacterOnDeathPatch");
-        StringAssert.Contains(source, "EventFactory.EntityKilled");
+        foreach (var marker in new[]
+                 {
+                     "TakaroClientChatMessage",
+                     "TakaroClientInventorySnapshot",
+                     "TakaroClientLocationSnapshot",
+                     "TakaroClientChatCommand",
+                     "TakaroGiveItem",
+                     "TakaroTeleportPlayer",
+                     "TakaroPlayerDeath",
+                     "TakaroEntityKilled",
+                     "Player.m_localPlayer"
+                 })
+        {
+            Assert.IsFalse(source.Contains(marker, StringComparison.Ordinal), marker);
+        }
     }
 
     [TestMethod]
-    public void PluginBridgeForwardsClientOwnedEntityDeathsToServer()
+    public void PluginAdapterDoesNotRouteActionsThroughCustomClientRpc()
     {
-        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
 
-        StringAssert.Contains(source, "\"TakaroEntityKilled\"");
-        StringAssert.Contains(source, "RPC_TakaroEntityKilled");
-        StringAssert.Contains(source, "ForwardLocalEntityKilled");
-        StringAssert.Contains(source, "InvokeRoutedRPC(\"TakaroEntityKilled\"");
+        Assert.IsFalse(source.Contains("TakaroGiveItem", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TakaroTeleportPlayer", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TakaroServerMessage", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TryGetLocationSnapshot", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TryGetInventorySnapshot", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void PluginAdapterReturnsExplicitUnavailableErrorsForClientOwnedState()
+    {
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
+        var location = SliceMethod(
+            source,
+            "public Task<TakaroActionResult> GetPlayerLocationAsync",
+            "public Task<TakaroActionResult> GetPlayerInventoryAsync");
+        var inventory = SliceMethod(
+            source,
+            "public Task<TakaroActionResult> GetPlayerInventoryAsync",
+            "public Task<TakaroActionResult> GiveItemAsync");
+
+        StringAssert.Contains(location, "player_position_unavailable");
+        Assert.IsFalse(location.Contains("new TakaroPosition(0, 0, 0", StringComparison.Ordinal));
+        StringAssert.Contains(inventory, "player_component_unavailable");
+        Assert.IsFalse(inventory.Contains("Array.Empty<object>()", StringComparison.Ordinal));
     }
 
     private static string ReadPluginSource(string fileName)

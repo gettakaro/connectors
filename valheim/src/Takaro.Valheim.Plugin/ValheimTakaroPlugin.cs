@@ -21,15 +21,15 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
 
     private void Awake()
     {
-        harmony = new Harmony(PluginGuid);
-        harmony.PatchAll(typeof(ValheimChatEventBridge).Assembly);
-
         if (!IsDedicatedServerProcess())
         {
-            ValheimChatEventBridge.Initialize(null, Logger.LogInfo);
-            Logger.LogInfo("Takaro Valheim client bridge started.");
+            Logger.LogWarning("Takaro Valheim only runs on dedicated Valheim servers; client process detected, plugin disabled.");
+            enabled = false;
             return;
         }
+
+        harmony = new Harmony(PluginGuid);
+        harmony.PatchAll(typeof(ValheimChatEventBridge).Assembly);
 
         var values = new Dictionary<string, string>
         {
