@@ -1,10 +1,37 @@
 # Valheim Server-Only Validation Ledger
 
-## Verdict: PASS WITH GAPS (turn-4 build/server core; failure wire blocked; turn-5 pending)
+## Verdict: PASS WITH GAPS (turn-5 artifact/runtime passed; independent Codex review quota-blocked; turn-6 pending)
 
-Turn 4 live-validated source commit `75224f2cc9540f9e40baa6178e4ffb70d247b892` on the dedicated server with no Takaro client plugin. Build, server startup/identity, vanilla-player presence, real position/teleport, lifecycle persistence, visible actions, catalogs, nested raw locations, and cron delivery passed. The run also confirmed one release blocker: invalid `giveItem` failures were over-suppressed, so Takaro timed out instead of receiving an immediate actionable payload error. The verdict therefore does not claim release readiness.
+Turn 5 live-validated source commit `bd4bfff718139d91cb415eece2c1b6b6c763942a` on the dedicated server with no Takaro client plugin. The exact build, vanilla-player boundary, immediate invalid-input errors, inventory non-mutation, and persisted lifecycle passed. The exerciser passed. Independent Codex review did not complete because its exact-turn invocation was quota-blocked until 20:22, so this ledger does not promote the branch to fully verified or release-ready.
 
-Turn-5 source is not live-validated by this ledger. It changes response failure handling, position-cache synchronization, SteamCMD staging, managed-reference validation, and the `listLocations` status. Those changes require a fresh build/deploy/runtime run before inheriting turn-4 live evidence.
+Turn-6 source is pending fresh build and live verification. Its action-surface, runtime-availability, world-cache, and atomic setup changes must not inherit turn-5 runtime proof until the orchestrator pins a new commit and artifact.
+
+## Turn-5 Artifact-Pinned Evidence
+
+### Artifact, build, and boundary
+
+| Evidence | Exact value | Result |
+| --- | --- | --- |
+| Source commit | `bd4bfff718139d91cb415eece2c1b6b6c763942a` | Exact clean turn-5 HEAD |
+| Release zip SHA-256 | `b2b1748d266f7281731b992762ef7b3188a720de2224ccddb79745f3a271ac3d` | Deployed build input |
+| Packaged/deployed DLL SHA-256 | `3477982857610212a83b006318bd0adea8f861afb7b090179016238a09a1e8b4` | Exact match |
+| Unit/contract tests | `145/145` | PASS |
+| Setup behavior harness | `13/13` | PASS |
+| Real plugin build | real `net472` build: PASS with 0 warnings | PASS |
+| Runtime exercise | `Exerciser: PASSED` | PASS |
+| Independent review | `Codex review: BLOCKED by quota until 20:22` | BLOCKED, not passed |
+| Evidence directory | `/tmp/valheim-turn5-evidence` | Local exact-turn evidence |
+
+Vanilla player `Hehe` connected without a Takaro client plugin. The dedicated-server plugin identified and the safe player-bound/runtime flow completed at the server-only boundary.
+
+### Immediate failures and state integrity
+
+- Oversized `giveItem` amount `1001` returned one immediate HTTP 400 in approximately 400 ms with actionable maximum 1000 detail.
+- Fractional amount `1.5` returned one immediate HTTP 400 in approximately 434 ms with expected integer detail.
+- Each invalid item request produced exactly one request and one response; neither waited for the pending-request timeout.
+- A representative whitespace console failure returned immediately in approximately 891 ms rather than fabricating success.
+- The unsupported inventory probe sent 11 inventory requests, produced zero response frames, and recorded no fabricated inventory changes.
+- `player-connected and player-disconnected persisted` for the vanilla player during the exact turn-5 run.
 
 ## Turn-4 Artifact-Pinned Evidence
 

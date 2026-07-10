@@ -11,10 +11,41 @@ public sealed class QaLedgerContractTests
         var ledger = ReadLedger();
 
         StringAssert.Contains(ledger, "## Verdict: PASS WITH GAPS");
-        StringAssert.Contains(ledger, "75224f2cc9540f9e40baa6178e4ffb70d247b892");
-        StringAssert.Contains(ledger, "35238e55dd4353374cba26565c2e5daa66de70d5c4d22a5823941d515ea34b6b");
-        StringAssert.Contains(ledger, "58e6615b1c078d0f85e86beac9d65eed3d949d3b5e9bf117334421e72db8fb02");
-        StringAssert.Contains(ledger, "Turn-5 source is not live-validated by this ledger");
+        StringAssert.Contains(ledger, "bd4bfff718139d91cb415eece2c1b6b6c763942a");
+        StringAssert.Contains(ledger, "b2b1748d266f7281731b992762ef7b3188a720de2224ccddb79745f3a271ac3d");
+        StringAssert.Contains(ledger, "3477982857610212a83b006318bd0adea8f861afb7b090179016238a09a1e8b4");
+        StringAssert.Contains(ledger, "Turn-6 source is pending");
+    }
+
+    [TestMethod]
+    public void LedgerPinsTurnFiveLiveFailureAndStateIntegrityEvidenceWithoutPromotingTurnSix()
+    {
+        var ledger = ReadLedger();
+
+        foreach (var marker in new[]
+                 {
+                     "145/145",
+                     "13/13",
+                     "real `net472` build: PASS with 0 warnings",
+                     "Vanilla player `Hehe` connected",
+                     "approximately 400 ms",
+                     "approximately 434 ms",
+                     "maximum 1000",
+                     "expected integer",
+                     "exactly one request and one response",
+                     "approximately 891 ms",
+                     "11 inventory requests",
+                     "zero response frames",
+                     "no fabricated inventory changes",
+                     "player-connected and player-disconnected persisted",
+                     "Exerciser: PASSED",
+                     "Codex review: BLOCKED by quota until 20:22",
+                     "/tmp/valheim-turn5-evidence",
+                     "Turn-6 source is pending"
+                 })
+        {
+            StringAssert.Contains(ledger, marker);
+        }
     }
 
     [TestMethod]
@@ -38,7 +69,7 @@ public sealed class QaLedgerContractTests
                      "f55c8b39-fc2c-442f-a4e2-be81a7851f4e",
                      "5ea168d7-1ae1-4d73-a7dc-5731b02957e5",
                      "command-executed analytics remained at zero",
-                     "Turn-5 source is not live-validated"
+                     "Turn-6 source is pending"
                  })
         {
             StringAssert.Contains(ledger, marker);
@@ -46,7 +77,7 @@ public sealed class QaLedgerContractTests
     }
 
     [TestMethod]
-    public void LedgerPinsTurnFourArtifactRuntimeAndKnownFailureWithoutClaimingTurnFiveLive()
+    public void LedgerPinsTurnFourArtifactRuntimeAndKnownFailureAsHistoricalEvidence()
     {
         var ledger = ReadLedger();
 
@@ -71,7 +102,7 @@ public sealed class QaLedgerContractTests
                      "/tmp/valheim-turn4-evidence/raw-harness-result.json",
                      "invalid `giveItem`",
                      "timed out",
-                     "Turn-5 source is not live-validated"
+                     "Turn-6 source is pending"
                  })
         {
             StringAssert.Contains(ledger, marker);

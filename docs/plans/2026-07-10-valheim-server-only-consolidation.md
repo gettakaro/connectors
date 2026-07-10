@@ -285,8 +285,8 @@ Create a test that parses `valheim/capabilities.json`, asserts every status is e
 string[] actions = [
     "testReachability", "getPlayers", "getPlayer", "getPlayerLocation",
     "getPlayerInventory", "giveItem", "sendMessage", "executeConsoleCommand",
-    "listItems", "listEntities", "listLocations", "teleportPlayer",
-    "kickPlayer", "banPlayer", "unbanPlayer", "listBans", "shutdown"
+    "listItems", "listEntities", "listLocations", "getMapInfo", "getMapTile",
+    "teleportPlayer", "kickPlayer", "banPlayer", "unbanPlayer", "listBans", "shutdown"
 ];
 
 string[] events = [
@@ -458,3 +458,10 @@ Investigate and fix failures; do not stop after pushing. When the replacement PR
 **Step 5: Integration gate**
 
 Merge only when branch protection/review permits. After merge, refresh/re-run Valheim release PR #70 and verify its package job before merging the release PR.
+
+## Player-Coach Execution Status
+
+- Tasks 3-5 are implemented in turn-6 working source, including the exhaustive pinned action list, honest runtime-unavailable behavior, real PE/CLI validation, and atomic reference publication. They still require the next independent branch verification before being accepted.
+- Task 6 local player gates are complete for turn 6; artifact hashes from a working tree are build evidence only and are not recorded as live proof.
+- Task 7 remains pinned to the exact turn-5 commit and deployed artifact in the QA ledger. Turn-6 live validation is pending.
+- Task 8 PR creation, GitHub Actions, superseded-PR closure, merge, and release-PR refresh remain pending orchestrator work. None is claimed complete here.

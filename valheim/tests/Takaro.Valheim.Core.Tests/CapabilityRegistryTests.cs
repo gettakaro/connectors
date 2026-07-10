@@ -19,6 +19,8 @@ public sealed class CapabilityRegistryTests
         "listItems",
         "listEntities",
         "listLocations",
+        "getMapInfo",
+        "getMapTile",
         "teleportPlayer",
         "kickPlayer",
         "banPlayer",
@@ -57,12 +59,33 @@ public sealed class CapabilityRegistryTests
     }
 
     [TestMethod]
+    public void PinnedTakaroActionListAt0c63cf1cMatchesDispatcherConstantsAndRegistry()
+    {
+        var upstreamActionsAt0c63cf1c = new[]
+        {
+            "testReachability", "getPlayers", "getPlayer", "getPlayerLocation",
+            "getPlayerInventory", "giveItem", "sendMessage", "executeConsoleCommand",
+            "listItems", "listEntities", "listLocations", "getMapInfo", "getMapTile",
+            "teleportPlayer", "kickPlayer", "banPlayer", "unbanPlayer", "listBans", "shutdown"
+        };
+
+        CollectionAssert.AreEqual(upstreamActionsAt0c63cf1c, TakaroActionNames.All.ToArray());
+
+        using var registry = ReadRegistry();
+        CollectionAssert.AreEquivalent(
+            upstreamActionsAt0c63cf1c,
+            registry.RootElement.GetProperty("actions").EnumerateObject().Select(entry => entry.Name).ToArray());
+    }
+
+    [TestMethod]
     public void RegistryKeepsUnprovenClientOwnedAndServerEventPathsUnsupported()
     {
         using var registry = ReadRegistry();
         var root = registry.RootElement;
 
         Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
+        Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getMapInfo").GetString());
+        Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getMapTile").GetString());
         Assert.AreEqual("schema-fallback", root.GetProperty("actions").GetProperty("listLocations").GetString());
         Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("player-connected").GetString());
         Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("player-disconnected").GetString());

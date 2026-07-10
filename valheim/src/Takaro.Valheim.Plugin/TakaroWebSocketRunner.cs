@@ -111,7 +111,15 @@ public sealed class TakaroWebSocketRunner : IDisposable
         {
             try
             {
-                var players = await adapter.GetPlayersAsync(cancellationToken);
+                var playersResult = await adapter.GetPlayersAsync(cancellationToken);
+                if (!playersResult.Success
+                    || playersResult.Payload is not IEnumerable<TakaroPlayer> players)
+                {
+                    log($"Takaro Valheim lifecycle polling skipped because the server player list is unavailable ({playersResult.ErrorCode ?? "runtime_unavailable"}); existing lifecycle state is preserved.");
+                    await Task.Delay(PlayerLifecyclePollInterval, cancellationToken);
+                    continue;
+                }
+
                 var playersWithObservedPositions = new List<TakaroPlayer>();
                 foreach (var player in players)
                 {

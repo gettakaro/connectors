@@ -23,17 +23,17 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public async Task ListOnlyActionsReturnBareArraysFromPluginAdapter()
+    public async Task ReferenceFreeScaffoldDoesNotFabricateEmptyRuntimeArrays()
     {
         var dispatcher = new TakaroRequestDispatcher(new ValheimServerAdapter());
 
         var bansResult = await dispatcher.DispatchAsync(new TakaroRequest("list-bans", "listBans", JsonDocument.Parse("""[]""").RootElement));
-        using var bansDocument = JsonDocument.Parse(TakaroProtocol.CreateResponse("list-bans", bansResult));
-        Assert.AreEqual(JsonValueKind.Array, bansDocument.RootElement.GetProperty("payload").ValueKind);
+        Assert.IsFalse(bansResult.Success);
+        Assert.AreEqual("runtime_unavailable", bansResult.ErrorCode);
 
         var locationsResult = await dispatcher.DispatchAsync(new TakaroRequest("list-locations", "listLocations", JsonDocument.Parse("""[]""").RootElement));
-        using var locationsDocument = JsonDocument.Parse(TakaroProtocol.CreateResponse("list-locations", locationsResult));
-        Assert.AreEqual(JsonValueKind.Array, locationsDocument.RootElement.GetProperty("payload").ValueKind);
+        Assert.IsFalse(locationsResult.Success);
+        Assert.AreEqual("runtime_unavailable", locationsResult.ErrorCode);
     }
 
     [TestMethod]
@@ -296,6 +296,20 @@ public sealed class PluginScaffoldContractTests
 
         StringAssert.Contains(entrypoint, "ValheimRuntimePolicy.IsDedicatedServerProcess");
         StringAssert.Contains(adapter, "GiveItemPolicy.PlanStacks");
+        StringAssert.Contains(adapter, "RuntimeArrayActionPolicy");
+        StringAssert.Contains(adapter, "playerPositions.SwitchWorld");
+        foreach (var method in new[]
+                 {
+                     SliceMethod(adapter, "public Task<TakaroActionResult> GetPlayersAsync", "public async Task<TakaroActionResult> GetPlayerAsync"),
+                     SliceMethod(adapter, "public Task<TakaroActionResult> ListItemsAsync", "public Task<TakaroActionResult> ListEntitiesAsync"),
+                     SliceMethod(adapter, "public Task<TakaroActionResult> ListEntitiesAsync", "public Task<TakaroActionResult> ListLocationsAsync"),
+                     SliceMethod(adapter, "public Task<TakaroActionResult> ListLocationsAsync", "public Task<TakaroActionResult> GetMapInfoAsync"),
+                     SliceMethod(adapter, "public Task<TakaroActionResult> ListBansAsync", "public Task<TakaroActionResult> ShutdownAsync")
+                 })
+        {
+            Assert.IsFalse(method.Contains("?? []", StringComparison.Ordinal));
+            StringAssert.Contains(method, "RuntimeArrayActionPolicy");
+        }
     }
 
     [TestMethod]
@@ -330,6 +344,9 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(setup, "--retry 5");
         StringAssert.Contains(setup, "--retry-delay 2");
         StringAssert.Contains(setup, "--retry-all-errors");
+        StringAssert.Contains(setup, "command -v file");
+        StringAssert.Contains(setup, "requires the 'file' command");
+        StringAssert.Contains(setup, "Mono/.Net\\ assembly");
     }
 
     private static string ReadPluginSource(string fileName)

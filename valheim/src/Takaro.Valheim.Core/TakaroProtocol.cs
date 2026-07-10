@@ -66,7 +66,7 @@ public static class TakaroProtocol
         var error = FormatActionError(result);
         switch (action)
         {
-            case "getPlayer":
+            case TakaroActionNames.GetPlayer:
                 response = CreateResponse(requestId, new
                 {
                     gameId = string.Empty,
@@ -74,7 +74,7 @@ public static class TakaroProtocol
                     error
                 });
                 return true;
-            case "getPlayerLocation":
+            case TakaroActionNames.GetPlayerLocation:
                 // Takaro app-connector 0c63cf1c validates IPosition before Generic checks
                 // payload.error. Required coordinates make this an immediate actionable
                 // rejection without returning a fabricated position to the caller.
@@ -86,7 +86,7 @@ public static class TakaroProtocol
                     error
                 });
                 return true;
-            case "testReachability":
+            case TakaroActionNames.TestReachability:
                 // This action bypasses Generic.requestFromServer's payload.error check, so
                 // its validated DTO must carry an explicit disconnected result and reason.
                 response = CreateResponse(requestId, new
@@ -96,7 +96,7 @@ public static class TakaroProtocol
                     error
                 });
                 return true;
-            case "executeConsoleCommand":
+            case TakaroActionNames.ExecuteConsoleCommand:
                 response = CreateResponse(requestId, new
                 {
                     rawResult = string.Empty,
@@ -105,12 +105,24 @@ public static class TakaroProtocol
                     error
                 });
                 return true;
-            case "getPlayers":
-            case "getPlayerInventory":
-            case "listItems":
-            case "listEntities":
-            case "listLocations":
-            case "listBans":
+            case TakaroActionNames.GetMapInfo:
+                response = CreateResponse(requestId, new
+                {
+                    enabled = false,
+                    mapBlockSize = 0,
+                    maxZoom = 0,
+                    mapSizeX = 0,
+                    mapSizeY = 0,
+                    mapSizeZ = 0,
+                    error
+                });
+                return true;
+            case TakaroActionNames.GetPlayers:
+            case TakaroActionNames.GetPlayerInventory:
+            case TakaroActionNames.ListItems:
+            case TakaroActionNames.ListEntities:
+            case TakaroActionNames.ListLocations:
+            case TakaroActionNames.ListBans:
                 // These actions are pinned to array DTOs at Takaro 0c63cf1c. JSON arrays
                 // cannot carry a top-level error, while [] or an error-bearing item would
                 // fabricate game state. Only actual failure paths are suppressed.

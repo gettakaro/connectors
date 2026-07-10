@@ -23,6 +23,23 @@ public sealed class RequestDispatcherTests
             adapter.Calls);
     }
 
+    [DataTestMethod]
+    [DataRow("getMapInfo")]
+    [DataRow("getMapTile")]
+    public async Task DispatchesPinnedButServerOnlyUnsupportedMapActionsActionably(string action)
+    {
+        var dispatcher = new TakaroRequestDispatcher(new FakeAdapter());
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest(
+            "map",
+            action,
+            JsonDocument.Parse("""{}""").RootElement));
+
+        Assert.IsFalse(response.Success);
+        Assert.AreEqual("server_only_unsupported", response.ErrorCode);
+        StringAssert.Contains(response.Message, "dedicated server");
+    }
+
     [TestMethod]
     public async Task DispatchesOfficialNestedPlayerArgsThroughAdapter()
     {
@@ -323,14 +340,14 @@ public sealed class RequestDispatcherTests
         public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(TakaroActionResult.Ok(new { connectable = true }));
 
-        public Task<IReadOnlyList<TakaroPlayer>> GetPlayersAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<TakaroPlayer>>(new[]
+        public Task<TakaroActionResult> GetPlayersAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(TakaroActionResult.Ok(new[]
             {
                 new TakaroPlayer("Steam_1", "Odin", "1", "steam:1", null, null)
-            });
+            }));
 
-        public Task<TakaroPlayer?> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default) =>
-            RecordCall($"getPlayer:{identifier}", Task.FromResult<TakaroPlayer?>(new TakaroPlayer("Steam_1", "Odin", "1", "steam:1", null, null)));
+        public Task<TakaroActionResult> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default) =>
+            RecordCall($"getPlayer:{identifier}", Task.FromResult(TakaroActionResult.Ok(new TakaroPlayer("Steam_1", "Odin", "1", "steam:1", null, null))));
 
         public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default) =>
             RecordCall($"location:{identifier}", Task.FromResult(TakaroActionResult.Ok(new { x = 1, y = 2, z = 3 })));
@@ -379,6 +396,12 @@ public sealed class RequestDispatcherTests
 
         public Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(TakaroActionResult.Ok(new[] { LocationFactory.Create("StartTemple", "Start Temple", 0, 0, 0) }));
+
+        public Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(TakaroActionResult.Error("server_only_unsupported", "Valheim dedicated server map metadata is unavailable."));
+
+        public Task<TakaroActionResult> GetMapTileAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(TakaroActionResult.Error("server_only_unsupported", "Valheim dedicated server map tiles are unavailable."));
 
         public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default) =>
             RecordCall($"teleport:{identifier}:{position.X}:{position.Y}:{position.Z}", Task.FromResult(TakaroActionResult.Ok(new { queued = true })));

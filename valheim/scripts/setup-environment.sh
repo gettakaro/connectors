@@ -25,7 +25,45 @@ REQUIRED_BEPINEX_ASSEMBLIES=(
 
 BEPINEX_API="${BEPINEX_API:-https://thunderstore.io/api/experimental/package/denikson/BepInExPack_Valheim/}"
 
-mkdir -p "$STEAMCMD_DIR" "$SERVER_DIR" "$DEPS_DIR"
+if ! command -v file >/dev/null 2>&1; then
+  echo "Valheim reference setup requires the 'file' command to validate real PE/CLI assemblies." >&2
+  exit 1
+fi
+
+mkdir -p "$STEAMCMD_DIR" "$(dirname "$SERVER_DIR")" "$DEPS_DIR"
+
+ACTIVE_SERVER_STAGE=""
+ACTIVE_SERVER_BACKUP=""
+ACTIVE_SERVER_FINAL=""
+
+cleanup_server_publication_state() {
+  if [ -n "$ACTIVE_SERVER_BACKUP" ]; then
+    if [ -n "$ACTIVE_SERVER_FINAL" ] && [ ! -e "$ACTIVE_SERVER_FINAL" ]; then
+      if mv "$ACTIVE_SERVER_BACKUP" "$ACTIVE_SERVER_FINAL"; then
+        ACTIVE_SERVER_BACKUP=""
+      else
+        echo "Interrupted Valheim publication could not restore the previous install; it remains preserved at $ACTIVE_SERVER_BACKUP." >&2
+      fi
+    else
+      echo "Interrupted Valheim publication preserved the previous install backup at $ACTIVE_SERVER_BACKUP." >&2
+    fi
+  fi
+  if [ -n "$ACTIVE_SERVER_STAGE" ]; then
+    rm -rf "$ACTIVE_SERVER_STAGE"
+    ACTIVE_SERVER_STAGE=""
+  fi
+  ACTIVE_SERVER_FINAL=""
+}
+
+cleanup_on_exit() {
+  local status=$?
+  cleanup_server_publication_state
+  trap - EXIT
+  exit "$status"
+}
+
+trap cleanup_on_exit EXIT
+trap 'exit 130' HUP INT TERM
 
 curl_retry() {
   curl --retry 5 --retry-delay 2 --retry-all-errors "$@"
@@ -109,15 +147,56 @@ validate_bepinex_assemblies() {
 
 is_managed_pe_assembly() {
   local assembly_path="$1"
-  local size
-  local header
+  local description
 
   [ -f "$assembly_path" ] || return 1
-  size="$(wc -c < "$assembly_path")"
-  [ "$size" -ge 64 ] || return 1
-  header="$(LC_ALL=C dd if="$assembly_path" bs=1 count=2 2>/dev/null)"
-  [ "$header" = "MZ" ] || return 1
-  LC_ALL=C grep -aFq 'BSJB' "$assembly_path"
+  if ! description="$(LC_ALL=C file -b -- "$assembly_path")"; then
+    return 1
+  fi
+
+  case "$description" in
+    *PE32*Mono/.Net\ assembly*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+publish_valheim_server_install() {
+  local stage_dir="$1"
+  local final_dir="$2"
+  local backup_dir="${final_dir}.backup.$$.${RANDOM}"
+  local publish_status
+
+  if [ -e "$final_dir" ]; then
+    if ! mv "$final_dir" "$backup_dir"; then
+      echo "Could not move the existing Valheim install aside for atomic publication: $final_dir" >&2
+      return 1
+    fi
+    ACTIVE_SERVER_BACKUP="$backup_dir"
+    ACTIVE_SERVER_FINAL="$final_dir"
+  fi
+
+  if mv "$stage_dir" "$final_dir"; then
+    ACTIVE_SERVER_STAGE=""
+    if [ -n "$ACTIVE_SERVER_BACKUP" ]; then
+      rm -rf "$ACTIVE_SERVER_BACKUP"
+      ACTIVE_SERVER_BACKUP=""
+    fi
+    ACTIVE_SERVER_FINAL=""
+    return 0
+  else
+    publish_status=$?
+  fi
+
+  echo "Could not atomically publish validated Valheim references to $final_dir; restoring the previous install." >&2
+  if [ -n "$ACTIVE_SERVER_BACKUP" ]; then
+    if mv "$ACTIVE_SERVER_BACKUP" "$final_dir"; then
+      ACTIVE_SERVER_BACKUP=""
+      ACTIVE_SERVER_FINAL=""
+    else
+      echo "Rollback failed; the preserved previous install remains at $ACTIVE_SERVER_BACKUP." >&2
+    fi
+  fi
+  return "$publish_status"
 }
 
 install_valheim_server() {
@@ -127,6 +206,8 @@ install_valheim_server() {
   local last_exit_code=1
   local managed_dir="$SERVER_DIR/valheim_server_Data/Managed"
   local server_install_dir="$SERVER_DIR"
+  local stage_dir
+  local stage_managed_dir
 
   read -r -a platforms <<< "$VALHEIM_STEAM_PLATFORMS"
   if [ "${#platforms[@]}" -eq 0 ]; then
@@ -136,14 +217,31 @@ install_valheim_server() {
 
   if [[ "$server_install_dir" != /* ]]; then
     server_install_dir="$(pwd)/$server_install_dir"
+    managed_dir="$server_install_dir/valheim_server_Data/Managed"
+  fi
+
+  if validate_managed_assemblies "$managed_dir"; then
+    echo "Reusing validated Valheim dedicated-server references at $managed_dir."
+    return 0
   fi
 
   for platform in "${platforms[@]}"; do
     for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt++)); do
+      if ! stage_dir="$(mktemp -d "${server_install_dir}.stage.XXXXXX")"; then
+        echo "Could not create a sibling Valheim staging directory for $server_install_dir." >&2
+        return 1
+      fi
+      ACTIVE_SERVER_STAGE="$stage_dir"
+      if [ -d "$server_install_dir" ] && ! cp -a "$server_install_dir/." "$stage_dir/"; then
+        echo "Could not stage the existing Valheim install before update: $server_install_dir" >&2
+        return 1
+      fi
+      stage_managed_dir="$stage_dir/valheim_server_Data/Managed"
+
       echo "Installing Valheim compile references for Steam platform '$platform' (attempt $attempt/$MAX_ATTEMPTS)..."
       if "$STEAMCMD" \
         +@sSteamCmdForcePlatformType "$platform" \
-        +force_install_dir "$server_install_dir" \
+        +force_install_dir "$stage_dir" \
         +login anonymous \
         +app_update 896660 validate \
         +quit; then
@@ -152,13 +250,21 @@ install_valheim_server() {
         last_exit_code=$?
       fi
 
-      if [ "$last_exit_code" -eq 0 ] && validate_managed_assemblies "$managed_dir"; then
-        echo "Valheim dedicated-server references installed for Steam platform '$platform'."
-        return 0
+      if [ "$last_exit_code" -eq 0 ] && validate_managed_assemblies "$stage_managed_dir"; then
+        if publish_valheim_server_install "$stage_dir" "$server_install_dir"; then
+          echo "Valheim dedicated-server references installed for Steam platform '$platform'."
+          return 0
+        fi
+        last_exit_code=1
       fi
 
       if [ "$last_exit_code" -eq 0 ]; then
         last_exit_code=1
+      fi
+
+      if [ -n "$ACTIVE_SERVER_STAGE" ]; then
+        rm -rf "$ACTIVE_SERVER_STAGE"
+        ACTIVE_SERVER_STAGE=""
       fi
 
       if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then

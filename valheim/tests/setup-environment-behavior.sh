@@ -12,7 +12,8 @@ REQUIRED_ASSEMBLIES=(
 )
 
 create_required_assemblies() {
-  local managed_dir="$STUB_SERVER_DIR/valheim_server_Data/Managed"
+  local install_dir="${1:-$STUB_SERVER_DIR}"
+  local managed_dir="$install_dir/valheim_server_Data/Managed"
   local assembly
   mkdir -p "$managed_dir"
   for assembly in "${REQUIRED_ASSEMBLIES[@]}"; do
@@ -23,8 +24,12 @@ create_required_assemblies() {
 create_managed_assembly_fixture() {
   local output="$1"
   mkdir -p "$(dirname "$output")"
-  # Small deterministic fixture with the two structural markers used by portable
-  # setup validation: DOS/PE MZ header and CLR metadata signature.
+  /bin/cp "$MANAGED_ASSEMBLY_FIXTURE" "$output"
+}
+
+create_fake_marker_assembly_fixture() {
+  local output="$1"
+  mkdir -p "$(dirname "$output")"
   printf 'MZ%0126dBSJB' 0 > "$output"
 }
 
@@ -33,11 +38,14 @@ steamcmd_stub() {
   local previous=""
   local argument
   local count=0
+  local install_dir="$STUB_SERVER_DIR"
 
   for argument in "$@"; do
     if [ "$previous" = "+@sSteamCmdForcePlatformType" ]; then
       platform="$argument"
-      break
+    fi
+    if [ "$previous" = "+force_install_dir" ]; then
+      install_dir="$argument"
     fi
     previous="$argument"
   done
@@ -57,31 +65,31 @@ steamcmd_stub() {
   fi
 
   case "$STUB_SCENARIO" in
-    first_success|empty_bepinex|corrupt_bepinex)
-      create_required_assemblies
+    first_success|empty_bepinex|corrupt_bepinex|fake_marker_bepinex|file_unavailable|valheim_publish_failure|valheim_publish_interrupt)
+      create_required_assemblies "$install_dir"
       return 0
       ;;
     retry_success)
       if [ "$count" -eq 1 ]; then
         return 31
       fi
-      create_required_assemblies
+      create_required_assemblies "$install_dir"
       return 0
       ;;
     windows_success)
       if [ "$platform" = "linux" ]; then
         return 32
       fi
-      create_required_assemblies
+      create_required_assemblies "$install_dir"
       return 0
       ;;
     missing_required)
-      mkdir -p "$STUB_SERVER_DIR/valheim_server_Data/Managed"
-      create_managed_assembly_fixture "$STUB_SERVER_DIR/valheim_server_Data/Managed/assembly_valheim.dll"
+      mkdir -p "$install_dir/valheim_server_Data/Managed"
+      create_managed_assembly_fixture "$install_dir/valheim_server_Data/Managed/assembly_valheim.dll"
       return 0
       ;;
     corrupt_required)
-      local corrupt_dir="$STUB_SERVER_DIR/valheim_server_Data/Managed"
+      local corrupt_dir="$install_dir/valheim_server_Data/Managed"
       local corrupt_assembly
       mkdir -p "$corrupt_dir"
       for corrupt_assembly in "${REQUIRED_ASSEMBLIES[@]}"; do
@@ -90,11 +98,20 @@ steamcmd_stub() {
       return 0
       ;;
     empty_required)
-      local managed_dir="$STUB_SERVER_DIR/valheim_server_Data/Managed"
+      local managed_dir="$install_dir/valheim_server_Data/Managed"
       local assembly
       mkdir -p "$managed_dir"
       for assembly in "${REQUIRED_ASSEMBLIES[@]}"; do
         : > "$managed_dir/$assembly"
+      done
+      return 0
+      ;;
+    fake_marker_required)
+      local marker_dir="$install_dir/valheim_server_Data/Managed"
+      local marker_assembly
+      mkdir -p "$marker_dir"
+      for marker_assembly in "${REQUIRED_ASSEMBLIES[@]}"; do
+        create_fake_marker_assembly_fixture "$marker_dir/$marker_assembly"
       done
       return 0
       ;;
@@ -216,6 +233,9 @@ unzip_stub() {
   elif [ "$STUB_SCENARIO" = "corrupt_bepinex" ]; then
     printf 'not a managed assembly\n' > "$destination/BepInExPack_Valheim/BepInEx/core/BepInEx.dll"
     printf 'not a managed assembly\n' > "$destination/BepInExPack_Valheim/BepInEx/core/0Harmony.dll"
+  elif [ "$STUB_SCENARIO" = "fake_marker_bepinex" ]; then
+    create_fake_marker_assembly_fixture "$destination/BepInExPack_Valheim/BepInEx/core/BepInEx.dll"
+    create_fake_marker_assembly_fixture "$destination/BepInExPack_Valheim/BepInEx/core/0Harmony.dll"
   else
     create_managed_assembly_fixture "$destination/BepInExPack_Valheim/BepInEx/core/BepInEx.dll"
     create_managed_assembly_fixture "$destination/BepInExPack_Valheim/BepInEx/core/0Harmony.dll"
@@ -228,6 +248,32 @@ cp_stub() {
     return 68
   fi
   /bin/cp "$@"
+}
+
+mv_stub() {
+  if [ "$STUB_SCENARIO" = "valheim_publish_interrupt" ] \
+    && [[ "${1:-}" == "$STUB_SERVER_DIR".stage.* ]] \
+    && [ "${2:-}" = "$STUB_SERVER_DIR" ]; then
+    : > "$STUB_STATE_DIR/publish-interrupt-attempted"
+    kill -TERM "$PPID"
+    /bin/sleep 0.2
+    return 70
+  fi
+  if [ "$STUB_SCENARIO" = "valheim_publish_failure" ] \
+    && [[ "${1:-}" == "$STUB_SERVER_DIR".stage.* ]] \
+    && [ "${2:-}" = "$STUB_SERVER_DIR" ]; then
+    printf 'simulated atomic Valheim publication failure\n' >&2
+    return 69
+  fi
+  /bin/mv "$@"
+}
+
+file_stub() {
+  if [ "$STUB_SCENARIO" = "file_unavailable" ]; then
+    printf "file: command unavailable\n" >&2
+    return 127
+  fi
+  /usr/bin/file "$@"
 }
 
 case "$COMMAND_NAME" in
@@ -255,6 +301,14 @@ case "$COMMAND_NAME" in
     cp_stub "$@"
     exit $?
     ;;
+  mv)
+    mv_stub "$@"
+    exit $?
+    ;;
+  file)
+    file_stub "$@"
+    exit $?
+    ;;
   sleep)
     exit 0
     ;;
@@ -262,6 +316,11 @@ esac
 
 VALHEIM_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
 SETUP_SCRIPT="$VALHEIM_DIR/scripts/setup-environment.sh"
+MANAGED_ASSEMBLY_FIXTURE="${MANAGED_ASSEMBLY_FIXTURE:-$VALHEIM_DIR/src/Takaro.Valheim.Core/bin/Debug/net8.0/Takaro.Valheim.Core.dll}"
+if [ ! -f "$MANAGED_ASSEMBLY_FIXTURE" ]; then
+  printf 'Managed assembly fixture is missing: %s\n' "$MANAGED_ASSEMBLY_FIXTURE" >&2
+  exit 1
+fi
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
@@ -280,11 +339,11 @@ run_setup() {
   local steamcmd_path
 
   mkdir -p "$bin_dir" "$case_dir/home" "$case_dir/data" "$case_dir/server" "$case_dir/steamcmd" "$case_dir/deps" "$case_dir/state"
-  for command in curl jq unzip tar cp sleep; do
-    ln -s "$SELF" "$bin_dir/$command"
+  for command in curl jq unzip tar cp mv file sleep; do
+    ln -sf "$SELF" "$bin_dir/$command"
   done
   if [ "$preinstall_steamcmd" = true ]; then
-    ln -s "$SELF" "$bin_dir/steamcmd.sh"
+    ln -sf "$SELF" "$bin_dir/steamcmd.sh"
     steamcmd_path="$bin_dir/steamcmd.sh"
   else
     steamcmd_path="$case_dir/steamcmd/steamcmd.sh"
@@ -305,6 +364,7 @@ run_setup() {
     STUB_STATE_DIR="$case_dir/state" \
     STUB_SERVER_DIR="$case_dir/server" \
     STUB_STEAMCMD_DIR="$case_dir/steamcmd" \
+    MANAGED_ASSEMBLY_FIXTURE="$MANAGED_ASSEMBLY_FIXTURE" \
     bash "$SETUP_SCRIPT" > "$RUN_OUTPUT" 2>&1
   RUN_STATUS=$?
 }
@@ -430,6 +490,12 @@ test_corrupt_required_dlls_exhaust_all_attempts() {
   assert_output_contains "managed PE/CLI assembly" "Valheim corruption failure should be actionable" || return 1
 }
 
+test_fake_managed_markers_do_not_satisfy_real_assembly_validation() {
+  run_setup fake-marker-required fake_marker_required
+  assert_nonzero "$RUN_STATUS" "MZ and BSJB marker placement must not satisfy managed assembly validation" || return 1
+  assert_equals 6 "$(call_count)" "fake marker DLLs should retry and fall back" || return 1
+}
+
 test_empty_bepinex_dlls_fail_setup() {
   run_setup empty-bepinex empty_bepinex
   assert_nonzero "$RUN_STATUS" "zero-byte BepInEx DLLs must not satisfy reference validation" || return 1
@@ -440,6 +506,54 @@ test_corrupt_bepinex_dlls_fail_setup() {
   run_setup corrupt-bepinex corrupt_bepinex
   assert_nonzero "$RUN_STATUS" "non-managed BepInEx DLL text must not satisfy reference validation" || return 1
   assert_output_contains "managed PE/CLI assembly" "BepInEx corruption failure should be actionable" || return 1
+}
+
+test_fake_bepinex_markers_do_not_satisfy_real_assembly_validation() {
+  run_setup fake-marker-bepinex fake_marker_bepinex
+  assert_nonzero "$RUN_STATUS" "fake BepInEx marker blobs must fail managed assembly validation" || return 1
+}
+
+test_failed_file_validator_is_actionable() {
+  run_setup file-unavailable file_unavailable
+  assert_nonzero "$RUN_STATUS" "setup must fail when its real PE/CLI validator is unavailable" || return 1
+  assert_output_contains "managed PE/CLI assembly" "failed validator should identify the required assembly contract" || return 1
+}
+
+test_valid_existing_install_skips_steamcmd() {
+  local case_dir="$TMP_ROOT/valid-existing"
+  STUB_SERVER_DIR="$case_dir/server" create_required_assemblies "$case_dir/server"
+
+  run_setup valid-existing always_fail
+  assert_equals 0 "$RUN_STATUS" "a fully validated existing install should be reused" || return 1
+  assert_equals 0 "$(call_count)" "validated existing references should skip SteamCMD" || return 1
+}
+
+test_failed_atomic_publication_rolls_back_and_next_run_retries() {
+  local case_dir="$TMP_ROOT/atomic-publication"
+  mkdir -p "$case_dir/server/worlds_local"
+  printf '%s\n' "old install" > "$case_dir/server/worlds_local/world.db"
+
+  run_setup atomic-publication valheim_publish_failure
+  assert_nonzero "$RUN_STATUS" "a failed atomic publication must fail setup" || return 1
+  assert_file "$RUN_CASE_DIR/server/worlds_local/world.db" "failed publication must restore the old install" || return 1
+  assert_equals "old install" "$(cat "$RUN_CASE_DIR/server/worlds_local/world.db")" "rollback must retain old install content" || return 1
+
+  run_setup atomic-publication first_success
+  assert_equals 0 "$RUN_STATUS" "the next setup run must retry after failed publication" || return 1
+  assert_nonempty_file "$RUN_CASE_DIR/server/valheim_server_Data/Managed/assembly_valheim.dll" "retry should publish validated references" || return 1
+  assert_file "$RUN_CASE_DIR/server/worlds_local/world.db" "successful swap must preserve caller server data" || return 1
+}
+
+test_signal_during_atomic_publication_restores_old_install() {
+  local case_dir="$TMP_ROOT/atomic-interrupt"
+  mkdir -p "$case_dir/server/worlds_local"
+  printf '%s\n' "old install" > "$case_dir/server/worlds_local/world.db"
+
+  run_setup atomic-interrupt valheim_publish_interrupt
+  assert_nonzero "$RUN_STATUS" "an interrupted atomic publication must fail setup" || return 1
+  assert_file "$RUN_CASE_DIR/state/publish-interrupt-attempted" "test must reach the atomic publication boundary" || return 1
+  assert_file "$RUN_CASE_DIR/server/worlds_local/world.db" "signal cleanup must restore the old install" || return 1
+  assert_equals "old install" "$(cat "$RUN_CASE_DIR/server/worlds_local/world.db")" "signal rollback must retain old install content" || return 1
 }
 
 test_steamcmd_download_is_completed_before_tar_reads_it() {
@@ -497,8 +611,14 @@ for test_case in \
   test_missing_required_dlls_exhausts_all_attempts \
   test_empty_required_dlls_exhaust_all_attempts \
   test_corrupt_required_dlls_exhaust_all_attempts \
+  test_fake_managed_markers_do_not_satisfy_real_assembly_validation \
   test_empty_bepinex_dlls_fail_setup \
   test_corrupt_bepinex_dlls_fail_setup \
+  test_fake_bepinex_markers_do_not_satisfy_real_assembly_validation \
+  test_failed_file_validator_is_actionable \
+  test_valid_existing_install_skips_steamcmd \
+  test_failed_atomic_publication_rolls_back_and_next_run_retries \
+  test_signal_during_atomic_publication_restores_old_install \
   test_steamcmd_download_is_completed_before_tar_reads_it \
   test_failed_steamcmd_download_cleans_partial_archive \
   test_failed_steamcmd_publish_cleans_archive_and_extract_directory \

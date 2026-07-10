@@ -23,6 +23,7 @@ public sealed class SetupEnvironmentScriptTests
         };
         startInfo.ArgumentList.Add("bash");
         startInfo.ArgumentList.Add(harness);
+        startInfo.Environment["MANAGED_ASSEMBLY_FIXTURE"] = typeof(TakaroActionResult).Assembly.Location;
 
         using var process = Process.Start(startInfo)!;
         var standardOutput = process.StandardOutput.ReadToEnd();

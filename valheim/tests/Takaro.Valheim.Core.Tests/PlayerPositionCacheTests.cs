@@ -69,6 +69,36 @@ public sealed class PlayerPositionCacheTests
     }
 
     [TestMethod]
+    public async Task StaleWorldRememberCannotClearOrOverwriteNewWorldObservation()
+    {
+        var cache = new PlayerPositionCache(TimeSpan.FromSeconds(30));
+        var oldWorld = new object();
+        var newWorld = new object();
+        var oldPlayer = new TakaroPlayer("Steam_old", "Old", "old", "steam:old", null, null);
+        var newPlayer = new TakaroPlayer("Steam_new", "New", "new", "steam:new", null, null);
+        var oldCanContinue = new ManualResetEventSlim(false);
+        var oldStarted = new ManualResetEventSlim(false);
+
+        cache.SwitchWorld(oldWorld);
+        var delayedOldRemember = Task.Run(() =>
+        {
+            oldStarted.Set();
+            oldCanContinue.Wait();
+            return cache.RememberIfCurrentWorld(oldWorld, oldPlayer, new TakaroPosition(1, 2, 3, "valheim"), Now);
+        });
+
+        oldStarted.Wait();
+        cache.SwitchWorld(newWorld);
+        Assert.IsTrue(cache.RememberIfCurrentWorld(newWorld, newPlayer, new TakaroPosition(4, 5, 6, "valheim"), Now));
+        oldCanContinue.Set();
+
+        Assert.IsFalse(await delayedOldRemember);
+        Assert.IsFalse(cache.TryGetForCurrentWorld(newWorld, oldPlayer.GameId, Now, out _));
+        Assert.IsTrue(cache.TryGetForCurrentWorld(newWorld, newPlayer.GameId, Now, out var current));
+        Assert.AreEqual(4, current.X);
+    }
+
+    [TestMethod]
     public async Task ParallelReadsWritesExpiryAndClearRemainSafe()
     {
         var cache = new PlayerPositionCache(TimeSpan.FromMilliseconds(25));

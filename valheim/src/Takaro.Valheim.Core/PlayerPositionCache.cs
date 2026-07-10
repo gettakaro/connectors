@@ -5,6 +5,8 @@ public sealed class PlayerPositionCache
     private readonly TimeSpan freshness;
     private readonly Dictionary<string, Observation> observations = new(StringComparer.OrdinalIgnoreCase);
     private readonly object syncRoot = new();
+    private object? currentWorld;
+    private bool hasCurrentWorld;
 
     public PlayerPositionCache(TimeSpan freshness)
     {
@@ -29,57 +31,122 @@ public sealed class PlayerPositionCache
             return false;
         }
 
-        var observation = new Observation(position, observedAt);
         lock (syncRoot)
         {
-            foreach (var alias in aliases)
-            {
-                observations[alias] = observation;
-            }
+            RememberLocked(aliases, position, observedAt);
         }
 
         return true;
     }
 
-    public bool TryGet(string? playerIdentifier, DateTimeOffset now, out TakaroPosition position)
+    public void SwitchWorld(object? worldIdentity)
     {
-        if (string.IsNullOrWhiteSpace(playerIdentifier))
+        lock (syncRoot)
         {
-            position = default!;
+            if (hasCurrentWorld && ReferenceEquals(currentWorld, worldIdentity))
+            {
+                return;
+            }
+
+            observations.Clear();
+            currentWorld = worldIdentity;
+            hasCurrentWorld = true;
+        }
+    }
+
+    public bool RememberIfCurrentWorld(
+        object? worldIdentity,
+        TakaroPlayer player,
+        TakaroPosition position,
+        DateTimeOffset observedAt)
+    {
+        if (!IsRealPosition(position))
+        {
+            return false;
+        }
+
+        var aliases = PlayerAliases(player).ToArray();
+        if (aliases.Length == 0)
+        {
             return false;
         }
 
         lock (syncRoot)
         {
-            if (!observations.TryGetValue(playerIdentifier!.Trim(), out var observation))
+            if (!hasCurrentWorld || !ReferenceEquals(currentWorld, worldIdentity))
             {
-                position = default!;
                 return false;
             }
 
-            if (now - observation.ObservedAt > freshness)
-            {
-                var expiredAliases = new List<string>();
-                foreach (var entry in observations)
-                {
-                    if (ReferenceEquals(entry.Value, observation))
-                    {
-                        expiredAliases.Add(entry.Key);
-                    }
-                }
-
-                foreach (var alias in expiredAliases)
-                {
-                    observations.Remove(alias);
-                }
-
-                position = default!;
-                return false;
-            }
-
-            position = observation.Position;
+            RememberLocked(aliases, position, observedAt);
             return true;
         }
+    }
+
+    public bool TryGetForCurrentWorld(
+        object? worldIdentity,
+        string? playerIdentifier,
+        DateTimeOffset now,
+        out TakaroPosition position)
+    {
+        lock (syncRoot)
+        {
+            if (!hasCurrentWorld || !ReferenceEquals(currentWorld, worldIdentity))
+            {
+                position = default!;
+                return false;
+            }
+
+            return TryGetLocked(playerIdentifier, now, out position);
+        }
+    }
+
+    public bool TryGet(string? playerIdentifier, DateTimeOffset now, out TakaroPosition position)
+    {
+        lock (syncRoot)
+        {
+            return TryGetLocked(playerIdentifier, now, out position);
+        }
+    }
+
+    private void RememberLocked(
+        IReadOnlyList<string> aliases,
+        TakaroPosition position,
+        DateTimeOffset observedAt)
+    {
+        var observation = new Observation(position, observedAt);
+        foreach (var alias in aliases)
+        {
+            observations[alias] = observation;
+        }
+    }
+
+    private bool TryGetLocked(string? playerIdentifier, DateTimeOffset now, out TakaroPosition position)
+    {
+        if (string.IsNullOrWhiteSpace(playerIdentifier)
+            || !observations.TryGetValue(playerIdentifier!.Trim(), out var observation))
+        {
+            position = default!;
+            return false;
+        }
+
+        if (now - observation.ObservedAt > freshness)
+        {
+            var expiredAliases = observations
+                .Where(entry => ReferenceEquals(entry.Value, observation))
+                .Select(entry => entry.Key)
+                .ToArray();
+            foreach (var alias in expiredAliases)
+            {
+                observations.Remove(alias);
+            }
+
+            position = default!;
+            return false;
+        }
+
+        position = observation.Position;
+        return true;
     }
 
     public void Clear()

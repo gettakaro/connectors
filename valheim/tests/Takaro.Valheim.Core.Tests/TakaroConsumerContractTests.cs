@@ -19,6 +19,8 @@ public sealed class TakaroConsumerContractTests
         new("listItems", ConsumerPayloadShape.Array, "code", "name"),
         new("listEntities", ConsumerPayloadShape.Array, "code", "name"),
         new("listLocations", ConsumerPayloadShape.Array, "position", "name"),
+        new("getMapInfo", ConsumerPayloadShape.Object, "enabled", "mapBlockSize", "maxZoom", "mapSizeX", "mapSizeY", "mapSizeZ"),
+        new("getMapTile", ConsumerPayloadShape.Unvalidated),
         new("teleportPlayer", ConsumerPayloadShape.Unvalidated),
         new("kickPlayer", ConsumerPayloadShape.Unvalidated),
         new("banPlayer", ConsumerPayloadShape.Unvalidated),
@@ -36,7 +38,7 @@ public sealed class TakaroConsumerContractTests
             "testReachability", "getPlayers", "getPlayer", "getPlayerLocation",
             "getPlayerInventory", "giveItem", "sendMessage", "executeConsoleCommand",
             "listItems", "listEntities", "listLocations", "teleportPlayer",
-            "kickPlayer", "banPlayer", "unbanPlayer", "listBans", "shutdown"
+            "getMapInfo", "getMapTile", "kickPlayer", "banPlayer", "unbanPlayer", "listBans", "shutdown"
         };
 
         CollectionAssert.AreEquivalent(
@@ -59,6 +61,8 @@ public sealed class TakaroConsumerContractTests
             ["listItems"] = """[{"code":"Wood","name":"Wood"}]""",
             ["listEntities"] = """[{"code":"Boar","name":"Boar"}]""",
             ["listLocations"] = """[{"name":"StartTemple","position":{"x":0,"y":0,"z":0}}]""",
+            ["getMapInfo"] = """{"enabled":false,"mapBlockSize":0,"maxZoom":0,"mapSizeX":0,"mapSizeY":0,"mapSizeZ":0}""",
+            ["getMapTile"] = """{}""",
             ["teleportPlayer"] = """{}""",
             ["kickPlayer"] = """null""",
             ["banPlayer"] = """null""",
@@ -77,6 +81,8 @@ public sealed class TakaroConsumerContractTests
 
     [DataTestMethod]
     [DataRow("getPlayer")]
+    [DataRow("getMapInfo")]
+    [DataRow("getMapTile")]
     [DataRow("giveItem")]
     [DataRow("sendMessage")]
     [DataRow("executeConsoleCommand")]
@@ -105,6 +111,23 @@ public sealed class TakaroConsumerContractTests
             action);
         StringAssert.Contains(exception.Message, "invalid_args", action);
         StringAssert.Contains(exception.Message, "Amount must be an integer", action);
+    }
+
+    [TestMethod]
+    public void UnsupportedMapInfoUsesEveryRequiredFieldAndAnActionablePayloadError()
+    {
+        var shouldSend = TakaroProtocol.TryCreateActionResponse(
+            "map-info",
+            "getMapInfo",
+            TakaroActionResult.Error("server_only_unsupported", "Valheim dedicated servers do not expose map tiles."),
+            out var frame);
+
+        Assert.IsTrue(shouldSend);
+        using var document = JsonDocument.Parse(frame!);
+        var payload = document.RootElement.GetProperty("payload");
+        AssertPinnedTakaroValidationAccepts("getMapInfo", payload);
+        Assert.IsFalse(payload.GetProperty("enabled").GetBoolean());
+        StringAssert.Contains(payload.GetProperty("error").GetString(), "server_only_unsupported");
     }
 
     [DataTestMethod]
@@ -293,7 +316,8 @@ public sealed class TakaroConsumerContractTests
             var expectedKind = property switch
             {
                 "x" or "y" or "z" => JsonValueKind.Number,
-                "connectable" or "success" => JsonValueKind.True,
+                "connectable" or "success" or "enabled" => JsonValueKind.True,
+                "mapBlockSize" or "maxZoom" or "mapSizeX" or "mapSizeY" or "mapSizeZ" => JsonValueKind.Number,
                 "position" or "player" => JsonValueKind.Object,
                 _ => JsonValueKind.String
             };
@@ -344,8 +368,8 @@ public sealed class TakaroConsumerContractTests
         private static Exception Unexpected() => new InvalidOperationException("Dispatcher must reject before adapter invocation.");
 
         public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) => throw Unexpected();
-        public Task<IReadOnlyList<TakaroPlayer>> GetPlayersAsync(CancellationToken cancellationToken = default) => throw Unexpected();
-        public Task<TakaroPlayer?> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default) => throw Unexpected();
+        public Task<TakaroActionResult> GetPlayersAsync(CancellationToken cancellationToken = default) => throw Unexpected();
+        public Task<TakaroActionResult> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default) => throw Unexpected();
@@ -354,6 +378,8 @@ public sealed class TakaroConsumerContractTests
         public Task<TakaroActionResult> ListItemsAsync(CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> ListEntitiesAsync(CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default) => throw Unexpected();
+        public Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default) => throw Unexpected();
+        public Task<TakaroActionResult> GetMapTileAsync(CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> KickPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) => throw Unexpected();

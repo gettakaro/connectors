@@ -75,6 +75,47 @@ public static class GiveItemPolicy
         new(false, Array.Empty<int>(), code, message);
 }
 
+public static class RuntimeArrayActionPolicy
+{
+    public static TakaroActionResult FromSource<T>(
+        bool sourceAvailable,
+        IEnumerable<T>? values,
+        string sourceName)
+    {
+        if (!sourceAvailable || values is null)
+        {
+            return TakaroActionResult.Error(
+                "runtime_unavailable",
+                $"{sourceName} is not available yet; the connector cannot confirm an empty result.");
+        }
+
+        return TakaroActionResult.Ok(values.ToArray());
+    }
+}
+
+public static class RuntimePlayerActionPolicy
+{
+    public static TakaroActionResult Find(TakaroActionResult playersResult, string identifier)
+    {
+        if (!playersResult.Success)
+        {
+            return playersResult;
+        }
+
+        if (playersResult.Payload is not IEnumerable<TakaroPlayer> players)
+        {
+            return TakaroActionResult.Error(
+                "runtime_unavailable",
+                "Valheim player list returned an unavailable runtime payload.");
+        }
+
+        var player = PlayerMapper.Find(players, identifier);
+        return player is null
+            ? TakaroActionResult.Error("player_not_found", $"Valheim player '{identifier}' is not online.")
+            : TakaroActionResult.Ok(player);
+    }
+}
+
 public enum ValheimEventObservationSource
 {
     Connector,

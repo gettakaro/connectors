@@ -13,7 +13,6 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     private readonly PlayerPositionCache playerPositions = new(TimeSpan.FromSeconds(30));
     private readonly Dictionary<string, HashSet<string>> banAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> banNames = new(StringComparer.OrdinalIgnoreCase);
-    private ZNet? observedNetwork;
 
     public ValheimServerAdapter(ManualLogSource logger, ConnectorConfig config)
     {
@@ -24,36 +23,57 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(TakaroActionResult.Ok(new { connectable = true }));
 
-    public Task<IReadOnlyList<TakaroPlayer>> GetPlayersAsync(CancellationToken cancellationToken = default)
+    public Task<TakaroActionResult> GetPlayersAsync(CancellationToken cancellationToken = default)
     {
-        RefreshWorldBoundary();
-        var players = ZNet.instance?.GetPlayerList()
-            .Select(ToTakaroPlayer)
-            .ToArray() ?? [];
+        var network = ZNet.instance;
+        playerPositions.SwitchWorld(network);
+        if (network is null)
+        {
+            return Task.FromResult(RuntimeArrayActionPolicy.FromSource<TakaroPlayer>(
+                sourceAvailable: false,
+                values: null,
+                sourceName: "Valheim networking"));
+        }
+
+        var players = network.GetPlayerList().Select(ToTakaroPlayer).ToArray();
 
         logger.LogInfo($"Takaro Valheim getPlayers returned {players.Length} player(s).");
-        return Task.FromResult<IReadOnlyList<TakaroPlayer>>(players);
+        return Task.FromResult(RuntimeArrayActionPolicy.FromSource(
+            sourceAvailable: true,
+            values: players,
+            sourceName: "Valheim player list"));
     }
 
-    public async Task<TakaroPlayer?> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default) =>
-        PlayerMapper.Find(await GetPlayersAsync(cancellationToken), identifier);
+    public async Task<TakaroActionResult> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default)
+    {
+        var playersResult = await GetPlayersAsync(cancellationToken);
+        return RuntimePlayerActionPolicy.Find(playersResult, identifier);
+    }
 
     public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default)
     {
-        RefreshWorldBoundary();
+        var currentNetwork = ZNet.instance;
+        playerPositions.SwitchWorld(currentNetwork);
+        if (currentNetwork is null)
+        {
+            return Task.FromResult(TakaroActionResult.Error(
+                "runtime_unavailable",
+                "Valheim networking is not available yet."));
+        }
+
         var now = DateTimeOffset.UtcNow;
         if (TryResolvePlayer(identifier, out var playerInfo, out var peer, out var player))
         {
             if (TryResolveServerKnownPosition(playerInfo, peer, out var position) && player is not null)
             {
                 var observed = new TakaroPosition(position.x, position.y, position.z, "valheim");
-                if (playerPositions.Remember(player, observed, now))
+                if (playerPositions.RememberIfCurrentWorld(currentNetwork, player, observed, now))
                 {
                     return Task.FromResult(TakaroActionResult.Ok(observed));
                 }
             }
 
-            if (playerPositions.TryGet(identifier, now, out var recent))
+            if (playerPositions.TryGetForCurrentWorld(currentNetwork, identifier, now, out var recent))
             {
                 return Task.FromResult(TakaroActionResult.Ok(recent));
             }
@@ -64,7 +84,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
                 $"Valheim does not expose a real server-observed position for player '{identifier}'."));
         }
 
-        if (playerPositions.TryGet(identifier, now, out var lastKnown))
+        if (playerPositions.TryGetForCurrentWorld(currentNetwork, identifier, now, out var lastKnown))
         {
             logger.LogInfo($"Takaro Valheim getPlayerLocation returned a fresh server-observed last-known position for offline player '{identifier}'.");
             return Task.FromResult(TakaroActionResult.Ok(lastKnown));
@@ -217,7 +237,16 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> ListItemsAsync(CancellationToken cancellationToken = default)
     {
-        var items = ZNetScene.instance?.m_prefabs?
+        var scene = ZNetScene.instance;
+        if (scene?.m_prefabs is null)
+        {
+            return Task.FromResult(RuntimeArrayActionPolicy.FromSource<object>(
+                sourceAvailable: false,
+                values: null,
+                sourceName: "Valheim item prefab registry"));
+        }
+
+        var items = scene.m_prefabs
             .Select(prefab => new { Prefab = prefab, ItemDrop = prefab.GetComponent<ItemDrop>() })
             .Where(entry => entry.ItemDrop != null)
             .Select(entry => new
@@ -230,15 +259,24 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             .GroupBy(item => item.code)
             .Select(group => group.First())
             .OrderBy(item => item.code)
-            .ToArray() ?? [];
+            .ToArray();
 
         logger.LogInfo($"Takaro Valheim listItems returned {items.Length} item prefab(s).");
-        return Task.FromResult(TakaroActionResult.Ok(items));
+        return Task.FromResult(RuntimeArrayActionPolicy.FromSource(true, items, "Valheim item prefab registry"));
     }
 
     public Task<TakaroActionResult> ListEntitiesAsync(CancellationToken cancellationToken = default)
     {
-        var entities = ZNetScene.instance?.m_prefabs?
+        var scene = ZNetScene.instance;
+        if (scene?.m_prefabs is null)
+        {
+            return Task.FromResult(RuntimeArrayActionPolicy.FromSource<object>(
+                sourceAvailable: false,
+                values: null,
+                sourceName: "Valheim entity prefab registry"));
+        }
+
+        var entities = scene.m_prefabs
             .Select(prefab => new { Prefab = prefab, Character = prefab.GetComponent<Character>() })
             .Where(entry => entry.Character != null && entry.Prefab.GetComponent<Player>() == null)
             .Select(entry => new
@@ -249,15 +287,24 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             .GroupBy(entity => entity.code)
             .Select(group => group.First())
             .OrderBy(entity => entity.code)
-            .ToArray() ?? [];
+            .ToArray();
 
         logger.LogInfo($"Takaro Valheim listEntities returned {entities.Length} character prefab(s).");
-        return Task.FromResult(TakaroActionResult.Ok(entities));
+        return Task.FromResult(RuntimeArrayActionPolicy.FromSource(true, entities, "Valheim entity prefab registry"));
     }
 
     public Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default)
     {
-        var locations = ZoneSystem.instance?.GetLocationList()
+        var zoneSystem = ZoneSystem.instance;
+        if (zoneSystem is null)
+        {
+            return Task.FromResult(RuntimeArrayActionPolicy.FromSource<object>(
+                sourceAvailable: false,
+                values: null,
+                sourceName: "Valheim zone system"));
+        }
+
+        var locations = zoneSystem.GetLocationList()
             .Select(instance => LocationFactory.Create(
                 code: FirstNonEmpty(instance.m_location.m_prefabName, instance.m_location.m_name),
                 rawName: instance.m_location.m_name,
@@ -269,11 +316,21 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             .OrderBy(location => location.Code, StringComparer.OrdinalIgnoreCase)
             .ThenBy(location => location.Position.X)
             .ThenBy(location => location.Position.Z)
-            .ToArray() ?? [];
+            .ToArray();
 
         logger.LogInfo($"Takaro Valheim listLocations returned {locations.Length} location(s).");
-        return Task.FromResult(TakaroActionResult.Ok(locations));
+        return Task.FromResult(RuntimeArrayActionPolicy.FromSource(true, locations, "Valheim location registry"));
     }
+
+    public Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(TakaroActionResult.Error(
+            "server_only_unsupported",
+            "Valheim dedicated servers do not expose the client map metadata required by getMapInfo."));
+
+    public Task<TakaroActionResult> GetMapTileAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(TakaroActionResult.Error(
+            "server_only_unsupported",
+            "Valheim dedicated servers do not expose client map tiles."));
 
     public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default)
     {
@@ -383,16 +440,28 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> ListBansAsync(CancellationToken cancellationToken = default)
     {
-        var bans = ZNet.instance?.Banned
+        var network = ZNet.instance;
+        if (network?.Banned is null)
+        {
+            return Task.FromResult(RuntimeArrayActionPolicy.FromSource<object>(
+                sourceAvailable: false,
+                values: null,
+                sourceName: "Valheim ban registry"));
+        }
+
+        var bans = network.Banned
             .Select(ban => new ValheimBan(
                 GameId: ban,
                 Name: banNames.TryGetValue(ban, out var name) ? name : ban,
                 SteamId: ExtractSteamId(ban),
                 PlatformId: ToPlatformId(ban)))
-            .ToArray() ?? [];
+            .ToArray();
 
         logger.LogInfo($"Takaro Valheim listBans returned {bans.Length} official ban entry/entries.");
-        return Task.FromResult(TakaroActionResult.Ok(ModerationFactory.CreateBanEntries(bans)));
+        return Task.FromResult(RuntimeArrayActionPolicy.FromSource(
+            true,
+            ModerationFactory.CreateBanEntries(bans),
+            "Valheim ban registry"));
     }
 
     public Task<TakaroActionResult> ShutdownAsync(CancellationToken cancellationToken = default)
@@ -588,16 +657,6 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         return false;
     }
 
-    private void RefreshWorldBoundary()
-    {
-        var currentNetwork = ZNet.instance;
-        if (!ReferenceEquals(observedNetwork, currentNetwork))
-        {
-            playerPositions.Clear();
-            observedNetwork = currentNetwork;
-        }
-    }
-
     private static bool TryResolveServerKnownPosition(ZNet.PlayerInfo playerInfo, ZNetPeer? peer, out Vector3 position)
     {
         if (peer is not null && peer.IsReady() && peer.m_refPos != Vector3.zero)
@@ -742,11 +801,11 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(TakaroActionResult.Ok(new { connectable = false }));
 
-    public Task<IReadOnlyList<TakaroPlayer>> GetPlayersAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<TakaroPlayer>>([]);
+    public Task<TakaroActionResult> GetPlayersAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(RuntimeArrayActionPolicy.FromSource<TakaroPlayer>(false, null, "Valheim networking"));
 
-    public Task<TakaroPlayer?> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default) =>
-        Task.FromResult<TakaroPlayer?>(null);
+    public Task<TakaroActionResult> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default) =>
+        Task.FromResult(TakaroActionResult.Error("runtime_unavailable", "Valheim networking is unavailable in reference-free scaffold mode."));
 
     public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default) =>
         Task.FromResult(TakaroActionResult.Error(
@@ -768,13 +827,19 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         Task.FromResult(TakaroActionResult.Error("scaffold_mode", "Build with Valheim references to enable console commands."));
 
     public Task<TakaroActionResult> ListItemsAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(TakaroActionResult.Ok(Array.Empty<object>()));
+        Task.FromResult(RuntimeArrayActionPolicy.FromSource<object>(false, null, "Valheim item prefab registry"));
 
     public Task<TakaroActionResult> ListEntitiesAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(TakaroActionResult.Ok(Array.Empty<object>()));
+        Task.FromResult(RuntimeArrayActionPolicy.FromSource<object>(false, null, "Valheim entity prefab registry"));
 
     public Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(TakaroActionResult.Ok(Array.Empty<object>()));
+        Task.FromResult(RuntimeArrayActionPolicy.FromSource<object>(false, null, "Valheim zone system"));
+
+    public Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(TakaroActionResult.Error("server_only_unsupported", "Valheim dedicated servers do not expose client map metadata."));
+
+    public Task<TakaroActionResult> GetMapTileAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(TakaroActionResult.Error("server_only_unsupported", "Valheim dedicated servers do not expose client map tiles."));
 
     public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default) =>
         Task.FromResult(TakaroActionResult.Error("scaffold_mode", "Build with Valheim references to enable teleport."));
@@ -789,7 +854,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         Task.FromResult(TakaroActionResult.Error("scaffold_mode", "Build with Valheim references to enable moderation."));
 
     public Task<TakaroActionResult> ListBansAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(TakaroActionResult.Ok(Array.Empty<object>()));
+        Task.FromResult(RuntimeArrayActionPolicy.FromSource<object>(false, null, "Valheim ban registry"));
 
     public Task<TakaroActionResult> ShutdownAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(TakaroActionResult.Error("scaffold_mode", "Build with Valheim references to enable shutdown."));

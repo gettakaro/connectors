@@ -30,6 +30,8 @@ Server-owned implementations retained from the validated local work are:
 
 Remote inventory and ordinary player-originated chat remain unavailable from a vanilla client at the proven server boundary. Player-death and entity-killed are also unsupported because no trustworthy server-only emitter exists. The connector emits none of those events. It returns only real current or fresh server-observed player positions; current Takaro rejects a schema-valid `payload.error` when position is unavailable. Inventory emits no response frame because its required array DTO cannot carry that error and `[]` would fabricate state. Other failure-capable actions return an immediate, action-specific payload error: validated objects include only their pinned required fields, validation-free actions use `{error}`, and reachability uses `connectable:false` plus an actionable reason.
 
+The pinned Takaro `0c63cf1c` action surface also contains `getMapInfo` and `getMapTile`. Both remain explicit server-only unsupported actions: map info returns every required `MapInfoDTO` field plus `payload.error`, while map tile returns validation-free `{error}`. Runtime-backed array actions return confirmed empty arrays only when their Valheim singleton exists; transient runtime absence suppresses the impossible error array and preserves lifecycle state.
+
 ## Consolidation Strategy
 
 Start from current `origin/main` and implement the desired behavior directly instead of merging the divergent histories of PRs #72, #78, and #79.
@@ -53,7 +55,7 @@ Automated tests must prevent the reintroduction of client plugin activation, cli
 
 ## Packaging And CI
 
-The environment setup script will use bounded retries for transient SteamCMD/Thunderstore failures, download SteamCMD to a unique temporary archive before extraction, remove partial files on every path, validate managed PE/CLI reference structure, and use the proven Windows-depot reference fallback when the Linux dedicated-server depot reports `Missing configuration`. Release packaging must contain the real `net472` plugin and required runtime dependencies while excluding tests and client-only artifacts.
+The environment setup script will use bounded retries for transient SteamCMD/Thunderstore failures, download SteamCMD to a unique temporary archive before extraction, remove partial files on every path, validate every reference with the host `file` utility as a real PE/CLI assembly, publish a fully validated sibling staging directory through rename/rollback, and use the proven Windows-depot reference fallback when the Linux dedicated-server depot reports `Missing configuration`. Release packaging must contain the real `net472` plugin and required runtime dependencies while excluding tests and client-only artifacts.
 
 ## Verification
 

@@ -6,8 +6,8 @@ namespace Takaro.Valheim.Core;
 public interface IValheimTakaroAdapter
 {
     Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<TakaroPlayer>> GetPlayersAsync(CancellationToken cancellationToken = default);
-    Task<TakaroPlayer?> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default);
+    Task<TakaroActionResult> GetPlayersAsync(CancellationToken cancellationToken = default);
+    Task<TakaroActionResult> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default);
@@ -16,12 +16,60 @@ public interface IValheimTakaroAdapter
     Task<TakaroActionResult> ListItemsAsync(CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ListEntitiesAsync(CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default);
+    Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default);
+    Task<TakaroActionResult> GetMapTileAsync(CancellationToken cancellationToken = default);
     Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> KickPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> UnbanPlayerAsync(string identifier, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ListBansAsync(CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ShutdownAsync(CancellationToken cancellationToken = default);
+}
+
+public static class TakaroActionNames
+{
+    public const string TestReachability = "testReachability";
+    public const string GetPlayers = "getPlayers";
+    public const string GetPlayer = "getPlayer";
+    public const string GetPlayerLocation = "getPlayerLocation";
+    public const string GetPlayerInventory = "getPlayerInventory";
+    public const string GiveItem = "giveItem";
+    public const string SendMessage = "sendMessage";
+    public const string ExecuteConsoleCommand = "executeConsoleCommand";
+    public const string ListItems = "listItems";
+    public const string ListEntities = "listEntities";
+    public const string ListLocations = "listLocations";
+    public const string GetMapInfo = "getMapInfo";
+    public const string GetMapTile = "getMapTile";
+    public const string TeleportPlayer = "teleportPlayer";
+    public const string KickPlayer = "kickPlayer";
+    public const string BanPlayer = "banPlayer";
+    public const string UnbanPlayer = "unbanPlayer";
+    public const string ListBans = "listBans";
+    public const string Shutdown = "shutdown";
+
+    public static IReadOnlyList<string> All { get; } =
+    [
+        TestReachability,
+        GetPlayers,
+        GetPlayer,
+        GetPlayerLocation,
+        GetPlayerInventory,
+        GiveItem,
+        SendMessage,
+        ExecuteConsoleCommand,
+        ListItems,
+        ListEntities,
+        ListLocations,
+        GetMapInfo,
+        GetMapTile,
+        TeleportPlayer,
+        KickPlayer,
+        BanPlayer,
+        UnbanPlayer,
+        ListBans,
+        Shutdown
+    ];
 }
 
 public sealed record TakaroActionResult(
@@ -53,23 +101,25 @@ public sealed class TakaroRequestDispatcher
         {
             return request.Action switch
             {
-                "testReachability" => await adapter.TestReachabilityAsync(cancellationToken),
-                "getPlayers" => TakaroActionResult.Ok(await adapter.GetPlayersAsync(cancellationToken)),
-                "getPlayer" => TakaroActionResult.Ok(await adapter.GetPlayerAsync(RequiredIdentifier(request.Args), cancellationToken)),
-                "getPlayerLocation" => await adapter.GetPlayerLocationAsync(RequiredIdentifier(request.Args), cancellationToken),
-                "getPlayerInventory" => await adapter.GetPlayerInventoryAsync(RequiredIdentifier(request.Args), cancellationToken),
-                "giveItem" => await adapter.GiveItemAsync(RequiredIdentifier(request.Args), RequiredItemCode(request.Args), OptionalPositiveInt(request.Args, "amount") ?? OptionalPositiveInt(request.Args, "quantity") ?? 1, OptionalString(request.Args, "quality"), cancellationToken),
-                "sendMessage" => await adapter.SendMessageAsync(RequiredString(request.Args, "message"), OptionalRecipientIdentifier(request.Args), cancellationToken),
-                "executeConsoleCommand" => await adapter.ExecuteConsoleCommandAsync(RequiredString(request.Args, "command"), cancellationToken),
-                "listItems" => await adapter.ListItemsAsync(cancellationToken),
-                "listEntities" => await adapter.ListEntitiesAsync(cancellationToken),
-                "listLocations" => await adapter.ListLocationsAsync(cancellationToken),
-                "teleportPlayer" => await adapter.TeleportPlayerAsync(RequiredIdentifier(request.Args), RequiredPosition(request.Args), cancellationToken),
-                "kickPlayer" => NullPayloadOnSuccess(await adapter.KickPlayerAsync(RequiredIdentifier(request.Args), OptionalString(request.Args, "reason"), cancellationToken)),
-                "banPlayer" => NullPayloadOnSuccess(await adapter.BanPlayerAsync(RequiredIdentifier(request.Args), OptionalString(request.Args, "reason"), cancellationToken)),
-                "unbanPlayer" => NullPayloadOnSuccess(await adapter.UnbanPlayerAsync(RequiredIdentifier(request.Args), cancellationToken)),
-                "listBans" => await adapter.ListBansAsync(cancellationToken),
-                "shutdown" => NullPayloadOnSuccess(await adapter.ShutdownAsync(cancellationToken)),
+                TakaroActionNames.TestReachability => await adapter.TestReachabilityAsync(cancellationToken),
+                TakaroActionNames.GetPlayers => await adapter.GetPlayersAsync(cancellationToken),
+                TakaroActionNames.GetPlayer => await adapter.GetPlayerAsync(RequiredIdentifier(request.Args), cancellationToken),
+                TakaroActionNames.GetPlayerLocation => await adapter.GetPlayerLocationAsync(RequiredIdentifier(request.Args), cancellationToken),
+                TakaroActionNames.GetPlayerInventory => await adapter.GetPlayerInventoryAsync(RequiredIdentifier(request.Args), cancellationToken),
+                TakaroActionNames.GiveItem => await adapter.GiveItemAsync(RequiredIdentifier(request.Args), RequiredItemCode(request.Args), OptionalPositiveInt(request.Args, "amount") ?? OptionalPositiveInt(request.Args, "quantity") ?? 1, OptionalString(request.Args, "quality"), cancellationToken),
+                TakaroActionNames.SendMessage => await adapter.SendMessageAsync(RequiredString(request.Args, "message"), OptionalRecipientIdentifier(request.Args), cancellationToken),
+                TakaroActionNames.ExecuteConsoleCommand => await adapter.ExecuteConsoleCommandAsync(RequiredString(request.Args, "command"), cancellationToken),
+                TakaroActionNames.ListItems => await adapter.ListItemsAsync(cancellationToken),
+                TakaroActionNames.ListEntities => await adapter.ListEntitiesAsync(cancellationToken),
+                TakaroActionNames.ListLocations => await adapter.ListLocationsAsync(cancellationToken),
+                TakaroActionNames.GetMapInfo => await adapter.GetMapInfoAsync(cancellationToken),
+                TakaroActionNames.GetMapTile => await adapter.GetMapTileAsync(cancellationToken),
+                TakaroActionNames.TeleportPlayer => await adapter.TeleportPlayerAsync(RequiredIdentifier(request.Args), RequiredPosition(request.Args), cancellationToken),
+                TakaroActionNames.KickPlayer => NullPayloadOnSuccess(await adapter.KickPlayerAsync(RequiredIdentifier(request.Args), OptionalString(request.Args, "reason"), cancellationToken)),
+                TakaroActionNames.BanPlayer => NullPayloadOnSuccess(await adapter.BanPlayerAsync(RequiredIdentifier(request.Args), OptionalString(request.Args, "reason"), cancellationToken)),
+                TakaroActionNames.UnbanPlayer => NullPayloadOnSuccess(await adapter.UnbanPlayerAsync(RequiredIdentifier(request.Args), cancellationToken)),
+                TakaroActionNames.ListBans => await adapter.ListBansAsync(cancellationToken),
+                TakaroActionNames.Shutdown => NullPayloadOnSuccess(await adapter.ShutdownAsync(cancellationToken)),
                 _ => TakaroActionResult.Error("unsupported_action", $"Valheim connector does not support action '{request.Action}' yet.")
             };
         }
