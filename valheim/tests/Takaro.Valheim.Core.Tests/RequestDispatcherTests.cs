@@ -210,7 +210,7 @@ public sealed class RequestDispatcherTests
             new ActionCase("giveItem", """{"gameId":"Steam_1","item":"Wood","amount":1}""", JsonValueKind.Object, "queued"),
             new ActionCase("listItems", """{}""", JsonValueKind.Array, "code"),
             new ActionCase("listEntities", """{}""", JsonValueKind.Array, "code"),
-            new ActionCase("listLocations", """{}""", JsonValueKind.Array, "code"),
+            new ActionCase("listLocations", """{}""", JsonValueKind.Array, "position"),
             new ActionCase("executeConsoleCommand", """{"command":"help"}""", JsonValueKind.Object, "rawResult", AllowsSuccessProperty: true),
             new ActionCase("sendMessage", """{"message":"hello"}""", JsonValueKind.Object, "sent"),
             new ActionCase("teleportPlayer", """{"gameId":"Steam_1","position":{"x":1,"y":2,"z":3}}""", JsonValueKind.Object, "queued"),

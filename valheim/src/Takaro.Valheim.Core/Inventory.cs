@@ -16,12 +16,9 @@ public sealed record TakaroInventorySlot(
     [property: JsonPropertyName("y")] int Y);
 
 public sealed record TakaroLocation(
-    [property: JsonPropertyName("code")] string Code,
     [property: JsonPropertyName("name")] string Name,
-    [property: JsonPropertyName("x")] double X,
-    [property: JsonPropertyName("y")] double Y,
-    [property: JsonPropertyName("z")] double Z,
-    [property: JsonPropertyName("dimension")] string Dimension = "valheim");
+    [property: JsonPropertyName("position")] TakaroPosition Position,
+    [property: JsonPropertyName("code")] string? Code = null);
 
 public sealed record TakaroEntity(
     [property: JsonPropertyName("code")] string Code,
@@ -30,7 +27,7 @@ public sealed record TakaroEntity(
 public static class LocationFactory
 {
     public static TakaroLocation Create(string code, string? rawName, double x, double y, double z) =>
-        new(code, DisplayName(rawName, code), x, y, z);
+        new(DisplayName(rawName, code), new TakaroPosition(x, y, z, "valheim"), code);
 
     private static string DisplayName(string? rawName, string fallback)
     {

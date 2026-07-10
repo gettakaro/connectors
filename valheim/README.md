@@ -40,7 +40,7 @@ The default WebSocket endpoint is `wss://connect.takaro.io/`. The plugin disable
 The registry uses only three statuses:
 
 - `live-supported`: the server-owned path has historical live evidence.
-- `schema-fallback`: the connector returns a Takaro-compatible shape without a proven game-backed implementation.
+- `schema-fallback`: a reserved status for a schema-valid result that is not yet backed by proven game state.
 - `unsupported`: the path is unavailable or lacks valid server-only proof.
 
 ### Actions
@@ -50,14 +50,14 @@ The registry uses only three statuses:
 | `testReachability` | `live-supported` | Reports connector reachability. |
 | `getPlayers` | `live-supported` | Reads the Valheim dedicated-server player list. |
 | `getPlayer` | `unsupported` | Filtering exists, but the final Takaro response shape still needs independent live proof. |
-| `getPlayerLocation` | `live-supported` | Uses the ready peer reference position, then public-position data; otherwise returns `player_position_unavailable`. |
-| `getPlayerInventory` | `schema-fallback` | Keeps the internal `player_component_unavailable` failure and sends an empty-array wire fallback; remote inventories are client-owned state. |
+| `getPlayerLocation` | `live-supported` | Uses only a real peer/public position or a fresh 30-second server-observed last-known position; an unavailable lookup is rejected through a schema-valid payload error. |
+| `getPlayerInventory` | `unsupported` | Remote inventories are client-owned. The connector deliberately sends no response instead of persisting a fabricated empty inventory. |
 | `giveItem` | `live-supported` | Creates stack-split world drops near the player's server-known position. |
 | `sendMessage` | `live-supported` | Uses Valheim's built-in routed HUD message calls without a custom client RPC. |
 | `executeConsoleCommand` | `live-supported` | Runs only exact or prefix-allowlisted commands. |
 | `listItems` | `live-supported` | Lists item prefabs visible to the server. |
 | `listEntities` | `live-supported` | Lists non-player character prefabs visible to the server. |
-| `listLocations` | `live-supported` | Reads named world locations from `ZoneSystem.GetLocationList()`. |
+| `listLocations` | `live-supported` | Reads `ZoneSystem.GetLocationList()` and emits current `ILocationDTO` objects with `name`, optional `code`, and nested `position`. |
 | `teleportPlayer` | `live-supported` | Routes Valheim's built-in `RPC_TeleportTo` to the server-known character ZDO. |
 | `kickPlayer` | `live-supported` | Sends Valheim's built-in `Kicked` RPC without directly disconnecting the peer. |
 | `banPlayer` | `live-supported` | Writes through Valheim's official ban behavior and then sends `Kicked` when online. |
@@ -70,8 +70,8 @@ The registry uses only three statuses:
 | Event | Status | Dedicated-server behavior |
 | --- | --- | --- |
 | `log` | `live-supported` | Emits connector log events. |
-| `player-connected` | `schema-fallback` | A dedicated-server snapshot frame is written, but turn-2 Takaro event search persisted no lifecycle event; re-proof is pending. |
-| `player-disconnected` | `schema-fallback` | A dedicated-server snapshot frame is written, but turn-2 Takaro event search persisted no lifecycle event; re-proof is pending. |
+| `player-connected` | `live-supported` | Derived from dedicated-server player snapshots after a real server position is observed; turn-3 Takaro searches persisted both tested connections. |
+| `player-disconnected` | `live-supported` | Derived from the same snapshot tracker; turn-3 Takaro searches persisted both tested disconnections. |
 | `chat-message` | `unsupported` | Vanilla-client inbound chat has no proven dedicated-server route; tracked in [issue #69](https://github.com/gettakaro/connectors/issues/69). |
 | `player-death` | `unsupported` | Routed `OnDeath` payloads are diagnostic-only; packet sender/target identity and actual death state are not server-owned proof. |
 | `entity-killed` | `unsupported` | No emitter or death Harmony patch is active; prior proof used rejected client forwarding. |
@@ -82,13 +82,15 @@ The registry uses only three statuses:
 
 `teleportPlayer` requires a server-known character ZDO ID. It uses Valheim's built-in teleport RPC and returns `character_unavailable` when that identity is missing.
 
-The adapter retains structured unavailable errors internally. At the WebSocket boundary, Takaro still requires action-specific DTO shapes: unavailable inventory uses an empty array and unavailable location uses `{x:0,y:0,z:0,dimension:"unavailable"}` while the response envelope keeps `success:false`, `errorCode`, and `message`. These are explicit schema fallbacks, never successful game-state claims.
+Player location never returns a fabricated origin. A live peer/public observation is cached for 30 seconds so Takaro can enrich a disconnect with the player's real last-known position; the cache is player-keyed, expires, and clears when Valheim replaces its network/world instance. Player-connected emission waits until such a real observation exists. If no current or fresh observation exists, the connector sends the position DTO's required numeric fields plus `payload.error`. At Takaro source commit `0c63cf1c`, the app connector validates that payload and `Generic.requestFromServer` rejects `payload.error` before returning a position. Root-level response metadata is not used by that consumer.
+
+Remote inventory is permanently unsupported at the dedicated-server boundary. Its DTO must be an array, so there is no place for the same payload error. Returning `[]` would falsely persist an empty inventory. The connector therefore sends no response frame, logs that suppression at most once per minute per failure, and relies on Takaro's current 10-second pending-request timeout. This is an explicit compatibility limitation and a deliberate exception to the protocol's normal always-respond guidance.
 
 Outbound messages and item confirmations use base-game `Message` and `ShowMessage` calls. They do not require a Takaro client plugin and are not treated as inbound chat.
 
 ## Evidence Boundary
 
-Historical dedicated-server evidence from June 21-22, 2026 covers the entries marked `live-supported`, including vanilla-client player location, world-drop item delivery, built-in teleport, moderation, and delayed shutdown.
+Historical dedicated-server evidence from June 21-22, 2026 covers several entries marked `live-supported`, including vanilla-client player location, world-drop item delivery, built-in teleport, moderation, and delayed shutdown. The July 10 turn-3 run additionally persisted two complete player connect/disconnect cycles, returned 11,293 raw server locations, and re-proved core player actions without any client plugin.
 
 That historical evidence is not a fresh validation of this branch. Current source/build checks and any new runtime evidence belong in [the 2026-07-10 server-only validation ledger](qa/2026-07-10-server-only-validation.md). Routed-packet chat/player-death and client-forwarded entity-kill evidence are explicitly excluded from trusted event claims.
 
@@ -112,14 +114,7 @@ dotnet build src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj \
 
 ## Release Build
 
-From the monorepo root:
-
-```bash
-just valheim-setup
-just build-release-valheim 0.1.0
-```
-
-Or from `valheim/`:
+From `valheim/`:
 
 ```bash
 ./scripts/setup-environment.sh

@@ -70,42 +70,46 @@ public sealed class ProtocolTests
     }
 
     [TestMethod]
-    public void CreateActionResponseKeepsSuccessMetadataOutsideSchemaPayload()
+    public void CreateActionResponseSendsOnlyTheSuccessfulSchemaPayload()
     {
-        var response = JsonDocument.Parse(TakaroProtocol.CreateResponse(
+        var shouldSend = TakaroProtocol.TryCreateActionResponse(
             "req-success",
             "getPlayerLocation",
-            TakaroActionResult.Ok(new TakaroPosition(12, 34, 56, "valheim")))).RootElement;
+            TakaroActionResult.Ok(new TakaroPosition(12, 34, 56, "valheim")),
+            out var frame);
+        var response = JsonDocument.Parse(frame!).RootElement;
 
-        Assert.IsTrue(response.GetProperty("success").GetBoolean());
+        Assert.IsTrue(shouldSend);
         Assert.AreEqual(12, response.GetProperty("payload").GetProperty("x").GetInt32());
-        Assert.AreEqual(JsonValueKind.Null, response.GetProperty("errorCode").ValueKind);
+        Assert.IsFalse(response.TryGetProperty("success", out _));
+        Assert.IsFalse(response.TryGetProperty("errorCode", out _));
     }
 
     [TestMethod]
-    public void CreateActionResponseUsesArrayFallbackForUnavailableInventory()
+    public void CreateActionResponseSuppressesUnavailableInventory()
     {
-        var response = JsonDocument.Parse(TakaroProtocol.CreateResponse(
+        var shouldSend = TakaroProtocol.TryCreateActionResponse(
             "req-inventory",
             "getPlayerInventory",
-            TakaroActionResult.Error("player_component_unavailable", "Remote inventory is client-owned."))).RootElement;
+            TakaroActionResult.Error("player_component_unavailable", "Remote inventory is client-owned."),
+            out var frame);
 
-        Assert.IsFalse(response.GetProperty("success").GetBoolean());
-        Assert.AreEqual("player_component_unavailable", response.GetProperty("errorCode").GetString());
-        Assert.AreEqual(JsonValueKind.Array, response.GetProperty("payload").ValueKind);
-        Assert.AreEqual(0, response.GetProperty("payload").GetArrayLength());
+        Assert.IsFalse(shouldSend);
+        Assert.IsNull(frame);
     }
 
     [TestMethod]
     public void CreateActionResponseKeepsSuccessfulInventoryAsArray()
     {
         var items = new[] { new TakaroInventoryItem("Wood", "Wood", 1, "1") };
-        var response = JsonDocument.Parse(TakaroProtocol.CreateResponse(
+        var shouldSend = TakaroProtocol.TryCreateActionResponse(
             "req-inventory-success",
             "getPlayerInventory",
-            TakaroActionResult.Ok(items))).RootElement;
+            TakaroActionResult.Ok(items),
+            out var frame);
+        var response = JsonDocument.Parse(frame!).RootElement;
 
-        Assert.IsTrue(response.GetProperty("success").GetBoolean());
+        Assert.IsTrue(shouldSend);
         Assert.AreEqual(JsonValueKind.Array, response.GetProperty("payload").ValueKind);
         Assert.AreEqual("Wood", response.GetProperty("payload")[0].GetProperty("code").GetString());
     }
@@ -113,20 +117,23 @@ public sealed class ProtocolTests
     [DataTestMethod]
     [DataRow("player_position_unavailable")]
     [DataRow("player_not_found")]
-    public void CreateActionResponseUsesTypedPositionFallbackForUnavailableLocation(string errorCode)
+    public void CreateActionResponseUsesPayloadErrorForUnavailableLocation(string errorCode)
     {
-        var response = JsonDocument.Parse(TakaroProtocol.CreateResponse(
+        var shouldSend = TakaroProtocol.TryCreateActionResponse(
             "req-location",
             "getPlayerLocation",
-            TakaroActionResult.Error(errorCode, "No current server-owned position."))).RootElement;
+            TakaroActionResult.Error(errorCode, "No current server-owned position."),
+            out var frame);
+        var response = JsonDocument.Parse(frame!).RootElement;
 
-        Assert.IsFalse(response.GetProperty("success").GetBoolean());
-        Assert.AreEqual(errorCode, response.GetProperty("errorCode").GetString());
+        Assert.IsTrue(shouldSend);
         var payload = response.GetProperty("payload");
         Assert.AreEqual(0, payload.GetProperty("x").GetDouble());
         Assert.AreEqual(0, payload.GetProperty("y").GetDouble());
         Assert.AreEqual(0, payload.GetProperty("z").GetDouble());
-        Assert.AreEqual("unavailable", payload.GetProperty("dimension").GetString());
+        StringAssert.Contains(payload.GetProperty("error").GetString(), errorCode);
+        Assert.IsFalse(response.TryGetProperty("success", out _));
+        Assert.IsFalse(response.TryGetProperty("errorCode", out _));
     }
 
     [TestMethod]

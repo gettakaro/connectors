@@ -1,12 +1,61 @@
 # Valheim Server-Only Validation Ledger
 
-## Verdict: PASS WITH GAPS
+## Verdict: PASS WITH GAPS (turn-3 runtime; turn-4 pending)
 
 Source commit `20b505b2fcc5e58a6bdb0ec3bf4d26bda6a5f096` passed build/package gates and a live dedicated-server run with a vanilla player. Player actions, catalogs, visible messaging, and cron delivery were proven. Client-owned inventory remains a schema fallback; inbound chat, death, and entity-killed remain unsupported; lifecycle frames were written but exact Takaro persistence was not proven.
 
-Turn-3 source is not live-validated by this ledger. Later commits may cite the executable tests here, but must not inherit the live verdict until their own artifact is deployed and exercised.
+Turn 3 then deployed source commit `d0195b677c43a766daae55a226be4af73ef24a10`. It removed schema validation errors and re-proved the core server-only path, including four persisted lifecycle events, but exposed the false-success fallback defect for unavailable inventory/location and a flat `listLocations` DTO. Those failures are recorded below rather than folded into a success claim.
 
-## Runtime Boundary
+Turn-4 source is not live-validated by this ledger. Its consumer-contract, no-fabricated-inventory, position-cache, and nested-location corrections must be rebuilt, deployed, and exercised before inheriting a live verdict.
+
+## Turn-3 Artifact-Pinned Evidence
+
+### Artifact and boundary
+
+| Evidence | Exact value | Result |
+| --- | --- | --- |
+| Source commit | `d0195b677c43a766daae55a226be4af73ef24a10` | Exact clean turn-3 HEAD |
+| Release zip SHA-256 | `6273a722a98b1685bc87f22c5c4d1338c00ed28ea29e0b2c4ab1eae6d3d7a458` | Deployed build input |
+| Packaged/deployed DLL SHA-256 | `8d7818ae0642af9ec6f6e4e67acc236d79957c47d321d1e0dbf0e4da8777b567` | Exact match |
+| Evidence directory | `/tmp/valheim-turn3-live-20260710T132532Z` | Local logs, probes, screenshots, and cleanup records |
+
+The client Takaro DLL was absent. The exact plugin identified as game server `4dadfdf6-18a3-41f1-ae2c-b94200dea9ab`; reachability passed. The vanilla player joined twice without a Takaro client plugin. All temporary server, client, MCP, and module state was cleaned up after the run.
+
+To replay against the same source rather than the current worktree, create a detached worktree first:
+
+```bash
+git worktree add --detach /tmp/connectors-valheim-turn3 d0195b677c43a766daae55a226be4af73ef24a10
+cd /tmp/connectors-valheim-turn3
+dotnet test valheim/Takaro.Valheim.sln --no-restore -v minimal
+bash valheim/tests/setup-environment-behavior.sh
+```
+
+### Actions and DTO findings
+
+- Global/direct messages, visible world-drop `giveItem`, the strict fractional/oversized amount bounds, teleport, allowlisted `help`, and `listBans` passed.
+- Fresh catalogs returned `listItems`: 821 and `listEntities`: 101.
+- The raw `listLocations` harness returned 11,293 server locations in a 1,528,611-byte response. The server source path was real, but each location used the wrong flat DTO; turn 4 changes this to required nested `position` and still needs live revalidation.
+- Schema validation errors disappeared for unavailable inventory/location. That was only a partial fix: Takaro resolves `payload` and ignored the root failure metadata, so `[]` and zero/`unavailable` were persisted as state. This is the confirmed false-success fallback defect, not a pass.
+- Destructive actions (`kickPlayer`, `banPlayer`, `unbanPlayer`, `shutdown`) remained skipped and approval-gated.
+
+### Persisted lifecycle proof
+
+Two complete vanilla connect/disconnect cycles persisted four Takaro events:
+
+- `player-connected`: `e51c2951-ec59-4c1b-9be5-8eca3653a7f8`
+- `player-disconnected`: `20897cd3-d833-4094-a68c-dfa4c6cf7f12`
+- `player-connected`: `bdb561c6-3d43-4a88-8f64-4d6e224e916d`
+- `player-disconnected`: `ba9b7643-923c-4a5a-bb0d-7739fe90a6e9`
+
+This upgrades lifecycle persistence itself to live-supported. Connector logs remain deliberately narrower: `lifecycle frame written` proves a transport write only; the event IDs above are the independent persistence proof.
+
+### Module automation
+
+Installed modules were `teleports`, `Waypoints`, and `serverMessages`. A fresh `serverMessages` cron reached the connector, rendered visibly, and persisted `cronjob-executed` event `f55c8b39-fc2c-442f-a4e2-be81a7851f4e`.
+
+A temporary hook persisted successful `hook-executed` event `5ea168d7-1ae1-4d73-a7dc-5731b02957e5`; its temporary module was then uninstalled and the post-cleanup search returned zero. Corrected `/waypoints` routing reached connector `sendMessage`, but command-executed analytics remained at zero, so command-module completion is not claimed.
+
+## Turn-2 Runtime Boundary
 
 - Architecture: dedicated-server-only BepInEx plugin; no client DLL, bridge, snapshot, or custom Takaro RPC.
 - Game server ID: `4dadfdf6-18a3-41f1-ae2c-b94200dea9ab`.
@@ -25,6 +74,8 @@ Turn-3 source is not live-validated by this ledger. Later commits may cite the e
 Replayable build commands:
 
 ```bash
+git worktree add --detach /tmp/connectors-valheim-turn2 20b505b2fcc5e58a6bdb0ec3bf4d26bda6a5f096
+cd /tmp/connectors-valheim-turn2
 dotnet test valheim/Takaro.Valheim.sln --no-restore -v minimal
 bash valheim/tests/setup-environment-behavior.sh
 dotnet build valheim/src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj \
@@ -89,4 +140,4 @@ These files are local evidence paths, not committed release assets.
 
 ## Final Gate
 
-Deploy the turn-3 artifact server-side only, repeat unavailable inventory/location polling, reconnect/disconnect the vanilla player, and require: no Takaro DTO validation errors; exact `eventSearch` lifecycle records before promotion; continued visible messaging/item/teleport proof; client plugin absence; and no unsupported event emission. Destructive actions remain approval-gated.
+Build and deploy the turn-4 artifact server-side only. Require: unavailable location rejects without mutating position; inventory times out without persisting `[]`; a ready and freshly disconnected player returns only a real observed position; `listLocations` passes the nested DTO route; persisted lifecycle still works; visible messaging/item/teleport remain intact; the client plugin stays absent; and unsupported chat/death/entity events remain absent. Destructive actions remain approval-gated.

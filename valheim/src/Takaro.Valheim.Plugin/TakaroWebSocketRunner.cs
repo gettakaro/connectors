@@ -14,6 +14,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private readonly CancellationTokenSource shutdown = new();
     private readonly SemaphoreSlim sendLock = new(1, 1);
     private readonly PlayerLifecycleEventTracker playerLifecycle = new();
+    private readonly SuppressedResponseLogLimiter suppressedResponseLogs = new(TimeSpan.FromMinutes(1));
     private static readonly TimeSpan PlayerLifecyclePollInterval = TimeSpan.FromSeconds(5);
     private ClientWebSocket? socket;
     private Task? runLoop;
@@ -111,7 +112,17 @@ public sealed class TakaroWebSocketRunner : IDisposable
             try
             {
                 var players = await adapter.GetPlayersAsync(cancellationToken);
-                var events = playerLifecycle.Update(players, DateTimeOffset.UtcNow);
+                var playersWithObservedPositions = new List<TakaroPlayer>();
+                foreach (var player in players)
+                {
+                    var location = await adapter.GetPlayerLocationAsync(player.GameId, cancellationToken);
+                    if (location.Success)
+                    {
+                        playersWithObservedPositions.Add(player);
+                    }
+                }
+
+                var events = playerLifecycle.Update(playersWithObservedPositions, DateTimeOffset.UtcNow);
                 foreach (var evt in events)
                 {
                     if (!ValheimEventAcceptancePolicy.CanEmit(
@@ -189,8 +200,22 @@ public sealed class TakaroWebSocketRunner : IDisposable
             var request = TakaroProtocol.ParseRequest(message);
             log($"Takaro Valheim request received: action={request.Action}, requestId={request.RequestId}.");
             var response = await dispatcher.DispatchAsync(request, cancellationToken);
-            await SendAsync(socket, TakaroProtocol.CreateResponse(request.RequestId, request.Action, response), cancellationToken);
-            log($"Takaro Valheim response sent: action={request.Action}, success={response.Success}.");
+            if (!TakaroProtocol.TryCreateActionResponse(
+                    request.RequestId,
+                    request.Action,
+                    response,
+                    out var responseFrame))
+            {
+                if (suppressedResponseLogs.ShouldLog(request.Action, response.ErrorCode, DateTimeOffset.UtcNow))
+                {
+                    log($"Takaro Valheim suppressed unsupported failure response: action={request.Action}, error={response.ErrorCode ?? "action_failed"}. The Generic Connector has no compatible failure payload for this action; Takaro will expire the pending request instead of accepting fabricated state.");
+                }
+
+                continue;
+            }
+
+            await SendAsync(socket, responseFrame!, cancellationToken);
+            log($"Takaro Valheim response frame written: action={request.Action}, success={response.Success}.");
         }
     }
 

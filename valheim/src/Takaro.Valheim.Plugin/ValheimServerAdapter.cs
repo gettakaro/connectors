@@ -10,8 +10,10 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 {
     private readonly ManualLogSource logger;
     private readonly ConsoleCommandPolicy commandPolicy;
+    private readonly PlayerPositionCache playerPositions = new(TimeSpan.FromSeconds(30));
     private readonly Dictionary<string, HashSet<string>> banAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> banNames = new(StringComparer.OrdinalIgnoreCase);
+    private ZNet? observedNetwork;
 
     public ValheimServerAdapter(ManualLogSource logger, ConnectorConfig config)
     {
@@ -24,6 +26,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<IReadOnlyList<TakaroPlayer>> GetPlayersAsync(CancellationToken cancellationToken = default)
     {
+        RefreshWorldBoundary();
         var players = ZNet.instance?.GetPlayerList()
             .Select(ToTakaroPlayer)
             .ToArray() ?? [];
@@ -37,60 +40,47 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default)
     {
-        if (!TryResolvePlayer(identifier, out var playerInfo, out var peer, out _))
+        RefreshWorldBoundary();
+        var now = DateTimeOffset.UtcNow;
+        if (TryResolvePlayer(identifier, out var playerInfo, out var peer, out var player))
         {
-            return Task.FromResult(TakaroActionResult.Error(
-                "player_not_found",
-                $"Valheim player '{identifier}' is not online."));
-        }
-
-        if (TryResolveServerKnownPosition(playerInfo, peer, out var position))
-        {
-            return Task.FromResult(TakaroActionResult.Ok(new
+            if (TryResolveServerKnownPosition(playerInfo, peer, out var position) && player is not null)
             {
-                x = position.x,
-                y = position.y,
-                z = position.z,
-                dimension = "valheim"
-            }));
+                var observed = new TakaroPosition(position.x, position.y, position.z, "valheim");
+                if (playerPositions.Remember(player, observed, now))
+                {
+                    return Task.FromResult(TakaroActionResult.Ok(observed));
+                }
+            }
+
+            if (playerPositions.TryGet(identifier, now, out var recent))
+            {
+                return Task.FromResult(TakaroActionResult.Ok(recent));
+            }
+
+            logger.LogInfo($"Takaro Valheim getPlayerLocation has no real server-observed position for '{identifier}'.");
+            return Task.FromResult(TakaroActionResult.Error(
+                "player_position_unavailable",
+                $"Valheim does not expose a real server-observed position for player '{identifier}'."));
         }
 
-        logger.LogInfo($"Takaro Valheim getPlayerLocation has no server-known position for '{identifier}'.");
+        if (playerPositions.TryGet(identifier, now, out var lastKnown))
+        {
+            logger.LogInfo($"Takaro Valheim getPlayerLocation returned a fresh server-observed last-known position for offline player '{identifier}'.");
+            return Task.FromResult(TakaroActionResult.Ok(lastKnown));
+        }
+
         return Task.FromResult(TakaroActionResult.Error(
-            "player_position_unavailable",
-            $"Valheim does not expose a server-known position for player '{identifier}'."));
+            "player_not_found",
+            $"Valheim player '{identifier}' is not online and has no fresh server-observed position."));
     }
 
     public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default)
     {
-        if (!TryResolvePlayer(identifier, out _, out _, out _))
-        {
-            return Task.FromResult(TakaroActionResult.Error(
-                "player_not_found",
-                $"Valheim player '{identifier}' is not online."));
-        }
-
-        if (!TryFindPlayerComponent(identifier, out var player))
-        {
-            logger.LogInfo($"Takaro Valheim getPlayerInventory found no server-side Player component for '{identifier}'.");
-            return Task.FromResult(TakaroActionResult.Error(
-                "player_component_unavailable",
-                $"Valheim does not expose a server-side Player inventory component for remote player '{identifier}'."));
-        }
-
-        var items = player.GetInventory().GetAllItems()
-            .Select(item => new TakaroInventoryItem(
-                Code: item.m_dropPrefab != null ? item.m_dropPrefab.name : item.m_shared.m_name,
-                Name: DisplayName(item.m_shared.m_name, item.m_dropPrefab != null ? item.m_dropPrefab.name : item.m_shared.m_name),
-                Amount: item.m_stack,
-                Quality: item.m_quality.ToString(),
-                Durability: item.m_durability,
-                Equipped: item.m_equipped,
-                Position: new TakaroInventorySlot(item.m_gridPos.x, item.m_gridPos.y)))
-            .ToArray();
-
-        logger.LogInfo($"Takaro Valheim getPlayerInventory returned {items.Length} item stack(s) for '{identifier}'.");
-        return Task.FromResult(TakaroActionResult.Ok(items));
+        logger.LogInfo($"Takaro Valheim getPlayerInventory is unsupported on a dedicated server for '{identifier}'.");
+        return Task.FromResult(TakaroActionResult.Error(
+            "player_component_unavailable",
+            "Valheim dedicated servers do not expose remote player inventory components."));
     }
 
     public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default)
@@ -274,11 +264,11 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
                 x: instance.m_position.x,
                 y: instance.m_position.y,
                 z: instance.m_position.z))
-            .GroupBy(location => $"{location.Code}|{location.X}|{location.Y}|{location.Z}", StringComparer.OrdinalIgnoreCase)
+            .GroupBy(location => $"{location.Code}|{location.Position.X}|{location.Position.Y}|{location.Position.Z}", StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .OrderBy(location => location.Code, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(location => location.X)
-            .ThenBy(location => location.Z)
+            .ThenBy(location => location.Position.X)
+            .ThenBy(location => location.Position.Z)
             .ToArray() ?? [];
 
         logger.LogInfo($"Takaro Valheim listLocations returned {locations.Length} location(s).");
@@ -598,19 +588,14 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         return false;
     }
 
-    private bool TryFindPlayerComponent(string identifier, out Player player)
+    private void RefreshWorldBoundary()
     {
-        if (TryFindPlayerInfo(identifier, out var playerInfo))
+        var currentNetwork = ZNet.instance;
+        if (!ReferenceEquals(observedNetwork, currentNetwork))
         {
-            var gameObject = ZNetScene.instance?.FindInstance(playerInfo.m_characterID);
-            if (gameObject != null && gameObject.TryGetComponent<Player>(out player))
-            {
-                return true;
-            }
+            playerPositions.Clear();
+            observedNetwork = currentNetwork;
         }
-
-        player = null!;
-        return false;
     }
 
     private static bool TryResolveServerKnownPosition(ZNet.PlayerInfo playerInfo, ZNetPeer? peer, out Vector3 position)

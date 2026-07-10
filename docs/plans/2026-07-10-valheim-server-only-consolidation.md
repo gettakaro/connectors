@@ -114,12 +114,11 @@ Only after this guard may the code create Harmony patches, read Takaro credentia
 Delete client snapshot caches, client update senders, client death/entity forwarding, custom client RPC registration/handlers, and client-side Harmony patches. The remaining bridge may:
 
 - observe server-routed `ChatMessage`/`Say` packets defensively;
-- emit server-observable lifecycle/death/entity events;
-- deduplicate events;
-- reject unsafe text/identity payloads;
+- emit only connector logs and server-snapshot `player-connected`/`player-disconnected` events;
+- reject routed packet identity/death payloads as diagnostic-only;
 - emit connector log events.
 
-Do not claim ordinary inbound chat as supported merely because a decoder remains present.
+Do not emit or claim ordinary inbound chat, player-death, or entity-killed. No death/entity Harmony emitter remains in the final server-only connector.
 
 Use PR #78 only as a behavioral reference:
 
@@ -171,10 +170,12 @@ Run the focused test and confirm this new test fails for the expected missing se
 
 **Step 2: Implement honest location and inventory behavior**
 
-- Resolve the requested online player and peer first; return `player_not_found` when absent.
-- Use `ZNetPeer.m_refPos` or another proven server-known peer reference position.
-- Return `player_position_unavailable` instead of origin when the server has no position.
-- Return `player_component_unavailable` instead of an empty array when the dedicated server has no remote `Player` inventory component.
+- Use only `ZNetPeer.m_refPos`, public-position data, or a fresh player-keyed last-known observation captured from those server-owned sources.
+- Retain last-known positions for 30 seconds across disconnect, expire them, and clear them when Valheim replaces its network/world instance. Never cache an origin placeholder.
+- Gate `player-connected` tracking until a real server-owned position exists so lifecycle enrichment does not race character readiness.
+- When no current/fresh location exists, emit required numeric coordinates plus `payload.error`; current Takaro source commit `0c63cf1c` validates the position DTO and rejects that payload before returning it.
+- Treat remote inventory as permanently unsupported on a dedicated server. Return `player_component_unavailable` internally and send no WebSocket response, allowing Takaro's bounded pending-request timeout rather than fabricating `[]`.
+- Rate-limit the explicit no-response compatibility log. Root-level `success`/`errorCode` fields are not a supported failure contract.
 
 **Step 3: Implement server-owned `giveItem`**
 
@@ -307,9 +308,10 @@ Expected: FAIL because the registry does not exist.
 
 Use an object with `architecture`, `actions`, `events`, and `notes`. Classify only proven server-owned paths as `live-supported`. Required conservative classifications include:
 
-- `getPlayerInventory`: `unsupported` until a server-owned inventory path exists;
+- `getPlayerInventory`: `unsupported`; the dedicated server has no remote inventory path, and the wire deliberately emits no response rather than a false empty array;
 - `chat-message`: `unsupported` until vanilla-client input is observed at the dedicated server and in Takaro;
-- `entity-killed`: `unsupported` until the server-only event path is re-proven;
+- `player-death` and `entity-killed`: `unsupported` with no active emitter;
+- `player-connected` and `player-disconnected`: `live-supported` after turn-3 Takaro searches persisted two complete cycles;
 - no `implemented`, `partial`, or `stub` values.
 
 If current live proof cannot establish `getPlayer`, classify it conservatively and explain the limitation rather than inventing a proof.
@@ -319,7 +321,7 @@ If current live proof cannot establish `getPlayer`, classify it conservatively a
 - State that installation is dedicated-server-only and no client mod is supported.
 - Remove Jotunn instructions.
 - Add a complete action/event support matrix matching the JSON registry.
-- Explain world-drop semantics for `giveItem`, built-in teleport semantics, structured inventory/position errors, and unsupported inbound chat.
+- Explain world-drop semantics for `giveItem`, built-in teleport semantics, the current-source `payload.error` position behavior, inventory no-response timeout limitation, and unsupported inbound chat/death/entity events.
 - Link issue #69 for inbound chat.
 - Separate historical live proof from current verification.
 
@@ -400,7 +402,7 @@ Use the local test server without printing registration/identity tokens. Confirm
 
 **Step 3: Run non-destructive connector checks**
 
-Use Takaro MCP plus dedicated-server logs for reachability, players/getPlayer, location, outbound message, world-drop `giveItem`, teleport, list items/entities/locations, allowlisted console behavior, and lifecycle/death/event searches. Resolve the Takaro player UUID before `gameserverGiveItem`.
+Use Takaro MCP plus dedicated-server logs for reachability, players/getPlayer, real location plus unavailable-location rejection, inventory timeout without state mutation, outbound message, world-drop `giveItem`, teleport, list items/entities/locations, allowlisted console behavior, persisted lifecycle searches, and zero unsupported death/entity emissions. Resolve the Takaro player UUID before `gameserverGiveItem`.
 
 **Step 4: Run installed-module checks**
 

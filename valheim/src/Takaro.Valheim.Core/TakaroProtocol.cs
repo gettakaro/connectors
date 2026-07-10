@@ -51,18 +51,38 @@ public static class TakaroProtocol
         }, JsonOptions);
     }
 
-    public static string CreateResponse(string requestId, string action, TakaroActionResult result)
+    public static bool TryCreateActionResponse(
+        string requestId,
+        string action,
+        TakaroActionResult result,
+        out string? response)
     {
-        var responsePayload = NormalizeActionResponsePayload(action, result);
-        return JsonSerializer.Serialize(new
+        if (result.Success)
         {
-            type = "response",
-            requestId,
-            payload = responsePayload,
-            success = result.Success,
-            errorCode = result.ErrorCode,
-            message = result.Message
-        }, JsonOptions);
+            response = CreateResponse(requestId, result.Payload!);
+            return true;
+        }
+
+        if (action.Equals("getPlayerLocation", StringComparison.Ordinal))
+        {
+            // Current Takaro app-connector 0c63cf1c validates the action DTO, resolves only
+            // payload, and Generic.requestFromServer rejects payload.error. Required numeric
+            // coordinates keep this compatible with the current non-null IPosition route.
+            response = CreateResponse(requestId, new
+            {
+                x = 0d,
+                y = 0d,
+                z = 0d,
+                error = $"{result.ErrorCode ?? "action_failed"}: {result.Message ?? "Valheim action failed."}"
+            });
+            return true;
+        }
+
+        // Takaro currently has no general action-failure response envelope. In particular,
+        // inventory must be an array, and [] would be persisted as a real empty inventory.
+        // Sending no frame lets Takaro reject via its bounded pending-request timeout.
+        response = null;
+        return false;
     }
 
     public static string CreateGameEvent(string eventType, object data)
@@ -133,18 +153,35 @@ public static class TakaroProtocol
         return payload;
     }
 
-    private static object? NormalizeActionResponsePayload(string action, TakaroActionResult result)
+}
+
+public sealed class SuppressedResponseLogLimiter
+{
+    private readonly TimeSpan interval;
+    private readonly Dictionary<string, DateTimeOffset> lastLoggedAt = new(StringComparer.Ordinal);
+
+    public SuppressedResponseLogLimiter(TimeSpan interval)
     {
-        if (result.Success)
+        if (interval <= TimeSpan.Zero)
         {
-            return result.Payload;
+            throw new ArgumentOutOfRangeException(nameof(interval), "Log interval must be positive.");
         }
 
-        return action switch
+        this.interval = interval;
+    }
+
+    public bool ShouldLog(string action, string? errorCode, DateTimeOffset now)
+    {
+        var key = $"{action}\n{errorCode ?? "action_failed"}";
+        lock (lastLoggedAt)
         {
-            "getPlayerInventory" => Array.Empty<TakaroInventoryItem>(),
-            "getPlayerLocation" => new TakaroPosition(0, 0, 0, "unavailable"),
-            _ => NormalizeResponsePayload(result)
-        };
+            if (lastLoggedAt.TryGetValue(key, out var previous) && now - previous < interval)
+            {
+                return false;
+            }
+
+            lastLoggedAt[key] = now;
+            return true;
+        }
     }
 }

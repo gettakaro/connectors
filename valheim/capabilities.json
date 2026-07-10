@@ -5,7 +5,7 @@
     "getPlayers": "live-supported",
     "getPlayer": "unsupported",
     "getPlayerLocation": "live-supported",
-    "getPlayerInventory": "schema-fallback",
+    "getPlayerInventory": "unsupported",
     "giveItem": "live-supported",
     "sendMessage": "live-supported",
     "executeConsoleCommand": "live-supported",
@@ -21,23 +21,24 @@
   },
   "events": {
     "log": "live-supported",
-    "player-connected": "schema-fallback",
-    "player-disconnected": "schema-fallback",
+    "player-connected": "live-supported",
+    "player-disconnected": "live-supported",
     "chat-message": "unsupported",
     "player-death": "unsupported",
     "entity-killed": "unsupported"
   },
   "notes": [
     "The connector and all Takaro configuration belong on the dedicated server. No Takaro client plugin or custom client RPC is supported.",
-    "Live-supported records dedicated-server evidence through source commit 20b505b on 2026-07-10. Later source must be revalidated before inheriting those claims.",
+    "Live-supported records retained dedicated-server evidence, including the turn-3 artifact run on 2026-07-10. Turn-4 wire and DTO corrections still require their own post-build live rerun.",
     "getPlayer is implemented by filtering the dedicated server player list, but its final Takaro response shape has not been independently live-proven, so it remains unsupported.",
-    "getPlayerLocation uses a ready peer reference position and then Valheim public-position data. An unavailable result keeps success=false while carrying a Takaro-valid x=0,y=0,z=0,dimension=unavailable fallback payload; it is never claimed as a real position.",
-    "getPlayerInventory keeps success=false with an empty-array schema fallback because a dedicated server does not expose remote client inventory components.",
+    "getPlayerLocation uses only a real ready-peer/public observation or a fresh 30-second player-keyed last-known observation. If neither exists, a required-coordinate payload with error is rejected by current Takaro Generic.requestFromServer rather than returned as a position.",
+    "getPlayerInventory is permanently unsupported because a dedicated server does not expose remote client inventory components. No response frame is sent: an empty array would be persisted as real state, so current Takaro rejects by its bounded pending-request timeout.",
     "giveItem creates server-owned world drops near the player's server-known position. These are collectible world objects, not a private inventory grant.",
     "teleportPlayer routes Valheim's built-in RPC_TeleportTo to the server-known character ZDO owner.",
     "Inbound vanilla-client chat is unsupported and tracked by https://github.com/gettakaro/connectors/issues/69.",
     "Routed ChatMessage, Say, and OnDeath packets are diagnostic-only because packet-supplied identity and death state are not server-owned. Chat-message and player-death remain unsupported.",
-    "Player lifecycle frames are derived from dedicated-server player snapshots, but exact turn-2 Takaro eventSearch persisted zero lifecycle events. They remain schema-fallback pending post-fix live persistence proof.",
+    "Player lifecycle frames are derived from dedicated-server player snapshots. Turn-3 Takaro eventSearch persisted two player-connected and two player-disconnected events; transport logs still claim only that a frame was written, not persistence acknowledgement.",
+    "listLocations returned 11293 server-owned locations in turn 3. The current implementation maps them to ILocationDTO name/code plus nested position; that corrected DTO shape is consumer-contract tested and awaits the turn-4 live rerun.",
     "Entity-killed is unsupported and has no active emitter or Harmony death patch."
   ]
 }

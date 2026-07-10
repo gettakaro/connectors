@@ -62,12 +62,25 @@ public sealed class CapabilityRegistryTests
         using var registry = ReadRegistry();
         var root = registry.RootElement;
 
-        Assert.AreEqual("schema-fallback", root.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
-        Assert.AreEqual("schema-fallback", root.GetProperty("events").GetProperty("player-connected").GetString());
-        Assert.AreEqual("schema-fallback", root.GetProperty("events").GetProperty("player-disconnected").GetString());
+        Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
+        Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("player-connected").GetString());
+        Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("player-disconnected").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("chat-message").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("player-death").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("entity-killed").GetString());
+    }
+
+    [TestMethod]
+    public void ReadmeDoesNotAdvertiseMissingValheimJustRecipes()
+    {
+        var readme = ReadValheimFile("README.md");
+        var justfile = ReadValheimFile("../justfile");
+
+        Assert.IsFalse(readme.Contains("just valheim-setup", StringComparison.Ordinal));
+        Assert.IsFalse(readme.Contains("just build-release-valheim", StringComparison.Ordinal));
+        StringAssert.Contains(readme, "./scripts/setup-environment.sh");
+        Assert.IsFalse(justfile.Contains("valheim-setup:", StringComparison.Ordinal));
+        Assert.IsFalse(justfile.Contains("build-release-valheim ", StringComparison.Ordinal));
     }
 
     [TestMethod]

@@ -155,6 +155,22 @@ public sealed class PluginScaffoldContractTests
         Assert.IsFalse(location.Contains("new TakaroPosition(0, 0, 0", StringComparison.Ordinal));
         StringAssert.Contains(inventory, "player_component_unavailable");
         Assert.IsFalse(inventory.Contains("Array.Empty<object>()", StringComparison.Ordinal));
+        Assert.IsFalse(inventory.Contains("GetInventory()", StringComparison.Ordinal));
+        Assert.IsFalse(inventory.Contains("TryFindPlayerComponent", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void RunnerGatesLifecycleAndWireResponsesOnHonestServerState()
+    {
+        var source = ReadPluginSource("TakaroWebSocketRunner.cs");
+
+        StringAssert.Contains(source, "GetPlayerLocationAsync(player.GameId");
+        StringAssert.Contains(source, "TryCreateActionResponse");
+        StringAssert.Contains(source, "SuppressedResponseLogLimiter");
+        Assert.IsTrue(
+            source.IndexOf("GetPlayerLocationAsync(player.GameId", StringComparison.Ordinal)
+                < source.IndexOf("playerLifecycle.Update", StringComparison.Ordinal),
+            "Lifecycle tracking must see only players with real server-owned positions.");
     }
 
     [TestMethod]
@@ -259,7 +275,7 @@ public sealed class PluginScaffoldContractTests
 
         StringAssert.Contains(source, "lifecycle frame written");
         Assert.IsFalse(source.Contains("event sent for", StringComparison.Ordinal));
-        StringAssert.Contains(source, "TakaroProtocol.CreateResponse(request.RequestId, request.Action, response)");
+        StringAssert.Contains(source, "TakaroProtocol.TryCreateActionResponse");
     }
 
     [TestMethod]

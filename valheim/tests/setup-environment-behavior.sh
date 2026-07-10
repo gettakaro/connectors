@@ -283,7 +283,7 @@ test_failed_steamcmd_does_not_accept_stale_managed_directory() {
   local assembly
   mkdir -p "$case_dir/server/valheim_server_Data/Managed"
   for assembly in "${REQUIRED_ASSEMBLIES[@]}"; do
-    : > "$case_dir/server/valheim_server_Data/Managed/$assembly"
+    printf 'stale-valid-looking-reference\n' > "$case_dir/server/valheim_server_Data/Managed/$assembly"
   done
 
   run_setup stale-managed always_fail

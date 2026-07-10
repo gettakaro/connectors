@@ -2,7 +2,7 @@
 
 ## Objective
 
-Replace the overlapping Valheim follow-up pull requests with one reviewable change built from current `main`. The resulting connector must run only inside the Valheim dedicated server, represent server-owned capabilities honestly, package reliably in CI, and leave client-owned features explicitly unsupported or fallback-classified.
+Replace the overlapping Valheim follow-up pull requests with one reviewable change built from current `main`. The resulting connector must run only inside the Valheim dedicated server, represent server-owned capabilities honestly, package reliably in CI, and leave client-owned features explicitly unsupported.
 
 ## Constraints
 
@@ -26,9 +26,9 @@ Server-owned implementations retained from the validated local work are:
 - routed outbound server messages;
 - item, entity, and location catalogs;
 - allowlisted console commands, moderation, bans, and shutdown;
-- server-observable lifecycle and death events.
+- server-observable player lifecycle events.
 
-Remote inventory and ordinary player-originated chat remain unavailable from a vanilla client at the proven server boundary. The connector returns a structured unavailable result for inventory/position gaps and does not emit unsupported chat events.
+Remote inventory and ordinary player-originated chat remain unavailable from a vanilla client at the proven server boundary. Player-death and entity-killed are also unsupported because no trustworthy server-only emitter exists. The connector emits none of those events. It returns only real current or fresh server-observed player positions; current Takaro rejects a schema-valid `payload.error` when position is unavailable. Inventory emits no response frame because its required array DTO cannot carry that error and `[]` would fabricate state.
 
 ## Consolidation Strategy
 
@@ -46,7 +46,7 @@ After the replacement PR is green, the superseded implementation/debug PRs can b
 Every Generic Connector action and event must be documented in the Valheim README with one of these outcomes:
 
 - `live-supported`: implemented through a server-owned path with retained live evidence;
-- `schema-fallback`: returns an accepted shape while documenting unavailable game-owned state;
+- `schema-fallback`: reserved for an accepted result shape that is explicitly not proven game state;
 - `unsupported`: fails or does not emit because no server-only path is proven.
 
 Automated tests must prevent the reintroduction of client plugin activation, client RPC names, fake origin success, and fake empty-inventory success.
@@ -59,7 +59,7 @@ The environment setup script will use bounded retries for transient SteamCMD/Thu
 
 Verification proceeds from cheapest to strongest evidence:
 
-1. Red-green tests for server-only guards, explicit fallbacks, server-owned give/teleport paths, chat payload validation, and setup-script behavior.
+1. Red-green tests for server-only guards, exact Takaro consumer failure behavior, player-position freshness, server-owned give/teleport paths, unsupported event suppression, and setup-script behavior.
 2. Full Valheim solution tests, shell syntax/static checks, real `net472` build, and release package inspection.
 3. Branch-wide independent verification.
 4. Non-destructive live dedicated-server proof with no Takaro client plugin: startup/identity, reachability, players, location, outbound messaging, give-item world drop, teleport, catalogs, `listLocations`, and server-observable events.
