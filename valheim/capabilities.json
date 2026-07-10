@@ -24,7 +24,7 @@
     "player-connected": "live-supported",
     "player-disconnected": "live-supported",
     "chat-message": "unsupported",
-    "player-death": "live-supported",
+    "player-death": "unsupported",
     "entity-killed": "unsupported"
   },
   "notes": [
@@ -36,6 +36,7 @@
     "giveItem creates server-owned world drops near the player's server-known position. These are collectible world objects, not a private inventory grant.",
     "teleportPlayer routes Valheim's built-in RPC_TeleportTo to the server-known character ZDO owner.",
     "Inbound vanilla-client chat is unsupported and tracked by https://github.com/gettakaro/connectors/issues/69.",
+    "Routed ChatMessage, Say, and OnDeath packets are diagnostic-only because packet-supplied identity and death state are not server-owned. Chat-message and player-death remain unsupported.",
     "The server-only entity-killed path exists in code, but prior live evidence depended on rejected client forwarding and must be re-proven before promotion."
   ]
 }

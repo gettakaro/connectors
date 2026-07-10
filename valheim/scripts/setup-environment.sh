@@ -11,6 +11,13 @@ DEPS_DIR="${VALHEIM_DEPS_DIR:-${DATA_DIR}/deps}"
 STEAMCMD="${STEAMCMD:-${STEAMCMD_DIR}/steamcmd.sh}"
 VALHEIM_STEAM_PLATFORMS="${VALHEIM_STEAM_PLATFORMS:-linux windows}"
 MAX_ATTEMPTS=3
+REQUIRED_VALHEIM_ASSEMBLIES=(
+  assembly_valheim.dll
+  assembly_utils.dll
+  Splatform.dll
+  UnityEngine.dll
+  UnityEngine.CoreModule.dll
+)
 
 BEPINEX_API="${BEPINEX_API:-https://thunderstore.io/api/experimental/package/denikson/BepInExPack_Valheim/}"
 
@@ -33,21 +40,43 @@ clear_steam_cache() {
   rm -rf "$STEAMCMD_DIR/appcache"
 }
 
+validate_managed_assemblies() {
+  local managed_dir="$1"
+  local assembly
+
+  [ -d "$managed_dir" ] || return 1
+  for assembly in "${REQUIRED_VALHEIM_ASSEMBLIES[@]}"; do
+    if [ ! -f "$managed_dir/$assembly" ]; then
+      echo "SteamCMD did not install required Valheim assembly: $managed_dir/$assembly" >&2
+      return 1
+    fi
+  done
+}
+
 install_valheim_server() {
   local -a platforms
   local platform
   local attempt
   local last_exit_code=1
   local managed_dir="$SERVER_DIR/valheim_server_Data/Managed"
+  local server_install_dir="$SERVER_DIR"
 
   read -r -a platforms <<< "$VALHEIM_STEAM_PLATFORMS"
+  if [ "${#platforms[@]}" -eq 0 ]; then
+    echo "VALHEIM_STEAM_PLATFORMS must name at least one Steam platform." >&2
+    return 1
+  fi
+
+  if [[ "$server_install_dir" != /* ]]; then
+    server_install_dir="$(pwd)/$server_install_dir"
+  fi
 
   for platform in "${platforms[@]}"; do
     for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt++)); do
       echo "Installing Valheim compile references for Steam platform '$platform' (attempt $attempt/$MAX_ATTEMPTS)..."
       if "$STEAMCMD" \
         +@sSteamCmdForcePlatformType "$platform" \
-        +force_install_dir "$(pwd)/$SERVER_DIR" \
+        +force_install_dir "$server_install_dir" \
         +login anonymous \
         +app_update 896660 validate \
         +quit; then
@@ -56,7 +85,7 @@ install_valheim_server() {
         last_exit_code=$?
       fi
 
-      if [ -d "$managed_dir" ]; then
+      if [ "$last_exit_code" -eq 0 ] && validate_managed_assemblies "$managed_dir"; then
         echo "Valheim dedicated-server references installed for Steam platform '$platform'."
         return 0
       fi
@@ -74,13 +103,14 @@ install_valheim_server() {
 
     if [ "$platform" = "linux" ]; then
       echo "Linux references unavailable; falling back to the Windows depot for compile references only."
-      rm -rf "$SERVER_DIR"
-      mkdir -p "$SERVER_DIR"
       clear_steam_cache
     fi
   done
 
   echo "Valheim managed assemblies were not installed after bounded SteamCMD retries." >&2
+  echo "Expected managed directory: $managed_dir" >&2
+  echo "Attempted Steam platforms: ${platforms[*]}" >&2
+  echo "Set VALHEIM_STEAM_PLATFORMS to override the compile-reference platform order (default: linux windows)." >&2
   return "$last_exit_code"
 }
 

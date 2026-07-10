@@ -4,6 +4,7 @@ using Takaro.Valheim.Core;
 using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
+using System.Diagnostics;
 using UnityEngine;
 
 namespace Takaro.Valheim.Plugin;
@@ -69,9 +70,14 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
     private ConfigEntry<string> Bind(string section, string key, string defaultValue, string description) =>
         Config.Bind(section, key, defaultValue, description);
 
-    private static bool IsDedicatedServerProcess() =>
-        Application.isBatchMode
-        || Environment.GetCommandLineArgs().Any(arg => arg.IndexOf("valheim_server", StringComparison.OrdinalIgnoreCase) >= 0);
+    private static bool IsDedicatedServerProcess()
+    {
+        using var process = Process.GetCurrentProcess();
+        return ValheimRuntimePolicy.IsDedicatedServerProcess(
+            Application.isBatchMode,
+            process.ProcessName,
+            Environment.GetCommandLineArgs().FirstOrDefault());
+    }
 }
 #else
 namespace Takaro.Valheim.Plugin;

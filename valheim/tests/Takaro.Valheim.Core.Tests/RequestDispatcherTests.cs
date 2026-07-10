@@ -81,6 +81,23 @@ public sealed class RequestDispatcherTests
     }
 
     [TestMethod]
+    public async Task RejectsGiveItemAmountsAboveTheWorldDropPolicyBeforeCallingAdapter()
+    {
+        var adapter = new FakeAdapter();
+        var dispatcher = new TakaroRequestDispatcher(adapter);
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest(
+            "give-too-many",
+            "giveItem",
+            JsonDocument.Parse($$"""{"gameId":"Steam_1","item":"Wood","amount":{{GiveItemPolicy.MaxAmount + 1}}}""").RootElement));
+
+        Assert.IsFalse(response.Success);
+        Assert.AreEqual("invalid_args", response.ErrorCode);
+        StringAssert.Contains(response.Message, $"at most {GiveItemPolicy.MaxAmount}");
+        Assert.AreEqual(0, adapter.Calls.Count);
+    }
+
+    [TestMethod]
     public async Task DispatchesTeleportPlayerThroughAdapter()
     {
         var adapter = new FakeAdapter();

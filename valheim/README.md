@@ -15,7 +15,8 @@ The Valheim connector is a dedicated-server-only BepInEx plugin implementing the
 2. Copy the `TakaroValheim` release folder into `BepInEx/plugins/` on that server.
 3. Start the server once and edit `BepInEx/config/com.takaro.valheim.cfg`.
 4. Set the registration token from the Takaro game-server connector setup.
-5. Keep the Valheim client free of `TakaroValheim.dll`.
+5. Restart the dedicated server so the connector loads the saved token and configuration.
+6. Keep the Valheim client free of `TakaroValheim.dll`.
 
 Never commit registration or identity tokens.
 
@@ -72,12 +73,12 @@ The registry uses only three statuses:
 | `player-connected` | `live-supported` | Derived from dedicated-server player-list lifecycle polling. |
 | `player-disconnected` | `live-supported` | Derived from dedicated-server player-list lifecycle polling. |
 | `chat-message` | `unsupported` | Vanilla-client inbound chat has no proven dedicated-server route; tracked in [issue #69](https://github.com/gettakaro/connectors/issues/69). |
-| `player-death` | `live-supported` | Observes Valheim's built-in routed `OnDeath` packet and maps its target ZDO to the server player list. |
+| `player-death` | `unsupported` | Routed `OnDeath` payloads are diagnostic-only; packet sender/target identity and actual death state are not server-owned proof. |
 | `entity-killed` | `unsupported` | A server-side observer exists, but prior proof used rejected client forwarding and cannot promote this path. |
 
 ## Server-Owned Action Semantics
 
-`giveItem` is a world-drop operation, not a private inventory mutation. Other players can collect the spawned objects. The adapter validates amount and quality, resolves prefab codes or display/name tokens, splits oversized stacks, and returns an error when no server-owned player position is known.
+`giveItem` is a world-drop operation, not a private inventory mutation. Other players can collect the spawned objects. The adapter accepts at most 1,000 items and 100 world-drop stacks per request, validates quality, resolves prefab codes or display/name tokens, splits oversized stacks, and returns an error when no server-owned player position is known.
 
 `teleportPlayer` requires a server-known character ZDO ID. It uses Valheim's built-in teleport RPC and returns `character_unavailable` when that identity is missing.
 
@@ -87,9 +88,9 @@ Outbound messages and item confirmations use base-game `Message` and `ShowMessag
 
 ## Evidence Boundary
 
-Historical dedicated-server evidence from June 21-22, 2026 covers the entries marked `live-supported`, including vanilla-client player location, world-drop item delivery, built-in teleport, player death, moderation, and delayed shutdown.
+Historical dedicated-server evidence from June 21-22, 2026 covers the entries marked `live-supported`, including vanilla-client player location, world-drop item delivery, built-in teleport, moderation, and delayed shutdown.
 
-That historical evidence is not a fresh validation of this branch. Current source/build checks and any new runtime evidence belong in [the 2026-07-10 server-only validation ledger](qa/2026-07-10-server-only-validation.md). Client-forwarded chat and entity-kill evidence is explicitly excluded.
+That historical evidence is not a fresh validation of this branch. Current source/build checks and any new runtime evidence belong in [the 2026-07-10 server-only validation ledger](qa/2026-07-10-server-only-validation.md). Routed-packet chat/player-death and client-forwarded entity-kill evidence are explicitly excluded from trusted event claims.
 
 ## Local Development
 

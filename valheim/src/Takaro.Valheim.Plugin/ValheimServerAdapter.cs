@@ -95,16 +95,17 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default)
     {
+        var amountValidation = GiveItemPolicy.PlanStacks(amount, maxStackSize: 0);
+        if (!amountValidation.Success)
+        {
+            return Task.FromResult(TakaroActionResult.Error(
+                amountValidation.ErrorCode!,
+                amountValidation.ErrorMessage!));
+        }
+
         if (ZRoutedRpc.instance is null)
         {
             return Task.FromResult(TakaroActionResult.Error("rpc_unavailable", "Valheim routed RPC is not available yet."));
-        }
-
-        if (amount <= 0)
-        {
-            return Task.FromResult(TakaroActionResult.Error(
-                "invalid_amount",
-                $"Valheim item amount must be positive, got {amount}."));
         }
 
         if (!TryResolvePlayer(identifier, out var playerInfo, out var peer, out var player) || peer is null || player is null)
@@ -129,17 +130,20 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             return Task.FromResult(TakaroActionResult.Error("invalid_quality", qualityError!));
         }
 
-        var maxStack = itemDrop.m_itemData.m_shared?.m_maxStackSize > 0
-            ? itemDrop.m_itemData.m_shared.m_maxStackSize
-            : amount;
-        var remaining = amount;
-        var dropCount = 0;
-        while (remaining > 0)
+        var maxStack = itemDrop.m_itemData.m_shared?.m_maxStackSize ?? 0;
+        var stackPlan = GiveItemPolicy.PlanStacks(amount, maxStack);
+        if (!stackPlan.Success)
         {
-            var stack = Math.Min(remaining, maxStack);
+            return Task.FromResult(TakaroActionResult.Error(
+                stackPlan.ErrorCode!,
+                stackPlan.ErrorMessage!));
+        }
+
+        var dropCount = 0;
+        foreach (var stack in stackPlan.Stacks)
+        {
             var offset = new Vector3((dropCount % 3) - 1, 1.25f, dropCount / 3);
             DropItemStack(prefab, itemDrop, stack, qualityLevel, position + offset);
-            remaining -= stack;
             dropCount++;
         }
 

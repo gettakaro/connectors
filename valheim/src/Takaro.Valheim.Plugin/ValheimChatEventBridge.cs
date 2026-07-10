@@ -13,9 +13,7 @@ internal static class ValheimChatEventBridge
     private static readonly int OnDeathHash = "OnDeath".GetStableHashCode();
     private static readonly HashSet<int> UndecodedDedicatedServerChatHashes = [199378019];
     private static readonly object Sync = new();
-    private static readonly Dictionary<string, DateTimeOffset> RecentEvents = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, DateTimeOffset> RecentEntityDeaths = new(StringComparer.Ordinal);
-    private static readonly Dictionary<string, DateTimeOffset> RecentPlayerDeaths = new(StringComparer.Ordinal);
     private static readonly System.Reflection.FieldInfo? LastHitField = AccessTools.Field(typeof(Character), "m_lastHit");
     private static int routedDiagnosticsRemaining = 40;
     private static ZRoutedRpc? registeredRpc;
@@ -35,9 +33,7 @@ internal static class ValheimChatEventBridge
         registeredRpc = null;
         lock (Sync)
         {
-            RecentEvents.Clear();
             RecentEntityDeaths.Clear();
-            RecentPlayerDeaths.Clear();
         }
     }
 
@@ -50,42 +46,18 @@ internal static class ValheimChatEventBridge
         }
 
         registeredRpc = routedRpc;
-        log("Takaro Valheim server-only chat and entity bridge active.");
-    }
-
-    public static void Emit(long senderId, int chatType, UserInfo userInfo, string text)
-    {
-        if (!IsSafeChatText(text))
-        {
-            log("Takaro Valheim dropped malformed chat event: empty or unsafe text payload.");
-            return;
-        }
-
-        if (!TryResolveChatPlayer(senderId, userInfo, out var player))
-        {
-            log("Takaro Valheim dropped malformed chat event: could not resolve a safe player identity.");
-            return;
-        }
-
-        if (IsDuplicate(senderId, chatType, userInfo, text))
-        {
-            return;
-        }
-
-        var activeRunner = runner;
-        if (activeRunner is null)
-        {
-            return;
-        }
-
-        var evt = EventFactory.ChatMessage(player, ChannelName(chatType), DateTimeOffset.UtcNow, text);
-        log($"Takaro Valheim chat event captured: player={player.Name}, channel={ChannelName(chatType)}, msgLength={text.Length}.");
-
-        _ = SendAsync(activeRunner, evt);
+        log("Takaro Valheim routed diagnostics and server entity bridge active.");
     }
 
     public static void EmitLog(string level, string message)
     {
+        if (!ValheimEventAcceptancePolicy.CanEmit(
+                ValheimEventType.Log,
+                ValheimEventObservationSource.Connector))
+        {
+            return;
+        }
+
         var activeRunner = runner;
         if (activeRunner is null)
         {
@@ -127,31 +99,19 @@ internal static class ValheimChatEventBridge
             data.m_parameters.SetPos(0);
             if (data.m_methodHash == ChatMessageHash)
             {
-                log("Takaro Valheim observed routed ChatMessage packet.");
-                _ = data.m_parameters.ReadVector3();
-                var chatType = data.m_parameters.ReadInt();
-                var userInfo = new UserInfo();
-                userInfo.Deserialize(ref data.m_parameters);
-                var text = data.m_parameters.ReadString();
-                Emit(data.m_senderPeerID, chatType, userInfo, text);
+                ObserveUntrustedRoutedEvent(ValheimEventType.ChatMessage, "ChatMessage", data);
                 return;
             }
 
             if (data.m_methodHash == SayHash)
             {
-                log("Takaro Valheim observed routed Say packet.");
-                var chatType = data.m_parameters.ReadInt();
-                var userInfo = new UserInfo();
-                userInfo.Deserialize(ref data.m_parameters);
-                var text = data.m_parameters.ReadString();
-                Emit(data.m_senderPeerID, chatType, userInfo, text);
+                ObserveUntrustedRoutedEvent(ValheimEventType.ChatMessage, "Say", data);
                 return;
             }
 
             if (data.m_methodHash == OnDeathHash)
             {
-                log($"Takaro Valheim observed routed OnDeath packet: sender={data.m_senderPeerID}, targetPeer={data.m_targetPeerID}, targetZdo={data.m_targetZDO}.");
-                EmitPlayerDeathFromRoutedRpc(data.m_senderPeerID, data.m_targetZDO);
+                ObserveUntrustedRoutedEvent(ValheimEventType.PlayerDeath, "OnDeath", data);
                 return;
             }
 
@@ -175,6 +135,21 @@ internal static class ValheimChatEventBridge
         {
             data.m_parameters.SetPos(originalPosition);
         }
+    }
+
+    private static void ObserveUntrustedRoutedEvent(
+        string eventType,
+        string rpcName,
+        ZRoutedRpc.RoutedRPCData data)
+    {
+        if (ValheimEventAcceptancePolicy.CanEmit(
+                eventType,
+                ValheimEventObservationSource.RoutedRpcPayload))
+        {
+            return;
+        }
+
+        log($"Takaro Valheim observed routed {rpcName} packet but did not emit an event because routed identity and state are not server-owned: sender={data.m_senderPeerID}, targetPeer={data.m_targetPeerID}, targetZdo={data.m_targetZDO}.");
     }
 
     private static void LogUndecodedDedicatedChatPacket(ZRoutedRpc.RoutedRPCData data)
@@ -220,16 +195,6 @@ internal static class ValheimChatEventBridge
         }
     }
 
-    private static async Task SendAsync(TakaroWebSocketRunner activeRunner, object evt)
-    {
-        await SendGameEventAsync(
-            activeRunner,
-            "chat-message",
-            evt,
-            "Takaro Valheim chat event sent to Takaro.",
-            "Takaro Valheim chat event send failed");
-    }
-
     private static async Task SendGameEventAsync(
         TakaroWebSocketRunner activeRunner,
         string eventType,
@@ -253,7 +218,13 @@ internal static class ValheimChatEventBridge
 
     internal static void EmitEntityKilled(Character character)
     {
-        if (!IsDedicatedServer() || character is Player || character.GetComponent<Player>() != null || !ShouldEmitEntityDeath(character))
+        if (!ValheimEventAcceptancePolicy.CanEmit(
+                ValheimEventType.EntityKilled,
+                ValheimEventObservationSource.ServerCharacterState)
+            || !IsDedicatedServer()
+            || character is Player
+            || character.GetComponent<Player>() != null
+            || !ShouldEmitEntityDeath(character))
         {
             return;
         }
@@ -295,46 +266,6 @@ internal static class ValheimChatEventBridge
         }
     }
 
-    internal static void EmitPlayerDeathFromRoutedRpc(long senderPeerId, ZDOID targetZdo)
-    {
-        if (!IsDedicatedServer() || targetZdo.IsNone())
-        {
-            return;
-        }
-
-        if (!TryMapPlayerZdoToTakaroPlayer(targetZdo, senderPeerId, out var player, out var position)
-            || player is null)
-        {
-            log($"Takaro Valheim could not map routed OnDeath target to player: sender={senderPeerId}, targetZdo={targetZdo}.");
-            return;
-        }
-
-        if (!ShouldEmitPlayerDeath(targetZdo.ToString()))
-        {
-            return;
-        }
-
-        var activeRunner = runner;
-        if (activeRunner is null)
-        {
-            return;
-        }
-
-        var evt = EventFactory.PlayerDeath(
-            player,
-            DateTimeOffset.UtcNow,
-            position,
-            attacker: null,
-            weapon: null);
-
-        _ = SendGameEventAsync(
-            activeRunner,
-            "player-death",
-            evt,
-            $"Takaro Valheim routed player-death event sent for {player.Name} ({player.GameId}).",
-            "Takaro Valheim routed player-death event send failed");
-    }
-
     private static TakaroPlayer? FindTakaroPlayer(string? identifier)
     {
         if (string.IsNullOrWhiteSpace(identifier))
@@ -347,27 +278,6 @@ internal static class ValheimChatEventBridge
             .ToArray() ?? [];
 
         return PlayerMapper.Find(players, identifier!);
-    }
-
-    private static bool TryResolveChatPlayer(long senderId, UserInfo userInfo, out TakaroPlayer player)
-    {
-        if (ContainsUnsafeChatIdentity(userInfo.Name) || ContainsUnsafeChatIdentity(userInfo.GetDisplayName()))
-        {
-            player = null!;
-            return false;
-        }
-
-        var playerId = FirstSafeNonEmpty(userInfo.UserId.ToString(), senderId.ToString());
-        var playerName = FirstSafeNonEmpty(userInfo.Name, userInfo.GetDisplayName(), playerId);
-        if (!IsSafeChatIdentity(playerName) || !IsSafeChatIdentity(playerId))
-        {
-            player = null!;
-            return false;
-        }
-
-        var existing = FindTakaroPlayer(playerId) ?? FindTakaroPlayer(playerName);
-        player = existing ?? PlayerMapper.ToTakaroPlayer(new ValheimPlayer(playerName, playerId, null, null, null));
-        return true;
     }
 
     private static bool TryMapCharacterToTakaroPlayer(Character? character, out TakaroPlayer? player)
@@ -394,65 +304,6 @@ internal static class ValheimChatEventBridge
         return player is not null;
     }
 
-    private static bool TryMapPlayerZdoToTakaroPlayer(
-        ZDOID characterId,
-        long senderPeerId,
-        out TakaroPlayer? player,
-        out TakaroPosition position)
-    {
-        player = null;
-        position = new TakaroPosition(0, 0, 0, "valheim");
-
-        var znet = ZNet.instance;
-        if (znet is null)
-        {
-            return false;
-        }
-
-        var playerInfo = default(ZNet.PlayerInfo);
-        var foundPlayerInfo = false;
-        foreach (var candidate in znet.GetPlayerList())
-        {
-            if (!candidate.m_characterID.Equals(characterId))
-            {
-                continue;
-            }
-
-            playerInfo = candidate;
-            foundPlayerInfo = true;
-            break;
-        }
-
-        if (!foundPlayerInfo)
-        {
-            return false;
-        }
-
-        var peer = znet.GetPeer(senderPeerId)
-            ?? znet.GetPeers().FirstOrDefault(candidate =>
-                candidate.m_characterID.Equals(characterId)
-                || Matches(candidate.m_playerName, playerInfo.m_name)
-                || Matches(candidate.m_playerName, playerInfo.m_serverAssignedDisplayName));
-
-        var rawPosition = Vector3.zero;
-        if (peer is not null && peer.IsReady() && peer.m_refPos != Vector3.zero)
-        {
-            rawPosition = peer.m_refPos;
-        }
-        else if (playerInfo.m_publicPosition)
-        {
-            rawPosition = playerInfo.m_position;
-        }
-        else
-        {
-            rawPosition = ZDOMan.instance?.GetZDO(characterId)?.GetPosition() ?? Vector3.zero;
-        }
-
-        player = ToTakaroPlayer(playerInfo);
-        position = new TakaroPosition(rawPosition.x, rawPosition.y, rawPosition.z, "valheim");
-        return true;
-    }
-
     private static TakaroPlayer ToTakaroPlayer(ZNet.PlayerInfo player)
     {
         var playerId = FirstNonEmpty(player.m_userInfo.m_id.ToString(), player.m_characterID.ToString());
@@ -464,53 +315,13 @@ internal static class ValheimChatEventBridge
             null));
     }
 
-    private static bool IsDuplicate(long senderId, int chatType, UserInfo userInfo, string text)
-    {
-        var now = DateTimeOffset.UtcNow;
-        var key = $"{senderId}|{chatType}|{userInfo.UserId}|{userInfo.Name}|{text}";
-
-        lock (Sync)
-        {
-            foreach (var staleKey in RecentEvents.Where(entry => now - entry.Value > TimeSpan.FromSeconds(2)).Select(entry => entry.Key).ToArray())
-            {
-                RecentEvents.Remove(staleKey);
-            }
-
-            if (RecentEvents.ContainsKey(key))
-            {
-                return true;
-            }
-
-            RecentEvents[key] = now;
-            return false;
-        }
-    }
-
-    private static string ChannelName(int chatType) =>
-        (Talker.Type)chatType switch
-        {
-            Talker.Type.Whisper => "team",
-            _ => "global"
-        };
-
     private static string FirstNonEmpty(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "unknown";
-
-    private static string FirstSafeNonEmpty(params string?[] values) =>
-        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value) && IsSafeChatIdentity(value!)) ?? "unknown";
 
     private static bool IsSafeChatText(string? value) =>
         !string.IsNullOrWhiteSpace(value)
         && value!.Length <= 512
         && !value.Any(IsUnsafeChatCharacter);
-
-    private static bool IsSafeChatIdentity(string? value) =>
-        !string.IsNullOrWhiteSpace(value)
-        && value!.Length <= 128
-        && !value.Any(IsUnsafeChatCharacter);
-
-    private static bool ContainsUnsafeChatIdentity(string? value) =>
-        !string.IsNullOrWhiteSpace(value) && !IsSafeChatIdentity(value);
 
     private static bool IsUnsafeChatCharacter(char value) =>
         value == '\0' || value == '\uFFFD' || (char.IsControl(value) && value is not '\t' and not '\r' and not '\n');
@@ -576,58 +387,9 @@ internal static class ValheimChatEventBridge
         }
     }
 
-    private static bool ShouldEmitPlayerDeath(string key)
-    {
-        var now = DateTimeOffset.UtcNow;
-        lock (Sync)
-        {
-            foreach (var staleKey in RecentPlayerDeaths
-                         .Where(entry => now - entry.Value > TimeSpan.FromSeconds(5))
-                         .Select(entry => entry.Key)
-                         .ToArray())
-            {
-                RecentPlayerDeaths.Remove(staleKey);
-            }
-
-            if (RecentPlayerDeaths.ContainsKey(key))
-            {
-                return false;
-            }
-
-            RecentPlayerDeaths[key] = now;
-            return true;
-        }
-    }
-
     private static HitData? GetLastHit(Character character) =>
         LastHitField?.GetValue(character) as HitData;
 
-}
-
-[HarmonyPatch(typeof(Chat), "RPC_ChatMessage")]
-internal static class TakaroChatRpcChatMessagePatch
-{
-    private static bool Prefix(long sender, Vector3 position, int type, UserInfo userInfo, string text)
-    {
-        ValheimChatEventBridge.Emit(sender, type, userInfo, text);
-        return true;
-    }
-
-    private static bool IsDedicatedServer() =>
-        ZNet.instance is not null && ZNet.instance.IsDedicated();
-}
-
-[HarmonyPatch(typeof(Talker), "RPC_Say")]
-internal static class TakaroTalkerRpcSayPatch
-{
-    private static bool Prefix(long sender, int ctype, UserInfo user, string text)
-    {
-        ValheimChatEventBridge.Emit(sender, ctype, user, text);
-        return true;
-    }
-
-    private static bool IsDedicatedServer() =>
-        ZNet.instance is not null && ZNet.instance.IsDedicated();
 }
 
 [HarmonyPatch(typeof(ZRoutedRpc), "RPC_RoutedRPC")]

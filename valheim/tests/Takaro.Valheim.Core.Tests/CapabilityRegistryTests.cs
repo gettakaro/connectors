@@ -64,6 +64,7 @@ public sealed class CapabilityRegistryTests
 
         Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("chat-message").GetString());
+        Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("player-death").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("entity-killed").GetString());
     }
 

@@ -194,6 +194,12 @@ public sealed class TakaroRequestDispatcher
             throw new ArgumentException($"Expected positive integer argument '{property}'.");
         }
 
+        if (number > GiveItemPolicy.MaxAmount)
+        {
+            throw new ArgumentException(
+                $"Expected integer argument '{property}' to be at most {GiveItemPolicy.MaxAmount}.");
+        }
+
         return number;
     }
 

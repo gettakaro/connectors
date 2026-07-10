@@ -114,6 +114,13 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 var events = playerLifecycle.Update(players, DateTimeOffset.UtcNow);
                 foreach (var evt in events)
                 {
+                    if (!ValheimEventAcceptancePolicy.CanEmit(
+                            evt.Type,
+                            ValheimEventObservationSource.ServerPlayerSnapshot))
+                    {
+                        continue;
+                    }
+
                     await SendAsync(socket, TakaroProtocol.CreateGameEvent(evt.Type, evt.Data), cancellationToken);
                     log($"Takaro Valheim {evt.Type} event sent for {evt.Player.Name} ({evt.Player.GameId}).");
                 }

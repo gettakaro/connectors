@@ -186,8 +186,9 @@ public sealed class PluginScaffoldContractTests
             "public Task<TakaroActionResult> GiveItemAsync",
             "public Task<TakaroActionResult> SendMessageAsync");
 
-        StringAssert.Contains(give, "amount <= 0");
-        StringAssert.Contains(give, "invalid_amount");
+        StringAssert.Contains(give, "GiveItemPolicy.PlanStacks");
+        StringAssert.Contains(give, "amountValidation.ErrorCode");
+        StringAssert.Contains(give, "stackPlan.ErrorCode");
         StringAssert.Contains(give, "invalid_quality");
         StringAssert.Contains(give, "position_unavailable");
     }
@@ -206,15 +207,38 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void PluginBridgeUsesServerRoutedPlayerDeathWithoutCustomClientRpc()
+    public void PluginBridgeDoesNotEmitIdentityEventsFromRoutedPayloads()
     {
         var source = ReadPluginSource("ValheimChatEventBridge.cs");
 
         StringAssert.Contains(source, "OnDeathHash");
         StringAssert.Contains(source, "data.m_methodHash == OnDeathHash");
-        StringAssert.Contains(source, "EmitPlayerDeathFromRoutedRpc");
-        StringAssert.Contains(source, "\"player-death\"");
+        StringAssert.Contains(source, "ValheimEventAcceptancePolicy");
+        Assert.IsFalse(source.Contains("EmitPlayerDeathFromRoutedRpc", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("EventFactory.ChatMessage", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("\"chat-message\"", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("\"player-death\"", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("\"TakaroPlayerDeath\"", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void PluginUsesCoreRuntimeAndWorldDropPolicies()
+    {
+        var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
+        var adapter = ReadPluginSource("ValheimServerAdapter.cs");
+
+        StringAssert.Contains(entrypoint, "ValheimRuntimePolicy.IsDedicatedServerProcess");
+        StringAssert.Contains(adapter, "GiveItemPolicy.PlanStacks");
+    }
+
+    [TestMethod]
+    public void SourceAndPackagedInstallFlowsRequireRestartAfterConfiguration()
+    {
+        var readme = ReadValheimFile("README.md");
+        var release = ReadValheimFile("scripts/build-release.sh");
+
+        StringAssert.Contains(readme, "Restart the dedicated server");
+        StringAssert.Contains(release, "Restart the dedicated server");
     }
 
     [TestMethod]

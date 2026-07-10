@@ -65,6 +65,7 @@ Install:
 2. Copy this folder into BepInEx/plugins/TakaroValheim.
 3. Start the server once, then configure BepInEx/config/com.takaro.valheim.cfg.
 4. Set registrationToken to the token from your Takaro game server connector setup.
+5. Restart the dedicated server so the connector loads the saved token and configuration.
 
 Do not commit live registration tokens.
 EOF
