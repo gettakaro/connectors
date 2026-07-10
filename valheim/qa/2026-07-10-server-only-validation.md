@@ -1,10 +1,44 @@
 # Valheim Server-Only Validation Ledger
 
-## Verdict: PASS WITH GAPS (turn-5 artifact/runtime passed; independent Codex review quota-blocked; turn-6 pending)
+## Verdict: PASS WITH GAPS (turn-6 artifact/runtime and exerciser passed; exact Codex review quota-blocked; turn-7 branch verification continues)
 
-Turn 5 live-validated source commit `bd4bfff718139d91cb415eece2c1b6b6c763942a` on the dedicated server with no Takaro client plugin. The exact build, vanilla-player boundary, immediate invalid-input errors, inventory non-mutation, and persisted lifecycle passed. The exerciser passed. Independent Codex review did not complete because its exact-turn invocation was quota-blocked until 20:22, so this ledger does not promote the branch to fully verified or release-ready.
+Turn 6 live-validated source commit `20bed2475ad558646c4c7cfccb20a185e516a429` on the dedicated server with no Takaro client plugin. The exact artifact boundary, pre-ready failure behavior, vanilla-player lifecycle, last-known real position, inventory non-mutation, and explicit unsupported map actions passed. The exerciser passed and runtime cleanup complete. The exact-turn independent Codex invocation remained quota-blocked until 20:22, so this is still `PASS WITH GAPS`, not a release-ready claim.
 
-Turn-6 source is pending fresh build and live verification. Its action-surface, runtime-availability, world-cache, and atomic setup changes must not inherit turn-5 runtime proof until the orchestrator pins a new commit and artifact.
+Turn-7 branch verification continues after review-driven source changes. Those changes do not inherit turn-6 runtime proof. PR creation, GitHub Actions, merge, and release refresh remain orchestrator work.
+
+## Turn-6 Artifact-Pinned Evidence
+
+### Artifact, build, and boundary
+
+| Evidence | Exact value | Result |
+| --- | --- | --- |
+| Source commit | `20bed2475ad558646c4c7cfccb20a185e516a429` | Exact clean turn-6 HEAD |
+| Release zip SHA-256 | `d322af0b405fbc901a48f5a5f0c1b9c1f052167ab05295acdc53896395a97186` | Deployed build input |
+| Packaged/deployed DLL SHA-256 | `028eb5dfda9e52eb9998d3c538c4189e6332e761ad563a23ba8b76cdecc61755` | Exact match |
+| Unit/contract tests | `158/158` | PASS |
+| Setup behavior harness | `19/19` | PASS |
+| Real plugin build | real `net472` build: PASS with 0 warnings | PASS |
+| Runtime exercise | `Exerciser: PASSED` | PASS |
+| Independent review | `Codex review: BLOCKED by quota until 20:22` | BLOCKED, not passed |
+| Game server ID | `4dadfdf6-18a3-41f1-ae2c-b94200dea9ab` | Exact identified server |
+| Evidence directory | `/tmp/valheim-turn6-evidence` | Local exact-turn evidence; no secrets committed |
+
+The live window ran from `2026-07-10T16:20:47Z` until the server shutdown trace at `18:25:10` Europe/Brussels. Vanilla player `Hehe` connected with an empty client-plugin scan, and the dedicated-server DLL exactly matched the packaged DLL. Server and client processes were stopped after the safe checks; cleanup complete.
+
+### Runtime availability and safe action evidence
+
+- The pre-ready harness identified successfully but emitted no game events. Unavailable `getPlayers`, `listItems`, `listEntities`, `listLocations`, `listBans`, and inventory requests produced zero response frames rather than fabricated empty state. `getPlayer` returned an immediate `runtime_unavailable` payload error.
+- `getMapInfo` and `getMapTile` returned immediate `server_only_unsupported` payload errors, matching their registry classification.
+- Once ready, `getPlayers` returned vanilla player `Hehe`. Oversized `giveItem` amount `1001` returned an actionable HTTP 400 in approximately 387 ms.
+- The inventory probe produced zero response frames, and Takaro inventory history remained empty with no fabricated inventory changes.
+- The player-on-game record held the real server-observed position `85/36/-2` while online and retained `85/36/-2` after disconnect; it was never replaced with an origin placeholder.
+
+### Persisted lifecycle and exclusions
+
+- Persisted `player-connected`: `4e0aa0c0-d5da-4558-be9b-61c906b5bcfc`.
+- Persisted `player-disconnected`: `63c912ff-5c5e-402f-8f4e-1b31ece68ce3`.
+- The final exact-window search contained exactly those two lifecycle events. Unsupported chat-message, player-death, and entity-killed events remained absent.
+- Destructive `kickPlayer`, `banPlayer`, `unbanPlayer`, and `shutdown` implementation exists, but exact live support remains unproven and approval-gated. The checks were deliberately skipped and these actions are classified `unsupported` until an approved disposable-server run proves the current artifact.
 
 ## Turn-5 Artifact-Pinned Evidence
 
@@ -200,4 +234,6 @@ These files are local evidence paths, not committed release assets.
 
 ## Final Gate
 
-Build and deploy the turn-5 artifact server-side only. Require: invalid `giveItem` inputs return one immediate actionable `payload.error`; unavailable location rejects without mutating position; inventory times out without persisting `[]`; a ready and freshly disconnected player returns only a real observed position; the raw `listLocations` action remains nested while the standard Takaro route is reported separately; persisted lifecycle still works; visible messaging/item/teleport remain intact; the client plugin stays absent; and unsupported chat/death/entity events remain absent. Destructive actions remain approval-gated.
+Task 7 is complete for the exact turn-6 commit and artifact above. Turn-7 player gates passed `166/166` tests, `20/20` setup scenarios, Bash/JSON checks, and a real `net472` build with zero warnings or errors. A non-default `2.3.4-rc.1+turn7` package carried that exact version in BepInEx, plugin/core assembly informational metadata, README, and manifest; its zip SHA-256 was `b441e53c02c5e2513f5559259b0724a5475a590f23565a0e5a206c7797382153` and plugin DLL SHA-256 was `6bc4d802442dcbbe7db9afb8889530d445d8f6671fcb9a6f5c6c313f647b31de`. These are turn-7 build checks, not new live evidence.
+
+Turn-7 independent branch verification continues under Task 8 before PR handoff. PR creation, GitHub Actions, superseded-PR closure, merge, and release refresh remain pending orchestrator work. Destructive actions remain approval-gated and are not required for this server-only validation ledger.

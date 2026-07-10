@@ -65,7 +65,7 @@ steamcmd_stub() {
   fi
 
   case "$STUB_SCENARIO" in
-    first_success|empty_bepinex|corrupt_bepinex|fake_marker_bepinex|file_unavailable|valheim_publish_failure|valheim_publish_interrupt)
+    first_success|empty_bepinex|corrupt_bepinex|fake_marker_bepinex|file_unavailable|valheim_publish_failure|valheim_publish_interrupt|valheim_first_rename_interrupt)
       create_required_assemblies "$install_dir"
       return 0
       ;;
@@ -251,6 +251,15 @@ cp_stub() {
 }
 
 mv_stub() {
+  if [ "$STUB_SCENARIO" = "valheim_first_rename_interrupt" ] \
+    && [ "${1:-}" = "$STUB_SERVER_DIR" ] \
+    && [[ "${2:-}" == "$STUB_SERVER_DIR".backup.* ]]; then
+    /bin/mv "$@"
+    : > "$STUB_STATE_DIR/first-rename-interrupt-attempted"
+    kill -TERM "$PPID"
+    /bin/sleep 0.2
+    return 71
+  fi
   if [ "$STUB_SCENARIO" = "valheim_publish_interrupt" ] \
     && [[ "${1:-}" == "$STUB_SERVER_DIR".stage.* ]] \
     && [ "${2:-}" = "$STUB_SERVER_DIR" ]; then
@@ -556,6 +565,18 @@ test_signal_during_atomic_publication_restores_old_install() {
   assert_equals "old install" "$(cat "$RUN_CASE_DIR/server/worlds_local/world.db")" "signal rollback must retain old install content" || return 1
 }
 
+test_signal_after_first_atomic_rename_restores_old_install() {
+  local case_dir="$TMP_ROOT/first-rename-interrupt"
+  mkdir -p "$case_dir/server/worlds_local"
+  printf '%s\n' "old install" > "$case_dir/server/worlds_local/world.db"
+
+  run_setup first-rename-interrupt valheim_first_rename_interrupt
+  assert_nonzero "$RUN_STATUS" "a signal after the first publication rename must fail setup" || return 1
+  assert_file "$RUN_CASE_DIR/state/first-rename-interrupt-attempted" "test must interrupt immediately after the old install is renamed" || return 1
+  assert_file "$RUN_CASE_DIR/server/worlds_local/world.db" "first-rename signal cleanup must restore the old install" || return 1
+  assert_equals "old install" "$(cat "$RUN_CASE_DIR/server/worlds_local/world.db")" "first-rename signal rollback must retain old install content" || return 1
+}
+
 test_steamcmd_download_is_completed_before_tar_reads_it() {
   run_setup steamcmd-download first_success "linux windows" false
   assert_equals 0 "$RUN_STATUS" "completed SteamCMD archive should install and run" || return 1
@@ -618,6 +639,7 @@ for test_case in \
   test_failed_file_validator_is_actionable \
   test_valid_existing_install_skips_steamcmd \
   test_failed_atomic_publication_rolls_back_and_next_run_retries \
+  test_signal_after_first_atomic_rename_restores_old_install \
   test_signal_during_atomic_publication_restores_old_install \
   test_steamcmd_download_is_completed_before_tar_reads_it \
   test_failed_steamcmd_download_cleans_partial_archive \

@@ -6,6 +6,9 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>TakaroValheim</AssemblyName>
     <EnableValheimPluginBuild Condition="'$(EnableValheimPluginBuild)' == ''">false</EnableValheimPluginBuild>
+    <TakaroValheimPluginVersion Condition="'$(TakaroValheimPluginVersion)' == ''">0.1.0</TakaroValheimPluginVersion>
+    <Version>$(TakaroValheimPluginVersion)</Version>
+    <PackageVersion>$(TakaroValheimPluginVersion)</PackageVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(EnableValheimPluginBuild)' == 'true'">
@@ -52,4 +55,17 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+
+  <Target Name="GenerateTakaroValheimBuildVersion" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <TakaroBuildVersionFile>$(IntermediateOutputPath)TakaroBuildVersion.g.cs</TakaroBuildVersionFile>
+    </PropertyGroup>
+    <WriteLinesToFile
+      File="$(TakaroBuildVersionFile)"
+      Lines="namespace Takaro.Valheim.Plugin { internal static class TakaroBuildVersion { public const string Value = &quot;$(TakaroValheimPluginVersion)&quot;%3B } }"
+      Overwrite="true" />
+    <ItemGroup>
+      <Compile Include="$(TakaroBuildVersionFile)" />
+    </ItemGroup>
+  </Target>
 </Project>

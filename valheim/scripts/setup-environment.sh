@@ -37,15 +37,15 @@ ACTIVE_SERVER_BACKUP=""
 ACTIVE_SERVER_FINAL=""
 
 cleanup_server_publication_state() {
-  if [ -n "$ACTIVE_SERVER_BACKUP" ]; then
-    if [ -n "$ACTIVE_SERVER_FINAL" ] && [ ! -e "$ACTIVE_SERVER_FINAL" ]; then
-      if mv "$ACTIVE_SERVER_BACKUP" "$ACTIVE_SERVER_FINAL"; then
+  if [ -n "$ACTIVE_SERVER_BACKUP" ] && [ -e "$ACTIVE_SERVER_BACKUP" ]; then
+    if [ -n "$ACTIVE_SERVER_FINAL" ]; then
+      if [ -e "$ACTIVE_SERVER_FINAL" ] && ! rm -rf "$ACTIVE_SERVER_FINAL"; then
+        echo "Interrupted Valheim publication could not remove the uncommitted replacement; the previous install remains preserved at $ACTIVE_SERVER_BACKUP." >&2
+      elif mv "$ACTIVE_SERVER_BACKUP" "$ACTIVE_SERVER_FINAL"; then
         ACTIVE_SERVER_BACKUP=""
       else
         echo "Interrupted Valheim publication could not restore the previous install; it remains preserved at $ACTIVE_SERVER_BACKUP." >&2
       fi
-    else
-      echo "Interrupted Valheim publication preserved the previous install backup at $ACTIVE_SERVER_BACKUP." >&2
     fi
   fi
   if [ -n "$ACTIVE_SERVER_STAGE" ]; then
@@ -167,19 +167,27 @@ publish_valheim_server_install() {
   local publish_status
 
   if [ -e "$final_dir" ]; then
-    if ! mv "$final_dir" "$backup_dir"; then
-      echo "Could not move the existing Valheim install aside for atomic publication: $final_dir" >&2
-      return 1
-    fi
+    # Record rollback state before the first rename so a signal cannot land in
+    # the gap after the old install moves but before cleanup knows its paths.
     ACTIVE_SERVER_BACKUP="$backup_dir"
     ACTIVE_SERVER_FINAL="$final_dir"
+    if mv "$final_dir" "$backup_dir"; then
+      :
+    else
+      publish_status=$?
+      echo "Could not move the existing Valheim install aside for atomic publication: $final_dir" >&2
+      cleanup_server_publication_state
+      return "$publish_status"
+    fi
   fi
 
   if mv "$stage_dir" "$final_dir"; then
     ACTIVE_SERVER_STAGE=""
     if [ -n "$ACTIVE_SERVER_BACKUP" ]; then
-      rm -rf "$ACTIVE_SERVER_BACKUP"
+      backup_dir="$ACTIVE_SERVER_BACKUP"
       ACTIVE_SERVER_BACKUP=""
+      ACTIVE_SERVER_FINAL=""
+      rm -rf "$backup_dir"
     fi
     ACTIVE_SERVER_FINAL=""
     return 0
@@ -188,14 +196,7 @@ publish_valheim_server_install() {
   fi
 
   echo "Could not atomically publish validated Valheim references to $final_dir; restoring the previous install." >&2
-  if [ -n "$ACTIVE_SERVER_BACKUP" ]; then
-    if mv "$ACTIVE_SERVER_BACKUP" "$final_dir"; then
-      ACTIVE_SERVER_BACKUP=""
-      ACTIVE_SERVER_FINAL=""
-    else
-      echo "Rollback failed; the preserved previous install remains at $ACTIVE_SERVER_BACKUP." >&2
-    fi
-  fi
+  cleanup_server_publication_state
   return "$publish_status"
 }
 

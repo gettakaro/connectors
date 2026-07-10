@@ -11,37 +11,36 @@ public sealed class QaLedgerContractTests
         var ledger = ReadLedger();
 
         StringAssert.Contains(ledger, "## Verdict: PASS WITH GAPS");
-        StringAssert.Contains(ledger, "bd4bfff718139d91cb415eece2c1b6b6c763942a");
-        StringAssert.Contains(ledger, "b2b1748d266f7281731b992762ef7b3188a720de2224ccddb79745f3a271ac3d");
-        StringAssert.Contains(ledger, "3477982857610212a83b006318bd0adea8f861afb7b090179016238a09a1e8b4");
-        StringAssert.Contains(ledger, "Turn-6 source is pending");
+        StringAssert.Contains(ledger, "20bed2475ad558646c4c7cfccb20a185e516a429");
+        StringAssert.Contains(ledger, "d322af0b405fbc901a48f5a5f0c1b9c1f052167ab05295acdc53896395a97186");
+        StringAssert.Contains(ledger, "028eb5dfda9e52eb9998d3c538c4189e6332e761ad563a23ba8b76cdecc61755");
+        StringAssert.Contains(ledger, "Turn-7 branch verification continues");
+        Assert.IsFalse(ledger.Contains("Turn-6 source is pending", StringComparison.Ordinal));
     }
 
     [TestMethod]
-    public void LedgerPinsTurnFiveLiveFailureAndStateIntegrityEvidenceWithoutPromotingTurnSix()
+    public void LedgerPinsTurnSixLiveRuntimeAndStateIntegrityEvidence()
     {
         var ledger = ReadLedger();
 
         foreach (var marker in new[]
                  {
-                     "145/145",
-                     "13/13",
+                     "158/158",
+                     "19/19",
                      "real `net472` build: PASS with 0 warnings",
                      "Vanilla player `Hehe` connected",
-                     "approximately 400 ms",
-                     "approximately 434 ms",
-                     "maximum 1000",
-                     "expected integer",
-                     "exactly one request and one response",
-                     "approximately 891 ms",
-                     "11 inventory requests",
+                     "approximately 387 ms",
                      "zero response frames",
                      "no fabricated inventory changes",
-                     "player-connected and player-disconnected persisted",
+                     "4dadfdf6-18a3-41f1-ae2c-b94200dea9ab",
+                     "4e0aa0c0-d5da-4558-be9b-61c906b5bcfc",
+                     "63c912ff-5c5e-402f-8f4e-1b31ece68ce3",
+                     "85/36/-2",
                      "Exerciser: PASSED",
                      "Codex review: BLOCKED by quota until 20:22",
-                     "/tmp/valheim-turn5-evidence",
-                     "Turn-6 source is pending"
+                     "/tmp/valheim-turn6-evidence",
+                     "cleanup complete",
+                     "Turn-7 branch verification continues"
                  })
         {
             StringAssert.Contains(ledger, marker);
@@ -68,8 +67,7 @@ public sealed class QaLedgerContractTests
                      "false-success fallback defect",
                      "f55c8b39-fc2c-442f-a4e2-be81a7851f4e",
                      "5ea168d7-1ae1-4d73-a7dc-5731b02957e5",
-                     "command-executed analytics remained at zero",
-                     "Turn-6 source is pending"
+                     "command-executed analytics remained at zero"
                  })
         {
             StringAssert.Contains(ledger, marker);
@@ -100,9 +98,8 @@ public sealed class QaLedgerContractTests
                      "dd7fabcb-bd18-491c-8ea3-c9d2147be33f",
                      "/tmp/valheim-turn4-visible-actions.png",
                      "/tmp/valheim-turn4-evidence/raw-harness-result.json",
-                     "invalid `giveItem`",
-                     "timed out",
-                     "Turn-6 source is pending"
+                     "Invalid `giveItem`",
+                     "timed out"
                  })
         {
             StringAssert.Contains(ledger, marker);
@@ -156,6 +153,17 @@ public sealed class QaLedgerContractTests
         {
             StringAssert.Contains(ledger, marker);
         }
+    }
+
+    [TestMethod]
+    public void LedgerKeepsUnprovenDestructiveActionsApprovalGatedAndUnsupported()
+    {
+        var ledger = ReadLedger();
+
+        StringAssert.Contains(ledger, "kickPlayer`, `banPlayer`, `unbanPlayer`, and `shutdown");
+        StringAssert.Contains(ledger, "approval-gated");
+        StringAssert.Contains(ledger, "exact live support remains unproven");
+        StringAssert.Contains(ledger, "classified `unsupported`");
     }
 
     private static string ReadLedger()

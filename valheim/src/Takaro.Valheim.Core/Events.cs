@@ -63,6 +63,33 @@ public sealed record TakaroPlayerLifecycleEvent(
     TakaroPlayer Player,
     object Data);
 
+public sealed class PlayerLifecyclePresenceFilter
+{
+    private readonly HashSet<string> admittedGameIds = new(StringComparer.OrdinalIgnoreCase);
+
+    public IReadOnlyList<TakaroPlayer> SelectTrackable(
+        IReadOnlyCollection<TakaroPlayer> onlinePlayers,
+        IReadOnlyCollection<string> playersWithObservedPositions)
+    {
+        var onlineByGameId = onlinePlayers
+            .GroupBy(player => player.GameId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        admittedGameIds.IntersectWith(onlineByGameId.Keys);
+        foreach (var gameId in playersWithObservedPositions)
+        {
+            if (onlineByGameId.ContainsKey(gameId))
+            {
+                admittedGameIds.Add(gameId);
+            }
+        }
+
+        return onlineByGameId.Values
+            .Where(player => admittedGameIds.Contains(player.GameId))
+            .ToArray();
+    }
+}
+
 public sealed class PlayerLifecycleEventTracker
 {
     private readonly Dictionary<string, TakaroPlayer> previousPlayers = new(StringComparer.OrdinalIgnoreCase);

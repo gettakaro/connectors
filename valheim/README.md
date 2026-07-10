@@ -61,11 +61,11 @@ The registry uses only three statuses:
 | `getMapInfo` | `unsupported` | Returns an immediate schema-valid payload error; the dedicated server does not expose client map metadata. |
 | `getMapTile` | `unsupported` | Returns an immediate payload error; the dedicated server does not expose rendered client map tiles. |
 | `teleportPlayer` | `live-supported` | Routes Valheim's built-in `RPC_TeleportTo` to the server-known character ZDO. |
-| `kickPlayer` | `live-supported` | Sends Valheim's built-in `Kicked` RPC without directly disconnecting the peer. |
-| `banPlayer` | `live-supported` | Writes through Valheim's official ban behavior and then sends `Kicked` when online. |
-| `unbanPlayer` | `live-supported` | Removes matching official ban identifiers and known aliases. |
+| `kickPlayer` | `unsupported` | A built-in `Kicked` RPC implementation exists, but exact live support remains unproven and approval-gated. |
+| `banPlayer` | `unsupported` | Official ban behavior is implemented, but exact live support remains unproven and approval-gated. |
+| `unbanPlayer` | `unsupported` | Official ban-list removal is implemented, but exact live support remains unproven and approval-gated. |
 | `listBans` | `live-supported` | Reads Valheim's official ban entries. |
-| `shutdown` | `live-supported` | Schedules `Application.Quit()` after the Takaro response can flush. |
+| `shutdown` | `unsupported` | Delayed `Application.Quit()` is implemented, but exact live support remains unproven and approval-gated. |
 
 ### Events
 
@@ -98,7 +98,7 @@ Outbound messages and item confirmations use base-game `Message` and `ShowMessag
 
 Historical dedicated-server evidence from June 21-22, 2026 covers several entries marked `live-supported`, including vanilla-client player location, world-drop item delivery, built-in teleport, moderation, and delayed shutdown. The July 10 turn-3 run additionally persisted two complete player connect/disconnect cycles. Turn 4 re-proved a vanilla `Hehe` handshake, real position and teleport, lifecycle persistence, visible messaging/item/cron behavior, and an official raw `listLocations` response containing 11,293 nested locations without any client plugin. The standard Takaro `listLocations` route remained unavailable, so that action is `schema-fallback`, not `live-supported`.
 
-Turn 5 then live-proved immediate invalid-input failures, inventory non-mutation, lifecycle persistence, and the vanilla-client server boundary against its exact commit and artifact hashes. Turn-6 source changes are not covered by that evidence. Current source/build checks and any new runtime evidence belong in [the 2026-07-10 server-only validation ledger](qa/2026-07-10-server-only-validation.md). Routed-packet chat/player-death and client-forwarded entity-kill evidence are explicitly excluded from trusted event claims.
+Turn 5 then live-proved immediate invalid-input failures, inventory non-mutation, lifecycle persistence, and the vanilla-client server boundary against its exact commit and artifact hashes. Turn 6 pinned the current exhaustive action surface to an exact deployed artifact and re-proved pre-ready non-fabrication, immediate unsupported map errors, a vanilla connect/disconnect lifecycle, the real `85/36/-2` position across disconnect, and inventory non-mutation. Turn-7 review fixes require fresh branch verification and do not inherit that runtime proof. Current evidence belongs in [the 2026-07-10 server-only validation ledger](qa/2026-07-10-server-only-validation.md). Routed-packet chat/player-death and client-forwarded entity-kill evidence are explicitly excluded from trusted event claims.
 
 ## Local Development
 
@@ -128,5 +128,7 @@ From `valheim/`:
 ```
 
 The release artifact is `takaro-valheim-plugin.zip`. It contains the dedicated-server plugin, core library, and required runtime dependencies; host-provided game, Unity, BepInEx, and Harmony assemblies are excluded.
+
+The release version argument must be valid SemVer. It is compiled into BepInEx plugin metadata, exact assembly informational/package metadata, the packaged README, and `manifest.json`; numeric assembly/file metadata uses the corresponding `major.minor.patch.0`. The build generates its compile-time version source under the intermediate output directory and does not edit tracked source files.
 
 Environment setup downloads SteamCMD completely to a unique temporary archive before extraction and removes temporary files on both success and failure. It requires the host `file` utility to identify every required Valheim and BepInEx DLL as a real `PE32 ... Mono/.Net assembly`; marker blobs, empty files, and arbitrary text cannot satisfy validation. Valheim is updated in a sibling staging directory, validated there, and published by directory rename with rollback so an interrupted or failed update cannot leave a partially copied final install.

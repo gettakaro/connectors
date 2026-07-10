@@ -95,6 +95,30 @@ public sealed class CapabilityRegistryTests
     }
 
     [TestMethod]
+    public void ApprovalGatedDestructiveActionsRemainUnsupportedUntilExactLiveProofExists()
+    {
+        using var registry = ReadRegistry();
+        var root = registry.RootElement;
+        var notes = root.GetProperty("notes")
+            .EnumerateArray()
+            .Select(note => note.GetString() ?? string.Empty)
+            .ToArray();
+        var readme = ReadValheimFile("README.md");
+
+        foreach (var action in new[] { "kickPlayer", "banPlayer", "unbanPlayer", "shutdown" })
+        {
+            Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty(action).GetString(), action);
+            StringAssert.Contains(readme, $"| `{action}` | `unsupported` |");
+        }
+
+        Assert.IsTrue(notes.Any(note =>
+            note.Contains("implementation exists", StringComparison.OrdinalIgnoreCase)
+            && note.Contains("approval-gated", StringComparison.OrdinalIgnoreCase)
+            && note.Contains("exact live support is unproven", StringComparison.OrdinalIgnoreCase)));
+        StringAssert.Contains(readme, "exact live support remains unproven and approval-gated");
+    }
+
+    [TestMethod]
     public void ListLocationsSeparatesRawConnectorProofFromUnavailableStandardTakaroRoute()
     {
         using var document = ReadRegistry();

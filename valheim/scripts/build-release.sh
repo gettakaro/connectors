@@ -7,6 +7,35 @@ cd "$(dirname "$0")/.."
 
 VERSION="${1:?usage: build-release.sh <version> <out-dir>}"
 OUT_DIR="${2:?usage: build-release.sh <version> <out-dir>}"
+SEMVER_PATTERN='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+
+is_valid_semver() {
+  local candidate="$1"
+  local release_and_prerelease
+  local prerelease
+  local identifier
+  local -a identifiers
+
+  [[ "$candidate" =~ $SEMVER_PATTERN ]] || return 1
+  release_and_prerelease="${candidate%%+*}"
+  if [[ "$release_and_prerelease" == *-* ]]; then
+    prerelease="${release_and_prerelease#*-}"
+    IFS='.' read -r -a identifiers <<< "$prerelease"
+    for identifier in "${identifiers[@]}"; do
+      if [[ "$identifier" =~ ^[0-9]+$ && ${#identifier} -gt 1 && "$identifier" == 0* ]]; then
+        return 1
+      fi
+    done
+  fi
+}
+
+if ! is_valid_semver "$VERSION"; then
+  echo "Invalid semantic version: $VERSION" >&2
+  echo "Expected SemVer such as 1.2.3, 1.2.3-rc.1, or 1.2.3+build.4." >&2
+  exit 2
+fi
+CORE_VERSION="${VERSION%%[-+]*}"
+ASSEMBLY_VERSION="${CORE_VERSION}.0"
 
 DATA_DIR="${VALHEIM_DATA_DIR:-_data}"
 VALHEIM_REFERENCE_PATH="${VALHEIM_REFERENCE_PATH:-${DATA_DIR}/server/valheim_server_Data/Managed}"
@@ -39,7 +68,14 @@ dotnet publish src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj \
   -o "$PUBLISH_DIR" \
   -p:EnableValheimPluginBuild=true \
   -p:BepInExReferencePath="$BEPINEX_REFERENCE_PATH" \
-  -p:ValheimReferencePath="$VALHEIM_REFERENCE_PATH"
+  -p:ValheimReferencePath="$VALHEIM_REFERENCE_PATH" \
+  -p:TakaroValheimPluginVersion="$VERSION" \
+  -p:Version="$VERSION" \
+  -p:PackageVersion="$VERSION" \
+  -p:AssemblyVersion="$ASSEMBLY_VERSION" \
+  -p:FileVersion="$ASSEMBLY_VERSION" \
+  -p:InformationalVersion="$VERSION" \
+  -p:IncludeSourceRevisionInInformationalVersion=false
 
 PLUGIN_DIR="$STAGE/TakaroValheim"
 mkdir -p "$PLUGIN_DIR"
@@ -68,6 +104,14 @@ Install:
 5. Restart the dedicated server so the connector loads the saved token and configuration.
 
 Do not commit live registration tokens.
+EOF
+
+cat > "$PLUGIN_DIR/manifest.json" << EOF
+{
+  "name": "TakaroValheim",
+  "version": "${VERSION}",
+  "architecture": "dedicated-server-only-bepinex-plugin"
+}
 EOF
 
 (cd "$STAGE" && zip -qr takaro-valheim-plugin.zip TakaroValheim)

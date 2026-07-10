@@ -15,11 +15,11 @@
     "getMapInfo": "unsupported",
     "getMapTile": "unsupported",
     "teleportPlayer": "live-supported",
-    "kickPlayer": "live-supported",
-    "banPlayer": "live-supported",
-    "unbanPlayer": "live-supported",
+    "kickPlayer": "unsupported",
+    "banPlayer": "unsupported",
+    "unbanPlayer": "unsupported",
     "listBans": "live-supported",
-    "shutdown": "live-supported"
+    "shutdown": "unsupported"
   },
   "events": {
     "log": "live-supported",
@@ -31,7 +31,7 @@
   },
   "notes": [
     "The connector and all Takaro configuration belong on the dedicated server. No Takaro client plugin or custom client RPC is supported.",
-    "Live-supported records retain dedicated-server evidence through the artifact-pinned turn-5 run on 2026-07-10. Turn-6 source changes remain pending fresh build and live verification.",
+    "Live-supported records retain dedicated-server evidence through the artifact-pinned turn-6 run on 2026-07-10. Turn-7 review fixes require fresh branch verification and do not inherit turn-6 runtime proof.",
     "getPlayer is implemented by filtering the dedicated server player list, but its final Takaro response shape has not been independently live-proven, so it remains unsupported.",
     "getPlayerLocation uses only a real ready-peer/public observation or a fresh 30-second player-keyed last-known observation. If neither exists, a required-coordinate payload with error is rejected by current Takaro Generic.requestFromServer rather than returned as a position.",
     "getPlayerInventory is permanently unsupported because a dedicated server does not expose remote client inventory components. No response frame is sent: an empty array would be persisted as real state, so current Takaro rejects by its bounded pending-request timeout.",
@@ -42,6 +42,7 @@
     "Player lifecycle frames are derived from dedicated-server player snapshots. Turn-3 Takaro eventSearch persisted two player-connected and two player-disconnected events; transport logs still claim only that a frame was written, not persistence acknowledgement.",
     "listLocations is schema-fallback: turn 4 live-proved the official raw Generic Connector action/schema with 11293 nested server-owned locations in a 1815046-byte response, but Takaro 0c63cf1c Generic.listLocations throws NotImplementedError, so the standard Takaro route is unavailable pending upstream support.",
     "getMapInfo and getMapTile are part of the exhaustive Takaro 0c63cf1c action list but unsupported at the dedicated-server-only boundary because Valheim exposes neither client map metadata nor rendered map tiles there.",
+    "Implementation exists for kickPlayer, banPlayer, unbanPlayer, and shutdown, but exact live support is unproven and approval-gated because destructive turn-6 checks were deliberately skipped. They remain unsupported until an approved disposable-server run proves the current artifact.",
     "Entity-killed is unsupported and has no active emitter or Harmony death patch."
   ]
 }

@@ -461,7 +461,7 @@ Merge only when branch protection/review permits. After merge, refresh/re-run Va
 
 ## Player-Coach Execution Status
 
-- Tasks 3-5 are implemented in turn-6 working source, including the exhaustive pinned action list, honest runtime-unavailable behavior, real PE/CLI validation, and atomic reference publication. They still require the next independent branch verification before being accepted.
-- Task 6 local player gates are complete for turn 6; artifact hashes from a working tree are build evidence only and are not recorded as live proof.
-- Task 7 remains pinned to the exact turn-5 commit and deployed artifact in the QA ledger. Turn-6 live validation is pending.
-- Task 8 PR creation, GitHub Actions, superseded-PR closure, merge, and release-PR refresh remain pending orchestrator work. None is claimed complete here.
+- Tasks 3-5 were implemented through turn 6. Turn 7 addresses independent review findings for signal-safe publication, lifecycle admission, destructive capability evidence, and release-version propagation; fresh verification is still required.
+- Task 6 local player gates are complete for turn 7: `166/166` tests, `20/20` setup scenarios, Bash/JSON checks, real `net472` build with zero warnings/errors, invalid-SemVer rejection, and exact non-default version propagation through the release package. Independent branch verification is still required.
+- Task 7 is complete for exact turn-6 source commit `20bed2475ad558646c4c7cfccb20a185e516a429`, release zip `d322af0b405fbc901a48f5a5f0c1b9c1f052167ab05295acdc53896395a97186`, and deployed DLL `028eb5dfda9e52eb9998d3c538c4189e6332e761ad563a23ba8b76cdecc61755`. The QA ledger keeps that proof scoped to turn 6.
+- Task 8 branch verification continues on turn 7. PR creation, GitHub Actions, superseded-PR closure, merge, and release-PR refresh remain pending orchestrator work. None is claimed complete here.
