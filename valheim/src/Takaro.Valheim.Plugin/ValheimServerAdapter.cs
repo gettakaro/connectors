@@ -138,13 +138,12 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         {
             var stack = Math.Min(remaining, maxStack);
             var offset = new Vector3((dropCount % 3) - 1, 1.25f, dropCount / 3);
-            InstantiateItemDrop(prefab, itemDrop, stack, qualityLevel, position + offset);
+            DropItemStack(prefab, itemDrop, stack, qualityLevel, position + offset);
             remaining -= stack;
             dropCount++;
         }
 
         var itemName = DisplayName(itemDrop.m_itemData.m_shared?.m_name, prefab.name);
-        SendChatMessage(peer, $"Takaro dropped {amount}x {itemName} near you.", position);
         SendHudMessage(peer, $"Dropped {amount}x {itemName} near you.");
 
         logger.LogInfo($"Takaro Valheim dropped {amount}x {prefab.name} for {player.Name} ({player.GameId}) at x={position.x}, y={position.y}, z={position.z}.");
@@ -697,7 +696,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     private static int ClampQuality(int quality, int maxQuality) =>
         Math.Min(Math.Max(quality, 1), Math.Max(maxQuality, 1));
 
-    private static void InstantiateItemDrop(
+    private static void DropItemStack(
         GameObject prefab,
         ItemDrop itemDrop,
         int stack,
@@ -709,23 +708,6 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         itemData.m_quality = qualityLevel;
         itemData.m_stack = stack;
         ItemDrop.DropItem(itemData, stack, position, Quaternion.identity);
-    }
-
-    private static void SendChatMessage(ZNetPeer peer, string message, Vector3 position)
-    {
-        var userInfo = new UserInfo
-        {
-            Name = "Takaro",
-            UserId = default
-        };
-
-        ZRoutedRpc.instance.InvokeRoutedRPC(
-            peer.m_uid,
-            "ChatMessage",
-            position == Vector3.zero ? peer.m_refPos : position,
-            (int)Talker.Type.Shout,
-            userInfo,
-            message);
     }
 
     private static string FirstNonEmpty(params string?[] values) =>

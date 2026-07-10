@@ -10,10 +10,12 @@ internal static class ValheimChatEventBridge
 {
     private static readonly int ChatMessageHash = "ChatMessage".GetStableHashCode();
     private static readonly int SayHash = "Say".GetStableHashCode();
+    private static readonly int OnDeathHash = "OnDeath".GetStableHashCode();
     private static readonly HashSet<int> UndecodedDedicatedServerChatHashes = [199378019];
     private static readonly object Sync = new();
     private static readonly Dictionary<string, DateTimeOffset> RecentEvents = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, DateTimeOffset> RecentEntityDeaths = new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, DateTimeOffset> RecentPlayerDeaths = new(StringComparer.Ordinal);
     private static readonly System.Reflection.FieldInfo? LastHitField = AccessTools.Field(typeof(Character), "m_lastHit");
     private static int routedDiagnosticsRemaining = 40;
     private static ZRoutedRpc? registeredRpc;
@@ -24,7 +26,7 @@ internal static class ValheimChatEventBridge
     {
         runner = activeRunner;
         log = logger ?? (_ => { });
-        log($"Takaro Valheim chat hash diagnostics: ChatMessage={ChatMessageHash}, Say={SayHash}.");
+        log($"Takaro Valheim routed RPC diagnostics: ChatMessage={ChatMessageHash}, Say={SayHash}, OnDeath={OnDeathHash}.");
     }
 
     public static void Shutdown()
@@ -35,6 +37,7 @@ internal static class ValheimChatEventBridge
         {
             RecentEvents.Clear();
             RecentEntityDeaths.Clear();
+            RecentPlayerDeaths.Clear();
         }
     }
 
@@ -142,6 +145,13 @@ internal static class ValheimChatEventBridge
                 userInfo.Deserialize(ref data.m_parameters);
                 var text = data.m_parameters.ReadString();
                 Emit(data.m_senderPeerID, chatType, userInfo, text);
+                return;
+            }
+
+            if (data.m_methodHash == OnDeathHash)
+            {
+                log($"Takaro Valheim observed routed OnDeath packet: sender={data.m_senderPeerID}, targetPeer={data.m_targetPeerID}, targetZdo={data.m_targetZDO}.");
+                EmitPlayerDeathFromRoutedRpc(data.m_senderPeerID, data.m_targetZDO);
                 return;
             }
 
@@ -285,6 +295,46 @@ internal static class ValheimChatEventBridge
         }
     }
 
+    internal static void EmitPlayerDeathFromRoutedRpc(long senderPeerId, ZDOID targetZdo)
+    {
+        if (!IsDedicatedServer() || targetZdo.IsNone())
+        {
+            return;
+        }
+
+        if (!TryMapPlayerZdoToTakaroPlayer(targetZdo, senderPeerId, out var player, out var position)
+            || player is null)
+        {
+            log($"Takaro Valheim could not map routed OnDeath target to player: sender={senderPeerId}, targetZdo={targetZdo}.");
+            return;
+        }
+
+        if (!ShouldEmitPlayerDeath(targetZdo.ToString()))
+        {
+            return;
+        }
+
+        var activeRunner = runner;
+        if (activeRunner is null)
+        {
+            return;
+        }
+
+        var evt = EventFactory.PlayerDeath(
+            player,
+            DateTimeOffset.UtcNow,
+            position,
+            attacker: null,
+            weapon: null);
+
+        _ = SendGameEventAsync(
+            activeRunner,
+            "player-death",
+            evt,
+            $"Takaro Valheim routed player-death event sent for {player.Name} ({player.GameId}).",
+            "Takaro Valheim routed player-death event send failed");
+    }
+
     private static TakaroPlayer? FindTakaroPlayer(string? identifier)
     {
         if (string.IsNullOrWhiteSpace(identifier))
@@ -342,6 +392,65 @@ internal static class ValheimChatEventBridge
 
         player = FindTakaroPlayer(character.GetHoverName());
         return player is not null;
+    }
+
+    private static bool TryMapPlayerZdoToTakaroPlayer(
+        ZDOID characterId,
+        long senderPeerId,
+        out TakaroPlayer? player,
+        out TakaroPosition position)
+    {
+        player = null;
+        position = new TakaroPosition(0, 0, 0, "valheim");
+
+        var znet = ZNet.instance;
+        if (znet is null)
+        {
+            return false;
+        }
+
+        var playerInfo = default(ZNet.PlayerInfo);
+        var foundPlayerInfo = false;
+        foreach (var candidate in znet.GetPlayerList())
+        {
+            if (!candidate.m_characterID.Equals(characterId))
+            {
+                continue;
+            }
+
+            playerInfo = candidate;
+            foundPlayerInfo = true;
+            break;
+        }
+
+        if (!foundPlayerInfo)
+        {
+            return false;
+        }
+
+        var peer = znet.GetPeer(senderPeerId)
+            ?? znet.GetPeers().FirstOrDefault(candidate =>
+                candidate.m_characterID.Equals(characterId)
+                || Matches(candidate.m_playerName, playerInfo.m_name)
+                || Matches(candidate.m_playerName, playerInfo.m_serverAssignedDisplayName));
+
+        var rawPosition = Vector3.zero;
+        if (peer is not null && peer.IsReady() && peer.m_refPos != Vector3.zero)
+        {
+            rawPosition = peer.m_refPos;
+        }
+        else if (playerInfo.m_publicPosition)
+        {
+            rawPosition = playerInfo.m_position;
+        }
+        else
+        {
+            rawPosition = ZDOMan.instance?.GetZDO(characterId)?.GetPosition() ?? Vector3.zero;
+        }
+
+        player = ToTakaroPlayer(playerInfo);
+        position = new TakaroPosition(rawPosition.x, rawPosition.y, rawPosition.z, "valheim");
+        return true;
     }
 
     private static TakaroPlayer ToTakaroPlayer(ZNet.PlayerInfo player)
@@ -463,6 +572,29 @@ internal static class ValheimChatEventBridge
             }
 
             RecentEntityDeaths[key] = now;
+            return true;
+        }
+    }
+
+    private static bool ShouldEmitPlayerDeath(string key)
+    {
+        var now = DateTimeOffset.UtcNow;
+        lock (Sync)
+        {
+            foreach (var staleKey in RecentPlayerDeaths
+                         .Where(entry => now - entry.Value > TimeSpan.FromSeconds(5))
+                         .Select(entry => entry.Key)
+                         .ToArray())
+            {
+                RecentPlayerDeaths.Remove(staleKey);
+            }
+
+            if (RecentPlayerDeaths.ContainsKey(key))
+            {
+                return false;
+            }
+
+            RecentPlayerDeaths[key] = now;
             return true;
         }
     }

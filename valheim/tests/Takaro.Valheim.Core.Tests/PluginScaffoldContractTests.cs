@@ -170,8 +170,8 @@ public sealed class PluginScaffoldContractTests
             "public Task<TakaroActionResult> TeleportPlayerAsync",
             "public Task<TakaroActionResult> KickPlayerAsync");
 
-        StringAssert.Contains(give, "ItemDrop");
-        StringAssert.Contains(give, "Instantiate");
+        StringAssert.Contains(give, "DropItemStack");
+        StringAssert.Contains(source, "ItemDrop.DropItem");
         StringAssert.Contains(teleport, "RPC_TeleportTo");
         Assert.IsFalse(give.Contains("TakaroGiveItem", StringComparison.Ordinal));
         Assert.IsFalse(teleport.Contains("TakaroTeleportPlayer", StringComparison.Ordinal));
@@ -190,6 +190,31 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(give, "invalid_amount");
         StringAssert.Contains(give, "invalid_quality");
         StringAssert.Contains(give, "position_unavailable");
+    }
+
+    [TestMethod]
+    public void GiveItemConfirmationCannotBeReemittedAsInboundChat()
+    {
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
+        var give = SliceMethod(
+            source,
+            "public Task<TakaroActionResult> GiveItemAsync",
+            "public Task<TakaroActionResult> SendMessageAsync");
+
+        StringAssert.Contains(give, "SendHudMessage");
+        Assert.IsFalse(give.Contains("SendChatMessage", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void PluginBridgeUsesServerRoutedPlayerDeathWithoutCustomClientRpc()
+    {
+        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+
+        StringAssert.Contains(source, "OnDeathHash");
+        StringAssert.Contains(source, "data.m_methodHash == OnDeathHash");
+        StringAssert.Contains(source, "EmitPlayerDeathFromRoutedRpc");
+        StringAssert.Contains(source, "\"player-death\"");
+        Assert.IsFalse(source.Contains("\"TakaroPlayerDeath\"", StringComparison.Ordinal));
     }
 
     [TestMethod]
