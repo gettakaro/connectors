@@ -19,8 +19,6 @@ public sealed record ConnectorConfig(
 {
     public CompanionMode CompanionMode { get; init; } = CompanionMode.Required;
 
-    public IReadOnlyList<string> CompanionCommandPrefixes { get; init; } = new[] { "$" };
-
     public static bool TryFromDictionary(
         IReadOnlyDictionary<string, string> values,
         out ConnectorConfig? config,
@@ -61,10 +59,7 @@ public sealed record ConnectorConfig(
             CommandAllowlistExact: ParseList(Optional(values, "commandAllowlistExact"), defaultValues: new[] { "help" }),
             CommandAllowlistPrefixes: ParseList(Optional(values, "commandAllowlistPrefixes"), defaultValues: Array.Empty<string>()))
         {
-            CompanionMode = ParseCompanionMode(Optional(values, "companionMode")),
-            CompanionCommandPrefixes = ParseList(
-                Optional(values, "companionCommandPrefixes"),
-                defaultValues: new[] { "$" })
+            CompanionMode = ParseCompanionMode(Optional(values, "companionMode"))
         };
     }
 

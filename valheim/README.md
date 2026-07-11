@@ -49,7 +49,8 @@ The plugin reads these BepInEx settings:
 - `commandAllowlistExact`
 - `commandAllowlistPrefixes`
 - `companionMode` (default `required`)
-- `companionCommandPrefixes` (default `$`)
+
+The graphical client companion separately reads `companionCommandPrefixes` (default `$`) from `com.takaro.valheim.companion.cfg`. This is intentionally client-side; the server cannot change a client's local chat interception policy.
 
 The default WebSocket endpoint is `wss://connect.takaro.io/`. The plugin disables itself before Harmony patching or connector startup when it detects a non-dedicated process.
 

@@ -366,11 +366,10 @@ Run focused/full tests and commit `feat(valheim): process companion reports`.
 
 **Step 1: Write failing config and inventory tests**
 
-Add `disabled|optional|required` parsing, default `required`, default `$` command prefix, and invalid-value rejection. Add adapter contracts for fresh, confirmed-empty, missing, and expired inventory.
+Add `disabled|optional|required` parsing, default `required`, and invalid-value rejection. Add adapter contracts for fresh, confirmed-empty, missing, and expired inventory. The `$` command-prefix default belongs only to the graphical-client companion config implemented later.
 
 ```csharp
 Assert.AreEqual(CompanionMode.Required, config.CompanionMode);
-CollectionAssert.AreEqual(new[] { "$" }, config.CompanionCommandPrefixes.ToArray());
 ```
 
 **Step 2: Verify RED**

@@ -240,7 +240,7 @@ public sealed class PluginScaffoldContractTests
         var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
 
         StringAssert.Contains(entrypoint, "[\"companionMode\"]");
-        StringAssert.Contains(entrypoint, "[\"companionCommandPrefixes\"]");
+        Assert.IsFalse(entrypoint.Contains("companionCommandPrefixes", StringComparison.Ordinal));
         StringAssert.Contains(entrypoint, "private CompanionInventoryCache? companionInventory;");
         StringAssert.Contains(entrypoint, "private CompanionServerBridge? companionBridge;");
         StringAssert.Contains(entrypoint, "new ValheimPlayerResolver(Logger)");

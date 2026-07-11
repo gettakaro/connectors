@@ -87,7 +87,6 @@ public sealed class ConfigTests
         });
 
         Assert.AreEqual("Required", ReadCompanionMode(config));
-        CollectionAssert.AreEqual(new[] { "$" }, ReadCompanionCommandPrefixes(config));
     }
 
     [DataTestMethod]
@@ -109,21 +108,6 @@ public sealed class ConfigTests
     }
 
     [TestMethod]
-    public void FromDictionaryParsesCompanionCommandPrefixes()
-    {
-        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
-        {
-            ["registrationToken"] = "reg-123",
-            ["serverName"] = "Meadows",
-            ["companionCommandPrefixes"] = "! ; /,  ? "
-        });
-
-        CollectionAssert.AreEqual(
-            new[] { "!", "/", "?" },
-            ReadCompanionCommandPrefixes(config));
-    }
-
-    [TestMethod]
     public void FromDictionaryTrimsCompanionModeWhitespace()
     {
         var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
@@ -137,7 +121,7 @@ public sealed class ConfigTests
     }
 
     [TestMethod]
-    public void FromDictionaryDefaultsBlankOrNullCompanionValues()
+    public void FromDictionaryDefaultsBlankOrNullCompanionMode()
     {
         foreach (var value in new string?[] { "", "   ", null })
         {
@@ -145,41 +129,11 @@ public sealed class ConfigTests
             {
                 ["registrationToken"] = "reg-123",
                 ["serverName"] = "Meadows",
-                ["companionMode"] = value!,
-                ["companionCommandPrefixes"] = value!
+                ["companionMode"] = value!
             });
 
             Assert.AreEqual("Required", ReadCompanionMode(config));
-            CollectionAssert.AreEqual(new[] { "$" }, ReadCompanionCommandPrefixes(config));
         }
-    }
-
-    [TestMethod]
-    public void FromDictionaryAllowsExplicitDelimiterOnlyCompanionPrefixes()
-    {
-        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
-        {
-            ["registrationToken"] = "reg-123",
-            ["serverName"] = "Meadows",
-            ["companionCommandPrefixes"] = ";, ; ,"
-        });
-
-        Assert.AreEqual(0, ReadCompanionCommandPrefixes(config).Length);
-    }
-
-    [TestMethod]
-    public void FromDictionaryDropsEmptyAndDuplicateCompanionPrefixesPreservingOrder()
-    {
-        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
-        {
-            ["registrationToken"] = "reg-123",
-            ["serverName"] = "Meadows",
-            ["companionCommandPrefixes"] = "!;;, /, !, , $, /"
-        });
-
-        CollectionAssert.AreEqual(
-            new[] { "!", "/", "$" },
-            ReadCompanionCommandPrefixes(config));
     }
 
     [DataTestMethod]
@@ -209,13 +163,4 @@ public sealed class ConfigTests
             ?? throw new AssertFailedException("ConnectorConfig.CompanionMode is null.");
     }
 
-    private static string[] ReadCompanionCommandPrefixes(ConnectorConfig config)
-    {
-        var property = typeof(ConnectorConfig).GetProperty("CompanionCommandPrefixes")
-            ?? throw new AssertFailedException("ConnectorConfig is missing CompanionCommandPrefixes.");
-        var prefixes = property.GetValue(config) as IEnumerable<string>
-            ?? throw new AssertFailedException("ConnectorConfig.CompanionCommandPrefixes is not a string list.");
-
-        return prefixes.ToArray();
-    }
 }
