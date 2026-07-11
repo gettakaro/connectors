@@ -28,6 +28,7 @@ internal static class CompanionClientHooks
 {
     private static CompanionClientBridge? bridge;
     private static CompanionChatPolicy policy = new(Array.Empty<string>());
+    private static readonly CompanionCombatReader combatReader = new();
     private static Action<string> log = _ => { };
 
     public static void Initialize(
@@ -46,6 +47,7 @@ internal static class CompanionClientHooks
     {
         bridge = null;
         policy = new CompanionChatPolicy(Array.Empty<string>());
+        combatReader.Reset();
         log = _ => { };
     }
 
@@ -88,6 +90,73 @@ internal static class CompanionClientHooks
             _ = activeBridge.TrySendChat(state.Message);
         }
     }
+
+    public static void OnLocalPlayerDeath(Player __instance)
+    {
+        var activeBridge = bridge;
+        if (activeBridge is null
+            || __instance != Player.m_localPlayer)
+        {
+            return;
+        }
+
+        try
+        {
+            if (combatReader.TryCreateLocalPlayerDeath(
+                    __instance,
+                    MonotonicNow(),
+                    DateTimeOffset.UtcNow,
+                    out var report)
+                && report is not null)
+            {
+                _ = activeBridge.TrySendPlayerDeath(report);
+            }
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim Companion could not report local player death: {ex.Message}");
+        }
+    }
+
+    public static void OnCharacterDeath(Character character)
+    {
+        var activeBridge = bridge;
+        if (activeBridge is null
+            || character is Player
+            || character.GetComponent<Player>() != null)
+        {
+            return;
+        }
+
+        try
+        {
+            var hit = CompanionCombatReader.GetLastHit(character);
+            if (hit?.GetAttacker() != Player.m_localPlayer)
+            {
+                return;
+            }
+
+            if (combatReader.TryCreateEntityKilled(
+                    character,
+                    hit,
+                    MonotonicNow(),
+                    DateTimeOffset.UtcNow,
+                    out var report)
+                && report is not null)
+            {
+                _ = activeBridge.TrySendEntityKilled(report);
+            }
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim Companion could not report local entity kill: {ex.Message}");
+        }
+    }
+
+    private static TimeSpan MonotonicNow() =>
+        UnityEngine.Time.realtimeSinceStartup > 0
+            ? TimeSpan.FromSeconds(UnityEngine.Time.realtimeSinceStartup)
+            : TimeSpan.Zero;
 }
 
 [HarmonyPatch(typeof(Talker), "Say")]
@@ -109,5 +178,19 @@ internal static class CompanionTalkerSayPatch
             CompanionClientHooks.AfterTalkerSay(__state);
         }
     }
+}
+
+[HarmonyPatch(typeof(Player), "OnDeath")]
+internal static class CompanionPlayerOnDeathPatch
+{
+    private static void Postfix(Player __instance) =>
+        CompanionClientHooks.OnLocalPlayerDeath(__instance);
+}
+
+[HarmonyPatch(typeof(Character), "OnDeath")]
+internal static class CompanionCharacterOnDeathPatch
+{
+    private static void Postfix(Character __instance) =>
+        CompanionClientHooks.OnCharacterDeath(__instance);
 }
 #endif

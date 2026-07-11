@@ -192,6 +192,19 @@ public sealed class CompanionPluginContractTests
         Assert.IsFalse(bridge.Contains("stack(s)", StringComparison.OrdinalIgnoreCase));
     }
 
+    [TestMethod]
+    public void CompanionCombatReportsShareNegotiatedExactServerTransport()
+    {
+        var bridge = ReadCompanionSource("CompanionClientBridge.cs");
+
+        StringAssert.Contains(bridge, "TrySendPlayerDeath(CompanionPlayerDeathReport report)");
+        StringAssert.Contains(bridge, "TrySendEntityKilled(CompanionEntityKilledReport report)");
+        StringAssert.Contains(bridge, "CompanionMessageTypes.PlayerDeath");
+        StringAssert.Contains(bridge, "CompanionMessageTypes.EntityKilled");
+        StringAssert.Contains(bridge, "TrySendReport(");
+        Assert.IsFalse(bridge.Contains("InvokeRoutedRPC(CompanionMessageTypes", StringComparison.Ordinal));
+    }
+
     private static string ReadAllCompanionText() =>
         string.Join(
             '\n',

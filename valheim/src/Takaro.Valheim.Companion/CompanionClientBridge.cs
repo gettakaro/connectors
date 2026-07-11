@@ -153,6 +153,52 @@ internal sealed class CompanionClientBridge : IDisposable
         }
     }
 
+    internal bool TrySendPlayerDeath(CompanionPlayerDeathReport report) =>
+        report is not null
+        && TrySendReport(CompanionMessageTypes.PlayerDeath, report);
+
+    internal bool TrySendEntityKilled(CompanionEntityKilledReport report) =>
+        report is not null
+        && TrySendReport(CompanionMessageTypes.EntityKilled, report);
+
+    private bool TrySendReport<TPayload>(
+        string messageType,
+        TPayload payload)
+    {
+        if (!initialized || disposed)
+        {
+            return false;
+        }
+
+        try
+        {
+            var network = ZNet.instance;
+            var routedRpc = ZRoutedRpc.instance;
+            SynchronizeRegistration(network, routedRpc);
+            if (network is null
+                || routedRpc is null
+                || !registrationSucceeded
+                || !ReferenceEquals(network, observedNetwork)
+                || !ReferenceEquals(routedRpc, registeredRpc)
+                || !SynchronizeReadyContext(network, routedRpc, out var serverPeer)
+                || !state.TryCreateReport(
+                    messageType,
+                    payload,
+                    out var envelope)
+                || envelope is null)
+            {
+                return false;
+            }
+
+            return TrySendEnvelope(routedRpc, network, serverPeer, envelope);
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim Companion could not report {messageType}: {ex.Message}");
+            return false;
+        }
+    }
+
     private void SynchronizeRegistration(
         ZNet? network,
         ZRoutedRpc? routedRpc)
@@ -449,6 +495,10 @@ internal sealed class CompanionClientBridge : IDisposable
     }
 
     internal bool TrySendChat(string message) => false;
+
+    internal bool TrySendPlayerDeath(CompanionPlayerDeathReport report) => false;
+
+    internal bool TrySendEntityKilled(CompanionEntityKilledReport report) => false;
 
     public void Dispose()
     {
