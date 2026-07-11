@@ -493,12 +493,15 @@ public sealed class PluginScaffoldContractTests
         var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
         var setup = ReadValheimFile("scripts/setup-environment.sh");
         var release = ReadValheimFile("scripts/build-release.sh");
-        var combined = string.Join('\n', project, entrypoint, setup, release);
+        var combined = string.Join('\n', project, entrypoint, setup);
 
         foreach (var marker in new[] { "Jotunn", "JOTUNN_REFERENCE_PATH", "BepInDependency" })
         {
             Assert.IsFalse(combined.Contains(marker, StringComparison.OrdinalIgnoreCase), marker);
         }
+
+        StringAssert.Contains(release, "rm -f");
+        StringAssert.Contains(release, "Jotunn.dll");
 
         StringAssert.Contains(setup, "VALHEIM_STEAM_PLATFORMS");
         StringAssert.Contains(setup, "VALHEIM_REFERENCE_CACHE_DIR");

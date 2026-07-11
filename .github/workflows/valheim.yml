@@ -62,7 +62,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y lib32gcc-s1 jq unzip
+          sudo apt-get install -y lib32gcc-s1 jq ripgrep unzip zip
 
       - name: Cache Valheim build dependencies
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
@@ -96,11 +96,17 @@ jobs:
       - name: Build release artifact
         run: valheim/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
 
+      - name: Validate separate server and client archives
+        run: valheim/tests/release-package-behavior.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
+
       - name: Publish stable release assets
         if: ${{ steps.params.outputs.publish == 'stable' }}
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: scripts/publish-release.sh upload "${{ steps.params.outputs.tag }}" "$RUNNER_TEMP/dist/takaro-valheim-plugin.zip"
+        run: |
+          scripts/publish-release.sh upload "${{ steps.params.outputs.tag }}" \
+            "$RUNNER_TEMP/dist/takaro-valheim-plugin.zip" \
+            "$RUNNER_TEMP/dist/takaro-valheim-companion.zip"
 
       - name: Publish rolling dev build
         if: ${{ steps.params.outputs.publish == 'rolling' }}
@@ -110,7 +116,8 @@ jobs:
           scripts/publish-release.sh rolling valheim-dev \
             "Valheim Connector - latest dev build" \
             "Rolling development build (\`${{ steps.params.outputs.version }}\`), updated on every push to main. Not for production." \
-            "$RUNNER_TEMP/dist/takaro-valheim-plugin.zip"
+            "$RUNNER_TEMP/dist/takaro-valheim-plugin.zip" \
+            "$RUNNER_TEMP/dist/takaro-valheim-companion.zip"
 
       - name: Publish PR build
         if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
@@ -120,7 +127,8 @@ jobs:
           scripts/publish-release.sh rolling "${{ steps.params.outputs.tag }}" \
             "Valheim Connector - build for PR #${{ github.event.pull_request.number }}" \
             "Disposable build (\`${{ steps.params.outputs.version }}\`) for PR #${{ github.event.pull_request.number }}. Replaced on every push, deleted when the PR closes. Not for production." \
-            "$RUNNER_TEMP/dist/takaro-valheim-plugin.zip"
+            "$RUNNER_TEMP/dist/takaro-valheim-plugin.zip" \
+            "$RUNNER_TEMP/dist/takaro-valheim-companion.zip"
 
       - name: Comment PR build
         if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
@@ -131,4 +139,5 @@ jobs:
             "${{ github.event.pull_request.number }}" \
             "${{ steps.params.outputs.tag }}" \
             "${{ steps.params.outputs.version }}" \
-            "$RUNNER_TEMP/dist/takaro-valheim-plugin.zip"
+            "$RUNNER_TEMP/dist/takaro-valheim-plugin.zip" \
+            "$RUNNER_TEMP/dist/takaro-valheim-companion.zip"
