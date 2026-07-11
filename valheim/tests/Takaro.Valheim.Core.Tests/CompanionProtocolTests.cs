@@ -105,6 +105,50 @@ public sealed class CompanionProtocolTests
     }
 
     [TestMethod]
+    public void InspectsUnsupportedHelloAckVersionWithoutAcceptingIt()
+    {
+        var envelope = CreateEnvelope(
+            CompanionMessageTypes.HelloAck,
+            """{"protocolVersion":2,"productVersion":"2.4.0","acceptedCapabilities":1}""");
+
+        Assert.IsFalse(CompanionEnvelopeCodec.TryDecodePayload<CompanionHelloAck>(
+            envelope,
+            out _,
+            out var strictError));
+        Assert.AreEqual("invalid-payload", strictError);
+        Assert.IsTrue(CompanionEnvelopeCodec.TryInspectHelloAck(
+            envelope,
+            out var inspected));
+        Assert.IsNotNull(inspected);
+        Assert.AreEqual(2, inspected.ProtocolVersion);
+        Assert.AreEqual("2.4.0", inspected.ProductVersion);
+        Assert.AreEqual(CompanionCapability.Chat, inspected.AcceptedCapabilities);
+
+        Assert.IsFalse(CompanionEnvelopeCodec.TryInspectHelloAck(
+            CreateEnvelope(
+                CompanionMessageTypes.HelloAck,
+                """{"protocolVersion":2,"productVersion":"2.4.0","acceptedCapabilities":1,"playerId":"claimed"}"""),
+            out _));
+
+        CompanionEnvelope disposedEnvelope;
+        using (var document = JsonDocument.Parse(
+                   """{"protocolVersion":2,"productVersion":"2.4.0","acceptedCapabilities":1}"""))
+        {
+            disposedEnvelope = new CompanionEnvelope(
+                CompanionProtocol.CurrentVersion,
+                "nonce",
+                1,
+                "message-1",
+                CompanionMessageTypes.HelloAck,
+                document.RootElement);
+        }
+
+        Assert.IsFalse(CompanionEnvelopeCodec.TryInspectHelloAck(
+            disposedEnvelope,
+            out _));
+    }
+
+    [TestMethod]
     public void VersionOneMessageTypesAreStable()
     {
         Assert.AreEqual("hello", GetConstant<string>("CompanionMessageTypes", "Hello"));

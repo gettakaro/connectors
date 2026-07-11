@@ -1,13 +1,5 @@
 namespace Takaro.Valheim.Core;
 
-public static class CompanionSessionRestartPolicy
-{
-    public static bool ShouldRestart(
-        CompanionSessionSnapshot? session,
-        DateTimeOffset now) =>
-        session is null || now >= session.ExpiresAt;
-}
-
 public sealed record QueuedCompanionEvent(
     long Generation,
     CompanionAcceptedEvent Event);

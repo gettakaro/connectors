@@ -235,6 +235,45 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
+    public void PluginWiresOneSharedCompanionGraphOnTheMainThread()
+    {
+        var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
+
+        StringAssert.Contains(entrypoint, "[\"companionMode\"]");
+        StringAssert.Contains(entrypoint, "[\"companionCommandPrefixes\"]");
+        StringAssert.Contains(entrypoint, "private CompanionInventoryCache? companionInventory;");
+        StringAssert.Contains(entrypoint, "private CompanionServerBridge? companionBridge;");
+        StringAssert.Contains(entrypoint, "new ValheimPlayerResolver(Logger)");
+        StringAssert.Contains(entrypoint, "companionInventory,");
+        StringAssert.Contains(entrypoint, "playerResolver);");
+        StringAssert.Contains(entrypoint, "config.CompanionMode");
+        StringAssert.Contains(entrypoint, "config.CompanionMode == CompanionMode.Disabled");
+
+        var cacheAt = entrypoint.IndexOf("companionInventory = new CompanionInventoryCache()", StringComparison.Ordinal);
+        var resolverAt = entrypoint.IndexOf("new ValheimPlayerResolver(Logger)", StringComparison.Ordinal);
+        var adapterAt = entrypoint.IndexOf("new ValheimServerAdapter(", StringComparison.Ordinal);
+        var runnerAt = entrypoint.IndexOf("new TakaroWebSocketRunner(", StringComparison.Ordinal);
+        var bridgeAt = entrypoint.IndexOf("new CompanionServerBridge(", StringComparison.Ordinal);
+        Assert.IsTrue(cacheAt >= 0 && cacheAt < resolverAt);
+        Assert.IsTrue(resolverAt < adapterAt);
+        Assert.IsTrue(adapterAt < runnerAt);
+        Assert.IsTrue(runnerAt < bridgeAt);
+
+        var update = SliceMethod(entrypoint, "private void Update()", "private void OnDestroy()");
+        Assert.IsTrue(
+            update.IndexOf("mainThreadActions?.Drain()", StringComparison.Ordinal)
+            < update.IndexOf("companionBridge?.Update()", StringComparison.Ordinal));
+
+        var destroy = SliceMethod(entrypoint, "private void OnDestroy()", "private void RequestShutdown()");
+        Assert.IsTrue(
+            destroy.IndexOf("companionBridge?.Dispose()", StringComparison.Ordinal)
+            < destroy.IndexOf("runner?.Dispose()", StringComparison.Ordinal));
+        Assert.IsTrue(
+            destroy.IndexOf("runner?.Dispose()", StringComparison.Ordinal)
+            < destroy.IndexOf("mainThreadActions?.Dispose()", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void RealPluginAdapterExposesCompanionInventoryCacheInjection()
     {
         var source = ReadPluginSource("ValheimServerAdapter.cs");

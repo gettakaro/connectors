@@ -2,6 +2,12 @@ using Takaro.Valheim.Companion.Protocol;
 
 namespace Takaro.Valheim.Core;
 
+public sealed record CompanionMessageHandlingResult(
+    CompanionReportOutput? Output,
+    CompanionSessionDecision? SessionDecision,
+    int? ReportedProtocolVersion,
+    string? ReportedProductVersion);
+
 public sealed class CompanionServerMessageHandler
 {
     private readonly CompanionSessionRegistry sessions;
@@ -22,13 +28,20 @@ public sealed class CompanionServerMessageHandler
         long peerId,
         TakaroPlayer player,
         string json,
+        DateTimeOffset now) =>
+        Handle(peerId, player, json, now).Output;
+
+    public CompanionMessageHandlingResult Handle(
+        long peerId,
+        TakaroPlayer player,
+        string json,
         DateTimeOffset now)
     {
         if (player is null
             || !CompanionEnvelopeCodec.TryDecodeEnvelope(json, out var envelope, out _)
             || envelope is null)
         {
-            return null;
+            return EmptyResult();
         }
 
         switch (envelope.Type)
@@ -36,45 +49,59 @@ public sealed class CompanionServerMessageHandler
             case CompanionMessageTypes.HelloAck:
                 if (!rateLimiter.TryConsume(peerId, envelope.Type, now))
                 {
-                    return null;
+                    return EmptyResult();
                 }
 
-                ProcessHelloAck(peerId, envelope, now);
-                return null;
+                return ProcessHelloAck(peerId, envelope, now);
             case CompanionMessageTypes.Heartbeat:
                 if (!rateLimiter.TryConsume(peerId, envelope.Type, now))
                 {
-                    return null;
+                    return EmptyResult();
                 }
 
-                ProcessHeartbeat(peerId, envelope, now);
-                return null;
+                return ProcessHeartbeat(peerId, envelope, now);
             case CompanionMessageTypes.Chat:
             case CompanionMessageTypes.InventorySnapshot:
             case CompanionMessageTypes.PlayerDeath:
             case CompanionMessageTypes.EntityKilled:
-                return reportProcessor.Process(peerId, player, envelope, now);
+                return new CompanionMessageHandlingResult(
+                    reportProcessor.Process(peerId, player, envelope, now),
+                    null,
+                    null,
+                    null);
             default:
-                return null;
+                return EmptyResult();
         }
     }
 
-    private void ProcessHelloAck(
+    private CompanionMessageHandlingResult ProcessHelloAck(
         long peerId,
         CompanionEnvelope envelope,
         DateTimeOffset now)
     {
-        if (!CompanionEnvelopeCodec.TryDecodePayload<CompanionHelloAck>(
+        var isStrictlyValid = CompanionEnvelopeCodec.TryDecodePayload<CompanionHelloAck>(
+            envelope,
+            out var strictHelloAck,
+            out _);
+        if (!CompanionEnvelopeCodec.TryInspectHelloAck(
                 envelope,
-                out var helloAck,
-                out _)
-            || helloAck is null
-            || envelope.ProtocolVersion != helloAck.ProtocolVersion)
+                out var inspectedHelloAck)
+            || inspectedHelloAck is null)
         {
-            return;
+            return EmptyResult();
         }
 
-        sessions.CompleteHelloAck(
+        var helloAck = strictHelloAck ?? inspectedHelloAck;
+        var isSupportedVersion = helloAck.ProtocolVersion >= CompanionProtocol.MinimumVersion
+            && helloAck.ProtocolVersion <= CompanionProtocol.CurrentVersion;
+        if ((isSupportedVersion && !isStrictlyValid)
+            || (isSupportedVersion
+                && envelope.ProtocolVersion != helloAck.ProtocolVersion))
+        {
+            return EmptyResult();
+        }
+
+        var decision = sessions.CompleteHelloAck(
             peerId,
             envelope.SessionNonce,
             helloAck.ProtocolVersion,
@@ -82,9 +109,14 @@ public sealed class CompanionServerMessageHandler
             helloAck.AcceptedCapabilities,
             envelope.Sequence,
             now);
+        return new CompanionMessageHandlingResult(
+            null,
+            decision,
+            helloAck.ProtocolVersion,
+            helloAck.ProductVersion);
     }
 
-    private void ProcessHeartbeat(
+    private CompanionMessageHandlingResult ProcessHeartbeat(
         long peerId,
         CompanionEnvelope envelope,
         DateTimeOffset now)
@@ -95,14 +127,22 @@ public sealed class CompanionServerMessageHandler
                 out _)
             || heartbeat is null)
         {
-            return;
+            return EmptyResult();
         }
 
-        sessions.ValidateHeartbeat(
+        var decision = sessions.ValidateHeartbeat(
             peerId,
             envelope.SessionNonce,
             envelope.ProtocolVersion,
             envelope.Sequence,
             now);
+        return new CompanionMessageHandlingResult(
+            null,
+            decision,
+            null,
+            null);
     }
+
+    private static CompanionMessageHandlingResult EmptyResult() =>
+        new(null, null, null, null);
 }

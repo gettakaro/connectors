@@ -2,6 +2,7 @@ using Takaro.Valheim.Companion.Protocol;
 using Takaro.Valheim.Core;
 
 #if TAKARO_VALHEIM_PLUGIN
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
@@ -10,6 +11,8 @@ namespace Takaro.Valheim.Plugin;
 public sealed class CompanionServerBridge : IDisposable
 {
     private const int MaximumPendingEvents = 256;
+    private static readonly TimeSpan DisconnectExplanationGrace = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan DisconnectFallbackGrace = TimeSpan.FromSeconds(1);
     private const CompanionCapability SupportedCapabilities =
         CompanionCapability.Chat
         | CompanionCapability.Inventory
@@ -29,10 +32,12 @@ public sealed class CompanionServerBridge : IDisposable
     private readonly CompanionRateLimiter rateLimiter;
     private readonly BoundedEventDeduplicator eventDeduplicator;
     private readonly CompanionServerMessageHandler messageHandler;
+    private readonly CompanionMode companionMode;
     private readonly Action<string> log;
     private readonly Func<DateTimeOffset> clock;
     private readonly Func<string> nonceFactory;
     private readonly Dictionary<long, TrackedPeer> trackedPeers = new();
+    private readonly List<PendingDisconnect> pendingDisconnects = new();
     private readonly BoundedCompanionEventQueue pendingEvents = new(MaximumPendingEvents);
     private CancellationTokenSource? eventForwardingCancellation = new();
     private Task? activeEventSend;
@@ -46,6 +51,7 @@ public sealed class CompanionServerBridge : IDisposable
         TakaroWebSocketRunner runner,
         ValheimPlayerResolver playerResolver,
         CompanionInventoryCache inventory,
+        CompanionMode companionMode,
         Action<string>? log = null)
         : this(
             runner,
@@ -62,8 +68,9 @@ public sealed class CompanionServerBridge : IDisposable
                 refillTokens: 20,
                 refillInterval: TimeSpan.FromSeconds(1)),
             new BoundedEventDeduplicator(capacity: 4096),
+            companionMode,
             log,
-            () => DateTimeOffset.UtcNow,
+            CreateMonotonicClock(),
             () => Guid.NewGuid().ToString("N"))
     {
     }
@@ -75,6 +82,7 @@ public sealed class CompanionServerBridge : IDisposable
         CompanionSessionRegistry sessions,
         CompanionRateLimiter rateLimiter,
         BoundedEventDeduplicator eventDeduplicator,
+        CompanionMode companionMode,
         Action<string>? log,
         Func<DateTimeOffset> clock,
         Func<string> nonceFactory)
@@ -85,6 +93,12 @@ public sealed class CompanionServerBridge : IDisposable
         this.sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         this.rateLimiter = rateLimiter ?? throw new ArgumentNullException(nameof(rateLimiter));
         this.eventDeduplicator = eventDeduplicator ?? throw new ArgumentNullException(nameof(eventDeduplicator));
+        if (!Enum.IsDefined(typeof(CompanionMode), companionMode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(companionMode));
+        }
+
+        this.companionMode = companionMode;
         this.log = log ?? (_ => { });
         this.clock = clock ?? throw new ArgumentNullException(nameof(clock));
         this.nonceFactory = nonceFactory ?? throw new ArgumentNullException(nameof(nonceFactory));
@@ -117,6 +131,10 @@ public sealed class CompanionServerBridge : IDisposable
 
     private void UpdateCore()
     {
+        if (companionMode == CompanionMode.Disabled)
+        {
+            return;
+        }
 
         var network = ZNet.instance;
         SwitchWorld(network);
@@ -161,6 +179,7 @@ public sealed class CompanionServerBridge : IDisposable
         rateLimiter.Clear();
         eventDeduplicator.Clear();
         inventory.Clear();
+        pendingDisconnects.Clear();
         registeredRpc = null;
     }
 
@@ -170,6 +189,7 @@ public sealed class CompanionServerBridge : IDisposable
     private void SynchronizeReadyPeers(ZNet network, ZRoutedRpc routedRpc)
     {
         var now = clock();
+        ProcessPendingDisconnects(network, now);
         var uniqueReadyPeers = network.GetPeers()
             .Where(peer => peer.IsReady())
             .GroupBy(peer => peer.m_uid)
@@ -198,9 +218,7 @@ public sealed class CompanionServerBridge : IDisposable
                     || !string.Equals(
                         tracked.CharacterId,
                         characterId,
-                        StringComparison.Ordinal)
-                    || !sessions.TryGetSnapshot(peer.m_uid, out var snapshot)
-                    || CompanionSessionRestartPolicy.ShouldRestart(snapshot, now)))
+                        StringComparison.Ordinal)))
             {
                 RemovePeer(peer.m_uid);
             }
@@ -210,7 +228,263 @@ public sealed class CompanionServerBridge : IDisposable
                 trackedPeers.Add(peer.m_uid, new TrackedPeer(peer, characterId));
                 BeginSession(routedRpc, peer);
             }
+
+            if (!trackedPeers.TryGetValue(peer.m_uid, out tracked))
+            {
+                continue;
+            }
+
+            CompanionEnforcementDecision decision;
+            if (tracked.EnforcementSchedule is not null)
+            {
+                decision = tracked.EnforcementSchedule.Decision;
+            }
+            else
+            {
+                sessions.TryGetSnapshot(peer.m_uid, out var snapshot);
+                decision = CompanionEnforcementPolicy.Evaluate(
+                    companionMode,
+                    snapshot,
+                    now,
+                    CompanionProtocol.MinimumVersion,
+                    CompanionProtocol.CurrentVersion,
+                    tracked.Negotiation.RejectedProtocolVersion
+                        ?? tracked.Negotiation.ReportedProtocolVersion);
+            }
+
+            switch (decision.Action)
+            {
+                case CompanionEnforcementAction.None:
+                    break;
+                case CompanionEnforcementAction.RestartSession:
+                    RemovePeer(peer.m_uid);
+                    trackedPeers.Add(peer.m_uid, new TrackedPeer(peer, characterId));
+                    BeginSession(routedRpc, peer);
+                    break;
+                case CompanionEnforcementAction.ExplainThenDisconnect:
+                    ExpirePeerCapabilities(peer.m_uid, tracked);
+                    AdvanceRequiredEnforcement(
+                        routedRpc,
+                        peer,
+                        tracked,
+                        decision,
+                        now);
+                    break;
+                default:
+                    throw new InvalidOperationException(
+                        $"Unknown companion enforcement action {decision.Action}.");
+            }
         }
+    }
+
+    private void AdvanceRequiredEnforcement(
+        ZRoutedRpc routedRpc,
+        ZNetPeer peer,
+        TrackedPeer tracked,
+        CompanionEnforcementDecision decision,
+        DateTimeOffset now)
+    {
+        tracked.EnforcementSchedule ??= new CompanionDisconnectSchedule(
+            decision,
+            now,
+            DisconnectExplanationGrace,
+            DisconnectFallbackGrace);
+        if (tracked.EnforcementTransferred)
+        {
+            return;
+        }
+
+        switch (tracked.EnforcementSchedule.TakeDueStep(now))
+        {
+            case CompanionDisconnectStep.Explain:
+                if (!SendRequiredCompanionExplanation(
+                        routedRpc,
+                        peer,
+                        RequiredCompanionExplanation(decision)))
+                {
+                    tracked.EnforcementSchedule.RetryExplanation();
+                    return;
+                }
+
+                log($"Takaro Valheim required companion enforcement scheduled for peer {peer.m_uid}: reason={decision.Reason}, expected={ExpectedProtocolRange(decision)}, actual={decision.ActualProtocolVersion?.ToString() ?? "missing"}.");
+                break;
+            case CompanionDisconnectStep.Kick:
+                var kickedRpcSent = false;
+                try
+                {
+                    if (peer.m_rpc is not null)
+                    {
+                        peer.m_rpc.Invoke("Kicked");
+                        kickedRpcSent = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    log($"Takaro Valheim could not send the built-in kicked RPC to peer {peer.m_uid}; the exact-peer disconnect fallback remains scheduled: {ex.Message}");
+                }
+
+                tracked.EnforcementTransferred = true;
+                pendingDisconnects.Add(new PendingDisconnect(
+                    peer,
+                    tracked.CharacterId,
+                    tracked.EnforcementSchedule));
+                log(kickedRpcSent
+                    ? $"Takaro Valheim sent the built-in kicked RPC to peer {peer.m_uid} after the companion explanation grace period."
+                    : $"Takaro Valheim scheduled the exact-peer disconnect fallback for peer {peer.m_uid} because the built-in kicked RPC was unavailable.");
+                break;
+            case CompanionDisconnectStep.None:
+                break;
+            default:
+                throw new InvalidOperationException(
+                    "Companion enforcement reached an invalid step before transfer to the disconnect fallback.");
+        }
+    }
+
+    private void ExpirePeerCapabilities(long peerId, TrackedPeer tracked)
+    {
+        sessions.RemovePeer(peerId);
+        if (tracked.CapabilitiesExpired)
+        {
+            return;
+        }
+
+        inventory.RemovePeer(peerId);
+        rateLimiter.RemovePeer(peerId);
+        eventDeduplicator.RemovePeer(peerId);
+        tracked.CapabilitiesExpired = true;
+    }
+
+    private void ProcessPendingDisconnects(ZNet network, DateTimeOffset now)
+    {
+        if (pendingDisconnects.Count == 0)
+        {
+            return;
+        }
+
+        var connectedPeers = network.GetPeers().ToArray();
+        foreach (var pending in pendingDisconnects.ToArray())
+        {
+            var isSameConnection = connectedPeers.Any(peer => ReferenceEquals(peer, pending.Peer))
+                && string.Equals(
+                    pending.CharacterId,
+                    CharacterId(pending.Peer),
+                    StringComparison.Ordinal);
+            if (!isSameConnection)
+            {
+                pendingDisconnects.Remove(pending);
+                continue;
+            }
+
+            if (pending.Schedule.TakeDueStep(now)
+                == CompanionDisconnectStep.ForceDisconnect)
+            {
+                try
+                {
+                    network.Disconnect(pending.Peer);
+                    log($"Takaro Valheim disconnected exact peer {pending.Peer.m_uid} after the built-in kicked RPC fallback grace period.");
+                    pendingDisconnects.Remove(pending);
+                }
+                catch (Exception ex)
+                {
+                    pending.Schedule.RetryForceDisconnect(now);
+                    log($"Takaro Valheim exact-peer disconnect fallback failed for peer {pending.Peer.m_uid} and will retry after the fallback grace period: {ex.Message}");
+                }
+            }
+        }
+    }
+
+    private bool SendRequiredCompanionExplanation(
+        ZRoutedRpc routedRpc,
+        ZNetPeer peer,
+        string message)
+    {
+        var sent = false;
+        try
+        {
+            routedRpc.InvokeRoutedRPC(
+                peer.m_uid,
+                "ShowMessage",
+                (int)MessageHud.MessageType.Center,
+                message);
+            sent = true;
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim could not send the center companion explanation to peer {peer.m_uid}: {ex.Message}");
+        }
+
+        try
+        {
+            routedRpc.InvokeRoutedRPC(
+                peer.m_uid,
+                "ShowMessage",
+                (int)MessageHud.MessageType.TopLeft,
+                message);
+            sent = true;
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim could not send the top-left companion explanation to peer {peer.m_uid}: {ex.Message}");
+        }
+
+        if (!peer.m_characterID.IsNone())
+        {
+            try
+            {
+                routedRpc.InvokeRoutedRPC(
+                    peer.m_uid,
+                    peer.m_characterID,
+                    "Message",
+                    (int)MessageHud.MessageType.Center,
+                    message,
+                    0);
+                sent = true;
+            }
+            catch (Exception ex)
+            {
+                log($"Takaro Valheim could not send the character companion explanation to peer {peer.m_uid}: {ex.Message}");
+            }
+        }
+
+        return sent;
+    }
+
+    private static string RequiredCompanionExplanation(
+        CompanionEnforcementDecision decision)
+    {
+        var expected = ExpectedProtocolRange(decision);
+        switch (decision.Reason)
+        {
+            case CompanionEnforcementReason.IncompatibleProtocol:
+                return $"Takaro Valheim Companion is incompatible. This server expects protocol {expected}; your client reported {decision.ActualProtocolVersion?.ToString() ?? "unknown"}. Install or update the Takaro Valheim Companion, then reconnect.";
+            case CompanionEnforcementReason.HeartbeatExpired:
+                return $"Takaro Valheim Companion stopped responding. This server requires protocol {expected}. Restart or update the companion, then reconnect.";
+            case CompanionEnforcementReason.MissingCompanion:
+            default:
+                return $"Takaro Valheim Companion is required. This server expects protocol {expected}. Install or enable the companion, then reconnect.";
+        }
+    }
+
+    private static string ExpectedProtocolRange(
+        CompanionEnforcementDecision decision) =>
+        decision.ExpectedMinimumVersion == decision.ExpectedMaximumVersion
+            ? decision.ExpectedMinimumVersion.ToString()
+            : $"{decision.ExpectedMinimumVersion}-{decision.ExpectedMaximumVersion}";
+
+    private static string? CharacterId(ZNetPeer peer) =>
+        peer.m_characterID.IsNone() ? null : peer.m_characterID.ToString();
+
+    private static Func<DateTimeOffset> CreateMonotonicClock()
+    {
+        var startedAt = DateTimeOffset.UtcNow;
+        var stopwatch = Stopwatch.StartNew();
+        return () =>
+        {
+            var elapsed = stopwatch.Elapsed;
+            return startedAt > DateTimeOffset.MaxValue - elapsed
+                ? DateTimeOffset.MaxValue
+                : startedAt + elapsed;
+        };
     }
 
     private void BeginSession(ZRoutedRpc routedRpc, ZNetPeer peer)
@@ -269,8 +543,18 @@ public sealed class CompanionServerBridge : IDisposable
             return;
         }
 
-        var output = messageHandler.Process(sender, player, json, clock());
-        if (output is CompanionAcceptedEvent acceptedEvent)
+        var result = messageHandler.Handle(sender, player, json, clock());
+        if (trackedPeers.TryGetValue(sender, out var tracked))
+        {
+            tracked.Negotiation.Observe(result);
+            if (companionMode == CompanionMode.Required
+                && result.SessionDecision == CompanionSessionDecision.RejectVersion)
+            {
+                ExpirePeerCapabilities(sender, tracked);
+            }
+        }
+
+        if (result.Output is CompanionAcceptedEvent acceptedEvent)
         {
             ForwardAcceptedEvent(acceptedEvent);
         }
@@ -355,6 +639,7 @@ public sealed class CompanionServerBridge : IDisposable
 
         RemoveAllTrackedPeers();
         ResetEventForwarding(recreate: true);
+        pendingDisconnects.Clear();
         var worldMarker = new object();
         sessions.SwitchWorld(worldMarker);
         inventory.SwitchWorld(worldMarker);
@@ -420,6 +705,33 @@ public sealed class CompanionServerBridge : IDisposable
         public ZNetPeer Peer { get; }
 
         public string? CharacterId { get; }
+
+        public CompanionNegotiationObservation Negotiation { get; } = new();
+
+        public CompanionDisconnectSchedule? EnforcementSchedule { get; set; }
+
+        public bool EnforcementTransferred { get; set; }
+
+        public bool CapabilitiesExpired { get; set; }
+    }
+
+    private sealed class PendingDisconnect
+    {
+        public PendingDisconnect(
+            ZNetPeer peer,
+            string? characterId,
+            CompanionDisconnectSchedule schedule)
+        {
+            Peer = peer;
+            CharacterId = characterId;
+            Schedule = schedule;
+        }
+
+        public ZNetPeer Peer { get; }
+
+        public string? CharacterId { get; }
+
+        public CompanionDisconnectSchedule Schedule { get; }
     }
 
     private static CompanionEnvelope CreateEnvelope<TPayload>(

@@ -253,6 +253,64 @@ public static class CompanionEnvelopeCodec
         }
     }
 
+    public static bool TryInspectHelloAck(
+        CompanionEnvelope envelope,
+        out CompanionHelloAck? helloAck)
+    {
+        helloAck = null;
+        try
+        {
+            if (envelope is null
+                || envelope.Type != CompanionMessageTypes.HelloAck
+                || envelope.Payload.ValueKind != JsonValueKind.Object
+                || !HasStrictFields(
+                    envelope.Payload,
+                    HelloAckFields,
+                    Array.Empty<string>())
+                || !TryReadInt32(
+                    envelope.Payload,
+                    "protocolVersion",
+                    out var protocolVersion)
+                || protocolVersion <= 0
+                || !TryReadString(
+                    envelope.Payload,
+                    "productVersion",
+                    out var productVersion)
+                || !IsRequiredString(
+                    productVersion,
+                    CompanionProtocol.MaximumProductVersionCharacters)
+                || !TryReadInt32(
+                    envelope.Payload,
+                    "acceptedCapabilities",
+                    out var capabilityValue))
+            {
+                return false;
+            }
+
+            var capabilities = (CompanionCapability)capabilityValue;
+            if (!HasKnownCapabilities(capabilities))
+            {
+                return false;
+            }
+
+            helloAck = new CompanionHelloAck(
+                protocolVersion,
+                productVersion!,
+                capabilities);
+            return true;
+        }
+        catch (ObjectDisposedException)
+        {
+            helloAck = null;
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            helloAck = null;
+            return false;
+        }
+    }
+
     private static bool TryValidateEnvelopeMetadata(CompanionEnvelope envelope, out string errorCode)
     {
         errorCode = string.Empty;

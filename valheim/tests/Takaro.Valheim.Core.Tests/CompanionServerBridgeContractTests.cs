@@ -47,7 +47,7 @@ public sealed class CompanionServerBridgeContractTests
         var source = ReadPluginSource("CompanionServerBridge.cs");
 
         StringAssert.Contains(source, "TryResolveConnectedPeer(sender");
-        StringAssert.Contains(source, "messageHandler.Process(sender, player");
+        StringAssert.Contains(source, "messageHandler.Handle(sender, player");
         Assert.IsFalse(source.Contains("payloadPlayer", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(source.Contains("claimedPlayer", StringComparison.OrdinalIgnoreCase));
     }
@@ -63,7 +63,7 @@ public sealed class CompanionServerBridgeContractTests
         StringAssert.Contains(handler, "return;");
         Assert.IsTrue(
             handler.IndexOf("TryResolveConnectedPeer(sender", StringComparison.Ordinal)
-            < handler.IndexOf("messageHandler.Process(sender, player", StringComparison.Ordinal));
+            < handler.IndexOf("messageHandler.Handle(sender, player", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -72,7 +72,7 @@ public sealed class CompanionServerBridgeContractTests
         var source = ReadPluginSource("CompanionServerBridge.cs");
         var handler = Slice(source, "private void HandleEnvelope", "private void ForwardAcceptedEvent");
 
-        StringAssert.Contains(handler, "output is CompanionAcceptedEvent acceptedEvent");
+        StringAssert.Contains(handler, "result.Output is CompanionAcceptedEvent acceptedEvent");
         StringAssert.Contains(source, "runner.SendGameEventAsync(");
         StringAssert.Contains(source, "acceptedEvent.Type");
         StringAssert.Contains(source, "acceptedEvent.Data");
@@ -89,7 +89,7 @@ public sealed class CompanionServerBridgeContractTests
         foreach (var marker in new[]
         {
             "GetWorldUID()",
-            "CompanionSessionRestartPolicy.ShouldRestart",
+            "CompanionEnforcementPolicy.Evaluate",
             "pendingEvents.AdvanceGeneration()",
             "sessions.SwitchWorld",
             "inventory.SwitchWorld",
@@ -273,21 +273,6 @@ public sealed class CompanionServerBridgeContractTests
     }
 
     [TestMethod]
-    public void SessionRestartPolicyRecoversAtTheExactExpiryBoundary()
-    {
-        var harness = CreateHarness();
-        Begin(harness);
-        Assert.IsTrue(harness.Sessions.TryGetSnapshot(PeerId, out var snapshot));
-
-        Assert.IsFalse(CompanionSessionRestartPolicy.ShouldRestart(
-            snapshot,
-            snapshot.ExpiresAt - TimeSpan.FromTicks(1)));
-        Assert.IsTrue(CompanionSessionRestartPolicy.ShouldRestart(
-            snapshot,
-            snapshot.ExpiresAt));
-    }
-
-    [TestMethod]
     public void EventQueueIsBoundedFifoAndDropsOldGenerationOnWorldReset()
     {
         var queue = new BoundedCompanionEventQueue(capacity: 2);
@@ -310,6 +295,400 @@ public sealed class CompanionServerBridgeContractTests
         Assert.IsTrue(queue.TryDequeue(out var current));
         Assert.AreEqual(1, current.Generation);
         Assert.AreEqual("current", current.Event.Type);
+    }
+
+    [TestMethod]
+    public void DisabledModeRegistersNothing()
+    {
+        var harness = CreateHarness();
+        Begin(harness);
+        Assert.IsTrue(harness.Sessions.TryGetSnapshot(PeerId, out var session));
+
+        var decision = CompanionEnforcementPolicy.Evaluate(
+            CompanionMode.Disabled,
+            session,
+            session.ExpiresAt,
+            CompanionProtocol.MinimumVersion,
+            CompanionProtocol.CurrentVersion,
+            reportedProtocolVersion: null);
+        var bridge = ReadPluginSource("CompanionServerBridge.cs");
+
+        Assert.AreEqual(CompanionEnforcementAction.None, decision.Action);
+        Assert.IsFalse(decision.RequiresDisconnect);
+        StringAssert.Contains(bridge, "companionMode == CompanionMode.Disabled");
+        Assert.IsTrue(
+            bridge.IndexOf("companionMode == CompanionMode.Disabled", StringComparison.Ordinal)
+            < bridge.IndexOf("ZRoutedRpc.instance", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void OptionalModeExpiresCapabilitiesButNeverDisconnects()
+    {
+        var harness = CreateHarness();
+        Begin(harness);
+        Assert.IsTrue(harness.Sessions.TryGetSnapshot(PeerId, out var session));
+
+        var beforeExpiry = CompanionEnforcementPolicy.Evaluate(
+            CompanionMode.Optional,
+            session,
+            session.ExpiresAt - TimeSpan.FromTicks(1),
+            CompanionProtocol.MinimumVersion,
+            CompanionProtocol.CurrentVersion,
+            reportedProtocolVersion: null);
+        var decision = CompanionEnforcementPolicy.Evaluate(
+            CompanionMode.Optional,
+            session,
+            session.ExpiresAt,
+            CompanionProtocol.MinimumVersion,
+            CompanionProtocol.CurrentVersion,
+            reportedProtocolVersion: null);
+
+        Assert.AreEqual(CompanionEnforcementAction.None, beforeExpiry.Action);
+        Assert.AreEqual(CompanionEnforcementAction.RestartSession, decision.Action);
+        Assert.IsFalse(decision.RequiresDisconnect);
+        Assert.AreEqual(CompanionEnforcementReason.None, decision.Reason);
+    }
+
+    [TestMethod]
+    public void RequiredModeExplainsThenDisconnectsMissingCompanion()
+    {
+        var harness = CreateHarness();
+        Begin(harness);
+        Assert.IsTrue(harness.Sessions.TryGetSnapshot(PeerId, out var session));
+
+        var beforeExpiry = CompanionEnforcementPolicy.Evaluate(
+            CompanionMode.Required,
+            session,
+            session.ExpiresAt - TimeSpan.FromTicks(1),
+            CompanionProtocol.MinimumVersion,
+            CompanionProtocol.CurrentVersion,
+            reportedProtocolVersion: null);
+        var decision = CompanionEnforcementPolicy.Evaluate(
+            CompanionMode.Required,
+            session,
+            session.ExpiresAt,
+            CompanionProtocol.MinimumVersion,
+            CompanionProtocol.CurrentVersion,
+            reportedProtocolVersion: null);
+        var bridge = ReadPluginSource("CompanionServerBridge.cs");
+
+        Assert.AreEqual(CompanionEnforcementAction.None, beforeExpiry.Action);
+        Assert.AreEqual(CompanionEnforcementAction.ExplainThenDisconnect, decision.Action);
+        Assert.AreEqual(CompanionEnforcementReason.MissingCompanion, decision.Reason);
+        Assert.IsTrue(decision.RequiresDisconnect);
+        StringAssert.Contains(bridge, "ShowMessage");
+        StringAssert.Contains(bridge, "peer.m_rpc is not null");
+        StringAssert.Contains(bridge, "peer.m_rpc.Invoke(\"Kicked\")");
+        StringAssert.Contains(bridge, "network.Disconnect(pending.Peer)");
+        StringAssert.Contains(bridge, "DisconnectExplanationGrace");
+        StringAssert.Contains(bridge, "DisconnectFallbackGrace");
+    }
+
+    [TestMethod]
+    public void RequiredModeExplainsExpectedAndActualVersion()
+    {
+        var harness = CreateHarness();
+        Begin(harness);
+        Assert.IsTrue(harness.Sessions.TryGetSnapshot(PeerId, out var session));
+
+        var decision = CompanionEnforcementPolicy.Evaluate(
+            CompanionMode.Required,
+            session,
+            Now.AddSeconds(1),
+            CompanionProtocol.MinimumVersion,
+            CompanionProtocol.CurrentVersion,
+            reportedProtocolVersion: CompanionProtocol.CurrentVersion + 1);
+
+        Assert.AreEqual(CompanionEnforcementAction.ExplainThenDisconnect, decision.Action);
+        Assert.AreEqual(CompanionEnforcementReason.IncompatibleProtocol, decision.Reason);
+        Assert.AreEqual(CompanionProtocol.MinimumVersion, decision.ExpectedMinimumVersion);
+        Assert.AreEqual(CompanionProtocol.CurrentVersion, decision.ExpectedMaximumVersion);
+        Assert.AreEqual(CompanionProtocol.CurrentVersion + 1, decision.ActualProtocolVersion);
+    }
+
+    [TestMethod]
+    public void RequiredModeDisconnectsExpiredHeartbeatAfterGrace()
+    {
+        var harness = CreateHarness();
+        Begin(harness);
+        var player = Player("Steam_real", "Real Player");
+        _ = harness.Handler.Process(
+            PeerId,
+            player,
+            Encode(CompanionMessageTypes.HelloAck, 1, new CompanionHelloAck(
+                CompanionProtocol.CurrentVersion,
+                "1.0.0",
+                CompanionCapability.Chat)),
+            Now.AddSeconds(1));
+        Assert.IsTrue(harness.Sessions.TryGetSnapshot(PeerId, out var session));
+
+        var beforeExpiry = CompanionEnforcementPolicy.Evaluate(
+            CompanionMode.Required,
+            session,
+            session.ExpiresAt - TimeSpan.FromTicks(1),
+            CompanionProtocol.MinimumVersion,
+            CompanionProtocol.CurrentVersion,
+            reportedProtocolVersion: CompanionProtocol.CurrentVersion);
+        var decision = CompanionEnforcementPolicy.Evaluate(
+            CompanionMode.Required,
+            session,
+            session.ExpiresAt,
+            CompanionProtocol.MinimumVersion,
+            CompanionProtocol.CurrentVersion,
+            reportedProtocolVersion: CompanionProtocol.CurrentVersion);
+
+        Assert.AreEqual(CompanionEnforcementAction.None, beforeExpiry.Action);
+        Assert.AreEqual(CompanionEnforcementAction.ExplainThenDisconnect, decision.Action);
+        Assert.AreEqual(CompanionEnforcementReason.HeartbeatExpired, decision.Reason);
+        Assert.IsTrue(decision.RequiresDisconnect);
+    }
+
+    [TestMethod]
+    public void CompatibleProductPatchDoesNotFailWireCompatibility()
+    {
+        var harness = CreateHarness();
+        Begin(harness);
+        var player = Player("Steam_real", "Real Player");
+
+        _ = harness.Handler.Process(
+            PeerId,
+            player,
+            Encode(CompanionMessageTypes.HelloAck, 1, new CompanionHelloAck(
+                CompanionProtocol.CurrentVersion,
+                "1.99.123-compatible-patch",
+                CompanionCapability.Chat)),
+            Now.AddSeconds(1));
+
+        Assert.IsTrue(harness.Sessions.TryGetSnapshot(PeerId, out var session));
+        Assert.IsTrue(session.IsNegotiated);
+        Assert.AreEqual("1.99.123-compatible-patch", session.ProductVersion);
+        Assert.AreEqual(CompanionProtocol.CurrentVersion, session.SelectedProtocolVersion);
+    }
+
+    [TestMethod]
+    public void MessageHandlerReportsUnsupportedProtocolWithoutNegotiatingIt()
+    {
+        var harness = CreateHarness();
+        Begin(harness);
+        var player = Player("Steam_real", "Real Player");
+        var json = $"{{\"protocolVersion\":{CompanionProtocol.CurrentVersion},\"sessionNonce\":\"{Nonce}\",\"sequence\":1,\"messageId\":\"hello-ack-1\",\"type\":\"{CompanionMessageTypes.HelloAck}\",\"payload\":{{\"protocolVersion\":{CompanionProtocol.CurrentVersion + 1},\"productVersion\":\"2.0.0\",\"acceptedCapabilities\":1}}}}";
+
+        var result = harness.Handler.Handle(
+            PeerId,
+            player,
+            json,
+            Now.AddSeconds(1));
+
+        Assert.AreEqual(CompanionSessionDecision.RejectVersion, result.SessionDecision);
+        Assert.AreEqual(CompanionProtocol.CurrentVersion + 1, result.ReportedProtocolVersion);
+        Assert.AreEqual("2.0.0", result.ReportedProductVersion);
+        Assert.IsNull(result.Output);
+        Assert.IsTrue(harness.Sessions.TryGetSnapshot(PeerId, out var session));
+        Assert.IsFalse(session.IsNegotiated);
+        Assert.AreEqual(0, session.LastSequence);
+    }
+
+    [TestMethod]
+    public void RequiredEnforcementRevokesSessionBeforeGraceWindow()
+    {
+        var harness = CreateHarness();
+        Begin(harness);
+        var player = Player("Steam_real", "Real Player");
+        var unsupportedHelloAck = $"{{\"protocolVersion\":{CompanionProtocol.CurrentVersion},\"sessionNonce\":\"{Nonce}\",\"sequence\":1,\"messageId\":\"hello-ack-unsupported\",\"type\":\"{CompanionMessageTypes.HelloAck}\",\"payload\":{{\"protocolVersion\":{CompanionProtocol.CurrentVersion + 1},\"productVersion\":\"2.0.0\",\"acceptedCapabilities\":1}}}}";
+
+        var rejected = harness.Handler.Handle(
+            PeerId,
+            player,
+            unsupportedHelloAck,
+            Now.AddSeconds(1));
+        Assert.AreEqual(CompanionSessionDecision.RejectVersion, rejected.SessionDecision);
+
+        harness.Sessions.RemovePeer(PeerId);
+        harness.Inventory.RemovePeer(PeerId);
+        var compatibleAfterRevocation = harness.Handler.Handle(
+            PeerId,
+            player,
+            Encode(CompanionMessageTypes.HelloAck, 1, new CompanionHelloAck(
+                CompanionProtocol.CurrentVersion,
+                "1.0.1",
+                CompanionCapability.Chat)),
+            Now.AddSeconds(1));
+        var reportAfterRevocation = harness.Handler.Handle(
+            PeerId,
+            player,
+            Encode(CompanionMessageTypes.Chat, 2, new CompanionChatReport(
+                "chat-after-revocation",
+                Now.ToUnixTimeMilliseconds(),
+                "must not forward")),
+            Now.AddSeconds(1));
+        var bridge = ReadPluginSource("CompanionServerBridge.cs");
+        var expiration = Slice(
+            bridge,
+            "private void ExpirePeerCapabilities",
+            "private void ProcessPendingDisconnects");
+        var handler = Slice(
+            bridge,
+            "private void HandleEnvelopeCore",
+            "private bool MatchesTrackedPeer");
+
+        Assert.AreEqual(
+            CompanionSessionDecision.RejectUnknownPeer,
+            compatibleAfterRevocation.SessionDecision);
+        Assert.IsNull(compatibleAfterRevocation.Output);
+        Assert.IsNull(reportAfterRevocation.Output);
+        Assert.IsFalse(harness.Sessions.TryGetSnapshot(PeerId, out _));
+        StringAssert.Contains(expiration, "sessions.RemovePeer(peerId)");
+        StringAssert.Contains(handler, "result.SessionDecision == CompanionSessionDecision.RejectVersion");
+        StringAssert.Contains(handler, "ExpirePeerCapabilities(sender, tracked)");
+    }
+
+    [TestMethod]
+    public void RequiredEnforcementDecisionRemainsLatchedUntilDisconnect()
+    {
+        var bridge = ReadPluginSource("CompanionServerBridge.cs");
+        var synchronization = Slice(
+            bridge,
+            "private void SynchronizeReadyPeers",
+            "private void AdvanceRequiredEnforcement");
+
+        StringAssert.Contains(
+            synchronization,
+            "tracked.EnforcementSchedule is not null");
+        StringAssert.Contains(
+            synchronization,
+            "tracked.EnforcementSchedule.Decision");
+        Assert.IsTrue(
+            synchronization.IndexOf(
+                "tracked.EnforcementSchedule.Decision",
+                StringComparison.Ordinal)
+            < synchronization.IndexOf(
+                "CompanionEnforcementPolicy.Evaluate",
+                StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void EnforcementClockUsesMonotonicElapsedTime()
+    {
+        var bridge = ReadPluginSource("CompanionServerBridge.cs");
+
+        StringAssert.Contains(bridge, "CreateMonotonicClock()");
+        StringAssert.Contains(bridge, "Stopwatch.StartNew()");
+        StringAssert.Contains(bridge, "var elapsed = stopwatch.Elapsed");
+        StringAssert.Contains(bridge, "startedAt + elapsed");
+        Assert.IsFalse(
+            bridge.Contains("() => DateTimeOffset.UtcNow", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void RequiredDisconnectDeadlineSurvivesRepeatedExplanationFailures()
+    {
+        var decision = new CompanionEnforcementDecision(
+            CompanionEnforcementAction.ExplainThenDisconnect,
+            CompanionEnforcementReason.MissingCompanion,
+            CompanionProtocol.MinimumVersion,
+            CompanionProtocol.CurrentVersion,
+            null);
+        var schedule = new CompanionDisconnectSchedule(
+            decision,
+            Now,
+            explanationGrace: TimeSpan.FromSeconds(2),
+            fallbackGrace: TimeSpan.FromSeconds(1));
+
+        Assert.AreEqual(CompanionDisconnectStep.Explain, schedule.TakeDueStep(Now));
+        schedule.RetryExplanation();
+        Assert.AreEqual(
+            CompanionDisconnectStep.Explain,
+            schedule.TakeDueStep(Now.AddSeconds(1)));
+        schedule.RetryExplanation();
+        Assert.AreEqual(
+            CompanionDisconnectStep.Explain,
+            schedule.TakeDueStep(Now.AddSeconds(2) - TimeSpan.FromTicks(1)));
+        schedule.RetryExplanation();
+        Assert.AreEqual(
+            CompanionDisconnectStep.Kick,
+            schedule.TakeDueStep(Now.AddSeconds(2)));
+    }
+
+    [TestMethod]
+    public void RequiredDisconnectScheduleExplainsAndActsOnceUnlessForceRetryIsRequested()
+    {
+        var decision = new CompanionEnforcementDecision(
+            CompanionEnforcementAction.ExplainThenDisconnect,
+            CompanionEnforcementReason.MissingCompanion,
+            CompanionProtocol.MinimumVersion,
+            CompanionProtocol.CurrentVersion,
+            null);
+        var schedule = new CompanionDisconnectSchedule(
+            decision,
+            Now,
+            explanationGrace: TimeSpan.FromSeconds(2),
+            fallbackGrace: TimeSpan.FromSeconds(1));
+
+        Assert.AreEqual(CompanionDisconnectStep.Explain, schedule.TakeDueStep(Now));
+        Assert.AreEqual(CompanionDisconnectStep.None, schedule.TakeDueStep(Now));
+        schedule.RetryExplanation();
+        Assert.AreEqual(CompanionDisconnectStep.Explain, schedule.TakeDueStep(Now));
+        Assert.AreEqual(
+            CompanionDisconnectStep.None,
+            schedule.TakeDueStep(Now.AddSeconds(2) - TimeSpan.FromTicks(1)));
+        Assert.AreEqual(
+            CompanionDisconnectStep.Kick,
+            schedule.TakeDueStep(Now.AddSeconds(2)));
+        Assert.AreEqual(
+            CompanionDisconnectStep.None,
+            schedule.TakeDueStep(Now.AddSeconds(2)));
+        Assert.AreEqual(
+            CompanionDisconnectStep.None,
+            schedule.TakeDueStep(Now.AddSeconds(3) - TimeSpan.FromTicks(1)));
+        Assert.AreEqual(
+            CompanionDisconnectStep.ForceDisconnect,
+            schedule.TakeDueStep(Now.AddSeconds(3)));
+        schedule.RetryForceDisconnect(Now.AddSeconds(3));
+        Assert.AreEqual(
+            CompanionDisconnectStep.None,
+            schedule.TakeDueStep(Now.AddSeconds(4) - TimeSpan.FromTicks(1)));
+        Assert.AreEqual(
+            CompanionDisconnectStep.ForceDisconnect,
+            schedule.TakeDueStep(Now.AddSeconds(4)));
+        Assert.AreEqual(
+            CompanionDisconnectStep.None,
+            schedule.TakeDueStep(DateTimeOffset.MaxValue));
+    }
+
+    [TestMethod]
+    public void NegotiationObservationIgnoresReplayAndLatchesFirstVersionRejection()
+    {
+        var acceptedThenReplay = new CompanionNegotiationObservation();
+        acceptedThenReplay.Observe(new CompanionMessageHandlingResult(
+            null,
+            CompanionSessionDecision.Accept,
+            CompanionProtocol.CurrentVersion,
+            "1.0.1"));
+        acceptedThenReplay.Observe(new CompanionMessageHandlingResult(
+            null,
+            CompanionSessionDecision.RejectSequence,
+            CompanionProtocol.CurrentVersion + 1,
+            "2.0.0"));
+
+        Assert.AreEqual(CompanionProtocol.CurrentVersion, acceptedThenReplay.ReportedProtocolVersion);
+        Assert.AreEqual("1.0.1", acceptedThenReplay.ReportedProductVersion);
+        Assert.IsNull(acceptedThenReplay.RejectedProtocolVersion);
+
+        var rejectedThenCompatible = new CompanionNegotiationObservation();
+        rejectedThenCompatible.Observe(new CompanionMessageHandlingResult(
+            null,
+            CompanionSessionDecision.RejectVersion,
+            CompanionProtocol.CurrentVersion + 1,
+            "2.0.0"));
+        rejectedThenCompatible.Observe(new CompanionMessageHandlingResult(
+            null,
+            CompanionSessionDecision.Accept,
+            CompanionProtocol.CurrentVersion,
+            "1.0.2"));
+
+        Assert.AreEqual(CompanionProtocol.CurrentVersion + 1, rejectedThenCompatible.RejectedProtocolVersion);
+        Assert.AreEqual(CompanionProtocol.CurrentVersion, rejectedThenCompatible.ReportedProtocolVersion);
+        Assert.AreEqual("1.0.2", rejectedThenCompatible.ReportedProductVersion);
     }
 
     private static Harness CreateHarness(int rateCapacity = 20)
