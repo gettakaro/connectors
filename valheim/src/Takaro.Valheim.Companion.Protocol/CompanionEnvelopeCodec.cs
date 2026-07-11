@@ -8,10 +8,6 @@ public static class CompanionEnvelopeCodec
     public const int MaximumSessionNonceCharacters = 128;
     public const int MaximumMessageIdCharacters = 64;
 
-    private const int MaximumInventoryAmount = 1_000_000;
-    private const int MaximumItemQuality = 1_000_000;
-    private const int MaximumInventorySlot = CompanionProtocol.MaximumInventoryStacks - 1;
-    private const float MaximumDurability = 1_000_000_000f;
     private const float MaximumAbsolutePositionCoordinate = 1_000_000f;
     private const long MaximumTimestampUnixMilliseconds = 253_402_300_799_999L;
 
@@ -521,14 +517,14 @@ public static class CompanionEnvelopeCodec
                 || !IsRequiredString(stack.Code, CompanionProtocol.MaximumCodeCharacters)
                 || !IsRequiredString(stack.Name, CompanionProtocol.MaximumChatCharacters)
                 || stack.Amount <= 0
-                || stack.Amount > MaximumInventoryAmount
+                || stack.Amount > CompanionProtocol.MaximumInventoryAmount
                 || stack.Quality <= 0
-                || stack.Quality > MaximumItemQuality
+                || stack.Quality > CompanionProtocol.MaximumItemQuality
                 || !IsFinite(stack.Durability)
                 || stack.Durability < 0
-                || stack.Durability > MaximumDurability
+                || stack.Durability > CompanionProtocol.MaximumDurability
                 || stack.Slot < 0
-                || stack.Slot > MaximumInventorySlot)
+                || stack.Slot > CompanionProtocol.MaximumInventorySlot)
             {
                 return false;
             }

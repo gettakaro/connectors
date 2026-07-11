@@ -13,6 +13,10 @@ public static class CompanionProtocol
     public const int MaximumCodeCharacters = 128;
     public const int MaximumEventIdCharacters = 64;
     public const int MaximumProductVersionCharacters = 128;
+    public const int MaximumInventoryAmount = 1_000_000;
+    public const int MaximumItemQuality = 1_000_000;
+    public const int MaximumInventorySlot = MaximumInventoryStacks - 1;
+    public const float MaximumDurability = 1_000_000_000f;
 }
 
 [Flags]
