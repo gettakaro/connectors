@@ -24,13 +24,14 @@ public sealed class ValheimPlayerResolver
             null,
             null));
 
-        logger.LogInfo($"Takaro Valheim player mapped: name={takaroPlayer.Name}, gameId={takaroPlayer.GameId}, platformId={takaroPlayer.PlatformId ?? "<none>"}.");
+        logger.LogDebug($"Takaro Valheim player mapped: name={takaroPlayer.Name}, gameId={takaroPlayer.GameId}, platformId={takaroPlayer.PlatformId ?? "<none>"}.");
         return takaroPlayer;
     }
 
     public TakaroPlayer ToTakaroPlayer(ZNetPeer peer)
     {
-        var hostName = peer.m_socket.GetHostName();
+        var hostName = peer.m_socket?.GetHostName();
+        hostName = FirstNonEmpty(hostName, peer.m_uid.ToString());
         var platformId = hostName.Contains('_') ? hostName : $"Steam_{hostName}";
         return PlayerMapper.ToTakaroPlayer(new ValheimPlayer(
             FirstNonEmpty(peer.m_playerName, platformId),
@@ -61,12 +62,8 @@ public sealed class ValheimPlayerResolver
             return false;
         }
 
-        var peerCandidates = (ZNet.instance?.GetPeers() ?? [])
-            .Select(candidate => new
-            {
-                Source = candidate,
-                Player = ToTakaroPlayer(candidate)
-            })
+        var peerCandidates = GetPeerCandidates()
+            .Where(candidate => candidate.IsReady)
             .ToArray();
         var peerFound = PlayerMapper.TryFindUnique(
             peerCandidates.Select(candidate => candidate.Player),
@@ -94,14 +91,15 @@ public sealed class ValheimPlayerResolver
         out ZNetPeer? peer,
         out TakaroPlayer? player)
     {
-        foreach (var candidate in ZNet.instance?.GetPeers() ?? [])
+        if (PeerResolutionPolicy.TryResolveReadySender(
+                GetPeerCandidates(),
+                sender,
+                out var resolved)
+            && resolved is not null)
         {
-            if (candidate.m_uid == sender)
-            {
-                peer = candidate;
-                player = ToTakaroPlayer(candidate);
-                return true;
-            }
+            peer = resolved.Source;
+            player = resolved.Player;
+            return true;
         }
 
         peer = null;
@@ -140,31 +138,55 @@ public sealed class ValheimPlayerResolver
 
     private bool TryFindPeer(ZNet.PlayerInfo playerInfo, TakaroPlayer player, out ZNetPeer peer)
     {
-        foreach (var candidate in ZNet.instance?.GetPeers() ?? [])
+        var characterId = playerInfo.m_characterID.IsNone()
+            ? null
+            : playerInfo.m_characterID.ToString();
+        var stableIdentifiers = new[]
         {
-            if ((candidate.m_characterID == playerInfo.m_characterID && !candidate.m_characterID.IsNone())
-                || Matches(candidate.m_playerName, playerInfo.m_name)
-                || Matches(candidate.m_playerName, player.Name)
-                || Matches(candidate.m_socket.GetHostName(), playerInfo.m_userInfo.m_id.m_userID)
-                || Matches(candidate.m_socket.GetHostName(), playerInfo.m_userInfo.m_id.ToString())
-                || Matches(ToTakaroPlayer(candidate).GameId, player.GameId))
-            {
-                peer = candidate;
-                return true;
-            }
+            playerInfo.m_userInfo.m_id.m_userID,
+            playerInfo.m_userInfo.m_id.ToString(),
+            player.GameId,
+            player.PlatformId,
+            player.SteamId
+        };
+        var names = new[]
+        {
+            playerInfo.m_name,
+            playerInfo.m_serverAssignedDisplayName,
+            playerInfo.m_userInfo.m_displayName,
+            player.Name
+        };
+        if (PeerResolutionPolicy.TryAssociate(
+                GetPeerCandidates(),
+                characterId,
+                stableIdentifiers,
+                names,
+                out var resolved,
+                out _)
+            && resolved is not null)
+        {
+            peer = resolved.Source;
+            return true;
         }
 
         peer = null!;
         return false;
     }
 
+    private PeerResolutionCandidate<ZNetPeer>[] GetPeerCandidates() =>
+        (ZNet.instance?.GetPeers() ?? [])
+            .Select(candidate => new PeerResolutionCandidate<ZNetPeer>(
+                candidate,
+                candidate.m_uid,
+                candidate.IsReady(),
+                candidate.m_characterID.IsNone() ? null : candidate.m_characterID.ToString(),
+                candidate.m_socket?.GetHostName(),
+                ToTakaroPlayer(candidate)))
+            .ToArray();
+
     private static string FirstNonEmpty(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "unknown";
 
-    private static bool Matches(string? value, string? needle) =>
-        !string.IsNullOrWhiteSpace(value)
-        && !string.IsNullOrWhiteSpace(needle)
-        && value!.Equals(needle, StringComparison.OrdinalIgnoreCase);
 }
 #else
 namespace Takaro.Valheim.Plugin;

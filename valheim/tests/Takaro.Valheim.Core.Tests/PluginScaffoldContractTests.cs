@@ -215,7 +215,8 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(resolver, "long sender");
         StringAssert.Contains(resolver, "out ZNetPeer? peer");
         StringAssert.Contains(resolver, "out TakaroPlayer? player");
-        StringAssert.Contains(resolver, "candidate.m_uid == sender");
+        StringAssert.Contains(resolver, "PeerResolutionPolicy.TryResolveReadySender(");
+        StringAssert.Contains(resolver, "candidate.IsReady()");
         Assert.IsFalse(resolver.Contains("payload", StringComparison.OrdinalIgnoreCase));
     }
 
