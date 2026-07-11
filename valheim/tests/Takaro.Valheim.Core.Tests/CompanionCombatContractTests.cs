@@ -105,6 +105,8 @@ public sealed class CompanionCombatContractTests
         StringAssert.Contains(source, "attacker?.GetCurrentWeapon()");
         StringAssert.Contains(source, "weapon.m_dropPrefab");
         StringAssert.Contains(source, "weapon.m_shared?.m_name");
+        StringAssert.Contains(source, "hit.m_skill.ToString()");
+        StringAssert.Contains(source, "?? \"unarmed\"");
         StringAssert.Contains(source, "return null;");
     }
 

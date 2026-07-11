@@ -10,6 +10,8 @@ public sealed record CompanionAcceptedEvent(string Type, object Data) : Companio
 
 public sealed class CompanionReportProcessor
 {
+    public static readonly TimeSpan MaximumEventClockSkew = TimeSpan.FromMinutes(5);
+
     private readonly CompanionSessionRegistry sessions;
     private readonly CompanionRateLimiter rateLimiter;
     private readonly BoundedEventDeduplicator eventDeduplicator;
@@ -72,13 +74,13 @@ public sealed class CompanionReportProcessor
         switch (envelope.Type)
         {
             case CompanionMessageTypes.Chat:
-                return ProcessChat(peerId, player, envelope);
+                return ProcessChat(peerId, player, envelope, now);
             case CompanionMessageTypes.InventorySnapshot:
                 return ProcessInventory(peerId, player, envelope, now);
             case CompanionMessageTypes.PlayerDeath:
-                return ProcessPlayerDeath(peerId, player, envelope);
+                return ProcessPlayerDeath(peerId, player, envelope, now);
             case CompanionMessageTypes.EntityKilled:
-                return ProcessEntityKilled(peerId, player, envelope);
+                return ProcessEntityKilled(peerId, player, envelope, now);
             default:
                 return null;
         }
@@ -87,13 +89,14 @@ public sealed class CompanionReportProcessor
     private CompanionReportOutput? ProcessChat(
         long peerId,
         TakaroPlayer player,
-        CompanionEnvelope envelope)
+        CompanionEnvelope envelope,
+        DateTimeOffset now)
     {
         if (!CompanionEnvelopeCodec.TryDecodePayload<CompanionChatReport>(
                 envelope,
                 out var report,
                 out _)
-            || !TryTimestamp(report!.TimestampUnixMilliseconds, out var timestamp))
+            || !TryTimestamp(report!.TimestampUnixMilliseconds, now, out var timestamp))
         {
             return null;
         }
@@ -132,13 +135,14 @@ public sealed class CompanionReportProcessor
     private CompanionReportOutput? ProcessPlayerDeath(
         long peerId,
         TakaroPlayer player,
-        CompanionEnvelope envelope)
+        CompanionEnvelope envelope,
+        DateTimeOffset now)
     {
         if (!CompanionEnvelopeCodec.TryDecodePayload<CompanionPlayerDeathReport>(
                 envelope,
                 out var report,
                 out _)
-            || !TryTimestamp(report!.TimestampUnixMilliseconds, out var timestamp))
+            || !TryTimestamp(report!.TimestampUnixMilliseconds, now, out var timestamp))
         {
             return null;
         }
@@ -159,7 +163,8 @@ public sealed class CompanionReportProcessor
     private CompanionReportOutput? ProcessEntityKilled(
         long peerId,
         TakaroPlayer player,
-        CompanionEnvelope envelope)
+        CompanionEnvelope envelope,
+        DateTimeOffset now)
     {
         if (!CompanionEnvelopeCodec.TryDecodePayload<CompanionEntityKilledReport>(
                 envelope,
@@ -167,7 +172,7 @@ public sealed class CompanionReportProcessor
                 out _)
             || string.IsNullOrWhiteSpace(report!.EntityCodeHint)
             || string.IsNullOrWhiteSpace(report.WeaponCodeHint)
-            || !TryTimestamp(report.TimestampUnixMilliseconds, out var timestamp))
+            || !TryTimestamp(report.TimestampUnixMilliseconds, now, out var timestamp))
         {
             return null;
         }
@@ -205,12 +210,16 @@ public sealed class CompanionReportProcessor
     private static TakaroPosition Position(CompanionPosition position) =>
         new(position.X, position.Y, position.Z, "valheim");
 
-    private static bool TryTimestamp(long unixMilliseconds, out DateTimeOffset timestamp)
+    private static bool TryTimestamp(
+        long unixMilliseconds,
+        DateTimeOffset now,
+        out DateTimeOffset timestamp)
     {
         try
         {
             timestamp = DateTimeOffset.FromUnixTimeMilliseconds(unixMilliseconds);
-            return true;
+            return timestamp >= SaturatingSubtract(now, MaximumEventClockSkew)
+                && timestamp <= SaturatingAdd(now, MaximumEventClockSkew);
         }
         catch (ArgumentOutOfRangeException)
         {
@@ -218,6 +227,16 @@ public sealed class CompanionReportProcessor
             return false;
         }
     }
+
+    private static DateTimeOffset SaturatingAdd(DateTimeOffset value, TimeSpan duration) =>
+        value > DateTimeOffset.MaxValue - duration
+            ? DateTimeOffset.MaxValue
+            : value + duration;
+
+    private static DateTimeOffset SaturatingSubtract(DateTimeOffset value, TimeSpan duration) =>
+        value < DateTimeOffset.MinValue + duration
+            ? DateTimeOffset.MinValue
+            : value - duration;
 
     private static bool TryGetRequiredCapability(
         string messageType,

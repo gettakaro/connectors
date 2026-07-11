@@ -48,7 +48,7 @@ The implementation uses separate client and server BepInEx plugins. A small game
 
 The protocol defines a stable GUID, protocol version, supported version range, capability flags, maximum payload sizes, sequence identifiers, event identifiers, and these versioned messages:
 
-- `hello` / `hello-ack`
+- `hello` / `hello-ack` / `hello-nack`
 - `heartbeat`
 - `chat`
 - `inventory-snapshot`
@@ -65,7 +65,7 @@ The client plugin:
 - registers the protocol and responds to the server nonce/version handshake;
 - forwards ordinary local-player chat while leaving Valheim's normal chat behavior intact;
 - intercepts configured `$` commands, forwards them once, and prevents accidental duplicate normal-chat delivery;
-- hashes the local inventory periodically, sends an immediate snapshot after readiness, and sends a new bounded snapshot only when the inventory changes;
+- hashes the local inventory periodically, sends an immediate snapshot after readiness, sends changed snapshots, and refreshes unchanged state before the server cache expires;
 - observes the local player's death and emits one event identifier per death;
 - observes `Character.OnDeath`, emits an entity kill only when the local player is the validated attacker, and includes bounded entity/weapon/position data;
 - sends a heartbeat while the local player remains connected.

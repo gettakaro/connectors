@@ -47,12 +47,15 @@ public sealed class CompanionServerMessageHandler
         switch (envelope.Type)
         {
             case CompanionMessageTypes.HelloAck:
+            case CompanionMessageTypes.HelloNack:
                 if (!rateLimiter.TryConsume(peerId, envelope.Type, now))
                 {
                     return EmptyResult();
                 }
 
-                return ProcessHelloAck(peerId, envelope, now);
+                return envelope.Type == CompanionMessageTypes.HelloAck
+                    ? ProcessHelloAck(peerId, envelope, now)
+                    : ProcessHelloNack(peerId, envelope, now);
             case CompanionMessageTypes.Heartbeat:
                 if (!rateLimiter.TryConsume(peerId, envelope.Type, now))
                 {
@@ -141,6 +144,41 @@ public sealed class CompanionServerMessageHandler
             decision,
             null,
             null);
+    }
+
+    private CompanionMessageHandlingResult ProcessHelloNack(
+        long peerId,
+        CompanionEnvelope envelope,
+        DateTimeOffset now)
+    {
+        if (!CompanionEnvelopeCodec.TryDecodePayload<CompanionHelloNack>(
+                envelope,
+                out var helloNack,
+                out _)
+            || helloNack is null
+            || CompanionVersionPolicy.TryNegotiate(
+                CompanionProtocol.MinimumVersion,
+                CompanionProtocol.CurrentVersion,
+                helloNack.MinimumVersion,
+                helloNack.MaximumVersion,
+                out _))
+        {
+            return EmptyResult();
+        }
+
+        var decision = sessions.CompleteHelloAck(
+            peerId,
+            envelope.SessionNonce,
+            helloNack.MaximumVersion,
+            helloNack.ProductVersion,
+            CompanionCapability.None,
+            envelope.Sequence,
+            now);
+        return new CompanionMessageHandlingResult(
+            null,
+            decision,
+            helloNack.MaximumVersion,
+            helloNack.ProductVersion);
     }
 
     private static CompanionMessageHandlingResult EmptyResult() =>

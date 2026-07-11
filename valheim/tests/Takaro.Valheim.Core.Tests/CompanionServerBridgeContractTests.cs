@@ -502,6 +502,30 @@ public sealed class CompanionServerBridgeContractTests
     }
 
     [TestMethod]
+    public void MessageHandlerRecordsExplicitIncompatibleClientRange()
+    {
+        var harness = CreateHarness();
+        Begin(harness);
+        var player = Player("Steam_real", "Real Player");
+
+        var result = harness.Handler.Handle(
+            PeerId,
+            player,
+            Encode(
+                CompanionMessageTypes.HelloNack,
+                1,
+                new CompanionHelloNack(2, 3, "3.0.0-client")),
+            Now.AddSeconds(1));
+
+        Assert.AreEqual(CompanionSessionDecision.RejectVersion, result.SessionDecision);
+        Assert.AreEqual(3, result.ReportedProtocolVersion);
+        Assert.AreEqual("3.0.0-client", result.ReportedProductVersion);
+        Assert.IsNull(result.Output);
+        Assert.IsTrue(harness.Sessions.TryGetSnapshot(PeerId, out var session));
+        Assert.IsFalse(session.IsNegotiated);
+    }
+
+    [TestMethod]
     public void RequiredEnforcementRevokesSessionBeforeGraceWindow()
     {
         var harness = CreateHarness();

@@ -25,6 +25,7 @@ public sealed class CompanionProtocolTests
     [
         "CompanionHello",
         "CompanionHelloAck",
+        "CompanionHelloNack",
         "CompanionHeartbeat",
         "CompanionChatReport",
         "CompanionInventoryReport",
@@ -102,6 +103,24 @@ public sealed class CompanionProtocolTests
             $"{{\"protocolVersion\":1,\"productVersion\":\"{new string('v', 129)}\",\"acceptedCapabilities\":1}}",
             "invalid-payload",
             "hello-ack oversized product version");
+    }
+
+    [TestMethod]
+    public void HelloNackCarriesOnlyBoundedClientCompatibilityMetadata()
+    {
+        AssertPublicProperties(
+            RequireType("CompanionHelloNack"),
+            "MinimumVersion",
+            "MaximumVersion",
+            "ProductVersion");
+        AssertDeclaredPayloadAccepted(
+            CompanionMessageTypes.HelloNack,
+            """{"minimumVersion":2,"maximumVersion":3,"productVersion":"3.0.0"}""");
+        AssertDeclaredPayloadRejected(
+            CompanionMessageTypes.HelloNack,
+            """{"minimumVersion":3,"maximumVersion":2,"productVersion":"3.0.0"}""",
+            "invalid-payload",
+            "hello-nack reversed range");
     }
 
     [TestMethod]
@@ -756,6 +775,9 @@ public sealed class CompanionProtocolTests
             case CompanionMessageTypes.HelloAck:
                 AssertPayloadRejected<CompanionHelloAck>(messageType, payloadJson, expectedErrorCode, name);
                 break;
+            case CompanionMessageTypes.HelloNack:
+                AssertPayloadRejected<CompanionHelloNack>(messageType, payloadJson, expectedErrorCode, name);
+                break;
             case CompanionMessageTypes.Heartbeat:
                 AssertPayloadRejected<CompanionHeartbeat>(messageType, payloadJson, expectedErrorCode, name);
                 break;
@@ -793,6 +815,9 @@ public sealed class CompanionProtocolTests
         {
             case CompanionMessageTypes.HelloAck:
                 AssertPayloadAccepted<CompanionHelloAck>(envelope);
+                break;
+            case CompanionMessageTypes.HelloNack:
+                AssertPayloadAccepted<CompanionHelloNack>(envelope);
                 break;
             case CompanionMessageTypes.Heartbeat:
                 AssertPayloadAccepted<CompanionHeartbeat>(envelope);

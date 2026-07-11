@@ -86,6 +86,32 @@ public sealed class CompanionClientStateTests
     }
 
     [TestMethod]
+    public void ClientReportsIncompatibleRangeWithoutBecomingReady()
+    {
+        var state = new CompanionClientState(
+            minimumProtocolVersion: 2,
+            maximumProtocolVersion: 3,
+            CompanionCapability.Chat);
+
+        Assert.IsTrue(state.TryPrepareHelloAck(
+            Hello("incompatible", minimumVersion: 1, maximumVersion: 1),
+            "3.0.0-client",
+            out var prepared));
+        Assert.IsNotNull(prepared);
+        Assert.AreEqual(CompanionMessageTypes.HelloNack, prepared.Envelope.Type);
+        Assert.IsTrue(CompanionEnvelopeCodec.TryDecodePayload<CompanionHelloNack>(
+            prepared.Envelope,
+            out var nack,
+            out _));
+        Assert.IsNotNull(nack);
+        Assert.AreEqual(2, nack.MinimumVersion);
+        Assert.AreEqual(3, nack.MaximumVersion);
+        Assert.AreEqual("3.0.0-client", nack.ProductVersion);
+        Assert.IsFalse(state.ConfirmHelloAckSent(prepared, TimeSpan.Zero));
+        Assert.IsFalse(state.CanReport);
+    }
+
+    [TestMethod]
     public void ClientSequenceIsStrictlyMonotonicWithinSession()
     {
         var state = CreateState();

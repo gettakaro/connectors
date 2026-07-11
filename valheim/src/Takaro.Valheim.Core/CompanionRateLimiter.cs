@@ -114,6 +114,7 @@ public sealed class CompanionRateLimiter
     private static bool IsKnownMessageType(string? messageType) =>
         messageType == CompanionMessageTypes.Hello
         || messageType == CompanionMessageTypes.HelloAck
+        || messageType == CompanionMessageTypes.HelloNack
         || messageType == CompanionMessageTypes.Heartbeat
         || messageType == CompanionMessageTypes.Chat
         || messageType == CompanionMessageTypes.InventorySnapshot

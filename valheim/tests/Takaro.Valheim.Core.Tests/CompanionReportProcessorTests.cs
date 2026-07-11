@@ -211,6 +211,38 @@ public sealed class CompanionReportProcessorTests
     }
 
     [TestMethod]
+    public void EventTimestampsOutsideServerSkewWindowEmitNothing()
+    {
+        var tooOld = CreateHarness(CompanionCapability.Chat).Processor.Process(
+            PeerId,
+            AuthoritativePlayer,
+            Envelope(
+                CompanionMessageTypes.Chat,
+                sequence: 2,
+                new CompanionChatReport(
+                    "too-old",
+                    (Now - CompanionReportProcessor.MaximumEventClockSkew - TimeSpan.FromMilliseconds(1)).ToUnixTimeMilliseconds(),
+                    "ignored")),
+            Now);
+        var tooFuture = CreateHarness(CompanionCapability.PlayerDeath).Processor.Process(
+            PeerId,
+            AuthoritativePlayer,
+            Envelope(
+                CompanionMessageTypes.PlayerDeath,
+                sequence: 2,
+                new CompanionPlayerDeathReport(
+                    "too-future",
+                    (Now + CompanionReportProcessor.MaximumEventClockSkew + TimeSpan.FromMilliseconds(1)).ToUnixTimeMilliseconds(),
+                    new CompanionPosition(0, 0, 0),
+                    null,
+                    null)),
+            Now);
+
+        Assert.IsNull(tooOld);
+        Assert.IsNull(tooFuture);
+    }
+
+    [TestMethod]
     public void CapabilityMismatchMalformedWrongPayloadAndControlEmitNothing()
     {
         var harness = CreateHarness(CompanionCapability.Inventory);
@@ -275,7 +307,7 @@ public sealed class CompanionReportProcessorTests
             """
             {
               "eventId":"chat-forged",
-              "timestampUnixMilliseconds":1,
+              "timestampUnixMilliseconds":1783771200000,
               "message":"forged",
               "player":{"gameId":"Steam_forged","name":"Loki"}
             }
@@ -288,7 +320,7 @@ public sealed class CompanionReportProcessorTests
             Envelope(
                 CompanionMessageTypes.Chat,
                 sequence: 3,
-                new CompanionChatReport("chat-forged", 1, "authoritative")),
+                new CompanionChatReport("chat-forged", Now.ToUnixTimeMilliseconds(), "authoritative")),
             Now);
 
         Assert.IsNull(forged);

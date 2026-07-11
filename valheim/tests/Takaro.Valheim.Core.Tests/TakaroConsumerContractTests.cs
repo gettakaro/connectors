@@ -256,7 +256,7 @@ public sealed class TakaroConsumerContractTests
                     nonce,
                     sequence: 2,
                     CompanionMessageTypes.Chat,
-                    new CompanionChatReport("chat-1", 1, "hello")),
+                    new CompanionChatReport("chat-1", now.ToUnixTimeMilliseconds(), "hello")),
                 now),
             processor.Process(
                 peerId,
@@ -267,7 +267,7 @@ public sealed class TakaroConsumerContractTests
                     CompanionMessageTypes.PlayerDeath,
                     new CompanionPlayerDeathReport(
                         "death-1",
-                        2,
+                        now.ToUnixTimeMilliseconds(),
                         new CompanionPosition(1, 2, 3),
                         null,
                         null)),
@@ -281,7 +281,7 @@ public sealed class TakaroConsumerContractTests
                     CompanionMessageTypes.EntityKilled,
                     new CompanionEntityKilledReport(
                         "kill-1",
-                        3,
+                        now.ToUnixTimeMilliseconds(),
                         new CompanionPosition(4, 5, 6),
                         "Greydwarf",
                         "SwordIron")),
@@ -315,7 +315,7 @@ public sealed class TakaroConsumerContractTests
         Assert.AreEqual("Steam_real", killedData.GetProperty("player").GetProperty("gameId").GetString());
         Assert.AreEqual("Greydwarf", killedData.GetProperty("entity").GetString());
         Assert.AreEqual("SwordIron", killedData.GetProperty("weapon").GetString());
-        Assert.AreEqual("1970-01-01T00:00:00.003+00:00", killedData.GetProperty("timestamp").GetString());
+        Assert.AreEqual("2026-07-11T12:00:00+00:00", killedData.GetProperty("timestamp").GetString());
     }
 
     [TestMethod]

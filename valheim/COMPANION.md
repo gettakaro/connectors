@@ -46,6 +46,8 @@ The client folder must contain the companion and protocol DLLs shipped together 
 
 Server and client product patch versions may differ when their wire protocol overlaps. Protocol compatibility—not an exact product-version string match—controls negotiation. Upgrade the companion when a required-mode message shows incompatible expected and actual protocol versions.
 
+An incompatible companion reports its bounded supported protocol range to the server before required-mode disconnection, so server logs can distinguish it from a missing companion.
+
 ## Remove or Roll Back
 
 ### Remove the companion from a client

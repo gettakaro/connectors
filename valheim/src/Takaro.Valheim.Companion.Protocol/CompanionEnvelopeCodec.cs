@@ -51,6 +51,13 @@ public static class CompanionEnvelopeCodec
         "acceptedCapabilities"
     ];
 
+    private static readonly string[] HelloNackFields =
+    [
+        "minimumVersion",
+        "maximumVersion",
+        "productVersion"
+    ];
+
     private static readonly string[] HeartbeatFields = ["timestampUnixMilliseconds"];
 
     private static readonly string[] ChatFields =
@@ -352,6 +359,8 @@ public static class CompanionEnvelopeCodec
                 return TryNormalizePayload<CompanionHello>(envelope, out normalizedPayload, out errorCode);
             case CompanionMessageTypes.HelloAck:
                 return TryNormalizePayload<CompanionHelloAck>(envelope, out normalizedPayload, out errorCode);
+            case CompanionMessageTypes.HelloNack:
+                return TryNormalizePayload<CompanionHelloNack>(envelope, out normalizedPayload, out errorCode);
             case CompanionMessageTypes.Heartbeat:
                 return TryNormalizePayload<CompanionHeartbeat>(envelope, out normalizedPayload, out errorCode);
             case CompanionMessageTypes.Chat:
@@ -412,6 +421,9 @@ public static class CompanionEnvelopeCodec
                 break;
             case CompanionMessageTypes.HelloAck:
                 validFields = HasStrictFields(payload, HelloAckFields, Array.Empty<string>());
+                break;
+            case CompanionMessageTypes.HelloNack:
+                validFields = HasStrictFields(payload, HelloNackFields, Array.Empty<string>());
                 break;
             case CompanionMessageTypes.Heartbeat:
                 validFields = HasStrictFields(payload, HeartbeatFields, Array.Empty<string>());
@@ -515,6 +527,7 @@ public static class CompanionEnvelopeCodec
     {
         return (payloadType == typeof(CompanionHello) && messageType == CompanionMessageTypes.Hello)
             || (payloadType == typeof(CompanionHelloAck) && messageType == CompanionMessageTypes.HelloAck)
+            || (payloadType == typeof(CompanionHelloNack) && messageType == CompanionMessageTypes.HelloNack)
             || (payloadType == typeof(CompanionHeartbeat) && messageType == CompanionMessageTypes.Heartbeat)
             || (payloadType == typeof(CompanionChatReport) && messageType == CompanionMessageTypes.Chat)
             || (payloadType == typeof(CompanionInventoryReport) && messageType == CompanionMessageTypes.InventorySnapshot)
@@ -537,6 +550,12 @@ public static class CompanionEnvelopeCodec
                         helloAck.ProductVersion,
                         CompanionProtocol.MaximumProductVersionCharacters)
                     && HasKnownCapabilities(helloAck.AcceptedCapabilities);
+            case CompanionHelloNack helloNack:
+                return helloNack.MinimumVersion > 0
+                    && helloNack.MaximumVersion >= helloNack.MinimumVersion
+                    && IsRequiredString(
+                        helloNack.ProductVersion,
+                        CompanionProtocol.MaximumProductVersionCharacters);
             case CompanionHeartbeat heartbeat:
                 return IsValidTimestamp(heartbeat.TimestampUnixMilliseconds);
             case CompanionChatReport chat:
@@ -625,6 +644,7 @@ public static class CompanionEnvelopeCodec
     {
         return messageType == CompanionMessageTypes.Hello
             || messageType == CompanionMessageTypes.HelloAck
+            || messageType == CompanionMessageTypes.HelloNack
             || messageType == CompanionMessageTypes.Heartbeat
             || messageType == CompanionMessageTypes.Chat
             || messageType == CompanionMessageTypes.InventorySnapshot

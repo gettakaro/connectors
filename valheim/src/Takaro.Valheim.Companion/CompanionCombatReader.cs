@@ -117,7 +117,9 @@ public sealed class CompanionCombatReader
             utcNow.ToUnixTimeMilliseconds(),
             position,
             CharacterHint(character),
-            WeaponHint(hit));
+            WeaponHint(hit)
+                ?? BoundedHint(hit.m_skill.ToString())
+                ?? "unarmed");
         return true;
     }
 

@@ -4,6 +4,7 @@ public static class CompanionMessageTypes
 {
     public const string Hello = "hello";
     public const string HelloAck = "hello-ack";
+    public const string HelloNack = "hello-nack";
     public const string Heartbeat = "heartbeat";
     public const string Chat = "chat";
     public const string InventorySnapshot = "inventory-snapshot";
@@ -20,6 +21,11 @@ public sealed record CompanionHelloAck(
     int ProtocolVersion,
     string ProductVersion,
     CompanionCapability AcceptedCapabilities);
+
+public sealed record CompanionHelloNack(
+    int MinimumVersion,
+    int MaximumVersion,
+    string ProductVersion);
 
 public sealed record CompanionHeartbeat(long TimestampUnixMilliseconds);
 

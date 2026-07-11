@@ -104,15 +104,38 @@ public sealed class CompanionClientState
                 helloEnvelope,
                 out var hello,
                 out _)
-            || hello is null
-            || !CompanionVersionPolicy.TryNegotiate(
+            || hello is null)
+        {
+            return false;
+        }
+
+        if (!CompanionVersionPolicy.TryNegotiate(
                 minimumProtocolVersion,
                 maximumProtocolVersion,
                 hello.MinimumVersion,
                 hello.MaximumVersion,
                 out var selectedProtocolVersion))
         {
-            return false;
+            Reset(retireCurrentSession: true);
+            if (!TryCreateEnvelope(
+                    helloEnvelope.ProtocolVersion,
+                    helloEnvelope.SessionNonce,
+                    sequence: 1,
+                    messageId: $"hello-nack-{generation}",
+                    CompanionMessageTypes.HelloNack,
+                    new CompanionHelloNack(
+                        minimumProtocolVersion,
+                        maximumProtocolVersion,
+                        productVersion),
+                    out var nackEnvelope)
+                || nackEnvelope is null)
+            {
+                return false;
+            }
+
+            prepared = new PreparedCompanionHelloAck(generation, nackEnvelope);
+            pendingHelloAck = prepared;
+            return true;
         }
 
         Reset(retireCurrentSession: true);
@@ -146,6 +169,7 @@ public sealed class CompanionClientState
             || monotonicNow < TimeSpan.Zero
             || !ReferenceEquals(pendingHelloAck, prepared)
             || prepared.Generation != generation
+            || prepared.Envelope.Type != CompanionMessageTypes.HelloAck
             || !CompanionEnvelopeCodec.TryDecodePayload<CompanionHelloAck>(
                 prepared.Envelope,
                 out var helloAck,
