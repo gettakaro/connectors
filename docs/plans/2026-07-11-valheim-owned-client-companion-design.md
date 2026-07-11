@@ -1,7 +1,7 @@
 # Takaro-Owned Valheim Client Companion Design
 
-**Date:** 2026-07-11  
-**Status:** Approved  
+**Date:** 2026-07-11
+**Status:** Approved
 **Target:** `gettakaro/connectors` Valheim connector
 
 ## Problem
