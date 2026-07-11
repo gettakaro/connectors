@@ -27,11 +27,23 @@ public sealed class ValheimCompanionPlugin : BaseUnityPlugin
             return;
         }
 
-        harmony = new Harmony(PluginGuid);
-        harmony.PatchAll(typeof(ValheimCompanionPlugin).Assembly);
-        clientBridge = new CompanionClientBridge(Logger.LogInfo);
-        clientBridge.Initialize();
-        Logger.LogInfo($"Takaro Valheim Companion {ProductVersion} started with protocol {ProtocolVersion}.");
+        try
+        {
+            harmony = new Harmony(PluginGuid);
+            harmony.PatchAll(typeof(ValheimCompanionPlugin).Assembly);
+            clientBridge = new CompanionClientBridge(Logger.LogInfo);
+            clientBridge.Initialize();
+            Logger.LogInfo($"Takaro Valheim Companion {ProductVersion} started with protocol {ProtocolVersion}.");
+        }
+        catch (Exception ex)
+        {
+            clientBridge?.Dispose();
+            clientBridge = null;
+            harmony?.UnpatchSelf();
+            harmony = null;
+            enabled = false;
+            Logger.LogError($"Takaro Valheim Companion startup failed and was rolled back: {ex.Message}");
+        }
     }
 
     private void Update()

@@ -117,6 +117,42 @@ public sealed class CompanionPluginContractTests
             "only runs on dedicated Valheim servers");
     }
 
+    [TestMethod]
+    public void CompanionTargetsOnlyExactLiveServerPeer()
+    {
+        var bridge = ReadCompanionSource("CompanionClientBridge.cs");
+
+        StringAssert.Contains(bridge, "network.GetServerPeer()");
+        StringAssert.Contains(bridge, "serverPeer.m_uid");
+        StringAssert.Contains(
+            bridge,
+            "InvokeRoutedRPC(serverPeer.m_uid, CompanionProtocol.RpcName, json)");
+        Assert.IsFalse(bridge.Contains(
+            "InvokeRoutedRPC(CompanionProtocol.RpcName",
+            StringComparison.Ordinal));
+        Assert.IsFalse(bridge.Contains("GetServerPeerID()", StringComparison.Ordinal));
+        Assert.IsFalse(bridge.Contains("Everybody", StringComparison.Ordinal));
+        Assert.IsFalse(bridge.Contains("EverybodyExceptPeer", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void CompanionResetsOnRpcWorldServerAndDisconnectChanges()
+    {
+        var bridge = ReadCompanionSource("CompanionClientBridge.cs");
+
+        StringAssert.Contains(bridge, "ReferenceEquals(routedRpc, registeredRpc)");
+        StringAssert.Contains(bridge, "registrationAttempted");
+        StringAssert.Contains(bridge, "(sender, json) => HandleEnvelope(sourceRpc, sender, json)");
+        StringAssert.Contains(bridge, "ZNet.World");
+        StringAssert.Contains(bridge, "world.m_uid");
+        StringAssert.Contains(bridge, "network.GetServerPeer()");
+        StringAssert.Contains(bridge, "state.ResetConnection()");
+        StringAssert.Contains(bridge, "IsConnectionReady");
+        StringAssert.Contains(bridge, "sender != serverPeer.m_uid");
+        StringAssert.Contains(bridge, "ReferenceEquals(ZRoutedRpc.instance, registeredRpc)");
+        Assert.IsFalse(bridge.Contains("GetWorldUID()", StringComparison.Ordinal));
+    }
+
     private static string ReadAllCompanionText() =>
         string.Join(
             '\n',
