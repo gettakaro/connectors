@@ -209,6 +209,13 @@ tar_stub() {
     return 67
   fi
 
+  if [ "$STUB_SCENARIO" = "steamcmd_extract_failure" ]; then
+    mkdir -p "$destination"
+    printf 'partial extraction\n' > "$destination/partial-extraction"
+    printf 'simulated SteamCMD extraction failure\n' >&2
+    return 69
+  fi
+
   mkdir -p "$destination"
   ln -sf "$SELF" "$destination/steamcmd.sh"
 }
@@ -478,6 +485,17 @@ assert_output_contains() {
   fi
 }
 
+assert_no_steamcmd_temporary_state() {
+  local leaked_path
+  leaked_path="$(find "$RUN_CASE_DIR" -mindepth 1 -maxdepth 1 \
+    \( -name 'steamcmd.download.*' -o -name 'steamcmd.stage.*' -o -name 'steamcmd.backup.*' \) \
+    -print -quit)"
+  if [ -n "$leaked_path" ]; then
+    printf 'ASSERT: SteamCMD sibling temporary state was not cleaned up: %s\n' "$leaked_path" >&2
+    return 1
+  fi
+}
+
 test_first_attempt_success() {
   run_setup first-success first_success
   assert_equals 0 "$RUN_STATUS" "first successful SteamCMD run should complete setup" || return 1
@@ -574,6 +592,30 @@ test_failed_file_validator_is_actionable() {
   assert_output_contains "managed PE/CLI assembly" "failed validator should identify the required assembly contract" || return 1
 }
 
+test_missing_file_command_fails_preflight() {
+  local case_dir="$TMP_ROOT/file-command-absent"
+  local bin_dir="$case_dir/bin"
+  mkdir -p "$bin_dir" "$case_dir/home"
+  ln -sf /bin/bash "$bin_dir/bash"
+  ln -sf /usr/bin/dirname "$bin_dir/dirname"
+
+  if PATH="$bin_dir" command -v file >/dev/null 2>&1; then
+    printf "ASSERT: isolated preflight PATH unexpectedly contains the 'file' command\n" >&2
+    return 1
+  fi
+
+  RUN_OUTPUT="$case_dir/output.log"
+  RUN_CASE_DIR="$case_dir"
+  /usr/bin/env \
+    PATH="$bin_dir" \
+    HOME="$case_dir/home" \
+    /bin/bash "$SETUP_SCRIPT" > "$RUN_OUTPUT" 2>&1
+  RUN_STATUS=$?
+
+  assert_nonzero "$RUN_STATUS" "setup must fail its preflight when the file command is truly absent" || return 1
+  assert_output_contains "requires the 'file' command" "missing validator preflight should be actionable" || return 1
+}
+
 test_valid_existing_install_skips_steamcmd() {
   local case_dir="$TMP_ROOT/valid-existing"
   STUB_SERVER_DIR="$case_dir/server" create_required_assemblies "$case_dir/server"
@@ -628,14 +670,7 @@ test_steamcmd_download_is_completed_before_tar_reads_it() {
   assert_equals 0 "$RUN_STATUS" "completed SteamCMD archive should install and run" || return 1
   assert_file "$RUN_CASE_DIR/state/tar-input" "tar should receive an archive file" || return 1
   assert_equals "COMPLETE_ARCHIVE" "$(cat "$RUN_CASE_DIR/state/tar-input")" "tar must see only the completed retry result" || return 1
-  if find "$RUN_CASE_DIR/steamcmd" -maxdepth 1 -name 'steamcmd.*.tar.gz' -print -quit | grep -q .; then
-    printf 'ASSERT: successful SteamCMD archive temporary file was not cleaned up\n' >&2
-    return 1
-  fi
-  if find "$RUN_CASE_DIR/steamcmd" -maxdepth 1 -type d -name 'steamcmd-extract.*' -print -quit | grep -q .; then
-    printf 'ASSERT: successful SteamCMD extraction directory was not cleaned up\n' >&2
-    return 1
-  fi
+  assert_no_steamcmd_temporary_state || return 1
 }
 
 test_failed_steamcmd_download_cleans_partial_archive() {
@@ -645,19 +680,20 @@ test_failed_steamcmd_download_cleans_partial_archive() {
     printf 'ASSERT: tar must not inspect a failed SteamCMD download\n' >&2
     return 1
   fi
-  if find "$RUN_CASE_DIR/steamcmd" -maxdepth 1 -name 'steamcmd.*.tar.gz' -print -quit | grep -q .; then
-    printf 'ASSERT: failed SteamCMD archive temporary file was not cleaned up\n' >&2
-    return 1
-  fi
+  assert_no_steamcmd_temporary_state || return 1
+}
+
+test_failed_steamcmd_extraction_cleans_archive_and_stage() {
+  run_setup steamcmd-extract-failure steamcmd_extract_failure "linux windows" false
+  assert_nonzero "$RUN_STATUS" "failed SteamCMD extraction must fail setup" || return 1
+  assert_file "$RUN_CASE_DIR/state/tar-input" "the extraction failure test must reach tar" || return 1
+  assert_no_steamcmd_temporary_state || return 1
 }
 
 test_failed_steamcmd_publish_cleans_archive_and_extract_directory() {
   run_setup steamcmd-publish-failure steamcmd_publish_failure "linux windows" false
   assert_nonzero "$RUN_STATUS" "failed SteamCMD publish must fail setup" || return 1
-  if find "$RUN_CASE_DIR/steamcmd" -maxdepth 1 \( -name 'steamcmd.*.tar.gz' -o -name 'steamcmd-extract.*' \) -print -quit | grep -q .; then
-    printf 'ASSERT: failed SteamCMD publish left temporary archive or extraction state\n' >&2
-    return 1
-  fi
+  assert_no_steamcmd_temporary_state || return 1
 }
 
 test_partial_steamcmd_publication_is_removed_before_next_run() {
@@ -667,12 +703,7 @@ test_partial_steamcmd_publication_is_removed_before_next_run() {
     printf 'ASSERT: failed SteamCMD publication left an executable final destination\n' >&2
     return 1
   fi
-  if find "$RUN_CASE_DIR" -maxdepth 1 \
-      \( -name 'steamcmd.stage.*' -o -name 'steamcmd.backup.*' -o -name 'steamcmd.download.*' \) \
-      -print -quit | grep -q .; then
-    printf 'ASSERT: failed SteamCMD publication left sibling temporary state\n' >&2
-    return 1
-  fi
+  assert_no_steamcmd_temporary_state || return 1
 
   run_setup steamcmd-partial-publish first_success "linux windows" false
   assert_equals 0 "$RUN_STATUS" "the next run must reinstall instead of trusting a partial executable" || return 1
@@ -691,12 +722,7 @@ test_signal_during_partial_steamcmd_publication_cleans_destination() {
     printf 'ASSERT: interrupted SteamCMD publication left an executable final destination\n' >&2
     return 1
   fi
-  if find "$RUN_CASE_DIR" -maxdepth 1 \
-      \( -name 'steamcmd.stage.*' -o -name 'steamcmd.backup.*' -o -name 'steamcmd.download.*' \) \
-      -print -quit | grep -q .; then
-    printf 'ASSERT: interrupted SteamCMD publication left sibling temporary state\n' >&2
-    return 1
-  fi
+  assert_no_steamcmd_temporary_state || return 1
 }
 
 test_markerless_steamcmd_executable_is_repaired_without_losing_unrelated_files() {
@@ -752,12 +778,14 @@ for test_case in \
   test_corrupt_bepinex_dlls_fail_setup \
   test_fake_bepinex_markers_do_not_satisfy_real_assembly_validation \
   test_failed_file_validator_is_actionable \
+  test_missing_file_command_fails_preflight \
   test_valid_existing_install_skips_steamcmd \
   test_failed_atomic_publication_rolls_back_and_next_run_retries \
   test_signal_after_first_atomic_rename_restores_old_install \
   test_signal_during_atomic_publication_restores_old_install \
   test_steamcmd_download_is_completed_before_tar_reads_it \
   test_failed_steamcmd_download_cleans_partial_archive \
+  test_failed_steamcmd_extraction_cleans_archive_and_stage \
   test_failed_steamcmd_publish_cleans_archive_and_extract_directory \
   test_partial_steamcmd_publication_is_removed_before_next_run \
   test_signal_during_partial_steamcmd_publication_cleans_destination \

@@ -1,10 +1,33 @@
 # Valheim Server-Only Validation Ledger
 
-## Verdict: FAIL (turn-7 prerelease artifact was rejected by BepInEx; turn-8 branch verification is pending)
+## Verdict: FAIL (turn-8 artifact and safe exerciser passed; locale-dependent release validation failed)
 
-Turn 7 verified exact source commit `36730faec109f9975865492d9cc619ab12f5fc7f`. Its prerelease artifact did not load, so the latest branch verdict is `FAIL` even though a numeric-version control from the same commit live-proved the connector runtime. Turn-8 source changes do not inherit that control artifact's runtime proof. Turn-8 branch verification is pending; PR creation, GitHub Actions, merge, and release refresh remain orchestrator work.
+Turn 8 verified exact source commit `92320c76db97da8972237cde72ac8bed59f880c8`. Its exact prerelease artifact loaded, identified, and passed the safe live exerciser with an unmodified vanilla client. The branch verdict remains `FAIL` because independent custom-gate testing proved that locale-dependent release validation accepted non-ASCII SemVer under `en_US.UTF-8` and allowed a real package to be produced. Turn-9 source changes do not inherit turn-8 verification. Turn-9 branch verification is pending; PR creation, GitHub Actions, merge, and release refresh remain orchestrator work.
 
-Turn 6 remains the latest exact artifact whose full safe exerciser passed. Its independent Codex invocation was quota-blocked, so the historical turn-6 result remains `PASS WITH GAPS`, not a release-ready claim.
+The exact Codex review remained quota-blocked until 20:22. That gate is blocked, not passed. Destructive kick, ban, unban, and shutdown actions remained deliberately skipped and approval-gated.
+
+## Turn-8 Exact Artifact and Verification Failure
+
+| Evidence | Exact value | Result |
+| --- | --- | --- |
+| Source commit | `92320c76db97da8972237cde72ac8bed59f880c8` | Exact clean turn-8 HEAD |
+| Prerelease version | `7.8.9-rc.2+verify8` | Exact package/informational SemVer |
+| Release zip SHA-256 | `4d1d7f2497546beb0051d04d4b6b17ae3bf73e5888cdccae26daf3df449c6724` | Exact verifier artifact |
+| Plugin DLL SHA-256 | `c235f20e968e7b282f95639c7a60ec704335b2519a54c44d0d1f1bf5c39eea5f` | Exact verifier plugin |
+| BepInEx loader | `Takaro Valheim 7.8.9` | PASS: numeric loader metadata accepted |
+| Game server ID | `4dadfdf6-18a3-41f1-ae2c-b94200dea9ab` | PASS: exact server identified |
+| Client boundary | Vanilla client; no Takaro client DLL | PASS: dedicated-server-only |
+| Real server-owned position | `140/33/-2` | PASS |
+| Persisted `player-connected` | `1311f9bd-c636-4fdd-9793-335aa6547285` | PASS |
+| Persisted `player-disconnected` | `6a9531e6-6ccf-4cb8-9edb-1c9bdf607dc5` | PASS |
+| Safe runtime exercise | `Exerciser: PASSED` | PASS: safe actions and unsupported-event exclusion |
+| Release validation | `1.2.3-é` accepted under `en_US.UTF-8` and packaged; rejected under `C.UTF-8` | FAIL: locale-dependent release validation |
+| Independent review | `Codex review: BLOCKED by quota until 20:22` | BLOCKED, not passed |
+| Evidence directory | `/tmp/valheim-turn8-evidence` | Local exact-turn evidence; secrets excluded |
+
+No unsupported chat-message, player-death, or entity-killed event was emitted during the exact turn-8 window. The safe action suite passed without a client plugin. Destructive checks remained skipped and are not upgraded by this run.
+
+The turn-8 locale finding is a release blocker even though the runtime exerciser passed: ambient locale changed the meaning of `[A-Za-z]` in Bash's SemVer regular expression. Turn 9 scopes matching to the C locale inside the sourced resolver and adds executable resolver and build-release tests across available `C`, `C.UTF-8`, and `en_US.UTF-8` locales. Those turn-9 changes require fresh independent verification.
 
 ## Turn-7 Failed Artifact and Numeric Control
 
@@ -30,7 +53,7 @@ Turn-8 player gates passed `172/172` tests, `24/24` setup scenarios, Bash/JSON/d
 | `1.0.0` | `e4ae818224acd7c36e31722480e412638fd01c1f49ee9354e3178bfb4a11f8c7` | `9544033124bb5c5e53eb3f3232d29f36361cfbb30efe8cf21cd4b79796324435` | `373819238d3e871fbcab261c4b90fb6704eb9ebf4867c66c270698b3374e5408` | BepInEx `1.0.0`; informational `1.0.0`; assembly `1.0.0.0` |
 | `7.8.9-rc.2+verify8` | `41d27290de50fc5075ef8e340da8a21761956eed1f0d011791e1edeaad5db56c` | `03bae4a2c2dc06447c4aff0207be2a0397d623272eeaf8617c465290784ba195` | `4766c9fa9757d74b4b45990f94d4808e178ea362b06a147c08b70978ed3f166f` | BepInEx `7.8.9`; informational `7.8.9-rc.2+verify8`; assembly `7.8.9.0` |
 
-A non-loading `System.Reflection.Metadata` probe read the actual packaged `BepInPlugin` custom attribute and passed its loader value through `System.Version`. Both manifests and packaged READMEs retained the exact full SemVer. Package inspection found no client artifact, Jotunn dependency, test payload, or banned custom client RPC marker. These are local player checks only; the turn-8 verifier must still live-load its own exact prerelease artifact.
+A non-loading `System.Reflection.Metadata` probe read the actual packaged `BepInPlugin` custom attribute and passed its loader value through `System.Version`. Both manifests and packaged READMEs retained the exact full SemVer. Package inspection found no client artifact, Jotunn dependency, test payload, or banned custom client RPC marker. The independent turn-8 verifier then live-loaded its own exact prerelease artifact as recorded above; the separate locale gate still failed.
 
 ## Turn-6 Artifact-Pinned Evidence
 
@@ -262,4 +285,4 @@ These files are local evidence paths, not committed release assets.
 
 Task 7 is complete for the exact turn-6 commit and artifact above. Turn-7 local player gates passed `166/166` tests, `20/20` setup scenarios, Bash/JSON checks, and a real `net472` build with zero warnings or errors, but those checks missed loader compatibility. The exact `7.8.9-rc.2+verify7` verifier artifact was then rejected by BepInEx, so the turn-7 exerciser and overall branch verdict are `FAIL`. The separate numeric-version control evidence is recorded above and is not substituted for the failed artifact.
 
-Turn-8 branch verification is pending under Task 8 before PR handoff. PR creation, GitHub Actions, superseded-PR closure, merge, and release refresh remain pending orchestrator work. Destructive actions remain approval-gated and are not required for this server-only validation ledger.
+Turn-8 safe live verification passed, but branch verification failed on locale-dependent SemVer validation and the exact Codex review remained quota-blocked. Turn-9 branch verification is pending under Task 8 before PR handoff. PR creation, GitHub Actions, superseded-PR closure, merge, and release refresh remain pending orchestrator work. Destructive actions remain approval-gated and are not required for this server-only validation ledger.

@@ -3,6 +3,7 @@
 SEMVER_PATTERN='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
 
 is_valid_semver() {
+  local LC_ALL=C
   local candidate="$1"
   local release_and_prerelease
   local prerelease

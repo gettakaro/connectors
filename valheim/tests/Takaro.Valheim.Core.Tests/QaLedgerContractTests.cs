@@ -14,7 +14,7 @@ public sealed class QaLedgerContractTests
         StringAssert.Contains(ledger, "20bed2475ad558646c4c7cfccb20a185e516a429");
         StringAssert.Contains(ledger, "d322af0b405fbc901a48f5a5f0c1b9c1f052167ab05295acdc53896395a97186");
         StringAssert.Contains(ledger, "028eb5dfda9e52eb9998d3c538c4189e6332e761ad563a23ba8b76cdecc61755");
-        StringAssert.Contains(ledger, "Turn-8 branch verification is pending");
+        StringAssert.Contains(ledger, "Turn-9 branch verification is pending");
         Assert.IsFalse(ledger.Contains("Turn-6 source is pending", StringComparison.Ordinal));
     }
 
@@ -40,7 +40,7 @@ public sealed class QaLedgerContractTests
                      "Codex review: BLOCKED by quota until 20:22",
                      "/tmp/valheim-turn6-evidence",
                      "cleanup complete",
-                     "Turn-8 branch verification is pending"
+                     "Turn-9 branch verification is pending"
                  })
         {
             StringAssert.Contains(ledger, marker);
@@ -65,7 +65,34 @@ public sealed class QaLedgerContractTests
                      "247a346b-c69d-47b1-b9c9-d28cc4a74d60",
                      "aae4df31-7660-4447-8103-8447eb639518",
                      "Codex review: BLOCKED by quota until 20:22",
-                     "Turn-8 branch verification is pending"
+                     "Turn-9 branch verification is pending"
+                 })
+        {
+            StringAssert.Contains(ledger, marker);
+        }
+    }
+
+    [TestMethod]
+    public void LedgerPinsTurnEightLiveArtifactAndLocaleGateFailure()
+    {
+        var ledger = ReadLedger();
+
+        foreach (var marker in new[]
+                 {
+                     "92320c76db97da8972237cde72ac8bed59f880c8",
+                     "7.8.9-rc.2+verify8",
+                     "4d1d7f2497546beb0051d04d4b6b17ae3bf73e5888cdccae26daf3df449c6724",
+                     "c235f20e968e7b282f95639c7a60ec704335b2519a54c44d0d1f1bf5c39eea5f",
+                     "Takaro Valheim 7.8.9",
+                     "4dadfdf6-18a3-41f1-ae2c-b94200dea9ab",
+                     "140/33/-2",
+                     "1311f9bd-c636-4fdd-9793-335aa6547285",
+                     "6a9531e6-6ccf-4cb8-9edb-1c9bdf607dc5",
+                     "Exerciser: PASSED",
+                     "1.2.3-é",
+                     "locale-dependent release validation",
+                     "/tmp/valheim-turn8-evidence",
+                     "Turn-9 branch verification is pending"
                  })
         {
             StringAssert.Contains(ledger, marker);

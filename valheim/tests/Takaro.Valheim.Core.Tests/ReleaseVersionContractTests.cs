@@ -51,13 +51,59 @@ public sealed class ReleaseVersionContractTests
         string expectedBepInExVersion,
         string expectedAssemblyVersion)
     {
-        var (exitCode, loaderVersion, assemblyVersion) = RunVersionResolver(releaseVersion);
+        foreach (var locale in ValidationLocales())
+        {
+            var (exitCode, loaderVersion, assemblyVersion, localeAfter) =
+                RunVersionResolver(releaseVersion, locale);
 
-        Assert.AreEqual(0, exitCode, releaseVersion);
-        Assert.AreEqual(expectedBepInExVersion, loaderVersion, releaseVersion);
-        Assert.AreEqual(expectedAssemblyVersion, assemblyVersion, releaseVersion);
-        Assert.IsTrue(Version.TryParse(loaderVersion, out var parsed), loaderVersion);
-        Assert.AreEqual(new Version(expectedBepInExVersion), parsed);
+            Assert.AreEqual(0, exitCode, $"{releaseVersion} under {locale}");
+            Assert.AreEqual(expectedBepInExVersion, loaderVersion, locale);
+            Assert.AreEqual(expectedAssemblyVersion, assemblyVersion, locale);
+            Assert.AreEqual(locale, localeAfter, "The sourced resolver must not leak locale changes.");
+            Assert.IsTrue(Version.TryParse(loaderVersion, out var parsed), loaderVersion);
+            Assert.AreEqual(new Version(expectedBepInExVersion), parsed);
+        }
+    }
+
+    [TestMethod]
+    public void ReleaseVersionValidationRejectsNonAsciiIdentifiersBeforeBuildingInEveryAvailableLocale()
+    {
+        foreach (var locale in ValidationLocales())
+        {
+            foreach (var version in new[]
+                     {
+                         "1.2.3-é",
+                         "1.2.3+crème",
+                         "1.2.3-Ａ",
+                         "1.2.3+rс.1"
+                     })
+            {
+                var (resolverExitCode, _, _, localeAfter) = RunVersionResolver(version, locale);
+                Assert.AreNotEqual(0, resolverExitCode, $"resolver accepted {version} under {locale}");
+                Assert.AreEqual(locale, localeAfter, "The sourced resolver must not leak locale changes.");
+
+                var testRoot = Directory.CreateTempSubdirectory("valheim-invalid-version-");
+                var outputDirectory = Path.Combine(testRoot.FullName, "package");
+                try
+                {
+                    var (releaseExitCode, standardOutput, standardError) =
+                        RunRelease(version, locale, outputDirectory);
+
+                    Assert.AreEqual(2, releaseExitCode, $"build-release accepted {version} under {locale}");
+                    StringAssert.Contains(standardError, "Invalid semantic version", version);
+                    Assert.IsFalse(
+                        standardOutput.Contains("Building Valheim connector", StringComparison.Ordinal),
+                        $"build started for invalid version {version} under {locale}");
+                    Assert.IsFalse(
+                        Directory.Exists(outputDirectory),
+                        $"package output was created for invalid version {version} under {locale}");
+                }
+                finally
+                {
+                    testRoot.Delete(recursive: true);
+                }
+            }
+        }
     }
 
     [TestMethod]
@@ -124,6 +170,18 @@ public sealed class ReleaseVersionContractTests
 
     private static (int ExitCode, string StandardError) RunRelease(string version)
     {
+        var outputDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"valheim-invalid-version-test-{Guid.NewGuid():N}");
+        var (exitCode, _, standardError) = RunRelease(version, null, outputDirectory);
+        return (exitCode, standardError);
+    }
+
+    private static (int ExitCode, string StandardOutput, string StandardError) RunRelease(
+        string version,
+        string? locale,
+        string outputDirectory)
+    {
         var valheimDirectory = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory,
             "../../../../../"));
@@ -139,16 +197,24 @@ public sealed class ReleaseVersionContractTests
         startInfo.ArgumentList.Add("bash");
         startInfo.ArgumentList.Add(releaseScript);
         startInfo.ArgumentList.Add(version);
-        startInfo.ArgumentList.Add(Path.Combine(Path.GetTempPath(), "valheim-invalid-version-test"));
+        startInfo.ArgumentList.Add(outputDirectory);
+        if (locale is not null)
+        {
+            startInfo.Environment["LC_ALL"] = locale;
+        }
 
         using var process = Process.Start(startInfo)!;
-        process.StandardOutput.ReadToEnd();
+        var standardOutput = process.StandardOutput.ReadToEnd();
         var standardError = process.StandardError.ReadToEnd();
         process.WaitForExit();
-        return (process.ExitCode, standardError);
+        return (process.ExitCode, standardOutput, standardError);
     }
 
-    private static (int ExitCode, string LoaderVersion, string AssemblyVersion) RunVersionResolver(string version)
+    private static (
+        int ExitCode,
+        string LoaderVersion,
+        string AssemblyVersion,
+        string LocaleAfter) RunVersionResolver(string version, string locale)
     {
         var valheimDirectory = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory,
@@ -165,10 +231,15 @@ public sealed class ReleaseVersionContractTests
         startInfo.ArgumentList.Add("bash");
         startInfo.ArgumentList.Add("-c");
         startInfo.ArgumentList.Add(
-            "source \"$1\" && resolve_valheim_release_version \"$2\" && printf '%s\\n%s\\n' \"$VALHEIM_BEPINEX_VERSION\" \"$VALHEIM_ASSEMBLY_VERSION\"");
+            "source \"$1\"; " +
+            "if resolve_valheim_release_version \"$2\"; then status=0; else status=$?; fi; " +
+            "printf 'loader=%s\\nassembly=%s\\nlocale=%s\\n' " +
+            "\"${VALHEIM_BEPINEX_VERSION-}\" \"${VALHEIM_ASSEMBLY_VERSION-}\" \"${LC_ALL-}\"; " +
+            "exit \"$status\"");
         startInfo.ArgumentList.Add("valheim-release-version-test");
         startInfo.ArgumentList.Add(resolverScript);
         startInfo.ArgumentList.Add(version);
+        startInfo.Environment["LC_ALL"] = locale;
 
         using var process = Process.Start(startInfo)!;
         var lines = process.StandardOutput.ReadToEnd()
@@ -177,7 +248,48 @@ public sealed class ReleaseVersionContractTests
         process.WaitForExit();
         return (
             process.ExitCode,
-            lines.ElementAtOrDefault(0) ?? string.Empty,
-            lines.ElementAtOrDefault(1) ?? string.Empty);
+            ReadValue(lines, "loader="),
+            ReadValue(lines, "assembly="),
+            ReadValue(lines, "locale="));
+    }
+
+    private static IReadOnlyList<string> ValidationLocales()
+    {
+        var locales = new List<string> { "C" };
+        foreach (var candidate in new[] { "C.UTF-8", "en_US.UTF-8" })
+        {
+            if (LocaleIsAvailable(candidate))
+            {
+                locales.Add(candidate);
+            }
+        }
+
+        return locales;
+    }
+
+    private static bool LocaleIsAvailable(string locale)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "/usr/bin/env",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add("locale");
+        startInfo.ArgumentList.Add("charmap");
+        startInfo.Environment["LC_ALL"] = locale;
+
+        using var process = Process.Start(startInfo)!;
+        process.StandardOutput.ReadToEnd();
+        process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        return process.ExitCode == 0;
+    }
+
+    private static string ReadValue(IEnumerable<string> lines, string prefix)
+    {
+        var line = lines.Single(value => value.StartsWith(prefix, StringComparison.Ordinal));
+        return line[prefix.Length..];
     }
 }
