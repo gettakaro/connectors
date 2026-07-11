@@ -40,24 +40,6 @@ public static class EventFactory
         return data;
     }
 
-    public static object EntityKilled(
-        TakaroEntity entity,
-        DateTimeOffset timestamp,
-        TakaroPosition position,
-        TakaroPlayer? killer,
-        string? weapon = null)
-    {
-        var data = new Dictionary<string, object?>
-        {
-            ["player"] = killer ?? new TakaroPlayer("unknown", "unknown", null, null, null, null),
-            ["entity"] = entity.Code,
-            ["timestamp"] = timestamp,
-            ["weapon"] = string.IsNullOrWhiteSpace(weapon) ? "Unknown" : weapon
-        };
-
-        return data;
-    }
-
     public static object Log(string level, string message, DateTimeOffset timestamp) =>
         new LogEventData(message, timestamp);
 
@@ -80,6 +62,50 @@ public sealed record TakaroPlayerLifecycleEvent(
     string Type,
     TakaroPlayer Player,
     object Data);
+
+public sealed class PlayerLifecyclePresenceFilter
+{
+    private readonly HashSet<string> admittedGameIds = new(StringComparer.OrdinalIgnoreCase);
+
+    public IReadOnlyList<TakaroPlayer> SelectTrackable(
+        IReadOnlyCollection<TakaroPlayer> onlinePlayers,
+        IReadOnlyCollection<string> playersWithObservedPositions)
+    {
+        var onlineByGameId = onlinePlayers
+            .GroupBy(player => player.GameId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        admittedGameIds.IntersectWith(onlineByGameId.Keys);
+        foreach (var gameId in playersWithObservedPositions)
+        {
+            if (onlineByGameId.ContainsKey(gameId))
+            {
+                admittedGameIds.Add(gameId);
+            }
+        }
+
+        return onlineByGameId.Values
+            .Where(player => admittedGameIds.Contains(player.GameId))
+            .ToArray();
+    }
+}
+
+public sealed class PlayerLifecyclePollCoordinator
+{
+    private readonly PlayerLifecyclePresenceFilter presence = new();
+    private readonly PlayerLifecycleEventTracker lifecycle = new();
+
+    public IReadOnlyList<TakaroPlayerLifecycleEvent> Update(
+        IReadOnlyCollection<TakaroPlayer> onlinePlayers,
+        IReadOnlyCollection<string> playersWithObservedPositions,
+        DateTimeOffset timestamp)
+    {
+        var trackablePlayers = presence.SelectTrackable(
+            onlinePlayers,
+            playersWithObservedPositions);
+        return lifecycle.Update(trackablePlayers, timestamp);
+    }
+}
 
 public sealed class PlayerLifecycleEventTracker
 {

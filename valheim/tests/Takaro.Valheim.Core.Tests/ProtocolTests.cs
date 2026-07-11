@@ -70,6 +70,73 @@ public sealed class ProtocolTests
     }
 
     [TestMethod]
+    public void CreateActionResponseSendsOnlyTheSuccessfulSchemaPayload()
+    {
+        var shouldSend = TakaroProtocol.TryCreateActionResponse(
+            "req-success",
+            "getPlayerLocation",
+            TakaroActionResult.Ok(new TakaroPosition(12, 34, 56, "valheim")),
+            out var frame);
+        var response = JsonDocument.Parse(frame!).RootElement;
+
+        Assert.IsTrue(shouldSend);
+        Assert.AreEqual(12, response.GetProperty("payload").GetProperty("x").GetInt32());
+        Assert.IsFalse(response.TryGetProperty("success", out _));
+        Assert.IsFalse(response.TryGetProperty("errorCode", out _));
+    }
+
+    [TestMethod]
+    public void CreateActionResponseSuppressesUnavailableInventory()
+    {
+        var shouldSend = TakaroProtocol.TryCreateActionResponse(
+            "req-inventory",
+            "getPlayerInventory",
+            TakaroActionResult.Error("player_component_unavailable", "Remote inventory is client-owned."),
+            out var frame);
+
+        Assert.IsFalse(shouldSend);
+        Assert.IsNull(frame);
+    }
+
+    [TestMethod]
+    public void CreateActionResponseKeepsSuccessfulInventoryAsArray()
+    {
+        var items = new[] { new TakaroInventoryItem("Wood", "Wood", 1, "1") };
+        var shouldSend = TakaroProtocol.TryCreateActionResponse(
+            "req-inventory-success",
+            "getPlayerInventory",
+            TakaroActionResult.Ok(items),
+            out var frame);
+        var response = JsonDocument.Parse(frame!).RootElement;
+
+        Assert.IsTrue(shouldSend);
+        Assert.AreEqual(JsonValueKind.Array, response.GetProperty("payload").ValueKind);
+        Assert.AreEqual("Wood", response.GetProperty("payload")[0].GetProperty("code").GetString());
+    }
+
+    [DataTestMethod]
+    [DataRow("player_position_unavailable")]
+    [DataRow("player_not_found")]
+    public void CreateActionResponseUsesPayloadErrorForUnavailableLocation(string errorCode)
+    {
+        var shouldSend = TakaroProtocol.TryCreateActionResponse(
+            "req-location",
+            "getPlayerLocation",
+            TakaroActionResult.Error(errorCode, "No current server-owned position."),
+            out var frame);
+        var response = JsonDocument.Parse(frame!).RootElement;
+
+        Assert.IsTrue(shouldSend);
+        var payload = response.GetProperty("payload");
+        Assert.AreEqual(0, payload.GetProperty("x").GetDouble());
+        Assert.AreEqual(0, payload.GetProperty("y").GetDouble());
+        Assert.AreEqual(0, payload.GetProperty("z").GetDouble());
+        StringAssert.Contains(payload.GetProperty("error").GetString(), errorCode);
+        Assert.IsFalse(response.TryGetProperty("success", out _));
+        Assert.IsFalse(response.TryGetProperty("errorCode", out _));
+    }
+
+    [TestMethod]
     public void CreateIdentifyUsesKnownConnectorPayloadShape()
     {
         var config = new ConnectorConfig(

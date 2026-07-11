@@ -23,6 +23,23 @@ public sealed class RequestDispatcherTests
             adapter.Calls);
     }
 
+    [DataTestMethod]
+    [DataRow("getMapInfo")]
+    [DataRow("getMapTile")]
+    public async Task DispatchesPinnedButServerOnlyUnsupportedMapActionsActionably(string action)
+    {
+        var dispatcher = new TakaroRequestDispatcher(new FakeAdapter());
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest(
+            "map",
+            action,
+            JsonDocument.Parse("""{}""").RootElement));
+
+        Assert.IsFalse(response.Success);
+        Assert.AreEqual("server_only_unsupported", response.ErrorCode);
+        StringAssert.Contains(response.Message, "dedicated server");
+    }
+
     [TestMethod]
     public async Task DispatchesOfficialNestedPlayerArgsThroughAdapter()
     {
@@ -78,6 +95,73 @@ public sealed class RequestDispatcherTests
 
         Assert.IsTrue(response.Success);
         CollectionAssert.AreEqual(new[] { "give:Steam_1:Wood:10:<quality>" }, adapter.Calls);
+    }
+
+    [TestMethod]
+    public async Task RejectsGiveItemAmountsAboveTheWorldDropPolicyBeforeCallingAdapter()
+    {
+        var adapter = new FakeAdapter();
+        var dispatcher = new TakaroRequestDispatcher(adapter);
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest(
+            "give-too-many",
+            "giveItem",
+            JsonDocument.Parse($$"""{"gameId":"Steam_1","item":"Wood","amount":{{GiveItemPolicy.MaxAmount + 1}}}""").RootElement));
+
+        Assert.IsFalse(response.Success);
+        Assert.AreEqual("invalid_args", response.ErrorCode);
+        StringAssert.Contains(response.Message, $"at most {GiveItemPolicy.MaxAmount}");
+        Assert.AreEqual(0, adapter.Calls.Count);
+    }
+
+    [DataTestMethod]
+    [DataRow("1.5")]
+    [DataRow("-1")]
+    [DataRow("0")]
+    [DataRow("2147483648")]
+    [DataRow("\"ten\"")]
+    [DataRow("null")]
+    public async Task RejectsMalformedSuppliedGiveItemAmountInsteadOfDefaulting(string amountJson)
+    {
+        var adapter = new FakeAdapter();
+        var dispatcher = new TakaroRequestDispatcher(adapter);
+        using var args = JsonDocument.Parse($$"""{"gameId":"Steam_1","item":"Wood","amount":{{amountJson}}}""");
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest("give-invalid", "giveItem", args.RootElement));
+
+        Assert.IsFalse(response.Success, amountJson);
+        Assert.AreEqual("invalid_args", response.ErrorCode, amountJson);
+        Assert.AreEqual(0, adapter.Calls.Count, amountJson);
+    }
+
+    [TestMethod]
+    public async Task MissingGiveItemAmountDefaultsToOne()
+    {
+        var adapter = new FakeAdapter();
+        var dispatcher = new TakaroRequestDispatcher(adapter);
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest(
+            "give-default",
+            "giveItem",
+            JsonDocument.Parse("""{"gameId":"Steam_1","item":"Wood"}""").RootElement));
+
+        Assert.IsTrue(response.Success);
+        CollectionAssert.AreEqual(new[] { "give:Steam_1:Wood:1:<quality>" }, adapter.Calls);
+    }
+
+    [TestMethod]
+    public async Task MaximumGiveItemAmountIsAccepted()
+    {
+        var adapter = new FakeAdapter();
+        var dispatcher = new TakaroRequestDispatcher(adapter);
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest(
+            "give-max",
+            "giveItem",
+            JsonDocument.Parse($$"""{"gameId":"Steam_1","item":"Wood","amount":{{GiveItemPolicy.MaxAmount}}}""").RootElement));
+
+        Assert.IsTrue(response.Success);
+        CollectionAssert.AreEqual(new[] { $"give:Steam_1:Wood:{GiveItemPolicy.MaxAmount}:<quality>" }, adapter.Calls);
     }
 
     [TestMethod]
@@ -143,7 +227,7 @@ public sealed class RequestDispatcherTests
             new ActionCase("giveItem", """{"gameId":"Steam_1","item":"Wood","amount":1}""", JsonValueKind.Object, "queued"),
             new ActionCase("listItems", """{}""", JsonValueKind.Array, "code"),
             new ActionCase("listEntities", """{}""", JsonValueKind.Array, "code"),
-            new ActionCase("listLocations", """{}""", JsonValueKind.Array, "code"),
+            new ActionCase("listLocations", """{}""", JsonValueKind.Array, "position"),
             new ActionCase("executeConsoleCommand", """{"command":"help"}""", JsonValueKind.Object, "rawResult", AllowsSuccessProperty: true),
             new ActionCase("sendMessage", """{"message":"hello"}""", JsonValueKind.Object, "sent"),
             new ActionCase("teleportPlayer", """{"gameId":"Steam_1","position":{"x":1,"y":2,"z":3}}""", JsonValueKind.Object, "queued"),
@@ -256,14 +340,14 @@ public sealed class RequestDispatcherTests
         public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(TakaroActionResult.Ok(new { connectable = true }));
 
-        public Task<IReadOnlyList<TakaroPlayer>> GetPlayersAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<TakaroPlayer>>(new[]
+        public Task<TakaroActionResult> GetPlayersAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(TakaroActionResult.Ok(new[]
             {
                 new TakaroPlayer("Steam_1", "Odin", "1", "steam:1", null, null)
-            });
+            }));
 
-        public Task<TakaroPlayer?> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default) =>
-            RecordCall($"getPlayer:{identifier}", Task.FromResult<TakaroPlayer?>(new TakaroPlayer("Steam_1", "Odin", "1", "steam:1", null, null)));
+        public Task<TakaroActionResult> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default) =>
+            RecordCall($"getPlayer:{identifier}", Task.FromResult(TakaroActionResult.Ok(new TakaroPlayer("Steam_1", "Odin", "1", "steam:1", null, null))));
 
         public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default) =>
             RecordCall($"location:{identifier}", Task.FromResult(TakaroActionResult.Ok(new { x = 1, y = 2, z = 3 })));
@@ -312,6 +396,12 @@ public sealed class RequestDispatcherTests
 
         public Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(TakaroActionResult.Ok(new[] { LocationFactory.Create("StartTemple", "Start Temple", 0, 0, 0) }));
+
+        public Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(TakaroActionResult.Error("server_only_unsupported", "Valheim dedicated server map metadata is unavailable."));
+
+        public Task<TakaroActionResult> GetMapTileAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(TakaroActionResult.Error("server_only_unsupported", "Valheim dedicated server map tiles are unavailable."));
 
         public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default) =>
             RecordCall($"teleport:{identifier}:{position.X}:{position.Y}:{position.Z}", Task.FromResult(TakaroActionResult.Ok(new { queued = true })));

@@ -9,17 +9,31 @@ namespace Takaro.Valheim.Core.Tests;
 public sealed class PluginScaffoldContractTests
 {
     [TestMethod]
-    public async Task ListOnlyActionsReturnBareArraysFromPluginAdapter()
+    public async Task ReferenceFreeScaffoldReturnsExplicitUnavailablePlayerState()
+    {
+        var adapter = new ValheimServerAdapter();
+
+        var location = await adapter.GetPlayerLocationAsync("Steam_1");
+        var inventory = await adapter.GetPlayerInventoryAsync("Steam_1");
+
+        Assert.IsFalse(location.Success);
+        Assert.AreEqual("player_position_unavailable", location.ErrorCode);
+        Assert.IsFalse(inventory.Success);
+        Assert.AreEqual("player_component_unavailable", inventory.ErrorCode);
+    }
+
+    [TestMethod]
+    public async Task ReferenceFreeScaffoldDoesNotFabricateEmptyRuntimeArrays()
     {
         var dispatcher = new TakaroRequestDispatcher(new ValheimServerAdapter());
 
         var bansResult = await dispatcher.DispatchAsync(new TakaroRequest("list-bans", "listBans", JsonDocument.Parse("""[]""").RootElement));
-        using var bansDocument = JsonDocument.Parse(TakaroProtocol.CreateResponse("list-bans", bansResult));
-        Assert.AreEqual(JsonValueKind.Array, bansDocument.RootElement.GetProperty("payload").ValueKind);
+        Assert.IsFalse(bansResult.Success);
+        Assert.AreEqual("runtime_unavailable", bansResult.ErrorCode);
 
         var locationsResult = await dispatcher.DispatchAsync(new TakaroRequest("list-locations", "listLocations", JsonDocument.Parse("""[]""").RootElement));
-        using var locationsDocument = JsonDocument.Parse(TakaroProtocol.CreateResponse("list-locations", locationsResult));
-        Assert.AreEqual(JsonValueKind.Array, locationsDocument.RootElement.GetProperty("payload").ValueKind);
+        Assert.IsFalse(locationsResult.Success);
+        Assert.AreEqual("runtime_unavailable", locationsResult.ErrorCode);
     }
 
     [TestMethod]
@@ -78,35 +92,313 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void PluginBridgeRegistersLocationAndDeathRoutedRpc()
+    public void PluginDoesNotStartOnClientProcesses()
     {
-        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+        var source = ReadPluginSource("ValheimTakaroPlugin.cs");
 
-        StringAssert.Contains(source, "\"TakaroClientLocationSnapshot\"");
-        StringAssert.Contains(source, "\"TakaroPlayerDeath\"");
-        StringAssert.Contains(source, "TrySendLocalLocationSnapshot(force: true)");
+        StringAssert.Contains(source, "if (!IsDedicatedServerProcess())");
+        StringAssert.Contains(source, "only runs on dedicated Valheim servers");
+        Assert.IsTrue(
+            source.IndexOf("if (!IsDedicatedServerProcess())", StringComparison.Ordinal)
+                < source.IndexOf("harmony = new Harmony", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("client bridge started", StringComparison.OrdinalIgnoreCase));
     }
 
     [TestMethod]
-    public void PluginBridgeHooksDeathEvents()
+    public void PluginBridgeDoesNotDeclareClientSideRpcContracts()
     {
         var source = ReadPluginSource("ValheimChatEventBridge.cs");
 
-        StringAssert.Contains(source, "TakaroPlayerOnDeathPatch");
-        StringAssert.Contains(source, "EventFactory.PlayerDeath");
-        StringAssert.Contains(source, "TakaroCharacterOnDeathPatch");
-        StringAssert.Contains(source, "EventFactory.EntityKilled");
+        foreach (var marker in new[]
+                 {
+                     "TakaroClientChatMessage",
+                     "TakaroClientInventorySnapshot",
+                     "TakaroClientLocationSnapshot",
+                     "TakaroClientChatCommand",
+                     "TakaroGiveItem",
+                     "TakaroTeleportPlayer",
+                     "TakaroPlayerDeath",
+                     "TakaroEntityKilled",
+                     "Player.m_localPlayer"
+                 })
+        {
+            Assert.IsFalse(source.Contains(marker, StringComparison.Ordinal), marker);
+        }
     }
 
     [TestMethod]
-    public void PluginBridgeForwardsClientOwnedEntityDeathsToServer()
+    public void PluginAdapterDoesNotRouteActionsThroughCustomClientRpc()
+    {
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
+
+        Assert.IsFalse(source.Contains("TakaroGiveItem", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TakaroTeleportPlayer", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TakaroServerMessage", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TryGetLocationSnapshot", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TryGetInventorySnapshot", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void PluginAdapterReturnsExplicitUnavailableErrorsForClientOwnedState()
+    {
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
+        var location = SliceMethod(
+            source,
+            "public Task<TakaroActionResult> GetPlayerLocationAsync",
+            "public Task<TakaroActionResult> GetPlayerInventoryAsync");
+        var inventory = SliceMethod(
+            source,
+            "public Task<TakaroActionResult> GetPlayerInventoryAsync",
+            "public Task<TakaroActionResult> GiveItemAsync");
+
+        StringAssert.Contains(location, "player_position_unavailable");
+        Assert.IsFalse(location.Contains("new TakaroPosition(0, 0, 0", StringComparison.Ordinal));
+        StringAssert.Contains(inventory, "player_component_unavailable");
+        Assert.IsFalse(inventory.Contains("Array.Empty<object>()", StringComparison.Ordinal));
+        Assert.IsFalse(inventory.Contains("GetInventory()", StringComparison.Ordinal));
+        Assert.IsFalse(inventory.Contains("TryFindPlayerComponent", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void RunnerGatesLifecycleAndWireResponsesOnHonestServerState()
+    {
+        var source = ReadPluginSource("TakaroWebSocketRunner.cs");
+
+        StringAssert.Contains(source, "GetPlayerLocationAsync(player.GameId");
+        StringAssert.Contains(source, "TryCreateActionResponse");
+        StringAssert.Contains(source, "SuppressedResponseLogLimiter");
+        Assert.IsTrue(
+            source.IndexOf("GetPlayerLocationAsync(player.GameId", StringComparison.Ordinal)
+                < source.IndexOf("lifecycleCoordinator.Update", StringComparison.Ordinal),
+            "Lifecycle tracking must see only players with real server-owned positions.");
+    }
+
+    [TestMethod]
+    public void PluginDrainsAndDisposesTheBoundedMainThreadScheduler()
+    {
+        var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
+        var runner = ReadPluginSource("TakaroWebSocketRunner.cs");
+        var scheduler = ReadValheimFile("src/Takaro.Valheim.Core/MainThreadActionScheduler.cs");
+
+        StringAssert.Contains(entrypoint, "new QueuedMainThreadActionScheduler");
+        StringAssert.Contains(entrypoint, "mainThreadActions?.Drain()");
+        StringAssert.Contains(entrypoint, "mainThreadActions?.Dispose()");
+        StringAssert.Contains(runner, "new TakaroRequestDispatcher(adapter, this.mainThreadActions)");
+        StringAssert.Contains(runner, "mainThreadActions.ScheduleAsync");
+        StringAssert.Contains(scheduler, "TaskCreationOptions.RunContinuationsAsynchronously");
+        StringAssert.Contains(scheduler, "capacity");
+    }
+
+    [TestMethod]
+    public void ShutdownAndGameEventIoDoNotCallUnityOrWebSocketsFromTheWrongThread()
+    {
+        var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
+        var adapter = ReadPluginSource("ValheimServerAdapter.cs");
+        var runner = ReadPluginSource("TakaroWebSocketRunner.cs");
+        var shutdown = SliceMethod(
+            adapter,
+            "public Task<TakaroActionResult> ShutdownAsync",
+            "private TakaroPlayer ToTakaroPlayer");
+
+        StringAssert.Contains(shutdown, "requestShutdown()");
+        Assert.IsFalse(shutdown.Contains("Task.Run", StringComparison.Ordinal));
+        Assert.IsFalse(shutdown.Contains("Application.Quit", StringComparison.Ordinal));
+        StringAssert.Contains(entrypoint, "Application.Quit()");
+        StringAssert.Contains(entrypoint, "shutdownRequestedAt");
+        StringAssert.Contains(runner, "Task.Run(() => SendGameEventCoreAsync");
+    }
+
+    [TestMethod]
+    public void PluginAdapterUsesServerOwnedGiveAndTeleportPaths()
+    {
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
+        var give = SliceMethod(
+            source,
+            "public Task<TakaroActionResult> GiveItemAsync",
+            "public Task<TakaroActionResult> SendMessageAsync");
+        var teleport = SliceMethod(
+            source,
+            "public Task<TakaroActionResult> TeleportPlayerAsync",
+            "public Task<TakaroActionResult> KickPlayerAsync");
+
+        StringAssert.Contains(give, "DropItemStack");
+        StringAssert.Contains(source, "ItemDrop.DropItem");
+        StringAssert.Contains(teleport, "RPC_TeleportTo");
+        Assert.IsFalse(give.Contains("TakaroGiveItem", StringComparison.Ordinal));
+        Assert.IsFalse(teleport.Contains("TakaroTeleportPlayer", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void PluginAdapterValidatesServerOwnedGiveRequests()
+    {
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
+        var give = SliceMethod(
+            source,
+            "public Task<TakaroActionResult> GiveItemAsync",
+            "public Task<TakaroActionResult> SendMessageAsync");
+
+        StringAssert.Contains(give, "GiveItemPolicy.PlanStacks");
+        StringAssert.Contains(give, "amountValidation.ErrorCode");
+        StringAssert.Contains(give, "stackPlan.ErrorCode");
+        StringAssert.Contains(give, "invalid_quality");
+        StringAssert.Contains(give, "position_unavailable");
+    }
+
+    [TestMethod]
+    public void GiveItemConfirmationCannotBeReemittedAsInboundChat()
+    {
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
+        var give = SliceMethod(
+            source,
+            "public Task<TakaroActionResult> GiveItemAsync",
+            "public Task<TakaroActionResult> SendMessageAsync");
+
+        StringAssert.Contains(give, "SendHudMessage");
+        Assert.IsFalse(give.Contains("SendChatMessage", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void PluginBridgeDoesNotEmitIdentityEventsFromRoutedPayloads()
     {
         var source = ReadPluginSource("ValheimChatEventBridge.cs");
 
-        StringAssert.Contains(source, "\"TakaroEntityKilled\"");
-        StringAssert.Contains(source, "RPC_TakaroEntityKilled");
-        StringAssert.Contains(source, "ForwardLocalEntityKilled");
-        StringAssert.Contains(source, "InvokeRoutedRPC(\"TakaroEntityKilled\"");
+        StringAssert.Contains(source, "OnDeathHash");
+        StringAssert.Contains(source, "data.m_methodHash == OnDeathHash");
+        StringAssert.Contains(source, "ValheimEventAcceptancePolicy");
+        Assert.IsFalse(source.Contains("EmitPlayerDeathFromRoutedRpc", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("EventFactory.ChatMessage", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("\"chat-message\"", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("\"player-death\"", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("\"TakaroPlayerDeath\"", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void DestroyZdoIsNotTreatedAsAChatDiagnosticCandidate()
+    {
+        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+
+        Assert.IsFalse(source.Contains("199378019", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("UndecodedDedicatedServerChatHashes", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("dedicated chat candidate", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public void DestroyZdoHousekeepingDoesNotConsumeGenericRpcDiagnostics()
+    {
+        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+
+        StringAssert.Contains(source, "DestroyZdoHash = \"DestroyZDO\".GetStableHashCode()");
+        var ignore = source.IndexOf("data.m_methodHash == DestroyZdoHash", StringComparison.Ordinal);
+        var genericDiagnostic = source.IndexOf("if (routedDiagnosticsRemaining > 0)", StringComparison.Ordinal);
+        Assert.IsTrue(ignore >= 0 && ignore < genericDiagnostic);
+    }
+
+    [TestMethod]
+    public void UnsupportedEntityKilledEventHasNoPluginEmitterOrHarmonyPatch()
+    {
+        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+
+        Assert.IsFalse(source.Contains("EmitEntityKilled", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("TakaroCharacterOnDeathPatch", StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains("entity-killed event sent", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void LifecycleTransportLogsFrameWriteWithoutClaimingPersistence()
+    {
+        var source = ReadPluginSource("TakaroWebSocketRunner.cs");
+
+        StringAssert.Contains(source, "lifecycle frame written");
+        Assert.IsFalse(source.Contains("event sent for", StringComparison.Ordinal));
+        StringAssert.Contains(source, "TakaroProtocol.TryCreateActionResponse");
+    }
+
+    [TestMethod]
+    public void ObsoleteClientSnapshotCachesAndTestsAreRemoved()
+    {
+        var inventory = ReadValheimFile("src/Takaro.Valheim.Core/Inventory.cs");
+        Assert.IsFalse(inventory.Contains("LocationSnapshotCache", StringComparison.Ordinal));
+        Assert.IsFalse(inventory.Contains("InventorySnapshotCache", StringComparison.Ordinal));
+        Assert.IsFalse(File.Exists(ValheimPath("tests/Takaro.Valheim.Core.Tests/LocationSnapshotCacheTests.cs")));
+        Assert.IsFalse(File.Exists(ValheimPath("tests/Takaro.Valheim.Core.Tests/InventorySnapshotCacheTests.cs")));
+    }
+
+    [TestMethod]
+    public void PluginUsesCoreRuntimeAndWorldDropPolicies()
+    {
+        var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
+        var adapter = ReadPluginSource("ValheimServerAdapter.cs");
+
+        StringAssert.Contains(entrypoint, "ValheimRuntimePolicy.IsDedicatedServerProcess");
+        StringAssert.Contains(adapter, "GiveItemPolicy.PlanStacks");
+        StringAssert.Contains(adapter, "RuntimeArrayActionPolicy");
+        StringAssert.Contains(adapter, "playerPositions.SwitchWorld");
+        foreach (var method in new[]
+                 {
+                     SliceMethod(adapter, "public Task<TakaroActionResult> GetPlayersAsync", "public async Task<TakaroActionResult> GetPlayerAsync"),
+                     SliceMethod(adapter, "public Task<TakaroActionResult> ListItemsAsync", "public Task<TakaroActionResult> ListEntitiesAsync"),
+                     SliceMethod(adapter, "public Task<TakaroActionResult> ListEntitiesAsync", "public Task<TakaroActionResult> ListLocationsAsync"),
+                     SliceMethod(adapter, "public Task<TakaroActionResult> ListLocationsAsync", "public Task<TakaroActionResult> GetMapInfoAsync"),
+                     SliceMethod(adapter, "public Task<TakaroActionResult> ListBansAsync", "public Task<TakaroActionResult> ShutdownAsync")
+                 })
+        {
+            Assert.IsFalse(method.Contains("?? []", StringComparison.Ordinal));
+            StringAssert.Contains(method, "RuntimeArrayActionPolicy");
+        }
+    }
+
+    [TestMethod]
+    public void SourceAndPackagedInstallFlowsRequireRestartAfterConfiguration()
+    {
+        var readme = ReadValheimFile("README.md");
+        var release = ReadValheimFile("scripts/build-release.sh");
+
+        StringAssert.Contains(readme, "Restart the dedicated server");
+        StringAssert.Contains(release, "Restart the dedicated server");
+    }
+
+    [TestMethod]
+    public void ServerOnlyPluginHasNoJotunnDependencyAndRetriesReferenceSetup()
+    {
+        var project = ReadValheimFile("src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj");
+        var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
+        var setup = ReadValheimFile("scripts/setup-environment.sh");
+        var release = ReadValheimFile("scripts/build-release.sh");
+        var combined = string.Join('\n', project, entrypoint, setup, release);
+
+        foreach (var marker in new[] { "Jotunn", "JOTUNN_REFERENCE_PATH", "BepInDependency" })
+        {
+            Assert.IsFalse(combined.Contains(marker, StringComparison.OrdinalIgnoreCase), marker);
+        }
+
+        StringAssert.Contains(setup, "VALHEIM_STEAM_PLATFORMS");
+        StringAssert.Contains(setup, "VALHEIM_REFERENCE_CACHE_DIR");
+        StringAssert.Contains(setup, ".takaro-valheim-reference-cache");
+        StringAssert.Contains(setup, "refusing to mutate");
+        StringAssert.Contains(setup, "linux windows");
+        StringAssert.Contains(setup, "MAX_ATTEMPTS");
+        StringAssert.Contains(setup, "valheim_server_Data/Managed");
+        StringAssert.Contains(setup, "appcache");
+        StringAssert.Contains(setup, "--retry 5");
+        StringAssert.Contains(setup, "--retry-delay 2");
+        StringAssert.Contains(setup, "--retry-all-errors");
+        StringAssert.Contains(setup, "command -v file");
+        StringAssert.Contains(setup, "requires the 'file' command");
+        StringAssert.Contains(setup, "Mono/.Net\\ assembly");
+    }
+
+    [TestMethod]
+    public void WorkflowCachesTheOwnedReferenceDirectoryIncludingItsMarker()
+    {
+        var workflow = File.ReadAllText(Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "../../../../../../.github/workflows/valheim.yml")));
+
+        StringAssert.Contains(workflow, "valheim/_data/server\n");
+        Assert.IsFalse(
+            workflow.Contains("valheim/_data/server/valheim_server_Data/Managed", StringComparison.Ordinal),
+            "Caching only Managed would drop the ownership marker and make a corrupt restored cache unrepairable.");
+        StringAssert.Contains(workflow, "valheim-build-deps-v2-owned-reference-cache");
     }
 
     private static string ReadPluginSource(string fileName)
@@ -118,6 +410,19 @@ public sealed class PluginScaffoldContractTests
 
         return File.ReadAllText(sourcePath);
     }
+
+    private static string ReadValheimFile(string relativePath)
+    {
+        var sourcePath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "../../../../../",
+            relativePath));
+
+        return File.ReadAllText(sourcePath);
+    }
+
+    private static string ValheimPath(string relativePath) =>
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../", relativePath));
 
     private static string SliceMethod(string source, string startMarker, string endMarker)
     {

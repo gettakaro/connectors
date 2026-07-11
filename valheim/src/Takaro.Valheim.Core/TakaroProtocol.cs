@@ -51,6 +51,92 @@ public static class TakaroProtocol
         }, JsonOptions);
     }
 
+    public static bool TryCreateActionResponse(
+        string requestId,
+        string action,
+        TakaroActionResult result,
+        out string? response)
+    {
+        if (result.Success)
+        {
+            response = CreateResponse(requestId, result.Payload!);
+            return true;
+        }
+
+        var error = FormatActionError(result);
+        switch (action)
+        {
+            case TakaroActionNames.GetPlayer:
+                response = CreateResponse(requestId, new
+                {
+                    gameId = string.Empty,
+                    name = string.Empty,
+                    error
+                });
+                return true;
+            case TakaroActionNames.GetPlayerLocation:
+                // Takaro app-connector 0c63cf1c validates IPosition before Generic checks
+                // payload.error. Required coordinates make this an immediate actionable
+                // rejection without returning a fabricated position to the caller.
+                response = CreateResponse(requestId, new
+                {
+                    x = 0d,
+                    y = 0d,
+                    z = 0d,
+                    error
+                });
+                return true;
+            case TakaroActionNames.TestReachability:
+                // This action bypasses Generic.requestFromServer's payload.error check, so
+                // its validated DTO must carry an explicit disconnected result and reason.
+                response = CreateResponse(requestId, new
+                {
+                    connectable = false,
+                    reason = error,
+                    error
+                });
+                return true;
+            case TakaroActionNames.ExecuteConsoleCommand:
+                response = CreateResponse(requestId, new
+                {
+                    rawResult = string.Empty,
+                    success = false,
+                    errorMessage = error,
+                    error
+                });
+                return true;
+            case TakaroActionNames.GetMapInfo:
+                response = CreateResponse(requestId, new
+                {
+                    enabled = false,
+                    mapBlockSize = 0,
+                    maxZoom = 0,
+                    mapSizeX = 0,
+                    mapSizeY = 0,
+                    mapSizeZ = 0,
+                    error
+                });
+                return true;
+            case TakaroActionNames.GetPlayers:
+            case TakaroActionNames.GetPlayerInventory:
+            case TakaroActionNames.ListItems:
+            case TakaroActionNames.ListEntities:
+            case TakaroActionNames.ListLocations:
+            case TakaroActionNames.ListBans:
+                // These actions are pinned to array DTOs at Takaro 0c63cf1c. JSON arrays
+                // cannot carry a top-level error, while [] or an error-bearing item would
+                // fabricate game state. Only actual failure paths are suppressed.
+                response = null;
+                return false;
+            default:
+                // Takaro does not validate response DTOs for giveItem, sendMessage,
+                // teleport/moderation, or shutdown. Generic.requestFromServer rejects the
+                // top-level payload.error immediately and preserves the actionable detail.
+                response = CreateResponse(requestId, new { error });
+                return true;
+        }
+    }
+
     public static string CreateGameEvent(string eventType, object data)
     {
         return JsonSerializer.Serialize(new
@@ -117,5 +203,40 @@ public static class TakaroProtocol
         }
 
         return payload;
+    }
+
+    private static string FormatActionError(TakaroActionResult result) =>
+        $"{result.ErrorCode ?? "action_failed"}: {result.Message ?? "Valheim action failed."}";
+
+}
+
+public sealed class SuppressedResponseLogLimiter
+{
+    private readonly TimeSpan interval;
+    private readonly Dictionary<string, DateTimeOffset> lastLoggedAt = new(StringComparer.Ordinal);
+
+    public SuppressedResponseLogLimiter(TimeSpan interval)
+    {
+        if (interval <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(interval), "Log interval must be positive.");
+        }
+
+        this.interval = interval;
+    }
+
+    public bool ShouldLog(string action, string? errorCode, DateTimeOffset now)
+    {
+        var key = $"{action}\n{errorCode ?? "action_failed"}";
+        lock (lastLoggedAt)
+        {
+            if (lastLoggedAt.TryGetValue(key, out var previous) && now - previous < interval)
+            {
+                return false;
+            }
+
+            lastLoggedAt[key] = now;
+            return true;
+        }
     }
 }

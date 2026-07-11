@@ -125,33 +125,6 @@ public sealed class EventFactoryTests
     }
 
     [TestMethod]
-    public void EntityKilledUsesTakaroPayloadShape()
-    {
-        var killer = Player("Steam_76561198000735875", "Odin");
-        var timestamp = new DateTimeOffset(2026, 6, 21, 8, 4, 0, TimeSpan.Zero);
-
-        var json = TakaroProtocol.CreateGameEvent(
-            "entity-killed",
-            EventFactory.EntityKilled(
-                new TakaroEntity("Boar", "Boar"),
-                timestamp,
-                new TakaroPosition(4, 5, 6, "valheim"),
-                killer,
-                "Club"));
-        using var document = JsonDocument.Parse(json);
-        var data = document.RootElement.GetProperty("payload").GetProperty("data");
-
-        Assert.AreEqual("entity-killed", document.RootElement.GetProperty("payload").GetProperty("type").GetString());
-        Assert.AreEqual("Boar", data.GetProperty("entity").GetString());
-        Assert.AreEqual("Odin", data.GetProperty("player").GetProperty("name").GetString());
-        Assert.AreEqual("Steam_76561198000735875", data.GetProperty("player").GetProperty("gameId").GetString());
-        Assert.AreEqual("2026-06-21T08:04:00+00:00", data.GetProperty("timestamp").GetString());
-        Assert.AreEqual("Club", data.GetProperty("weapon").GetString());
-        Assert.IsFalse(data.TryGetProperty("killer", out _));
-        Assert.IsFalse(data.TryGetProperty("position", out _));
-    }
-
-    [TestMethod]
     public void LogUsesTakaroPayloadShape()
     {
         var timestamp = new DateTimeOffset(2026, 6, 21, 8, 5, 0, TimeSpan.Zero);

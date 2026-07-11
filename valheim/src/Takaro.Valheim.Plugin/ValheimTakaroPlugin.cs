@@ -4,32 +4,36 @@ using Takaro.Valheim.Core;
 using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
+using System.Diagnostics;
 using UnityEngine;
 
 namespace Takaro.Valheim.Plugin;
 
 [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
-[BepInDependency(Jotunn.Main.ModGuid)]
 public sealed class ValheimTakaroPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.takaro.valheim";
     public const string PluginName = "Takaro Valheim";
-    public const string PluginVersion = "0.1.0";
+    public const string PluginVersion = TakaroBuildVersion.BepInExVersion;
+    public const string ReleaseVersion = TakaroBuildVersion.ReleaseVersion;
 
     private TakaroWebSocketRunner? runner;
+    private QueuedMainThreadActionScheduler? mainThreadActions;
     private Harmony? harmony;
+    private bool shutdownRequested;
+    private float shutdownRequestedAt;
 
     private void Awake()
     {
-        harmony = new Harmony(PluginGuid);
-        harmony.PatchAll(typeof(ValheimChatEventBridge).Assembly);
-
         if (!IsDedicatedServerProcess())
         {
-            ValheimChatEventBridge.Initialize(null, Logger.LogInfo);
-            Logger.LogInfo("Takaro Valheim client bridge started.");
+            Logger.LogWarning("Takaro Valheim only runs on dedicated Valheim servers; client process detected, plugin disabled.");
+            enabled = false;
             return;
         }
+
+        harmony = new Harmony(PluginGuid);
+        harmony.PatchAll(typeof(ValheimChatEventBridge).Assembly);
 
         var values = new Dictionary<string, string>
         {
@@ -49,30 +53,58 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             return;
         }
 
-        var adapter = new ValheimServerAdapter(Logger, config);
-        runner = new TakaroWebSocketRunner(config, adapter, message => Logger.LogInfo(message));
+        mainThreadActions = new QueuedMainThreadActionScheduler();
+        var adapter = new ValheimServerAdapter(Logger, config, RequestShutdown);
+        runner = new TakaroWebSocketRunner(
+            config,
+            adapter,
+            message => Logger.LogInfo(message),
+            mainThreadActions);
         ValheimChatEventBridge.Initialize(runner, Logger.LogInfo);
         _ = runner.StartAsync();
 
         Logger.LogInfo("Takaro Valheim connector started.");
     }
 
-    private void Update() =>
+    private void Update()
+    {
+        mainThreadActions?.Drain();
         ValheimChatEventBridge.Update();
+
+        if (shutdownRequested && Time.realtimeSinceStartup >= shutdownRequestedAt)
+        {
+            shutdownRequested = false;
+            Logger.LogInfo("Takaro Valheim executing scheduled shutdown on the Unity main thread.");
+            Application.Quit();
+        }
+    }
 
     private void OnDestroy()
     {
         harmony?.UnpatchSelf();
         ValheimChatEventBridge.Shutdown();
         runner?.Dispose();
+        mainThreadActions?.Dispose();
+    }
+
+    private void RequestShutdown()
+    {
+        shutdownRequested = true;
+        shutdownRequestedAt = Time.realtimeSinceStartup + 1f;
+        Logger.LogInfo("Takaro Valheim shutdown requested; scheduling Application.Quit after response flush.");
     }
 
     private ConfigEntry<string> Bind(string section, string key, string defaultValue, string description) =>
         Config.Bind(section, key, defaultValue, description);
 
-    private static bool IsDedicatedServerProcess() =>
-        Application.isBatchMode
-        || Environment.GetCommandLineArgs().Any(arg => arg.IndexOf("valheim_server", StringComparison.OrdinalIgnoreCase) >= 0);
+    private static bool IsDedicatedServerProcess()
+    {
+        using var process = Process.GetCurrentProcess();
+        return ValheimRuntimePolicy.IsDedicatedServerProcess(
+            Application.isBatchMode,
+            process.ProcessName,
+            Environment.GetCommandLineArgs().FirstOrDefault());
+    }
 }
 #else
 namespace Takaro.Valheim.Plugin;
@@ -81,9 +113,10 @@ public sealed class ValheimTakaroPlugin
 {
     public const string PluginGuid = "com.takaro.valheim";
     public const string PluginName = "Takaro Valheim";
-    public const string PluginVersion = "0.1.0";
+    public const string PluginVersion = TakaroBuildVersion.BepInExVersion;
+    public const string ReleaseVersion = TakaroBuildVersion.ReleaseVersion;
 
     public static string BuildMode =>
-        "Reference-free scaffold. Build with EnableValheimPluginBuild=true and Valheim/BepInEx/Jotunn references for the real plugin.";
+        "Reference-free scaffold. Build with EnableValheimPluginBuild=true and Valheim/BepInEx references for the real plugin.";
 }
 #endif
