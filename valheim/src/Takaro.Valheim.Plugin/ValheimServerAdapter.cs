@@ -11,6 +11,8 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     private readonly ManualLogSource logger;
     private readonly ConsoleCommandPolicy commandPolicy;
     private readonly Action requestShutdown;
+    private readonly CompanionInventoryCache companionInventory;
+    private readonly CompanionMode companionMode;
     private readonly PlayerPositionCache playerPositions = new(TimeSpan.FromSeconds(30));
     private readonly Dictionary<string, HashSet<string>> banAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> banNames = new(StringComparer.OrdinalIgnoreCase);
@@ -19,10 +21,21 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         ManualLogSource logger,
         ConnectorConfig config,
         Action requestShutdown)
+        : this(logger, config, requestShutdown, new CompanionInventoryCache())
+    {
+    }
+
+    public ValheimServerAdapter(
+        ManualLogSource logger,
+        ConnectorConfig config,
+        Action requestShutdown,
+        CompanionInventoryCache companionInventory)
     {
         this.logger = logger;
         commandPolicy = new ConsoleCommandPolicy(config.CommandAllowlistExact, config.CommandAllowlistPrefixes);
         this.requestShutdown = requestShutdown;
+        this.companionInventory = companionInventory ?? throw new ArgumentNullException(nameof(companionInventory));
+        companionMode = config.CompanionMode;
     }
 
     public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
@@ -102,10 +115,29 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default)
     {
-        logger.LogInfo($"Takaro Valheim getPlayerInventory is unsupported on a dedicated server for '{identifier}'.");
-        return Task.FromResult(TakaroActionResult.Error(
-            "player_component_unavailable",
-            "Valheim dedicated servers do not expose remote player inventory components."));
+        if (companionMode == CompanionMode.Disabled)
+        {
+            return Task.FromResult(CompanionInventoryActionPolicy.FromResolvedPlayer(
+                companionMode,
+                player: null,
+                companionInventory,
+                DateTimeOffset.UtcNow));
+        }
+
+        if (!TryResolvePlayer(identifier, out _, out _, out var player) || player is null)
+        {
+            return Task.FromResult(CompanionInventoryActionPolicy.FromResolvedPlayer(
+                companionMode,
+                player: null,
+                companionInventory,
+                DateTimeOffset.UtcNow));
+        }
+
+        return Task.FromResult(CompanionInventoryActionPolicy.FromResolvedPlayer(
+            companionMode,
+            player,
+            companionInventory,
+            DateTimeOffset.UtcNow));
     }
 
     public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default)

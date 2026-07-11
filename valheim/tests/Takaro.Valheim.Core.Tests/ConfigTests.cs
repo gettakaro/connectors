@@ -76,4 +76,87 @@ public sealed class ConfigTests
         CollectionAssert.AreEqual(new[] { "help", "players" }, config.CommandAllowlistExact.ToArray());
         CollectionAssert.AreEqual(new[] { "say", "broadcast" }, config.CommandAllowlistPrefixes.ToArray());
     }
+
+    [TestMethod]
+    public void FromDictionaryAppliesExactCompanionDefaults()
+    {
+        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
+        {
+            ["registrationToken"] = "reg-123",
+            ["serverName"] = "Meadows"
+        });
+
+        Assert.AreEqual("Required", ReadCompanionMode(config));
+        CollectionAssert.AreEqual(new[] { "$" }, ReadCompanionCommandPrefixes(config));
+    }
+
+    [DataTestMethod]
+    [DataRow("disabled", "Disabled")]
+    [DataRow("oPtIoNaL", "Optional")]
+    [DataRow("REQUIRED", "Required")]
+    public void FromDictionaryParsesEveryCompanionModeCaseInsensitively(
+        string configuredValue,
+        string expectedMode)
+    {
+        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
+        {
+            ["registrationToken"] = "reg-123",
+            ["serverName"] = "Meadows",
+            ["companionMode"] = configuredValue
+        });
+
+        Assert.AreEqual(expectedMode, ReadCompanionMode(config));
+    }
+
+    [TestMethod]
+    public void FromDictionaryParsesCompanionCommandPrefixes()
+    {
+        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
+        {
+            ["registrationToken"] = "reg-123",
+            ["serverName"] = "Meadows",
+            ["companionCommandPrefixes"] = "! ; /,  ? "
+        });
+
+        CollectionAssert.AreEqual(
+            new[] { "!", "/", "?" },
+            ReadCompanionCommandPrefixes(config));
+    }
+
+    [DataTestMethod]
+    [DataRow("enabled")]
+    [DataRow("1")]
+    [DataRow("optional|required")]
+    public void TryFromDictionaryRejectsEveryOtherNonblankCompanionMode(string configuredValue)
+    {
+        var ok = ConnectorConfig.TryFromDictionary(new Dictionary<string, string>
+        {
+            ["registrationToken"] = "reg-123",
+            ["serverName"] = "Meadows",
+            ["companionMode"] = configuredValue
+        }, out var config, out var error);
+
+        Assert.IsFalse(ok);
+        Assert.IsNull(config);
+        StringAssert.Contains(error, "companionMode");
+    }
+
+    private static string ReadCompanionMode(ConnectorConfig config)
+    {
+        var property = typeof(ConnectorConfig).GetProperty("CompanionMode")
+            ?? throw new AssertFailedException("ConnectorConfig is missing CompanionMode.");
+
+        return property.GetValue(config)?.ToString()
+            ?? throw new AssertFailedException("ConnectorConfig.CompanionMode is null.");
+    }
+
+    private static string[] ReadCompanionCommandPrefixes(ConnectorConfig config)
+    {
+        var property = typeof(ConnectorConfig).GetProperty("CompanionCommandPrefixes")
+            ?? throw new AssertFailedException("ConnectorConfig is missing CompanionCommandPrefixes.");
+        var prefixes = property.GetValue(config) as IEnumerable<string>
+            ?? throw new AssertFailedException("ConnectorConfig.CompanionCommandPrefixes is not a string list.");
+
+        return prefixes.ToArray();
+    }
 }

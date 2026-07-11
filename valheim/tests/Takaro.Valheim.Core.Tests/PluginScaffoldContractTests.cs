@@ -139,7 +139,7 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void PluginAdapterReturnsExplicitUnavailableErrorsForClientOwnedState()
+    public void PluginAdapterUsesCompanionInventoryWithoutPlayerComponentAccess()
     {
         var source = ReadPluginSource("ValheimServerAdapter.cs");
         var location = SliceMethod(
@@ -153,10 +153,24 @@ public sealed class PluginScaffoldContractTests
 
         StringAssert.Contains(location, "player_position_unavailable");
         Assert.IsFalse(location.Contains("new TakaroPosition(0, 0, 0", StringComparison.Ordinal));
-        StringAssert.Contains(inventory, "player_component_unavailable");
+        StringAssert.Contains(inventory, "CompanionMode.Disabled");
+        StringAssert.Contains(inventory, "TryResolvePlayer(identifier");
+        StringAssert.Contains(inventory, "CompanionInventoryActionPolicy.FromResolvedPlayer");
         Assert.IsFalse(inventory.Contains("Array.Empty<object>()", StringComparison.Ordinal));
         Assert.IsFalse(inventory.Contains("GetInventory()", StringComparison.Ordinal));
         Assert.IsFalse(inventory.Contains("TryFindPlayerComponent", StringComparison.Ordinal));
+        Assert.IsFalse(inventory.Contains("companionInventory.TryGet(identifier", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void RealPluginAdapterExposesCompanionInventoryCacheInjection()
+    {
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
+        var realAdapter = source[..source.IndexOf("#else", StringComparison.Ordinal)];
+
+        StringAssert.Contains(realAdapter, "private readonly CompanionInventoryCache companionInventory;");
+        StringAssert.Contains(realAdapter, "CompanionInventoryCache companionInventory");
+        StringAssert.Contains(realAdapter, "this.companionInventory = companionInventory");
     }
 
     [TestMethod]

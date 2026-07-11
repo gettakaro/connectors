@@ -1,5 +1,12 @@
 namespace Takaro.Valheim.Core;
 
+public enum CompanionMode
+{
+    Disabled,
+    Optional,
+    Required
+}
+
 public sealed record ConnectorConfig(
     string RegistrationToken,
     string ServerName,
@@ -10,6 +17,10 @@ public sealed record ConnectorConfig(
     IReadOnlyList<string> CommandAllowlistExact,
     IReadOnlyList<string> CommandAllowlistPrefixes)
 {
+    public CompanionMode CompanionMode { get; init; } = CompanionMode.Required;
+
+    public IReadOnlyList<string> CompanionCommandPrefixes { get; init; } = new[] { "$" };
+
     public static bool TryFromDictionary(
         IReadOnlyDictionary<string, string> values,
         out ConnectorConfig? config,
@@ -48,7 +59,13 @@ public sealed record ConnectorConfig(
             LogLevel: Optional(values, "logLevel") ?? "Information",
             EnableLogEvents: ParseBool(Optional(values, "enableLogEvents"), defaultValue: true),
             CommandAllowlistExact: ParseList(Optional(values, "commandAllowlistExact"), defaultValues: new[] { "help" }),
-            CommandAllowlistPrefixes: ParseList(Optional(values, "commandAllowlistPrefixes"), defaultValues: Array.Empty<string>()));
+            CommandAllowlistPrefixes: ParseList(Optional(values, "commandAllowlistPrefixes"), defaultValues: Array.Empty<string>()))
+        {
+            CompanionMode = ParseCompanionMode(Optional(values, "companionMode")),
+            CompanionCommandPrefixes = ParseList(
+                Optional(values, "companionCommandPrefixes"),
+                defaultValues: new[] { "$" })
+        };
     }
 
     private static string? Required(IReadOnlyDictionary<string, string> values, string key, List<string> missing)
@@ -84,6 +101,32 @@ public sealed record ConnectorConfig(
             || value.Equals("true", StringComparison.OrdinalIgnoreCase)
             || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
             || value.Equals("on", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static CompanionMode ParseCompanionMode(string? value)
+    {
+        if (value is null)
+        {
+            return CompanionMode.Required;
+        }
+
+        if (value.Equals("disabled", StringComparison.OrdinalIgnoreCase))
+        {
+            return CompanionMode.Disabled;
+        }
+
+        if (value.Equals("optional", StringComparison.OrdinalIgnoreCase))
+        {
+            return CompanionMode.Optional;
+        }
+
+        if (value.Equals("required", StringComparison.OrdinalIgnoreCase))
+        {
+            return CompanionMode.Required;
+        }
+
+        throw new ArgumentException(
+            $"Invalid Valheim Takaro companionMode '{value}'. Expected disabled, optional, or required.");
     }
 
     private static IReadOnlyList<string> ParseList(string? value, IReadOnlyList<string> defaultValues)
