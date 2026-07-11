@@ -10,6 +10,11 @@ namespace Takaro.Valheim.Core.Tests;
 public sealed class CompanionProtocolTests
 {
     private const string ProtocolNamespace = "Takaro.Valheim.Companion.Protocol";
+    private const int MaximumInventoryAmount = 1_000_000;
+    private const int MaximumItemQuality = 1_000_000;
+    private const float MaximumDurability = 1_000_000_000f;
+    private const float MaximumAbsolutePositionCoordinate = 1_000_000f;
+    private const long MaximumTimestampUnixMilliseconds = 253_402_300_799_999L;
 
     private static readonly JsonSerializerOptions WireJsonOptions = new()
     {
@@ -271,34 +276,28 @@ public sealed class CompanionProtocolTests
     [TestMethod]
     public void RejectsUnknownPayloadFieldsThatCouldClaimIdentity()
     {
-        AssertPayloadRejected<CompanionChatReport>(
+        AssertDeclaredPayloadRejected(
             CompanionMessageTypes.Chat,
             """
             {"eventId":"chat-1","timestampUnixMilliseconds":1,"message":"hello","playerId":"claimed"}
             """,
             "invalid-payload-fields");
-        AssertPayloadRejected<CompanionChatReport>(
+        AssertDeclaredPayloadRejected(
             CompanionMessageTypes.Chat,
             """
             {"eventId":"chat-1","timestampUnixMilliseconds":1,"message":"hello","steamId":"claimed"}
             """,
             "invalid-payload-fields");
-        AssertPayloadRejected<CompanionChatReport>(
-            CompanionMessageTypes.Chat,
+        AssertDeclaredPayloadRejected(
+            CompanionMessageTypes.InventorySnapshot,
             """
-            {"timestampUnixMilliseconds":1,"message":"hello"}
+            {"stacks":[{"code":"Wood","name":"Wood","amount":1,"quality":1,"durability":1,"equipped":false,"slot":0,"accountId":"claimed"}]}
             """,
             "invalid-payload-fields");
-        AssertPayloadRejected<CompanionChatReport>(
-            CompanionMessageTypes.Chat,
+        AssertDeclaredPayloadRejected(
+            CompanionMessageTypes.PlayerDeath,
             """
-            {"eventId":"chat-1","eventId":"chat-2","timestampUnixMilliseconds":1,"message":"hello"}
-            """,
-            "invalid-payload-fields");
-        AssertPayloadRejected<CompanionChatReport>(
-            CompanionMessageTypes.Chat,
-            """
-            {"EventId":"chat-1","timestampUnixMilliseconds":1,"message":"hello"}
+            {"eventId":"death-1","timestampUnixMilliseconds":1,"position":{"x":0,"y":0,"z":0,"peerId":"claimed"}}
             """,
             "invalid-payload-fields");
 
@@ -312,58 +311,199 @@ public sealed class CompanionProtocolTests
                 out var wrongPayloadError));
         Assert.IsNull(wrongPayload);
         Assert.AreEqual("payload-type-mismatch", wrongPayloadError);
+    }
 
-        AssertPayloadRejected<CompanionChatReport>(
-            CompanionMessageTypes.Chat,
-            """{"eventId":"chat-1","timestampUnixMilliseconds":1,"message":42}""",
-            "invalid-payload");
-        AssertPayloadRejected<CompanionChatReport>(
-            CompanionMessageTypes.Chat,
-            CreateChatPayload(new string('e', CompanionProtocol.MaximumEventIdCharacters + 1), "hello"),
-            "invalid-payload");
-        AssertPayloadRejected<CompanionChatReport>(
-            CompanionMessageTypes.Chat,
-            CreateChatPayload("chat-1", new string('c', CompanionProtocol.MaximumChatCharacters + 1)),
-            "invalid-payload");
-
+    [TestMethod]
+    public void RejectsInvalidValuesAcrossEveryVersionOnePayload()
+    {
         var oversizedStacks = string.Join(
             ",",
             Enumerable.Repeat(
                 """{"code":"Wood","name":"Wood","amount":1,"quality":1,"durability":1,"equipped":false,"slot":0}""",
                 CompanionProtocol.MaximumInventoryStacks + 1));
-        AssertPayloadRejected<CompanionInventoryReport>(
-            CompanionMessageTypes.InventorySnapshot,
-            $"{{\"stacks\":[{oversizedStacks}]}}",
-            "invalid-payload");
-        AssertPayloadRejected<CompanionInventoryReport>(
-            CompanionMessageTypes.InventorySnapshot,
-            """
-            {"stacks":[{"code":"Wood","name":"Wood","amount":0,"quality":1,"durability":1,"equipped":false,"slot":0}]}
-            """,
-            "invalid-payload");
-        AssertPayloadRejected<CompanionInventoryReport>(
-            CompanionMessageTypes.InventorySnapshot,
-            """
-            {"stacks":[{"code":"Wood","name":"Wood","amount":1,"quality":-1,"durability":1,"equipped":false,"slot":0}]}
-            """,
-            "invalid-payload");
-        AssertPayloadRejected<CompanionInventoryReport>(
-            CompanionMessageTypes.InventorySnapshot,
-            """
-            {"stacks":[{"code":"Wood","name":"Wood","amount":1,"quality":1,"durability":-1,"equipped":false,"slot":0}]}
-            """,
-            "invalid-payload");
 
-        AssertPayloadRejected<CompanionPlayerDeathReport>(
-            CompanionMessageTypes.PlayerDeath,
-            """
-            {"eventId":"death-1","timestampUnixMilliseconds":1,"position":{"x":1e40,"y":0,"z":0},"causeHint":null,"attackerCodeHint":null}
-            """,
-            "invalid-payload");
-        AssertPayloadRejected<CompanionEntityKilledReport>(
-            CompanionMessageTypes.EntityKilled,
-            $"{{\"eventId\":\"kill-1\",\"timestampUnixMilliseconds\":1,\"position\":{{\"x\":0,\"y\":0,\"z\":0}},\"entityCodeHint\":\"{new string('x', CompanionProtocol.MaximumCodeCharacters + 1)}\",\"weaponCodeHint\":null}}",
-            "invalid-payload");
+        var invalidPayloads = new (string Name, string MessageType, string Json, string ErrorCode)[]
+        {
+            ("hello nonpositive range", CompanionMessageTypes.Hello,
+                """{"minimumVersion":0,"maximumVersion":1,"capabilities":0}""", "invalid-payload"),
+            ("hello reversed range", CompanionMessageTypes.Hello,
+                """{"minimumVersion":2,"maximumVersion":1,"capabilities":0}""", "invalid-payload"),
+            ("hello unknown capability", CompanionMessageTypes.Hello,
+                """{"minimumVersion":1,"maximumVersion":1,"capabilities":16}""", "invalid-payload"),
+            ("hello-ack unsupported version", CompanionMessageTypes.HelloAck,
+                """{"protocolVersion":2,"acceptedCapabilities":0}""", "invalid-payload"),
+            ("hello-ack unknown capability", CompanionMessageTypes.HelloAck,
+                """{"protocolVersion":1,"acceptedCapabilities":16}""", "invalid-payload"),
+            ("heartbeat negative timestamp", CompanionMessageTypes.Heartbeat,
+                """{"timestampUnixMilliseconds":-1}""", "invalid-payload"),
+            ("chat null event", CompanionMessageTypes.Chat,
+                """{"eventId":null,"timestampUnixMilliseconds":1,"message":"hello"}""", "invalid-payload"),
+            ("chat negative timestamp", CompanionMessageTypes.Chat,
+                """{"eventId":"chat-1","timestampUnixMilliseconds":-1,"message":"hello"}""", "invalid-payload"),
+            ("chat null message", CompanionMessageTypes.Chat,
+                """{"eventId":"chat-1","timestampUnixMilliseconds":1,"message":null}""", "invalid-payload"),
+            ("chat oversized event", CompanionMessageTypes.Chat,
+                CreateChatPayload(new string('e', CompanionProtocol.MaximumEventIdCharacters + 1), "hello"), "invalid-payload"),
+            ("chat oversized message", CompanionMessageTypes.Chat,
+                CreateChatPayload("chat-1", new string('c', CompanionProtocol.MaximumChatCharacters + 1)), "invalid-payload"),
+            ("inventory null stacks", CompanionMessageTypes.InventorySnapshot,
+                """{"stacks":null}""", "invalid-payload"),
+            ("inventory too many stacks", CompanionMessageTypes.InventorySnapshot,
+                $"{{\"stacks\":[{oversizedStacks}]}}", "invalid-payload"),
+            ("inventory null stack", CompanionMessageTypes.InventorySnapshot,
+                """{"stacks":[null]}""", "invalid-payload"),
+            ("inventory nested unknown", CompanionMessageTypes.InventorySnapshot,
+                """{"stacks":[{"code":"Wood","name":"Wood","amount":1,"quality":1,"durability":1,"equipped":false,"slot":0,"future":true}]}""", "invalid-payload-fields"),
+            ("inventory nested duplicate", CompanionMessageTypes.InventorySnapshot,
+                """{"stacks":[{"code":"Wood","code":"Stone","name":"Wood","amount":1,"quality":1,"durability":1,"equipped":false,"slot":0}]}""", "invalid-payload-fields"),
+            ("inventory nested casing", CompanionMessageTypes.InventorySnapshot,
+                """{"stacks":[{"Code":"Wood","name":"Wood","amount":1,"quality":1,"durability":1,"equipped":false,"slot":0}]}""", "invalid-payload-fields"),
+            ("inventory null strings", CompanionMessageTypes.InventorySnapshot,
+                """{"stacks":[{"code":null,"name":null,"amount":1,"quality":1,"durability":1,"equipped":false,"slot":0}]}""", "invalid-payload"),
+            ("inventory oversized strings", CompanionMessageTypes.InventorySnapshot,
+                $"{{\"stacks\":[{{\"code\":\"{new string('c', CompanionProtocol.MaximumCodeCharacters + 1)}\",\"name\":\"{new string('n', CompanionProtocol.MaximumChatCharacters + 1)}\",\"amount\":1,\"quality\":1,\"durability\":1,\"equipped\":false,\"slot\":0}}]}}", "invalid-payload"),
+            ("inventory invalid numbers", CompanionMessageTypes.InventorySnapshot,
+                """{"stacks":[{"code":"Wood","name":"Wood","amount":0,"quality":0,"durability":-1,"equipped":false,"slot":-1}]}""", "invalid-payload"),
+            ("death null position", CompanionMessageTypes.PlayerDeath,
+                """{"eventId":"death-1","timestampUnixMilliseconds":1,"position":null}""", "invalid-payload"),
+            ("death nested unknown", CompanionMessageTypes.PlayerDeath,
+                """{"eventId":"death-1","timestampUnixMilliseconds":1,"position":{"x":0,"y":0,"z":0,"future":1}}""", "invalid-payload-fields"),
+            ("death nested duplicate", CompanionMessageTypes.PlayerDeath,
+                """{"eventId":"death-1","timestampUnixMilliseconds":1,"position":{"x":0,"x":1,"y":0,"z":0}}""", "invalid-payload-fields"),
+            ("death nested casing", CompanionMessageTypes.PlayerDeath,
+                """{"eventId":"death-1","timestampUnixMilliseconds":1,"position":{"X":0,"y":0,"z":0}}""", "invalid-payload-fields"),
+            ("death nonfinite position", CompanionMessageTypes.PlayerDeath,
+                """{"eventId":"death-1","timestampUnixMilliseconds":1,"position":{"x":"NaN","y":0,"z":0}}""", "invalid-payload"),
+            ("kill null position", CompanionMessageTypes.EntityKilled,
+                """{"eventId":"kill-1","timestampUnixMilliseconds":1,"position":null}""", "invalid-payload"),
+            ("kill nested unknown", CompanionMessageTypes.EntityKilled,
+                """{"eventId":"kill-1","timestampUnixMilliseconds":1,"position":{"x":0,"y":0,"z":0,"future":1}}""", "invalid-payload-fields"),
+            ("kill nested duplicate", CompanionMessageTypes.EntityKilled,
+                """{"eventId":"kill-1","timestampUnixMilliseconds":1,"position":{"x":0,"y":0,"z":0,"z":1}}""", "invalid-payload-fields"),
+            ("kill nested casing", CompanionMessageTypes.EntityKilled,
+                """{"eventId":"kill-1","timestampUnixMilliseconds":1,"position":{"x":0,"y":0,"Z":0}}""", "invalid-payload-fields"),
+            ("kill nonfinite position", CompanionMessageTypes.EntityKilled,
+                """{"eventId":"kill-1","timestampUnixMilliseconds":1,"position":{"x":0,"y":"Infinity","z":0}}""", "invalid-payload"),
+            ("kill oversized code hint", CompanionMessageTypes.EntityKilled,
+                $"{{\"eventId\":\"kill-1\",\"timestampUnixMilliseconds\":1,\"position\":{{\"x\":0,\"y\":0,\"z\":0}},\"entityCodeHint\":\"{new string('x', CompanionProtocol.MaximumCodeCharacters + 1)}\"}}", "invalid-payload")
+        };
+
+        foreach (var testCase in invalidPayloads)
+        {
+            AssertDeclaredPayloadRejected(testCase.MessageType, testCase.Json, testCase.ErrorCode, testCase.Name);
+        }
+    }
+
+    [TestMethod]
+    public void RejectsFinitePayloadValuesBeyondWireSafetyBoundsOnDecodeAndEncode()
+    {
+        var invalidPayloads = new (string Name, string MessageType, object Payload)[]
+        {
+            ("heartbeat timestamp", CompanionMessageTypes.Heartbeat,
+                new CompanionHeartbeat(MaximumTimestampUnixMilliseconds + 1)),
+            ("chat timestamp", CompanionMessageTypes.Chat,
+                new CompanionChatReport("chat-1", MaximumTimestampUnixMilliseconds + 1, "hello")),
+            ("inventory amount", CompanionMessageTypes.InventorySnapshot,
+                InventoryWith(new CompanionInventoryStack("Wood", "Wood", MaximumInventoryAmount + 1, 1, 1, false, 0))),
+            ("inventory quality", CompanionMessageTypes.InventorySnapshot,
+                InventoryWith(new CompanionInventoryStack("Wood", "Wood", 1, MaximumItemQuality + 1, 1, false, 0))),
+            ("inventory slot", CompanionMessageTypes.InventorySnapshot,
+                InventoryWith(new CompanionInventoryStack("Wood", "Wood", 1, 1, 1, false, CompanionProtocol.MaximumInventoryStacks))),
+            ("inventory durability", CompanionMessageTypes.InventorySnapshot,
+                InventoryWith(new CompanionInventoryStack("Wood", "Wood", 1, 1, MaximumDurability + 128f, false, 0))),
+            ("death timestamp", CompanionMessageTypes.PlayerDeath,
+                new CompanionPlayerDeathReport("death-1", MaximumTimestampUnixMilliseconds + 1, new CompanionPosition(0, 0, 0), null, null)),
+            ("death coordinate", CompanionMessageTypes.PlayerDeath,
+                new CompanionPlayerDeathReport("death-1", 1, new CompanionPosition(MaximumAbsolutePositionCoordinate + 1, 0, 0), null, null)),
+            ("kill timestamp", CompanionMessageTypes.EntityKilled,
+                new CompanionEntityKilledReport("kill-1", MaximumTimestampUnixMilliseconds + 1, new CompanionPosition(0, 0, 0), null, null)),
+            ("kill coordinate", CompanionMessageTypes.EntityKilled,
+                new CompanionEntityKilledReport("kill-1", 1, new CompanionPosition(0, 0, -MaximumAbsolutePositionCoordinate - 1), null, null))
+        };
+
+        foreach (var testCase in invalidPayloads)
+        {
+            AssertDeclaredPayloadRejected(
+                testCase.MessageType,
+                SerializePayload(testCase.Payload),
+                "invalid-payload",
+                testCase.Name);
+        }
+    }
+
+    [TestMethod]
+    public void AcceptsExactWireSafetyBoundsOnDecodeAndEncode()
+    {
+        var validPayloads = new (string MessageType, object Payload)[]
+        {
+            (CompanionMessageTypes.Heartbeat,
+                new CompanionHeartbeat(MaximumTimestampUnixMilliseconds)),
+            (CompanionMessageTypes.Chat,
+                new CompanionChatReport(
+                    new string('e', CompanionProtocol.MaximumEventIdCharacters),
+                    MaximumTimestampUnixMilliseconds,
+                    new string('c', CompanionProtocol.MaximumChatCharacters))),
+            (CompanionMessageTypes.InventorySnapshot,
+                InventoryWith(new CompanionInventoryStack(
+                    new string('c', CompanionProtocol.MaximumCodeCharacters),
+                    new string('n', CompanionProtocol.MaximumChatCharacters),
+                    MaximumInventoryAmount,
+                    MaximumItemQuality,
+                    MaximumDurability,
+                    true,
+                    CompanionProtocol.MaximumInventoryStacks - 1))),
+            (CompanionMessageTypes.PlayerDeath,
+                new CompanionPlayerDeathReport(
+                    "death-1",
+                    MaximumTimestampUnixMilliseconds,
+                    new CompanionPosition(
+                        MaximumAbsolutePositionCoordinate,
+                        -MaximumAbsolutePositionCoordinate,
+                        MaximumAbsolutePositionCoordinate),
+                    new string('c', CompanionProtocol.MaximumChatCharacters),
+                    new string('a', CompanionProtocol.MaximumCodeCharacters))),
+            (CompanionMessageTypes.EntityKilled,
+                new CompanionEntityKilledReport(
+                    "kill-1",
+                    MaximumTimestampUnixMilliseconds,
+                    new CompanionPosition(
+                        -MaximumAbsolutePositionCoordinate,
+                        MaximumAbsolutePositionCoordinate,
+                        -MaximumAbsolutePositionCoordinate),
+                    new string('e', CompanionProtocol.MaximumCodeCharacters),
+                    new string('w', CompanionProtocol.MaximumCodeCharacters)))
+        };
+
+        foreach (var testCase in validPayloads)
+        {
+            AssertDeclaredPayloadAccepted(testCase.MessageType, SerializePayload(testCase.Payload));
+        }
+    }
+
+    [TestMethod]
+    public void ReturnsStableErrorForDisposedExternalPayloadElement()
+    {
+        JsonElement disposedPayload;
+        using (var document = JsonDocument.Parse("""{"timestampUnixMilliseconds":1}"""))
+        {
+            disposedPayload = document.RootElement;
+        }
+
+        var envelope = new CompanionEnvelope(
+            CompanionProtocol.CurrentVersion,
+            "nonce",
+            1,
+            "message-1",
+            CompanionMessageTypes.Heartbeat,
+            disposedPayload);
+
+        Assert.IsFalse(
+            CompanionEnvelopeCodec.TryDecodePayload<CompanionHeartbeat>(
+                envelope,
+                out var payload,
+                out var errorCode));
+        Assert.IsNull(payload);
+        Assert.AreEqual("invalid-payload", errorCode);
     }
 
     private static Assembly ProtocolAssembly => Assembly.Load(ProtocolNamespace);
@@ -497,17 +637,111 @@ public sealed class CompanionProtocolTests
         Assert.IsFalse(errorCode.Contains("claimed", StringComparison.Ordinal));
     }
 
-    private static void AssertPayloadRejected<T>(string messageType, string payloadJson, string expectedErrorCode)
+    private static void AssertPayloadRejected<T>(
+        string messageType,
+        string payloadJson,
+        string expectedErrorCode,
+        string caseName)
         where T : class
     {
         var envelope = CreateEnvelope(messageType, payloadJson);
 
-        Assert.IsFalse(CompanionEnvelopeCodec.TryDecodePayload<T>(envelope, out var payload, out var errorCode));
-        Assert.IsNull(payload);
-        Assert.AreEqual(expectedErrorCode, errorCode);
-        Assert.IsFalse(errorCode.Contains("claimed", StringComparison.Ordinal));
-        Assert.IsFalse(errorCode.Contains("hello", StringComparison.Ordinal));
-        Assert.IsFalse(errorCode.Contains("Wood", StringComparison.Ordinal));
+        Assert.IsFalse(
+            CompanionEnvelopeCodec.TryDecodePayload<T>(envelope, out var payload, out var errorCode),
+            caseName);
+        Assert.IsNull(payload, caseName);
+        Assert.AreEqual(expectedErrorCode, errorCode, caseName);
+        Assert.IsFalse(errorCode.Contains("claimed", StringComparison.Ordinal), caseName);
+        Assert.IsFalse(errorCode.Contains("hello", StringComparison.Ordinal), caseName);
+        Assert.IsFalse(errorCode.Contains("Wood", StringComparison.Ordinal), caseName);
+    }
+
+    private static void AssertDeclaredPayloadRejected(
+        string messageType,
+        string payloadJson,
+        string expectedErrorCode,
+        string? caseName = null)
+    {
+        var name = caseName ?? messageType;
+
+        switch (messageType)
+        {
+            case CompanionMessageTypes.Hello:
+                AssertPayloadRejected<CompanionHello>(messageType, payloadJson, expectedErrorCode, name);
+                break;
+            case CompanionMessageTypes.HelloAck:
+                AssertPayloadRejected<CompanionHelloAck>(messageType, payloadJson, expectedErrorCode, name);
+                break;
+            case CompanionMessageTypes.Heartbeat:
+                AssertPayloadRejected<CompanionHeartbeat>(messageType, payloadJson, expectedErrorCode, name);
+                break;
+            case CompanionMessageTypes.Chat:
+                AssertPayloadRejected<CompanionChatReport>(messageType, payloadJson, expectedErrorCode, name);
+                break;
+            case CompanionMessageTypes.InventorySnapshot:
+                AssertPayloadRejected<CompanionInventoryReport>(messageType, payloadJson, expectedErrorCode, name);
+                break;
+            case CompanionMessageTypes.PlayerDeath:
+                AssertPayloadRejected<CompanionPlayerDeathReport>(messageType, payloadJson, expectedErrorCode, name);
+                break;
+            case CompanionMessageTypes.EntityKilled:
+                AssertPayloadRejected<CompanionEntityKilledReport>(messageType, payloadJson, expectedErrorCode, name);
+                break;
+            default:
+                Assert.Fail($"Unknown test message type {messageType}.");
+                break;
+        }
+
+        var envelope = CreateEnvelope(messageType, payloadJson);
+        var exception = Assert.ThrowsException<ArgumentException>(
+            () => CompanionEnvelopeCodec.EncodeEnvelope(envelope),
+            name);
+        StringAssert.StartsWith(exception.Message, expectedErrorCode, name);
+        Assert.IsFalse(exception.Message.Contains("claimed", StringComparison.Ordinal), name);
+        Assert.IsFalse(exception.Message.Contains("Wood", StringComparison.Ordinal), name);
+    }
+
+    private static void AssertDeclaredPayloadAccepted(string messageType, string payloadJson)
+    {
+        var envelope = CreateEnvelope(messageType, payloadJson);
+
+        switch (messageType)
+        {
+            case CompanionMessageTypes.Heartbeat:
+                AssertPayloadAccepted<CompanionHeartbeat>(envelope);
+                break;
+            case CompanionMessageTypes.Chat:
+                AssertPayloadAccepted<CompanionChatReport>(envelope);
+                break;
+            case CompanionMessageTypes.InventorySnapshot:
+                AssertPayloadAccepted<CompanionInventoryReport>(envelope);
+                break;
+            case CompanionMessageTypes.PlayerDeath:
+                AssertPayloadAccepted<CompanionPlayerDeathReport>(envelope);
+                break;
+            case CompanionMessageTypes.EntityKilled:
+                AssertPayloadAccepted<CompanionEntityKilledReport>(envelope);
+                break;
+            default:
+                Assert.Fail($"Unsupported acceptance-test message type {messageType}.");
+                break;
+        }
+
+        var encoded = CompanionEnvelopeCodec.EncodeEnvelope(envelope);
+        Assert.IsTrue(
+            CompanionEnvelopeCodec.TryDecodeEnvelope(encoded, out var decodedEnvelope, out var errorCode),
+            errorCode);
+        Assert.IsNotNull(decodedEnvelope);
+    }
+
+    private static void AssertPayloadAccepted<T>(CompanionEnvelope envelope)
+        where T : class
+    {
+        Assert.IsTrue(
+            CompanionEnvelopeCodec.TryDecodePayload<T>(envelope, out var payload, out var errorCode),
+            errorCode);
+        Assert.IsNotNull(payload);
+        Assert.AreEqual(string.Empty, errorCode);
     }
 
     private static CompanionEnvelope CreateEnvelope(string messageType, string payloadJson)
@@ -537,6 +771,16 @@ public sealed class CompanionProtocolTests
     private static string CreateChatPayload(string eventId, string message)
     {
         return $"{{\"eventId\":{JsonSerializer.Serialize(eventId)},\"timestampUnixMilliseconds\":1,\"message\":{JsonSerializer.Serialize(message)}}}";
+    }
+
+    private static CompanionInventoryReport InventoryWith(CompanionInventoryStack stack)
+    {
+        return new CompanionInventoryReport([stack]);
+    }
+
+    private static string SerializePayload(object payload)
+    {
+        return JsonSerializer.Serialize(payload, payload.GetType(), WireJsonOptions);
     }
 
     private static JsonElement ToJsonElement<T>(T value)

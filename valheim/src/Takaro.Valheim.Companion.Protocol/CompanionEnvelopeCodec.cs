@@ -8,6 +8,13 @@ public static class CompanionEnvelopeCodec
     public const int MaximumSessionNonceCharacters = 128;
     public const int MaximumMessageIdCharacters = 64;
 
+    private const int MaximumInventoryAmount = 1_000_000;
+    private const int MaximumItemQuality = 1_000_000;
+    private const int MaximumInventorySlot = CompanionProtocol.MaximumInventoryStacks - 1;
+    private const float MaximumDurability = 1_000_000_000f;
+    private const float MaximumAbsolutePositionCoordinate = 1_000_000f;
+    private const long MaximumTimestampUnixMilliseconds = 253_402_300_799_999L;
+
     private const string EnvelopeTooLargeError = "envelope-too-large";
     private const string MalformedJsonError = "malformed-json";
     private const string InvalidEnvelopeFieldsError = "invalid-envelope-fields";
@@ -205,34 +212,48 @@ public static class CompanionEnvelopeCodec
             return false;
         }
 
-        if (!TryValidatePayloadShape(envelope.Type, envelope.Payload, out errorCode))
-        {
-            return false;
-        }
-
         try
         {
+            if (!TryValidatePayloadShape(envelope.Type, envelope.Payload, out errorCode))
+            {
+                return false;
+            }
+
             payload = JsonSerializer.Deserialize<T>(envelope.Payload.GetRawText(), WireJsonOptions);
+
+            if (payload is null || !IsSemanticallyValidPayload(payload))
+            {
+                payload = null;
+                errorCode = InvalidPayloadError;
+                return false;
+            }
+
+            return true;
         }
         catch (JsonException)
-        {
-            errorCode = InvalidPayloadError;
-            return false;
-        }
-        catch (NotSupportedException)
-        {
-            errorCode = InvalidPayloadError;
-            return false;
-        }
-
-        if (payload is null || !IsSemanticallyValidPayload(payload))
         {
             payload = null;
             errorCode = InvalidPayloadError;
             return false;
         }
-
-        return true;
+        catch (NotSupportedException)
+        {
+            payload = null;
+            errorCode = InvalidPayloadError;
+            return false;
+        }
+        catch (ObjectDisposedException)
+        {
+            payload = null;
+            errorCode = InvalidPayloadError;
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            payload = null;
+            errorCode = InvalidPayloadError;
+            return false;
+        }
     }
 
     private static bool TryValidateEnvelopeMetadata(CompanionEnvelope envelope, out string errorCode)
@@ -459,23 +480,23 @@ public static class CompanionEnvelopeCodec
                     && helloAck.ProtocolVersion <= CompanionProtocol.CurrentVersion
                     && HasKnownCapabilities(helloAck.AcceptedCapabilities);
             case CompanionHeartbeat heartbeat:
-                return heartbeat.TimestampUnixMilliseconds >= 0;
+                return IsValidTimestamp(heartbeat.TimestampUnixMilliseconds);
             case CompanionChatReport chat:
                 return IsEventId(chat.EventId)
-                    && chat.TimestampUnixMilliseconds >= 0
+                    && IsValidTimestamp(chat.TimestampUnixMilliseconds)
                     && IsRequiredString(chat.Message, CompanionProtocol.MaximumChatCharacters);
             case CompanionInventoryReport inventory:
                 return IsValidInventory(inventory);
             case CompanionPlayerDeathReport playerDeath:
                 return IsEventId(playerDeath.EventId)
-                    && playerDeath.TimestampUnixMilliseconds >= 0
-                    && IsFinitePosition(playerDeath.Position)
+                    && IsValidTimestamp(playerDeath.TimestampUnixMilliseconds)
+                    && IsValidPosition(playerDeath.Position)
                     && IsOptionalString(playerDeath.CauseHint, CompanionProtocol.MaximumChatCharacters)
                     && IsOptionalString(playerDeath.AttackerCodeHint, CompanionProtocol.MaximumCodeCharacters);
             case CompanionEntityKilledReport entityKilled:
                 return IsEventId(entityKilled.EventId)
-                    && entityKilled.TimestampUnixMilliseconds >= 0
-                    && IsFinitePosition(entityKilled.Position)
+                    && IsValidTimestamp(entityKilled.TimestampUnixMilliseconds)
+                    && IsValidPosition(entityKilled.Position)
                     && IsOptionalString(entityKilled.EntityCodeHint, CompanionProtocol.MaximumCodeCharacters)
                     && IsOptionalString(entityKilled.WeaponCodeHint, CompanionProtocol.MaximumCodeCharacters);
             default:
@@ -496,10 +517,14 @@ public static class CompanionEnvelopeCodec
                 || !IsRequiredString(stack.Code, CompanionProtocol.MaximumCodeCharacters)
                 || !IsRequiredString(stack.Name, CompanionProtocol.MaximumChatCharacters)
                 || stack.Amount <= 0
+                || stack.Amount > MaximumInventoryAmount
                 || stack.Quality <= 0
+                || stack.Quality > MaximumItemQuality
                 || !IsFinite(stack.Durability)
                 || stack.Durability < 0
-                || stack.Slot < 0)
+                || stack.Durability > MaximumDurability
+                || stack.Slot < 0
+                || stack.Slot > MaximumInventorySlot)
             {
                 return false;
             }
@@ -508,12 +533,19 @@ public static class CompanionEnvelopeCodec
         return true;
     }
 
-    private static bool IsFinitePosition(CompanionPosition? position)
+    private static bool IsValidPosition(CompanionPosition? position)
     {
         return position is not null
-            && IsFinite(position.X)
-            && IsFinite(position.Y)
-            && IsFinite(position.Z);
+            && IsValidPositionCoordinate(position.X)
+            && IsValidPositionCoordinate(position.Y)
+            && IsValidPositionCoordinate(position.Z);
+    }
+
+    private static bool IsValidPositionCoordinate(float value)
+    {
+        return IsFinite(value)
+            && value >= -MaximumAbsolutePositionCoordinate
+            && value <= MaximumAbsolutePositionCoordinate;
     }
 
     private static bool IsFinite(float value)
@@ -545,6 +577,11 @@ public static class CompanionEnvelopeCodec
     private static bool IsEventId(string? value)
     {
         return IsRequiredString(value, CompanionProtocol.MaximumEventIdCharacters);
+    }
+
+    private static bool IsValidTimestamp(long value)
+    {
+        return value >= 0 && value <= MaximumTimestampUnixMilliseconds;
     }
 
     private static bool IsRequiredString(string? value, int maximumCharacters)
