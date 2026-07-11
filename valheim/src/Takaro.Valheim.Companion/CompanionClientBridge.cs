@@ -12,6 +12,7 @@ internal sealed class CompanionClientBridge : IDisposable
         | CompanionCapability.Inventory
         | CompanionCapability.PlayerDeath
         | CompanionCapability.EntityKilled;
+    private static readonly TimeSpan InventoryPollInterval = TimeSpan.FromSeconds(2);
 
     private readonly Action<string> log;
     private readonly CompanionClientState state = new(
@@ -19,12 +20,14 @@ internal sealed class CompanionClientBridge : IDisposable
         CompanionProtocol.CurrentVersion,
         SupportedCapabilities);
     private readonly Stopwatch monotonicClock = Stopwatch.StartNew();
+    private readonly CompanionInventoryReader inventoryReader = new();
     private ZNet? observedNetwork;
     private ZRoutedRpc? registeredRpc;
     private ZNetPeer? activeServerPeer;
     private World? activeWorld;
     private long activeServerUid;
     private long activeWorldUid;
+    private TimeSpan nextInventoryPollAt;
     private bool registrationAttempted;
     private bool registrationSucceeded;
     private bool hasActiveContext;
@@ -73,7 +76,7 @@ internal sealed class CompanionClientBridge : IDisposable
 
         disposed = true;
         initialized = false;
-        state.ResetConnection();
+        ResetConnectionState();
         ClearActiveContext();
         observedNetwork = null;
         registeredRpc = null;
@@ -104,6 +107,8 @@ internal sealed class CompanionClientBridge : IDisposable
         {
             _ = TrySendEnvelope(routedRpc, network, serverPeer, heartbeat);
         }
+
+        PollInventory(routedRpc, network, serverPeer);
     }
 
     internal bool TrySendChat(string message)
@@ -154,14 +159,14 @@ internal sealed class CompanionClientBridge : IDisposable
     {
         if (!ReferenceEquals(network, observedNetwork))
         {
-            state.ResetConnection();
+            ResetConnectionState();
             ClearActiveContext();
             observedNetwork = network;
         }
 
         if (!ReferenceEquals(routedRpc, registeredRpc))
         {
-            state.ResetConnection();
+            ResetConnectionState();
             ClearActiveContext();
             registeredRpc = routedRpc;
             registrationAttempted = false;
@@ -203,7 +208,7 @@ internal sealed class CompanionClientBridge : IDisposable
         {
             if (hasActiveContext || state.HasSession)
             {
-                state.ResetConnection();
+                ResetConnectionState();
                 ClearActiveContext();
             }
 
@@ -217,7 +222,7 @@ internal sealed class CompanionClientBridge : IDisposable
             || activeServerUid != readyServerPeer.m_uid;
         if (contextChanged)
         {
-            state.ResetConnection();
+            ResetConnectionState();
             activeWorld = world;
             activeServerPeer = readyServerPeer;
             activeWorldUid = world.m_uid;
@@ -306,8 +311,12 @@ internal sealed class CompanionClientBridge : IDisposable
         if (!state.ConfirmHelloAckSent(prepared, monotonicClock.Elapsed))
         {
             state.Reset();
+            inventoryReader.Reset();
             return;
         }
+
+        inventoryReader.Reset();
+        nextInventoryPollAt = monotonicClock.Elapsed;
 
         log($"Takaro Valheim Companion negotiated protocol {prepared.Envelope.ProtocolVersion} with the connected server.");
     }
@@ -320,6 +329,36 @@ internal sealed class CompanionClientBridge : IDisposable
     {
         var json = CompanionEnvelopeCodec.EncodeEnvelope(envelope);
         return TrySendJson(routedRpc, network, serverPeer, json);
+    }
+
+    private void PollInventory(
+        ZRoutedRpc routedRpc,
+        ZNet network,
+        ZNetPeer serverPeer)
+    {
+        var now = monotonicClock.Elapsed;
+        if (!state.HasCapability(CompanionCapability.Inventory)
+            || now < nextInventoryPollAt)
+        {
+            return;
+        }
+
+        nextInventoryPollAt = SaturatingAdd(now, InventoryPollInterval);
+        if (!inventoryReader.TryReadChanged(
+                Player.m_localPlayer,
+                out var snapshot)
+            || snapshot is null
+            || !state.TryCreateReport(
+                CompanionMessageTypes.InventorySnapshot,
+                new CompanionInventoryReport(snapshot.Stacks),
+                out var envelope)
+            || envelope is null
+            || !TrySendEnvelope(routedRpc, network, serverPeer, envelope))
+        {
+            return;
+        }
+
+        inventoryReader.MarkSent(snapshot);
     }
 
     private bool TrySendJson(
@@ -363,6 +402,18 @@ internal sealed class CompanionClientBridge : IDisposable
         activeWorldUid = 0;
         hasActiveContext = false;
     }
+
+    private void ResetConnectionState()
+    {
+        state.ResetConnection();
+        inventoryReader.Reset();
+        nextInventoryPollAt = TimeSpan.Zero;
+    }
+
+    private static TimeSpan SaturatingAdd(TimeSpan value, TimeSpan duration) =>
+        value > TimeSpan.MaxValue - duration
+            ? TimeSpan.MaxValue
+            : value + duration;
 }
 #else
 namespace Takaro.Valheim.Companion;

@@ -74,6 +74,12 @@ public sealed class CompanionClientState
 
     public string? SessionNonce => activeNonce;
 
+    public bool HasCapability(CompanionCapability capability) =>
+        CanReport
+        && capability != CompanionCapability.None
+        && (capability & ~KnownCapabilities) == CompanionCapability.None
+        && (activeCapabilities & capability) == capability;
+
     public bool TryPrepareHelloAck(
         CompanionEnvelope helloEnvelope,
         string productVersion,

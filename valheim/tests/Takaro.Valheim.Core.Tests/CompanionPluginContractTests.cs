@@ -172,6 +172,26 @@ public sealed class CompanionPluginContractTests
         StringAssert.Contains(entrypoint, "companionCommandPrefixes");
     }
 
+    [TestMethod]
+    public void CompanionPollsBoundedInventoryOnlyAfterNegotiation()
+    {
+        var reader = ReadCompanionSource("CompanionInventoryReader.cs");
+        var bridge = ReadCompanionSource("CompanionClientBridge.cs");
+        var hooks = ReadCompanionSource("CompanionClientHooks.cs");
+
+        StringAssert.Contains(reader, "inventory.GetAllItems()");
+        StringAssert.Contains(reader, "item.m_dropPrefab");
+        StringAssert.Contains(reader, "item.m_gridPos");
+        StringAssert.Contains(bridge, "InventoryPollInterval");
+        StringAssert.Contains(bridge, "Player.m_localPlayer");
+        StringAssert.Contains(bridge, "state.HasCapability(CompanionCapability.Inventory)");
+        StringAssert.Contains(bridge, "inventoryReader.TryReadChanged(");
+        StringAssert.Contains(bridge, "inventoryReader.MarkSent(snapshot)");
+        StringAssert.Contains(bridge, "inventoryReader.Reset()");
+        Assert.IsFalse(hooks.Contains("typeof(Player), \"Update\"", StringComparison.Ordinal));
+        Assert.IsFalse(bridge.Contains("stack(s)", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static string ReadAllCompanionText() =>
         string.Join(
             '\n',
