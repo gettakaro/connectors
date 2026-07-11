@@ -154,12 +154,10 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(location, "player_position_unavailable");
         Assert.IsFalse(location.Contains("new TakaroPosition(0, 0, 0", StringComparison.Ordinal));
         StringAssert.Contains(inventory, "CompanionMode.Disabled");
-        StringAssert.Contains(inventory, "ZNet.instance");
-        StringAssert.Contains(inventory, "GetPlayerList()");
-        StringAssert.Contains(inventory, "Select(ToTakaroPlayer)");
-        StringAssert.Contains(inventory, "PlayerMapper.FindUnique");
+        StringAssert.Contains(inventory, "TryResolvePlayer(identifier");
         StringAssert.Contains(inventory, "CompanionInventoryActionPolicy.FromResolvedPlayer");
-        Assert.IsFalse(inventory.Contains("TryResolvePlayer", StringComparison.Ordinal));
+        Assert.IsFalse(inventory.Contains("PlayerMapper.Find", StringComparison.Ordinal));
+        Assert.IsFalse(inventory.Contains("GetPlayerList()", StringComparison.Ordinal));
         Assert.IsFalse(inventory.Contains("Array.Empty<object>()", StringComparison.Ordinal));
         Assert.IsFalse(inventory.Contains("GetInventory()", StringComparison.Ordinal));
         Assert.IsFalse(inventory.Contains("TryFindPlayerComponent", StringComparison.Ordinal));
@@ -169,6 +167,25 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(policy, "cache.TryGetStable");
         Assert.IsFalse(policy.Contains("player.Name", StringComparison.Ordinal));
         Assert.IsFalse(policy.Contains("cache.TryGet(alias", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void PluginPlayerResolverFailsClosedOnAmbiguityBeforePeerFallback()
+    {
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
+        var resolver = SliceMethod(
+            source,
+            "private bool TryFindPlayerInfo",
+            "private bool TryFindPeer");
+
+        StringAssert.Contains(resolver, "PlayerMapper.TryFindUnique");
+        StringAssert.Contains(resolver, "out var playerInfoAmbiguous");
+        StringAssert.Contains(resolver, "if (playerInfoAmbiguous)");
+        StringAssert.Contains(resolver, "GetPlayerList()");
+        StringAssert.Contains(resolver, "GetPeers()");
+        StringAssert.Contains(resolver, "peerCandidates.Select");
+        Assert.IsFalse(resolver.Contains("PlayerMapper.Find(", StringComparison.Ordinal));
+        Assert.IsFalse(resolver.Contains("foreach (", StringComparison.Ordinal));
     }
 
     [TestMethod]

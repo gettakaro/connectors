@@ -52,14 +52,27 @@ public static class PlayerMapper
 
     public static TakaroPlayer? FindUnique(IEnumerable<TakaroPlayer> players, string? identifier)
     {
+        return TryFindUnique(players, identifier, out var player, out _)
+            ? player
+            : null;
+    }
+
+    public static bool TryFindUnique(
+        IEnumerable<TakaroPlayer> players,
+        string? identifier,
+        out TakaroPlayer? player,
+        out bool ambiguous)
+    {
         if (players is null)
         {
             throw new ArgumentNullException(nameof(players));
         }
 
+        player = null;
+        ambiguous = false;
         if (string.IsNullOrWhiteSpace(identifier))
         {
-            return null;
+            return false;
         }
 
         var needle = identifier!.Trim();
@@ -73,14 +86,18 @@ public static class PlayerMapper
             .ToArray();
         if (stableMatches.Length > 0)
         {
-            return stableMatches.Length == 1 ? stableMatches[0] : null;
+            ambiguous = stableMatches.Length > 1;
+            player = ambiguous ? null : stableMatches[0];
+            return !ambiguous;
         }
 
         var nameMatches = candidates
             .Where(player => Matches(player.Name, needle))
             .Take(2)
             .ToArray();
-        return nameMatches.Length == 1 ? nameMatches[0] : null;
+        ambiguous = nameMatches.Length > 1;
+        player = nameMatches.Length == 1 ? nameMatches[0] : null;
+        return player is not null;
     }
 
     private static string? ToPlatformId(string platformUserId, string? steamId)

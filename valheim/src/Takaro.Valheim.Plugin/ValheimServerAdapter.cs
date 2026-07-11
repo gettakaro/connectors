@@ -124,14 +124,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
                 DateTimeOffset.UtcNow));
         }
 
-        var network = ZNet.instance;
-        var players = network?.GetPlayerList()
-            .Select(ToTakaroPlayer)
-            .ToArray();
-        var player = players is null
-            ? null
-            : PlayerMapper.FindUnique(players, identifier);
-        if (player is null)
+        if (!TryResolvePlayer(identifier, out _, out _, out var player) || player is null)
         {
             return Task.FromResult(CompanionInventoryActionPolicy.FromResolvedPlayer(
                 companionMode,
@@ -528,40 +521,72 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         return takaroPlayer;
     }
 
-    private bool TryFindPlayerInfo(string identifier, out ZNet.PlayerInfo player)
+    private bool TryFindPlayerInfo(
+        string identifier,
+        out ZNet.PlayerInfo player,
+        out bool ambiguous)
     {
-        foreach (var candidate in ZNet.instance?.GetPlayerList() ?? [])
-        {
-            if (PlayerMapper.Find(new[] { ToTakaroPlayer(candidate) }, identifier) is not null)
+        var candidates = (ZNet.instance?.GetPlayerList() ?? [])
+            .Select(candidate => new
             {
-                player = candidate;
-                return true;
-            }
+                Source = candidate,
+                Player = ToTakaroPlayer(candidate)
+            })
+            .ToArray();
+        if (!PlayerMapper.TryFindUnique(
+                candidates.Select(candidate => candidate.Player),
+                identifier,
+                out var resolvedPlayer,
+                out ambiguous)
+            || resolvedPlayer is null)
+        {
+            player = default;
+            return false;
         }
 
-        player = default;
-        return false;
+        player = candidates
+            .First(candidate => ReferenceEquals(candidate.Player, resolvedPlayer))
+            .Source;
+        return true;
     }
 
     private bool TryResolvePlayer(string identifier, out ZNet.PlayerInfo playerInfo, out ZNetPeer? peer, out TakaroPlayer? player)
     {
-        if (TryFindPlayerInfo(identifier, out playerInfo))
+        if (TryFindPlayerInfo(identifier, out playerInfo, out var playerInfoAmbiguous))
         {
             player = ToTakaroPlayer(playerInfo);
             peer = TryFindPeer(playerInfo, player, out var resolvedPeer) ? resolvedPeer : null;
             return true;
         }
 
-        foreach (var candidate in ZNet.instance?.GetPeers() ?? [])
+        if (playerInfoAmbiguous)
         {
-            var candidatePlayer = ToTakaroPlayer(candidate);
-            if (PlayerMapper.Find(new[] { candidatePlayer }, identifier) is not null)
+            playerInfo = default;
+            peer = null;
+            player = null;
+            return false;
+        }
+
+        var peerCandidates = (ZNet.instance?.GetPeers() ?? [])
+            .Select(candidate => new
             {
-                playerInfo = default;
-                peer = candidate;
-                player = candidatePlayer;
-                return true;
-            }
+                Source = candidate,
+                Player = ToTakaroPlayer(candidate)
+            })
+            .ToArray();
+        var peerFound = PlayerMapper.TryFindUnique(
+            peerCandidates.Select(candidate => candidate.Player),
+            identifier,
+            out player,
+            out var peerAmbiguous);
+        if (peerFound && !peerAmbiguous && player is not null)
+        {
+            playerInfo = default;
+            var resolvedPeerPlayer = player;
+            peer = peerCandidates
+                .First(candidate => ReferenceEquals(candidate.Player, resolvedPeerPlayer))
+                .Source;
+            return true;
         }
 
         playerInfo = default;
