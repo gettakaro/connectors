@@ -147,6 +147,142 @@ public sealed class CompanionInventoryCacheTests
     }
 
     [TestMethod]
+    public void ExpiredInventoryRemainsExpiredWhenTimeRegresses()
+    {
+        var cache = CreateCache();
+        Assert.IsTrue(cache.Remember(
+            PeerId,
+            SessionNonce,
+            Player,
+            new[] { Stack("Wood", "Wood", slot: 0) },
+            Now));
+
+        Assert.AreEqual(
+            CompanionInventoryState.Expired,
+            cache.TryGet(Player.GameId, Now.AddSeconds(30), out var expired));
+        Assert.AreEqual(0, expired.Count);
+        Assert.AreEqual(
+            CompanionInventoryState.Expired,
+            cache.TryGet(Player.GameId, Now.AddSeconds(1), out var afterRegression));
+        Assert.AreEqual(0, afterRegression.Count);
+    }
+
+    [TestMethod]
+    public void NewerSnapshotReplacesExpiredTombstone()
+    {
+        var cache = CreateCache();
+        Assert.IsTrue(cache.Remember(
+            PeerId,
+            SessionNonce,
+            Player,
+            new[] { Stack("Wood", "Wood", slot: 0) },
+            Now));
+        Assert.AreEqual(
+            CompanionInventoryState.Expired,
+            cache.TryGet(Player.GameId, Now.AddSeconds(30), out _));
+
+        Assert.IsTrue(cache.Remember(
+            PeerId,
+            SessionNonce,
+            Player,
+            new[] { Stack("Stone", "Stone", slot: 1) },
+            Now.AddSeconds(31)));
+
+        Assert.AreEqual(
+            CompanionInventoryState.Fresh,
+            cache.TryGet(Player.GameId, Now.AddSeconds(31), out var refreshed));
+        Assert.AreEqual("Stone", refreshed.Single().Code);
+    }
+
+    [TestMethod]
+    public void DisplayNameCannotOverrideStableIdentifier()
+    {
+        var cache = new CompanionInventoryCache(TimeSpan.FromSeconds(30));
+        var stableOwner = new TakaroPlayer(
+            "Stable_A",
+            "First Viking",
+            "steam-a",
+            "steam:steam-a",
+            null,
+            null);
+        var collidingName = new TakaroPlayer(
+            "Stable_B",
+            "Stable_A",
+            "steam-b",
+            "steam:steam-b",
+            null,
+            null);
+        RememberPlayer(cache, 1, "session-a", stableOwner, "Wood");
+        RememberPlayer(cache, 2, "session-b", collidingName, "Stone");
+
+        Assert.AreEqual(
+            CompanionInventoryState.Fresh,
+            cache.TryGet("  stable_a  ", Now, out var stableInventory));
+        Assert.AreEqual("Wood", stableInventory.Single().Code);
+        Assert.AreEqual(
+            CompanionInventoryState.Fresh,
+            cache.TryGet(collidingName.PlatformId!, Now, out var secondInventory));
+        Assert.AreEqual("Stone", secondInventory.Single().Code);
+    }
+
+    [TestMethod]
+    public void DuplicateDisplayNamesAreAmbiguous()
+    {
+        var cache = new CompanionInventoryCache(TimeSpan.FromSeconds(30));
+        var first = new TakaroPlayer("Stable_A", "Shared Name", "steam-a", "steam:steam-a", null, null);
+        var second = new TakaroPlayer("Stable_B", "Shared Name", "steam-b", "steam:steam-b", null, null);
+        RememberPlayer(cache, 1, "session-a", first, "Wood");
+        RememberPlayer(cache, 2, "session-b", second, "Stone");
+
+        Assert.AreEqual(
+            CompanionInventoryState.Missing,
+            cache.TryGet("shared name", Now, out var ambiguous));
+        Assert.AreEqual(0, ambiguous.Count);
+    }
+
+    [TestMethod]
+    public void RemovingPeerRestoresUniqueDisplayNameAlias()
+    {
+        var cache = new CompanionInventoryCache(TimeSpan.FromSeconds(30));
+        var first = new TakaroPlayer("Stable_A", "Shared Name", "steam-a", "steam:steam-a", null, null);
+        var second = new TakaroPlayer("Stable_B", "Shared Name", "steam-b", "steam:steam-b", null, null);
+        RememberPlayer(cache, 1, "session-a", first, "Wood");
+        RememberPlayer(cache, 2, "session-b", second, "Stone");
+        Assert.AreEqual(
+            CompanionInventoryState.Missing,
+            cache.TryGet("Shared Name", Now, out _));
+
+        cache.RemovePeer(2);
+
+        Assert.AreEqual(
+            CompanionInventoryState.Fresh,
+            cache.TryGet("Shared Name", Now, out var restored));
+        Assert.AreEqual("Wood", restored.Single().Code);
+    }
+
+    [TestMethod]
+    public void DuplicateStableAliasesAreAmbiguousWhileOtherStableIdsResolve()
+    {
+        var cache = new CompanionInventoryCache(TimeSpan.FromSeconds(30));
+        var first = new TakaroPlayer("Shared_Stable", "First", "steam-a", "steam:steam-a", null, null);
+        var second = new TakaroPlayer("Shared_Stable", "Second", "steam-b", "steam:steam-b", null, null);
+        RememberPlayer(cache, 1, "session-a", first, "Wood");
+        RememberPlayer(cache, 2, "session-b", second, "Stone");
+
+        Assert.AreEqual(
+            CompanionInventoryState.Missing,
+            cache.TryGet("shared_stable", Now, out _));
+        Assert.AreEqual(
+            CompanionInventoryState.Fresh,
+            cache.TryGet("STEAM:STEAM-A", Now, out var firstInventory));
+        Assert.AreEqual("Wood", firstInventory.Single().Code);
+        Assert.AreEqual(
+            CompanionInventoryState.Fresh,
+            cache.TryGet("steam:steam-b", Now, out var secondInventory));
+        Assert.AreEqual("Stone", secondInventory.Single().Code);
+    }
+
+    [TestMethod]
     public void RemovePeerAndWorldResetClearInventoryAliases()
     {
         var cache = new CompanionInventoryCache();
@@ -297,6 +433,22 @@ public sealed class CompanionInventoryCacheTests
         bool equipped = false,
         int slot = 0) =>
         new(code, name, amount, quality, durability, equipped, slot);
+
+    private static void RememberPlayer(
+        CompanionInventoryCache cache,
+        long peerId,
+        string sessionNonce,
+        TakaroPlayer player,
+        string itemCode)
+    {
+        cache.BeginSession(peerId, sessionNonce);
+        Assert.IsTrue(cache.Remember(
+            peerId,
+            sessionNonce,
+            player,
+            new[] { Stack(itemCode, itemCode, slot: 0) },
+            Now));
+    }
 
     private static void AssertAllAliasesAreMissing(
         CompanionInventoryCache cache,

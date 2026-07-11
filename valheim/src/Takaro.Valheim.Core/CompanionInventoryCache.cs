@@ -18,7 +18,9 @@ public sealed class CompanionInventoryCache
 
     private readonly TimeSpan freshness;
     private readonly Dictionary<long, PeerState> peers = new();
-    private readonly Dictionary<string, Observation> observationsByAlias =
+    private readonly Dictionary<string, HashSet<Observation>> stableObservationsByAlias =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, HashSet<Observation>> secondaryObservationsByAlias =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly object syncRoot = new();
     private object? currentWorldIdentity;
@@ -82,7 +84,12 @@ public sealed class CompanionInventoryCache
             }
         }
 
-        if (!TryCanonicalize(player, stacks, out var aliases, out var items))
+        if (!TryCanonicalize(
+            player,
+            stacks,
+            out var stableAliases,
+            out var secondaryAliases,
+            out var items))
         {
             return false;
         }
@@ -103,12 +110,15 @@ public sealed class CompanionInventoryCache
             }
 
             RemoveObservationAliasesLocked(currentSession.Observation);
-            var observation = new Observation(peerId, sessionNonce, aliases, items, observedAt);
+            var observation = new Observation(
+                peerId,
+                sessionNonce,
+                stableAliases,
+                secondaryAliases,
+                items,
+                observedAt);
             currentSession.Observation = observation;
-            foreach (var alias in aliases)
-            {
-                observationsByAlias[alias] = observation;
-            }
+            AddObservationAliasesLocked(observation);
 
             return true;
         }
@@ -127,19 +137,25 @@ public sealed class CompanionInventoryCache
 
         lock (syncRoot)
         {
-            if (!observationsByAlias.TryGetValue(identifier.Trim(), out var observation))
+            var normalizedIdentifier = identifier.Trim();
+            if (stableObservationsByAlias.TryGetValue(
+                normalizedIdentifier,
+                out var stableObservations))
+            {
+                return stableObservations.Count == 1
+                    ? QueryObservationLocked(stableObservations.First(), now, out items)
+                    : CompanionInventoryState.Missing;
+            }
+
+            if (!secondaryObservationsByAlias.TryGetValue(
+                    normalizedIdentifier,
+                    out var secondaryObservations)
+                || secondaryObservations.Count != 1)
             {
                 return CompanionInventoryState.Missing;
             }
 
-            if (now >= observation.ObservedAt
-                && now - observation.ObservedAt >= freshness)
-            {
-                return CompanionInventoryState.Expired;
-            }
-
-            items = observation.Items;
-            return CompanionInventoryState.Fresh;
+            return QueryObservationLocked(secondaryObservations.First(), now, out items);
         }
     }
 
@@ -186,8 +202,60 @@ public sealed class CompanionInventoryCache
 
     private void ClearLocked()
     {
-        observationsByAlias.Clear();
+        stableObservationsByAlias.Clear();
+        secondaryObservationsByAlias.Clear();
         peers.Clear();
+    }
+
+    private CompanionInventoryState QueryObservationLocked(
+        Observation observation,
+        DateTimeOffset now,
+        out IReadOnlyList<TakaroInventoryItem> items)
+    {
+        items = UnavailableItems;
+        if (observation.IsExpired)
+        {
+            return CompanionInventoryState.Expired;
+        }
+
+        if (now >= observation.ObservedAt
+            && now - observation.ObservedAt >= freshness)
+        {
+            observation.MarkExpired(UnavailableItems);
+            return CompanionInventoryState.Expired;
+        }
+
+        items = observation.Items;
+        return CompanionInventoryState.Fresh;
+    }
+
+    private void AddObservationAliasesLocked(Observation observation)
+    {
+        AddAliasesLocked(
+            stableObservationsByAlias,
+            observation.StableAliases,
+            observation);
+        AddAliasesLocked(
+            secondaryObservationsByAlias,
+            observation.SecondaryAliases,
+            observation);
+    }
+
+    private static void AddAliasesLocked(
+        IDictionary<string, HashSet<Observation>> observationsByAlias,
+        IEnumerable<string> aliases,
+        Observation observation)
+    {
+        foreach (var alias in aliases)
+        {
+            if (!observationsByAlias.TryGetValue(alias, out var observations))
+            {
+                observations = new HashSet<Observation>();
+                observationsByAlias.Add(alias, observations);
+            }
+
+            observations.Add(observation);
+        }
     }
 
     private void RemoveObservationAliasesLocked(Observation? observation)
@@ -197,10 +265,30 @@ public sealed class CompanionInventoryCache
             return;
         }
 
-        foreach (var alias in observation.Aliases)
+        RemoveAliasesLocked(
+            stableObservationsByAlias,
+            observation.StableAliases,
+            observation);
+        RemoveAliasesLocked(
+            secondaryObservationsByAlias,
+            observation.SecondaryAliases,
+            observation);
+    }
+
+    private static void RemoveAliasesLocked(
+        IDictionary<string, HashSet<Observation>> observationsByAlias,
+        IEnumerable<string> aliases,
+        Observation observation)
+    {
+        foreach (var alias in aliases)
         {
-            if (observationsByAlias.TryGetValue(alias, out var current)
-                && ReferenceEquals(current, observation))
+            if (!observationsByAlias.TryGetValue(alias, out var observations))
+            {
+                continue;
+            }
+
+            observations.Remove(observation);
+            if (observations.Count == 0)
             {
                 observationsByAlias.Remove(alias);
             }
@@ -210,10 +298,12 @@ public sealed class CompanionInventoryCache
     private static bool TryCanonicalize(
         TakaroPlayer player,
         IReadOnlyList<CompanionInventoryStack> stacks,
-        out IReadOnlyList<string> aliases,
+        out IReadOnlyList<string> stableAliases,
+        out IReadOnlyList<string> secondaryAliases,
         out IReadOnlyList<TakaroInventoryItem> items)
     {
-        aliases = Array.Empty<string>();
+        stableAliases = Array.Empty<string>();
+        secondaryAliases = Array.Empty<string>();
         items = UnavailableItems;
         if (player is null
             || stacks is null
@@ -222,8 +312,9 @@ public sealed class CompanionInventoryCache
             return false;
         }
 
-        var resolvedAliases = PlayerAliases(player).ToArray();
-        if (resolvedAliases.Length == 0)
+        var resolvedStableAliases = StablePlayerAliases(player).ToArray();
+        var resolvedSecondaryAliases = SecondaryPlayerAliases(player).ToArray();
+        if (resolvedStableAliases.Length == 0 && resolvedSecondaryAliases.Length == 0)
         {
             return false;
         }
@@ -255,7 +346,8 @@ public sealed class CompanionInventoryCache
                 new TakaroInventorySlot(stack.Slot, 0)))
             .ToArray();
 
-        aliases = Array.AsReadOnly(resolvedAliases);
+        stableAliases = Array.AsReadOnly(resolvedStableAliases);
+        secondaryAliases = Array.AsReadOnly(resolvedSecondaryAliases);
         items = Array.AsReadOnly(mapped);
         return true;
     }
@@ -297,8 +389,14 @@ public sealed class CompanionInventoryCache
         return true;
     }
 
-    private static IEnumerable<string> PlayerAliases(TakaroPlayer player) =>
-        new[] { player.GameId, player.PlatformId, player.SteamId, player.Name }
+    private static IEnumerable<string> StablePlayerAliases(TakaroPlayer player) =>
+        NormalizeAliases(new[] { player.GameId, player.PlatformId, player.SteamId });
+
+    private static IEnumerable<string> SecondaryPlayerAliases(TakaroPlayer player) =>
+        NormalizeAliases(new[] { player.Name });
+
+    private static IEnumerable<string> NormalizeAliases(IEnumerable<string?> aliases) =>
+        aliases
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Select(value => value!.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase);
@@ -334,13 +432,15 @@ public sealed class CompanionInventoryCache
         public Observation(
             long peerId,
             string sessionNonce,
-            IReadOnlyList<string> aliases,
+            IReadOnlyList<string> stableAliases,
+            IReadOnlyList<string> secondaryAliases,
             IReadOnlyList<TakaroInventoryItem> items,
             DateTimeOffset observedAt)
         {
             PeerId = peerId;
             SessionNonce = sessionNonce;
-            Aliases = aliases;
+            StableAliases = stableAliases;
+            SecondaryAliases = secondaryAliases;
             Items = items;
             ObservedAt = observedAt;
         }
@@ -349,11 +449,21 @@ public sealed class CompanionInventoryCache
 
         public string SessionNonce { get; }
 
-        public IReadOnlyList<string> Aliases { get; }
+        public IReadOnlyList<string> StableAliases { get; }
 
-        public IReadOnlyList<TakaroInventoryItem> Items { get; }
+        public IReadOnlyList<string> SecondaryAliases { get; }
+
+        public IReadOnlyList<TakaroInventoryItem> Items { get; private set; }
 
         public DateTimeOffset ObservedAt { get; }
+
+        public bool IsExpired { get; private set; }
+
+        public void MarkExpired(IReadOnlyList<TakaroInventoryItem> unavailableItems)
+        {
+            Items = unavailableItems;
+            IsExpired = true;
+        }
     }
 
     private sealed class CanonicalStack

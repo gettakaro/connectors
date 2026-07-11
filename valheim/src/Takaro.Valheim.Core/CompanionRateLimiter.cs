@@ -1,3 +1,5 @@
+using Takaro.Valheim.Companion.Protocol;
+
 namespace Takaro.Valheim.Core;
 
 public sealed class CompanionRateLimiter
@@ -5,10 +7,15 @@ public sealed class CompanionRateLimiter
     private readonly int capacity;
     private readonly int refillTokens;
     private readonly TimeSpan refillInterval;
+    private readonly int maximumPeers;
     private readonly Dictionary<long, Dictionary<string, Bucket>> bucketsByPeer = new();
     private readonly object syncRoot = new();
 
-    public CompanionRateLimiter(int capacity, int refillTokens, TimeSpan refillInterval)
+    public CompanionRateLimiter(
+        int capacity,
+        int refillTokens,
+        TimeSpan refillInterval,
+        int maximumPeers = 256)
     {
         if (capacity <= 0)
         {
@@ -22,32 +29,43 @@ public sealed class CompanionRateLimiter
         {
             throw new ArgumentOutOfRangeException(nameof(refillInterval), "Refill interval must be positive.");
         }
+        if (maximumPeers <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumPeers), "Maximum peers must be positive.");
+        }
 
         this.capacity = capacity;
         this.refillTokens = refillTokens;
         this.refillInterval = refillInterval;
+        this.maximumPeers = maximumPeers;
     }
 
     public bool TryConsume(long peerId, string messageType, DateTimeOffset now)
     {
-        if (string.IsNullOrWhiteSpace(messageType))
+        if (!IsKnownMessageType(messageType))
         {
-            throw new ArgumentException("Message type must not be blank.", nameof(messageType));
+            throw new ArgumentException(
+                "Message type must be an exact companion protocol message type.",
+                nameof(messageType));
         }
 
-        var normalizedMessageType = messageType.Trim();
         lock (syncRoot)
         {
             if (!bucketsByPeer.TryGetValue(peerId, out var peerBuckets))
             {
+                if (bucketsByPeer.Count >= maximumPeers)
+                {
+                    return false;
+                }
+
                 peerBuckets = new Dictionary<string, Bucket>(StringComparer.Ordinal);
                 bucketsByPeer.Add(peerId, peerBuckets);
             }
 
-            if (!peerBuckets.TryGetValue(normalizedMessageType, out var bucket))
+            if (!peerBuckets.TryGetValue(messageType, out var bucket))
             {
                 bucket = new Bucket(capacity, now);
-                peerBuckets.Add(normalizedMessageType, bucket);
+                peerBuckets.Add(messageType, bucket);
             }
             else
             {
@@ -92,6 +110,15 @@ public sealed class CompanionRateLimiter
         bucket.Tokens = Math.Min(capacity, bucket.Tokens + replenished);
         bucket.LastRefillAt = now;
     }
+
+    private static bool IsKnownMessageType(string? messageType) =>
+        messageType == CompanionMessageTypes.Hello
+        || messageType == CompanionMessageTypes.HelloAck
+        || messageType == CompanionMessageTypes.Heartbeat
+        || messageType == CompanionMessageTypes.Chat
+        || messageType == CompanionMessageTypes.InventorySnapshot
+        || messageType == CompanionMessageTypes.PlayerDeath
+        || messageType == CompanionMessageTypes.EntityKilled;
 
     private sealed class Bucket
     {

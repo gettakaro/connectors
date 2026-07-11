@@ -55,6 +55,74 @@ public sealed class CompanionValidationTests
     }
 
     [TestMethod]
+    public void RateLimiterBoundsPeersAndRecoversAfterRemoval()
+    {
+        var limiter = new CompanionRateLimiter(
+            capacity: 1,
+            refillTokens: 1,
+            refillInterval: TimeSpan.FromMinutes(1),
+            maximumPeers: 2);
+
+        Assert.IsTrue(limiter.TryConsume(1, CompanionMessageTypes.Chat, Now));
+        Assert.IsTrue(limiter.TryConsume(2, CompanionMessageTypes.Chat, Now));
+        Assert.IsFalse(limiter.TryConsume(3, CompanionMessageTypes.Chat, Now));
+        Assert.IsTrue(
+            limiter.TryConsume(1, CompanionMessageTypes.InventorySnapshot, Now),
+            "Existing peers must be able to create another bounded message-type bucket.");
+
+        limiter.RemovePeer(2);
+
+        Assert.IsTrue(limiter.TryConsume(3, CompanionMessageTypes.Chat, Now));
+    }
+
+    [TestMethod]
+    public void RateLimiterAcceptsOnlyExactProtocolMessageTypes()
+    {
+        var limiter = new CompanionRateLimiter(
+            capacity: 1,
+            refillTokens: 1,
+            refillInterval: TimeSpan.FromMinutes(1));
+        var knownTypes = new[]
+        {
+            CompanionMessageTypes.Hello,
+            CompanionMessageTypes.HelloAck,
+            CompanionMessageTypes.Heartbeat,
+            CompanionMessageTypes.Chat,
+            CompanionMessageTypes.InventorySnapshot,
+            CompanionMessageTypes.PlayerDeath,
+            CompanionMessageTypes.EntityKilled
+        };
+
+        foreach (var messageType in knownTypes)
+        {
+            Assert.IsTrue(limiter.TryConsume(1, messageType, Now), messageType);
+        }
+
+        Assert.ThrowsException<ArgumentException>(() =>
+            limiter.TryConsume(1, "CHAT", Now));
+        Assert.ThrowsException<ArgumentException>(() =>
+            limiter.TryConsume(1, "unknown", Now));
+        Assert.ThrowsException<ArgumentException>(() =>
+            limiter.TryConsume(1, new string('x', 1_024), Now));
+    }
+
+    [TestMethod]
+    public void RateLimiterDefaultPeerBoundIsFinite()
+    {
+        var limiter = new CompanionRateLimiter(
+            capacity: 1,
+            refillTokens: 1,
+            refillInterval: TimeSpan.FromMinutes(1));
+
+        for (var peerId = 1; peerId <= 256; peerId++)
+        {
+            Assert.IsTrue(limiter.TryConsume(peerId, CompanionMessageTypes.Chat, Now));
+        }
+
+        Assert.IsFalse(limiter.TryConsume(257, CompanionMessageTypes.Chat, Now));
+    }
+
+    [TestMethod]
     public void DuplicateEventIdIsAcceptedExactlyOnce()
     {
         var deduplicator = new BoundedEventDeduplicator(capacity: 4);
@@ -148,6 +216,8 @@ public sealed class CompanionValidationTests
             new CompanionRateLimiter(1, 0, TimeSpan.FromSeconds(1)));
         Assert.ThrowsException<ArgumentOutOfRangeException>(() =>
             new CompanionRateLimiter(1, 1, TimeSpan.Zero));
+        Assert.ThrowsException<ArgumentOutOfRangeException>(() =>
+            new CompanionRateLimiter(1, 1, TimeSpan.FromSeconds(1), maximumPeers: 0));
         Assert.ThrowsException<ArgumentException>(() =>
             new CompanionRateLimiter(1, 1, TimeSpan.FromSeconds(1)).TryConsume(1, " ", Now));
         Assert.ThrowsException<ArgumentOutOfRangeException>(() =>
