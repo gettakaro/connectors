@@ -11,8 +11,7 @@ public enum CompanionSessionDecision
     RejectSequence,
     RejectVersion,
     Expired,
-    RejectMetadata,
-    RejectAlreadyNegotiated
+    RejectMetadata
 }
 
 public sealed record CompanionSessionBegin(
@@ -139,7 +138,7 @@ public sealed class CompanionSessionRegistry
             }
             if (session.IsNegotiated)
             {
-                return CompanionSessionDecision.RejectAlreadyNegotiated;
+                return CompanionSessionDecision.RejectSequence;
             }
             if (selectedProtocolVersion < minimumProtocolVersion
                 || selectedProtocolVersion > maximumProtocolVersion)

@@ -94,7 +94,7 @@ public sealed class CompanionSessionRegistryTests
             sequence: 2,
             Now.AddSeconds(2));
 
-        Assert.AreEqual(CompanionSessionDecision.RejectAlreadyNegotiated, decision);
+        Assert.AreEqual(CompanionSessionDecision.RejectSequence, decision);
         Assert.AreEqual(negotiated, Snapshot(registry, PeerId));
     }
 
