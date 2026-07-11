@@ -174,6 +174,41 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
+    public void PluginDrainsAndDisposesTheBoundedMainThreadScheduler()
+    {
+        var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
+        var runner = ReadPluginSource("TakaroWebSocketRunner.cs");
+        var scheduler = ReadValheimFile("src/Takaro.Valheim.Core/MainThreadActionScheduler.cs");
+
+        StringAssert.Contains(entrypoint, "new QueuedMainThreadActionScheduler");
+        StringAssert.Contains(entrypoint, "mainThreadActions?.Drain()");
+        StringAssert.Contains(entrypoint, "mainThreadActions?.Dispose()");
+        StringAssert.Contains(runner, "new TakaroRequestDispatcher(adapter, this.mainThreadActions)");
+        StringAssert.Contains(runner, "mainThreadActions.ScheduleAsync");
+        StringAssert.Contains(scheduler, "TaskCreationOptions.RunContinuationsAsynchronously");
+        StringAssert.Contains(scheduler, "capacity");
+    }
+
+    [TestMethod]
+    public void ShutdownAndGameEventIoDoNotCallUnityOrWebSocketsFromTheWrongThread()
+    {
+        var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
+        var adapter = ReadPluginSource("ValheimServerAdapter.cs");
+        var runner = ReadPluginSource("TakaroWebSocketRunner.cs");
+        var shutdown = SliceMethod(
+            adapter,
+            "public Task<TakaroActionResult> ShutdownAsync",
+            "private TakaroPlayer ToTakaroPlayer");
+
+        StringAssert.Contains(shutdown, "requestShutdown()");
+        Assert.IsFalse(shutdown.Contains("Task.Run", StringComparison.Ordinal));
+        Assert.IsFalse(shutdown.Contains("Application.Quit", StringComparison.Ordinal));
+        StringAssert.Contains(entrypoint, "Application.Quit()");
+        StringAssert.Contains(entrypoint, "shutdownRequestedAt");
+        StringAssert.Contains(runner, "Task.Run(() => SendGameEventCoreAsync");
+    }
+
+    [TestMethod]
     public void PluginAdapterUsesServerOwnedGiveAndTeleportPaths()
     {
         var source = ReadPluginSource("ValheimServerAdapter.cs");
@@ -337,6 +372,9 @@ public sealed class PluginScaffoldContractTests
         }
 
         StringAssert.Contains(setup, "VALHEIM_STEAM_PLATFORMS");
+        StringAssert.Contains(setup, "VALHEIM_REFERENCE_CACHE_DIR");
+        StringAssert.Contains(setup, ".takaro-valheim-reference-cache");
+        StringAssert.Contains(setup, "refusing to mutate");
         StringAssert.Contains(setup, "linux windows");
         StringAssert.Contains(setup, "MAX_ATTEMPTS");
         StringAssert.Contains(setup, "valheim_server_Data/Managed");
@@ -347,6 +385,20 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(setup, "command -v file");
         StringAssert.Contains(setup, "requires the 'file' command");
         StringAssert.Contains(setup, "Mono/.Net\\ assembly");
+    }
+
+    [TestMethod]
+    public void WorkflowCachesTheOwnedReferenceDirectoryIncludingItsMarker()
+    {
+        var workflow = File.ReadAllText(Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "../../../../../../.github/workflows/valheim.yml")));
+
+        StringAssert.Contains(workflow, "valheim/_data/server\n");
+        Assert.IsFalse(
+            workflow.Contains("valheim/_data/server/valheim_server_Data/Managed", StringComparison.Ordinal),
+            "Caching only Managed would drop the ownership marker and make a corrupt restored cache unrepairable.");
+        StringAssert.Contains(workflow, "valheim-build-deps-v2-owned-reference-cache");
     }
 
     private static string ReadPluginSource(string fileName)

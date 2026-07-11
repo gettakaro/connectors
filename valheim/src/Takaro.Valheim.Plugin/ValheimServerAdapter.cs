@@ -10,14 +10,19 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 {
     private readonly ManualLogSource logger;
     private readonly ConsoleCommandPolicy commandPolicy;
+    private readonly Action requestShutdown;
     private readonly PlayerPositionCache playerPositions = new(TimeSpan.FromSeconds(30));
     private readonly Dictionary<string, HashSet<string>> banAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> banNames = new(StringComparer.OrdinalIgnoreCase);
 
-    public ValheimServerAdapter(ManualLogSource logger, ConnectorConfig config)
+    public ValheimServerAdapter(
+        ManualLogSource logger,
+        ConnectorConfig config,
+        Action requestShutdown)
     {
         this.logger = logger;
         commandPolicy = new ConsoleCommandPolicy(config.CommandAllowlistExact, config.CommandAllowlistPrefixes);
+        this.requestShutdown = requestShutdown;
     }
 
     public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
@@ -466,14 +471,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> ShutdownAsync(CancellationToken cancellationToken = default)
     {
-        logger.LogInfo("Takaro Valheim shutdown requested; scheduling Application.Quit after response flush.");
-        _ = Task.Run(async () =>
-        {
-            await Task.Delay(TimeSpan.FromSeconds(1));
-            logger.LogInfo("Takaro Valheim executing scheduled shutdown.");
-            Application.Quit();
-        });
-
+        requestShutdown();
         return Task.FromResult(TakaroActionResult.Ok());
     }
 

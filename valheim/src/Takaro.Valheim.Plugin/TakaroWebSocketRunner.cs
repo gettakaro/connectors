@@ -10,6 +10,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private readonly ConnectorConfig config;
     private readonly IValheimTakaroAdapter adapter;
     private readonly TakaroRequestDispatcher dispatcher;
+    private readonly IMainThreadActionScheduler mainThreadActions;
     private readonly Action<string> log;
     private readonly CancellationTokenSource shutdown = new();
     private readonly SemaphoreSlim sendLock = new(1, 1);
@@ -19,11 +20,16 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private ClientWebSocket? socket;
     private Task? runLoop;
 
-    public TakaroWebSocketRunner(ConnectorConfig config, IValheimTakaroAdapter adapter, Action<string>? log = null)
+    public TakaroWebSocketRunner(
+        ConnectorConfig config,
+        IValheimTakaroAdapter adapter,
+        Action<string>? log = null,
+        IMainThreadActionScheduler? mainThreadActions = null)
     {
         this.config = config;
         this.adapter = adapter;
-        dispatcher = new TakaroRequestDispatcher(adapter);
+        this.mainThreadActions = mainThreadActions ?? InlineMainThreadActionScheduler.Instance;
+        dispatcher = new TakaroRequestDispatcher(adapter, this.mainThreadActions);
         this.log = log ?? (_ => { });
     }
 
@@ -35,7 +41,10 @@ public sealed class TakaroWebSocketRunner : IDisposable
         return Task.CompletedTask;
     }
 
-    public async Task SendGameEventAsync(string eventType, object data, CancellationToken cancellationToken = default)
+    public Task SendGameEventAsync(string eventType, object data, CancellationToken cancellationToken = default) =>
+        Task.Run(() => SendGameEventCoreAsync(eventType, data, cancellationToken), cancellationToken);
+
+    private async Task SendGameEventCoreAsync(string eventType, object data, CancellationToken cancellationToken)
     {
         var activeSocket = socket;
         if (activeSocket is null || activeSocket.State != WebSocketState.Open)
@@ -111,7 +120,9 @@ public sealed class TakaroWebSocketRunner : IDisposable
         {
             try
             {
-                var playersResult = await adapter.GetPlayersAsync(cancellationToken);
+                var playersResult = await RunAdapterActionAsync(
+                    () => adapter.GetPlayersAsync(cancellationToken),
+                    cancellationToken);
                 if (!playersResult.Success
                     || playersResult.Payload is not IEnumerable<TakaroPlayer> players)
                 {
@@ -124,7 +135,9 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 var playersWithObservedPositions = new List<string>();
                 foreach (var player in onlinePlayers)
                 {
-                    var location = await adapter.GetPlayerLocationAsync(player.GameId, cancellationToken);
+                    var location = await RunAdapterActionAsync(
+                        () => adapter.GetPlayerLocationAsync(player.GameId, cancellationToken),
+                        cancellationToken);
                     if (location.Success)
                     {
                         playersWithObservedPositions.Add(player.GameId);
@@ -230,6 +243,13 @@ public sealed class TakaroWebSocketRunner : IDisposable
             log($"Takaro Valheim response frame written: action={request.Action}, success={response.Success}.");
         }
     }
+
+    private Task<TakaroActionResult> RunAdapterActionAsync(
+        Func<Task<TakaroActionResult>> action,
+        CancellationToken cancellationToken) =>
+        mainThreadActions.ScheduleAsync(
+            () => action().GetAwaiter().GetResult(),
+            cancellationToken);
 
     private async Task SendAsync(ClientWebSocket socket, string json, CancellationToken cancellationToken)
     {

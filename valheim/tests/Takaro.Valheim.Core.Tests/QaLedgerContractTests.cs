@@ -14,7 +14,7 @@ public sealed class QaLedgerContractTests
         StringAssert.Contains(ledger, "20bed2475ad558646c4c7cfccb20a185e516a429");
         StringAssert.Contains(ledger, "d322af0b405fbc901a48f5a5f0c1b9c1f052167ab05295acdc53896395a97186");
         StringAssert.Contains(ledger, "028eb5dfda9e52eb9998d3c538c4189e6332e761ad563a23ba8b76cdecc61755");
-        StringAssert.Contains(ledger, "Turn-9 branch verification is pending");
+        StringAssert.Contains(ledger, "Turn-10 branch verification remains pending");
         Assert.IsFalse(ledger.Contains("Turn-6 source is pending", StringComparison.Ordinal));
     }
 
@@ -40,7 +40,7 @@ public sealed class QaLedgerContractTests
                      "Codex review: BLOCKED by quota until 20:22",
                      "/tmp/valheim-turn6-evidence",
                      "cleanup complete",
-                     "Turn-9 branch verification is pending"
+                     "Turn-10 branch verification remains pending"
                  })
         {
             StringAssert.Contains(ledger, marker);
@@ -65,7 +65,7 @@ public sealed class QaLedgerContractTests
                      "247a346b-c69d-47b1-b9c9-d28cc4a74d60",
                      "aae4df31-7660-4447-8103-8447eb639518",
                      "Codex review: BLOCKED by quota until 20:22",
-                     "Turn-9 branch verification is pending"
+                     "Turn-10 branch verification remains pending"
                  })
         {
             StringAssert.Contains(ledger, marker);
@@ -92,7 +92,37 @@ public sealed class QaLedgerContractTests
                      "1.2.3-é",
                      "locale-dependent release validation",
                      "/tmp/valheim-turn8-evidence",
-                     "Turn-9 branch verification is pending"
+                     "Turn-10 branch verification remains pending"
+                 })
+        {
+            StringAssert.Contains(ledger, marker);
+        }
+    }
+
+    [TestMethod]
+    public void LedgerPinsTurnNineLiveArtifactCompletedReviewAndPendingFindings()
+    {
+        var ledger = ReadLedger();
+
+        foreach (var marker in new[]
+                 {
+                     "0a008863d4761a7865c97efdc88bd598204a978d",
+                     "7.8.9-rc.2+verify9",
+                     "1fa0ac9eb9bc7ca0f5b2cc296eff1df7abefdb8402f20e5fbaa226c93bf99f51",
+                     "5c7728ffbdd33844547f7aa5f9d921b9c698f3b2d22cf5c684a54bc8c0e7466f",
+                     "174/174",
+                     "26/26",
+                     "4dadfdf6-18a3-41f1-ae2c-b94200dea9ab",
+                     "140/33/-2",
+                     "55ab985e-d0e2-4b6b-9d0a-8c3df7d365dd",
+                     "8688cb9f-3540-4e34-b355-4a0aa52d69b8",
+                     "53026329-cdd3-4d81-b6ea-d321931c47fb",
+                     "019f5004-5dcb-7751-9693-fea212ea19a8",
+                     "COMPLETED; two severity-8 findings",
+                     "background-thread `ItemDrop` path",
+                     "unsafe Windows fallback boundary",
+                     "/tmp/valheim-turn9-evidence",
+                     "Turn-10 branch verification remains pending"
                  })
         {
             StringAssert.Contains(ledger, marker);

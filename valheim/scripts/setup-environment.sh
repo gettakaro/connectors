@@ -6,7 +6,8 @@ cd "$(dirname "$0")/.."
 
 DATA_DIR="${VALHEIM_DATA_DIR:-_data}"
 STEAMCMD_DIR="${STEAMCMD_DIR:-${DATA_DIR}/steamcmd}"
-SERVER_DIR="${VALHEIM_SERVER_DIR:-${DATA_DIR}/server}"
+REFERENCE_CACHE_DIR="${VALHEIM_REFERENCE_CACHE_DIR:-${VALHEIM_SERVER_DIR:-${DATA_DIR}/server}}"
+SERVER_DIR="$REFERENCE_CACHE_DIR"
 DEPS_DIR="${VALHEIM_DEPS_DIR:-${DATA_DIR}/deps}"
 STEAMCMD="${STEAMCMD:-${STEAMCMD_DIR}/steamcmd.sh}"
 VALHEIM_STEAM_PLATFORMS="${VALHEIM_STEAM_PLATFORMS:-linux windows}"
@@ -22,6 +23,8 @@ REQUIRED_BEPINEX_ASSEMBLIES=(
   BepInEx.dll
   0Harmony.dll
 )
+REFERENCE_CACHE_MARKER_NAME=".takaro-valheim-reference-cache"
+REFERENCE_CACHE_MARKER_CONTENT="takaro-valheim-reference-cache-v1"
 
 BEPINEX_API="${BEPINEX_API:-https://thunderstore.io/api/experimental/package/denikson/BepInExPack_Valheim/}"
 
@@ -199,16 +202,6 @@ steamcmd_install_is_complete() {
   fi
 }
 
-if ! steamcmd_install_is_complete; then
-  if [ -x "$STEAMCMD" ] && [ "$STEAMCMD" = "$STEAMCMD_DIR/steamcmd.sh" ]; then
-    echo "Repairing markerless or incomplete managed SteamCMD install..."
-  fi
-  echo "Downloading SteamCMD..."
-  if ! install_steamcmd; then
-    exit 1
-  fi
-fi
-
 clear_steam_cache() {
   if [ -n "${HOME:-}" ]; then
     rm -rf "$HOME/Steam/appcache"
@@ -255,6 +248,61 @@ is_managed_pe_assembly() {
     *PE32*Mono/.Net\ assembly*) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+reference_cache_is_owned() {
+  local cache_dir="$1"
+  local marker="$cache_dir/$REFERENCE_CACHE_MARKER_NAME"
+  local marker_content
+
+  [ -f "$marker" ] || return 1
+  IFS= read -r marker_content < "$marker" || return 1
+  [ "$marker_content" = "$REFERENCE_CACHE_MARKER_CONTENT" ]
+}
+
+reference_cache_has_entries() {
+  local cache_dir="$1"
+  [ -d "$cache_dir" ] || return 1
+  [ -n "$(find -H "$cache_dir" -mindepth 1 -maxdepth 1 -print -quit)" ]
+}
+
+ensure_reference_cache_write_is_safe() {
+  local cache_dir="$1"
+
+  if [ -e "$cache_dir" ] && [ ! -d "$cache_dir" ]; then
+    echo "Valheim reference cache target is not a directory; refusing to mutate it: $cache_dir" >&2
+    echo "Set VALHEIM_REFERENCE_CACHE_DIR to a separate empty directory used only for compile references." >&2
+    return 1
+  fi
+
+  if ! reference_cache_has_entries "$cache_dir"; then
+    return 0
+  fi
+
+  if reference_cache_is_owned "$cache_dir"; then
+    return 0
+  fi
+
+  echo "Valheim reference cache target is non-empty and unowned; refusing to mutate it: $cache_dir" >&2
+  if [ -e "$cache_dir/valheim_server.x86_64" ]; then
+    echo "Detected live-server marker: $cache_dir/valheim_server.x86_64" >&2
+  fi
+  echo "Validated assemblies may be reused read-only, but invalid caller/live-server files are never replaced." >&2
+  echo "Set VALHEIM_REFERENCE_CACHE_DIR to a separate empty directory used only for compile references." >&2
+  echo "Legacy VALHEIM_SERVER_DIR remains read-only unless it is empty or already carries the Takaro reference-cache ownership marker." >&2
+  return 1
+}
+
+ensure_steamcmd_install() {
+  if steamcmd_install_is_complete; then
+    return 0
+  fi
+
+  if [ -x "$STEAMCMD" ] && [ "$STEAMCMD" = "$STEAMCMD_DIR/steamcmd.sh" ]; then
+    echo "Repairing markerless or incomplete managed SteamCMD install..."
+  fi
+  echo "Downloading SteamCMD..."
+  install_steamcmd
 }
 
 publish_valheim_server_install() {
@@ -319,8 +367,16 @@ install_valheim_server() {
   fi
 
   if validate_managed_assemblies "$managed_dir"; then
-    echo "Reusing validated Valheim dedicated-server references at $managed_dir."
+    echo "Reusing validated Valheim references read-only at $managed_dir."
     return 0
+  fi
+
+  if ! ensure_reference_cache_write_is_safe "$server_install_dir"; then
+    return 1
+  fi
+
+  if ! ensure_steamcmd_install; then
+    return 1
   fi
 
   for platform in "${platforms[@]}"; do
@@ -349,8 +405,11 @@ install_valheim_server() {
       fi
 
       if [ "$last_exit_code" -eq 0 ] && validate_managed_assemblies "$stage_managed_dir"; then
-        if publish_valheim_server_install "$stage_dir" "$server_install_dir"; then
-          echo "Valheim dedicated-server references installed for Steam platform '$platform'."
+        if ! printf '%s\n' "$REFERENCE_CACHE_MARKER_CONTENT" > "$stage_dir/$REFERENCE_CACHE_MARKER_NAME"; then
+          echo "Could not mark the validated Valheim reference cache complete: $stage_dir" >&2
+          last_exit_code=1
+        elif publish_valheim_server_install "$stage_dir" "$server_install_dir"; then
+          echo "Valheim compile-reference cache installed for Steam platform '$platform'."
           return 0
         fi
         last_exit_code=1
@@ -407,5 +466,5 @@ unzip -q "$DEPS_DIR/bepinex.zip" -d "$DEPS_DIR/bepinex"
 validate_bepinex_assemblies "$DEPS_DIR/bepinex/BepInExPack_Valheim/BepInEx/core"
 
 echo "Reference assemblies ready:"
-echo "  Valheim: $SERVER_DIR/valheim_server_Data/Managed"
+echo "  Valheim: $REFERENCE_CACHE_DIR/valheim_server_Data/Managed"
 echo "  BepInEx: $DEPS_DIR/bepinex/BepInExPack_Valheim/BepInEx/core"

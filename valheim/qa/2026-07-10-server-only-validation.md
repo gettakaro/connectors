@@ -1,10 +1,35 @@
 # Valheim Server-Only Validation Ledger
 
-## Verdict: FAIL (turn-8 artifact and safe exerciser passed; locale-dependent release validation failed)
+## Verdict: FAIL (turn-9 exerciser and exact Codex review passed; two severity-8 findings require turn 10)
 
-Turn 8 verified exact source commit `92320c76db97da8972237cde72ac8bed59f880c8`. Its exact prerelease artifact loaded, identified, and passed the safe live exerciser with an unmodified vanilla client. The branch verdict remains `FAIL` because independent custom-gate testing proved that locale-dependent release validation accepted non-ASCII SemVer under `en_US.UTF-8` and allowed a real package to be produced. Turn-9 source changes do not inherit turn-8 verification. Turn-9 branch verification is pending; PR creation, GitHub Actions, merge, and release refresh remain orchestrator work.
+Turn 9 verified exact source commit `0a008863d4761a7865c97efdc88bd598204a978d`. Its exact prerelease artifact loaded, identified, and passed the safe live exerciser with an unmodified vanilla client. Locale-stable release validation passed and exact Codex review session `019f5004-5dcb-7751-9693-fea212ea19a8` completed. The branch verdict remains `FAIL` because that review found two severity-8 defects: game adapter calls could run on the WebSocket background thread, and Windows compile-reference fallback could replace a configured Linux server installation. Turn-10 source changes do not inherit turn-9 verification. Fresh branch verification, PR creation, GitHub Actions, merge, and release refresh remain pending orchestrator work.
 
-The exact Codex review remained quota-blocked until 20:22. That gate is blocked, not passed. Destructive kick, ban, unban, and shutdown actions remained deliberately skipped and approval-gated.
+Destructive kick, ban, unban, and shutdown actions remained deliberately skipped and approval-gated.
+
+## Turn-9 Exact Artifact and Verification Findings
+
+| Evidence | Exact value | Result |
+| --- | --- | --- |
+| Source commit | `0a008863d4761a7865c97efdc88bd598204a978d` | Exact clean turn-9 HEAD |
+| Prerelease version | `7.8.9-rc.2+verify9` | Exact package/informational SemVer |
+| Release zip SHA-256 | `1fa0ac9eb9bc7ca0f5b2cc296eff1df7abefdb8402f20e5fbaa226c93bf99f51` | Exact verifier artifact |
+| Plugin DLL SHA-256 | `5c7728ffbdd33844547f7aa5f9d921b9c698f3b2d22cf5c684a54bc8c0e7466f` | Exact verifier plugin |
+| Unit/contract tests | `174/174` | PASS |
+| Setup behavior harness | `26/26` | PASS at turn-9 source |
+| BepInEx loader | `Takaro Valheim 7.8.9` | PASS: prerelease loader metadata accepted |
+| Game server ID | `4dadfdf6-18a3-41f1-ae2c-b94200dea9ab` | PASS: exact server identified |
+| Client boundary | Vanilla client; no Takaro client DLL | PASS: dedicated-server-only |
+| Real server-owned position | `140/33/-2` | PASS |
+| Persisted `player-connected` | `55ab985e-d0e2-4b6b-9d0a-8c3df7d365dd` | PASS |
+| Persisted `player-disconnected` | `8688cb9f-3540-4e34-b355-4a0aa52d69b8` | PASS |
+| Outbound chat record | `53026329-cdd3-4d81-b6ea-d321931c47fb` | Acting-user outbound message, not connector-emitted inbound chat |
+| Safe runtime exercise | `Exerciser: PASSED` | PASS: safe actions and unsupported-event exclusion |
+| Exact Codex review | `019f5004-5dcb-7751-9693-fea212ea19a8` | COMPLETED; two severity-8 findings |
+| Evidence directory | `/tmp/valheim-turn9-evidence` | Local sanitized evidence; secrets excluded |
+
+The turn-9 live window proved the real position, lifecycle persistence, inventory non-mutation, actionable invalid/unsupported failures, safe outbound messaging, and zero connector-emitted chat-message, player-death, or entity-killed events. It did not exercise a valid world drop, so it did not expose the background-thread `ItemDrop` path. The run reused existing references, so it also did not cross the unsafe Windows fallback boundary. Destructive actions stayed skipped and are not upgraded by this run.
+
+Turn 10 adds a bounded main-thread scheduler for every request-dispatched adapter action and lifecycle read, with `ValheimTakaroPlugin.Update()` as the drain boundary. It also separates writable compile references into an owned cache and refuses to mutate invalid non-empty unowned or live-server directories. These are source changes awaiting independent turn-10 verification, not retroactive turn-9 proof.
 
 ## Turn-8 Exact Artifact and Verification Failure
 
@@ -285,4 +310,4 @@ These files are local evidence paths, not committed release assets.
 
 Task 7 is complete for the exact turn-6 commit and artifact above. Turn-7 local player gates passed `166/166` tests, `20/20` setup scenarios, Bash/JSON checks, and a real `net472` build with zero warnings or errors, but those checks missed loader compatibility. The exact `7.8.9-rc.2+verify7` verifier artifact was then rejected by BepInEx, so the turn-7 exerciser and overall branch verdict are `FAIL`. The separate numeric-version control evidence is recorded above and is not substituted for the failed artifact.
 
-Turn-8 safe live verification passed, but branch verification failed on locale-dependent SemVer validation and the exact Codex review remained quota-blocked. Turn-9 branch verification is pending under Task 8 before PR handoff. PR creation, GitHub Actions, superseded-PR closure, merge, and release refresh remain pending orchestrator work. Destructive actions remain approval-gated and are not required for this server-only validation ledger.
+Turn-9 safe live verification, locale/release gates, and exact Codex review completed, but branch verification failed on the two severity-8 thread/cache findings recorded above. Turn-10 branch verification remains pending under Task 8 before PR handoff. PR creation, GitHub Actions, superseded-PR closure, merge, and release refresh remain pending orchestrator work. Destructive actions remain approval-gated and are not required for this server-only validation ledger.

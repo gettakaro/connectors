@@ -18,7 +18,10 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
     public const string ReleaseVersion = TakaroBuildVersion.ReleaseVersion;
 
     private TakaroWebSocketRunner? runner;
+    private QueuedMainThreadActionScheduler? mainThreadActions;
     private Harmony? harmony;
+    private bool shutdownRequested;
+    private float shutdownRequestedAt;
 
     private void Awake()
     {
@@ -50,22 +53,45 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             return;
         }
 
-        var adapter = new ValheimServerAdapter(Logger, config);
-        runner = new TakaroWebSocketRunner(config, adapter, message => Logger.LogInfo(message));
+        mainThreadActions = new QueuedMainThreadActionScheduler();
+        var adapter = new ValheimServerAdapter(Logger, config, RequestShutdown);
+        runner = new TakaroWebSocketRunner(
+            config,
+            adapter,
+            message => Logger.LogInfo(message),
+            mainThreadActions);
         ValheimChatEventBridge.Initialize(runner, Logger.LogInfo);
         _ = runner.StartAsync();
 
         Logger.LogInfo("Takaro Valheim connector started.");
     }
 
-    private void Update() =>
+    private void Update()
+    {
+        mainThreadActions?.Drain();
         ValheimChatEventBridge.Update();
+
+        if (shutdownRequested && Time.realtimeSinceStartup >= shutdownRequestedAt)
+        {
+            shutdownRequested = false;
+            Logger.LogInfo("Takaro Valheim executing scheduled shutdown on the Unity main thread.");
+            Application.Quit();
+        }
+    }
 
     private void OnDestroy()
     {
         harmony?.UnpatchSelf();
         ValheimChatEventBridge.Shutdown();
         runner?.Dispose();
+        mainThreadActions?.Dispose();
+    }
+
+    private void RequestShutdown()
+    {
+        shutdownRequested = true;
+        shutdownRequestedAt = Time.realtimeSinceStartup + 1f;
+        Logger.LogInfo("Takaro Valheim shutdown requested; scheduling Application.Quit after response flush.");
     }
 
     private ConfigEntry<string> Bind(string section, string key, string defaultValue, string description) =>

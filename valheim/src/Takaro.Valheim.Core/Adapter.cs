@@ -89,39 +89,27 @@ public sealed record TakaroPosition(double X, double Y, double Z, string? Dimens
 public sealed class TakaroRequestDispatcher
 {
     private readonly IValheimTakaroAdapter adapter;
+    private readonly IMainThreadActionScheduler mainThreadActions;
 
-    public TakaroRequestDispatcher(IValheimTakaroAdapter adapter)
+    public TakaroRequestDispatcher(
+        IValheimTakaroAdapter adapter,
+        IMainThreadActionScheduler? mainThreadActions = null)
     {
         this.adapter = adapter;
+        this.mainThreadActions = mainThreadActions ?? InlineMainThreadActionScheduler.Instance;
     }
 
     public async Task<TakaroActionResult> DispatchAsync(TakaroRequest request, CancellationToken cancellationToken = default)
     {
         try
         {
-            return request.Action switch
-            {
-                TakaroActionNames.TestReachability => await adapter.TestReachabilityAsync(cancellationToken),
-                TakaroActionNames.GetPlayers => await adapter.GetPlayersAsync(cancellationToken),
-                TakaroActionNames.GetPlayer => await adapter.GetPlayerAsync(RequiredIdentifier(request.Args), cancellationToken),
-                TakaroActionNames.GetPlayerLocation => await adapter.GetPlayerLocationAsync(RequiredIdentifier(request.Args), cancellationToken),
-                TakaroActionNames.GetPlayerInventory => await adapter.GetPlayerInventoryAsync(RequiredIdentifier(request.Args), cancellationToken),
-                TakaroActionNames.GiveItem => await adapter.GiveItemAsync(RequiredIdentifier(request.Args), RequiredItemCode(request.Args), OptionalPositiveInt(request.Args, "amount") ?? OptionalPositiveInt(request.Args, "quantity") ?? 1, OptionalString(request.Args, "quality"), cancellationToken),
-                TakaroActionNames.SendMessage => await adapter.SendMessageAsync(RequiredString(request.Args, "message"), OptionalRecipientIdentifier(request.Args), cancellationToken),
-                TakaroActionNames.ExecuteConsoleCommand => await adapter.ExecuteConsoleCommandAsync(RequiredString(request.Args, "command"), cancellationToken),
-                TakaroActionNames.ListItems => await adapter.ListItemsAsync(cancellationToken),
-                TakaroActionNames.ListEntities => await adapter.ListEntitiesAsync(cancellationToken),
-                TakaroActionNames.ListLocations => await adapter.ListLocationsAsync(cancellationToken),
-                TakaroActionNames.GetMapInfo => await adapter.GetMapInfoAsync(cancellationToken),
-                TakaroActionNames.GetMapTile => await adapter.GetMapTileAsync(cancellationToken),
-                TakaroActionNames.TeleportPlayer => await adapter.TeleportPlayerAsync(RequiredIdentifier(request.Args), RequiredPosition(request.Args), cancellationToken),
-                TakaroActionNames.KickPlayer => NullPayloadOnSuccess(await adapter.KickPlayerAsync(RequiredIdentifier(request.Args), OptionalString(request.Args, "reason"), cancellationToken)),
-                TakaroActionNames.BanPlayer => NullPayloadOnSuccess(await adapter.BanPlayerAsync(RequiredIdentifier(request.Args), OptionalString(request.Args, "reason"), cancellationToken)),
-                TakaroActionNames.UnbanPlayer => NullPayloadOnSuccess(await adapter.UnbanPlayerAsync(RequiredIdentifier(request.Args), cancellationToken)),
-                TakaroActionNames.ListBans => await adapter.ListBansAsync(cancellationToken),
-                TakaroActionNames.Shutdown => NullPayloadOnSuccess(await adapter.ShutdownAsync(cancellationToken)),
-                _ => TakaroActionResult.Error("unsupported_action", $"Valheim connector does not support action '{request.Action}' yet.")
-            };
+            return await mainThreadActions.ScheduleAsync(
+                () => DispatchScheduled(request, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (ArgumentException ex)
         {
@@ -131,6 +119,35 @@ public sealed class TakaroRequestDispatcher
         {
             return TakaroActionResult.Error("action_failed", ex.Message);
         }
+    }
+
+    private TakaroActionResult DispatchScheduled(
+        TakaroRequest request,
+        CancellationToken cancellationToken)
+    {
+        return request.Action switch
+            {
+                TakaroActionNames.TestReachability => adapter.TestReachabilityAsync(cancellationToken).GetAwaiter().GetResult(),
+                TakaroActionNames.GetPlayers => adapter.GetPlayersAsync(cancellationToken).GetAwaiter().GetResult(),
+                TakaroActionNames.GetPlayer => adapter.GetPlayerAsync(RequiredIdentifier(request.Args), cancellationToken).GetAwaiter().GetResult(),
+                TakaroActionNames.GetPlayerLocation => adapter.GetPlayerLocationAsync(RequiredIdentifier(request.Args), cancellationToken).GetAwaiter().GetResult(),
+                TakaroActionNames.GetPlayerInventory => adapter.GetPlayerInventoryAsync(RequiredIdentifier(request.Args), cancellationToken).GetAwaiter().GetResult(),
+                TakaroActionNames.GiveItem => adapter.GiveItemAsync(RequiredIdentifier(request.Args), RequiredItemCode(request.Args), OptionalPositiveInt(request.Args, "amount") ?? OptionalPositiveInt(request.Args, "quantity") ?? 1, OptionalString(request.Args, "quality"), cancellationToken).GetAwaiter().GetResult(),
+                TakaroActionNames.SendMessage => adapter.SendMessageAsync(RequiredString(request.Args, "message"), OptionalRecipientIdentifier(request.Args), cancellationToken).GetAwaiter().GetResult(),
+                TakaroActionNames.ExecuteConsoleCommand => adapter.ExecuteConsoleCommandAsync(RequiredString(request.Args, "command"), cancellationToken).GetAwaiter().GetResult(),
+                TakaroActionNames.ListItems => adapter.ListItemsAsync(cancellationToken).GetAwaiter().GetResult(),
+                TakaroActionNames.ListEntities => adapter.ListEntitiesAsync(cancellationToken).GetAwaiter().GetResult(),
+                TakaroActionNames.ListLocations => adapter.ListLocationsAsync(cancellationToken).GetAwaiter().GetResult(),
+                TakaroActionNames.GetMapInfo => adapter.GetMapInfoAsync(cancellationToken).GetAwaiter().GetResult(),
+                TakaroActionNames.GetMapTile => adapter.GetMapTileAsync(cancellationToken).GetAwaiter().GetResult(),
+                TakaroActionNames.TeleportPlayer => adapter.TeleportPlayerAsync(RequiredIdentifier(request.Args), RequiredPosition(request.Args), cancellationToken).GetAwaiter().GetResult(),
+                TakaroActionNames.KickPlayer => NullPayloadOnSuccess(adapter.KickPlayerAsync(RequiredIdentifier(request.Args), OptionalString(request.Args, "reason"), cancellationToken).GetAwaiter().GetResult()),
+                TakaroActionNames.BanPlayer => NullPayloadOnSuccess(adapter.BanPlayerAsync(RequiredIdentifier(request.Args), OptionalString(request.Args, "reason"), cancellationToken).GetAwaiter().GetResult()),
+                TakaroActionNames.UnbanPlayer => NullPayloadOnSuccess(adapter.UnbanPlayerAsync(RequiredIdentifier(request.Args), cancellationToken).GetAwaiter().GetResult()),
+                TakaroActionNames.ListBans => adapter.ListBansAsync(cancellationToken).GetAwaiter().GetResult(),
+                TakaroActionNames.Shutdown => NullPayloadOnSuccess(adapter.ShutdownAsync(cancellationToken).GetAwaiter().GetResult()),
+                _ => TakaroActionResult.Error("unsupported_action", $"Valheim connector does not support action '{request.Action}' yet.")
+            };
     }
 
     private static string RequiredIdentifier(JsonElement args) =>

@@ -10,6 +10,14 @@ REQUIRED_ASSEMBLIES=(
   UnityEngine.dll
   UnityEngine.CoreModule.dll
 )
+REFERENCE_CACHE_MARKER_NAME=".takaro-valheim-reference-cache"
+REFERENCE_CACHE_MARKER_CONTENT="takaro-valheim-reference-cache-v1"
+
+mark_owned_reference_cache() {
+  local cache_dir="$1"
+  mkdir -p "$cache_dir"
+  printf '%s\n' "$REFERENCE_CACHE_MARKER_CONTENT" > "$cache_dir/$REFERENCE_CACHE_MARKER_NAME"
+}
 
 create_required_assemblies() {
   local install_dir="${1:-$STUB_SERVER_DIR}"
@@ -395,10 +403,12 @@ run_setup() {
   local scenario="$2"
   local platforms="${3:-linux windows}"
   local preinstall_steamcmd="${4:-true}"
+  local cache_variable="${5:-reference}"
   local case_dir="$TMP_ROOT/$name"
   local bin_dir="$case_dir/bin"
   local command
   local steamcmd_path
+  local -a cache_environment
 
   mkdir -p "$bin_dir" "$case_dir/home" "$case_dir/data" "$case_dir/server" "$case_dir/steamcmd" "$case_dir/deps" "$case_dir/state"
   for command in curl jq unzip tar cp mv file sleep; do
@@ -413,12 +423,23 @@ run_setup() {
 
   RUN_OUTPUT="$case_dir/output.log"
   RUN_CASE_DIR="$case_dir"
+  case "$cache_variable" in
+    reference)
+      cache_environment=("VALHEIM_REFERENCE_CACHE_DIR=$case_dir/server")
+      ;;
+    legacy)
+      cache_environment=("VALHEIM_SERVER_DIR=$case_dir/server")
+      ;;
+    *)
+      printf 'unknown cache variable mode: %s\n' "$cache_variable" >&2
+      return 2
+      ;;
+  esac
   env \
     PATH="$bin_dir:$PATH" \
     HOME="$case_dir/home" \
     VALHEIM_DATA_DIR="$case_dir/data" \
     STEAMCMD_DIR="$case_dir/steamcmd" \
-    VALHEIM_SERVER_DIR="$case_dir/server" \
     VALHEIM_DEPS_DIR="$case_dir/deps" \
     STEAMCMD="$steamcmd_path" \
     VALHEIM_STEAM_PLATFORMS="$platforms" \
@@ -427,6 +448,7 @@ run_setup() {
     STUB_SERVER_DIR="$case_dir/server" \
     STUB_STEAMCMD_DIR="$case_dir/steamcmd" \
     MANAGED_ASSEMBLY_FIXTURE="$MANAGED_ASSEMBLY_FIXTURE" \
+    "${cache_environment[@]}" \
     bash "$SETUP_SCRIPT" > "$RUN_OUTPUT" 2>&1
   RUN_STATUS=$?
 }
@@ -496,11 +518,37 @@ assert_no_steamcmd_temporary_state() {
   fi
 }
 
+assert_no_server_temporary_state() {
+  local leaked_path
+  leaked_path="$(find "$RUN_CASE_DIR" -mindepth 1 -maxdepth 1 \
+    \( -name 'server.stage.*' -o -name 'server.backup.*' \) \
+    -print -quit)"
+  if [ -n "$leaked_path" ]; then
+    printf 'ASSERT: Valheim reference-cache sibling temporary state was not cleaned up: %s\n' "$leaked_path" >&2
+    return 1
+  fi
+}
+
+tree_fingerprint() {
+  local directory="$1"
+  (
+    cd "$directory" || exit 1
+    find . -type f -print0 \
+      | sort -z \
+      | while IFS= read -r -d '' path; do
+          printf '%s\0' "$path"
+          sha256sum -- "$path"
+        done
+  ) | sha256sum | awk '{print $1}'
+}
+
 test_first_attempt_success() {
   run_setup first-success first_success
   assert_equals 0 "$RUN_STATUS" "first successful SteamCMD run should complete setup" || return 1
   assert_equals 1 "$(call_count)" "success should not retry" || return 1
   assert_nonempty_file "$RUN_CASE_DIR/server/valheim_server_Data/Managed/UnityEngine.CoreModule.dll" "required assemblies should be nonempty" || return 1
+  assert_file "$RUN_CASE_DIR/server/$REFERENCE_CACHE_MARKER_NAME" "a newly published reference cache must carry its ownership marker" || return 1
+  assert_equals "$REFERENCE_CACHE_MARKER_CONTENT" "$(cat "$RUN_CASE_DIR/server/$REFERENCE_CACHE_MARKER_NAME")" "the ownership marker must be written only with the completed format" || return 1
   assert_nonempty_file "$RUN_CASE_DIR/deps/bepinex/BepInExPack_Valheim/BepInEx/core/BepInEx.dll" "BepInEx reference should be nonempty" || return 1
 }
 
@@ -526,22 +574,51 @@ test_failed_steamcmd_does_not_accept_stale_managed_directory() {
   for assembly in "${REQUIRED_ASSEMBLIES[@]}"; do
     printf 'stale-valid-looking-reference\n' > "$case_dir/server/valheim_server_Data/Managed/$assembly"
   done
+  mark_owned_reference_cache "$case_dir/server"
 
   run_setup stale-managed always_fail
   assert_nonzero "$RUN_STATUS" "failed SteamCMD must not accept stale assemblies" || return 1
   assert_equals 6 "$(call_count)" "stale cache must not bypass retries or platform fallback" || return 1
 }
 
-test_linux_windows_fallback_preserves_caller_server_data() {
+test_owned_reference_cache_linux_windows_fallback_preserves_cache_data() {
   local case_dir="$TMP_ROOT/platform-fallback"
   mkdir -p "$case_dir/server/worlds_local"
   printf '%s\n' "keep me" > "$case_dir/server/worlds_local/world.db"
+  mark_owned_reference_cache "$case_dir/server"
 
   run_setup platform-fallback windows_success
   assert_equals 0 "$RUN_STATUS" "Windows compile-reference fallback should succeed" || return 1
   assert_equals 4 "$(call_count)" "fallback should exhaust Linux then try Windows once" || return 1
-  assert_file "$RUN_CASE_DIR/server/worlds_local/world.db" "platform fallback must not delete caller-controlled server data" || return 1
+  assert_file "$RUN_CASE_DIR/server/worlds_local/world.db" "platform fallback must preserve owned cache data" || return 1
+  assert_file "$RUN_CASE_DIR/server/$REFERENCE_CACHE_MARKER_NAME" "successful fallback must publish a completed ownership marker" || return 1
   assert_output_contains "Windows depot for compile references only" "fallback purpose should be explicit" || return 1
+}
+
+test_invalid_legacy_live_server_is_refused_before_steamcmd_and_unchanged() {
+  local case_dir="$TMP_ROOT/legacy-live-server"
+  local before
+  local after
+  mkdir -p "$case_dir/server/worlds_local" "$case_dir/server/valheim_server_Data/Managed"
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$case_dir/server/valheim_server.x86_64"
+  chmod +x "$case_dir/server/valheim_server.x86_64"
+  printf '%s\n' 'irreplaceable world' > "$case_dir/server/worlds_local/world.db"
+  printf '%s\n' 'invalid reference' > "$case_dir/server/valheim_server_Data/Managed/assembly_valheim.dll"
+  before="$(tree_fingerprint "$case_dir/server")"
+
+  run_setup legacy-live-server windows_success "linux windows" true legacy
+  after="$(tree_fingerprint "$case_dir/server")"
+
+  assert_nonzero "$RUN_STATUS" "an invalid unowned legacy live-server tree must be refused" || return 1
+  assert_equals 0 "$(call_count)" "refusal must happen before SteamCMD can mutate a live server tree" || return 1
+  assert_equals "$before" "$after" "every live-server file and hash must stay unchanged" || return 1
+  assert_output_contains "VALHEIM_REFERENCE_CACHE_DIR" "refusal must direct the caller to a separate owned cache" || return 1
+  assert_output_contains "valheim_server.x86_64" "refusal must identify the live-server marker" || return 1
+  if [ -e "$RUN_CASE_DIR/server/$REFERENCE_CACHE_MARKER_NAME" ]; then
+    printf 'ASSERT: refusal forged an ownership marker inside the live server\n' >&2
+    return 1
+  fi
+  assert_no_server_temporary_state || return 1
 }
 
 test_missing_required_dlls_exhausts_all_attempts() {
@@ -620,49 +697,71 @@ test_valid_existing_install_skips_steamcmd() {
   local case_dir="$TMP_ROOT/valid-existing"
   STUB_SERVER_DIR="$case_dir/server" create_required_assemblies "$case_dir/server"
 
-  run_setup valid-existing always_fail
+  run_setup valid-existing always_fail "linux windows" true legacy
   assert_equals 0 "$RUN_STATUS" "a fully validated existing install should be reused" || return 1
   assert_equals 0 "$(call_count)" "validated existing references should skip SteamCMD" || return 1
+  if [ -e "$RUN_CASE_DIR/server/$REFERENCE_CACHE_MARKER_NAME" ]; then
+    printf 'ASSERT: read-only reuse must not claim ownership of a caller installation\n' >&2
+    return 1
+  fi
 }
 
 test_failed_atomic_publication_rolls_back_and_next_run_retries() {
   local case_dir="$TMP_ROOT/atomic-publication"
   mkdir -p "$case_dir/server/worlds_local"
   printf '%s\n' "old install" > "$case_dir/server/worlds_local/world.db"
+  mark_owned_reference_cache "$case_dir/server"
 
   run_setup atomic-publication valheim_publish_failure
   assert_nonzero "$RUN_STATUS" "a failed atomic publication must fail setup" || return 1
   assert_file "$RUN_CASE_DIR/server/worlds_local/world.db" "failed publication must restore the old install" || return 1
   assert_equals "old install" "$(cat "$RUN_CASE_DIR/server/worlds_local/world.db")" "rollback must retain old install content" || return 1
+  assert_no_server_temporary_state || return 1
 
   run_setup atomic-publication first_success
   assert_equals 0 "$RUN_STATUS" "the next setup run must retry after failed publication" || return 1
   assert_nonempty_file "$RUN_CASE_DIR/server/valheim_server_Data/Managed/assembly_valheim.dll" "retry should publish validated references" || return 1
   assert_file "$RUN_CASE_DIR/server/worlds_local/world.db" "successful swap must preserve caller server data" || return 1
+  assert_no_server_temporary_state || return 1
+}
+
+test_failed_first_publication_does_not_forge_cache_ownership() {
+  run_setup failed-first-publication valheim_publish_failure
+
+  assert_nonzero "$RUN_STATUS" "failed first reference-cache publication must fail setup" || return 1
+  if [ -e "$RUN_CASE_DIR/server/$REFERENCE_CACHE_MARKER_NAME" ]; then
+    printf 'ASSERT: a partial publication forged a completed cache ownership marker\n' >&2
+    return 1
+  fi
+  assert_no_server_temporary_state || return 1
 }
 
 test_signal_during_atomic_publication_restores_old_install() {
   local case_dir="$TMP_ROOT/atomic-interrupt"
   mkdir -p "$case_dir/server/worlds_local"
   printf '%s\n' "old install" > "$case_dir/server/worlds_local/world.db"
+  mark_owned_reference_cache "$case_dir/server"
 
   run_setup atomic-interrupt valheim_publish_interrupt
   assert_nonzero "$RUN_STATUS" "an interrupted atomic publication must fail setup" || return 1
   assert_file "$RUN_CASE_DIR/state/publish-interrupt-attempted" "test must reach the atomic publication boundary" || return 1
   assert_file "$RUN_CASE_DIR/server/worlds_local/world.db" "signal cleanup must restore the old install" || return 1
   assert_equals "old install" "$(cat "$RUN_CASE_DIR/server/worlds_local/world.db")" "signal rollback must retain old install content" || return 1
+  assert_no_server_temporary_state || return 1
 }
 
 test_signal_after_first_atomic_rename_restores_old_install() {
   local case_dir="$TMP_ROOT/first-rename-interrupt"
   mkdir -p "$case_dir/server/worlds_local"
   printf '%s\n' "old install" > "$case_dir/server/worlds_local/world.db"
+  mark_owned_reference_cache "$case_dir/server"
 
   run_setup first-rename-interrupt valheim_first_rename_interrupt
   assert_nonzero "$RUN_STATUS" "a signal after the first publication rename must fail setup" || return 1
   assert_file "$RUN_CASE_DIR/state/first-rename-interrupt-attempted" "test must interrupt immediately after the old install is renamed" || return 1
   assert_file "$RUN_CASE_DIR/server/worlds_local/world.db" "first-rename signal cleanup must restore the old install" || return 1
   assert_equals "old install" "$(cat "$RUN_CASE_DIR/server/worlds_local/world.db")" "first-rename signal rollback must retain old install content" || return 1
+  assert_no_server_temporary_state || return 1
 }
 
 test_steamcmd_download_is_completed_before_tar_reads_it() {
@@ -746,6 +845,7 @@ test_complete_cached_steamcmd_install_is_reused() {
   run_setup steamcmd-complete-cache first_success "linux windows" false
   assert_equals 0 "$RUN_STATUS" "initial managed SteamCMD setup should succeed" || return 1
   assert_file "$RUN_CASE_DIR/steamcmd/.takaro-steamcmd-complete" "managed SteamCMD setup should publish a completion marker" || return 1
+  assert_file "$RUN_CASE_DIR/server/$REFERENCE_CACHE_MARKER_NAME" "managed Valheim cache should publish an ownership marker" || return 1
   assert_equals 1 "$(cat "$RUN_CASE_DIR/state/steamcmd-download-count")" "initial setup should download SteamCMD once" || return 1
 
   rm -rf "$RUN_CASE_DIR/server/valheim_server_Data/Managed"
@@ -753,6 +853,7 @@ test_complete_cached_steamcmd_install_is_reused() {
   run_setup steamcmd-complete-cache first_success "linux windows" false
   assert_equals 0 "$RUN_STATUS" "a complete cached SteamCMD install should remain usable" || return 1
   assert_equals 1 "$(cat "$RUN_CASE_DIR/state/steamcmd-download-count")" "complete cached install should not be downloaded again" || return 1
+  assert_file "$RUN_CASE_DIR/server/$REFERENCE_CACHE_MARKER_NAME" "owned cache repair should retain its completion marker" || return 1
 }
 
 test_exhaustion_reports_recovery_context() {
@@ -769,7 +870,8 @@ for test_case in \
   test_first_attempt_success \
   test_retry_recovery_clears_cache \
   test_failed_steamcmd_does_not_accept_stale_managed_directory \
-  test_linux_windows_fallback_preserves_caller_server_data \
+  test_owned_reference_cache_linux_windows_fallback_preserves_cache_data \
+  test_invalid_legacy_live_server_is_refused_before_steamcmd_and_unchanged \
   test_missing_required_dlls_exhausts_all_attempts \
   test_empty_required_dlls_exhaust_all_attempts \
   test_corrupt_required_dlls_exhaust_all_attempts \
@@ -781,6 +883,7 @@ for test_case in \
   test_missing_file_command_fails_preflight \
   test_valid_existing_install_skips_steamcmd \
   test_failed_atomic_publication_rolls_back_and_next_run_retries \
+  test_failed_first_publication_does_not_forge_cache_ownership \
   test_signal_after_first_atomic_rename_restores_old_install \
   test_signal_during_atomic_publication_restores_old_install \
   test_steamcmd_download_is_completed_before_tar_reads_it \
