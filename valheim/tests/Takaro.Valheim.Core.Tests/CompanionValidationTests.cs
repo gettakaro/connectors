@@ -138,6 +138,24 @@ public sealed class CompanionValidationTests
     }
 
     [TestMethod]
+    public void DuplicateEventIdsAreScopedToBoundedSessionNonce()
+    {
+        var deduplicator = new BoundedEventDeduplicator(capacity: 4);
+
+        Assert.IsTrue(deduplicator.TryAccept(1, "nonce-old", "event-1"));
+        Assert.IsFalse(deduplicator.TryAccept(1, "nonce-old", "event-1"));
+        Assert.IsTrue(deduplicator.TryAccept(1, "nonce-new", "event-1"));
+        Assert.IsFalse(deduplicator.TryAccept(1, "nonce-new", "event-1"));
+
+        Assert.ThrowsException<ArgumentException>(() =>
+            deduplicator.TryAccept(1, " ", "event-2"));
+        Assert.ThrowsException<ArgumentException>(() => deduplicator.TryAccept(
+            1,
+            new string('n', CompanionEnvelopeCodec.MaximumSessionNonceCharacters + 1),
+            "event-2"));
+    }
+
+    [TestMethod]
     public void DeduplicatorEvictsOldestEntryAtBound()
     {
         var deduplicator = new BoundedEventDeduplicator(capacity: 2);

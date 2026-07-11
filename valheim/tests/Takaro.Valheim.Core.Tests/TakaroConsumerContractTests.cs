@@ -31,6 +31,18 @@ public sealed class TakaroConsumerContractTests
         new("shutdown", ConsumerPayloadShape.Unvalidated)
     };
 
+    // Pinned from @takaro/modules 0.4.17 EventEntityKilled plus BaseEvent.
+    // This local mirror intentionally avoids a runtime dependency on node_modules.
+    private static readonly ConsumerEventContract[] PinnedEventValidationMap =
+    {
+        new(
+            "entity-killed",
+            new ConsumerEventProperty("player", JsonValueKind.Object),
+            new ConsumerEventProperty("entity", JsonValueKind.String),
+            new ConsumerEventProperty("weapon", JsonValueKind.String),
+            new ConsumerEventProperty("timestamp", JsonValueKind.String))
+    };
+
     [TestMethod]
     public void PinnedTakaroValidationMapCoversEverySupportedActionAt0c63cf1c()
     {
@@ -298,11 +310,27 @@ public sealed class TakaroConsumerContractTests
 
         using var killed = ParseGameEvent(events[2]);
         var killedData = killed.RootElement.GetProperty("payload").GetProperty("data");
-        AssertPropertySet(killedData, "entity", "player", "position", "timestamp", "weapon");
+        AssertPropertySet(killedData, "entity", "player", "timestamp", "weapon");
+        Assert.IsTrue(PinnedTakaroEventValidationAccepts("entity-killed", killedData));
         Assert.AreEqual("Steam_real", killedData.GetProperty("player").GetProperty("gameId").GetString());
         Assert.AreEqual("Greydwarf", killedData.GetProperty("entity").GetString());
         Assert.AreEqual("SwordIron", killedData.GetProperty("weapon").GetString());
         Assert.AreEqual("1970-01-01T00:00:00.003+00:00", killedData.GetProperty("timestamp").GetString());
+    }
+
+    [TestMethod]
+    public void PinnedEntityKilledContractRejectsMissingWeaponAndPositionExtension()
+    {
+        using var valid = JsonDocument.Parse(
+            """{"player":{"gameId":"Steam_1","name":"Odin"},"entity":"Greydwarf","weapon":"SwordIron","timestamp":"2026-07-11T12:00:00+00:00"}""");
+        using var missingWeapon = JsonDocument.Parse(
+            """{"player":{"gameId":"Steam_1","name":"Odin"},"entity":"Greydwarf","timestamp":"2026-07-11T12:00:00+00:00"}""");
+        using var extraPosition = JsonDocument.Parse(
+            """{"player":{"gameId":"Steam_1","name":"Odin"},"entity":"Greydwarf","weapon":"SwordIron","timestamp":"2026-07-11T12:00:00+00:00","position":{"x":1,"y":2,"z":3}}""");
+
+        Assert.IsTrue(PinnedTakaroEventValidationAccepts("entity-killed", valid.RootElement));
+        Assert.IsFalse(PinnedTakaroEventValidationAccepts("entity-killed", missingWeapon.RootElement));
+        Assert.IsFalse(PinnedTakaroEventValidationAccepts("entity-killed", extraPosition.RootElement));
     }
 
     [DataTestMethod]
@@ -486,6 +514,39 @@ public sealed class TakaroConsumerContractTests
         }
     }
 
+    private static bool PinnedTakaroEventValidationAccepts(string eventType, JsonElement data)
+    {
+        var contract = PinnedEventValidationMap.SingleOrDefault(candidate => candidate.EventType == eventType);
+        if (contract is null || data.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        var properties = data.EnumerateObject().ToArray();
+        if (properties.Length != contract.RequiredProperties.Length)
+        {
+            return false;
+        }
+
+        foreach (var required in contract.RequiredProperties)
+        {
+            if (!data.TryGetProperty(required.Name, out var value)
+                || value.ValueKind != required.Kind)
+            {
+                return false;
+            }
+        }
+
+        var player = data.GetProperty("player");
+        return player.TryGetProperty("gameId", out var gameId)
+            && gameId.ValueKind == JsonValueKind.String
+            && player.TryGetProperty("name", out var name)
+            && name.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(data.GetProperty("entity").GetString())
+            && !string.IsNullOrWhiteSpace(data.GetProperty("weapon").GetString())
+            && data.GetProperty("timestamp").TryGetDateTimeOffset(out _);
+    }
+
     private enum ConsumerPayloadShape
     {
         Unvalidated,
@@ -497,6 +558,12 @@ public sealed class TakaroConsumerContractTests
         string Action,
         ConsumerPayloadShape Shape,
         params string[] RequiredProperties);
+
+    private sealed record ConsumerEventProperty(string Name, JsonValueKind Kind);
+
+    private sealed record ConsumerEventContract(
+        string EventType,
+        params ConsumerEventProperty[] RequiredProperties);
 
     private sealed class NeverCalledAdapter : IValheimTakaroAdapter
     {

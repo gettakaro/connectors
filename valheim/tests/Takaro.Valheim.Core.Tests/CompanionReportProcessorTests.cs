@@ -155,7 +155,9 @@ public sealed class CompanionReportProcessorTests
         Assert.AreEqual("Greydwarf", data.GetProperty("entity").GetString());
         Assert.AreEqual("SwordIron", data.GetProperty("weapon").GetString());
         Assert.AreEqual("2026-07-11T11:59:56.456+00:00", data.GetProperty("timestamp").GetString());
-        Assert.AreEqual("valheim", data.GetProperty("position").GetProperty("dimension").GetString());
+        CollectionAssert.AreEquivalent(
+            new[] { "player", "entity", "weapon", "timestamp" },
+            data.EnumerateObject().Select(property => property.Name).ToArray());
     }
 
     [TestMethod]
@@ -303,31 +305,109 @@ public sealed class CompanionReportProcessorTests
                 .GetString());
     }
 
-    [TestMethod]
-    public void MissingEntityHintEmitsNothingAndDoesNotConsumeDeduplicationKey()
+    [DataTestMethod]
+    [DataRow(null, "SwordIron")]
+    [DataRow(" ", "SwordIron")]
+    [DataRow("Greydwarf", null)]
+    [DataRow("Greydwarf", " ")]
+    public void MissingRequiredEntityOrWeaponEmitsNothingAndDoesNotConsumeDeduplicationKey(
+        string? entityCodeHint,
+        string? weaponCodeHint)
     {
         var harness = CreateHarness(CompanionCapability.EntityKilled);
-        var missingEntity = new CompanionEntityKilledReport(
+        var incomplete = new CompanionEntityKilledReport(
             "kill-retry",
             Now.ToUnixTimeMilliseconds(),
             new CompanionPosition(1, 2, 3),
-            null,
-            "SwordIron");
-        var validEntity = missingEntity with { EntityCodeHint = "Greydwarf" };
+            entityCodeHint,
+            weaponCodeHint);
+        var complete = incomplete with
+        {
+            EntityCodeHint = "Greydwarf",
+            WeaponCodeHint = "SwordIron"
+        };
 
         var rejected = harness.Processor.Process(
             PeerId,
             AuthoritativePlayer,
-            Envelope(CompanionMessageTypes.EntityKilled, sequence: 2, missingEntity),
+            Envelope(CompanionMessageTypes.EntityKilled, sequence: 2, incomplete),
             Now);
         var accepted = harness.Processor.Process(
             PeerId,
             AuthoritativePlayer,
-            Envelope(CompanionMessageTypes.EntityKilled, sequence: 3, validEntity),
+            Envelope(CompanionMessageTypes.EntityKilled, sequence: 3, complete),
             Now);
 
         Assert.IsNull(rejected);
         Assert.IsInstanceOfType<CompanionAcceptedEvent>(accepted);
+    }
+
+    [TestMethod]
+    public void ReconnectScopesEventDeduplicationToNegotiatedNonce()
+    {
+        const string replacementNonce = "server-session-new";
+        var harness = CreateHarness(CompanionCapability.Chat);
+        var reusedEvent = new CompanionChatReport(
+            "event-reused-across-sessions",
+            Now.ToUnixTimeMilliseconds(),
+            "old session");
+
+        var oldAccepted = harness.Processor.Process(
+            PeerId,
+            AuthoritativePlayer,
+            Envelope(CompanionMessageTypes.Chat, sequence: 2, reusedEvent),
+            Now);
+
+        harness.Sessions.Begin(PeerId, Now.AddSeconds(1), replacementNonce);
+        Assert.AreEqual(
+            CompanionSessionDecision.Accept,
+            harness.Sessions.CompleteHelloAck(
+                PeerId,
+                replacementNonce,
+                CompanionProtocol.CurrentVersion,
+                "1.0.0",
+                CompanionCapability.Chat,
+                sequence: 1,
+                Now.AddSeconds(2)));
+
+        var staleAttempt = harness.Processor.Process(
+            PeerId,
+            AuthoritativePlayer,
+            Envelope(
+                CompanionMessageTypes.Chat,
+                sequence: 3,
+                new CompanionChatReport(
+                    "stale-session-event",
+                    Now.ToUnixTimeMilliseconds(),
+                    "stale")),
+            Now.AddSeconds(3));
+        var replacementAccepted = harness.Processor.Process(
+            PeerId,
+            AuthoritativePlayer,
+            Envelope(CompanionMessageTypes.Chat, sequence: 2, reusedEvent) with
+            {
+                SessionNonce = replacementNonce
+            },
+            Now.AddSeconds(3));
+        var staleIdAcceptedInReplacement = harness.Processor.Process(
+            PeerId,
+            AuthoritativePlayer,
+            Envelope(
+                CompanionMessageTypes.Chat,
+                sequence: 3,
+                new CompanionChatReport(
+                    "stale-session-event",
+                    Now.ToUnixTimeMilliseconds(),
+                    "current")) with
+            {
+                SessionNonce = replacementNonce
+            },
+            Now.AddSeconds(3));
+
+        Assert.IsInstanceOfType<CompanionAcceptedEvent>(oldAccepted);
+        Assert.IsNull(staleAttempt);
+        Assert.IsInstanceOfType<CompanionAcceptedEvent>(replacementAccepted);
+        Assert.IsInstanceOfType<CompanionAcceptedEvent>(staleIdAcceptedInReplacement);
     }
 
     private static Harness CreateHarness(
@@ -365,7 +445,7 @@ public sealed class CompanionReportProcessorTests
                 TimeSpan.FromMinutes(1)),
             new BoundedEventDeduplicator(capacity: 32),
             inventory);
-        return new Harness(processor, inventory);
+        return new Harness(processor, sessions, inventory);
     }
 
     private static CompanionEnvelope Envelope<T>(string type, long sequence, T payload)
@@ -402,5 +482,6 @@ public sealed class CompanionReportProcessorTests
 
     private sealed record Harness(
         CompanionReportProcessor Processor,
+        CompanionSessionRegistry Sessions,
         CompanionInventoryCache Inventory);
 }

@@ -216,6 +216,38 @@ public sealed class CompanionSessionRegistryTests
     }
 
     [TestMethod]
+    public void AcceptedReportReturnsSnapshotBoundToValidatedSession()
+    {
+        var registry = CreateRegistry();
+        registry.Begin(PeerId, Now, "nonce-old");
+        Assert.AreEqual(
+            CompanionSessionDecision.Accept,
+            Negotiate(registry, PeerId, "nonce-old", sequence: 1, Now.AddSeconds(1)));
+
+        var decision = registry.ValidateReport(
+            PeerId,
+            "nonce-old",
+            protocolVersion: 1,
+            sequence: 2,
+            Now.AddSeconds(2),
+            out var acceptedSession);
+
+        Assert.AreEqual(CompanionSessionDecision.Accept, decision);
+        Assert.IsNotNull(acceptedSession);
+        Assert.AreEqual("nonce-old", acceptedSession.Nonce);
+        Assert.AreEqual(2, acceptedSession.LastSequence);
+
+        registry.Begin(PeerId, Now.AddSeconds(3), "nonce-new");
+        Assert.AreEqual(
+            CompanionSessionDecision.Accept,
+            Negotiate(registry, PeerId, "nonce-new", sequence: 1, Now.AddSeconds(4)));
+
+        Assert.AreEqual("nonce-old", acceptedSession.Nonce);
+        Assert.AreEqual(2, acceptedSession.LastSequence);
+        Assert.AreEqual("nonce-new", Snapshot(registry, PeerId).Nonce);
+    }
+
+    [TestMethod]
     public void HeartbeatRefreshesOnlyNegotiatedSession()
     {
         var registry = CreateRegistry();

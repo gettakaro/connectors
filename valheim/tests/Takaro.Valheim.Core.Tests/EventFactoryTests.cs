@@ -157,7 +157,6 @@ public sealed class EventFactoryTests
                 Player("Steam_real", "Odin"),
                 "Greydwarf",
                 timestamp,
-                new TakaroPosition(4, 5, 6, "valheim"),
                 "SwordIron"));
         using var document = JsonDocument.Parse(json);
         var data = document.RootElement.GetProperty("payload").GetProperty("data");
@@ -166,24 +165,9 @@ public sealed class EventFactoryTests
         Assert.AreEqual("Greydwarf", data.GetProperty("entity").GetString());
         Assert.AreEqual("SwordIron", data.GetProperty("weapon").GetString());
         Assert.AreEqual("2026-07-11T08:04:00+00:00", data.GetProperty("timestamp").GetString());
-        Assert.AreEqual("valheim", data.GetProperty("position").GetProperty("dimension").GetString());
-    }
-
-    [TestMethod]
-    public void EntityKilledOmitsMissingWeapon()
-    {
-        var json = TakaroProtocol.CreateGameEvent(
-            "entity-killed",
-            EventFactory.EntityKilled(
-                Player("Steam_real", "Odin"),
-                "Greydwarf",
-                DateTimeOffset.UnixEpoch,
-                new TakaroPosition(0, 0, 0, "valheim"),
-                weapon: null));
-        using var document = JsonDocument.Parse(json);
-        var data = document.RootElement.GetProperty("payload").GetProperty("data");
-
-        Assert.IsFalse(data.TryGetProperty("weapon", out _));
+        CollectionAssert.AreEquivalent(
+            new[] { "player", "entity", "weapon", "timestamp" },
+            data.EnumerateObject().Select(property => property.Name).ToArray());
     }
 
     [TestMethod]

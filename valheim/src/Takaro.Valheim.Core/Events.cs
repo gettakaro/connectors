@@ -76,21 +76,15 @@ public static class EventFactory
         TakaroPlayer player,
         string entity,
         DateTimeOffset timestamp,
-        TakaroPosition position,
-        string? weapon)
+        string weapon)
     {
         var data = new Dictionary<string, object?>
         {
             ["player"] = player,
             ["entity"] = entity.Trim(),
             ["timestamp"] = timestamp,
-            ["position"] = position
+            ["weapon"] = weapon.Trim()
         };
-
-        if (!string.IsNullOrWhiteSpace(weapon))
-        {
-            data["weapon"] = weapon!.Trim();
-        }
 
         return data;
     }

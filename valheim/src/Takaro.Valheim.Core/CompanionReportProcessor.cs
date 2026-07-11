@@ -27,6 +27,16 @@ public sealed class CompanionReportProcessor
         this.inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
     }
 
+    /// <summary>
+    /// Processes one report whose <paramref name="player"/> was resolved by the server bridge
+    /// from the same authoritative transport sender represented by <paramref name="peerId"/>.
+    /// Report payloads never supply player identity.
+    /// </summary>
+    /// <remarks>
+    /// Session validation advances the sequence before capability, rate, payload, and duplicate
+    /// checks. Accepted envelopes therefore have at-most-once sequence semantics even when a later
+    /// guard rejects their output.
+    /// </remarks>
     public CompanionReportOutput? Process(
         long peerId,
         TakaroPlayer player,
@@ -45,14 +55,15 @@ public sealed class CompanionReportProcessor
                 envelope.SessionNonce,
                 envelope.ProtocolVersion,
                 envelope.Sequence,
-                now)
-            != CompanionSessionDecision.Accept)
+                now,
+                out var session)
+            != CompanionSessionDecision.Accept
+            || session is null)
         {
             return null;
         }
 
-        if (!sessions.TryGetSnapshot(peerId, out var session)
-            || (session.Capabilities & requiredCapability) != requiredCapability
+        if ((session.Capabilities & requiredCapability) != requiredCapability
             || !rateLimiter.TryConsume(peerId, envelope.Type, now))
         {
             return null;
@@ -89,6 +100,7 @@ public sealed class CompanionReportProcessor
 
         return AcceptEvent(
             peerId,
+            envelope.SessionNonce,
             report.EventId,
             ValheimEventType.ChatMessage,
             EventFactory.ChatMessage(player, "global", timestamp, report.Message));
@@ -133,6 +145,7 @@ public sealed class CompanionReportProcessor
 
         return AcceptEvent(
             peerId,
+            envelope.SessionNonce,
             report.EventId,
             ValheimEventType.PlayerDeath,
             EventFactory.CompanionPlayerDeath(
@@ -153,6 +166,7 @@ public sealed class CompanionReportProcessor
                 out var report,
                 out _)
             || string.IsNullOrWhiteSpace(report!.EntityCodeHint)
+            || string.IsNullOrWhiteSpace(report.WeaponCodeHint)
             || !TryTimestamp(report.TimestampUnixMilliseconds, out var timestamp))
         {
             return null;
@@ -160,18 +174,19 @@ public sealed class CompanionReportProcessor
 
         return AcceptEvent(
             peerId,
+            envelope.SessionNonce,
             report.EventId,
             ValheimEventType.EntityKilled,
             EventFactory.EntityKilled(
                 player,
                 report.EntityCodeHint!,
                 timestamp,
-                Position(report.Position),
-                report.WeaponCodeHint));
+                report.WeaponCodeHint!));
     }
 
     private CompanionReportOutput? AcceptEvent(
         long peerId,
+        string sessionNonce,
         string eventId,
         string eventType,
         object data)
@@ -179,7 +194,7 @@ public sealed class CompanionReportProcessor
         if (!ValheimEventAcceptancePolicy.CanEmit(
                 eventType,
                 ValheimEventObservationSource.ClientCompanion)
-            || !eventDeduplicator.TryAccept(peerId, eventId))
+            || !eventDeduplicator.TryAccept(peerId, sessionNonce, eventId))
         {
             return null;
         }

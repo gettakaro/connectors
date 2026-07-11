@@ -19,10 +19,19 @@ public sealed class BoundedEventDeduplicator
         this.capacity = capacity;
     }
 
-    public bool TryAccept(long peerId, string eventId)
+    public bool TryAccept(long peerId, string eventId) =>
+        TryAcceptCore(peerId, sessionNonce: null, eventId);
+
+    public bool TryAccept(long peerId, string sessionNonce, string eventId)
+    {
+        ValidateSessionNonce(sessionNonce);
+        return TryAcceptCore(peerId, sessionNonce, eventId);
+    }
+
+    private bool TryAcceptCore(long peerId, string? sessionNonce, string eventId)
     {
         ValidateEventId(eventId);
-        var key = new EventKey(peerId, eventId);
+        var key = new EventKey(peerId, sessionNonce, eventId);
 
         lock (syncRoot)
         {
@@ -83,20 +92,35 @@ public sealed class BoundedEventDeduplicator
         }
     }
 
+    private static void ValidateSessionNonce(string sessionNonce)
+    {
+        if (string.IsNullOrWhiteSpace(sessionNonce)
+            || sessionNonce.Length > CompanionEnvelopeCodec.MaximumSessionNonceCharacters)
+        {
+            throw new ArgumentException(
+                $"Session nonce must contain 1 to {CompanionEnvelopeCodec.MaximumSessionNonceCharacters} characters.",
+                nameof(sessionNonce));
+        }
+    }
+
     private readonly struct EventKey : IEquatable<EventKey>
     {
-        public EventKey(long peerId, string eventId)
+        public EventKey(long peerId, string? sessionNonce, string eventId)
         {
             PeerId = peerId;
+            SessionNonce = sessionNonce;
             EventId = eventId;
         }
 
         public long PeerId { get; }
 
+        public string? SessionNonce { get; }
+
         public string EventId { get; }
 
         public bool Equals(EventKey other) =>
             PeerId == other.PeerId
+            && string.Equals(SessionNonce, other.SessionNonce, StringComparison.Ordinal)
             && string.Equals(EventId, other.EventId, StringComparison.Ordinal);
 
         public override bool Equals(object? obj) =>
@@ -106,7 +130,10 @@ public sealed class BoundedEventDeduplicator
         {
             unchecked
             {
-                return (PeerId.GetHashCode() * 397)
+                var hashCode = PeerId.GetHashCode();
+                hashCode = (hashCode * 397)
+                    ^ (SessionNonce is null ? 0 : StringComparer.Ordinal.GetHashCode(SessionNonce));
+                return (hashCode * 397)
                     ^ StringComparer.Ordinal.GetHashCode(EventId);
             }
         }

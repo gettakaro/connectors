@@ -171,17 +171,39 @@ public sealed class CompanionSessionRegistry
         string nonce,
         int protocolVersion,
         long sequence,
-        DateTimeOffset now)
+        DateTimeOffset now) =>
+        ValidateReport(
+            peerId,
+            nonce,
+            protocolVersion,
+            sequence,
+            now,
+            out _);
+
+    public CompanionSessionDecision ValidateReport(
+        long peerId,
+        string nonce,
+        int protocolVersion,
+        long sequence,
+        DateTimeOffset now,
+        out CompanionSessionSnapshot? acceptedSession)
     {
         lock (syncRoot)
         {
-            return ValidateNegotiatedEnvelopeLocked(
+            acceptedSession = null;
+            var decision = ValidateNegotiatedEnvelopeLocked(
                 peerId,
                 nonce,
                 protocolVersion,
                 sequence,
                 now,
                 refreshHeartbeat: false);
+            if (decision == CompanionSessionDecision.Accept)
+            {
+                acceptedSession = CreateSnapshot(sessions[peerId]);
+            }
+
+            return decision;
         }
     }
 
