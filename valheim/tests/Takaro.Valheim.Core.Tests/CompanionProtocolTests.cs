@@ -8,8 +8,11 @@ public sealed class CompanionProtocolTests
 {
     private const string ProtocolNamespace = "Takaro.Valheim.Companion.Protocol";
 
-    private static readonly string[] ReportTypeNames =
+    private static readonly string[] VersionOnePayloadTypeNames =
     [
+        "CompanionHello",
+        "CompanionHelloAck",
+        "CompanionHeartbeat",
         "CompanionChatReport",
         "CompanionInventoryReport",
         "CompanionPlayerDeathReport",
@@ -76,16 +79,7 @@ public sealed class CompanionProtocolTests
     [TestMethod]
     public void VersionOneDefinesRequiredControlAndReportPayloads()
     {
-        foreach (var typeName in new[]
-                 {
-                     "CompanionHello",
-                     "CompanionHelloAck",
-                     "CompanionHeartbeat",
-                     "CompanionChatReport",
-                     "CompanionInventoryReport",
-                     "CompanionPlayerDeathReport",
-                     "CompanionEntityKilledReport"
-                 })
+        foreach (var typeName in VersionOnePayloadTypeNames)
         {
             Assert.IsNotNull(RequireType(typeName), typeName);
         }
@@ -128,7 +122,7 @@ public sealed class CompanionProtocolTests
     [TestMethod]
     public void VersionOneReportsContainNoClaimedPlayerIdentity()
     {
-        foreach (var typeName in ReportTypeNames.Append("CompanionEnvelope"))
+        foreach (var typeName in VersionOnePayloadTypeNames.Append("CompanionEnvelope"))
         {
             foreach (var property in EnumerateProtocolProperties(RequireType(typeName)))
             {
