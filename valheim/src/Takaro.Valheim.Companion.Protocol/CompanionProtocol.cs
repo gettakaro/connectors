@@ -12,6 +12,7 @@ public static class CompanionProtocol
     public const int MaximumInventoryStacks = 256;
     public const int MaximumCodeCharacters = 128;
     public const int MaximumEventIdCharacters = 64;
+    public const int MaximumProductVersionCharacters = 128;
 }
 
 [Flags]

@@ -78,6 +78,48 @@ public sealed class CompanionSessionRegistryTests
     }
 
     [TestMethod]
+    public void DuplicateHelloAckIsRejectedWithoutMutation()
+    {
+        var registry = CreateRegistry();
+        registry.Begin(PeerId, Now, CurrentNonce);
+        Assert.AreEqual(
+            CompanionSessionDecision.Accept,
+            Negotiate(registry, PeerId, CurrentNonce, sequence: 1, Now.AddSeconds(1)));
+        var negotiated = Snapshot(registry, PeerId);
+
+        var decision = Negotiate(
+            registry,
+            PeerId,
+            CurrentNonce,
+            sequence: 2,
+            Now.AddSeconds(2));
+
+        Assert.AreEqual(CompanionSessionDecision.RejectAlreadyNegotiated, decision);
+        Assert.AreEqual(negotiated, Snapshot(registry, PeerId));
+    }
+
+    [TestMethod]
+    public void ExpiredNegotiatedSessionRejectsDuplicateHelloAckAsExpired()
+    {
+        var registry = CreateRegistry();
+        registry.Begin(PeerId, Now, CurrentNonce);
+        Assert.AreEqual(
+            CompanionSessionDecision.Accept,
+            Negotiate(registry, PeerId, CurrentNonce, sequence: 1, Now));
+        var negotiated = Snapshot(registry, PeerId);
+
+        var decision = Negotiate(
+            registry,
+            PeerId,
+            CurrentNonce,
+            sequence: 2,
+            Now + HeartbeatGrace);
+
+        Assert.AreEqual(CompanionSessionDecision.Expired, decision);
+        Assert.AreEqual(negotiated, Snapshot(registry, PeerId));
+    }
+
+    [TestMethod]
     public void ReconnectReplacesNonceAndRejectsOldSession()
     {
         var registry = CreateRegistry();
@@ -106,6 +148,43 @@ public sealed class CompanionSessionRegistryTests
         Assert.AreEqual(
             CompanionSessionDecision.RejectNonce,
             registry.ValidateHeartbeat(PeerId, "nonce-old", 1, 2, Now.AddSeconds(4)));
+    }
+
+    [TestMethod]
+    public void BeginRejectsNonceBeyondWireBound()
+    {
+        var registry = CreateRegistry();
+        var maximumNonce = new string(
+            'n',
+            CompanionEnvelopeCodec.MaximumSessionNonceCharacters);
+
+        var accepted = registry.Begin(PeerId, Now, maximumNonce);
+
+        Assert.AreEqual(maximumNonce, accepted.Nonce);
+        Assert.ThrowsException<ArgumentException>(() => registry.Begin(
+            PeerId + 1,
+            Now,
+            maximumNonce + "n"));
+        Assert.IsFalse(registry.TryGetSnapshot(PeerId + 1, out _));
+    }
+
+    [TestMethod]
+    public void DeadlinesSaturateAtDateTimeOffsetMaximum()
+    {
+        var registry = CreateRegistry();
+        var nearMaximum = DateTimeOffset.MaxValue - TimeSpan.FromSeconds(1);
+
+        var begin = registry.Begin(PeerId, nearMaximum, CurrentNonce);
+
+        Assert.AreEqual(DateTimeOffset.MaxValue, begin.HandshakeDeadline);
+        Assert.AreEqual(DateTimeOffset.MaxValue, Snapshot(registry, PeerId).ExpiresAt);
+        Assert.AreEqual(
+            CompanionSessionDecision.Accept,
+            Negotiate(registry, PeerId, CurrentNonce, sequence: 1, nearMaximum));
+        Assert.AreEqual(DateTimeOffset.MaxValue, Snapshot(registry, PeerId).ExpiresAt);
+        Assert.AreEqual(
+            CompanionSessionDecision.Accept,
+            registry.ValidateReport(PeerId, CurrentNonce, 1, 2, nearMaximum));
     }
 
     [TestMethod]
@@ -168,6 +247,50 @@ public sealed class CompanionSessionRegistryTests
         Assert.AreEqual(heartbeatAt, refreshed.LastHeartbeat);
         Assert.AreEqual(2, refreshed.LastSequence);
         Assert.AreEqual(heartbeatAt + HeartbeatGrace, refreshed.ExpiresAt);
+    }
+
+    [TestMethod]
+    public void RegressiveHeartbeatTimeCannotShortenSession()
+    {
+        var registry = CreateRegistry();
+        registry.Begin(PeerId, Now, CurrentNonce);
+        var negotiatedAt = Now.AddSeconds(5);
+        Assert.AreEqual(
+            CompanionSessionDecision.Accept,
+            Negotiate(registry, PeerId, CurrentNonce, sequence: 1, negotiatedAt));
+        var negotiated = Snapshot(registry, PeerId);
+
+        var decision = registry.ValidateHeartbeat(
+            PeerId,
+            CurrentNonce,
+            protocolVersion: 1,
+            sequence: 2,
+            Now.AddSeconds(1));
+
+        Assert.AreEqual(CompanionSessionDecision.Accept, decision);
+        var afterRegressiveHeartbeat = Snapshot(registry, PeerId);
+        Assert.AreEqual(2, afterRegressiveHeartbeat.LastSequence);
+        Assert.AreEqual(negotiated.LastHeartbeat, afterRegressiveHeartbeat.LastHeartbeat);
+        Assert.AreEqual(negotiated.ExpiresAt, afterRegressiveHeartbeat.ExpiresAt);
+    }
+
+    [TestMethod]
+    public void HelloAckTimeBeforeBeginIsClampedToSessionStart()
+    {
+        var registry = CreateRegistry();
+        registry.Begin(PeerId, Now, CurrentNonce);
+
+        var decision = Negotiate(
+            registry,
+            PeerId,
+            CurrentNonce,
+            sequence: 1,
+            Now.AddSeconds(-5));
+
+        Assert.AreEqual(CompanionSessionDecision.Accept, decision);
+        var snapshot = Snapshot(registry, PeerId);
+        Assert.AreEqual(Now, snapshot.LastHeartbeat);
+        Assert.AreEqual(Now + HeartbeatGrace, snapshot.ExpiresAt);
     }
 
     [TestMethod]
@@ -299,7 +422,7 @@ public sealed class CompanionSessionRegistryTests
             registry,
             pending,
             selectedProtocolVersion: 1,
-            new string('v', CompanionSessionRegistry.MaximumProductVersionCharacters + 1),
+            new string('v', CompanionProtocol.MaximumProductVersionCharacters + 1),
             CompanionCapability.Chat,
             sequence: 1,
             CompanionSessionDecision.RejectMetadata);

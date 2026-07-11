@@ -18,6 +18,7 @@ public sealed record CompanionHello(
 
 public sealed record CompanionHelloAck(
     int ProtocolVersion,
+    string ProductVersion,
     CompanionCapability AcceptedCapabilities);
 
 public sealed record CompanionHeartbeat(long TimestampUnixMilliseconds);

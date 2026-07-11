@@ -51,6 +51,7 @@ public static class CompanionEnvelopeCodec
     private static readonly string[] HelloAckFields =
     [
         "protocolVersion",
+        "productVersion",
         "acceptedCapabilities"
     ];
 
@@ -478,6 +479,9 @@ public static class CompanionEnvelopeCodec
             case CompanionHelloAck helloAck:
                 return helloAck.ProtocolVersion >= CompanionProtocol.MinimumVersion
                     && helloAck.ProtocolVersion <= CompanionProtocol.CurrentVersion
+                    && IsRequiredString(
+                        helloAck.ProductVersion,
+                        CompanionProtocol.MaximumProductVersionCharacters)
                     && HasKnownCapabilities(helloAck.AcceptedCapabilities);
             case CompanionHeartbeat heartbeat:
                 return IsValidTimestamp(heartbeat.TimestampUnixMilliseconds);

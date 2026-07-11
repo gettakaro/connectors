@@ -11,7 +11,8 @@ public enum CompanionSessionDecision
     RejectSequence,
     RejectVersion,
     Expired,
-    RejectMetadata
+    RejectMetadata,
+    RejectAlreadyNegotiated
 }
 
 public sealed record CompanionSessionBegin(
@@ -33,8 +34,6 @@ public sealed record CompanionSessionSnapshot(
 
 public sealed class CompanionSessionRegistry
 {
-    public const int MaximumProductVersionCharacters = 128;
-
     private const CompanionCapability KnownCapabilities =
         CompanionCapability.Chat
         | CompanionCapability.Inventory
@@ -98,15 +97,18 @@ public sealed class CompanionSessionRegistry
 
     public CompanionSessionBegin Begin(long peerId, DateTimeOffset now, string nonce)
     {
-        if (string.IsNullOrWhiteSpace(nonce))
+        if (string.IsNullOrWhiteSpace(nonce)
+            || nonce.Length > CompanionEnvelopeCodec.MaximumSessionNonceCharacters)
         {
-            throw new ArgumentException("Session nonce must not be blank.", nameof(nonce));
+            throw new ArgumentException(
+                $"Session nonce must contain 1 to {CompanionEnvelopeCodec.MaximumSessionNonceCharacters} characters.",
+                nameof(nonce));
         }
 
-        var deadline = now + handshakeGrace;
+        var deadline = SaturatingAdd(now, handshakeGrace);
         lock (syncRoot)
         {
-            sessions[peerId] = new Session(peerId, nonce, deadline);
+            sessions[peerId] = new Session(peerId, nonce, now, deadline);
         }
 
         return new CompanionSessionBegin(peerId, nonce, deadline);
@@ -137,7 +139,7 @@ public sealed class CompanionSessionRegistry
             }
             if (session.IsNegotiated)
             {
-                return CompanionSessionDecision.RejectNotNegotiated;
+                return CompanionSessionDecision.RejectAlreadyNegotiated;
             }
             if (selectedProtocolVersion < minimumProtocolVersion
                 || selectedProtocolVersion > maximumProtocolVersion)
@@ -160,7 +162,7 @@ public sealed class CompanionSessionRegistry
             session.ProductVersion = productVersion.Trim();
             session.Capabilities = capabilities;
             session.LastSequence = sequence;
-            session.LastHeartbeat = now;
+            session.LastHeartbeat = LaterOf(session.BeginAt, now);
             return CompanionSessionDecision.Accept;
         }
     }
@@ -226,6 +228,10 @@ public sealed class CompanionSessionRegistry
         }
     }
 
+    /// <summary>
+    /// Switches to a caller-supplied stable, immutable world value key.
+    /// Value equality defines world equivalence, so an equal key preserves current sessions.
+    /// </summary>
     public void SwitchWorld(object? worldIdentity)
     {
         lock (syncRoot)
@@ -277,7 +283,7 @@ public sealed class CompanionSessionRegistry
         session.LastSequence = sequence;
         if (refreshHeartbeat)
         {
-            session.LastHeartbeat = now;
+            session.LastHeartbeat = LaterOf(session.LastHeartbeat!.Value, now);
         }
 
         return CompanionSessionDecision.Accept;
@@ -290,13 +296,13 @@ public sealed class CompanionSessionRegistry
             return now >= session.HandshakeDeadline;
         }
 
-        return now >= session.LastHeartbeat!.Value + heartbeatGrace;
+        return now >= SaturatingAdd(session.LastHeartbeat!.Value, heartbeatGrace);
     }
 
     private CompanionSessionSnapshot CreateSnapshot(Session session)
     {
         var expiresAt = session.IsNegotiated
-            ? session.LastHeartbeat!.Value + heartbeatGrace
+            ? SaturatingAdd(session.LastHeartbeat!.Value, heartbeatGrace)
             : session.HandshakeDeadline;
         return new CompanionSessionSnapshot(
             session.PeerId,
@@ -314,6 +320,21 @@ public sealed class CompanionSessionRegistry
     private static bool NonceMatches(Session session, string nonce) =>
         string.Equals(session.Nonce, nonce, StringComparison.Ordinal);
 
+    private static DateTimeOffset LaterOf(DateTimeOffset first, DateTimeOffset second) =>
+        first >= second ? first : second;
+
+    private static DateTimeOffset SaturatingAdd(DateTimeOffset value, TimeSpan duration)
+    {
+        try
+        {
+            return value + duration;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return DateTimeOffset.MaxValue;
+        }
+    }
+
     private static bool IsValidProductVersion(string? productVersion)
     {
         if (string.IsNullOrWhiteSpace(productVersion))
@@ -321,7 +342,7 @@ public sealed class CompanionSessionRegistry
             return false;
         }
 
-        return productVersion!.Length <= MaximumProductVersionCharacters;
+        return productVersion!.Length <= CompanionProtocol.MaximumProductVersionCharacters;
     }
 
     private static bool HasOnlyKnownCapabilities(CompanionCapability capabilities) =>
@@ -329,16 +350,23 @@ public sealed class CompanionSessionRegistry
 
     private sealed class Session
     {
-        public Session(long peerId, string nonce, DateTimeOffset handshakeDeadline)
+        public Session(
+            long peerId,
+            string nonce,
+            DateTimeOffset beginAt,
+            DateTimeOffset handshakeDeadline)
         {
             PeerId = peerId;
             Nonce = nonce;
+            BeginAt = beginAt;
             HandshakeDeadline = handshakeDeadline;
         }
 
         public long PeerId { get; }
 
         public string Nonce { get; }
+
+        public DateTimeOffset BeginAt { get; }
 
         public DateTimeOffset HandshakeDeadline { get; }
 

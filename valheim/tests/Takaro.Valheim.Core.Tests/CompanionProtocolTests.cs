@@ -65,6 +65,46 @@ public sealed class CompanionProtocolTests
     }
 
     [TestMethod]
+    public void HelloAckWireShapeRequiresBoundedProductVersion()
+    {
+        AssertPublicProperties(
+            RequireType("CompanionHelloAck"),
+            "ProtocolVersion",
+            "ProductVersion",
+            "AcceptedCapabilities");
+        Assert.AreEqual(128, GetConstant<int>("CompanionProtocol", "MaximumProductVersionCharacters"));
+
+        AssertDeclaredPayloadAccepted(
+            CompanionMessageTypes.HelloAck,
+            $"{{\"protocolVersion\":1,\"productVersion\":\"{new string('v', 128)}\",\"acceptedCapabilities\":1}}");
+        AssertDeclaredPayloadRejected(
+            CompanionMessageTypes.HelloAck,
+            """{"protocolVersion":1,"acceptedCapabilities":1}""",
+            "invalid-payload-fields",
+            "hello-ack missing product version");
+        AssertDeclaredPayloadRejected(
+            CompanionMessageTypes.HelloAck,
+            """{"protocolVersion":1,"ProductVersion":"1.2.3","acceptedCapabilities":1}""",
+            "invalid-payload-fields",
+            "hello-ack product version casing");
+        AssertDeclaredPayloadRejected(
+            CompanionMessageTypes.HelloAck,
+            """{"protocolVersion":1,"productVersion":"","acceptedCapabilities":1}""",
+            "invalid-payload",
+            "hello-ack blank product version");
+        AssertDeclaredPayloadRejected(
+            CompanionMessageTypes.HelloAck,
+            """{"protocolVersion":1,"productVersion":null,"acceptedCapabilities":1}""",
+            "invalid-payload",
+            "hello-ack null product version");
+        AssertDeclaredPayloadRejected(
+            CompanionMessageTypes.HelloAck,
+            $"{{\"protocolVersion\":1,\"productVersion\":\"{new string('v', 129)}\",\"acceptedCapabilities\":1}}",
+            "invalid-payload",
+            "hello-ack oversized product version");
+    }
+
+    [TestMethod]
     public void VersionOneMessageTypesAreStable()
     {
         Assert.AreEqual("hello", GetConstant<string>("CompanionMessageTypes", "Hello"));
@@ -155,7 +195,7 @@ public sealed class CompanionProtocolTests
             sequence: 1);
         AssertRoundTrip(
             CompanionMessageTypes.HelloAck,
-            new CompanionHelloAck(1, CompanionCapability.Chat),
+            new CompanionHelloAck(1, "1.2.3", CompanionCapability.Chat),
             sequence: 2);
         AssertRoundTrip(
             CompanionMessageTypes.Heartbeat,
@@ -331,9 +371,9 @@ public sealed class CompanionProtocolTests
             ("hello unknown capability", CompanionMessageTypes.Hello,
                 """{"minimumVersion":1,"maximumVersion":1,"capabilities":16}""", "invalid-payload"),
             ("hello-ack unsupported version", CompanionMessageTypes.HelloAck,
-                """{"protocolVersion":2,"acceptedCapabilities":0}""", "invalid-payload"),
+                """{"protocolVersion":2,"productVersion":"1.2.3","acceptedCapabilities":0}""", "invalid-payload"),
             ("hello-ack unknown capability", CompanionMessageTypes.HelloAck,
-                """{"protocolVersion":1,"acceptedCapabilities":16}""", "invalid-payload"),
+                """{"protocolVersion":1,"productVersion":"1.2.3","acceptedCapabilities":16}""", "invalid-payload"),
             ("heartbeat negative timestamp", CompanionMessageTypes.Heartbeat,
                 """{"timestampUnixMilliseconds":-1}""", "invalid-payload"),
             ("chat null event", CompanionMessageTypes.Chat,
@@ -707,6 +747,9 @@ public sealed class CompanionProtocolTests
 
         switch (messageType)
         {
+            case CompanionMessageTypes.HelloAck:
+                AssertPayloadAccepted<CompanionHelloAck>(envelope);
+                break;
             case CompanionMessageTypes.Heartbeat:
                 AssertPayloadAccepted<CompanionHeartbeat>(envelope);
                 break;
