@@ -265,6 +265,8 @@ unzip_stub() {
 write_poisoned_steamcmd_destination() {
   local destination="$1"
   mkdir -p "$destination"
+  # Expand STUB_STATE_DIR when the generated stub runs, not while writing it.
+  # shellcheck disable=SC2016
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     ': > "$STUB_STATE_DIR/poisoned-steamcmd-ran"' \

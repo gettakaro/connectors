@@ -32,7 +32,7 @@ is_supported_dotnet_version_core() {
   IFS='.' read -r -a components <<< "$core"
   for component in "${components[@]}"; do
     if [ "${#component}" -gt 5 ] \
-      || { [ "${#component}" -eq 5 ] && [[ "$component" > "65534" ]]; }; then
+      || { [ "${#component}" -eq 5 ] && [ "$component" -gt 65534 ]; }; then
       return 1
     fi
   done
@@ -43,7 +43,10 @@ resolve_valheim_release_version() {
 
   is_valid_semver "$candidate" || return 1
   is_supported_dotnet_version_core "$candidate" || return 2
+  # These globals are output values consumed by scripts that source this helper.
+  # shellcheck disable=SC2034
   VALHEIM_RELEASE_VERSION="$candidate"
   VALHEIM_BEPINEX_VERSION="${candidate%%[-+]*}"
+  # shellcheck disable=SC2034
   VALHEIM_ASSEMBLY_VERSION="${VALHEIM_BEPINEX_VERSION}.0"
 }
