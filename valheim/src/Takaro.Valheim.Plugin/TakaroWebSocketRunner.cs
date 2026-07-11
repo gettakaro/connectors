@@ -10,19 +10,26 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private readonly ConnectorConfig config;
     private readonly IValheimTakaroAdapter adapter;
     private readonly TakaroRequestDispatcher dispatcher;
+    private readonly IMainThreadActionScheduler mainThreadActions;
     private readonly Action<string> log;
     private readonly CancellationTokenSource shutdown = new();
     private readonly SemaphoreSlim sendLock = new(1, 1);
-    private readonly PlayerLifecycleEventTracker playerLifecycle = new();
+    private readonly PlayerLifecyclePollCoordinator lifecycleCoordinator = new();
+    private readonly SuppressedResponseLogLimiter suppressedResponseLogs = new(TimeSpan.FromMinutes(1));
     private static readonly TimeSpan PlayerLifecyclePollInterval = TimeSpan.FromSeconds(5);
     private ClientWebSocket? socket;
     private Task? runLoop;
 
-    public TakaroWebSocketRunner(ConnectorConfig config, IValheimTakaroAdapter adapter, Action<string>? log = null)
+    public TakaroWebSocketRunner(
+        ConnectorConfig config,
+        IValheimTakaroAdapter adapter,
+        Action<string>? log = null,
+        IMainThreadActionScheduler? mainThreadActions = null)
     {
         this.config = config;
         this.adapter = adapter;
-        dispatcher = new TakaroRequestDispatcher(adapter);
+        this.mainThreadActions = mainThreadActions ?? InlineMainThreadActionScheduler.Instance;
+        dispatcher = new TakaroRequestDispatcher(adapter, this.mainThreadActions);
         this.log = log ?? (_ => { });
     }
 
@@ -34,7 +41,10 @@ public sealed class TakaroWebSocketRunner : IDisposable
         return Task.CompletedTask;
     }
 
-    public async Task SendGameEventAsync(string eventType, object data, CancellationToken cancellationToken = default)
+    public Task SendGameEventAsync(string eventType, object data, CancellationToken cancellationToken = default) =>
+        Task.Run(() => SendGameEventCoreAsync(eventType, data, cancellationToken), cancellationToken);
+
+    private async Task SendGameEventCoreAsync(string eventType, object data, CancellationToken cancellationToken)
     {
         var activeSocket = socket;
         if (activeSocket is null || activeSocket.State != WebSocketState.Open)
@@ -110,12 +120,45 @@ public sealed class TakaroWebSocketRunner : IDisposable
         {
             try
             {
-                var players = await adapter.GetPlayersAsync(cancellationToken);
-                var events = playerLifecycle.Update(players, DateTimeOffset.UtcNow);
+                var playersResult = await RunAdapterActionAsync(
+                    () => adapter.GetPlayersAsync(cancellationToken),
+                    cancellationToken);
+                if (!playersResult.Success
+                    || playersResult.Payload is not IEnumerable<TakaroPlayer> players)
+                {
+                    log($"Takaro Valheim lifecycle polling skipped because the server player list is unavailable ({playersResult.ErrorCode ?? "runtime_unavailable"}); existing lifecycle state is preserved.");
+                    await Task.Delay(PlayerLifecyclePollInterval, cancellationToken);
+                    continue;
+                }
+
+                var onlinePlayers = players.ToArray();
+                var playersWithObservedPositions = new List<string>();
+                foreach (var player in onlinePlayers)
+                {
+                    var location = await RunAdapterActionAsync(
+                        () => adapter.GetPlayerLocationAsync(player.GameId, cancellationToken),
+                        cancellationToken);
+                    if (location.Success)
+                    {
+                        playersWithObservedPositions.Add(player.GameId);
+                    }
+                }
+
+                var events = lifecycleCoordinator.Update(
+                    onlinePlayers,
+                    playersWithObservedPositions,
+                    DateTimeOffset.UtcNow);
                 foreach (var evt in events)
                 {
+                    if (!ValheimEventAcceptancePolicy.CanEmit(
+                            evt.Type,
+                            ValheimEventObservationSource.ServerPlayerSnapshot))
+                    {
+                        continue;
+                    }
+
                     await SendAsync(socket, TakaroProtocol.CreateGameEvent(evt.Type, evt.Data), cancellationToken);
-                    log($"Takaro Valheim {evt.Type} event sent for {evt.Player.Name} ({evt.Player.GameId}).");
+                    log($"Takaro Valheim {evt.Type} lifecycle frame written for {evt.Player.Name} ({evt.Player.GameId}); Takaro persistence is not acknowledged by the Generic Connector transport.");
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -182,10 +225,31 @@ public sealed class TakaroWebSocketRunner : IDisposable
             var request = TakaroProtocol.ParseRequest(message);
             log($"Takaro Valheim request received: action={request.Action}, requestId={request.RequestId}.");
             var response = await dispatcher.DispatchAsync(request, cancellationToken);
-            await SendAsync(socket, TakaroProtocol.CreateResponse(request.RequestId, response), cancellationToken);
-            log($"Takaro Valheim response sent: action={request.Action}, success={response.Success}.");
+            if (!TakaroProtocol.TryCreateActionResponse(
+                    request.RequestId,
+                    request.Action,
+                    response,
+                    out var responseFrame))
+            {
+                if (suppressedResponseLogs.ShouldLog(request.Action, response.ErrorCode, DateTimeOffset.UtcNow))
+                {
+                    log($"Takaro Valheim suppressed unsupported failure response: action={request.Action}, error={response.ErrorCode ?? "action_failed"}. The Generic Connector has no compatible failure payload for this action; Takaro will expire the pending request instead of accepting fabricated state.");
+                }
+
+                continue;
+            }
+
+            await SendAsync(socket, responseFrame!, cancellationToken);
+            log($"Takaro Valheim response frame written: action={request.Action}, success={response.Success}.");
         }
     }
+
+    private Task<TakaroActionResult> RunAdapterActionAsync(
+        Func<Task<TakaroActionResult>> action,
+        CancellationToken cancellationToken) =>
+        mainThreadActions.ScheduleAsync(
+            () => action().GetAwaiter().GetResult(),
+            cancellationToken);
 
     private async Task SendAsync(ClientWebSocket socket, string json, CancellationToken cancellationToken)
     {

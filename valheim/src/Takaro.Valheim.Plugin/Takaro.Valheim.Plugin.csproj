@@ -6,6 +6,10 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>TakaroValheim</AssemblyName>
     <EnableValheimPluginBuild Condition="'$(EnableValheimPluginBuild)' == ''">false</EnableValheimPluginBuild>
+    <TakaroValheimReleaseVersion Condition="'$(TakaroValheimReleaseVersion)' == ''">0.1.0</TakaroValheimReleaseVersion>
+    <TakaroValheimBepInExVersion Condition="'$(TakaroValheimBepInExVersion)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(TakaroValheimReleaseVersion)', '[-+].*$', ''))</TakaroValheimBepInExVersion>
+    <Version>$(TakaroValheimReleaseVersion)</Version>
+    <PackageVersion>$(TakaroValheimReleaseVersion)</PackageVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(EnableValheimPluginBuild)' == 'true'">
@@ -31,10 +35,6 @@
       <HintPath>$(BepInExReferencePath)\BepInEx.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="Jotunn">
-      <HintPath>$(JotunnReferencePath)\Jotunn.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
     <Reference Include="assembly_valheim">
       <HintPath>$(ValheimReferencePath)\assembly_valheim.dll</HintPath>
       <Private>false</Private>
@@ -56,4 +56,17 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+
+  <Target Name="GenerateTakaroValheimBuildVersion" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <TakaroBuildVersionFile>$(IntermediateOutputPath)TakaroBuildVersion.g.cs</TakaroBuildVersionFile>
+    </PropertyGroup>
+    <WriteLinesToFile
+      File="$(TakaroBuildVersionFile)"
+      Lines="namespace Takaro.Valheim.Plugin { internal static class TakaroBuildVersion { public const string ReleaseVersion = &quot;$(TakaroValheimReleaseVersion)&quot;%3B public const string BepInExVersion = &quot;$(TakaroValheimBepInExVersion)&quot;%3B } }"
+      Overwrite="true" />
+    <ItemGroup>
+      <Compile Include="$(TakaroBuildVersionFile)" />
+    </ItemGroup>
+  </Target>
 </Project>

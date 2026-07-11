@@ -22,10 +22,15 @@ public sealed class LocationFactoryTests
 
         Assert.AreEqual("Runestone_BlackForest", payload.GetProperty("code").GetString());
         Assert.AreEqual("location_runestone", payload.GetProperty("name").GetString());
-        Assert.AreEqual(100, payload.GetProperty("x").GetDouble());
-        Assert.AreEqual(20.5, payload.GetProperty("y").GetDouble());
-        Assert.AreEqual(-75, payload.GetProperty("z").GetDouble());
-        Assert.AreEqual("valheim", payload.GetProperty("dimension").GetString());
+        var position = payload.GetProperty("position");
+        Assert.AreEqual(100, position.GetProperty("x").GetDouble());
+        Assert.AreEqual(20.5, position.GetProperty("y").GetDouble());
+        Assert.AreEqual(-75, position.GetProperty("z").GetDouble());
+        Assert.AreEqual("valheim", position.GetProperty("dimension").GetString());
+        Assert.IsFalse(payload.TryGetProperty("x", out _), "ILocationDTO coordinates belong under position.");
+        Assert.IsFalse(payload.TryGetProperty("y", out _), "ILocationDTO coordinates belong under position.");
+        Assert.IsFalse(payload.TryGetProperty("z", out _), "ILocationDTO coordinates belong under position.");
+        Assert.IsFalse(payload.TryGetProperty("dimension", out _), "ILocationDTO dimension belongs under position.");
     }
 
     [TestMethod]

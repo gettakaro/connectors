@@ -69,10 +69,10 @@ jobs:
         id: valheim-cache
         with:
           path: |
-            valheim/_data/server/valheim_server_Data/Managed
+            valheim/_data/server
             valheim/_data/deps
             valheim/_data/steamcmd
-          key: valheim-build-deps-v1
+          key: valheim-build-deps-v2-owned-reference-cache
 
       - name: Make scripts executable
         run: chmod +x valheim/scripts/*.sh scripts/*.sh
@@ -132,4 +132,3 @@ jobs:
             "${{ steps.params.outputs.tag }}" \
             "${{ steps.params.outputs.version }}" \
             "$RUNNER_TEMP/dist/takaro-valheim-plugin.zip"
-
