@@ -21,7 +21,7 @@ internal static class ValheimChatEventBridge
     {
         runner = activeRunner;
         log = logger ?? (_ => { });
-        log($"Takaro Valheim routed RPC diagnostics: ChatMessage={ChatMessageHash}, Say={SayHash}, OnDeath={OnDeathHash}.");
+        log($"Takaro Valheim untrusted routed RPC diagnostics (observation only): ChatMessage={ChatMessageHash}, Say={SayHash}, OnDeath={OnDeathHash}.");
     }
 
     public static void Shutdown()
@@ -39,7 +39,7 @@ internal static class ValheimChatEventBridge
         }
 
         registeredRpc = routedRpc;
-        log("Takaro Valheim routed diagnostics active.");
+        log("Takaro Valheim untrusted routed diagnostics active; trusted companion reports use the dedicated server bridge.");
     }
 
     public static void EmitLog(string level, string message)

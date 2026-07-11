@@ -221,6 +221,20 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
+    public void PluginCompanionBridgeKeepsTrustedReportsSeparateFromRoutedDiagnostics()
+    {
+        var bridge = ReadPluginSource("CompanionServerBridge.cs");
+        var diagnostics = ReadPluginSource("ValheimChatEventBridge.cs");
+
+        StringAssert.Contains(bridge, "CompanionServerMessageHandler");
+        StringAssert.Contains(bridge, "TryResolveConnectedPeer(sender");
+        StringAssert.Contains(bridge, "CompanionAcceptedEvent acceptedEvent");
+        StringAssert.Contains(diagnostics, "untrusted routed RPC diagnostics");
+        StringAssert.Contains(diagnostics, "observation only");
+        Assert.IsFalse(diagnostics.Contains("CompanionProtocol.RpcName", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void RealPluginAdapterExposesCompanionInventoryCacheInjection()
     {
         var source = ReadPluginSource("ValheimServerAdapter.cs");
