@@ -496,6 +496,9 @@ public sealed class CompanionServerBridge : IDisposable
             var session = sessions.Begin(peer.m_uid, now, nonce);
             inventory.BeginSession(peer.m_uid, session.Nonce);
             var hello = CreateEnvelope(
+                CompanionVersionPolicy.SelectNegotiationEnvelopeVersion(
+                    CompanionProtocol.MinimumVersion,
+                    CompanionProtocol.CurrentVersion),
                 session.Nonce,
                 sequence: 1,
                 messageId: "server-hello",
@@ -735,6 +738,7 @@ public sealed class CompanionServerBridge : IDisposable
     }
 
     private static CompanionEnvelope CreateEnvelope<TPayload>(
+        int protocolVersion,
         string sessionNonce,
         long sequence,
         string messageId,
@@ -744,7 +748,7 @@ public sealed class CompanionServerBridge : IDisposable
         using var document = JsonDocument.Parse(
             JsonSerializer.Serialize(payload, WireJsonOptions));
         return new CompanionEnvelope(
-            CompanionProtocol.CurrentVersion,
+            protocolVersion,
             sessionNonce,
             sequence,
             messageId,

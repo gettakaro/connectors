@@ -58,9 +58,36 @@ public sealed class CompanionInventorySnapshot
 public sealed class CompanionInventoryReader
 {
     private string? lastSentFingerprint;
+    private TimeSpan? lastSentAt;
 
     public bool TryGetChanged(
         IReadOnlyList<CompanionInventorySourceItem>? items,
+        out CompanionInventorySnapshot? snapshot) =>
+        TryGetSnapshot(items, includeUnchanged: false, out snapshot);
+
+    public bool TryGetChangedOrRefresh(
+        IReadOnlyList<CompanionInventorySourceItem>? items,
+        TimeSpan monotonicNow,
+        TimeSpan refreshInterval,
+        out CompanionInventorySnapshot? snapshot)
+    {
+        if (monotonicNow < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(monotonicNow));
+        }
+        if (refreshInterval <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(refreshInterval));
+        }
+
+        var refreshDue = lastSentAt is TimeSpan sentAt
+            && monotonicNow >= SaturatingAdd(sentAt, refreshInterval);
+        return TryGetSnapshot(items, refreshDue, out snapshot);
+    }
+
+    private bool TryGetSnapshot(
+        IReadOnlyList<CompanionInventorySourceItem>? items,
+        bool includeUnchanged,
         out CompanionInventorySnapshot? snapshot)
     {
         snapshot = null;
@@ -86,7 +113,8 @@ public sealed class CompanionInventoryReader
         if (string.Equals(
             fingerprint,
             lastSentFingerprint,
-            StringComparison.Ordinal))
+            StringComparison.Ordinal)
+            && !includeUnchanged)
         {
             return false;
         }
@@ -103,11 +131,28 @@ public sealed class CompanionInventoryReader
         }
 
         lastSentFingerprint = snapshot.Fingerprint;
+        lastSentAt = null;
+    }
+
+    public void MarkSent(CompanionInventorySnapshot snapshot, TimeSpan monotonicNow)
+    {
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+        if (monotonicNow < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(monotonicNow));
+        }
+
+        lastSentFingerprint = snapshot.Fingerprint;
+        lastSentAt = monotonicNow;
     }
 
     public void Reset()
     {
         lastSentFingerprint = null;
+        lastSentAt = null;
     }
 
 #if TAKARO_VALHEIM_COMPANION
@@ -116,6 +161,30 @@ public sealed class CompanionInventoryReader
         out CompanionInventorySnapshot? snapshot)
     {
         snapshot = null;
+        return TryReadItems(player, out var sourceItems)
+            && TryGetChanged(sourceItems, out snapshot);
+    }
+
+    internal bool TryReadChangedOrRefresh(
+        Player? player,
+        TimeSpan monotonicNow,
+        TimeSpan refreshInterval,
+        out CompanionInventorySnapshot? snapshot)
+    {
+        snapshot = null;
+        return TryReadItems(player, out var sourceItems)
+            && TryGetChangedOrRefresh(
+                sourceItems,
+                monotonicNow,
+                refreshInterval,
+                out snapshot);
+    }
+
+    private static bool TryReadItems(
+        Player? player,
+        out IReadOnlyList<CompanionInventorySourceItem> sourceItems)
+    {
+        sourceItems = Array.Empty<CompanionInventorySourceItem>();
         if (player == null)
         {
             return false;
@@ -128,7 +197,7 @@ public sealed class CompanionInventoryReader
         }
 
         var width = Math.Max(1, inventory.GetWidth());
-        var sourceItems = inventory.GetAllItems()
+        sourceItems = inventory.GetAllItems()
             .Select(item =>
             {
                 var rawName = item.m_shared?.m_name;
@@ -154,9 +223,14 @@ public sealed class CompanionInventoryReader
             })
             .ToArray();
 
-        return TryGetChanged(sourceItems, out snapshot);
+        return true;
     }
 #endif
+
+    private static TimeSpan SaturatingAdd(TimeSpan value, TimeSpan duration) =>
+        value > TimeSpan.MaxValue - duration
+            ? TimeSpan.MaxValue
+            : value + duration;
 
     private static CompanionInventoryStack? Normalize(
         CompanionInventorySourceItem item)

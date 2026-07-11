@@ -2,6 +2,18 @@ namespace Takaro.Valheim.Companion.Protocol;
 
 public static class CompanionVersionPolicy
 {
+    public static int SelectNegotiationEnvelopeVersion(
+        int minimumVersion,
+        int currentVersion)
+    {
+        if (minimumVersion <= 0 || currentVersion < minimumVersion)
+        {
+            throw new ArgumentOutOfRangeException(nameof(minimumVersion));
+        }
+
+        return minimumVersion;
+    }
+
     public static bool TryNegotiate(
         int localMinimum,
         int localMaximum,

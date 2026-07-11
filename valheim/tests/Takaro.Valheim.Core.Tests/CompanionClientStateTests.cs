@@ -76,6 +76,16 @@ public sealed class CompanionClientStateTests
     }
 
     [TestMethod]
+    public void NegotiationEnvelopeUsesOldestAdvertisedVersionForForwardCompatibility()
+    {
+        Assert.AreEqual(
+            1,
+            CompanionVersionPolicy.SelectNegotiationEnvelopeVersion(
+                minimumVersion: 1,
+                currentVersion: 2));
+    }
+
+    [TestMethod]
     public void ClientSequenceIsStrictlyMonotonicWithinSession()
     {
         var state = CreateState();

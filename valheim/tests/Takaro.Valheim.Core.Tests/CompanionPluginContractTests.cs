@@ -185,8 +185,9 @@ public sealed class CompanionPluginContractTests
         StringAssert.Contains(bridge, "InventoryPollInterval");
         StringAssert.Contains(bridge, "Player.m_localPlayer");
         StringAssert.Contains(bridge, "state.HasCapability(CompanionCapability.Inventory)");
-        StringAssert.Contains(bridge, "inventoryReader.TryReadChanged(");
-        StringAssert.Contains(bridge, "inventoryReader.MarkSent(snapshot)");
+        StringAssert.Contains(bridge, "InventoryRefreshInterval");
+        StringAssert.Contains(bridge, "inventoryReader.TryReadChangedOrRefresh(");
+        StringAssert.Contains(bridge, "inventoryReader.MarkSent(snapshot, now)");
         StringAssert.Contains(bridge, "inventoryReader.Reset()");
         Assert.IsFalse(hooks.Contains("typeof(Player), \"Update\"", StringComparison.Ordinal));
         Assert.IsFalse(bridge.Contains("stack(s)", StringComparison.OrdinalIgnoreCase));

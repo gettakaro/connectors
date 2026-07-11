@@ -8,6 +8,19 @@ namespace Takaro.Valheim.Core.Tests;
 [TestClass]
 public sealed class CompanionServerBridgeContractTests
 {
+    [TestMethod]
+    public void ServerHelloUsesNegotiationEnvelopeVersionInsteadOfCurrentVersion()
+    {
+        var bridge = ReadPluginSource("CompanionServerBridge.cs");
+        var beginSession = Slice(bridge, "private void BeginSession", "private void HandleEnvelope");
+
+        StringAssert.Contains(
+            beginSession,
+            "CompanionVersionPolicy.SelectNegotiationEnvelopeVersion(");
+        StringAssert.Contains(beginSession, "CompanionProtocol.MinimumVersion");
+        StringAssert.Contains(beginSession, "CompanionProtocol.CurrentVersion");
+    }
+
     private static readonly DateTimeOffset Now = new(2026, 7, 11, 12, 0, 0, TimeSpan.Zero);
     private static readonly JsonSerializerOptions WireJson = new()
     {

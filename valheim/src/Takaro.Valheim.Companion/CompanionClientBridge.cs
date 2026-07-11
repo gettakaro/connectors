@@ -13,6 +13,7 @@ internal sealed class CompanionClientBridge : IDisposable
         | CompanionCapability.PlayerDeath
         | CompanionCapability.EntityKilled;
     private static readonly TimeSpan InventoryPollInterval = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan InventoryRefreshInterval = TimeSpan.FromSeconds(20);
 
     private readonly Action<string> log;
     private readonly CompanionClientState state = new(
@@ -390,8 +391,10 @@ internal sealed class CompanionClientBridge : IDisposable
         }
 
         nextInventoryPollAt = SaturatingAdd(now, InventoryPollInterval);
-        if (!inventoryReader.TryReadChanged(
+        if (!inventoryReader.TryReadChangedOrRefresh(
                 Player.m_localPlayer,
+                now,
+                InventoryRefreshInterval,
                 out var snapshot)
             || snapshot is null
             || !state.TryCreateReport(
@@ -404,7 +407,7 @@ internal sealed class CompanionClientBridge : IDisposable
             return;
         }
 
-        inventoryReader.MarkSent(snapshot);
+        inventoryReader.MarkSent(snapshot, now);
     }
 
     private bool TrySendJson(

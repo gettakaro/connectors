@@ -59,6 +59,69 @@ public sealed class CompanionInventoryReaderContractTests
     }
 
     [TestMethod]
+    public void UnchangedSnapshotIsRefreshedBeforeServerCacheCanExpire()
+    {
+        var reader = new CompanionInventoryReader();
+        var items = new[] { Item("Wood", "Wood", amount: 1, slot: 0) };
+        var refreshInterval = TimeSpan.FromSeconds(20);
+
+        Assert.IsTrue(reader.TryGetChangedOrRefresh(
+            items,
+            TimeSpan.Zero,
+            refreshInterval,
+            out var initial));
+        Assert.IsNotNull(initial);
+        reader.MarkSent(initial, TimeSpan.Zero);
+
+        Assert.IsFalse(reader.TryGetChangedOrRefresh(
+            items,
+            refreshInterval - TimeSpan.FromTicks(1),
+            refreshInterval,
+            out _));
+        Assert.IsTrue(reader.TryGetChangedOrRefresh(
+            items,
+            refreshInterval,
+            refreshInterval,
+            out var refresh));
+        Assert.IsNotNull(refresh);
+        Assert.AreEqual(initial.Fingerprint, refresh.Fingerprint);
+    }
+
+    [TestMethod]
+    public void FailedRefreshRemainsDueUntilItIsMarkedSent()
+    {
+        var reader = new CompanionInventoryReader();
+        var items = new[] { Item("Wood", "Wood", amount: 1, slot: 0) };
+        var refreshInterval = TimeSpan.FromSeconds(20);
+
+        Assert.IsTrue(reader.TryGetChangedOrRefresh(
+            items,
+            TimeSpan.Zero,
+            refreshInterval,
+            out var initial));
+        Assert.IsNotNull(initial);
+        reader.MarkSent(initial, TimeSpan.Zero);
+
+        Assert.IsTrue(reader.TryGetChangedOrRefresh(
+            items,
+            refreshInterval,
+            refreshInterval,
+            out _));
+        Assert.IsTrue(reader.TryGetChangedOrRefresh(
+            items,
+            refreshInterval + TimeSpan.FromSeconds(2),
+            refreshInterval,
+            out var retry));
+        Assert.IsNotNull(retry);
+        reader.MarkSent(retry, refreshInterval + TimeSpan.FromSeconds(2));
+        Assert.IsFalse(reader.TryGetChangedOrRefresh(
+            items,
+            refreshInterval + TimeSpan.FromSeconds(3),
+            refreshInterval,
+            out _));
+    }
+
+    [TestMethod]
     public void ConfirmedEmptyInventoryIsARealSnapshot()
     {
         var reader = new CompanionInventoryReader();
