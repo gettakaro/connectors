@@ -107,6 +107,25 @@ public sealed class CompanionProtocolTests
     }
 
     [TestMethod]
+    public void VersionOneCombatReportsCarryExplicitBoundedHints()
+    {
+        AssertPublicProperties(
+            RequireType("CompanionPlayerDeathReport"),
+            "EventId",
+            "TimestampUnixMilliseconds",
+            "Position",
+            "CauseHint",
+            "AttackerCodeHint");
+        AssertPublicProperties(
+            RequireType("CompanionEntityKilledReport"),
+            "EventId",
+            "TimestampUnixMilliseconds",
+            "Position",
+            "EntityCodeHint",
+            "WeaponCodeHint");
+    }
+
+    [TestMethod]
     public void VersionOneReportsContainNoClaimedPlayerIdentity()
     {
         foreach (var typeName in ReportTypeNames.Append("CompanionEnvelope"))

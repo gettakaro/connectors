@@ -44,10 +44,12 @@ public sealed record CompanionPlayerDeathReport(
     string EventId,
     long TimestampUnixMilliseconds,
     CompanionPosition Position,
-    string? CauseHint);
+    string? CauseHint,
+    string? AttackerCodeHint);
 
 public sealed record CompanionEntityKilledReport(
     string EventId,
     long TimestampUnixMilliseconds,
     CompanionPosition Position,
-    string? EntityCodeHint);
+    string? EntityCodeHint,
+    string? WeaponCodeHint);
