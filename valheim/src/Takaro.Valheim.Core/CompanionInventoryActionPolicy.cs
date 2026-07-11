@@ -27,14 +27,14 @@ public static class CompanionInventoryActionPolicy
                 "The requested Valheim player is not online.");
         }
 
-        var aliases = new[] { player.GameId, player.PlatformId, player.SteamId, player.Name }
+        var aliases = new[] { player.GameId, player.PlatformId, player.SteamId }
             .Where(alias => !string.IsNullOrWhiteSpace(alias))
             .Select(alias => alias!)
             .Distinct(StringComparer.OrdinalIgnoreCase);
 
         foreach (var alias in aliases)
         {
-            if (cache.TryGet(alias, now, out var items) == CompanionInventoryState.Fresh)
+            if (cache.TryGetStable(alias, now, out var items) == CompanionInventoryState.Fresh)
             {
                 return TakaroActionResult.Ok(items);
             }

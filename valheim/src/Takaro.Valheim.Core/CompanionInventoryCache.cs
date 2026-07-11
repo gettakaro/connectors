@@ -159,6 +159,31 @@ public sealed class CompanionInventoryCache
         }
     }
 
+    public CompanionInventoryState TryGetStable(
+        string identifier,
+        DateTimeOffset now,
+        out IReadOnlyList<TakaroInventoryItem> items)
+    {
+        items = UnavailableItems;
+        if (string.IsNullOrWhiteSpace(identifier))
+        {
+            return CompanionInventoryState.Missing;
+        }
+
+        lock (syncRoot)
+        {
+            if (!stableObservationsByAlias.TryGetValue(
+                    identifier.Trim(),
+                    out var observations)
+                || observations.Count != 1)
+            {
+                return CompanionInventoryState.Missing;
+            }
+
+            return QueryObservationLocked(observations.First(), now, out items);
+        }
+    }
+
     public void RemovePeer(long peerId)
     {
         lock (syncRoot)

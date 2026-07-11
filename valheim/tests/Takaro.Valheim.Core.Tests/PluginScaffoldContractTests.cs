@@ -154,12 +154,21 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(location, "player_position_unavailable");
         Assert.IsFalse(location.Contains("new TakaroPosition(0, 0, 0", StringComparison.Ordinal));
         StringAssert.Contains(inventory, "CompanionMode.Disabled");
-        StringAssert.Contains(inventory, "TryResolvePlayer(identifier");
+        StringAssert.Contains(inventory, "ZNet.instance");
+        StringAssert.Contains(inventory, "GetPlayerList()");
+        StringAssert.Contains(inventory, "Select(ToTakaroPlayer)");
+        StringAssert.Contains(inventory, "PlayerMapper.FindUnique");
         StringAssert.Contains(inventory, "CompanionInventoryActionPolicy.FromResolvedPlayer");
+        Assert.IsFalse(inventory.Contains("TryResolvePlayer", StringComparison.Ordinal));
         Assert.IsFalse(inventory.Contains("Array.Empty<object>()", StringComparison.Ordinal));
         Assert.IsFalse(inventory.Contains("GetInventory()", StringComparison.Ordinal));
         Assert.IsFalse(inventory.Contains("TryFindPlayerComponent", StringComparison.Ordinal));
         Assert.IsFalse(inventory.Contains("companionInventory.TryGet(identifier", StringComparison.Ordinal));
+
+        var policy = ReadValheimFile("src/Takaro.Valheim.Core/CompanionInventoryActionPolicy.cs");
+        StringAssert.Contains(policy, "cache.TryGetStable");
+        Assert.IsFalse(policy.Contains("player.Name", StringComparison.Ordinal));
+        Assert.IsFalse(policy.Contains("cache.TryGet(alias", StringComparison.Ordinal));
     }
 
     [TestMethod]

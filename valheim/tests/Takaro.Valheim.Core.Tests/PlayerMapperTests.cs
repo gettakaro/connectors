@@ -73,4 +73,60 @@ public sealed class PlayerMapperTests
         Assert.AreEqual("Eikthyr Hunter", PlayerMapper.Find(players, "76561198000000001")?.Name);
         Assert.AreEqual("Boar Tamer", PlayerMapper.Find(players, "boar tamer")?.Name);
     }
+
+    [TestMethod]
+    public void FindUniquePrefersOneStableMatchOverAnotherPlayersMatchingName()
+    {
+        var nameCollision = new TakaroPlayer("other", "target", "2", "steam:2", null, null);
+        var stableMatch = new TakaroPlayer("target", "Stable Match", "1", "steam:1", null, null);
+
+        var result = FindUnique(new[] { nameCollision, stableMatch }, "target");
+
+        Assert.AreSame(stableMatch, result);
+    }
+
+    [TestMethod]
+    public void FindUniqueRejectsDuplicateNames()
+    {
+        var players = new[]
+        {
+            new TakaroPlayer("game-1", "Shared Name", "1", "steam:1", null, null),
+            new TakaroPlayer("game-2", "Shared Name", "2", "steam:2", null, null)
+        };
+
+        Assert.IsNull(FindUnique(players, "shared name"));
+    }
+
+    [TestMethod]
+    public void FindUniqueRejectsDuplicateStableIdentifiers()
+    {
+        var players = new[]
+        {
+            new TakaroPlayer("duplicate", "First", "1", "steam:1", null, null),
+            new TakaroPlayer("duplicate", "Second", "2", "steam:2", null, null)
+        };
+
+        Assert.IsNull(FindUnique(players, "duplicate"));
+    }
+
+    [TestMethod]
+    public void FindUniqueAllowsOneMatchingNameWhenNoStableAliasMatches()
+    {
+        var expected = new TakaroPlayer("game-1", "Unique Name", "1", "steam:1", null, null);
+        var players = new[]
+        {
+            expected,
+            new TakaroPlayer("game-2", "Other Name", "2", "steam:2", null, null)
+        };
+
+        Assert.AreSame(expected, FindUnique(players, " unique name "));
+    }
+
+    private static TakaroPlayer? FindUnique(IEnumerable<TakaroPlayer> players, string identifier)
+    {
+        var method = typeof(PlayerMapper).GetMethod("FindUnique")
+            ?? throw new AssertFailedException("PlayerMapper is missing FindUnique.");
+
+        return method.Invoke(null, new object?[] { players, identifier }) as TakaroPlayer;
+    }
 }

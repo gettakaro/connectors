@@ -133,13 +133,14 @@ public sealed record ConnectorConfig(
     {
         if (value is null)
         {
-            return defaultValues.ToArray();
+            return defaultValues.Distinct(StringComparer.Ordinal).ToArray();
         }
 
         return value
             .Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(entry => entry.Trim())
             .Where(entry => !string.IsNullOrWhiteSpace(entry))
+            .Distinct(StringComparer.Ordinal)
             .ToArray();
     }
 }

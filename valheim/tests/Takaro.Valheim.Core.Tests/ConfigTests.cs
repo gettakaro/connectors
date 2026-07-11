@@ -123,6 +123,65 @@ public sealed class ConfigTests
             ReadCompanionCommandPrefixes(config));
     }
 
+    [TestMethod]
+    public void FromDictionaryTrimsCompanionModeWhitespace()
+    {
+        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
+        {
+            ["registrationToken"] = "reg-123",
+            ["serverName"] = "Meadows",
+            ["companionMode"] = "  optional  "
+        });
+
+        Assert.AreEqual("Optional", ReadCompanionMode(config));
+    }
+
+    [TestMethod]
+    public void FromDictionaryDefaultsBlankOrNullCompanionValues()
+    {
+        foreach (var value in new string?[] { "", "   ", null })
+        {
+            var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
+            {
+                ["registrationToken"] = "reg-123",
+                ["serverName"] = "Meadows",
+                ["companionMode"] = value!,
+                ["companionCommandPrefixes"] = value!
+            });
+
+            Assert.AreEqual("Required", ReadCompanionMode(config));
+            CollectionAssert.AreEqual(new[] { "$" }, ReadCompanionCommandPrefixes(config));
+        }
+    }
+
+    [TestMethod]
+    public void FromDictionaryAllowsExplicitDelimiterOnlyCompanionPrefixes()
+    {
+        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
+        {
+            ["registrationToken"] = "reg-123",
+            ["serverName"] = "Meadows",
+            ["companionCommandPrefixes"] = ";, ; ,"
+        });
+
+        Assert.AreEqual(0, ReadCompanionCommandPrefixes(config).Length);
+    }
+
+    [TestMethod]
+    public void FromDictionaryDropsEmptyAndDuplicateCompanionPrefixesPreservingOrder()
+    {
+        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
+        {
+            ["registrationToken"] = "reg-123",
+            ["serverName"] = "Meadows",
+            ["companionCommandPrefixes"] = "!;;, /, !, , $, /"
+        });
+
+        CollectionAssert.AreEqual(
+            new[] { "!", "/", "$" },
+            ReadCompanionCommandPrefixes(config));
+    }
+
     [DataTestMethod]
     [DataRow("enabled")]
     [DataRow("1")]

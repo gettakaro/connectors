@@ -124,14 +124,89 @@ public sealed class CompanionAdapterContractTests
         Assert.IsNull(result.Payload);
     }
 
+    [TestMethod]
+    public void StableIdentifierCannotFallThroughToAnotherPlayersMatchingDisplayName()
+    {
+        var resolvedPlayer = new TakaroPlayer(
+            "resolved-game-id",
+            "Resolved Viking",
+            "resolved-steam-id",
+            "steam:resolved-steam-id",
+            null,
+            null);
+        var otherPlayer = new TakaroPlayer(
+            "other-game-id",
+            resolvedPlayer.GameId,
+            "other-steam-id",
+            "steam:other-steam-id",
+            null,
+            null);
+        var cache = CacheWithSnapshot(
+            otherPlayer,
+            new[] { new CompanionInventoryStack("Coins", "Coins", 99, 1, 100, false, 0) });
+
+        var result = InvokePolicy("Required", resolvedPlayer, cache, Now);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("player_component_unavailable", result.ErrorCode);
+        Assert.IsNull(result.Payload);
+    }
+
+    [TestMethod]
+    public void ResolvedPlayersStableSnapshotWinsOverAnotherPlayersMatchingDisplayName()
+    {
+        var resolvedPlayer = new TakaroPlayer(
+            "resolved-game-id",
+            "Resolved Viking",
+            "resolved-steam-id",
+            "steam:resolved-steam-id",
+            null,
+            null);
+        var otherPlayer = new TakaroPlayer(
+            "other-game-id",
+            resolvedPlayer.GameId,
+            "other-steam-id",
+            "steam:other-steam-id",
+            null,
+            null);
+        var cache = new CompanionInventoryCache(TimeSpan.FromSeconds(30));
+        RememberSnapshot(
+            cache,
+            peerId: 1,
+            sessionNonce: "other-session",
+            otherPlayer,
+            new[] { new CompanionInventoryStack("Coins", "Coins", 99, 1, 100, false, 0) });
+        RememberSnapshot(
+            cache,
+            peerId: 2,
+            sessionNonce: "resolved-session",
+            resolvedPlayer,
+            new[] { new CompanionInventoryStack("Wood", "Wood", 10, 1, 100, false, 0) });
+
+        var result = InvokePolicy("Required", resolvedPlayer, cache, Now);
+
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual("Wood", AssertItems(result).Single().Code);
+    }
+
     private static CompanionInventoryCache CacheWithSnapshot(
         TakaroPlayer player,
         IReadOnlyList<CompanionInventoryStack> stacks)
     {
         var cache = new CompanionInventoryCache(TimeSpan.FromSeconds(30));
-        cache.BeginSession(PeerId, SessionNonce);
-        Assert.IsTrue(cache.Remember(PeerId, SessionNonce, player, stacks, Now));
+        RememberSnapshot(cache, PeerId, SessionNonce, player, stacks);
         return cache;
+    }
+
+    private static void RememberSnapshot(
+        CompanionInventoryCache cache,
+        long peerId,
+        string sessionNonce,
+        TakaroPlayer player,
+        IReadOnlyList<CompanionInventoryStack> stacks)
+    {
+        cache.BeginSession(peerId, sessionNonce);
+        Assert.IsTrue(cache.Remember(peerId, sessionNonce, player, stacks, Now));
     }
 
     private static TakaroActionResult InvokePolicy(

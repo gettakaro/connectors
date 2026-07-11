@@ -124,7 +124,14 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
                 DateTimeOffset.UtcNow));
         }
 
-        if (!TryResolvePlayer(identifier, out _, out _, out var player) || player is null)
+        var network = ZNet.instance;
+        var players = network?.GetPlayerList()
+            .Select(ToTakaroPlayer)
+            .ToArray();
+        var player = players is null
+            ? null
+            : PlayerMapper.FindUnique(players, identifier);
+        if (player is null)
         {
             return Task.FromResult(CompanionInventoryActionPolicy.FromResolvedPlayer(
                 companionMode,
