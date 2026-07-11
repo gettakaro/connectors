@@ -487,6 +487,23 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
+    public void DocumentationKeepsServerAndClientProcessRolesSeparate()
+    {
+        var readme = ReadValheimFile("README.md");
+        var companion = ReadValheimFile("COMPANION.md");
+        var serverEntrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
+        var clientEntrypoint = ReadValheimFile(
+            "src/Takaro.Valheim.Companion/ValheimCompanionPlugin.cs");
+
+        StringAssert.Contains(readme, "takaro-valheim-plugin.zip");
+        StringAssert.Contains(readme, "takaro-valheim-companion.zip");
+        StringAssert.Contains(companion, "Never copy `TakaroValheim.dll` into the client");
+        StringAssert.Contains(companion, "Never copy `Takaro.Valheim.Companion.dll` into the dedicated server");
+        StringAssert.Contains(serverEntrypoint, "if (!IsDedicatedServerProcess())");
+        StringAssert.Contains(clientEntrypoint, "if (!IsGraphicalValheimClient())");
+    }
+
+    [TestMethod]
     public void ServerOnlyPluginHasNoJotunnDependencyAndRetriesReferenceSetup()
     {
         var project = ReadValheimFile("src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj");

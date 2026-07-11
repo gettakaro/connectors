@@ -46,6 +46,14 @@ public sealed class CapabilityRegistryTests
         "unsupported"
     ];
 
+    private static readonly HashSet<string> AllowedOwnership =
+    [
+        "server-owned",
+        "client-reported",
+        "upstream-blocked",
+        "unsupported"
+    ];
+
     [TestMethod]
     public void RegistryExhaustivelyClassifiesEveryActionAndEvent()
     {
@@ -56,6 +64,15 @@ public sealed class CapabilityRegistryTests
         Assert.AreEqual(JsonValueKind.Array, root.GetProperty("notes").ValueKind);
         AssertCompleteRegistry(root.GetProperty("actions"), RequiredActions, "action");
         AssertCompleteRegistry(root.GetProperty("events"), RequiredEvents, "event");
+        var ownership = root.GetProperty("ownership");
+        AssertCompleteOwnership(
+            ownership.GetProperty("actions"),
+            RequiredActions,
+            "action");
+        AssertCompleteOwnership(
+            ownership.GetProperty("events"),
+            RequiredEvents,
+            "event");
     }
 
     [TestMethod]
@@ -92,6 +109,24 @@ public sealed class CapabilityRegistryTests
         Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("chat-message").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("player-death").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("entity-killed").GetString());
+
+        var ownership = root.GetProperty("ownership");
+        Assert.AreEqual(
+            "client-reported",
+            ownership.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
+        Assert.AreEqual(
+            "upstream-blocked",
+            ownership.GetProperty("actions").GetProperty("listLocations").GetString());
+        Assert.AreEqual(
+            "unsupported",
+            ownership.GetProperty("actions").GetProperty("getMapInfo").GetString());
+        foreach (var eventName in new[] { "chat-message", "player-death", "entity-killed" })
+        {
+            Assert.AreEqual(
+                "client-reported",
+                ownership.GetProperty("events").GetProperty(eventName).GetString(),
+                eventName);
+        }
     }
 
     [TestMethod]
@@ -166,6 +201,36 @@ public sealed class CapabilityRegistryTests
         }
     }
 
+    [TestMethod]
+    public void CompanionDocumentationCoversSafeInstallUpgradeRemovalAndTrustBoundary()
+    {
+        var companion = ReadValheimFile("COMPANION.md");
+        var readme = ReadValheimFile("README.md");
+        var combined = companion + "\n" + readme;
+
+        foreach (var marker in new[]
+                 {
+                     "takaro-valheim-plugin.zip",
+                     "takaro-valheim-companion.zip",
+                     "Install",
+                     "Upgrade",
+                     "Remove",
+                     "required",
+                     "protocol",
+                     "client-reported",
+                     "untrusted",
+                     "No Takaro token",
+                     "BepInEx/plugins/TakaroValheimCompanion"
+                 })
+        {
+            StringAssert.Contains(combined, marker);
+        }
+
+        StringAssert.Contains(companion, "registrationToken stays on the dedicated server");
+        StringAssert.Contains(companion, "expected and actual protocol versions");
+        StringAssert.Contains(readme, "server plugin still refuses graphical-client processes");
+    }
+
     private static JsonDocument ReadRegistry()
     {
         return JsonDocument.Parse(ReadValheimFile("capabilities.json"));
@@ -192,6 +257,24 @@ public sealed class CapabilityRegistryTests
         {
             Assert.AreEqual(JsonValueKind.String, entry.Value.ValueKind, entry.Name);
             Assert.IsTrue(AllowedStatuses.Contains(entry.Value.GetString()!), $"Invalid status for {entry.Name}.");
+        }
+    }
+
+    private static void AssertCompleteOwnership(
+        JsonElement entries,
+        string[] expectedNames,
+        string kind)
+    {
+        Assert.AreEqual(JsonValueKind.Object, entries.ValueKind, kind);
+        CollectionAssert.AreEqual(
+            expectedNames.Order().ToArray(),
+            entries.EnumerateObject().Select(entry => entry.Name).Order().ToArray(),
+            $"Unexpected {kind} ownership keys.");
+        foreach (var entry in entries.EnumerateObject())
+        {
+            Assert.IsTrue(
+                AllowedOwnership.Contains(entry.Value.GetString()!),
+                $"Invalid ownership for {entry.Name}.");
         }
     }
 }

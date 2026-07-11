@@ -1,0 +1,89 @@
+# Takaro Valheim Companion
+
+The Takaro Valheim Companion is the owned graphical-client half of the Valheim connector. It reports client-owned gameplay observations to the dedicated-server plugin over a bounded Valheim routed-RPC protocol. It does not connect to Takaro directly.
+
+This implementation has automated and real-assembly build proof, but its client-reported action/event paths remain `unsupported` in `capabilities.json` until the exact packaged server and client artifacts are live-proven through Takaro.
+
+## Trust Boundary
+
+No Takaro token, identity token, WebSocket URL, or other cloud credential belongs in the companion. The server registrationToken stays on the dedicated server. The companion accepts a session only from the current connected server peer and sends every report back to that exact nonzero peer; it never uses Valheim's target-zero broadcast path.
+
+Inventory, chat, death, and kill contents are client-reported and therefore untrusted. They can enrich normal community automation, but must not be treated as authoritative identity, anti-cheat, security, economy, or moderation evidence. The dedicated-server plugin binds every accepted report to the actual connected peer instead of trusting a player identity supplied by the client.
+
+## Packages and Process Roles
+
+- `takaro-valheim-plugin.zip` contains `TakaroValheim`, the dedicated-server connector with Takaro cloud transport and server configuration.
+- `takaro-valheim-companion.zip` contains `TakaroValheimCompanion`, the graphical-client companion with no cloud transport or credentials.
+
+Never copy `TakaroValheim.dll` into the client. Never copy `Takaro.Valheim.Companion.dll` into the dedicated server. Each plugin disables itself before Harmony setup when it detects the wrong process role.
+
+## Install
+
+### Dedicated server
+
+1. Install BepInExPack Valheim on the dedicated server.
+2. Extract `takaro-valheim-plugin.zip`.
+3. Copy `TakaroValheim` to `BepInEx/plugins/TakaroValheim`.
+4. Start once, then edit `BepInEx/config/com.takaro.valheim.cfg`.
+5. Set `registrationToken`, choose `companionMode`, and restart the dedicated server.
+
+### Graphical client
+
+1. Install BepInExPack Valheim in the graphical Valheim client.
+2. Extract `takaro-valheim-companion.zip`.
+3. Copy `TakaroValheimCompanion` to `BepInEx/plugins/TakaroValheimCompanion`.
+4. Start Valheim once. The optional client config is `BepInEx/config/com.takaro.valheim.companion.cfg`.
+5. Keep `companionCommandPrefixes` aligned with the intended command prefixes; the default is `$`.
+
+The client folder must contain the companion and protocol DLLs shipped together in the same archive. Do not copy a server config file into it.
+
+## Upgrade
+
+1. Stop the dedicated server and exit every Valheim client.
+2. Replace the complete `TakaroValheim` server plugin folder from the new server ZIP.
+3. Replace the complete `TakaroValheimCompanion` client plugin folder from the matching client ZIP on each participating client.
+4. Keep existing BepInEx config files, review release notes for protocol/config changes, then start the server and clients.
+
+Server and client product patch versions may differ when their wire protocol overlaps. Protocol compatibility—not an exact product-version string match—controls negotiation. Upgrade the companion when a required-mode message shows incompatible expected and actual protocol versions.
+
+## Remove or Roll Back
+
+### Remove the companion from a client
+
+1. Exit Valheim.
+2. Remove `BepInEx/plugins/TakaroValheimCompanion`.
+3. Optionally remove `BepInEx/config/com.takaro.valheim.companion.cfg`.
+
+### Remove the connector from the server
+
+1. Stop the dedicated server.
+2. Remove `BepInEx/plugins/TakaroValheim`.
+3. Preserve or securely delete the server config according to your token-rotation policy.
+
+If the server uses `companionMode=required`, removing only the client companion will intentionally prevent that client from remaining connected. Switch the server to `optional` or `disabled` before a companion rollback when uninterrupted vanilla-client access is required.
+
+## Server Modes
+
+- `disabled`: no companion RPC is registered and vanilla clients are unaffected.
+- `optional`: compatible companions can report client-owned state; missing or expired sessions are restarted without disconnecting the player.
+- `required`: a missing, incompatible, or silent companion is terminal for that connection. The server revokes its session immediately, shows a player-visible explanation, waits two seconds, sends Valheim's built-in `Kicked` RPC, and retains an exact-peer disconnect fallback.
+
+The default is `required`. A product patch version alone does not cause rejection. Protocol v1 currently negotiates chat, inventory, player-death, and entity-killed capabilities and uses a five-second heartbeat.
+
+## Report Behavior
+
+- Ordinary local chat follows normal Valheim behavior and is reported once afterward.
+- An accepted configured command is reported once and suppressed from ordinary chat only after the server-bound send succeeds.
+- Inventory is polled every two seconds after negotiation; the initial confirmed snapshot, including an empty inventory, is sent and unchanged canonical snapshots are not resent.
+- Local player death is reported once per callback window.
+- Non-player entity death is reported only when the cached last hit resolves the local player as attacker. Missing weapon data is omitted.
+
+All reports are bounded by the protocol schema and stop immediately when the RPC, world, server peer, or connection changes.
+
+## Troubleshooting
+
+- Check `BepInEx/LogOutput.log` on both roles for the plugin GUIDs `com.takaro.valheim` and `com.takaro.valheim.companion`.
+- A required-mode missing-companion message means the client plugin did not complete its hello/heartbeat session.
+- An incompatible message includes the server's expected protocol range and the client's actual protocol version when it was safely inspectable.
+- Do not solve a version error by copying DLLs between the two role folders. Install a matching release archive for each role.
+- Client reports cannot repair server-only unsupported map actions or the upstream-blocked standard `listLocations` route.
