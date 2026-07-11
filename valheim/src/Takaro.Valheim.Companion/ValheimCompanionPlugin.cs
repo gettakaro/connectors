@@ -29,14 +29,24 @@ public sealed class ValheimCompanionPlugin : BaseUnityPlugin
 
         try
         {
+            var commandPrefixes = Config.Bind(
+                "Takaro",
+                "companionCommandPrefixes",
+                "$",
+                "Semicolon-separated chat prefixes handled as Takaro commands.").Value;
             harmony = new Harmony(PluginGuid);
-            harmony.PatchAll(typeof(ValheimCompanionPlugin).Assembly);
             clientBridge = new CompanionClientBridge(Logger.LogInfo);
             clientBridge.Initialize();
+            CompanionClientHooks.Initialize(
+                clientBridge,
+                commandPrefixes,
+                Logger.LogInfo);
+            harmony.PatchAll(typeof(ValheimCompanionPlugin).Assembly);
             Logger.LogInfo($"Takaro Valheim Companion {ProductVersion} started with protocol {ProtocolVersion}.");
         }
         catch (Exception ex)
         {
+            CompanionClientHooks.Shutdown();
             clientBridge?.Dispose();
             clientBridge = null;
             harmony?.UnpatchSelf();
@@ -53,6 +63,7 @@ public sealed class ValheimCompanionPlugin : BaseUnityPlugin
 
     private void OnDestroy()
     {
+        CompanionClientHooks.Shutdown();
         clientBridge?.Dispose();
         clientBridge = null;
         harmony?.UnpatchSelf();

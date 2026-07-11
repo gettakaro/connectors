@@ -102,7 +102,49 @@ internal sealed class CompanionClientBridge : IDisposable
                 out var heartbeat)
             && heartbeat is not null)
         {
-            SendEnvelope(routedRpc, network, serverPeer, heartbeat);
+            _ = TrySendEnvelope(routedRpc, network, serverPeer, heartbeat);
+        }
+    }
+
+    internal bool TrySendChat(string message)
+    {
+        if (!initialized
+            || disposed
+            || string.IsNullOrWhiteSpace(message)
+            || message.Length > CompanionProtocol.MaximumChatCharacters)
+        {
+            return false;
+        }
+
+        try
+        {
+            var network = ZNet.instance;
+            var routedRpc = ZRoutedRpc.instance;
+            SynchronizeRegistration(network, routedRpc);
+            if (network is null
+                || routedRpc is null
+                || !registrationSucceeded
+                || !ReferenceEquals(network, observedNetwork)
+                || !ReferenceEquals(routedRpc, registeredRpc)
+                || !SynchronizeReadyContext(network, routedRpc, out var serverPeer)
+                || !state.TryCreateReport(
+                    CompanionMessageTypes.Chat,
+                    new CompanionChatReport(
+                        $"chat-{Guid.NewGuid():N}",
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        message),
+                    out var envelope)
+                || envelope is null)
+            {
+                return false;
+            }
+
+            return TrySendEnvelope(routedRpc, network, serverPeer, envelope);
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim Companion could not report local chat: {ex.Message}");
+            return false;
         }
     }
 
@@ -270,14 +312,14 @@ internal sealed class CompanionClientBridge : IDisposable
         log($"Takaro Valheim Companion negotiated protocol {prepared.Envelope.ProtocolVersion} with the connected server.");
     }
 
-    private void SendEnvelope(
+    private bool TrySendEnvelope(
         ZRoutedRpc routedRpc,
         ZNet network,
         ZNetPeer serverPeer,
         CompanionEnvelope envelope)
     {
         var json = CompanionEnvelopeCodec.EncodeEnvelope(envelope);
-        _ = TrySendJson(routedRpc, network, serverPeer, json);
+        return TrySendJson(routedRpc, network, serverPeer, json);
     }
 
     private bool TrySendJson(
@@ -354,6 +396,8 @@ internal sealed class CompanionClientBridge : IDisposable
             return;
         }
     }
+
+    internal bool TrySendChat(string message) => false;
 
     public void Dispose()
     {

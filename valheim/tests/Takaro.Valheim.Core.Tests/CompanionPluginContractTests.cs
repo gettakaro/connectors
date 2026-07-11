@@ -153,6 +153,25 @@ public sealed class CompanionPluginContractTests
         Assert.IsFalse(bridge.Contains("GetWorldUID()", StringComparison.Ordinal));
     }
 
+    [TestMethod]
+    public void CompanionPatchesOnlyLocalTalkerSayForChatReports()
+    {
+        var hooks = ReadCompanionSource("CompanionClientHooks.cs");
+        var bridge = ReadCompanionSource("CompanionClientBridge.cs");
+        var entrypoint = ReadCompanionSource("ValheimCompanionPlugin.cs");
+
+        StringAssert.Contains(hooks, "[HarmonyPatch(typeof(Talker), \"Say\")]");
+        StringAssert.Contains(hooks, "__instance.GetComponent<Player>() == Player.m_localPlayer");
+        StringAssert.Contains(hooks, "private static bool Prefix(");
+        StringAssert.Contains(hooks, "out CompanionChatHookState __state");
+        StringAssert.Contains(hooks, "private static void Postfix(CompanionChatHookState __state)");
+        Assert.IsFalse(hooks.Contains("RPC_Say", StringComparison.Ordinal));
+        StringAssert.Contains(bridge, "TrySendChat(string message)");
+        StringAssert.Contains(entrypoint, "CompanionClientHooks.Initialize(");
+        StringAssert.Contains(entrypoint, "CompanionClientHooks.Shutdown()");
+        StringAssert.Contains(entrypoint, "companionCommandPrefixes");
+    }
+
     private static string ReadAllCompanionText() =>
         string.Join(
             '\n',
