@@ -170,14 +170,20 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void PluginPlayerResolverFailsClosedOnAmbiguityBeforePeerFallback()
+    public void PluginPlayerResolverOwnsAuthoritativeIdentityResolution()
     {
-        var source = ReadPluginSource("ValheimServerAdapter.cs");
-        var resolver = SliceMethod(
-            source,
-            "private bool TryFindPlayerInfo",
-            "private bool TryFindPeer");
+        var resolverPath = ValheimPath("src/Takaro.Valheim.Plugin/ValheimPlayerResolver.cs");
+        Assert.IsTrue(File.Exists(resolverPath), "Missing authoritative Valheim player resolver.");
 
+        var resolver = File.ReadAllText(resolverPath);
+        var adapter = ReadPluginSource("ValheimServerAdapter.cs");
+
+        StringAssert.Contains(resolver, "public sealed class ValheimPlayerResolver");
+        StringAssert.Contains(resolver, "TakaroPlayer ToTakaroPlayer(ZNet.PlayerInfo");
+        StringAssert.Contains(resolver, "TakaroPlayer ToTakaroPlayer(ZNetPeer");
+        StringAssert.Contains(resolver, "bool TryResolvePlayer(");
+        StringAssert.Contains(resolver, "bool TryFindPlayerInfo(");
+        StringAssert.Contains(resolver, "bool TryFindPeer(");
         StringAssert.Contains(resolver, "PlayerMapper.TryFindUnique");
         StringAssert.Contains(resolver, "out var playerInfoAmbiguous");
         StringAssert.Contains(resolver, "if (playerInfoAmbiguous)");
@@ -185,7 +191,32 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(resolver, "GetPeers()");
         StringAssert.Contains(resolver, "peerCandidates.Select");
         Assert.IsFalse(resolver.Contains("PlayerMapper.Find(", StringComparison.Ordinal));
-        Assert.IsFalse(resolver.Contains("foreach (", StringComparison.Ordinal));
+
+        StringAssert.Contains(adapter, "private readonly ValheimPlayerResolver playerResolver;");
+        StringAssert.Contains(adapter, "playerResolver.ToTakaroPlayer");
+        StringAssert.Contains(adapter, "playerResolver.TryResolvePlayer");
+        Assert.IsFalse(adapter.Contains("private TakaroPlayer ToTakaroPlayer(", StringComparison.Ordinal));
+        Assert.IsFalse(adapter.Contains("private bool TryResolvePlayer(", StringComparison.Ordinal));
+        Assert.IsFalse(adapter.Contains("private bool TryFindPlayerInfo(", StringComparison.Ordinal));
+        Assert.IsFalse(adapter.Contains("private bool TryFindPeer(", StringComparison.Ordinal));
+        Assert.IsFalse(adapter.Contains("PlayerMapper.TryFindUnique", StringComparison.Ordinal));
+        Assert.IsFalse(adapter.Contains("m_userInfo", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void PluginPlayerResolverResolvesExactConnectedPeerUidWithoutPayloadIdentity()
+    {
+        var resolverPath = ValheimPath("src/Takaro.Valheim.Plugin/ValheimPlayerResolver.cs");
+        Assert.IsTrue(File.Exists(resolverPath), "Missing authoritative Valheim player resolver.");
+
+        var resolver = File.ReadAllText(resolverPath);
+
+        StringAssert.Contains(resolver, "public bool TryResolveConnectedPeer(");
+        StringAssert.Contains(resolver, "long sender");
+        StringAssert.Contains(resolver, "out ZNetPeer? peer");
+        StringAssert.Contains(resolver, "out TakaroPlayer? player");
+        StringAssert.Contains(resolver, "candidate.m_uid == sender");
+        Assert.IsFalse(resolver.Contains("payload", StringComparison.OrdinalIgnoreCase));
     }
 
     [TestMethod]
@@ -197,6 +228,10 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(realAdapter, "private readonly CompanionInventoryCache companionInventory;");
         StringAssert.Contains(realAdapter, "CompanionInventoryCache companionInventory");
         StringAssert.Contains(realAdapter, "this.companionInventory = companionInventory");
+        StringAssert.Contains(realAdapter, "private readonly ValheimPlayerResolver playerResolver;");
+        StringAssert.Contains(realAdapter, "new ValheimPlayerResolver(logger)");
+        StringAssert.Contains(realAdapter, "ValheimPlayerResolver playerResolver");
+        StringAssert.Contains(realAdapter, "this.playerResolver = playerResolver");
     }
 
     [TestMethod]
@@ -238,7 +273,7 @@ public sealed class PluginScaffoldContractTests
         var shutdown = SliceMethod(
             adapter,
             "public Task<TakaroActionResult> ShutdownAsync",
-            "private TakaroPlayer ToTakaroPlayer");
+            "private static void SendHudMessage");
 
         StringAssert.Contains(shutdown, "requestShutdown()");
         Assert.IsFalse(shutdown.Contains("Task.Run", StringComparison.Ordinal));
