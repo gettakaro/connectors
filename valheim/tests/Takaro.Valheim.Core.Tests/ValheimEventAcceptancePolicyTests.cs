@@ -9,11 +9,35 @@ public sealed class ValheimEventAcceptancePolicyTests
     [DataTestMethod]
     [DataRow("chat-message")]
     [DataRow("player-death")]
+    [DataRow("entity-killed")]
     public void RejectsIdentityBearingEventsFromRoutedRpcPayloads(string eventType)
     {
         Assert.IsFalse(ValheimEventAcceptancePolicy.CanEmit(
             eventType,
             ValheimEventObservationSource.RoutedRpcPayload));
+    }
+
+    [DataTestMethod]
+    [DataRow("chat-message")]
+    [DataRow("player-death")]
+    [DataRow("entity-killed")]
+    public void AcceptsOwnedReportEventsFromClientCompanion(string eventType)
+    {
+        Assert.IsTrue(ValheimEventAcceptancePolicy.CanEmit(
+            eventType,
+            ValheimEventObservationSource.ClientCompanion));
+    }
+
+    [DataTestMethod]
+    [DataRow("log")]
+    [DataRow("player-connected")]
+    [DataRow("player-disconnected")]
+    [DataRow("unknown-event")]
+    public void RejectsOtherEventsFromClientCompanion(string eventType)
+    {
+        Assert.IsFalse(ValheimEventAcceptancePolicy.CanEmit(
+            eventType,
+            ValheimEventObservationSource.ClientCompanion));
     }
 
     [DataTestMethod]
