@@ -11,6 +11,7 @@ namespace Takaro.Valheim.Plugin;
 public sealed class CompanionServerBridge : IDisposable
 {
     private const int MaximumPendingEvents = 256;
+    private static readonly TimeSpan DefaultHandshakeGrace = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan DisconnectExplanationGrace = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan DisconnectFallbackGrace = TimeSpan.FromSeconds(1);
     private const CompanionCapability SupportedCapabilities =
@@ -61,7 +62,7 @@ public sealed class CompanionServerBridge : IDisposable
                 CompanionProtocol.MinimumVersion,
                 CompanionProtocol.CurrentVersion,
                 SupportedCapabilities,
-                TimeSpan.FromSeconds(10),
+                DefaultHandshakeGrace,
                 TimeSpan.FromSeconds(30)),
             new CompanionRateLimiter(
                 capacity: 20,

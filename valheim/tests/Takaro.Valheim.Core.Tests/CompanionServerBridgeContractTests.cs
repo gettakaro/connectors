@@ -9,6 +9,19 @@ namespace Takaro.Valheim.Core.Tests;
 public sealed class CompanionServerBridgeContractTests
 {
     [TestMethod]
+    public void DefaultHandshakeGraceAccommodatesSlowWorldLoads()
+    {
+        var bridge = ReadPluginSource("CompanionServerBridge.cs");
+
+        StringAssert.Contains(
+            bridge,
+            "DefaultHandshakeGrace = TimeSpan.FromSeconds(30)");
+        StringAssert.Contains(
+            bridge,
+            "DefaultHandshakeGrace,");
+    }
+
+    [TestMethod]
     public void ServerHelloUsesNegotiationEnvelopeVersionInsteadOfCurrentVersion()
     {
         var bridge = ReadPluginSource("CompanionServerBridge.cs");

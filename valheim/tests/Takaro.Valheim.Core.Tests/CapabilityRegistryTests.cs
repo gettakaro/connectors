@@ -95,20 +95,20 @@ public sealed class CapabilityRegistryTests
     }
 
     [TestMethod]
-    public void RegistryKeepsUnprovenClientOwnedAndServerEventPathsUnsupported()
+    public void RegistryPublishesLiveProvenClientOwnedPaths()
     {
         using var registry = ReadRegistry();
         var root = registry.RootElement;
 
-        Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
+        Assert.AreEqual("live-supported", root.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getMapInfo").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getMapTile").GetString());
         Assert.AreEqual("schema-fallback", root.GetProperty("actions").GetProperty("listLocations").GetString());
         Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("player-connected").GetString());
         Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("player-disconnected").GetString());
-        Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("chat-message").GetString());
-        Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("player-death").GetString());
-        Assert.AreEqual("unsupported", root.GetProperty("events").GetProperty("entity-killed").GetString());
+        Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("chat-message").GetString());
+        Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("player-death").GetString());
+        Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("entity-killed").GetString());
 
         var ownership = root.GetProperty("ownership");
         Assert.AreEqual(

@@ -5,7 +5,7 @@
     "getPlayers": "live-supported",
     "getPlayer": "unsupported",
     "getPlayerLocation": "live-supported",
-    "getPlayerInventory": "unsupported",
+    "getPlayerInventory": "live-supported",
     "giveItem": "live-supported",
     "sendMessage": "live-supported",
     "executeConsoleCommand": "live-supported",
@@ -25,9 +25,9 @@
     "log": "live-supported",
     "player-connected": "live-supported",
     "player-disconnected": "live-supported",
-    "chat-message": "unsupported",
-    "player-death": "unsupported",
-    "entity-killed": "unsupported"
+    "chat-message": "live-supported",
+    "player-death": "live-supported",
+    "entity-killed": "live-supported"
   },
   "ownership": {
     "actions": {
@@ -62,21 +62,21 @@
   },
   "notes": [
     "The connector and every Takaro token/cloud setting remain dedicated-server-only. The separately packaged owned graphical-client companion has no Takaro credentials or direct cloud transport.",
-    "The companion protocol, negotiation, chat, inventory, death, and attributed-kill paths are implemented and automated-tested but remain unsupported until exact live server/client/Takaro proof is recorded.",
+    "The companion protocol, required-mode enforcement, chat, inventory, death, and attributed-kill paths have exact live server/client/Takaro proof recorded in qa/2026-07-12-owned-companion-validation.md.",
     "Client-reported observations are untrusted gameplay claims. They may enrich automation but must not become authoritative identity, security, anti-cheat, or moderation evidence.",
     "In required mode, a missing, incompatible, or silent companion receives a visible explanation before delayed exact-peer disconnect. Version diagnostics include expected and actual protocol versions when available.",
-    "Live-supported records retain dedicated-server evidence through the artifact-pinned turn-6 run on 2026-07-10. Turn-7 review fixes require fresh branch verification and do not inherit turn-6 runtime proof.",
+    "Dedicated-server records retain their historical artifact-pinned evidence. Client-reported live-supported records use the owned-companion validation run completed on 2026-07-12.",
     "getPlayer is implemented by filtering the dedicated server player list, but its final Takaro response shape has not been independently live-proven, so it remains unsupported.",
     "getPlayerLocation uses only a real ready-peer/public observation or a fresh 30-second player-keyed last-known observation. If neither exists, a required-coordinate payload with error is rejected by current Takaro Generic.requestFromServer rather than returned as a position.",
-    "getPlayerInventory remains unsupported before live proof. With a compatible companion it is sourced from bounded, canonical client-reported snapshots; without one, the server still refuses to fabricate an empty inventory.",
+    "getPlayerInventory is live-supported with a compatible companion and is sourced from bounded, canonical client-reported snapshots; without one, the server still refuses to fabricate an empty inventory.",
     "giveItem creates server-owned world drops near the player's server-known position. These are collectible world objects, not a private inventory grant.",
     "teleportPlayer routes Valheim's built-in RPC_TeleportTo to the server-known character ZDO owner.",
-    "Inbound vanilla-client chat remains unsupported. The owned companion now has an implemented client-reported chat path, but its status stays unsupported until live proof replaces the older upstream limitation tracked by issue 69.",
+    "Inbound chat is live-supported through the owned negotiated companion. Ordinary chat and configured commands were each persisted once, and a real tplist module command completed successfully without duplicating player-originated input.",
     "Routed vanilla ChatMessage, Say, and OnDeath packets remain diagnostic-only. Implemented companion chat and death reports use the server-bound negotiated session and authoritative peer binding, while their gameplay contents remain untrusted client reports.",
     "Player lifecycle frames are derived from dedicated-server player snapshots. Turn-3 Takaro eventSearch persisted two player-connected and two player-disconnected events; transport logs still claim only that a frame was written, not persistence acknowledgement.",
     "listLocations is schema-fallback: turn 4 live-proved the official raw Generic Connector action/schema with 11293 nested server-owned locations in a 1815046-byte response, but Takaro 0c63cf1c Generic.listLocations throws NotImplementedError, so the standard Takaro route is unavailable pending upstream support.",
     "getMapInfo and getMapTile are part of the exhaustive Takaro 0c63cf1c action list but unsupported at the dedicated-server-only boundary because Valheim exposes neither client map metadata nor rendered map tiles there.",
     "Implementation exists for kickPlayer, banPlayer, unbanPlayer, and shutdown, but exact live support is unproven and approval-gated because destructive turn-6 checks were deliberately skipped. They remain unsupported until an approved disposable-server run proves the current artifact.",
-    "Entity-killed remains unsupported before live proof. The companion implementation patches local Character.OnDeath, requires m_lastHit attacker equality with the local player, excludes players, and suppresses duplicate callbacks."
+    "Entity-killed is live-supported through the owned companion. Exact Takaro proof persisted one Greyling kill attributed to the bound player with weapon Unarmed; the implementation still treats this as an untrusted client gameplay report."
   ]
 }

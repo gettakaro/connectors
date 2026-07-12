@@ -2,7 +2,7 @@
 
 The Takaro Valheim Companion is the owned graphical-client half of the Valheim connector. It reports client-owned gameplay observations to the dedicated-server plugin over a bounded Valheim routed-RPC protocol. It does not connect to Takaro directly.
 
-This implementation has automated and real-assembly build proof, but its client-reported action/event paths remain `unsupported` in `capabilities.json` until the exact packaged server and client artifacts are live-proven through Takaro.
+This implementation has automated, real-assembly, exact graphical-client, dedicated-server, and Takaro proof. Its client-reported inventory, chat, death, and attributed-kill paths are `live-supported` in `capabilities.json`; see [the owned-companion validation ledger](qa/2026-07-12-owned-companion-validation.md).
 
 ## Trust Boundary
 
@@ -68,7 +68,7 @@ If the server uses `companionMode=required`, removing only the client companion 
 
 - `disabled`: no companion RPC is registered and vanilla clients are unaffected.
 - `optional`: compatible companions can report client-owned state; missing or expired sessions are restarted without disconnecting the player.
-- `required`: a missing, incompatible, or silent companion is terminal for that connection. The server revokes its session immediately, shows a player-visible explanation, waits two seconds, sends Valheim's built-in `Kicked` RPC, and retains an exact-peer disconnect fallback.
+- `required`: a missing, incompatible, or silent companion is terminal for that connection. Initial negotiation allows 30 seconds so graphical clients can finish slow world loading. After an enforcement decision, the server revokes the session, shows a player-visible explanation, waits two seconds, sends Valheim's built-in `Kicked` RPC, and retains an exact-peer disconnect fallback.
 
 The default is `required`. A product patch version alone does not cause rejection. Protocol v1 currently negotiates chat, inventory, player-death, and entity-killed capabilities and uses a five-second heartbeat.
 
@@ -78,7 +78,7 @@ The default is `required`. A product patch version alone does not cause rejectio
 - An accepted configured command is reported once and suppressed from ordinary chat only after the server-bound send succeeds.
 - Inventory is polled every two seconds after negotiation; the initial confirmed snapshot, including an empty inventory, is sent and unchanged canonical snapshots are not resent.
 - Local player death is reported once per callback window.
-- Non-player entity death is reported only when the cached last hit resolves the local player as attacker. Missing weapon data is omitted.
+- Non-player entity death is reported only when the cached last hit resolves the local player as attacker. Weapon attribution uses the equipped weapon when available and a bounded skill or `Unarmed` fallback otherwise.
 
 All reports are bounded by the protocol schema and stop immediately when the RPC, world, server peer, or connection changes.
 
