@@ -125,6 +125,52 @@ public sealed class EventFactoryTests
     }
 
     [TestMethod]
+    public void CompanionPlayerDeathHintsNeverInventAnAttackerPlayer()
+    {
+        var timestamp = new DateTimeOffset(2026, 7, 11, 8, 3, 0, TimeSpan.Zero);
+
+        var json = TakaroProtocol.CreateGameEvent(
+            "player-death",
+            EventFactory.CompanionPlayerDeath(
+                Player("Steam_real", "Odin"),
+                timestamp,
+                new TakaroPosition(1, 2, 3, "valheim"),
+                "fall damage",
+                "Deathsquito"));
+        using var document = JsonDocument.Parse(json);
+        var data = document.RootElement.GetProperty("payload").GetProperty("data");
+
+        Assert.AreEqual("Steam_real", data.GetProperty("player").GetProperty("gameId").GetString());
+        StringAssert.Contains(data.GetProperty("msg").GetString(), "fall damage");
+        StringAssert.Contains(data.GetProperty("msg").GetString(), "Deathsquito");
+        Assert.IsFalse(data.TryGetProperty("attacker", out _));
+    }
+
+    [TestMethod]
+    public void EntityKilledUsesTakaroPayloadShape()
+    {
+        var timestamp = new DateTimeOffset(2026, 7, 11, 8, 4, 0, TimeSpan.Zero);
+
+        var json = TakaroProtocol.CreateGameEvent(
+            "entity-killed",
+            EventFactory.EntityKilled(
+                Player("Steam_real", "Odin"),
+                "Greydwarf",
+                timestamp,
+                "SwordIron"));
+        using var document = JsonDocument.Parse(json);
+        var data = document.RootElement.GetProperty("payload").GetProperty("data");
+
+        Assert.AreEqual("Steam_real", data.GetProperty("player").GetProperty("gameId").GetString());
+        Assert.AreEqual("Greydwarf", data.GetProperty("entity").GetString());
+        Assert.AreEqual("SwordIron", data.GetProperty("weapon").GetString());
+        Assert.AreEqual("2026-07-11T08:04:00+00:00", data.GetProperty("timestamp").GetString());
+        CollectionAssert.AreEquivalent(
+            new[] { "player", "entity", "weapon", "timestamp" },
+            data.EnumerateObject().Select(property => property.Name).ToArray());
+    }
+
+    [TestMethod]
     public void LogUsesTakaroPayloadShape()
     {
         var timestamp = new DateTimeOffset(2026, 6, 21, 8, 5, 0, TimeSpan.Zero);

@@ -20,6 +20,20 @@ public sealed class ReleaseVersionContractTests
         StringAssert.Contains(project, "<Version>$(TakaroValheimReleaseVersion)</Version>");
         StringAssert.Contains(project, "<PackageVersion>$(TakaroValheimReleaseVersion)</PackageVersion>");
         StringAssert.Contains(project, "TakaroBuildVersion.g.cs");
+
+        var companionEntrypoint = ReadValheimFile(
+            "src/Takaro.Valheim.Companion/ValheimCompanionPlugin.cs");
+        var companionProject = ReadValheimFile(
+            "src/Takaro.Valheim.Companion/Takaro.Valheim.Companion.csproj");
+        Assert.AreEqual(2, CountOccurrences(
+            companionEntrypoint,
+            "PluginVersion = TakaroCompanionBuildVersion.BepInExVersion"));
+        Assert.AreEqual(2, CountOccurrences(
+            companionEntrypoint,
+            "ProductVersion = TakaroCompanionBuildVersion.ProductVersion"));
+        StringAssert.Contains(companionProject, "TakaroValheimCompanionReleaseVersion");
+        StringAssert.Contains(companionProject, "TakaroValheimCompanionBepInExVersion");
+        StringAssert.Contains(companionProject, "TakaroCompanionBuildVersion.g.cs");
     }
 
     [TestMethod]
@@ -38,6 +52,8 @@ public sealed class ReleaseVersionContractTests
         StringAssert.Contains(release, "-p:FileVersion=\"$VALHEIM_ASSEMBLY_VERSION\"");
         StringAssert.Contains(release, "-p:InformationalVersion=\"$VALHEIM_RELEASE_VERSION\"");
         StringAssert.Contains(release, "-p:IncludeSourceRevisionInInformationalVersion=false");
+        StringAssert.Contains(release, "-p:TakaroValheimCompanionReleaseVersion=\"$VALHEIM_RELEASE_VERSION\"");
+        StringAssert.Contains(release, "-p:TakaroValheimCompanionBepInExVersion=\"$VALHEIM_BEPINEX_VERSION\"");
         StringAssert.Contains(release, "manifest.json");
         Assert.IsFalse(release.Contains("sed -i", StringComparison.Ordinal));
     }

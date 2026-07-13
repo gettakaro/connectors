@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Takaro.Valheim.Companion.Protocol;
 using Takaro.Valheim.Core;
 
 namespace Takaro.Valheim.Core.Tests;
@@ -28,6 +29,18 @@ public sealed class TakaroConsumerContractTests
         new("listBans", ConsumerPayloadShape.Array, "player", "reason"),
         new("testReachability", ConsumerPayloadShape.Object, "connectable"),
         new("shutdown", ConsumerPayloadShape.Unvalidated)
+    };
+
+    // Pinned from @takaro/modules 0.4.17 EventEntityKilled plus BaseEvent.
+    // This local mirror intentionally avoids a runtime dependency on node_modules.
+    private static readonly ConsumerEventContract[] PinnedEventValidationMap =
+    {
+        new(
+            "entity-killed",
+            new ConsumerEventProperty("player", JsonValueKind.Object),
+            new ConsumerEventProperty("entity", JsonValueKind.String),
+            new ConsumerEventProperty("weapon", JsonValueKind.String),
+            new ConsumerEventProperty("timestamp", JsonValueKind.String))
     };
 
     [TestMethod]
@@ -201,6 +214,125 @@ public sealed class TakaroConsumerContractTests
         Assert.IsNull(frame);
     }
 
+    [TestMethod]
+    public void CompanionProcessorOutputsMatchPinnedTakaroGameEventShapes()
+    {
+        const long peerId = 42;
+        const string nonce = "server-session";
+        var now = DateTimeOffset.Parse("2026-07-11T12:00:00+00:00");
+        var player = new TakaroPlayer("Steam_real", "Odin", "real", "steam:real", null, null);
+        var capabilities = CompanionCapability.Chat
+            | CompanionCapability.PlayerDeath
+            | CompanionCapability.EntityKilled;
+        var sessions = new CompanionSessionRegistry(
+            CompanionProtocol.CurrentVersion,
+            CompanionProtocol.CurrentVersion,
+            capabilities,
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromMinutes(1));
+        sessions.Begin(peerId, now, nonce);
+        Assert.AreEqual(
+            CompanionSessionDecision.Accept,
+            sessions.CompleteHelloAck(
+                peerId,
+                nonce,
+                CompanionProtocol.CurrentVersion,
+                "1.0.0",
+                capabilities,
+                sequence: 1,
+                now));
+        var processor = new CompanionReportProcessor(
+            sessions,
+            new CompanionRateLimiter(10, 1, TimeSpan.FromMinutes(1)),
+            new BoundedEventDeduplicator(10),
+            new CompanionInventoryCache());
+
+        var outputs = new[]
+        {
+            processor.Process(
+                peerId,
+                player,
+                ReportEnvelope(
+                    nonce,
+                    sequence: 2,
+                    CompanionMessageTypes.Chat,
+                    new CompanionChatReport("chat-1", now.ToUnixTimeMilliseconds(), "hello")),
+                now),
+            processor.Process(
+                peerId,
+                player,
+                ReportEnvelope(
+                    nonce,
+                    sequence: 3,
+                    CompanionMessageTypes.PlayerDeath,
+                    new CompanionPlayerDeathReport(
+                        "death-1",
+                        now.ToUnixTimeMilliseconds(),
+                        new CompanionPosition(1, 2, 3),
+                        null,
+                        null)),
+                now),
+            processor.Process(
+                peerId,
+                player,
+                ReportEnvelope(
+                    nonce,
+                    sequence: 4,
+                    CompanionMessageTypes.EntityKilled,
+                    new CompanionEntityKilledReport(
+                        "kill-1",
+                        now.ToUnixTimeMilliseconds(),
+                        new CompanionPosition(4, 5, 6),
+                        "Greydwarf",
+                        "SwordIron")),
+                now)
+        };
+
+        var events = outputs.Select(RequireAcceptedEvent).ToArray();
+        CollectionAssert.AreEqual(
+            new[] { "chat-message", "player-death", "entity-killed" },
+            events.Select(gameEvent => gameEvent.Type).ToArray());
+
+        using var chat = ParseGameEvent(events[0]);
+        AssertPropertySet(
+            chat.RootElement.GetProperty("payload").GetProperty("data"),
+            "channel", "msg", "player", "timestamp");
+        Assert.AreEqual(
+            "Steam_real",
+            chat.RootElement.GetProperty("payload").GetProperty("data").GetProperty("player").GetProperty("gameId").GetString());
+
+        using var death = ParseGameEvent(events[1]);
+        AssertPropertySet(
+            death.RootElement.GetProperty("payload").GetProperty("data"),
+            "player", "position", "timestamp");
+        Assert.IsFalse(
+            death.RootElement.GetProperty("payload").GetProperty("data").TryGetProperty("attacker", out _));
+
+        using var killed = ParseGameEvent(events[2]);
+        var killedData = killed.RootElement.GetProperty("payload").GetProperty("data");
+        AssertPropertySet(killedData, "entity", "player", "timestamp", "weapon");
+        Assert.IsTrue(PinnedTakaroEventValidationAccepts("entity-killed", killedData));
+        Assert.AreEqual("Steam_real", killedData.GetProperty("player").GetProperty("gameId").GetString());
+        Assert.AreEqual("Greydwarf", killedData.GetProperty("entity").GetString());
+        Assert.AreEqual("SwordIron", killedData.GetProperty("weapon").GetString());
+        Assert.AreEqual("2026-07-11T12:00:00+00:00", killedData.GetProperty("timestamp").GetString());
+    }
+
+    [TestMethod]
+    public void PinnedEntityKilledContractRejectsMissingWeaponAndPositionExtension()
+    {
+        using var valid = JsonDocument.Parse(
+            """{"player":{"gameId":"Steam_1","name":"Odin"},"entity":"Greydwarf","weapon":"SwordIron","timestamp":"2026-07-11T12:00:00+00:00"}""");
+        using var missingWeapon = JsonDocument.Parse(
+            """{"player":{"gameId":"Steam_1","name":"Odin"},"entity":"Greydwarf","timestamp":"2026-07-11T12:00:00+00:00"}""");
+        using var extraPosition = JsonDocument.Parse(
+            """{"player":{"gameId":"Steam_1","name":"Odin"},"entity":"Greydwarf","weapon":"SwordIron","timestamp":"2026-07-11T12:00:00+00:00","position":{"x":1,"y":2,"z":3}}""");
+
+        Assert.IsTrue(PinnedTakaroEventValidationAccepts("entity-killed", valid.RootElement));
+        Assert.IsFalse(PinnedTakaroEventValidationAccepts("entity-killed", missingWeapon.RootElement));
+        Assert.IsFalse(PinnedTakaroEventValidationAccepts("entity-killed", extraPosition.RootElement));
+    }
+
     [DataTestMethod]
     [DataRow("1001")]
     [DataRow("1.5")]
@@ -294,6 +426,37 @@ public sealed class TakaroConsumerContractTests
         return payload.Clone();
     }
 
+    private static CompanionEnvelope ReportEnvelope<T>(
+        string nonce,
+        long sequence,
+        string type,
+        T payload) =>
+        new(
+            CompanionProtocol.CurrentVersion,
+            nonce,
+            sequence,
+            $"message-{sequence}",
+            type,
+            JsonSerializer.SerializeToElement(
+                payload,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+
+    private static JsonDocument ParseGameEvent(CompanionAcceptedEvent gameEvent) =>
+        JsonDocument.Parse(TakaroProtocol.CreateGameEvent(gameEvent.Type, gameEvent.Data));
+
+    private static CompanionAcceptedEvent RequireAcceptedEvent(CompanionReportOutput? output)
+    {
+        Assert.IsInstanceOfType<CompanionAcceptedEvent>(output);
+        return (CompanionAcceptedEvent)output!;
+    }
+
+    private static void AssertPropertySet(JsonElement element, params string[] expected)
+    {
+        CollectionAssert.AreEquivalent(
+            expected,
+            element.EnumerateObject().Select(property => property.Name).ToArray());
+    }
+
     private static void AssertPinnedTakaroValidationAccepts(string action, JsonElement payload)
     {
         var contract = PinnedValidationMap.Single(candidate => candidate.Action == action);
@@ -351,6 +514,39 @@ public sealed class TakaroConsumerContractTests
         }
     }
 
+    private static bool PinnedTakaroEventValidationAccepts(string eventType, JsonElement data)
+    {
+        var contract = PinnedEventValidationMap.SingleOrDefault(candidate => candidate.EventType == eventType);
+        if (contract is null || data.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        var properties = data.EnumerateObject().ToArray();
+        if (properties.Length != contract.RequiredProperties.Length)
+        {
+            return false;
+        }
+
+        foreach (var required in contract.RequiredProperties)
+        {
+            if (!data.TryGetProperty(required.Name, out var value)
+                || value.ValueKind != required.Kind)
+            {
+                return false;
+            }
+        }
+
+        var player = data.GetProperty("player");
+        return player.TryGetProperty("gameId", out var gameId)
+            && gameId.ValueKind == JsonValueKind.String
+            && player.TryGetProperty("name", out var name)
+            && name.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(data.GetProperty("entity").GetString())
+            && !string.IsNullOrWhiteSpace(data.GetProperty("weapon").GetString())
+            && data.GetProperty("timestamp").TryGetDateTimeOffset(out _);
+    }
+
     private enum ConsumerPayloadShape
     {
         Unvalidated,
@@ -362,6 +558,12 @@ public sealed class TakaroConsumerContractTests
         string Action,
         ConsumerPayloadShape Shape,
         params string[] RequiredProperties);
+
+    private sealed record ConsumerEventProperty(string Name, JsonValueKind Kind);
+
+    private sealed record ConsumerEventContract(
+        string EventType,
+        params ConsumerEventProperty[] RequiredProperties);
 
     private sealed class NeverCalledAdapter : IValheimTakaroAdapter
     {

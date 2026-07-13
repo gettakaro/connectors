@@ -76,4 +76,91 @@ public sealed class ConfigTests
         CollectionAssert.AreEqual(new[] { "help", "players" }, config.CommandAllowlistExact.ToArray());
         CollectionAssert.AreEqual(new[] { "say", "broadcast" }, config.CommandAllowlistPrefixes.ToArray());
     }
+
+    [TestMethod]
+    public void FromDictionaryAppliesExactCompanionDefaults()
+    {
+        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
+        {
+            ["registrationToken"] = "reg-123",
+            ["serverName"] = "Meadows"
+        });
+
+        Assert.AreEqual("Required", ReadCompanionMode(config));
+    }
+
+    [DataTestMethod]
+    [DataRow("disabled", "Disabled")]
+    [DataRow("oPtIoNaL", "Optional")]
+    [DataRow("REQUIRED", "Required")]
+    public void FromDictionaryParsesEveryCompanionModeCaseInsensitively(
+        string configuredValue,
+        string expectedMode)
+    {
+        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
+        {
+            ["registrationToken"] = "reg-123",
+            ["serverName"] = "Meadows",
+            ["companionMode"] = configuredValue
+        });
+
+        Assert.AreEqual(expectedMode, ReadCompanionMode(config));
+    }
+
+    [TestMethod]
+    public void FromDictionaryTrimsCompanionModeWhitespace()
+    {
+        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
+        {
+            ["registrationToken"] = "reg-123",
+            ["serverName"] = "Meadows",
+            ["companionMode"] = "  optional  "
+        });
+
+        Assert.AreEqual("Optional", ReadCompanionMode(config));
+    }
+
+    [TestMethod]
+    public void FromDictionaryDefaultsBlankOrNullCompanionMode()
+    {
+        foreach (var value in new string?[] { "", "   ", null })
+        {
+            var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
+            {
+                ["registrationToken"] = "reg-123",
+                ["serverName"] = "Meadows",
+                ["companionMode"] = value!
+            });
+
+            Assert.AreEqual("Required", ReadCompanionMode(config));
+        }
+    }
+
+    [DataTestMethod]
+    [DataRow("enabled")]
+    [DataRow("1")]
+    [DataRow("optional|required")]
+    public void TryFromDictionaryRejectsEveryOtherNonblankCompanionMode(string configuredValue)
+    {
+        var ok = ConnectorConfig.TryFromDictionary(new Dictionary<string, string>
+        {
+            ["registrationToken"] = "reg-123",
+            ["serverName"] = "Meadows",
+            ["companionMode"] = configuredValue
+        }, out var config, out var error);
+
+        Assert.IsFalse(ok);
+        Assert.IsNull(config);
+        StringAssert.Contains(error, "companionMode");
+    }
+
+    private static string ReadCompanionMode(ConnectorConfig config)
+    {
+        var property = typeof(ConnectorConfig).GetProperty("CompanionMode")
+            ?? throw new AssertFailedException("ConnectorConfig is missing CompanionMode.");
+
+        return property.GetValue(config)?.ToString()
+            ?? throw new AssertFailedException("ConnectorConfig.CompanionMode is null.");
+    }
+
 }
