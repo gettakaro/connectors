@@ -231,6 +231,28 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(readme, "server plugin still refuses graphical-client processes");
     }
 
+    [TestMethod]
+    public void ServerMessageDocumentationRequiresAuthenticatedNormalChatRendering()
+    {
+        var companion = ReadValheimFile("COMPANION.md");
+        var readme = ReadValheimFile("README.md");
+        using var registry = ReadRegistry();
+        var notes = registry.RootElement.GetProperty("notes")
+            .EnumerateArray()
+            .Select(note => note.GetString() ?? string.Empty)
+            .ToArray();
+
+        StringAssert.Contains(readme, "normal Valheim chat history");
+        StringAssert.Contains(readme, "active negotiated companion");
+        StringAssert.Contains(companion, "server-chat");
+        StringAssert.Contains(companion, "normal chat history");
+        StringAssert.Contains(companion, "never rendered through the HUD overlay APIs");
+        Assert.IsTrue(notes.Any(note =>
+            note.Contains("sendMessage", StringComparison.Ordinal)
+            && note.Contains("normal chat", StringComparison.OrdinalIgnoreCase)
+            && note.Contains("negotiated companion", StringComparison.OrdinalIgnoreCase)));
+    }
+
     private static JsonDocument ReadRegistry()
     {
         return JsonDocument.Parse(ReadValheimFile("capabilities.json"));

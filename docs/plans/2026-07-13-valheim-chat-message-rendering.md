@@ -114,7 +114,7 @@ Require `CompanionCapability.ServerChat`, a call to `state.TryAcceptServerChat`,
 
 ```csharp
 Chat.instance.AddString(chat.Sender, chat.Message, Talker.Type.Normal);
-Chat.instance.m_hideTimer = 0f;
+AccessTools.Field(typeof(Chat), "m_hideTimer")?.SetValue(Chat.instance, 0f);
 ```
 
 Reject `MessageHud`, `ShowMessage`, and client-side rebroadcast through `Chat.SendText` in the server-chat handler.

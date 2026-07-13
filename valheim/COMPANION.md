@@ -8,6 +8,8 @@ This implementation has automated, real-assembly, exact graphical-client, dedica
 
 No Takaro token, identity token, WebSocket URL, or other cloud credential belongs in the companion. The server registrationToken stays on the dedicated server. The companion accepts a session only from the current connected server peer and sends every report back to that exact nonzero peer; it never uses Valheim's target-zero broadcast path.
 
+The reverse `server-chat` message is accepted only from that same authenticated server peer, current session nonce, negotiated protocol version, and increasing server sequence. The companion writes it to Valheim's normal chat history and makes the chat window visible; server messages are never rendered through the HUD overlay APIs.
+
 Inventory, chat, death, and kill contents are client-reported and therefore untrusted. They can enrich normal community automation, but must not be treated as authoritative identity, anti-cheat, security, economy, or moderation evidence. The dedicated-server plugin binds every accepted report to the actual connected peer instead of trusting a player identity supplied by the client.
 
 ## Packages and Process Roles
@@ -70,11 +72,12 @@ If the server uses `companionMode=required`, removing only the client companion 
 - `optional`: compatible companions can report client-owned state; missing or expired sessions are restarted without disconnecting the player.
 - `required`: a missing, incompatible, or silent companion is terminal for that connection. Initial negotiation allows 30 seconds so graphical clients can finish slow world loading. After an enforcement decision, the server revokes the session, shows a player-visible explanation, waits two seconds, sends Valheim's built-in `Kicked` RPC, and retains an exact-peer disconnect fallback.
 
-The default is `required`. A product patch version alone does not cause rejection. Protocol v1 currently negotiates chat, inventory, player-death, and entity-killed capabilities and uses a five-second heartbeat.
+The default is `required`. A product patch version alone does not cause rejection. Protocol v1 currently negotiates chat, inventory, player-death, entity-killed, and server-chat capabilities and uses a five-second heartbeat.
 
 ## Report Behavior
 
 - Ordinary local chat follows normal Valheim behavior and is reported once afterward.
+- Authenticated server-chat messages are added to the normal chat history as `Takaro` and are not re-emitted as player-originated inbound chat.
 - An accepted configured command is reported once and suppressed from ordinary chat only after the server-bound send succeeds.
 - Inventory is polled every two seconds after negotiation; the initial confirmed snapshot, including an empty inventory, is sent and unchanged canonical snapshots are not resent.
 - Local player death is reported once per callback window.
