@@ -95,16 +95,42 @@ public sealed class ValheimPlayerResolver
                 GetPeerCandidates(),
                 sender,
                 out var resolved)
-            && resolved is not null)
+            && resolved is not null
+            && TryFindPlayerInfoForPeer(resolved.Source, out var playerInfo))
         {
             peer = resolved.Source;
-            player = resolved.Player;
+            player = ToTakaroPlayer(playerInfo);
             return true;
         }
 
         peer = null;
         player = null;
         return false;
+    }
+
+    private bool TryFindPlayerInfoForPeer(
+        ZNetPeer peer,
+        out ZNet.PlayerInfo playerInfo)
+    {
+        var matches = (ZNet.instance?.GetPlayerList() ?? [])
+            .Select(candidate => new
+            {
+                Source = candidate,
+                Player = ToTakaroPlayer(candidate)
+            })
+            .Where(candidate =>
+                TryFindPeer(candidate.Source, candidate.Player, out var resolvedPeer)
+                && ReferenceEquals(resolvedPeer, peer))
+            .Take(2)
+            .ToArray();
+        if (matches.Length != 1)
+        {
+            playerInfo = default;
+            return false;
+        }
+
+        playerInfo = matches[0].Source;
+        return true;
     }
 
     private bool TryFindPlayerInfo(

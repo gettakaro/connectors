@@ -11,7 +11,7 @@ The Takaro-owned graphical-client companion is live-proven with the dedicated-se
 - Player: `Hehe`, gameId `Steam_76561198000735875`, Takaro player id `0515d777-8dc2-48b1-b035-b40dacd762c5`.
 - Client companion DLL SHA-256: `d51c556d9cffa114bc04f0fa68aebf4a091d974aeddb6194ef77f5d9247704c6`.
 - Client protocol DLL SHA-256: `9d116aa85a41b342b13e4bbf9437e0fc368786d54895736640ee3629ca3319d2`.
-- Final slow-load-fix server DLL SHA-256: `0f8cc978bf3af725adb8ab081b4e52d7661e0caf323ab07138c0db25816931bf`.
+- Final authoritative-player-fix server DLL SHA-256: `f53fdec52696f65c4f166ef1ad1f4423529c939f6530909e25f6012983246a7c`.
 - Product version: `2.0.0-rc.1+verify`; negotiated protocol: `1`.
 
 The server connector was the only Takaro/cloud component on the dedicated server. The companion contained no Takaro credentials or direct cloud transport. A temporary QA-only server fixture spawned one disposable Greyling for the combat check; it was removed before the final clean server restart and was never part of either release artifact.
@@ -22,6 +22,7 @@ The server connector was the only Takaro/cloud component on the dedicated server
 - A test-only companion advertising protocol `2` against the server's protocol `1` received `IncompatibleProtocol`, including expected `1` and actual `2`, followed by the same bounded disconnect flow.
 - The exact compatible companion negotiated protocol `1`, refreshed its five-second heartbeat, stayed connected beyond heartbeat expiry, and renegotiated on reconnect and server restart without stale-session reuse.
 - Live testing exposed a real slow-load race: the original ten-second handshake deadline elapsed while the graphical client was still generating and unpacking its world. A regression test now pins the production handshake window at 30 seconds. The reproduced 17-second load then negotiated successfully, returned inventory, and was not kicked.
+- A final live reconnect proved that companion reports resolve through the authoritative Valheim player list: Takaro kept `Steam_76561198000735875` online while the historical socket-derived `-1091506454` record remained offline. The same session negotiated protocol 1 and returned `getPlayerInventory` successfully.
 
 ## Takaro Action and Event Proof
 
