@@ -44,7 +44,8 @@ The client folder must contain the companion and protocol DLLs shipped together 
 1. Stop the dedicated server and exit every Valheim client.
 2. Replace the complete `TakaroValheim` server plugin folder from the new server ZIP.
 3. Replace the complete `TakaroValheimCompanion` client plugin folder from the matching client ZIP on each participating client.
-4. Keep existing BepInEx config files, review release notes for protocol/config changes, then start the server and clients.
+4. Delete `BepInEx/cache/chainloader_typeloader.dat` on each upgraded server or client before restarting. The release archives use deterministic timestamps, so clearing this generated cache prevents BepInEx from retaining metadata for a previous same-size DLL.
+5. Keep existing BepInEx config files, review release notes for protocol/config changes, then start the server and clients.
 
 Server and client product patch versions may differ when their wire protocol overlaps. Protocol compatibility—not an exact product-version string match—controls negotiation. Upgrade the companion when a required-mode message shows incompatible expected and actual protocol versions.
 
