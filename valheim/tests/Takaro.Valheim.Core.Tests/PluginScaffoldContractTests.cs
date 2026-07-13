@@ -301,13 +301,16 @@ public sealed class PluginScaffoldContractTests
             "public Task<TakaroActionResult> ExecuteConsoleCommandAsync");
         var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
 
-        StringAssert.Contains(source, "Func<ZNetPeer, string, bool> sendCompanionChat");
-        StringAssert.Contains(send, "sendCompanionChat(peer, message)");
+        StringAssert.Contains(source, "Func<ZNetPeer, string, string, bool> sendCompanionChat");
+        StringAssert.Contains(send, "var sender = string.IsNullOrWhiteSpace(senderNameOverride)");
+        StringAssert.Contains(send, "? \"Takaro\"");
+        StringAssert.Contains(send, ": senderNameOverride!.Trim()");
+        StringAssert.Contains(send, "sendCompanionChat(peer, sender, message)");
         StringAssert.Contains(send, "companion_server_chat_unavailable");
         StringAssert.Contains(send, "skipped");
         StringAssert.Contains(
             entrypoint,
-            "(peer, message) => companionBridge?.TrySendServerChat(peer, message) == true");
+            "(peer, sender, message) => companionBridge?.TrySendServerChat(peer, sender, message) == true");
         Assert.IsFalse(send.Contains("SendHudMessage", StringComparison.Ordinal));
         Assert.IsFalse(send.Contains("MessageHud", StringComparison.Ordinal));
         Assert.IsFalse(send.Contains("ShowMessage", StringComparison.Ordinal));

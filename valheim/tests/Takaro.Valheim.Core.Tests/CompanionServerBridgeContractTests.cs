@@ -84,7 +84,15 @@ public sealed class CompanionServerBridgeContractTests
         StringAssert.Contains(send, "snapshot.SelectedProtocolVersion.Value");
         StringAssert.Contains(send, "snapshot.Nonce");
         StringAssert.Contains(send, "CompanionMessageTypes.ServerChat");
-        StringAssert.Contains(send, "new CompanionServerChatMessage(\"Takaro\", message)");
+        StringAssert.Contains(
+            send,
+            "public bool TrySendServerChat(ZNetPeer peer, string sender, string message)");
+        StringAssert.Contains(send, "string.IsNullOrWhiteSpace(sender)");
+        StringAssert.Contains(send, "new CompanionServerChatMessage(sender, message)");
+        Assert.IsFalse(
+            send.Contains(
+                "new CompanionServerChatMessage(\"Takaro\", message)",
+                StringComparison.Ordinal));
         StringAssert.Contains(send, "routedRpc.InvokeRoutedRPC(");
         StringAssert.Contains(send, "peer.m_uid");
         StringAssert.Contains(send, "tracked.NextServerSequence++");

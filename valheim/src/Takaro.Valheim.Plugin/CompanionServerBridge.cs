@@ -565,11 +565,12 @@ public sealed class CompanionServerBridge : IDisposable
         }
     }
 
-    public bool TrySendServerChat(ZNetPeer peer, string message)
+    public bool TrySendServerChat(ZNetPeer peer, string sender, string message)
     {
         var routedRpc = registeredRpc;
         if (disposed
             || peer is null
+            || string.IsNullOrWhiteSpace(sender)
             || string.IsNullOrWhiteSpace(message)
             || routedRpc is null
             || !ReferenceEquals(ZRoutedRpc.instance, routedRpc)
@@ -594,7 +595,7 @@ public sealed class CompanionServerBridge : IDisposable
                 sequence,
                 $"server-chat-{sequence}",
                 CompanionMessageTypes.ServerChat,
-                new CompanionServerChatMessage("Takaro", message));
+                new CompanionServerChatMessage(sender, message));
             routedRpc.InvokeRoutedRPC(
                 peer.m_uid,
                 CompanionProtocol.RpcName,

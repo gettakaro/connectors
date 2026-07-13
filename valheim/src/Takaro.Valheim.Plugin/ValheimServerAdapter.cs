@@ -14,7 +14,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     private readonly CompanionInventoryCache companionInventory;
     private readonly CompanionMode companionMode;
     private readonly ValheimPlayerResolver playerResolver;
-    private readonly Func<ZNetPeer, string, bool> sendCompanionChat;
+    private readonly Func<ZNetPeer, string, string, bool> sendCompanionChat;
     private readonly PlayerPositionCache playerPositions = new(TimeSpan.FromSeconds(30));
     private readonly Dictionary<string, HashSet<string>> banAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> banNames = new(StringComparer.OrdinalIgnoreCase);
@@ -52,7 +52,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         Action requestShutdown,
         CompanionInventoryCache companionInventory,
         ValheimPlayerResolver playerResolver,
-        Func<ZNetPeer, string, bool>? sendCompanionChat = null)
+        Func<ZNetPeer, string, string, bool>? sendCompanionChat = null)
     {
         this.logger = logger;
         commandPolicy = new ConsoleCommandPolicy(config.CommandAllowlistExact, config.CommandAllowlistPrefixes);
@@ -60,7 +60,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         this.companionInventory = companionInventory ?? throw new ArgumentNullException(nameof(companionInventory));
         companionMode = config.CompanionMode;
         this.playerResolver = playerResolver ?? throw new ArgumentNullException(nameof(playerResolver));
-        this.sendCompanionChat = sendCompanionChat ?? ((_, _) => false);
+        this.sendCompanionChat = sendCompanionChat ?? ((_, _, _) => false);
     }
 
     public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
@@ -235,6 +235,10 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, string? senderNameOverride, CancellationToken cancellationToken = default)
     {
+        var sender = string.IsNullOrWhiteSpace(senderNameOverride)
+            ? "Takaro"
+            : senderNameOverride!.Trim();
+
         if (!string.IsNullOrWhiteSpace(recipientIdentifier))
         {
             if (!playerResolver.TryResolvePlayer(recipientIdentifier!, out _, out var peer, out var recipient) || peer is null || recipient is null)
@@ -242,7 +246,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
                 return Task.FromResult(TakaroActionResult.Error("player_not_found", $"Valheim player '{recipientIdentifier}' is not online."));
             }
 
-            if (!sendCompanionChat(peer, message))
+            if (!sendCompanionChat(peer, sender, message))
             {
                 return Task.FromResult(TakaroActionResult.Error(
                     "companion_server_chat_unavailable",
@@ -262,7 +266,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
                 continue;
             }
 
-            if (sendCompanionChat(peer, message))
+            if (sendCompanionChat(peer, sender, message))
             {
                 sent++;
             }
