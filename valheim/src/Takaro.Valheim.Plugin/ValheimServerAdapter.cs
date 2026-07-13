@@ -233,7 +233,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         }));
     }
 
-    public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, CancellationToken cancellationToken = default)
+    public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, string? senderNameOverride, CancellationToken cancellationToken = default)
     {
         if (!string.IsNullOrWhiteSpace(recipientIdentifier))
         {
@@ -802,7 +802,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default) =>
         Task.FromResult(TakaroActionResult.Error("scaffold_mode", "Build with Valheim references to enable item giving."));
 
-    public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, CancellationToken cancellationToken = default) =>
+    public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, string? senderNameOverride, CancellationToken cancellationToken = default) =>
         Task.FromResult(TakaroActionResult.Error("scaffold_mode", "Build with Valheim references to enable server messaging."));
 
     public Task<TakaroActionResult> ExecuteConsoleCommandAsync(string command, CancellationToken cancellationToken = default) =>

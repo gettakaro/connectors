@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Takaro.Valheim.Companion.Protocol;
 using Takaro.Valheim.Core;
 
 namespace Takaro.Valheim.Core.Tests;
@@ -19,7 +20,7 @@ public sealed class RequestDispatcherTests
         await dispatcher.DispatchAsync(new TakaroRequest("4", "shutdown", JsonDocument.Parse("""{}""").RootElement));
 
         CollectionAssert.AreEqual(
-            new[] { "message:hello:<global>", "command:players", "kick:Steam_1:spam", "shutdown" },
+            new[] { "message:hello:<global>:<sender>", "command:players", "kick:Steam_1:spam", "shutdown" },
             adapter.Calls);
     }
 
@@ -78,7 +79,84 @@ public sealed class RequestDispatcherTests
             JsonDocument.Parse("""{"message":"Welcome","opts":{"recipient":{"gameId":"Steam_1"}}}""").RootElement));
 
         CollectionAssert.AreEqual(
-            new[] { "message:Welcome:Steam_1" },
+            new[] { "message:Welcome:Steam_1:<sender>" },
+            adapter.Calls);
+    }
+
+    [TestMethod]
+    public async Task DispatchesTrimmedSenderNameOverridePerMessage()
+    {
+        var adapter = new FakeAdapter();
+        var dispatcher = new TakaroRequestDispatcher(adapter);
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest(
+            "sender",
+            "sendMessage",
+            JsonDocument.Parse(
+                """{"message":"Hello","opts":{"senderNameOverride":"  con  "}}""")
+                .RootElement));
+
+        Assert.IsTrue(response.Success);
+        CollectionAssert.AreEqual(
+            new[] { "message:Hello:<global>:con" },
+            adapter.Calls);
+    }
+
+    [TestMethod]
+    public async Task RejectsOversizedSenderNameOverrideBeforeCallingAdapter()
+    {
+        var adapter = new FakeAdapter();
+        var dispatcher = new TakaroRequestDispatcher(adapter);
+        var sender = new string('s', CompanionProtocol.MaximumCodeCharacters + 1);
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest(
+            "sender-too-long",
+            "sendMessage",
+            JsonSerializer.SerializeToElement(new
+            {
+                message = "Hello",
+                opts = new { senderNameOverride = sender }
+            })));
+
+        Assert.IsFalse(response.Success);
+        Assert.AreEqual("invalid_args", response.ErrorCode);
+        Assert.AreEqual(0, adapter.Calls.Count);
+    }
+
+    [TestMethod]
+    public async Task RejectsNonStringSenderNameOverrideBeforeCallingAdapter()
+    {
+        var adapter = new FakeAdapter();
+        var dispatcher = new TakaroRequestDispatcher(adapter);
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest(
+            "sender-wrong-type",
+            "sendMessage",
+            JsonDocument.Parse(
+                """{"message":"Hello","opts":{"senderNameOverride":42}}""")
+                .RootElement));
+
+        Assert.IsFalse(response.Success);
+        Assert.AreEqual("invalid_args", response.ErrorCode);
+        Assert.AreEqual(0, adapter.Calls.Count);
+    }
+
+    [TestMethod]
+    public async Task TreatsWhitespaceSenderNameOverrideAsMissing()
+    {
+        var adapter = new FakeAdapter();
+        var dispatcher = new TakaroRequestDispatcher(adapter);
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest(
+            "sender-blank",
+            "sendMessage",
+            JsonDocument.Parse(
+                """{"message":"Hello","opts":{"senderNameOverride":"   "}}""")
+                .RootElement));
+
+        Assert.IsTrue(response.Success);
+        CollectionAssert.AreEqual(
+            new[] { "message:Hello:<global>:<sender>" },
             adapter.Calls);
     }
 
@@ -358,9 +436,9 @@ public sealed class RequestDispatcherTests
         public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default) =>
             RecordCall($"give:{identifier}:{itemCode}:{amount}:{quality ?? "<quality>"}", Task.FromResult(TakaroActionResult.Ok(new { queued = true })));
 
-        public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, CancellationToken cancellationToken = default)
+        public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, string? senderNameOverride, CancellationToken cancellationToken = default)
         {
-            Calls.Add($"message:{message}:{recipientIdentifier ?? "<global>"}");
+            Calls.Add($"message:{message}:{recipientIdentifier ?? "<global>"}:{senderNameOverride ?? "<sender>"}");
             return Task.FromResult(TakaroActionResult.Ok(new { sent = true }));
         }
 
