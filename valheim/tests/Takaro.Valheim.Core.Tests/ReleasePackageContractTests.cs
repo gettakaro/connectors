@@ -64,6 +64,22 @@ public sealed class ReleasePackageContractTests
         StringAssert.Contains(workflow, "release-package-behavior.sh");
     }
 
+    [TestMethod]
+    public void TestWorkflowInstallsReleaseHarnessDependencies()
+    {
+        var workflow = ReadRepositoryFile(".github/workflows/valheim.yml");
+        var testJobStart = workflow.IndexOf("  test:\n", StringComparison.Ordinal);
+        var packageJobStart = workflow.IndexOf("  package:\n", StringComparison.Ordinal);
+
+        Assert.IsTrue(testJobStart >= 0, "Valheim workflow is missing the test job.");
+        Assert.IsTrue(
+            packageJobStart > testJobStart,
+            "Valheim workflow is missing the package job after the test job.");
+
+        var testJob = workflow[testJobStart..packageJobStart];
+        StringAssert.Contains(testJob, "sudo apt-get install -y ripgrep");
+    }
+
     private static TemporaryDirectory CreateFixture(string? mutation = null)
     {
         var fixture = new TemporaryDirectory();
