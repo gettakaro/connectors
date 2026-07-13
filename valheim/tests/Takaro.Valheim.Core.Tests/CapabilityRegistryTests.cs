@@ -236,6 +236,7 @@ public sealed class CapabilityRegistryTests
     {
         var companion = ReadValheimFile("COMPANION.md");
         var readme = ReadValheimFile("README.md");
+        var combined = readme + "\n" + companion;
         using var registry = ReadRegistry();
         var notes = registry.RootElement.GetProperty("notes")
             .EnumerateArray()
@@ -247,6 +248,10 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(companion, "server-chat");
         StringAssert.Contains(companion, "normal chat history");
         StringAssert.Contains(companion, "never rendered through the HUD overlay APIs");
+        StringAssert.Contains(combined, "opts.senderNameOverride");
+        StringAssert.Contains(combined, "dynamic per message");
+        StringAssert.Contains(combined, "missing or blank");
+        StringAssert.Contains(combined, "`Takaro`");
         Assert.IsTrue(notes.Any(note =>
             note.Contains("sendMessage", StringComparison.Ordinal)
             && note.Contains("normal chat", StringComparison.OrdinalIgnoreCase)

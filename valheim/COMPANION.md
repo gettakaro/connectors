@@ -8,7 +8,7 @@ This implementation has automated, real-assembly, exact graphical-client, dedica
 
 No Takaro token, identity token, WebSocket URL, or other cloud credential belongs in the companion. The server registrationToken stays on the dedicated server. The companion accepts a session only from the current connected server peer and sends every report back to that exact nonzero peer; it never uses Valheim's target-zero broadcast path.
 
-The reverse `server-chat` message is accepted only from that same authenticated server peer, current session nonce, negotiated protocol version, and increasing server sequence. The companion writes it to Valheim's normal chat history and makes the chat window visible; server messages are never rendered through the HUD overlay APIs.
+The reverse `server-chat` message is accepted only from that same authenticated server peer, current session nonce, negotiated protocol version, and increasing server sequence. The companion writes it to Valheim's normal chat history and makes the chat window visible; server messages are never rendered through the HUD overlay APIs. Takaro's `opts.senderNameOverride` is dynamic per message, and a missing or blank value displays as `Takaro`.
 
 Inventory, chat, death, and kill contents are client-reported and therefore untrusted. They can enrich normal community automation, but must not be treated as authoritative identity, anti-cheat, security, economy, or moderation evidence. The dedicated-server plugin binds every accepted report to the actual connected peer instead of trusting a player identity supplied by the client.
 
@@ -78,7 +78,7 @@ The default is `required`. A product patch version alone does not cause rejectio
 ## Report Behavior
 
 - Ordinary local chat follows normal Valheim behavior and is reported once afterward.
-- Authenticated server-chat messages are added to the normal chat history as `Takaro` and are not re-emitted as player-originated inbound chat.
+- Authenticated server-chat messages are added to the normal chat history under that request's bounded sender override, or `Takaro` when missing, and are not re-emitted as player-originated inbound chat.
 - An accepted configured command is reported once and suppressed from ordinary chat only after the server-bound send succeeds.
 - Inventory is polled every two seconds after negotiation; the initial confirmed snapshot, including an empty inventory, is sent and unchanged canonical snapshots are not resent.
 - Local player death is reported once per callback window.

@@ -74,7 +74,7 @@ Ownership values are `server-owned`, `client-reported`, `upstream-blocked`, or `
 | `getPlayerLocation` | `live-supported` | Uses only a real peer/public position or a fresh 30-second server-observed last-known position; an unavailable lookup is rejected through a schema-valid payload error. |
 | `getPlayerInventory` | `live-supported` | A negotiated companion provides bounded canonical client-reported snapshots, including a confirmed empty inventory. Exact live proof observed repeated successful Takaro polls and a Wood change from 13 to 14; without a companion the server never fabricates `[]`. |
 | `giveItem` | `live-supported` | Creates stack-split world drops near the player's server-known position. |
-| `sendMessage` | `unsupported` | Routes only through an active negotiated companion into the normal Valheim chat history. The authenticated chat-only implementation is complete, but this changed path remains unsupported until exact live client/server/Takaro proof is recorded. |
+| `sendMessage` | `unsupported` | Routes only through an active negotiated companion into the normal Valheim chat history. Takaro's `opts.senderNameOverride` is dynamic per message; a missing or blank value displays as `Takaro`. The authenticated chat-only implementation is complete, but this changed path remains unsupported until exact live client/server/Takaro proof is recorded. |
 | `executeConsoleCommand` | `live-supported` | Runs only exact or prefix-allowlisted commands. |
 | `listItems` | `live-supported` | Lists item prefabs visible to the server. |
 | `listEntities` | `live-supported` | Lists non-player character prefabs visible to the server. |
@@ -113,7 +113,7 @@ Other failure-capable actions return immediately. At Takaro source commit `0c63c
 
 The connector distinguishes a confirmed empty collection from an unavailable Valheim runtime source. `getPlayers`, `listItems`, `listEntities`, `listLocations`, and `listBans` return `[]` only when their required server singleton and collection exist. During world startup or reload, `runtime_unavailable` is suppressed for these array DTOs and lifecycle polling preserves its prior snapshot instead of fabricating an empty server or a false disconnect. A missing `getPlayer` match returns an immediate `player_not_found` payload error.
 
-Outbound `sendMessage` delivery requires an active negotiated companion and is rendered into the normal Valheim chat history. It never falls back to the HUD overlay APIs, so a missing or incompatible companion produces an immediate `companion_server_chat_unavailable` error. Item-drop confirmations remain separate player-visible HUD notifications and are not treated as inbound chat.
+Outbound `sendMessage` delivery requires an active negotiated companion and is rendered into the normal Valheim chat history. Each request may supply Takaro's `opts.senderNameOverride`; the trimmed value is used for that message, while a missing or blank value displays as `Takaro`. It never falls back to the HUD overlay APIs, so a missing or incompatible companion produces an immediate `companion_server_chat_unavailable` error. Item-drop confirmations remain separate player-visible HUD notifications and are not treated as inbound chat.
 
 ## Evidence Boundary
 
