@@ -249,6 +249,45 @@ public sealed class CompanionClientStateTests
             out _));
     }
 
+    [TestMethod]
+    public void ClientAcceptsOnlyCurrentMonotonicServerChat()
+    {
+        var state = CreateState();
+        var chat = ServerChat("nonce-a", sequence: 2, "Hello");
+
+        Assert.IsFalse(state.TryAcceptServerChat(chat, out _), "Pre-negotiation chat must be rejected.");
+        _ = PrepareAndConfirm(state, "nonce-a");
+
+        Assert.IsTrue(state.TryAcceptServerChat(chat, out var accepted));
+        Assert.IsNotNull(accepted);
+        Assert.AreEqual("Takaro", accepted.Sender);
+        Assert.AreEqual("Hello", accepted.Message);
+        Assert.IsFalse(state.TryAcceptServerChat(chat, out _), "A replayed sequence must be rejected.");
+        Assert.IsFalse(state.TryAcceptServerChat(ServerChat("wrong", 3, "Wrong nonce"), out _));
+        Assert.IsFalse(state.TryAcceptServerChat(ServerChat("nonce-a", 3, "Wrong version") with
+        {
+            ProtocolVersion = CompanionProtocol.CurrentVersion + 1
+        }, out _));
+        Assert.IsTrue(state.TryAcceptServerChat(ServerChat("nonce-a", 3, "Next"), out _));
+
+        state.Reset();
+        Assert.IsFalse(state.TryAcceptServerChat(ServerChat("nonce-a", 4, "Retired"), out _));
+    }
+
+    [TestMethod]
+    public void ClientRejectsServerChatWithoutNegotiatedCapability()
+    {
+        var state = CreateState();
+        Assert.IsTrue(state.TryPrepareHelloAck(
+            Hello("nonce-a", capabilities: CompanionCapability.Chat),
+            "1.2.3",
+            out var prepared));
+        Assert.IsNotNull(prepared);
+        Assert.IsTrue(state.ConfirmHelloAckSent(prepared, TimeSpan.Zero));
+
+        Assert.IsFalse(state.TryAcceptServerChat(ServerChat("nonce-a", 2, "Ignored"), out _));
+    }
+
     private static CompanionClientState CreateState() =>
         new(
             CompanionProtocol.MinimumVersion,
@@ -256,7 +295,8 @@ public sealed class CompanionClientStateTests
             CompanionCapability.Chat
                 | CompanionCapability.Inventory
                 | CompanionCapability.PlayerDeath
-                | CompanionCapability.EntityKilled);
+                | CompanionCapability.EntityKilled
+                | CompanionCapability.ServerChat);
 
     private static PreparedCompanionHelloAck PrepareAndConfirm(
         CompanionClientState state,
@@ -281,7 +321,8 @@ public sealed class CompanionClientStateTests
         CompanionCapability capabilities = CompanionCapability.Chat
             | CompanionCapability.Inventory
             | CompanionCapability.PlayerDeath
-            | CompanionCapability.EntityKilled) =>
+            | CompanionCapability.EntityKilled
+            | CompanionCapability.ServerChat) =>
         new(
             CompanionProtocol.CurrentVersion,
             nonce,
@@ -292,6 +333,23 @@ public sealed class CompanionClientStateTests
                 minimumVersion,
                 maximumVersion,
                 capabilities),
+                new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                }));
+
+    private static CompanionEnvelope ServerChat(
+        string nonce,
+        long sequence,
+        string message) =>
+        new(
+            CompanionProtocol.CurrentVersion,
+            nonce,
+            sequence,
+            $"server-{sequence}",
+            CompanionMessageTypes.ServerChat,
+            JsonSerializer.SerializeToElement(
+                new CompanionServerChatMessage("Takaro", message),
                 new JsonSerializerOptions
                 {
                     PropertyNamingPolicy = JsonNamingPolicy.CamelCase
