@@ -14,6 +14,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     private readonly CompanionInventoryCache companionInventory;
     private readonly CompanionMode companionMode;
     private readonly ValheimPlayerResolver playerResolver;
+    private readonly Func<ZNetPeer, string, bool> sendCompanionChat;
     private readonly PlayerPositionCache playerPositions = new(TimeSpan.FromSeconds(30));
     private readonly Dictionary<string, HashSet<string>> banAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> banNames = new(StringComparer.OrdinalIgnoreCase);
@@ -50,7 +51,8 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         ConnectorConfig config,
         Action requestShutdown,
         CompanionInventoryCache companionInventory,
-        ValheimPlayerResolver playerResolver)
+        ValheimPlayerResolver playerResolver,
+        Func<ZNetPeer, string, bool>? sendCompanionChat = null)
     {
         this.logger = logger;
         commandPolicy = new ConsoleCommandPolicy(config.CommandAllowlistExact, config.CommandAllowlistPrefixes);
@@ -58,6 +60,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         this.companionInventory = companionInventory ?? throw new ArgumentNullException(nameof(companionInventory));
         companionMode = config.CompanionMode;
         this.playerResolver = playerResolver ?? throw new ArgumentNullException(nameof(playerResolver));
+        this.sendCompanionChat = sendCompanionChat ?? ((_, _) => false);
     }
 
     public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
@@ -232,11 +235,6 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, CancellationToken cancellationToken = default)
     {
-        if (ZRoutedRpc.instance is null)
-        {
-            return Task.FromResult(TakaroActionResult.Error("rpc_unavailable", "Valheim routed RPC is not available yet."));
-        }
-
         if (!string.IsNullOrWhiteSpace(recipientIdentifier))
         {
             if (!playerResolver.TryResolvePlayer(recipientIdentifier!, out _, out var peer, out var recipient) || peer is null || recipient is null)
@@ -244,12 +242,19 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
                 return Task.FromResult(TakaroActionResult.Error("player_not_found", $"Valheim player '{recipientIdentifier}' is not online."));
             }
 
-            SendHudMessage(peer, message);
+            if (!sendCompanionChat(peer, message))
+            {
+                return Task.FromResult(TakaroActionResult.Error(
+                    "companion_server_chat_unavailable",
+                    $"Valheim player '{recipientIdentifier}' does not have an active compatible Takaro companion chat session."));
+            }
+
             logger.LogInfo($"Takaro Valheim server message routed to {recipient.Name} ({recipient.GameId}).");
             return Task.FromResult(TakaroActionResult.Ok(new { sent = true, recipient }));
         }
 
         var sent = 0;
+        var skipped = 0;
         foreach (var peer in ZNet.instance?.GetPeers() ?? [])
         {
             if (!peer.IsReady())
@@ -257,12 +262,25 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
                 continue;
             }
 
-            SendHudMessage(peer, message);
-            sent++;
+            if (sendCompanionChat(peer, message))
+            {
+                sent++;
+            }
+            else
+            {
+                skipped++;
+            }
         }
 
-        logger.LogInfo($"Takaro Valheim server message routed to {sent} peer(s).");
-        return Task.FromResult(TakaroActionResult.Ok(new { sent = sent > 0, recipients = sent }));
+        if (sent == 0)
+        {
+            return Task.FromResult(TakaroActionResult.Error(
+                "companion_server_chat_unavailable",
+                "No ready Valheim peer has an active compatible Takaro companion chat session."));
+        }
+
+        logger.LogInfo($"Takaro Valheim server message routed to {sent} peer(s); skipped {skipped} peer(s) without compatible companion chat.");
+        return Task.FromResult(TakaroActionResult.Ok(new { sent = true, recipients = sent, skipped }));
     }
 
     public Task<TakaroActionResult> ExecuteConsoleCommandAsync(string command, CancellationToken cancellationToken = default)

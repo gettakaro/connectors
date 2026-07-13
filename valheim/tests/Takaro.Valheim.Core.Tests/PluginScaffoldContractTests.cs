@@ -248,7 +248,7 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(entrypoint, "private CompanionServerBridge? companionBridge;");
         StringAssert.Contains(entrypoint, "new ValheimPlayerResolver(Logger)");
         StringAssert.Contains(entrypoint, "companionInventory,");
-        StringAssert.Contains(entrypoint, "playerResolver);");
+        StringAssert.Contains(entrypoint, "playerResolver,");
         StringAssert.Contains(entrypoint, "config.CompanionMode");
         StringAssert.Contains(entrypoint, "config.CompanionMode == CompanionMode.Disabled");
 
@@ -289,6 +289,29 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(realAdapter, "new ValheimPlayerResolver(logger)");
         StringAssert.Contains(realAdapter, "ValheimPlayerResolver playerResolver");
         StringAssert.Contains(realAdapter, "this.playerResolver = playerResolver");
+    }
+
+    [TestMethod]
+    public void ServerMessagesUseAuthenticatedCompanionChatInsteadOfHudOverlays()
+    {
+        var source = ReadPluginSource("ValheimServerAdapter.cs");
+        var send = SliceMethod(
+            source,
+            "public Task<TakaroActionResult> SendMessageAsync",
+            "public Task<TakaroActionResult> ExecuteConsoleCommandAsync");
+        var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
+
+        StringAssert.Contains(source, "Func<ZNetPeer, string, bool> sendCompanionChat");
+        StringAssert.Contains(send, "sendCompanionChat(peer, message)");
+        StringAssert.Contains(send, "companion_server_chat_unavailable");
+        StringAssert.Contains(send, "skipped");
+        StringAssert.Contains(
+            entrypoint,
+            "(peer, message) => companionBridge?.TrySendServerChat(peer, message) == true");
+        Assert.IsFalse(send.Contains("SendHudMessage", StringComparison.Ordinal));
+        Assert.IsFalse(send.Contains("MessageHud", StringComparison.Ordinal));
+        Assert.IsFalse(send.Contains("ShowMessage", StringComparison.Ordinal));
+        Assert.IsFalse(send.Contains("SendPlayerMessage", StringComparison.Ordinal));
     }
 
     [TestMethod]
