@@ -1,0 +1,72 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net472</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Takaro.Valheim.Companion</AssemblyName>
+    <EnableValheimCompanionBuild Condition="'$(EnableValheimCompanionBuild)' == ''">false</EnableValheimCompanionBuild>
+    <TakaroValheimCompanionReleaseVersion Condition="'$(TakaroValheimCompanionReleaseVersion)' == ''">0.1.0</TakaroValheimCompanionReleaseVersion>
+    <TakaroValheimCompanionBepInExVersion Condition="'$(TakaroValheimCompanionBepInExVersion)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(TakaroValheimCompanionReleaseVersion)', '[-+].*$', ''))</TakaroValheimCompanionBepInExVersion>
+    <Version>$(TakaroValheimCompanionReleaseVersion)</Version>
+    <PackageVersion>$(TakaroValheimCompanionReleaseVersion)</PackageVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(EnableValheimCompanionBuild)' == 'true'">
+    <DefineConstants>$(DefineConstants);TAKARO_VALHEIM_COMPANION</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net472' and '$(TargetFrameworkRootPath)' == ''">
+    <TargetFrameworkRootPath>$(NuGetPackageRoot)microsoft.netframework.referenceassemblies.net472/1.0.3/build/</TargetFrameworkRootPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Takaro.Valheim.Companion.Protocol\Takaro.Valheim.Companion.Protocol.csproj" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(EnableValheimCompanionBuild)' == 'true'">
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExReferencePath)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExReferencePath)\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="assembly_valheim">
+      <HintPath>$(ValheimReferencePath)\assembly_valheim.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="assembly_utils">
+      <HintPath>$(ValheimReferencePath)\assembly_utils.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Splatform">
+      <HintPath>$(ValheimReferencePath)\Splatform.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ValheimReferencePath)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ValheimReferencePath)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="GenerateTakaroValheimCompanionBuildVersion" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <TakaroCompanionBuildVersionFile>$(IntermediateOutputPath)TakaroCompanionBuildVersion.g.cs</TakaroCompanionBuildVersionFile>
+    </PropertyGroup>
+    <WriteLinesToFile
+      File="$(TakaroCompanionBuildVersionFile)"
+      Lines="namespace Takaro.Valheim.Companion { internal static class TakaroCompanionBuildVersion { public const string ProductVersion = &quot;$(TakaroValheimCompanionReleaseVersion)&quot;%3B public const string BepInExVersion = &quot;$(TakaroValheimCompanionBepInExVersion)&quot;%3B public const int ProtocolVersion = Takaro.Valheim.Companion.Protocol.CompanionProtocol.CurrentVersion%3B } }"
+      Overwrite="true" />
+    <ItemGroup>
+      <Compile Include="$(TakaroCompanionBuildVersionFile)" />
+    </ItemGroup>
+  </Target>
+</Project>

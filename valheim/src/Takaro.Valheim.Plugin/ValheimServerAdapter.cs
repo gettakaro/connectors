@@ -11,6 +11,9 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     private readonly ManualLogSource logger;
     private readonly ConsoleCommandPolicy commandPolicy;
     private readonly Action requestShutdown;
+    private readonly CompanionInventoryCache companionInventory;
+    private readonly CompanionMode companionMode;
+    private readonly ValheimPlayerResolver playerResolver;
     private readonly PlayerPositionCache playerPositions = new(TimeSpan.FromSeconds(30));
     private readonly Dictionary<string, HashSet<string>> banAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> banNames = new(StringComparer.OrdinalIgnoreCase);
@@ -19,10 +22,42 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         ManualLogSource logger,
         ConnectorConfig config,
         Action requestShutdown)
+        : this(
+            logger,
+            config,
+            requestShutdown,
+            new CompanionInventoryCache(),
+            new ValheimPlayerResolver(logger))
+    {
+    }
+
+    public ValheimServerAdapter(
+        ManualLogSource logger,
+        ConnectorConfig config,
+        Action requestShutdown,
+        CompanionInventoryCache companionInventory)
+        : this(
+            logger,
+            config,
+            requestShutdown,
+            companionInventory,
+            new ValheimPlayerResolver(logger))
+    {
+    }
+
+    public ValheimServerAdapter(
+        ManualLogSource logger,
+        ConnectorConfig config,
+        Action requestShutdown,
+        CompanionInventoryCache companionInventory,
+        ValheimPlayerResolver playerResolver)
     {
         this.logger = logger;
         commandPolicy = new ConsoleCommandPolicy(config.CommandAllowlistExact, config.CommandAllowlistPrefixes);
         this.requestShutdown = requestShutdown;
+        this.companionInventory = companionInventory ?? throw new ArgumentNullException(nameof(companionInventory));
+        companionMode = config.CompanionMode;
+        this.playerResolver = playerResolver ?? throw new ArgumentNullException(nameof(playerResolver));
     }
 
     public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
@@ -40,7 +75,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
                 sourceName: "Valheim networking"));
         }
 
-        var players = network.GetPlayerList().Select(ToTakaroPlayer).ToArray();
+        var players = network.GetPlayerList().Select(playerResolver.ToTakaroPlayer).ToArray();
 
         logger.LogInfo($"Takaro Valheim getPlayers returned {players.Length} player(s).");
         return Task.FromResult(RuntimeArrayActionPolicy.FromSource(
@@ -67,7 +102,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         }
 
         var now = DateTimeOffset.UtcNow;
-        if (TryResolvePlayer(identifier, out var playerInfo, out var peer, out var player))
+        if (playerResolver.TryResolvePlayer(identifier, out var playerInfo, out var peer, out var player))
         {
             if (TryResolveServerKnownPosition(playerInfo, peer, out var position) && player is not null)
             {
@@ -102,10 +137,29 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default)
     {
-        logger.LogInfo($"Takaro Valheim getPlayerInventory is unsupported on a dedicated server for '{identifier}'.");
-        return Task.FromResult(TakaroActionResult.Error(
-            "player_component_unavailable",
-            "Valheim dedicated servers do not expose remote player inventory components."));
+        if (companionMode == CompanionMode.Disabled)
+        {
+            return Task.FromResult(CompanionInventoryActionPolicy.FromResolvedPlayer(
+                companionMode,
+                player: null,
+                companionInventory,
+                DateTimeOffset.UtcNow));
+        }
+
+        if (!playerResolver.TryResolvePlayer(identifier, out _, out _, out var player) || player is null)
+        {
+            return Task.FromResult(CompanionInventoryActionPolicy.FromResolvedPlayer(
+                companionMode,
+                player: null,
+                companionInventory,
+                DateTimeOffset.UtcNow));
+        }
+
+        return Task.FromResult(CompanionInventoryActionPolicy.FromResolvedPlayer(
+            companionMode,
+            player,
+            companionInventory,
+            DateTimeOffset.UtcNow));
     }
 
     public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default)
@@ -123,7 +177,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             return Task.FromResult(TakaroActionResult.Error("rpc_unavailable", "Valheim routed RPC is not available yet."));
         }
 
-        if (!TryResolvePlayer(identifier, out var playerInfo, out var peer, out var player) || peer is null || player is null)
+        if (!playerResolver.TryResolvePlayer(identifier, out var playerInfo, out var peer, out var player) || peer is null || player is null)
         {
             return Task.FromResult(TakaroActionResult.Error("player_not_found", $"Valheim player '{identifier}' is not online."));
         }
@@ -185,7 +239,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
         if (!string.IsNullOrWhiteSpace(recipientIdentifier))
         {
-            if (!TryResolvePlayer(recipientIdentifier!, out _, out var peer, out var recipient) || peer is null || recipient is null)
+            if (!playerResolver.TryResolvePlayer(recipientIdentifier!, out _, out var peer, out var recipient) || peer is null || recipient is null)
             {
                 return Task.FromResult(TakaroActionResult.Error("player_not_found", $"Valheim player '{recipientIdentifier}' is not online."));
             }
@@ -344,7 +398,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             return Task.FromResult(TakaroActionResult.Error("rpc_unavailable", "Valheim routed RPC is not available yet."));
         }
 
-        if (!TryResolvePlayer(identifier, out _, out var peer, out var player) || peer is null || player is null)
+        if (!playerResolver.TryResolvePlayer(identifier, out _, out var peer, out var player) || peer is null || player is null)
         {
             return Task.FromResult(TakaroActionResult.Error("player_not_found", $"Valheim player '{identifier}' is not online."));
         }
@@ -376,7 +430,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             return Task.FromResult(TakaroActionResult.Error("znet_unavailable", "Valheim networking is not available yet."));
         }
 
-        if (!TryResolvePlayer(identifier, out _, out var peer, out var player) || player is null)
+        if (!playerResolver.TryResolvePlayer(identifier, out _, out var peer, out var player) || player is null)
         {
             return Task.FromResult(TakaroActionResult.Error("player_not_found", $"Valheim player '{identifier}' is not online."));
         }
@@ -402,7 +456,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             return Task.FromResult(TakaroActionResult.Error("znet_unavailable", "Valheim networking is not available yet."));
         }
 
-        TryResolvePlayer(identifier, out _, out var peer, out var player);
+        playerResolver.TryResolvePlayer(identifier, out _, out var peer, out var player);
         var primaryIdentifier = FirstNonEmpty(player?.GameId, identifier);
         var displayName = FirstNonEmpty(player?.Name, peer?.m_playerName, primaryIdentifier);
 
@@ -473,94 +527,6 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     {
         requestShutdown();
         return Task.FromResult(TakaroActionResult.Ok());
-    }
-
-    private TakaroPlayer ToTakaroPlayer(ZNet.PlayerInfo player)
-    {
-        var playerId = FirstNonEmpty(player.m_userInfo.m_id.ToString(), player.m_characterID.ToString());
-        var takaroPlayer = PlayerMapper.ToTakaroPlayer(new ValheimPlayer(
-            FirstNonEmpty(player.m_name, player.m_serverAssignedDisplayName, player.m_userInfo.m_displayName, playerId),
-            playerId,
-            null,
-            null,
-            null));
-
-        logger.LogInfo($"Takaro Valheim player mapped: name={takaroPlayer.Name}, gameId={takaroPlayer.GameId}, platformId={takaroPlayer.PlatformId ?? "<none>"}.");
-        return takaroPlayer;
-    }
-
-    private bool TryFindPlayerInfo(string identifier, out ZNet.PlayerInfo player)
-    {
-        foreach (var candidate in ZNet.instance?.GetPlayerList() ?? [])
-        {
-            if (PlayerMapper.Find(new[] { ToTakaroPlayer(candidate) }, identifier) is not null)
-            {
-                player = candidate;
-                return true;
-            }
-        }
-
-        player = default;
-        return false;
-    }
-
-    private bool TryResolvePlayer(string identifier, out ZNet.PlayerInfo playerInfo, out ZNetPeer? peer, out TakaroPlayer? player)
-    {
-        if (TryFindPlayerInfo(identifier, out playerInfo))
-        {
-            player = ToTakaroPlayer(playerInfo);
-            peer = TryFindPeer(playerInfo, player, out var resolvedPeer) ? resolvedPeer : null;
-            return true;
-        }
-
-        foreach (var candidate in ZNet.instance?.GetPeers() ?? [])
-        {
-            var candidatePlayer = ToTakaroPlayer(candidate);
-            if (PlayerMapper.Find(new[] { candidatePlayer }, identifier) is not null)
-            {
-                playerInfo = default;
-                peer = candidate;
-                player = candidatePlayer;
-                return true;
-            }
-        }
-
-        playerInfo = default;
-        peer = null;
-        player = null;
-        return false;
-    }
-
-    private bool TryFindPeer(ZNet.PlayerInfo playerInfo, TakaroPlayer player, out ZNetPeer peer)
-    {
-        foreach (var candidate in ZNet.instance?.GetPeers() ?? [])
-        {
-            if ((candidate.m_characterID == playerInfo.m_characterID && !candidate.m_characterID.IsNone())
-                || Matches(candidate.m_playerName, playerInfo.m_name)
-                || Matches(candidate.m_playerName, player.Name)
-                || Matches(candidate.m_socket.GetHostName(), playerInfo.m_userInfo.m_id.m_userID)
-                || Matches(candidate.m_socket.GetHostName(), playerInfo.m_userInfo.m_id.ToString())
-                || Matches(ToTakaroPlayer(candidate).GameId, player.GameId))
-            {
-                peer = candidate;
-                return true;
-            }
-        }
-
-        peer = null!;
-        return false;
-    }
-
-    private TakaroPlayer ToTakaroPlayer(ZNetPeer peer)
-    {
-        var hostName = peer.m_socket.GetHostName();
-        var platformId = hostName.Contains('_') ? hostName : $"Steam_{hostName}";
-        return PlayerMapper.ToTakaroPlayer(new ValheimPlayer(
-            FirstNonEmpty(peer.m_playerName, platformId),
-            platformId,
-            null,
-            null,
-            null));
     }
 
     private static void SendHudMessage(ZNetPeer peer, string message) =>

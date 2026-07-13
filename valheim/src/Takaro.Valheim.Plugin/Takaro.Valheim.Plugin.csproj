@@ -21,6 +21,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Takaro.Valheim.Companion.Protocol\Takaro.Valheim.Companion.Protocol.csproj" />
     <ProjectReference Include="..\Takaro.Valheim.Core\Takaro.Valheim.Core.csproj" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />

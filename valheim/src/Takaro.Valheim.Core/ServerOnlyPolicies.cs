@@ -121,6 +121,7 @@ public enum ValheimEventObservationSource
     Connector,
     ServerPlayerSnapshot,
     ServerCharacterState,
+    ClientCompanion,
     RoutedRpcPayload
 }
 
@@ -142,6 +143,9 @@ public static class ValheimEventAcceptancePolicy
             (ValheimEventType.Log, ValheimEventObservationSource.Connector) => true,
             (ValheimEventType.PlayerConnected, ValheimEventObservationSource.ServerPlayerSnapshot) => true,
             (ValheimEventType.PlayerDisconnected, ValheimEventObservationSource.ServerPlayerSnapshot) => true,
+            (ValheimEventType.ChatMessage, ValheimEventObservationSource.ClientCompanion) => true,
+            (ValheimEventType.PlayerDeath, ValheimEventObservationSource.ClientCompanion) => true,
+            (ValheimEventType.EntityKilled, ValheimEventObservationSource.ClientCompanion) => true,
             _ => false
         };
 }
