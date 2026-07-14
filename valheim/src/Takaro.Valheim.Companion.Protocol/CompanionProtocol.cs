@@ -26,7 +26,8 @@ public enum CompanionCapability
     Chat = 1,
     Inventory = 2,
     PlayerDeath = 4,
-    EntityKilled = 8
+    EntityKilled = 8,
+    ServerChat = 16
 }
 
 public sealed record CompanionEnvelope(

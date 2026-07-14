@@ -1,6 +1,7 @@
 using Takaro.Valheim.Companion.Protocol;
 
 #if TAKARO_VALHEIM_COMPANION
+using HarmonyLib;
 using System.Diagnostics;
 
 namespace Takaro.Valheim.Companion;
@@ -11,7 +12,8 @@ internal sealed class CompanionClientBridge : IDisposable
         CompanionCapability.Chat
         | CompanionCapability.Inventory
         | CompanionCapability.PlayerDeath
-        | CompanionCapability.EntityKilled;
+        | CompanionCapability.EntityKilled
+        | CompanionCapability.ServerChat;
     private static readonly TimeSpan InventoryPollInterval = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan InventoryRefreshInterval = TimeSpan.FromSeconds(20);
 
@@ -338,8 +340,27 @@ internal sealed class CompanionClientBridge : IDisposable
             || !SynchronizeReadyContext(network, sourceRpc, out var serverPeer)
             || sender != serverPeer.m_uid
             || !CompanionEnvelopeCodec.TryDecodeEnvelope(json, out var envelope, out _)
-            || envelope is null
-            || !state.TryPrepareHelloAck(
+            || envelope is null)
+        {
+            return;
+        }
+
+        if (envelope.Type == CompanionMessageTypes.ServerChat)
+        {
+            if (!state.TryAcceptServerChat(envelope, out var chat)
+                || chat is null
+                || Chat.instance is null)
+            {
+                return;
+            }
+
+            Chat.instance.AddString(chat.Sender, chat.Message, Talker.Type.Normal);
+            AccessTools.Field(typeof(Chat), "m_hideTimer")?.SetValue(Chat.instance, 0f);
+            log($"Takaro Valheim Companion rendered a server message from {chat.Sender} in chat.");
+            return;
+        }
+
+        if (!state.TryPrepareHelloAck(
                 envelope,
                 TakaroCompanionBuildVersion.ProductVersion,
                 out var prepared)

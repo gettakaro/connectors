@@ -28,6 +28,7 @@ public sealed class CompanionProtocolTests
         "CompanionHelloNack",
         "CompanionHeartbeat",
         "CompanionChatReport",
+        "CompanionServerChatMessage",
         "CompanionInventoryReport",
         "CompanionPlayerDeathReport",
         "CompanionEntityKilledReport"
@@ -53,6 +54,7 @@ public sealed class CompanionProtocolTests
         Assert.AreEqual(2, GetEnumValue(capabilityType, "Inventory"));
         Assert.AreEqual(4, GetEnumValue(capabilityType, "PlayerDeath"));
         Assert.AreEqual(8, GetEnumValue(capabilityType, "EntityKilled"));
+        Assert.AreEqual(16, GetEnumValue(capabilityType, "ServerChat"));
     }
 
     [TestMethod]
@@ -174,6 +176,7 @@ public sealed class CompanionProtocolTests
         Assert.AreEqual("hello-ack", GetConstant<string>("CompanionMessageTypes", "HelloAck"));
         Assert.AreEqual("heartbeat", GetConstant<string>("CompanionMessageTypes", "Heartbeat"));
         Assert.AreEqual("chat", GetConstant<string>("CompanionMessageTypes", "Chat"));
+        Assert.AreEqual("server-chat", GetConstant<string>("CompanionMessageTypes", "ServerChat"));
         Assert.AreEqual("inventory-snapshot", GetConstant<string>("CompanionMessageTypes", "InventorySnapshot"));
         Assert.AreEqual("player-death", GetConstant<string>("CompanionMessageTypes", "PlayerDeath"));
         Assert.AreEqual("entity-killed", GetConstant<string>("CompanionMessageTypes", "EntityKilled"));
@@ -198,6 +201,38 @@ public sealed class CompanionProtocolTests
         foreach (var typeName in VersionOnePayloadTypeNames)
         {
             Assert.IsNotNull(RequireType(typeName), typeName);
+        }
+    }
+
+    [TestMethod]
+    public void ServerChatCarriesOnlyBoundedSenderAndMessage()
+    {
+        AssertPublicProperties(
+            RequireType("CompanionServerChatMessage"),
+            "Sender",
+            "Message");
+        AssertDeclaredPayloadAccepted(
+            CompanionMessageTypes.ServerChat,
+            """{"sender":"Takaro","message":"Hello from Takaro"}""");
+
+        var invalidPayloads = new (string Name, string Json, string ErrorCode)[]
+        {
+            ("missing sender", """{"message":"Hello"}""", "invalid-payload-fields"),
+            ("blank sender", """{"sender":"","message":"Hello"}""", "invalid-payload"),
+            ("null message", """{"sender":"Takaro","message":null}""", "invalid-payload"),
+            ("unknown field", """{"sender":"Takaro","message":"Hello","future":true}""", "invalid-payload-fields"),
+            ("incorrect casing", """{"Sender":"Takaro","message":"Hello"}""", "invalid-payload-fields"),
+            ("oversized sender", $"{{\"sender\":\"{new string('s', CompanionProtocol.MaximumChatCharacters + 1)}\",\"message\":\"Hello\"}}", "invalid-payload"),
+            ("oversized message", $"{{\"sender\":\"Takaro\",\"message\":\"{new string('m', CompanionProtocol.MaximumChatCharacters + 1)}\"}}", "invalid-payload")
+        };
+
+        foreach (var testCase in invalidPayloads)
+        {
+            AssertDeclaredPayloadRejected(
+                CompanionMessageTypes.ServerChat,
+                testCase.Json,
+                testCase.ErrorCode,
+                testCase.Name);
         }
     }
 
@@ -432,11 +467,11 @@ public sealed class CompanionProtocolTests
             ("hello reversed range", CompanionMessageTypes.Hello,
                 """{"minimumVersion":2,"maximumVersion":1,"capabilities":0}""", "invalid-payload"),
             ("hello unknown capability", CompanionMessageTypes.Hello,
-                """{"minimumVersion":1,"maximumVersion":1,"capabilities":16}""", "invalid-payload"),
+                """{"minimumVersion":1,"maximumVersion":1,"capabilities":32}""", "invalid-payload"),
             ("hello-ack unsupported version", CompanionMessageTypes.HelloAck,
                 """{"protocolVersion":2,"productVersion":"1.2.3","acceptedCapabilities":0}""", "invalid-payload"),
             ("hello-ack unknown capability", CompanionMessageTypes.HelloAck,
-                """{"protocolVersion":1,"productVersion":"1.2.3","acceptedCapabilities":16}""", "invalid-payload"),
+                """{"protocolVersion":1,"productVersion":"1.2.3","acceptedCapabilities":32}""", "invalid-payload"),
             ("heartbeat negative timestamp", CompanionMessageTypes.Heartbeat,
                 """{"timestampUnixMilliseconds":-1}""", "invalid-payload"),
             ("chat null event", CompanionMessageTypes.Chat,
@@ -546,6 +581,10 @@ public sealed class CompanionProtocolTests
                     new string('e', CompanionProtocol.MaximumEventIdCharacters),
                     MaximumTimestampUnixMilliseconds,
                     new string('c', CompanionProtocol.MaximumChatCharacters))),
+            (CompanionMessageTypes.ServerChat,
+                new CompanionServerChatMessage(
+                    new string('s', CompanionProtocol.MaximumChatCharacters),
+                    new string('m', CompanionProtocol.MaximumChatCharacters))),
             (CompanionMessageTypes.InventorySnapshot,
                 InventoryWith(new CompanionInventoryStack(
                     new string('c', CompanionProtocol.MaximumCodeCharacters),
@@ -784,6 +823,9 @@ public sealed class CompanionProtocolTests
             case CompanionMessageTypes.Chat:
                 AssertPayloadRejected<CompanionChatReport>(messageType, payloadJson, expectedErrorCode, name);
                 break;
+            case CompanionMessageTypes.ServerChat:
+                AssertPayloadRejected<CompanionServerChatMessage>(messageType, payloadJson, expectedErrorCode, name);
+                break;
             case CompanionMessageTypes.InventorySnapshot:
                 AssertPayloadRejected<CompanionInventoryReport>(messageType, payloadJson, expectedErrorCode, name);
                 break;
@@ -824,6 +866,9 @@ public sealed class CompanionProtocolTests
                 break;
             case CompanionMessageTypes.Chat:
                 AssertPayloadAccepted<CompanionChatReport>(envelope);
+                break;
+            case CompanionMessageTypes.ServerChat:
+                AssertPayloadAccepted<CompanionServerChatMessage>(envelope);
                 break;
             case CompanionMessageTypes.InventorySnapshot:
                 AssertPayloadAccepted<CompanionInventoryReport>(envelope);

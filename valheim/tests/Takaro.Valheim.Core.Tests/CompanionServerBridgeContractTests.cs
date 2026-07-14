@@ -68,6 +68,41 @@ public sealed class CompanionServerBridgeContractTests
     }
 
     [TestMethod]
+    public void ServerChatTargetsOnlyAnActiveNegotiatedExactPeer()
+    {
+        var source = ReadPluginSource("CompanionServerBridge.cs");
+        var send = Slice(
+            source,
+            "public bool TrySendServerChat",
+            "private void ForwardAcceptedEvent");
+
+        StringAssert.Contains(source, "CompanionCapability.ServerChat");
+        StringAssert.Contains(send, "sessions.TryGetActiveSession(");
+        StringAssert.Contains(send, "peer.m_uid,");
+        StringAssert.Contains(send, "CompanionCapability.ServerChat,");
+        StringAssert.Contains(send, "MatchesTrackedPeer(peer.m_uid, peer)");
+        StringAssert.Contains(send, "snapshot.SelectedProtocolVersion.Value");
+        StringAssert.Contains(send, "snapshot.Nonce");
+        StringAssert.Contains(send, "CompanionMessageTypes.ServerChat");
+        StringAssert.Contains(
+            send,
+            "public bool TrySendServerChat(ZNetPeer peer, string sender, string message)");
+        StringAssert.Contains(send, "string.IsNullOrWhiteSpace(sender)");
+        StringAssert.Contains(send, "new CompanionServerChatMessage(sender, message)");
+        Assert.IsFalse(
+            send.Contains(
+                "new CompanionServerChatMessage(\"Takaro\", message)",
+                StringComparison.Ordinal));
+        StringAssert.Contains(send, "routedRpc.InvokeRoutedRPC(");
+        StringAssert.Contains(send, "peer.m_uid");
+        StringAssert.Contains(send, "tracked.NextServerSequence++");
+        Assert.IsTrue(
+            send.IndexOf("InvokeRoutedRPC(", StringComparison.Ordinal)
+            < send.IndexOf("tracked.NextServerSequence++", StringComparison.Ordinal));
+        Assert.IsFalse(send.Contains("ZRoutedRpc.Everybody", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void ServerBindsReportsToTheRpcSender()
     {
         var source = ReadPluginSource("CompanionServerBridge.cs");

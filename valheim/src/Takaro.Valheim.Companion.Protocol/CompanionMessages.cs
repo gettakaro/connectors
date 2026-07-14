@@ -7,6 +7,7 @@ public static class CompanionMessageTypes
     public const string HelloNack = "hello-nack";
     public const string Heartbeat = "heartbeat";
     public const string Chat = "chat";
+    public const string ServerChat = "server-chat";
     public const string InventorySnapshot = "inventory-snapshot";
     public const string PlayerDeath = "player-death";
     public const string EntityKilled = "entity-killed";
@@ -32,6 +33,10 @@ public sealed record CompanionHeartbeat(long TimestampUnixMilliseconds);
 public sealed record CompanionChatReport(
     string EventId,
     long TimestampUnixMilliseconds,
+    string Message);
+
+public sealed record CompanionServerChatMessage(
+    string Sender,
     string Message);
 
 public sealed record CompanionInventoryReport(IReadOnlyList<CompanionInventoryStack> Stacks);

@@ -126,6 +126,8 @@ Dedicated server install:
 4. Set the server registrationToken and companionMode.
 5. Restart the dedicated server so the saved configuration is loaded.
 
+Upgrade note: after replacing this folder, delete BepInEx/cache/chainloader_typeloader.dat before restarting. Deterministic archive timestamps can otherwise leave cached metadata from a previous same-size DLL.
+
 This server package is not a client mod. Never commit live registration tokens.
 EOF
 
@@ -136,6 +138,8 @@ Graphical client install:
 1. Install BepInExPack Valheim in the graphical Valheim client.
 2. Copy TakaroValheimCompanion into BepInEx/plugins/TakaroValheimCompanion.
 3. Restart Valheim. No Takaro token or cloud credential belongs on the client.
+
+Upgrade note: after replacing this folder, delete BepInEx/cache/chainloader_typeloader.dat before restarting. Deterministic archive timestamps can otherwise leave cached metadata from a previous same-size DLL.
 
 This client package is not the dedicated-server connector.
 EOF
