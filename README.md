@@ -11,6 +11,7 @@ Monorepo for connector plugins that implement the [Takaro Generic Connector Prot
 | 7D2D | [`7d2d/`](7d2d/) | C# / .NET Framework 4.8 | Dockerized Mono `msbuild` |
 | Conan Exiles | [`conan-exiles/`](conan-exiles/) | TypeScript | Node.js |
 | Terraria | [`terraria/`](terraria/) | C# / .NET 9 | TShock reference build |
+| Valheim | [`valheim/`](valheim/) | C# / .NET | BepInEx dedicated-server plugin and graphical-client companion |
 
 Each connector is self-contained with its own Docker dev environment, build system, and scripts. See each connector's README for details.
 
@@ -26,13 +27,17 @@ All operations are in the `justfile`. Run `just --list` to see available command
 
 ## Releasing
 
-Connectors are versioned and released independently:
+Connectors are versioned and released independently through Release Please. Merging a connector's release PR creates its version tag and publishes the GitHub release artifacts. To force a specific version, add a `Release-As: X.Y.Z` footer to a commit on `main`.
+
+Build release artifacts locally with:
 
 ```bash
-just release-rust 1.0.1        # Tags rust-v1.0.1 and pushes
-just release-minecraft 1.2.3   # Tags minecraft-v1.2.3 and pushes
-just release-7d2d 1.4.0        # Tags 7d2d-v1.4.0 and pushes
-just release-terraria 0.1.0    # Tags terraria-v0.1.0 and pushes
+just build-release-rust 1.0.1
+just build-release-minecraft 1.2.3
+just build-release-7d2d 1.4.0
+just build-release-conan 1.0.0
+just build-release-terraria 0.1.0
+just build-release-valheim 2.0.0
 ```
 
 Pushing to `main` creates pre-releases automatically (per-connector, path-filtered).
@@ -44,6 +49,7 @@ Pushing to `main` creates pre-releases automatically (per-connector, path-filter
 - `conan-exiles/` is a server-side TypeScript sidecar that connects through Takaro WebSocket, Conan RCON, optional log tailing, optional save DB reads, and an optional server-side chat helper.
 - `terraria/` is a server-side TShock plugin that emits Takaro event markers and
   coordinate helper commands. It stores local build references under `terraria/_data/`.
+- [`valheim/`](valheim/README.md) provides a dedicated-server connector and a separately packaged graphical-client companion. Takaro credentials remain on the server; the companion reports client-owned gameplay observations through the server.
 
 ## Documentation
 
