@@ -31,6 +31,10 @@ build-release-conan version out-dir='dist':
 build-release-terraria version out-dir='dist':
     ./terraria/scripts/build-release.sh {{version}} {{out-dir}}
 
+# Build the Valheim connector release artifacts locally into <out-dir>
+build-release-valheim version out-dir='dist':
+    ./valheim/scripts/build-release.sh {{version}} {{out-dir}}
+
 # === Terraria Plugin ===
 
 # Prepare TShock reference assemblies
