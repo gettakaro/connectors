@@ -80,6 +80,21 @@ public sealed class ReleasePackageContractTests
         StringAssert.Contains(testJob, "sudo apt-get install -y ripgrep");
     }
 
+    [TestMethod]
+    public void DeterministicPackageUpgradeInstructionsClearBepInExTypeCache()
+    {
+        var release = ReadValheimFile("scripts/build-release.sh");
+        var companion = ReadValheimFile("COMPANION.md");
+        const string cachePath = "BepInEx/cache/chainloader_typeloader.dat";
+
+        Assert.AreEqual(
+            2,
+            release.Split(cachePath, StringSplitOptions.None).Length - 1,
+            "Both packaged role READMEs must invalidate BepInEx's metadata cache.");
+        StringAssert.Contains(companion, cachePath);
+        StringAssert.Contains(companion, "before restarting");
+    }
+
     private static TemporaryDirectory CreateFixture(string? mutation = null)
     {
         var fixture = new TemporaryDirectory();

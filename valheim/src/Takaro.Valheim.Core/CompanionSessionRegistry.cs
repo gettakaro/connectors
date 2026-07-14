@@ -37,7 +37,8 @@ public sealed class CompanionSessionRegistry
         CompanionCapability.Chat
         | CompanionCapability.Inventory
         | CompanionCapability.PlayerDeath
-        | CompanionCapability.EntityKilled;
+        | CompanionCapability.EntityKilled
+        | CompanionCapability.ServerChat;
 
     private readonly int minimumProtocolVersion;
     private readonly int maximumProtocolVersion;
@@ -231,6 +232,30 @@ public sealed class CompanionSessionRegistry
         lock (syncRoot)
         {
             if (!sessions.TryGetValue(peerId, out var session))
+            {
+                snapshot = default!;
+                return false;
+            }
+
+            snapshot = CreateSnapshot(session);
+            return true;
+        }
+    }
+
+    public bool TryGetActiveSession(
+        long peerId,
+        CompanionCapability requiredCapability,
+        DateTimeOffset now,
+        out CompanionSessionSnapshot snapshot)
+    {
+        lock (syncRoot)
+        {
+            if (requiredCapability == CompanionCapability.None
+                || !HasOnlyKnownCapabilities(requiredCapability)
+                || !sessions.TryGetValue(peerId, out var session)
+                || !session.IsNegotiated
+                || IsExpired(session, now)
+                || (session.Capabilities & requiredCapability) != requiredCapability)
             {
                 snapshot = default!;
                 return false;

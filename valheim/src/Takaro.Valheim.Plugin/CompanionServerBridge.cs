@@ -18,7 +18,8 @@ public sealed class CompanionServerBridge : IDisposable
         CompanionCapability.Chat
         | CompanionCapability.Inventory
         | CompanionCapability.PlayerDeath
-        | CompanionCapability.EntityKilled;
+        | CompanionCapability.EntityKilled
+        | CompanionCapability.ServerChat;
 
     private static readonly JsonSerializerOptions WireJsonOptions = new()
     {
@@ -564,6 +565,51 @@ public sealed class CompanionServerBridge : IDisposable
         }
     }
 
+    public bool TrySendServerChat(ZNetPeer peer, string sender, string message)
+    {
+        var routedRpc = registeredRpc;
+        if (disposed
+            || peer is null
+            || string.IsNullOrWhiteSpace(sender)
+            || string.IsNullOrWhiteSpace(message)
+            || routedRpc is null
+            || !ReferenceEquals(ZRoutedRpc.instance, routedRpc)
+            || !MatchesTrackedPeer(peer.m_uid, peer)
+            || !trackedPeers.TryGetValue(peer.m_uid, out var tracked)
+            || !sessions.TryGetActiveSession(
+                peer.m_uid,
+                CompanionCapability.ServerChat,
+                clock(),
+                out var snapshot)
+            || !snapshot.SelectedProtocolVersion.HasValue)
+        {
+            return false;
+        }
+
+        try
+        {
+            var sequence = tracked.NextServerSequence;
+            var envelope = CreateEnvelope(
+                snapshot.SelectedProtocolVersion.Value,
+                snapshot.Nonce,
+                sequence,
+                $"server-chat-{sequence}",
+                CompanionMessageTypes.ServerChat,
+                new CompanionServerChatMessage(sender, message));
+            routedRpc.InvokeRoutedRPC(
+                peer.m_uid,
+                CompanionProtocol.RpcName,
+                CompanionEnvelopeCodec.EncodeEnvelope(envelope));
+            tracked.NextServerSequence++;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim could not send companion server chat to peer {peer.m_uid}: {ex.Message}");
+            return false;
+        }
+    }
+
     private bool MatchesTrackedPeer(long sender, ZNetPeer peer)
     {
         var characterId = peer.m_characterID.IsNone()
@@ -717,6 +763,8 @@ public sealed class CompanionServerBridge : IDisposable
         public bool EnforcementTransferred { get; set; }
 
         public bool CapabilitiesExpired { get; set; }
+
+        public long NextServerSequence { get; set; } = 2;
     }
 
     private sealed class PendingDisconnect

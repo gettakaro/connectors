@@ -27,7 +27,8 @@ public sealed class CompanionClientState
         CompanionCapability.Chat
         | CompanionCapability.Inventory
         | CompanionCapability.PlayerDeath
-        | CompanionCapability.EntityKilled;
+        | CompanionCapability.EntityKilled
+        | CompanionCapability.ServerChat;
 
     private static readonly JsonSerializerOptions WireJson = new()
     {
@@ -46,6 +47,7 @@ public sealed class CompanionClientState
     private CompanionCapability activeCapabilities;
     private long generation;
     private long nextSequence;
+    private long lastServerSequence;
     private TimeSpan nextHeartbeatAt = TimeSpan.MaxValue;
 
     public CompanionClientState(
@@ -183,6 +185,7 @@ public sealed class CompanionClientState
         activeProtocolVersion = prepared.Envelope.ProtocolVersion;
         activeCapabilities = helloAck.AcceptedCapabilities;
         nextSequence = 2;
+        lastServerSequence = prepared.Envelope.Sequence;
         nextHeartbeatAt = SaturatingAdd(monotonicNow, HeartbeatInterval);
         pendingHelloAck = null;
         CanReport = true;
@@ -241,6 +244,34 @@ public sealed class CompanionClientState
         return TryCreateOutboundEnvelope(messageType, payload, out envelope);
     }
 
+    public bool TryAcceptServerChat(
+        CompanionEnvelope envelope,
+        out CompanionServerChatMessage? message)
+    {
+        message = null;
+        if (!CanReport
+            || activeNonce is null
+            || (activeCapabilities & CompanionCapability.ServerChat) == 0
+            || envelope is null
+            || envelope.Type != CompanionMessageTypes.ServerChat
+            || envelope.ProtocolVersion != activeProtocolVersion
+            || !string.Equals(envelope.SessionNonce, activeNonce, StringComparison.Ordinal)
+            || envelope.Sequence <= lastServerSequence
+            || !IsStrictlyValidEnvelope(envelope)
+            || !CompanionEnvelopeCodec.TryDecodePayload<CompanionServerChatMessage>(
+                envelope,
+                out var decoded,
+                out _)
+            || decoded is null)
+        {
+            return false;
+        }
+
+        lastServerSequence = envelope.Sequence;
+        message = decoded;
+        return true;
+    }
+
     public void Reset() => Reset(retireCurrentSession: true);
 
     public void ResetConnection()
@@ -293,6 +324,7 @@ public sealed class CompanionClientState
         activeProtocolVersion = 0;
         activeCapabilities = CompanionCapability.None;
         nextSequence = 0;
+        lastServerSequence = 0;
         nextHeartbeatAt = TimeSpan.MaxValue;
         CanReport = false;
         generation = NextGeneration(generation);

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Takaro.Valheim.Companion.Protocol;
 
 namespace Takaro.Valheim.Core;
 
@@ -11,7 +12,7 @@ public interface IValheimTakaroAdapter
     Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default);
-    Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, CancellationToken cancellationToken = default);
+    Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, string? senderNameOverride, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ExecuteConsoleCommandAsync(string command, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ListItemsAsync(CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ListEntitiesAsync(CancellationToken cancellationToken = default);
@@ -133,7 +134,11 @@ public sealed class TakaroRequestDispatcher
             TakaroActionNames.GetPlayerLocation => adapter.GetPlayerLocationAsync(RequiredIdentifier(request.Args), cancellationToken).GetAwaiter().GetResult(),
             TakaroActionNames.GetPlayerInventory => adapter.GetPlayerInventoryAsync(RequiredIdentifier(request.Args), cancellationToken).GetAwaiter().GetResult(),
             TakaroActionNames.GiveItem => adapter.GiveItemAsync(RequiredIdentifier(request.Args), RequiredItemCode(request.Args), OptionalPositiveInt(request.Args, "amount") ?? OptionalPositiveInt(request.Args, "quantity") ?? 1, OptionalString(request.Args, "quality"), cancellationToken).GetAwaiter().GetResult(),
-            TakaroActionNames.SendMessage => adapter.SendMessageAsync(RequiredString(request.Args, "message"), OptionalRecipientIdentifier(request.Args), cancellationToken).GetAwaiter().GetResult(),
+            TakaroActionNames.SendMessage => adapter.SendMessageAsync(
+                RequiredString(request.Args, "message"),
+                OptionalRecipientIdentifier(request.Args),
+                OptionalSenderNameOverride(request.Args),
+                cancellationToken).GetAwaiter().GetResult(),
             TakaroActionNames.ExecuteConsoleCommand => adapter.ExecuteConsoleCommandAsync(RequiredString(request.Args, "command"), cancellationToken).GetAwaiter().GetResult(),
             TakaroActionNames.ListItems => adapter.ListItemsAsync(cancellationToken).GetAwaiter().GetResult(),
             TakaroActionNames.ListEntities => adapter.ListEntitiesAsync(cancellationToken).GetAwaiter().GetResult(),
@@ -175,6 +180,36 @@ public sealed class TakaroRequestDispatcher
         }
 
         return OptionalNestedIdentifier(args, "recipient");
+    }
+
+    private static string? OptionalSenderNameOverride(JsonElement args)
+    {
+        if (args.ValueKind != JsonValueKind.Object
+            || !args.TryGetProperty("opts", out var opts)
+            || opts.ValueKind != JsonValueKind.Object
+            || !opts.TryGetProperty("senderNameOverride", out var sender))
+        {
+            return null;
+        }
+
+        if (sender.ValueKind != JsonValueKind.String)
+        {
+            throw new ArgumentException("Expected string argument 'opts.senderNameOverride'.");
+        }
+
+        var value = sender.GetString()?.Trim();
+        if (string.IsNullOrEmpty(value))
+        {
+            return null;
+        }
+
+        if (value!.Length > CompanionProtocol.MaximumCodeCharacters)
+        {
+            throw new ArgumentException(
+                $"Expected string argument 'opts.senderNameOverride' to contain at most {CompanionProtocol.MaximumCodeCharacters} characters.");
+        }
+
+        return value;
     }
 
     private static string? OptionalNestedIdentifier(JsonElement args, string property)

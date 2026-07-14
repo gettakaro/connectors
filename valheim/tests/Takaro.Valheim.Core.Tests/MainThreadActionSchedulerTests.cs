@@ -121,7 +121,7 @@ public sealed class MainThreadActionSchedulerTests
         public Task<TakaroActionResult> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default) => Unexpected();
         public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default) => Unexpected();
         public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default) => Unexpected();
-        public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, CancellationToken cancellationToken = default) => Unexpected();
+        public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, string? senderNameOverride, CancellationToken cancellationToken = default) => Unexpected();
         public Task<TakaroActionResult> ExecuteConsoleCommandAsync(string command, CancellationToken cancellationToken = default) => Unexpected();
         public Task<TakaroActionResult> ListItemsAsync(CancellationToken cancellationToken = default) => Unexpected();
         public Task<TakaroActionResult> ListEntitiesAsync(CancellationToken cancellationToken = default) => Unexpected();

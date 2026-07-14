@@ -67,6 +67,12 @@ public static class CompanionEnvelopeCodec
         "message"
     ];
 
+    private static readonly string[] ServerChatFields =
+    [
+        "sender",
+        "message"
+    ];
+
     private static readonly string[] InventoryFields = ["stacks"];
 
     private static readonly string[] InventoryStackFields =
@@ -365,6 +371,8 @@ public static class CompanionEnvelopeCodec
                 return TryNormalizePayload<CompanionHeartbeat>(envelope, out normalizedPayload, out errorCode);
             case CompanionMessageTypes.Chat:
                 return TryNormalizePayload<CompanionChatReport>(envelope, out normalizedPayload, out errorCode);
+            case CompanionMessageTypes.ServerChat:
+                return TryNormalizePayload<CompanionServerChatMessage>(envelope, out normalizedPayload, out errorCode);
             case CompanionMessageTypes.InventorySnapshot:
                 return TryNormalizePayload<CompanionInventoryReport>(envelope, out normalizedPayload, out errorCode);
             case CompanionMessageTypes.PlayerDeath:
@@ -430,6 +438,9 @@ public static class CompanionEnvelopeCodec
                 break;
             case CompanionMessageTypes.Chat:
                 validFields = HasStrictFields(payload, ChatFields, Array.Empty<string>());
+                break;
+            case CompanionMessageTypes.ServerChat:
+                validFields = HasStrictFields(payload, ServerChatFields, Array.Empty<string>());
                 break;
             case CompanionMessageTypes.InventorySnapshot:
                 validFields = HasStrictFields(payload, InventoryFields, Array.Empty<string>());
@@ -530,6 +541,7 @@ public static class CompanionEnvelopeCodec
             || (payloadType == typeof(CompanionHelloNack) && messageType == CompanionMessageTypes.HelloNack)
             || (payloadType == typeof(CompanionHeartbeat) && messageType == CompanionMessageTypes.Heartbeat)
             || (payloadType == typeof(CompanionChatReport) && messageType == CompanionMessageTypes.Chat)
+            || (payloadType == typeof(CompanionServerChatMessage) && messageType == CompanionMessageTypes.ServerChat)
             || (payloadType == typeof(CompanionInventoryReport) && messageType == CompanionMessageTypes.InventorySnapshot)
             || (payloadType == typeof(CompanionPlayerDeathReport) && messageType == CompanionMessageTypes.PlayerDeath)
             || (payloadType == typeof(CompanionEntityKilledReport) && messageType == CompanionMessageTypes.EntityKilled);
@@ -562,6 +574,9 @@ public static class CompanionEnvelopeCodec
                 return IsEventId(chat.EventId)
                     && IsValidTimestamp(chat.TimestampUnixMilliseconds)
                     && IsRequiredString(chat.Message, CompanionProtocol.MaximumChatCharacters);
+            case CompanionServerChatMessage serverChat:
+                return IsRequiredString(serverChat.Sender, CompanionProtocol.MaximumChatCharacters)
+                    && IsRequiredString(serverChat.Message, CompanionProtocol.MaximumChatCharacters);
             case CompanionInventoryReport inventory:
                 return IsValidInventory(inventory);
             case CompanionPlayerDeathReport playerDeath:
@@ -635,7 +650,8 @@ public static class CompanionEnvelopeCodec
         const CompanionCapability knownCapabilities = CompanionCapability.Chat
             | CompanionCapability.Inventory
             | CompanionCapability.PlayerDeath
-            | CompanionCapability.EntityKilled;
+            | CompanionCapability.EntityKilled
+            | CompanionCapability.ServerChat;
 
         return (capabilities & ~knownCapabilities) == 0;
     }
@@ -647,6 +663,7 @@ public static class CompanionEnvelopeCodec
             || messageType == CompanionMessageTypes.HelloNack
             || messageType == CompanionMessageTypes.Heartbeat
             || messageType == CompanionMessageTypes.Chat
+            || messageType == CompanionMessageTypes.ServerChat
             || messageType == CompanionMessageTypes.InventorySnapshot
             || messageType == CompanionMessageTypes.PlayerDeath
             || messageType == CompanionMessageTypes.EntityKilled;

@@ -23,7 +23,8 @@ public sealed class CompanionSessionRegistryTests
         CompanionCapability.Chat
         | CompanionCapability.Inventory
         | CompanionCapability.PlayerDeath
-        | CompanionCapability.EntityKilled;
+        | CompanionCapability.EntityKilled
+        | CompanionCapability.ServerChat;
 
     [TestMethod]
     public void ReportBeforeHelloAckIsRejected()
@@ -509,6 +510,47 @@ public sealed class CompanionSessionRegistryTests
             registry.ValidateHeartbeat(PeerId, CurrentNonce, 1, 3, Now.AddSeconds(2)));
 
         Assert.AreEqual(negotiated, Snapshot(registry, PeerId));
+    }
+
+    [TestMethod]
+    public void ActiveSessionRequiresNegotiationCapabilityAndFreshHeartbeat()
+    {
+        var registry = CreateRegistry();
+        registry.Begin(PeerId, Now, CurrentNonce);
+
+        Assert.IsFalse(registry.TryGetActiveSession(
+            PeerId,
+            CompanionCapability.ServerChat,
+            Now.AddSeconds(1),
+            out _));
+        Assert.AreEqual(
+            CompanionSessionDecision.Accept,
+            registry.CompleteHelloAck(
+                PeerId,
+                CurrentNonce,
+                selectedProtocolVersion: 1,
+                ProductVersion,
+                CompanionCapability.Chat | CompanionCapability.ServerChat,
+                sequence: 1,
+                Now.AddSeconds(1)));
+
+        Assert.IsTrue(registry.TryGetActiveSession(
+            PeerId,
+            CompanionCapability.ServerChat,
+            Now.AddSeconds(2),
+            out var active));
+        Assert.IsNotNull(active);
+        Assert.AreEqual(CurrentNonce, active.Nonce);
+        Assert.IsFalse(registry.TryGetActiveSession(
+            PeerId,
+            CompanionCapability.Inventory,
+            Now.AddSeconds(2),
+            out _));
+        Assert.IsFalse(registry.TryGetActiveSession(
+            PeerId,
+            CompanionCapability.ServerChat,
+            Now.AddSeconds(1) + HeartbeatGrace,
+            out _));
     }
 
     [TestMethod]

@@ -206,6 +206,25 @@ public sealed class CompanionPluginContractTests
         Assert.IsFalse(bridge.Contains("InvokeRoutedRPC(CompanionMessageTypes", StringComparison.Ordinal));
     }
 
+    [TestMethod]
+    public void CompanionRendersAuthenticatedServerMessagesOnlyInNormalChat()
+    {
+        var bridge = ReadCompanionSource("CompanionClientBridge.cs");
+
+        StringAssert.Contains(bridge, "CompanionCapability.ServerChat");
+        StringAssert.Contains(bridge, "sender != serverPeer.m_uid");
+        StringAssert.Contains(bridge, "state.TryAcceptServerChat(");
+        StringAssert.Contains(
+            bridge,
+            "Chat.instance.AddString(chat.Sender, chat.Message, Talker.Type.Normal)");
+        StringAssert.Contains(
+            bridge,
+            "AccessTools.Field(typeof(Chat), \"m_hideTimer\")?.SetValue(Chat.instance, 0f)");
+        Assert.IsFalse(bridge.Contains("MessageHud", StringComparison.Ordinal));
+        Assert.IsFalse(bridge.Contains("ShowMessage", StringComparison.Ordinal));
+        Assert.IsFalse(bridge.Contains("Chat.instance.SendText", StringComparison.Ordinal));
+    }
+
     private static string ReadAllCompanionText() =>
         string.Join(
             '\n',
