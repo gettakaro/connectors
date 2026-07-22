@@ -1,6 +1,7 @@
 # Takaro 7D2D Mod
 
-A companion mod for 7 Days to Die servers that connects to Takaro via WebSocket.
+A server-side-only companion mod for 7 Days to Die servers that connects to
+Takaro through the Generic Connector Protocol over WebSocket.
 
 ## Quick Start
 

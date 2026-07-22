@@ -16,7 +16,10 @@ namespace Takaro.WebSocket
             Send(
                 WebSocketMessage.Create(
                     WebSocketMessage.MessageTypes.Response,
-                    new Dictionary<string, object> { { "connectable", true } },
+                    new Dictionary<string, object>
+                    {
+                        { "connectable", StateMirror.Instance.IsGameReady },
+                    },
                     requestId
                 )
             );
@@ -39,7 +42,7 @@ namespace Takaro.WebSocket
             PlayerRecord record = StateMirror.Instance.GetOnlinePlayer(gameId);
             if (record == null)
             {
-                SendError(requestId, "Player not found");
+                Send(WebSocketMessage.CreateResponse(requestId, null));
                 return;
             }
 
@@ -52,7 +55,7 @@ namespace Takaro.WebSocket
             PlayerRecord record = StateMirror.Instance.GetOnlinePlayer(gameId);
             if (record == null)
             {
-                SendError(requestId, "Player not found");
+                Send(WebSocketMessage.CreateResponse(requestId, null));
                 return;
             }
 
@@ -78,7 +81,7 @@ namespace Takaro.WebSocket
             PlayerRecord record = StateMirror.Instance.GetOnlinePlayer(gameId);
             if (record == null)
             {
-                SendError(requestId, "Player not found");
+                Send(WebSocketMessage.CreateResponse(requestId, new TakaroItem[0]));
                 return;
             }
 
@@ -103,6 +106,18 @@ namespace Takaro.WebSocket
                     requestId
                 )
             );
+        }
+
+        public static void ListEntities(string requestId)
+        {
+            List<TakaroEntity> entities = StateMirror.Instance.GetEntities();
+            Send(WebSocketMessage.CreateResponse(requestId, entities.ToArray()));
+        }
+
+        public static void ListLocations(string requestId)
+        {
+            List<TakaroLocation> locations = StateMirror.Instance.GetLocations();
+            Send(WebSocketMessage.CreateResponse(requestId, locations.ToArray()));
         }
 
         public static void ListBans(string requestId)

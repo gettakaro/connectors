@@ -84,7 +84,9 @@ namespace Takaro.WebSocket
                 return;
 
             string json = Newtonsoft.Json.JsonConvert.SerializeObject(message);
-            LogService.Instance.Debug($"Queueing WebSocket message: {json}");
+            LogService.Instance.Debug(
+                $"Queueing WebSocket message '{message.Type}' ({message.RequestId ?? "no-request-id"})"
+            );
             _outbound.Add(json);
         }
 

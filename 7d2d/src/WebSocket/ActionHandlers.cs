@@ -15,121 +15,7 @@ namespace Takaro.WebSocket
     {
         public static async Task GiveItem(string requestId, TakaroGiveItemArgs args)
         {
-            if (args == null || args.GameId == null || string.IsNullOrEmpty(args.Item))
-            {
-                SendError(requestId, "Invalid or missing parameters");
-                return;
-            }
-
-            await MainThreadDispatcher.Instance.Run(() =>
-            {
-                ClientInfo cInfo = Shared.GetClientInfoFromGameId(args.GameId);
-                if (cInfo == null)
-                {
-                    SendError(requestId, "Player not found");
-                    return;
-                }
-
-                ItemValue itemValue = ItemClass.GetItem(args.Item);
-                if (itemValue == null || itemValue.type == ItemValue.None.type)
-                {
-                    SendError(requestId, "Item not found");
-                    return;
-                }
-
-                if (
-                    !GameManager.Instance.World.Players.dict.TryGetValue(
-                        cInfo.entityId,
-                        out EntityPlayer player
-                    )
-                )
-                {
-                    SendError(requestId, "Player entity not found");
-                    return;
-                }
-
-                if (!player.IsSpawned())
-                {
-                    SendError(requestId, "Player is not spawned");
-                    return;
-                }
-
-                if (player.IsDead())
-                {
-                    SendError(requestId, "Player is dead");
-                    return;
-                }
-
-                if (args.Amount <= 0)
-                {
-                    SendError(requestId, "Invalid item amount");
-                    return;
-                }
-
-                ushort quality = Constants.cItemMaxQuality;
-                if (!string.IsNullOrEmpty(args.Quality))
-                {
-                    if (
-                        ushort.TryParse(args.Quality, out ushort parsedQuality)
-                        && parsedQuality <= Constants.cItemMaxQuality
-                    )
-                    {
-                        quality = parsedQuality;
-                    }
-                    else
-                    {
-                        SendError(requestId, "Invalid quality value");
-                        return;
-                    }
-                }
-
-                ItemValue iv = new ItemValue(itemValue.type, true);
-
-                if (ItemClass.list[iv.type].HasSubItems)
-                {
-                    for (int i = 0; i < iv.Modifications.Length; i++)
-                    {
-                        ItemValue tmp = iv.Modifications[i];
-                        tmp.Quality = quality;
-                        iv.Modifications[i] = tmp;
-                    }
-                }
-                else if (ItemClass.list[iv.type].HasQuality)
-                {
-                    iv.Quality = quality;
-                }
-
-                ItemStack itemStack = new ItemStack(iv, args.Amount);
-                World world = GameManager.Instance.World;
-                EntityItem entityItem = (EntityItem)
-                    EntityFactory.CreateEntity(
-                        new EntityCreationData
-                        {
-                            entityClass = EntityClass.FromString("item"),
-                            id = EntityFactory.nextEntityID++,
-                            itemStack = itemStack,
-                            pos = world.Players.dict[cInfo.entityId].position,
-                            rot = new Vector3(20f, 0f, 20f),
-                            lifetime = 60f,
-                            belongsPlayerId = cInfo.entityId,
-                        }
-                    );
-                world.SpawnEntityInWorld(entityItem);
-                cInfo.SendPackage(
-                    NetPackageManager
-                        .GetPackage<NetPackageEntityCollect>()
-                        .Setup(entityItem.entityId, cInfo.entityId)
-                );
-                world.RemoveEntity(entityItem.entityId, EnumRemoveEntityReason.Despawned);
-
-                Send(
-                    WebSocketMessage.Create(
-                        WebSocketMessage.MessageTypes.Response,
-                        new Dictionary<string, object> { },
-                        requestId
-                    )
-                );
-            });
+            await GiveItemHandler.Handle(requestId, args);
         }
 
         public static async Task SendChatMessage(string requestId, TakaroSendMessageArgs args)
@@ -142,10 +28,17 @@ namespace Takaro.WebSocket
 
             await MainThreadDispatcher.Instance.Run(() =>
             {
+                string senderNameOverride = args.Opts == null ? null : args.Opts.SenderNameOverride;
+                TakaroSendMessageRecipientArgs recipient =
+                    args.Opts == null ? null : args.Opts.Recipient;
+                string renderedMessage = string.IsNullOrEmpty(senderNameOverride)
+                    ? args.Message
+                    : $"[{senderNameOverride}] {args.Message}";
+
                 // If a GameId is provided, send the message to that player as a whisper
-                if (args.Recipient != null && args.Recipient.GameId != null)
+                if (recipient != null && recipient.GameId != null)
                 {
-                    ClientInfo cInfo = Shared.GetClientInfoFromGameId(args.Recipient.GameId);
+                    ClientInfo cInfo = Shared.GetClientInfoFromGameId(recipient.GameId);
                     if (cInfo == null)
                     {
                         SendError(requestId, "Player not found");
@@ -158,7 +51,7 @@ namespace Takaro.WebSocket
                             .Setup(
                                 EChatType.Whisper,
                                 -1,
-                                args.Message,
+                                renderedMessage,
                                 null,
                                 EMessageSender.Server,
                                 GeneratedTextManager.BbCodeSupportMode.Supported
@@ -171,19 +64,13 @@ namespace Takaro.WebSocket
                         null,
                         EChatType.Global,
                         -1,
-                        args.Message,
+                        renderedMessage,
                         null,
                         EMessageSender.Server
                     );
                 }
 
-                Send(
-                    WebSocketMessage.Create(
-                        WebSocketMessage.MessageTypes.Response,
-                        new Dictionary<string, object> { },
-                        requestId
-                    )
-                );
+                Send(WebSocketMessage.CreateResponse(requestId, null));
             });
         }
 
@@ -240,18 +127,7 @@ namespace Takaro.WebSocket
                     $"Kicked player {cInfo.playerName} ({args.Player.GameId}): {kickReason}"
                 );
 
-                Send(
-                    WebSocketMessage.Create(
-                        WebSocketMessage.MessageTypes.Response,
-                        new Dictionary<string, object>
-                        {
-                            { "success", true },
-                            { "playerName", cInfo.playerName },
-                            { "reason", kickReason },
-                        },
-                        requestId
-                    )
-                );
+                Send(WebSocketMessage.CreateResponse(requestId, null));
             });
         }
 
@@ -370,30 +246,13 @@ namespace Takaro.WebSocket
                     $"Banned player {playerName} ({args.Player.GameId}) using {banMethod}: {banReason}, expires: {(banUntil == DateTime.MaxValue ? "never" : banUntil.ToString("o"))}"
                 );
 
-                Send(
-                    WebSocketMessage.Create(
-                        WebSocketMessage.MessageTypes.Response,
-                        new Dictionary<string, object>
-                        {
-                            { "success", true },
-                            { "playerName", playerName },
-                            { "reason", banReason },
-                            { "wasOnline", cInfo != null },
-                            { "method", banMethod },
-                            {
-                                "expiresAt",
-                                banUntil == DateTime.MaxValue ? null : banUntil.ToString("o")
-                            },
-                        },
-                        requestId
-                    )
-                );
+                Send(WebSocketMessage.CreateResponse(requestId, null));
             });
         }
 
         public static async Task UnbanPlayer(string requestId, TakaroUnbanPlayerArgs args)
         {
-            if (args == null || args.Player == null || string.IsNullOrEmpty(args.Player.GameId))
+            if (args == null || string.IsNullOrEmpty(args.GameId))
             {
                 SendError(requestId, "Invalid or missing gameId parameter");
                 return;
@@ -402,7 +261,7 @@ namespace Takaro.WebSocket
             await MainThreadDispatcher.Instance.Run(() =>
             {
                 PlatformUserIdentifierAbs userId = PlatformUserIdentifierAbs.FromCombinedString(
-                    $"EOS_{args.Player.GameId}"
+                    $"EOS_{args.GameId}"
                 );
                 bool unbanSuccess = false;
                 string playerName = "";
@@ -447,7 +306,7 @@ namespace Takaro.WebSocket
                         playerName =
                             playerData != null
                                 ? playerData.PlayerName.playerName.Text
-                                : $"Player_{args.Player.GameId}";
+                                : $"Player_{args.GameId}";
                     }
                 }
 
@@ -460,21 +319,10 @@ namespace Takaro.WebSocket
                 StateMirror.Instance.RefreshBans();
 
                 LogService.Instance.Debug(
-                    $"Unbanned player {playerName} ({args.Player.GameId}) using {unbanMethod}"
+                    $"Unbanned player {playerName} ({args.GameId}) using {unbanMethod}"
                 );
 
-                Send(
-                    WebSocketMessage.Create(
-                        WebSocketMessage.MessageTypes.Response,
-                        new Dictionary<string, object>
-                        {
-                            { "success", true },
-                            { "playerName", playerName },
-                            { "method", unbanMethod },
-                        },
-                        requestId
-                    )
-                );
+                Send(WebSocketMessage.CreateResponse(requestId, null));
             });
         }
 
@@ -531,20 +379,7 @@ namespace Takaro.WebSocket
                     $"Teleported player {cInfo.playerName} to ({targetPosition.x}, {targetPosition.y}, {targetPosition.z})"
                 );
 
-                Send(
-                    WebSocketMessage.Create(
-                        WebSocketMessage.MessageTypes.Response,
-                        new Dictionary<string, object>
-                        {
-                            { "success", true },
-                            { "playerName", cInfo.playerName },
-                            { "x", targetPosition.x },
-                            { "y", targetPosition.y },
-                            { "z", targetPosition.z },
-                        },
-                        requestId
-                    )
-                );
+                Send(WebSocketMessage.CreateResponse(requestId, null));
             });
         }
 

@@ -3,9 +3,9 @@ name: 7D2D Connector
 on:
   push:
     branches: [main]
-    paths: ['7d2d/**', 'scripts/**', '.github/workflows/7d2d.yml']
+    paths: ['7d2d/**', 'tests/test_7d2d_connector_regressions.py', 'scripts/**', '.github/workflows/7d2d.yml']
   pull_request:
-    paths: ['7d2d/**', 'scripts/**', '.github/workflows/7d2d.yml']
+    paths: ['7d2d/**', 'tests/test_7d2d_connector_regressions.py', 'scripts/**', '.github/workflows/7d2d.yml']
   workflow_call:
     inputs:
       version:
@@ -60,13 +60,19 @@ jobs:
         id: binaries-cache
         with:
           path: 7d2d/_data/7dtd-binaries
-          key: 7d2d-managed-v1
+          key: 7d2d-managed-v3-0-1-b24117900-v1
 
       - name: Make scripts executable
         run: chmod +x 7d2d/scripts/*.sh scripts/*.sh
 
       - name: Set up environment
         run: 7d2d/scripts/setup-environment.sh
+
+      - name: Run Generic Connector contract harness
+        run: 7d2d/scripts/test-contract.sh
+
+      - name: Run source regressions
+        run: python3 -m unittest tests/test_7d2d_connector_regressions.py
 
       - name: Resolve release params
         id: params

@@ -106,7 +106,7 @@ namespace Takaro.Config
                 {
                     IdentityToken = GenerateUuid();
                     UpdateIdentityTokenInConfig(IdentityToken);
-                    LogService.Instance.Info($"Generated new identity token: {IdentityToken}");
+                    LogService.Instance.Info("Generated a new identity token");
                 }
 
                 LogService.Instance.Info(
@@ -155,9 +155,7 @@ namespace Takaro.Config
                 // Update the instance property
                 IdentityToken = identityToken;
 
-                LogService.Instance.Info(
-                    $"Default config created with generated identity token: {identityToken}"
-                );
+                LogService.Instance.Info("Default config created with a generated identity token");
             }
             catch (Exception ex)
             {

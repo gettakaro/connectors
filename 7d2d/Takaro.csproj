@@ -85,7 +85,7 @@
     <Reference Include="websocket-sharp">
       <HintPath>_data\7dtd-binaries\websocket-sharp.dll</HintPath>
     </Reference>
-    <Reference Include="System.Runtime.Serialization" />    
+    <Reference Include="System.Runtime.Serialization" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="src\API.cs" />
@@ -97,9 +97,11 @@
     <Compile Include="src\Services\DbWriter.cs" />
     <Compile Include="src\Services\LogService.cs" />
     <Compile Include="src\Services\MainThreadDispatcher.cs" />
+    <Compile Include="src\Services\PlayerProximateItemDelivery.cs" />
     <Compile Include="src\Services\PositionSampler.cs" />
     <Compile Include="src\Services\StateMirror.cs" />
     <Compile Include="src\WebSocket\ActionHandlers.cs" />
+    <Compile Include="src\WebSocket\GiveItemHandler.cs" />
     <Compile Include="src\WebSocket\GameEventPublisher.cs" />
     <Compile Include="src\WebSocket\ReadHandlers.cs" />
     <Compile Include="src\WebSocket\RequestRouter.cs" />

@@ -48,6 +48,7 @@ namespace Takaro
             // Seed the mirror from game truth before the WebSocket connects, so
             // requests can never observe a cold mirror.
             StateMirror.Instance.SeedOnGameStart();
+            StateMirror.Instance.MarkGameReady();
             WebSocketTransport.Instance.Initialize();
         }
 
@@ -60,6 +61,7 @@ namespace Takaro
         private static void GameShutdown(ref ModEvents.SGameShutdownData data)
         {
             LogService.Instance.Info("Game shutting down");
+            StateMirror.Instance.MarkGameStopping();
 
             // Unregister Unity log handler
             Application.logMessageReceived -= HandleLogMessage;

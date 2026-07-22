@@ -67,6 +67,35 @@ namespace Takaro.Persistence
         public string Description { get; set; }
     }
 
+    public class EntityRecord
+    {
+        [BsonId]
+        public string Code { get; set; }
+
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public string Type { get; set; }
+        public string RuntimeClass { get; set; }
+        public string SpawnType { get; set; }
+    }
+
+    public class LocationRecord
+    {
+        [BsonId]
+        public string Code { get; set; }
+
+        public string Name { get; set; }
+        public int X { get; set; }
+        public int Y { get; set; }
+        public int Z { get; set; }
+        public int SizeX { get; set; }
+        public int SizeY { get; set; }
+        public int SizeZ { get; set; }
+        public string PrefabName { get; set; }
+        public int Rotation { get; set; }
+        public string PositionAnchor { get; set; }
+    }
+
     public class PositionSample
     {
         public string GameId { get; set; }
