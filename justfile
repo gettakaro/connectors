@@ -115,6 +115,14 @@ sevend2d-build:
 sevend2d-build-deploy:
     cd 7d2d && ./scripts/build-mod.sh deploy
 
+# Run the Generic Connector protocol contract harness
+sevend2d-test-contract:
+    cd 7d2d && ./scripts/test-contract.sh
+
+# Run the 7D2D source-level regression suite
+sevend2d-test-regressions:
+    python3 -m unittest tests/test_7d2d_connector_regressions.py
+
 # Start the 7D2D dev services
 sevend2d-up *args:
     cd 7d2d && docker compose up {{args}}
