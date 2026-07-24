@@ -1,24 +1,25 @@
 # Takaro 7D2D Mod - Implementation Status
 
 > **Qualification status:** Source presence is classified separately from
-> runtime support. The V3.0.1 server-side build has twenty-two Live-supported
-> Coverage Cells; only `listLocations` remains a Takaro-core Schema-fallback.
+> runtime support. All twenty-three Coverage Cells are Live-supported. The
+> V3.1.0 forward-compatibility refresh includes a vanilla client and the
+> generated Takaro `listLocations` route.
 
 ## Executive Summary
 
 This document tracks the mod-7d2d implementation against the [official Takaro specification](https://docs.takaro.io/advanced/adding-support-for-a-new-game).
 
-**Qualification status: 22/23 Coverage Cells are Live-supported.**
+**Qualification status: 23/23 Coverage Cells are Live-supported.**
 
 ## 📊 Quick Status Overview
 
 | Category | Status | Progress |
 |----------|--------|----------|
 | Contract/build foundation | Locally verified | 329 contract assertions; V3 Release build |
-| Function source paths | 17 implemented | Sixteen Live-supported; one Schema-fallback |
+| Function source paths | 17 implemented | Seventeen Live-supported |
 | Function placeholders | 0 stubs | Entity and placed-POI catalogues are mirror-backed |
 | Event source paths | 6 implemented | Six Live-supported |
-| Live-supported | 22/23 | Sixteen functions and six events; one documented Schema-fallback |
+| Live-supported | 23/23 | Seventeen functions and six events |
 
 ---
 
@@ -74,7 +75,7 @@ never observe a cold mirror.
 | `getPlayerInventory` | `inventories` collection | join + `ModEvents.SavePlayerData` | client playerdata sync interval (~30s); Live-supported through Takaro inventory sync |
 | `listItems` | `items` collection | seeded once at GameStartDone (static) | 0; Live-supported |
 | `listEntities` | `entities` collection | seeded from `EntityClass.list.Dict` at GameStartDone | 0; Live-supported |
-| `listLocations` | `locations` collection | seeded from placed `DynamicPrefabDecorator` POIs at GameStartDone | 0; direct-live proven, Takaro Schema-fallback |
+| `listLocations` | `locations` collection | seeded from placed `DynamicPrefabDecorator` POIs at GameStartDone | 0; Live-supported through the generated Takaro route |
 | `listBans` | `bans` collection | seed; refreshed after Takaro ban/unban; 60s resync catches console bans | ≤60s for console-issued bans; timed path Live-supported |
 | `giveItem` | first-party player-proximate world drop inside a main-thread dispatcher closure | — | Live-supported |
 | `banPlayer`, `unbanPlayer` | game API calls inside a main-thread dispatcher closure | — | timed and permanent paths Live-supported |
@@ -95,8 +96,8 @@ Read requests (mirror-backed, `src/WebSocket/ReadHandlers.cs`):
 - **`getPlayerInventory`** — Live-supported; post-deployment validated observations were persisted by Takaro inventory sync
 - **`listItems`** — Live-supported; localized item catalogue
 - **`listEntities`** — Live-supported; spawnable living non-player entity catalogue
-- **`listLocations`** — Schema-fallback; placed POI catalogue is directly
-  live-proven, but Takaro core has no callable Generic `listLocations` path
+- **`listLocations`** — Live-supported; the generated Takaro API route returned
+  368 validated placed POIs while an unmodified V3.1.0 client was online
 - **`listBans`** — Live-supported for the timed-ban path; merged timed and permanent ban sources
 
 Action requests (main-thread dispatched, `src/WebSocket/ActionHandlers.cs`):
@@ -115,8 +116,10 @@ Action requests (main-thread dispatched, `src/WebSocket/ActionHandlers.cs`):
 - **`shutdown`** — Live-supported; Takaro success, native save/cleanup, normal WebSocket close, and actual process exit proven
 
 The complete live-proof record is maintained in the El-Limon/gamingconnectors
-incubation workspace. The Takaro platform dependency for `listLocations` is
-tracked in El-Limon issue #18.
+incubation workspace. The callable platform route is pending review in
+[`gettakaro/takaro` PR #3093](https://github.com/gettakaro/takaro/pull/3093);
+production installations require that platform change to be merged and
+deployed.
 
 ---
 
