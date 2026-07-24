@@ -72,6 +72,26 @@ namespace Takaro.Services
             return record != null && record.Online ? record : null;
         }
 
+        public PlayerRecord GetPlayerLocationRecord(string gameId)
+        {
+            PlayerRecord record;
+            lock (Database.Instance.SyncRoot)
+            {
+                record = Database.Instance.Players.FindById(gameId);
+            }
+
+            if (record == null)
+                return null;
+
+            return PlayerLocationReadWindow.IsReadable(
+                record.Online,
+                record.LastSeenUtc,
+                DateTime.UtcNow
+            )
+                ? record
+                : null;
+        }
+
         public List<TakaroItem> GetPlayerInventory(string gameId)
         {
             InventoryRecord record;
@@ -510,7 +530,7 @@ namespace Takaro.Services
                         ExpiresAt =
                             ban.BannedUntil == DateTime.MaxValue
                                 ? null
-                                : ban.BannedUntil.ToString("o"),
+                                : BanExpiry.ToTakaroUtc(ban.BannedUntil, TimeZoneInfo.Local),
                     };
 
                     if (banId.StartsWith("EOS_"))

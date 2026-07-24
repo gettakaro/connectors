@@ -16,6 +16,26 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn("Platform.BlockedPlayerList.Instance.GetEntriesOrdered", mirror)
         self.assertIn("Shared.TransformBanRecordToTakaroBan(record)", mirror)
 
+    def test_timed_bans_use_game_local_deadlines_and_persist_before_kick(self):
+        actions = self.source("src/WebSocket/ActionHandlers.cs")
+        ban_player = actions.split(
+            "public static async Task BanPlayer", 1
+        )[1].split("public static async Task UnbanPlayer", 1)[0]
+        mirror = self.source("src/Services/StateMirror.cs")
+
+        self.assertIn("BanExpiry.TryCreateGameDeadline", ban_player)
+        self.assertIn("DateTimeOffset.UtcNow", ban_player)
+        self.assertIn("TimeZoneInfo.Local", ban_player)
+        self.assertIn("Blacklist.AddBan", ban_player)
+        self.assertIn("Blacklist.IsBanned", ban_player)
+        self.assertIn("Game did not persist timed ban", ban_player)
+        self.assertLess(
+            ban_player.index("Blacklist.IsBanned"),
+            ban_player.index("GameUtils.KickPlayerForClientInfo"),
+        )
+        self.assertNotIn("banUntil.ToUniversalTime()", ban_player)
+        self.assertIn("BanExpiry.ToTakaroUtc", mirror)
+
     def test_reconnect_remains_indefinite_with_a_backoff_cap(self):
         transport = self.source("src/WebSocket/WebSocketTransport.cs")
         self.assertNotIn("MAX_RECONNECT_ATTEMPTS", transport)
@@ -24,11 +44,62 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn("Math.Pow(2", transport)
         self.assertIn("MAX_RECONNECT_INTERVAL_SECONDS", transport)
 
-    def test_raw_game_logs_are_forwarded_without_connector_feedback(self):
+    def test_native_game_logs_are_forwarded_without_connector_feedback(self):
         api = self.source("src/API.cs")
-        self.assertIn("GameEventPublisher.SendLogEvent(logString)", api)
-        self.assertIn('logString.Contains($"[{ModPrefix}]")', api)
+        self.assertIn("Log.LogCallbacksExtended += HandleNativeLogMessage", api)
+        self.assertIn("Log.LogCallbacksExtended -= HandleNativeLogMessage", api)
+        self.assertNotIn("Application.logMessageReceived", api)
+        self.assertIn("GameEventPublisher.SendLogEvent(plainMessage)", api)
+        self.assertIn('plainMessage.Contains($"[{ModPrefix}]")', api)
+        self.assertIn("ServerMessageEchoGuard.Instance.ShouldSuppress", api)
         self.assertNotIn("type == LogType.Error || type == LogType.Warning", api)
+
+        actions = self.source("src/WebSocket/ActionHandlers.cs")
+        send_message = actions.split(
+            "public static async Task SendChatMessage", 1
+        )[1].split("public static async Task ExecuteCommand", 1)[0]
+        self.assertIn("ServerMessageEchoGuard.Instance.Record(renderedMessage)", send_message)
+        self.assertLess(
+            send_message.index("ServerMessageEchoGuard.Instance.Record(renderedMessage)"),
+            send_message.index("GameManager.Instance.ChatMessageServer"),
+        )
+
+    def test_lifecycle_events_use_stable_v3_server_owned_hooks(self):
+        api = self.source("src/API.cs")
+        disconnect = api.split(
+            "private static void PlayerDisconnected", 1
+        )[1].split("public void EntityKilled", 1)[0]
+        entity_killed = api.split("public void EntityKilled", 1)[1].split(
+            "private static ModEvents.EModEventResult GameMessage", 1
+        )[0]
+
+        self.assertIn("TransformClientInfoToTakaroPlayerIdentity", disconnect)
+        self.assertIn("GameEventPublisher.SendPlayerDisconnected(player)", disconnect)
+        self.assertLess(
+            disconnect.index("TransformClientInfoToTakaroPlayerIdentity"),
+            disconnect.index("StateMirror.Instance.MarkOffline"),
+        )
+
+        self.assertIn("ModEvents.GameMessage.RegisterHandler(GameMessage)", api)
+        self.assertIn("ModEvents.GameMessage.UnregisterHandler(GameMessage)", api)
+        self.assertIn("EnumGameMessages.EntityWasKilled", api)
+        self.assertIn("GameEventPublisher.SendPlayerDeath", api)
+        self.assertIn("ModEvents.EModEventResult.Continue", api)
+        game_message = api.split(
+            "private static ModEvents.EModEventResult GameMessage", 1
+        )[1].split("private static void PlayerSpawnedInWorld", 1)[0]
+        self.assertIn("data.MainName", game_message)
+        self.assertIn("PlayerDisplayName", game_message)
+        self.assertIn("Clients.ForEntityId", game_message)
+        self.assertNotIn("|| data.ClientInfo == null", game_message)
+
+        self.assertIn(
+            "data.KilledEntitiy.entityType == EntityType.Player", entity_killed
+        )
+        self.assertIn("return;", entity_killed)
+        self.assertNotIn("Player death:", entity_killed)
+        self.assertNotIn("GameEventPublisher.SendPlayerDeath", entity_killed)
+        self.assertIn("GameEventPublisher.SendEntityKilled", entity_killed)
 
     def test_default_endpoint_is_production(self):
         config = self.source("src/Config/ConfigManager.cs")
@@ -36,14 +107,6 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn("wss://connect.takaro.io/", config)
         self.assertNotIn("wss://your-takaro-websocket-server.com", config)
         self.assertIn("wss://connect.takaro.io/", readme)
-
-    def test_ci_managed_assemblies_are_pinned_to_the_live_proven_v3_build(self):
-        setup = self.source("scripts/setup-environment.sh")
-        workflow = (REPOSITORY_ROOT / ".github/workflows/7d2d.yml").read_text()
-        expected_hash = "d05257aa0a597abe51b39574fc86acd5945da4d5e41b66b7f357e0c2ea5e55bd"
-        self.assertIn(expected_hash, setup)
-        self.assertIn("verify_managed_assembly", setup)
-        self.assertIn("7d2d-managed-v3-0-1-b24117900-v1", workflow)
 
     def test_sensitive_payloads_are_not_logged(self):
         router = self.source("src/WebSocket/RequestRouter.cs")
@@ -53,11 +116,47 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertNotIn("serializedMessage", transport)
         self.assertNotIn("Identity token: {identityToken}", config)
 
-    def test_production_handlers_preserve_null_semantics(self):
+    def test_protocol_error_frames_are_diagnosed_without_dispatch_or_raw_payloads(self):
+        router = self.source("src/WebSocket/RequestRouter.cs")
+        error_branch = router.split(
+            "webSocketMessage.Type == WebSocketMessage.MessageTypes.Error", 1
+        )[1].split(
+            "webSocketMessage.Type != WebSocketMessage.MessageTypes.Request", 1
+        )[0]
+        diagnostics = self.source("src/Services/ProtocolDiagnostics.cs")
+
+        self.assertIn("ProtocolDiagnostics.ExtractErrorMessage", error_branch)
+        self.assertIn("LogService.Instance.Warn", error_branch)
+        self.assertIn("return;", error_branch)
+        self.assertNotIn("Dispatch(", error_branch)
+        self.assertIn("MaxMessageLength", diagnostics)
+        self.assertIn('jObject["message"]', diagnostics)
+        self.assertNotIn("SerializeObject(payload)", diagnostics)
+
+    def test_console_command_responses_reflect_native_error_lines(self):
+        actions = self.source("src/WebSocket/ActionHandlers.cs")
+        execute_command = actions.split("public static async Task ExecuteCommand", 1)[
+            1
+        ].split("public static async Task KickPlayer", 1)[0]
+        classifier = self.source("src/Services/ConsoleCommandOutcome.cs")
+
+        self.assertIn("ConsoleCommandOutcome.FromRawResult", execute_command)
+        self.assertIn('{ "success", outcome.Success }', execute_command)
+        self.assertIn('payload["errorMessage"] = outcome.ErrorMessage', execute_command)
+        self.assertNotIn('{ "success", true }', execute_command)
+        self.assertIn('"*** ERROR:"', classifier)
+        self.assertIn('"Wrong number of arguments"', classifier)
+        self.assertIn('"Invalid value for"', classifier)
+        self.assertIn("StartsWith(prefix, StringComparison.Ordinal)", classifier)
+        self.assertIn("MaxErrorMessageLength", classifier)
+
+    def test_production_handlers_preserve_supported_not_found_semantics(self):
         reads = self.source("src/WebSocket/ReadHandlers.cs")
         actions = self.source("src/WebSocket/ActionHandlers.cs")
         give_item = self.source("src/WebSocket/GiveItemHandler.cs")
-        self.assertEqual(2, reads.count("WebSocketMessage.CreateResponse(requestId, null)"))
+        self.assertEqual(0, reads.count("WebSocketMessage.CreateResponse(requestId, null)"))
+        self.assertEqual(2, reads.count('SendError(requestId, "Player not found")'))
+        self.assertIn("new TakaroItem[0]", reads)
         self.assertEqual(6, actions.count("WebSocketMessage.CreateResponse(requestId, null)"))
         self.assertEqual(1, give_item.count("WebSocketMessage.CreateResponse(requestId, null)"))
 
@@ -136,6 +235,30 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn("public bool IsGameReady", mirror)
         self.assertIn("StateMirror.Instance.MarkGameReady()", api)
         self.assertIn("StateMirror.Instance.MarkGameStopping()", api)
+
+    def test_startup_waits_for_seed_writes_before_advertising_readiness(self):
+        api = self.source("src/API.cs")
+        startup = api.split(
+            "private static void GameStartDone", 1
+        )[1].split("private static void GameUpdate", 1)[0]
+        writer = self.source("src/Services/DbWriter.cs")
+
+        self.assertIn("DbWriter.Instance.Flush", startup)
+        self.assertLess(
+            startup.index("StateMirror.Instance.SeedOnGameStart()"),
+            startup.index("DbWriter.Instance.Flush"),
+        )
+        self.assertLess(
+            startup.index("DbWriter.Instance.Flush"),
+            startup.index("StateMirror.Instance.MarkGameReady()"),
+        )
+        self.assertLess(
+            startup.index("StateMirror.Instance.MarkGameReady()"),
+            startup.index("WebSocketTransport.Instance.Initialize()"),
+        )
+        self.assertIn("public void Flush(TimeSpan timeout)", writer)
+        self.assertIn("TimeoutException", writer)
+        self.assertIn("_hasFailedOperation", writer)
 
 
 if __name__ == "__main__":

@@ -43,14 +43,14 @@
     {
       "name": "getPlayer",
       "args": {"gameId": "fixture-player"},
-      "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": 7}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responsePayload": null}],
+      "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": 7}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responseType": "error"}],
       "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayer", "args": "{\"gameId\":\"fixture-player\"}"}},
       "response": {"type": "response", "requestId": "fixture-request", "payload": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "ping": 42}}
     },
     {
       "name": "getPlayerLocation",
       "args": {"gameId": "fixture-player"},
-      "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": false}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responsePayload": null}],
+      "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": false}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responseType": "error"}],
       "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayerLocation", "args": "{\"gameId\":\"fixture-player\"}"}},
       "response": {"type": "response", "requestId": "fixture-request", "payload": {"x": 10.5, "y": 20.25, "z": 30.75, "dimension": "main"}}
     },

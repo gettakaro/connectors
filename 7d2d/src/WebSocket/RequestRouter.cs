@@ -126,6 +126,18 @@ namespace Takaro.WebSocket
                 if (webSocketMessage == null)
                     return;
 
+                if (webSocketMessage.Type == WebSocketMessage.MessageTypes.Error)
+                {
+                    string errorMessage = ProtocolDiagnostics.ExtractErrorMessage(
+                        webSocketMessage.Payload
+                    );
+                    string correlation = string.IsNullOrEmpty(webSocketMessage.RequestId)
+                        ? string.Empty
+                        : $" ({webSocketMessage.RequestId})";
+                    LogService.Instance.Warn($"Takaro protocol error{correlation}: {errorMessage}");
+                    return;
+                }
+
                 if (webSocketMessage.Type != WebSocketMessage.MessageTypes.Request)
                     return;
 

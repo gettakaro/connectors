@@ -19,7 +19,12 @@ public static class ContractHarness
                 throw new ArgumentException("Expected the Generic Connector fixture path");
 
             JObject fixture = JObject.Parse(File.ReadAllText(args[0]));
+            AssertBanExpiryConversion();
+            AssertConsoleCommandOutcomeClassification();
             AssertResponseSerialization(fixture);
+            AssertStableEventPayloads();
+            AssertDisconnectedLocationReadWindow();
+            AssertServerMessageEchoGuard();
             AssertWorldDtoSerialization(fixture);
             AssertPlayerProximateItemDelivery();
             AssertGiveItemProductionValidationAndCardinality();
@@ -27,6 +32,7 @@ public static class ContractHarness
             AssertNestedArgumentParsing();
             AssertRouterParsingAndCardinality(fixture);
             AssertControlFramesDoNotEnterRequestDispatch();
+            AssertProtocolErrorsAreBoundedAndSafe();
             AssertCorrelatedMalformedRequestsTerminate();
             AssertRawRequestsAreNotLogged();
             Console.WriteLine("Contract harness passed: " + _assertions + " assertions");
@@ -37,6 +43,316 @@ public static class ContractHarness
             Console.Error.WriteLine(ex);
             return 1;
         }
+    }
+
+    private static void AssertDisconnectedLocationReadWindow()
+    {
+        DateTime now = DateTime.Parse("2026-07-24T10:24:12Z").ToUniversalTime();
+
+        True(
+            PlayerLocationReadWindow.IsReadable(true, DateTime.MinValue, now),
+            "online player location is readable"
+        );
+        True(
+            PlayerLocationReadWindow.IsReadable(false, now.AddSeconds(-1), now),
+            "recent disconnect location remains readable for Takaro enrichment"
+        );
+        True(
+            PlayerLocationReadWindow.IsReadable(false, now.AddSeconds(-30), now),
+            "disconnect location remains readable at the grace boundary"
+        );
+        True(
+            !PlayerLocationReadWindow.IsReadable(false, now.AddSeconds(-31), now),
+            "stale offline player location is not exposed"
+        );
+
+        TimeZoneInfo utcPlusTwo = TimeZoneInfo.CreateCustomTimeZone(
+            "fixture-utc-plus-two",
+            TimeSpan.FromHours(2),
+            "Fixture UTC+2",
+            "Fixture UTC+2"
+        );
+        DateTime localWallTime = DateTime.SpecifyKind(
+            now.AddHours(2).AddSeconds(-1),
+            DateTimeKind.Unspecified
+        );
+        True(
+            PlayerLocationReadWindow.IsReadable(false, localWallTime, now, utcPlusTwo),
+            "LiteDB local wall time is normalized before disconnect age comparison"
+        );
+    }
+
+    private static void AssertServerMessageEchoGuard()
+    {
+        var guard = new ServerMessageEchoGuard();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-24T09:20:25Z");
+        const string outbound = "{\"msg\":\"TESTING native log\",\"timestamp\":\"fixture\"}";
+        string nativeEcho = "Chat (from '-non-player-', entity id '-1', to 'Global'): " + outbound;
+
+        guard.Record(outbound, now);
+        True(
+            guard.ShouldSuppress(nativeEcho, now.AddSeconds(1)),
+            "recent Takaro server-message echo is suppressed"
+        );
+        True(
+            !guard.ShouldSuppress(nativeEcho, now.AddSeconds(1)),
+            "server-message echo suppression is consumed exactly once"
+        );
+
+        guard.Record("ordinary announcement", now);
+        True(
+            !guard.ShouldSuppress(
+                "Chat (from 'Fixture Player', entity id '7', to 'Global'): ordinary announcement",
+                now.AddSeconds(1)
+            ),
+            "player chat with matching text is not suppressed"
+        );
+
+        guard.Record("ordinary announcement", now);
+        True(
+            !guard.ShouldSuppress(
+                "Chat (from '-non-player-', entity id '-1', to 'Global'): prefix: ordinary announcement",
+                now.AddSeconds(1)
+            ),
+            "non-player suffix collision is not suppressed"
+        );
+        True(
+            guard.ShouldSuppress(
+                "Chat (from '-non-player-', entity id '-1', to 'Global'): ordinary announcement",
+                now.AddSeconds(1)
+            ),
+            "suffix collision does not consume the exact global echo"
+        );
+
+        guard.Record("private announcement", now);
+        True(
+            !guard.ShouldSuppress(
+                "Chat (from '-non-player-', entity id '-1', to 'Whisper'): private announcement",
+                now.AddSeconds(1)
+            ),
+            "non-global server chat is not suppressed"
+        );
+        True(
+            !guard.ShouldSuppress(
+                "Chat (from '-non-player-', entity id '-1', to 'Global'): ordinary announcement",
+                now.AddSeconds(31)
+            ),
+            "expired server-message echoes are not suppressed"
+        );
+
+        for (int index = 0; index < ServerMessageEchoGuard.MaxEntries + 1; index++)
+            guard.Record("message-" + index, now);
+        True(
+            !guard.ShouldSuppress(
+                "Chat (from '-non-player-', entity id '-1', to 'Global'): message-0",
+                now.AddSeconds(1)
+            ),
+            "server-message echo guard stays bounded"
+        );
+        True(
+            guard.ShouldSuppress(
+                "Chat (from '-non-player-', entity id '-1', to 'Global'): message-128",
+                now.AddSeconds(1)
+            ),
+            "server-message echo guard retains the newest bounded entry"
+        );
+    }
+
+    private static void AssertStableEventPayloads()
+    {
+        var client = new ClientInfo
+        {
+            CrossplatformId = new PlatformUserIdentifierAbs
+            {
+                CombinedString = "EOS_fixture-event-player",
+            },
+            PlatformId = new PlatformUserIdentifierAbs
+            {
+                CombinedString = "Steam_fixture-event-platform",
+            },
+            playerName = "Fixture Event Player",
+            ip = "192.0.2.25",
+            ping = 73,
+        };
+        Takaro.TakaroPlayer identity = Takaro.Shared.TransformClientInfoToTakaroPlayerIdentity(
+            client
+        );
+        JObject identityJson = JObject.Parse(JsonConvert.SerializeObject(identity));
+        Equal("fixture-event-player", (string)identityJson["gameId"], "identity gameId");
+        Equal("Fixture Event Player", (string)identityJson["name"], "identity name");
+        Equal(
+            "steam:fixture-event-platform",
+            (string)identityJson["platformId"],
+            "identity platformId"
+        );
+        True(identityJson["ip"] == null, "identity snapshot omits teardown IP");
+        True(identityJson["ping"] == null, "identity snapshot omits teardown ping");
+
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        GameEventPublisher.SendPlayerDisconnected(identity);
+        AssertPublishedEvent("player-disconnected", out JObject disconnectedData);
+        TokenEqual(identityJson, disconnectedData["player"], "disconnect uses stable identity");
+
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        GameEventPublisher.SendPlayerDeath(
+            identity,
+            null,
+            new UnityEngine.Vector3(10.5f, 20.25f, 30.75f)
+        );
+        AssertPublishedEvent("player-death", out JObject deathData);
+        TokenEqual(identityJson, deathData["player"], "death uses stable identity");
+        True(deathData["attacker"] == null, "death omits missing attacker");
+        Equal(10.5f, (float)deathData["position"]["x"], "death position x");
+        Equal(20.25f, (float)deathData["position"]["y"], "death position y");
+        Equal(30.75f, (float)deathData["position"]["z"], "death position z");
+
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        GameEventPublisher.SendEntityKilled(identity, "Rabbit", "animal", null);
+        AssertPublishedEvent("entity-killed", out JObject killedData);
+        TokenEqual(identityJson, killedData["player"], "entity kill uses stable identity");
+        Equal("animal", (string)killedData["entity"], "entity kill type");
+        Equal("unknown", (string)killedData["weapon"], "entity kill weapon fallback");
+    }
+
+    private static void AssertPublishedEvent(string expectedType, out JObject eventData)
+    {
+        Equal(
+            1,
+            WebSocketTransport.Instance.TerminalMessages.Count,
+            expectedType + " publishes exactly one frame"
+        );
+        JObject frame = JObject.Parse(
+            JsonConvert.SerializeObject(WebSocketTransport.Instance.TerminalMessages[0])
+        );
+        Equal("gameEvent", (string)frame["type"], expectedType + " frame type");
+        Equal(expectedType, (string)frame["payload"]["type"], expectedType + " event type");
+        eventData = (JObject)frame["payload"]["data"];
+        True(eventData != null, expectedType + " has event data");
+    }
+
+    private static void AssertBanExpiryConversion()
+    {
+        TimeZoneInfo utcPlusTwo = TimeZoneInfo.CreateCustomTimeZone(
+            "Fixture UTC+02",
+            TimeSpan.FromHours(2),
+            "Fixture UTC+02",
+            "Fixture UTC+02"
+        );
+        DateTimeOffset utcNow = DateTimeOffset.Parse("2026-07-23T20:00:00Z");
+
+        True(
+            BanExpiry.TryCreateGameDeadline(
+                "2026-07-23T20:15:00Z",
+                utcNow,
+                utcPlusTwo,
+                out DateTime gameDeadline,
+                out string error
+            ),
+            "future Takaro UTC expiry is accepted"
+        );
+        Equal(string.Empty, error, "accepted expiry has no error");
+        Equal(
+            new DateTime(2026, 7, 23, 22, 15, 0, DateTimeKind.Unspecified),
+            gameDeadline,
+            "UTC expiry becomes the game-local wall clock"
+        );
+        Equal(
+            "2026-07-23T20:15:00.0000000Z",
+            BanExpiry.ToTakaroUtc(gameDeadline, utcPlusTwo),
+            "game-local deadline round-trips to canonical Takaro UTC"
+        );
+
+        True(
+            !BanExpiry.TryCreateGameDeadline(
+                "not-a-timestamp",
+                utcNow,
+                utcPlusTwo,
+                out DateTime invalidDeadline,
+                out string invalidError
+            ),
+            "invalid Takaro expiry is rejected"
+        );
+        True(!string.IsNullOrEmpty(invalidError), "invalid expiry returns an error");
+
+        True(
+            !BanExpiry.TryCreateGameDeadline(
+                "2026-07-23T20:00:00Z",
+                utcNow,
+                utcPlusTwo,
+                out DateTime currentDeadline,
+                out string currentError
+            ),
+            "current Takaro expiry is rejected"
+        );
+        True(!string.IsNullOrEmpty(currentError), "current expiry returns an error");
+
+        True(
+            !BanExpiry.TryCreateGameDeadline(
+                "2026-07-23T19:59:59Z",
+                utcNow,
+                utcPlusTwo,
+                out DateTime pastDeadline,
+                out string pastError
+            ),
+            "past Takaro expiry is rejected"
+        );
+        True(!string.IsNullOrEmpty(pastError), "past expiry returns an error");
+    }
+
+    private static void AssertConsoleCommandOutcomeClassification()
+    {
+        ConsoleCommandOutcome valid = ConsoleCommandOutcome.FromRawResult(
+            "Game version: V3.0.1\nDay 4, 12:00"
+        );
+        True(valid.Success, "ordinary multiline console output succeeds");
+        Equal(
+            "Game version: V3.0.1\nDay 4, 12:00",
+            valid.RawResult,
+            "successful console output remains byte-for-byte unchanged"
+        );
+        True(valid.ErrorMessage == null, "successful console output omits error message");
+
+        foreach (
+            string rawResult in new[]
+            {
+                "*** ERROR: Unknown command",
+                "Command preface\r\n*** ERROR: Native rejection\r\nCommand suffix",
+                "Wrong number of arguments, expected 2, found 0.",
+                "Invalid value for single argument variant: \"not-a-time\"",
+            }
+        )
+        {
+            ConsoleCommandOutcome rejected = ConsoleCommandOutcome.FromRawResult(rawResult);
+            True(!rejected.Success, "native failure line rejects console command");
+            Equal(rawResult, rejected.RawResult, "rejected console output remains unchanged");
+            True(
+                rawResult.Contains(rejected.ErrorMessage),
+                "rejected console output exposes the first native failure line"
+            );
+        }
+
+        foreach (
+            string rawResult in new[]
+            {
+                " *** ERROR: indented text is not a native error line",
+                "prefix *** ERROR: embedded text is not a native error line",
+                "*** Error: matching is ordinal and case-sensitive",
+            }
+        )
+        {
+            True(
+                ConsoleCommandOutcome.FromRawResult(rawResult).Success,
+                "near-match console output remains successful"
+            );
+        }
+
+        ConsoleCommandOutcome bounded = ConsoleCommandOutcome.FromRawResult(
+            "*** ERROR: " + new string('x', 2048)
+        );
+        True(
+            bounded.ErrorMessage.Length <= ConsoleCommandOutcome.MaxErrorMessageLength,
+            "native error message is bounded"
+        );
     }
 
     private static void AssertPlayerProximateItemDelivery()
@@ -292,20 +608,36 @@ public static class ContractHarness
 
     private static void AssertProductionNotFoundReadSemantics()
     {
-        AssertSingleTerminalPayload(
+        AssertSingleTerminalError(
             () => ReadHandlers.GetPlayer("fixture-missing-player", "missing-player"),
-            JValue.CreateNull(),
             "missing getPlayer"
         );
-        AssertSingleTerminalPayload(
+        AssertSingleTerminalError(
             () => ReadHandlers.GetPlayerLocation("fixture-missing-location", "missing-player"),
-            JValue.CreateNull(),
             "missing getPlayerLocation"
         );
         AssertSingleTerminalPayload(
             () => ReadHandlers.GetPlayerInventory("fixture-missing-inventory", "missing-player"),
             new JArray(),
             "missing getPlayerInventory"
+        );
+    }
+
+    private static void AssertSingleTerminalError(Action invoke, string description)
+    {
+        HandlerProbe.Configure(JValue.CreateNull());
+        invoke();
+        Equal(
+            1,
+            WebSocketTransport.Instance.TerminalMessages.Count,
+            description + " has exactly one terminal response"
+        );
+        WebSocketMessage terminal = WebSocketTransport.Instance.TerminalMessages[0];
+        Equal(WebSocketMessage.MessageTypes.Error, terminal.Type, description + " is an error");
+        JObject serialized = JObject.Parse(JsonConvert.SerializeObject(terminal));
+        True(
+            !string.IsNullOrEmpty((string)serialized["payload"]["error"]),
+            description + " explains the failure"
         );
     }
 
@@ -559,6 +891,44 @@ public static class ContractHarness
         );
     }
 
+    private static void AssertProtocolErrorsAreBoundedAndSafe()
+    {
+        const string secret = "fixture-registration-secret";
+        LogService.Instance.Messages.Clear();
+        HandlerProbe.Configure(JValue.CreateNull());
+        RequestRouter.Route(
+            "{\"type\":\"error\",\"requestId\":\"fixture-error\",\"payload\":{\"message\":\"first\\nsecond\",\"registrationToken\":\""
+                + secret
+                + "\"}}"
+        );
+
+        Equal(0, HandlerProbe.Actions.Count, "protocol error does not dispatch an action");
+        Equal(
+            0,
+            WebSocketTransport.Instance.TerminalMessages.Count,
+            "protocol error does not emit a terminal response"
+        );
+        Equal(1, LogService.Instance.Messages.Count, "protocol error emits one diagnostic");
+        string diagnostic = LogService.Instance.Messages[0];
+        True(diagnostic.Contains("fixture-error"), "protocol diagnostic preserves correlation");
+        True(diagnostic.Contains("first second"), "protocol diagnostic normalizes newlines");
+        True(!diagnostic.Contains(secret), "protocol diagnostic omits token value");
+        True(!diagnostic.Contains("registrationToken"), "protocol diagnostic omits payload fields");
+
+        LogService.Instance.Messages.Clear();
+        HandlerProbe.Configure(JValue.CreateNull());
+        RequestRouter.Route(
+            JsonConvert.SerializeObject(
+                new { type = "error", payload = new { message = new string('x', 2048) } }
+            )
+        );
+        Equal(1, LogService.Instance.Messages.Count, "uncorrelated protocol error is logged");
+        True(
+            LogService.Instance.Messages[0].Length <= ProtocolDiagnostics.MaxMessageLength + 64,
+            "protocol diagnostic is bounded"
+        );
+    }
+
     private static void AssertRawRequestsAreNotLogged()
     {
         const string secret = "fixture-registration-secret";
@@ -769,6 +1139,11 @@ namespace Takaro.Services
             return gameId == "fixture-player" ? FixturePlayer() : null;
         }
 
+        public Takaro.Persistence.PlayerRecord GetPlayerLocationRecord(string gameId)
+        {
+            return gameId == "fixture-player" ? FixturePlayer() : null;
+        }
+
         public List<Takaro.TakaroItem> GetPlayerInventory(string gameId)
         {
             return new List<Takaro.TakaroItem>
@@ -859,6 +1234,8 @@ namespace Takaro.Persistence
         public float X { get; set; }
         public float Y { get; set; }
         public float Z { get; set; }
+        public bool Online { get; set; }
+        public DateTime LastSeenUtc { get; set; }
     }
 
     public sealed class BanRecord
@@ -891,6 +1268,14 @@ public sealed class ClientInfo
     public string ip { get; set; }
     public int ping { get; set; }
     public int entityId { get; set; }
+}
+
+public enum EChatType
+{
+    Global,
+    Whisper,
+    Friends,
+    Party,
 }
 
 public sealed class ConnectionManager

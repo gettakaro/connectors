@@ -205,6 +205,35 @@ namespace Takaro
             return player;
         }
 
+        public static TakaroPlayer TransformClientInfoToTakaroPlayerIdentity(ClientInfo clientInfo)
+        {
+            if (clientInfo == null)
+                return null;
+
+            string crossplatformId = clientInfo.CrossplatformId?.CombinedString;
+            if (string.IsNullOrEmpty(crossplatformId))
+                return null;
+
+            string steamId = null;
+            string xboxLiveId = null;
+            string platformId = clientInfo.PlatformId?.CombinedString;
+            if (!string.IsNullOrEmpty(platformId))
+            {
+                if (platformId.StartsWith("Steam_"))
+                    steamId = platformId.Replace("Steam_", "");
+                else if (platformId.StartsWith("XBL_"))
+                    xboxLiveId = platformId.Replace("XBL_", "");
+            }
+
+            string epicOnlineServicesId = crossplatformId.Replace("EOS_", "");
+            return new TakaroPlayer
+            {
+                GameId = epicOnlineServicesId,
+                Name = clientInfo.playerName,
+                PlatformId = PlatformIdFromIdentifiers(steamId, xboxLiveId, epicOnlineServicesId),
+            };
+        }
+
         public static string PlatformIdFromIdentifiers(
             string steamId,
             string xboxLiveId,

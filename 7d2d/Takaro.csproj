@@ -97,7 +97,12 @@
     <Compile Include="src\Services\DbWriter.cs" />
     <Compile Include="src\Services\LogService.cs" />
     <Compile Include="src\Services\MainThreadDispatcher.cs" />
+    <Compile Include="src\Services\BanExpiry.cs" />
+    <Compile Include="src\Services\ConsoleCommandOutcome.cs" />
     <Compile Include="src\Services\PlayerProximateItemDelivery.cs" />
+    <Compile Include="src\Services\ProtocolDiagnostics.cs" />
+    <Compile Include="src\Services\PlayerLocationReadWindow.cs" />
+    <Compile Include="src\Services\ServerMessageEchoGuard.cs" />
     <Compile Include="src\Services\PositionSampler.cs" />
     <Compile Include="src\Services\StateMirror.cs" />
     <Compile Include="src\WebSocket\ActionHandlers.cs" />

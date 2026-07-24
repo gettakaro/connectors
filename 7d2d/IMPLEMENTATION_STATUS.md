@@ -1,20 +1,24 @@
 # Takaro 7D2D Mod - Implementation Status
 
+> **Qualification status:** Source presence is classified separately from
+> runtime support. The V3.0.1 server-side build has twenty-two Live-supported
+> Coverage Cells; only `listLocations` remains a Takaro-core Schema-fallback.
+
 ## Executive Summary
 
 This document tracks the mod-7d2d implementation against the [official Takaro specification](https://docs.takaro.io/advanced/adding-support-for-a-new-game).
 
-**Qualification status: 5/23 Coverage Cells are Live-supported.**
+**Qualification status: 22/23 Coverage Cells are Live-supported.**
 
 ## 📊 Quick Status Overview
 
 | Category | Status | Progress |
 |----------|--------|----------|
-| Contract/build foundation | Locally verified | 251 contract assertions; V3 Release build |
-| Function source paths | 17 implemented | Five Live-supported; one Schema-fallback; eleven unqualified |
+| Contract/build foundation | Locally verified | 329 contract assertions; V3 Release build |
+| Function source paths | 17 implemented | Sixteen Live-supported; one Schema-fallback |
 | Function placeholders | 0 stubs | Entity and placed-POI catalogues are mirror-backed |
-| Event source paths | 6 implemented, unproven | Live proof required |
-| Live-supported | 5/23 | Four read cells plus `giveItem`; no connector-wide promotion claim |
+| Event source paths | 6 implemented | Six Live-supported |
+| Live-supported | 22/23 | Sixteen functions and six events; one documented Schema-fallback |
 
 ---
 
@@ -51,8 +55,10 @@ hammer the connector with read requests without touching the game simulation.
 
 **Mirror lifecycle:** the database is **in-memory and ephemeral** — rebuilt
 from game truth on every boot. Nothing in the mirror has value across
-restarts: reads only serve online players, while items, entities, locations,
-and bans are reseeded at `GameStartDone`. (The memory backend also sidesteps
+restarts: ordinary player reads serve only online players, while items,
+entities, locations, and bans are reseeded at `GameStartDone`. The location
+read alone retains the last sample for a bounded 30 seconds after disconnect
+so Takaro can enrich the lifecycle event. (The memory backend also sidesteps
 LiteDB 5 disk-engine
 failures under Mono — "ReadFull must read PAGE_SIZE bytes" during
 WAL/checkpoint.) Seeding happens *before* the WebSocket connects, so requests
@@ -63,16 +69,18 @@ never observe a cold mirror.
 | Action | Served from | Updated by | Staleness bound |
 |---|---|---|---|
 | `testReachability` | cached game-ready lifecycle state | game start/shutdown | lifecycle-bound; Live-supported |
-| `getPlayers`, `getPlayer` | `players` collection (Online=true) | spawn/disconnect events; sampler refreshes ping | identity exact; ping ≤3s; `getPlayers` Live-supported, `getPlayer` direct-live only |
-| `getPlayerLocation` | `players.X/Y/Z` | PositionSampler (~3s) | ≤3s; direct-live only |
-| `getPlayerInventory` | `inventories` collection | join + `ModEvents.SavePlayerData` | client playerdata sync interval (~30s); direct-live only |
+| `getPlayers`, `getPlayer` | `players` collection (Online=true) | spawn/disconnect events; sampler refreshes ping | identity exact; ping ≤3s; Live-supported |
+| `getPlayerLocation` | `players.X/Y/Z` | PositionSampler (~3s); bounded disconnect snapshot | ≤3s online; ≤30s after disconnect for Takaro enrichment; Live-supported |
+| `getPlayerInventory` | `inventories` collection | join + `ModEvents.SavePlayerData` | client playerdata sync interval (~30s); Live-supported through Takaro inventory sync |
 | `listItems` | `items` collection | seeded once at GameStartDone (static) | 0; Live-supported |
 | `listEntities` | `entities` collection | seeded from `EntityClass.list.Dict` at GameStartDone | 0; Live-supported |
 | `listLocations` | `locations` collection | seeded from placed `DynamicPrefabDecorator` POIs at GameStartDone | 0; direct-live proven, Takaro Schema-fallback |
-| `listBans` | `bans` collection | seed; refreshed after Takaro ban/unban; 60s resync catches console bans | ≤60s for console-issued bans |
+| `listBans` | `bans` collection | seed; refreshed after Takaro ban/unban; 60s resync catches console bans | ≤60s for console-issued bans; timed path Live-supported |
 | `giveItem` | first-party player-proximate world drop inside a main-thread dispatcher closure | — | Live-supported |
-| `sendMessage`, `kickPlayer`, `banPlayer`, `unbanPlayer`, `teleportPlayer` | game API calls inside a main-thread dispatcher closure | — | unproven |
-| `executeConsoleCommand`, `shutdown` | `SdtdConsole.ExecuteAsync` (async by design) | — | unproven |
+| `banPlayer`, `unbanPlayer` | game API calls inside a main-thread dispatcher closure | — | timed and permanent paths Live-supported |
+| `sendMessage`, `kickPlayer`, `teleportPlayer` | game API calls inside a main-thread dispatcher closure | — | Live-supported |
+| `executeConsoleCommand` | `SdtdConsole.ExecuteAsync` plus native-result classifier | — | Live-supported for valid, unknown, and invalid-argument paths |
+| `shutdown` | `SdtdConsole.ExecuteAsync` (async by design) | — | Live-supported |
 
 ---
 
@@ -82,32 +90,33 @@ Read requests (mirror-backed, `src/WebSocket/ReadHandlers.cs`):
 
 - **`testReachability`** — Live-supported; reports cached game lifecycle readiness
 - **`getPlayers`** — Live-supported; online players from the mirror
-- **`getPlayer`** — implemented and direct-live proven; no Takaro-owned caller proof
-- **`getPlayerLocation`** — implemented and direct-live proven; no Takaro-owned caller proof
-- **`getPlayerInventory`** — implemented and direct-live proven; no Takaro-owned caller proof
+- **`getPlayer`** — Live-supported; recipient-scoped message metadata proves the Takaro-owned caller and DTO validation path
+- **`getPlayerLocation`** — Live-supported; a unique move and restoration were persisted by Takaro player sync
+- **`getPlayerInventory`** — Live-supported; post-deployment validated observations were persisted by Takaro inventory sync
 - **`listItems`** — Live-supported; localized item catalogue
 - **`listEntities`** — Live-supported; spawnable living non-player entity catalogue
 - **`listLocations`** — Schema-fallback; placed POI catalogue is directly
   live-proven, but Takaro core has no callable Generic `listLocations` path
-- **`listBans`** — implemented, unproven; merged timed and permanent ban sources
+- **`listBans`** — Live-supported for the timed-ban path; merged timed and permanent ban sources
 
 Action requests (main-thread dispatched, `src/WebSocket/ActionHandlers.cs`):
 
 - **`giveItem`** — Live-supported; combined direct and exact-current-build proof
   covers the Takaro-owned first-party world drop, exact vanilla pickup
   quantity, correlated readback, and full-inventory refusal on V3.0.1
-- **`sendMessage`** — implemented, unproven; global and recipient branches
-- **`executeConsoleCommand`** — implemented, unproven; asynchronous result capture
-- **`kickPlayer`** — implemented, unproven; optional reason
-- **`banPlayer`** — implemented, unproven; timed/permanent paths and mirror refresh
-- **`unbanPlayer`** — implemented, unproven; permanent/timed paths and mirror refresh
-- **`teleportPlayer`** — implemented, unproven; world-bounds clamping
-- **`shutdown`** — implemented, unproven; null response payload
+- **`sendMessage`** — Live-supported; global and recipient branches are visible in the vanilla client
+- **`executeConsoleCommand`** — Live-supported; valid output remains successful,
+  while unknown commands and V3 invalid-argument output preserve `rawResult`
+  and return a bounded failure
+- **`kickPlayer`** — Live-supported; the optional reason is visible in the vanilla client and the player leaves game state
+- **`banPlayer`** — Live-supported for timed and permanent paths; UTC input is converted to the game-local deadline and persistence is verified before kick
+- **`unbanPlayer`** — Live-supported for timed and permanent paths; game-owned removal, empty Takaro list, and successful vanilla reconnect proven
+- **`teleportPlayer`** — Live-supported; spawned-state rejection, bounded movement, and exact restoration are client-log proven
+- **`shutdown`** — Live-supported; Takaro success, native save/cleanup, normal WebSocket close, and actual process exit proven
 
-The curated runtime proofs and review history are recorded in the incubation
-workspace through El-Limon/gamingconnectors PRs #14, #16, #19, and #21. The
-Takaro platform dependency for `listLocations` is tracked in El-Limon issue
-#18.
+The complete live-proof record is maintained in the El-Limon/gamingconnectors
+incubation workspace. The Takaro platform dependency for `listLocations` is
+tracked in El-Limon issue #18.
 
 ---
 
@@ -115,12 +124,17 @@ Takaro platform dependency for `listLocations` is tracked in El-Limon issue
 
 All published via `src/WebSocket/GameEventPublisher.cs` (non-blocking outbound queue):
 
-- **`player-connected`** — implemented, unproven; `PlayerSpawnedInWorld`
-- **`player-disconnected`** — implemented, unproven; excludes shutdown disconnects
-- **`chat-message`** — implemented, unproven; Harmony network-package patch
-- **`entity-killed`** — implemented, unproven; non-player kills
-- **`player-death`** — implemented, unproven; death and attacker data
-- **`log`** — implemented, unproven; Unity log stream with feedback filtering
+- **`player-connected`** — Live-supported; native spawn and Takaro event are correlated
+- **`player-disconnected`** — Live-supported; stable identity snapshot, bounded
+  post-disconnect location enrichment, exact single Takaro event, and zero
+  online-player readback; shutdown disconnects remain excluded
+- **`chat-message`** — Live-supported; unique vanilla-client message is correlated through native and Takaro event timestamps
+- **`entity-killed`** — Live-supported; real vanilla-client non-player kill with
+  player attribution and non-empty held weapon
+- **`player-death`** — Live-supported; real vanilla-client fall death with
+  linked player and position
+- **`log`** — Live-supported; native server stream plus bounded one-shot
+  server-message echo suppression proven against a temporary Takaro hook
 
 ---
 
@@ -142,7 +156,11 @@ src/
 │   ├── LogService.cs           # File + console logging
 │   ├── DbWriter.cs             # Background writer thread (all DB writes)
 │   ├── MainThreadDispatcher.cs # WS thread → game main thread marshalling
-│   ├── PlayerProximateItemDelivery.cs # First-party replicated item drops
+│   ├── BanExpiry.cs             # UTC ↔ game-local timed-ban conversion
+│   ├── ConsoleCommandOutcome.cs # native console failure classification
+│   ├── ProtocolDiagnostics.cs   # bounded Takaro error diagnostics
+│   ├── PlayerLocationReadWindow.cs # bounded post-disconnect location access
+│   ├── ServerMessageEchoGuard.cs # bounded one-shot native chat echo guard
 │   ├── StateMirror.cs          # Mirror reads (WS thread) + snapshot writes (main thread)
 │   └── PositionSampler.cs      # ~3s position/ping sampling + 60s ban resync
 └── WebSocket/
@@ -150,7 +168,6 @@ src/
     ├── RequestRouter.cs        # Message parsing, dispatch, error boundary
     ├── ReadHandlers.cs         # Mirror-backed read requests
     ├── ActionHandlers.cs       # Main-thread-dispatched action requests
-    ├── GiveItemHandler.cs      # Validated item delivery and response cardinality
     ├── GameEventPublisher.cs   # Game event publishing
     └── WebSocketMessage.cs     # Message envelope
 ```

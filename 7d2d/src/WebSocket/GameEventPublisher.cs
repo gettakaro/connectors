@@ -37,17 +37,14 @@ namespace Takaro.WebSocket
             );
         }
 
-        public static void SendPlayerDisconnected(ClientInfo cInfo)
+        public static void SendPlayerDisconnected(TakaroPlayer player)
         {
-            if (cInfo == null)
+            if (player == null)
                 return;
 
             SendGameEvent(
                 "player-disconnected",
-                new Dictionary<string, object>
-                {
-                    { "player", Shared.TransformClientInfoToTakaroPlayer(cInfo) },
-                }
+                new Dictionary<string, object> { { "player", player } }
             );
         }
 
@@ -94,41 +91,37 @@ namespace Takaro.WebSocket
         }
 
         public static void SendEntityKilled(
-            ClientInfo killerInfo,
+            TakaroPlayer killer,
             string entityName,
             string entityType,
             string weapon = null
         )
         {
-            if (killerInfo == null)
+            if (killer == null)
                 return;
 
             var eventData = new Dictionary<string, object>
             {
-                { "player", Shared.TransformClientInfoToTakaroPlayer(killerInfo) },
+                { "player", killer },
                 { "entity", entityType },
+                { "weapon", string.IsNullOrEmpty(weapon) ? "unknown" : weapon },
             };
-
-            if (!string.IsNullOrEmpty(weapon))
-            {
-                eventData["weapon"] = weapon;
-            }
 
             SendGameEvent("entity-killed", eventData);
         }
 
         public static void SendPlayerDeath(
-            ClientInfo deadPlayerInfo,
-            ClientInfo attackerInfo,
+            TakaroPlayer deadPlayer,
+            TakaroPlayer attacker,
             Vector3 deathPosition
         )
         {
-            if (deadPlayerInfo == null)
+            if (deadPlayer == null)
                 return;
 
             var eventData = new Dictionary<string, object>
             {
-                { "player", Shared.TransformClientInfoToTakaroPlayer(deadPlayerInfo) },
+                { "player", deadPlayer },
                 {
                     "position",
                     new Dictionary<string, object>
@@ -140,9 +133,9 @@ namespace Takaro.WebSocket
                 },
             };
 
-            if (attackerInfo != null)
+            if (attacker != null)
             {
-                eventData["attacker"] = Shared.TransformClientInfoToTakaroPlayer(attackerInfo);
+                eventData["attacker"] = attacker;
             }
 
             SendGameEvent("player-death", eventData);

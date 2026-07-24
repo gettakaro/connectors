@@ -60,6 +60,7 @@ namespace Takaro.WebSocket
                 }
                 else
                 {
+                    ServerMessageEchoGuard.Instance.Record(renderedMessage);
                     GameManager.Instance.ChatMessageServer(
                         null,
                         EChatType.Global,
@@ -86,13 +87,17 @@ namespace Takaro.WebSocket
             var cr = new CommandResult(args.Command, tcs);
             SdtdConsole.Instance.ExecuteAsync(args.Command, cr);
             string result = await tcs.Task;
+            ConsoleCommandOutcome outcome = ConsoleCommandOutcome.FromRawResult(result);
+            var payload = new Dictionary<string, object>
+            {
+                { "rawResult", outcome.RawResult },
+                { "success", outcome.Success },
+            };
+            if (!outcome.Success)
+                payload["errorMessage"] = outcome.ErrorMessage;
 
             Send(
-                WebSocketMessage.Create(
-                    WebSocketMessage.MessageTypes.Response,
-                    new Dictionary<string, object> { { "rawResult", result }, { "success", true } },
-                    requestId
-                )
+                WebSocketMessage.Create(WebSocketMessage.MessageTypes.Response, payload, requestId)
             );
         }
 
@@ -160,27 +165,22 @@ namespace Takaro.WebSocket
                     ? "Banned by admin"
                     : args.Reason;
 
+                bool isTimedBan = !string.IsNullOrEmpty(args.ExpiresAt);
                 DateTime banUntil = DateTime.MaxValue;
-                if (!string.IsNullOrEmpty(args.ExpiresAt))
+                if (isTimedBan)
                 {
-                    try
-                    {
-                        banUntil = DateTime.Parse(
+                    if (
+                        !BanExpiry.TryCreateGameDeadline(
                             args.ExpiresAt,
-                            null,
-                            System.Globalization.DateTimeStyles.RoundtripKind
-                        );
-                        if (banUntil.Kind != DateTimeKind.Utc)
-                        {
-                            banUntil = banUntil.ToUniversalTime();
-                        }
-                    }
-                    catch (Exception parseEx)
+                            DateTimeOffset.UtcNow,
+                            TimeZoneInfo.Local,
+                            out banUntil,
+                            out string expiryError
+                        )
+                    )
                     {
-                        LogService.Instance.Warn(
-                            $"Failed to parse ban expiration date '{args.ExpiresAt}': {parseEx.Message}. Using permanent ban."
-                        );
-                        banUntil = DateTime.MaxValue;
+                        SendError(requestId, expiryError);
+                        return;
                     }
                 }
 
@@ -189,7 +189,7 @@ namespace Takaro.WebSocket
 
                 // Timed bans must use AdminTools.Blacklist (BlockedPlayerList has no
                 // expiration); permanent bans prefer the platform BlockedPlayerList.
-                if (banUntil != DateTime.MaxValue)
+                if (isTimedBan)
                 {
                     GameManager.Instance.adminTools.Blacklist.AddBan(
                         "Admin Ban",
@@ -197,6 +197,20 @@ namespace Takaro.WebSocket
                         banUntil,
                         banReason
                     );
+
+                    if (
+                        !GameManager.Instance.adminTools.Blacklist.IsBanned(
+                            userId,
+                            out DateTime _,
+                            out string _
+                        )
+                    )
+                    {
+                        GameManager.Instance.adminTools.Blacklist.RemoveBan(userId);
+                        SendError(requestId, "Game did not persist timed ban");
+                        return;
+                    }
+
                     banSuccess = true;
                     banMethod = "AdminTools.Blacklist (timed)";
                 }
@@ -228,7 +242,7 @@ namespace Takaro.WebSocket
                     banMethod = "AdminTools.Blacklist";
                 }
 
-                // If the player is currently online, kick them immediately
+                // Disconnect only after game-owned moderation state is active.
                 if (cInfo != null)
                 {
                     var kickData = new GameUtils.KickPlayerData(

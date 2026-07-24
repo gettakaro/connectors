@@ -33,9 +33,10 @@ namespace Takaro
             ModEvents.PlayerSpawnedInWorld.RegisterHandler(PlayerSpawnedInWorld);
             ModEvents.PlayerDisconnected.RegisterHandler(PlayerDisconnected);
             ModEvents.EntityKilled.RegisterHandler(EntityKilled);
+            ModEvents.GameMessage.RegisterHandler(GameMessage);
 
-            // Register Unity log handler for capturing server logs
-            Application.logMessageReceived += HandleLogMessage;
+            // Capture the dedicated server's native Log.Out stream as well as Unity logs.
+            Log.LogCallbacksExtended += HandleNativeLogMessage;
 
             LogService.Instance.Info("Mod initialized successfully");
         }
@@ -48,6 +49,7 @@ namespace Takaro
             // Seed the mirror from game truth before the WebSocket connects, so
             // requests can never observe a cold mirror.
             StateMirror.Instance.SeedOnGameStart();
+            DbWriter.Instance.Flush(TimeSpan.FromSeconds(30));
             StateMirror.Instance.MarkGameReady();
             WebSocketTransport.Instance.Initialize();
         }
@@ -63,8 +65,8 @@ namespace Takaro
             LogService.Instance.Info("Game shutting down");
             StateMirror.Instance.MarkGameStopping();
 
-            // Unregister Unity log handler
-            Application.logMessageReceived -= HandleLogMessage;
+            ModEvents.GameMessage.UnregisterHandler(GameMessage);
+            Log.LogCallbacksExtended -= HandleNativeLogMessage;
 
             MainThreadDispatcher.Instance.Shutdown();
             WebSocketTransport.Instance.Shutdown();
@@ -76,14 +78,15 @@ namespace Takaro
             if (data.ClientInfo == null)
                 return;
 
+            TakaroPlayer player = Shared.TransformClientInfoToTakaroPlayerIdentity(data.ClientInfo);
             StateMirror.Instance.MarkOffline(data.ClientInfo);
 
-            if (!data.GameShuttingDown)
+            if (!data.GameShuttingDown && player != null)
             {
                 LogService.Instance.Debug(
                     $"Player disconnected: {data.ClientInfo.playerName} ({data.ClientInfo.PlatformId})"
                 );
-                GameEventPublisher.SendPlayerDisconnected(data.ClientInfo);
+                GameEventPublisher.SendPlayerDisconnected(player);
             }
         }
 
@@ -92,42 +95,12 @@ namespace Takaro
             if (data.KilledEntitiy == null)
                 return;
 
-            // Handle player death events
             if (data.KilledEntitiy.entityType == EntityType.Player)
-            {
-                ClientInfo killedPlayerInfo = ConsoleHelper.ParseParamIdOrName(
-                    data.KilledEntitiy.entityId.ToString()
-                );
-                if (killedPlayerInfo != null)
-                {
-                    ClientInfo attackerInfo = null;
-                    if (
-                        data.KillingEntity != null
-                        && data.KillingEntity.entityType == EntityType.Player
-                    )
-                    {
-                        attackerInfo = ConsoleHelper.ParseParamIdOrName(
-                            data.KillingEntity.entityId.ToString()
-                        );
-                    }
+                return;
 
-                    Vector3 deathPosition = data.KilledEntitiy.position;
-                    LogService.Instance.Debug(
-                        $"Player death: {killedPlayerInfo.playerName} died at {deathPosition}"
-                    );
-
-                    GameEventPublisher.SendPlayerDeath(
-                        killedPlayerInfo,
-                        attackerInfo,
-                        deathPosition
-                    );
-                }
-            }
-            // Handle entity kill events (player killing something else)
-            else if (
-                data.KillingEntity != null
-                && data.KillingEntity.entityType == EntityType.Player
-            )
+            // Player deaths use GameMessage. EntityKilled remains the first-party
+            // surface for a player killing a non-player living entity.
+            if (data.KillingEntity != null && data.KillingEntity.entityType == EntityType.Player)
             {
                 ClientInfo killerInfo = ConsoleHelper.ParseParamIdOrName(
                     data.KillingEntity.entityId.ToString()
@@ -159,8 +132,79 @@ namespace Takaro
                     }
                 }
 
-                GameEventPublisher.SendEntityKilled(killerInfo, ea.EntityName, entityType, weapon);
+                TakaroPlayer killer = Shared.TransformClientInfoToTakaroPlayerIdentity(killerInfo);
+                GameEventPublisher.SendEntityKilled(killer, ea.EntityName, entityType, weapon);
             }
+        }
+
+        private static ModEvents.EModEventResult GameMessage(ref ModEvents.SGameMessageData data)
+        {
+            if (data.MessageType != EnumGameMessages.EntityWasKilled)
+                return ModEvents.EModEventResult.Continue;
+
+            ClientInfo victimInfo = data.ClientInfo;
+            EntityPlayer victimEntity = null;
+            if (victimInfo != null)
+            {
+                GameManager.Instance.World.Players.dict.TryGetValue(
+                    victimInfo.entityId,
+                    out victimEntity
+                );
+            }
+            else
+            {
+                foreach (EntityPlayer candidate in GameManager.Instance.World.Players.dict.Values)
+                {
+                    if (
+                        candidate == null
+                        || !string.Equals(
+                            candidate.PlayerDisplayName,
+                            data.MainName,
+                            StringComparison.Ordinal
+                        )
+                    )
+                        continue;
+
+                    if (victimEntity != null)
+                    {
+                        LogService.Instance.Warn(
+                            $"Skipped ambiguous player-death event for '{data.MainName}'"
+                        );
+                        return ModEvents.EModEventResult.Continue;
+                    }
+                    victimEntity = candidate;
+                }
+
+                if (victimEntity != null)
+                    victimInfo = ConnectionManager.Instance.Clients.ForEntityId(
+                        victimEntity.entityId
+                    );
+            }
+
+            TakaroPlayer victim = Shared.TransformClientInfoToTakaroPlayerIdentity(victimInfo);
+            if (victim == null)
+            {
+                LogService.Instance.Warn("Skipped player-death event without stable identity");
+                return ModEvents.EModEventResult.Continue;
+            }
+
+            Vector3 deathPosition;
+            if (victimEntity != null)
+            {
+                deathPosition = victimEntity.GetPosition();
+            }
+            else if (victimInfo.latestPlayerData != null)
+            {
+                deathPosition = victimInfo.latestPlayerData.ecd.pos;
+            }
+            else
+            {
+                LogService.Instance.Warn("Skipped player-death event without a position");
+                return ModEvents.EModEventResult.Continue;
+            }
+
+            GameEventPublisher.SendPlayerDeath(victim, null, deathPosition);
+            return ModEvents.EModEventResult.Continue;
         }
 
         private static void PlayerSpawnedInWorld(ref ModEvents.SPlayerSpawnedInWorldData data)
@@ -192,14 +236,25 @@ namespace Takaro
             StateMirror.Instance.UpsertInventory(data.ClientInfo);
         }
 
-        private static void HandleLogMessage(string logString, string stackTrace, LogType type)
+        private static void HandleNativeLogMessage(
+            string formattedMessage,
+            string plainMessage,
+            string trace,
+            LogType type,
+            DateTime timestamp,
+            long uptime
+        )
         {
             // Forward raw server log lines to Takaro while avoiding feedback loops from
             // the connector's own LogService output.
-            if (string.IsNullOrEmpty(logString) || logString.Contains($"[{ModPrefix}]"))
+            if (
+                string.IsNullOrEmpty(plainMessage)
+                || plainMessage.Contains($"[{ModPrefix}]")
+                || ServerMessageEchoGuard.Instance.ShouldSuppress(plainMessage)
+            )
                 return;
 
-            GameEventPublisher.SendLogEvent(logString);
+            GameEventPublisher.SendLogEvent(plainMessage);
         }
 
         [HarmonyPatch(typeof(NetPackageChat), "ProcessPackage")]
