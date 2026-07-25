@@ -48,7 +48,7 @@ namespace Takaro.WebSocket
 
     public class TakaroGiveItemArgs
     {
-        public string GameId { get; set; }
+        public TakaroPlayerReference Player { get; set; }
         public string Item { get; set; }
         public int Amount { get; set; }
         public string Quality { get; set; }
@@ -62,7 +62,13 @@ namespace Takaro.WebSocket
     public class TakaroSendMessageArgs
     {
         public string Message { get; set; }
+        public TakaroSendMessageOptsArgs Opts { get; set; }
+    }
+
+    public class TakaroSendMessageOptsArgs
+    {
         public TakaroSendMessageRecipientArgs Recipient { get; set; }
+        public string SenderNameOverride { get; set; }
     }
 
     public class TakaroSendMessageRecipientArgs
@@ -90,7 +96,7 @@ namespace Takaro.WebSocket
 
     public class TakaroUnbanPlayerArgs
     {
-        public TakaroPlayerReference Player { get; set; }
+        public string GameId { get; set; }
     }
 
     public class TakaroTeleportPlayerArgs
@@ -112,18 +118,39 @@ namespace Takaro.WebSocket
     {
         public static void Route(string message)
         {
+            string requestId = null;
             try
             {
-                LogService.Instance.Debug($"Received WebSocket message: {message}");
                 var webSocketMessage = JsonConvert.DeserializeObject<WebSocketMessage>(message);
 
-                if (webSocketMessage == null || webSocketMessage.Payload == null)
+                if (webSocketMessage == null)
                     return;
 
-                string requestId = webSocketMessage.RequestId;
+                if (webSocketMessage.Type == WebSocketMessage.MessageTypes.Error)
+                {
+                    string errorMessage = ProtocolDiagnostics.ExtractErrorMessage(
+                        webSocketMessage.Payload
+                    );
+                    string correlation = string.IsNullOrEmpty(webSocketMessage.RequestId)
+                        ? string.Empty
+                        : $" ({webSocketMessage.RequestId})";
+                    LogService.Instance.Warn($"Takaro protocol error{correlation}: {errorMessage}");
+                    return;
+                }
+
+                if (webSocketMessage.Type != WebSocketMessage.MessageTypes.Request)
+                    return;
+
+                requestId = webSocketMessage.RequestId;
                 if (string.IsNullOrEmpty(requestId))
                 {
                     LogService.Instance.Warn("Received message without requestId");
+                    return;
+                }
+
+                if (webSocketMessage.Payload == null)
+                {
+                    SendError(requestId, "Invalid or missing request payload");
                     return;
                 }
 
@@ -141,15 +168,25 @@ namespace Takaro.WebSocket
                         LogService.Instance.Warn(
                             "Received message with payload that is not a dictionary"
                         );
+                        SendError(requestId, "Invalid request payload");
                         return;
                     }
                 }
 
-                if (!payloadDict.ContainsKey("action"))
+                if (
+                    !payloadDict.TryGetValue("action", out object actionValue)
+                    || actionValue == null
+                    || string.IsNullOrWhiteSpace(actionValue.ToString())
+                )
+                {
+                    SendError(requestId, "Invalid or missing action");
                     return;
+                }
 
-                string action = payloadDict["action"].ToString();
+                string action = actionValue.ToString();
                 object args = payloadDict.ContainsKey("args") ? payloadDict["args"] : null;
+
+                LogService.Instance.Debug($"Received WebSocket request '{action}' ({requestId})");
 
                 _ = Dispatch(action, requestId, args);
             }
@@ -157,6 +194,8 @@ namespace Takaro.WebSocket
             {
                 LogService.Instance.Error($"Error handling WebSocket message: {ex.Message}");
                 Log.Exception(ex);
+                if (!string.IsNullOrEmpty(requestId))
+                    SendError(requestId, "Failed to handle request");
             }
         }
 
@@ -174,39 +213,33 @@ namespace Takaro.WebSocket
                         break;
                     case "getPlayer":
                     {
-                        var playerArgs = WebSocketArgs<TakaroPlayerReferenceArgs>.Parse(args);
-                        if (playerArgs == null || string.IsNullOrEmpty(playerArgs.GameId))
-                        {
-                            SendError(requestId, "Invalid or missing gameId parameter");
+                        if (!TryGetPlayerGameId(requestId, args, out string gameId))
                             return;
-                        }
-                        ReadHandlers.GetPlayer(requestId, playerArgs.GameId);
+                        ReadHandlers.GetPlayer(requestId, gameId);
                         break;
                     }
                     case "getPlayerLocation":
                     {
-                        var locationArgs = WebSocketArgs<TakaroPlayerReferenceArgs>.Parse(args);
-                        if (locationArgs == null || string.IsNullOrEmpty(locationArgs.GameId))
-                        {
-                            SendError(requestId, "Invalid or missing gameId parameter");
+                        if (!TryGetPlayerGameId(requestId, args, out string gameId))
                             return;
-                        }
-                        ReadHandlers.GetPlayerLocation(requestId, locationArgs.GameId);
+                        ReadHandlers.GetPlayerLocation(requestId, gameId);
                         break;
                     }
                     case "getPlayerInventory":
                     {
-                        var inventoryArgs = WebSocketArgs<TakaroPlayerReferenceArgs>.Parse(args);
-                        if (inventoryArgs == null || string.IsNullOrEmpty(inventoryArgs.GameId))
-                        {
-                            SendError(requestId, "Invalid or missing gameId parameter");
+                        if (!TryGetPlayerGameId(requestId, args, out string gameId))
                             return;
-                        }
-                        ReadHandlers.GetPlayerInventory(requestId, inventoryArgs.GameId);
+                        ReadHandlers.GetPlayerInventory(requestId, gameId);
                         break;
                     }
                     case "listItems":
                         ReadHandlers.ListItems(requestId);
+                        break;
+                    case "listEntities":
+                        ReadHandlers.ListEntities(requestId);
+                        break;
+                    case "listLocations":
+                        ReadHandlers.ListLocations(requestId);
                         break;
                     case "listBans":
                         ReadHandlers.ListBans(requestId);
@@ -268,6 +301,19 @@ namespace Takaro.WebSocket
                 Log.Exception(ex);
                 SendError(requestId, ex.Message);
             }
+        }
+
+        private static bool TryGetPlayerGameId(string requestId, object args, out string gameId)
+        {
+            TakaroPlayerReferenceArgs playerArgs = WebSocketArgs<TakaroPlayerReferenceArgs>.Parse(
+                args
+            );
+            gameId = playerArgs?.GameId;
+            if (!string.IsNullOrEmpty(gameId))
+                return true;
+
+            SendError(requestId, "Invalid or missing gameId parameter");
+            return false;
         }
 
         private static void SendError(string requestId, string errorMessage)

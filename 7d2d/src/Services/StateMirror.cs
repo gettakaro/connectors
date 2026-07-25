@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Takaro.Interfaces;
 using Takaro.Persistence;
 
@@ -15,6 +16,9 @@ namespace Takaro.Services
     {
         private static StateMirror _instance;
         private static readonly object _lock = new object();
+        private volatile bool _isGameReady;
+
+        public bool IsGameReady => _isGameReady;
 
         public static StateMirror Instance
         {
@@ -34,6 +38,16 @@ namespace Takaro.Services
         public void OnInit() { }
 
         public void OnDestroy() { }
+
+        public void MarkGameReady()
+        {
+            _isGameReady = true;
+        }
+
+        public void MarkGameStopping()
+        {
+            _isGameReady = false;
+        }
 
         #region Read side (WebSocket thread)
 
@@ -58,6 +72,26 @@ namespace Takaro.Services
             return record != null && record.Online ? record : null;
         }
 
+        public PlayerRecord GetPlayerLocationRecord(string gameId)
+        {
+            PlayerRecord record;
+            lock (Database.Instance.SyncRoot)
+            {
+                record = Database.Instance.Players.FindById(gameId);
+            }
+
+            if (record == null)
+                return null;
+
+            return PlayerLocationReadWindow.IsReadable(
+                record.Online,
+                record.LastSeenUtc,
+                DateTime.UtcNow
+            )
+                ? record
+                : null;
+        }
+
         public List<TakaroItem> GetPlayerInventory(string gameId)
         {
             InventoryRecord record;
@@ -66,7 +100,7 @@ namespace Takaro.Services
                 record = Database.Instance.Inventories.FindById(gameId);
             }
             if (record == null)
-                return null;
+                return new List<TakaroItem>();
 
             var items = new List<TakaroItem>();
             foreach (ItemSlot slot in record.Items)
@@ -85,6 +119,75 @@ namespace Takaro.Services
             return items;
         }
 
+        public List<TakaroEntity> GetEntities()
+        {
+            List<EntityRecord> records;
+            lock (Database.Instance.SyncRoot)
+            {
+                records = new List<EntityRecord>(Database.Instance.Entities.FindAll());
+            }
+            records.Sort((left, right) => string.CompareOrdinal(left.Code, right.Code));
+
+            var entities = new List<TakaroEntity>();
+            foreach (EntityRecord record in records)
+            {
+                var metadata = new Dictionary<string, object>
+                {
+                    { "runtimeClass", record.RuntimeClass },
+                    { "spawnType", record.SpawnType },
+                };
+                entities.Add(
+                    new TakaroEntity
+                    {
+                        Code = record.Code,
+                        Name = record.Name,
+                        Description = record.Description,
+                        Type = record.Type,
+                        Metadata = metadata,
+                    }
+                );
+            }
+            return entities;
+        }
+
+        public List<TakaroLocation> GetLocations()
+        {
+            List<LocationRecord> records;
+            lock (Database.Instance.SyncRoot)
+            {
+                records = new List<LocationRecord>(Database.Instance.Locations.FindAll());
+            }
+            records.Sort((left, right) => string.CompareOrdinal(left.Code, right.Code));
+
+            var locations = new List<TakaroLocation>();
+            foreach (LocationRecord record in records)
+            {
+                locations.Add(
+                    new TakaroLocation
+                    {
+                        Code = record.Code,
+                        Name = record.Name,
+                        Position = new TakaroPosition
+                        {
+                            X = record.X,
+                            Y = record.Y,
+                            Z = record.Z,
+                        },
+                        SizeX = record.SizeX,
+                        SizeY = record.SizeY,
+                        SizeZ = record.SizeZ,
+                        Metadata = new Dictionary<string, object>
+                        {
+                            { "prefab", record.PrefabName },
+                            { "rotation", record.Rotation },
+                            { "positionAnchor", record.PositionAnchor },
+                        },
+                    }
+                );
+            }
+            return locations;
+        }
+
         public List<TakaroItem> GetItems()
         {
             List<ItemRecord> records;
@@ -92,6 +195,7 @@ namespace Takaro.Services
             {
                 records = new List<ItemRecord>(Database.Instance.Items.FindAll());
             }
+            records.Sort((left, right) => string.CompareOrdinal(left.Code, right.Code));
 
             var items = new List<TakaroItem>();
             foreach (ItemRecord record in records)
@@ -119,21 +223,7 @@ namespace Takaro.Services
             var bans = new List<TakaroBan>();
             foreach (BanRecord record in records)
             {
-                bans.Add(
-                    new TakaroBan
-                    {
-                        Player = new TakaroPlayer
-                        {
-                            GameId = record.GameId,
-                            Name = record.Name,
-                            SteamId = record.SteamId,
-                            XboxLiveId = record.XboxLiveId,
-                            EpicOnlineServicesId = record.EpicOnlineServicesId,
-                        },
-                        Reason = record.Reason,
-                        ExpiresAt = record.ExpiresAt,
-                    }
-                );
+                bans.Add(Shared.TransformBanRecordToTakaroBan(record));
             }
             return bans;
         }
@@ -149,8 +239,12 @@ namespace Takaro.Services
         public void SeedOnGameStart()
         {
             SeedItems();
+            SeedEntities();
+            SeedLocations();
             RefreshBans();
-            LogService.Instance.Info("State mirror seeding enqueued (items, bans)");
+            LogService.Instance.Info(
+                "State mirror seeding enqueued (items, entities, locations, bans)"
+            );
         }
 
         public void UpsertPlayerOnline(ClientInfo cInfo)
@@ -220,7 +314,7 @@ namespace Takaro.Services
 
             var slots = new List<ItemSlot>();
             CaptureItemStacks(cInfo.latestPlayerData.inventory, slots);
-            CaptureItemStacks(cInfo.latestPlayerData.bag, slots);
+            CaptureItemStacks(cInfo.latestPlayerData.bag?.GetSlots(), slots);
             CaptureEquippedItems(cInfo.latestPlayerData.equipment?.GetItems(), slots);
 
             string gameId = Shared.GameIdFromClientInfo(cInfo);
@@ -285,6 +379,124 @@ namespace Takaro.Services
             });
         }
 
+        private void SeedEntities()
+        {
+            var records = new List<EntityRecord>();
+            var seenCodes = new HashSet<string>();
+
+            foreach (KeyValuePair<int, EntityClass> entry in EntityClass.list.Dict)
+            {
+                EntityClass entityClass = entry.Value;
+                if (
+                    entityClass == null
+                    || entityClass.userSpawnType == EntityClass.UserSpawnType.None
+                    || entityClass.classname == null
+                    || !typeof(EntityAlive).IsAssignableFrom(entityClass.classname)
+                    || typeof(EntityPlayer).IsAssignableFrom(entityClass.classname)
+                    || typeof(EntityVehicle).IsAssignableFrom(entityClass.classname)
+                )
+                    continue;
+
+                string code = entityClass.entityClassName;
+                if (string.IsNullOrEmpty(code) || !seenCodes.Add(code))
+                    continue;
+
+                string localizedName = Localization.Get(code, true);
+                if (string.IsNullOrEmpty(localizedName))
+                    localizedName = code;
+
+                records.Add(
+                    new EntityRecord
+                    {
+                        Code = code,
+                        Name = localizedName,
+                        Type = entityClass.bIsEnemyEntity ? "hostile" : null,
+                        RuntimeClass = entityClass.classname.Name,
+                        SpawnType = entityClass.userSpawnType.ToString(),
+                    }
+                );
+            }
+
+            records.Sort((left, right) => string.CompareOrdinal(left.Code, right.Code));
+            LogService.Instance.Info($"Entity catalogue captured {records.Count} entries");
+            DbWriter.Instance.Enqueue(() =>
+            {
+                Database.Instance.Entities.DeleteAll();
+                if (records.Count > 0)
+                    Database.Instance.Entities.InsertBulk(records);
+            });
+        }
+
+        private void SeedLocations()
+        {
+            var records = new List<LocationRecord>();
+            var seenCodes = new HashSet<string>();
+            DynamicPrefabDecorator decorator = GameManager.Instance.GetDynamicPrefabDecorator();
+            if (decorator != null)
+            {
+                var prefabs = new List<PrefabInstance>();
+                decorator.GetPOIPrefabs(prefabs);
+                foreach (PrefabInstance instance in prefabs)
+                {
+                    if (instance?.prefab == null)
+                        continue;
+
+                    string prefabName = instance.prefab.PrefabName;
+                    if (string.IsNullOrEmpty(prefabName))
+                        prefabName = instance.name;
+                    if (
+                        string.IsNullOrEmpty(prefabName)
+                        || instance.boundingBoxSize.x <= 0
+                        || instance.boundingBoxSize.y <= 0
+                        || instance.boundingBoxSize.z <= 0
+                    )
+                        continue;
+
+                    string code = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "{0}@{1},{2},{3}:r{4}",
+                        prefabName,
+                        instance.boundingBoxPosition.x,
+                        instance.boundingBoxPosition.y,
+                        instance.boundingBoxPosition.z,
+                        instance.rotation
+                    );
+                    if (!seenCodes.Add(code))
+                        continue;
+
+                    string localizedName = instance.prefab.LocalizedName;
+                    if (string.IsNullOrEmpty(localizedName))
+                        localizedName = prefabName;
+
+                    records.Add(
+                        new LocationRecord
+                        {
+                            Code = code,
+                            Name = localizedName,
+                            X = instance.boundingBoxPosition.x,
+                            Y = instance.boundingBoxPosition.y,
+                            Z = instance.boundingBoxPosition.z,
+                            SizeX = instance.boundingBoxSize.x,
+                            SizeY = instance.boundingBoxSize.y,
+                            SizeZ = instance.boundingBoxSize.z,
+                            PrefabName = prefabName,
+                            Rotation = instance.rotation,
+                            PositionAnchor = "min-corner",
+                        }
+                    );
+                }
+            }
+
+            records.Sort((left, right) => string.CompareOrdinal(left.Code, right.Code));
+            LogService.Instance.Info($"Location catalogue captured {records.Count} entries");
+            DbWriter.Instance.Enqueue(() =>
+            {
+                Database.Instance.Locations.DeleteAll();
+                if (records.Count > 0)
+                    Database.Instance.Locations.InsertBulk(records);
+            });
+        }
+
         private static List<BanRecord> CaptureBans()
         {
             var records = new List<BanRecord>();
@@ -318,7 +530,7 @@ namespace Takaro.Services
                         ExpiresAt =
                             ban.BannedUntil == DateTime.MaxValue
                                 ? null
-                                : ban.BannedUntil.ToString("o"),
+                                : BanExpiry.ToTakaroUtc(ban.BannedUntil, TimeZoneInfo.Local),
                     };
 
                     if (banId.StartsWith("EOS_"))

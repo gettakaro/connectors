@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 3,
+  "source": "https://github.com/gettakaro/takaro/blob/103fc1dc6df6a575dcd518d8112fc80315664a8d/packages/lib-gameserver/src/gameservers/generic/index.ts",
+  "wireOracle": {
+    "repository": "https://github.com/gettakaro/takaro.git",
+    "commit": "103fc1dc6df6a575dcd518d8112fc80315664a8d",
+    "runtimePath": "packages/lib-gameserver/src/gameservers/generic/index.ts",
+    "interfacePath": "packages/lib-gameserver/src/interfaces/GameServer.ts",
+    "docsDivergence": {
+      "repository": "https://github.com/gettakaro/docs.git",
+      "commit": "2baf4fa263f7fca0c8e91f846c9b73aa7614675d",
+      "path": "docs/advanced/generic-connector-protocol.mdx",
+      "documentedNoArgs": [],
+      "operativeNoArgs": "{}",
+      "decision": "current runtime is the operative wire oracle"
+    }
+  },
+  "wireEnvelope": {
+    "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "<function>", "args": "<JSON string>"}},
+    "response": {"type": "response", "requestId": "fixture-request", "payload": "<function result>"},
+    "event": {"type": "gameEvent", "payload": {"type": "<event>", "data": "<event data>"}}
+  },
+  "functions": [
+    {
+      "name": "testReachability",
+      "args": {},
+      "argumentCases": [
+        {"name": "object", "value": {}},
+        {"name": "json-string", "value": "{}"},
+        {"name": "empty", "value": ""},
+        {"name": "invalid", "value": "{"}
+      ],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "testReachability", "args": "{}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": {"connectable": true}}
+    },
+    {
+      "name": "getPlayers",
+      "args": {},
+      "argumentCases": [{"name": "object", "value": {}}, {"name": "json-string", "value": "{}"}, {"name": "empty", "value": ""}, {"name": "invalid", "value": "{"}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayers", "args": "{}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "ping": 42}]}
+    },
+    {
+      "name": "getPlayer",
+      "args": {"gameId": "fixture-player"},
+      "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": 7}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responseType": "error"}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayer", "args": "{\"gameId\":\"fixture-player\"}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "ping": 42}}
+    },
+    {
+      "name": "getPlayerLocation",
+      "args": {"gameId": "fixture-player"},
+      "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": false}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responseType": "error"}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayerLocation", "args": "{\"gameId\":\"fixture-player\"}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": {"x": 10.5, "y": 20.25, "z": 30.75, "dimension": "main"}}
+    },
+    {
+      "name": "getPlayerInventory",
+      "args": {"gameId": "fixture-player"},
+      "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": []}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responsePayload": []}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayerInventory", "args": "{\"gameId\":\"fixture-player\"}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"name": "Wood", "code": "resourceWood", "amount": 2, "quality": "1"}]}
+    },
+    {
+      "name": "listItems",
+      "args": {},
+      "argumentCases": [{"name": "object", "value": {}}, {"name": "json-string", "value": "{}"}, {"name": "empty", "value": ""}, {"name": "invalid", "value": "{"}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "listItems", "args": "{}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"name": "Wood", "code": "resourceWood", "description": "Building resource"}]}
+    },
+    {
+      "name": "giveItem",
+      "args": {"player": {"gameId": "fixture-player"}, "item": "resourceWood", "amount": 2, "quality": "1"},
+      "argumentCases": [{"name": "object", "value": {"player": {"gameId": "fixture-player"}, "item": "resourceWood", "amount": 2, "quality": "1"}}, {"name": "json-string", "value": "{\"player\":{\"gameId\":\"fixture-player\"},\"item\":\"resourceWood\",\"amount\":2,\"quality\":\"1\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"player": {}, "amount": -1}}, {"name": "not-found", "value": {"player": {"gameId": "missing-player"}, "item": "resourceWood", "amount": 1, "quality": "1"}}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "giveItem", "args": "{\"player\":{\"gameId\":\"fixture-player\"},\"item\":\"resourceWood\",\"amount\":2,\"quality\":\"1\"}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": null}
+    },
+    {
+      "name": "listEntities",
+      "args": {},
+      "argumentCases": [{"name": "object", "value": {}}, {"name": "json-string", "value": "{}"}, {"name": "empty", "value": ""}, {"name": "invalid", "value": "{"}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "listEntities", "args": "{}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"code": "zombieArlene", "name": "Arlene", "description": "Hostile zombie", "type": "hostile", "metadata": {"source": "7d2d"}}]}
+    },
+    {
+      "name": "listLocations",
+      "args": {},
+      "argumentCases": [{"name": "object", "value": {}}, {"name": "json-string", "value": "{}"}, {"name": "empty", "value": ""}, {"name": "invalid", "value": "{"}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "listLocations", "args": "{}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"name": "Fort Camo", "code": "army_camp_01@100,50,200:r1", "position": {"x": 100, "y": 50, "z": 200}, "sizeX": 61, "sizeY": 28, "sizeZ": 53, "metadata": {"prefab": "army_camp_01", "rotation": 1, "positionAnchor": "min-corner"}}]}
+    },
+    {
+      "name": "sendMessage",
+      "args": {"message": "qualification fixture", "opts": {"recipient": {"gameId": "fixture-player"}, "senderNameOverride": "Qualification Bot"}},
+      "argumentCases": [{"name": "object", "value": {"message": "qualification fixture", "opts": {"recipient": {"gameId": "fixture-player"}, "senderNameOverride": "Qualification Bot"}}}, {"name": "json-string", "value": "{\"message\":\"qualification fixture\",\"opts\":{\"recipient\":{\"gameId\":\"fixture-player\"},\"senderNameOverride\":\"Qualification Bot\"}}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"message": 7}}, {"name": "not-found", "value": {"message": "qualification fixture", "opts": {"recipient": {"gameId": "missing-player"}}}}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "sendMessage", "args": "{\"message\":\"qualification fixture\",\"opts\":{\"recipient\":{\"gameId\":\"fixture-player\"},\"senderNameOverride\":\"Qualification Bot\"}}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": null}
+    },
+    {
+      "name": "executeConsoleCommand",
+      "args": {"command": "version"},
+      "argumentCases": [{"name": "object", "value": {"command": "version"}}, {"name": "json-string", "value": "{\"command\":\"version\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"command": []}}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "executeConsoleCommand", "args": "{\"command\":\"version\"}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": {"rawResult": "Game version: V3.0.1", "success": true}}
+    },
+    {
+      "name": "teleportPlayer",
+      "args": {"player": {"gameId": "fixture-player"}, "x": 10, "y": 20, "z": 30, "dimension": "main"},
+      "argumentCases": [{"name": "object", "value": {"player": {"gameId": "fixture-player"}, "x": 10, "y": 20, "z": 30}}, {"name": "json-string", "value": "{\"player\":{\"gameId\":\"fixture-player\"},\"x\":10,\"y\":20,\"z\":30}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"player": {}, "x": "east"}}, {"name": "not-found", "value": {"player": {"gameId": "missing-player"}, "x": 10, "y": 20, "z": 30}}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "teleportPlayer", "args": "{\"player\":{\"gameId\":\"fixture-player\"},\"x\":10,\"y\":20,\"z\":30}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": null}
+    },
+    {
+      "name": "kickPlayer",
+      "args": {"player": {"gameId": "fixture-player"}, "reason": "qualification fixture"},
+      "argumentCases": [{"name": "object", "value": {"player": {"gameId": "fixture-player"}, "reason": "qualification fixture"}}, {"name": "json-string", "value": "{\"player\":{\"gameId\":\"fixture-player\"},\"reason\":\"qualification fixture\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"player": "fixture-player"}}, {"name": "not-found", "value": {"player": {"gameId": "missing-player"}, "reason": "qualification fixture"}}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "kickPlayer", "args": "{\"player\":{\"gameId\":\"fixture-player\"},\"reason\":\"qualification fixture\"}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": null}
+    },
+    {
+      "name": "banPlayer",
+      "args": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player"}, "reason": "qualification fixture", "expiresAt": "2030-01-01T00:00:00Z"},
+      "argumentCases": [{"name": "object", "value": {"player": {"gameId": "fixture-player"}, "reason": "qualification fixture", "expiresAt": "2030-01-01T00:00:00Z"}}, {"name": "json-string", "value": "{\"player\":{\"gameId\":\"fixture-player\"},\"reason\":\"qualification fixture\",\"expiresAt\":\"2030-01-01T00:00:00Z\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"player": {}, "expiresAt": "never"}}, {"name": "not-found", "value": {"player": {"gameId": "missing-player"}, "reason": "qualification fixture", "expiresAt": null}}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "banPlayer", "args": "{\"player\":{\"gameId\":\"fixture-player\"},\"reason\":\"qualification fixture\",\"expiresAt\":\"2030-01-01T00:00:00Z\"}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": null}
+    },
+    {
+      "name": "unbanPlayer",
+      "args": {"gameId": "fixture-player"},
+      "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": null}}, {"name": "not-found", "value": {"gameId": "missing-player"}}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "unbanPlayer", "args": "{\"gameId\":\"fixture-player\"}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": null}
+    },
+    {
+      "name": "listBans",
+      "args": {},
+      "argumentCases": [{"name": "object", "value": {}}, {"name": "json-string", "value": "{}"}, {"name": "empty", "value": ""}, {"name": "invalid", "value": "{"}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "listBans", "args": "{}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player"}, "reason": "qualification fixture", "expiresAt": "2030-01-01T00:00:00Z"}]}
+    },
+    {
+      "name": "shutdown",
+      "args": {},
+      "argumentCases": [{"name": "object", "value": {}}, {"name": "json-string", "value": "{}"}, {"name": "empty", "value": ""}, {"name": "invalid", "value": "{"}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "shutdown", "args": "{}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": null}
+    }
+  ],
+  "events": [
+    {"name": "log", "message": {"type": "gameEvent", "payload": {"type": "log", "data": {"msg": "fixture log line"}}}},
+    {"name": "player-connected", "message": {"type": "gameEvent", "payload": {"type": "player-connected", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "ping": 42}}}}},
+    {"name": "player-disconnected", "message": {"type": "gameEvent", "payload": {"type": "player-disconnected", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player"}}}}},
+    {"name": "chat-message", "message": {"type": "gameEvent", "payload": {"type": "chat-message", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player"}, "channel": "global", "msg": "qualification fixture"}}}},
+    {"name": "player-death", "message": {"type": "gameEvent", "payload": {"type": "player-death", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player"}, "position": {"x": 10, "y": 20, "z": 30, "dimension": "main"}, "msg": "Fixture Player died"}}}},
+    {"name": "entity-killed", "message": {"type": "gameEvent", "payload": {"type": "entity-killed", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player"}, "entity": "zombieArlene", "weapon": "clubWood", "msg": "Fixture Player killed zombieArlene"}}}}
+  ]
+}

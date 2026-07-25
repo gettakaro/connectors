@@ -69,36 +69,12 @@ namespace Takaro.WebSocket
         // Standard response methods
         public static WebSocketMessage CreateResponse(string requestId, object data)
         {
-            // Handle dictionary data
-            if (data is Dictionary<string, object> dictData)
+            return new WebSocketMessage
             {
-                return new WebSocketMessage("response", dictData, requestId);
-            }
-
-            // Handle array data
-            if (data is object[] listData)
-            {
-                return new WebSocketMessage("response", listData, requestId);
-            }
-
-            var payload = new Dictionary<string, object>();
-
-            if (data != null)
-            {
-                // For complex objects, extract properties
-                foreach (var prop in data.GetType().GetProperties())
-                {
-                    payload[prop.Name] = prop.GetValue(data);
-                }
-
-                // If no properties were found, serialize the entire object as a single value
-                if (payload.Count == 0)
-                {
-                    payload["value"] = data;
-                }
-            }
-
-            return new WebSocketMessage("response", payload, requestId);
+                Type = MessageTypes.Response,
+                Payload = data,
+                RequestId = requestId,
+            };
         }
 
         public static WebSocketMessage CreateErrorResponse(string requestId, string errorMessage)
@@ -115,6 +91,7 @@ namespace Takaro.WebSocket
         {
             // Basic types
             public const string Ping = "ping";
+            public const string Request = "request";
             public const string Identify = "identify";
             public const string Response = "response";
             public const string Error = "error";

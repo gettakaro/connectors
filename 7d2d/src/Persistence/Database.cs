@@ -45,6 +45,9 @@ namespace Takaro.Persistence
             Db.GetCollection<InventoryRecord>("inventories");
         public ILiteCollection<BanRecord> Bans => Db.GetCollection<BanRecord>("bans");
         public ILiteCollection<ItemRecord> Items => Db.GetCollection<ItemRecord>("items");
+        public ILiteCollection<EntityRecord> Entities => Db.GetCollection<EntityRecord>("entities");
+        public ILiteCollection<LocationRecord> Locations =>
+            Db.GetCollection<LocationRecord>("locations");
 
         public void OnInit()
         {

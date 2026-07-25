@@ -8,6 +8,15 @@ cd "${PROJECT_ROOT}"
 
 echo "Setting up 7D2D mod development environment..."
 
+EXPECTED_ASSEMBLY_CSHARP_SHA256="d05257aa0a597abe51b39574fc86acd5945da4d5e41b66b7f357e0c2ea5e55bd"
+
+verify_managed_assembly() {
+  printf '%s  %s\n' \
+    "${EXPECTED_ASSEMBLY_CSHARP_SHA256}" \
+    "./_data/7dtd-binaries/Assembly-CSharp.dll" \
+    | sha256sum --check --status
+}
+
 # Create directory structure
 mkdir -p ./_data/{7dtd-binaries,build,game-files,lib,ServerFiles}
 # Make everything world-writable
@@ -15,7 +24,7 @@ chmod -R 777 ./_data
 
 # Skip everything if the binaries are already in place (CI cache hit, or a
 # repeat local run). The mod build only needs _data/7dtd-binaries/.
-if [ -f "./_data/7dtd-binaries/Assembly-CSharp.dll" ] && \
+if verify_managed_assembly && \
    [ -f "./_data/7dtd-binaries/websocket-sharp.dll" ] && \
    [ -f "./_data/7dtd-binaries/LiteDB.dll" ] && \
    [ -f "./_data/7dtd-binaries/System.Buffers.dll" ]; then
@@ -65,6 +74,11 @@ fi
 echo "Extracting game DLLs..."
 docker compose run --rm builder bash -c "cp -f /app/_data/game-files/7DaysToDieServer_Data/Managed/*.dll /app/_data/7dtd-binaries/ && \
                                          cp -f /app/_data/game-files/Mods/0_TFP_Harmony/*.dll /app/_data/7dtd-binaries/"
+
+if ! verify_managed_assembly; then
+  echo "Error: Assembly-CSharp.dll does not match live-proven 7D2D V3.0.1 build 24117900." >&2
+  exit 1
+fi
 
 # Build dependencies (websocket-sharp)
 echo "Preparing dependencies..."
