@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.4](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.3...7d2d-v0.1.4) (2026-07-25)
+
+
+### Bug Fixes
+
+* **7d2d:** restore V3 connector behavior ([#88](https://github.com/gettakaro/connectors/issues/88)) ([7762ae2](https://github.com/gettakaro/connectors/commit/7762ae22d37f0ef12665879704bced5cb15ee177))
+
+
+### Code Refactoring
+
+* **7d2d:** re-architect connector around event-driven LiteDB state mirror ([#66](https://github.com/gettakaro/connectors/issues/66)) ([030c8ef](https://github.com/gettakaro/connectors/commit/030c8ef19cc339d965bb1c9071532e200e3cbec9))
+
 ## [0.1.3](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.2...7d2d-v0.1.3) (2026-06-04)
 
 
