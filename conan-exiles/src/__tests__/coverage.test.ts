@@ -45,7 +45,7 @@ test('coverage registry separates real support, schema fallbacks, and unsupporte
   assert.equal(getActionCoverage('teleportPlayer').status, 'live-supported');
 });
 
-test('coverage registry records unavailable Conan/Pippi runtime gaps', () => {
+test('coverage registry records unavailable Conan runtime gaps', () => {
   assert.match(getActionCoverage('getMapTile').reason, /not available/i);
 });
 
@@ -54,4 +54,11 @@ test('coverage registry records Conan log-backed death and entity kill events', 
   assert.match(getEventCoverage('player-death').reason, /KillCharacterWithRagdoll/i);
   assert.equal(getEventCoverage('entity-killed').status, 'live-supported');
   assert.match(getEventCoverage('entity-killed').reason, /KillCharacterWithRagdoll/i);
+});
+
+test('coverage registry describes the validated TakaroConan chat paths', () => {
+  assert.match(getActionCoverage('sendMessage').liveVerification, /DataCmd.*client render/i);
+  assert.match(getActionCoverage('sendMessage').reason, /TakaroConan.*without Pippi/i);
+  assert.match(getEventCoverage('chat-message').liveVerification, /vanilla.*ChatWindow.*stable/i);
+  assert.doesNotMatch(getEventCoverage('chat-message').reason, /final ownership must/i);
 });

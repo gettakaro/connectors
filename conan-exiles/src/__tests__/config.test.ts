@@ -38,6 +38,7 @@ rconPassword=secret
   assert.equal(config.enableLogEvents, true);
   assert.deepEqual(config.logFiles, []);
   assert.equal(config.requireModSourceAttribution, false);
+  assert.equal(config.enableTakaroClientModChat, true);
 
   rmSync(path.dirname(file), { recursive: true, force: true });
 });
@@ -60,6 +61,7 @@ logFiles=/tmp/ConanSandbox.log, /tmp/RconCommandLog.log
 databasePath=/tmp/game_0.db
 itemCatalogPath=/tmp/conan-items.json
 requireModSourceAttribution=true
+enableTakaroClientModChat=false
 `);
 
   const config = loadConfig(file);
@@ -78,6 +80,7 @@ requireModSourceAttribution=true
   assert.equal(config.databasePath, '/tmp/game_0.db');
   assert.equal(config.itemCatalogPath, '/tmp/conan-items.json');
   assert.equal(config.requireModSourceAttribution, true);
+  assert.equal(config.enableTakaroClientModChat, false);
 
   rmSync(path.dirname(file), { recursive: true, force: true });
 });

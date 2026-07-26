@@ -1,5 +1,11 @@
 # Takaro Conan Mod Install, Reconnect, and Live Test Runbook
 
+> Historical runtime runbook: use it only for installation sequencing and
+> rollback context. HTTP `modBridge.connected` and `/mod/poll` checks are
+> superseded. Current proof requires DataCmd RCON dispatch, the
+> `TakaroConan: rendered ` client log, visible chat, vanilla inbound server log,
+> and stable Takaro player identity as defined in `MOD_SPEC.md`.
+
 This runbook assumes a cooked `TakaroConan.pak` already exists.
 
 If a valid registration token or cooked build-host artifact is still missing,

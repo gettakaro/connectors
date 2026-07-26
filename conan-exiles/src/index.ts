@@ -6,9 +6,10 @@ import { HealthServer } from './health/server.js';
 import { logger } from './logger.js';
 import { LogTailer } from './logs/logTailer.js';
 import { ModCommandBridge } from './mod/commandBridge.js';
+import { ConanClientModChatBridge } from './mod/clientModChatBridge.js';
 import { validateStrictModEvent } from './mod/strictEventValidation.js';
 import { RconCommandQueue } from './rcon/commandQueue.js';
-import { sendRconCommand } from './rcon/client.js';
+import { RconClient } from './rcon/client.js';
 import { loadConanItemCatalog } from './conan/itemCatalog.js';
 import { ConanSaveDbReader } from './conan/saveDb.js';
 import { TakaroWsClient } from './takaro/client.js';
@@ -24,6 +25,7 @@ async function main(): Promise<void> {
   logger.info(`Conan item catalog: ${config.itemCatalogPath ? 'configured' : 'built-in seed only'}`);
   logger.info(`Health: http://127.0.0.1:${config.httpPort}/health`);
   logger.info(`Mod source attribution required: ${config.requireModSourceAttribution}`);
+  logger.info(`Takaro client-mod chat transport enabled: ${config.enableTakaroClientModChat}`);
 
   const identifyPayload = {
     identityToken: config.identityToken ?? config.serverName,
@@ -32,16 +34,13 @@ async function main(): Promise<void> {
   };
   const takaro = new TakaroWsClient(config.takaroWsUrl, identifyPayload);
 
-  const rconQueue = new RconCommandQueue((command) =>
-    sendRconCommand({
-      host: config.rcon.host,
-      port: config.rcon.port,
-      password: config.rcon.password,
-      command,
-      timeoutMs: config.rcon.timeoutMs,
-    }),
-    config.rcon.commandGapMs,
-  );
+  const rcon = new RconClient({
+    host: config.rcon.host,
+    port: config.rcon.port,
+    password: config.rcon.password,
+    timeoutMs: config.rcon.timeoutMs,
+  });
+  const rconQueue = new RconCommandQueue((command) => rcon.run(command), config.rcon.commandGapMs);
 
   const emit = (type: GameEventType, data: unknown): void => {
     logger.info(`Emitting Takaro game event type=${type}`);
@@ -58,7 +57,18 @@ async function main(): Promise<void> {
   });
   const itemCatalog = loadConanItemCatalog(config.itemCatalogPath);
   const saveDb = new ConanSaveDbReader(config.databasePath, itemCatalog);
-  adapter = new ConanAdapter((command) => rconQueue.run(command), modBridge, saveDb, itemCatalog);
+  const clientModChatBridge = new ConanClientModChatBridge(
+    (command) => rconQueue.run(command),
+    () => adapter.getPlayers(),
+    config.enableTakaroClientModChat,
+  );
+  adapter = new ConanAdapter(
+    (command) => rconQueue.run(command),
+    modBridge,
+    saveDb,
+    itemCatalog,
+    config.enableTakaroClientModChat ? clientModChatBridge : undefined,
+  );
 
   const playerPoller = new PlayerPoller(
     () => adapter.getPlayers(),
@@ -88,6 +98,7 @@ async function main(): Promise<void> {
     rconConfigured: Boolean(config.rcon.host && config.rcon.port && config.rcon.password),
     logTailers: logTailers.length,
     modBridge: modBridge.status(),
+    clientModChatBridge: clientModChatBridge.status(),
   }), (req, res) => modBridge.handleHttpRequest(req, res));
 
   takaro.on('request', (message: WsMessage) => {
@@ -110,6 +121,7 @@ async function main(): Promise<void> {
     logger.info('Shutting down Conan Exiles Takaro bridge');
     playerPoller.stop();
     for (const tailer of logTailers) tailer.stop();
+    rcon.close();
     takaro.shutdown();
     await health.stop();
     setTimeout(() => process.exit(0), 100);

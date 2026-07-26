@@ -84,18 +84,18 @@ if ($DevKitRoot) {
       Fail "TakaroConan_ModController asset missing under active DevKit mod folder"
     }
 
-    $bridgeComponent = Get-ChildItem -LiteralPath $activeModRoot -Recurse -Filter "BP_TakaroBridgeComponent*.uasset" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($bridgeComponent) {
-      Ok "BP_TakaroBridgeComponent asset found: $($bridgeComponent.FullName)"
+    $chatCommand = Get-ChildItem -LiteralPath $activeModRoot -Recurse -Filter "BP_TakaroChatCommand*.uasset" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($chatCommand) {
+      Ok "BP_TakaroChatCommand asset found: $($chatCommand.FullName)"
     } else {
-      Fail "BP_TakaroBridgeComponent asset missing under active DevKit mod folder"
+      Fail "BP_TakaroChatCommand asset missing under active DevKit mod folder"
     }
 
-    $clientMarkerComponent = Get-ChildItem -LiteralPath $activeModRoot -Recurse -Filter "BP_TakaroClientMarkerComponent*.uasset" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($clientMarkerComponent) {
-      Ok "BP_TakaroClientMarkerComponent asset found: $($clientMarkerComponent.FullName)"
+    $commandTable = Get-ChildItem -LiteralPath $activeModRoot -Recurse -Filter "DT_TakaroConsoleCommands*.uasset" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($commandTable) {
+      Ok "DT_TakaroConsoleCommands asset found: $($commandTable.FullName)"
     } else {
-      Fail "BP_TakaroClientMarkerComponent asset missing under active DevKit mod folder"
+      Fail "DT_TakaroConsoleCommands asset missing under active DevKit mod folder"
     }
   } else {
     Fail "active DevKit mod folder missing: $activeModRoot"

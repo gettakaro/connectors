@@ -1,148 +1,70 @@
-# Takaro Conan Mod Specification
+# TakaroConan Mod Specification
 
-## Goal
+## Boundary
 
-Create `TakaroConan.pak`, a minimal Conan Exiles server+client mod that replaces only the current Enhanced Pippi-backed chat/event boundary.
+TakaroConan replaces only the in-game chat render boundary. It does not clone
+Pippi features or own Takaro connectivity.
 
-The existing sidecar remains the owner of Takaro WebSocket connectivity, RCON actions, save DB reads, health checks, and action/event classification. The mod must not clone Pippi features.
-
-## Runtime Boundary
-
-Existing sidecar endpoints:
-
-- `GET http://127.0.0.1:3010/mod/poll`
-- `POST http://127.0.0.1:3010/mod/result`
-- `POST http://127.0.0.1:3010/mod/event`
-- `GET http://127.0.0.1:3010/health`
-
-The mod must run inside Conan and become the renderer/event producer for the chat boundary. The host-side Pippi poller must be stopped when the Takaro mod is under test, otherwise Pippi can mask missing Takaro mod behavior.
-
-## Required Mod Behavior
-
-### Startup
-
-- Load as a Conan mod controller/component using the Conan DevKit-supported mod flow.
-- Log an unmistakable startup marker, for example `TakaroConan: initialized`.
-- Poll only the local sidecar URL from server runtime. Do not embed Takaro cloud tokens or RCON credentials.
-- Fail visibly in Conan logs if the sidecar is unreachable.
-
-### Poll Loop
-
-- Poll `/mod/poll` on an interval short enough for chat to feel live, with retry/backoff when the sidecar is unavailable.
-- Treat an empty poll as success and continue looping.
-- For every command, call `/mod/result` with the original `requestId`.
-- Only return success after the in-engine renderer accepted responsibility for rendering the message.
-
-Expected command shape:
-
-```json
-{
-  "requestId": "...",
-  "action": "sendMessage",
-  "args": {
-    "message": "text",
-    "recipient": "steam64-or-platform-id",
-    "senderNameOverride": "Takaro"
-  }
-}
+```text
+Takaro sendMessage
+  -> TypeScript sidecar
+  -> persistent Conan RCON connection
+  -> con <player-index> dc TakaroChat <sender> <encoded-message>
+  -> server-owned replicated command actor
+  -> reliable owning-client RPC
+  -> normal Conan chat widgets
 ```
 
-### Server-Wide Chat
+Inbound chat follows a separate server-owned path:
 
-- Render Takaro server-wide messages as normal Conan chat-feed text, not as a popup/overlay.
-- Use `senderNameOverride` when present; otherwise default to `Takaro`.
-- Preserve message text after sanitizing only what Conan requires for safe rendering.
+```text
+vanilla dedicated-server ChatWindow log
+  -> sidecar parser and stable Steam identity mapping
+  -> Takaro chat-message event
+```
 
-Acceptance evidence:
+The legacy `/mod/poll`, `/mod/result`, and `/mod/event` helper is diagnostic and
+compatibility-only. It is not the production render architecture.
 
-- Takaro MCP `gameserverSendMessage` returns success.
-- `/mod/result` receives success for the queued command.
-- A connected player sees the line in the normal chat feed.
-- Conan/server logs show the Takaro mod handled the command, not Pippi.
+## Outbound requirements
 
-### Targeted Chat
+- Resolve target players from current `listplayers` data.
+- Reject missing, malformed, or ambiguous targets before dispatch.
+- Validate each player index as decimal digits only.
+- Encode percent as `%25`, then ASCII space as `%20`.
+- Reject control characters and command separators.
+- Require the exact trimmed RCON response
+  `Successfully executed: <exact-command>`.
+- Dispatch server-wide messages once per online player.
+- Record RCON dispatch acceptance separately from client delivery.
+- Keep `deliveryVerified=false` until a client acknowledgement protocol exists.
 
-- Resolve targeted recipients by stable identity first: Steam64 / platform ID.
-- Fall back to current Conan character name only if stable ID is unavailable.
-- Render the message only to the intended target.
-- Return a structured failure when no online player matches the recipient.
+## Blueprint requirements
 
-Acceptance evidence:
+- `DT_TakaroConsoleCommands` maps `TakaroChat` to `BP_TakaroChatCommand`.
+- The DataActor runs server-side, replicates, is always relevant, and is owned
+  by the addressed player controller.
+- The event decodes argument index 1 and invokes a reliable owning-client RPC.
+- The RPC locates the real `W_ChatWindow`, creates `W_RichChatLine`, populates
+  its `FCRichTextBlock` named `Message`, adds it to the chat scroll box, and
+  scrolls to the end.
+- `TakaroConan: rendered ` is logged only after the line is added.
 
-- Takaro MCP targeted `gameserverSendMessage` returns success for an online player.
-- The target player sees the message.
-- A non-target player does not see the targeted message when a second client is available.
+## Security
 
-### Inbound Chat Event
+- No Takaro cloud, registration, bearer, or MCP credential in the pak.
+- No RCON password in the pak.
+- No client HTTP polling or sidecar-state control.
+- No Pippi or Amunet dependency.
+- No kits, ranks, economy, portals, warps, or admin UI.
 
-- Emit inbound player chat through `/mod/event` as `chat-message`.
-- Include the strongest available identity fields:
-  - Steam64 / platform identifier.
-  - display/player name.
-  - Conan character name.
-  - channel.
-  - timestamp.
-  - message.
-- Do not duplicate the same player chat line if Conan exposes multiple hooks/log surfaces for one message.
+## Acceptance
 
-Acceptance evidence:
-
-- Player sends a chat line.
-- Connector emits a Takaro `chat-message`.
-- Takaro accepts the event without validation errors.
-- The event resolves to the real Steam/platform identity, not only the character name.
-
-## Explicit Non-Goals
-
-- No kits, ranks, warps, currency, admin UI, data table gameplay changes, or Pippi compatibility layer.
-- No Takaro cloud WebSocket client inside the `.pak`.
-- No RCON password, registration token, identity token, or other secret inside the `.pak`.
-- No replacement for sidecar-owned RCON actions unless Conan DevKit proves a safer in-engine route.
-
-## Action/Event Ownership
-
-The mod must own or improve:
-
-- `sendMessage` rendering.
-- `chat-message` emission.
-
-The existing sidecar remains sufficient for:
-
-- `testReachability`
-- `getPlayer`
-- `getPlayers`
-- `executeConsoleCommand`
-- `listBans`
-- `kickPlayer`
-- `banPlayer`
-- `unbanPlayer`
-- `shutdown`
-- online-player `giveItem`
-- online-player `teleportPlayer`
-
-The existing sidecar/save DB remains sufficient for:
-
-- `getPlayerLocation`
-- `getPlayerInventory`
-- `listItems`
-- `listEntities`
-- `listLocations`
-
-Still fallback/unsupported unless a future in-engine provider is added:
-
-- `getMapInfo`: schema fallback with `enabled=false`.
-- `getMapTile`: unsupported.
-
-## Done Criteria
-
-The mod path is not complete until all of the following are true:
-
-- `TakaroConan.pak` exists as a cooked Conan mod artifact.
-- Server and client modlists contain `*TakaroConan.pak` and do not contain `*Pippi.pak`.
-- Server and client logs prove the Takaro mod loaded.
-- Host Pippi poller is stopped.
-- Connector health shows `modBridge.connected=true` because the Takaro mod itself is polling.
-- Server-wide chat passes with player-visible proof.
-- Targeted chat passes with player-visible proof.
-- Inbound chat passes with Takaro event proof.
-- Existing sidecar action coverage still passes after Pippi is removed.
+- Exact server/client pak hashes match.
+- Both active modlists contain only `*TakaroConan.pak`.
+- Server and client logs show the current mod mounted.
+- Server-wide and targeted multiword messages visibly render.
+- RCON logs show encoded DataCmd commands and no legacy renderer command.
+- Inbound chat reaches Takaro with stable player identity.
+- A real Takaro module command produces player-visible output.
+- Automated connector tests and build pass.

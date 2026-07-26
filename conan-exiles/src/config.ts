@@ -22,6 +22,7 @@ export interface BridgeConfig {
   enableLogEvents: boolean;
   logFiles: string[];
   requireModSourceAttribution: boolean;
+  enableTakaroClientModChat: boolean;
 }
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
@@ -85,5 +86,6 @@ export function loadConfig(configPath = process.env.BRIDGE_CONFIG || 'TakaroConf
       .map((entry) => entry.trim())
       .filter(Boolean),
     requireModSourceAttribution: parseBoolean(values.requireModSourceAttribution, false),
+    enableTakaroClientModChat: parseBoolean(values.enableTakaroClientModChat, true),
   };
 }

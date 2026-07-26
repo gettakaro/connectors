@@ -359,6 +359,53 @@ test('sendMessage fails clearly when Conan chat bridge is not connected', async 
   });
 });
 
+test('sendMessage falls back to the Takaro client-mod transport when the HTTP bridge is disconnected', async () => {
+  const clientModCalls: Array<[string, string | null, string | null]> = [];
+  const disconnectedHttpBridge = {
+    isConnected: () => false,
+    sendMessage: async () => { throw new Error('disconnected HTTP bridge must not be called'); },
+  };
+  const clientModTransport = {
+    isConnected: () => true,
+    sendMessage: async (message: string, recipient: string | null, sender: string | null) => {
+      clientModCalls.push([message, recipient, sender]);
+      return {
+        success: true,
+        message,
+        targetIds: [recipient ?? 'all'],
+        dispatchAccepted: true,
+        deliveryVerified: false,
+        verificationReason: 'RCON accepted the client DataCmd; client delivery is not acknowledged.',
+      };
+    },
+  };
+  const adapter = new ConanAdapter(
+    async () => 'unused',
+    disconnectedHttpBridge,
+    undefined,
+    undefined,
+    clientModTransport,
+  );
+
+  const result = await adapter.handleAction('sendMessage', {
+    message: 'Private bridge marker',
+    opts: {
+      senderNameOverride: 'Takaro',
+      recipient: { platformId: 'steam:76561198000735875' },
+    },
+  });
+
+  assert.deepEqual(clientModCalls, [['Private bridge marker', '76561198000735875', 'Takaro']]);
+  assert.deepEqual(result, {
+    success: true,
+    message: 'Private bridge marker',
+    targetIds: ['76561198000735875'],
+    dispatchAccepted: true,
+    deliveryVerified: false,
+    verificationReason: 'RCON accepted the client DataCmd; client delivery is not acknowledged.',
+  });
+});
+
 test('sendMessage routes through Conan chat bridge with recipient identifiers', async () => {
   const calls: string[] = [];
   const chatBridge = {

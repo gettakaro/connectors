@@ -6,6 +6,9 @@ param(
   [string]$ExpectedPlayerName = "TakaroDevkitTester"
 )
 
+# Legacy diagnostic only. The current TakaroConan mod uses RCON DataCmd plus a
+# reliable owning-client RPC and does not call these localhost HTTP endpoints.
+
 $ErrorActionPreference = "Stop"
 
 $marker = "TAKARO_CONAN_DEVKIT_SMOKE_$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"

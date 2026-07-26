@@ -72,7 +72,7 @@
     "sendMessage": {
       "goalStatus": "takaro-mod-required",
       "finalProofGate": "TakaroConan live mod gate",
-      "reason": "Current live proof uses Pippi server/directmessage through the host poller; final proof must show TakaroConan renders server-wide and targeted normal chat without Pippi."
+      "reason": "Validated through TakaroConan DataCmd dispatch plus the reliable client renderer for server-wide and targeted normal chat without Pippi."
     },
     "giveItem": {
       "goalStatus": "approval-gated-live-supported",
@@ -119,7 +119,7 @@
     "chat-message": {
       "goalStatus": "takaro-mod-required",
       "finalProofGate": "TakaroConan live mod gate",
-      "reason": "Current live proof uses Pippi ChatWindow logs; final proof must show /mod/event source TakaroConan with stable player identity."
+      "reason": "Validated from the vanilla Conan ChatWindow server log with stable Steam identity before Takaro chat-message emission."
     },
     "player-death": {
       "goalStatus": "connector-live-supported",

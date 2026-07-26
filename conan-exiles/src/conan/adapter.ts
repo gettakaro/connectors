@@ -26,6 +26,7 @@ export class ConanAdapter {
     private readonly chatBridge?: ConanChatBridge,
     private readonly saveDb?: ConanSaveDbReader,
     private readonly itemCatalog: ConanItemCatalog = saveDb?.itemCatalog ?? seedConanItemCatalog(),
+    private readonly clientModChatBridge?: ConanChatBridge,
   ) {}
 
   async handleAction(action: GameServerAction, rawArgs: unknown): Promise<unknown> {
@@ -143,7 +144,12 @@ export class ConanAdapter {
   }
 
   private async sendMessage(args: Record<string, unknown>): Promise<unknown> {
-    if (!this.chatBridge?.isConnected()) {
+    const bridge = this.chatBridge?.isConnected()
+      ? this.chatBridge
+      : this.clientModChatBridge?.isConnected()
+        ? this.clientModChatBridge
+        : null;
+    if (!bridge) {
       return {
         success: false,
         error: 'Conan chat bridge is not connected; vanilla RCON broadcast is not used for Takaro chat messages',
@@ -153,7 +159,7 @@ export class ConanAdapter {
     const message = requireString(args, ['message', 'text']);
     const recipient = optionalRecipientIdentifier(args);
     const senderNameOverride = optionalSenderNameOverride(args);
-    return this.chatBridge.sendMessage(message, recipient, senderNameOverride);
+    return bridge.sendMessage(message, recipient, senderNameOverride);
   }
 
   private async giveItem(args: Record<string, unknown>): Promise<unknown> {

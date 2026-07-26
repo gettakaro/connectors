@@ -7,6 +7,7 @@ import {
   RCON_AUTH_RESPONSE,
   RCON_EXEC_COMMAND,
   RCON_RESPONSE_VALUE,
+  RconClient,
   decodePacket,
   encodePacket,
   sendRconCommand,
@@ -77,6 +78,24 @@ test('accepts Conan-style auth response type before executing a command', async 
   assert.equal(response, 'Commands: listplayers');
 });
 
+test('reuses one authenticated RCON connection for sequential commands', async () => {
+  let connectionCount = 0;
+  const server = await startFakeRconServer('secret', {
+    help: 'Commands: listplayers',
+    listplayers: '0. Alice | 76561198000000001',
+  }, RCON_AUTH_RESPONSE, 0, 'auth', () => { connectionCount += 1; });
+  const address = server.address() as AddressInfo;
+  const client = new RconClient({ host: '127.0.0.1', port: address.port, password: 'secret', timeoutMs: 1000 });
+
+  try {
+    assert.equal(await client.run('help'), 'Commands: listplayers');
+    assert.equal(await client.run('listplayers'), '0. Alice | 76561198000000001');
+    assert.equal(connectionCount, 1);
+  } finally {
+    client.close();
+  }
+});
+
 test('rejects invalid RCON credentials', async () => {
   const server = await startFakeRconServer('secret', {});
   const address = server.address() as AddressInfo;
@@ -100,8 +119,10 @@ async function startFakeRconServer(
   authResponseType = RCON_AUTH_RESPONSE,
   authSuccessId: number | null = null,
   commandResponseId: 'command' | 'auth' = 'command',
+  onConnection: (() => void) | null = null,
 ): Promise<net.Server> {
   const server = net.createServer((socket) => {
+    onConnection?.();
     let buffer = Buffer.alloc(0);
 
     socket.on('data', (chunk) => {

@@ -1,58 +1,35 @@
 {
   "contract": "TakaroConan DevKit build source contract",
-  "version": 1,
+  "version": 2,
   "modName": "TakaroConan",
+  "architecture": "sidecar-datacmd-client-renderer",
   "requiredAssets": [
     {
       "key": "modController",
       "assetName": "TakaroConan_ModController",
       "path": "Content/Mods/TakaroConan/TakaroConan_ModController",
-      "requiredProof": [
-        "loads on server and client",
-        "starts bridge only on server authority",
-        "records exact attach target in BUILD_REPORT.md"
-      ]
+      "requiredProof": ["loads on server and client", "registers the TakaroChat command table"]
     },
     {
-      "key": "serverBridgeComponent",
-      "assetName": "BP_TakaroBridgeComponent",
-      "path": "Content/Mods/TakaroConan/BP_TakaroBridgeComponent",
-      "requiredProof": [
-        "polls /mod/poll with source=TakaroConan or X-Takaro-Mod-Source: TakaroConan",
-        "posts /mod/result with source=TakaroConan or X-Takaro-Mod-Source: TakaroConan",
-        "posts /mod/event chat-message with stable Steam or platform identity",
-        "renders server-wide messages in normal Conan chat",
-        "renders targeted messages only through Takaro-owned in-engine path",
-        "does not rely on User-Agent for source attribution",
-        "does not reference Pippi or Amunet assets"
-      ]
+      "key": "dataActorCommand",
+      "assetName": "BP_TakaroChatCommand",
+      "path": "Content/Mods/TakaroConan/BP_TakaroChatCommand",
+      "requiredProof": ["decodes DataCmd parameter 1", "uses a reliable owning-client RPC", "renders through real Conan chat widgets"]
     },
     {
-      "key": "clientMarkerComponent",
-      "assetName": "BP_TakaroClientMarkerComponent",
-      "path": "Content/Mods/TakaroConan/BP_TakaroClientMarkerComponent",
-      "requiredProof": [
-        "contains no Takaro cloud token",
-        "contains no registration token",
-        "contains no RCON password",
-        "does not call /mod/poll",
-        "does not call /mod/result",
-        "does not call /mod/event",
-        "does not control bridge state"
-      ]
+      "key": "consoleCommandTable",
+      "assetName": "DT_TakaroConsoleCommands",
+      "path": "Content/Mods/TakaroConan/DT_TakaroConsoleCommands",
+      "requiredProof": ["maps TakaroChat to BP_TakaroChatCommand"]
     }
   ],
   "runtimeContract": {
-    "bridgeBaseUrl": "http://127.0.0.1:3010",
-    "sourceName": "TakaroConan",
-    "pollEndpoint": "/mod/poll",
-    "resultEndpoint": "/mod/result",
-    "eventEndpoint": "/mod/event",
-    "explicitSourceAttributionRequired": true,
-    "userAgentSourceAttributionAllowed": false,
-    "serverAuthorityPollingOnly": true,
-    "clientMarkerDoesNotPoll": true,
-    "clientMarkerNoSecrets": true,
+    "outboundDispatch": "con <player-index> dc TakaroChat \"<sender>\" \"<message>\"",
+    "clientRenderer": "W_ChatWindow/W_RichChatLine/FCRichTextBlock",
+    "clientLogPrefix": "TakaroConan: rendered ",
+    "inboundChatSource": "Conan dedicated-server ChatWindow log",
+    "clientHttpPolling": false,
+    "clientContainsSecrets": false,
     "inboundChatRequiresStableIdentity": true,
     "supportsServerWideChat": true,
     "supportsTargetedChat": true,
@@ -64,10 +41,6 @@
     "sourceEvidence": "SOURCE_EVIDENCE.md",
     "artifactManifest": "artifact-manifest.json",
     "sourceContract": "BUILD_SOURCE_CONTRACT.json",
-    "bridgeContractSmoke": "BRIDGE_CONTRACT_SMOKE.result.json",
-    "buildReportMustReferenceSourceContract": true,
-    "sourceEvidenceMustReferenceSourceContract": true,
-    "artifactManifestMustReferenceSourceContract": true,
-    "artifactManifestMustDocumentBridgeContractSmoke": true
+    "artifactManifestMustReferenceSourceContract": true
   }
 }

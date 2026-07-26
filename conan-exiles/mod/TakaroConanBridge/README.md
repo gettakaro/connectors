@@ -1,51 +1,32 @@
-# TakaroConan Bridge Handoff
+# TakaroConan Mod Source Contract
 
-This folder contains the source-control-safe handoff for a minimal Conan Exiles
-server+client mod named `TakaroConan`.
+`TakaroConan` is the Takaro-owned Conan Exiles server/client mod used only for
+normal player-visible chat. The TypeScript sidecar remains responsible for
+Takaro authentication, RCON, save DB reads, logs, events, and all credentials.
 
-The TypeScript sidecar remains responsible for Takaro WebSocket connectivity,
-RCON actions, save DB reads, health checks, and action/event classification. The
-mod replaces only the Pippi-backed chat bridge boundary:
+## Required assets
 
-- server-wide Takaro chat rendering;
-- targeted Takaro chat rendering;
-- inbound player chat emission through `/mod/event` with stable
-  Steam/platform identity;
-- `/mod/result` completion for handled sidecar commands.
+- `TakaroConan_ModController`
+- `DT_TakaroConsoleCommands`
+- `BP_TakaroChatCommand`
 
-The committed handoff intentionally does not include a cooked `.pak`, DevKit
-cache/output, runtime config, or secrets.
+The command table registers `TakaroChat`. The sidecar addresses each recipient
+with `con <player-index> dc TakaroChat <sender> <encoded-message>`. The command
+actor is server-owned and replicated, then invokes a reliable owning-client RPC
+that renders through `W_ChatWindow`, `W_RichChatLine`, and `FCRichTextBlock`.
 
-## Files
+Spaces are encoded as `%20`; literal percent signs are encoded as `%25` first.
+The Blueprint decodes `%20` and then `%25`.
 
-- `MOD_SPEC.md`: required runtime behavior and non-goals.
-- `DEVKIT_IMPLEMENTATION_NOTES.md`: implementation contract for the DevKit pass.
-- `BUILD_ENVIRONMENT.md`: build/toolchain and artifact-intake boundary.
-- `INSTALL_RECONNECT_LIVE_TEST.md`: final runtime replacement and validation
-  runbook.
-- `API_COVERAGE_BOUNDARY.md`: connector-owned Takaro action/event boundary.
-- `API_GOAL_MATRIX.json`: final goal coverage matrix.
-- `COMPLETION_CHECKLIST.md`: final done checklist.
-- `devkit-handoff/`: Windows/Epic DevKit operator handoff scripts, templates,
-  and source contract.
+The mod contains no Takaro token, registration token, bearer token, or RCON
+password. It performs no HTTP polling and references no Pippi or Amunet asset.
 
-## Build Host Return
+Inbound chat is not posted by the client mod. The sidecar parses the vanilla
+dedicated-server `ChatWindow` log and maps it to stable Steam identity.
 
-The DevKit build host must return exactly these files:
+See `MOD_SPEC.md` for the runtime contract and `devkit-handoff/` for build-host
+templates. `BRIDGE_CONTRACT_SMOKE.ps1` is retained only as a diagnostic for the
+superseded localhost HTTP prototype; it is not a current build or proof gate.
 
-```text
-TakaroConan.pak
-artifact-manifest.json
-BUILD_REPORT.md
-SOURCE_EVIDENCE.md
-```
-
-No Takaro registration token, identity token, RCON password, API token, or other
-secret belongs in the client-distributed `.pak` or returned runtime bundle.
-
-## Sidecar Diagnostic
-
-From `conan-exiles`, `npm run verify:mod-protocol` can prove the local
-sidecar's `/mod/poll`, `/mod/result`, and `/mod/event` contract against a
-running disposable runtime. It uses `TakaroConanProtocolProbe/1.0` and is not
-installed-mod proof.
+The cooked `.pak` is a deployment artifact and is intentionally not committed.
+Build/source evidence must identify the exact pak SHA-256 and byte size.

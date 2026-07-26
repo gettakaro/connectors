@@ -1,5 +1,9 @@
 # Takaro Conan Mod Completion Checklist
 
+> Historical checklist: references to a server HTTP polling component or
+> no-op client marker are superseded by the schema-v2 DataCmd/client-renderer
+> contract in `MOD_SPEC.md` and `devkit-handoff/BUILD_SOURCE_CONTRACT.json`.
+
 This checklist is the final gate for saying the Takaro Conan server+client mod goal is done.
 
 For the currently verified live blockers and external inputs needed before the

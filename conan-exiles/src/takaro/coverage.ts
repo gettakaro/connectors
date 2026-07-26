@@ -85,13 +85,13 @@ export const ACTION_COVERAGE: Record<GameServerAction, ActionCoverage> = {
     status: 'schema-fallback',
     responseShape: '{ enabled: false, mapBlockSize: 0, maxZoom: 0, mapSizeX: 0, mapSizeY: 0, mapSizeZ: 0 }',
     liveVerification: 'MCP gameserverGetMapInfo returns disabled map info; Conan map metadata is not exposed',
-    reason: 'Map metadata is not available with the current Conan/Pippi runtime, but Takaro validates this action against MapInfoDTO.',
+    reason: 'Map metadata is not available from the current Conan dedicated-server integration, but Takaro validates this action against MapInfoDTO.',
   },
   getMapTile: {
     status: 'unsupported',
     responseShape: '{ success: false, error: string }',
     liveVerification: 'MCP gameserverGetMapTile returns structured unsupported error',
-    reason: 'Map tile rendering is not available with the current Conan/Pippi runtime.',
+    reason: 'Map tile rendering is not available from the current Conan dedicated-server integration.',
   },
   giveItem: {
     status: 'live-supported',
@@ -101,9 +101,9 @@ export const ACTION_COVERAGE: Record<GameServerAction, ActionCoverage> = {
   },
   sendMessage: {
     status: 'live-supported',
-    responseShape: 'chat bridge renderer result',
-    liveVerification: 'Historical connector proof is Pippi-backed; final TakaroConan goal requires validate-takaro-mod-live.sh with current-marker player-visible proof and no Pippi/RCON renderer',
-    reason: 'The sidecar action is implemented through the /mod/poll bridge; final ownership must be a TakaroConan server+client mod, not Enhanced Pippi.',
+    responseShape: 'TakaroConan DataCmd dispatch result with honest delivery verification state',
+    liveVerification: 'Takaro MCP sendMessage produced encoded DataCmd RCON commands and current-marker client render logs plus visible normal chat',
+    reason: 'The TakaroConan server/client mod renders server-wide and targeted normal chat through an owning-client RPC without Pippi.',
   },
   teleportPlayer: {
     status: 'live-supported',
@@ -153,8 +153,8 @@ export const EVENT_COVERAGE: Record<GameEventType, EventCoverage> = {
   'chat-message': {
     status: 'live-supported',
     payloadShape: 'Takaro chat-message payload with player identity when resolvable',
-    liveVerification: 'Historical connector proof is Pippi-log-backed; final TakaroConan goal requires /mod/event chat-message proof with current inbound marker and stable Steam/platform identity',
-    reason: 'The event bridge accepts /mod/event chat-message payloads; final ownership must be a TakaroConan server+client mod, not Enhanced Pippi logs.',
+    liveVerification: 'A current inbound marker parsed from the vanilla Conan ChatWindow server log reached Takaro with stable Steam identity',
+    reason: 'The sidecar parses vanilla dedicated-server chat logs and resolves stable player identity before emitting chat-message.',
   },
   'player-death': {
     status: 'live-supported',

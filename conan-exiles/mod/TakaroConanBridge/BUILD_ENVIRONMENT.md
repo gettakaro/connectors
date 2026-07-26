@@ -1,5 +1,10 @@
 # Takaro Conan Mod Build Environment
 
+> Historical operator detail: localhost `/mod/*` polling instructions below
+> describe the superseded prototype. The current build contract is the
+> DataCmd/client-RPC architecture in `README.md`, `MOD_SPEC.md`, and
+> `devkit-handoff/BUILD_SOURCE_CONTRACT.json` version 2.
+
 ## Current Gate
 
 This machine cannot currently build a cooked Conan `.pak`.

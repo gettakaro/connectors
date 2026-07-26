@@ -8,6 +8,7 @@ export interface HealthStatus {
   rconConfigured: boolean;
   logTailers: number;
   modBridge?: unknown;
+  clientModChatBridge?: unknown;
 }
 
 export class HealthServer {
