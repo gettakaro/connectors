@@ -73,10 +73,10 @@ export const ACTION_COVERAGE: Record<GameServerAction, ActionCoverage> = {
     reason: 'The REST API does not expose saved Takaro-style locations.',
   },
   getPlayerInventory: {
-    status: 'schema-fallback',
-    responseShape: '[]',
-    liveVerification: 'fake harness returns []',
-    reason: 'Not built yet. TShock REST exposes no inventory endpoint, but the server-side plugin can reach TPlayer.inventory the same way it reads position, so this is a missing feature rather than a hard limit.',
+    status: 'live-supported',
+    responseShape: 'Takaro item DTO array',
+    liveVerification: 'server-side TakaroTerrariaEvents /takaroinv plugin command with connected player',
+    reason: 'TShock REST does not expose player inventories, so the optional server-side plugin reads TSPlayer.TPlayer.inventory and armor slots.',
   },
   getMapInfo: {
     status: 'schema-fallback',

@@ -36,11 +36,13 @@ test('coverage registry distinguishes live support, schema fallbacks, and unsupp
   assert.equal(getActionCoverage('executeConsoleCommand').status, 'live-supported');
   assert.equal(getActionCoverage('listItems').status, 'live-supported');
   assert.equal(getActionCoverage('getPlayerLocation').status, 'live-supported');
-  assert.equal(getActionCoverage('getPlayerInventory').status, 'schema-fallback');
+  assert.equal(getActionCoverage('getPlayerInventory').status, 'live-supported');
+  assert.equal(getActionCoverage('listEntities').status, 'schema-fallback');
   assert.equal(getActionCoverage('getMapInfo').status, 'schema-fallback');
   assert.equal(getActionCoverage('getMapTile').status, 'unsupported');
 
-  assert.deepEqual(schemaFallbackForAction('getPlayerInventory'), []);
+  assert.deepEqual(schemaFallbackForAction('listEntities'), []);
+  assert.equal(schemaFallbackForAction('getPlayerInventory'), undefined);
   assert.equal(schemaFallbackForAction('listItems'), undefined);
   assert.deepEqual(schemaFallbackForAction('getMapInfo'), {
     enabled: false,

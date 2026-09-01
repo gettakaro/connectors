@@ -33,6 +33,10 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         {
             HelpText = "Prints a player's world X/Y coordinates for Takaro."
         });
+        Commands.ChatCommands.Add(new Command(AdminPermission, TakaroInventory, "takaroinv")
+        {
+            HelpText = "Prints a player's inventory for Takaro."
+        });
         TShock.Log.ConsoleInfo("Takaro Terraria Events plugin loaded");
     }
 
@@ -44,6 +48,7 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             ServerApi.Hooks.NpcKilled.Deregister(this, OnNpcKilled);
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takarotp"));
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaropos"));
+            Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaroinv"));
         }
 
         base.Dispose(disposing);
@@ -109,6 +114,63 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             z = 0
         });
         args.Player.SendInfoMessage($"TAKARO_POSITION {json}");
+    }
+
+    private static void TakaroInventory(CommandArgs args)
+    {
+        if (args.Parameters.Count != 1)
+        {
+            args.Player.SendErrorMessage("Usage: /takaroinv <player>");
+            return;
+        }
+
+        var matches = TSPlayer.FindByNameOrID(args.Parameters[0]);
+        if (matches.Count != 1)
+        {
+            args.Player.SendErrorMessage(matches.Count == 0
+                ? $"No player found matching '{args.Parameters[0]}'."
+                : $"Multiple players found matching '{args.Parameters[0]}'.");
+            return;
+        }
+
+        var player = matches[0].TPlayer;
+        var totals = new Dictionary<int, int>();
+        var names = new Dictionary<int, string>();
+        CollectItems(player?.inventory, totals, names);
+        CollectItems(player?.armor, totals, names);
+
+        var items = totals.Select(entry => new
+        {
+            code = entry.Key.ToString(CultureInfo.InvariantCulture),
+            name = names.TryGetValue(entry.Key, out var name) ? name : entry.Key.ToString(CultureInfo.InvariantCulture),
+            amount = entry.Value,
+            quality = string.Empty
+        }).ToArray();
+
+        var json = JsonSerializer.Serialize(new { items });
+        args.Player.SendInfoMessage($"TAKARO_INVENTORY {json}");
+    }
+
+    private static void CollectItems(Item[]? slots, Dictionary<int, int> totals, Dictionary<int, string> names)
+    {
+        if (slots is null)
+        {
+            return;
+        }
+
+        foreach (var item in slots)
+        {
+            if (item is null || item.type <= 0 || item.stack <= 0)
+            {
+                continue;
+            }
+
+            totals[item.type] = totals.TryGetValue(item.type, out var amount) ? amount + item.stack : item.stack;
+            if (!names.ContainsKey(item.type))
+            {
+                names[item.type] = NonEmpty(item.Name) ?? $"Item {item.type.ToString(CultureInfo.InvariantCulture)}";
+            }
+        }
     }
 
     private static void OnPlayerDeath(object? sender, GetDataHandlers.KillMeEventArgs args)

@@ -89,7 +89,8 @@ test('returns schema-compatible fallbacks for constrained Terraria gaps', async 
     enableShutdown: false,
   });
 
-  assert.deepEqual(await adapter.handleAction('getPlayerInventory', {}), []);
+  assert.deepEqual(await adapter.handleAction('listEntities', {}), []);
+  assert.deepEqual(await adapter.handleAction('listLocations', {}), []);
   assert.deepEqual(await adapter.handleAction('getMapInfo', {}), {
     enabled: false,
     mapBlockSize: 0,
@@ -118,6 +119,76 @@ test('reads plugin-backed player location from TShock raw command output', async
     z: 0,
   });
   assert.deepEqual(tshock.rawCommands, ['/takaropos "Guide"']);
+});
+
+function inventoryAdapter(rawResult: string, success = true) {
+  const tshock = new FakeTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return { success, rawResult };
+  };
+  const adapter = new TerrariaAdapter(tshock, {
+    commandAllowlistExact: [],
+    commandAllowlistPrefixes: [],
+    enableShutdown: false,
+  });
+  return { tshock, adapter };
+}
+
+test('reads plugin-backed player inventory from TShock raw command output', async () => {
+  const { tshock, adapter } = inventoryAdapter(
+    'TAKARO_INVENTORY {"items":[{"code":"3506","name":"Copper Coin","amount":42,"quality":""},{"code":"29","name":"Life Crystal","amount":3,"quality":""}]}',
+  );
+
+  assert.deepEqual(await adapter.handleAction('getPlayerInventory', { player: { name: 'Guide' } }), [
+    { code: '3506', name: 'Copper Coin', amount: 42, quality: '' },
+    { code: '29', name: 'Life Crystal', amount: 3, quality: '' },
+  ]);
+  assert.deepEqual(tshock.rawCommands, ['/takaroinv "Guide"']);
+});
+
+test('returns an empty inventory array for an empty, absent, or failed marker', async () => {
+  const empty = inventoryAdapter('TAKARO_INVENTORY {"items":[]}');
+  assert.deepEqual(await empty.adapter.handleAction('getPlayerInventory', { player: { name: 'Guide' } }), []);
+
+  const absent = inventoryAdapter('Invalid command.');
+  assert.deepEqual(await absent.adapter.handleAction('getPlayerInventory', { player: { name: 'Guide' } }), []);
+
+  const notFound = inventoryAdapter("No player found matching 'Ghost'.");
+  assert.deepEqual(await notFound.adapter.handleAction('getPlayerInventory', { player: { name: 'Ghost' } }), []);
+
+  const ambiguous = inventoryAdapter("Multiple players found matching 'G'.");
+  assert.deepEqual(await ambiguous.adapter.handleAction('getPlayerInventory', { player: { name: 'G' } }), []);
+
+  const failed = inventoryAdapter('TAKARO_INVENTORY {"items":[{"code":"9","name":"Wood","amount":1,"quality":""}]}', false);
+  assert.deepEqual(await failed.adapter.handleAction('getPlayerInventory', { player: { name: 'Guide' } }), []);
+});
+
+test('never throws on malformed inventory payloads and drops malformed entries', async () => {
+  const malformed = inventoryAdapter('TAKARO_INVENTORY {"items":[{"code":"9",');
+  assert.deepEqual(await malformed.adapter.handleAction('getPlayerInventory', { player: { name: 'Guide' } }), []);
+
+  const notAnArray = inventoryAdapter('TAKARO_INVENTORY {"items":"nope"}');
+  assert.deepEqual(await notAnArray.adapter.handleAction('getPlayerInventory', { player: { name: 'Guide' } }), []);
+
+  const mixed = inventoryAdapter(
+    'TAKARO_INVENTORY {"items":['
+    + '{"code":"9","name":"Wood","amount":1,"quality":""},'
+    + '{"code":"1","amount":5,"quality":""},'
+    + '{"code":"2","name":"Dirt Block","amount":"lots","quality":""},'
+    + 'null,'
+    + '"garbage",'
+    + '{"code":29,"name":"Life Crystal","amount":"3","quality":""}'
+    + ']}',
+  );
+  assert.deepEqual(await mixed.adapter.handleAction('getPlayerInventory', { player: { name: 'Guide' } }), [
+    { code: '9', name: 'Wood', amount: 1, quality: '' },
+    { code: '29', name: 'Life Crystal', amount: 3, quality: '' },
+  ]);
+
+  const noIdentifier = inventoryAdapter('TAKARO_INVENTORY {"items":[]}');
+  assert.deepEqual(await noIdentifier.adapter.handleAction('getPlayerInventory', {}), []);
+  assert.deepEqual(noIdentifier.tshock.rawCommands, []);
 });
 
 test('returns a Terraria item catalog for Takaro item pickers', async () => {

@@ -1,7 +1,9 @@
 import { schemaFallbackForAction, unsupportedActionError } from '../takaro/coverage.js';
 import type { GameServerAction } from '../takaro/protocol.js';
 import type { CommandResult, TShockBan, TShockPlayer, TShockStatus } from '../tshock/client.js';
-import { listTerrariaItems, resolveTerrariaItemCode } from './itemCatalog.js';
+import { listTerrariaItems, resolveTerrariaItemCode, type TerrariaItemCatalogEntry } from './itemCatalog.js';
+
+export type TakaroItem = Omit<TerrariaItemCatalogEntry, 'aliases'>;
 
 export interface TShockApi {
   testToken(): Promise<CommandResult>;
@@ -49,6 +51,8 @@ export class TerrariaAdapter {
         return this.getPlayer(args);
       case 'getPlayerLocation':
         return this.getPlayerLocation(args);
+      case 'getPlayerInventory':
+        return this.getPlayerInventory(args);
       case 'executeConsoleCommand':
         return this.executeConsoleCommand(args);
       case 'sendMessage':
@@ -123,6 +127,30 @@ export class TerrariaAdapter {
       };
     } catch {
       return { x: 0, y: 0, z: 0 };
+    }
+  }
+
+  private async getPlayerInventory(args: Record<string, unknown>): Promise<TakaroItem[]> {
+    let result: CommandResult;
+    try {
+      result = await this.tshock.rawCommand(`/takaroinv ${quote(identifierName(args))}`);
+    } catch {
+      return [];
+    }
+
+    // The payload contains nested objects, so match to the end of the marker line
+    // rather than the single-level {[^}]+} pattern getPlayerLocation can rely on.
+    const marker = result.rawResult.match(/TAKARO_INVENTORY\s+(\{.*)/);
+    if (!result.success || !marker) return [];
+
+    try {
+      const parsed = JSON.parse(marker[1]) as { items?: unknown };
+      if (!Array.isArray(parsed.items)) return [];
+      return parsed.items
+        .map((entry) => toTakaroItem(entry))
+        .filter((item): item is TakaroItem => item !== null);
+    } catch {
+      return [];
     }
   }
 
@@ -240,6 +268,24 @@ function parseAmount(args: Record<string, unknown>): number {
   if (!amount) return 1;
   const parsed = Number.parseInt(amount, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function toTakaroItem(entry: unknown): TakaroItem | null {
+  const record = recordValue(entry);
+  if (!record) return null;
+
+  const code = itemString(record.code);
+  const name = itemString(record.name);
+  const amount = finiteNumber(record.amount);
+  if (!code || !name || amount === undefined) return null;
+
+  return { code, name, amount, quality: itemString(record.quality) ?? '' };
+}
+
+function itemString(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return null;
 }
 
 function finiteNumber(value: unknown): number | undefined {
