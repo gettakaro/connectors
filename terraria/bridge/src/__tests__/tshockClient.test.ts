@@ -181,3 +181,97 @@ test('reports successful and unrecognised command output as success', async () =
   assert.equal((await client.rawCommand('/butcher')).success, true);
   assert.equal((await client.rawCommand('/help')).success, true);
 });
+
+/** .NET ticks for a UTC instant, matching what TShock reports in its ban list. */
+function ticks(iso: string): number {
+  return 621355968000000000 + Date.parse(iso) * 10000;
+}
+
+/**
+ * Serves a ban list with expired rows alongside a live one and records the destroy call.
+ *
+ * This reproduces the live defect: TShock leaves unbanned rows in the list with their
+ * end date stamped, so a player banned repeatedly accumulates stale entries.
+ */
+async function withBanListServer(
+  bans: unknown[],
+  run: (client: TShockClient, destroyed: () => string | null) => Promise<void>,
+): Promise<void> {
+  let destroyedTicket: string | null = null;
+  const banServer = http.createServer((req, res) => {
+    const url = new URL(req.url || '/', 'http://127.0.0.1');
+    res.setHeader('content-type', 'application/json');
+    if (url.pathname === '/v2/bans/list') {
+      res.end(JSON.stringify({ status: '200', bans }));
+      return;
+    }
+    if (url.pathname === '/v2/bans/destroy') {
+      destroyedTicket = url.searchParams.get('ticketNumber');
+      res.end(JSON.stringify({ status: '200', response: 'Ban deleted' }));
+      return;
+    }
+    res.end(JSON.stringify({ status: '404', error: 'not found' }));
+  });
+
+  await new Promise<void>((resolve) => banServer.listen(0, '127.0.0.1', resolve));
+  try {
+    const address = banServer.address();
+    if (!address || typeof address === 'string') throw new Error('server did not bind');
+    const client = new TShockClient({ baseUrl: `http://127.0.0.1:${address.port}`, token: 't', timeoutMs: 1000 });
+    await run(client, () => destroyedTicket);
+  } finally {
+    await new Promise<void>((resolve) => banServer.close(() => resolve()));
+  }
+}
+
+test('unban clears the active ban, not an already-expired row for the same player', async () => {
+  await withBanListServer([
+    // Listed first and already expired: the pre-fix code picked this and left the player banned.
+    { ticket_number: 3, identifier: 'CodexTest', start_date_ticks: ticks('2026-08-01T00:00:00Z'), end_date_ticks: ticks('2026-08-01T01:00:00Z') },
+    { ticket_number: 4, identifier: 'CodexTest', start_date_ticks: ticks('2026-09-01T00:00:00Z'), end_date_ticks: ticks('2099-01-01T00:00:00Z') },
+  ], async (client, destroyed) => {
+    assert.equal((await client.destroyBan({ user: 'CodexTest', type: 'user' })).success, true);
+    assert.equal(destroyed(), '4');
+  });
+});
+
+test('unban picks the newest active ban when several are in force', async () => {
+  await withBanListServer([
+    { ticket_number: 5, identifier: 'CodexTest', start_date_ticks: ticks('2026-09-01T00:00:00Z'), end_date_ticks: ticks('2099-01-01T00:00:00Z') },
+    { ticket_number: 6, identifier: 'CodexTest', start_date_ticks: ticks('2026-09-02T00:00:00Z'), end_date_ticks: ticks('2099-01-01T00:00:00Z') },
+  ], async (client, destroyed) => {
+    await client.destroyBan({ user: 'CodexTest', type: 'user' });
+    assert.equal(destroyed(), '6');
+  });
+});
+
+test('unban falls back to the newest expired row when no ban is active', async () => {
+  // Nothing to clear, but answering with the most recent row keeps the call idempotent.
+  await withBanListServer([
+    { ticket_number: 1, identifier: 'CodexTest', start_date_ticks: ticks('2026-07-01T00:00:00Z'), end_date_ticks: ticks('2026-07-01T01:00:00Z') },
+    { ticket_number: 2, identifier: 'CodexTest', start_date_ticks: ticks('2026-08-01T00:00:00Z'), end_date_ticks: ticks('2026-08-01T01:00:00Z') },
+  ], async (client, destroyed) => {
+    await client.destroyBan({ user: 'CodexTest', type: 'user' });
+    assert.equal(destroyed(), '2');
+  });
+});
+
+test('a ban with no end date is treated as permanent, not expired', async () => {
+  await withBanListServer([
+    { ticket_number: 9, identifier: 'CodexTest', start_date_ticks: ticks('2026-09-01T00:00:00Z') },
+  ], async (client, destroyed) => {
+    await client.destroyBan({ user: 'CodexTest', type: 'user' });
+    assert.equal(destroyed(), '9');
+  });
+});
+
+test('unban reports failure when the player has no ban at all', async () => {
+  await withBanListServer([
+    { ticket_number: 1, identifier: 'SomeoneElse', start_date_ticks: ticks('2026-09-01T00:00:00Z') },
+  ], async (client, destroyed) => {
+    const result = await client.destroyBan({ user: 'CodexTest', type: 'user' });
+    assert.equal(result.success, false);
+    assert.match(result.rawResult, /No TShock ban found/);
+    assert.equal(destroyed(), null);
+  });
+});

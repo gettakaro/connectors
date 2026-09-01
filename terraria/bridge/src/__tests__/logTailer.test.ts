@@ -204,3 +204,88 @@ test('follows a glob pattern and picks the newest match', async () => {
     assert.deepEqual(messagesOf(events), ['matched']);
   });
 });
+
+/** The exact shape TShock writes for a REST call the bridge itself made. */
+function restManagerLine(command: string): string {
+  return `2026-09-01 14:08:28 - RestManager: INFO: takaro-rest executed: ${command}.\n`;
+}
+
+test('suppresses excluded log lines so the bridge does not feed its own REST traffic back', async () => {
+  await withTempDir('terraria-tail-exclude-', async (dir) => {
+    const log = path.join(dir, logName(7, 0));
+    writeFileSync(log, chatLine('seed'));
+    const events: GameEvent[] = [];
+    const tailer = new LogTailer(dir, (event) => events.push(event), 1000, true, ['RestManager:']);
+    await tailer.pollOnce();
+
+    appendFileSync(log, restManagerLine('/takarogive CodexTest 1050 1'));
+    appendFileSync(log, restManagerLine('/takaropos CodexTest'));
+    await tailer.pollOnce();
+
+    assert.deepEqual(events.filter((event) => event.type === 'log'), []);
+  });
+});
+
+test('keeps unexcluded log lines flowing', async () => {
+  await withTempDir('terraria-tail-exclude-keep-', async (dir) => {
+    const log = path.join(dir, logName(7, 0));
+    writeFileSync(log, chatLine('seed'));
+    const events: GameEvent[] = [];
+    const tailer = new LogTailer(dir, (event) => events.push(event), 1000, true, ['RestManager:']);
+    await tailer.pollOnce();
+
+    appendFileSync(log, '2026-09-01 14:08:29 - TShock: INFO: Server started\n');
+    await tailer.pollOnce();
+
+    assert.equal(events.filter((event) => event.type === 'log').length, 1);
+  });
+});
+
+test('never suppresses a gameplay event, even when its text matches an exclude pattern', async () => {
+  await withTempDir('terraria-tail-exclude-gameplay-', async (dir) => {
+    const log = path.join(dir, logName(7, 0));
+    writeFileSync(log, chatLine('seed'));
+    const events: GameEvent[] = [];
+    const tailer = new LogTailer(dir, (event) => events.push(event), 1000, true, ['RestManager:']);
+    await tailer.pollOnce();
+
+    // A player can say anything, including the pattern itself. Chat is data, not noise.
+    appendFileSync(log, chatLine('RestManager: is this filtered?'));
+    await tailer.pollOnce();
+
+    assert.deepEqual(messagesOf(events), ['RestManager: is this filtered?']);
+  });
+});
+
+test('emits every log line when no exclude patterns are configured', async () => {
+  await withTempDir('terraria-tail-exclude-none-', async (dir) => {
+    const log = path.join(dir, logName(7, 0));
+    writeFileSync(log, chatLine('seed'));
+    const events: GameEvent[] = [];
+    const tailer = new LogTailer(dir, (event) => events.push(event), 1000);
+    await tailer.pollOnce();
+
+    appendFileSync(log, restManagerLine('/takarogive CodexTest 1050 1'));
+    await tailer.pollOnce();
+
+    assert.equal(events.filter((event) => event.type === 'log').length, 1);
+  });
+});
+
+test('suppresses REST chatter regardless of which logger TShock attributes it to', async () => {
+  // TShock 6.1 logs these under `Utils:`, older builds under `RestManager:`. Keying on the
+  // logger name alone silently stopped filtering after a server upgrade.
+  await withTempDir('terraria-tail-exclude-logger-', async (dir) => {
+    const log = path.join(dir, logName(7, 0));
+    writeFileSync(log, chatLine('seed'));
+    const events: GameEvent[] = [];
+    const tailer = new LogTailer(dir, (event) => events.push(event), 1000, true, ['takaro-rest executed:', 'RestManager:']);
+    await tailer.pollOnce();
+
+    appendFileSync(log, '2026-09-01 15:32:07 - Utils: INFO: takaro-rest executed: /takaropos "CodexTest".\n');
+    appendFileSync(log, '2026-09-01 14:08:28 - RestManager: INFO: takaro-rest executed: /takarogive CodexTest 1050 1.\n');
+    await tailer.pollOnce();
+
+    assert.deepEqual(events.filter((event) => event.type === 'log'), []);
+  });
+});

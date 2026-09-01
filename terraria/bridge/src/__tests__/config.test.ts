@@ -96,3 +96,35 @@ tshockBaseUrl=http://127.0.0.1:7878
   assert.throws(() => loadConfig(file, {}), /registrationToken/);
   assert.throws(() => loadConfig(file, { TAKARO_REGISTRATION_TOKEN: 'token' }), /tshockToken or tshockUsername\/tshockPassword/);
 });
+
+/** Minimal valid config; each exclude-pattern case varies only the one line it tests. */
+function writeConfigWith(extraLines: string): string {
+  const dir = mkdtempSync(path.join(tmpdir(), 'terraria-config-exclude-'));
+  const file = path.join(dir, 'TakaroConfig.txt');
+  writeFileSync(file, `
+registrationToken=rt
+identityToken=terraria-local-id
+serverName=Terraria Local
+tshockBaseUrl=http://127.0.0.1:7878
+tshockToken=t
+${extraLines}
+`);
+  return file;
+}
+
+test('excludes the bridge\'s own REST chatter by default', () => {
+  // Without this the bridge tails its own REST calls and trips Takaro's rate limiter.
+  // Both forms are covered: TShock 6.1 logs under Utils:, older builds under RestManager:.
+  const config = loadConfig(writeConfigWith(''), {});
+  assert.deepEqual(config.logExcludePatterns, ['takaro-rest executed:', 'RestManager:']);
+});
+
+test('an explicit empty logExcludePatterns disables filtering', () => {
+  const config = loadConfig(writeConfigWith('logExcludePatterns='), {});
+  assert.deepEqual(config.logExcludePatterns, []);
+});
+
+test('logExcludePatterns accepts a comma-separated override', () => {
+  const config = loadConfig(writeConfigWith('logExcludePatterns=RestManager:, Heartbeat'), {});
+  assert.deepEqual(config.logExcludePatterns, ['RestManager:', 'Heartbeat']);
+});

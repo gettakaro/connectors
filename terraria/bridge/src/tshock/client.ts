@@ -24,6 +24,29 @@ export interface TShockBan {
   name?: string;
   ip?: string;
   reason?: string;
+  /** .NET ticks. TShock keeps expired bans in the list, so this decides what is still in force. */
+  start_date_ticks?: number;
+  end_date_ticks?: number;
+}
+
+/** .NET ticks at the Unix epoch; TShock reports ban dates in ticks, not milliseconds. */
+const TICKS_AT_UNIX_EPOCH = 621355968000000000;
+const TICKS_PER_MS = 10000;
+
+function ticksToMs(ticks: number): number {
+  return (ticks - TICKS_AT_UNIX_EPOCH) / TICKS_PER_MS;
+}
+
+/**
+ * True while a ban is still in force.
+ *
+ * TShock never removes rows from its ban list — unbanning stamps `end_date_ticks` with the
+ * current time — so a player accumulates expired rows alongside a live one. Treating those
+ * as equivalent is what made unban silently no-op against the wrong ticket.
+ */
+function isBanActive(ban: TShockBan, nowMs: number): boolean {
+  if (typeof ban.end_date_ticks !== 'number') return true;
+  return ticksToMs(ban.end_date_ticks) > nowMs;
 }
 
 export interface CommandResult {
@@ -116,14 +139,29 @@ export class TShockClient {
     return { success: statusOk(data), rawResult: responseText(data) };
   }
 
+  /**
+   * Resolves the ticket that an unban should actually clear.
+   *
+   * Picks the newest ban that is still in force rather than the first row that happens to
+   * match the name. A player banned more than once carries expired rows in the same list, and
+   * clearing one of those leaves the live ban untouched while TShock still answers 200 — the
+   * player stays banned and the API reports success.
+   */
   private async findBanTicketNumber(identifier: string): Promise<string | null> {
     const normalized = identifier.toLowerCase();
-    const bans = await this.listBans();
-    const match = bans.find((ban) => [ban.identifier, ban.name, ban.ip]
+    const nowMs = Date.now();
+    const matches = (await this.listBans()).filter((ban) => [ban.identifier, ban.name, ban.ip]
       .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
       .map((value) => value.toLowerCase())
       .includes(normalized));
-    return match?.ticket_number ? String(match.ticket_number) : null;
+
+    const active = matches.filter((ban) => isBanActive(ban, nowMs));
+    // Newest first, so the ban actually keeping the player out is the one that gets cleared.
+    const ordered = (active.length > 0 ? active : matches)
+      .slice()
+      .sort((a, b) => (b.start_date_ticks ?? 0) - (a.start_date_ticks ?? 0));
+
+    return ordered[0]?.ticket_number ? String(ordered[0].ticket_number) : null;
   }
 
   private async get(pathname: string, params: Record<string, string | number | boolean>, mutating: boolean): Promise<Record<string, unknown>> {

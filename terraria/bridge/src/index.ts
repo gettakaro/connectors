@@ -37,7 +37,7 @@ async function main(): Promise<void> {
     (event) => emit(event.type, event.data),
     config.pollIntervalMs,
   );
-  const tailers = config.logFiles.map((file) => new LogTailer(file, (event) => emit(event.type, event.data)));
+  const tailers = config.logFiles.map((file) => new LogTailer(file, (event) => emit(event.type, event.data), undefined, undefined, config.logExcludePatterns));
   // The poller runs every pollIntervalMs and is the only component that continuously
   // exercises the game server, so its latest outcome is the freshest reachability truth
   // available. Before it has produced one (startup, or right after a Takaro reconnect

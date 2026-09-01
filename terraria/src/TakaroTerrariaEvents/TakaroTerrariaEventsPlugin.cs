@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using Terraria;
 using TerrariaApi.Server;
@@ -48,6 +49,14 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         {
             HelpText = "Gives a player an item for Takaro, refusing if the inventory is full."
         });
+        Commands.ChatCommands.Add(new Command(AdminPermission, TakaroBan, "takaroban")
+        {
+            HelpText = "Bans a player by UUID for Takaro so the ban survives a reconnect."
+        });
+        Commands.ChatCommands.Add(new Command(AdminPermission, TakaroUnban, "takarounban")
+        {
+            HelpText = "Lifts every active Takaro ban identifier for a player."
+        });
         TShock.Log.ConsoleInfo("Takaro Terraria Events plugin loaded");
     }
 
@@ -61,6 +70,8 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaropos"));
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaroinv"));
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takarogive"));
+            Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaroban"));
+            Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takarounban"));
         }
 
         base.Dispose(disposing);
@@ -126,6 +137,188 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             z = 0
         });
         args.Player.SendInfoMessage($"TAKARO_POSITION {json}");
+    }
+
+    // Bans a player on their TShock UUID rather than their display name.
+    //
+    // TShock only matches an untyped name ban against players who authenticated under
+    // that name, so on a server where players join unauthenticated a name ban records
+    // cleanly and then lets the player walk straight back in. `uuid:` is matched on every
+    // join regardless of authentication. The IP is banned alongside it as a second
+    // identifier, since a fresh client install produces a new UUID.
+    //
+    // REST cannot supply this: /v2/players/list exposes nickname/group/state and no UUID,
+    // which is why the sidecar has to come through the plugin for bans.
+    private static void TakaroBan(CommandArgs args)
+    {
+        if (args.Parameters.Count < 1)
+        {
+            args.Player.SendErrorMessage("Usage: /takaroban <player> [reason]");
+            return;
+        }
+
+        var matches = TSPlayer.FindByNameOrID(args.Parameters[0]);
+        if (matches.Count != 1)
+        {
+            var failure = JsonSerializer.Serialize(new
+            {
+                success = false,
+                reason = matches.Count == 0
+                    ? $"No player found matching '{args.Parameters[0]}'."
+                    : $"Multiple players found matching '{args.Parameters[0]}'."
+            });
+            args.Player.SendInfoMessage($"TAKARO_BAN {failure}");
+            return;
+        }
+
+        var target = matches[0];
+        var reason = args.Parameters.Count > 1
+            ? string.Join(" ", args.Parameters.GetRange(1, args.Parameters.Count - 1))
+            : "Banned by Takaro";
+
+        var identifiers = BanIdentifiersFor(target);
+        if (identifiers.Count == 0)
+        {
+            var failure = JsonSerializer.Serialize(new
+            {
+                success = false,
+                reason = $"{target.Name} exposes no UUID or IP to ban on."
+            });
+            args.Player.SendInfoMessage($"TAKARO_BAN {failure}");
+            return;
+        }
+
+        var applied = new List<string>();
+        foreach (var identifier in identifiers)
+        {
+            try
+            {
+                // Tag the ban with the player name so TakaroUnban can find it later: a
+                // banned player is offline by definition, so the UUID cannot be re-derived
+                // from a live TSPlayer at unban time.
+                TShock.Bans.InsertBan(identifier, $"{reason} {BanNameTag(target.Name)}", "takaro", DateTime.UtcNow, DateTime.MaxValue);
+                applied.Add(identifier);
+            }
+            catch (Exception ex)
+            {
+                TShock.Log.ConsoleError($"Takaro ban on {identifier} failed: {ex.Message}");
+            }
+        }
+
+        if (applied.Count == 0)
+        {
+            var failure = JsonSerializer.Serialize(new
+            {
+                success = false,
+                reason = $"Could not record any ban identifier for {target.Name}."
+            });
+            args.Player.SendInfoMessage($"TAKARO_BAN {failure}");
+            return;
+        }
+
+        target.Disconnect($"Banned: {reason}");
+
+        var json = JsonSerializer.Serialize(new
+        {
+            success = true,
+            player = target.Name,
+            identifiers = applied,
+            reason
+        });
+        args.Player.SendInfoMessage($"TAKARO_BAN {json}");
+    }
+
+    // Lifts every active ban matching any identifier this player is known by.
+    //
+    // A ban may have been recorded against the UUID, the IP or the bare name depending on
+    // which build wrote it, and clearing only one leaves the player locked out while the
+    // call reports success -- the exact failure this replaces.
+    private static void TakaroUnban(CommandArgs args)
+    {
+        if (args.Parameters.Count != 1)
+        {
+            args.Player.SendErrorMessage("Usage: /takarounban <player>");
+            return;
+        }
+
+        var name = args.Parameters[0];
+        var removed = new List<string>();
+
+        try
+        {
+            // A banned player is offline, so their UUID cannot be read from a live TSPlayer
+            // here -- looking them up that way is why an unban could only ever succeed for
+            // someone who was not actually banned. Scan the ban list instead: match the name
+            // tag written at ban time, plus any bare-name ban from an older build.
+            var tag = BanNameTag(name);
+            foreach (var ban in TShock.Bans.Bans.Values.ToArray())
+            {
+                var identifier = ban.Identifier ?? string.Empty;
+                var matchesTag = (ban.Reason ?? string.Empty).Contains(tag, StringComparison.OrdinalIgnoreCase);
+                var matchesName = identifier.Equals(name, StringComparison.OrdinalIgnoreCase)
+                    || identifier.Equals($"name:{name}", StringComparison.OrdinalIgnoreCase);
+
+                if (!matchesTag && !matchesName)
+                {
+                    continue;
+                }
+
+                TShock.Bans.RemoveBan(ban.TicketNumber, true);
+                removed.Add($"#{ban.TicketNumber} {identifier}");
+            }
+
+            // An online player can also be matched directly, which covers a ban recorded
+            // before this tagging existed.
+            var matches = TSPlayer.FindByNameOrID(name);
+            if (matches.Count == 1)
+            {
+                foreach (var identifier in BanIdentifiersFor(matches[0]))
+                {
+                    foreach (var ban in TShock.Bans.RetrieveBansByIdentifier(identifier))
+                    {
+                        TShock.Bans.RemoveBan(ban.TicketNumber, true);
+                        removed.Add($"#{ban.TicketNumber} {identifier}");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            TShock.Log.ConsoleError($"Takaro unban for {name} failed: {ex.Message}");
+        }
+
+        var json = JsonSerializer.Serialize(new
+        {
+            success = true,
+            player = name,
+            removed,
+            count = removed.Count
+        });
+        args.Player.SendInfoMessage($"TAKARO_UNBAN {json}");
+    }
+
+    /// Marker appended to a Takaro ban reason so the ban can be found again once the
+    /// player is offline and their UUID is no longer readable from a live TSPlayer.
+    private static string BanNameTag(string playerName) => $"[takaro:{playerName}]";
+
+    // UUID first: it is the identifier TShock matches on every join. IP second, so a
+    // reinstalled client with a fresh UUID is still caught.
+    private static List<string> BanIdentifiersFor(TSPlayer player)
+    {
+        var identifiers = new List<string>();
+        var uuid = NonEmpty(player.UUID);
+        if (uuid is not null)
+        {
+            identifiers.Add($"uuid:{uuid}");
+        }
+
+        var ip = NonEmpty(player.IP);
+        if (ip is not null)
+        {
+            identifiers.Add($"ip:{ip}");
+        }
+
+        return identifiers;
     }
 
     private static void TakaroInventory(CommandArgs args)
@@ -543,6 +736,7 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         Emit("player-death", new
         {
             player = PlayerDto(player, name),
+            attacker = ResolveDeathAttacker(args.PlayerDeathReason),
             reason,
             damage = args.Damage,
             pvp = args.Pvp,
@@ -776,6 +970,54 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             {
                 return PlayerDto(player, player.Name);
             }
+        }
+
+        return null;
+    }
+
+    // Resolves who or what killed the player, as a Takaro player-shaped DTO.
+    //
+    // PlayerDeathReason.TryGetCausingEntity is the public accessor Terraria uses to
+    // build its own death text ("... by Demon Eye"), so the killer is available even
+    // though the plugin previously dropped it. It already unwraps a projectile back
+    // to its owning NPC or player, so no separate projectile probe is needed.
+    //
+    // Returns null for a fall, drowning or lava death - those genuinely have no
+    // attacker, and inventing one would be worse than reporting none.
+    private static object? ResolveDeathAttacker(Terraria.DataStructures.PlayerDeathReason reason)
+    {
+        try
+        {
+            if (!reason.TryGetCausingEntity(out var entity) || entity is null)
+            {
+                return null;
+            }
+
+            if (entity is Player player)
+            {
+                var killer = ActivePlayerByIndex(player.whoAmI);
+                return killer is not null
+                    ? PlayerDto(killer, killer.Name)
+                    : PlayerDto(null, NonEmpty(player.name) ?? $"player:{player.whoAmI}");
+            }
+
+            if (entity is NPC npc)
+            {
+                return new
+                {
+                    gameId = $"npc:{npc.whoAmI}",
+                    name = NonEmpty(npc.GivenOrTypeName) ?? NonEmpty(npc.FullName) ?? $"NPC {npc.type}",
+                    platformId = $"terraria:npc:{npc.whoAmI}",
+                    type = npc.type,
+                    netId = npc.netID,
+                    boss = npc.boss
+                };
+            }
+        }
+        catch
+        {
+            // A malformed death reason must never take the event down; the death
+            // itself still carries the reason text.
         }
 
         return null;

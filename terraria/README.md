@@ -141,11 +141,11 @@ Every Takaro action has one explicit outcome, registered in
 | `getPlayerInventory` | Supported | Plugin command `/takaroinv`. |
 | `sendMessage` | Supported | `/v2/server/broadcast`. Global and per-recipient. |
 | `executeConsoleCommand` | Supported | Allowlisted by exact match and prefix. |
-| `giveItem` | Supported | `/give`, with name-to-item-code resolution. |
+| `giveItem` | Supported | Plugin command `/takarogive`, all-or-nothing, with name-to-item-code resolution. |
 | `teleportPlayer` | Supported | Plugin command `/takarotp`. |
 | `kickPlayer` | Supported | TShock console command. |
-| `banPlayer` | Supported | `/bans/create`. |
-| `unbanPlayer` | Supported | `/v2/bans/destroy`. |
+| `banPlayer` | Supported | Plugin command `/takaroban`; bans `uuid:` + `ip:`, not the display name. |
+| `unbanPlayer` | Supported | Plugin command `/takarounban`; clears every identifier while the player is offline. |
 | `listBans` | Supported | `/v2/bans/list`. |
 | `listItems` | Supported | 6147-entry catalog built from the server assemblies. |
 | `shutdown` | Supported | `/v2/server/off`, gated behind `enableShutdown`. |
@@ -169,6 +169,32 @@ Set `logFiles` in the bridge config to the TShock log directory, otherwise the
 log-derived events above are not delivered. TShock opens a new log file on every
 restart; pointing at the directory lets the bridge follow that rotation, whereas
 a single file path goes silent after the first restart.
+
+The bridge never ships log lines matching `logExcludePatterns` (default
+`takaro-rest executed:`, `RestManager:`) as `log` events. TShock logs every REST
+call the bridge itself makes, so an unfiltered tailer feeds its own traffic back
+to Takaro: on a live server that was 58% of all log lines and it tripped Takaro's
+rate limiter, which drops real gameplay events while `/health` stays green. The
+patterns match the REST call signature rather than the logger name, because
+TShock 6.1 logs these under `Utils:` where earlier builds use `RestManager:`.
+Only plain `log` passthrough is filtered, so a chat message or death whose text
+happens to match is still delivered.
+
+`player-death` reports an `attacker` when Terraria can name one, resolved through
+`PlayerDeathReason.TryGetCausingEntity` — the same accessor the game uses to build
+its own death text, which also unwraps a projectile back to its owner. A fall,
+drowning, or lava death genuinely has no attacker and omits the field.
+
+Bans go through the plugin rather than TShock's REST ban endpoint. TShock matches
+an untyped name ban only against players who authenticated under that name, so on
+a server where players join unauthenticated a name ban records cleanly, reports
+success, and the player reconnects straight through it. `/takaroban` bans
+`uuid:<TSPlayer.UUID>` plus `ip:<address>` — matched on every join, and the IP
+catches a reinstalled client whose UUID has changed — then disconnects the player.
+Because a banned player is offline, their UUID can no longer be read from a live
+`TSPlayer`, so each ban is tagged `[takaro:<name>]` in its reason and
+`/takarounban` searches the ban list by that tag. Both actions fall back to the
+REST name ban when the plugin is not loaded.
 
 `entity-killed` reports a `weapon`, taken from the killer's held item at the
 moment the kill fires. Terraria records no damage source on NPC death, so this

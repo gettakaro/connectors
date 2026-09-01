@@ -43,10 +43,18 @@ export class LogTailer {
     private readonly emit: (event: GameEvent) => void,
     private readonly intervalMs = 1000,
     private readonly startAtEnd = true,
+    private readonly excludePatterns: readonly string[] = [],
   ) {
     const { directory, pattern } = splitSource(source);
     this.directory = directory;
     this.pattern = pattern;
+  }
+
+  /** True when a line matches any configured exclude pattern (case-insensitive substring). */
+  private isExcluded(line: string): boolean {
+    if (this.excludePatterns.length === 0) return false;
+    const haystack = line.toLowerCase();
+    return this.excludePatterns.some((pattern) => haystack.includes(pattern.toLowerCase()));
   }
 
   start(): void {
@@ -130,7 +138,12 @@ export class LogTailer {
       target.offset += bytesRead;
       for (const line of buffer.subarray(0, bytesRead).toString('utf8').split(/\r?\n/)) {
         const event = parseLogLine(line);
-        if (event) this.emit(event);
+        if (!event) continue;
+        // Only plain `log` passthrough is filtered. A gameplay event (a death, a kill, a chat
+        // line) still carries its own meaning if its text happens to match an exclude pattern,
+        // so dropping it here would lose real data rather than noise.
+        if (event.type === 'log' && this.isExcluded(line)) continue;
+        this.emit(event);
       }
     } finally {
       await handle.close();
