@@ -31,6 +31,10 @@ build-release-conan version out-dir='dist':
 build-release-terraria version out-dir='dist':
     ./terraria/scripts/build-release.sh {{version}} {{out-dir}}
 
+# Build the Terraria bridge release artifact locally into <out-dir>
+build-release-terraria-bridge version out-dir='dist':
+    ./terraria/scripts/build-bridge-release.sh {{version}} {{out-dir}}
+
 # Build the Valheim connector release artifacts locally into <out-dir>
 build-release-valheim version out-dir='dist':
     ./valheim/scripts/build-release.sh {{version}} {{out-dir}}
@@ -44,6 +48,18 @@ terraria-setup:
 # Build the Terraria TShock plugin
 terraria-build:
     cd terraria && ./scripts/build-mod.sh
+
+# Install Terraria bridge dependencies
+terraria-bridge-install:
+    cd terraria/bridge && npm ci
+
+# Run Terraria bridge tests
+terraria-bridge-test:
+    cd terraria/bridge && npm test
+
+# Build the Terraria bridge
+terraria-bridge-build:
+    cd terraria/bridge && npm run build
 
 # === Rust Connector ===
 

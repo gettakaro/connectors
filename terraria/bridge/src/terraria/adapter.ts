@@ -1,0 +1,262 @@
+import { schemaFallbackForAction, unsupportedActionError } from '../takaro/coverage.js';
+import type { GameServerAction } from '../takaro/protocol.js';
+import type { CommandResult, TShockBan, TShockPlayer, TShockStatus } from '../tshock/client.js';
+import { listTerrariaItems, resolveTerrariaItemCode } from './itemCatalog.js';
+
+export interface TShockApi {
+  testToken(): Promise<CommandResult>;
+  status(): Promise<TShockStatus>;
+  players(): Promise<TShockPlayer[]>;
+  broadcast(message: string): Promise<CommandResult>;
+  rawCommand(command: string): Promise<CommandResult>;
+  createBan(input: { name?: string; ip?: string; reason?: string }): Promise<CommandResult>;
+  destroyBan(input: { user: string; type?: 'user' | 'ip' }): Promise<CommandResult>;
+  listBans(): Promise<TShockBan[]>;
+  shutdown(save?: boolean): Promise<CommandResult>;
+}
+
+export interface AdapterOptions {
+  commandAllowlistExact: string[];
+  commandAllowlistPrefixes: string[];
+  enableShutdown: boolean;
+  serverChatName?: string;
+}
+
+export class TerrariaAdapter {
+  private players = new Map<string, TShockPlayer>();
+
+  constructor(
+    private readonly tshock: TShockApi,
+    private readonly options: AdapterOptions,
+  ) {}
+
+  async handleAction(action: GameServerAction | undefined, rawArgs: unknown): Promise<unknown> {
+    if (!action) return { success: false, error: 'Missing action' };
+    const args = parseArgs(rawArgs);
+
+    const schemaFallback = schemaFallbackForAction(action);
+    if (schemaFallback !== undefined) return schemaFallback;
+
+    const unsupported = unsupportedActionError(action);
+    if (unsupported) return unsupported;
+
+    switch (action) {
+      case 'testReachability':
+        return this.testReachability();
+      case 'getPlayers':
+        return this.refreshPlayers();
+      case 'getPlayer':
+        return this.getPlayer(args);
+      case 'getPlayerLocation':
+        return this.getPlayerLocation(args);
+      case 'executeConsoleCommand':
+        return this.executeConsoleCommand(args);
+      case 'sendMessage':
+        return this.sendMessage(args);
+      case 'kickPlayer':
+        return this.tshock.rawCommand(`/kick ${quote(identifierName(args))}${reasonSuffix(args)}`);
+      case 'banPlayer':
+        return this.tshock.createBan({ name: identifierName(args), reason: optionalString(args, ['reason', 'message']) || undefined });
+      case 'unbanPlayer':
+        return this.tshock.destroyBan({ user: identifierName(args), type: 'user' });
+      case 'listBans':
+        return this.tshock.listBans();
+      case 'listItems':
+        return listTerrariaItems();
+      case 'giveItem':
+        return this.tshock.rawCommand(`/give ${quote(resolveTerrariaItemCode(requireString(args, ['itemCode', 'item', 'code', 'name'])))} ${quote(identifierName(args))} ${parseAmount(args)}`);
+      case 'teleportPlayer':
+        return this.tshock.rawCommand(`/takarotp ${quote(identifierName(args))} ${requireNumber(args, ['x'])} ${requireNumber(args, ['y'])}`);
+      case 'shutdown':
+        return this.shutdown();
+      default:
+        return { success: false, error: `Unknown action ${action}` };
+    }
+  }
+
+  async getPlayers(): Promise<TShockPlayer[]> {
+    return this.refreshPlayers();
+  }
+
+  private async testReachability(): Promise<{ connectable: boolean; reason: string | null }> {
+    try {
+      const token = await this.tshock.testToken();
+      const status = await this.tshock.status();
+      return {
+        connectable: token.success && typeof status === 'object',
+        reason: token.success ? null : token.rawResult,
+      };
+    } catch (err) {
+      return { connectable: false, reason: errorMessage(err) };
+    }
+  }
+
+  private async refreshPlayers(): Promise<TShockPlayer[]> {
+    const players = await this.tshock.players();
+    this.players.clear();
+    for (const player of players) {
+      this.players.set(player.gameId, player);
+      this.players.set(player.name.toLowerCase(), player);
+      if (player.platformId) this.players.set(player.platformId, player);
+    }
+    return players;
+  }
+
+  private async getPlayer(args: Record<string, unknown>): Promise<TShockPlayer | null | { success: false; error: string }> {
+    if (this.players.size === 0) await this.refreshPlayers();
+    const identifier = optionalNestedString(args, ['gameId', 'platformId', 'name', 'playerId']);
+    if (!identifier) return { success: false, error: 'Missing player identifier' };
+    return this.players.get(identifier) || this.players.get(identifier.toLowerCase()) || null;
+  }
+
+  private async getPlayerLocation(args: Record<string, unknown>): Promise<{ x: number; y: number; z: number }> {
+    const result = await this.tshock.rawCommand(`/takaropos ${quote(identifierName(args))}`);
+    const marker = result.rawResult.match(/TAKARO_POSITION\s+({[^}]+})/);
+    if (!result.success || !marker) return { x: 0, y: 0, z: 0 };
+
+    try {
+      const parsed = JSON.parse(marker[1]) as { x?: unknown; y?: unknown; z?: unknown };
+      return {
+        x: finiteNumber(parsed.x) ?? 0,
+        y: finiteNumber(parsed.y) ?? 0,
+        z: finiteNumber(parsed.z) ?? 0,
+      };
+    } catch {
+      return { x: 0, y: 0, z: 0 };
+    }
+  }
+
+  private async executeConsoleCommand(args: Record<string, unknown>): Promise<CommandResult> {
+    const command = requireString(args, ['command', 'rawCommand']);
+    if (!isAllowlisted(command, this.options)) {
+      return { success: false, rawResult: `Command is not allowlisted: ${command}` };
+    }
+    return this.tshock.rawCommand(command);
+  }
+
+  private async sendMessage(args: Record<string, unknown>): Promise<CommandResult> {
+    const message = requireString(args, ['message', 'text']);
+    const senderName = optionalNestedString(args, ['senderNameOverride', 'senderName', 'from']) || this.options.serverChatName;
+    return this.tshock.broadcast(senderName ? `${senderName}: ${message}` : message);
+  }
+
+  private async shutdown(): Promise<CommandResult> {
+    if (!this.options.enableShutdown) {
+      return { success: false, rawResult: 'Shutdown is disabled; set enableShutdown=true to allow this action' };
+    }
+    return this.tshock.shutdown(true);
+  }
+}
+
+export function parseArgs(rawArgs: unknown): Record<string, unknown> {
+  if (typeof rawArgs === 'string') {
+    if (!rawArgs.trim()) return {};
+    return JSON.parse(rawArgs) as Record<string, unknown>;
+  }
+  if (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) return rawArgs as Record<string, unknown>;
+  return {};
+}
+
+function isAllowlisted(command: string, options: AdapterOptions): boolean {
+  const normalized = command.trim();
+  return options.commandAllowlistExact.includes(normalized)
+    || options.commandAllowlistPrefixes.some((prefix) => matchesPrefix(normalized, prefix));
+}
+
+function matchesPrefix(command: string, prefix: string): boolean {
+  const normalizedPrefix = prefix.trim();
+  if (!normalizedPrefix) return false;
+  if (command === normalizedPrefix || command.startsWith(`${normalizedPrefix} `)) return true;
+  if (!normalizedPrefix.startsWith('/')) {
+    const slashPrefix = `/${normalizedPrefix}`;
+    return command === slashPrefix || command.startsWith(`${slashPrefix} `);
+  }
+  return false;
+}
+
+function identifierName(args: Record<string, unknown>): string {
+  const nestedValue = nestedRecords(args)
+    .slice(1)
+    .map((record) => optionalString(record, ['name', 'playerName', 'gameId', 'playerId', 'platformId']))
+    .find((value): value is string => Boolean(value));
+  const value = nestedValue || optionalString(args, ['playerName', 'gameId', 'playerId', 'platformId', 'name']);
+  if (!value) throw new Error('Missing player identifier');
+  return value.startsWith('terraria:') ? value.slice('terraria:'.length) : value;
+}
+
+function optionalNestedString(args: Record<string, unknown>, keys: string[]): string | null {
+  for (const record of nestedRecords(args)) {
+    const value = optionalString(record, keys);
+    if (value) return value;
+  }
+  return null;
+}
+
+function nestedRecords(args: Record<string, unknown>): Record<string, unknown>[] {
+  const records = [args];
+  for (const key of ['player', 'recipient', 'opts']) {
+    const record = recordValue(args[key]);
+    if (record) {
+      records.push(record);
+      const nestedPlayer = recordValue(record.player);
+      if (nestedPlayer) records.push(nestedPlayer);
+      const recipient = recordValue(record.recipient);
+      if (recipient) records.push(recipient);
+    }
+  }
+  return records;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function optionalString(args: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = args[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return null;
+}
+
+function requireString(args: Record<string, unknown>, keys: string[]): string {
+  const value = optionalString(args, keys);
+  if (!value) throw new Error(`Missing required argument: ${keys.join(' or ')}`);
+  return value;
+}
+
+function requireNumber(args: Record<string, unknown>, keys: string[]): number {
+  for (const key of keys) {
+    const value = args[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  }
+  throw new Error(`Missing required number argument: ${keys.join(' or ')}`);
+}
+
+function parseAmount(args: Record<string, unknown>): number {
+  const amount = optionalString(args, ['amount', 'quantity']);
+  if (!amount) return 1;
+  const parsed = Number.parseInt(amount, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return undefined;
+}
+
+function reasonSuffix(args: Record<string, unknown>): string {
+  const reason = optionalString(args, ['reason', 'message']);
+  return reason ? ` ${quote(reason)}` : '';
+}
+
+function quote(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
