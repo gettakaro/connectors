@@ -106,6 +106,13 @@ async function handleTakaroRequest(
   }
 }
 
+// Defense in depth: a transient game-server outage must never kill the bridge, but the
+// rejection is still logged loudly (with a stack) so real bugs stay visible instead of
+// being silently swallowed.
+process.on('unhandledRejection', (reason) => {
+  logger.error(`Unhandled promise rejection: ${reason instanceof Error ? reason.stack || reason.message : String(reason)}`);
+});
+
 main().catch((err) => {
   logger.error(`Fatal startup error: ${err instanceof Error ? err.stack || err.message : String(err)}`);
   process.exit(1);

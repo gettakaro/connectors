@@ -1,10 +1,16 @@
+import { logger } from '../logger.js';
 import type { GameEvent } from '../takaro/protocol.js';
 import type { TShockPlayer } from '../tshock/client.js';
+
+const FAILURE_LOG_INTERVAL_MS = 60_000;
 
 export class PlayerPoller {
   private timer: NodeJS.Timeout | null = null;
   private previous = new Map<string, TShockPlayer>();
   private polling = false;
+  private lastFailureMessage: string | null = null;
+  private lastFailureLoggedAt = 0;
+  private suppressedFailures = 0;
   lastPollAt: string | null = null;
 
   constructor(
@@ -27,6 +33,9 @@ export class PlayerPoller {
   reset(): void {
     this.previous.clear();
     this.lastPollAt = null;
+    this.lastFailureMessage = null;
+    this.lastFailureLoggedAt = 0;
+    this.suppressedFailures = 0;
   }
 
   async pollOnce(): Promise<void> {
@@ -43,8 +52,39 @@ export class PlayerPoller {
       }
       this.previous = next;
       this.lastPollAt = new Date().toISOString();
+      this.notePollRecovered();
+    } catch (err) {
+      // A failed poll tells us nothing about who is online, so leave `previous` and
+      // `lastPollAt` untouched: clearing them would emit false disconnects on the next
+      // successful poll, and a stale lastPollAt is the correct /health liveness signal.
+      this.notePollFailed(err);
     } finally {
       this.polling = false;
     }
+  }
+
+  private notePollFailed(err: unknown): void {
+    const message = err instanceof Error ? err.message : String(err);
+    const now = Date.now();
+    const isNewError = message !== this.lastFailureMessage;
+    const backoffElapsed = now - this.lastFailureLoggedAt >= FAILURE_LOG_INTERVAL_MS;
+    if (isNewError || backoffElapsed) {
+      const suppressed = this.suppressedFailures > 0 ? ` (${this.suppressedFailures} similar failures suppressed)` : '';
+      logger.error(`Player poll failed: ${message}${suppressed}`);
+      this.lastFailureMessage = message;
+      this.lastFailureLoggedAt = now;
+      this.suppressedFailures = 0;
+      return;
+    }
+    this.suppressedFailures += 1;
+  }
+
+  private notePollRecovered(): void {
+    if (!this.lastFailureMessage) return;
+    const suppressed = this.suppressedFailures > 0 ? ` (${this.suppressedFailures} similar failures suppressed)` : '';
+    logger.info(`Player poll recovered${suppressed}`);
+    this.lastFailureMessage = null;
+    this.lastFailureLoggedAt = 0;
+    this.suppressedFailures = 0;
   }
 }
