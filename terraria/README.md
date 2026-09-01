@@ -67,16 +67,17 @@ This creates `dist/takaro-terraria-plugin.zip`.
 ```text
 /takaropos <player>
 /takarotp <player> <x> <y>
+/takaroinv <player>
 ```
 
-Both are server-side TShock commands intended for connector automation, and both
-require the `takaro.admin` TShock permission.
+These are server-side TShock commands intended for connector automation, and
+all of them require the `takaro.admin` TShock permission.
 
 A REST user in the `superadmin` group already satisfies this through TShock's
 wildcard permission, which is the common setup and needs no extra configuration.
 For a more narrowly scoped user, grant `takaro.admin` explicitly: without it
-`teleportPlayer` fails and `getPlayerLocation` reports `0,0,0` rather than
-failing loudly.
+`teleportPlayer` fails, `getPlayerLocation` reports `0,0,0`, and
+`getPlayerInventory` returns an empty list, all rather than failing loudly.
 
 ## Bridge
 
@@ -167,19 +168,42 @@ Every Takaro action has one explicit outcome, registered in
 Set `logFiles` in the bridge config to the active TShock log, otherwise the
 log-derived events above are not delivered.
 
+`entity-killed` reports a `weapon`, taken from the killer's held item at the
+moment the kill fires. Terraria records no damage source on NPC death, so this
+is a proxy rather than exact attribution: a projectile fired earlier can land
+after the player swaps weapons, and minion, sentry, or damage-over-time kills
+may credit an item that dealt none of the damage. It reports `unknown` when no
+killer or held item resolves.
+
 ### Items and inventory
 
 Terraria has items, and both directions work. The bridge ships a static catalog
 of 6147 items extracted from the server assemblies and resolves a display name
 such as `Wood` to the numeric code TShock's `/give` expects.
 
-Inventory reading is plugin-backed: `/takaroinv` reads `TPlayer.inventory` and
-`TPlayer.armor`, skips empty slots, and aggregates duplicate item types by
-summing their stacks.
+Inventory reading is plugin-backed. `/takaroinv` reports every container a
+player owns, skips empty slots, and aggregates duplicate item types across all
+of them into a single entry by summing stacks:
 
-Note that `TPlayer.armor` covers vanity and accessory slots as well as
-functional equipment, so a player wearing a vanity set reports both pieces.
-That is faithful to what the player is carrying.
+| Container | Contents |
+| --- | --- |
+| `inventory` | main slots |
+| `armor` | armor, accessories, and their vanity slots |
+| `dye` | dye slots |
+| `miscEquips` | pet, light pet, mount, and grapple slots |
+| `miscDyes` | dyes for those misc slots |
+| `trashItem` | trash slot |
+| `bank`, `bank2`, `bank3`, `bank4` | Piggy Bank, Safe, Defender's Forge, Void Vault |
+| `Loadouts` | stored equipment loadouts |
+
+Loadouts do not double-count. `EquipmentLoadout.Swap` exchanges items with
+`player.armor` and `player.dye` rather than copying them, so the active
+loadout's own arrays hold only empty items while it is equipped and the
+empty-slot check drops them. Only the inactive loadouts contribute entries.
+
+Excluded are Terraria's transient engine arrays and its cached
+accessory-effect items, such as `starCloakItem`, which are internal state
+rather than possessions and would otherwise be reported as phantom items.
 
 Takaro does not call `listItems` on demand. It runs a `syncItems` job when a
 game server is registered, hourly thereafter, and on manual trigger, and that
