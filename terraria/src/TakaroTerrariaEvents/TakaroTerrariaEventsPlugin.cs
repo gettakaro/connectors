@@ -11,6 +11,13 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
 {
     private const string AdminPermission = "takaro.admin";
 
+    // Main inventory slot range, verified against the Terraria assembly's own constants:
+    // Main.InventoryItemSlotsStart = 0 and Main.InventoryItemSlotsCount = 50. Coin slots
+    // start at 50, ammo slots at 54, and Main.InventorySlotsTotal is 58. See
+    // BuildPlacementPlan for why the coin and ammo slots are excluded.
+    private const int MainInventorySlotStart = 0;
+    private const int MainInventorySlotCount = 50;
+
     public override string Name => "Takaro Terraria Events";
     public override Version Version => new(0, 1, 0);
     public override string Author => "Takaro";
@@ -37,6 +44,10 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         {
             HelpText = "Prints a player's inventory for Takaro."
         });
+        Commands.ChatCommands.Add(new Command(AdminPermission, TakaroGive, "takarogive")
+        {
+            HelpText = "Gives a player an item for Takaro, refusing if the inventory is full."
+        });
         TShock.Log.ConsoleInfo("Takaro Terraria Events plugin loaded");
     }
 
@@ -49,6 +60,7 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takarotp"));
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaropos"));
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaroinv"));
+            Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takarogive"));
         }
 
         base.Dispose(disposing);
@@ -158,6 +170,317 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
 
         var json = JsonSerializer.Serialize(new { items });
         args.Player.SendInfoMessage($"TAKARO_INVENTORY {json}");
+    }
+
+    /// <summary>
+    /// Gives an item to a player, placing the whole order into their inventory or refusing
+    /// outright. There is no partial delivery and no floor drop.
+    ///
+    /// TShock's own Commands.Give refuses when TSPlayer.InventorySlotAvailable is false —
+    /// that property only counts completely empty slots, so a player whose inventory is
+    /// full is refused even when the item would have stacked onto an existing partial
+    /// stack. A refused give makes a Takaro shop purchase charge the player and deliver
+    /// nothing, so we do not use that gate.
+    ///
+    /// We do not use TSPlayer.GiveItem either, for two reasons confirmed against this
+    /// server's config and the TShock assembly:
+    ///
+    ///   1. GiveItem only places items directly when TShock.Config.Settings.
+    ///      GiveItemsDirectly is true AND Main.ServerSideCharacter is enabled. This server
+    ///      has GiveItemsDirectly false and no SSC, so every give routes to GiveItemByDrop
+    ///      and lands on the ground. A purchase at the player's feet is easy to miss and
+    ///      can despawn, so a drop is a delivery failure, not a success.
+    ///   2. Even with direct placement enabled, GiveItemDirectly fills what it can and
+    ///      then drops the remainder, so a request for 50 into room for 20 places 20 and
+    ///      drops 30. That is a partially lost order.
+    ///
+    /// So we do the placement ourselves: compute exact capacity, refuse unless the entire
+    /// amount fits, and only then write into the inventory and sync each touched slot.
+    /// Takaro turns a reported failure into a shop-order-delivery-failed event, which a
+    /// module can surface to the player, so refusing is visible and actionable.
+    /// </summary>
+    private static void TakaroGive(CommandArgs args)
+    {
+        if (args.Parameters.Count is < 3 or > 4)
+        {
+            args.Player.SendErrorMessage("Usage: /takarogive <player> <itemId> <amount> [prefix]");
+            return;
+        }
+
+        var matches = TSPlayer.FindByNameOrID(args.Parameters[0]);
+        if (matches.Count != 1)
+        {
+            args.Player.SendErrorMessage(matches.Count == 0
+                ? $"No player found matching '{args.Parameters[0]}'."
+                : $"Multiple players found matching '{args.Parameters[0]}'.");
+            return;
+        }
+
+        if (!int.TryParse(args.Parameters[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var itemId) || itemId == 0)
+        {
+            EmitGiveFailure(args, $"Invalid item id '{args.Parameters[1]}'.");
+            return;
+        }
+
+        if (!int.TryParse(args.Parameters[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var amount) || amount <= 0)
+        {
+            EmitGiveFailure(args, $"Invalid amount '{args.Parameters[2]}'.");
+            return;
+        }
+
+        var prefix = 0;
+        if (args.Parameters.Count == 4
+            && !int.TryParse(args.Parameters[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out prefix))
+        {
+            EmitGiveFailure(args, $"Invalid prefix '{args.Parameters[3]}'.");
+            return;
+        }
+
+        if (prefix is < 0 or > byte.MaxValue)
+        {
+            EmitGiveFailure(args, $"Invalid prefix '{args.Parameters[3]}'.");
+            return;
+        }
+
+        var target = matches[0];
+        var template = new Item();
+        template.netDefaults(itemId);
+        if (template.type == 0)
+        {
+            EmitGiveFailure(args, $"Unknown item id '{itemId.ToString(CultureInfo.InvariantCulture)}'.");
+            return;
+        }
+
+        template.stack = amount;
+        template.prefix = (byte)prefix;
+
+        var itemName = NonEmpty(template.Name) ?? itemId.ToString(CultureInfo.InvariantCulture);
+
+        // Plan the entire placement before touching anything. BuildPlacementPlan returns
+        // null when the full amount does not fit, so we either apply a complete plan or
+        // mutate nothing at all.
+        List<PlannedPlacement> plan;
+        try
+        {
+            plan = BuildPlacementPlan(target.TPlayer, template, amount, out var capacity);
+            if (plan.Count == 0)
+            {
+                var missing = amount - capacity;
+                EmitGiveFailure(
+                    args,
+                    $"Inventory is full. Need room for {missing.ToString(CultureInfo.InvariantCulture)} more {itemName} and try again.");
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            EmitGiveFailure(args, $"Failed to give item: {ex.Message}");
+            return;
+        }
+
+        try
+        {
+            ApplyPlacementPlan(target, template, plan);
+        }
+        catch (Exception ex)
+        {
+            EmitGiveFailure(args, $"Failed to give item: {ex.Message}");
+            return;
+        }
+
+        var json = JsonSerializer.Serialize(new
+        {
+            success = true,
+            delivered = amount,
+            method = "inventory",
+            item = itemName
+        });
+        args.Player.SendInfoMessage($"TAKARO_GIVE {json}");
+    }
+
+    // One slot's worth of a planned delivery: put Amount more of the item into Slot.
+    // IsEmptySlot distinguishes "top up an existing stack" from "occupy a fresh slot",
+    // which decides whether the apply step reuses the slot's Item or builds a new one.
+    private readonly record struct PlannedPlacement(int Slot, int Amount, bool IsEmptySlot);
+
+    // Builds the complete list of slot writes needed to deliver `amount` of `template`,
+    // or an empty list when the inventory cannot take the whole amount. `capacity` always
+    // receives the real capacity so the caller can report the exact shortfall.
+    //
+    // Slot range: main inventory only, indices 0..49. Verified against the Terraria
+    // assembly's own constants — Main.InventoryItemSlotsStart = 0,
+    // Main.InventoryItemSlotsCount = 50, Main.InventoryCoinSlotsStart = 50,
+    // Main.InventoryAmmoSlotsStart = 54, Main.InventorySlotsTotal = 58 (index 58 is the
+    // mouse slot).
+    //
+    // Coin slots (50..53) and ammo slots (54..57) are deliberately EXCLUDED, so capacity
+    // is a deliberate under-estimate for coins and ammo. Those slots accept items only
+    // under extra conditions (Item.IsACoin for coins; Item.FitsAmmoSlot plus
+    // Item.CanFillEmptyAmmoSlot for ammo, which excludes bait, paints/coatings and a
+    // hardcoded item list). Counting them would mean reimplementing that gating exactly,
+    // and any drift would make capacity over-report — leaving a tail with nowhere to go,
+    // which is the drop we are trying to eliminate. Under-counting can only produce a
+    // refusal, which is safe and visible; over-counting produces a lost order. A player
+    // with a full main inventory but free ammo slots is told to make room, and an ammo
+    // give still succeeds normally whenever the main inventory has space.
+    private static List<PlannedPlacement> BuildPlacementPlan(Player? player, Item template, int amount, out int capacity)
+    {
+        capacity = 0;
+        var plan = new List<PlannedPlacement>();
+
+        var inventory = player?.inventory;
+        if (inventory is null)
+        {
+            return plan;
+        }
+
+        var lastSlot = Math.Min(MainInventorySlotStart + MainInventorySlotCount, inventory.Length);
+
+        // Pass 1: top up partial stacks of the same item. Item.CanStack compares type and
+        // prefix, so a prefixed give will not merge into an unprefixed stack (and returns
+        // false for an empty slot, whose type is 0). Doing this pass first keeps the
+        // inventory tidy and leaves empty slots free for anything that still does not fit.
+        for (var slot = MainInventorySlotStart; slot < lastSlot; slot++)
+        {
+            var existing = inventory[slot];
+            if (existing is null || existing.type <= 0 || existing.stack <= 0)
+            {
+                continue;
+            }
+
+            if (!Item.CanStack(existing, template))
+            {
+                continue;
+            }
+
+            var headroom = existing.maxStack - existing.stack;
+            if (headroom <= 0)
+            {
+                continue;
+            }
+
+            capacity += headroom;
+
+            var remaining = amount - PlannedTotal(plan);
+            if (remaining > 0)
+            {
+                plan.Add(new PlannedPlacement(slot, Math.Min(headroom, remaining), IsEmptySlot: false));
+            }
+        }
+
+        // Pass 2: empty slots, each of which can hold a full maxStack of the new item.
+        for (var slot = MainInventorySlotStart; slot < lastSlot; slot++)
+        {
+            var existing = inventory[slot];
+            if (existing is not null && existing.type > 0 && existing.stack > 0)
+            {
+                continue;
+            }
+
+            var slotCapacity = template.maxStack;
+            if (slotCapacity <= 0)
+            {
+                continue;
+            }
+
+            capacity += slotCapacity;
+
+            var remaining = amount - PlannedTotal(plan);
+            if (remaining > 0)
+            {
+                plan.Add(new PlannedPlacement(slot, Math.Min(slotCapacity, remaining), IsEmptySlot: true));
+            }
+        }
+
+        // All-or-nothing: an incomplete plan is discarded entirely so no caller can
+        // accidentally apply a partial delivery.
+        if (PlannedTotal(plan) < amount)
+        {
+            plan.Clear();
+        }
+
+        return plan;
+    }
+
+    private static int PlannedTotal(List<PlannedPlacement> plan)
+    {
+        var total = 0;
+        foreach (var placement in plan)
+        {
+            total += placement.Amount;
+        }
+
+        return total;
+    }
+
+    // Applies a plan that BuildPlacementPlan already proved complete, then syncs every
+    // touched slot to the clients.
+    //
+    // Sync convention verified against the assemblies rather than assumed. TShock's own
+    // TSPlayer.SendItemSlotPacketFor does exactly:
+    //     NetMessage.SendData(5, Index, -1, null, Index, slot, prefix)
+    // and NetMessage.SendData's packet-5 writer confirms the argument meanings:
+    //     packetWriter.Write((byte)number);    // owning player index
+    //     packetWriter.Write((short)number2);  // inventory slot index
+    //     ... then stack, prefix and type are read from
+    //     Main.player[number].inventory[slot] itself, not from the arguments.
+    // So the packet carries the server-side slot contents; number3 is only a bit flag in
+    // the trailing BitsByte (TShock passes the prefix there, which the writer ignores as a
+    // prefix), so we pass 0.
+    //
+    // Note TSPlayer.SendData does NOT take number6/number7 — its signature is
+    // SendData(PacketTypes, string text, int number, float number2, float number3,
+    // float number4, int number5) — so we call NetMessage.SendData directly, matching
+    // TShock. remoteClient: -1 broadcasts to every client, which is what other players
+    // need to render the change; passing target.Index would send to that client only.
+    private static void ApplyPlacementPlan(TSPlayer target, Item template, List<PlannedPlacement> plan)
+    {
+        var inventory = target.TPlayer.inventory;
+
+        foreach (var placement in plan)
+        {
+            if (placement.IsEmptySlot)
+            {
+                var fresh = new Item();
+                fresh.netDefaults(template.type);
+                fresh.stack = placement.Amount;
+                if (template.prefix != 0)
+                {
+                    fresh.prefix = template.prefix;
+                }
+
+                inventory[placement.Slot] = fresh;
+            }
+            else
+            {
+                inventory[placement.Slot].stack += placement.Amount;
+            }
+        }
+
+        // Sync after every write lands, so a client never sees a half-applied inventory.
+        foreach (var placement in plan)
+        {
+            NetMessage.SendData(
+                (int)PacketTypes.PlayerSlot,
+                -1,
+                -1,
+                null,
+                target.Index,
+                placement.Slot,
+                0f);
+        }
+    }
+
+    private static void EmitGiveFailure(CommandArgs args, string reason)
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            success = false,
+            delivered = 0,
+            method = "none",
+            reason
+        });
+        args.Player.SendInfoMessage($"TAKARO_GIVE {json}");
     }
 
     private static void CollectItems(Item[]? slots, Dictionary<int, int> totals, Dictionary<int, string> names)
