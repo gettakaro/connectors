@@ -48,3 +48,52 @@ On first start the mod creates `7d2d/Config.xml` with the production Takaro WebS
 ```
 
 Set `RegistrationToken` to the token from your Takaro game server connector setup before expecting the server to identify successfully. The mod generates `IdentityToken` automatically the first time the config is created.
+
+## Takaro coverage
+
+**23 of 25** capabilities in Takaro's API surface are
+live-supported, verified end to end through the Takaro API against a real
+dedicated server (game build V 3.2.0 b10).
+
+Rows come from Takaro's own `GAME_SERVER_ACTIONS` and `GameEvents`, so a capability
+this connector does not implement still appears here rather than going unlisted.
+
+### Actions
+
+| Action | | Status |
+|---|---|---|
+| `getPlayer` | ✅ | live-supported |
+| `getPlayers` | ✅ | live-supported |
+| `getPlayerLocation` | ✅ | live-supported |
+| `getPlayerInventory` | ✅ | live-supported |
+| `giveItem` | ✅ | live-supported |
+| `listItems` | ✅ | live-supported |
+| `listEntities` | ✅ | live-supported |
+| `listLocations` | ✅ | live-supported |
+| `executeConsoleCommand` | ✅ | live-supported |
+| `sendMessage` | ✅ | live-supported |
+| `teleportPlayer` | ✅ | live-supported |
+| `testReachability` | ✅ | live-supported |
+| `kickPlayer` | ✅ | live-supported |
+| `banPlayer` | ✅ | live-supported |
+| `unbanPlayer` | ✅ | live-supported |
+| `listBans` | ✅ | live-supported |
+| `shutdown` | ✅ | live-supported |
+| `getMapInfo` | — | missing |
+| `getMapTile` | — | missing |
+
+### Events
+
+| Event | | Status |
+|---|---|---|
+| `log` | ✅ | live-supported |
+| `player-connected` | ✅ | live-supported |
+| `player-disconnected` | ✅ | live-supported |
+| `chat-message` | ✅ | live-supported |
+| `player-death` | ✅ | live-supported |
+| `entity-killed` | ✅ | live-supported |
+
+`getMapInfo` and `getMapTile` are not implemented. Calling `getMapInfo` through
+Takaro returns `400 — The gameserver responded with bad data`. They are listed
+here rather than omitted so the matrix is measured against Takaro's API surface
+rather than against what this connector happens to implement.
