@@ -138,6 +138,15 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         var names = new Dictionary<int, string>();
         CollectItems(player?.inventory, totals, names);
         CollectItems(player?.armor, totals, names);
+        CollectItems(player?.dye, totals, names);
+        CollectItems(player?.miscEquips, totals, names);
+        CollectItems(player?.miscDyes, totals, names);
+        CollectItem(player?.trashItem, totals, names);
+        CollectChest(player?.bank, totals, names);
+        CollectChest(player?.bank2, totals, names);
+        CollectChest(player?.bank3, totals, names);
+        CollectChest(player?.bank4, totals, names);
+        CollectLoadouts(player?.Loadouts, totals, names);
 
         var items = totals.Select(entry => new
         {
@@ -160,16 +169,45 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
 
         foreach (var item in slots)
         {
-            if (item is null || item.type <= 0 || item.stack <= 0)
+            CollectItem(item, totals, names);
+        }
+    }
+
+    private static void CollectItem(Item? item, Dictionary<int, int> totals, Dictionary<int, string> names)
+    {
+        if (item is null || item.type <= 0 || item.stack <= 0)
+        {
+            return;
+        }
+
+        totals[item.type] = totals.TryGetValue(item.type, out var amount) ? amount + item.stack : item.stack;
+        if (!names.ContainsKey(item.type))
+        {
+            names[item.type] = NonEmpty(item.Name) ?? $"Item {item.type.ToString(CultureInfo.InvariantCulture)}";
+        }
+    }
+
+    private static void CollectChest(Chest? chest, Dictionary<int, int> totals, Dictionary<int, string> names)
+    {
+        CollectItems(chest?.item, totals, names);
+    }
+
+    private static void CollectLoadouts(EquipmentLoadout[]? loadouts, Dictionary<int, int> totals, Dictionary<int, string> names)
+    {
+        if (loadouts is null)
+        {
+            return;
+        }
+
+        foreach (var loadout in loadouts)
+        {
+            if (loadout is null)
             {
                 continue;
             }
 
-            totals[item.type] = totals.TryGetValue(item.type, out var amount) ? amount + item.stack : item.stack;
-            if (!names.ContainsKey(item.type))
-            {
-                names[item.type] = NonEmpty(item.Name) ?? $"Item {item.type.ToString(CultureInfo.InvariantCulture)}";
-            }
+            CollectItems(loadout.Armor, totals, names);
+            CollectItems(loadout.Dye, totals, names);
         }
     }
 
@@ -197,9 +235,11 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             return;
         }
 
+        var killer = ActivePlayerByIndex(npc.lastInteraction) ?? FirstActiveTSPlayer();
+
         Emit("entity-killed", new
         {
-            player = PlayerByIndex(npc.lastInteraction) ?? FirstActivePlayer(),
+            player = killer is null ? null : PlayerDto(killer, killer.Name),
             entity = new
             {
                 gameId = $"npc:{npc.whoAmI}",
@@ -210,7 +250,51 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
                 boss = npc.boss,
                 position = new { x = npc.position.X, y = npc.position.Y }
             },
+            weapon = HeldWeaponName(killer)
         });
+    }
+
+    // Best-effort weapon attribution: Terraria's NPC carries no record of what
+    // killed it, so we report the killer's held item at the moment the kill fires.
+    // This is a proxy, not exact attribution - a projectile fired earlier can land
+    // after the player swaps weapons, and damage-over-time, minion or sentry kills
+    // may credit a held item that dealt none of the damage. Terraria exposes no
+    // true damage source on NPC death, so this is the best signal available.
+    // Returns an empty string when unknown; Takaro's entity-killed DTO types
+    // weapon as a string, so we never emit null or omit the field.
+    private static string HeldWeaponName(TSPlayer? player)
+    {
+        var item = player?.TPlayer?.HeldItem;
+        if (item is null || item.type <= 0)
+        {
+            return string.Empty;
+        }
+
+        return NonEmpty(item.Name) ?? string.Empty;
+    }
+
+    private static TSPlayer? ActivePlayerByIndex(int index)
+    {
+        if (index < 0 || index >= TShock.Players.Length)
+        {
+            return null;
+        }
+
+        var player = TShock.Players[index];
+        return player is not null && player.Active ? player : null;
+    }
+
+    private static TSPlayer? FirstActiveTSPlayer()
+    {
+        foreach (var player in TShock.Players)
+        {
+            if (player is not null && player.Active)
+            {
+                return player;
+            }
+        }
+
+        return null;
     }
 
     private static object PlayerDto(TSPlayer? player, string fallbackName)
