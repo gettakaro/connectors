@@ -1,0 +1,33 @@
+# Copy this file to TakaroConfig.txt next to the bridge and fill in secrets there.
+# Do not commit real Takaro registration tokens or TShock REST tokens.
+
+# Takaro connection
+registrationToken=
+identityToken=terraria-local
+serverName=Terraria Server
+serverChatName=Takaro
+takaroWsUrl=wss://connect.takaro.io/
+
+# TShock REST API. Enable RestApiEnabled in tshock/config.json first.
+tshockBaseUrl=http://127.0.0.1:7878
+tshockToken=
+# Alternatively, create a token from credentials:
+# tshockUsername=admin
+# tshockPassword=
+
+# Local bridge HTTP server (GET /health, GET /coverage)
+httpPort=3020
+pollIntervalMs=10000
+
+# TShock log files to tail for chat, join/leave, and TAKARO_EVENT markers.
+# Point this at the log DIRECTORY, not a single file: TShock opens a new log on
+# every restart, and a directory lets the bridge follow that rotation. A single
+# file path still works but stops receiving events once the server restarts.
+logFiles=tshock/logs
+
+# Raw console commands are allowlisted by exact match and by prefix.
+commandAllowlistExact=help,/help
+commandAllowlistPrefixes=say,time
+
+# Shutdown is separately gated and off by default.
+enableShutdown=false
