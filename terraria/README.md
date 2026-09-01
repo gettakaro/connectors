@@ -137,6 +137,7 @@ Every Takaro action has one explicit outcome, registered in
 | `getPlayers` | Supported | From TShock REST. |
 | `getPlayer` | Supported | From TShock REST. |
 | `getPlayerLocation` | Supported | Plugin command `/takaropos`. |
+| `getPlayerInventory` | Supported | Plugin command `/takaroinv`. |
 | `sendMessage` | Supported | `/v2/server/broadcast`. Global and per-recipient. |
 | `executeConsoleCommand` | Supported | Allowlisted by exact match and prefix. |
 | `giveItem` | Supported | `/give`, with name-to-item-code resolution. |
@@ -147,7 +148,6 @@ Every Takaro action has one explicit outcome, registered in
 | `listBans` | Supported | `/v2/bans/list`. |
 | `listItems` | Supported | 6147-entry catalog built from the server assemblies. |
 | `shutdown` | Supported | `/v2/server/off`, gated behind `enableShutdown`. |
-| `getPlayerInventory` | **Not built yet** | Returns `[]`. See below. |
 | `listEntities` | Not applicable | Terraria NPCs spawn from world state; there is no queryable entity registry. |
 | `listLocations` | Not applicable | Terraria has no named-location concept for Takaro to list. |
 | `getMapInfo` | Not applicable | Returns a disabled map DTO. TShock exposes no map metadata. |
@@ -169,18 +169,24 @@ log-derived events above are not delivered.
 
 ### Items and inventory
 
-Terraria does have items, and `giveItem` works: the bridge ships a static catalog
+Terraria has items, and both directions work. The bridge ships a static catalog
 of 6147 items extracted from the server assemblies and resolves a display name
 such as `Wood` to the numeric code TShock's `/give` expects.
 
-Inventory reading is the one genuine gap. TShock REST exposes no inventory
-endpoint, so `getPlayerInventory` currently returns `[]`. This is a missing
-feature rather than a hard limit: the plugin already reads `TSPlayer.TPlayer`
-for coordinates, and `TPlayer.inventory` is reachable on the same object, so a
-plugin command in the shape of `/takaropos` would close it.
+Inventory reading is plugin-backed: `/takaroinv` reads `TPlayer.inventory` and
+`TPlayer.armor`, skips empty slots, and aggregates duplicate item types by
+summing their stacks.
 
-Note that Takaro polls `getPlayerInventory` regularly, so until it is
-implemented, Takaro will consistently see every player as holding nothing.
+Note that `TPlayer.armor` covers vanity and accessory slots as well as
+functional equipment, so a player wearing a vanity set reports both pieces.
+That is faithful to what the player is carrying.
+
+Takaro does not call `listItems` on demand. It runs a `syncItems` job when a
+game server is registered, hourly thereafter, and on manual trigger, and that
+job checks reachability first. If the connector is not attached at registration
+time the initial sync is skipped and Takaro's item table for that server stays
+empty until the next successful sync. Attach the bridge before registering the
+server, or trigger the job manually afterwards.
 
 ## Safety
 
