@@ -59,7 +59,7 @@ enableShutdown=false
   assert.equal(config.enableShutdown, false);
 });
 
-test('resolves log directories to the newest TShock log file', () => {
+test('passes log directories through so the tailer can follow TShock log rotation', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'terraria-config-logs-'));
   const logs = path.join(dir, 'logs');
   const file = path.join(dir, 'TakaroConfig.txt');
@@ -80,7 +80,9 @@ logFiles=${logs}
 
   const config = loadConfig(file, {});
 
-  assert.deepEqual(config.logFiles, [newer]);
+  // Resolving to `newer` here would pin the bridge to whichever log was newest at startup,
+  // which is exactly what breaks when TShock restarts and opens a new file.
+  assert.deepEqual(config.logFiles, [logs]);
 });
 
 test('requires a registration token and one TShock authentication method', () => {

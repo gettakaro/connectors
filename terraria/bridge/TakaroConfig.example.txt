@@ -20,7 +20,10 @@ httpPort=3020
 pollIntervalMs=10000
 
 # TShock log files to tail for chat, join/leave, and TAKARO_EVENT markers.
-logFiles=tshock/logs/server.log
+# Point this at the log DIRECTORY, not a single file: TShock opens a new log on
+# every restart, and a directory lets the bridge follow that rotation. A single
+# file path still works but stops receiving events once the server restarts.
+logFiles=tshock/logs
 
 # Raw console commands are allowlisted by exact match and by prefix.
 commandAllowlistExact=help,/help

@@ -165,8 +165,10 @@ Every Takaro action has one explicit outcome, registered in
 | `chat-message` | Supported | Parsed from the TShock log (best effort). |
 | `log` | Supported | Tailed from configured TShock log files. |
 
-Set `logFiles` in the bridge config to the active TShock log, otherwise the
-log-derived events above are not delivered.
+Set `logFiles` in the bridge config to the TShock log directory, otherwise the
+log-derived events above are not delivered. TShock opens a new log file on every
+restart; pointing at the directory lets the bridge follow that rotation, whereas
+a single file path goes silent after the first restart.
 
 `entity-killed` reports a `weapon`, taken from the killer's held item at the
 moment the kill fires. Terraria records no damage source on NPC death, so this

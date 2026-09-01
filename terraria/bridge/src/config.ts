@@ -85,17 +85,13 @@ function parseCsv(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Directory and glob entries are passed through verbatim so the tailer can re-resolve the
+ * newest log on every poll. Resolving to a single file here would pin the bridge to the log
+ * that happened to be newest at startup, and TShock opens a new one on every restart.
+ */
 function resolveLogFiles(entries: string[]): string[] {
-  return entries.flatMap((entry) => {
-    if (!fs.existsSync(entry) || !fs.statSync(entry).isDirectory()) return [entry];
-
-    const latest = fs.readdirSync(entry)
-      .filter((file) => file.endsWith('.log'))
-      .map((file) => path.join(entry, file))
-      .filter((file) => fs.statSync(file).isFile())
-      .sort((left, right) => fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs)[0];
-    return latest ? [latest] : [];
-  });
+  return entries;
 }
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
