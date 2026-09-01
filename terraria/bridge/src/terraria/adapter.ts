@@ -69,7 +69,7 @@ export class TerrariaAdapter {
       case 'listItems':
         return listTerrariaItems();
       case 'giveItem':
-        return this.tshock.rawCommand(`/give ${quote(resolveTerrariaItemCode(requireString(args, ['itemCode', 'item', 'code', 'name'])))} ${quote(identifierName(args))} ${parseAmount(args)}`);
+        return this.giveItem(args);
       case 'teleportPlayer':
         return this.tshock.rawCommand(`/takarotp ${quote(identifierName(args))} ${requireNumber(args, ['x'])} ${requireNumber(args, ['y'])}`);
       case 'shutdown':
@@ -160,20 +160,70 @@ export class TerrariaAdapter {
       return [];
     }
 
-    // The payload contains nested objects, so match to the end of the marker line
-    // rather than the single-level {[^}]+} pattern getPlayerLocation can rely on.
-    const marker = result.rawResult.match(/TAKARO_INVENTORY\s+(\{.*)/);
-    if (!result.success || !marker) return [];
+    if (!result.success) return [];
+    const parsed = parseMarker(result.rawResult, 'TAKARO_INVENTORY');
+    if (!parsed || !Array.isArray(parsed.items)) return [];
+    return parsed.items
+      .map((entry) => toTakaroItem(entry))
+      .filter((item): item is TakaroItem => item !== null);
+  }
 
+  /**
+   * Delivers a shop item through the plugin's /takarogive rather than TShock's /give.
+   *
+   * TShock's /give refuses outright when the player has no completely empty inventory slot,
+   * answering "Player does not have free slots!" — which previously left a Takaro shop order
+   * marked COMPLETED with the player charged and nothing delivered. /takarogive places items
+   * itself: it stacks onto partial stacks, and refuses unless the whole amount fits. Nothing
+   * is ever dropped on the ground, and a partial delivery is never attempted, since half an
+   * order is still a lost order.
+   *
+   * A refusal is reported as { error } so Takaro throws rather than completing quietly. Takaro
+   * flips shop orders to COMPLETED before delivery and swallows delivery errors, so this does
+   * not itself fail the order — but it fires shop-order-delivery-failed carrying the reason
+   * and the exact items, which is the record a disputed order is resolved from.
+   */
+  private async giveItem(args: Record<string, unknown>): Promise<CommandResult | { error: string }> {
+    const itemCode = resolveTerrariaItemCode(requireString(args, ['itemCode', 'item', 'code', 'name']));
+    const player = identifierName(args);
+    const amount = parseAmount(args);
+
+    let result: CommandResult;
     try {
-      const parsed = JSON.parse(marker[1]) as { items?: unknown };
-      if (!Array.isArray(parsed.items)) return [];
-      return parsed.items
-        .map((entry) => toTakaroItem(entry))
-        .filter((item): item is TakaroItem => item !== null);
-    } catch {
-      return [];
+      result = await this.tshock.rawCommand(`/takarogive ${quote(player)} ${quote(itemCode)} ${amount}`);
+    } catch (err) {
+      return { error: `Failed to give item to ${player}: ${errorMessage(err)}` };
     }
+
+    const parsed = parseMarker(result.rawResult, 'TAKARO_GIVE');
+
+    // No marker means the plugin never ran the give (old plugin build, unknown player, or a
+    // rejected command). Fall back to the raw output so the reason stays visible.
+    if (!parsed) {
+      if (!result.success) return { error: result.rawResult };
+      return result;
+    }
+
+    if (parsed.success !== true) {
+      const reason = typeof parsed.reason === 'string' && parsed.reason.trim()
+        ? parsed.reason
+        : result.rawResult;
+      return { error: `Failed to give item to ${player}: ${reason}` };
+    }
+
+    const dropped = parsed.method === 'dropped';
+    if (dropped) {
+      logger.info(`giveItem: ${player}'s inventory was full, ${amount}x ${itemCode} dropped at their feet`);
+    }
+
+    // The success shape stays a CommandResult so existing Takaro handling is unchanged; the
+    // delivery method rides along in rawResult so a dropped item is visible in logs.
+    return {
+      success: true,
+      rawResult: dropped
+        ? `Gave ${amount}x ${itemCode} to ${player} (inventory full, dropped at their feet)`
+        : `Gave ${amount}x ${itemCode} to ${player}`,
+    };
   }
 
   private async executeConsoleCommand(args: Record<string, unknown>): Promise<CommandResult> {
@@ -205,6 +255,24 @@ export function parseArgs(rawArgs: unknown): Record<string, unknown> {
   }
   if (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) return rawArgs as Record<string, unknown>;
   return {};
+}
+
+/**
+ * Reads a single-line TAKARO_* JSON marker out of TShock command output.
+ *
+ * The payload can contain nested objects, so this matches to the end of the marker line
+ * rather than the single-level {[^}]+} pattern getPlayerLocation can rely on. Returns null
+ * when the marker is absent or malformed; callers decide what that means for their action.
+ */
+function parseMarker(rawResult: string, marker: string): Record<string, unknown> | null {
+  const match = rawResult.match(new RegExp(`${marker}\\s+(\\{.*)`));
+  if (!match) return null;
+
+  try {
+    return recordValue(JSON.parse(match[1]));
+  } catch {
+    return null;
+  }
 }
 
 function isAllowlisted(command: string, options: AdapterOptions): boolean {

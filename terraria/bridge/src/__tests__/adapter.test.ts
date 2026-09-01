@@ -164,6 +164,17 @@ test('returns an empty inventory array for an empty, absent, or failed marker', 
   assert.deepEqual(await failed.adapter.handleAction('getPlayerInventory', { player: { name: 'Guide' } }), []);
 });
 
+test('keeps parsing the inventory marker when the plugin adds fields alongside items', async () => {
+  // The marker payload is allowed to grow; the items array must keep parsing unchanged.
+  const { adapter } = inventoryAdapter(
+    'TAKARO_INVENTORY {"items":[{"code":"9","name":"Wood","amount":1,"quality":""}],"capacity":{"freeSlots":0,"totalSlots":50}}',
+  );
+
+  assert.deepEqual(await adapter.handleAction('getPlayerInventory', { player: { name: 'Guide' } }), [
+    { code: '9', name: 'Wood', amount: 1, quality: '' },
+  ]);
+});
+
 test('never throws on malformed inventory payloads and drops malformed entries', async () => {
   const malformed = inventoryAdapter('TAKARO_INVENTORY {"items":[{"code":"9",');
   assert.deepEqual(await malformed.adapter.handleAction('getPlayerInventory', { player: { name: 'Guide' } }), []);
@@ -248,8 +259,11 @@ test('supports give item and plugin-backed teleport through guarded raw TShock c
   assert.equal((await adapter.handleAction('teleportPlayer', { player: { name: 'Guide' }, x: 10, y: 20 }) as { success: boolean }).success, true);
   assert.equal((await adapter.handleAction('shutdown', {}) as { success: boolean }).success, true);
 
-  assert.ok(tshock.rawCommands.includes('/give "29" "Guide" 3'));
-  assert.ok(tshock.rawCommands.includes('/give "9" "Guide" 1'));
+  // giveItem goes through the plugin's /takarogive, not TShock's /give: /give refuses
+  // whenever no inventory slot is completely empty, which silently lost shop purchases.
+  assert.ok(tshock.rawCommands.includes('/takarogive "Guide" "29" 3'));
+  assert.ok(tshock.rawCommands.includes('/takarogive "Guide" "9" 1'));
+  assert.ok(!tshock.rawCommands.some((command) => command.startsWith('/give ')));
   assert.ok(tshock.rawCommands.includes('/takarotp "Guide" 10 20'));
 });
 
@@ -311,34 +325,112 @@ test('the poller still sees TShock failures after the getPlayers action stops th
   await assert.rejects(() => adapter.getPlayers(), /fetch failed/);
 });
 
-test('propagates a failed giveItem to Takaro with the in-game reason', async () => {
+test('delivers a giveItem into the inventory and reports the unchanged success shape', async () => {
   const tshock = new FakeTShock();
   tshock.rawCommand = async (command: string) => {
     tshock.rawCommands.push(command);
-    return { success: false, rawResult: 'Player does not have free slots!' };
+    return {
+      success: true,
+      rawResult: 'TAKARO_GIVE {"success":true,"delivered":7,"method":"inventory","item":"Gold Bar"}',
+    };
   };
   const adapter = new TerrariaAdapter(tshock, {
     commandAllowlistExact: [],
-    commandAllowlistPrefixes: ['/give'],
+    commandAllowlistPrefixes: [],
     enableShutdown: false,
   });
 
-  // A Takaro shop order must be able to fail visibly with a reason rather than being
-  // marked COMPLETED while the player receives nothing.
   assert.deepEqual(await adapter.handleAction('giveItem', { player: { name: 'CodexTest' }, itemCode: '19', amount: 7 }), {
-    success: false,
-    rawResult: 'Player does not have free slots!',
+    success: true,
+    rawResult: 'Gave 7x 19 to CodexTest',
   });
-  assert.deepEqual(tshock.rawCommands, ['/give "19" "CodexTest" 7']);
+  assert.deepEqual(tshock.rawCommands, ['/takarogive "CodexTest" "19" 7']);
+});
 
-  // The other rawCommand-backed actions carry the reason through the same way.
+test('reports a giveItem that had to be dropped at the player\'s feet as a visible success', async () => {
+  const tshock = new FakeTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return {
+      success: true,
+      rawResult: 'TAKARO_GIVE {"success":true,"delivered":7,"method":"dropped","item":"Gold Bar"}',
+    };
+  };
+  const adapter = new TerrariaAdapter(tshock, {
+    commandAllowlistExact: [],
+    commandAllowlistPrefixes: [],
+    enableShutdown: false,
+  });
+
+  // A full inventory must not fail the purchase: the plugin drops the item at the player's
+  // feet, so the player still receives it. The response says so rather than hiding it.
+  const result = await adapter.handleAction('giveItem', { player: { name: 'CodexTest' }, itemCode: '19', amount: 7 }) as { success: boolean; rawResult: string };
+  assert.equal(result.success, true);
+  assert.match(result.rawResult, /dropped at their feet/);
+  assert.deepEqual(tshock.rawCommands, ['/takarogive "CodexTest" "19" 7']);
+});
+
+test('returns an error for a giveItem the plugin could not deliver at all', async () => {
+  const tshock = new FakeTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return {
+      success: true,
+      rawResult: 'TAKARO_GIVE {"success":false,"delivered":0,"method":"none","reason":"Unknown item id \'999999\'."}',
+    };
+  };
+  const adapter = new TerrariaAdapter(tshock, {
+    commandAllowlistExact: [],
+    commandAllowlistPrefixes: [],
+    enableShutdown: false,
+  });
+
+  // Takaro's generic connector throws on a response carrying an `error` key, so a genuine
+  // delivery failure becomes visible instead of completing quietly.
+  assert.deepEqual(await adapter.handleAction('giveItem', { player: { name: 'CodexTest' }, itemCode: '999999', amount: 1 }), {
+    error: "Failed to give item to CodexTest: Unknown item id '999999'.",
+  });
+});
+
+test('returns an error carrying the reason when the give command itself fails', async () => {
+  const tshock = new FakeTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return { success: false, rawResult: "No player found matching 'Ghost'." };
+  };
+  const adapter = new TerrariaAdapter(tshock, {
+    commandAllowlistExact: [],
+    commandAllowlistPrefixes: [],
+    enableShutdown: false,
+  });
+
+  assert.deepEqual(await adapter.handleAction('giveItem', { player: { name: 'Ghost' }, itemCode: '19', amount: 7 }), {
+    error: "No player found matching 'Ghost'.",
+  });
+
+  // The other rawCommand-backed actions still carry the reason through as a CommandResult.
   for (const [action, args] of [
-    ['teleportPlayer', { player: { name: 'CodexTest' }, x: 10, y: 20 }],
-    ['kickPlayer', { player: { name: 'CodexTest' } }],
-    ['executeConsoleCommand', { command: '/give 19 CodexTest 7' }],
+    ['teleportPlayer', { player: { name: 'Ghost' }, x: 10, y: 20 }],
+    ['kickPlayer', { player: { name: 'Ghost' } }],
   ] as const) {
     const result = await adapter.handleAction(action, args) as { success: boolean; rawResult: string };
     assert.equal(result.success, false, `expected ${action} to report failure`);
-    assert.equal(result.rawResult, 'Player does not have free slots!');
+    assert.equal(result.rawResult, "No player found matching 'Ghost'.");
   }
+});
+
+test('surfaces a thrown giveItem transport failure as an error', async () => {
+  const tshock = new FakeTShock();
+  tshock.rawCommand = async () => {
+    throw new Error('fetch failed');
+  };
+  const adapter = new TerrariaAdapter(tshock, {
+    commandAllowlistExact: [],
+    commandAllowlistPrefixes: [],
+    enableShutdown: false,
+  });
+
+  assert.deepEqual(await adapter.handleAction('giveItem', { player: { name: 'CodexTest' }, itemCode: '19', amount: 1 }), {
+    error: 'Failed to give item to CodexTest: fetch failed',
+  });
 });
