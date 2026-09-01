@@ -78,7 +78,7 @@ export class TShockClient {
     const params = { token: await this.getToken(), cmd: command };
     const data = await this.getWithFallback(['/v2/server/rawcmd', '/v3/server/rawcmd'], params, true);
     const rawResult = responseText(data);
-    return { success: statusOk(data) && !isInvalidCommand(rawResult), rawResult };
+    return { success: statusOk(data) && !isTShockFailureResult(rawResult), rawResult };
   }
 
   async createBan(input: TShockBan): Promise<CommandResult> {
@@ -214,8 +214,54 @@ function numberString(value: string): string | null {
   return /^\d+$/.test(value.trim()) ? value.trim() : null;
 }
 
-function isInvalidCommand(rawResult: string): boolean {
-  return rawResult.toLowerCase().includes('invalid command entered');
+/**
+ * TShock's REST envelope is not a reliable success signal for in-game commands:
+ * /v2|v3/server/rawcmd answers HTTP 200 with status "200" whether the command worked or
+ * failed, and carries the game-side failure text in `response` with no error/status field
+ * to distinguish it (verified against a live TShock server -- see the phrasings below,
+ * every one of which was captured from a real 200/"200" response). So there is no
+ * structural signal to key on, and success has to be read out of the command output.
+ *
+ * The list is deliberately conservative: it matches only failure phrasings we have
+ * actually observed. Unrecognised output is treated as SUCCESS, because silently turning
+ * working actions into failures would be its own bug. False negatives (a missed failure)
+ * are recoverable and visible; false positives (a fabricated failure) break working
+ * commands for every caller of rawCommand.
+ */
+const TSHOCK_FAILURE_PATTERNS: RegExp[] = [
+  // Command routing: the command itself does not exist or cannot run over REST.
+  /invalid command entered/i,
+  /you must use this command in-game/i,
+
+  // Argument/syntax rejection, emitted by TShock's command handlers before doing anything.
+  // The gap allows the sub-command variants ("Invalid Ban Add syntax.", "Invalid user syntax.").
+  /invalid\b[^.!\n]{0,40}\bsyntax/i,
+  /^usage: /im,
+
+  // Target resolution: the named player could not be resolved to exactly one online player.
+  /invalid player!/i,
+  /player not found/i,
+  /no player found matching/i,
+  /multiple players found matching/i,
+  /unable to find any player/i,
+
+  // Action refused by the game: the command ran but could not do what was asked.
+  /does not have free slots/i,
+  /invalid item type/i,
+  /must be numeric world coordinates/i,
+
+  // Permission denial.
+  /you do not have access to this command/i,
+  /you do not have permission/i,
+];
+
+/**
+ * True when the command output matches a known TShock failure. Unknown output is not a
+ * failure -- see TSHOCK_FAILURE_PATTERNS.
+ */
+export function isTShockFailureResult(rawResult: string): boolean {
+  if (!rawResult.trim()) return false;
+  return TSHOCK_FAILURE_PATTERNS.some((pattern) => pattern.test(rawResult));
 }
 
 function numberValue(value: unknown): number | undefined {

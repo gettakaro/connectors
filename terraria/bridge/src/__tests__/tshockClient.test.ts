@@ -43,11 +43,40 @@ before(async () => {
       return;
     }
     if (url.pathname === '/v3/server/rawcmd') {
-      if (url.searchParams.get('cmd') === 'bad') {
-        res.end(JSON.stringify({ status: '200', response: ['Invalid command entered. Type /help for a list of valid commands.'] }));
+      const cmd = url.searchParams.get('cmd') || '';
+      // TShock answers HTTP 200 with status "200" even for in-game failures, and puts the
+      // failure text in `response`. These are verbatim responses captured from a live server.
+      const failures: Record<string, string> = {
+        bad: 'Invalid command entered. Type /help for a list of valid commands.',
+        '/give "19" "CodexTest" 7': 'Player does not have free slots!',
+        '/give 19 NoSuchPlayer 1': 'Invalid player!',
+        '/give notanitem CodexTest 1': 'Invalid item type!',
+        '/give': 'Invalid syntax. Proper syntax: /give <item type/id> <player> [item amount] [prefix id/name]',
+        '/user': 'Invalid user syntax. Try /user help.',
+        '/kick NoSuchPlayer': 'Player not found. Unable to kick the player.',
+        '/takaroinv Ghost': "No player found matching 'Ghost'.",
+        '/takaroinv G': "Multiple players found matching 'G'.",
+        '/heal NoSuchPlayer': 'Unable to find any players named "NoSuchPlayer"',
+        '/takarotp "CodexTest" a 10': 'X and Y must be numeric world coordinates.',
+        '/tp': 'You must use this command in-game.',
+      };
+      if (failures[cmd]) {
+        res.end(JSON.stringify({ status: '200', response: [failures[cmd]] }));
         return;
       }
-      res.end(JSON.stringify({ status: '200', response: `ran ${url.searchParams.get('cmd')}` }));
+      if (cmd === '/time') {
+        res.end(JSON.stringify({ status: '200', response: ['The current time is 10:44.'] }));
+        return;
+      }
+      if (cmd === '/butcher') {
+        res.end(JSON.stringify({ status: '200', response: [] }));
+        return;
+      }
+      if (cmd === '/mystery') {
+        res.end(JSON.stringify({ status: '200', response: ['Whatever this plugin decided to print.'] }));
+        return;
+      }
+      res.end(JSON.stringify({ status: '200', response: `ran ${cmd}` }));
       return;
     }
     if (url.pathname === '/v2/bans/list') {
@@ -104,4 +133,51 @@ test('executes raw commands, broadcast, ban, unban, and guarded shutdown with to
   assert.ok(seen.some((entry) => entry.includes('token=static-token')));
   assert.ok(seen.some((entry) => entry.includes('identifier=BadPlayer')));
   assert.ok(seen.some((entry) => entry.includes('ticketNumber=7')));
+});
+
+test('reports in-game command failures as failures, not success', async () => {
+  const client = new TShockClient({ baseUrl, token: 'static-token', timeoutMs: 1000 });
+
+  // The exact regression: a Takaro shop giveItem to a player with a full inventory used to
+  // report success, so the order was marked COMPLETED and the player was charged for nothing.
+  assert.deepEqual(await client.rawCommand('/give "19" "CodexTest" 7'), {
+    success: false,
+    rawResult: 'Player does not have free slots!',
+  });
+
+  // The one failure the old hardcoded check caught, kept as a regression guard.
+  assert.deepEqual(await client.rawCommand('bad'), {
+    success: false,
+    rawResult: 'Invalid command entered. Type /help for a list of valid commands.',
+  });
+
+  // Every other known TShock failure shape, captured verbatim from a live server.
+  for (const command of [
+    '/give 19 NoSuchPlayer 1',
+    '/give notanitem CodexTest 1',
+    '/give',
+    '/user',
+    '/kick NoSuchPlayer',
+    '/takaroinv Ghost',
+    '/takaroinv G',
+    '/heal NoSuchPlayer',
+    '/takarotp "CodexTest" a 10',
+    '/tp',
+  ]) {
+    const result = await client.rawCommand(command);
+    assert.equal(result.success, false, `expected failure for ${command}, got ${result.rawResult}`);
+    assert.ok(result.rawResult.trim(), `expected a failure reason for ${command}`);
+  }
+});
+
+test('reports successful and unrecognised command output as success', async () => {
+  const client = new TShockClient({ baseUrl, token: 'static-token', timeoutMs: 1000 });
+
+  assert.deepEqual(await client.rawCommand('/time'), { success: true, rawResult: 'The current time is 10:44.' });
+
+  // Conservative by design: output we do not recognise must stay a success, so an
+  // unfamiliar command or plugin never has its working actions turned into failures.
+  assert.equal((await client.rawCommand('/mystery')).success, true);
+  assert.equal((await client.rawCommand('/butcher')).success, true);
+  assert.equal((await client.rawCommand('/help')).success, true);
 });

@@ -310,3 +310,35 @@ test('the poller still sees TShock failures after the getPlayers action stops th
 
   await assert.rejects(() => adapter.getPlayers(), /fetch failed/);
 });
+
+test('propagates a failed giveItem to Takaro with the in-game reason', async () => {
+  const tshock = new FakeTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return { success: false, rawResult: 'Player does not have free slots!' };
+  };
+  const adapter = new TerrariaAdapter(tshock, {
+    commandAllowlistExact: [],
+    commandAllowlistPrefixes: ['/give'],
+    enableShutdown: false,
+  });
+
+  // A Takaro shop order must be able to fail visibly with a reason rather than being
+  // marked COMPLETED while the player receives nothing.
+  assert.deepEqual(await adapter.handleAction('giveItem', { player: { name: 'CodexTest' }, itemCode: '19', amount: 7 }), {
+    success: false,
+    rawResult: 'Player does not have free slots!',
+  });
+  assert.deepEqual(tshock.rawCommands, ['/give "19" "CodexTest" 7']);
+
+  // The other rawCommand-backed actions carry the reason through the same way.
+  for (const [action, args] of [
+    ['teleportPlayer', { player: { name: 'CodexTest' }, x: 10, y: 20 }],
+    ['kickPlayer', { player: { name: 'CodexTest' } }],
+    ['executeConsoleCommand', { command: '/give 19 CodexTest 7' }],
+  ] as const) {
+    const result = await adapter.handleAction(action, args) as { success: boolean; rawResult: string };
+    assert.equal(result.success, false, `expected ${action} to report failure`);
+    assert.equal(result.rawResult, 'Player does not have free slots!');
+  }
+});
