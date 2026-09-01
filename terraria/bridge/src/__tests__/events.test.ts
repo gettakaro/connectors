@@ -33,12 +33,64 @@ test('parses log, chat, connect, and disconnect lines', () => {
     data: { player: { gameId: 'Guide', name: 'Guide', platformId: 'terraria:Guide' } },
   });
   assert.deepEqual(parseLogLine('Guide: hello world'), {
-    type: 'chat-message',
-    data: { player: { gameId: 'Guide', name: 'Guide', platformId: 'terraria:Guide' }, message: 'hello world' },
+    type: 'log',
+    data: { message: 'Guide: hello world' },
   });
   assert.deepEqual(parseLogLine('Guide has left.'), {
     type: 'player-disconnected',
     data: { player: { gameId: 'Guide', name: 'Guide', platformId: 'terraria:Guide' } },
+  });
+});
+
+test('strips the TShock timestamp and source prefix from join, leave, and chat lines', () => {
+  assert.deepEqual(parseLogLine('2026-09-01 07:10:00 - TShock: INFO: Broadcast: <CodexTest> hello world'), {
+    type: 'chat-message',
+    data: {
+      player: { gameId: 'CodexTest', name: 'CodexTest', platformId: 'terraria:CodexTest' },
+      message: 'hello world',
+      timestamp: '2026-09-01 07:10:00',
+    },
+  });
+  assert.deepEqual(parseLogLine('2026-09-01 07:10:01 - TShock: INFO: CodexTest has joined.'), {
+    type: 'player-connected',
+    data: { player: { gameId: 'CodexTest', name: 'CodexTest', platformId: 'terraria:CodexTest' } },
+  });
+  assert.deepEqual(parseLogLine('2026-09-01 07:10:02 - TShock: INFO: CodexTest left.'), {
+    type: 'player-disconnected',
+    data: { player: { gameId: 'CodexTest', name: 'CodexTest', platformId: 'terraria:CodexTest' } },
+  });
+});
+
+test('accepts both TShock leave phrasings and trailing join detail', () => {
+  assert.deepEqual(parseLogLine('2026-09-01 07:10:02 - TShock: INFO: CodexTest has left.'), {
+    type: 'player-disconnected',
+    data: { player: { gameId: 'CodexTest', name: 'CodexTest', platformId: 'terraria:CodexTest' } },
+  });
+  assert.deepEqual(parseLogLine('2026-09-01 07:02:26 - Utils: INFO: CodexTest has joined. IP: 172.17.0.1'), {
+    type: 'player-connected',
+    data: { player: { gameId: 'CodexTest', name: 'CodexTest', platformId: 'terraria:CodexTest' } },
+  });
+});
+
+test('treats generic colon-separated log lines as logs rather than chat', () => {
+  assert.deepEqual(parseLogLine('Error: Something went wrong: details here'), {
+    type: 'log',
+    data: { message: 'Error: Something went wrong: details here' },
+  });
+  assert.deepEqual(parseLogLine('2026-09-01 07:10:03 - TerrariaAPI: INFO: Plugin loaded'), {
+    type: 'log',
+    data: { message: '2026-09-01 07:10:03 - TerrariaAPI: INFO: Plugin loaded' },
+  });
+  assert.deepEqual(parseLogLine('Warning: disk almost full'), {
+    type: 'log',
+    data: { message: 'Warning: disk almost full' },
+  });
+});
+
+test('does not double-report a join relayed through the broadcast channel', () => {
+  assert.deepEqual(parseLogLine('2026-09-01 07:02:26 - Utils: INFO: Broadcast: CodexTest (N/A) has joined.'), {
+    type: 'log',
+    data: { message: '2026-09-01 07:02:26 - Utils: INFO: Broadcast: CodexTest (N/A) has joined.' },
   });
 });
 
