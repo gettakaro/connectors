@@ -235,7 +235,7 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             return;
         }
 
-        var killer = ActivePlayerByIndex(npc.lastInteraction) ?? FirstActiveTSPlayer();
+        var killer = ResolveKiller(npc);
 
         Emit("entity-killed", new
         {
@@ -254,18 +254,123 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         });
     }
 
+    // Resolves the player to credit for an NPC kill.
+    //
+    // Terraria records no "who landed the killing blow" on NPC death, so we probe
+    // the interaction bookkeeping it does keep, strongest signal first:
+    //
+    //  1. npc.playerInteraction - a bool[] indexed by player slot, set for every
+    //     player who damaged this NPC. This is the only signal that survives
+    //     ranged, projectile, minion and trap kills, because the engine flags the
+    //     projectile's owner, not whoever happened to swing last. We only trust it
+    //     when exactly one player is flagged; with several contributors there is no
+    //     way to tell which one finished the NPC.
+    //  2. npc.lastInteraction - the most recent player to interact. Note this is
+    //     NOT -1 when unset: Terraria initialises it to 255 (Main.maxPlayers), a
+    //     sentinel that is still inside TShock.Players' bounds, so a naive index
+    //     check treats the "nobody" value as a real slot.
+    //  3. npc.target / npc.oldTarget - who the NPC was aggroed on. Weaker still,
+    //     since aggro can point at a player who dealt no damage at all, but it is
+    //     better than nothing for AI types that never set an interaction.
+    //
+    // Returns null when nothing resolves, which surfaces as no player on the event.
+    private static TSPlayer? ResolveKiller(NPC npc)
+    {
+        return SoleInteractingPlayer(npc)
+            ?? ActivePlayerByIndex(npc.lastInteraction)
+            ?? ActivePlayerByIndex(npc.target)
+            ?? ActivePlayerByIndex(npc.oldTarget)
+            ?? SoleActiveTSPlayer();
+    }
+
+    // Returns the only player flagged in npc.playerInteraction, or null when zero
+    // or several are flagged. Two players who both hit the NPC give us no basis to
+    // pick between them, and crediting the wrong one is worse than crediting none.
+    private static TSPlayer? SoleInteractingPlayer(NPC npc)
+    {
+        var interactions = npc.playerInteraction;
+        if (interactions is null)
+        {
+            return null;
+        }
+
+        TSPlayer? found = null;
+        for (var index = 0; index < interactions.Length; index++)
+        {
+            if (!interactions[index])
+            {
+                continue;
+            }
+
+            var player = ActivePlayerByIndex(index);
+            if (player is null)
+            {
+                continue;
+            }
+
+            if (found is not null)
+            {
+                return null;
+            }
+
+            found = player;
+        }
+
+        return found;
+    }
+
     // Best-effort weapon attribution: Terraria's NPC carries no record of what
-    // killed it, so we report the killer's held item at the moment the kill fires.
-    // This is a proxy, not exact attribution - a projectile fired earlier can land
-    // after the player swaps weapons, and damage-over-time, minion or sentry kills
-    // may credit a held item that dealt none of the damage. Terraria exposes no
-    // true damage source on NPC death, so this is the best signal available.
-    // Returns an empty string when unknown; Takaro's entity-killed DTO types
-    // weapon as a string, so we never emit null or omit the field.
+    // killed it, so we report the killer's selected item at the moment the kill
+    // fires. This is a proxy, not exact attribution - a projectile fired earlier
+    // can land after the player swaps weapons, and damage-over-time, minion or
+    // sentry kills may credit an item that dealt none of the damage. Terraria
+    // exposes no true damage source on NPC death, so this is the best signal
+    // available.
+    //
+    // We only report items that could plausibly have dealt the killing blow, so a
+    // zero-damage consumable or tool that merely occupied the selected hotbar slot
+    // (a Mushroom, a torch, a building block) is rejected rather than reported as
+    // the murder weapon. A wrong weapon name is worse than no weapon name, because
+    // downstream consumers cannot tell it is wrong; an honest unknown can at least
+    // be filtered.
+    //
+    // Returns an empty string for every genuinely-unknown case; Takaro's
+    // entity-killed DTO types weapon as a string, so we never emit null or omit the
+    // field, and the bridge renders empty as "unknown".
     private static string HeldWeaponName(TSPlayer? player)
     {
-        var item = player?.TPlayer?.HeldItem;
-        if (item is null || item.type <= 0)
+        return WeaponName(SelectedItem(player));
+    }
+
+    // Player.HeldItem is compiled as inventory[selectedItem], so it is the same
+    // object rather than an independent fallback; we index the inventory ourselves
+    // to stay safe when selectedItem is out of range mid-swap, and fall back to
+    // HeldItem only if that indexing is not possible.
+    private static Item? SelectedItem(TSPlayer? player)
+    {
+        var terrariaPlayer = player?.TPlayer;
+        if (terrariaPlayer is null)
+        {
+            return null;
+        }
+
+        var inventory = terrariaPlayer.inventory;
+        var selected = terrariaPlayer.selectedItem;
+        if (inventory is not null && selected >= 0 && selected < inventory.Length)
+        {
+            return inventory[selected];
+        }
+
+        return terrariaPlayer.HeldItem;
+    }
+
+    // An item only counts as the killing weapon when it actually exists in the slot
+    // (type/stack) and can deal damage at all (damage). Item.damage is 0 for
+    // consumables, blocks and pure utility tools, which is exactly the false
+    // attribution we want to drop.
+    private static string WeaponName(Item? item)
+    {
+        if (item is null || item.type <= 0 || item.stack <= 0 || item.damage <= 0)
         {
             return string.Empty;
         }
@@ -284,17 +389,30 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         return player is not null && player.Active ? player : null;
     }
 
-    private static TSPlayer? FirstActiveTSPlayer()
+    // Last-resort killer guess. Only answers when exactly one player is online, in
+    // which case the kill must be theirs. With two or more connected, picking the
+    // first active slot is just a guess that is usually wrong on a busy server, and
+    // attributing a kill to the wrong player is worse than attributing it to nobody
+    // - so we return null and let the event report no killer.
+    private static TSPlayer? SoleActiveTSPlayer()
     {
+        TSPlayer? found = null;
         foreach (var player in TShock.Players)
         {
-            if (player is not null && player.Active)
+            if (player is null || !player.Active)
             {
-                return player;
+                continue;
             }
+
+            if (found is not null)
+            {
+                return null;
+            }
+
+            found = player;
         }
 
-        return null;
+        return found;
     }
 
     private static object PlayerDto(TSPlayer? player, string fallbackName)
