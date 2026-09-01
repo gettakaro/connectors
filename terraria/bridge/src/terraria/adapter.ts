@@ -1,3 +1,4 @@
+import { logger } from '../logger.js';
 import { schemaFallbackForAction, unsupportedActionError } from '../takaro/coverage.js';
 import type { GameServerAction } from '../takaro/protocol.js';
 import type { CommandResult, TShockBan, TShockPlayer, TShockStatus } from '../tshock/client.js';
@@ -46,7 +47,7 @@ export class TerrariaAdapter {
       case 'testReachability':
         return this.testReachability();
       case 'getPlayers':
-        return this.refreshPlayers();
+        return this.listPlayersForTakaro();
       case 'getPlayer':
         return this.getPlayer(args);
       case 'getPlayerLocation':
@@ -78,8 +79,29 @@ export class TerrariaAdapter {
     }
   }
 
+  /**
+   * Poller-facing read. This one deliberately propagates TShock failures so the poller can
+   * tell "nobody is online" from "the game server is unreachable" and report it to /health.
+   */
   async getPlayers(): Promise<TShockPlayer[]> {
     return this.refreshPlayers();
+  }
+
+  /**
+   * Takaro-facing read for the getPlayers action. Takaro validates this action's response
+   * against an array schema, so a thrown TShock error must not escape to the request
+   * handler: that handler answers with an error envelope ({ message }), and Takaro rejects
+   * the object with "Expected array for action getPlayers but got object". An unreachable
+   * game server means no observable players, which is the empty array. Reachability is
+   * reported through /health and the poller's own logging, not by breaking this schema.
+   */
+  private async listPlayersForTakaro(): Promise<TShockPlayer[]> {
+    try {
+      return await this.refreshPlayers();
+    } catch (err) {
+      logger.warn(`getPlayers falling back to empty list: ${errorMessage(err)}`);
+      return [];
+    }
   }
 
   private async testReachability(): Promise<{ connectable: boolean; reason: string | null }> {

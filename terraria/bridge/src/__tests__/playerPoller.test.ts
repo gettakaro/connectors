@@ -205,3 +205,24 @@ test('repeated identical failures are logged once, and new errors and recovery a
     console.log = originalLog;
   }
 });
+
+test('lastPollOk tracks the current poll outcome and lastPollAt still freezes on failure', async () => {
+  const harness = createHarness([guide]);
+
+  assert.equal(harness.poller.lastPollOk, null, 'no poll has run yet');
+
+  await harness.poller.pollOnce();
+  const successStamp = harness.poller.lastPollAt;
+  assert.equal(harness.poller.lastPollOk, true);
+  assert.ok(successStamp);
+
+  harness.setFailure(connectionRefused());
+  await harness.poller.pollOnce();
+  assert.equal(harness.poller.lastPollOk, false, 'a failed poll must flip reachability immediately');
+  assert.equal(harness.poller.lastPollAt, successStamp, 'lastPollAt stays frozen on failure');
+
+  harness.setFailure(null);
+  await harness.poller.pollOnce();
+  assert.equal(harness.poller.lastPollOk, true, 'recovery must flip it back');
+  assert.ok(harness.poller.lastPollAt, 'a recovered poll re-stamps lastPollAt');
+});

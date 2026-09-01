@@ -24,7 +24,9 @@ async function main(): Promise<void> {
     name: config.serverName,
   });
 
-  let tshockReachable = false;
+  // Reachability from the startup probe only. It seeds /health for the window before the
+  // first poll completes; once the poller has an outcome, the poller is authoritative.
+  let startupReachable = false;
   const emit = (type: GameEventType, data: unknown): void => {
     const event = normalizeGameEvent(type, data);
     const sent = takaro.sendGameEvent(event.type, event.data);
@@ -36,13 +38,23 @@ async function main(): Promise<void> {
     config.pollIntervalMs,
   );
   const tailers = config.logFiles.map((file) => new LogTailer(file, (event) => emit(event.type, event.data)));
-  const health = new HealthServer(config.httpPort, () => ({
-    ok: true,
-    takaroIdentified: takaro.identified(),
-    gameServerId: takaro.getGameServerId(),
-    tshockReachable,
-    lastPollAt: poller.lastPollAt,
-  }));
+  // The poller runs every pollIntervalMs and is the only component that continuously
+  // exercises the game server, so its latest outcome is the freshest reachability truth
+  // available. Before it has produced one (startup, or right after a Takaro reconnect
+  // resets it) fall back to the startup probe so a healthy server is not reported down.
+  const isTshockReachable = (): boolean => poller.lastPollOk ?? startupReachable;
+  const health = new HealthServer(config.httpPort, () => {
+    const tshockReachable = isTshockReachable();
+    return {
+      // A health endpoint that returns ok during a total game-server outage is worse than
+      // no endpoint at all, because it is trusted. ok tracks reachability.
+      ok: tshockReachable,
+      takaroIdentified: takaro.identified(),
+      gameServerId: takaro.getGameServerId(),
+      tshockReachable,
+      lastPollAt: poller.lastPollAt,
+    };
+  });
 
   takaro.on('request', (message: WsMessage & { payload?: RequestPayload }) => {
     void handleTakaroRequest(message, adapter, takaro);
@@ -69,7 +81,7 @@ async function main(): Promise<void> {
 
   await health.start();
   const reachability = await adapter.handleAction('testReachability', {});
-  tshockReachable = Boolean((reachability as { connectable?: boolean }).connectable);
+  startupReachable = Boolean((reachability as { connectable?: boolean }).connectable);
   logger.info(`Terraria bridge health: http://127.0.0.1:${health.port()}/health`);
   takaro.connect();
 

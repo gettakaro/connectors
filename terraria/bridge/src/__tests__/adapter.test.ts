@@ -252,3 +252,61 @@ test('supports give item and plugin-backed teleport through guarded raw TShock c
   assert.ok(tshock.rawCommands.includes('/give "9" "Guide" 1'));
   assert.ok(tshock.rawCommands.includes('/takarotp "Guide" 10 20'));
 });
+
+test('getPlayers returns an array when TShock is unreachable', async () => {
+  // Regression for "Expected array for action getPlayers but got object": an unreachable
+  // TShock made refreshPlayers throw, the request handler answered with the error envelope
+  // { message }, and Takaro rejected that object against the array schema for getPlayers.
+  const unreachable = {
+    async players(): Promise<never> {
+      const err = new Error('fetch failed');
+      (err as Error & { code?: string }).code = 'ECONNREFUSED';
+      throw err;
+    },
+  } as unknown as TShockApi;
+  const adapter = new TerrariaAdapter(unreachable, {
+    commandAllowlistExact: [],
+    commandAllowlistPrefixes: [],
+    enableShutdown: false,
+  });
+
+  const result = await adapter.handleAction('getPlayers', {});
+
+  assert.ok(Array.isArray(result), `expected an array, got ${typeof result}: ${JSON.stringify(result)}`);
+  assert.deepEqual(result, []);
+});
+
+test('getPlayers returns an array when TShock status omits the players field', async () => {
+  const noPlayersField = {
+    async players() {
+      return [];
+    },
+  } as unknown as TShockApi;
+  const adapter = new TerrariaAdapter(noPlayersField, {
+    commandAllowlistExact: [],
+    commandAllowlistPrefixes: [],
+    enableShutdown: false,
+  });
+
+  const result = await adapter.handleAction('getPlayers', {});
+
+  assert.ok(Array.isArray(result));
+  assert.deepEqual(result, []);
+});
+
+test('the poller still sees TShock failures after the getPlayers action stops throwing', async () => {
+  // getPlayers (the action) swallows to []; getPlayers (the poller read) must not, or the
+  // health signal built on poll outcomes would go blind.
+  const unreachable = {
+    async players(): Promise<never> {
+      throw new Error('fetch failed');
+    },
+  } as unknown as TShockApi;
+  const adapter = new TerrariaAdapter(unreachable, {
+    commandAllowlistExact: [],
+    commandAllowlistPrefixes: [],
+    enableShutdown: false,
+  });
+
+  await assert.rejects(() => adapter.getPlayers(), /fetch failed/);
+});

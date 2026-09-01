@@ -12,6 +12,12 @@ export class PlayerPoller {
   private lastFailureLoggedAt = 0;
   private suppressedFailures = 0;
   lastPollAt: string | null = null;
+  /**
+   * Outcome of the most recent poll attempt, or null when no poll has completed since
+   * the last reset. This is the bridge's only continuously-refreshed liveness signal for
+   * the game server, so /health reads it instead of a one-shot startup probe.
+   */
+  lastPollOk: boolean | null = null;
 
   constructor(
     private readonly loadPlayers: () => Promise<TShockPlayer[]>,
@@ -33,6 +39,7 @@ export class PlayerPoller {
   reset(): void {
     this.previous.clear();
     this.lastPollAt = null;
+    this.lastPollOk = null;
     this.lastFailureMessage = null;
     this.lastFailureLoggedAt = 0;
     this.suppressedFailures = 0;
@@ -52,11 +59,16 @@ export class PlayerPoller {
       }
       this.previous = next;
       this.lastPollAt = new Date().toISOString();
+      this.lastPollOk = true;
       this.notePollRecovered();
     } catch (err) {
       // A failed poll tells us nothing about who is online, so leave `previous` and
       // `lastPollAt` untouched: clearing them would emit false disconnects on the next
       // successful poll, and a stale lastPollAt is the correct /health liveness signal.
+      // lastPollOk, by contrast, must flip immediately: /health has to report the game
+      // server unreachable while the outage is happening, not leave a consumer to infer
+      // it from a frozen lastPollAt.
+      this.lastPollOk = false;
       this.notePollFailed(err);
     } finally {
       this.polling = false;
