@@ -76,7 +76,7 @@ export const ACTION_COVERAGE: Record<GameServerAction, ActionCoverage> = {
     status: 'schema-fallback',
     responseShape: '[]',
     liveVerification: 'fake harness returns []',
-    reason: 'TShock REST does not expose a player inventory DTO without a custom plugin.',
+    reason: 'Not built yet. TShock REST exposes no inventory endpoint, but the server-side plugin can reach TPlayer.inventory the same way it reads position, so this is a missing feature rather than a hard limit.',
   },
   getMapInfo: {
     status: 'schema-fallback',

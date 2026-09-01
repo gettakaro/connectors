@@ -72,9 +72,11 @@ This creates `dist/takaro-terraria-plugin.zip`.
 Both are server-side TShock commands intended for connector automation, and both
 require the `takaro.admin` TShock permission.
 
-Grant that permission to the TShock user the bridge authenticates as, otherwise
-`teleportPlayer` fails and `getPlayerLocation` reports `0,0,0` instead of the
-player's real position.
+A REST user in the `superadmin` group already satisfies this through TShock's
+wildcard permission, which is the common setup and needs no extra configuration.
+For a more narrowly scoped user, grant `takaro.admin` explicitly: without it
+`teleportPlayer` fails and `getPlayerLocation` reports `0,0,0` rather than
+failing loudly.
 
 ## Bridge
 
@@ -100,7 +102,7 @@ This creates `dist/takaro-terraria-bridge.zip`.
 1. Enable REST in `tshock/config.json` with `RestApiEnabled=true` and
    `RestApiPort=7878`.
 2. Create an application REST token for a TShock user that holds
-   `takaro.admin`.
+   `takaro.admin` (a `superadmin` user already does).
 3. Extract the bridge zip on the server host and run `npm ci --omit=dev`.
 4. Copy `TakaroConfig.example.txt` to `TakaroConfig.txt` and fill in the Takaro
    registration token and the TShock REST values.
@@ -118,32 +120,67 @@ GET /coverage   per-action and per-event support status
 ## Coverage
 
 Every Takaro action has one explicit outcome, registered in
-`bridge/src/takaro/coverage.ts`.
+`bridge/src/takaro/coverage.ts`. Status meanings:
 
-Live-supported: reachability, players, player lookup, plugin-backed player
-location, item catalog, broadcast and sendMessage, allowlisted raw command, give
-item, plugin-backed coordinate teleport, kick, ban, unban, list bans, and guarded
-shutdown.
+- **Supported** — works against a live server.
+- **Not applicable** — the concept does not exist in Terraria, or TShock exposes
+  no way to reach it. A Takaro-valid empty or disabled response is returned so
+  callers do not break.
+- **Not built yet** — technically reachable, but not implemented here. These are
+  the real roadmap items.
 
-Schema fallbacks, because TShock REST does not expose the state:
-`getPlayerInventory`, `listEntities`, `listLocations`, and `getMapInfo`.
+### Actions
 
-Unsupported: `getMapTile`, because the REST API does not render map tiles.
+| Action | Status | Notes |
+| --- | --- | --- |
+| `testReachability` | Supported | Token test plus `/v2/server/status`. |
+| `getPlayers` | Supported | From TShock REST. |
+| `getPlayer` | Supported | From TShock REST. |
+| `getPlayerLocation` | Supported | Plugin command `/takaropos`. |
+| `sendMessage` | Supported | `/v2/server/broadcast`. Global and per-recipient. |
+| `executeConsoleCommand` | Supported | Allowlisted by exact match and prefix. |
+| `giveItem` | Supported | `/give`, with name-to-item-code resolution. |
+| `teleportPlayer` | Supported | Plugin command `/takarotp`. |
+| `kickPlayer` | Supported | TShock console command. |
+| `banPlayer` | Supported | `/bans/create`. |
+| `unbanPlayer` | Supported | `/v2/bans/destroy`. |
+| `listBans` | Supported | `/v2/bans/list`. |
+| `listItems` | Supported | 6147-entry catalog built from the server assemblies. |
+| `shutdown` | Supported | `/v2/server/off`, gated behind `enableShutdown`. |
+| `getPlayerInventory` | **Not built yet** | Returns `[]`. See below. |
+| `listEntities` | Not applicable | Terraria NPCs spawn from world state; there is no queryable entity registry. |
+| `listLocations` | Not applicable | Terraria has no named-location concept for Takaro to list. |
+| `getMapInfo` | Not applicable | Returns a disabled map DTO. TShock exposes no map metadata. |
+| `getMapTile` | Not applicable | TShock does not render map tiles. |
 
-`listItems` is backed by a static Terraria item catalog, and the adapter resolves
-displayed names such as `Wood` back to numeric TShock item codes for `/give`.
+### Events
 
-## Events
+| Event | Status | Source |
+| --- | --- | --- |
+| `player-connected` | Supported | Derived from TShock player snapshots. |
+| `player-disconnected` | Supported | Derived from TShock player snapshots. |
+| `player-death` | Supported | Plugin `TAKARO_EVENT` marker. |
+| `entity-killed` | Supported | Plugin `TAKARO_EVENT` marker. |
+| `chat-message` | Supported | Parsed from the TShock log (best effort). |
+| `log` | Supported | Tailed from configured TShock log files. |
 
-`player-connected` and `player-disconnected` are derived from repeated TShock
-player snapshots.
+Set `logFiles` in the bridge config to the active TShock log, otherwise the
+log-derived events above are not delivered.
 
-`player-death` and `entity-killed` come from the plugin's `TAKARO_EVENT` markers,
-which the bridge reads from the TShock log. Set `logFiles` in the bridge config
-to the active TShock log for these to be delivered.
+### Items and inventory
 
-Chat, join, and leave lines are additionally parsed from the log on a
-best-effort basis.
+Terraria does have items, and `giveItem` works: the bridge ships a static catalog
+of 6147 items extracted from the server assemblies and resolves a display name
+such as `Wood` to the numeric code TShock's `/give` expects.
+
+Inventory reading is the one genuine gap. TShock REST exposes no inventory
+endpoint, so `getPlayerInventory` currently returns `[]`. This is a missing
+feature rather than a hard limit: the plugin already reads `TSPlayer.TPlayer`
+for coordinates, and `TPlayer.inventory` is reachable on the same object, so a
+plugin command in the shape of `/takaropos` would close it.
+
+Note that Takaro polls `getPlayerInventory` regularly, so until it is
+implemented, Takaro will consistently see every player as holding nothing.
 
 ## Safety
 
