@@ -30,8 +30,9 @@ graphical client.
 | Works with the server package alone | Needs the companion on the player's client |
 | --- | --- |
 | `testReachability`, `getPlayers`, `getPlayerLocation` | `getPlayerInventory` |
-| `giveItem` (world drop, see below), `teleportPlayer` | `sendMessage` |
-| `executeConsoleCommand`, `listItems`, `listEntities`, `listBans` | `chat-message` |
+| `teleportPlayer` | `giveItem` (inventory delivery) |
+| `executeConsoleCommand` | `sendMessage` |
+| `listItems`, `listEntities`, `listBans` | `chat-message` |
 | `kickPlayer`, `banPlayer`, `unbanPlayer`, `shutdown` | `player-death` |
 | `log`, `player-connected`, `player-disconnected` | `entity-killed` |
 
@@ -134,7 +135,7 @@ Ownership values are `server-owned`, `client-reported`, `upstream-blocked`, or `
 | `getPlayer` | `unsupported` | Filtering exists, but the final Takaro response shape still needs independent live proof. |
 | `getPlayerLocation` | `live-supported` | Uses only a real peer/public position or a fresh 30-second server-observed last-known position; an unavailable lookup is rejected through a schema-valid payload error. |
 | `getPlayerInventory` | `live-supported` | A negotiated companion provides bounded canonical client-reported snapshots, including a confirmed empty inventory. Exact live proof observed repeated successful Takaro polls and a Wood change from 13 to 14; without a companion the server never fabricates `[]`. |
-| `giveItem` | `live-supported` | Creates stack-split world drops near the player's server-known position. Items land on the **ground**, never in the player's inventory, and the companion does not change this — see Server-Owned Action Semantics. |
+| `giveItem` | `live-supported` | Delivers into the player's inventory through a negotiated companion, dropping only what does not fit at their feet. Without a companion it falls back to stack-split world drops near the player's server-known position. See Server-Owned Action Semantics. |
 | `sendMessage` | `live-supported` | Routes only through an active negotiated companion into the normal Valheim chat history. A July 14 live Takaro request reached one compatible peer and rendered an explicit `opts.senderNameOverride` of `con`; a missing or blank value displays as `Takaro`. |
 | `executeConsoleCommand` | `live-supported` | Runs only exact or prefix-allowlisted commands. |
 | `listItems` | `live-supported` | Lists item prefabs visible to the server. |
@@ -162,28 +163,27 @@ Ownership values are `server-owned`, `client-reported`, `upstream-blocked`, or `
 
 ## Server-Owned Action Semantics
 
-`giveItem` is a world-drop operation, not a private inventory mutation. Other players can collect the spawned objects.
+`giveItem` delivers into a player's inventory when that player runs a negotiated
+companion, and falls back to a world drop otherwise. A world drop is not a private
+mutation: other players can collect the spawned objects.
 
-**This applies to shop deliveries too.** A shop claim delivers through `giveItem`, so a
-purchase lands on the ground at the buyer's feet rather than in their inventory. Before
-running a Valheim economy, note that purchased goods are lootable by anyone nearby until
-collected, a purchase made while falling or swimming can be lost, and a buyer with a full
-inventory gets no feedback beyond items left on the ground.
+**This applies to shop deliveries too**, since a shop claim delivers through `giveItem`.
+On a server whose players have no companion, purchased goods land on the ground: lootable
+by anyone nearby until collected, and losable if the buyer is falling or swimming. That is
+worth knowing before running an economy on `companionMode=disabled`.
 
-**The companion does not change this.** It is a natural assumption that the client-side
-companion could place items directly into a player's inventory, since it already reads
-that inventory to answer `getPlayerInventory`. It does not. Protocol 1 negotiates five
-capabilities — chat, inventory *reporting*, player-death, entity-killed, and server-chat
-— and none of them writes to a player's inventory. `giveItem` performs a world drop
-unconditionally, so **delivery behaves identically whether or not a player has the
-companion installed**, and identically in all three `companionMode` values.
+**A player with the companion gets the item in their inventory instead.** Protocol 2
+adds an `item-grant` message: the server asks that player's companion to place the items,
+and the companion — which can see the live inventory — puts in whatever fits and drops
+only the remainder at the player's feet, telling them in chat which happened. So a
+purchase normally lands in the bag, and the world drop survives as the safety net rather
+than the default.
 
-Making delivery land in the inventory would need a new companion message type and a
-protocol version bump. It has not been ruled out — it simply has not been built, and no
-upstream decision covers it. The question it raises is that [COMPANION.md](COMPANION.md)
-constrains what client-*reported* data may be used for, while inventory insertion is the
-opposite direction: the server instructing the client to mutate state. Whether the
-existing trust boundary should extend to cover that is an open design question. The adapter accepts at most 1,000 items and 100 world-drop stacks per request, validates quality, resolves prefab codes or display/name tokens, splits oversized stacks, and returns an error when no server-owned player position is known.
+Players **without** a companion keep the world drop exactly as before. That covers
+`companionMode=disabled`, vanilla clients under `optional`, and any companion whose
+session did not negotiate the capability. Nothing regresses for them.
+
+The adapter accepts at most 1,000 items and 100 world-drop stacks per request, validates quality, resolves prefab codes or display/name tokens, splits oversized stacks, and returns an error when no server-owned player position is known.
 
 `teleportPlayer` requires a server-known character ZDO ID. It uses Valheim's built-in teleport RPC and returns `character_unavailable` when that identity is missing.
 

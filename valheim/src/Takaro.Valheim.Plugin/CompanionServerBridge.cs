@@ -19,7 +19,8 @@ public sealed class CompanionServerBridge : IDisposable
         | CompanionCapability.Inventory
         | CompanionCapability.PlayerDeath
         | CompanionCapability.EntityKilled
-        | CompanionCapability.ServerChat;
+        | CompanionCapability.ServerChat
+        | CompanionCapability.ItemGrant;
 
     private static readonly JsonSerializerOptions WireJsonOptions = new()
     {
@@ -625,6 +626,59 @@ public sealed class CompanionServerBridge : IDisposable
 
     private void ForwardAcceptedEvent(CompanionAcceptedEvent acceptedEvent) =>
         EnqueueAcceptedEvent(acceptedEvent);
+
+    /// <summary>
+    /// Asks one negotiated companion to place items in its local player's inventory.
+    /// Fire-and-forget by design: the caller has already answered Takaro, and the reply
+    /// could only arrive on a later frame. Returning false means this peer cannot be
+    /// served — no companion, no ItemGrant capability, or an expired session — and the
+    /// caller must fall back to a server-side world drop.
+    /// </summary>
+    public bool TrySendItemGrant(ZNetPeer peer, string code, int amount, int quality)
+    {
+        var routedRpc = registeredRpc;
+        if (disposed
+            || peer is null
+            || string.IsNullOrWhiteSpace(code)
+            || amount <= 0
+            || quality <= 0
+            || routedRpc is null
+            || !ReferenceEquals(ZRoutedRpc.instance, routedRpc)
+            || !MatchesTrackedPeer(peer.m_uid, peer)
+            || !trackedPeers.TryGetValue(peer.m_uid, out var tracked)
+            || !sessions.TryGetActiveSession(
+                peer.m_uid,
+                CompanionCapability.ItemGrant,
+                clock(),
+                out var snapshot)
+            || !snapshot.SelectedProtocolVersion.HasValue)
+        {
+            return false;
+        }
+
+        try
+        {
+            var sequence = tracked.NextServerSequence;
+            var envelope = CreateEnvelope(
+                snapshot.SelectedProtocolVersion.Value,
+                snapshot.Nonce,
+                sequence,
+                $"item-grant-{sequence}",
+                CompanionMessageTypes.ItemGrant,
+                new CompanionItemGrant(code, amount, quality));
+            routedRpc.InvokeRoutedRPC(
+                peer.m_uid,
+                CompanionProtocol.RpcName,
+                CompanionEnvelopeCodec.EncodeEnvelope(envelope));
+            tracked.NextServerSequence++;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim could not send companion item grant to peer {peer.m_uid}: {ex.Message}");
+            return false;
+        }
+    }
 
     private void EnqueueAcceptedEvent(CompanionAcceptedEvent acceptedEvent)
     {

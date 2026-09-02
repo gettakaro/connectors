@@ -36,7 +36,7 @@
       "getPlayer": "server-owned",
       "getPlayerLocation": "server-owned",
       "getPlayerInventory": "client-reported",
-      "giveItem": "server-owned",
+      "giveItem": "client-reported",
       "sendMessage": "client-reported",
       "executeConsoleCommand": "server-owned",
       "listItems": "server-owned",
@@ -85,10 +85,11 @@
     "2026-09-02 acceptance run: kickPlayer is live-supported. A live Takaro request logged 'kicked Hehe (Steam_76561198000735875). Reason: acceptance kick test.', getPlayers dropped to zero, and the headless dedicated server stayed alive because the built-in Kicked RPC is used instead of a direct ZNet.Disconnect(peer).",
     "2026-09-02 acceptance run: listItems and listEntities are live-supported through the standard Takaro route. Takaro does not request either action until its sync job runs, so a newly registered game server shows an empty catalog until then; triggering syncItems/syncEntities returned 821 item prefabs and 101 character prefabs, which Takaro persisted.",
     "2026-09-02 acceptance run: shutdown is live-supported. A live Takaro request wrote its success response frame first, then logged 'executing scheduled shutdown on the Unity main thread'; Valheim performed a clean ZNet shutdown and the dedicated server process exited.",
-    "2026-09-02 acceptance run: Takaro shop deliveries inherit giveItem's world-drop semantics. A 5x Wood delivery spawned on the ground at the player's position and did not enter their inventory, so purchased goods are lootable by nearby players until collected. This is inherent to the dedicated-server boundary, not a connector defect.",
     "2026-09-02 acceptance run: restart resilience verified. After a dedicated-server restart the connector re-identified without config changes and events resumed, with a fresh player-connected persisted by Takaro and module commands still executing.",
     "2026-09-02 acceptance run: the full in-game shop purchase path is live-verified. With economyUtils installed, a player typing '@shop 1 1 buy' completed a Takaro shop order, had 100 currency deducted, and received the goods. Shop deliveries use giveItem, so purchased items land on the ground at the buyer's feet rather than in their inventory.",
     "2026-09-02 acceptance run: player-death re-proved on the current artifact. A '/die' death produced 'observed routed OnDeath packet but did not emit an event because routed identity and state are not server-owned', and the Takaro event was emitted from the companion's peer-bound report with player, timestamp, and real position.",
-    "2026-09-02 acceptance run: entity-killed re-proved on the current artifact. A client-spawned Boar killed bare-handed produced a Takaro event bound to the player with entity 'Boar', weapon 'Unarmed', and timestamp. Note that 'spawn' cannot be used from the dedicated-server console ('not valid in the current context'); staging a target needs a client with devcommands."
+    "2026-09-02 acceptance run: entity-killed re-proved on the current artifact. A client-spawned Boar killed bare-handed produced a Takaro event bound to the player with entity 'Boar', weapon 'Unarmed', and timestamp. Note that 'spawn' cannot be used from the dedicated-server console ('not valid in the current context'); staging a target needs a client with devcommands.",
+    "Protocol 2 adds the item-grant capability: giveItem asks a negotiated companion to place items in the player's inventory, and the companion drops only the shortfall at their feet. Players without a companion keep the server-side world drop, so companionMode=disabled and vanilla clients under optional are unaffected.",
+    "giveItem delivery is fire-and-forget by design. The server cannot await the companion's outcome: the Takaro request dispatcher blocks the Unity main thread, and the reply can only arrive on a later frame, so waiting would deadlock the dedicated server. The companion decides against the live inventory instead and reports the result through its ordinary snapshot."
   ]
 }

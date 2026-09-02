@@ -10,6 +10,12 @@ No Takaro token, identity token, WebSocket URL, or other cloud credential belong
 
 The reverse `server-chat` message is accepted only from that same authenticated server peer, current session nonce, negotiated protocol version, and increasing server sequence. The companion writes it to Valheim's normal chat history and makes the chat window visible; server messages are never rendered through the HUD overlay APIs. Takaro's `opts.senderNameOverride` is dynamic per message, and a missing or blank value displays as `Takaro`.
 
+Item grants run the other way: the server instructs the companion to place items in the
+local player's inventory. The companion inserts what fits and drops the remainder in the
+world, so a full inventory cannot swallow a grant. This does not weaken the rule below —
+the server decides what is granted and the client only carries it out, while everything
+the client *reports* stays untrusted.
+
 Inventory, chat, death, and kill contents are client-reported and therefore untrusted. They can enrich normal community automation, but must not be treated as authoritative identity, anti-cheat, security, economy, or moderation evidence. The dedicated-server plugin binds every accepted report to the actual connected peer instead of trusting a player identity supplied by the client.
 
 ## Packages and Process Roles
@@ -73,7 +79,7 @@ If the server uses `companionMode=required`, removing only the client companion 
 - `optional`: compatible companions can report client-owned state; missing or expired sessions are restarted without disconnecting the player.
 - `required`: a missing, incompatible, or silent companion is terminal for that connection. Initial negotiation allows 30 seconds so graphical clients can finish slow world loading. After an enforcement decision, the server revokes the session, shows a player-visible explanation, waits two seconds, sends Valheim's built-in `Kicked` RPC, and retains an exact-peer disconnect fallback.
 
-The default is `required`. A product patch version alone does not cause rejection. Protocol v1 currently negotiates chat, inventory, player-death, entity-killed, and server-chat capabilities and uses a five-second heartbeat.
+The default is `required`. A product patch version alone does not cause rejection. Protocol v2 negotiates chat, inventory, player-death, entity-killed, server-chat, and item-grant capabilities and uses a five-second heartbeat.
 
 ## Observed Mode Behaviour
 
@@ -108,6 +114,7 @@ actually distribute the companion.
 - Authenticated server-chat messages are added to the normal chat history under that request's bounded sender override, or `Takaro` when missing, and are not re-emitted as player-originated inbound chat.
 - An accepted configured command is reported once and suppressed from ordinary chat only after the server-bound send succeeds.
 - Inventory is polled every two seconds after negotiation; the initial confirmed snapshot, including an empty inventory, is sent and unchanged canonical snapshots are not resent.
+- An accepted item grant is applied immediately and forces the next snapshot, so Takaro's inventory view reflects the grant without waiting for ordinary change detection. The player is told in chat how much entered their inventory and how much was dropped.
 - Local player death is reported once per callback window.
 - Non-player entity death is reported only when the cached last hit resolves the local player as attacker. Weapon attribution uses the equipped weapon when available and a bounded skill or `Unarmed` fallback otherwise.
 
