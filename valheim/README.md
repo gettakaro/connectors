@@ -4,6 +4,27 @@ The Valheim integration has two owned, role-specific BepInEx packages: the Takar
 
 The companion's client-reported inventory, chat, death, and attributed-kill paths are `live-supported` by exact server, graphical-client, and Takaro proof. See [COMPANION.md](COMPANION.md) for its trust boundary and operational guide, and [the owned-companion validation ledger](qa/2026-07-12-owned-companion-validation.md) for the evidence.
 
+## Quick Start
+
+Three decisions, in order:
+
+1. **Install the server package.** Every capability in the "server alone" column below
+   works from this step on. Put `TakaroValheim` under `BepInEx/plugins/` on the dedicated
+   server, set the registration token in `BepInEx/config/com.takaro.valheim.cfg`, restart.
+2. **Choose `companionMode`.** It decides what happens to players who do not install the
+   client companion — see [Choosing a companion mode](#choosing-a-companion-mode). The
+   default is `required`; switch to `optional` unless you can put the companion on every
+   player's client.
+3. **Distribute the companion** (`TakaroValheimCompanion`) to players if you chose
+   `optional` or `required`. It carries no token or credential; players drop it under
+   their own `BepInEx/plugins/`.
+
+**Upgrading:** the server package and the companion share a wire protocol (currently
+**2**) and must be upgraded together. A companion on an older protocol cannot read the
+new server's hello, so under `required` it is kicked and logged as
+`reason=MissingCompanion … older than protocol 2`; under `optional` it simply stops
+reporting. Ship the companion update to players first, or run `optional` for one release.
+
 ## What You Need
 
 Valheim has no RCON and no remote admin API, so the connector is a BepInEx plugin that
@@ -27,14 +48,32 @@ graphical client.
 
 ### Which half provides what
 
-| Works with the server package alone | Needs the companion on the player's client |
-| --- | --- |
-| `testReachability`, `getPlayers`, `getPlayerLocation` | `getPlayerInventory` |
-| `teleportPlayer` | `giveItem` (inventory delivery) |
-| `executeConsoleCommand` | `sendMessage` |
-| `listItems`, `listEntities`, `listBans` | `chat-message` |
-| `kickPlayer`, `banPlayer`, `unbanPlayer`, `shutdown` | `player-death` |
-| `log`, `player-connected`, `player-disconnected` | `entity-killed` |
+What each Takaro capability does with the server package alone, and what changes when the
+player's client runs the companion. Status is the `capabilities.json` value; every
+`live-supported` row has a dated ledger under `qa/`.
+
+| Capability | Server package alone | With the companion on that player's client | Status |
+| --- | --- | --- | --- |
+| `testReachability`, `getPlayers` | Works | — | `live-supported` |
+| `getPlayerLocation` | Works (server-known position, never fabricated) | — | `live-supported` |
+| `teleportPlayer` | Works (built-in `RPC_TeleportTo`) | — | `live-supported` |
+| `kickPlayer`, `banPlayer`, `unbanPlayer`, `listBans` | Work. Ban reason is **not** stored (Valheim's ban list holds ids only) | — | `live-supported` |
+| `shutdown` | Works; responds first, then quits cleanly | — | `live-supported` |
+| `executeConsoleCommand` | Works for allowlisted commands only | — | `live-supported` |
+| `listItems`, `listEntities` | Work | — | `live-supported` |
+| `giveItem` (and every shop delivery) | **World drop** at the player's feet — lootable by others, losable while falling or swimming | **Lands in the inventory.** Merges into existing stacks; a full bag drops only the shortfall with a chat notice | `live-supported` |
+| `getPlayerInventory` | Not available — the server never fabricates `[]` | Client-reported snapshots (untrusted for security or economy decisions) | `live-supported` |
+| `sendMessage` | Returns `companion_server_chat_unavailable` | Rendered into the player's normal chat | `live-supported` |
+| `chat-message` event | Not observed (Valheim chat never reaches the server) | Reported by the companion, bound to the real peer | `live-supported` |
+| `player-death`, `entity-killed` events | Not emitted (routed identity is not server-owned) | Reported by the companion | `live-supported` |
+| `player-connected`, `player-disconnected`, `log` events | Work | — | `live-supported` |
+| `getPlayer` | Implemented; Takaro exposes no route to prove it | — | `unsupported` |
+| `listLocations` | Implemented; Takaro's standard route throws `NotImplementedError` | — | `schema-fallback` |
+| `getMapInfo`, `getMapTile` | Not possible from a dedicated server | — | `unsupported` |
+
+Client-reported data (the companion column) enriches automation but is **not** authoritative
+identity, anti-cheat, security, economy, or moderation evidence — see
+[COMPANION.md](COMPANION.md).
 
 Two entries deserve their reasons stated plainly, because no amount of server-side work
 removes them:
@@ -46,7 +85,7 @@ removes them:
   drawn from `ZNet.GetPlayerList()`. A player's own line can stay entirely client-local,
   so the dedicated server observes no chat RPC to forward.
 
-`sendMessage` is in the right-hand column for a related reason: outbound messages are
+`sendMessage` needs the companion for a related reason: outbound messages are
 rendered into Valheim's real chat history by the companion. Without one, the connector
 returns `companion_server_chat_unavailable` rather than silently doing nothing.
 
@@ -57,7 +96,7 @@ companion:
 
 | Mode | Vanilla clients | What you give up |
 | --- | --- | --- |
-| `disabled` | Join normally; the companion RPC is never registered | Every capability in the right-hand column above |
+| `disabled` | Join normally; the companion RPC is never registered | Everything in the companion column of the matrix above |
 | `optional` | Join normally and stay connected | Client-owned data only from players who installed the companion |
 | `required` (default) | Disconnected after a 30-second grace period, with a visible explanation | Nothing, but every player must install the companion |
 
@@ -212,6 +251,15 @@ connector acceptance checklist with a real graphical client attached. That run m
 three `companionMode` values against a vanilla client. It also found that `banPlayer`
 discards the ban reason. See
 [`qa/2026-09-02-acceptance-validation.md`](qa/2026-09-02-acceptance-validation.md).
+
+Later the same day the protocol-2 `item-grant` delivery was live-proven on
+`2.0.0-dev.28a4566`: a `giveItem` and an in-game shop purchase both landed in the
+player's inventory, a full bag dropped only the shortfall with exact counts, thirty
+concurrent grants did not stall the main thread, and a protocol-1 companion against the
+protocol-2 server was kicked while the server survived. The follow-up build
+`2.0.0-dev.422148d` re-proved the enforcement wording that names the out-of-date
+companion cause. See
+[`qa/2026-09-02-item-grant-validation.md`](qa/2026-09-02-item-grant-validation.md).
 
 ## Local Development
 
