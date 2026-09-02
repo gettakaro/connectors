@@ -436,3 +436,90 @@ arguments. Running a command that does take one settled it.
 9 PASS at baseline). Both remaining FAILs are explained above — MOD-3 was a false
 positive now disproven, and `EVT-23 server-status-changed` recorded the connector going
 offline during this run, which was the deliberate `shutdown` test.
+## Correction — items previously recorded as SKIP
+
+Two items were recorded as SKIP above on reasoning that turned out to be wrong. Both were
+re-attempted and one of them resolved.
+
+### Shop purchase: SKIP was wrong, it is PASS
+
+The earlier SKIP said orders cannot be tested because they are placed as a linked player
+account. That is true of the **API** route (`shoporderCreate` needs a linked player, and
+`playerGetMe` returns "please link your player account"), but it is not the route a
+player actually uses. Installing `economyUtils` on the game server exposes the in-game
+`shop` command, and a player buys through chat with no account linking at all.
+
+Full purchase driven from inside Valheim:
+
+```text
+player   @shop 1 1 buy
+Takaro   You have purchased Acceptance Wood Bundle for 100 Takaro coins.
+Takaro   You have received items from a shop order.
+Takaro   5x item_wood
+server   dropped 5x Wood for Hehe (Steam_76561198000735875) at x=79.47, y=36.00, z=4.84
+```
+
+| ID | Item | Verdict | Evidence |
+| --- | --- | --- | --- |
+| ECON-4 | Balance command | PASS | `@balance` → `"balance: 300 Takaro coins"`, matching the API |
+| ECON-7 | Place shop order | PASS | Order `COMPLETED`; currency went `300 → 200` for a 100-coin listing |
+| ECON-8 | Shop claim delivers | PASS | 5x Wood delivered and confirmed in chat |
+
+This also confirms the world-drop caveat on the real purchase path, not just on a
+synthetic `giveItem` call: the goods a player buys land on the ground at their feet.
+
+Note for anyone repeating this: modules must be installed against the **correct game
+server**. The installation record's field is `gameserverId` (lowercase `s`); filtering on
+`gameServerId` silently matches nothing and makes commands look broken.
+
+### `player-death`: SKIP was wrong, it is PASS
+
+The earlier SKIP claimed a controlled death could not be staged without `-console`. It
+can — Valheim's built-in `/die` chat command needs no console. Triggering it produced:
+
+```text
+server  observed routed OnDeath packet but did not emit an event because routed identity
+        and state are not server-owned: sender=208696540, targetZdo=208696540:2.
+```
+
+and then the trusted companion report produced the actual Takaro event:
+
+```json
+{
+  "player": { "gameId": "Steam_76561198000735875", "name": "Hehe",
+              "platformId": "steam:76561198000735875" },
+  "timestamp": "2026-09-02T09:07:16.635Z",
+  "position": { "x": 79.40, "y": 36.00, "z": 4.83, "dimension": "valheim" },
+  "msg": "None"
+}
+```
+
+Those two log lines together are a precise demonstration of the trust boundary: the
+dedicated server *sees* the routed death packet and deliberately refuses to emit on it,
+because routed client identity is not server-owned. The event comes from the companion's
+peer-bound report instead.
+
+### `entity-killed`: still SKIP, and here is exactly why
+
+Not proven in this run. What was tried:
+
+- `executeConsoleCommand` with `spawn Greyling` — the connector allowlisted and forwarded
+  it correctly, but Valheim answered `'spawn' is not valid in the current context`.
+  `spawn` is a client devcommand; a dedicated server console cannot run it.
+- Roaming Meadows to find natural wildlife — the session had rolled into night and the
+  test character had lost its weapons to the death test above (they stay in the
+  gravestone), so no kill could be staged before this run ended.
+
+It needs a client launched with `-console` and `devcommands` enabled, or a player who
+walks into a boar in daylight. It remains `live-supported` in the registry on the
+2026-07-12 companion ledger's evidence, which this run did not contradict.
+
+### Event types persisted by Takaro during this run
+
+```
+chat-message 24   player-connected 6    player-inventory-changed 10
+command-executed 5    player-disconnected 4   player-sync-snapshot 6
+player-death 2    currency-added 1      currency-deducted 2
+shop-listing-created 1    shop-order-created 1    shop-order-status-changed 1
+cronjob-executed 6    hook-executed 1       module-installed 4
+```
