@@ -342,17 +342,17 @@ remains `schema-fallback` for the documented upstream reason.
 These are recorded as SKIP, not as passes:
 
 - `getMapTile` — needs tile coordinates; the action is declared `unsupported` anyway.
-- `player-death` and `entity-killed` — the test character had no weapons and the client
-  was launched without `-console`, so no controlled kill or death could be staged. Both
-  remain `live-supported` in the registry on the 2026-07-12 companion ledger's evidence;
-  this run neither re-proved nor contradicted them.
+- (resolved later in this run — see the corrections section: `player-death` and
+  `entity-killed` were both re-proved on the deployed artifact.)
 - RES-1/2/4/5/7 (restart and log-rotation resilience) — the session ended with the
   `shutdown` test.
 - ECON-1..19 shop and currency flows.
 
 ## Result
 
-The connector performed correctly on every capability exercised. The two failures the
+All six Takaro events are live-proven on the deployed `2.0.1` artifact, and 15 of 19
+actions are live-supported. The connector performed correctly on every capability
+exercised. The two failures the
 automated pass reported were both resolved without a code change: the empty item catalog
 was a Takaro sync-cadence artifact, and the missing module was a test-environment gap.
 
@@ -499,20 +499,41 @@ dedicated server *sees* the routed death packet and deliberately refuses to emit
 because routed client identity is not server-owned. The event comes from the companion's
 peer-bound report instead.
 
-### `entity-killed`: still SKIP, and here is exactly why
+### `entity-killed`: PASS
 
-Not proven in this run. What was tried:
+Initially recorded as SKIP because no target could be staged from the connector side:
+`executeConsoleCommand` correctly allowlisted and forwarded `spawn Greyling`, but Valheim
+answered `'spawn' is not valid in the current context` — `spawn` is a client devcommand
+and a dedicated-server console cannot run it.
 
-- `executeConsoleCommand` with `spawn Greyling` — the connector allowlisted and forwarded
-  it correctly, but Valheim answered `'spawn' is not valid in the current context`.
-  `spawn` is a client devcommand; a dedicated server console cannot run it.
-- Roaming Meadows to find natural wildlife — the session had rolled into night and the
-  test character had lost its weapons to the death test above (they stay in the
-  gravestone), so no kill could be staged before this run ended.
+It was subsequently proven with a client-side spawn and a real kill:
 
-It needs a client launched with `-console` and `devcommands` enabled, or a player who
-walks into a boar in daylight. It remains `live-supported` in the registry on the
-2026-07-12 companion ledger's evidence, which this run did not contradict.
+```text
+client  11:27:39  Spawned Boar x 1
+client  11:28:11  Queue unlock msg:$msg_newmaterial:$item_boar_meat
+```
+
+Takaro persisted the event at `2026-09-02T09:28:09.739Z`, bound to `playerId
+44ad4e7a-…`:
+
+```json
+{
+  "player": { "gameId": "Steam_76561198000735875", "name": "Hehe",
+              "steamId": "76561198000735875",
+              "platformId": "steam:76561198000735875" },
+  "entity": "Boar",
+  "weapon": "Unarmed",
+  "timestamp": "2026-09-02T09:28:09.739Z"
+}
+```
+
+Payload is complete: bound player identity, entity, weapon, and timestamp. `Unarmed` is
+the correct attribution here — the test character's weapons were still in the gravestone
+from the `player-death` test, so the kill was a bare-handed one, and the companion's
+documented skill/`Unarmed` fallback resolved it rather than reporting an empty weapon.
+
+This closes the last unproven event. All six Takaro events are now live-proven on the
+deployed `2.0.1` artifact.
 
 ### Event types persisted by Takaro during this run
 
