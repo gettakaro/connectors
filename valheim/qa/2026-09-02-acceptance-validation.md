@@ -365,3 +365,74 @@ this run does not by itself declare the connector accepted. What it does establi
 that the deployed 2.0.1 artifact's action surface, event surface, module loop, and all
 three companion modes behave as documented, with four previously unproven actions now
 carrying exact live evidence.
+## Economy, tracking, and restart — second session
+
+The first session ran `shutdown` before reaching the ECON, DATA, and RES sections. The
+server was restarted and those sections were then worked properly.
+
+### Restart resilience
+
+| ID | Item | Verdict | Evidence |
+| --- | --- | --- | --- |
+| RES-1 | Game server restart — reconnects | PASS | After restart the connector re-identified as `82f53af5-…` without config changes |
+| RES-2 | Game server restart — events resume | PASS | A fresh `player-connected` was persisted at `2026-09-02T08:46:42.553Z`, after the restart; `chat-message`, `command-executed`, and inventory-change events all continued to flow in the new session |
+
+### Currency
+
+| ID | Item | Verdict | Evidence |
+| --- | --- | --- | --- |
+| PRE-6 | Economy enabled | PASS | `economyEnabled: true`, currency name "Takaro coins" |
+| ECON-2 | Add currency | PASS | `playerongameserverAddCurrency` 500 → balance read back as `500` |
+| ECON-3 | Deduct currency | PASS | Deduct 200 → balance read back as `300` |
+
+### Shop
+
+| ID | Item | Verdict | Evidence |
+| --- | --- | --- | --- |
+| ECON-5 | Create shop listing | PASS | Listing `bd384176-…` "Acceptance Wood Bundle", price 100, 5x Wood, `draft: false` |
+| ECON-6 | Shop listing search | PASS | `shoplistingSearch` returned the listing bound to this game server |
+| ECON-7 | Place shop order | **SKIP** | `shoporderCreate` returns `Unknown player, make sure you have linked your account`, and `playerGetMe` returns `Player not found, please link your player account.` Orders are placed *as a player*, and this admin session has no linked player. Linking needs an in-game code redeemed through `playerOnboarding`. Not a connector defect — the order never reaches the connector. |
+| ECON-16 | Shop actions available | N/A | `shopactionGetAvailable` returned `[]`; listings on this server can only deliver items |
+
+### Shop delivery is a world drop — operator-facing caveat
+
+Shop claims deliver through `giveItem`, and on Valheim `giveItem` **spawns items on the
+ground**, it does not insert into a player's inventory. A 5x Wood delivery logged:
+
+```text
+dropped 5x Wood for Hehe (Steam_76561198000735875) at x=79.85327, y=36.01536, z=4.947341.
+```
+
+A screenshot taken immediately afterwards showed the player's inventory bar still empty,
+with the stack lying at their feet. This is inherent to the server-only boundary — the
+dedicated server cannot write into a remote client's inventory — but it has real
+consequences for a Valheim economy that are worth stating before anyone runs a shop:
+
+- Purchased goods are lootable by any nearby player until the buyer picks them up.
+- A purchase made while the buyer is falling, swimming, or in transit can be lost.
+- A buyer with a full inventory has no feedback beyond the items remaining on the ground.
+
+### Tracking
+
+| ID | Item | Verdict | Evidence |
+| --- | --- | --- | --- |
+| ECON-9 | Inventory history | PASS | 3 inventory snapshots in 24h, each carrying both `name` and `code` (`item_wood` / `Wood`) |
+| ECON-12 | Radius query | PASS | A 200-unit radius around `80,36,5` returned the player; a 50-unit radius around `9000,36,9000` correctly returned `[]`. The negative case was checked explicitly. |
+
+### Module state
+
+| ID | Item | Verdict | Evidence |
+| --- | --- | --- | --- |
+| MOD-3 | Chat command parsed **with arguments** | PASS | `@settp spot2` produced `command-executed` with `arguments: {"tp": "spot2"}` |
+| MOD-6 | Module variable persisted | PASS | `variableSearch` returned `tp_spot2 = {"name":"spot2","x":80,"y":36,"z":5,"dimension":"valheim"}` — the module wrote real game coordinates |
+
+An automated pass reported MOD-3 as FAIL with "arguments are EMPTY". That was a false
+positive: the only command sampled at the time was `tplist`, which legitimately takes no
+arguments. Running a command that does take one settled it.
+
+### Final automated pass
+
+`verify-connector.mjs` after this session: **32 PASS / 2 FAIL / 49 SKIP** (up from
+9 PASS at baseline). Both remaining FAILs are explained above — MOD-3 was a false
+positive now disproven, and `EVT-23 server-status-changed` recorded the connector going
+offline during this run, which was the deliberate `shutdown` test.

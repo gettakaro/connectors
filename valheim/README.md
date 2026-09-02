@@ -162,7 +162,14 @@ Ownership values are `server-owned`, `client-reported`, `upstream-blocked`, or `
 
 ## Server-Owned Action Semantics
 
-`giveItem` is a world-drop operation, not a private inventory mutation. Other players can collect the spawned objects. The adapter accepts at most 1,000 items and 100 world-drop stacks per request, validates quality, resolves prefab codes or display/name tokens, splits oversized stacks, and returns an error when no server-owned player position is known.
+`giveItem` is a world-drop operation, not a private inventory mutation. Other players can collect the spawned objects.
+
+**This applies to shop deliveries too.** A shop claim delivers through `giveItem`, so a
+purchase lands on the ground at the buyer's feet rather than in their inventory. Before
+running a Valheim economy, note that purchased goods are lootable by anyone nearby until
+collected, a purchase made while falling or swimming can be lost, and a buyer with a full
+inventory gets no feedback beyond items left on the ground. This is inherent to the
+dedicated-server boundary: the server cannot write into a remote client's inventory. The adapter accepts at most 1,000 items and 100 world-drop stacks per request, validates quality, resolves prefab codes or display/name tokens, splits oversized stacks, and returns an error when no server-owned player position is known.
 
 `teleportPlayer` requires a server-known character ZDO ID. It uses Valheim's built-in teleport RPC and returns `character_unavailable` when that identity is missing.
 
