@@ -38,8 +38,8 @@ public sealed class CompanionProtocolTests
     public void VersionOneProtocolConstantsAreStable()
     {
         Assert.AreEqual("TakaroCompanionV1", GetConstant<string>("CompanionProtocol", "RpcName"));
-        Assert.AreEqual(1, GetConstant<int>("CompanionProtocol", "CurrentVersion"));
-        Assert.AreEqual(1, GetConstant<int>("CompanionProtocol", "MinimumVersion"));
+        Assert.AreEqual(2, GetConstant<int>("CompanionProtocol", "CurrentVersion"));
+        Assert.AreEqual(2, GetConstant<int>("CompanionProtocol", "MinimumVersion"));
     }
 
     [TestMethod]
@@ -79,15 +79,15 @@ public sealed class CompanionProtocolTests
 
         AssertDeclaredPayloadAccepted(
             CompanionMessageTypes.HelloAck,
-            $"{{\"protocolVersion\":1,\"productVersion\":\"{new string('v', 128)}\",\"acceptedCapabilities\":1}}");
+            $"{{\"protocolVersion\":2,\"productVersion\":\"{new string('v', 128)}\",\"acceptedCapabilities\":1}}");
         AssertDeclaredPayloadRejected(
             CompanionMessageTypes.HelloAck,
-            """{"protocolVersion":1,"acceptedCapabilities":1}""",
+            """{"protocolVersion":2,"acceptedCapabilities":1}""",
             "invalid-payload-fields",
             "hello-ack missing product version");
         AssertDeclaredPayloadRejected(
             CompanionMessageTypes.HelloAck,
-            """{"protocolVersion":1,"ProductVersion":"1.2.3","acceptedCapabilities":1}""",
+            """{"protocolVersion":2,"ProductVersion":"1.2.3","acceptedCapabilities":1}""",
             "invalid-payload-fields",
             "hello-ack product version casing");
         AssertDeclaredPayloadRejected(
@@ -102,7 +102,7 @@ public sealed class CompanionProtocolTests
             "hello-ack null product version");
         AssertDeclaredPayloadRejected(
             CompanionMessageTypes.HelloAck,
-            $"{{\"protocolVersion\":1,\"productVersion\":\"{new string('v', 129)}\",\"acceptedCapabilities\":1}}",
+            $"{{\"protocolVersion\":2,\"productVersion\":\"{new string('v', 129)}\",\"acceptedCapabilities\":1}}",
             "invalid-payload",
             "hello-ack oversized product version");
     }
@@ -130,7 +130,7 @@ public sealed class CompanionProtocolTests
     {
         var envelope = CreateEnvelope(
             CompanionMessageTypes.HelloAck,
-            """{"protocolVersion":2,"productVersion":"2.4.0","acceptedCapabilities":1}""");
+            """{"protocolVersion":3,"productVersion":"2.4.0","acceptedCapabilities":1}""");
 
         Assert.IsFalse(CompanionEnvelopeCodec.TryDecodePayload<CompanionHelloAck>(
             envelope,
@@ -141,19 +141,19 @@ public sealed class CompanionProtocolTests
             envelope,
             out var inspected));
         Assert.IsNotNull(inspected);
-        Assert.AreEqual(2, inspected.ProtocolVersion);
+        Assert.AreEqual(3, inspected.ProtocolVersion);
         Assert.AreEqual("2.4.0", inspected.ProductVersion);
         Assert.AreEqual(CompanionCapability.Chat, inspected.AcceptedCapabilities);
 
         Assert.IsFalse(CompanionEnvelopeCodec.TryInspectHelloAck(
             CreateEnvelope(
                 CompanionMessageTypes.HelloAck,
-                """{"protocolVersion":2,"productVersion":"2.4.0","acceptedCapabilities":1,"playerId":"claimed"}"""),
+                """{"protocolVersion":3,"productVersion":"2.4.0","acceptedCapabilities":1,"playerId":"claimed"}"""),
             out _));
 
         CompanionEnvelope disposedEnvelope;
         using (var document = JsonDocument.Parse(
-                   """{"protocolVersion":2,"productVersion":"2.4.0","acceptedCapabilities":1}"""))
+                   """{"protocolVersion":3,"productVersion":"2.4.0","acceptedCapabilities":1}"""))
         {
             disposedEnvelope = new CompanionEnvelope(
                 CompanionProtocol.CurrentVersion,
@@ -289,11 +289,11 @@ public sealed class CompanionProtocolTests
     {
         AssertRoundTrip(
             CompanionMessageTypes.Hello,
-            new CompanionHello(1, 1, CompanionCapability.Chat | CompanionCapability.Inventory),
+            new CompanionHello(2, 2, CompanionCapability.Chat | CompanionCapability.Inventory),
             sequence: 1);
         AssertRoundTrip(
             CompanionMessageTypes.HelloAck,
-            new CompanionHelloAck(1, "1.2.3", CompanionCapability.Chat),
+            new CompanionHelloAck(2, "1.2.3", CompanionCapability.Chat),
             sequence: 2);
         AssertRoundTrip(
             CompanionMessageTypes.Heartbeat,
@@ -350,12 +350,12 @@ public sealed class CompanionProtocolTests
             CreateEnvelopeJson(type: "future-message", payloadJson: "{}"),
             "unknown-message-type");
         AssertEnvelopeRejected(
-            CreateEnvelopeJson(protocolVersion: 2, payloadJson: "{}"),
+            CreateEnvelopeJson(protocolVersion: 3, payloadJson: "{}"),
             "unsupported-protocol-version");
         AssertEnvelopeRejected("{not-json", "malformed-json");
         AssertEnvelopeRejected(
             """
-            {"protocolVersion":1,"sessionNonce":"nonce","sequence":1,"messageId":"message-1","type":"heartbeat"}
+            {"protocolVersion":2,"sessionNonce":"nonce","sequence":1,"messageId":"message-1","type":"heartbeat"}
             """,
             "invalid-envelope-fields");
         AssertEnvelopeRejected(
@@ -463,15 +463,15 @@ public sealed class CompanionProtocolTests
         var invalidPayloads = new (string Name, string MessageType, string Json, string ErrorCode)[]
         {
             ("hello nonpositive range", CompanionMessageTypes.Hello,
-                """{"minimumVersion":0,"maximumVersion":1,"capabilities":0}""", "invalid-payload"),
+                """{"minimumVersion":0,"maximumVersion":2,"capabilities":0}""", "invalid-payload"),
             ("hello reversed range", CompanionMessageTypes.Hello,
-                """{"minimumVersion":2,"maximumVersion":1,"capabilities":0}""", "invalid-payload"),
+                """{"minimumVersion":3,"maximumVersion":2,"capabilities":0}""", "invalid-payload"),
             ("hello unknown capability", CompanionMessageTypes.Hello,
-                """{"minimumVersion":1,"maximumVersion":1,"capabilities":32}""", "invalid-payload"),
+                """{"minimumVersion":2,"maximumVersion":2,"capabilities":64}""", "invalid-payload"),
             ("hello-ack unsupported version", CompanionMessageTypes.HelloAck,
-                """{"protocolVersion":2,"productVersion":"1.2.3","acceptedCapabilities":0}""", "invalid-payload"),
+                """{"protocolVersion":3,"productVersion":"1.2.3","acceptedCapabilities":0}""", "invalid-payload"),
             ("hello-ack unknown capability", CompanionMessageTypes.HelloAck,
-                """{"protocolVersion":1,"productVersion":"1.2.3","acceptedCapabilities":32}""", "invalid-payload"),
+                """{"protocolVersion":2,"productVersion":"1.2.3","acceptedCapabilities":64}""", "invalid-payload"),
             ("heartbeat negative timestamp", CompanionMessageTypes.Heartbeat,
                 """{"timestampUnixMilliseconds":-1}""", "invalid-payload"),
             ("chat null event", CompanionMessageTypes.Chat,

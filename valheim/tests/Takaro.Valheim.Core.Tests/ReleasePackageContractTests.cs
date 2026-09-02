@@ -158,7 +158,7 @@ public sealed class ReleasePackageContractTests
                 WriteManifest(
                     Path.Combine(client, "manifest.json"),
                     "graphical-client",
-                    protocolCurrent: 2);
+                    protocolCurrent: 3);
                 break;
             default:
                 Assert.Fail($"Unknown fixture mutation {mutation}.");
@@ -182,7 +182,7 @@ public sealed class ReleasePackageContractTests
         string path,
         string role,
         string version = Version,
-        int protocolCurrent = 1)
+        int protocolCurrent = 2)
     {
         var manifest = new
         {
@@ -194,9 +194,9 @@ public sealed class ReleasePackageContractTests
             processRole = role,
             protocol = new
             {
-                minimum = 1,
+                minimum = 2,
                 current = protocolCurrent,
-                maximum = 1
+                maximum = 2
             }
         };
         Write(path, JsonSerializer.Serialize(manifest));

@@ -443,6 +443,11 @@ public sealed class CompanionServerBridgeContractTests
         StringAssert.Contains(bridge, "network.Disconnect(pending.Peer)");
         StringAssert.Contains(bridge, "DisconnectExplanationGrace");
         StringAssert.Contains(bridge, "DisconnectFallbackGrace");
+        // A protocol-1 companion cannot parse a newer hello and is reported as missing, so
+        // both the log line and the player explanation must name the out-of-date cause.
+        StringAssert.Contains(bridge, "MissingCompanionHint(decision)");
+        StringAssert.Contains(bridge, "or it is older than protocol {decision.ExpectedMinimumVersion} and cannot read it.");
+        StringAssert.Contains(bridge, "either not installed or older than protocol {decision.ExpectedMinimumVersion}");
     }
 
     [TestMethod]
@@ -562,11 +567,11 @@ public sealed class CompanionServerBridgeContractTests
             Encode(
                 CompanionMessageTypes.HelloNack,
                 1,
-                new CompanionHelloNack(2, 3, "3.0.0-client")),
+                new CompanionHelloNack(3, 4, "3.0.0-client")),
             Now.AddSeconds(1));
 
         Assert.AreEqual(CompanionSessionDecision.RejectVersion, result.SessionDecision);
-        Assert.AreEqual(3, result.ReportedProtocolVersion);
+        Assert.AreEqual(4, result.ReportedProtocolVersion);
         Assert.AreEqual("3.0.0-client", result.ReportedProductVersion);
         Assert.IsNull(result.Output);
         Assert.IsTrue(harness.Sessions.TryGetSnapshot(PeerId, out var session));

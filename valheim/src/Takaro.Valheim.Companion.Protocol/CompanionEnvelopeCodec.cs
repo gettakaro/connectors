@@ -73,6 +73,13 @@ public static class CompanionEnvelopeCodec
         "message"
     ];
 
+    private static readonly string[] ItemGrantFields =
+    [
+        "code",
+        "amount",
+        "quality"
+    ];
+
     private static readonly string[] InventoryFields = ["stacks"];
 
     private static readonly string[] InventoryStackFields =
@@ -373,6 +380,8 @@ public static class CompanionEnvelopeCodec
                 return TryNormalizePayload<CompanionChatReport>(envelope, out normalizedPayload, out errorCode);
             case CompanionMessageTypes.ServerChat:
                 return TryNormalizePayload<CompanionServerChatMessage>(envelope, out normalizedPayload, out errorCode);
+            case CompanionMessageTypes.ItemGrant:
+                return TryNormalizePayload<CompanionItemGrant>(envelope, out normalizedPayload, out errorCode);
             case CompanionMessageTypes.InventorySnapshot:
                 return TryNormalizePayload<CompanionInventoryReport>(envelope, out normalizedPayload, out errorCode);
             case CompanionMessageTypes.PlayerDeath:
@@ -441,6 +450,9 @@ public static class CompanionEnvelopeCodec
                 break;
             case CompanionMessageTypes.ServerChat:
                 validFields = HasStrictFields(payload, ServerChatFields, Array.Empty<string>());
+                break;
+            case CompanionMessageTypes.ItemGrant:
+                validFields = HasStrictFields(payload, ItemGrantFields, Array.Empty<string>());
                 break;
             case CompanionMessageTypes.InventorySnapshot:
                 validFields = HasStrictFields(payload, InventoryFields, Array.Empty<string>());
@@ -544,7 +556,8 @@ public static class CompanionEnvelopeCodec
             || (payloadType == typeof(CompanionServerChatMessage) && messageType == CompanionMessageTypes.ServerChat)
             || (payloadType == typeof(CompanionInventoryReport) && messageType == CompanionMessageTypes.InventorySnapshot)
             || (payloadType == typeof(CompanionPlayerDeathReport) && messageType == CompanionMessageTypes.PlayerDeath)
-            || (payloadType == typeof(CompanionEntityKilledReport) && messageType == CompanionMessageTypes.EntityKilled);
+            || (payloadType == typeof(CompanionEntityKilledReport) && messageType == CompanionMessageTypes.EntityKilled)
+            || (payloadType == typeof(CompanionItemGrant) && messageType == CompanionMessageTypes.ItemGrant);
     }
 
     private static bool IsSemanticallyValidPayload(object payload)
@@ -577,6 +590,12 @@ public static class CompanionEnvelopeCodec
             case CompanionServerChatMessage serverChat:
                 return IsRequiredString(serverChat.Sender, CompanionProtocol.MaximumChatCharacters)
                     && IsRequiredString(serverChat.Message, CompanionProtocol.MaximumChatCharacters);
+            case CompanionItemGrant itemGrant:
+                return IsRequiredString(itemGrant.Code, CompanionProtocol.MaximumCodeCharacters)
+                    && itemGrant.Amount > 0
+                    && itemGrant.Amount <= CompanionProtocol.MaximumInventoryAmount
+                    && itemGrant.Quality > 0
+                    && itemGrant.Quality <= CompanionProtocol.MaximumItemQuality;
             case CompanionInventoryReport inventory:
                 return IsValidInventory(inventory);
             case CompanionPlayerDeathReport playerDeath:
@@ -651,7 +670,8 @@ public static class CompanionEnvelopeCodec
             | CompanionCapability.Inventory
             | CompanionCapability.PlayerDeath
             | CompanionCapability.EntityKilled
-            | CompanionCapability.ServerChat;
+            | CompanionCapability.ServerChat
+            | CompanionCapability.ItemGrant;
 
         return (capabilities & ~knownCapabilities) == 0;
     }
@@ -666,7 +686,8 @@ public static class CompanionEnvelopeCodec
             || messageType == CompanionMessageTypes.ServerChat
             || messageType == CompanionMessageTypes.InventorySnapshot
             || messageType == CompanionMessageTypes.PlayerDeath
-            || messageType == CompanionMessageTypes.EntityKilled;
+            || messageType == CompanionMessageTypes.EntityKilled
+            || messageType == CompanionMessageTypes.ItemGrant;
     }
 
     private static bool IsEventId(string? value)

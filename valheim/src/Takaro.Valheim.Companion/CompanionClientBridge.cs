@@ -13,7 +13,8 @@ internal sealed class CompanionClientBridge : IDisposable
         | CompanionCapability.Inventory
         | CompanionCapability.PlayerDeath
         | CompanionCapability.EntityKilled
-        | CompanionCapability.ServerChat;
+        | CompanionCapability.ServerChat
+        | CompanionCapability.ItemGrant;
     private static readonly TimeSpan InventoryPollInterval = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan InventoryRefreshInterval = TimeSpan.FromSeconds(20);
 
@@ -357,6 +358,40 @@ internal sealed class CompanionClientBridge : IDisposable
             Chat.instance.AddString(chat.Sender, chat.Message, Talker.Type.Normal);
             AccessTools.Field(typeof(Chat), "m_hideTimer")?.SetValue(Chat.instance, 0f);
             log($"Takaro Valheim Companion rendered a server message from {chat.Sender} in chat.");
+            return;
+        }
+
+        if (envelope.Type == CompanionMessageTypes.ItemGrant)
+        {
+            if (!state.TryAcceptItemGrant(envelope, out var grant) || grant is null)
+            {
+                return;
+            }
+
+            var outcome = CompanionInventoryWriter.Apply(
+                grant.Code,
+                grant.Amount,
+                grant.Quality,
+                out var itemName);
+            if (!outcome.Resolved)
+            {
+                log($"Takaro Valheim Companion could not apply an item grant for '{grant.Code}'.");
+                return;
+            }
+
+            var notice = CompanionItemGrantMath.DescribeOutcome(outcome, itemName);
+            if (!string.IsNullOrEmpty(notice) && Chat.instance is not null)
+            {
+                Chat.instance.AddString("Takaro", notice, Talker.Type.Normal);
+                AccessTools.Field(typeof(Chat), "m_hideTimer")?.SetValue(Chat.instance, 0f);
+            }
+
+            // Force the next poll to publish immediately so Takaro's inventory view reflects
+            // the grant without waiting for the ordinary change-detection interval.
+            inventoryReader.Reset();
+            nextInventoryPollAt = monotonicClock.Elapsed;
+
+            log($"Takaro Valheim Companion applied an item grant: {outcome.Delivered}x {itemName} to inventory, {outcome.Dropped} dropped.");
             return;
         }
 

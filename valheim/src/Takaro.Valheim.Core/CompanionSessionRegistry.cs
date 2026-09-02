@@ -38,7 +38,8 @@ public sealed class CompanionSessionRegistry
         | CompanionCapability.Inventory
         | CompanionCapability.PlayerDeath
         | CompanionCapability.EntityKilled
-        | CompanionCapability.ServerChat;
+        | CompanionCapability.ServerChat
+        | CompanionCapability.ItemGrant;
 
     private readonly int minimumProtocolVersion;
     private readonly int maximumProtocolVersion;

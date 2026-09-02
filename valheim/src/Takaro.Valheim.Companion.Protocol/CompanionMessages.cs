@@ -11,6 +11,7 @@ public static class CompanionMessageTypes
     public const string InventorySnapshot = "inventory-snapshot";
     public const string PlayerDeath = "player-death";
     public const string EntityKilled = "entity-killed";
+    public const string ItemGrant = "item-grant";
 }
 
 public sealed record CompanionHello(
@@ -38,6 +39,17 @@ public sealed record CompanionChatReport(
 public sealed record CompanionServerChatMessage(
     string Sender,
     string Message);
+
+/// <summary>
+/// Server-to-client instruction to place items in the local player's inventory.
+/// Like every other server-to-client message it carries no event id and no timestamp:
+/// the server has already answered Takaro by the time this is sent, and the companion
+/// reports the real outcome through its ordinary inventory snapshot.
+/// </summary>
+public sealed record CompanionItemGrant(
+    string Code,
+    int Amount,
+    int Quality);
 
 public sealed record CompanionInventoryReport(IReadOnlyList<CompanionInventoryStack> Stacks);
 
