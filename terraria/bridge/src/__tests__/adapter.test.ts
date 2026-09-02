@@ -434,3 +434,89 @@ test('surfaces a thrown giveItem transport failure as an error', async () => {
     error: 'Failed to give item to CodexTest: fetch failed',
   });
 });
+
+/** A TShock whose plugin answers ban/unban with the TAKARO_BAN / TAKARO_UNBAN markers. */
+class PluginBanTShock extends FakeTShock {
+  override async rawCommand(command: string) {
+    this.rawCommands.push(command);
+    if (command.startsWith('/takaroban ')) {
+      return {
+        success: true,
+        rawResult: 'TAKARO_BAN {"success":true,"player":"BadPlayer","identifiers":["uuid:ABC123","ip:10.0.0.1"],"reason":"test"}',
+      };
+    }
+    if (command.startsWith('/takarounban ')) {
+      return {
+        success: true,
+        rawResult: 'TAKARO_UNBAN {"success":true,"player":"BadPlayer","removed":["#7 uuid:ABC123"],"count":1}',
+      };
+    }
+    return { success: true, rawResult: `ran ${command}` };
+  }
+}
+
+test('banPlayer goes through the plugin so the ban is recorded against the UUID', async () => {
+  // A bare-name ban is recorded by TShock but not enforced against an unauthenticated
+  // player, who reconnects straight through it.
+  const tshock = new PluginBanTShock();
+  const adapter = new TerrariaAdapter(tshock, { commandAllowlistExact: ['help'], commandAllowlistPrefixes: ['say'], enableShutdown: false });
+
+  const result = await adapter.handleAction('banPlayer', { player: { name: 'BadPlayer' }, reason: 'test' }) as { success: boolean; rawResult: string };
+
+  assert.equal(result.success, true);
+  assert.match(result.rawResult, /uuid:ABC123/);
+  assert.ok(tshock.rawCommands.some((c) => c.startsWith('/takaroban "BadPlayer"')));
+  // The REST name-ban path must not also fire, or the player collects a useless second ban.
+  assert.equal(tshock.bans.length, 1);
+});
+
+test('banPlayer surfaces a plugin refusal as an error instead of reporting success', async () => {
+  const tshock = new PluginBanTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return { success: true, rawResult: 'TAKARO_BAN {"success":false,"reason":"No player found matching \'Ghost\'."}' };
+  };
+  const adapter = new TerrariaAdapter(tshock, { commandAllowlistExact: ['help'], commandAllowlistPrefixes: ['say'], enableShutdown: false });
+
+  const result = await adapter.handleAction('banPlayer', { player: { name: 'Ghost' } }) as { error: string };
+
+  assert.match(result.error, /No player found matching/);
+});
+
+test('banPlayer falls back to the REST name ban when the plugin is not loaded', async () => {
+  // Operators running without the optional plugin keep the old behaviour rather than
+  // silently losing bans entirely.
+  const tshock = new FakeTShock();
+  const adapter = new TerrariaAdapter(tshock, { commandAllowlistExact: ['help'], commandAllowlistPrefixes: ['say'], enableShutdown: false });
+
+  const result = await adapter.handleAction('banPlayer', { player: { name: 'BadPlayer' }, reason: 'test' }) as { success: boolean };
+
+  assert.equal(result.success, true);
+  assert.equal(tshock.bans.length, 2);
+});
+
+test('unbanPlayer lifts every identifier through the plugin', async () => {
+  const tshock = new PluginBanTShock();
+  const adapter = new TerrariaAdapter(tshock, { commandAllowlistExact: ['help'], commandAllowlistPrefixes: ['say'], enableShutdown: false });
+
+  const result = await adapter.handleAction('unbanPlayer', { player: { name: 'BadPlayer' } }) as { success: boolean; rawResult: string };
+
+  assert.equal(result.success, true);
+  assert.match(result.rawResult, /1 ban\(s\) lifted/);
+  assert.ok(tshock.rawCommands.some((c) => c.startsWith('/takarounban "BadPlayer"')));
+});
+
+test('unbanPlayer succeeds when the player has no active ban', async () => {
+  // Unbanning someone who is not banned is a no-op, not a failure.
+  const tshock = new PluginBanTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return { success: true, rawResult: 'TAKARO_UNBAN {"success":true,"player":"Clean","removed":[],"count":0}' };
+  };
+  const adapter = new TerrariaAdapter(tshock, { commandAllowlistExact: ['help'], commandAllowlistPrefixes: ['say'], enableShutdown: false });
+
+  const result = await adapter.handleAction('unbanPlayer', { player: { name: 'Clean' } }) as { success: boolean; rawResult: string };
+
+  assert.equal(result.success, true);
+  assert.match(result.rawResult, /No active ban/);
+});

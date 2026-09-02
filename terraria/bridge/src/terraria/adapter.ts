@@ -61,9 +61,9 @@ export class TerrariaAdapter {
       case 'kickPlayer':
         return this.tshock.rawCommand(`/kick ${quote(identifierName(args))}${reasonSuffix(args)}`);
       case 'banPlayer':
-        return this.tshock.createBan({ name: identifierName(args), reason: optionalString(args, ['reason', 'message']) || undefined });
+        return this.banPlayer(args);
       case 'unbanPlayer':
-        return this.tshock.destroyBan({ user: identifierName(args), type: 'user' });
+        return this.unbanPlayer(args);
       case 'listBans':
         return this.tshock.listBans();
       case 'listItems':
@@ -224,6 +224,66 @@ export class TerrariaAdapter {
         ? `Gave ${amount}x ${itemCode} to ${player} (inventory full, dropped at their feet)`
         : `Gave ${amount}x ${itemCode} to ${player}`,
     };
+  }
+
+  /**
+   * Bans through the plugin so the ban is recorded against the player's TShock UUID.
+   *
+   * TShock only matches an untyped name ban against players who authenticated under that
+   * name, so `/bans/create identifier=<name>` records a ban that a player on an
+   * unauthenticated server simply reconnects through — the ban reads as applied and does
+   * nothing. REST cannot supply the UUID (`/v2/players/list` returns nickname/group/state
+   * only), so this has to go through the plugin, which reads TSPlayer.UUID directly.
+   *
+   * Falls back to the REST name ban when the plugin is not loaded, so an operator running
+   * without it keeps the old behaviour rather than losing bans entirely.
+   */
+  private async banPlayer(args: Record<string, unknown>): Promise<CommandResult | { error: string }> {
+    const player = identifierName(args);
+    const reason = optionalString(args, ['reason', 'message']) || 'Banned by Takaro';
+
+    let result: CommandResult;
+    try {
+      result = await this.tshock.rawCommand(`/takaroban ${quote(player)} ${reason}`);
+    } catch (err) {
+      return { error: `Failed to ban ${player}: ${errorMessage(err)}` };
+    }
+
+    const parsed = parseMarker(result.rawResult, 'TAKARO_BAN');
+    if (!parsed) {
+      logger.info(`banPlayer: plugin marker absent, falling back to a REST name ban for ${player}`);
+      return this.tshock.createBan({ name: player, reason });
+    }
+
+    if (parsed.success !== true) {
+      const detail = typeof parsed.reason === 'string' && parsed.reason.trim() ? parsed.reason : result.rawResult;
+      return { error: `Failed to ban ${player}: ${detail}` };
+    }
+
+    const identifiers = Array.isArray(parsed.identifiers) ? parsed.identifiers.join(', ') : 'unknown';
+    return { success: true, rawResult: `Banned ${player} (${identifiers})` };
+  }
+
+  /** Lifts every identifier the player was banned under; see banPlayer for why a name is not enough. */
+  private async unbanPlayer(args: Record<string, unknown>): Promise<CommandResult | { error: string }> {
+    const player = identifierName(args);
+
+    let result: CommandResult;
+    try {
+      result = await this.tshock.rawCommand(`/takarounban ${quote(player)}`);
+    } catch (err) {
+      return { error: `Failed to unban ${player}: ${errorMessage(err)}` };
+    }
+
+    const parsed = parseMarker(result.rawResult, 'TAKARO_UNBAN');
+    if (!parsed) {
+      logger.info(`unbanPlayer: plugin marker absent, falling back to a REST ticket unban for ${player}`);
+      return this.tshock.destroyBan({ user: player, type: 'user' });
+    }
+
+    const count = typeof parsed.count === 'number' ? parsed.count : 0;
+    // Zero removals is not an error: unbanning someone who is not banned should succeed.
+    return { success: true, rawResult: count > 0 ? `Unbanned ${player} (${count} ban(s) lifted)` : `No active ban for ${player}` };
   }
 
   private async executeConsoleCommand(args: Record<string, unknown>): Promise<CommandResult> {
