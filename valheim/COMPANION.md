@@ -55,7 +55,7 @@ The client folder must contain the companion and protocol DLLs shipped together 
 
 Server and client product patch versions may differ when their wire protocol overlaps. Protocol compatibility—not an exact product-version string match—controls negotiation. Upgrade the companion when a required-mode message shows incompatible expected and actual protocol versions.
 
-An incompatible companion reports its bounded supported protocol range to the server before required-mode disconnection, so server logs can distinguish it from a missing companion.
+An incompatible companion reports its bounded supported protocol range to the server before required-mode disconnection, so server logs can distinguish it from a missing companion. **This holds only for a companion new enough to parse the server's hello — protocol 2 or later.** A protocol-1 companion cannot parse a protocol-2 hello, because it rejects the unknown `ItemGrant` capability bit, so it answers nothing and the server reports it as `reason=MissingCompanion, expected=2, actual=missing`. An out-of-date companion of that vintage is indistinguishable from an absent one in the server log, and the client logs no diagnostic of its own; the player sees only Valheim's generic kicked dialog. This was observed live on 2026-09-02 — see [the item-grant validation ledger](qa/2026-09-02-item-grant-validation.md).
 
 ## Remove or Roll Back
 
@@ -96,9 +96,12 @@ Under `required`, the server logs the decision before acting:
 
 ```text
 required companion enforcement scheduled for peer <id>:
-  reason=MissingCompanion, expected=1, actual=missing.
+  reason=MissingCompanion, expected=2, actual=missing.
 sent the built-in kicked RPC to peer <id> after the companion explanation grace period.
 ```
+
+`expected` is the server's own protocol version, so it reads `2` on the current release
+and read `1` when this was first observed on the protocol-1 artifact.
 
 The player sees Valheim's own "You have been kicked from the server." dialog, so the
 disconnect is never silent. Under `optional` the same unanswered handshake produces no
