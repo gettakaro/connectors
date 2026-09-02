@@ -28,7 +28,8 @@ public sealed class CompanionClientState
         | CompanionCapability.Inventory
         | CompanionCapability.PlayerDeath
         | CompanionCapability.EntityKilled
-        | CompanionCapability.ServerChat;
+        | CompanionCapability.ServerChat
+        | CompanionCapability.ItemGrant;
 
     private static readonly JsonSerializerOptions WireJson = new()
     {
@@ -242,6 +243,40 @@ public sealed class CompanionClientState
         }
 
         return TryCreateOutboundEnvelope(messageType, payload, out envelope);
+    }
+
+    /// <summary>
+    /// Validates an inbound item grant against the same session, nonce, protocol and
+    /// monotonic server-sequence rules as server chat. It deliberately shares
+    /// <c>lastServerSequence</c> with every other inbound type so grants and chat stay
+    /// ordered on one stream and neither can be replayed.
+    /// </summary>
+    public bool TryAcceptItemGrant(
+        CompanionEnvelope envelope,
+        out CompanionItemGrant? grant)
+    {
+        grant = null;
+        if (!CanReport
+            || activeNonce is null
+            || (activeCapabilities & CompanionCapability.ItemGrant) == 0
+            || envelope is null
+            || envelope.Type != CompanionMessageTypes.ItemGrant
+            || envelope.ProtocolVersion != activeProtocolVersion
+            || !string.Equals(envelope.SessionNonce, activeNonce, StringComparison.Ordinal)
+            || envelope.Sequence <= lastServerSequence
+            || !IsStrictlyValidEnvelope(envelope)
+            || !CompanionEnvelopeCodec.TryDecodePayload<CompanionItemGrant>(
+                envelope,
+                out var decoded,
+                out _)
+            || decoded is null)
+        {
+            return false;
+        }
+
+        lastServerSequence = envelope.Sequence;
+        grant = decoded;
+        return true;
     }
 
     public bool TryAcceptServerChat(

@@ -65,7 +65,8 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             RequestShutdown,
             companionInventory,
             playerResolver,
-            (peer, sender, message) => companionBridge?.TrySendServerChat(peer, sender, message) == true);
+            (peer, sender, message) => companionBridge?.TrySendServerChat(peer, sender, message) == true,
+            (peer, code, amount, quality) => companionBridge?.TrySendItemGrant(peer, code, amount, quality) == true);
         runner = new TakaroWebSocketRunner(
             config,
             adapter,

@@ -15,6 +15,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     private readonly CompanionMode companionMode;
     private readonly ValheimPlayerResolver playerResolver;
     private readonly Func<ZNetPeer, string, string, bool> sendCompanionChat;
+    private readonly Func<ZNetPeer, string, int, int, bool> sendCompanionItemGrant;
     private readonly PlayerPositionCache playerPositions = new(TimeSpan.FromSeconds(30));
     private readonly Dictionary<string, HashSet<string>> banAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> banNames = new(StringComparer.OrdinalIgnoreCase);
@@ -52,7 +53,8 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         Action requestShutdown,
         CompanionInventoryCache companionInventory,
         ValheimPlayerResolver playerResolver,
-        Func<ZNetPeer, string, string, bool>? sendCompanionChat = null)
+        Func<ZNetPeer, string, string, bool>? sendCompanionChat = null,
+        Func<ZNetPeer, string, int, int, bool>? sendCompanionItemGrant = null)
     {
         this.logger = logger;
         commandPolicy = new ConsoleCommandPolicy(config.CommandAllowlistExact, config.CommandAllowlistPrefixes);
@@ -61,6 +63,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         companionMode = config.CompanionMode;
         this.playerResolver = playerResolver ?? throw new ArgumentNullException(nameof(playerResolver));
         this.sendCompanionChat = sendCompanionChat ?? ((_, _, _) => false);
+        this.sendCompanionItemGrant = sendCompanionItemGrant ?? ((_, _, _, _) => false);
     }
 
     public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
@@ -211,6 +214,25 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
                 stackPlan.ErrorMessage!));
         }
 
+        var itemDisplayName = DisplayName(itemDrop.m_itemData.m_shared?.m_name, prefab.name);
+
+        // Prefer delivering into the player's inventory through their companion. The send is
+        // fire-and-forget: the companion decides against the live inventory and world-drops
+        // anything that does not fit, so nothing is ever lost. A false return means this peer
+        // has no companion able to take the grant, and the server-side drop below applies.
+        if (sendCompanionItemGrant(peer, prefab.name, amount, qualityLevel))
+        {
+            logger.LogInfo($"Takaro Valheim routed giveItem to the companion for {player.Name} ({player.GameId}): item={prefab.name}, amount={amount}, quality={qualityLevel}.");
+            return Task.FromResult(TakaroActionResult.Ok(new
+            {
+                delivered = true,
+                delivery = "companion",
+                player,
+                item = new { code = prefab.name, name = itemDisplayName, amount, quality = qualityLevel.ToString() },
+                position = new TakaroPosition(position.x, position.y, position.z, "valheim")
+            }));
+        }
+
         var dropCount = 0;
         foreach (var stack in stackPlan.Stacks)
         {
@@ -219,16 +241,16 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             dropCount++;
         }
 
-        var itemName = DisplayName(itemDrop.m_itemData.m_shared?.m_name, prefab.name);
-        SendHudMessage(peer, $"Dropped {amount}x {itemName} near you.");
+        SendHudMessage(peer, $"Dropped {amount}x {itemDisplayName} near you.");
 
         logger.LogInfo($"Takaro Valheim dropped {amount}x {prefab.name} for {player.Name} ({player.GameId}) at x={position.x}, y={position.y}, z={position.z}.");
         return Task.FromResult(TakaroActionResult.Ok(new
         {
             dropped = true,
+            delivery = "world-drop",
             stacks = dropCount,
             player,
-            item = new { code = prefab.name, name = itemName, amount, quality = qualityLevel.ToString() },
+            item = new { code = prefab.name, name = itemDisplayName, amount, quality = qualityLevel.ToString() },
             position = new TakaroPosition(position.x, position.y, position.z, "valheim")
         }));
     }

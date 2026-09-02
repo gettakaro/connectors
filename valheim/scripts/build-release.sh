@@ -150,7 +150,7 @@ cat > "$SERVER_DIR/manifest.json" << EOF
   "productVersion": "${VALHEIM_RELEASE_VERSION}",
   "bepInExVersion": "${VALHEIM_BEPINEX_VERSION}",
   "processRole": "dedicated-server",
-  "protocol": { "minimum": 1, "current": 1, "maximum": 1 }
+  "protocol": { "minimum": 2, "current": 2, "maximum": 2 }
 }
 EOF
 
@@ -160,7 +160,7 @@ cat > "$CLIENT_DIR/manifest.json" << EOF
   "productVersion": "${VALHEIM_RELEASE_VERSION}",
   "bepInExVersion": "${VALHEIM_BEPINEX_VERSION}",
   "processRole": "graphical-client",
-  "protocol": { "minimum": 1, "current": 1, "maximum": 1 }
+  "protocol": { "minimum": 2, "current": 2, "maximum": 2 }
 }
 EOF
 

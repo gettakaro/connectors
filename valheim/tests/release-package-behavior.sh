@@ -112,9 +112,9 @@ validate_manifest() {
       and .productVersion == $version
       and .bepInExVersion == $loader
       and .processRole == $role
-      and .protocol.minimum == 1
-      and .protocol.current == 1
-      and .protocol.maximum == 1' \
+      and .protocol.minimum == 2
+      and .protocol.current == 2
+      and .protocol.maximum == 2' \
     "$manifest" >/dev/null || {
       printf 'release manifest does not match product, role, or protocol contract: %s\n' "$manifest" >&2
       exit 1
