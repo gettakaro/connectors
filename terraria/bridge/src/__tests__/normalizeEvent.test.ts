@@ -40,3 +40,35 @@ test('normalizes online player snapshots to strict Takaro player DTOs', () => {
     data: { player: { gameId: 'TestPlayer', name: 'TestPlayer' } },
   });
 });
+
+test('carries the death attacker through when the plugin resolves one', () => {
+  // The plugin resolves the killer via PlayerDeathReason.TryGetCausingEntity; without
+  // it every death arrived with no attacker even when the game could name the killer.
+  assert.deepEqual(normalizeGameEvent('player-death', {
+    player: { gameId: 'TestPlayer', name: 'TestPlayer', platformId: 'terraria:hash' },
+    attacker: { gameId: 'npc:7', name: 'Demon Eye', platformId: 'terraria:npc:7' },
+    reason: 'TestPlayer was cut down the middle by Demon Eye.',
+  }), {
+    type: 'player-death',
+    data: {
+      player: { gameId: 'TestPlayer', name: 'TestPlayer' },
+      attacker: { gameId: 'npc:7', name: 'Demon Eye' },
+      msg: 'TestPlayer was cut down the middle by Demon Eye.',
+    },
+  });
+});
+
+test('omits the attacker for a death with no killer', () => {
+  // A fall or drowning death legitimately has none; inventing one would be worse.
+  assert.deepEqual(normalizeGameEvent('player-death', {
+    player: { gameId: 'TestPlayer', name: 'TestPlayer', platformId: 'terraria:hash' },
+    attacker: null,
+    reason: 'TestPlayer fell to their death.',
+  }), {
+    type: 'player-death',
+    data: {
+      player: { gameId: 'TestPlayer', name: 'TestPlayer' },
+      msg: 'TestPlayer fell to their death.',
+    },
+  });
+});

@@ -543,6 +543,7 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         Emit("player-death", new
         {
             player = PlayerDto(player, name),
+            attacker = ResolveDeathAttacker(args.PlayerDeathReason),
             reason,
             damage = args.Damage,
             pvp = args.Pvp,
@@ -776,6 +777,53 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             {
                 return PlayerDto(player, player.Name);
             }
+        }
+
+        return null;
+    }
+
+    // Resolves who or what killed the player, for the `attacker` field on player-death.
+    //
+    // PlayerDeathReason is the only record Terraria keeps of the killing blow, and it
+    // already unwraps a projectile back to its owning NPC or player, so no separate
+    // projectile probe is needed.
+    //
+    // Returns null for a fall, drowning or lava death - those genuinely have no
+    // attacker, and inventing one would be worse than reporting none.
+    private static object? ResolveDeathAttacker(Terraria.DataStructures.PlayerDeathReason reason)
+    {
+        try
+        {
+            if (!reason.TryGetCausingEntity(out var entity) || entity is null)
+            {
+                return null;
+            }
+
+            if (entity is Player player)
+            {
+                var killer = ActivePlayerByIndex(player.whoAmI);
+                return killer is not null
+                    ? PlayerDto(killer, killer.Name)
+                    : PlayerDto(null, NonEmpty(player.name) ?? $"player:{player.whoAmI}");
+            }
+
+            if (entity is NPC npc)
+            {
+                return new
+                {
+                    gameId = $"npc:{npc.whoAmI}",
+                    name = NonEmpty(npc.GivenOrTypeName) ?? NonEmpty(npc.FullName) ?? $"NPC {npc.type}",
+                    platformId = $"terraria:npc:{npc.whoAmI}",
+                    type = npc.type,
+                    netId = npc.netID,
+                    boss = npc.boss
+                };
+            }
+        }
+        catch
+        {
+            // A malformed death reason must never take the event down; the death
+            // itself still carries the reason text.
         }
 
         return null;
