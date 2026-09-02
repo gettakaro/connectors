@@ -179,10 +179,11 @@ unconditionally, so **delivery behaves identically whether or not a player has t
 companion installed**, and identically in all three `companionMode` values.
 
 Making delivery land in the inventory would need a new companion message type and a
-protocol version bump, and it would cross the trust boundary in
-[COMPANION.md](COMPANION.md): reporting inventory is an untrusted observation, whereas
-granting items on the server's instruction is the client mutating economy state. That is
-a deliberate design decision, not an oversight. The adapter accepts at most 1,000 items and 100 world-drop stacks per request, validates quality, resolves prefab codes or display/name tokens, splits oversized stacks, and returns an error when no server-owned player position is known.
+protocol version bump. It has not been ruled out — it simply has not been built, and no
+upstream decision covers it. The question it raises is that [COMPANION.md](COMPANION.md)
+constrains what client-*reported* data may be used for, while inventory insertion is the
+opposite direction: the server instructing the client to mutate state. Whether the
+existing trust boundary should extend to cover that is an open design question. The adapter accepts at most 1,000 items and 100 world-drop stacks per request, validates quality, resolves prefab codes or display/name tokens, splits oversized stacks, and returns an error when no server-owned player position is known.
 
 `teleportPlayer` requires a server-known character ZDO ID. It uses Valheim's built-in teleport RPC and returns `character_unavailable` when that identity is missing.
 
