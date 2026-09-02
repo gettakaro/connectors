@@ -107,7 +107,7 @@ would expose a reintroduced round trip, and nothing stalled.
 | ID | Item | Verdict | Evidence |
 | --- | --- | --- | --- |
 | ECON-7 | Shop claim delivers in game (full-bag route) | PASS | `@shop 1 1 buy` typed in-game against listing `bd384176-6f3d-40a1-939f-facdd9cd30ff` ("Acceptance Wood Bundle", 100 coins, 5× Wood). Takaro recorded a new order `8712a425-1b6d-46fc-9362-e73f51b7deaa` with status `COMPLETED`; currency went **201 → 101**, exactly −100. The server routed the delivery through the companion: `routed giveItem to the companion for Hehe (Steam_76561198000735875): item=Wood, amount=5, quality=1.` The bag was full, so the client reported `0x item_wood to inventory, 5 dropped.` and the player saw the chain in chat (`scratchpad/shots/c7-result.png`) |
-| GRANT-7 | Shop claim lands **in the bag** (non-full inventory) | **SKIP** | Not observed. The bag was 32/32 for the whole session and no slot could be freed by automation (see the findings section). The in-bag shop combination is *inferred* from ACT-11 (a direct grant does land in the bag) plus ECON-7 (the shop drives the same `giveItem` → companion route), but inference is not evidence and this is recorded as SKIP, not PASS |
+| GRANT-7 | Shop claim lands **in the bag** (non-full inventory) | PASS | Closed after the operator freed two slots by hand (30/32 used, `shots/shop3-chat.png`). `@shop 1 1 buy` typed in-game at 14:35:43Z → server `request received: action=giveItem` then `routed giveItem to the companion for Hehe (Steam_76561198000735875): item=Wood, amount=5, quality=1.`; client `applied an item grant: 5x item_wood to inventory, 0 dropped.`; no `dropped … for Hehe` line; order `6363de0f-0bf5-425b-b293-8070cc2cb4c7` `COMPLETED`; currency 101 → 1; Takaro inventory 30 → 31 stacks, Wood 1400 → 1405 (+5 exactly) |
 
 The full shop chain, as the player saw it:
 
@@ -212,11 +212,12 @@ log (`routed giveItem to the companion` versus `dropped Nx … at x=…`) and in
 log (`Nx to inventory, M dropped`). Anyone building on this — a shop refund policy, for
 instance — should know the API response carries no delivery information.
 
-### 5. The in-bag shop case could not be staged, for an input-automation reason
+### 5. The in-bag shop case needed a human hand on the inventory grid
 
-`GRANT-7` is a SKIP because the test bag could not be brought below full. Freeing a slot
-requires physically manipulating the inventory grid, and Valheim's UI cursor cannot be
-driven by synthetic pointer input:
+`GRANT-7` was initially a SKIP because the automated session could not bring the test bag
+below full; it was closed later the same day once the operator dropped two stacks by
+hand. Freeing a slot requires physically manipulating the inventory grid, and Valheim's
+UI cursor cannot be driven by synthetic pointer input:
 
 - `xdotool mousemove` to a computed slot position, with and without a preceding
   `windowactivate --sync`, moved the X pointer into the Valheim window
@@ -274,10 +275,8 @@ indistinguishable from an absent one — and the client logs nothing at all. The
 rationale's promise of an actionable version-mismatch message does not apply to a
 protocol-1 companion.
 
-One item is unproven and recorded as **SKIP**, not as a pass: a shop purchase landing in a
-*non-full* bag (`GRANT-7`). Both halves of it are individually proven — a direct grant
-into a bag with room (ACT-11) and a shop order driving the same companion route (ECON-7) —
-but the combination was never observed, because Valheim's UI cursor cannot be driven by
-synthetic pointer input and no inventory slot could be freed. Under the checklist's own
-scoring rule that is not accepted, and the next session with a hand on the mouse should
-close it in under a minute.
+The last gap was closed by hand: with two slots freed on the inventory grid, an in-game
+`@shop 1 1 buy` produced order `6363de0f-…` `COMPLETED`, the server routed the delivery to
+the companion, the client inserted `5x item_wood to inventory, 0 dropped`, and Takaro's
+inventory read moved 1400 → 1405 Wood (`GRANT-7`). Every row in this ledger is now
+observed, none inferred.
