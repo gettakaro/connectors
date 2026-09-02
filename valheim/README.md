@@ -30,7 +30,7 @@ graphical client.
 | Works with the server package alone | Needs the companion on the player's client |
 | --- | --- |
 | `testReachability`, `getPlayers`, `getPlayerLocation` | `getPlayerInventory` |
-| `giveItem`, `teleportPlayer` | `sendMessage` |
+| `giveItem` (world drop, see below), `teleportPlayer` | `sendMessage` |
 | `executeConsoleCommand`, `listItems`, `listEntities`, `listBans` | `chat-message` |
 | `kickPlayer`, `banPlayer`, `unbanPlayer`, `shutdown` | `player-death` |
 | `log`, `player-connected`, `player-disconnected` | `entity-killed` |
@@ -134,7 +134,7 @@ Ownership values are `server-owned`, `client-reported`, `upstream-blocked`, or `
 | `getPlayer` | `unsupported` | Filtering exists, but the final Takaro response shape still needs independent live proof. |
 | `getPlayerLocation` | `live-supported` | Uses only a real peer/public position or a fresh 30-second server-observed last-known position; an unavailable lookup is rejected through a schema-valid payload error. |
 | `getPlayerInventory` | `live-supported` | A negotiated companion provides bounded canonical client-reported snapshots, including a confirmed empty inventory. Exact live proof observed repeated successful Takaro polls and a Wood change from 13 to 14; without a companion the server never fabricates `[]`. |
-| `giveItem` | `live-supported` | Creates stack-split world drops near the player's server-known position. |
+| `giveItem` | `live-supported` | Creates stack-split world drops near the player's server-known position. Items land on the **ground**, never in the player's inventory, and the companion does not change this — see Server-Owned Action Semantics. |
 | `sendMessage` | `live-supported` | Routes only through an active negotiated companion into the normal Valheim chat history. A July 14 live Takaro request reached one compatible peer and rendered an explicit `opts.senderNameOverride` of `con`; a missing or blank value displays as `Takaro`. |
 | `executeConsoleCommand` | `live-supported` | Runs only exact or prefix-allowlisted commands. |
 | `listItems` | `live-supported` | Lists item prefabs visible to the server. |
@@ -168,8 +168,21 @@ Ownership values are `server-owned`, `client-reported`, `upstream-blocked`, or `
 purchase lands on the ground at the buyer's feet rather than in their inventory. Before
 running a Valheim economy, note that purchased goods are lootable by anyone nearby until
 collected, a purchase made while falling or swimming can be lost, and a buyer with a full
-inventory gets no feedback beyond items left on the ground. This is inherent to the
-dedicated-server boundary: the server cannot write into a remote client's inventory. The adapter accepts at most 1,000 items and 100 world-drop stacks per request, validates quality, resolves prefab codes or display/name tokens, splits oversized stacks, and returns an error when no server-owned player position is known.
+inventory gets no feedback beyond items left on the ground.
+
+**The companion does not change this.** It is a natural assumption that the client-side
+companion could place items directly into a player's inventory, since it already reads
+that inventory to answer `getPlayerInventory`. It does not. Protocol 1 negotiates five
+capabilities — chat, inventory *reporting*, player-death, entity-killed, and server-chat
+— and none of them writes to a player's inventory. `giveItem` performs a world drop
+unconditionally, so **delivery behaves identically whether or not a player has the
+companion installed**, and identically in all three `companionMode` values.
+
+Making delivery land in the inventory would need a new companion message type and a
+protocol version bump, and it would cross the trust boundary in
+[COMPANION.md](COMPANION.md): reporting inventory is an untrusted observation, whereas
+granting items on the server's instruction is the client mutating economy state. That is
+a deliberate design decision, not an oversight. The adapter accepts at most 1,000 items and 100 world-drop stacks per request, validates quality, resolves prefab codes or display/name tokens, splits oversized stacks, and returns an error when no server-owned player position is known.
 
 `teleportPlayer` requires a server-known character ZDO ID. It uses Valheim's built-in teleport RPC and returns `character_unavailable` when that identity is missing.
 
