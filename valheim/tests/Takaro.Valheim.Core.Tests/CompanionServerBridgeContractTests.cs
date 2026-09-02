@@ -443,6 +443,11 @@ public sealed class CompanionServerBridgeContractTests
         StringAssert.Contains(bridge, "network.Disconnect(pending.Peer)");
         StringAssert.Contains(bridge, "DisconnectExplanationGrace");
         StringAssert.Contains(bridge, "DisconnectFallbackGrace");
+        // A protocol-1 companion cannot parse a newer hello and is reported as missing, so
+        // both the log line and the player explanation must name the out-of-date cause.
+        StringAssert.Contains(bridge, "MissingCompanionHint(decision)");
+        StringAssert.Contains(bridge, "or it is older than protocol {decision.ExpectedMinimumVersion} and cannot read it.");
+        StringAssert.Contains(bridge, "either not installed or older than protocol {decision.ExpectedMinimumVersion}");
     }
 
     [TestMethod]

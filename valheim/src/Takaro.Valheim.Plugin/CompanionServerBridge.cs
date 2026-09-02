@@ -309,7 +309,7 @@ public sealed class CompanionServerBridge : IDisposable
                     return;
                 }
 
-                log($"Takaro Valheim required companion enforcement scheduled for peer {peer.m_uid}: reason={decision.Reason}, expected={ExpectedProtocolRange(decision)}, actual={decision.ActualProtocolVersion?.ToString() ?? "missing"}.");
+                log($"Takaro Valheim required companion enforcement scheduled for peer {peer.m_uid}: reason={decision.Reason}, expected={ExpectedProtocolRange(decision)}, actual={decision.ActualProtocolVersion?.ToString() ?? "missing"}.{MissingCompanionHint(decision)}");
                 break;
             case CompanionDisconnectStep.Kick:
                 var kickedRpcSent = false;
@@ -464,9 +464,19 @@ public sealed class CompanionServerBridge : IDisposable
                 return $"Takaro Valheim Companion stopped responding. This server requires protocol {expected}. Restart or update the companion, then reconnect.";
             case CompanionEnforcementReason.MissingCompanion:
             default:
-                return $"Takaro Valheim Companion is required. This server expects protocol {expected}. Install or enable the companion, then reconnect.";
+                return $"Takaro Valheim Companion is required. This server expects protocol {expected}. No companion answered, so it is either not installed or older than protocol {decision.ExpectedMinimumVersion}. Install or update the Takaro Valheim Companion, then reconnect.";
         }
     }
+
+    // A companion older than the server's minimum protocol cannot parse the hello, so it
+    // never answers and looks exactly like no companion at all. Say so in the log, or an
+    // operator whose player did install the companion goes hunting for an install fault
+    // when the real fix is an update.
+    private static string MissingCompanionHint(
+        CompanionEnforcementDecision decision) =>
+        decision.Reason == CompanionEnforcementReason.MissingCompanion
+            ? $" No companion answered the hello: none is installed, or it is older than protocol {decision.ExpectedMinimumVersion} and cannot read it."
+            : string.Empty;
 
     private static string ExpectedProtocolRange(
         CompanionEnforcementDecision decision) =>
