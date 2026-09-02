@@ -144,8 +144,8 @@ Every Takaro action has one explicit outcome, registered in
 | `giveItem` | Supported | `/give`, with name-to-item-code resolution. |
 | `teleportPlayer` | Supported | Plugin command `/takarotp`. |
 | `kickPlayer` | Supported | TShock console command. |
-| `banPlayer` | Supported | `/bans/create`. |
-| `unbanPlayer` | Supported | `/v2/bans/destroy`. |
+| `banPlayer` | Supported | Plugin command `/takaroban`, banning UUID and IP. |
+| `unbanPlayer` | Supported | Plugin command `/takarounban`, clearing every identifier. |
 | `listBans` | Supported | `/v2/bans/list`. |
 | `listItems` | Supported | 6147-entry catalog built from the server assemblies. |
 | `shutdown` | Supported | `/v2/server/off`, gated behind `enableShutdown`. |
@@ -213,6 +213,26 @@ job checks reachability first. If the connector is not attached at registration
 time the initial sync is skipped and Takaro's item table for that server stays
 empty until the next successful sync. Attach the bridge before registering the
 server, or trigger the job manually afterwards.
+
+### Bans
+
+Bans go through the plugin's `/takaroban`, not TShock REST. TShock matches an
+untyped name ban only against players who authenticated under that name, so on a
+server where players join unauthenticated a REST name ban records cleanly and the
+player reconnects straight through it.
+
+The plugin bans `uuid:<TSPlayer.UUID>` plus `ip:<address>`, which TShock matches
+on every join, and disconnects the player. The IP is banned alongside the UUID
+because a reinstalled client produces a fresh UUID.
+
+Because a banned player is offline — so their UUID can no longer be read from a
+live `TSPlayer` — each ban is tagged `[takaro:<name>]` in its reason, and
+`/takarounban` searches the ban list by that tag. Without that tag an unban can
+only ever succeed for a player who is not actually banned.
+
+Without the plugin loaded, both actions fall back to the old REST name ban, so an
+operator running the bridge alone keeps prior behaviour rather than losing bans
+outright.
 
 ## Safety
 
