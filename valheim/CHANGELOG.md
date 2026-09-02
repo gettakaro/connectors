@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.0.0](https://github.com/gettakaro/connectors/compare/valheim-v2.0.0...valheim-v3.0.0) (2026-09-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* **valheim:** deliver shop and giveItem purchases into the player's inventory ([#91](https://github.com/gettakaro/connectors/issues/91))
+
+### Features
+
+* **valheim:** deliver shop and giveItem purchases into the player's inventory ([#91](https://github.com/gettakaro/connectors/issues/91)) ([6bb0147](https://github.com/gettakaro/connectors/commit/6bb0147fdc6c4204d6edbe9413699aec79335058))
+
+
+### Bug Fixes
+
+* **valheim:** show Takaro server messages in chat ([#85](https://github.com/gettakaro/connectors/issues/85)) ([ab16dfe](https://github.com/gettakaro/connectors/commit/ab16dfef24d884a5bb155d6acc517c194c7bbe1e))
+
 ## [2.0.0](https://github.com/gettakaro/connectors/compare/valheim-v1.0.0...valheim-v2.0.0) (2026-07-13)
 
 
