@@ -75,6 +75,33 @@ If the server uses `companionMode=required`, removing only the client companion 
 
 The default is `required`. A product patch version alone does not cause rejection. Protocol v1 currently negotiates chat, inventory, player-death, entity-killed, and server-chat capabilities and uses a five-second heartbeat.
 
+## Observed Mode Behaviour
+
+The three modes were exercised live on 2026-09-02 against a real dedicated server and a
+real graphical client; see [the acceptance ledger](qa/2026-09-02-acceptance-validation.md).
+
+| Mode | Companion RPC | A player with no companion | What the server loses |
+| --- | --- | --- | --- |
+| `disabled` | never registered | joins and stays | inventory, inbound chat, death, kills, and outbound `sendMessage` |
+| `optional` | registered | joins and stays, indefinitely | those capabilities, for that player only |
+| `required` | registered | disconnected after the grace period | nothing |
+
+Under `required`, the server logs the decision before acting:
+
+```text
+required companion enforcement scheduled for peer <id>:
+  reason=MissingCompanion, expected=1, actual=missing.
+sent the built-in kicked RPC to peer <id> after the companion explanation grace period.
+```
+
+The player sees Valheim's own "You have been kicked from the server." dialog, so the
+disconnect is never silent. Under `optional` the same unanswered handshake produces no
+enforcement line at all.
+
+Choose `optional` when you cannot guarantee every player installs the companion but still
+want Takaro's server-owned features for everyone; choose `required` only when you can
+actually distribute the companion.
+
 ## Report Behavior
 
 - Ordinary local chat follows normal Valheim behavior and is reported once afterward.

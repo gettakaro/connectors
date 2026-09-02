@@ -15,11 +15,11 @@
     "getMapInfo": "unsupported",
     "getMapTile": "unsupported",
     "teleportPlayer": "live-supported",
-    "kickPlayer": "unsupported",
-    "banPlayer": "unsupported",
-    "unbanPlayer": "unsupported",
+    "kickPlayer": "live-supported",
+    "banPlayer": "live-supported",
+    "unbanPlayer": "live-supported",
     "listBans": "live-supported",
-    "shutdown": "unsupported"
+    "shutdown": "live-supported"
   },
   "events": {
     "log": "live-supported",
@@ -37,7 +37,7 @@
       "getPlayerLocation": "server-owned",
       "getPlayerInventory": "client-reported",
       "giveItem": "server-owned",
-      "sendMessage": "server-owned",
+      "sendMessage": "client-reported",
       "executeConsoleCommand": "server-owned",
       "listItems": "server-owned",
       "listEntities": "server-owned",
@@ -77,7 +77,13 @@
     "Player lifecycle frames are derived from dedicated-server player snapshots. Turn-3 Takaro eventSearch persisted two player-connected and two player-disconnected events; transport logs still claim only that a frame was written, not persistence acknowledgement.",
     "listLocations is schema-fallback: turn 4 live-proved the official raw Generic Connector action/schema with 11293 nested server-owned locations in a 1815046-byte response, but Takaro 0c63cf1c Generic.listLocations throws NotImplementedError, so the standard Takaro route is unavailable pending upstream support.",
     "getMapInfo and getMapTile are part of the exhaustive Takaro 0c63cf1c action list but unsupported at the dedicated-server-only boundary because Valheim exposes neither client map metadata nor rendered map tiles there.",
-    "Implementation exists for kickPlayer, banPlayer, unbanPlayer, and shutdown, but exact live support is unproven and approval-gated because destructive turn-6 checks were deliberately skipped. They remain unsupported until an approved disposable-server run proves the current artifact.",
-    "Entity-killed is live-supported through the owned companion. Exact Takaro proof persisted one Greyling kill attributed to the bound player with weapon Unarmed; the implementation still treats this as an untrusted client gameplay report."
+    "Entity-killed is live-supported through the owned companion. Exact Takaro proof persisted one Greyling kill attributed to the bound player with weapon Unarmed; the implementation still treats this as an untrusted client gameplay report.",
+    "2026-09-02 acceptance run: banPlayer and unbanPlayer are live-supported. A live Takaro request wrote Steam_76561198000735875 into Valheim bannedlist.txt, disconnected the player without crashing the headless server, was read back by listBans with the accepted DTO shape, and was then removed so listBans returned an empty array.",
+    "2026-09-02 acceptance run: banPlayer discards the ban reason. A ban requested with reason 'acceptance test' was read back by Takaro listBans as reason ''. Valheim's native ban list stores only one player identifier per line, so the connector has nowhere to persist a reason.",
+    "2026-09-02 acceptance run: sendMessage ownership is client-reported, not server-owned. With companionMode=disabled the action returns companion_server_chat_unavailable, so outbound chat delivery depends on a negotiated companion on the receiving client.",
+    "2026-09-02 acceptance run: companionMode was verified live. disabled registers no companion RPC; required disconnects a vanilla client after the grace period with reason=MissingCompanion via the built-in Kicked RPC, leaving the dedicated server alive.",
+    "2026-09-02 acceptance run: kickPlayer is live-supported. A live Takaro request logged 'kicked Hehe (Steam_76561198000735875). Reason: acceptance kick test.', getPlayers dropped to zero, and the headless dedicated server stayed alive because the built-in Kicked RPC is used instead of a direct ZNet.Disconnect(peer).",
+    "2026-09-02 acceptance run: listItems and listEntities are live-supported through the standard Takaro route. Takaro does not request either action until its sync job runs, so a newly registered game server shows an empty catalog until then; triggering syncItems/syncEntities returned 821 item prefabs and 101 character prefabs, which Takaro persisted.",
+    "2026-09-02 acceptance run: shutdown is live-supported. A live Takaro request wrote its success response frame first, then logged 'executing scheduled shutdown on the Unity main thread'; Valheim performed a clean ZNet shutdown and the dedicated server process exited."
   ]
 }

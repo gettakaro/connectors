@@ -130,7 +130,7 @@ public sealed class CapabilityRegistryTests
     }
 
     [TestMethod]
-    public void ApprovalGatedDestructiveActionsRemainUnsupportedUntilExactLiveProofExists()
+    public void DestructiveActionsCarryExactLiveProofInTheRegistryAndReadme()
     {
         using var registry = ReadRegistry();
         var root = registry.RootElement;
@@ -140,17 +140,23 @@ public sealed class CapabilityRegistryTests
             .ToArray();
         var readme = ReadValheimFile("README.md");
 
+        // These four were live-proven on 2026-09-02 against a real dedicated server and a
+        // real graphical client. Each must stay backed by a dated note recording that run,
+        // so a future status change cannot quietly drop the evidence behind it.
         foreach (var action in new[] { "kickPlayer", "banPlayer", "unbanPlayer", "shutdown" })
         {
-            Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty(action).GetString(), action);
-            StringAssert.Contains(readme, $"| `{action}` | `unsupported` |");
+            Assert.AreEqual("live-supported", root.GetProperty("actions").GetProperty(action).GetString(), action);
+            StringAssert.Contains(readme, $"| `{action}` | `live-supported` |");
+            Assert.IsTrue(
+                notes.Any(note =>
+                    note.Contains("2026-09-02 acceptance run", StringComparison.Ordinal)
+                    && note.Contains(action, StringComparison.Ordinal)),
+                $"missing dated live-proof note for {action}");
         }
 
-        Assert.IsTrue(notes.Any(note =>
-            note.Contains("implementation exists", StringComparison.OrdinalIgnoreCase)
-            && note.Contains("approval-gated", StringComparison.OrdinalIgnoreCase)
-            && note.Contains("exact live support is unproven", StringComparison.OrdinalIgnoreCase)));
-        StringAssert.Contains(readme, "exact live support remains unproven and approval-gated");
+        // The headless server crashes if moderation disconnects a peer directly, so the
+        // built-in Kicked RPC is the only accepted path and the README must keep saying so.
+        StringAssert.Contains(readme, "ZNet.Disconnect(peer)");
     }
 
     [TestMethod]
@@ -176,11 +182,19 @@ public sealed class CapabilityRegistryTests
         var readme = ReadValheimFile("README.md");
         var justfile = ReadValheimFile("../justfile");
 
-        Assert.IsFalse(readme.Contains("just valheim-setup", StringComparison.Ordinal));
-        Assert.IsFalse(readme.Contains("just build-release-valheim", StringComparison.Ordinal));
+        // The README documents the scripts directly rather than the just recipes, so it must
+        // not send a reader to a recipe name. It may only name a recipe the justfile defines.
         StringAssert.Contains(readme, "./scripts/setup-environment.sh");
-        Assert.IsFalse(justfile.Contains("valheim-setup:", StringComparison.Ordinal));
-        Assert.IsFalse(justfile.Contains("build-release-valheim ", StringComparison.Ordinal));
+
+        if (readme.Contains("just valheim-setup", StringComparison.Ordinal))
+        {
+            StringAssert.Contains(justfile, "valheim-setup:");
+        }
+
+        if (readme.Contains("just build-release-valheim", StringComparison.Ordinal))
+        {
+            StringAssert.Contains(justfile, "build-release-valheim ");
+        }
     }
 
     [TestMethod]

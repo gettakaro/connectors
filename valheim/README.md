@@ -4,6 +4,67 @@ The Valheim integration has two owned, role-specific BepInEx packages: the Takar
 
 The companion's client-reported inventory, chat, death, and attributed-kill paths are `live-supported` by exact server, graphical-client, and Takaro proof. See [COMPANION.md](COMPANION.md) for its trust boundary and operational guide, and [the owned-companion validation ledger](qa/2026-07-12-owned-companion-validation.md) for the evidence.
 
+## What You Need
+
+Valheim has no RCON and no remote admin API, so the connector is a BepInEx plugin that
+runs **inside the dedicated server process**. Some of what Takaro wants to know is not
+visible to that process at all, which is why there is a second, optional package for the
+graphical client.
+
+### On the dedicated server (always required)
+
+- BepInExPack Valheim.
+- The `TakaroValheim` server package.
+- A Takaro registration token, set in `BepInEx/config/com.takaro.valheim.cfg`.
+- Outbound access to `wss://connect.takaro.io/`. The connector dials out; nothing needs
+  to be port-forwarded to it.
+
+### On each player's Valheim client (only for client-owned data)
+
+- BepInExPack Valheim.
+- The `TakaroValheimCompanion` package.
+- No token, and no Takaro credential of any kind.
+
+### Which half provides what
+
+| Works with the server package alone | Needs the companion on the player's client |
+| --- | --- |
+| `testReachability`, `getPlayers`, `getPlayerLocation` | `getPlayerInventory` |
+| `giveItem`, `teleportPlayer` | `sendMessage` |
+| `executeConsoleCommand`, `listItems`, `listEntities`, `listBans` | `chat-message` |
+| `kickPlayer`, `banPlayer`, `unbanPlayer`, `shutdown` | `player-death` |
+| `log`, `player-connected`, `player-disconnected` | `entity-killed` |
+
+Two entries deserve their reasons stated plainly, because no amount of server-side work
+removes them:
+
+- **Inventory is client-owned.** Valheim loads a player's inventory from their
+  `PlayerProfile` into the client's own `Player`/`Humanoid` object. A dedicated server
+  holds no inventory state for a remote player, so there is nothing for it to read.
+- **Normal chat never reaches the server.** Valheim targets chat at character *owners*
+  drawn from `ZNet.GetPlayerList()`. A player's own line can stay entirely client-local,
+  so the dedicated server observes no chat RPC to forward.
+
+`sendMessage` is in the right-hand column for a related reason: outbound messages are
+rendered into Valheim's real chat history by the companion. Without one, the connector
+returns `companion_server_chat_unavailable` rather than silently doing nothing.
+
+### Choosing a companion mode
+
+`companionMode` in the server config decides what happens to a player who has no
+companion:
+
+| Mode | Vanilla clients | What you give up |
+| --- | --- | --- |
+| `disabled` | Join normally; the companion RPC is never registered | Every capability in the right-hand column above |
+| `optional` | Join normally and stay connected | Client-owned data only from players who installed the companion |
+| `required` (default) | Disconnected after a 30-second grace period, with a visible explanation | Nothing, but every player must install the companion |
+
+Pick `optional` if you want Takaro's server-owned features for everyone and the richer
+data from whoever opts in. Pick `required` only if you can actually distribute the
+companion to your players. Pick `disabled` if you want a pure server-side integration
+and accept the reduced surface.
+
 ## Project Shape
 
 - `src/Takaro.Valheim.Core` contains the game-independent protocol, configuration, models, and request dispatcher.
@@ -82,11 +143,11 @@ Ownership values are `server-owned`, `client-reported`, `upstream-blocked`, or `
 | `getMapInfo` | `unsupported` | Returns an immediate schema-valid payload error; the dedicated server does not expose client map metadata. |
 | `getMapTile` | `unsupported` | Returns an immediate payload error; the dedicated server does not expose rendered client map tiles. |
 | `teleportPlayer` | `live-supported` | Routes Valheim's built-in `RPC_TeleportTo` to the server-known character ZDO. |
-| `kickPlayer` | `unsupported` | A built-in `Kicked` RPC implementation exists, but exact live support remains unproven and approval-gated. |
-| `banPlayer` | `unsupported` | Official ban behavior is implemented, but exact live support remains unproven and approval-gated. |
-| `unbanPlayer` | `unsupported` | Official ban-list removal is implemented, but exact live support remains unproven and approval-gated. |
+| `kickPlayer` | `live-supported` | Sends Valheim's built-in `Kicked` RPC and logs the supplied reason. It never calls `ZNet.Disconnect(peer)` directly, which is what previously crashed the headless server. |
+| `banPlayer` | `live-supported` | Writes the player identifier into Valheim's official ban list and disconnects them with the built-in `Kicked` RPC, which does not crash the headless server. **The ban reason is discarded**: Valheim's ban list stores only one identifier per line, so a reason supplied by Takaro is read back as `""`. |
+| `unbanPlayer` | `live-supported` | Removes the identifier from Valheim's official ban list; `listBans` then returns an empty array. |
 | `listBans` | `live-supported` | Reads Valheim's official ban entries. |
-| `shutdown` | `unsupported` | Delayed `Application.Quit()` is implemented, but exact live support remains unproven and approval-gated. |
+| `shutdown` | `live-supported` | Writes its success response before quitting, then shuts down on Unity's main thread. Valheim performs a clean `ZNet` shutdown and the server process exits. |
 
 ### Events
 
@@ -122,6 +183,14 @@ Historical dedicated-server evidence from June 21-22, 2026 covers several entrie
 The July 14 chat-only validation deployed release archives built from connector commit `82546ddd49c6`, negotiated companion protocol 1, and live-routed Takaro `sendMessage` requests to the connected client. The client rendered the messages in normal chat, not the HUD overlay, and logged the per-request sender `con` when the request supplied `opts.senderNameOverride`. See [`qa/2026-07-14-server-chat-validation.md`](qa/2026-07-14-server-chat-validation.md).
 
 Turn 5 then live-proved immediate invalid-input failures, inventory non-mutation, lifecycle persistence, and the vanilla-client server boundary against its exact commit and artifact hashes. Turn 6 pinned the exhaustive action surface to an exact deployed artifact and re-proved pre-ready non-fabrication, immediate unsupported map errors, a vanilla connect/disconnect lifecycle, the real `85/36/-2` position across disconnect, and inventory non-mutation. Turn 7's exact prerelease artifact was rejected by BepInEx before startup; a numeric-version control isolated that failure to loader metadata. Turn 8 live-loaded its exact prerelease artifact, and turn 9 passed locale-stable packaging plus the safe live exerciser at real position `140/33/-2`. Turn-9 verification nevertheless found two release blockers: Valheim adapter calls were not marshalled to Unity's main thread, and Windows compile-reference fallback could replace a configured live server tree. Turn 10 addresses those findings with a bounded `Update()`-drained action scheduler and an owned reference-cache boundary. Historical server-only evidence remains in [the 2026-07-10 ledger](qa/2026-07-10-server-only-validation.md). Fresh companion evidence is recorded separately in [the 2026-07-12 owned-companion ledger](qa/2026-07-12-owned-companion-validation.md).
+
+On 2026-09-02 the deployed `2.0.1` artifact was run against the reusable Takaro
+connector acceptance checklist with a real graphical client attached. That run moved
+`kickPlayer`, `banPlayer`, `unbanPlayer`, and `shutdown` from `unsupported` to
+`live-supported`, re-proved the module command loop end to end, and characterised all
+three `companionMode` values against a vanilla client. It also found that `banPlayer`
+discards the ban reason. See
+[`qa/2026-09-02-acceptance-validation.md`](qa/2026-09-02-acceptance-validation.md).
 
 ## Local Development
 
