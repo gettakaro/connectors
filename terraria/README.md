@@ -160,7 +160,7 @@ Every Takaro action has one explicit outcome, registered in
 | --- | --- | --- |
 | `player-connected` | Supported | Derived from TShock player snapshots. |
 | `player-disconnected` | Supported | Derived from TShock player snapshots. |
-| `player-death` | Supported | Plugin `TAKARO_EVENT` marker. |
+| `player-death` | Supported | Plugin `TAKARO_EVENT` marker, including the resolved `attacker`. |
 | `entity-killed` | Supported | Plugin `TAKARO_EVENT` marker. |
 | `chat-message` | Supported | Parsed from the TShock log (best effort). |
 | `log` | Supported | Tailed from configured TShock log files. |
@@ -169,6 +169,14 @@ Set `logFiles` in the bridge config to the TShock log directory, otherwise the
 log-derived events above are not delivered. TShock opens a new log file on every
 restart; pointing at the directory lets the bridge follow that rotation, whereas
 a single file path goes silent after the first restart.
+
+The tailer never ships lines matching `logExcludePatterns` (default
+`takaro-rest executed:,RestManager:`) as `log` events. TShock logs every REST
+call the bridge itself makes, so without this the bridge feeds its own traffic
+back to Takaro and trips the rate limiter, which silently drops real gameplay
+events. The filter applies only to plain `log` passthrough, so a chat line or a
+death whose text happens to match is still delivered. Set an empty value to
+disable filtering, or a comma-separated list to replace the defaults.
 
 `entity-killed` reports a `weapon`, taken from the killer's held item at the
 moment the kill fires. Terraria records no damage source on NPC death, so this

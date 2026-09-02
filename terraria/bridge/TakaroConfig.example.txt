@@ -25,6 +25,12 @@ pollIntervalMs=10000
 # file path still works but stops receiving events once the server restarts.
 logFiles=tshock/logs
 
+# Substring matches (case-insensitive, comma-separated) never shipped as `log` events.
+# Defaults to `takaro-rest executed:,RestManager:` — TShock logs every REST call the bridge
+# itself makes, and tailing those feeds the bridge's own traffic back to Takaro until the
+# rate limiter drops real gameplay events. Set to an empty value to disable filtering.
+logExcludePatterns=takaro-rest executed:,RestManager:
+
 # Raw console commands are allowlisted by exact match and by prefix.
 commandAllowlistExact=help,/help
 commandAllowlistPrefixes=say,time

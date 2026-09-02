@@ -19,6 +19,7 @@ export interface BridgeConfig {
   httpPort: number;
   pollIntervalMs: number;
   logFiles: string[];
+  logExcludePatterns: string[];
   commandAllowlistExact: string[];
   commandAllowlistPrefixes: string[];
   enableShutdown: boolean;
@@ -72,6 +73,7 @@ export function loadConfig(
     httpPort: parseNumber(values.httpPort, 3020),
     pollIntervalMs: parseNumber(values.pollIntervalMs, 10000),
     logFiles: resolveLogFiles(parseCsv(values.logFiles)),
+    logExcludePatterns: resolveLogExcludePatterns(values.logExcludePatterns),
     commandAllowlistExact: parseCsv(values.commandAllowlistExact),
     commandAllowlistPrefixes: parseCsv(values.commandAllowlistPrefixes),
     enableShutdown: parseBoolean(values.enableShutdown, false),
@@ -92,6 +94,28 @@ function parseCsv(value: string | undefined): string[] {
  */
 function resolveLogFiles(entries: string[]): string[] {
   return entries;
+}
+
+/**
+ * Lines matching these are never shipped to Takaro as `log` events.
+ *
+ * TShock logs every REST call, including the ones this bridge itself makes, so an unfiltered
+ * tailer feeds its own traffic back to Takaro. On a live server that was 58% of all log lines
+ * and it tripped Takaro's rate limiter (sustained 50 per 30s), which drops real gameplay
+ * events — silent data loss behind a green health check.
+ *
+ * Match on the REST call signature rather than the logger name: TShock 6.1 emits these under
+ * `Utils:` while other builds use `RestManager:`, so keying on the logger alone silently stops
+ * filtering after a server upgrade. `takaro-rest executed:` is the bridge's own REST user and
+ * is the stable part of the line.
+ *
+ * Set `logExcludePatterns=` (empty) to disable, or supply a comma-separated replacement list.
+ */
+const DEFAULT_LOG_EXCLUDE_PATTERNS = ['takaro-rest executed:', 'RestManager:'];
+
+function resolveLogExcludePatterns(value: string | undefined): string[] {
+  if (value == null) return [...DEFAULT_LOG_EXCLUDE_PATTERNS];
+  return parseCsv(value);
 }
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
