@@ -117,14 +117,14 @@ export const ACTION_COVERAGE: Record<GameServerAction, ActionCoverage> = {
   banPlayer: {
     status: 'live-supported',
     responseShape: '{ success: boolean, rawResult: string }',
-    liveVerification: 'fake TShock /bans/create plus cleanup',
-    reason: 'TShock exposes ban creation through REST.',
+    liveVerification: 'plugin /takaroban with a connected player; live rejoin refused with "You are banned"',
+    reason: 'Bans go through the plugin so they record uuid:<TSPlayer.UUID> plus ip:<addr>. A REST name ban is only matched for players who authenticated under that name, so on an unauthenticated server it records cleanly and the player reconnects through it. Falls back to the REST name ban when the plugin is absent.',
   },
   unbanPlayer: {
     status: 'live-supported',
     responseShape: '{ success: boolean, rawResult: string }',
-    liveVerification: 'fake TShock /v2/bans/destroy plus cleanup',
-    reason: 'TShock exposes ban deletion through REST.',
+    liveVerification: 'plugin /takarounban against an offline banned player; both identifiers cleared and rejoin succeeds',
+    reason: 'A banned player is offline, so their UUID cannot be re-derived from a live TSPlayer. Bans carry a [takaro:<name>] tag so the ban list is searchable while they are offline.',
   },
   shutdown: {
     status: 'live-supported',
