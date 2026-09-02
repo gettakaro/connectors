@@ -124,7 +124,7 @@ Takaro: 5x item_wood
 | ID | Item | Verdict | Evidence |
 | --- | --- | --- | --- |
 | GRANT-8 | No companion under `optional` → unchanged server-side world drop | PASS | With `companionMode = optional` and the companion folder moved aside (vanilla client), `give Wood 5` logged `Takaro Valheim dropped 5x Wood for Hehe (Steam_76561198000735875) at x=81.72208, y=35.97805, z=-0.9973294.` and **no** `routed giveItem to the companion` line. The client Takaro log had zero new lines. No enforcement line existed in the server log after 40 s (`grep -a -i "required companion enforcement\|kicked RPC"` → no matches), the player stayed connected and listed by `gameserverGetPlayers`, and `scratchpad/shots/c5-worlddrop.png` shows the wood log on the ground at the character's feet |
-| GRANT-9 | v1 companion vs v2 server under `required` — server survives, client is told | PASS (outcome) | The `2.0.1` / protocol-1 companion fixture was installed against the protocol-2 server. Enforcement fired ~30 s after spawn: `required companion enforcement scheduled for peer -642826249: reason=MissingCompanion, expected=2, actual=missing.` followed by `sent the built-in kicked RPC to peer -642826249 after the companion explanation grace period.` The client returned to the main menu with Valheim's own modal reading "You have been kicked from the server." (`scratchpad/shots/c6-kicked.png`). Server pid `653081` was **identical** before and after, `gameserverGetPlayers` answered (`[]`) and `gameserverTestReachabilityForId` still returned `{"connectable": true}`. The diagnostic string is weaker than documented — see the findings section |
+| GRANT-9 | v1 companion vs v2 server under `required` — server survives, client is told | PASS (outcome) | The `2.0.1` / protocol-1 companion fixture was installed against the protocol-2 server. Enforcement fired ~30 s after spawn: `required companion enforcement scheduled for peer -642826249: reason=MissingCompanion, expected=2, actual=missing.` followed by `sent the built-in kicked RPC to peer -642826249 after the companion explanation grace period.` The client returned to the main menu with Valheim's own modal reading "You have been kicked from the server." (`scratchpad/shots/c6-kicked.png`). Server pid `653081` was **identical** before and after, `gameserverGetPlayers` answered (`[]`) and `gameserverTestReachabilityForId` still returned `{"connectable": true}`. The diagnostic string is weaker than documented — see the findings section. The wording was improved and re-proven live afterwards; see the enforcement-wording follow-up below |
 
 Restoring the v2 companion under `required` returned the session to a clean state:
 `negotiated protocol 2 with the connected server`, no enforcement scheduled for the new
@@ -172,6 +172,54 @@ incompatible client is kicked and the dedicated server survives — but the diag
 promised by the upgrade rationale are not there. A version-range report can only work for
 a companion new enough to parse the server hello; from protocol 2 onward that is possible,
 and for protocol 1 it never will be. `COMPANION.md` has been qualified accordingly.
+
+### Follow-up — enforcement wording, 2026-09-02
+
+The diagnostic gap above was closed as far as the protocol allows and re-proven live.
+Commit `422148d` does not change any behaviour; it changes what the server says. The
+server still cannot tell an absent companion from one too old to answer, so instead of
+naming one cause it now names both.
+
+Built `2.0.0-dev.422148d` (435/435 tests, real-assembly publish, package test valid) and
+redeployed **both** halves so the pair stays consistent, even though the companion's
+protocol is unchanged. Both manifests read `protocol { "minimum": 2, "current": 2,
+"maximum": 2 }`. Shipped assembly hashes:
+
+| DLL | sha256 |
+| --- | --- |
+| server `TakaroValheim.dll` | `f367d1a2f31e917f5fc144464946c194eb6c96fb0f0c2188b8f1d8b9770f0449` |
+| server `Takaro.Valheim.Core.dll` | `003ede76998d6bb1bb388f013543b6e83e3367b9659c48c9ac2153649a4f050a` |
+| server `Takaro.Valheim.Companion.Protocol.dll` | `9ee2b9a74c36ba966ad8a20f28044934ee05a9829e8b8b10a4f123c50cd12f2d` |
+| companion `Takaro.Valheim.Companion.dll` | `7526701048b80f8400843356c1181418a07c91a42d3532e8a35c17fe822b6dbf` |
+| companion `Takaro.Valheim.Companion.Protocol.dll` | `9ee2b9a74c36ba966ad8a20f28044934ee05a9829e8b8b10a4f123c50cd12f2d` |
+
+The same 2.0.1 / protocol-1 fixture was installed against the redeployed protocol-2 server
+under `companionMode = required`. Peer `264158697` spawned at `16:52:26` and enforcement
+fired ~30 s later. The server log now reads:
+
+```text
+Takaro Valheim required companion enforcement scheduled for peer 264158697: reason=MissingCompanion, expected=2, actual=missing. No companion answered the hello: none is installed, or it is older than protocol 2 and cannot read it.
+Takaro Valheim sent the built-in kicked RPC to peer 264158697 after the companion explanation grace period.
+```
+
+The player-visible explanation was captured inside the two-second grace window
+(`scratchpad/shots/p5-explanation.png`) and reads in full:
+
+```text
+Takaro Valheim Companion is required. This server expects protocol 2. No companion answered, so it is either not installed or older than protocol 2. Install or update the Takaro Valheim Companion, then reconnect.
+```
+
+The outcome is unchanged from GRANT-9: Valheim's own "You have been kicked from the
+server." modal followed (`scratchpad/shots/p5-kicked.png`), server pid `723192` was
+identical before and after the check, `gameserverGetPlayers` answered `[]`, and
+`gameserverTestReachabilityForId` still returned `{"connectable": true}`.
+
+One part of the original finding stands and is not fixable: the **client** still logs
+nothing. Its whole Takaro log for the run is the four protocol-1 startup lines. A
+companion too old to parse the hello is also too old to recognise that it failed, so every
+diagnostic has to come from the server or from the on-screen explanation. Restoring the
+v2 companion returned the session to `negotiated protocol 2 with the connected server`
+with `Hehe` listed again.
 
 ### 2. Chat notices use the Takaro item code, not the Valheim display name
 

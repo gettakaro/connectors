@@ -55,7 +55,7 @@ The client folder must contain the companion and protocol DLLs shipped together 
 
 Server and client product patch versions may differ when their wire protocol overlaps. Protocol compatibility—not an exact product-version string match—controls negotiation. Upgrade the companion when a required-mode message shows incompatible expected and actual protocol versions.
 
-An incompatible companion reports its bounded supported protocol range to the server before required-mode disconnection, so server logs can distinguish it from a missing companion. **This holds only for a companion new enough to parse the server's hello — protocol 2 or later.** A protocol-1 companion cannot parse a protocol-2 hello, because it rejects the unknown `ItemGrant` capability bit, so it answers nothing and the server reports it as `reason=MissingCompanion, expected=2, actual=missing`. An out-of-date companion of that vintage is indistinguishable from an absent one in the server log, and the client logs no diagnostic of its own; the player sees only Valheim's generic kicked dialog. This was observed live on 2026-09-02 — see [the item-grant validation ledger](qa/2026-09-02-item-grant-validation.md).
+An incompatible companion reports its bounded supported protocol range to the server before required-mode disconnection, so server logs can distinguish it from a missing companion. **This holds only for a companion new enough to parse the server's hello — protocol 2 or later.** A protocol-1 companion cannot parse a protocol-2 hello, because it rejects the unknown `ItemGrant` capability bit, so it answers nothing and the server reports it as `reason=MissingCompanion, expected=2, actual=missing`. An out-of-date companion of that vintage is still indistinguishable from an absent one, because the server never receives a version it could report. What the server can do is name both possibilities, and it now does: the enforcement line appends `No companion answered the hello: none is installed, or it is older than protocol 2 and cannot read it.`, and the player-visible explanation likewise says the companion is either not installed or older than the minimum protocol and should be installed or updated. The companion itself still logs no diagnostic of its own — a version too old to parse the hello is also too old to know it failed. Both the original observation and the improved wording were proven live on 2026-09-02 — see [the item-grant validation ledger](qa/2026-09-02-item-grant-validation.md).
 
 ## Remove or Roll Back
 
@@ -96,7 +96,8 @@ Under `required`, the server logs the decision before acting:
 
 ```text
 required companion enforcement scheduled for peer <id>:
-  reason=MissingCompanion, expected=2, actual=missing.
+  reason=MissingCompanion, expected=2, actual=missing. No companion answered the
+  hello: none is installed, or it is older than protocol 2 and cannot read it.
 sent the built-in kicked RPC to peer <id> after the companion explanation grace period.
 ```
 
