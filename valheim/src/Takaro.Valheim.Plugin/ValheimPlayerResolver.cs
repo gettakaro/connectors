@@ -18,7 +18,7 @@ public sealed class ValheimPlayerResolver
     {
         var playerId = FirstNonEmpty(player.m_userInfo.m_id.ToString(), player.m_characterID.ToString());
         var takaroPlayer = PlayerMapper.ToTakaroPlayer(new ValheimPlayer(
-            FirstNonEmpty(player.m_name, player.m_serverAssignedDisplayName, player.m_userInfo.m_displayName, playerId),
+            FirstNonEmpty(player.m_name, player.m_userInfo.m_serverAssignedDisplayName, player.m_userInfo.m_displayName, playerId),
             playerId,
             null,
             null,
@@ -178,7 +178,7 @@ public sealed class ValheimPlayerResolver
         var names = new[]
         {
             playerInfo.m_name,
-            playerInfo.m_serverAssignedDisplayName,
+            playerInfo.m_userInfo.m_serverAssignedDisplayName,
             playerInfo.m_userInfo.m_displayName,
             player.Name
         };
