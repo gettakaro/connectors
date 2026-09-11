@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.1](https://github.com/gettakaro/connectors/compare/valheim-v3.0.0...valheim-v3.0.1) (2026-09-11)
+
+
+### Bug Fixes
+
+* **valheim:** read serverAssignedDisplayName from UserInfo for Valheim 1.0.7 ([#94](https://github.com/gettakaro/connectors/issues/94)) ([fcf25ec](https://github.com/gettakaro/connectors/commit/fcf25ec20fd1d933373c4c606ba19bffc207c089))
+
 ## [3.0.0](https://github.com/gettakaro/connectors/compare/valheim-v2.0.0...valheim-v3.0.0) (2026-09-02)
 
 
