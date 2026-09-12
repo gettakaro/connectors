@@ -1,10 +1,12 @@
 package io.takaro.zomboid.agent.hooks;
 
 import io.takaro.zomboid.agent.AgentLog;
+import io.takaro.zomboid.agent.EventManagerCallback;
 import io.takaro.zomboid.agent.MainThreadQueue;
 import io.takaro.zomboid.agent.PlayerRegistry;
 import io.takaro.zomboid.agent.Pz;
 import io.takaro.zomboid.agent.Reconciler;
+import io.takaro.zomboid.agent.TokenBucket;
 import io.takaro.zomboid.core.EventEmitter;
 import io.takaro.zomboid.core.model.PlayerInfo;
 
@@ -37,6 +39,22 @@ public final class Bridge {
     private static final AtomicBoolean FIRED_CONNECT = new AtomicBoolean();
     private static final AtomicBoolean FIRED_DISCONNECT = new AtomicBoolean();
     private static final AtomicBoolean FIRED_DEATH = new AtomicBoolean();
+    private static final AtomicBoolean FIRED_ZOMBIE_KILLED = new AtomicBoolean();
+    private static final AtomicBoolean FIRED_LOG = new AtomicBoolean();
+
+    // Rate limiters for the firehose events (a horde or a chatty log cannot flood
+    // the WebSocket). entity-killed: 20/s, burst 50 (per plan). log: 30/s, burst 60.
+    private static final TokenBucket ZOMBIE_KILL_LIMITER = new TokenBucket(50, 20.0);
+    private static final TokenBucket LOG_LIMITER = new TokenBucket(60, 30.0);
+    private static final AtomicBoolean ZOMBIE_KILL_DROP_WARNED = new AtomicBoolean();
+    private static final AtomicBoolean LOG_DROP_WARNED = new AtomicBoolean();
+    private static final AtomicLong ZOMBIE_KILL_DROPPED = new AtomicLong();
+    private static final AtomicLong LOG_DROPPED = new AtomicLong();
+
+    // EventManager log callback registration (attempted from the tick once the
+    // game is up; server-side observable, independent of logEvents).
+    private static final AtomicBoolean LOG_CALLBACK_REGISTERED = new AtomicBoolean();
+    private static final AtomicBoolean LOG_CALLBACK_GAVE_UP = new AtomicBoolean();
 
     private static volatile MainThreadQueue queue;
     private static volatile Reconciler reconciler;
@@ -44,6 +62,7 @@ public final class Bridge {
     private static volatile EventEmitter emitter;
     private static volatile Runnable connectorStarter;
     private static volatile boolean logEvents;
+    private static volatile boolean debugCatalog;
 
     private static volatile long lastReconcileMs;
 
@@ -52,12 +71,13 @@ public final class Bridge {
 
     /** Wired up by {@code TakaroAgent.premain} before any hook can fire. */
     public static void configure(MainThreadQueue q, Reconciler r, PlayerRegistry reg,
-                                 Runnable starter, boolean logEventsEnabled) {
+                                 Runnable starter, boolean logEventsEnabled, boolean debugCatalogEnabled) {
         queue = q;
         reconciler = r;
         registry = reg;
         connectorStarter = starter;
         logEvents = logEventsEnabled;
+        debugCatalog = debugCatalogEnabled;
     }
 
     /** Set once the WebSocket client exists (initial connect); also survives reconnects. */
@@ -74,7 +94,9 @@ public final class Bridge {
                 + " connect=" + FIRED_CONNECT.get()
                 + " disconnect=" + FIRED_DISCONNECT.get()
                 + " chat=" + FIRED_CHAT.get()
-                + " death=" + FIRED_DEATH.get();
+                + " death=" + FIRED_DEATH.get()
+                + " zombieKilled=" + FIRED_ZOMBIE_KILLED.get()
+                + " log=" + FIRED_LOG.get();
     }
 
     // --- hook entry points ---
@@ -97,6 +119,8 @@ public final class Bridge {
             if (q != null) {
                 q.drain();
             }
+
+            registerLogCallbackOnce();
 
             Reconciler r = reconciler;
             if (r != null) {
@@ -123,9 +147,60 @@ public final class Bridge {
                     AgentLog.log("first tick reached — starting Takaro connector");
                     starter.run();
                 }
+                if (debugCatalog) {
+                    dumpCatalogSizes();
+                }
             }
         } catch (Throwable t) {
             AgentLog.error("connector start failed", t);
+        }
+    }
+
+    /** One-shot diagnostic (behind {@code debugCatalog}) run on the first tick / main thread. */
+    private static void dumpCatalogSizes() {
+        try {
+            java.util.List<io.takaro.zomboid.core.model.GameItem> items = Pz.listItems();
+            int rawRows = Pz.itemRows().size();
+            long baseCount = items.stream().filter(i -> i.code() != null && i.code().startsWith("Base.")).count();
+            long distinct = items.stream().map(io.takaro.zomboid.core.model.GameItem::code).distinct().count();
+            StringBuilder sample = new StringBuilder();
+            for (int i = 0; i < Math.min(3, items.size()); i++) {
+                if (i > 0) {
+                    sample.append(", ");
+                }
+                sample.append(items.get(i).code());
+            }
+            AgentLog.log("debugCatalog: listItems=" + items.size()
+                    + " (rawRows=" + rawRows + " distinctCodes=" + distinct
+                    + " baseCodes=" + baseCount + " sample=[" + sample + "])"
+                    + " listEntities=" + Pz.listEntities().size()
+                    + " listLocations=" + Pz.listLocations().size());
+        } catch (Throwable t) {
+            AgentLog.error("debugCatalog dump failed", t);
+        }
+    }
+
+    /** Register the EventManager log callback once the game instance exists. */
+    private static void registerLogCallbackOnce() {
+        if (LOG_CALLBACK_REGISTERED.get() || LOG_CALLBACK_GAVE_UP.get()) {
+            return;
+        }
+        try {
+            if (Pz.registerLogCallback(new EventManagerCallback())) {
+                if (LOG_CALLBACK_REGISTERED.compareAndSet(false, true)) {
+                    AgentLog.log("EventManager callback registered (log event source)");
+                }
+            } else if (TICKS.get() > 6000L) {
+                // EventManager never appeared after ~minutes of ticks — stop trying.
+                if (LOG_CALLBACK_GAVE_UP.compareAndSet(false, true)) {
+                    AgentLog.log("WARN EventManager.instance() still null after 6000 ticks; "
+                            + "log event falls back to the ZLogger.write hook only");
+                }
+            }
+        } catch (Throwable t) {
+            if (LOG_CALLBACK_GAVE_UP.compareAndSet(false, true)) {
+                AgentLog.error("EventManager callback registration failed", t);
+            }
         }
     }
 
@@ -219,5 +294,89 @@ public final class Bridge {
         } catch (Throwable t) {
             // never propagate into the death path
         }
+    }
+
+    /**
+     * {@code IsoZombie.onKilled(killer, weapon, gory)} on enter — entity-killed
+     * event, but only when the killer is a player. Rate-limited (token bucket
+     * 20/s, burst 50) so a horde kill does not flood Takaro.
+     */
+    public static void zombieKilled(Object killer, Object weapon) {
+        try {
+            if (FIRED_ZOMBIE_KILLED.compareAndSet(false, true)) {
+                AgentLog.log("HOOK CONFIRMED: zombie killed (IsoZombie.onKilled)");
+            }
+            EventEmitter e = emitter;
+            if (e == null || killer == null || !Pz.isIsoPlayer(killer)) {
+                return; // only player kills are reported
+            }
+            if (!ZOMBIE_KILL_LIMITER.tryAcquire()) {
+                long dropped = ZOMBIE_KILL_DROPPED.incrementAndGet();
+                if (ZOMBIE_KILL_DROP_WARNED.compareAndSet(false, true)) {
+                    AgentLog.log("WARN entity-killed events are being rate-limited (20/s, burst 50); "
+                            + "further drops are counted silently (first drop at total=" + dropped + ")");
+                }
+                return;
+            }
+            String gameId = Pz.playerUsername(killer);
+            String name = Pz.playerDisplayName(killer);
+            String weaponCode = Pz.weaponFullType(weapon);
+            e.emitEntityKilled(gameId, name, "Zombie", weaponCode);
+        } catch (Throwable t) {
+            // never propagate into the death path
+        }
+    }
+
+    /** Text-only server report line from the EventManager callback — {@code log} event. */
+    public static void logLine(String message) {
+        try {
+            if (FIRED_LOG.compareAndSet(false, true)) {
+                AgentLog.log("HOOK CONFIRMED: log (EventManager callback)");
+            }
+            emitLogGated(message);
+        } catch (Throwable t) {
+            // never propagate
+        }
+    }
+
+    /**
+     * {@code ZLogger.write(String)} on enter — secondary {@code log} source,
+     * filtered to the {@code user} logger. Fires for every logger write, so the
+     * cheap {@code logEvents} gate comes first.
+     */
+    public static void logWrite(Object zlogger, String line) {
+        try {
+            if (FIRED_LOG.compareAndSet(false, true)) {
+                AgentLog.log("HOOK CONFIRMED: log (ZLogger.write)");
+            }
+            if (!logEvents) {
+                return;
+            }
+            if (!Pz.isUserLogger(zlogger)) {
+                return;
+            }
+            emitLogGated(line);
+        } catch (Throwable t) {
+            // never propagate into the logging path
+        }
+    }
+
+    private static void emitLogGated(String message) {
+        if (!logEvents) {
+            return;
+        }
+        EventEmitter e = emitter;
+        if (e == null || message == null || message.isEmpty()) {
+            return;
+        }
+        if (!LOG_LIMITER.tryAcquire()) {
+            long dropped = LOG_DROPPED.incrementAndGet();
+            if (LOG_DROP_WARNED.compareAndSet(false, true)) {
+                AgentLog.log("WARN log events are being rate-limited (30/s, burst 60); "
+                        + "further drops are counted silently (first drop at total=" + dropped + ")");
+            }
+            return;
+        }
+        e.emitLog(message);
     }
 }

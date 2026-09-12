@@ -2,6 +2,9 @@ package io.takaro.zomboid.agent;
 
 import io.takaro.zomboid.core.model.BanEntry;
 import io.takaro.zomboid.core.model.CommandResult;
+import io.takaro.zomboid.core.model.GameEntity;
+import io.takaro.zomboid.core.model.GameItem;
+import io.takaro.zomboid.core.model.GameLocation;
 import io.takaro.zomboid.core.model.PlayerInfo;
 import io.takaro.zomboid.core.model.PlayerLocation;
 
@@ -14,14 +17,23 @@ import java.util.List;
 
 import zombie.characters.IsoPlayer;
 import zombie.chat.ChatMessage;
+import zombie.core.logger.LoggerManager;
+import zombie.core.logger.ZLogger;
 import zombie.core.raknet.UdpConnection;
+import zombie.inventory.InventoryItem;
 import zombie.inventory.ItemContainer;
+import zombie.inventory.types.HandWeapon;
+import zombie.iso.areas.SafeHouse;
 import zombie.network.DBBannedSteamID;
 import zombie.network.GameServer;
 import zombie.network.ServerWorldDatabase;
 import zombie.network.chat.ChatServer;
+import zombie.network.server.EventManager;
+import zombie.network.server.IEventController;
 import zombie.scripting.ScriptManager;
+import zombie.scripting.entity.GameEntityTemplate;
 import zombie.scripting.objects.Item;
+import zombie.scripting.objects.VehicleScript;
 
 /**
  * Typed facade over the Project Zomboid B42 (42.20.4) server classes.
@@ -317,6 +329,188 @@ public final class Pz {
             AgentLog.log("bannedUsernamesViaConn: unavailable (" + t.getClass().getSimpleName() + ")");
         }
         return out;
+    }
+
+    // --- M2: shutdown ---
+
+    /** Graceful server shutdown — mirrors the {@code QuitCommand} path via {@code GameServer.rcon}. */
+    public static void shutdown() {
+        GameServer.rcon("quit");
+    }
+
+    // --- M2: item catalogue ---
+
+    /** Raw rows from {@code ScriptManager.instance.getAllItems()} for {@link Catalog#buildItems}. */
+    @SuppressWarnings("unchecked")
+    public static List<Catalog.ItemRow> itemRows() {
+        List<Catalog.ItemRow> rows = new ArrayList<>();
+        ScriptManager sm = ScriptManager.instance;
+        if (sm == null) {
+            return rows;
+        }
+        ArrayList<Item> items = sm.getAllItems();
+        if (items == null) {
+            return rows;
+        }
+        for (Item it : items) {
+            if (it == null) {
+                continue;
+            }
+            rows.add(new Catalog.ItemRow(it.getFullName(), it.getDisplayName(), it.getDisplayCategory()));
+        }
+        return rows;
+    }
+
+    public static List<GameItem> listItems() {
+        return Catalog.buildItems(itemRows());
+    }
+
+    // --- M2: player inventory ---
+
+    @SuppressWarnings("unchecked")
+    public static List<io.takaro.zomboid.core.model.InventoryItem> getPlayerInventory(String username) {
+        IsoPlayer p = findPlayer(username);
+        if (p == null) {
+            return null;
+        }
+        ItemContainer inv = p.getInventory();
+        List<Catalog.InvRow> rows = new ArrayList<>();
+        if (inv != null) {
+            ArrayList<InventoryItem> items = inv.getItems();
+            if (items != null) {
+                for (InventoryItem it : items) {
+                    if (it == null) {
+                        continue;
+                    }
+                    rows.add(new Catalog.InvRow(it.getFullType(), it.getDisplayName(),
+                            it.getCount(), it.getCondition(), it.getConditionMax()));
+                }
+            }
+        }
+        return Catalog.groupInventory(rows);
+    }
+
+    // --- M2: entities (static Zombie + entity templates + vehicle scripts) ---
+
+    public static List<GameEntity> listEntities() {
+        List<GameEntity> out = new ArrayList<>();
+        out.add(new GameEntity("Zombie", "Zombie", "The Project Zomboid infected", "hostile"));
+        ScriptManager sm = ScriptManager.instance;
+        if (sm == null) {
+            return out;
+        }
+        ArrayList<?> templates = sm.getAllGameEntityTemplates();
+        if (templates != null) {
+            for (Object obj : templates) {
+                if (obj instanceof GameEntityTemplate g) {
+                    String code = g.name; // GameEntityTemplate exposes a public `name` field
+                    if (code == null || code.isEmpty()) {
+                        continue;
+                    }
+                    out.add(new GameEntity(code, code, "Game entity template", "entity"));
+                }
+            }
+        }
+        ArrayList<?> vehicles = sm.getAllVehicleScripts();
+        if (vehicles != null) {
+            for (Object obj : vehicles) {
+                if (obj instanceof VehicleScript v) {
+                    String code = v.getFullName();
+                    if (code == null || code.isEmpty()) {
+                        code = v.getName();
+                    }
+                    if (code == null || code.isEmpty()) {
+                        continue;
+                    }
+                    out.add(new GameEntity(code, v.getName() != null ? v.getName() : code,
+                            "Vehicle", "vehicle"));
+                }
+            }
+        }
+        return out;
+    }
+
+    // --- M2: locations (safehouses) ---
+
+    /**
+     * Safehouses, read from the package-private static {@code SafeHouse.safehouseList}
+     * (PZ exposes no public full-list accessor — only per-owner / per-square
+     * lookups). An empty world has no safehouses, so this is normally {@code []}.
+     */
+    @SuppressWarnings("unchecked")
+    public static List<GameLocation> listLocations() {
+        List<GameLocation> out = new ArrayList<>();
+        try {
+            Field f = SafeHouse.class.getDeclaredField("safehouseList");
+            f.setAccessible(true);
+            Object raw = f.get(null);
+            if (raw instanceof ArrayList<?> list) {
+                for (Object o : list) {
+                    if (o instanceof SafeHouse sh) {
+                        int x = sh.getX();
+                        int y = sh.getY();
+                        int w = sh.getW();
+                        int h = sh.getH();
+                        String title = sh.getTitle();
+                        String owner = sh.getOwner();
+                        String name = title != null && !title.isEmpty() ? title
+                                : (owner != null && !owner.isEmpty() ? owner + "'s safehouse" : "Safehouse");
+                        // centre of the claimed rectangle
+                        double cx = x + w / 2.0;
+                        double cy = y + h / 2.0;
+                        out.add(new GameLocation(name, name, cx, cy, 0.0, null, null,
+                                (double) w, (double) h, 0.0));
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            AgentLog.log("listLocations: safehouse list unavailable (" + t.getClass().getSimpleName() + ")");
+        }
+        return out;
+    }
+
+    // --- M2: entity-killed weapon decode ---
+
+    /** {@code weapon.getFullType()} for the entity-killed event; "" when no weapon. */
+    public static String weaponFullType(Object weapon) {
+        if (weapon instanceof HandWeapon hw) {
+            String t = hw.getFullType();
+            return t != null ? t : "";
+        }
+        return "";
+    }
+
+    // --- M2: log event plumbing ---
+
+    /** Register a text-only server report callback on the EventManager (for the {@code log} event). */
+    public static boolean registerLogCallback(Object controller) {
+        EventManager em = EventManager.instance();
+        if (em == null) {
+            return false;
+        }
+        em.registerCallback((IEventController) controller);
+        return true;
+    }
+
+    /** Lazily-resolved {@code user} logger, cached, for filtering {@code ZLogger.write}. */
+    private static volatile ZLogger userLogger;
+    private static volatile boolean userLoggerResolved;
+
+    public static boolean isUserLogger(Object zlogger) {
+        if (!(zlogger instanceof ZLogger)) {
+            return false;
+        }
+        ZLogger target = userLogger;
+        if (!userLoggerResolved) {
+            try {
+                target = LoggerManager.getLogger("user");
+            } catch (Throwable t) {
+                target = null;
+            }
+            userLogger = target;
+            userLoggerResolved = true;
+        }
+        return target != null && zlogger == target;
     }
 
     // --- chat message decode (safe to read off the main thread) ---

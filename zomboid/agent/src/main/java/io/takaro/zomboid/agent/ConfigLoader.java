@@ -23,9 +23,21 @@ public final class ConfigLoader {
     public static final String DEFAULT_CONFIG_FILE = "/home/steam/Zomboid/Takaro/TakaroConfig.txt";
 
     private boolean logEvents;
+    private boolean debugCatalog;
 
     public boolean isLogEvents() {
         return logEvents;
+    }
+
+    /**
+     * When set, the connector logs the {@code listItems}/{@code listEntities}/
+     * {@code listLocations} sizes once at start (a server-side way to prove the
+     * catalogue when no Takaro REST driver is available). Config key
+     * {@code debugCatalog}, env {@code TAKARO_DEBUG_CATALOG}, or system property
+     * {@code takaro.debugCatalog}.
+     */
+    public boolean isDebugCatalog() {
+        return debugCatalog;
     }
 
     /** Resolved per call (not cached) so a test/install can point it elsewhere via the system property. */
@@ -62,7 +74,19 @@ public final class ConfigLoader {
 
         config.applyEnvOverrides();
         applyLogEventsEnv();
+        applyDebugCatalogEnv();
         return config;
+    }
+
+    private void applyDebugCatalogEnv() {
+        String env = System.getenv("TAKARO_DEBUG_CATALOG");
+        if (env != null && !env.isEmpty()) {
+            this.debugCatalog = isTruthy(env);
+        }
+        String prop = System.getProperty("takaro.debugCatalog");
+        if (prop != null && !prop.isEmpty()) {
+            this.debugCatalog = isTruthy(prop);
+        }
     }
 
     private void applyKey(TakaroConfig config, String key, String value) {
@@ -81,6 +105,9 @@ public final class ConfigLoader {
                 break;
             case "logEvents":
                 this.logEvents = isTruthy(value);
+                break;
+            case "debugCatalog":
+                this.debugCatalog = isTruthy(value);
                 break;
             default:
                 // ignore unknown keys so a newer config file does not break us

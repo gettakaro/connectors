@@ -40,6 +40,11 @@
         { "type": "generic", "path": "ModInfo.xml" }
       ]
     },
+    "zomboid": {
+      "release-type": "simple",
+      "component": "zomboid",
+      "changelog-path": "CHANGELOG.md"
+    },
     "valheim": {
       "release-type": "simple",
       "component": "valheim",

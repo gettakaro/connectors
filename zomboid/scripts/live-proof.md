@@ -25,6 +25,25 @@ graphics. Drive actions from the Takaro side (REST API or dashboard). Watch
 | 11 | `POST /gameserver/{id}/player/{playerId}/giveItem` `Base.Axe` | axe appears in the client inventory without a relog |
 | 12 | `GET /gameserver/{id}/players` while client online | returns the player with gameId=username, steamId, platformId `steam:<id>`, ip, ping |
 
+## M2 deferred items
+
+The M2 server-side surface is proven without a client (see
+`evidence/2026-09-13-m2-catalog-and-events-live.md`): `listItems` (5092 `Base.*`
+codes, no dupes), `listEntities` (242), `listLocations` (0 — empty world), the
+`shutdown` game path (`GameServer.rcon("quit")` via the RCON oracle), the
+EventManager `log` callback registration, and the `ZLogger.write` log-hook
+binding. The items below still need a connected client and/or a same-domain
+Takaro REST driver.
+
+| # | Takaro action / trigger | Expected result |
+| --- | --- | --- |
+| 13 | Player kills a zombie (melee/ranged) | agent log `HOOK CONFIRMED: zombie killed`; Takaro `entity-killed` event, `entity=Zombie`, `weapon=<Base.…>` |
+| 14 | Kill many zombies fast (horde) | ≤ ~20 events/s reach Takaro; one `WARN entity-killed … rate-limited` line, no flood |
+| 15 | Player action writes a `user`-logger line (perk gain, death) with `logEvents=true` | Takaro `log` event carrying the line (EventManager process() and/or ZLogger.write path) |
+| 16 | `GET /gameserver/{id}/player/{playerId}/inventory` on a player with items | grouped inventory: `code` per `getFullType`, summed `amount`, `quality=cond/max` |
+| 17 | `POST /gameserver/{id}/shutdown` (Takaro-driven) | server saves and quits (container `restart: unless-stopped` brings it back); adapter path already proven via RCON `quit` |
+
 Oracles: `Zomboid/db/*.db` `SELECT * FROM bannedid` for steam-id bans;
 `Zomboid/Takaro/bans.json` for Takaro-issued bans with expiry;
-`Zomboid/Logs/*_user.txt` appears on first join.
+`Zomboid/Logs/*_user.txt` appears on first join; set `debugCatalog=true` (or
+`TAKARO_DEBUG_CATALOG=1`) to log catalogue sizes server-side.

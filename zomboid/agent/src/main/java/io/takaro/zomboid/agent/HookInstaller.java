@@ -11,6 +11,8 @@ import io.takaro.zomboid.agent.hooks.PlayerConnectAdvice;
 import io.takaro.zomboid.agent.hooks.PlayerDeathAdvice;
 import io.takaro.zomboid.agent.hooks.PlayerDisconnectAdvice;
 import io.takaro.zomboid.agent.hooks.TickAdvice;
+import io.takaro.zomboid.agent.hooks.ZLoggerAdvice;
+import io.takaro.zomboid.agent.hooks.ZombieKilledAdvice;
 
 import java.lang.instrument.Instrumentation;
 
@@ -73,6 +75,20 @@ public final class HookInstaller {
                 .transform((builder, type, loader, module, pd) -> builder.visit(
                         Advice.to(PlayerDeathAdvice.class)
                                 .on(named("onKilled").and(takesArguments(3)))))
+                // entity-killed (zombie killed by a player)
+                .type(named("zombie.characters.IsoZombie"))
+                .transform((builder, type, loader, module, pd) -> builder.visit(
+                        Advice.to(ZombieKilledAdvice.class)
+                                .on(named("onKilled").and(takesArguments(3)))))
+                // log (user logger writes) — emission gated on logEvents in the Bridge.
+                // Hook the write(String,String,boolean) funnel every public
+                // write(..) overload routes through (the 1-arg form is rarely called).
+                .type(named("zombie.core.logger.ZLogger"))
+                .transform((builder, type, loader, module, pd) -> builder.visit(
+                        Advice.to(ZLoggerAdvice.class)
+                                .on(named("write").and(takesArguments(3))
+                                        .and(takesArgument(0, named("java.lang.String")))
+                                        .and(takesArgument(2, boolean.class)))))
                 .installOn(inst);
     }
 

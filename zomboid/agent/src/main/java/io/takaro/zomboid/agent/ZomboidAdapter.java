@@ -95,31 +95,47 @@ public final class ZomboidAdapter implements GameAdapter {
         return Pz.getPlayerLocation(gameId);
     }
 
-    // --- M2 queries: clean protocol error until implemented ---
+    // --- M2 queries ---
+
+    /** The full item catalogue is large (>1000) and static, so it is cached ~10 min. */
+    private static final long ITEM_CACHE_TTL_MS = 10 * 60 * 1000L;
+    private volatile List<GameItem> itemCache;
+    private volatile long itemCacheAtMs;
 
     @Override
     public List<InventoryItem> getPlayerInventory(String gameId) {
-        throw new UnsupportedOperationException("getPlayerInventory is not implemented yet (M2)");
+        List<InventoryItem> items = Pz.getPlayerInventory(gameId);
+        if (items == null) {
+            throw new IllegalStateException("Player not online: " + gameId);
+        }
+        return items;
     }
 
     @Override
     public List<GameItem> listItems() {
-        throw new UnsupportedOperationException("listItems is not implemented yet (M2)");
+        List<GameItem> cached = itemCache;
+        if (cached != null && System.currentTimeMillis() - itemCacheAtMs < ITEM_CACHE_TTL_MS) {
+            return cached;
+        }
+        List<GameItem> built = Pz.listItems();
+        itemCache = built;
+        itemCacheAtMs = System.currentTimeMillis();
+        return built;
     }
 
     @Override
     public List<GameEntity> listEntities() {
-        throw new UnsupportedOperationException("listEntities is not implemented yet (M2)");
+        return Pz.listEntities();
     }
 
     @Override
     public List<GameLocation> listLocations() {
-        throw new UnsupportedOperationException("listLocations is not implemented yet (M2)");
+        return Pz.listLocations();
     }
 
     @Override
     public void shutdownServer() {
-        throw new UnsupportedOperationException("shutdown is not implemented yet (M2)");
+        Pz.shutdown();
     }
 
     // --- player actions (M1) ---

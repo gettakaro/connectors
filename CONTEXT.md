@@ -7,7 +7,7 @@ no implementation details.
 
 **Connector** — A self-contained plugin that connects one game server to Takaro via the
 Generic Connector Protocol, or a server-side helper plugin used by a connector for
-game-owned events and actions. Current components include `rust`, `minecraft`, `7d2d`,
+game-owned events and actions. Current components include `rust`, `minecraft`, `7d2d`, `zomboid`,
 `valheim`, `conan-exiles`, and `terraria`. Each is versioned and released independently.
 
 **Stable release** — A published, semver-versioned build of a single connector

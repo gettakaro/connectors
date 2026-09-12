@@ -27,7 +27,7 @@ public final class TakaroAgent {
 
     public static void premain(String args, Instrumentation inst) {
         try {
-            AgentLog.log("premain: Takaro Project Zomboid connector (M1)");
+            AgentLog.log("premain: Takaro Project Zomboid connector (M2)");
             AgentLog.log("premain: java.version=" + System.getProperty("java.version")
                     + " vendor=" + System.getProperty("java.vm.vendor"));
             AgentLog.log("premain: jvm input args = "
@@ -42,7 +42,8 @@ public final class TakaroAgent {
                     + " identity=" + (config.getIdentityToken() != null ? "set" : "MISSING")
                     + " registration=" + (config.getRegistrationToken() != null ? "set" : "MISSING")
                     + " debug=" + config.isDebugEnabled()
-                    + " logEvents=" + loader.isLogEvents());
+                    + " logEvents=" + loader.isLogEvents()
+                    + " debugCatalog=" + loader.isDebugCatalog());
 
             // --- build the runtime graph ---
             MainThreadQueue queue = new MainThreadQueue();
@@ -55,7 +56,8 @@ public final class TakaroAgent {
 
             // Connector is started from the first tick (right JVM + main thread).
             Runnable starter = connector::connect;
-            Bridge.configure(queue, reconciler, registry, starter, loader.isLogEvents());
+            Bridge.configure(queue, reconciler, registry, starter,
+                    loader.isLogEvents(), loader.isDebugCatalog());
 
             // --- install hooks (binds only in the JVM that loads the game classes) ---
             HookInstaller.install(inst);
