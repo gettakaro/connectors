@@ -1,0 +1,22 @@
+[versions]
+# ByteBuddy must support class-file major version 69 (Java 25) — the PZ B42
+# server ships Zulu OpenJDK 25 and projectzomboid.jar is compiled to v69.
+# Native Java 25 support landed in 1.17.5; 1.18.13 is the current release.
+byte-buddy = "1.18.13"
+
+java-websocket = "1.6.0"
+gson = "2.14.0"
+junit = "6.1.0"
+
+shadow = "9.4.2"
+
+[libraries]
+byte-buddy = { module = "net.bytebuddy:byte-buddy", version.ref = "byte-buddy" }
+byte-buddy-agent = { module = "net.bytebuddy:byte-buddy-agent", version.ref = "byte-buddy" }
+java-websocket = { module = "org.java-websocket:Java-WebSocket", version.ref = "java-websocket" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version = "1.14.0" }
+
+[plugins]
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
