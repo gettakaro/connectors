@@ -1,120 +1,117 @@
 package io.takaro.zomboid.agent;
 
-import static net.bytebuddy.matcher.ElementMatchers.isStatic;
-import static net.bytebuddy.matcher.ElementMatchers.named;
-import static net.bytebuddy.matcher.ElementMatchers.nameStartsWith;
-import static net.bytebuddy.matcher.ElementMatchers.takesArguments;
+import io.takaro.zomboid.agent.hooks.Bridge;
+import io.takaro.zomboid.core.TakaroConfig;
+import io.takaro.zomboid.core.TakaroConnector;
 
-import io.takaro.zomboid.agent.hooks.JoinAdvice;
-import io.takaro.zomboid.agent.hooks.TickAdvice;
 import java.lang.instrument.Instrumentation;
 import java.lang.management.ManagementFactory;
-import net.bytebuddy.agent.builder.AgentBuilder;
-import net.bytebuddy.asm.Advice;
-import net.bytebuddy.description.type.TypeDescription;
-import net.bytebuddy.dynamic.DynamicType;
-import net.bytebuddy.utility.JavaModule;
 
 /**
- * M0 spike agent: prove that a {@code -javaagent} jar injected through
- * {@code JAVA_TOOL_OPTIONS} loads inside the Project Zomboid B42 dedicated
- * server JVM and that ByteBuddy can instrument the (class-file v69) game
- * classes.
+ * Project Zomboid Takaro connector agent ({@code Premain-Class}).
  *
- * <p>Hooks installed here: the main-loop tick
- * ({@code zombie.network.RCONServer.update()}) and the authoritative join
- * ({@code zombie.network.GameServer.receivePlayerConnect}).
+ * <p>The connector is injected through {@code JAVA_TOOL_OPTIONS}, so
+ * {@code premain} runs in every JVM the image's launch chain spawns (three of
+ * them). It therefore does NOT open the Takaro WebSocket here — it only wires up
+ * the runtime and installs the hooks. The connector is started from the FIRST
+ * {@code RCONServer.update()} tick, which is guaranteed to be the real server
+ * JVM, on its main thread, with the game classes loaded (see {@link Bridge}).
  */
 public final class TakaroAgent {
+
+    /** Seconds after the tick target is transformed before we WARN about a dead tick hook. */
+    private static final long TICK_WATCHDOG_SECONDS = 180L;
 
     private TakaroAgent() {
     }
 
     public static void premain(String args, Instrumentation inst) {
         try {
-            AgentLog.log("premain: Takaro Project Zomboid connector (M0 spike)");
-            AgentLog.log("premain: agent args = " + args);
-            AgentLog.log("premain: java.version = " + System.getProperty("java.version")
-                    + " vendor = " + System.getProperty("java.vm.vendor")
-                    + " vm = " + System.getProperty("java.vm.name"));
-            AgentLog.log("premain: jvm input args = " + ManagementFactory.getRuntimeMXBean().getInputArguments());
-            AgentLog.log("premain: bytebuddy version = " + byteBuddyVersion()
-                    + " from " + net.bytebuddy.ByteBuddy.class.getProtectionDomain().getCodeSource());
+            AgentLog.log("premain: Takaro Project Zomboid connector (M1)");
+            AgentLog.log("premain: java.version=" + System.getProperty("java.version")
+                    + " vendor=" + System.getProperty("java.vm.vendor"));
+            AgentLog.log("premain: jvm input args = "
+                    + ManagementFactory.getRuntimeMXBean().getInputArguments());
             AgentLog.log("premain: instrumentation retransform=" + inst.isRetransformClassesSupported()
                     + " redefine=" + inst.isRedefineClassesSupported());
 
-            install(inst);
+            // --- load config (file + env overrides; env wins) ---
+            ConfigLoader loader = new ConfigLoader();
+            TakaroConfig config = loader.load();
+            AgentLog.log("premain: wsUrl=" + config.getWsUrl()
+                    + " identity=" + (config.getIdentityToken() != null ? "set" : "MISSING")
+                    + " registration=" + (config.getRegistrationToken() != null ? "set" : "MISSING")
+                    + " debug=" + config.isDebugEnabled()
+                    + " logEvents=" + loader.isLogEvents());
+
+            // --- build the runtime graph ---
+            MainThreadQueue queue = new MainThreadQueue();
+            PlayerRegistry registry = new PlayerRegistry();
+            BanStore banStore = new BanStore();
+            Reconciler reconciler = new Reconciler(registry, banStore);
+            ZomboidAdapter adapter = new ZomboidAdapter(queue, registry, reconciler, banStore,
+                    config.isDebugEnabled());
+            TakaroConnector connector = new TakaroConnector(adapter, config);
+
+            // Connector is started from the first tick (right JVM + main thread).
+            Runnable starter = connector::connect;
+            Bridge.configure(queue, reconciler, registry, starter, loader.isLogEvents());
+
+            // --- install hooks (binds only in the JVM that loads the game classes) ---
+            HookInstaller.install(inst);
             AgentLog.log("premain: hooks installed");
+
+            startTickWatchdog();
+
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                try {
+                    connector.shutdown();
+                } catch (Throwable ignored) {
+                    // best effort on JVM shutdown
+                }
+            }, "takaro-shutdown"));
         } catch (Throwable t) {
             AgentLog.error("premain failed", t);
         }
     }
 
-    /** Entry point for dynamic attach; unused in production, handy for debugging. */
+    /** Entry point for dynamic attach; handy for debugging. */
     public static void agentmain(String args, Instrumentation inst) {
         premain(args, inst);
     }
 
-    /** Reads the ByteBuddy version stamped into our own jar manifest at build time. */
-    private static String byteBuddyVersion() {
-        try {
-            java.net.URL url = TakaroAgent.class.getProtectionDomain().getCodeSource().getLocation();
-            try (java.util.jar.JarFile jar = new java.util.jar.JarFile(new java.io.File(url.toURI()))) {
-                return jar.getManifest().getMainAttributes().getValue("ByteBuddy-Version");
+    /**
+     * Loud failure if the tick hook never fires even though its carrier class
+     * ({@code RCONServer}) was transformed — i.e. the matcher bound nothing. In
+     * the probe JVMs the game classes are never loaded, so the watchdog stays
+     * silent there and only speaks in the real server JVM.
+     */
+    private static void startTickWatchdog() {
+        Thread t = new Thread(() -> {
+            long deadlineHit = 0L;
+            try {
+                while (true) {
+                    Thread.sleep(5000L);
+                    if (Bridge.tickCount() > 0L) {
+                        return; // tick hook confirmed — nothing to warn about
+                    }
+                    if (HookInstaller.sawTickTarget()) {
+                        if (deadlineHit == 0L) {
+                            deadlineHit = System.currentTimeMillis() + TICK_WATCHDOG_SECONDS * 1000L;
+                        } else if (System.currentTimeMillis() >= deadlineHit) {
+                            AgentLog.log("WARN ***** tick hook on RCONServer.update() has NOT fired "
+                                    + TICK_WATCHDOG_SECONDS + "s after the class was transformed. "
+                                    + "The matcher likely bound nothing — the connector will NOT start. "
+                                    + "Re-pin the hook with dump-signatures.py. *****");
+                            return;
+                        }
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
-        } catch (Throwable ignored) {
-            return "unknown";
-        }
-    }
-
-    private static void install(Instrumentation inst) {
-        new AgentBuilder.Default()
-                .disableClassFormatChanges()
-                .with(AgentBuilder.RedefinitionStrategy.DISABLED)
-                .ignore(nameStartsWith("net.bytebuddy.")
-                        .or(nameStartsWith("io.takaro."))
-                        .or(nameStartsWith("io.takaro.zomboid.libs.")))
-                .with(new LoggingListener())
-                .type(named("zombie.network.RCONServer"))
-                .transform((builder, type, loader, module, pd) -> builder.visit(
-                        Advice.to(TickAdvice.class)
-                                .on(named("update").and(isStatic()).and(takesArguments(0)))))
-                .type(named("zombie.network.GameServer"))
-                .transform((builder, type, loader, module, pd) -> builder.visit(
-                        Advice.to(JoinAdvice.class)
-                                .on(named("receivePlayerConnect").and(isStatic()).and(takesArguments(3)))))
-                .installOn(inst);
-    }
-
-    /** Logs every transform attempt so a silently-unbound matcher is visible. */
-    private static final class LoggingListener implements AgentBuilder.Listener {
-
-        @Override
-        public void onDiscovery(String typeName, ClassLoader loader, JavaModule module, boolean loaded) {
-            // too noisy to log
-        }
-
-        @Override
-        public void onTransformation(TypeDescription type, ClassLoader loader, JavaModule module,
-                                     boolean loaded, DynamicType dynamicType) {
-            AgentLog.log("listener: transformed " + type.getName() + " (loaded=" + loaded
-                    + ", loader=" + loader + ")");
-        }
-
-        @Override
-        public void onIgnored(TypeDescription type, ClassLoader loader, JavaModule module, boolean loaded) {
-            // too noisy to log
-        }
-
-        @Override
-        public void onError(String typeName, ClassLoader loader, JavaModule module, boolean loaded,
-                            Throwable throwable) {
-            AgentLog.error("listener: transform failed for " + typeName, throwable);
-        }
-
-        @Override
-        public void onComplete(String typeName, ClassLoader loader, JavaModule module, boolean loaded) {
-            // too noisy to log
-        }
+        }, "takaro-tick-watchdog");
+        t.setDaemon(true);
+        t.start();
     }
 }
