@@ -129,12 +129,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     @Override
-    public void emitPlayerDisconnected(String gameId, String playerName) {
+    public void emitPlayerDisconnected(PlayerInfo player) {
         JsonObject data = new JsonObject();
-        JsonObject player = new JsonObject();
-        player.addProperty("gameId", gameId);
-        player.addProperty("name", playerName);
-        data.add("player", player);
+        data.add("player", playerInfoToJson(player));
         sendGameEvent("player-disconnected", data);
     }
 
