@@ -558,12 +558,41 @@ public final class Pz {
         try {
             ChatMessage m = (ChatMessage) chatMessage;
             if (m.getChat() != null && m.getChat().getType() != null) {
-                return m.getChat().getType().name();
+                return mapChatChannel(m.getChat().getType().name());
             }
         } catch (Throwable t) {
             // fall through
         }
-        return "general";
+        return "global";
+    }
+
+    /**
+     * Map a Project Zomboid {@code ChatType} (say, general, shout, radio, server,
+     * admin, faction, safehouse, whisper, notDefined) onto the channel enum Takaro
+     * accepts for chat-message events (global | team | friends | whisper). PZ has
+     * more channels than Takaro, so proximity/broadcast channels collapse to
+     * global, group channels to team, and whisper stays whisper.
+     */
+    static String mapChatChannel(String pzType) {
+        if (pzType == null) {
+            return "global";
+        }
+        switch (pzType.toLowerCase()) {
+            case "whisper":
+                return "whisper";
+            case "faction":
+            case "safehouse":
+                return "team";
+            case "say":
+            case "general":
+            case "shout":
+            case "radio":
+            case "server":
+            case "admin":
+            case "notdefined":
+            default:
+                return "global";
+        }
     }
 
     // --- death decode ---

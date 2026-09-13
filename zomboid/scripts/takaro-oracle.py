@@ -50,13 +50,38 @@ def _req(method, path, token=None, body=None):
         except Exception:
             return e.code, {}
 
+TOKEN_CACHE = os.environ.get("TAKARO_TOKEN_CACHE", "")
+
 def login():
+    # Reuse a cached Ory session token when valid — the /login endpoint is
+    # rate-limited under rapid repeated calls, so we log in ONCE and cache it.
+    if TOKEN_CACHE and os.path.exists(TOKEN_CACHE):
+        try:
+            tok = open(TOKEN_CACHE).read().strip()
+            st, _ = _req("GET", "/me", token=tok)
+            if st == 200:
+                return tok
+        except Exception:
+            pass
     if not (USER and PW):
         sys.exit("Set TAKARO_USERNAME and TAKARO_PASSWORD in the environment.")
     st, body = _req("POST", "/login", body={"username": USER, "password": PW})
     if st != 200:
         sys.exit(f"login failed http={st}: {body}")
-    return body["data"]["token"]
+    tok = body["data"]["token"]
+    if TOKEN_CACHE:
+        try:
+            open(TOKEN_CACHE, "w").write(tok)
+        except Exception:
+            pass
+    return tok
+
+def resolve_player(token, gsid, game_id):
+    """Resolve the Takaro global playerId + pog record for a gameId on a server."""
+    st, b = _req("POST", "/gameserver/player/search", token=token,
+                 body={"filters": {"gameServerId": [gsid], "gameId": [game_id]}})
+    data = b.get("data", [])
+    return data[0] if data else None
 
 def me(token):
     st, body = _req("GET", "/me", token=token)
@@ -108,18 +133,78 @@ def cmd_drive(token, gsid):
     for k, v in results.items():
         print(f"{k}: {json.dumps(v)[:300]}")
 
+def _pr(label, st, body):
+    print(f"{label}: http={st} {json.dumps(body)[:600]}")
+    return st, body
+
+def cmd_player(token, gsid, game_id):
+    """getPlayer/getPlayers/getPlayerLocation/getPlayerInventory oracle view."""
+    pog = resolve_player(token, gsid, game_id)
+    if not pog:
+        print(f"no pog for {game_id}"); return None
+    st, p = _req("GET", f"/player/{pog['playerId']}", token=token)
+    pd = p.get("data", {})
+    print(json.dumps({
+        "playerId": pog["playerId"], "gameId": pog["gameId"], "online": pog["online"],
+        "name": pd.get("name"), "steamId": pd.get("steamId"), "platformId": pd.get("platformId"),
+        "ping": pog.get("ping"), "ip": pog.get("ip"),
+        "location": {"x": pog.get("positionX"), "y": pog.get("positionY"), "z": pog.get("positionZ")},
+        "inventory": pog.get("inventory"),
+    }, indent=1))
+    return pog
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "me"
+    a = sys.argv
     token = login()
     if cmd == "me": cmd_me(token)
     elif cmd == "find": cmd_find(token)
     elif cmd == "list": cmd_list(token)
     elif cmd == "drive":
-        gsid = sys.argv[2] if len(sys.argv) > 2 else GSID
+        gsid = a[2] if len(a) > 2 else GSID
         if not gsid: sys.exit("provide a gameServerId (arg or TAKARO_GAMESERVER_ID)")
         cmd_drive(token, gsid)
+    elif cmd == "player":   # player <gsid> <gameId>
+        cmd_player(token, a[2], a[3])
+    elif cmd == "giveitem": # giveitem <gsid> <gameId> <name> [amount] [quality]
+        pog = resolve_player(token, a[2], a[3])
+        _pr("giveItem", *_req("POST", f"/gameserver/{a[2]}/player/{pog['playerId']}/giveItem", token=token,
+            body={"name": a[4], "amount": int(a[5]) if len(a) > 5 else 1, "quality": a[6] if len(a) > 6 else "1"}))
+    elif cmd == "teleport": # teleport <gsid> <gameId> <x> <y> <z>
+        pog = resolve_player(token, a[2], a[3])
+        _pr("teleport", *_req("POST", f"/gameserver/{a[2]}/player/{pog['playerId']}/teleport", token=token,
+            body={"x": float(a[4]), "y": float(a[5]), "z": float(a[6])}))
+    elif cmd == "kick":     # kick <gsid> <gameId> [reason]
+        pog = resolve_player(token, a[2], a[3])
+        _pr("kick", *_req("POST", f"/gameserver/{a[2]}/player/{pog['playerId']}/kick", token=token,
+            body={"reason": a[4] if len(a) > 4 else "takaro-proof"}))
+    elif cmd == "ban":      # ban <gsid> <gameId> [reason] [expiresAtISO]
+        pog = resolve_player(token, a[2], a[3])
+        body = {"reason": a[4] if len(a) > 4 else "takaro-proof"}
+        if len(a) > 5: body["expiresAt"] = a[5]
+        _pr("ban", *_req("POST", f"/gameserver/{a[2]}/player/{pog['playerId']}/ban", token=token, body=body))
+    elif cmd == "unban":    # unban <gsid> <gameId>
+        pog = resolve_player(token, a[2], a[3])
+        _pr("unban", *_req("POST", f"/gameserver/{a[2]}/player/{pog['playerId']}/unban", token=token, body={}))
+    elif cmd == "bans":     # bans <gsid>
+        _pr("listBans", *_req("GET", f"/gameserver/{a[2]}/bans", token=token))
+    elif cmd == "msg":      # msg <gsid> <message> [recipientGameId]
+        body = {"message": a[3]}
+        if len(a) > 4: body["opts"] = {"recipient": {"gameId": a[4]}}
+        _pr("message", *_req("POST", f"/gameserver/{a[2]}/message", token=token, body=body))
+    elif cmd == "cmd":      # cmd <gsid> <command...>
+        _pr("command", *_req("POST", f"/gameserver/{a[2]}/command", token=token, body={"command": " ".join(a[3:])}))
+    elif cmd == "shutdown": # shutdown <gsid>
+        _pr("shutdown", *_req("POST", f"/gameserver/{a[2]}/shutdown", token=token, body={}))
+    elif cmd == "reach":    # reach <gsid>
+        _pr("reachability", *_req("GET", f"/gameserver/{a[2]}/reachability", token=token))
+    elif cmd == "events":   # events <gsid> [eventName] [limit]
+        filt = {"gameserverId": [a[2]]}
+        if len(a) > 3 and a[3] != "-": filt["eventName"] = [a[3]]
+        _pr("events", *_req("POST", "/event/search", token=token,
+            body={"filters": filt, "limit": int(a[4]) if len(a) > 4 else 10, "sortBy": "createdAt", "sortDirection": "desc"}))
     else:
-        sys.exit(f"unknown command {cmd!r}; use me|find|list|drive")
+        sys.exit(f"unknown command {cmd!r}")
 
 if __name__ == "__main__":
     main()

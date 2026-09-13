@@ -447,7 +447,10 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         String gameId = extractGameId(args);
         if (gameId == null) return null;
         PlayerLocation loc = adapter.getPlayerLocation(gameId);
-        if (loc == null) return null;
+        // An offline/unknown player has no position. Returning null makes the
+        // dispatcher send an empty {} payload, which Takaro rejects as an
+        // invalid IPosition ("x isNumber"). Signal a proper action error instead.
+        if (loc == null) throw new IllegalStateException("Player not online: " + gameId);
         JsonObject obj = new JsonObject();
         obj.addProperty("x", loc.x());
         obj.addProperty("y", loc.y());
