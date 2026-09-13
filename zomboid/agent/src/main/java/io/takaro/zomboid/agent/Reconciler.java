@@ -78,7 +78,7 @@ public final class Reconciler {
             for (Map.Entry<String, PlayerInfo> entry : previous.entrySet()) {
                 if (!current.containsKey(entry.getKey())) {
                     AgentLog.log("event: player-disconnected " + entry.getKey());
-                    e.emitPlayerDisconnected(entry.getValue().gameId(), entry.getValue().name());
+                    e.emitPlayerDisconnected(entry.getValue());
                 }
             }
         }

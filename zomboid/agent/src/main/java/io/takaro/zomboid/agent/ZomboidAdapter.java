@@ -14,7 +14,9 @@ import io.takaro.zomboid.core.model.PlayerLocation;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The Project Zomboid {@link GameAdapter}. Every query/action runs on the game
@@ -92,8 +94,18 @@ public final class ZomboidAdapter implements GameAdapter {
 
     @Override
     public PlayerLocation getPlayerLocation(String gameId) {
-        return Pz.getPlayerLocation(gameId);
+        PlayerLocation loc = Pz.getPlayerLocation(gameId);
+        if (loc != null) {
+            lastLocations.put(gameId, loc);
+            return loc;
+        }
+        // Takaro's player-disconnected handling asks for the location of the
+        // player who just left; an error there drops the event, so answer with
+        // the last known position.
+        return lastLocations.get(gameId);
     }
+
+    private final Map<String, PlayerLocation> lastLocations = new ConcurrentHashMap<>();
 
     // --- M2 queries ---
 
