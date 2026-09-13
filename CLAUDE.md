@@ -7,6 +7,7 @@ Monorepo for connector plugins implementing the Takaro Generic Connector Protoco
 - `.claude/skills/takaro-rust-engineer/` — Rust connector
 - `.claude/skills/takaro-minecraft-engineer/` — Minecraft connector
 - `.claude/skills/takaro-7d2d-engineer/` — 7D2D connector
+- `.claude/skills/takaro-zomboid-engineer/` — Project Zomboid connector
 
 ## Commands
 
@@ -21,6 +22,20 @@ Each connector is self-contained in its own directory with its own docker-compos
 | Rust | `rust/` | C# | None (Carbon runtime compile) |
 | Minecraft | `minecraft/` | Java 21 | Gradle |
 | 7D2D | `7d2d/` | C# / .NET Framework 4.8 | Dockerized Mono `msbuild` |
+| Project Zomboid | `zomboid/` | Java 25 (`-javaagent`, ByteBuddy) | Gradle |
+
+## Test Environment
+
+`dev-servers/` runs a server for every connector (plus Palworld via a third-party bridge)
+with the real mod installed. One Compose file per game, own ports, own `_data/`.
+See `dev-servers/README.md`.
+
+```bash
+just dev-install-all          # sequential install; games are left stopped
+just dev-start <game>         # rust, minecraft-paper, 7d2d, zomboid, valheim, terraria, conan-exiles, palworld, ...
+just dev-status               # installed / running / RAM / disk
+just dev-validate             # docker compose config + port-collision check
+```
 
 ## Working on a Connector
 
@@ -45,6 +60,13 @@ just sevend2d-build           # Build the mod
 just sevend2d-build-deploy    # Build and deploy to the local test server
 just sevend2d-up -d 7dtdserver
 just sevend2d-logs
+
+# Project Zomboid
+just zomboid-setup            # Stage the PZ server jar for compilation
+just zomboid-build            # Build (unit tests + shaded -javaagent jar)
+just zomboid-deploy           # Build + deploy the agent into dev-servers/_data
+just zomboid-up
+just zomboid-logs
 ```
 
 ## Documentation

@@ -23,6 +23,10 @@ build-release-minecraft version out-dir='dist':
 build-release-7d2d version out-dir='dist':
     ./7d2d/scripts/build-release.sh {{version}} {{out-dir}}
 
+# Build the Project Zomboid connector release artifact locally into <out-dir>
+build-release-zomboid version out-dir='dist':
+    ./zomboid/scripts/build-release.sh {{version}} {{out-dir}}
+
 # Build the Conan Exiles connector release artifact locally into <out-dir>
 build-release-conan version out-dir='dist':
     ./conan-exiles/scripts/build-release.sh {{version}} {{out-dir}}
@@ -151,6 +155,32 @@ sevend2d-down *args:
 sevend2d-logs *args='--tail 100 -f':
     cd 7d2d && docker compose logs {{args}}
 
+# === Project Zomboid Connector ===
+
+# Stage the PZ server jar so the agent can compile against the game classes
+zomboid-setup:
+    cd zomboid && ./scripts/setup-environment.sh
+
+# Build the Zomboid connector (unit tests + shaded -javaagent jar; needs JDK 25)
+zomboid-build *args:
+    cd zomboid && ./gradlew build {{args}}
+
+# Build the Zomboid agent from the working tree and deploy it into dev-servers/_data
+zomboid-deploy:
+    ./dev-servers/scripts/deploy-connector.sh zomboid
+
+# Start the Zomboid dev server
+zomboid-up *args='-d':
+    docker compose -f dev-servers/compose/zomboid.yml --env-file dev-servers/.env up {{args}}
+
+# Stop the Zomboid dev server
+zomboid-down *args:
+    docker compose -f dev-servers/compose/zomboid.yml --env-file dev-servers/.env down {{args}}
+
+# View Zomboid server logs
+zomboid-logs *args='--tail 100 -f':
+    docker compose -f dev-servers/compose/zomboid.yml --env-file dev-servers/.env logs {{args}}
+
 # === Conan Exiles Connector ===
 
 # Install Conan Exiles connector dependencies
@@ -164,3 +194,56 @@ conan-test:
 # Build the Conan Exiles connector
 conan-build:
     cd conan-exiles && npm run build
+
+# === Dev Servers (dev-servers/) ===
+
+# Unified test environment: every game with its real Takaro connector installed.
+# See dev-servers/README.md. One-time: cp dev-servers/.env.example dev-servers/.env
+
+# Install every game (or the ones named), strictly one at a time
+dev-install-all *args:
+    ./dev-servers/scripts/install-all.sh {{args}}
+
+# Install a single game
+dev-install game *args:
+    ./dev-servers/scripts/install.sh {{game}} {{args}}
+
+# Rebuild a connector from the working tree and deploy it into dev-servers/_data
+dev-deploy game:
+    ./dev-servers/scripts/deploy-connector.sh {{game}}
+
+# Start one or more games (refuses to exceed the RAM budget)
+dev-start *args:
+    ./dev-servers/scripts/start.sh {{args}}
+
+# Stop games; with no arguments, stops everything
+dev-stop *args:
+    ./dev-servers/scripts/stop.sh {{args}}
+
+# Re-render Takaro configs after setting the token (no reinstall, no re-download)
+dev-reconfigure *args:
+    ./dev-servers/scripts/reconfigure.sh {{args}}
+
+# Show what is installed, running, and what it costs
+dev-status:
+    ./dev-servers/scripts/status.sh
+
+# Tail a game's logs
+dev-logs game *args:
+    ./dev-servers/scripts/logs.sh {{game}} {{args}}
+
+# Report which deployed connectors have gone stale vs the working tree
+dev-sync-check:
+    ./dev-servers/scripts/sync-connectors.sh --check
+
+# Rebuild and redeploy any connector whose source changed (--restart to restart them)
+dev-sync *args:
+    ./dev-servers/scripts/sync-connectors.sh {{args}}
+
+# Install git hooks that check connector staleness after pull/merge/checkout
+dev-install-hooks *args:
+    ./dev-servers/scripts/install-git-hooks.sh {{args}}
+
+# Validate every dev-servers compose file and check for port collisions
+dev-validate:
+    ./dev-servers/scripts/validate.sh
