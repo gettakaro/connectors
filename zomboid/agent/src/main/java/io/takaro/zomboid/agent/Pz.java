@@ -15,6 +15,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
+import zombie.characters.IsoGameCharacter;
 import zombie.characters.IsoPlayer;
 import zombie.characters.Roles;
 import zombie.chat.ChatMessage;
@@ -492,9 +493,37 @@ public final class Pz {
 
     /** {@code weapon.getFullType()} for the entity-killed event; "" when no weapon. */
     public static String weaponFullType(Object weapon) {
+        return weaponFromKill(weapon, null);
+    }
+
+    /**
+     * Resolve the weapon used in a zombie kill. On a dedicated server the
+     * {@code weapon} arg passed to {@code IsoZombie.onKilled} is usually null
+     * (the hit is computed client-side), so fall back to the killer's in-hand
+     * weapon: {@code getUseHandWeapon()} then {@code getPrimaryHandItem()}.
+     */
+    public static String weaponFromKill(Object weapon, Object killer) {
         if (weapon instanceof HandWeapon hw) {
             String t = hw.getFullType();
-            return t != null ? t : "";
+            if (t != null && !t.isEmpty()) {
+                return t;
+            }
+        }
+        if (killer instanceof IsoGameCharacter c) {
+            HandWeapon used = c.getUseHandWeapon();
+            if (used != null) {
+                String t = used.getFullType();
+                if (t != null && !t.isEmpty()) {
+                    return t;
+                }
+            }
+            InventoryItem prim = c.getPrimaryHandItem();
+            if (prim != null) {
+                String t = prim.getFullType();
+                if (t != null && !t.isEmpty()) {
+                    return t;
+                }
+            }
         }
         return "";
     }

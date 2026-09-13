@@ -320,7 +320,7 @@ public final class Bridge {
             }
             String gameId = Pz.playerUsername(killer);
             String name = Pz.playerDisplayName(killer);
-            String weaponCode = Pz.weaponFullType(weapon);
+            String weaponCode = Pz.weaponFromKill(weapon, killer);
             e.emitEntityKilled(gameId, name, "Zombie", weaponCode);
         } catch (Throwable t) {
             // never propagate into the death path
