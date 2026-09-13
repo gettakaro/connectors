@@ -91,6 +91,55 @@ public final class HookInstaller {
                                         .and(takesArgument(0, named("java.lang.String")))
                                         .and(takesArgument(2, boolean.class)))))
                 .installOn(inst);
+        retransformLateTargets(inst);
+    }
+
+    /**
+     * RETRANSFORMATION only retransforms classes already loaded when the agent
+     * installs. Some carrier types (notably {@code zombie.characters.IsoZombie},
+     * which loads when the first zombie spawns — after a player joins) load later
+     * and can slip past the on-load path. This watchdog waits for each late type
+     * to appear in the loaded set and explicitly retransforms it, which re-runs
+     * the (retransform-capable) transformer and binds the advice. Idempotent:
+     * retransforming an already-instrumented class is harmless.
+     */
+    private static void retransformLateTargets(Instrumentation inst) {
+        final String[] wanted = {
+                "zombie.characters.IsoZombie",
+                "zombie.characters.IsoPlayer",
+                "zombie.network.chat.ChatServer",
+        };
+        Thread t = new Thread(() -> {
+            java.util.Set<String> done = new java.util.HashSet<>();
+            long end = System.currentTimeMillis() + 15 * 60 * 1000L;
+            while (System.currentTimeMillis() < end && done.size() < wanted.length) {
+                for (Class<?> c : inst.getAllLoadedClasses()) {
+                    String n = c.getName();
+                    for (String w : wanted) {
+                        if (!done.contains(w) && w.equals(n)) {
+                            done.add(w);
+                            try {
+                                if (inst.isModifiableClass(c)) {
+                                    inst.retransformClasses(c);
+                                    AgentLog.log("watchdog: retransformed " + w);
+                                } else {
+                                    AgentLog.log("watchdog: " + w + " not modifiable");
+                                }
+                            } catch (Throwable ex) {
+                                AgentLog.error("watchdog retransform " + w, ex);
+                            }
+                        }
+                    }
+                }
+                try {
+                    Thread.sleep(2000L);
+                } catch (InterruptedException ie) {
+                    return;
+                }
+            }
+        }, "takaro-retransform-watchdog");
+        t.setDaemon(true);
+        t.start();
     }
 
     /** Logs every transform attempt so a silently-unbound matcher is visible. */
@@ -98,6 +147,9 @@ public final class HookInstaller {
 
         @Override
         public void onDiscovery(String typeName, ClassLoader loader, JavaModule module, boolean loaded) {
+            if (typeName.startsWith("zombie.characters.Iso") || typeName.startsWith("zombie.network.")) {
+                AgentLog.log("listener: discovery " + typeName + " (loaded=" + loaded + ")");
+            }
         }
 
         @Override
@@ -114,6 +166,10 @@ public final class HookInstaller {
 
         @Override
         public void onIgnored(TypeDescription type, ClassLoader loader, JavaModule module, boolean loaded) {
+            String name = type.getName();
+            if (name.equals("zombie.characters.IsoZombie")) {
+                AgentLog.log("listener: IGNORED " + name + " (loaded=" + loaded + ")");
+            }
         }
 
         @Override
