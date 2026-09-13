@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import zombie.characters.IsoPlayer;
+import zombie.characters.Roles;
 import zombie.chat.ChatMessage;
 import zombie.core.logger.LoggerManager;
 import zombie.core.logger.ZLogger;
@@ -316,16 +317,34 @@ public final class Pz {
             if (conn == null) {
                 return out;
             }
+            // B42 has no whitelist.banned column — a ban sets the row's role to the
+            // default "banned" role. Detect the schema and query accordingly so this
+            // works on both B41 (banned column) and B42 (role id).
+            java.util.Set<String> cols = new java.util.HashSet<>();
             try (Statement st = conn.createStatement();
-                 ResultSet rs = st.executeQuery(
-                         "SELECT username FROM whitelist WHERE banned = 1")) {
+                 ResultSet rs = st.executeQuery("PRAGMA table_info(whitelist)")) {
                 while (rs.next()) {
-                    out.add(rs.getString(1));
+                    cols.add(rs.getString("name").toLowerCase());
+                }
+            }
+            String sql = null;
+            if (cols.contains("banned")) {
+                sql = "SELECT username FROM whitelist WHERE banned = 1";
+            } else if (cols.contains("role")) {
+                int bannedRoleId = Roles.getDefaultForBanned().getId();
+                sql = "SELECT username FROM whitelist WHERE role = " + bannedRoleId;
+            }
+            if (sql != null) {
+                try (Statement st = conn.createStatement();
+                     ResultSet rs = st.executeQuery(sql)) {
+                    while (rs.next()) {
+                        out.add(rs.getString(1));
+                    }
                 }
             }
         } catch (Throwable t) {
-            // schema without a `banned` column (the common case) or no DB yet —
-            // BanStore remains the authoritative record of Takaro-issued bans.
+            // No DB yet, or an unexpected schema — BanStore remains the authoritative
+            // record of Takaro-issued bans; steam/IP bans come from the DB API.
             AgentLog.log("bannedUsernamesViaConn: unavailable (" + t.getClass().getSimpleName() + ")");
         }
         return out;
@@ -407,7 +426,7 @@ public final class Pz {
                     if (code == null || code.isEmpty()) {
                         continue;
                     }
-                    out.add(new GameEntity(code, code, "Game entity template", "entity"));
+                    out.add(new GameEntity(code, code, "Game entity template", "neutral"));
                 }
             }
         }
@@ -423,7 +442,7 @@ public final class Pz {
                         continue;
                     }
                     out.add(new GameEntity(code, v.getName() != null ? v.getName() : code,
-                            "Vehicle", "vehicle"));
+                            "Vehicle", "neutral"));
                 }
             }
         }
