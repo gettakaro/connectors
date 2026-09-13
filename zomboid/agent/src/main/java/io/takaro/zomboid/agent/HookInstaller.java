@@ -47,7 +47,8 @@ public final class HookInstaller {
     public static void install(Instrumentation inst) {
         new AgentBuilder.Default()
                 .disableClassFormatChanges()
-                .with(AgentBuilder.RedefinitionStrategy.DISABLED)
+                .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
+                .with(AgentBuilder.RedefinitionStrategy.DiscoveryStrategy.Reiterating.INSTANCE)
                 .ignore(nameStartsWith("net.bytebuddy.")
                         .or(nameStartsWith("io.takaro."))
                         .or(nameStartsWith("io.takaro.zomboid.libs.")))
