@@ -107,7 +107,7 @@ class ActionRoutingTest {
         sendRequest("sendMessage", "req-6", "{\"message\":\"hello world\"}");
         waitForResponse();
 
-        assertEquals("hello world", adapter.lastMessage);
+        assertEquals("Server: hello world", adapter.lastMessage);
         assertNull(adapter.lastRecipient);
     }
 
@@ -116,8 +116,16 @@ class ActionRoutingTest {
         sendRequest("sendMessage", "req-7", "{\"message\":\"hi\",\"opts\":{\"recipient\":{\"gameId\":\"player-1\"}}}");
         waitForResponse();
 
-        assertEquals("hi", adapter.lastMessage);
+        assertEquals("Server: hi", adapter.lastMessage);
         assertEquals("player-1", adapter.lastRecipient);
+    }
+
+    @Test
+    void sendMessageUsesSenderNameOverride() {
+        sendRequest("sendMessage", "req-7b", "{\"message\":\"yo\",\"opts\":{\"senderNameOverride\":\"Admin\"}}");
+        waitForResponse();
+
+        assertEquals("Admin: yo", adapter.lastMessage);
     }
 
     @Test
