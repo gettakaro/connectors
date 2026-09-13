@@ -85,3 +85,23 @@ name. Sender name resolves: Takaro `senderNameOverride` -> connector `serverChat
 config (`TAKARO_SERVER_CHAT_NAME`) -> `GameServer.serverName` -> "Server". Left as the
 server-name default for now; proper fix is Takaro attaching the name (report upstream).
 See zomboid/README.md "Chat sender name".
+
+## Proof discipline
+A capability counts as verified only with an observed artifact: the actual WS
+`response` / `gameEvent` frame (run with `TAKARO_DEBUG=true`) or the actual in-game
+change. A hook firing, an HTTP 200, or a green unit test is not proof. If you can't
+point at it, say it's unverified.
+
+## Gotchas that mimic connector bugs
+- **Death is not a disconnect.** PZ drops the dead character while the connection lives.
+  Online status comes from `GameServer.udpEngine.connections`, never
+  `GameServer.getPlayers()` — otherwise dead players show offline in Takaro.
+- **Connected != spawned.** While loading or on the respawn screen there is no
+  `IsoPlayer`: `getPlayers` is empty and player-scoped actions fail. Not a bug.
+- **Corrupt saved position wedges spawn.** An off-map `players.db` position causes
+  `chunk not generated in 30s` and an endless client load. Fix the save.
+- **Prove hook binding with a sentinel.** `IsoZombie` loads during boot and is missed by
+  the on-load transformer (hence the retransform watchdog); `onTransformation` firing
+  does not mean a method matcher bound. Use the `Bridge` sentinels / heartbeat `hooks[...]`.
+- **Keeping a test character alive:** `invisibleplayer "<user>" -true` works on a named
+  player; `godmode` only affects the RCON caller.
