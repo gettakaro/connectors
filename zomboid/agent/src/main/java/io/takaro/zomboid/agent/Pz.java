@@ -22,6 +22,7 @@ import zombie.chat.ChatMessage;
 import zombie.core.logger.LoggerManager;
 import zombie.core.logger.ZLogger;
 import zombie.core.raknet.UdpConnection;
+import zombie.core.raknet.UdpEngine;
 import zombie.inventory.InventoryItem;
 import zombie.inventory.ItemContainer;
 import zombie.inventory.types.HandWeapon;
@@ -73,18 +74,49 @@ public final class Pz {
     // --- player queries ---
 
     @SuppressWarnings("unchecked")
+    /**
+     * Online players, sourced from the connection list — NOT
+     * {@code GameServer.getPlayers()} (the live-character list). A player who dies
+     * is removed from the character list while still connected (respawn screen),
+     * which would otherwise look like a disconnect to Takaro. The connection
+     * persists until the player actually leaves, so this keeps a dead-but-connected
+     * player online.
+     */
     public static List<PlayerInfo> getPlayers() {
         List<PlayerInfo> out = new ArrayList<>();
-        ArrayList<IsoPlayer> players = GameServer.getPlayers();
-        if (players == null) {
+        UdpEngine engine = GameServer.udpEngine;
+        if (engine == null || engine.connections == null) {
             return out;
         }
-        for (IsoPlayer p : players) {
-            if (p != null) {
-                out.add(toPlayerInfo(p));
+        for (UdpConnection c : new ArrayList<>(engine.connections)) {
+            if (c != null && c.isFullyConnected()) {
+                PlayerInfo pi = toPlayerInfoFromConnection(c);
+                if (pi != null) {
+                    out.add(pi);
+                }
             }
         }
         return out;
+    }
+
+    /** Build a player DTO from a connection; enriches name from the live character when present. */
+    public static PlayerInfo toPlayerInfoFromConnection(UdpConnection c) {
+        String username = c.getUserName();
+        if (username == null || username.isEmpty()) {
+            return null;
+        }
+        String name = username;
+        IsoPlayer p = (c.players != null && c.players.length > 0) ? c.players[0] : null;
+        if (p != null) {
+            String dn = p.getDisplayName();
+            if (dn != null && !dn.isEmpty()) {
+                name = dn;
+            }
+        }
+        long steam = c.getSteamId();
+        String steamId = steam != 0L ? Long.toString(steam) : null;
+        String platformId = steamId != null ? PlayerInfo.buildPlatformId(steamId) : null;
+        return new PlayerInfo(username, name, steamId, null, null, platformId, c.getIP(), c.getAveragePing());
     }
 
     public static PlayerInfo getPlayer(String username) {
