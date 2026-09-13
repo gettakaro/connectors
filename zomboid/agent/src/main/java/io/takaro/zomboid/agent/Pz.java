@@ -55,6 +55,11 @@ public final class Pz {
     private Pz() {
     }
 
+    public static String serverName() {
+        String n = GameServer.serverName;
+        return (n != null && !n.isEmpty()) ? n : null;
+    }
+
     // --- lifecycle / reachability ---
 
     public static boolean reachable() {

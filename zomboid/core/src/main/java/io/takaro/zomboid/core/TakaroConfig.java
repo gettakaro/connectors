@@ -4,6 +4,7 @@ public class TakaroConfig {
     private String wsUrl;
     private String identityToken;
     private String registrationToken;
+    private String serverChatName;
     private boolean reconnectEnabled = true;
     private long reconnectDelay = 5000;
     private long maxReconnectDelay = 300000;
@@ -18,6 +19,10 @@ public class TakaroConfig {
 
     public String getRegistrationToken() { return registrationToken; }
     public void setRegistrationToken(String registrationToken) { this.registrationToken = registrationToken; }
+
+    /** Chat sender name for connector-sent messages (falls back to the game server name, then "Server"). */
+    public String getServerChatName() { return serverChatName; }
+    public void setServerChatName(String serverChatName) { this.serverChatName = serverChatName; }
 
     public boolean isReconnectEnabled() { return reconnectEnabled; }
     public void setReconnectEnabled(boolean reconnectEnabled) { this.reconnectEnabled = reconnectEnabled; }
@@ -46,6 +51,10 @@ public class TakaroConfig {
         String registrationEnv = System.getenv("TAKARO_REGISTRATION_TOKEN");
         if (registrationEnv != null && !registrationEnv.isEmpty()) {
             this.registrationToken = registrationEnv;
+        }
+        String chatNameEnv = System.getenv("TAKARO_SERVER_CHAT_NAME");
+        if (chatNameEnv != null && !chatNameEnv.isEmpty()) {
+            serverChatName = chatNameEnv;
         }
         String debugEnv = System.getenv("TAKARO_DEBUG");
         if (debugEnv != null && !debugEnv.isEmpty()) {

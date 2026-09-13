@@ -149,6 +149,11 @@ public final class ZomboidAdapter implements GameAdapter {
     }
 
     @Override
+    public String getServerName() {
+        return Pz.serverName();
+    }
+
+    @Override
     public void sendMessage(String message, String recipientGameId) {
         if (recipientGameId == null || recipientGameId.isEmpty()) {
             Pz.sendMessageGlobal(message);

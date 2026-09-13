@@ -578,7 +578,15 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         // PZ server chat shows no author for a plain message, so prefix a name:
         // Takaro's senderNameOverride when provided, otherwise "Server".
         if (senderName == null || senderName.isEmpty()) {
-            senderName = "Server";
+            String configured = config.getServerChatName();
+            String serverName = adapter.getServerName();
+            if (configured != null && !configured.isEmpty()) {
+                senderName = configured;
+            } else if (serverName != null && !serverName.isEmpty()) {
+                senderName = serverName;
+            } else {
+                senderName = "Server";
+            }
         }
         adapter.sendMessage(senderName + ": " + message, recipientGameId);
     }

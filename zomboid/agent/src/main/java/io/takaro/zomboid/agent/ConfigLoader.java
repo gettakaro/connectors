@@ -100,6 +100,9 @@ public final class ConfigLoader {
             case "registrationToken":
                 config.setRegistrationToken(value);
                 break;
+            case "serverChatName":
+                config.setServerChatName(value);
+                break;
             case "debug":
                 config.setDebugEnabled(isTruthy(value));
                 break;

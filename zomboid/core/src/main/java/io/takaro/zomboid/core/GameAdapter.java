@@ -8,6 +8,9 @@ public interface GameAdapter {
     void logInfo(String msg);
     void logWarning(String msg);
     default void logDebug(String msg) {}
+
+    /** The game server's display name, used as the default chat sender name. */
+    default String getServerName() { return null; }
     void runOnMainThread(Runnable task);
 
     /**
