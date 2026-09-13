@@ -477,12 +477,29 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     private void handleGiveItem(JsonObject args) {
         String gameId = extractGameId(args);
-        String itemCode = args.has("item") ? args.get("item").getAsString() : null;
-        int amount = args.has("amount") ? args.get("amount").getAsInt() : 1;
-        String quality = args.has("quality") ? args.get("quality").getAsString() : "";
+        // Takaro sends the item identifier under itemCode (confirmed against the
+        // shipped Terraria/Conan connectors); accept the known aliases.
+        String itemCode = firstString(args, "itemCode", "item", "code", "name");
+        int amount = 1;
+        for (String k : new String[] {"amount", "quantity"}) {
+            if (args.has(k) && args.get(k).isJsonPrimitive()) { amount = args.get(k).getAsInt(); break; }
+        }
+        String quality = args.has("quality") && args.get("quality").isJsonPrimitive()
+                ? args.get("quality").getAsString() : "";
         if (gameId != null && itemCode != null) {
             adapter.giveItem(gameId, itemCode, amount, quality);
         }
+    }
+
+    /** First present, primitive string value among the given keys, else null. */
+    private static String firstString(JsonObject args, String... keys) {
+        if (args == null) return null;
+        for (String k : keys) {
+            if (args.has(k) && args.get(k).isJsonPrimitive()) {
+                return args.get(k).getAsString();
+            }
+        }
+        return null;
     }
 
     private JsonElement handleListItems() {
