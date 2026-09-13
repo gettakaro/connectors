@@ -1,45 +1,97 @@
 # Takaro Project Zomboid Connector
 
-A server-side Java agent (`-javaagent`) loaded into the Project Zomboid Build 42
-dedicated server JVM. It opens an outbound WebSocket to Takaro, hooks game methods
-for events, and runs actions on the game main thread. All 17 Takaro actions and 6
-events are implemented; 22/23 hard-verified live (see the campaign evidence in
-`gamingconnectors/context/games/project-zomboid/`), `listLocations` partial (B42 has
-no named-location registry).
+A server-side-only Java agent for Project Zomboid Build 42 dedicated servers that
+connects to Takaro through the Generic Connector Protocol over WebSocket. It loads
+into the server JVM with `-javaagent`, hooks game methods for events, and runs Takaro
+actions on the game main thread. No client-side mod and no Workshop item are required.
 
-## Install
+## Quick Start
+
+From the monorepo root:
+
+```sh
+just zomboid-setup      # stage projectzomboid.jar as a compile reference
+just zomboid-build      # unit tests + shaded -javaagent jar (needs JDK 25)
+just zomboid-deploy     # build and copy the agent into dev-servers/_data
+just zomboid-up         # start the dev server with the agent attached
+```
+
+Or from inside `zomboid/`:
+
+```sh
+./scripts/setup-environment.sh
+./gradlew build
+```
+
+The build produces `zomboid/agent/build/libs/TakaroConnector-<version>.jar`. Local
+server files and build outputs live under `dev-servers/_data/zomboid/`.
+
+## Architecture
+
+Project Zomboid's Lua (Kahlua) sandbox exposes no networking and fires no server-side
+connect/disconnect/chat/death events, so the connector is a **Java agent inside the
+dedicated server JVM**, not a Lua mod:
+
+- A `premain` agent installs [ByteBuddy](https://bytebuddy.net/) `Advice` hooks on the
+  server classes and opens the outbound WebSocket to Takaro.
+- **Events** are method hooks: `GameServer.receivePlayerConnect` / `disconnectPlayer`
+  (with a `GameServer.Players` reconciler as the source of truth), `ChatServer.sendMessage`,
+  `IsoPlayer.onKilled` (death), `IsoZombie.onKilled` (entity-killed), and a `ZLogger` /
+  `EventManager` `log` source.
+- **Actions** (`getPlayers`, `giveItem`, `teleportPlayer`, `banPlayer`, …) are marshalled
+  onto the game main thread via a queue drained from a per-tick hook, then answered/executed;
+  console commands go through `GameServer.rcon`.
+- The agent shades and relocates its dependencies (ByteBuddy, Java-WebSocket, Gson) so it
+  is safe to load alongside the game and other agents.
+
+Because it runs on the JVM, this connector requires editing how the server starts (a JVM
+argument), the same install tier as Rust's Carbon preload or Valheim's BepInEx.
+
+## Installation
 
 Drop `TakaroConnector.jar` in the server cache dir (`<cachedir>/Takaro/`) and inject it
 into the server JVM. Injection paths, in order of preference:
 
-1. **`JAVA_TOOL_OPTIONS`** env var (Docker/self-hosted): `-javaagent:/home/steam/Zomboid/Takaro/TakaroConnector.jar`. Zero file edits; survives SteamCMD validate (which only touches the install dir, not the cache dir).
-2. `vmArgs` in `ProjectZomboid64.json` — works, but SteamCMD validate reverts it; re-apply after updates.
+1. **`JAVA_TOOL_OPTIONS`** env var (Docker / self-hosted): `-javaagent:<cachedir>/Takaro/TakaroConnector.jar`. Zero file edits, and it survives SteamCMD `validate` (which only touches the install dir, never the cache dir).
+2. `vmArgs` in `ProjectZomboid64.json` — works, but SteamCMD `validate` reverts it; re-apply after game updates.
 3. `-javaagent:<jar> --` as a launch option before the `--` separator.
 
-Config: `<cachedir>/Takaro/TakaroConfig.txt` (`key=value`), overridden by `TAKARO_*` env vars.
-Keys: `wsUrl`, `identityToken`, `registrationToken`, `debug`, `logEvents`, `serverChatName`.
+## Configuration
 
-## Chat sender name
+Config is read from `<cachedir>/Takaro/TakaroConfig.txt` (`key=value`), each key overridable
+by a `TAKARO_*` environment variable (env wins):
+
+```
+wsUrl=wss://connect.takaro.io/
+identityToken=
+registrationToken=
+debug=false
+logEvents=false
+serverChatName=
+```
+
+Set `registrationToken` from your Takaro game-server connector setup before the server can
+identify. `wsUrl` defaults to the production Takaro WebSocket URL. Env overrides:
+`TAKARO_WS_URL`, `TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN`, `TAKARO_DEBUG`,
+`TAKARO_SERVER_CHAT_NAME`.
+
+## Takaro coverage
+
+**22 of 23** capabilities (17 actions + 6 events) are `live-supported`, verified end to end
+through the Takaro API against a real dedicated server with a live client (game build
+42.20.4 b0bbce05d5). `listLocations` is `partial`: Build 42 exposes no named-location
+registry. Full per-capability evidence lives in the campaign docs under
+`context/games/project-zomboid/` of the gamingconnectors workspace.
+
+### Chat sender name
 
 Messages the connector sends to game chat are prefixed with a sender name, resolved:
+Takaro's `opts.senderNameOverride` on `sendMessage`, else the connector's `serverChatName`
+config, else the live PZ server name (`GameServer.serverName`), else `"Server"`.
 
-1. Takaro's `opts.senderNameOverride` on the `sendMessage` action (Takaro's own
-   Server Chat Name setting, when it attaches it), else
-2. the connector's `serverChatName` config (`serverChatName` / env `TAKARO_SERVER_CHAT_NAME`), else
-3. the live PZ server name (`GameServer.serverName`), else `"Server"`.
-
-### KNOWN ISSUE — still to change
-
-Takaro does **not** currently attach the domain/gameserver **Server Chat Name** setting
-to admin/dashboard messages: every `sendMessage` observed over the wire (raw `/message`
-API and dashboard chat, before and after a server restart) arrives with `opts={}` — no
-`senderNameOverride`. Takaro also sends the connector no settings on identify (only
-`gameServerId`), so the connector cannot read the setting itself. As a result, admin
-messages currently fall back to the real server name (e.g. `Takaro Dev Zomboid: ...`)
-instead of the configured Server Chat Name.
-
-**For now** we accept the server-name fallback. **To fix properly**, Takaro should attach
-`serverChatName` as `senderNameOverride` on admin/dashboard `sendMessage` (it appears to
-do so only for module/command flows) — this is a Takaro-side change to report. Setting the
-connector's own `TAKARO_SERVER_CHAT_NAME` is a stopgap but duplicates Takaro's setting, so
-it is intentionally left unset.
+**Known issue:** Takaro does not currently attach the domain **Server Chat Name** setting to
+admin/dashboard messages — they arrive with empty `opts`, and the connector receives no
+settings on identify, so those messages fall back to the server name. The connector honors
+the name whenever Takaro sends it (module/command flows). Proper fix is Takaro attaching the
+name to admin messages; setting `serverChatName` on the connector is a stopgap that
+duplicates the Takaro setting, so it is left unset by default.
