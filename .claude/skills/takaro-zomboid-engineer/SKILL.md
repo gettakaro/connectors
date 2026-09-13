@@ -76,3 +76,12 @@ connectors/
   checked in `setup-environment.sh` and WARNs on drift.
 - **Keep `context/games/project-zomboid/capabilities.json` (gamingconnectors repo)
   current** when action/event coverage changes, with an evidence file per cell.
+
+## Known issue: Server Chat Name on admin messages
+Takaro does not attach the `serverChatName` setting to admin/dashboard `sendMessage`
+(wire shows `opts={}`; the connector receives no settings on identify — only
+`gameServerId`). So connector-sent admin messages fall back to the real PZ server
+name. Sender name resolves: Takaro `senderNameOverride` -> connector `serverChatName`
+config (`TAKARO_SERVER_CHAT_NAME`) -> `GameServer.serverName` -> "Server". Left as the
+server-name default for now; proper fix is Takaro attaching the name (report upstream).
+See zomboid/README.md "Chat sender name".
