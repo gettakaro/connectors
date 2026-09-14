@@ -1,5 +1,43 @@
 # Docker Dev Servers
 
+## dev-servers rig (live)
+
+`dev-servers/` is the **live** rig — use it for anything real. The `minecraft/docker-compose.yml`
+environment documented further down is **legacy** (and is the only place the Mineflayer bot runs).
+
+| Service | Platform | Image | Minecraft | Game port | RCON (localhost) | Container |
+|---|---|---|---|---|---|---|
+| `minecraft-paper` | Paper | `itzg/minecraft-server:java21` | 1.21.11 (`MINECRAFT_VERSION`) | 25565/tcp | 127.0.0.1:25575 | `takaro-dev-minecraft-paper` |
+| `minecraft-neoforge` | NeoForge | `itzg/minecraft-server:java21` | 1.21.11 (`MINECRAFT_VERSION`) | 25566/tcp | 127.0.0.1:25576 | `takaro-dev-minecraft-neoforge` |
+| `minecraft-fabric` | Fabric | `itzg/minecraft-server:java25` | 26.2 (`MINECRAFT_FABRIC_VERSION`) | 25567/tcp | 127.0.0.1:25577 | `takaro-dev-minecraft-fabric` |
+
+RCON password comes from `RCON_PASSWORD` in `dev-servers/.env` (**not** `takaro123` — that is
+the legacy compose only). `rcon-cli` inside the container picks it up automatically:
+
+```bash
+docker exec takaro-dev-minecraft-fabric rcon-cli list
+docker exec takaro-dev-minecraft-fabric rcon-cli 'kill @e[type=zombie,distance=..20]'
+```
+
+Data: `dev-servers/_data/minecraft/<platform>/`
+- mods/plugins deploy target, plus `config/takaro.json` (Fabric) — env vars override the file
+- logs: `logs/latest.log` (raw WebSocket frames when `TAKARO_DEBUG=true`)
+
+Deploy + restart (Fabric has **no** hot reload):
+
+```bash
+dev-servers/scripts/deploy-connector.sh minecraft-fabric   # builds in eclipse-temurin:25-jdk
+just dev-stop minecraft-fabric && just dev-start minecraft-fabric
+just dev-logs minecraft-fabric -f
+```
+
+All three Minecraft platforms build in the JDK 25 image; only the *runtime* image differs.
+
+## Legacy compose (`just minecraft-up`)
+
+Everything below refers to `minecraft/docker-compose.yml`, kept for connector development
+and the Mineflayer bot. It is not the rig used for hard tests.
+
 ## Services
 
 | Service | Platform | Game Port | RCON Port | Container |

@@ -34,6 +34,7 @@ public class TakaroFabricMod implements DedicatedServerModInitializer {
     public void onInitializeServer() {
         ServerLifecycleEvents.SERVER_STARTED.register(this::onServerStarted);
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            emitDisconnectForOnlinePlayers(server);
             if (connector != null) {
                 connector.shutdown();
             }
@@ -107,6 +108,38 @@ public class TakaroFabricMod implements DedicatedServerModInitializer {
                 );
             }
         });
+    }
+
+    /**
+     * The DISCONNECT event does not fire for players still online when the server stops,
+     * so Takaro would keep them marked online forever. Emit player-disconnected for each
+     * of them before the connector shuts down.
+     */
+    private void emitDisconnectForOnlinePlayers(MinecraftServer server) {
+        if (adapter == null || server == null) return;
+        EventEmitter emitter = adapter.getEventEmitter();
+        if (emitter == null) return;
+        if (server.getPlayerList() == null) return;
+        int emitted = 0;
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            if (player == null) continue;
+            try {
+                String gameId = player.getUUID().toString();
+                adapter.getPlayerLocation(gameId); // warm cache before player is removed from list
+                emitter.emitPlayerDisconnected(gameId, player.getGameProfile().name());
+                emitted++;
+            } catch (Exception e) {
+                LOGGER.warn("Failed to emit player-disconnected on shutdown: {}", e.getMessage());
+            }
+        }
+        if (emitted > 0) {
+            // give the frames time to reach Takaro before the socket is torn down
+            try {
+                Thread.sleep(750);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     private void onServerStarted(MinecraftServer server) {

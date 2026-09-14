@@ -14,7 +14,7 @@ Multi-platform Minecraft connector for the Takaro game management platform. Impl
 | Architecture | [ARCHITECTURE.md](ARCHITECTURE.md) | — |
 | Build & Deploy | [BUILD.md](BUILD.md) | `just minecraft-build` |
 | Testing | [TESTING.md](TESTING.md) | `cd minecraft && ./gradlew :core:test` |
-| Docker Dev Servers | [DOCKER.md](DOCKER.md) | `just minecraft-up -d paper` |
+| Docker Dev Servers | [DOCKER.md](DOCKER.md) | `just dev-start minecraft-fabric` (live rig); `just minecraft-up -d paper` (legacy) |
 | Test Bot | [BOT.md](BOT.md) | `curl http://localhost:3001/status` |
 | Integration Testing | [INTEGRATION-TESTING.md](INTEGRATION-TESTING.md) | Takaro MCP tools + bot API |
 
@@ -35,6 +35,9 @@ Multi-platform Minecraft connector for the Takaro game management platform. Impl
   [Paper Plugin]  [NeoForge Mod]  [Fabric Mod]
 ```
 
+**Fabric targets Minecraft 26.2 / Java 25; Paper and NeoForge stay on 1.21.11 / Java 21.**
+The whole Gradle build must run on a **JDK 25** Gradle JVM (see [BUILD.md](BUILD.md)).
+
 Core module is pure Java with no Minecraft dependency. Each platform module implements `GameAdapter` and translates platform events to `EventEmitter` calls.
 
 ## Project Structure
@@ -49,7 +52,8 @@ connectors/
 │   ├── bot/            # Mineflayer test bot with HTTP API
 │   ├── net/            # Stub classes
 │   ├── scripts/        # deploy.sh, reload.sh
-│   └── docker-compose.yml
+│   └── docker-compose.yml   # LEGACY dev environment (bot lives here)
+├── dev-servers/        # THE LIVE RIG — compose/, scripts/, _data/ for every game
 ├── .env.example        # Shared env config (root level)
 ├── justfile            # All commands
 └── .claude/skills/takaro-minecraft-engineer/

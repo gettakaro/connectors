@@ -25,7 +25,7 @@
         "net.fabricmc.fabric-api:fabric-api",
         "net.neoforged:neoforge",
         "net.neoforged.moddev",
-        "fabric-loom"
+        "net.fabricmc.fabric-loom"
       ],
       "groupName": "minecraft platform",
       "automerge": false

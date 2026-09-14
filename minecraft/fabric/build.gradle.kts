@@ -3,13 +3,22 @@ plugins {
     alias(libs.plugins.shadow)
 }
 
+// Minecraft 26.2 requires Java 25; the other Minecraft modules stay on 21.
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
+
+tasks.withType<JavaCompile> {
+    options.release = 25
+}
+
 val shade: Configuration by configurations.creating
 
 dependencies {
-    minecraft("com.mojang:minecraft:${libs.versions.minecraft.get()}")
-    mappings(loom.officialMojangMappings())
-    modImplementation("net.fabricmc:fabric-loader:${libs.versions.fabric.loader.get()}")
-    modImplementation("net.fabricmc.fabric-api:fabric-api:${libs.versions.fabric.api.get()}")
+    minecraft("com.mojang:minecraft:${libs.versions.minecraft.fabric.get()}")
+    implementation("net.fabricmc:fabric-loader:${libs.versions.fabric.loader.get()}")
+    implementation("net.fabricmc.fabric-api:fabric-api:${libs.versions.fabric.api.get()}")
 
     shade(project(":core"))
     implementation(project(":core"))
@@ -17,7 +26,7 @@ dependencies {
 
 tasks.shadowJar {
     configurations = listOf(shade)
-    archiveClassifier.set("dev-shadow")
+    archiveClassifier.set("")
     relocate("org.java_websocket", "io.takaro.libs.websocket")
     relocate("com.google.gson", "io.takaro.libs.gson")
     exclude("com/google/errorprone/**")
@@ -29,7 +38,6 @@ tasks.shadowJar {
     exclude("META-INF/maven/org.checkerframework/**")
 }
 
-tasks.remapJar {
-    inputFile.set(tasks.shadowJar.get().archiveFile)
+tasks.build {
     dependsOn(tasks.shadowJar)
 }
