@@ -4,6 +4,19 @@ All notable changes to the Takaro Project Zomboid connector are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## 1.0.0 (2026-09-14)
+
+
+### Features
+
+* **zomboid:** add Project Zomboid Takaro connector ([#96](https://github.com/gettakaro/connectors/issues/96)) ([63b2616](https://github.com/gettakaro/connectors/commit/63b261617c53591e980f1688e95e6e97a1fb68e7))
+
+
+### Bug Fixes
+
+* **zomboid:** keep dead players online and reformat README ([#98](https://github.com/gettakaro/connectors/issues/98)) ([10a1f81](https://github.com/gettakaro/connectors/commit/10a1f817c4fa2550d4105b89b4c67941e66e50b8))
+* **zomboid:** record player-disconnected in Takaro ([#99](https://github.com/gettakaro/connectors/issues/99)) ([a362647](https://github.com/gettakaro/connectors/commit/a3626475b74605ac9d7c40b37ed81e919c1c62e3))
+
 ## [Unreleased]
 
 ### Added — M2 (remaining actions + events + repo integration)
