@@ -35,6 +35,8 @@ public static class ContractHarness
             AssertProtocolErrorsAreBoundedAndSafe();
             AssertCorrelatedMalformedRequestsTerminate();
             AssertRawRequestsAreNotLogged();
+            AssertMapCatalog();
+            AssertMapRouting();
             Console.WriteLine("Contract harness passed: " + _assertions + " assertions");
             return 0;
         }
@@ -979,6 +981,222 @@ public static class ContractHarness
         }
     }
 
+    /// <summary>
+    /// getMapInfo must always satisfy Takaro's MapInfoDTO. The shipped 0.1.3
+    /// build had no handler at all, so Takaro validated the router's error reply
+    /// and failed on "property enabled has failed ... isBoolean".
+    /// </summary>
+    private static void AssertMapCatalog()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            "takaro-map-" + Guid.NewGuid().ToString("N")
+        );
+
+        // No tile cache at all (web dashboard disabled, the common case).
+        Dictionary<string, object> disabled = MapCatalog.BuildMapInfo(
+            Path.Combine(root, "missing"),
+            6144,
+            256,
+            6144
+        );
+        AssertMapInfoShape(disabled, "map info without a tile cache");
+        Equal(false, (bool)disabled["enabled"], "missing tile cache reports enabled=false");
+        Equal(
+            MapCatalog.FallbackMaxZoom,
+            (int)disabled["maxZoom"],
+            "missing tile cache still reports a usable maxZoom"
+        );
+        Equal(6144, (int)disabled["mapSizeX"], "map info echoes the world extent X");
+        Equal(256, (int)disabled["mapSizeY"], "map info echoes the world extent Y");
+        Equal(6144, (int)disabled["mapSizeZ"], "map info echoes the world extent Z");
+        Equal(
+            MapCatalog.TileBlockSize,
+            (int)disabled["mapBlockSize"],
+            "map info reports the tile block size"
+        );
+
+        Dictionary<string, object> nullRoot = MapCatalog.BuildMapInfo(null, -5, -5, -5);
+        AssertMapInfoShape(nullRoot, "map info with an unresolved save directory");
+        Equal(false, (bool)nullRoot["enabled"], "unresolved save dir reports enabled=false");
+        Equal(0, (int)nullRoot["mapSizeX"], "negative world extent is clamped to zero");
+
+        // A real tile cache.
+        string mapRoot = Path.Combine(root, "map");
+        Directory.CreateDirectory(Path.Combine(mapRoot, "3", "-2"));
+        Directory.CreateDirectory(Path.Combine(mapRoot, "notazoom"));
+        byte[] png = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x01 };
+        File.WriteAllBytes(Path.Combine(mapRoot, "3", "-2", "7.png"), png);
+
+        try
+        {
+            Dictionary<string, object> enabled = MapCatalog.BuildMapInfo(mapRoot, 8192, 256, 8192);
+            AssertMapInfoShape(enabled, "map info with a tile cache");
+            Equal(true, (bool)enabled["enabled"], "present tile cache reports enabled=true");
+            Equal(3, (int)enabled["maxZoom"], "maxZoom is the highest numeric zoom directory");
+
+            int discovered;
+            True(
+                MapCatalog.TryInspect(mapRoot, out discovered),
+                "tile cache with numeric zoom directories is usable"
+            );
+            Equal(3, discovered, "non-numeric zoom directories are ignored");
+
+            string tile = MapCatalog.TryReadTileBase64(mapRoot, 3, -2, 7);
+            Equal(
+                Convert.ToBase64String(png),
+                tile,
+                "an existing tile is returned as base64 PNG bytes"
+            );
+            True(
+                MapCatalog.TryReadTileBase64(mapRoot, 3, -2, 8) == null,
+                "an unrendered tile reads as null rather than throwing"
+            );
+            True(
+                MapCatalog.TryReadTileBase64(null, 3, -2, 7) == null,
+                "an unresolved tile root reads as null rather than throwing"
+            );
+            True(
+                MapCatalog.ResolveTilePath(mapRoot, 3, -2, 7).EndsWith(
+                    Path.Combine("3", "-2", "7.png")
+                ),
+                "tile paths follow the <zoom>/<x>/<y>.png layout"
+            );
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch (Exception) { }
+        }
+    }
+
+    private static void AssertMapInfoShape(Dictionary<string, object> info, string description)
+    {
+        JObject json = JObject.Parse(JsonConvert.SerializeObject(info));
+        True(json["enabled"] != null, description + ": enabled is present");
+        Equal(
+            JTokenType.Boolean,
+            json["enabled"].Type,
+            description + ": enabled serializes as a JSON boolean"
+        );
+        foreach (string numeric in new[]
+        {
+            "mapBlockSize",
+            "maxZoom",
+            "mapSizeX",
+            "mapSizeY",
+            "mapSizeZ",
+        })
+        {
+            True(json[numeric] != null, description + ": " + numeric + " is present");
+            Equal(
+                JTokenType.Integer,
+                json[numeric].Type,
+                description + ": " + numeric + " serializes as a JSON number"
+            );
+        }
+    }
+
+    /// <summary>
+    /// The router must dispatch getMapInfo/getMapTile instead of falling through
+    /// to "Unknown message type".
+    /// </summary>
+    private static void AssertMapRouting()
+    {
+        Takaro.Services.StateMirror.Instance.MapRoot = null;
+        Takaro.Services.StateMirror.Instance.MapSizeX = 6144;
+        Takaro.Services.StateMirror.Instance.MapSizeY = 256;
+        Takaro.Services.StateMirror.Instance.MapSizeZ = 6144;
+
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        HandlerProbe.Configure(JValue.CreateNull());
+        RouteMapRequest("getMapInfo", "map-info-1", null);
+        Equal(
+            1,
+            WebSocketTransport.Instance.TerminalMessages.Count,
+            "getMapInfo has exactly one terminal response"
+        );
+        WebSocketMessage mapInfoMessage = WebSocketTransport.Instance.TerminalMessages[0];
+        Equal(
+            WebSocketMessage.MessageTypes.Response,
+            mapInfoMessage.Type,
+            "getMapInfo is routed to a response, not Unknown message type"
+        );
+        Equal(
+            "map-info-1",
+            mapInfoMessage.RequestId,
+            "getMapInfo preserves request correlation"
+        );
+        JObject info = (JObject)
+            JObject.Parse(JsonConvert.SerializeObject(mapInfoMessage))["payload"];
+        Equal(
+            JTokenType.Boolean,
+            info["enabled"].Type,
+            "routed getMapInfo returns a boolean enabled"
+        );
+        Equal(false, info["enabled"].Value<bool>(), "routed getMapInfo reports disabled");
+        Equal(
+            6144,
+            info["mapSizeX"].Value<int>(),
+            "routed getMapInfo carries the captured world extent"
+        );
+        Equal(
+            0,
+            HandlerProbe.Actions.Count,
+            "getMapInfo is answered by the production read handler"
+        );
+
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        HandlerProbe.Configure(JValue.CreateNull());
+        RouteMapRequest(
+            "getMapTile",
+            "map-tile-1",
+            new JObject
+            {
+                ["x"] = 1,
+                ["y"] = 2,
+                ["z"] = 3,
+            }
+        );
+        Equal(
+            1,
+            WebSocketTransport.Instance.TerminalMessages.Count,
+            "getMapTile has exactly one terminal response"
+        );
+        WebSocketMessage tileMessage = WebSocketTransport.Instance.TerminalMessages[0];
+        Equal(
+            WebSocketMessage.MessageTypes.Error,
+            tileMessage.Type,
+            "getMapTile without a tile cache fails explicitly"
+        );
+        string tileError = (string)
+            JObject.Parse(JsonConvert.SerializeObject(tileMessage))["payload"]["error"];
+        True(
+            !string.IsNullOrEmpty(tileError) && tileError.IndexOf("Unknown message type") < 0,
+            "getMapTile error explains the missing tile cache instead of an unknown action"
+        );
+
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+    }
+
+    private static void RouteMapRequest(string action, string requestId, JToken args)
+    {
+        var payload = new JObject { ["action"] = action };
+        if (args != null)
+            payload["args"] = args;
+
+        var request = new JObject
+        {
+            ["type"] = "request",
+            ["requestId"] = requestId,
+            ["payload"] = payload,
+        };
+        RequestRouter.Route(request.ToString(Formatting.None));
+    }
+
     private static void True(bool condition, string description)
     {
         _assertions++;
@@ -1125,6 +1343,11 @@ namespace Takaro.Services
         public static readonly StateMirror Instance = new StateMirror();
 
         public bool IsGameReady => true;
+
+        public string MapRoot;
+        public int MapSizeX;
+        public int MapSizeY;
+        public int MapSizeZ;
 
         public List<Takaro.TakaroPlayer> GetOnlinePlayers()
         {

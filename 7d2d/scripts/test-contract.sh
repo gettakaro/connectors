@@ -24,6 +24,7 @@ docker compose --project-directory "${PROJECT_ROOT}" run --rm --no-deps \
       /app/src/Services/ProtocolDiagnostics.cs \
       /app/src/Services/PlayerLocationReadWindow.cs \
       /app/src/Services/ServerMessageEchoGuard.cs \
+      /app/src/Services/MapCatalog.cs \
       /app/src/Services/PlayerProximateItemDelivery.cs \
       /app/src/Shared.cs \
       /app/tests/ContractHarness.cs

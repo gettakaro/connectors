@@ -87,6 +87,23 @@ namespace Takaro.WebSocket
         public string Reason { get; set; }
     }
 
+    /// <summary>
+    /// getMapTile arguments. Takaro sends {x, y, z}; "zoom" is accepted as an
+    /// alias so a spec rename cannot silently degrade to zoom 0.
+    /// </summary>
+    public class TakaroMapTileArgs
+    {
+        public int X { get; set; }
+        public int Y { get; set; }
+        public int Z { get; set; }
+
+        public int Zoom
+        {
+            get { return Z; }
+            set { Z = value; }
+        }
+    }
+
     public class TakaroBanPlayerArgs
     {
         public TakaroPlayerReference Player { get; set; }
@@ -241,6 +258,20 @@ namespace Takaro.WebSocket
                     case "listLocations":
                         ReadHandlers.ListLocations(requestId);
                         break;
+                    case "getMapInfo":
+                        ReadHandlers.GetMapInfo(requestId);
+                        break;
+                    case "getMapTile":
+                    {
+                        TakaroMapTileArgs tileArgs = WebSocketArgs<TakaroMapTileArgs>.Parse(args);
+                        if (tileArgs == null)
+                        {
+                            SendError(requestId, "Invalid or missing map tile parameters");
+                            return;
+                        }
+                        ReadHandlers.GetMapTile(requestId, tileArgs.X, tileArgs.Y, tileArgs.Z);
+                        break;
+                    }
                     case "listBans":
                         ReadHandlers.ListBans(requestId);
                         break;

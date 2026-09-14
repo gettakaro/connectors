@@ -20,6 +20,19 @@ namespace Takaro.Services
 
         public bool IsGameReady => _isGameReady;
 
+        // World/map facts captured once on the game thread at seed time so the
+        // WebSocket thread can answer getMapInfo/getMapTile without touching
+        // game APIs.
+        private volatile string _mapRoot;
+        private int _mapSizeX;
+        private int _mapSizeY;
+        private int _mapSizeZ;
+
+        public string MapRoot => _mapRoot;
+        public int MapSizeX => _mapSizeX;
+        public int MapSizeY => _mapSizeY;
+        public int MapSizeZ => _mapSizeZ;
+
         public static StateMirror Instance
         {
             get
@@ -241,9 +254,48 @@ namespace Takaro.Services
             SeedItems();
             SeedEntities();
             SeedLocations();
+            SeedWorldMap();
             RefreshBans();
             LogService.Instance.Info(
                 "State mirror seeding enqueued (items, entities, locations, bans)"
+            );
+        }
+
+        /// <summary>
+        /// Captures the world extent and the web-map tile-cache root. Both are
+        /// game-thread-only reads, so they happen here rather than per request.
+        /// </summary>
+        private void SeedWorldMap()
+        {
+            try
+            {
+                _mapRoot = System.IO.Path.Combine(GameIO.GetSaveGameDir(), "map");
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Warn($"Could not resolve map tile cache: {ex.Message}");
+                _mapRoot = null;
+            }
+
+            try
+            {
+                World world = GameManager.Instance?.World;
+                Vector3i min;
+                Vector3i max;
+                if (world != null && world.GetWorldExtent(out min, out max))
+                {
+                    _mapSizeX = Math.Abs(max.x - min.x);
+                    _mapSizeY = Math.Abs(max.y - min.y);
+                    _mapSizeZ = Math.Abs(max.z - min.z);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Warn($"Could not resolve world extent: {ex.Message}");
+            }
+
+            LogService.Instance.Info(
+                $"World map captured (extent {_mapSizeX}x{_mapSizeY}x{_mapSizeZ}, tiles '{_mapRoot}')"
             );
         }
 
