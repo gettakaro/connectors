@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Threading;
 using Takaro.Config;
@@ -28,6 +29,14 @@ namespace Takaro.WebSocket
 
         private BlockingCollection<string> _outbound;
         private Thread _senderThread;
+
+        // Messages that could not be written yet (socket down / reconnecting).
+        // Previously these were logged and discarded, which silently lost the
+        // state-mirror seed batch whenever the first connect flapped.
+        private readonly Queue<string> _pending = new Queue<string>();
+        private const int MAX_PENDING_MESSAGES = 1000;
+        private const int SENDER_POLL_MILLISECONDS = 1000;
+        private bool _pendingOverflowLogged;
 
         public static WebSocketTransport Instance
         {
@@ -97,23 +106,73 @@ namespace Takaro.WebSocket
 
         private void DrainOutbound()
         {
-            foreach (string json in _outbound.GetConsumingEnumerable())
+            while (true)
             {
-                if (_webSocket == null || !_isConnected)
-                {
-                    LogService.Instance.Warn("Cannot send message - WebSocket not connected");
-                    continue;
-                }
-
+                string json = null;
+                bool took;
                 try
                 {
-                    _webSocket.Send(json);
+                    took = _outbound.TryTake(out json, SENDER_POLL_MILLISECONDS);
+                }
+                catch (Exception)
+                {
+                    // Collection completed/disposed during shutdown.
+                    break;
+                }
+
+                if (took)
+                    Buffer(json);
+                else if (_outbound.IsCompleted)
+                    break;
+
+                FlushPending();
+            }
+        }
+
+        private void Buffer(string json)
+        {
+            if (string.IsNullOrEmpty(json))
+                return;
+
+            _pending.Enqueue(json);
+            while (_pending.Count > MAX_PENDING_MESSAGES)
+            {
+                _pending.Dequeue();
+                if (!_pendingOverflowLogged)
+                {
+                    _pendingOverflowLogged = true;
+                    LogService.Instance.Warn(
+                        $"Outbound buffer exceeded {MAX_PENDING_MESSAGES} messages while "
+                            + "disconnected - dropping oldest messages"
+                    );
+                }
+            }
+        }
+
+        private void FlushPending()
+        {
+            while (_pending.Count > 0)
+            {
+                WebSocketSharp.WebSocket socket = _webSocket;
+                if (socket == null || !_isConnected)
+                    return; // Keep the backlog; retry on the next poll.
+
+                string json = _pending.Peek();
+                try
+                {
+                    socket.Send(json);
                 }
                 catch (Exception ex)
                 {
                     LogService.Instance.Error($"Error sending WebSocket message: {ex.Message}");
                     Log.Exception(ex);
+                    // Drop this message so one poison payload cannot wedge the queue.
+                    _pending.Dequeue();
+                    continue;
                 }
+
+                _pending.Dequeue();
+                _pendingOverflowLogged = false;
             }
         }
 
@@ -128,11 +187,21 @@ namespace Takaro.WebSocket
                     return;
                 }
 
-                _webSocket = new WebSocketSharp.WebSocket(config.WebSocketUrl);
+                // Drop any previous socket first: its receive thread can still
+                // raise OnClose after we have moved on, which would otherwise
+                // mark the *new* connection as dead.
+                DiscardSocket();
 
-                _webSocket.OnOpen += (sender, e) =>
+                WebSocketSharp.WebSocket socket = new WebSocketSharp.WebSocket(
+                    config.WebSocketUrl
+                );
+                _webSocket = socket;
+
+                socket.OnOpen += (sender, e) =>
                 {
-                    _isConnected = true;
+                    if (!ReferenceEquals(socket, _webSocket))
+                        return;
+
                     _reconnectAttempts = 0;
                     LogService.Instance.Info("WebSocket connection established");
 
@@ -147,29 +216,65 @@ namespace Takaro.WebSocket
                         return;
                     }
 
-                    Send(
-                        WebSocketMessage.CreateIdentify(
-                            config.RegistrationToken,
-                            config.IdentityToken
-                        )
-                    );
+                    // Identify must be the first frame on the wire, ahead of any
+                    // buffered backlog, so it is written directly instead of
+                    // going through the outbound queue.
+                    try
+                    {
+                        socket.Send(
+                            Newtonsoft.Json.JsonConvert.SerializeObject(
+                                WebSocketMessage.CreateIdentify(
+                                    config.RegistrationToken,
+                                    config.IdentityToken
+                                )
+                            )
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        LogService.Instance.Error($"Failed to identify: {ex.Message}");
+                        return;
+                    }
+
+                    _isConnected = true;
                     StartHeartbeat();
                 };
 
-                _webSocket.OnMessage += (sender, e) =>
+                socket.OnMessage += (sender, e) =>
                 {
+                    if (!ReferenceEquals(socket, _webSocket))
+                        return;
+
+                    // Ping/pong and binary control traffic must never reach the
+                    // JSON request router.
+                    if (!e.IsText)
+                        return;
+
                     RequestRouter.Route(e.Data);
                 };
 
-                _webSocket.OnError += (sender, e) =>
+                socket.OnError += (sender, e) =>
                 {
                     LogService.Instance.Error($"WebSocket error: {e.Message}");
+                    if (e.Exception != null)
+                    {
+                        LogService.Instance.Error(
+                            $"WebSocket error detail: {e.Exception.GetType().FullName}: "
+                                + $"{e.Exception.Message}"
+                        );
+                        Log.Exception(e.Exception);
+                    }
                 };
 
-                _webSocket.OnClose += (sender, e) =>
+                socket.OnClose += (sender, e) =>
                 {
+                    if (!ReferenceEquals(socket, _webSocket))
+                        return;
+
                     _isConnected = false;
-                    LogService.Instance.Info($"WebSocket connection closed: {e.Code} - {e.Reason}");
+                    LogService.Instance.Info(
+                        $"WebSocket connection closed: {e.Code} - {e.Reason}"
+                    );
 
                     StopTimers();
 
@@ -179,7 +284,7 @@ namespace Takaro.WebSocket
                     }
                 };
 
-                _webSocket.Connect();
+                socket.Connect();
             }
             catch (Exception ex)
             {
@@ -261,6 +366,32 @@ namespace Takaro.WebSocket
             {
                 _reconnectTimer.Dispose();
                 _reconnectTimer = null;
+            }
+        }
+
+        /// <summary>
+        /// Detaches and closes the current socket without touching the pending
+        /// outbound backlog.
+        /// </summary>
+        private void DiscardSocket()
+        {
+            WebSocketSharp.WebSocket previous = _webSocket;
+            if (previous == null)
+                return;
+
+            _webSocket = null;
+            _isConnected = false;
+
+            try
+            {
+                if (previous.ReadyState == WebSocketState.Open)
+                    previous.Close(CloseStatusCode.Away, "Reconnecting");
+                else
+                    ((IDisposable)previous).Dispose();
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Debug($"Error discarding previous socket: {ex.Message}");
             }
         }
 
