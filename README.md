@@ -13,6 +13,7 @@ Monorepo for connector plugins that implement the [Takaro Generic Connector Prot
 | Conan Exiles | [`conan-exiles/`](conan-exiles/) | TypeScript | Node.js |
 | Terraria | [`terraria/`](terraria/) | C# / .NET 9 | TShock reference build |
 | Valheim | [`valheim/`](valheim/) | C# / .NET | BepInEx dedicated-server plugin and graphical-client companion |
+| Enshrouded | [`enshrouded/`](enshrouded/) | C++ (`dbghelp.dll` proxy) + TypeScript sidecar | zig cross-compile + Node.js |
 
 Each connector is self-contained with its own Docker dev environment, build system, and scripts. See each connector's README for details.
 
