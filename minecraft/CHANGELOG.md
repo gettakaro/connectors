@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.0.3...minecraft-v0.1.0) (2026-09-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **minecraft:** run the Fabric connector on Minecraft 26.2 (Java 25) ([#102](https://github.com/gettakaro/connectors/issues/102))
+
+### Features
+
+* **minecraft:** run the Fabric connector on Minecraft 26.2 (Java 25) ([#102](https://github.com/gettakaro/connectors/issues/102)) ([5be44de](https://github.com/gettakaro/connectors/commit/5be44de2775c4bc9f5c8b3ab6c23b38ad2ed9b92))
+
 ## [0.0.3](https://github.com/gettakaro/connectors/compare/minecraft-v0.0.2...minecraft-v0.0.3) (2026-06-05)
 
 
