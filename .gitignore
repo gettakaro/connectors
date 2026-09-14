@@ -31,3 +31,6 @@ conan-exiles/logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code skills/plans live in the private workspace repo, never here
+.claude/
