@@ -56,7 +56,11 @@ namespace Takaro.WebSocket
             List<int> recipientEntityIds
         )
         {
-            if (cInfo == null)
+            // Defence in depth against server-message echo: a chat-message event
+            // must always identify a real player. Server/Takaro-originated chat
+            // uses entity id -1 and the '-non-player-' sender, and must never be
+            // republished to Takaro.
+            if (cInfo == null || _senderId < 0)
                 return;
 
             string channel;
