@@ -1,16 +1,16 @@
 [versions]
-minecraft = "1.21.11"
+minecraft-fabric = "26.2"
 paper-api = "1.21.11-R0.1-SNAPSHOT"
 neoforge-version = "21.11.38-beta"
-fabric-loader = "0.19.3"
-fabric-api = "0.141.4+1.21.11"
+fabric-loader = "0.19.5"
+fabric-api = "0.160.0+26.2"
 
 java-websocket = "1.6.0"
 gson = "2.14.0"
 log4j = "2.26.0"
 
 shadow = "9.4.2"
-fabric-loom = "1.16.3"
+fabric-loom = "1.17.20"
 neoforge-moddev = "2.0.141"
 
 [libraries]
@@ -21,5 +21,5 @@ paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper-api" }
 
 [plugins]
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
-fabric-loom = { id = "fabric-loom", version.ref = "fabric-loom" }
+fabric-loom = { id = "net.fabricmc.fabric-loom", version.ref = "fabric-loom" }
 neoforge-moddev = { id = "net.neoforged.moddev", version.ref = "neoforge-moddev" }

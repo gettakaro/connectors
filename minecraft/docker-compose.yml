@@ -53,7 +53,8 @@ services:
     stdin_open: true
 
   fabric:
-    image: itzg/minecraft-server@sha256:f29173ca0edfee411bd9e08820aa1bfc508787d7fd02876cfa4c96a3a2a7a77c
+    # MC 26.2 requires Java 25 (digest pin dropped: the pinned image is JRE 21).
+    image: itzg/minecraft-server:java25
     container_name: minecraft-fabric
     env_file: ../.env
     ports:
@@ -62,7 +63,7 @@ services:
     environment:
       EULA: "TRUE"
       TYPE: FABRIC
-      VERSION: "1.21.11"
+      VERSION: "26.2"
       MODRINTH_PROJECTS: "fabric-api"
       MEMORY: 2G
       ENABLE_RCON: "true"

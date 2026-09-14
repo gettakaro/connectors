@@ -98,7 +98,7 @@ public class FabricGameAdapter implements GameAdapter {
                 var key = BuiltInRegistries.ITEM.getKey(item);
                 items.add(new GameItem(
                         key.toString(),
-                        item.getName().getString(),
+                        item.getName(item.getDefaultInstance()).getString(),
                         ""
                 ));
             }

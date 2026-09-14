@@ -7,17 +7,29 @@ End-to-end verification of the Takaro Minecraft connector using the Mineflayer t
 Takaro-assigned UUIDs change on re-registration. Discover them fresh each session:
 
 ```
-# Find gameserver IDs
+# Find gameserver IDs (e.g. `takaro-dev-fabric` = 1f22bc33-9d99-47a6-a9a7-d696bc2d0201)
 mcp__takaro__gameserverSearch({})
 
 # Find online players (need gameserverId from above)
 mcp__takaro__gameserverGetPlayers({ gameserverId: "<id>" })
 
-# Confirm command prefix (default: +)
-mcp__takaro__settingsGet({})
+# Confirm command prefix — it is a DOMAIN SETTING, never assume it
+mcp__takaro__settingsGet({})   # read `commandPrefix`
 ```
 
-Bot usernames: `TakaroBot_paper`, `TakaroBot_neoforge`, `TakaroBot_fabric`.
+**Command prefix:** on the dev domain it is `@` (e.g. `@ping`), **not** `+`. Always read
+`commandPrefix` from `settingsGet` before typing a command; examples below that show `+`
+are illustrative only.
+
+**Gameserver ids** are Takaro-assigned and change on re-registration. Current dev value:
+`takaro-dev-fabric` → `1f22bc33-9d99-47a6-a9a7-d696bc2d0201` — re-confirm with
+`gameserverSearch` each session.
+
+**The Mineflayer bot is legacy-only.** It exists in `minecraft/docker-compose.yml` and is
+**not** running with the `dev-servers/` rig. On the live rig, drive tests through RCON +
+Takaro MCP tools, and do real-client testing from a Windows PC.
+
+Bot usernames (legacy compose): `TakaroBot_paper`, `TakaroBot_neoforge`, `TakaroBot_fabric`.
 
 ## Event Verification Workflow
 
@@ -87,6 +99,24 @@ After modifying code, run the corresponding integration tests:
 
 ## RCON Recipes
 
+### dev-servers rig (live)
+
+Containers are `takaro-dev-minecraft-{paper,neoforge,fabric}`; the RCON password comes from
+`RCON_PASSWORD` in `dev-servers/.env` and `rcon-cli` reads it inside the container:
+
+```bash
+docker exec takaro-dev-minecraft-fabric rcon-cli 'list'
+docker exec takaro-dev-minecraft-fabric rcon-cli 'kill <player>'
+docker exec takaro-dev-minecraft-fabric rcon-cli 'execute at <player> run summon zombie ~ ~ ~1'
+docker exec takaro-dev-minecraft-fabric rcon-cli 'give <player> minecraft:diamond 1'
+docker exec takaro-dev-minecraft-fabric rcon-cli 'tp <player> 0 64 0'
+```
+
+Fabric has no hot reload — after `dev-servers/scripts/deploy-connector.sh minecraft-fabric`,
+restart the container before testing.
+
+### Legacy compose
+
 Common RCON commands for testing. Always quote the command argument:
 
 ```bash
@@ -110,11 +140,16 @@ cd minecraft && docker compose exec paper rcon-cli 'list'
 ```
 
 Replace `paper` with `fabric` or `neoforge` and adjust bot username accordingly.
+RCON password for this legacy compose is `takaro123`.
 
 ## Known Limitations
 
 - **Bot `attack()` targets hostile mobs and players**: The attack endpoint filters by `e.type === 'mob' || e.type === 'player'`, not `animal` (passive). To test entity-killed events, summon hostile mobs via RCON.
 - **Entity tracking breaks after teleport**: After teleporting the bot, nearby entity tracking may be stale. Wait a few seconds or have the bot move.
+- **Mineflayer bot is legacy-only**: it is not part of the `dev-servers/` rig; real-client
+  testing there is done from a Windows PC.
+- **Client/server version match**: Fabric is on Minecraft 26.2, Paper/NeoForge on 1.21.11 —
+  a client must match the server it joins.
 - **NeoForge bot connection broken**: Protocol mismatch prevents the Mineflayer bot from connecting to NeoForge. Test NeoForge via RCON + MCP tools only.
 - **Bot does NOT auto-respawn**: After death, you must call `POST /bot/:server/respawn` to respawn it.
 - **`executeConsoleCommand` rawResult always empty**: The Minecraft server doesn't return command output through the protocol. Verify command effects instead.

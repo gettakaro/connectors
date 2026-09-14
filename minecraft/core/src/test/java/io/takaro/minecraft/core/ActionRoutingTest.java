@@ -260,6 +260,71 @@ class ActionRoutingTest {
         assertFalse(data.has("attacker"));
     }
 
+    @Test
+    void giveItemWithNullQualityUsesEmptyString() {
+        // Takaro shop deliveries send "quality": null - must not throw (JsonNull)
+        sendRequest("giveItem", "req-give-null", "{\"player\":{\"gameId\":\"player-1\"},\"item\":\"minecraft:diamond\",\"amount\":1,\"quality\":null}");
+        waitForResponse();
+
+        assertEquals("player-1", adapter.lastGiveGameId);
+        assertEquals("minecraft:diamond", adapter.lastGiveItem);
+        assertEquals(1, adapter.lastGiveAmount);
+        assertEquals("", adapter.lastGiveQuality);
+
+        assertEquals(1, sentMessages.size());
+        JsonObject response = parseResponse(sentMessages.get(0));
+        assertFalse(response.has("error"), "giveItem with null quality must not produce an error response");
+        assertEquals("req-give-null", response.get("requestId").getAsString());
+    }
+
+    @Test
+    void giveItemWithMissingQualityUsesEmptyString() {
+        sendRequest("giveItem", "req-give-missing", "{\"player\":{\"gameId\":\"player-2\"},\"item\":\"minecraft:stone\",\"amount\":5}");
+        waitForResponse();
+
+        assertEquals("player-2", adapter.lastGiveGameId);
+        assertEquals(5, adapter.lastGiveAmount);
+        assertEquals("", adapter.lastGiveQuality);
+        assertFalse(parseResponse(sentMessages.get(0)).has("error"));
+    }
+
+    @Test
+    void giveItemWithQualityPassesItThrough() {
+        sendRequest("giveItem", "req-give-q", "{\"player\":{\"gameId\":\"player-3\"},\"item\":\"minecraft:stone\",\"quality\":\"5\"}");
+        waitForResponse();
+
+        assertEquals("5", adapter.lastGiveQuality);
+        assertEquals(1, adapter.lastGiveAmount);
+    }
+
+    @Test
+    void nullOptionalStringsDoNotThrowForOtherActions() {
+        sendRequest("banPlayer", "req-ban-null", "{\"player\":{\"gameId\":\"player-1\"},\"reason\":null,\"expiresAt\":null}");
+        waitForResponse();
+        assertEquals("player-1", adapter.lastBannedId);
+        assertEquals("", adapter.lastBanReason);
+        assertNull(adapter.lastBanExpiry);
+        assertFalse(parseResponse(sentMessages.get(0)).has("error"));
+
+        sentMessages.clear();
+        sendRequest("kickPlayer", "req-kick-null", "{\"player\":{\"gameId\":\"player-1\"},\"reason\":null}");
+        waitForResponse();
+        assertEquals("", adapter.lastKickReason);
+        assertFalse(parseResponse(sentMessages.get(0)).has("error"));
+
+        sentMessages.clear();
+        sendRequest("sendMessage", "req-msg-null", "{\"message\":\"hi\",\"opts\":null}");
+        waitForResponse();
+        assertEquals("hi", adapter.lastMessage);
+        assertNull(adapter.lastRecipient);
+        assertFalse(parseResponse(sentMessages.get(0)).has("error"));
+
+        sentMessages.clear();
+        sendRequest("teleportPlayer", "req-tp-null", "{\"player\":{\"gameId\":\"player-1\"},\"x\":1,\"y\":2,\"z\":3,\"dimension\":null}");
+        waitForResponse();
+        assertFalse(parseResponse(sentMessages.get(0)).has("error"));
+    }
+
     // --- Helpers ---
 
     private void sendRequest(String action, String requestId, String argsJson) {
@@ -296,6 +361,10 @@ class ActionRoutingTest {
         String lastBannedId = null;
         String lastBanReason = null;
         String lastBanExpiry = null;
+        String lastGiveGameId = null;
+        String lastGiveItem = null;
+        int lastGiveAmount = -1;
+        String lastGiveQuality = null;
         List<BanEntry> bans = new ArrayList<>();
         List<GameItem> items = new ArrayList<>();
 
@@ -316,7 +385,13 @@ class ActionRoutingTest {
         @Override public List<GameItem> listItems() { return items; }
         @Override public List<GameEntity> listEntities() { return Collections.emptyList(); }
         @Override public List<GameLocation> listLocations() { return Collections.emptyList(); }
-        @Override public void giveItem(String gameId, String itemCode, int amount, String quality) {}
+        @Override
+        public void giveItem(String gameId, String itemCode, int amount, String quality) {
+            lastGiveGameId = gameId;
+            lastGiveItem = itemCode;
+            lastGiveAmount = amount;
+            lastGiveQuality = quality;
+        }
 
         @Override
         public void sendMessage(String message, String recipientGameId) {

@@ -7,6 +7,14 @@ pluginManagement {
     }
 }
 
+// NeoForge's ModDevGradle pins its tooling JVM to the Minecraft version's Java
+// level (21 for 1.21.x) while the build itself now runs on JDK 25 for Fabric /
+// Minecraft 26.2. Let Gradle provision the missing JDK instead of requiring
+// both to be installed.
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+}
+
 rootProject.name = "takaro-minecraft"
 
 include("core")
