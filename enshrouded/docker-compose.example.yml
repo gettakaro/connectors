@@ -1,0 +1,74 @@
+name: enshrouded-takaro
+services:
+  enshrouded:
+    image: mornedhels/enshrouded-server:latest
+    container_name: enshrouded-server
+    restart: unless-stopped
+    stop_grace_period: 2m
+    ports:
+      - "15637:15637/udp"
+    environment:
+      SERVER_NAME: My Enshrouded Server
+      SERVER_SLOT_COUNT: "16"
+      PUID: "1000"
+      PGID: "1000"
+      SERVER_ROLE_0_NAME: Admins
+      SERVER_ROLE_0_PASSWORD: "${ENSHROUDED_ADMIN_PASSWORD:?required}"
+      SERVER_ROLE_0_CAN_KICK_BAN: "true"
+      SERVER_ROLE_0_CAN_ACCESS_INVENTORIES: "true"
+      SERVER_ROLE_0_CAN_EDIT_WORLD: "true"
+      SERVER_ROLE_0_CAN_EDIT_BASE: "true"
+      SERVER_ROLE_0_CAN_EXTEND_BASE: "true"
+      SERVER_ROLE_1_NAME: Friends
+      SERVER_ROLE_1_PASSWORD: "${ENSHROUDED_PLAYER_PASSWORD:?required}"
+      SERVER_ROLE_1_CAN_ACCESS_INVENTORIES: "true"
+      SERVER_ROLE_1_CAN_EDIT_WORLD: "true"
+      SERVER_ROLE_1_CAN_EDIT_BASE: "true"
+      SERVER_ROLE_1_CAN_EXTEND_BASE: "true"
+      SERVER_ROLE_2_NAME: Guests
+      SERVER_ROLE_2_PASSWORD: "${ENSHROUDED_GUEST_PASSWORD:?required}"
+      BACKUP_CRON: "0 * * * *"
+      BACKUP_MAX_COUNT: "24"
+      TZ: Europe/Brussels
+      WINEDLLOVERRIDES: "dbghelp=n,b"
+      TAKARO_PLUGIN_TOKEN: "${TAKARO_ENSHROUDED_PLUGIN_TOKEN:?required}"
+    volumes:
+      - ./data/enshrouded:/opt/enshrouded
+      # Takaro plugin (dbghelp.dll proxy) mounted read-only so SteamCMD updates cannot overwrite/remove it
+      - ./data/enshrouded-plugin/dbghelp.dll:/opt/enshrouded/server/dbghelp.dll:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  # Takaro sidecar (connector bridge). Shares the game container's network namespace so the plugin's
+  # loopback-only API (127.0.0.1:18890) is reachable and never exposed on the host.
+  enshrouded-takaro:
+    build: ./sidecar
+    image: takaro-enshrouded-sidecar:latest
+    container_name: enshrouded-takaro-sidecar
+    restart: unless-stopped
+    network_mode: "service:enshrouded"
+    depends_on:
+      - enshrouded
+    environment:
+      TAKARO_WS_URL: "${TAKARO_WS_URL:-wss://connect.takaro.io/}"
+      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_ENSHROUDED:-my-enshrouded-server}"
+      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN:?required}"
+      TAKARO_SERVER_NAME: "My Enshrouded Server"
+      TAKARO_PLUGIN_URL: "http://127.0.0.1:18890"
+      TAKARO_PLUGIN_TOKEN: "${TAKARO_ENSHROUDED_PLUGIN_TOKEN:?required}"
+      ENSHROUDED_LOG_TAIL: "auto"
+      ENSHROUDED_LOG_EVENTS: "${ENSHROUDED_LOG_EVENTS:-filtered}"
+      ENSHROUDED_LOG_FILE: /opt/enshrouded/server/logs/enshrouded_server.log
+      TAKARO_CURSOR_FILE: /data/event-cursor.json
+      SIDECAR_HEALTH_PORT: "18891"
+    volumes:
+      - ./data/enshrouded:/opt/enshrouded:ro
+      - ./data/enshrouded-sidecar:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

@@ -1,0 +1,160 @@
+{
+  "game": "Enshrouded",
+  "connector": "Takaro Enshrouded plugin + sidecar",
+  "architecture": "in-process native plugin (dbghelp.dll proxy loaded by enshrouded_server.exe under Wine/Proton) exposing a loopback HTTP API, plus a Node.js sidecar that speaks the Takaro Generic Connector Protocol",
+  "runtime": "enshrouded_server.exe game build 1024233 (Steam build 23178631) in mornedhels/enshrouded-server; plugin 0.4.2",
+  "takaroConnection": "outbound_websocket",
+  "updated": "2026-09-14",
+  "oracle": "Takaro MCP (takaro-mcp 127.0.0.1:3000/mcp)",
+  "statusDefinitions": {
+    "proven": "observed end-to-end via MCP plus game-side check",
+    "partial": "works on one side, not proven end-to-end via MCP",
+    "blocked": "cannot be done / known blocker",
+    "pending": "not implemented or not tested yet"
+  },
+  "actions": {
+    "testReachability": {
+      "status": "proven"
+    },
+    "getPlayers": {
+      "status": "proven"
+    },
+    "getPlayer": {
+      "status": "proven",
+      "note": "via playerongameserverSearch/playerGetOne"
+    },
+    "getPlayerLocation": {
+      "status": "proven",
+      "note": "MCP playerongameserverSearch position + trackingGetPlayerMovementHistory; matches start spawn point within 0.2 m and follows teleports"
+    },
+    "getPlayerInventory": {
+      "status": "proven",
+      "note": "MCP trackingGetPlayerInventoryHistory matches in-game backpack (Ward_T1 level 5, arrows 26, club); Takaro history records changes only, so the unchanged starter legs (equipment) never appear there; plugin returns them"
+    },
+    "giveItem": {
+      "status": "proven",
+      "note": "non-admin player; game ignores count, plugin splits into full-stack + single actions (max 64); Admin-group player: give x5 + x4 arrived in client, a later client-driven backpack move was accepted server-side, no crash. Persistence across restart not verified (server was hard-killed before save and the character rolled back)"
+    },
+    "listItems": {
+      "status": "proven",
+      "note": "3609 items via syncItems job, MCP itemSearch"
+    },
+    "listEntities": {
+      "status": "proven",
+      "note": "979 templates, Takaro stored 977 (2 duplicate codes), MCP entitySearch; static data, live entity list only as /debug/nearby"
+    },
+    "listLocations": {
+      "status": "partial",
+      "note": "1031 locations via plugin and sidecar adapter; Takaro app-api never calls listLocations and MCP has no location tool, so not observable via MCP"
+    },
+    "executeConsoleCommand": {
+      "status": "proven",
+      "note": "plugin-defined command set (help, players, say, whisper, location, teleport, tp, inventory, give, item, kick, save-and-shutdown); no settime"
+    },
+    "sendMessage": {
+      "status": "partial",
+      "note": "broadcast proven (renders as \"<character name of an online player>: text\"). Whisper reaches the recipient, but exclusion of other players is NOT verified: only one player account is available. Accepted limitation (user decision 2026-09-14)"
+    },
+    "teleportPlayer": {
+      "status": "proven",
+      "note": "Takaro rounds coordinates to integers; game nudges to a free voxel spot"
+    },
+    "kickPlayer": {
+      "status": "proven",
+      "note": "Friends group (0.3.0, 0.4.1, 0.4.2) and Admins group (0.4.2) proven via MCP + client 'The host has kicked you from the session.'. Plugin <=0.4.1 silently did nothing for Admins/canKickBan players: the game's own handler skips them; 0.4.2 lifts that check for the one call. MCP returns {} for success and for plugin errors alike"
+    },
+    "banPlayer": {
+      "status": "proven",
+      "note": "online players only; reason/expiresAt not supported by the game. Re-proven 2026-09-14 on 0.4.2 with an Admins-group player (ban dialog, bannedAccounts entry, rejoin refused)"
+    },
+    "unbanPlayer": {
+      "status": "proven",
+      "note": "requires the player to have been seen online once (hash cache); re-proven 2026-09-14 on 0.4.2 (unban log line, list empty, rejoin succeeded)"
+    },
+    "listBans": {
+      "status": "proven"
+    },
+    "shutdown": {
+      "status": "proven"
+    }
+  },
+  "events": {
+    "player-connected": {
+      "status": "proven",
+      "note": "stored records 7f2fa9b2, 4038ab40 from real joins; playerOnboarding hook fired from them"
+    },
+    "player-disconnected": {
+      "status": "proven",
+      "note": "stored 7757b852 from a real leave; 9b618661 from sidecar reconciliation after the server was killed with the player online"
+    },
+    "log": {
+      "status": "partial",
+      "note": "not a stored/searchable Takaro event; arrival only shown by event-rate-limited records (697530ba, limitedEventType log, droppedCount 231)"
+    },
+    "chat-message": {
+      "status": "proven"
+    },
+    "player-death": {
+      "status": "proven",
+      "note": "fall death and death by enemy proven earlier. Non-player killer is now forwarded in the base msg field ('<name> was killed by <code>'; Takaro schema has no killerEntity and forbids unknown fields). Unit-tested only; not re-proven live after the change"
+    },
+    "entity-killed": {
+      "status": "proven",
+      "note": "weapon is empty (weapon category not mapped); props/voxel destructibles are filtered out"
+    }
+  },
+  "modules": {
+    "command": {
+      "status": "proven",
+      "note": "real in-game chat with '@' prefix (utils ping, custom ensproof); '/', '!' also pass through"
+    },
+    "hook": {
+      "status": "proven",
+      "note": "real chat-message, real player-connected (playerOnboarding) and MCP hookTrigger"
+    },
+    "cronjob": {
+      "status": "proven",
+      "note": "MCP cronjobTrigger (message seen in client) and natural scheduled runs 20:05, 20:10"
+    },
+    "teleports": {
+      "status": "proven",
+      "note": "@settp/@tp/@tplist/@deletetp; position change confirmed by plugin, server log, MCP pog and screenshots"
+    },
+    "serverMessages": {
+      "status": "proven"
+    },
+    "playerOnboarding": {
+      "status": "proven",
+      "note": "join-time welcome is sent while the client is still loading and was not seen on screen; the same hook run via hookTrigger in game was seen"
+    },
+    "chatBridge": {
+      "status": "proven",
+      "note": "built-in chatBridge: D1, D4 and a human D2 proven. Replaced on this server by chatBridgeNoEcho (5ca72768) because of the Takaro-core echo"
+    },
+    "chatBridgeNoEcho": {
+      "status": "proven",
+      "note": "fork of chatBridge. GameToDiscord skips player-less chat. No echo proven, and player chat still relayed"
+    }
+  },
+  "resilience": {
+    "containerRestartReconnect": {
+      "status": "proven",
+      "note": "reachability false during restart, sidecar self-exit after 180 s, reconnected, connectable:true"
+    },
+    "sidecarRestartNoReplay": {
+      "status": "proven",
+      "note": "cursor 693 persisted; no Takaro records created by the restart; new chat after restart forwarded once"
+    },
+    "serverRestartOnlineReconcile": {
+      "status": "proven"
+    },
+    "pluginRestartDetection": {
+      "status": "proven",
+      "note": "seq-reset path proven live (0.4.0); plugin 0.4.1 adds bootId (cursor now stores it, used live after redeploy); bootId-only case unit-tested"
+    },
+    "signatureSelfCheckDegrade": {
+      "status": "proven",
+      "note": "debug build with corrupted addComponent pattern: teleport=degraded, all other capabilities ok, server kept running, MCP reachability reason 'capabilities not ok: teleport=degraded'; release 0.4.1 restored with all ok. Degraded teleport request not exercised with a player online"
+    }
+  }
+}
