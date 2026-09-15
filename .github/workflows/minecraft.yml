@@ -3,9 +3,9 @@ name: Minecraft Connector
 on:
   push:
     branches: [main]
-    paths: ['minecraft/**', 'scripts/**', '.github/workflows/minecraft.yml']
+    paths: ['games/minecraft/**', 'scripts/**', '.github/workflows/minecraft.yml']
   pull_request:
-    paths: ['minecraft/**', 'scripts/**', '.github/workflows/minecraft.yml']
+    paths: ['games/minecraft/**', 'scripts/**', '.github/workflows/minecraft.yml']
   workflow_call:
     inputs:
       version:
@@ -58,7 +58,7 @@ jobs:
         run: scripts/release-params.sh minecraft >> "$GITHUB_OUTPUT"
 
       - name: Build release artifacts
-        run: minecraft/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
+        run: games/minecraft/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
 
       - name: Publish stable release assets
         if: ${{ steps.params.outputs.publish == 'stable' }}

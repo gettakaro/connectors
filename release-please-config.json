@@ -19,43 +19,43 @@
     { "type": "ci", "section": "Continuous Integration", "hidden": false }
   ],
   "packages": {
-    "rust": {
+    "games/rust": {
       "release-type": "simple",
       "component": "rust",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "plugin/TakaroConnector.cs" }
+        { "type": "generic", "path": "mod/TakaroConnector.cs" }
       ]
     },
-    "minecraft": {
+    "games/minecraft": {
       "release-type": "simple",
       "component": "minecraft",
       "changelog-path": "CHANGELOG.md"
     },
-    "7d2d": {
+    "games/7d2d": {
       "release-type": "simple",
       "component": "7d2d",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "ModInfo.xml" }
+        { "type": "generic", "path": "mod/ModInfo.xml" }
       ]
     },
-    "zomboid": {
+    "games/zomboid": {
       "release-type": "simple",
       "component": "zomboid",
       "changelog-path": "CHANGELOG.md"
     },
-    "valheim": {
+    "games/valheim": {
       "release-type": "simple",
       "component": "valheim",
       "changelog-path": "CHANGELOG.md"
     },
-    "conan-exiles": {
+    "games/conan-exiles": {
       "release-type": "simple",
       "component": "conan-exiles",
       "changelog-path": "CHANGELOG.md"
     },
-    "terraria": {
+    "games/terraria": {
       "release-type": "simple",
       "component": "terraria",
       "changelog-path": "CHANGELOG.md"

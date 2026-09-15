@@ -1,9 +1,9 @@
 {
-  "rust": "0.0.3",
-  "minecraft": "0.1.0",
-  "7d2d": "0.1.5",
-  "valheim": "3.0.1",
-  "conan-exiles": "1.0.0",
-  "terraria": "0.2.0",
-  "zomboid": "1.0.0"
+  "games/rust": "0.0.3",
+  "games/minecraft": "0.1.0",
+  "games/7d2d": "0.1.5",
+  "games/valheim": "3.0.1",
+  "games/conan-exiles": "1.0.0",
+  "games/terraria": "0.2.0",
+  "games/zomboid": "1.0.0"
 }

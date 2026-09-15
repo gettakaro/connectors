@@ -3,9 +3,9 @@ name: Rust Connector
 on:
   push:
     branches: [main]
-    paths: ['rust/**', 'scripts/**', '.github/workflows/rust.yml']
+    paths: ['games/rust/**', 'scripts/**', '.github/workflows/rust.yml']
   pull_request:
-    paths: ['rust/**', 'scripts/**', '.github/workflows/rust.yml']
+    paths: ['games/rust/**', 'scripts/**', '.github/workflows/rust.yml']
   workflow_call:
     inputs:
       version:
@@ -70,7 +70,7 @@ jobs:
 
           mkdir -p /tmp/compile-check/src
 
-          cp rust/plugin/TakaroConnector.cs /tmp/compile-check/src/
+          cp games/rust/mod/TakaroConnector.cs /tmp/compile-check/src/
 
           GAME_REFS=""
           for dll in "$GAME"/*.dll; do
@@ -111,7 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Build Docker image
-        run: docker build -t takaro-rust-test rust/
+        run: docker build -t takaro-rust-test games/rust/
 
   package:
     runs-on: ubuntu-latest
@@ -142,7 +142,7 @@ jobs:
         run: scripts/release-params.sh rust >> "$GITHUB_OUTPUT"
 
       - name: Build release artifact
-        run: rust/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
+        run: games/rust/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
 
       - name: Publish stable release assets
         if: ${{ steps.params.outputs.publish == 'stable' }}
