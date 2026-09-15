@@ -3,9 +3,9 @@ name: Conan Exiles Connector
 on:
   push:
     branches: [main]
-    paths: ['conan-exiles/**', 'scripts/**', '.github/workflows/conan-exiles.yml']
+    paths: ['games/conan-exiles/**', 'scripts/**', '.github/workflows/conan-exiles.yml']
   pull_request:
-    paths: ['conan-exiles/**', 'scripts/**', '.github/workflows/conan-exiles.yml']
+    paths: ['games/conan-exiles/**', 'scripts/**', '.github/workflows/conan-exiles.yml']
   workflow_call:
     inputs:
       version:
@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: conan-exiles
+        working-directory: games/conan-exiles/bridge
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Set up Node.js
@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: 22.x
           cache: npm
-          cache-dependency-path: conan-exiles/package-lock.json
+          cache-dependency-path: games/conan-exiles/bridge/package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Test
@@ -62,10 +62,10 @@ jobs:
         with:
           node-version: 22.x
           cache: npm
-          cache-dependency-path: conan-exiles/package-lock.json
+          cache-dependency-path: games/conan-exiles/bridge/package-lock.json
 
       - name: Make scripts executable
-        run: chmod +x conan-exiles/scripts/*.sh scripts/*.sh
+        run: chmod +x games/conan-exiles/scripts/*.sh scripts/*.sh
 
       - name: Resolve release params
         id: params
@@ -78,7 +78,7 @@ jobs:
         run: scripts/release-params.sh conan-exiles >> "$GITHUB_OUTPUT"
 
       - name: Build release artifact
-        run: conan-exiles/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
+        run: games/conan-exiles/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
 
       - name: Publish stable release assets
         if: ${{ steps.params.outputs.publish == 'stable' }}

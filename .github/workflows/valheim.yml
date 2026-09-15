@@ -3,9 +3,9 @@ name: Valheim Connector
 on:
   push:
     branches: [main]
-    paths: ['valheim/**', 'scripts/**', '.github/workflows/valheim.yml']
+    paths: ['games/valheim/**', 'scripts/**', '.github/workflows/valheim.yml']
   pull_request:
-    paths: ['valheim/**', 'scripts/**', '.github/workflows/valheim.yml']
+    paths: ['games/valheim/**', 'scripts/**', '.github/workflows/valheim.yml']
   workflow_call:
     inputs:
       version:
@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: valheim
+        working-directory: games/valheim
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Set up .NET
@@ -37,9 +37,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ripgrep
       - name: Restore
-        run: dotnet restore Takaro.Valheim.sln
+        run: dotnet restore mod/Takaro.Valheim.sln
       - name: Test reference-free connector projects
-        run: dotnet test Takaro.Valheim.sln --no-restore -v minimal
+        run: dotnet test mod/Takaro.Valheim.sln --no-restore -v minimal
 
   package:
     runs-on: ubuntu-latest
@@ -73,19 +73,19 @@ jobs:
         id: valheim-cache
         with:
           path: |
-            valheim/_data/server
-            valheim/_data/deps
-            valheim/_data/steamcmd
+            games/valheim/_data/server
+            games/valheim/_data/deps
+            games/valheim/_data/steamcmd
           key: valheim-build-deps-v2-owned-reference-cache
 
       - name: Make scripts executable
-        run: chmod +x valheim/scripts/*.sh scripts/*.sh
+        run: chmod +x games/valheim/scripts/*.sh scripts/*.sh
 
       - name: Set up environment
-        run: valheim/scripts/setup-environment.sh
+        run: games/valheim/scripts/setup-environment.sh
 
       - name: Restore
-        run: dotnet restore valheim/Takaro.Valheim.sln
+        run: dotnet restore games/valheim/mod/Takaro.Valheim.sln
 
       - name: Resolve release params
         id: params
@@ -98,10 +98,10 @@ jobs:
         run: scripts/release-params.sh valheim >> "$GITHUB_OUTPUT"
 
       - name: Build release artifact
-        run: valheim/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
+        run: games/valheim/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
 
       - name: Validate separate server and client archives
-        run: valheim/tests/release-package-behavior.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
+        run: games/valheim/tests/release-package-behavior.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
 
       - name: Publish stable release assets
         if: ${{ steps.params.outputs.publish == 'stable' }}

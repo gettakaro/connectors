@@ -17,8 +17,8 @@ bot/node_modules/
 
 # Node sidecars
 node_modules/
-conan-exiles/dist/
-conan-exiles/logs/
+games/conan-exiles/bridge/dist/
+games/conan-exiles/bridge/logs/
 
 # IDE
 .idea/

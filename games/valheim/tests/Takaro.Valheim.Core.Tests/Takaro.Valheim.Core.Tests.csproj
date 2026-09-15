@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
+    <PackageReference Include="MSTest.TestAdapter" Version="3.4.3" />
+    <PackageReference Include="MSTest.TestFramework" Version="3.4.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\mod\src\Takaro.Valheim.Companion\Takaro.Valheim.Companion.csproj" />
+    <ProjectReference Include="..\..\mod\src\Takaro.Valheim.Companion.Protocol\Takaro.Valheim.Companion.Protocol.csproj" />
+    <ProjectReference Include="..\..\mod\src\Takaro.Valheim.Core\Takaro.Valheim.Core.csproj" />
+    <ProjectReference Include="..\..\mod\src\Takaro.Valheim.Plugin\Takaro.Valheim.Plugin.csproj" />
+  </ItemGroup>
+</Project>

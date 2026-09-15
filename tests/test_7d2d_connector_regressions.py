@@ -3,12 +3,16 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ROOT = REPOSITORY_ROOT / "7d2d"
+GAME_ROOT = REPOSITORY_ROOT / "games" / "7d2d"
+SOURCE_ROOT = GAME_ROOT / "mod"
 
 
 class SourceRegressionTests(unittest.TestCase):
     def source(self, relative_path: str) -> str:
         return (SOURCE_ROOT / relative_path).read_text()
+
+    def game_file(self, relative_path: str) -> str:
+        return (GAME_ROOT / relative_path).read_text()
 
     def test_current_ban_sources_are_mirrored(self):
         mirror = self.source("src/Services/StateMirror.cs")
@@ -103,7 +107,7 @@ class SourceRegressionTests(unittest.TestCase):
 
     def test_default_endpoint_is_production(self):
         config = self.source("src/Config/ConfigManager.cs")
-        readme = self.source("README.md")
+        readme = self.game_file("README.md")
         self.assertIn("wss://connect.takaro.io/", config)
         self.assertNotIn("wss://your-takaro-websocket-server.com", config)
         self.assertIn("wss://connect.takaro.io/", readme)
