@@ -130,7 +130,7 @@ public sealed class CapabilityRegistryTests
     }
 
     [TestMethod]
-    public void DestructiveActionsCarryExactLiveProofInTheRegistryAndReadme()
+    public void DestructiveActionsCarryExactLiveProofInTheRegistryAndDeveloperDoc()
     {
         using var registry = ReadRegistry();
         var root = registry.RootElement;
@@ -138,7 +138,7 @@ public sealed class CapabilityRegistryTests
             .EnumerateArray()
             .Select(note => note.GetString() ?? string.Empty)
             .ToArray();
-        var readme = ReadValheimFile("README.md");
+        var developerDoc = ReadValheimFile("DEVELOPMENT.md");
 
         // These four were live-proven on 2026-09-02 against a real dedicated server and a
         // real graphical client. Each must stay backed by a dated note recording that run,
@@ -146,7 +146,7 @@ public sealed class CapabilityRegistryTests
         foreach (var action in new[] { "kickPlayer", "banPlayer", "unbanPlayer", "shutdown" })
         {
             Assert.AreEqual("live-supported", root.GetProperty("actions").GetProperty(action).GetString(), action);
-            StringAssert.Contains(readme, $"| `{action}` | `live-supported` |");
+            StringAssert.Contains(developerDoc, $"| `{action}` | `live-supported` |");
             Assert.IsTrue(
                 notes.Any(note =>
                     note.Contains("2026-09-02 acceptance run", StringComparison.Ordinal)
@@ -155,8 +155,8 @@ public sealed class CapabilityRegistryTests
         }
 
         // The headless server crashes if moderation disconnects a peer directly, so the
-        // built-in Kicked RPC is the only accepted path and the README must keep saying so.
-        StringAssert.Contains(readme, "ZNet.Disconnect(peer)");
+        // built-in Kicked RPC is the only accepted path and the developer doc must keep saying so.
+        StringAssert.Contains(developerDoc, "ZNet.Disconnect(peer)");
     }
 
     [TestMethod]
@@ -167,50 +167,50 @@ public sealed class CapabilityRegistryTests
             .EnumerateArray()
             .Select(note => note.GetString() ?? string.Empty)
             .ToArray();
-        var readme = ReadValheimFile("README.md");
+        var developerDoc = ReadValheimFile("DEVELOPMENT.md");
 
         Assert.IsTrue(notes.Any(note => note.Contains("raw Generic Connector action", StringComparison.Ordinal)));
         Assert.IsTrue(notes.Any(note => note.Contains("standard Takaro route", StringComparison.Ordinal)));
-        StringAssert.Contains(readme, "| `listLocations` | `schema-fallback`");
-        StringAssert.Contains(readme, "official raw Generic Connector action/schema");
-        StringAssert.Contains(readme, "standard Takaro route");
+        StringAssert.Contains(developerDoc, "| `listLocations` | `schema-fallback`");
+        StringAssert.Contains(developerDoc, "official raw Generic Connector action/schema");
+        StringAssert.Contains(developerDoc, "standard Takaro route");
     }
 
     [TestMethod]
-    public void ReadmeDoesNotAdvertiseMissingValheimJustRecipes()
+    public void DeveloperDocDoesNotAdvertiseMissingValheimJustRecipes()
     {
-        var readme = ReadValheimFile("README.md");
+        var developerDoc = ReadValheimFile("DEVELOPMENT.md");
         var justfile = ReadValheimFile("../../justfile");
 
-        // The README documents the scripts directly rather than the just recipes, so it must
+        // The developer doc documents the scripts directly rather than the just recipes, so it must
         // not send a reader to a recipe name. It may only name a recipe the justfile defines.
-        StringAssert.Contains(readme, "./scripts/setup-environment.sh");
+        StringAssert.Contains(developerDoc, "./scripts/setup-environment.sh");
 
-        if (readme.Contains("just valheim-setup", StringComparison.Ordinal))
+        if (developerDoc.Contains("just valheim-setup", StringComparison.Ordinal))
         {
             StringAssert.Contains(justfile, "valheim-setup:");
         }
 
-        if (readme.Contains("just build-release-valheim", StringComparison.Ordinal))
+        if (developerDoc.Contains("just build-release-valheim", StringComparison.Ordinal))
         {
             StringAssert.Contains(justfile, "build-release-valheim ");
         }
     }
 
     [TestMethod]
-    public void RegistryAndReadmeSupportMatricesStaySynchronized()
+    public void RegistryAndDeveloperDocSupportMatricesStaySynchronized()
     {
         using var registry = ReadRegistry();
-        var readme = ReadValheimFile("README.md");
+        var developerDoc = ReadValheimFile("DEVELOPMENT.md");
 
         foreach (var sectionName in new[] { "actions", "events" })
         {
             foreach (var entry in registry.RootElement.GetProperty(sectionName).EnumerateObject())
             {
                 StringAssert.Contains(
-                    readme,
+                    developerDoc,
                     $"| `{entry.Name}` | `{entry.Value.GetString()}` |",
-                    $"README status mismatch for {entry.Name}.");
+                    $"Developer doc status mismatch for {entry.Name}.");
             }
         }
     }
@@ -219,8 +219,8 @@ public sealed class CapabilityRegistryTests
     public void CompanionDocumentationCoversSafeInstallUpgradeRemovalAndTrustBoundary()
     {
         var companion = ReadValheimFile("COMPANION.md");
-        var readme = ReadValheimFile("README.md");
-        var combined = companion + "\n" + readme;
+        var developerDoc = ReadValheimFile("DEVELOPMENT.md");
+        var combined = companion + "\n" + developerDoc;
 
         foreach (var marker in new[]
                  {
@@ -242,23 +242,23 @@ public sealed class CapabilityRegistryTests
 
         StringAssert.Contains(companion, "registrationToken stays on the dedicated server");
         StringAssert.Contains(companion, "expected and actual protocol versions");
-        StringAssert.Contains(readme, "server plugin still refuses graphical-client processes");
+        StringAssert.Contains(developerDoc, "server plugin still refuses graphical-client processes");
     }
 
     [TestMethod]
     public void ServerMessageDocumentationRequiresAuthenticatedNormalChatRendering()
     {
         var companion = ReadValheimFile("COMPANION.md");
-        var readme = ReadValheimFile("README.md");
-        var combined = readme + "\n" + companion;
+        var developerDoc = ReadValheimFile("DEVELOPMENT.md");
+        var combined = developerDoc + "\n" + companion;
         using var registry = ReadRegistry();
         var notes = registry.RootElement.GetProperty("notes")
             .EnumerateArray()
             .Select(note => note.GetString() ?? string.Empty)
             .ToArray();
 
-        StringAssert.Contains(readme, "normal Valheim chat history");
-        StringAssert.Contains(readme, "active negotiated companion");
+        StringAssert.Contains(developerDoc, "normal Valheim chat history");
+        StringAssert.Contains(developerDoc, "active negotiated companion");
         StringAssert.Contains(companion, "server-chat");
         StringAssert.Contains(companion, "normal chat history");
         StringAssert.Contains(companion, "never rendered through the HUD overlay APIs");
