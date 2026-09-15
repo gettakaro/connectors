@@ -1057,9 +1057,9 @@ public static class ContractHarness
                 "an unresolved tile root reads as null rather than throwing"
             );
             True(
-                MapCatalog.ResolveTilePath(mapRoot, 3, -2, 7).EndsWith(
-                    Path.Combine("3", "-2", "7.png")
-                ),
+                MapCatalog
+                    .ResolveTilePath(mapRoot, 3, -2, 7)
+                    .EndsWith(Path.Combine("3", "-2", "7.png")),
                 "tile paths follow the <zoom>/<x>/<y>.png layout"
             );
         }
@@ -1082,14 +1082,16 @@ public static class ContractHarness
             json["enabled"].Type,
             description + ": enabled serializes as a JSON boolean"
         );
-        foreach (string numeric in new[]
-        {
-            "mapBlockSize",
-            "maxZoom",
-            "mapSizeX",
-            "mapSizeY",
-            "mapSizeZ",
-        })
+        foreach (
+            string numeric in new[]
+            {
+                "mapBlockSize",
+                "maxZoom",
+                "mapSizeX",
+                "mapSizeY",
+                "mapSizeZ",
+            }
+        )
         {
             True(json[numeric] != null, description + ": " + numeric + " is present");
             Equal(
@@ -1125,11 +1127,7 @@ public static class ContractHarness
             mapInfoMessage.Type,
             "getMapInfo is routed to a response, not Unknown message type"
         );
-        Equal(
-            "map-info-1",
-            mapInfoMessage.RequestId,
-            "getMapInfo preserves request correlation"
-        );
+        Equal("map-info-1", mapInfoMessage.RequestId, "getMapInfo preserves request correlation");
         JObject info = (JObject)
             JObject.Parse(JsonConvert.SerializeObject(mapInfoMessage))["payload"];
         Equal(

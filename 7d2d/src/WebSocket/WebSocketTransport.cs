@@ -1,6 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 using Takaro.Config;
 using Takaro.Services;
@@ -360,9 +360,7 @@ namespace Takaro.WebSocket
                 // mark the *new* connection as dead.
                 DiscardSocket();
 
-                WebSocketSharp.WebSocket socket = new WebSocketSharp.WebSocket(
-                    config.WebSocketUrl
-                );
+                WebSocketSharp.WebSocket socket = new WebSocketSharp.WebSocket(config.WebSocketUrl);
                 _webSocket = socket;
 
                 // websocket-sharp swallows the real cause of a 1006: the receive
@@ -461,7 +459,8 @@ namespace Takaro.WebSocket
                     int uptimeSeconds =
                         openedAt == 0
                             ? -1
-                            : (int)TimeSpan.FromTicks(DateTime.UtcNow.Ticks - openedAt).TotalSeconds;
+                            : (int)
+                                TimeSpan.FromTicks(DateTime.UtcNow.Ticks - openedAt).TotalSeconds;
 
                     bool wasConfirmed = _isConfirmed;
                     _isConnected = false;
@@ -599,9 +598,7 @@ namespace Takaro.WebSocket
             }
             catch (Exception ex)
             {
-                LogService.Instance.Warn(
-                    $"Could not attach websocket-sharp logger: {ex.Message}"
-                );
+                LogService.Instance.Warn($"Could not attach websocket-sharp logger: {ex.Message}");
             }
         }
 
@@ -697,7 +694,8 @@ namespace Takaro.WebSocket
             _reconnectAttempts++;
 
             int baseIntervalSeconds = ConfigManager.Instance.ReconnectIntervalSeconds;
-            double backoffMultiplier = Math.Pow(2, Math.Min(16, Math.Max(0, _reconnectAttempts - 1)));
+            int backoffExponent = Math.Min(16, Math.Max(0, _reconnectAttempts - 1));
+            double backoffMultiplier = Math.Pow(2, backoffExponent);
             int intervalSeconds = (int)
                 Math.Min(baseIntervalSeconds * backoffMultiplier, MAX_RECONNECT_INTERVAL_SECONDS);
             var interval = TimeSpan.FromSeconds(Math.Max(1, intervalSeconds));

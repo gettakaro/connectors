@@ -51,14 +51,7 @@ namespace Takaro.Services
             {
                 string name = Path.GetFileName(dir);
                 int zoom;
-                if (
-                    !int.TryParse(
-                        name,
-                        NumberStyles.None,
-                        CultureInfo.InvariantCulture,
-                        out zoom
-                    )
-                )
+                if (!int.TryParse(name, NumberStyles.None, CultureInfo.InvariantCulture, out zoom))
                     continue;
 
                 found = true;
