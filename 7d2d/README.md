@@ -49,51 +49,58 @@ On first start the mod creates `7d2d/Config.xml` with the production Takaro WebS
 
 Set `RegistrationToken` to the token from your Takaro game server connector setup before expecting the server to identify successfully. The mod generates `IdentityToken` automatically the first time the config is created.
 
-## Takaro coverage
+## What works, what doesn't
 
-**23 of 25** capabilities in Takaro's API surface are
-live-supported, verified end to end through the Takaro API against a real
-dedicated server (game build V 3.2.0 b10).
+Verified end to end on 2026-09-14 against a real dedicated server (game build **V 3.2.0 b10**, mod
+**0.1.3**, plus the 0.1.4 map work) with a real game client connected. ✅ = works, ⚠️ = works with a
+caveat, ❌ = does not work, `TODO` = not exercised in that run yet. Full evidence:
+`gamingconnectors/context/games/7-days-to-die/evidence/2026-09-14-hardtest.md`.
 
-Rows come from Takaro's own `GAME_SERVER_ACTIONS` and `GameEvents`, so a capability
-this connector does not implement still appears here rather than going unlisted.
-
-### Actions
-
-| Action | | Status |
+| What | | Notes |
 |---|---|---|
-| `getPlayer` | ✅ | live-supported |
-| `getPlayers` | ✅ | live-supported |
-| `getPlayerLocation` | ✅ | live-supported |
-| `getPlayerInventory` | ✅ | live-supported |
-| `giveItem` | ✅ | live-supported |
-| `listItems` | ✅ | live-supported |
-| `listEntities` | ✅ | live-supported |
-| `listLocations` | ✅ | live-supported |
-| `executeConsoleCommand` | ✅ | live-supported |
-| `sendMessage` | ✅ | live-supported |
-| `teleportPlayer` | ✅ | live-supported |
-| `testReachability` | ✅ | live-supported |
-| `kickPlayer` | ✅ | live-supported |
-| `banPlayer` | ✅ | live-supported |
-| `unbanPlayer` | ✅ | live-supported |
-| `listBans` | ✅ | live-supported |
-| `shutdown` | ✅ | live-supported |
-| `getMapInfo` | — | missing |
-| `getMapTile` | — | missing |
+| Connection & heartbeat | ⚠️ | Connects and stays up; Takaro polls reachability every ~30 s. The socket dropped twice in 42 minutes (WebSocket code 1006) and reconnected itself after 30 s each time. |
+| Player list | ✅ | Name, platform id, IP and ping. This is how Takaro loads players for 7D2D. |
+| Single player lookup | ⚠️ | The data is correct, but Takaro never asks for one player at a time on this game — it uses the player list instead. |
+| Player location | ✅ | Polled about every 30 s; matches the server's own `lp` output. |
+| Player inventory | ✅ | Matches what the player is carrying in game. |
+| Item catalogue | ✅ | 26,329 items synced. |
+| Entity catalogue | ✅ | 175 entities synced. |
+| Chat messages from players | ✅ | Real player chat reaches Takaro with the player attached. |
+| Broadcast a message | ✅ | Shown to everyone in the server chat. |
+| Whisper a player | ⚠️ | The message reaches the intended player. Only one client was connected, so "nobody else sees it" has not been confirmed. |
+| Give an item | ⚠️ | Works, but the item **drops as a bag at the player's feet** — the player has to walk over it and press E to collect. |
+| Teleport a player | ⚠️ | Works; the height (Y) is snapped to the ground, so the player lands on solid ground rather than at the exact Y you asked for. |
+| Run a console command | ✅ | Output and success/failure are returned, including the error text for unknown commands. |
+| Kick a player | ✅ | The player is dropped from the server with the reason shown. |
+| Ban a player (timed and permanent) | ⚠️ | The ban lands on the game server and the player is blocked. Takaro does not emit its own ban events for it, so the ban is only visible on the game side and in the ban list. |
+| Unban a player | ⚠️ | Clears the ban on the game server; same missing Takaro ban events as above. |
+| Ban list | ✅ | Matches the server's own ban list. |
+| Shut the server down | ✅ | The server stops cleanly on request. |
+| Player joined event | ✅ | Arrives in Takaro about 1 s after the join. |
+| Player left event | ✅ | Arrives in Takaro shortly after the player disconnects. |
+| Player chat event | ✅ | See "Chat messages from players". |
+| Player death event | ✅ | Includes the position where the player died. |
+| Entity kill event | ❌ | Not proven. The test harness cannot swing a weapon (mouse clicks injected by automation are ignored by the game in first-person view), so no kill could be produced — and whether the mod would report one is still unknown. |
+| Log events | ⚠️ | The mod sends them, but Takaro does not store server log lines as events, so they cannot be searched or used in modules. |
+| Map info | ✅ | Implemented in 0.1.4 and verified through the Takaro API. On 0.1.3 it returned *"The gameserver responded with bad data"*. |
+| Map tiles | ⚠️ | Implemented in 0.1.4, but only returns tiles when `WebDashboardEnabled=true` in `serverconfig.xml`; not verified end to end. |
+| Locations / points of interest | ❌ | The mod collects them (368 found), but Takaro has no way to ask for them yet. |
+| Discord chat bridge | ⚠️ | Messages do travel between the game and Discord, but Takaro records its own outgoing messages as chat, so the bridge echoes a message back and forth a few times before it stops. |
+| Shop & economy | ✅ | Buying in game (`/shop`), ordering through the Takaro API, currency grants and balance checks all work. Purchases arrive as a bag at the player's feet. A purchase you cannot afford is rejected correctly, but the in-game message only says "something went wrong". |
 
-### Events
+### Known issues
 
-| Event | | Status |
-|---|---|---|
-| `log` | ✅ | live-supported |
-| `player-connected` | ✅ | live-supported |
-| `player-disconnected` | ✅ | live-supported |
-| `chat-message` | ✅ | live-supported |
-| `player-death` | ✅ | live-supported |
-| `entity-killed` | ✅ | live-supported |
+- **Chat bridge echo.** Takaro stores its own `sendMessage` as a `chat-message` event, so the chat
+  bridge sees the server's own message, forwards it to Discord, relays it back into the game, and
+  loops a few rounds. This is on the Takaro side — the mod only reports chat from real players.
+- **Occasional WebSocket drops.** The connection closed twice with code 1006 during a 42-minute
+  session. The mod reconnects automatically after 30 s and resumes; no operator action is needed.
+- **Locations are not reachable from hosted Takaro.** The mod implements the catalogue, but there is
+  no API route yet — tracked in [gettakaro/takaro#3093](https://github.com/gettakaro/takaro/pull/3093).
+- **Map tiles need the web map.** `getMapTile` reads the server's own tile cache, which only exists
+  when `WebDashboardEnabled=true` in `serverconfig.xml`.
+- **Permanent reconnect loop after a network outage.** 0.1.4 can get stuck retrying forever once the
+  network drops out; only restarting the server recovers it — fix pending in 0.1.5.
 
-`getMapInfo` and `getMapTile` are not implemented. Calling `getMapInfo` through
-Takaro returns `400 — The gameserver responded with bad data`. They are listed
-here rather than omitted so the matrix is measured against Takaro's API surface
-rather than against what this connector happens to implement.
+Rows come from Takaro's own `GAME_SERVER_ACTIONS` and `GameEvents`, so a capability this connector
+does not implement still appears here rather than going unlisted.
