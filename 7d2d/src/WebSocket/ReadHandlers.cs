@@ -132,6 +132,57 @@ namespace Takaro.WebSocket
             );
         }
 
+        /// <summary>
+        /// Answers Takaro's MapInfoDTO. Previously unimplemented: the router's
+        /// default branch replied with a protocol error, which Takaro then tried
+        /// to validate as a MapInfoDTO and rejected ("property enabled has failed
+        /// the following constraints: isBoolean").
+        /// </summary>
+        public static void GetMapInfo(string requestId)
+        {
+            StateMirror mirror = StateMirror.Instance;
+            Send(
+                WebSocketMessage.CreateResponse(
+                    requestId,
+                    MapCatalog.BuildMapInfo(
+                        mirror.MapRoot,
+                        mirror.MapSizeX,
+                        mirror.MapSizeY,
+                        mirror.MapSizeZ
+                    )
+                )
+            );
+        }
+
+        /// <summary>
+        /// Serves a single rendered map tile as base64 PNG. Tiles only exist when
+        /// the server's web dashboard is enabled; otherwise this reports a clear
+        /// error rather than an empty success.
+        /// </summary>
+        public static void GetMapTile(string requestId, int x, int y, int z)
+        {
+            string mapRoot = StateMirror.Instance.MapRoot;
+            int maxZoom;
+            if (!MapCatalog.TryInspect(mapRoot, out maxZoom))
+            {
+                SendError(
+                    requestId,
+                    "Map tiles are not available: this server has no web-map tile cache "
+                        + "(set WebDashboardEnabled=true in serverconfig.xml and restart)"
+                );
+                return;
+            }
+
+            string tile = MapCatalog.TryReadTileBase64(mapRoot, z, x, y);
+            if (tile == null)
+            {
+                SendError(requestId, $"Map tile {z}/{x}/{y} has not been rendered yet");
+                return;
+            }
+
+            Send(WebSocketMessage.CreateResponse(requestId, tile));
+        }
+
         private static void Send(WebSocketMessage message)
         {
             WebSocketTransport.Instance.Send(message);

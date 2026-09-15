@@ -267,6 +267,14 @@ namespace Takaro
                 string ___msg
             )
             {
+                // Server-originated chat (GameManager.ChatMessageServer, which is
+                // how Takaro's own sendMessage renders) also reaches this patch
+                // with sender entity id -1 and no ClientInfo. Only messages that
+                // carry a real player entity may become chat-message events;
+                // anything else would be published back to Takaro and echo.
+                if (__instance.senderEntityId < 0)
+                    return true;
+
                 ClientInfo cInfo =
                     SingletonMonoBehaviour<ConnectionManager>.Instance.Clients.ForEntityId(
                         __instance.senderEntityId

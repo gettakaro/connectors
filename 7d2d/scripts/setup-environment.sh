@@ -8,7 +8,10 @@ cd "${PROJECT_ROOT}"
 
 echo "Setting up 7D2D mod development environment..."
 
-EXPECTED_ASSEMBLY_CSHARP_SHA256="d05257aa0a597abe51b39574fc86acd5945da4d5e41b66b7f357e0c2ea5e55bd"
+# Default stays the live-proven V3.0.1 build. Override to build against a
+# different game build (e.g. testing whether the mod still works on a newer
+# release); an override asserts nothing about that build being proven.
+EXPECTED_ASSEMBLY_CSHARP_SHA256="${EXPECTED_ASSEMBLY_CSHARP_SHA256:-d05257aa0a597abe51b39574fc86acd5945da4d5e41b66b7f357e0c2ea5e55bd}"
 
 verify_managed_assembly() {
   printf '%s  %s\n' \
@@ -20,7 +23,10 @@ verify_managed_assembly() {
 # Create directory structure
 mkdir -p ./_data/{7dtd-binaries,build,game-files,lib,ServerFiles}
 # Make everything world-writable
-chmod -R 777 ./_data
+# Root-owned files written by containers cannot be chmod-ed by the host user;
+# keep the mode fixup best-effort so setup never aborts on them.
+chmod -R 777 ./_data 2>/dev/null \
+  || echo "warning: some ./_data entries could not be chmod-ed (root-owned); continuing"
 
 # Skip everything if the binaries are already in place (CI cache hit, or a
 # repeat local run). The mod build only needs _data/7dtd-binaries/.
