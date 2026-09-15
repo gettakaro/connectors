@@ -126,9 +126,9 @@ has confirmed it, ❌ means it is not implemented or not supported.
 | Teleport a player | ⚠️ | Moves the player to the exact coordinates given, with no ground snapping. Implemented, not verified in a live test. |
 | Run a console command | ⚠️ | Runs as a server console command and returns the output or the error. Implemented, not verified in a live test. |
 | Kick | ⚠️ | Drops the player with the reason shown. Implemented, not verified in a live test. |
-| Ban (timed and permanent) | ⚠️ | Bans land in the server's own ban list and the player is kicked, but **the expiry time is ignored — every ban is permanent on the game server**. Not verified in a live test. |
-| Unban | ⚠️ | Removes the player from the server's ban list. Implemented, not verified in a live test. |
-| Ban list | ⚠️ | Returns the server's banned users; every entry reports no expiry, because the game server does not store one. Not verified in a live test. |
+| Ban (timed and permanent) | ⚠️ | Timed bans are enforced by the plugin's own ban record (not verified in a live test). Permanent bans go into the server's own ban list; either way the player is kicked. |
+| Unban | ⚠️ | Clears both the plugin's ban record and the server's ban list. Implemented, not verified in a live test. |
+| Ban list | ⚠️ | Returns the server's banned users (no expiry) plus the plugin's timed bans with their real expiry. Not verified in a live test. |
 | Shut the server down | ⚠️ | Runs the server's `quit` command. Implemented, not verified in a live test. |
 | Player joined event | ⚠️ | Sent when a player connects. Implemented, not verified in a live test. |
 | Player left event | ⚠️ | Sent when a player disconnects. Implemented, not verified in a live test. |
@@ -145,8 +145,6 @@ has confirmed it, ❌ means it is not implemented or not supported.
 
 - **Nothing here is live-tested.** Treat every row above as "should work", not "does work". If you
   run this on a real server, expect to find things.
-- **Timed bans are permanent.** Takaro can ask for a ban that expires; the plugin bans the player
-  outright and the ban list always reports no expiry. Unban by hand when the time is up.
 - **No map.** Takaro's API does not support map tiles for Generic-connector servers, and the plugin
   does not answer map-info requests either.
 - **Item quality is not reported.** Inventory entries always come back with an empty quality field.
