@@ -79,7 +79,7 @@ If the server uses `companionMode=required`, removing only the client companion 
 - `optional`: compatible companions can report client-owned state; missing or expired sessions are restarted without disconnecting the player.
 - `required`: a missing, incompatible, or silent companion is terminal for that connection. Initial negotiation allows 30 seconds so graphical clients can finish slow world loading. After an enforcement decision, the server revokes the session, shows a player-visible explanation, waits two seconds, sends Valheim's built-in `Kicked` RPC, and retains an exact-peer disconnect fallback.
 
-The default is `required`. A product patch version alone does not cause rejection. Protocol v2 negotiates chat, inventory, player-death, entity-killed, server-chat, and item-grant capabilities and uses a five-second heartbeat.
+The default is `disabled`, because the connector ships server-side only; set `optional` or `required` only when you distribute the client companion. A product patch version alone does not cause rejection. Protocol v2 negotiates chat, inventory, player-death, entity-killed, server-chat, and item-grant capabilities and uses a five-second heartbeat.
 
 ## Observed Mode Behaviour
 

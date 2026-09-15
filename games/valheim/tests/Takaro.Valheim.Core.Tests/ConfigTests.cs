@@ -86,7 +86,7 @@ public sealed class ConfigTests
             ["serverName"] = "Meadows"
         });
 
-        Assert.AreEqual("Required", ReadCompanionMode(config));
+        Assert.AreEqual("Disabled", ReadCompanionMode(config));
     }
 
     [DataTestMethod]
@@ -132,7 +132,7 @@ public sealed class ConfigTests
                 ["companionMode"] = value!
             });
 
-            Assert.AreEqual("Required", ReadCompanionMode(config));
+            Assert.AreEqual("Disabled", ReadCompanionMode(config));
         }
     }
 
