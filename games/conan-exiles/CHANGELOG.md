@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.1](https://github.com/gettakaro/connectors/compare/conan-exiles-v1.0.0...conan-exiles-v1.0.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* **conan-exiles:** ship the mod helper in the bridge release ([#127](https://github.com/gettakaro/connectors/issues/127)) ([2f9c0ea](https://github.com/gettakaro/connectors/commit/2f9c0ea6adfc2757ae3109c7ffba5f99d1bdce53))
+
+
+### Code Refactoring
+
+* move connectors under games/&lt;game&gt;/ with a dedicated mod/ folder per game ([#112](https://github.com/gettakaro/connectors/issues/112)) ([fb03711](https://github.com/gettakaro/connectors/commit/fb03711d2bbd2cc45463f9963961adceebbee32b))
+
+
+### Documentation
+
+* **conan-exiles:** README with install steps and current status only ([#124](https://github.com/gettakaro/connectors/issues/124)) ([d55808f](https://github.com/gettakaro/connectors/commit/d55808f44af19211e72c579b124afb43bafbadb4))
+
 ## 1.0.0 (2026-09-01)
 
 
