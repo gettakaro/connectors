@@ -47,97 +47,97 @@ build-release-valheim version out-dir='dist':
 
 # Prepare TShock reference assemblies
 terraria-setup:
-    cd terraria && ./scripts/setup-environment.sh
+    cd games/terraria && ./scripts/setup-environment.sh
 
 # Build the Terraria TShock plugin
 terraria-build:
-    cd terraria && ./scripts/build-mod.sh
+    cd games/terraria && ./scripts/build-mod.sh
 
 # Install Terraria bridge dependencies
 terraria-bridge-install:
-    cd terraria/bridge && npm ci
+    cd games/terraria/bridge && npm ci
 
 # Run Terraria bridge tests
 terraria-bridge-test:
-    cd terraria/bridge && npm test
+    cd games/terraria/bridge && npm test
 
 # Build the Terraria bridge
 terraria-bridge-build:
-    cd terraria/bridge && npm run build
+    cd games/terraria/bridge && npm run build
 
 # === Rust Connector ===
 
 # Start the Rust dev server
 rust-up *args:
-    cd rust && docker compose up {{args}}
+    cd games/rust && docker compose up {{args}}
 
 # Stop the Rust dev server
 rust-down *args:
-    cd rust && docker compose down {{args}}
+    cd games/rust && docker compose down {{args}}
 
 # View Rust server logs
 rust-logs *args='--tail 100 -f':
-    cd rust && docker compose logs {{args}}
+    cd games/rust && docker compose logs {{args}}
 
 # Deploy the Rust plugin to the dev server
 rust-deploy:
-    cd rust && ./scripts/deploy.sh
+    cd games/rust && ./scripts/deploy.sh
 
 # Hot-reload the Rust plugin via RCON
 rust-reload:
-    cd rust && ./scripts/reload.sh
+    cd games/rust && ./scripts/reload.sh
 
 # === Minecraft Connector ===
 
 # Build all Minecraft connector modules
 minecraft-build *args:
-    cd minecraft && ./gradlew build {{args}}
+    cd games/minecraft/mod && ./gradlew build {{args}}
 
 # Build a single Minecraft module (paper, fabric, neoforge, core)
 minecraft-build-module module *args:
-    cd minecraft && ./gradlew :{{module}}:build {{args}}
+    cd games/minecraft/mod && ./gradlew :{{module}}:build {{args}}
 
 # Start Minecraft dev server(s)
 minecraft-up *args:
-    cd minecraft && docker compose up {{args}}
+    cd games/minecraft && docker compose up {{args}}
 
 # Stop Minecraft dev server(s)
 minecraft-down *args:
-    cd minecraft && docker compose down {{args}}
+    cd games/minecraft && docker compose down {{args}}
 
 # View Minecraft server logs
 minecraft-logs *args='--tail 100 -f':
-    cd minecraft && docker compose logs {{args}}
+    cd games/minecraft && docker compose logs {{args}}
 
 # Deploy Minecraft JARs to dev server(s)
 minecraft-deploy platform:
-    cd minecraft && ./scripts/deploy.sh {{platform}}
+    cd games/minecraft && ./scripts/deploy.sh {{platform}}
 
 # Reload Minecraft plugin via RCON
 minecraft-reload platform:
-    cd minecraft && ./scripts/reload.sh {{platform}}
+    cd games/minecraft && ./scripts/reload.sh {{platform}}
 
 # Start the Minecraft test bot
 minecraft-bot-up *args:
-    cd minecraft && docker compose up bot {{args}}
+    cd games/minecraft && docker compose up bot {{args}}
 
 # === 7D2D Connector ===
 
 # Prepare 7D2D build dependencies and game binaries
 sevend2d-setup:
-    cd 7d2d && ./scripts/setup-environment.sh
+    cd games/7d2d && ./scripts/setup-environment.sh
 
 # Build the 7D2D mod
 sevend2d-build:
-    cd 7d2d && ./scripts/build-mod.sh
+    cd games/7d2d && ./scripts/build-mod.sh
 
 # Build and deploy the 7D2D mod to the local test server
 sevend2d-build-deploy:
-    cd 7d2d && ./scripts/build-mod.sh deploy
+    cd games/7d2d && ./scripts/build-mod.sh deploy
 
 # Run the Generic Connector protocol contract harness
 sevend2d-test-contract:
-    cd 7d2d && ./scripts/test-contract.sh
+    cd games/7d2d && ./scripts/test-contract.sh
 
 # Run the 7D2D source-level regression suite
 sevend2d-test-regressions:
@@ -145,25 +145,25 @@ sevend2d-test-regressions:
 
 # Start the 7D2D dev services
 sevend2d-up *args:
-    cd 7d2d && docker compose up {{args}}
+    cd games/7d2d && docker compose up {{args}}
 
 # Stop the 7D2D dev services
 sevend2d-down *args:
-    cd 7d2d && docker compose down {{args}}
+    cd games/7d2d && docker compose down {{args}}
 
 # View 7D2D service logs
 sevend2d-logs *args='--tail 100 -f':
-    cd 7d2d && docker compose logs {{args}}
+    cd games/7d2d && docker compose logs {{args}}
 
 # === Project Zomboid Connector ===
 
 # Stage the PZ server jar so the agent can compile against the game classes
 zomboid-setup:
-    cd zomboid && ./scripts/setup-environment.sh
+    cd games/zomboid && ./scripts/setup-environment.sh
 
 # Build the Zomboid connector (unit tests + shaded -javaagent jar; needs JDK 25)
 zomboid-build *args:
-    cd zomboid && ./gradlew build {{args}}
+    cd games/zomboid/mod && ./gradlew build {{args}}
 
 # Build the Zomboid agent from the working tree and deploy it into dev-servers/_data
 zomboid-deploy:
@@ -185,15 +185,15 @@ zomboid-logs *args='--tail 100 -f':
 
 # Install Conan Exiles connector dependencies
 conan-install:
-    cd conan-exiles && npm ci
+    cd games/conan-exiles/bridge && npm ci
 
 # Run Conan Exiles connector tests
 conan-test:
-    cd conan-exiles && npm test
+    cd games/conan-exiles/bridge && npm test
 
 # Build the Conan Exiles connector
 conan-build:
-    cd conan-exiles && npm run build
+    cd games/conan-exiles/bridge && npm run build
 
 # === Dev Servers (dev-servers/) ===
 

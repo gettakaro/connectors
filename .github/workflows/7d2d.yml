@@ -3,9 +3,9 @@ name: 7D2D Connector
 on:
   push:
     branches: [main]
-    paths: ['7d2d/**', 'tests/test_7d2d_connector_regressions.py', 'scripts/**', '.github/workflows/7d2d.yml']
+    paths: ['games/7d2d/**', 'tests/test_7d2d_connector_regressions.py', 'scripts/**', '.github/workflows/7d2d.yml']
   pull_request:
-    paths: ['7d2d/**', 'tests/test_7d2d_connector_regressions.py', 'scripts/**', '.github/workflows/7d2d.yml']
+    paths: ['games/7d2d/**', 'tests/test_7d2d_connector_regressions.py', 'scripts/**', '.github/workflows/7d2d.yml']
   workflow_call:
     inputs:
       version:
@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: 7d2d
+        working-directory: games/7d2d/mod
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Setup .NET SDK
@@ -35,7 +35,7 @@ jobs:
       - name: Install CSharpier
         run: dotnet tool restore
       - name: Check formatting
-        run: dotnet csharpier --check .
+        run: dotnet csharpier --check . ../tests
 
   package:
     runs-on: ubuntu-latest
@@ -59,17 +59,17 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         id: binaries-cache
         with:
-          path: 7d2d/_data/7dtd-binaries
+          path: games/7d2d/_data/7dtd-binaries
           key: 7d2d-managed-v3-2-0-b24994542-v1
 
       - name: Make scripts executable
-        run: chmod +x 7d2d/scripts/*.sh scripts/*.sh
+        run: chmod +x games/7d2d/scripts/*.sh scripts/*.sh
 
       - name: Set up environment
-        run: 7d2d/scripts/setup-environment.sh
+        run: games/7d2d/scripts/setup-environment.sh
 
       - name: Run Generic Connector contract harness
-        run: 7d2d/scripts/test-contract.sh
+        run: games/7d2d/scripts/test-contract.sh
 
       - name: Run source regressions
         run: python3 -m unittest tests/test_7d2d_connector_regressions.py
@@ -85,7 +85,7 @@ jobs:
         run: scripts/release-params.sh 7d2d >> "$GITHUB_OUTPUT"
 
       - name: Build release artifact
-        run: 7d2d/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
+        run: games/7d2d/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
 
       - name: Publish stable release assets
         if: ${{ steps.params.outputs.publish == 'stable' }}

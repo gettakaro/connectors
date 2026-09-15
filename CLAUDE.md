@@ -19,10 +19,10 @@ Each connector is self-contained in its own directory with its own docker-compos
 
 | Connector | Directory | Language | Build |
 |-----------|-----------|----------|-------|
-| Rust | `rust/` | C# | None (Carbon runtime compile) |
-| Minecraft | `minecraft/` | Java 21 | Gradle |
-| 7D2D | `7d2d/` | C# / .NET Framework 4.8 | Dockerized Mono `msbuild` |
-| Project Zomboid | `zomboid/` | Java 25 (`-javaagent`, ByteBuddy) | Gradle |
+| Rust | `games/rust/` | C# | None (Carbon runtime compile) |
+| Minecraft | `games/minecraft/` | Java 21 | Gradle |
+| 7D2D | `games/7d2d/` | C# / .NET Framework 4.8 | Dockerized Mono `msbuild` |
+| Project Zomboid | `games/zomboid/` | Java 25 (`-javaagent`, ByteBuddy) | Gradle |
 
 ## Test Environment
 
@@ -79,5 +79,5 @@ just zomboid-logs
 
 - Always use non-interactive verify: `/verify --mode=report-only --scope=branch`
 - Use `docker compose` (not `docker-compose`)
-- `7d2d/` does not use the shared root `.env`; its runtime config is generated in `7d2d/Config.xml`
+- `games/7d2d/` does not use the shared root `.env`; its runtime config is generated in `games/7d2d/Config.xml`
 - PR titles MUST follow Conventional Commits — the `pr-title` check (`scripts/check-commit-title.sh`) enforces it and fails otherwise. Allowed types: `feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert` (append `!` for breaking). Example: `ci: open release PRs for every commit type`. Validate locally with `bash scripts/check-commit-title.sh "<title>"`.

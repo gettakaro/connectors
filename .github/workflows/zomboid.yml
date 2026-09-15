@@ -3,9 +3,9 @@ name: Project Zomboid Connector
 on:
   push:
     branches: [main]
-    paths: ['zomboid/**', 'scripts/**', '.github/workflows/zomboid.yml']
+    paths: ['games/zomboid/**', 'scripts/**', '.github/workflows/zomboid.yml']
   pull_request:
-    paths: ['zomboid/**', 'scripts/**', '.github/workflows/zomboid.yml']
+    paths: ['games/zomboid/**', 'scripts/**', '.github/workflows/zomboid.yml']
   workflow_call:
     inputs:
       version:
@@ -54,18 +54,18 @@ jobs:
       - name: Cache Project Zomboid server jar
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
-          path: zomboid/_deps/projectzomboid.jar
+          path: games/zomboid/_deps/projectzomboid.jar
           key: zomboid-gamejar-80e405a4-v1
 
       - name: Make scripts executable
-        run: chmod +x zomboid/scripts/*.sh scripts/*.sh
+        run: chmod +x games/zomboid/scripts/*.sh scripts/*.sh
 
       - name: Stage Project Zomboid server jar
-        run: zomboid/scripts/setup-environment.sh
+        run: games/zomboid/scripts/setup-environment.sh
 
       - name: Build agent (unit tests + shadowJar)
         run: |
-          cd zomboid
+          cd games/zomboid/mod
           ./gradlew test :agent:shadowJar --no-daemon
 
       - name: Resolve release params
@@ -79,7 +79,7 @@ jobs:
         run: scripts/release-params.sh zomboid >> "$GITHUB_OUTPUT"
 
       - name: Build release artifact
-        run: zomboid/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
+        run: games/zomboid/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
 
       - name: Publish stable release assets
         if: ${{ steps.params.outputs.publish == 'stable' }}

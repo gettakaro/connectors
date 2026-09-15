@@ -3,9 +3,9 @@ name: Terraria Plugin
 on:
   push:
     branches: [main]
-    paths: ['terraria/**', 'scripts/**', '.github/workflows/terraria.yml']
+    paths: ['games/terraria/**', 'scripts/**', '.github/workflows/terraria.yml']
   pull_request:
-    paths: ['terraria/**', 'scripts/**', '.github/workflows/terraria.yml']
+    paths: ['games/terraria/**', 'scripts/**', '.github/workflows/terraria.yml']
   workflow_call:
     inputs:
       version:
@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: terraria/bridge
+        working-directory: games/terraria/bridge
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Set up Node.js
@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: 22.x
           cache: npm
-          cache-dependency-path: terraria/bridge/package-lock.json
+          cache-dependency-path: games/terraria/bridge/package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Test
@@ -67,13 +67,13 @@ jobs:
         with:
           node-version: 22.x
           cache: npm
-          cache-dependency-path: terraria/bridge/package-lock.json
+          cache-dependency-path: games/terraria/bridge/package-lock.json
 
       - name: Make scripts executable
-        run: chmod +x terraria/scripts/*.sh scripts/*.sh
+        run: chmod +x games/terraria/scripts/*.sh scripts/*.sh
 
       - name: Set up TShock references
-        run: terraria/scripts/setup-environment.sh
+        run: games/terraria/scripts/setup-environment.sh
 
       - name: Resolve release params
         id: params
@@ -86,10 +86,10 @@ jobs:
         run: scripts/release-params.sh terraria >> "$GITHUB_OUTPUT"
 
       - name: Build release artifact
-        run: terraria/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
+        run: games/terraria/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
 
       - name: Build bridge release artifact
-        run: terraria/scripts/build-bridge-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
+        run: games/terraria/scripts/build-bridge-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
 
       - name: Publish stable release assets
         if: ${{ steps.params.outputs.publish == 'stable' }}
