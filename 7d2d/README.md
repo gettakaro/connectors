@@ -103,12 +103,7 @@ WebSocket connection confirmed
 And in Takaro, the game server shows as **online**. If it stays offline, the registration token in
 `Config.xml` is the first thing to re-check.
 
-### 6. Optional: map tiles
-
-If you want the live map in Takaro, set `WebDashboardEnabled=true` in the server's
-`serverconfig.xml`. Without it the map tile requests return nothing.
-
-### 7. Upgrading
+### 6. Upgrading
 
 **Stop the server first.** Delete `<server>/Mods/Takaro/` and unzip the new version in its place,
 then start the server again. Leave `<server>/Takaro/Config.xml` alone — your token and identity
@@ -147,8 +142,8 @@ mod **0.1.4**) with a real game client connected.
 | Player death event | ✅ | Includes the position where the player died. |
 | Entity kill event | ✅ | Proven with a real kill (zombie, Steel Club); the weapon used is included. |
 | Log events | ⚠️ | The mod sends them, but Takaro does not store server log lines as events, so they cannot be searched or used in modules. |
-| Map info | ✅ | Verified through the Takaro API. |
-| Map tiles | ⚠️ | Only returns tiles when `WebDashboardEnabled=true` in `serverconfig.xml`; the success path is not verified end to end. |
+| Map info | ⚠️ | The mod answers, but Takaro has no map view for this connector type yet. |
+| Map tiles | ❌ | Not supported by Takaro for this connector type yet (the legacy native 7DTD integration has a map; this one does not). |
 | Locations / points of interest | ❌ | The mod collects them (368 found), but Takaro has no way to ask for them yet. |
 | Discord chat bridge | ⚠️ | Game → Discord works. Takaro records its own outgoing messages as chat, so the bridge echoes a message back and forth a few times before it stops (Takaro-side). Discord → game relayed from a **human** Discord account was never confirmed in the hard test. |
 | Shop & economy | ✅ | Buying in game (`/shop`), ordering through the Takaro API, currency grants and balance checks all work. Purchases arrive as a bag at the player's feet. |
@@ -160,8 +155,8 @@ mod **0.1.4**) with a real game client connected.
   side — the mod only reports chat from real players.
 - **Locations are not reachable from Takaro.** The mod builds the catalogue, but there is no API
   route for it yet.
-- **Map tiles need the web dashboard.** Tiles come from the server's own tile cache, which only
-  exists when `WebDashboardEnabled=true` in `serverconfig.xml`.
+- **No map.** Takaro's API does not support map tiles for Generic-connector servers yet; nothing on
+  the game server side changes that.
 - **~90 s of events can be lost when a network outage starts.** The mod needs about that long to
   notice a dead connection; events sent into it in the meantime do not arrive. Everything after
   that is buffered and delivered once the connection is back.
