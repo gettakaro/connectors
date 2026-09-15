@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.5](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.4...7d2d-v0.1.5) (2026-09-15)
+
+
+### Documentation
+
+* **7d2d:** README version matches the published 0.1.4 release ([#109](https://github.com/gettakaro/connectors/issues/109)) ([0ba4e5d](https://github.com/gettakaro/connectors/commit/0ba4e5dd4183b73dd3bc396f4d3501fe174330b2))
+* **7d2d:** README with install steps and current status only ([#107](https://github.com/gettakaro/connectors/issues/107)) ([e1d3697](https://github.com/gettakaro/connectors/commit/e1d369796384ea451bac81cbca9ee3899156ed47))
+
 ## [0.1.4](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.3...7d2d-v0.1.4) (2026-09-15)
 
 
