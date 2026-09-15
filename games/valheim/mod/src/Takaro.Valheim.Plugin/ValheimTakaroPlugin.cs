@@ -47,7 +47,12 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             ["enableLogEvents"] = Bind("Takaro", "enableLogEvents", "true", "Forward connector log events to Takaro.").Value,
             ["commandAllowlistExact"] = Bind("Takaro", "commandAllowlistExact", "help", "Semicolon-separated exact console commands allowed for executeConsoleCommand.").Value,
             ["commandAllowlistPrefixes"] = Bind("Takaro", "commandAllowlistPrefixes", "", "Semicolon-separated console command prefixes allowed for executeConsoleCommand.").Value,
-            ["companionMode"] = Bind("Takaro", "companionMode", "required", "Client companion policy: disabled, optional, or required.").Value
+            ["companionMode"] = Bind(
+                "Takaro",
+                "companionMode",
+                "disabled",
+                "Client companion policy: disabled, optional, or required. Defaults to disabled because this connector is server-side only; only set optional or required if you deploy the client companion package."
+            ).Value
         };
 
         if (!ConnectorConfig.TryFromDictionary(values, out var config, out var error) || config is null)

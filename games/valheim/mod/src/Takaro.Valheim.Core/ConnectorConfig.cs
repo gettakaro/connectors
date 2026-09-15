@@ -17,7 +17,7 @@ public sealed record ConnectorConfig(
     IReadOnlyList<string> CommandAllowlistExact,
     IReadOnlyList<string> CommandAllowlistPrefixes)
 {
-    public CompanionMode CompanionMode { get; init; } = CompanionMode.Required;
+    public CompanionMode CompanionMode { get; init; } = CompanionMode.Disabled;
 
     public static bool TryFromDictionary(
         IReadOnlyDictionary<string, string> values,
@@ -102,7 +102,7 @@ public sealed record ConnectorConfig(
     {
         if (value is null)
         {
-            return CompanionMode.Required;
+            return CompanionMode.Disabled;
         }
 
         if (value.Equals("disabled", StringComparison.OrdinalIgnoreCase))
