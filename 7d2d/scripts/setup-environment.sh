@@ -8,10 +8,11 @@ cd "${PROJECT_ROOT}"
 
 echo "Setting up 7D2D mod development environment..."
 
-# Default stays the live-proven V3.0.1 build. Override to build against a
+# Default stays the live-proven V3.2.0 (b10) build, Steam buildid 24994542 —
+# the build the 2026-09-14 hard test proved the mod on. Override to build against a
 # different game build (e.g. testing whether the mod still works on a newer
 # release); an override asserts nothing about that build being proven.
-EXPECTED_ASSEMBLY_CSHARP_SHA256="${EXPECTED_ASSEMBLY_CSHARP_SHA256:-d05257aa0a597abe51b39574fc86acd5945da4d5e41b66b7f357e0c2ea5e55bd}"
+EXPECTED_ASSEMBLY_CSHARP_SHA256="${EXPECTED_ASSEMBLY_CSHARP_SHA256:-3737eedc9f143d428a69030317428c45d342be4f11006a46d72bcd7b1d0fc64d}"
 
 verify_managed_assembly() {
   printf '%s  %s\n' \
@@ -82,7 +83,7 @@ docker compose run --rm builder bash -c "cp -f /app/_data/game-files/7DaysToDieS
                                          cp -f /app/_data/game-files/Mods/0_TFP_Harmony/*.dll /app/_data/7dtd-binaries/"
 
 if ! verify_managed_assembly; then
-  echo "Error: Assembly-CSharp.dll does not match live-proven 7D2D V3.0.1 build 24117900." >&2
+  echo "Error: Assembly-CSharp.dll does not match live-proven 7D2D V3.2.0 (b10) build 24994542." >&2
   exit 1
 fi
 
