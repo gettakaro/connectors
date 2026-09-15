@@ -14,14 +14,28 @@ namespace Takaro.WebSocket
     /// dedicated sender thread so callers (including the game main thread) never
     /// block on socket I/O. Incoming messages are handed to RequestRouter.
     ///
-    /// Connection lifecycle (0.1.5):
+    /// Connection lifecycle (0.1.6):
     ///   open -> identify written directly (under the send lock)
     ///        -> "unconfirmed": nothing else may be written
-    ///        -> confirmed by the first inbound frame, or after
+    ///        -> confirmed by the identify acknowledgement (any inbound frame
+    ///           other than Takaro's immediate "connected" welcome), or after
     ///           CONNECTION_CONFIRM_GRACE_SECONDS of uptime
     ///        -> backlog is drained and the heartbeat starts
     ///        -> the reconnect backoff is reset only once the connection has
     ///           stayed up for CONNECTION_STABLE_SECONDS
+    /// 0.1.5 confirmed on the *first* inbound frame, but Takaro's connector
+    /// sends `{"type":"connected"}` the instant the socket is accepted, before
+    /// it has processed identify. Confirming on it released the backlog into a
+    /// socket that was not identified yet; the edge answers an unidentified
+    /// `gameEvent` with a bare TCP terminate, which is the 1006 "header part of
+    /// a frame could not be read" bounce (F17b / F15a).
+    ///
+    /// 0.1.5 also had no way to notice a dead-but-open socket: the 30 s
+    /// heartbeat was written and never checked, so a blackholed link stayed
+    /// "open" for minutes and every event written into it was lost (F17a).
+    /// 0.1.6 tracks the last inbound frame and forces a close once nothing has
+    /// arrived for INBOUND_TIMEOUT_SECONDS.
+    ///
     /// 0.1.4 reset the backoff the moment a socket opened, so a peer that
     /// accepted and instantly dropped every connection produced an endless
     /// 30 s loop; and it wrote the buffered backlog before identify could be
@@ -45,6 +59,7 @@ namespace Takaro.WebSocket
 
         private volatile bool _shuttingDown;
         private long _openedAtTicks;
+        private long _lastInboundTicks;
         private int _reconnectAttempts;
         private const int MAX_RECONNECT_INTERVAL_SECONDS = 300;
 
@@ -55,6 +70,18 @@ namespace Takaro.WebSocket
         // How long a connection must stay up before the reconnect backoff is
         // reset. See ResetBackoffIfStable().
         private const int CONNECTION_STABLE_SECONDS = 10;
+
+        private const int HEARTBEAT_INTERVAL_SECONDS = 30;
+
+        // No inbound frame for this long means the socket is dead even though
+        // the TLS layer still reports it open (F17a). Two and a half heartbeat
+        // intervals: Takaro pings us every 30 s and answers our own ping, so a
+        // healthy link is never this quiet.
+        private const int INBOUND_TIMEOUT_SECONDS = HEARTBEAT_INTERVAL_SECONDS * 5 / 2;
+
+        // Takaro's connector sends this the moment the socket is accepted,
+        // before identify has been processed. It is not an acknowledgement.
+        private const string WELCOME_MESSAGE_TYPE = "connected";
 
         // Serialises every write on the socket. websocket-sharp as shipped with
         // 7D2D does not lock its send path (the `_forSend` field is assigned in
@@ -231,6 +258,13 @@ namespace Takaro.WebSocket
             if (openedAt == 0)
                 return;
 
+            // A link with no inbound traffic is dead, however long it has been
+            // "open": promoting it here would undo the heartbeat watchdog's
+            // verdict and resume writing into the void (seen at 10:41:14 in the
+            // 0.1.6 X4d run, one second after the watchdog fired).
+            if (IsInboundStale())
+                return;
+
             TimeSpan uptime = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - openedAt);
             if (uptime.TotalSeconds >= CONNECTION_CONFIRM_GRACE_SECONDS)
                 ConfirmConnection($"open for {(int)uptime.TotalSeconds}s without a close");
@@ -261,7 +295,7 @@ namespace Takaro.WebSocket
             while (_pending.Count > 0)
             {
                 WebSocketSharp.WebSocket socket = _webSocket;
-                if (socket == null || !_isConnected || !_isConfirmed)
+                if (socket == null || !_isConnected || !_isConfirmed || IsInboundStale())
                     return; // Keep the backlog; retry on the next poll.
 
                 string json = _pending.Peek();
@@ -281,6 +315,14 @@ namespace Takaro.WebSocket
                         $"Error sending WebSocket message (attempt {_headFailureCount}): "
                             + $"{ex.GetType().FullName}: {ex.Message}"
                     );
+                    if (IsInboundStale())
+                    {
+                        // The link is suspect (F17a). Send failures here say
+                        // nothing about the payload, so keep the backlog intact
+                        // and let the heartbeat watchdog force the reconnect.
+                        return;
+                    }
+
                     if (_headFailureCount >= MAX_SEND_FAILURES_PER_MESSAGE)
                     {
                         // Drop this message so one poison payload cannot wedge
@@ -336,6 +378,7 @@ namespace Takaro.WebSocket
                         return;
 
                     Interlocked.Exchange(ref _openedAtTicks, DateTime.UtcNow.Ticks);
+                    Interlocked.Exchange(ref _lastInboundTicks, DateTime.UtcNow.Ticks);
                     LogService.Instance.Info(
                         $"WebSocket connection established ({_pending.Count} message(s) buffered)"
                     );
@@ -380,18 +423,21 @@ namespace Takaro.WebSocket
 
                 socket.OnMessage += (sender, e) =>
                 {
-                    if (!ReferenceEquals(socket, _webSocket))
-                        return;
-
-                    // Any inbound frame proves the far side accepted identify.
-                    ConfirmConnection("first inbound frame");
-
-                    // Ping/pong and binary control traffic must never reach the
-                    // JSON request router.
-                    if (!e.IsText)
-                        return;
-
-                    RequestRouter.Route(e.Data);
+                    // Nothing may escape this handler. websocket-sharp's
+                    // messagec() catches a handler exception and logs
+                    // ex.ToString(); on the Mono shipped with 7D2D that walk
+                    // hit an assertion in metadata.c and aborted the whole
+                    // server process (signal 6) during the 0.1.6 X4d run.
+                    try
+                    {
+                        HandleInboundFrame(socket, e);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogService.Instance.Info(
+                            $"Error handling inbound frame: {ex.GetType().FullName}: {ex.Message}"
+                        );
+                    }
                 };
 
                 socket.OnError += (sender, e) =>
@@ -411,6 +457,7 @@ namespace Takaro.WebSocket
                         return;
 
                     long openedAt = Interlocked.Exchange(ref _openedAtTicks, 0);
+                    Interlocked.Exchange(ref _lastInboundTicks, 0);
                     int uptimeSeconds =
                         openedAt == 0
                             ? -1
@@ -442,6 +489,80 @@ namespace Takaro.WebSocket
                 Log.Exception(ex);
                 ScheduleReconnect();
             }
+        }
+
+        /// <summary>
+        /// The inbound-frame path, off the lambda so it can be wrapped in a
+        /// catch-all (see OnMessage).
+        /// </summary>
+        private void HandleInboundFrame(WebSocketSharp.WebSocket socket, MessageEventArgs e)
+        {
+            if (!ReferenceEquals(socket, _webSocket))
+                return;
+
+            // Any frame at all - text, binary, or a pong - proves the link is
+            // still carrying traffic. This is what the heartbeat watchdog
+            // checks (F17a).
+            Interlocked.Exchange(ref _lastInboundTicks, DateTime.UtcNow.Ticks);
+
+            // Ping/pong and binary control traffic must never reach the JSON
+            // request router.
+            if (!e.IsText)
+                return;
+
+            // Takaro sends {"type":"connected"} the instant it accepts the
+            // socket, *before* it has processed identify. Treating that as the
+            // acknowledgement (0.1.5) released the backlog into a socket that
+            // was not identified yet, and the edge answers an unidentified
+            // gameEvent by terminating the TCP connection with no close frame -
+            // the F17b bounce. Wait for a frame that can only follow identify.
+            string messageType = PeekMessageType(e.Data);
+            if (messageType == WELCOME_MESSAGE_TYPE)
+            {
+                LogService.Instance.Debug(
+                    "Received Takaro welcome frame; waiting for the identify "
+                        + "acknowledgement before releasing the backlog"
+                );
+                return;
+            }
+
+            ConfirmConnection(
+                string.IsNullOrEmpty(messageType)
+                    ? "inbound frame"
+                    : $"inbound '{messageType}' frame"
+            );
+
+            RequestRouter.Route(e.Data);
+        }
+
+        /// <summary>
+        /// Reads just the "type" field of an inbound frame, by scanning rather
+        /// than deserialising: this runs on websocket-sharp's receive thread on
+        /// the Mono runtime shipped with 7D2D, and the cheapest possible path is
+        /// the safest one. Returns null when there is no readable type.
+        /// </summary>
+        private static string PeekMessageType(string json)
+        {
+            if (string.IsNullOrEmpty(json))
+                return null;
+
+            int key = json.IndexOf("\"type\"", StringComparison.Ordinal);
+            if (key < 0)
+                return null;
+
+            int colon = json.IndexOf(':', key + 6);
+            if (colon < 0)
+                return null;
+
+            int open = json.IndexOf('"', colon + 1);
+            if (open < 0)
+                return null;
+
+            int close = json.IndexOf('"', open + 1);
+            if (close < 0)
+                return null;
+
+            return json.Substring(open + 1, close - open - 1);
         }
 
         private static string Describe(Exception ex)
@@ -488,18 +609,75 @@ namespace Takaro.WebSocket
         {
             StopHeartbeatTimer();
 
+            Interlocked.Exchange(ref _lastInboundTicks, DateTime.UtcNow.Ticks);
+
             _heartbeatTimer = new Timer(
                 state =>
                 {
-                    if (_isConnected && _isConfirmed)
-                    {
-                        Send(WebSocketMessage.CreateHeartbeat());
-                    }
+                    if (!_isConnected || !_isConfirmed)
+                        return;
+
+                    Send(WebSocketMessage.CreateHeartbeat());
+                    CheckInboundLiveness();
                 },
                 null,
-                TimeSpan.FromSeconds(30),
-                TimeSpan.FromSeconds(30)
+                TimeSpan.FromSeconds(HEARTBEAT_INTERVAL_SECONDS),
+                TimeSpan.FromSeconds(HEARTBEAT_INTERVAL_SECONDS)
             );
+        }
+
+        /// <summary>
+        /// Seconds since the last inbound frame, or -1 while no socket is up.
+        /// </summary>
+        private int SecondsSinceInbound()
+        {
+            long last = Interlocked.Read(ref _lastInboundTicks);
+            if (last == 0)
+                return -1;
+            return (int)TimeSpan.FromTicks(DateTime.UtcNow.Ticks - last).TotalSeconds;
+        }
+
+        private bool IsInboundStale()
+        {
+            int seconds = SecondsSinceInbound();
+            return seconds >= 0 && seconds > INBOUND_TIMEOUT_SECONDS;
+        }
+
+        /// <summary>
+        /// A blackholed link leaves the TLS socket "open" indefinitely: writes
+        /// disappear into the send buffer and websocket-sharp reports no error,
+        /// so every event written into it is lost (F17a). Nothing inbound for
+        /// more than INBOUND_TIMEOUT_SECONDS means the socket is dead; close it
+        /// so the normal reconnect path runs and events go to the backlog
+        /// instead of the void.
+        /// </summary>
+        private void CheckInboundLiveness()
+        {
+            if (_shuttingDown || !_isConnected || !IsInboundStale())
+                return;
+
+            WebSocketSharp.WebSocket socket = _webSocket;
+            if (socket == null)
+                return;
+
+            LogService.Instance.Info(
+                $"No inbound traffic for {SecondsSinceInbound()}s - treating socket as dead; "
+                    + $"closing it ({_pending.Count} message(s) buffered)"
+            );
+
+            try
+            {
+                // Async: a close handshake on a blackholed link would block this
+                // timer thread until the TCP send buffer drains. OnClose still
+                // fires, so ScheduleReconnect() runs as usual.
+                socket.CloseAsync(CloseStatusCode.Away, "No inbound traffic");
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Info(
+                    $"Error closing a dead socket: {ex.GetType().FullName}: {ex.Message}"
+                );
+            }
         }
 
         private void StopHeartbeatTimer()
@@ -570,6 +748,7 @@ namespace Takaro.WebSocket
             _isConnected = false;
             _isConfirmed = false;
             Interlocked.Exchange(ref _openedAtTicks, 0);
+            Interlocked.Exchange(ref _lastInboundTicks, 0);
 
             try
             {

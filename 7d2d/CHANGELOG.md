@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.5...7d2d-v0.1.6) (2026-09-15)
+
+
+### Bug Fixes
+
+* **7d2d:** detect a dead-but-open socket from missing inbound traffic, and wait for the identify acknowledgement instead of Takaro's welcome frame before releasing the backlog
+
 ## [0.1.5](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.4...7d2d-v0.1.5) (2026-09-15)
 
 
