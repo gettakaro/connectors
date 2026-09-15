@@ -62,3 +62,10 @@ generated automatically the first time the config is created.
 The mod writes its own log to `<server>/Takaro/logs/<M-D-YYYY>.log`. On the dev
 rig, DEBUG logging is toggled with the `takaro-debug` console command (it resets
 to off on every server restart).
+
+## Versioning
+
+release-please owns `7d2d/ModInfo.xml` and `7d2d/version.txt` — do not bump them in
+a feature branch. Whatever version a PR branch carries is overwritten by the next
+release PR, which is why the 2026-09-15 hardening work shipped as release
+`7d2d-v0.1.4` even though the branch was labelled 0.1.6.

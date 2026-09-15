@@ -1,6 +1,6 @@
 # Takaro 7D2D Mod
 
-A server-side-only mod (version **0.1.6**) that connects a 7 Days to Die dedicated server to
+A server-side-only mod (version **0.1.4**) that connects a 7 Days to Die dedicated server to
 Takaro. Tested against a **V 3.2.0 b10** dedicated server; players do not install anything.
 
 ## Install
@@ -23,7 +23,8 @@ Download **`takaro-7d2d-mod.zip`** from the latest `7d2d-vX.Y.Z` release on the 
 Direct link pattern:
 `https://github.com/gettakaro/connectors/releases/download/7d2d-v<version>/takaro-7d2d-mod.zip`
 
-Use 0.1.6 or newer — the results in the table below were proven on 0.1.6. Do not use the
+Use `7d2d-v0.1.4` or newer. The results in the table below were proven on the code that shipped in
+0.1.4 (the dev build was labelled 0.1.6 during testing). Do not use the
 `7d2d-dev` pre-release; that is an untested rolling build.
 
 The zip contains a single folder, `Takaro/`. That whole folder is the mod.
@@ -88,7 +89,7 @@ Save the file and start the server.
 In the server console / server log:
 
 ```
-[MODS] Loaded Mod: Takaro (0.1.6)
+[MODS] Loaded Mod: Takaro (0.1.4)
 ```
 
 In the mod's own log at `<server>/Takaro/logs/<M-D-YYYY>.log` (for example
@@ -116,7 +117,7 @@ survive the upgrade. Never swap `Takaro.dll` under a running server; it can cras
 ## What works, what doesn't
 
 Verified end to end on **2026-09-15** against a real dedicated server (game build **V 3.2.0 b10**,
-mod **0.1.6**) with a real game client connected.
+mod **0.1.4**) with a real game client connected.
 ✅ = works, ⚠️ = works with a caveat, ❌ = does not work.
 
 | What | | Notes |
