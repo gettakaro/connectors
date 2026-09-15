@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.1](https://github.com/gettakaro/connectors/compare/minecraft-v0.1.0...minecraft-v0.1.1) (2026-09-15)
+
+
+### Code Refactoring
+
+* move connectors under games/&lt;game&gt;/ with a dedicated mod/ folder per game ([#112](https://github.com/gettakaro/connectors/issues/112)) ([fb03711](https://github.com/gettakaro/connectors/commit/fb03711d2bbd2cc45463f9963961adceebbee32b))
+
+
+### Documentation
+
+* **minecraft:** README with install steps and current status only ([#121](https://github.com/gettakaro/connectors/issues/121)) ([d176a78](https://github.com/gettakaro/connectors/commit/d176a78c6d7a4aebd6f90ae7e2e54871bdf2d48e))
+
 ## [0.1.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.0.3...minecraft-v0.1.0) (2026-09-14)
 
 
