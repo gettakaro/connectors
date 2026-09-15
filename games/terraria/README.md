@@ -187,8 +187,6 @@ connector's own capability record and its automated tests, so almost everything 
 
 ### Known issues
 
-- **The `terraria-v0.2.0` release has no files attached.** Until a release carries both zips, the
-  download links in step 2 only work for a release that does.
 - **Nothing here has been proven on a live server end to end** except the death and NPC-kill
   events. Treat every ⚠️ row as untested rather than working.
 - **Kill weapons can be wrong.** Terraria records no damage source on NPC death, so the weapon is
