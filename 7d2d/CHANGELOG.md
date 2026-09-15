@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.4...7d2d-v0.1.5) (2026-09-15)
+
+
+### Bug Fixes
+
+* **7d2d:** only drain the outbound backlog after the connection is confirmed, count consecutive reconnect failures, and log the real cause of a 1006
+
 ## [0.1.3](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.2...7d2d-v0.1.3) (2026-06-04)
 
 
