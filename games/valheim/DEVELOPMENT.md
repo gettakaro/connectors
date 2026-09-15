@@ -1,0 +1,320 @@
+# Takaro Valheim Connector — Development
+
+Everything here is for people building, testing or changing the connector. Operators only
+need [README.md](README.md).
+
+## Quick Start
+
+Run the reference-free build and tests (no game assemblies needed):
+
+```bash
+dotnet test mod/Takaro.Valheim.sln
+```
+
+Build the real plugin against dedicated-server references:
+
+```bash
+dotnet build mod/src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj \
+  -f net472 \
+  -p:EnableValheimPluginBuild=true \
+  -p:BepInExReferencePath=/path/to/BepInEx/core \
+  -p:ValheimReferencePath=/path/to/valheim_server_Data/Managed
+```
+
+Build the real companion against graphical-client references:
+
+```bash
+dotnet build mod/src/Takaro.Valheim.Companion/Takaro.Valheim.Companion.csproj \
+  -f net472 \
+  -p:EnableValheimCompanionBuild=true \
+  -p:BepInExReferencePath=/path/to/client/BepInEx/core \
+  -p:ValheimReferencePath=/path/to/Valheim/valheim_Data/Managed
+```
+
+## Architecture
+
+Valheim has no RCON and no remote admin API, so the connector is a BepInEx plugin that
+runs **inside the dedicated server process** and dials out to `wss://connect.takaro.io/`.
+
+- `mod/src/Takaro.Valheim.Core` — the game-independent protocol, configuration, models and
+  request dispatcher.
+- `mod/src/Takaro.Valheim.Companion.Protocol` — the bounded shared wire contract between
+  the two halves.
+- `mod/src/Takaro.Valheim.Plugin` — the dedicated-server BepInEx adapter
+  (`com.takaro.valheim`, plugin name `Takaro Valheim`).
+- `mod/src/Takaro.Valheim.Companion` — the owned graphical-client BepInEx companion
+  (`com.takaro.valheim.companion`). It references only the protocol project and has no
+  Takaro cloud transport.
+- `tests/Takaro.Valheim.Core.Tests` — protocol, behavior, packaging and capability-registry
+  tests.
+- `capabilities.json` — the machine-readable support registry.
+
+Each plugin disables itself before Harmony patching or connector startup when it detects
+the wrong process role: the server plugin still refuses graphical-client processes, and the
+companion refuses dedicated-server/batch processes. Never copy `TakaroValheim.dll` into a
+client or `Takaro.Valheim.Companion.dll` onto a dedicated server.
+
+The companion's trust boundary, install and rollback are documented in full in
+[COMPANION.md](COMPANION.md), which remains the reference for that half. In short: it
+carries no Takaro token or credential, it talks only to its authenticated server peer, and
+everything it *reports* (inventory, chat, deaths, kills) is an untrusted client claim that
+must not become authoritative identity, anti-cheat, security, economy or moderation
+evidence.
+
+### Main-thread constraint
+
+`giveItem` delivery to a companion is fire-and-forget by design and must stay that way.
+`TakaroRequestDispatcher` blocks the Unity main thread via `GetAwaiter().GetResult()`
+inside `QueuedMainThreadActionScheduler.Drain()`, and `ValheimTakaroPlugin.Update()` runs
+`Drain()` *before* `companionBridge.Update()` on that same thread. A companion reply can
+only arrive on a later frame, so awaiting it hangs the dedicated server permanently. The
+companion decides against the live inventory instead and reports the result through its
+ordinary snapshot. Delivery is counted rather than assumed, because `Inventory.AddItem`
+partially fills: the companion counts the item before and after and drops the difference.
+That accounting lives in `CompanionItemGrantMath` (pure, Unity-free, unit tested in
+`CompanionItemGrantTests`).
+
+### Companion modes
+
+`companionMode` in the server config decides what happens to a player with no companion:
+
+| Mode | Vanilla clients | What you give up |
+| --- | --- | --- |
+| `disabled` | Join normally; the companion RPC is never registered | Every client-reported capability |
+| `optional` | Join normally and stay connected | Client-owned data only from players who installed the companion |
+| `required` (default) | Disconnected after a 30-second grace period, with a visible explanation | Nothing, but every player must install the companion |
+
+The two halves share a wire protocol (currently **2**) and must be upgraded together. A
+protocol-1 companion cannot parse a protocol-2 hello, so it answers nothing and is
+indistinguishable from an absent companion: the server logs
+`reason=MissingCompanion, expected=2, actual=missing` plus `No companion answered the
+hello: none is installed, or it is older than protocol 2 and cannot read it.` The client
+logs nothing at all in that case. Ship the companion update to players first, or run
+`optional` for one release.
+
+## Configuration
+
+The plugin reads these BepInEx settings from the `[Takaro]` section of
+`BepInEx/config/com.takaro.valheim.cfg`:
+
+- `registrationToken`
+- `serverName` (default `Valheim Server`)
+- `identityToken` (written by the plugin after registration)
+- `takaroWsUrl` (default `wss://connect.takaro.io/`)
+- `logLevel` (default `Information`)
+- `enableLogEvents` (default `true`)
+- `commandAllowlistExact` (default `help`, semicolon-separated)
+- `commandAllowlistPrefixes` (default empty, semicolon-separated)
+- `companionMode` (default `required`)
+
+The graphical-client companion separately reads `companionCommandPrefixes` (default `$`)
+from `com.takaro.valheim.companion.cfg`. This is intentionally client-side; the server
+cannot change a client's local chat interception policy.
+
+Never commit registration or identity tokens.
+
+## Capability registry
+
+`capabilities.json` uses three statuses, independently of its ownership/source metadata:
+
+- `live-supported` — the path has valid historical live evidence.
+- `schema-fallback` — the connector action/schema is available or live-proven, but Takaro's
+  standard route cannot yet expose it end to end.
+- `unsupported` — the path is unavailable or still lacks exact live proof.
+
+Ownership values are `server-owned`, `client-reported`, `upstream-blocked` or
+`unsupported`.
+
+### Actions
+
+| Action | Status | Source and behavior |
+| --- | --- | --- |
+| `testReachability` | `live-supported` | Reports connector reachability. |
+| `getPlayers` | `live-supported` | Reads the Valheim dedicated-server player list. |
+| `getPlayer` | `unsupported` | Filtering exists, but the final Takaro response shape still needs independent live proof. |
+| `getPlayerLocation` | `live-supported` | Uses only a real peer/public position or a fresh 30-second server-observed last-known position; an unavailable lookup is rejected through a schema-valid payload error. |
+| `getPlayerInventory` | `live-supported` | A negotiated companion provides bounded canonical client-reported snapshots, including a confirmed empty inventory. Exact live proof observed repeated successful Takaro polls and a Wood change from 13 to 14; without a companion the server never fabricates `[]`. |
+| `giveItem` | `live-supported` | Delivers into the player's inventory through a negotiated companion, dropping only what does not fit at their feet. Without a companion it falls back to stack-split world drops near the player's server-known position. |
+| `sendMessage` | `live-supported` | Routes only through an active negotiated companion into the normal Valheim chat history. A 2026-07-14 live Takaro request reached one compatible peer and rendered an explicit `opts.senderNameOverride` of `con`; a missing or blank value displays as `Takaro`. |
+| `executeConsoleCommand` | `live-supported` | Runs only exact or prefix-allowlisted commands. |
+| `listItems` | `live-supported` | Lists item prefabs visible to the server (821 in the 2026-09-02 run). |
+| `listEntities` | `live-supported` | Lists non-player character prefabs visible to the server (101 in the 2026-09-02 run). |
+| `listLocations` | `schema-fallback` | The official raw Generic Connector action/schema live-returned 11,293 nested `ILocationDTO` objects, but the standard Takaro route at `0c63cf1c` throws `NotImplementedError` before requesting them. |
+| `getMapInfo` | `unsupported` | Returns an immediate schema-valid payload error; the dedicated server does not expose client map metadata. |
+| `getMapTile` | `unsupported` | Returns an immediate payload error; the dedicated server does not expose rendered client map tiles, and Takaro's API does not support map tiles for Generic-connector servers. |
+| `teleportPlayer` | `live-supported` | Routes Valheim's built-in `RPC_TeleportTo` to the server-known character ZDO, and returns `character_unavailable` when that identity is missing. |
+| `kickPlayer` | `live-supported` | Sends Valheim's built-in `Kicked` RPC and logs the supplied reason. It never calls `ZNet.Disconnect(peer)` directly, which is what previously crashed the headless server. |
+| `banPlayer` | `live-supported` | Writes the player identifier into Valheim's official ban list and disconnects them with the built-in `Kicked` RPC. **The ban reason is discarded**: Valheim's ban list stores only one identifier per line, so a reason supplied by Takaro is read back as `""`. |
+| `unbanPlayer` | `live-supported` | Removes the identifier from Valheim's official ban list; `listBans` then returns an empty array. |
+| `listBans` | `live-supported` | Reads Valheim's official ban entries. |
+| `shutdown` | `live-supported` | Writes its success response before quitting, then shuts down on Unity's main thread. Valheim performs a clean `ZNet` shutdown and the server process exits. |
+
+### Events
+
+| Event | Status | Source and behavior |
+| --- | --- | --- |
+| `log` | `live-supported` | Emits connector log events. |
+| `player-connected` | `live-supported` | Derived from dedicated-server player snapshots after a real server position is observed. |
+| `player-disconnected` | `live-supported` | Derived from the same snapshot tracker. |
+| `chat-message` | `live-supported` | Companion-sourced. Exact Takaro proof persisted one ordinary local chat line and one `$tplist` command input without duplicating either player-originated input. Server-alone, Valheim never routes player chat to the dedicated server. |
+| `player-death` | `live-supported` | Companion-sourced. Exact Takaro proof persisted a controlled local-player death with the bound player, real position, timestamp and message; routed vanilla `OnDeath` diagnostics remain non-emitting. |
+| `entity-killed` | `live-supported` | Companion-sourced. Exact Takaro proof persisted one player-attributed Greyling death with the bound player, timestamp, entity and `Unarmed` weapon. |
+
+## Server-owned action semantics
+
+`giveItem` delivers into a player's inventory when that player runs a negotiated companion,
+and falls back to a world drop otherwise. A world drop is not a private mutation: other
+players can collect the spawned objects. **This applies to shop deliveries too**, since a
+shop claim delivers through `giveItem`. Protocol 2 adds an `item-grant` message: the server
+asks the companion to place the items, the companion puts in whatever fits and drops only
+the remainder at the player's feet, telling them in chat which happened.
+
+The adapter accepts at most 1,000 items and 100 world-drop stacks per request, validates
+quality, resolves prefab codes or display/name tokens, splits oversized stacks, and returns
+an error when no server-owned player position is known.
+
+Player location never returns a fabricated origin. A live peer/public observation is cached
+for 30 seconds so Takaro can enrich a disconnect with the player's real last-known
+position; the cache is player-keyed, expires, and clears when Valheim replaces its
+network/world instance. `player-connected` emission waits until such a real observation
+exists. If no current or fresh observation exists, the connector sends the position DTO's
+required numeric fields plus `payload.error`. At Takaro source commit `0c63cf1c`, the app
+connector validates that payload and `Generic.requestFromServer` rejects `payload.error`
+before returning a position. Root-level response metadata is not used by that consumer.
+
+Remote inventory remains unavailable at the dedicated-server-only boundary, so a missing,
+disabled or expired companion never becomes a fabricated empty array. A negotiated
+companion can instead submit a bounded canonical snapshot bound to its actual server peer.
+
+Other failure-capable actions return immediately. At Takaro source commit `0c63cf1c`,
+validation-free actions such as `giveItem`, messaging, teleport, moderation and shutdown
+accept `{ error: "code: message" }`, which `Generic.requestFromServer` rejects without
+waiting for a timeout. Validated object actions add only their required DTO fields before
+the same payload error; `testReachability` instead returns `connectable:false` with an
+actionable reason because that route bypasses the Generic error check. Array-validated
+actions cannot carry a top-level JSON error; their ordinary server-owned paths return
+arrays, and any actual failed array path is suppressed rather than fabricating an empty
+result.
+
+The connector distinguishes a confirmed empty collection from an unavailable Valheim
+runtime source. `getPlayers`, `listItems`, `listEntities`, `listLocations` and `listBans`
+return `[]` only when their required server singleton and collection exist. During world
+startup or reload, `runtime_unavailable` is suppressed for these array DTOs and lifecycle
+polling preserves its prior snapshot instead of fabricating an empty server or a false
+disconnect. A missing `getPlayer` match returns an immediate `player_not_found` payload
+error.
+
+Outbound `sendMessage` delivery requires an active negotiated companion and is rendered
+into the normal Valheim chat history. Each request may supply Takaro's
+`opts.senderNameOverride`; the trimmed value is used for that message, while a missing or
+blank value displays as `Takaro`. It never falls back to the HUD overlay APIs, so a missing
+or incompatible companion produces an immediate `companion_server_chat_unavailable` error.
+Item-drop confirmations remain separate player-visible HUD notifications and are not
+treated as inbound chat.
+
+## Evidence boundary
+
+Historical dedicated-server evidence from 2026-06-21/22 covers several `live-supported`
+entries, including vanilla-client player location, world-drop item delivery, built-in
+teleport, moderation and delayed shutdown. The 2026-07-10 turn-3 run persisted two complete
+player connect/disconnect cycles. Turn 4 re-proved a vanilla `Hehe` handshake, real position
+and teleport, lifecycle persistence, visible messaging/item/cron behavior, and an official
+raw `listLocations` response containing 11,293 nested locations without any client plugin;
+the standard Takaro `listLocations` route remained unavailable, so that action is
+`schema-fallback`, not `live-supported`.
+
+The 2026-07-14 chat-only validation deployed release archives built from connector commit
+`82546ddd49c6`, negotiated companion protocol 1, and live-routed Takaro `sendMessage`
+requests to the connected client. See
+[`qa/2026-07-14-server-chat-validation.md`](qa/2026-07-14-server-chat-validation.md).
+
+Turn 5 live-proved immediate invalid-input failures, inventory non-mutation, lifecycle
+persistence and the vanilla-client server boundary against its exact commit and artifact
+hashes. Turn 6 pinned the exhaustive action surface to an exact deployed artifact and
+re-proved pre-ready non-fabrication, immediate unsupported map errors, a vanilla
+connect/disconnect lifecycle, the real `85/36/-2` position across disconnect, and inventory
+non-mutation. Turn 7's exact prerelease artifact was rejected by BepInEx before startup; a
+numeric-version control isolated that failure to loader metadata. Turn 8 live-loaded its
+exact prerelease artifact, and turn 9 passed locale-stable packaging plus the safe live
+exerciser at real position `140/33/-2`. Turn-9 verification found two release blockers:
+Valheim adapter calls were not marshalled to Unity's main thread, and Windows
+compile-reference fallback could replace a configured live server tree. Turn 10 addressed
+those with a bounded `Update()`-drained action scheduler and an owned reference-cache
+boundary. Historical server-only evidence remains in
+[the 2026-07-10 ledger](qa/2026-07-10-server-only-validation.md); companion evidence is in
+[the 2026-07-12 owned-companion ledger](qa/2026-07-12-owned-companion-validation.md).
+
+On 2026-09-02 the deployed `2.0.1` artifact was run against the reusable Takaro connector
+acceptance checklist with a real graphical client attached. That run moved `kickPlayer`,
+`banPlayer`, `unbanPlayer` and `shutdown` from `unsupported` to `live-supported`, re-proved
+the module command loop end to end, characterised all three `companionMode` values against
+a vanilla client, and found that `banPlayer` discards the ban reason. See
+[`qa/2026-09-02-acceptance-validation.md`](qa/2026-09-02-acceptance-validation.md) and
+[`HANDOFF-2026-09-02.md`](HANDOFF-2026-09-02.md).
+
+Later the same day the protocol-2 `item-grant` delivery was live-proven on
+`2.0.0-dev.28a4566`: a `giveItem` and an in-game shop purchase both landed in the player's
+inventory, a full bag dropped only the shortfall with exact counts, thirty concurrent
+grants completed in 1686 ms without stalling the main thread, and a protocol-1 companion
+against the protocol-2 server was kicked while the server survived. The follow-up build
+`2.0.0-dev.422148d` re-proved the enforcement wording that names the out-of-date companion
+cause. See [`qa/2026-09-02-item-grant-validation.md`](qa/2026-09-02-item-grant-validation.md).
+
+Takaro does not surface a `delivery` field, so a successful `giveItem` returns an empty
+success payload and the caller cannot tell from the API whether items reached the inventory
+or the ground; that split is only visible in the server and client logs. Takaro inventory
+snapshots also lag a grant by roughly 8 to 20 seconds, so verification must poll rather than
+read once.
+
+## Release build
+
+CI builds and publishes through `.github/workflows/valheim.yml`. Its `package` job runs
+`games/valheim/scripts/setup-environment.sh`, then
+`games/valheim/scripts/build-release.sh`, validates the archives with
+`games/valheim/tests/release-package-behavior.sh`, and uploads
+`takaro-valheim-plugin.zip` and `takaro-valheim-companion.zip` as release assets.
+
+Locally, from `games/valheim/`:
+
+```bash
+./scripts/setup-environment.sh
+./scripts/build-release.sh 0.1.0 dist
+```
+
+`setup-environment.sh` writes game compile references only to
+`VALHEIM_REFERENCE_CACHE_DIR`, which defaults to `_data/server`. A valid Managed directory
+can be reused read-only from any configured location. An invalid non-empty directory is
+writable only when it carries the setup script's completed ownership marker; otherwise setup
+refuses before invoking SteamCMD and directs the caller to a separate cache. The legacy
+`VALHEIM_SERVER_DIR` variable remains a safe fallback for read-only valid references or
+explicitly owned/empty caches, but it must not point setup at a live dedicated-server
+installation. BepInEx references come from the Thunderstore
+`denikson/BepInExPack_Valheim` package.
+
+The release produces `takaro-valheim-plugin.zip` and `takaro-valheim-companion.zip`. The
+first contains the dedicated-server plugin, Core, Protocol and required runtime
+dependencies. The second contains only the graphical-client companion, Protocol and
+required runtime dependencies. Both exclude host-provided game, Unity, BepInEx, Harmony,
+Jotunn, debug, host and role-inappropriate files.
+
+## Versioning
+
+The release version argument must be valid SemVer with major, minor and patch values no
+greater than 65534. The exact full SemVer remains in assembly informational/package
+metadata, the packaged README and `manifest.json`. BepInEx 5 parses its loader-facing
+attribute with `System.Version`, so that one value is deliberately normalized to numeric
+`major.minor.patch`; stable versions such as `1.0.0` therefore match exactly, while a
+version such as `1.0.0-rc.1+build.2` loads as `1.0.0`. Numeric assembly/file metadata uses
+`major.minor.patch.0`. The build generates both compile-time values under the intermediate
+output directory and does not edit tracked source files.
+
+Environment setup downloads SteamCMD completely to a sibling temporary archive, extracts
+into a sibling staging directory, writes a completion marker only after validation, and
+publishes by directory rename with rollback. A markerless executable is repaired, a
+completed cache is reused, unrelated owned-cache files are preserved, and failure/signal
+cleanup cannot leave a partial executable trusted by the next run. It requires the host
+`file` utility to identify every required Valheim and BepInEx DLL as a real
+`PE32 ... Mono/.Net assembly`. Valheim compile references are likewise built in a sibling
+staging directory, validated there, marked as an owned cache only after validation, and
+published by directory rename with rollback. Linux and Windows fallback therefore never
+inject or replace files inside an unowned live server tree.
