@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.1.4](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.3...7d2d-v0.1.4) (2026-09-15)
+
+
+### Bug Fixes
+
+* **7d2d:** chat echo, map endpoints, reconnect buffering, dead-socket detection and 0.1.6 release ([#105](https://github.com/gettakaro/connectors/issues/105)) ([a6efdaa](https://github.com/gettakaro/connectors/commit/a6efdaaf265b41569434b275ddf80158d846c819))
+* **7d2d:** restore V3 connector behavior ([#88](https://github.com/gettakaro/connectors/issues/88)) ([7762ae2](https://github.com/gettakaro/connectors/commit/7762ae22d37f0ef12665879704bced5cb15ee177))
+
+
+### Code Refactoring
+
+* **7d2d:** re-architect connector around event-driven LiteDB state mirror ([#66](https://github.com/gettakaro/connectors/issues/66)) ([030c8ef](https://github.com/gettakaro/connectors/commit/030c8ef19cc339d965bb1c9071532e200e3cbec9))
+
+
+### Build System
+
+* **7d2d:** pin Assembly-CSharp to the live-proven V3.2.0 b10 build ([#106](https://github.com/gettakaro/connectors/issues/106)) ([9fcd206](https://github.com/gettakaro/connectors/commit/9fcd2062d5e325729d678c2f20c165c5dac88317))
+
+
+### Documentation
+
+* **7d2d:** document Takaro coverage in the README ([#90](https://github.com/gettakaro/connectors/issues/90)) ([252f073](https://github.com/gettakaro/connectors/commit/252f07301f203fe3e1ff4258e07335aedbd89591))
+
 ## [0.1.6](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.5...7d2d-v0.1.6) (2026-09-15)
 
 
