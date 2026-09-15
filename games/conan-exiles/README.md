@@ -125,8 +125,7 @@ TAKARO_CONAN_CHAT_MOD=pippi \
 npm run mod-helper
 ```
 
-Note: the released zip ships only the compiled bridge, so `npm run mod-helper` needs the source
-checkout of `games/conan-exiles/bridge` and a full `npm ci` (not `--omit=dev`) on the server host.
+The helper ships compiled in the released zip and runs on `npm ci --omit=dev`, same as the bridge.
 Without this helper, Takaro messages fail with a clear error instead of appearing in chat.
 
 Then start the bridge:

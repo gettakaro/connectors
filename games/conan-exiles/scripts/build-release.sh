@@ -23,6 +23,15 @@ cp -R dist scripts package.json package-lock.json "$PACKAGE_DIR/"
 cp ../README.md ../TakaroConfig.example.txt "$PACKAGE_DIR/"
 rm -rf "$PACKAGE_DIR/dist/__tests__"
 
+# The release must be runnable with `npm ci --omit=dev`, so every entrypoint a
+# package.json script points at has to exist in the packaged dist/.
+for required in dist/index.js dist/mod/pollerCli.js; do
+  if [ ! -f "$PACKAGE_DIR/$required" ]; then
+    echo "build-release: missing $required in release package" >&2
+    exit 1
+  fi
+done
+
 cat > "$PACKAGE_DIR/README.release.txt" << EOF
 Takaro Conan Exiles Connector ${VERSION}
 
@@ -32,6 +41,11 @@ Install:
 3. Copy TakaroConfig.example.txt to TakaroConfig.txt.
 4. Configure Takaro registration and Conan RCON values.
 5. Start with npm start.
+6. For in-game chat, start the helper as a second process: npm run mod-helper
+   (see README.md for TAKARO_CONAN_CHAT_MOD / TAKARO_CONAN_RENDER_COMMAND).
+
+Both npm start and npm run mod-helper run from dist/ and need only production
+dependencies.
 
 Do not commit live registration tokens or RCON passwords.
 EOF

@@ -84,7 +84,11 @@ npm start
 
 `scripts/build-release.sh <version> <out-dir>` produces `takaro-conan-exiles-bridge.zip`
 containing `dist/`, `scripts/`, `package.json`, `package-lock.json`, `README.md`,
-`TakaroConfig.example.txt` and a generated `README.release.txt`. CI runs it from
+`TakaroConfig.example.txt` and a generated `README.release.txt`. The zip contains no `src/`, so
+every runtime `package.json` script points at compiled `dist/` output (`npm start` ->
+`dist/index.js`, `npm run mod-helper` -> `dist/mod/pollerCli.js`) and runs under
+`npm ci --omit=dev`; the script fails the build if either entrypoint is missing from the package.
+`npm run mod-helper:dev` is the `tsx` source variant for local development only. CI runs it from
 `.github/workflows/conan-exiles.yml` (`test` job: `npm ci`, `npm test`, `npm run build`;
 `package` job: build + publish stable / rolling `conan-exiles-dev` / per-PR assets).
 
