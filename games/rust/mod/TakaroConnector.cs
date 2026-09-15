@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Net.WebSockets;
 using System.Text;
@@ -13,7 +12,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("TakaroConnector", "Takaro", "0.0.3")] // x-release-please-version
+    [Info("TakaroConnector", "Takaro", "0.0.4")] // x-release-please-version
     [Description("Takaro Generic Connector — connects outbound to Takaro via WebSocket")]
     public class TakaroConnector : RustPlugin
     {
@@ -38,40 +37,10 @@ namespace Oxide.Plugins
         private readonly object _sendLock = new object();
         private readonly Dictionary<string, Vector3> _lastPosition = new Dictionary<string, Vector3>();
 
-        // --- Timed Bans ---
-        //
-        // Rust's native ban list (ServerUsers) has no expiry, so timed bans are kept
-        // in the plugin's own data file and enforced on login. Permanent bans still
-        // go through the native ban list.
-
-        private const string BanDataFile = "TakaroConnector_bans";
-        private const float BanSweepInterval = 60f;
-
-        private readonly Dictionary<ulong, TimedBan> _timedBans = new Dictionary<ulong, TimedBan>();
-        private Timer _banSweepTimer;
-
-        private class TimedBan
-        {
-            [JsonProperty("steamId")]
-            public string SteamId { get; set; }
-
-            [JsonProperty("name")]
-            public string Name { get; set; }
-
-            [JsonProperty("reason")]
-            public string Reason { get; set; }
-
-            [JsonProperty("expiresAt")]
-            public string ExpiresAt { get; set; }
-        }
-
         // --- Lifecycle ---
 
         private void Init()
         {
-            LoadTimedBans();
-            _banSweepTimer = timer.Every(BanSweepInterval, () => PruneExpiredBans());
-
             _wsUrl = Environment.GetEnvironmentVariable("TAKARO_WS_URL") ?? "wss://connect.takaro.io/";
             _registrationToken = Environment.GetEnvironmentVariable("TAKARO_REGISTRATION_TOKEN") ?? "";
             _identityToken = Environment.GetEnvironmentVariable("TAKARO_IDENTITY_TOKEN") ?? "";
@@ -100,8 +69,6 @@ namespace Oxide.Plugins
             _connected = false;
             _cts?.Cancel();
             try { _ws?.Dispose(); } catch { }
-            _banSweepTimer?.Destroy();
-            _banSweepTimer = null;
             _lastPosition.Clear();
         }
 
@@ -727,7 +694,6 @@ namespace Oxide.Plugins
             var playerObj = args["player"] as JObject;
             var gameId = playerObj?.Value<string>("gameId");
             var reason = args.Value<string>("reason") ?? "";
-            var expiresAt = args.Value<string>("expiresAt");
 
             if (string.IsNullOrEmpty(gameId)) throw new Exception("gameId required");
             if (!ulong.TryParse(gameId, out var steamId)) throw new Exception("Invalid gameId");
@@ -735,30 +701,8 @@ namespace Oxide.Plugins
             var player = FindPlayerByGameId(gameId);
             var name = player?.displayName ?? gameId;
 
-            DateTimeOffset expiry;
-            if (TryParseExpiry(expiresAt, out expiry))
-            {
-                // Timed ban: keep it in our own data file, native ban list has no expiry.
-                ServerUsers.Remove(steamId);
-                ServerUsers.Save();
-
-                _timedBans[steamId] = new TimedBan
-                {
-                    SteamId = gameId,
-                    Name = name,
-                    Reason = reason,
-                    ExpiresAt = ToIso8601(expiry)
-                };
-                SaveTimedBans();
-                LogInfo($"Timed ban for {gameId} until {ToIso8601(expiry)}");
-            }
-            else
-            {
-                if (_timedBans.Remove(steamId)) SaveTimedBans();
-
-                ServerUsers.Set(steamId, ServerUsers.UserGroup.Banned, name, reason);
-                ServerUsers.Save();
-            }
+            ServerUsers.Set(steamId, ServerUsers.UserGroup.Banned, name, reason);
+            ServerUsers.Save();
 
             player?.Kick($"Banned: {reason}");
         }
@@ -769,16 +713,12 @@ namespace Oxide.Plugins
             if (string.IsNullOrEmpty(gameId)) throw new Exception("gameId required");
             if (!ulong.TryParse(gameId, out var steamId)) throw new Exception("Invalid gameId");
 
-            if (_timedBans.Remove(steamId)) SaveTimedBans();
-
             ServerUsers.Remove(steamId);
             ServerUsers.Save();
         }
 
         private JToken HandleListBans()
         {
-            PruneExpiredBans();
-
             var arr = new JArray();
             var bans = ServerUsers.GetAll(ServerUsers.UserGroup.Banned);
             foreach (var ban in bans)
@@ -794,131 +734,7 @@ namespace Oxide.Plugins
                     ["expiresAt"] = null
                 });
             }
-
-            foreach (var ban in _timedBans.Values)
-            {
-                arr.Add(new JObject
-                {
-                    ["player"] = new JObject
-                    {
-                        ["gameId"] = ban.SteamId ?? "",
-                        ["name"] = ban.Name ?? ""
-                    },
-                    ["reason"] = ban.Reason ?? "",
-                    ["expiresAt"] = ban.ExpiresAt
-                });
-            }
-
             return arr;
-        }
-
-        // --- Timed Ban Storage & Enforcement ---
-
-        private static bool TryParseExpiry(string expiresAt, out DateTimeOffset expiry)
-        {
-            expiry = default(DateTimeOffset);
-            if (string.IsNullOrEmpty(expiresAt)) return false;
-
-            DateTimeOffset parsed;
-            if (!DateTimeOffset.TryParse(
-                    expiresAt,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal,
-                    out parsed))
-            {
-                return false;
-            }
-
-            expiry = parsed.ToUniversalTime();
-            return expiry > DateTimeOffset.UtcNow;
-        }
-
-        private static string ToIso8601(DateTimeOffset value) =>
-            value.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
-
-        private void LoadTimedBans()
-        {
-            _timedBans.Clear();
-            try
-            {
-                var stored = Interface.Oxide.DataFileSystem
-                    .ReadObject<Dictionary<string, TimedBan>>(BanDataFile);
-                if (stored == null) return;
-
-                foreach (var entry in stored)
-                {
-                    ulong steamId;
-                    if (entry.Value == null || !ulong.TryParse(entry.Key, out steamId)) continue;
-                    if (string.IsNullOrEmpty(entry.Value.SteamId)) entry.Value.SteamId = entry.Key;
-                    _timedBans[steamId] = entry.Value;
-                }
-            }
-            catch (Exception ex)
-            {
-                LogWarning($"Could not read timed ban data: {ex.Message}");
-            }
-
-            PruneExpiredBans();
-        }
-
-        private void SaveTimedBans()
-        {
-            try
-            {
-                var toStore = new Dictionary<string, TimedBan>();
-                foreach (var entry in _timedBans) toStore[entry.Key.ToString()] = entry.Value;
-                Interface.Oxide.DataFileSystem.WriteObject(BanDataFile, toStore);
-            }
-            catch (Exception ex)
-            {
-                LogWarning($"Could not write timed ban data: {ex.Message}");
-            }
-        }
-
-        /// <summary>Drops timed bans whose expiry has passed. Returns true if anything changed.</summary>
-        private bool PruneExpiredBans()
-        {
-            if (_timedBans.Count == 0) return false;
-
-            var now = DateTimeOffset.UtcNow;
-            var expired = new List<ulong>();
-            foreach (var entry in _timedBans)
-            {
-                DateTimeOffset expiry = default(DateTimeOffset);
-                var parseable = !string.IsNullOrEmpty(entry.Value?.ExpiresAt)
-                    && DateTimeOffset.TryParse(
-                        entry.Value.ExpiresAt,
-                        CultureInfo.InvariantCulture,
-                        DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal,
-                        out expiry);
-
-                // An unreadable expiry would never lift, so drop it rather than ban forever.
-                if (!parseable || expiry.ToUniversalTime() <= now) expired.Add(entry.Key);
-            }
-
-            if (expired.Count == 0) return false;
-
-            foreach (var steamId in expired)
-            {
-                _timedBans.Remove(steamId);
-                LogInfo($"Timed ban for {steamId} expired, lifted");
-            }
-            SaveTimedBans();
-            return true;
-        }
-
-        private object CanUserLogin(string name, string id, string ip)
-        {
-            ulong steamId;
-            if (!ulong.TryParse(id, out steamId)) return null;
-
-            TimedBan ban;
-            if (!_timedBans.TryGetValue(steamId, out ban)) return null;
-
-            PruneExpiredBans();
-            if (!_timedBans.TryGetValue(steamId, out ban)) return null;
-
-            return string.IsNullOrEmpty(ban.Reason) ? "Banned" : $"Banned: {ban.Reason}";
         }
 
         private void HandleShutdown()
