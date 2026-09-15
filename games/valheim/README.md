@@ -92,10 +92,7 @@ registrationToken = your-registration-token-here
 companionMode = disabled
 ```
 
-**Set `companionMode` yourself — the default is `required`.** On a server-side-only
-install that default disconnects every ordinary player about 30 seconds after they join,
-because none of them is running the client companion. `disabled` is the correct value for
-the install described in this README.
+`companionMode` defaults to `disabled`; only change it if you deploy the client companion.
 
 Leave `takaroWsUrl` as it is, and leave `identityToken` alone — the plugin fills it in by
 itself after the first successful registration. Save the file. Restart the dedicated server
@@ -115,9 +112,6 @@ In `BepInEx/LogOutput.log` on the server:
 The `identified as gameServerId=` line is the one that matters — it means Takaro accepted
 your registration token. And in Takaro, the game server shows as **online**. If it stays
 offline, `registrationToken` in the config file is the first thing to re-check.
-
-If players are dropped ~30 seconds after joining with a "kicked" dialog, `companionMode`
-is still on its `required` default; set it to `disabled` and restart.
 
 ### 6. Upgrading
 
@@ -175,8 +169,6 @@ server-side-only install this README covers, and is documented in
 
 ### Known issues
 
-- **Set `companionMode = disabled`.** The shipped default is `required`, which kicks every
-  ordinary player about 30 seconds after they join.
 - **No chat in either direction.** Valheim's dedicated server neither sees player chat nor
   can write into a player's chat window, so chat events, broadcasts, whispers and any
   Discord bridge are all off the table on a server-side-only install.

@@ -80,9 +80,9 @@ That accounting lives in `CompanionItemGrantMath` (pure, Unity-free, unit tested
 
 | Mode | Vanilla clients | What you give up |
 | --- | --- | --- |
-| `disabled` | Join normally; the companion RPC is never registered | Every client-reported capability |
+| `disabled` (default) | Join normally; the companion RPC is never registered | Every client-reported capability |
 | `optional` | Join normally and stay connected | Client-owned data only from players who installed the companion |
-| `required` (default) | Disconnected after a 30-second grace period, with a visible explanation | Nothing, but every player must install the companion |
+| `required` | Disconnected after a 30-second grace period, with a visible explanation | Nothing, but every player must install the companion |
 
 The two halves share a wire protocol (currently **2**) and must be upgraded together. A
 protocol-1 companion cannot parse a protocol-2 hello, so it answers nothing and is
@@ -105,7 +105,7 @@ The plugin reads these BepInEx settings from the `[Takaro]` section of
 - `enableLogEvents` (default `true`)
 - `commandAllowlistExact` (default `help`, semicolon-separated)
 - `commandAllowlistPrefixes` (default empty, semicolon-separated)
-- `companionMode` (default `required`)
+- `companionMode` (default `disabled`)
 
 The graphical-client companion separately reads `companionCommandPrefixes` (default `$`)
 from `com.takaro.valheim.companion.cfg`. This is intentionally client-side; the server
