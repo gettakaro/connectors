@@ -12,27 +12,27 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     outputs:
-      rust_released: ${{ steps.rp.outputs['rust--release_created'] }}
-      rust_tag: ${{ steps.rp.outputs['rust--tag_name'] }}
-      rust_version: ${{ steps.rp.outputs['rust--version'] }}
-      minecraft_released: ${{ steps.rp.outputs['minecraft--release_created'] }}
-      minecraft_tag: ${{ steps.rp.outputs['minecraft--tag_name'] }}
-      minecraft_version: ${{ steps.rp.outputs['minecraft--version'] }}
-      sevend2d_released: ${{ steps.rp.outputs['7d2d--release_created'] }}
-      sevend2d_tag: ${{ steps.rp.outputs['7d2d--tag_name'] }}
-      sevend2d_version: ${{ steps.rp.outputs['7d2d--version'] }}
-      zomboid_released: ${{ steps.rp.outputs['zomboid--release_created'] }}
-      zomboid_tag: ${{ steps.rp.outputs['zomboid--tag_name'] }}
-      zomboid_version: ${{ steps.rp.outputs['zomboid--version'] }}
-      valheim_released: ${{ steps.rp.outputs['valheim--release_created'] }}
-      valheim_tag: ${{ steps.rp.outputs['valheim--tag_name'] }}
-      valheim_version: ${{ steps.rp.outputs['valheim--version'] }}
-      conan_exiles_released: ${{ steps.rp.outputs['conan-exiles--release_created'] }}
-      conan_exiles_tag: ${{ steps.rp.outputs['conan-exiles--tag_name'] }}
-      conan_exiles_version: ${{ steps.rp.outputs['conan-exiles--version'] }}
-      terraria_released: ${{ steps.rp.outputs['terraria--release_created'] }}
-      terraria_tag: ${{ steps.rp.outputs['terraria--tag_name'] }}
-      terraria_version: ${{ steps.rp.outputs['terraria--version'] }}
+      rust_released: ${{ steps.rp.outputs['games/rust--release_created'] }}
+      rust_tag: ${{ steps.rp.outputs['games/rust--tag_name'] }}
+      rust_version: ${{ steps.rp.outputs['games/rust--version'] }}
+      minecraft_released: ${{ steps.rp.outputs['games/minecraft--release_created'] }}
+      minecraft_tag: ${{ steps.rp.outputs['games/minecraft--tag_name'] }}
+      minecraft_version: ${{ steps.rp.outputs['games/minecraft--version'] }}
+      sevend2d_released: ${{ steps.rp.outputs['games/7d2d--release_created'] }}
+      sevend2d_tag: ${{ steps.rp.outputs['games/7d2d--tag_name'] }}
+      sevend2d_version: ${{ steps.rp.outputs['games/7d2d--version'] }}
+      zomboid_released: ${{ steps.rp.outputs['games/zomboid--release_created'] }}
+      zomboid_tag: ${{ steps.rp.outputs['games/zomboid--tag_name'] }}
+      zomboid_version: ${{ steps.rp.outputs['games/zomboid--version'] }}
+      valheim_released: ${{ steps.rp.outputs['games/valheim--release_created'] }}
+      valheim_tag: ${{ steps.rp.outputs['games/valheim--tag_name'] }}
+      valheim_version: ${{ steps.rp.outputs['games/valheim--version'] }}
+      conan_exiles_released: ${{ steps.rp.outputs['games/conan-exiles--release_created'] }}
+      conan_exiles_tag: ${{ steps.rp.outputs['games/conan-exiles--tag_name'] }}
+      conan_exiles_version: ${{ steps.rp.outputs['games/conan-exiles--version'] }}
+      terraria_released: ${{ steps.rp.outputs['games/terraria--release_created'] }}
+      terraria_tag: ${{ steps.rp.outputs['games/terraria--tag_name'] }}
+      terraria_version: ${{ steps.rp.outputs['games/terraria--version'] }}
     steps:
       # Author Release PRs as takaro-ci-bot[bot] instead of GITHUB_TOKEN. PRs/commits made
       # with GITHUB_TOKEN don't fire downstream events, so the required `conventional-title`
