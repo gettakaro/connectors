@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.0.4](https://github.com/gettakaro/connectors/compare/rust-v0.0.3...rust-v0.0.4) (2026-09-16)
+
+
+### Bug Fixes
+
+* **rust:** honour ban expiry and report it in listBans ([#128](https://github.com/gettakaro/connectors/issues/128)) ([bdcd411](https://github.com/gettakaro/connectors/commit/bdcd4114594c0e7fdffc79474a97b743ae5db118))
+
+
+### Miscellaneous Chores
+
+* **main:** release rust 0.0.4 ([#118](https://github.com/gettakaro/connectors/issues/118)) ([9292803](https://github.com/gettakaro/connectors/commit/92928036f396cb1e5608367172d79becf2a22f16))
+
+
+### Code Refactoring
+
+* move connectors under games/&lt;game&gt;/ with a dedicated mod/ folder per game ([#112](https://github.com/gettakaro/connectors/issues/112)) ([fb03711](https://github.com/gettakaro/connectors/commit/fb03711d2bbd2cc45463f9963961adceebbee32b))
+
+
+### Documentation
+
+* **rust:** README with install steps and current status only ([#120](https://github.com/gettakaro/connectors/issues/120)) ([90c1428](https://github.com/gettakaro/connectors/commit/90c1428f7b1ee3692241bc04ef42669311549cbb))
+
 ## [0.0.4](https://github.com/gettakaro/connectors/compare/rust-v0.0.3...rust-v0.0.4) (2026-09-15)
 
 
