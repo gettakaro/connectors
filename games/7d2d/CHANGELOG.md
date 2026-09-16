@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.5...7d2d-v0.1.6) (2026-09-15)
+
+
+### Code Refactoring
+
+* move connectors under games/&lt;game&gt;/ with a dedicated mod/ folder per game ([#112](https://github.com/gettakaro/connectors/issues/112)) ([fb03711](https://github.com/gettakaro/connectors/commit/fb03711d2bbd2cc45463f9963961adceebbee32b))
+
 ## [0.1.5](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.4...7d2d-v0.1.5) (2026-09-15)
 
 
