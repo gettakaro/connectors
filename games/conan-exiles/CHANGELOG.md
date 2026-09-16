@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/gettakaro/connectors/compare/conan-exiles-v1.0.1...conan-exiles-v1.0.2) (2026-09-16)
+
+
+### Miscellaneous Chores
+
+* remove internal plans, handoffs and evidence from the public repo ([#139](https://github.com/gettakaro/connectors/issues/139)) ([60cd2f1](https://github.com/gettakaro/connectors/commit/60cd2f1f4dfe9c032d58509c67c5618ccb61cf01))
+
 ## [1.0.1](https://github.com/gettakaro/connectors/compare/conan-exiles-v1.0.0...conan-exiles-v1.0.1) (2026-09-15)
 
 
