@@ -2,7 +2,7 @@
 
 The Takaro Valheim Companion is the owned graphical-client half of the Valheim connector. It reports client-owned gameplay observations to the dedicated-server plugin over a bounded Valheim routed-RPC protocol. It does not connect to Takaro directly.
 
-This implementation has automated, real-assembly, exact graphical-client, dedicated-server, and Takaro proof. Its client-reported inventory, chat, death, and attributed-kill paths are `live-supported` in `capabilities.json`; see [the owned-companion validation ledger](qa/2026-07-12-owned-companion-validation.md).
+This implementation has automated, real-assembly, exact graphical-client, dedicated-server, and Takaro proof. Its client-reported inventory, chat, death, and attributed-kill paths are `live-supported` in `capabilities.json`; the owned-companion validation ledger is kept in the private workspace repo.
 
 ## Trust Boundary
 
@@ -55,7 +55,7 @@ The client folder must contain the companion and protocol DLLs shipped together 
 
 Server and client product patch versions may differ when their wire protocol overlaps. Protocol compatibility—not an exact product-version string match—controls negotiation. Upgrade the companion when a required-mode message shows incompatible expected and actual protocol versions.
 
-An incompatible companion reports its bounded supported protocol range to the server before required-mode disconnection, so server logs can distinguish it from a missing companion. **This holds only for a companion new enough to parse the server's hello — protocol 2 or later.** A protocol-1 companion cannot parse a protocol-2 hello, because it rejects the unknown `ItemGrant` capability bit, so it answers nothing and the server reports it as `reason=MissingCompanion, expected=2, actual=missing`. An out-of-date companion of that vintage is still indistinguishable from an absent one, because the server never receives a version it could report. What the server can do is name both possibilities, and it now does: the enforcement line appends `No companion answered the hello: none is installed, or it is older than protocol 2 and cannot read it.`, and the player-visible explanation likewise says the companion is either not installed or older than the minimum protocol and should be installed or updated. The companion itself still logs no diagnostic of its own — a version too old to parse the hello is also too old to know it failed. Both the original observation and the improved wording were proven live on 2026-09-02 — see [the item-grant validation ledger](qa/2026-09-02-item-grant-validation.md).
+An incompatible companion reports its bounded supported protocol range to the server before required-mode disconnection, so server logs can distinguish it from a missing companion. **This holds only for a companion new enough to parse the server's hello — protocol 2 or later.** A protocol-1 companion cannot parse a protocol-2 hello, because it rejects the unknown `ItemGrant` capability bit, so it answers nothing and the server reports it as `reason=MissingCompanion, expected=2, actual=missing`. An out-of-date companion of that vintage is still indistinguishable from an absent one, because the server never receives a version it could report. What the server can do is name both possibilities, and it now does: the enforcement line appends `No companion answered the hello: none is installed, or it is older than protocol 2 and cannot read it.`, and the player-visible explanation likewise says the companion is either not installed or older than the minimum protocol and should be installed or updated. The companion itself still logs no diagnostic of its own — a version too old to parse the hello is also too old to know it failed. Both the original observation and the improved wording were proven live on 2026-09-02 — the item-grant validation ledger is kept in the private workspace repo.
 
 ## Remove or Roll Back
 
@@ -84,7 +84,7 @@ The default is `disabled`, because the connector ships server-side only; set `op
 ## Observed Mode Behaviour
 
 The three modes were exercised live on 2026-09-02 against a real dedicated server and a
-real graphical client; see [the acceptance ledger](qa/2026-09-02-acceptance-validation.md).
+real graphical client; the acceptance ledger is kept in the private workspace repo.
 
 | Mode | Companion RPC | A player with no companion | What the server loses |
 | --- | --- | --- | --- |

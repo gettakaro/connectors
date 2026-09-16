@@ -34,3 +34,10 @@ Thumbs.db
 
 # Claude Code skills/plans live in the private workspace repo, never here
 .claude/
+
+# Internal plans/notes/evidence live in the private workspace repo, never here
+docs/plans/
+**/HANDOFF*.md
+**/qa/
+CLAUDE.md
+CONTEXT.md

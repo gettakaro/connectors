@@ -338,7 +338,8 @@ but **no `.pak` is built or shipped from this repo** — building it requires th
 - `API_COVERAGE_BOUNDARY.md` — connector-owned actions/events vs wider Takaro MCP tools.
 - `COMPLETION_CHECKLIST.md` — final done checklist for the server+client mod goal.
 - `DEVKIT_IMPLEMENTATION_NOTES.md` — source-attributed DevKit implementation contract.
-- `devkit-handoff/` — blueprint, implementation plan, build contract and PowerShell build helpers.
+- `devkit-handoff/` — build contract and PowerShell build helpers (the blueprint and
+  implementation plan live in the private workspace repo).
 
 Read-only local gates (`check-mod-toolchain.sh`, `check-takaro-mod-install.sh`,
 `audit-takaro-mod-goal.sh`) were used during the mod campaign; they are **not currently present in

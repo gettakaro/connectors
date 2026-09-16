@@ -17,14 +17,9 @@ this runtime can install and live-test them.
 
 ## Implementation Files
 
-- `TAKARO_CONAN_DEVKIT_BLUEPRINT.md`: asset graph and runtime behavior contract.
-- `IMPLEMENTATION_PLAN.md`: concrete DevKit asset creation and graph checklist.
 - `BUILD_SOURCE_CONTRACT.json`: machine-readable source/asset contract that
   returned evidence and `artifact-manifest.json` must reference.
 - `ARTIFACT_MANIFEST.template.json`: metadata to ship with the cooked `.pak`.
-- `BUILD_REPORT.template.md`: operator checklist and build evidence.
-- `SOURCE_EVIDENCE.template.md`: source evidence for the actual DevKit assets
-  that implement the server bridge and no-secret client marker.
 - `BUILD_HOST_PREFLIGHT.ps1`: Windows/Epic DevKit host readiness check.
 - `BRIDGE_CONTRACT_SMOKE.ps1`: local mock bridge for a DevKit play/session
   smoke before the cooked artifact is returned.
@@ -61,8 +56,8 @@ client control of the bridge.
 
 3. Create a unique mod named `TakaroConan`.
 4. Create the ModController, bridge component, and client marker described in
-   `TAKARO_CONAN_DEVKIT_BLUEPRINT.md`, `IMPLEMENTATION_PLAN.md`, and
-   `BUILD_SOURCE_CONTRACT.json`.
+   `BUILD_SOURCE_CONTRACT.json` and in the DevKit blueprint and implementation
+   plan, which are kept in the private workspace repo.
 5. Compile and save all assets.
 6. Before cooking, run the local bridge contract smoke while the DevKit play
    session or dedicated test session is running:
@@ -79,8 +74,8 @@ client control of the bridge.
    `BRIDGE_CONTRACT_SMOKE.result.json` outside the runtime return bundle and
    reference it from `BUILD_REPORT.md` and `SOURCE_EVIDENCE.md`.
 7. Cook/build the mod from the DevKit.
-8. Fill `BUILD_REPORT.md` from the template.
-9. Fill `SOURCE_EVIDENCE.md` from the template.
+8. Fill `BUILD_REPORT.md` from the template in the private workspace repo.
+9. Fill `SOURCE_EVIDENCE.md` from the template in the private workspace repo.
 10. Collect the artifact:
 
    ```powershell

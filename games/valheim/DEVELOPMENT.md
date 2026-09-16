@@ -225,8 +225,7 @@ the standard Takaro `listLocations` route remained unavailable, so that action i
 
 The 2026-07-14 chat-only validation deployed release archives built from connector commit
 `82546ddd49c6`, negotiated companion protocol 1, and live-routed Takaro `sendMessage`
-requests to the connected client. See
-[`qa/2026-07-14-server-chat-validation.md`](qa/2026-07-14-server-chat-validation.md).
+requests to the connected client. The validation ledger for that run is kept in the private workspace repo.
 
 Turn 5 live-proved immediate invalid-input failures, inventory non-mutation, lifecycle
 persistence and the vanilla-client server boundary against its exact commit and artifact
@@ -240,17 +239,15 @@ exerciser at real position `140/33/-2`. Turn-9 verification found two release bl
 Valheim adapter calls were not marshalled to Unity's main thread, and Windows
 compile-reference fallback could replace a configured live server tree. Turn 10 addressed
 those with a bounded `Update()`-drained action scheduler and an owned reference-cache
-boundary. Historical server-only evidence remains in
-[the 2026-07-10 ledger](qa/2026-07-10-server-only-validation.md); companion evidence is in
-[the 2026-07-12 owned-companion ledger](qa/2026-07-12-owned-companion-validation.md).
+boundary. Historical server-only evidence and the 2026-07-12 owned-companion evidence are kept in
+the private workspace repo.
 
 On 2026-09-02 the deployed `2.0.1` artifact was run against the reusable Takaro connector
 acceptance checklist with a real graphical client attached. That run moved `kickPlayer`,
 `banPlayer`, `unbanPlayer` and `shutdown` from `unsupported` to `live-supported`, re-proved
 the module command loop end to end, characterised all three `companionMode` values against
-a vanilla client, and found that `banPlayer` discards the ban reason. See
-[`qa/2026-09-02-acceptance-validation.md`](qa/2026-09-02-acceptance-validation.md) and
-[`HANDOFF-2026-09-02.md`](HANDOFF-2026-09-02.md).
+a vanilla client, and found that `banPlayer` discards the ban reason. The acceptance ledger and the session handoff for that run are kept in the private
+workspace repo.
 
 Later the same day the protocol-2 `item-grant` delivery was live-proven on
 `2.0.0-dev.28a4566`: a `giveItem` and an in-game shop purchase both landed in the player's
@@ -258,7 +255,7 @@ inventory, a full bag dropped only the shortfall with exact counts, thirty concu
 grants completed in 1686 ms without stalling the main thread, and a protocol-1 companion
 against the protocol-2 server was kicked while the server survived. The follow-up build
 `2.0.0-dev.422148d` re-proved the enforcement wording that names the out-of-date companion
-cause. See [`qa/2026-09-02-item-grant-validation.md`](qa/2026-09-02-item-grant-validation.md).
+cause. The item-grant validation ledger is kept in the private workspace repo.
 
 Takaro does not surface a `delivery` field, so a successful `giveItem` returns an empty
 success payload and the caller cannot tell from the API whether items reached the inventory
