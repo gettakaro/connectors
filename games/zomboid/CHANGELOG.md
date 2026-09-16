@@ -4,6 +4,18 @@ All notable changes to the Takaro Project Zomboid connector are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.1](https://github.com/gettakaro/connectors/compare/zomboid-v1.0.0...zomboid-v1.0.1) (2026-09-16)
+
+
+### Code Refactoring
+
+* move connectors under games/&lt;game&gt;/ with a dedicated mod/ folder per game ([#112](https://github.com/gettakaro/connectors/issues/112)) ([fb03711](https://github.com/gettakaro/connectors/commit/fb03711d2bbd2cc45463f9963961adceebbee32b))
+
+
+### Documentation
+
+* **zomboid:** README with install steps and current status only ([#119](https://github.com/gettakaro/connectors/issues/119)) ([49cd5cb](https://github.com/gettakaro/connectors/commit/49cd5cb7c4a82d7670f8650dcf4be2e0e7fbb5f6))
+
 ## 1.0.0 (2026-09-14)
 
 
