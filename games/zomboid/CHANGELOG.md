@@ -4,6 +4,13 @@ All notable changes to the Takaro Project Zomboid connector are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.2](https://github.com/gettakaro/connectors/compare/zomboid-v1.0.1...zomboid-v1.0.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* **zomboid:** accept explicit JSON null for optional action args ([#137](https://github.com/gettakaro/connectors/issues/137)) ([35e86c4](https://github.com/gettakaro/connectors/commit/35e86c46b52d74940f49ab88b4f52cdf89f67ae4))
+
 ## [1.0.1](https://github.com/gettakaro/connectors/compare/zomboid-v1.0.0...zomboid-v1.0.1) (2026-09-16)
 
 
