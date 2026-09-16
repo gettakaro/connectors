@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.1](https://github.com/gettakaro/connectors/compare/terraria-v0.2.0...terraria-v0.2.1) (2026-09-16)
+
+
+### Code Refactoring
+
+* move connectors under games/&lt;game&gt;/ with a dedicated mod/ folder per game ([#112](https://github.com/gettakaro/connectors/issues/112)) ([fb03711](https://github.com/gettakaro/connectors/commit/fb03711d2bbd2cc45463f9963961adceebbee32b))
+
+
+### Documentation
+
+* **terraria:** README with install steps and current status only ([#122](https://github.com/gettakaro/connectors/issues/122)) ([85c2132](https://github.com/gettakaro/connectors/commit/85c2132db9540a1b56bf0b716fe25ecb093602b3))
+
+
+### Continuous Integration
+
+* **terraria:** upload release assets on tagged releases ([#126](https://github.com/gettakaro/connectors/issues/126)) ([1ba29bb](https://github.com/gettakaro/connectors/commit/1ba29bb20831a5606cac621c330deff61e4fa44e))
+
 ## [0.2.0](https://github.com/gettakaro/connectors/compare/terraria-v0.1.0...terraria-v0.2.0) (2026-09-02)
 
 
