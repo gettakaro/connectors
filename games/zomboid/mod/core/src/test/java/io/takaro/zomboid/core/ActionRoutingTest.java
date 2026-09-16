@@ -147,6 +147,98 @@ class ActionRoutingTest {
         assertEquals("2026-12-31T00:00:00Z", adapter.lastBanExpiry);
     }
 
+    // --- explicit JSON null in optional args (defect 2026-09-16, LANE-C cell C8) ---
+    // Takaro *modules* send optional args as explicit nulls where the REST path
+    // omits the key; Gson's has() is true for those and JsonNull.getAsString()
+    // throws, which silently dropped module-driven teleports.
+
+    @Test
+    void teleportPlayerWithNullDimensionSucceeds() {
+        sendRequest("teleportPlayer", "req-null-dim",
+                "{\"player\":{\"gameId\":\"player-1\"},\"x\":10911,\"y\":10037,\"z\":0,\"dimension\":null}");
+        waitForResponse();
+
+        JsonObject response = parseResponse(sentMessages.get(0));
+        assertFalse(response.has("error"), "teleport with dimension:null must not error");
+        assertEquals("player-1", adapter.lastTeleportedId);
+        assertEquals(10911, adapter.lastTeleportX, 0.001);
+        assertEquals(10037, adapter.lastTeleportY, 0.001);
+        assertEquals(0, adapter.lastTeleportZ, 0.001);
+        assertNull(adapter.lastTeleportDimension);
+    }
+
+    @Test
+    void kickPlayerWithNullReasonSucceeds() {
+        sendRequest("kickPlayer", "req-null-reason",
+                "{\"player\":{\"gameId\":\"player-1\"},\"reason\":null}");
+        waitForResponse();
+
+        JsonObject response = parseResponse(sentMessages.get(0));
+        assertFalse(response.has("error"));
+        assertEquals("player-1", adapter.lastKickedId);
+        assertEquals("", adapter.lastKickReason);
+    }
+
+    @Test
+    void banPlayerWithNullExpiresAtIsPermanent() {
+        sendRequest("banPlayer", "req-null-expiry",
+                "{\"player\":{\"gameId\":\"player-1\"},\"reason\":null,\"expiresAt\":null}");
+        waitForResponse();
+
+        JsonObject response = parseResponse(sentMessages.get(0));
+        assertFalse(response.has("error"));
+        assertEquals("player-1", adapter.lastBannedId);
+        assertEquals("", adapter.lastBanReason);
+        assertNull(adapter.lastBanExpiry, "expiresAt:null must mean a permanent ban");
+    }
+
+    @Test
+    void banPlayerWithIsoExpiresAtIsPassedThrough() {
+        sendRequest("banPlayer", "req-iso-expiry",
+                "{\"player\":{\"gameId\":\"player-1\"},\"reason\":\"cheating\",\"expiresAt\":\"2026-12-31T00:00:00Z\"}");
+        waitForResponse();
+
+        JsonObject response = parseResponse(sentMessages.get(0));
+        assertFalse(response.has("error"));
+        assertEquals("cheating", adapter.lastBanReason);
+        assertEquals("2026-12-31T00:00:00Z", adapter.lastBanExpiry);
+    }
+
+    @Test
+    void giveItemWithNullQualityDeliversItem() {
+        sendRequest("giveItem", "req-null-quality",
+                "{\"player\":{\"gameId\":\"player-1\"},\"item\":\"Base.Axe\",\"amount\":1,\"quality\":null}");
+        waitForResponse();
+
+        JsonObject response = parseResponse(sentMessages.get(0));
+        assertFalse(response.has("error"));
+        assertEquals("Base.Axe", adapter.lastGivenItem);
+        assertEquals(1, adapter.lastGivenAmount);
+        assertEquals("", adapter.lastGivenQuality);
+    }
+
+    @Test
+    void sendMessageWithNullOptsAndRecipientSucceeds() {
+        sendRequest("sendMessage", "req-null-opts",
+                "{\"message\":\"hi\",\"opts\":null}");
+        waitForResponse();
+
+        JsonObject response = parseResponse(sentMessages.get(0));
+        assertFalse(response.has("error"));
+        assertEquals("Server: hi", adapter.lastMessage);
+        assertNull(adapter.lastRecipient);
+    }
+
+    @Test
+    void executeConsoleCommandWithNullCommandDoesNotThrow() {
+        sendRequest("executeConsoleCommand", "req-null-cmd", "{\"command\":null}");
+        waitForResponse();
+
+        JsonObject response = parseResponse(sentMessages.get(0));
+        assertFalse(response.has("error"));
+        assertEquals("", adapter.lastCommand);
+    }
+
     @Test
     void listBansReturnsFormattedEntries() {
         adapter.bans.add(new BanEntry("uuid-1", "Griefer", "griefing", "2026-12-31T00:00:00Z"));
@@ -372,6 +464,14 @@ class ActionRoutingTest {
         String lastBannedId = null;
         String lastBanReason = null;
         String lastBanExpiry = null;
+        String lastTeleportedId = null;
+        double lastTeleportX;
+        double lastTeleportY;
+        double lastTeleportZ;
+        String lastTeleportDimension = null;
+        String lastGivenItem = null;
+        int lastGivenAmount;
+        String lastGivenQuality = null;
         List<BanEntry> bans = new ArrayList<>();
         List<GameItem> items = new ArrayList<>();
         boolean throwOnCommand = false;
@@ -393,7 +493,12 @@ class ActionRoutingTest {
         @Override public List<GameItem> listItems() { return items; }
         @Override public List<GameEntity> listEntities() { return Collections.emptyList(); }
         @Override public List<GameLocation> listLocations() { return Collections.emptyList(); }
-        @Override public void giveItem(String gameId, String itemCode, int amount, String quality) {}
+        @Override
+        public void giveItem(String gameId, String itemCode, int amount, String quality) {
+            lastGivenItem = itemCode;
+            lastGivenAmount = amount;
+            lastGivenQuality = quality;
+        }
 
         @Override
         public void sendMessage(String message, String recipientGameId) {
@@ -410,7 +515,14 @@ class ActionRoutingTest {
             return new CommandResult(true, "", null);
         }
 
-        @Override public void teleportPlayer(String gameId, double x, double y, double z, String dimension) {}
+        @Override
+        public void teleportPlayer(String gameId, double x, double y, double z, String dimension) {
+            lastTeleportedId = gameId;
+            lastTeleportX = x;
+            lastTeleportY = y;
+            lastTeleportZ = z;
+            lastTeleportDimension = dimension;
+        }
 
         @Override
         public void kickPlayer(String gameId, String reason) {
