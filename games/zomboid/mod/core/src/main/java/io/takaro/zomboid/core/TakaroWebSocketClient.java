@@ -52,7 +52,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         }
         try {
             JsonObject json = JsonParser.parseString(message).getAsJsonObject();
-            String type = json.has("type") ? json.get("type").getAsString() : "";
+            String type = optString(json, "type", "");
 
             switch (type) {
                 case "connected":
@@ -72,13 +72,10 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                     handlePing(json);
                     break;
                 case "error":
-                    String errorMsg = "unknown";
-                    if (json.has("payload") && json.getAsJsonObject("payload").has("message")) {
-                        errorMsg = json.getAsJsonObject("payload").get("message").getAsString();
-                    } else if (json.has("message")) {
-                        errorMsg = json.get("message").getAsString();
-                    }
-                    String requestId = json.has("requestId") ? json.get("requestId").getAsString() : null;
+                    JsonObject errorPayload = optObject(json, "payload");
+                    String errorMsg = optString(errorPayload, "message", null);
+                    if (errorMsg == null) errorMsg = optString(json, "message", "unknown");
+                    String requestId = optString(json, "requestId", null);
                     adapter.logWarning("Server error: " + errorMsg + (requestId != null ? " (requestId=" + requestId + ")" : ""));
                     break;
                 default:
@@ -228,14 +225,15 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     private void handleIdentifyResponse(JsonObject json) {
-        JsonObject payload = json.has("payload") ? json.getAsJsonObject("payload") : new JsonObject();
+        JsonObject payloadObj = optObject(json, "payload");
+        JsonObject payload = payloadObj != null ? payloadObj : new JsonObject();
 
         if (payload.has("error") && !payload.get("error").isJsonNull()) {
             JsonElement errorElement = payload.get("error");
             String errorMessage;
             if (errorElement.isJsonObject()) {
                 JsonObject errorObj = errorElement.getAsJsonObject();
-                errorMessage = errorObj.has("message") ? errorObj.get("message").getAsString() : errorObj.toString();
+                errorMessage = optString(errorObj, "message", errorObj.toString());
             } else {
                 errorMessage = errorElement.getAsString();
             }
@@ -245,8 +243,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
         currentReconnectDelay = config.getReconnectDelay();
 
-        if (payload.has("server") && payload.getAsJsonObject("server").has("id")) {
-            String serverId = payload.getAsJsonObject("server").get("id").getAsString();
+        String serverId = optString(optObject(payload, "server"), "id", null);
+        if (serverId != null) {
             adapter.logInfo("Identified successfully, server ID: " + serverId);
         } else {
             adapter.logInfo("Identified successfully");
@@ -272,14 +270,15 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     private void handleRequest(JsonObject json) {
-        String requestId = json.has("requestId") ? json.get("requestId").getAsString() : null;
+        String requestId = optString(json, "requestId", null);
         if (requestId == null) {
             adapter.logWarning("Received request without requestId");
             return;
         }
 
-        JsonObject payload = json.has("payload") ? json.getAsJsonObject("payload") : new JsonObject();
-        String action = payload.has("action") ? payload.get("action").getAsString() : "";
+        JsonObject requestPayload = optObject(json, "payload");
+        JsonObject payload = requestPayload != null ? requestPayload : new JsonObject();
+        String action = optString(payload, "action", "");
         if (config.isDebugEnabled()) {
             adapter.logDebug("Request: action=" + action + ", requestId=" + requestId);
         }
@@ -345,6 +344,50 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     /**
+     * Optional string field. Returns {@code def} when the key is absent, is an
+     * explicit JSON {@code null} or is not a primitive. Takaro modules send
+     * optional args as explicit nulls (e.g. {@code "dimension": null}) where the
+     * REST path omits the key entirely, and {@code JsonNull.getAsString()}
+     * throws, so every optional read must go through here.
+     */
+    static String optString(JsonObject obj, String key, String def) {
+        if (obj == null || !obj.has(key)) return def;
+        JsonElement el = obj.get(key);
+        return el.isJsonPrimitive() ? el.getAsString() : def;
+    }
+
+    /** Optional number field; {@code def} when absent, JSON null or unparsable. */
+    static double optDouble(JsonObject obj, String key, double def) {
+        if (obj == null || !obj.has(key)) return def;
+        JsonElement el = obj.get(key);
+        if (!el.isJsonPrimitive()) return def;
+        try {
+            return el.getAsDouble();
+        } catch (RuntimeException e) {
+            return def;
+        }
+    }
+
+    /** Optional integer field; {@code def} when absent, JSON null or unparsable. */
+    static int optInt(JsonObject obj, String key, int def) {
+        if (obj == null || !obj.has(key)) return def;
+        JsonElement el = obj.get(key);
+        if (!el.isJsonPrimitive()) return def;
+        try {
+            return el.getAsInt();
+        } catch (RuntimeException e) {
+            return def;
+        }
+    }
+
+    /** Optional object field; {@code null} when absent, JSON null or not an object. */
+    static JsonObject optObject(JsonObject obj, String key) {
+        if (obj == null || !obj.has(key)) return null;
+        JsonElement el = obj.get(key);
+        return el.isJsonObject() ? el.getAsJsonObject() : null;
+    }
+
+    /**
      * Normalise the {@code args} field into a {@link JsonObject}. Takaro sends
      * args most often as a JSON string, sometimes as a raw object, and empty
      * args as {@code "{}"}, {@code "[]"}, {@code {}}, {@code []} or an empty
@@ -377,16 +420,11 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
      */
     static String extractGameId(JsonObject args) {
         if (args == null) return null;
-        if (args.has("gameId") && args.get("gameId").isJsonPrimitive()) {
-            return args.get("gameId").getAsString();
-        }
+        String flat = optString(args, "gameId", null);
+        if (flat != null) return flat;
         for (String key : new String[] {"player", "playerRef"}) {
-            if (args.has(key) && args.get(key).isJsonObject()) {
-                JsonObject nested = args.getAsJsonObject(key);
-                if (nested.has("gameId") && nested.get("gameId").isJsonPrimitive()) {
-                    return nested.get("gameId").getAsString();
-                }
-            }
+            String nested = optString(optObject(args, key), "gameId", null);
+            if (nested != null) return nested;
         }
         return null;
     }
@@ -477,12 +515,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         // Takaro sends the item identifier under itemCode (confirmed against the
         // shipped Terraria/Conan connectors); accept the known aliases.
         String itemCode = firstString(args, "itemCode", "item", "code", "name");
-        int amount = 1;
-        for (String k : new String[] {"amount", "quantity"}) {
-            if (args.has(k) && args.get(k).isJsonPrimitive()) { amount = args.get(k).getAsInt(); break; }
-        }
-        String quality = args.has("quality") && args.get("quality").isJsonPrimitive()
-                ? args.get("quality").getAsString() : "";
+        int amount = optInt(args, "amount", optInt(args, "quantity", 1));
+        String quality = optString(args, "quality", "");
         if (gameId != null && itemCode != null) {
             adapter.giveItem(gameId, itemCode, amount, quality);
         }
@@ -492,9 +526,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     private static String firstString(JsonObject args, String... keys) {
         if (args == null) return null;
         for (String k : keys) {
-            if (args.has(k) && args.get(k).isJsonPrimitive()) {
-                return args.get(k).getAsString();
-            }
+            String v = optString(args, k, null);
+            if (v != null) return v;
         }
         return null;
     }
@@ -549,7 +582,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     private JsonElement handleExecuteConsoleCommand(JsonObject args) {
-        String command = args.has("command") ? args.get("command").getAsString() : "";
+        String command = optString(args, "command", "");
         CommandResult result = adapter.executeConsoleCommand(command);
         JsonObject obj = new JsonObject();
         obj.addProperty("success", result.success());
@@ -559,18 +592,13 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     private void handleSendMessage(JsonObject args) {
-        String message = args.has("message") ? args.get("message").getAsString() : "";
+        String message = optString(args, "message", "");
         String recipientGameId = null;
         String senderName = null;
-        if (args.has("opts") && args.get("opts").isJsonObject()) {
-            JsonObject opts = args.getAsJsonObject("opts");
-            if (opts.has("recipient") && opts.get("recipient").isJsonObject()) {
-                JsonObject recipient = opts.getAsJsonObject("recipient");
-                recipientGameId = recipient.has("gameId") ? recipient.get("gameId").getAsString() : null;
-            }
-            if (opts.has("senderNameOverride") && opts.get("senderNameOverride").isJsonPrimitive()) {
-                senderName = opts.get("senderNameOverride").getAsString();
-            }
+        JsonObject opts = optObject(args, "opts");
+        if (opts != null) {
+            recipientGameId = optString(optObject(opts, "recipient"), "gameId", null);
+            senderName = optString(opts, "senderNameOverride", null);
         }
         // PZ server chat shows no author for a plain message, so prefix a name:
         // Takaro's senderNameOverride when provided, otherwise "Server".
@@ -590,10 +618,10 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     private void handleTeleportPlayer(JsonObject args) {
         String gameId = extractGameId(args);
-        double x = args.has("x") ? args.get("x").getAsDouble() : 0;
-        double y = args.has("y") ? args.get("y").getAsDouble() : 0;
-        double z = args.has("z") ? args.get("z").getAsDouble() : 0;
-        String dimension = args.has("dimension") ? args.get("dimension").getAsString() : null;
+        double x = optDouble(args, "x", 0);
+        double y = optDouble(args, "y", 0);
+        double z = optDouble(args, "z", 0);
+        String dimension = optString(args, "dimension", null);
         if (gameId != null) {
             adapter.teleportPlayer(gameId, x, y, z, dimension);
         }
@@ -601,7 +629,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     private void handleKickPlayer(JsonObject args) {
         String gameId = extractGameId(args);
-        String reason = args.has("reason") ? args.get("reason").getAsString() : "";
+        String reason = optString(args, "reason", "");
         if (gameId != null) {
             adapter.kickPlayer(gameId, reason);
         }
@@ -609,8 +637,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     private void handleBanPlayer(JsonObject args) {
         String gameId = extractGameId(args);
-        String reason = args.has("reason") ? args.get("reason").getAsString() : "";
-        String expiresAt = args.has("expiresAt") ? args.get("expiresAt").getAsString() : null;
+        String reason = optString(args, "reason", "");
+        String expiresAt = optString(args, "expiresAt", null);
         if (gameId != null) {
             adapter.banPlayer(gameId, reason, expiresAt);
         }
