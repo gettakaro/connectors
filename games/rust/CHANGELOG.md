@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.0.5](https://github.com/gettakaro/connectors/compare/rust-v0.0.4...rust-v0.0.5) (2026-09-16)
+
+
+### Miscellaneous Chores
+
+* **main:** release rust 0.0.4 ([#132](https://github.com/gettakaro/connectors/issues/132)) ([ae0b3ec](https://github.com/gettakaro/connectors/commit/ae0b3ec001f6983539d94eb9c28b91db5dd1ee11))
+* **main:** release rust 0.0.4 ([#133](https://github.com/gettakaro/connectors/issues/133)) ([1f39b3d](https://github.com/gettakaro/connectors/commit/1f39b3dd0b968b62a42e659aa61ef7ac3359b52a))
+* **rust:** repair release manifest and changelog after duplicate 0.0.4 release PR ([#134](https://github.com/gettakaro/connectors/issues/134)) ([d158c4a](https://github.com/gettakaro/connectors/commit/d158c4aca21d7ca16dd6df2916437e50b5254f7d))
+
 ## [0.0.4](https://github.com/gettakaro/connectors/compare/rust-v0.0.3...rust-v0.0.4) (2026-09-15)
 
 
