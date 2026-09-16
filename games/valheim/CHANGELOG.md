@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.0.2](https://github.com/gettakaro/connectors/compare/valheim-v3.0.1...valheim-v3.0.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* **valheim:** default companionMode to disabled so vanilla players are not kicked ([#129](https://github.com/gettakaro/connectors/issues/129)) ([0f3f115](https://github.com/gettakaro/connectors/commit/0f3f1150937525c51ac258c237b71f8a01979d2f))
+
+
+### Code Refactoring
+
+* move connectors under games/&lt;game&gt;/ with a dedicated mod/ folder per game ([#112](https://github.com/gettakaro/connectors/issues/112)) ([fb03711](https://github.com/gettakaro/connectors/commit/fb03711d2bbd2cc45463f9963961adceebbee32b))
+
+
+### Documentation
+
+* **valheim:** README with install steps and current status only ([#125](https://github.com/gettakaro/connectors/issues/125)) ([8c90777](https://github.com/gettakaro/connectors/commit/8c90777b599c07beb6cdc90d5c72b94d07027558))
+
 ## [3.0.1](https://github.com/gettakaro/connectors/compare/valheim-v3.0.0...valheim-v3.0.1) (2026-09-11)
 
 
