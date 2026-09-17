@@ -315,6 +315,29 @@ def golden_dashboard() -> Any:
     return board
 
 
+def catalog_target_rows(root: Path, game: str = "minecraft") -> list[dict[str, Any]]:
+    """The dashboard's target rows as the catalog tree on disk spells them.
+
+    Read straight from the records rather than through the loader, so the expectation stays
+    independent of the code under test, and so a scenario can say "the dashboard mirrors the
+    catalog" without naming the records -- adding a target never edits the assertion.
+    """
+    rows = [
+        {
+            "id": str(record["id"]),
+            "platform": str(record["platform"]),
+            "revision": str(record["revision"]),
+            "status": str(record["support"]["status"]),
+        }
+        for record in (
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in (root / "catalog" / game / "targets").glob("*.json")
+        )
+        if record["support"]["status"] != "retired"
+    ]
+    return sorted(rows, key=lambda row: row["id"])
+
+
 def add_candidate_target(root: Path, revision: str, *, platform: str = "fabric") -> Path:
     """Clone the maintained Fabric record into a candidate target for ``revision``."""
     from conftest import read_target, write_target

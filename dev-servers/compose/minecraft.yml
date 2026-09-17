@@ -74,3 +74,24 @@ services:
       - ../_data/minecraft/fabric:/data
 
 # --- additional targets are appended below ---
+
+  # Second Fabric target (catalog fabric-26.1.2): the same shape as `fabric`, with its own
+  # data dir, identity and ports. Values come from _data/.targets/minecraft-fabric-26.1.2.env.
+  fabric-26-1-2:
+    <<: *minecraft-common
+    image: "${MC_FABRIC_26_1_2_IMAGE:-target-not-resolved}"
+    profiles: ["fabric-26-1-2"]
+    container_name: takaro-dev-minecraft-fabric-26.1.2
+    ports:
+      - "25568:25565/tcp"
+      - "127.0.0.1:25578:25575"
+    environment:
+      <<: *minecraft-env
+      TYPE: "FABRIC"
+      VERSION: "${MC_FABRIC_26_1_2_VERSION:-}"
+      FABRIC_LOADER_VERSION: "${MC_FABRIC_26_1_2_LOADER_VERSION:-}"
+      FABRIC_LAUNCHER_VERSION: "${MC_FABRIC_26_1_2_LAUNCHER_VERSION:-}"
+      FABRIC_LAUNCHER: "${MC_FABRIC_26_1_2_LAUNCHER:-}"
+      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_FABRIC_26_1_2:-takaro-dev-fabric-26.1.2}"
+    volumes:
+      - ../_data/minecraft/fabric-26.1.2:/data

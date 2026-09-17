@@ -257,6 +257,7 @@ case "$GAME" in
     minecraft-paper)    install_minecraft paper ;;
     minecraft-neoforge) install_minecraft neoforge ;;
     minecraft-fabric)   install_minecraft fabric ;;
+    minecraft-fabric-26.1.2) install_minecraft fabric-26-1-2 ;;
     7d2d)               install_7d2d ;;
     zomboid)            install_zomboid ;;
     dayz)               install_dayz ;;

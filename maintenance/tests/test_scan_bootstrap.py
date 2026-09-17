@@ -42,9 +42,10 @@ def test_bootstrap_seeds_heads_and_files_only_the_uncovered_head(
         assert source["heads"] == {"release": "26.3"}
         assert sorted(harness.checkpoint_ids()) == sorted(["26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.11"])
         assert source["checkpoint"]["floor"] is None
-        assert state["targets"]["minecraft"] == [
-            {"id": "fabric-26.2", "platform": "fabric", "revision": "26.2", "status": "maintained"}
-        ]
+        assert state["targets"]["minecraft"] == support.catalog_target_rows(catalog_copy)
+        assert {"id": "fabric-26.2", "platform": "fabric", "revision": "26.2", "status": "maintained"} in (
+            state["targets"]["minecraft"]
+        )
         work = state["work"]["provider=mojang component=minecraft branch=release rev=26.3"]
         assert work == {"issue": filed["number"], "state": "detected", "since": support.FROZEN_NOW}
         assert state["lastSuccess"] == support.FROZEN_NOW

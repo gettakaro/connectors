@@ -268,6 +268,7 @@ case "$GAME" in
     minecraft-paper)    deploy_minecraft paper ;;
     minecraft-neoforge) deploy_minecraft neoforge ;;
     minecraft-fabric)   deploy_minecraft fabric ;;
+    minecraft-fabric-26.1.2) deploy_minecraft fabric-26.1.2 ;;
     7d2d)               deploy_7d2d ;;
     zomboid)            deploy_zomboid ;;
     valheim)            deploy_valheim ;;
