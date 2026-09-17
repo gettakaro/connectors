@@ -1,0 +1,17 @@
+[
+  {
+    "id": 1,
+    "time": "2026-09-15T12:51:28Z",
+    "channel": "ALPHA",
+    "downloads": {
+      "server:default": {
+        "name": "paper-26.3-rc-3-1.jar",
+        "checksums": {
+          "sha256": "098602998d2676ad8ec36e53b0da3ccb9f5e9b901ddfac9ee5b6fe50a330f6f3"
+        },
+        "size": 63714968,
+        "url": "https://fill-data.papermc.io/v1/objects/098602998d2676ad8ec36e53b0da3ccb9f5e9b901ddfac9ee5b6fe50a330f6f3/paper-26.3-rc-3-1.jar"
+      }
+    }
+  }
+]

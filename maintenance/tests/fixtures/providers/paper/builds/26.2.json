@@ -1,0 +1,32 @@
+[
+  {
+    "id": 124,
+    "time": "2026-09-15T17:48:49Z",
+    "channel": "STABLE",
+    "downloads": {
+      "server:default": {
+        "name": "paper-26.2-124.jar",
+        "checksums": {
+          "sha256": "274bbcb9807ad79a479617ce695a7c0686e652a8d1cabfd0e288d92a3ea29593"
+        },
+        "size": 64521995,
+        "url": "https://fill-data.papermc.io/v1/objects/274bbcb9807ad79a479617ce695a7c0686e652a8d1cabfd0e288d92a3ea29593/paper-26.2-124.jar"
+      }
+    }
+  },
+  {
+    "id": 82,
+    "time": "2026-07-26T13:34:22Z",
+    "channel": "BETA",
+    "downloads": {
+      "server:default": {
+        "name": "paper-26.2-82.jar",
+        "checksums": {
+          "sha256": "3a21273692b2659696d1a22e394612b3ff732e231a10b1466975824d3e29dad8"
+        },
+        "size": 61754996,
+        "url": "https://fill-data.papermc.io/v1/objects/3a21273692b2659696d1a22e394612b3ff732e231a10b1466975824d3e29dad8/paper-26.2-82.jar"
+      }
+    }
+  }
+]
