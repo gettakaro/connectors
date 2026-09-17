@@ -252,7 +252,11 @@ class NeoForgeProvider(Provider):
         )
 
     def enrich(self, observation: Observation, source: dict[str, Any]) -> Observation:
-        """Add the installer's published sha256 from its ``.sha256`` sidecar."""
+        """Add the installer's published sha256, from the same sidecar acquisition trusts.
+
+        A sidecar this run could not read withdraws the whole source's listing from the
+        readiness registry before failing, so no row claims a digest nobody verified.
+        """
         asset = dict(observation.facts.get("artifact") or {})
         url = str(asset.get("url") or "")
         if not url or asset.get("sha256"):
