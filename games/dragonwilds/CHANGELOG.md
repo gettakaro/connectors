@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.1.0...dragonwilds-v0.2.0) (2026-09-17)
+
+
+### Features
+
+* **dragonwilds:** RuneScape Dragonwilds connector (LD_PRELOAD plugin + sidecar) ([#179](https://github.com/gettakaro/connectors/issues/179)) ([15baea9](https://github.com/gettakaro/connectors/commit/15baea9986f98c680a00f5e3179f728ad03d62b9))
+
 ## 0.1.0 (2026-09-16)
 
 ### Features
