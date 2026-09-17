@@ -3,6 +3,7 @@ package io.takaro.minecraft.neoforge;
 import io.takaro.minecraft.core.EventEmitter;
 import io.takaro.minecraft.core.GameAdapter;
 import io.takaro.minecraft.core.model.*;
+import io.takaro.minecraft.core.target.RuntimeIdentity;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
@@ -32,6 +33,27 @@ public class NeoForgeGameAdapter implements GameAdapter {
 
     public EventEmitter getEventEmitter() {
         return eventEmitter;
+    }
+
+    /** What NeoForge itself says it loaded — the guard compares this with the jar's stamp. */
+    @Override
+    public RuntimeIdentity getRuntimeIdentity() {
+        return new RuntimeIdentity(
+                modVersion("minecraft"),
+                "neoforge",
+                modVersion("neoforge"),
+                Runtime.version().feature());
+    }
+
+    /**
+     * ModList is stable across the NeoForge 21.x line; FMLLoader.versionInfo() changed shape
+     * inside it and is deliberately not used.
+     */
+    private static String modVersion(String modId) {
+        return net.neoforged.fml.ModList.get()
+                .getModContainerById(modId)
+                .map(container -> container.getModInfo().getVersion().toString())
+                .orElse("");
     }
 
     @Override

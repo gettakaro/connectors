@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Builds the Minecraft connector at <version> into <out-dir>.
-# Thin wrapper: every catalog target goes through takaro-maint, and the modules that
-# have not moved to the catalog yet go through build-legacy.sh.
+# Thin wrapper: every target goes through takaro-maint.
 set -euo pipefail
 
 VERSION="${1:?usage: build-release.sh <version> <out-dir>}"
@@ -18,5 +17,3 @@ echo "Building Minecraft connector v${VERSION}..."
 
 "${REPO_ROOT}/maintenance/bin/takaro-maint" build \
   --game minecraft --all-targets --version "$VERSION" --out "$OUT_DIR"
-
-scripts/build-legacy.sh "$VERSION" "$OUT_DIR"

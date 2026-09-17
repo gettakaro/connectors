@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gettakaro/connectors/catalog/schema/v1/inputs/neoforge-installer.schema.json",
+  "title": "NeoForge installer input",
+  "description": "The NeoForge server installer for one NeoForge version, pinned by the upstream .sha256 sidecar.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "source", "hashOrigin", "gameVersion", "loaderVersion", "path", "sha256", "installPath"],
+  "properties": {
+    "kind": {"const": "neoforge-installer"},
+    "source": {"type": "string", "minLength": 1},
+    "hashOrigin": {"enum": ["upstream", "self-recorded"]},
+    "gameVersion": {"type": "string", "minLength": 1},
+    "loaderVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "The NeoForge version (major.minor.patch); loaderMin for the guard."
+    },
+    "path": {"type": "string", "pattern": "^/releases/net/neoforged/neoforge/[^/]+/neoforge-[^/]+-installer\\.jar$"},
+    "sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "size": {"type": "integer", "minimum": 1},
+    "installPath": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*(/[A-Za-z0-9][A-Za-z0-9._+-]*)*$"}
+  }
+}

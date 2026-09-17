@@ -19,9 +19,13 @@ x-minecraft-common: &minecraft-common
     TAKARO_DEBUG: "${TAKARO_DEBUG:-false}"
 
 services:
-  # TODO(#151): switch to ${MC_PAPER_*} once Paper becomes a catalog target.
+  # Fully driven by catalog target paper-1.21.11: image, game version, build and the
+  # pre-staged jar come from _data/.targets/minecraft-paper.env, which install.sh resolves.
+  # The sentinel keeps `compose config` valid before the first install; the real gate
+  # is ds_preflight_target in start.sh.
   paper:
     <<: *minecraft-common
+    image: "${MC_PAPER_IMAGE:-target-not-resolved}"
     profiles: ["paper"]
     container_name: takaro-dev-minecraft-paper
     ports:
@@ -30,13 +34,17 @@ services:
     environment:
       <<: *minecraft-env
       TYPE: "PAPER"
+      VERSION: "${MC_PAPER_VERSION:-}"
+      PAPER_BUILD: "${MC_PAPER_BUILD:-}"
+      PAPER_CUSTOM_JAR: "${MC_PAPER_CUSTOM_JAR:-}"
       TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_PAPER:-takaro-dev-paper}"
     volumes:
       - ../_data/minecraft/paper:/data
 
-  # TODO(#151): switch to ${MC_NEOFORGE_*} once NeoForge becomes a catalog target.
+  # Fully driven by catalog target neoforge-1.21.11, the same way.
   neoforge:
     <<: *minecraft-common
+    image: "${MC_NEOFORGE_IMAGE:-target-not-resolved}"
     profiles: ["neoforge"]
     container_name: takaro-dev-minecraft-neoforge
     ports:
@@ -45,7 +53,9 @@ services:
     environment:
       <<: *minecraft-env
       TYPE: "NEOFORGE"
-      NEOFORGE_VERSION: "beta"
+      VERSION: "${MC_NEOFORGE_VERSION:-}"
+      NEOFORGE_VERSION: "${MC_NEOFORGE_LOADER_VERSION:-}"
+      NEOFORGE_INSTALLER: "${MC_NEOFORGE_INSTALLER:-}"
       TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_NEOFORGE:-takaro-dev-neoforge}"
     volumes:
       - ../_data/minecraft/neoforge:/data

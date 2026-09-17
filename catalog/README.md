@@ -57,6 +57,8 @@ name a file outside the directory the command was pointed at.
 | `fabric-launcher` | the Fabric server launcher for one (game, loader, launcher) triple | sha256 |
 | `maven-artifact` | a jar from a Maven repository, addressed by group/artifact/version | sha256 |
 | `http-file` | anything else fetched by URL | sha256 |
+| `paper-build` | a PaperMC server jar for one (project, game version, build), fetched by its content-addressed Fill v3 URL | sha256 (the URL's hash segment) + size |
+| `neoforge-installer` | the NeoForge server installer for one NeoForge version | upstream `.sha256` sidecar |
 | `container-image` | the runtime and build images | immutable tag + manifest digest |
 
 `hashOrigin` records where a hash came from: `upstream` when the publisher serves a checksum we

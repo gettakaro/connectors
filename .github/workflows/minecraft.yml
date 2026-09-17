@@ -97,4 +97,3 @@ jobs:
       tag: ${{ needs.params.outputs.tag }}
       publish: ${{ needs.params.outputs.publish }}
       pr_number: ${{ github.event.pull_request.number }}
-      legacy_build: games/minecraft/scripts/build-legacy.sh

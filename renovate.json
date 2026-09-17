@@ -13,10 +13,8 @@
   "lockFileMaintenance": { "enabled": true },
   "packageRules": [
     {
-      "description": "Game-coupled coordinates live in catalog/, not in Gradle files: Minecraft, the Fabric loader and the Fabric API are pinned per target and change only through a catalog PR. Renovate keeps the tool pins below.",
+      "description": "Minecraft, the Fabric loader/API, Paper and NeoForge are pinned per target in catalog/minecraft/targets/*.json, not in Gradle files, and change only through a catalog PR. Renovate keeps the tool pins below.",
       "matchDepNames": [
-        "io.papermc.paper:paper-api",
-        "net.neoforged:neoforge",
         "net.neoforged.moddev",
         "net.fabricmc.fabric-loom"
       ],

@@ -18,9 +18,6 @@ plugins {
 rootProject.name = "takaro-minecraft"
 
 include("core")
-// legacy single-target modules, migrated to targets/ by the Paper/NeoForge issue
-include("paper")
-include("neoforge")
 
 // Every directory under targets/ that carries a build file is a catalog target.
 // Adding a target is adding its JSON record and its one-line build file, nothing here.

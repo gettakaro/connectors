@@ -1,8 +1,7 @@
 [versions]
-# Game-coupled coordinates (Minecraft, Fabric loader, Fabric API) live in catalog/minecraft/
-# targets/*.json, not here: they change per target and only through a catalog PR.
-paper-api = "1.21.11-R0.1-SNAPSHOT"
-neoforge-version = "21.11.38-beta"
+# Game-coupled coordinates (Minecraft, the Fabric loader/API, the Paper API and the NeoForge
+# version) live in catalog/minecraft/targets/*.json, not here: they change per target and only
+# through a catalog PR. Only the build tooling below is pinned in this file.
 
 java-websocket = "1.6.0"
 gson = "2.14.0"
@@ -16,7 +15,6 @@ neoforge-moddev = "2.0.141"
 java-websocket = { module = "org.java-websocket:Java-WebSocket", version.ref = "java-websocket" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 log4j-api = { module = "org.apache.logging.log4j:log4j-api", version.ref = "log4j" }
-paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper-api" }
 
 [plugins]
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }

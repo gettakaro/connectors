@@ -1,16 +1,18 @@
+import io.takaro.gradle.TargetCatalog
+
+// ModDevGradle and shadow are applied here rather than from a convention plugin: putting
+// them on buildSrc's classpath would break the targets that request them by version alias.
 plugins {
     alias(libs.plugins.neoforge.moddev)
     alias(libs.plugins.shadow)
+    id("takaro.neoforge-target")
 }
 
-neoForge {
-    version = libs.versions.neoforge.version.get()
+val target = TargetCatalog.load(project)
 
-    runs {
-        create("server") {
-            server()
-        }
-    }
+neoForge {
+    // The NeoForge version comes from the catalog record, never from the version catalog.
+    version = target.input("loader")["loaderVersion"] as String
 
     mods {
         create("takaro") {
@@ -19,14 +21,7 @@ neoForge {
     }
 }
 
-val shade: Configuration by configurations.creating {
-    isTransitive = true
-}
-
-dependencies {
-    shade(project(":core"))
-    compileOnly(project(":core"))
-}
+val shade: Configuration by configurations.getting
 
 tasks.shadowJar {
     configurations = listOf(shade)
@@ -42,8 +37,4 @@ tasks.shadowJar {
     exclude("META-INF/maven/org.checkerframework/**")
     exclude("org/slf4j/**")
     exclude("META-INF/maven/org.slf4j/**")
-}
-
-tasks.build {
-    dependsOn(tasks.shadowJar)
 }

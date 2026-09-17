@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gettakaro/connectors/catalog/schema/v1/inputs/paper-build.schema.json",
+  "title": "PaperMC server build input",
+  "description": "A PaperMC server jar for one (project, game version, build), served by its content-addressed URL.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "source", "hashOrigin", "project", "gameVersion", "loaderVersion", "path", "sha256", "installPath"],
+  "properties": {
+    "kind": {"const": "paper-build"},
+    "source": {"type": "string", "minLength": 1},
+    "hashOrigin": {"enum": ["upstream", "self-recorded"]},
+    "project": {"enum": ["paper"]},
+    "gameVersion": {"type": "string", "minLength": 1},
+    "loaderVersion": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$",
+      "description": "The Paper build number, as a string: it is the loader version the runtime guard compares (loaderMin)."
+    },
+    "path": {"type": "string", "pattern": "^/v1/objects/[0-9a-f]{64}/paper-[^/]+\\.jar$"},
+    "sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "size": {"type": "integer", "minimum": 1},
+    "installPath": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*(/[A-Za-z0-9][A-Za-z0-9._+-]*)*$"}
+  }
+}

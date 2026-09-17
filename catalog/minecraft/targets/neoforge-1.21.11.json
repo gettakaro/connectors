@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "id": "neoforge-1.21.11",
+  "game": "minecraft",
+  "platform": "neoforge",
+  "revision": "1.21.11",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-09-17",
+    "evidence": [],
+    "notes": "Pinned by #151; runtime verification against the fake Takaro passes at protocol level, hosted identify and gameplay evidence pending (#152)."
+  },
+  "inputs": {
+    "loader": {
+      "kind": "neoforge-installer",
+      "source": "neoforge-maven",
+      "hashOrigin": "upstream",
+      "gameVersion": "1.21.11",
+      "loaderVersion": "21.11.45",
+      "path": "/releases/net/neoforged/neoforge/21.11.45/neoforge-21.11.45-installer.jar",
+      "sha256": "e54350cc68d7dec6cb0523a0597a6a2fa664c1acd878b456af4564ee126da00a",
+      "size": 4236966,
+      "installPath": "neoforge-21.11.45-installer.jar"
+    },
+    "universal": {
+      "kind": "http-file",
+      "source": "neoforge-maven",
+      "hashOrigin": "upstream",
+      "path": "/releases/net/neoforged/neoforge/21.11.45/neoforge-21.11.45-universal.jar",
+      "sha256": "0d9ab82c37319ed6514e8e28e5ab357ba5e9b8043ee4621333cf45b743039cba",
+      "size": 3831805,
+      "installPath": "libraries/net/neoforged/neoforge/21.11.45/neoforge-21.11.45-universal.jar"
+    }
+  },
+  "runtime": {
+    "java": 21,
+    "container": {
+      "kind": "container-image",
+      "image": "itzg/minecraft-server",
+      "tag": "2026.9.1-java21",
+      "digest": "sha256:21b3d6bad32cc49ca15c8ceefcaffe94ac7fb6a53939fc7a5da066ec5dd0bc1d",
+      "env": {
+        "TYPE": "NEOFORGE",
+        "VERSION": "1.21.11",
+        "NEOFORGE_VERSION": "21.11.45",
+        "NEOFORGE_INSTALLER": "/data/neoforge-21.11.45-installer.jar"
+      }
+    }
+  },
+  "build": {
+    "system": "gradle",
+    "gradleProject": "neoforge-1.21.11",
+    "javaRelease": 21,
+    "gradleJvm": 25,
+    "gradleVersion": "9.5.1",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "eclipse-temurin",
+      "tag": "25-jdk",
+      "digest": "sha256:010ab2b79329b951bf052dbf515843ab345ae4e4f0ef72287d85c9fa54da275f"
+    },
+    "plugins": {
+      "neoforge-moddev": "2.0.141",
+      "shadow": "9.4.2"
+    },
+    "deps": {
+      "minecraft": {"coordinate": "com.mojang:minecraft:1.21.11", "sha256": null}
+    }
+  },
+  "components": [
+    {"role": "server-mod", "artifact": "takaro-minecraft-mod-neoforge-1.21.11-{version}.jar", "installDir": "mods"}
+  ],
+  "verification": {"required": "protocol", "separate": []},
+  "preserve": [
+    "world*/",
+    "config/",
+    "server.properties",
+    "ops.json",
+    "whitelist.json",
+    "banned-*.json",
+    "usercache.json",
+    "eula.txt",
+    ".takaro/"
+  ],
+  "devServers": {"gameId": "minecraft-neoforge"},
+  "notes": "21.11.45 is the newest release of the 21.11 line (the rig's floating alias and the 21.11.38 pre-release pin resolve here). The build dependency is resolved by ModDevGradle from the pinned NeoForge version; its universal and installer jars are hashed by the target's verifyNeoForgeInputs task against inputs.universal / inputs.loader. The installer fetches and verifies the vanilla server jar and libraries at first boot."
+}

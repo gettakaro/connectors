@@ -12,7 +12,7 @@ Notes for working on the connector itself. Server operators only need [`README.m
 
 - **Building requires JDK 25** for the whole multi-project build (Fabric Loom 1.17.20 needs
   Gradle >= 9.5 on a JDK 25 Gradle JVM, and the fabric project is evaluated even when you
-  build only `:paper:build`). Paper, NeoForge and core are still compiled with `--release 21`,
+  build only one target). Paper, NeoForge and core are compiled with `--release 21`,
   so their class files stay Java 21.
 - Docker and Docker Compose (for running servers).
 
@@ -24,19 +24,20 @@ and 1.21.11 clients cannot join 26.x servers. Paper and NeoForge stay on 1.21.11
 
 ## Targets
 
-Fabric is built from a **catalog target**: `catalog/minecraft/targets/fabric-26.2.json` pins the
-exact Minecraft version, Fabric loader, Fabric API, Java level, toolchain image and runtime image,
-each by hash or digest. Nothing in the Gradle files chooses a game version any more.
+Every platform is built from a **catalog target**: `catalog/minecraft/targets/<id>.json` pins the
+exact Minecraft version, the loader or server build, its dependencies, the Java level, the toolchain
+image and the runtime image, each by hash or digest. Nothing in the Gradle files chooses a game
+version any more.
 
 ```
-catalog/minecraft/targets/fabric-26.2.json   the record
-games/minecraft/mod/targets/fabric-26.2/     its Gradle project (a one-line build file)
-games/minecraft/mod/buildSrc/                the conventions that read the record
+catalog/minecraft/targets/fabric-26.2.json       the record
+games/minecraft/mod/targets/fabric-26.2/         its Gradle project (a one-line build file)
+games/minecraft/mod/buildSrc/                    the conventions that read the record
 ```
 
-The Gradle project is named after the target and reads its own record, so adding a Fabric target
-is adding a JSON file and a directory — `settings.gradle.kts` picks it up on its own. Paper and
-NeoForge are still single-version modules; they move to `targets/` with their own issue.
+The Gradle project is named after the target and reads its own record, so adding a target is adding
+a JSON file and a directory — `settings.gradle.kts` picks it up on its own. `just maint targets list --game minecraft`
+prints the targets that exist right now.
 
 See [catalog/README.md](../../catalog/README.md) for the record format, the fingerprint and how to
 add or retire a target.
@@ -55,15 +56,15 @@ Gradle directly still works:
 
 ```bash
 (cd mod && ./gradlew :fabric-26.2:build)          # one target
-(cd mod && ./gradlew :paper:build)                # a legacy module
+(cd mod && ./gradlew :paper-1.21.11:build)        # another target
 (cd mod && ./gradlew :core:test :buildSrc:test)   # unit tests and fingerprint parity
 ```
 
 Artifacts:
 
 - `targets/fabric-26.2/build/libs/takaro-minecraft-mod-fabric-26.2-<version>.jar`
-- `paper/build/libs/takaro-paper-<version>.jar`
-- `neoforge/build/libs/takaro-neoforge-<version>.jar`
+- `targets/paper-1.21.11/build/libs/takaro-minecraft-mod-paper-1.21.11-<version>.jar`
+- `targets/neoforge-1.21.11/build/libs/takaro-minecraft-mod-neoforge-1.21.11-<version>.jar`
 
 The target jar's name is part of its identity: `takaro-maint` looks it up by that exact name
 rather than globbing `build/libs`, and the build fails if it does not match the catalog.

@@ -25,6 +25,8 @@ The exact server builds this connector is maintained for:
 | --- | --- | --- | --- | --- | --- | --- |
 | `fabric-26.1.2` | 26.1.2 | fabric | loader 0.19.3 / API 0.155.3+26.1.2 | 25 | candidate | protocol |
 | `fabric-26.2` | 26.2 | fabric | loader 0.19.5 / API 0.160.0+26.2 | 25 | maintained | protocol |
+| `neoforge-1.21.11` | 1.21.11 | neoforge | loader 21.11.45 | 21 | candidate | protocol |
+| `paper-1.21.11` | 1.21.11 | paper | loader 132 | 21 | candidate | protocol |
 <!-- takaro-maint:targets:end -->
 
 Players' clients must match the server's Minecraft version. A 26.2 client cannot join a 1.21.11
@@ -39,11 +41,12 @@ Download the jar for your platform from the latest `minecraft-vX.Y.Z` release:
 | Your server | File to download |
 |---|---|
 | Fabric | `takaro-minecraft-mod-fabric-26.2-<version>.jar` |
-| Paper | `takaro-paper-<version>.jar` |
-| NeoForge | `takaro-neoforge-<version>.jar` |
+| Paper | `takaro-minecraft-mod-paper-1.21.11-<version>.jar` |
+| NeoForge | `takaro-minecraft-mod-neoforge-1.21.11-<version>.jar` |
 
-The Fabric jar is named after the server build it was made for. Releases before the next
-`minecraft-v*` used `takaro-fabric-<version>.jar`; that is the same connector under the old name.
+Every jar is named after the server build it was made for. Releases before the next
+`minecraft-v*` used `takaro-fabric-<version>.jar`, `takaro-paper-<version>.jar` and
+`takaro-neoforge-<version>.jar`; those are the same connectors under their old names.
 
 Direct link pattern:
 `https://github.com/gettakaro/connectors/releases/download/minecraft-v<version>/<file>`
@@ -57,8 +60,8 @@ Stop the server, then put the single jar into the right folder for your platform
 
 ```
 Fabric     <server>/mods/takaro-minecraft-mod-fabric-26.2-<version>.jar
-NeoForge   <server>/mods/takaro-neoforge-<version>.jar
-Paper      <server>/plugins/takaro-paper-<version>.jar
+NeoForge   <server>/mods/takaro-minecraft-mod-neoforge-1.21.11-<version>.jar
+Paper      <server>/plugins/takaro-minecraft-mod-paper-1.21.11-<version>.jar
 ```
 
 That is the whole install — one file, no extra libraries. On Fabric, keep the Fabric API jar in

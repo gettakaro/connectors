@@ -11,8 +11,8 @@ allprojects {
 }
 
 subprojects {
-    // Target projects configure themselves from their catalog record; this block only
-    // covers the legacy modules that keep the Java 21 toolchain until they are migrated.
+    // Target projects configure themselves from their catalog record; this block configures
+    // core, the one project that is not a target.
     if (projectDir.parentFile.name == "targets") return@subprojects
 
     apply(plugin = "java")
@@ -33,11 +33,5 @@ subprojects {
     tasks.withType<JavaCompile> {
         options.encoding = "UTF-8"
         options.release = 21
-    }
-
-    tasks.withType<ProcessResources> {
-        filesMatching(listOf("plugin.yml", "fabric.mod.json", "META-INF/neoforge.mods.toml")) {
-            expand("version" to project.version)
-        }
     }
 }

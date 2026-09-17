@@ -11,13 +11,13 @@ description = "Takaro game server connector for NeoForge"
 [[dependencies.takaro]]
 modId = "minecraft"
 type = "required"
-versionRange = "[1.21.11,)"
+versionRange = "[${mc_version}]"
 ordering = "NONE"
 side = "SERVER"
 
 [[dependencies.takaro]]
 modId = "neoforge"
 type = "required"
-versionRange = "[21.11,)"
+versionRange = "[${loader_min},)"
 ordering = "NONE"
 side = "SERVER"

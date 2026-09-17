@@ -1,5 +1,5 @@
 name: TakaroMinecraft
 version: '${version}'
 main: io.takaro.minecraft.paper.TakaroPaperPlugin
-api-version: '1.21'
+api-version: '${mc_version}'
 description: Takaro game server connector for Paper/Spigot

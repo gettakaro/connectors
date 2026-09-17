@@ -1,7 +1,11 @@
-"""NeoForged: the Maven metadata that says which Minecraft versions NeoForge builds for.
+"""NeoForged: the server installer, and the Maven metadata that says which game it builds for.
 
-NeoForge encodes the game version in its own version number, in two grammars that have to
-be read differently:
+*Acquiring.* Every artifact under maven.neoforged.net is published next to a ``.sha256``
+file. That sidecar is fetched first and compared with the catalog, so a re-published version
+is refused before its bytes are pulled at all.
+
+*Observing.* NeoForge encodes the game version in its own version number, in two grammars
+that have to be read differently:
 
 ``21.11.45``      three segments, the Minecraft 1.x line: ``1.<major>.<minor>`` — so this is
                   NeoForge for Minecraft ``1.21.11``, and ``21.0.x`` would be ``1.21``.
@@ -15,22 +19,23 @@ and are reported for review rather than guessed at.
 The metadata's ``<latest>`` and ``<release>`` pointers are never read: upstream currently
 points ``<release>`` at ``26.3.0.3-beta``. Publish order in ``<versions>`` is the only
 ordering this provider trusts.
-
-This module owns observation only. Acquiring a NeoForge installer as a build input is a
-separate concern and is not implemented here.
 """
 
 from __future__ import annotations
 
 import re
+import tempfile
 from collections.abc import Callable
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
-from .. import channels, observations, readiness
-from ..exit_codes import MaintError
+from .. import channels, net, observations, readiness
+from ..exit_codes import IntegrityError, MaintError, UpstreamUnavailable
 from ..tracker import identity
 from .base import Observation, Provider, ProviderResult
+
+_SIDECAR = re.compile(r"^[0-9a-f]{64}")
 
 #: ``<core>`` is three or four dot-separated numbers; everything from the first dash on is
 #: the label. Split first, classify second — that way an unparseable core is reported as
@@ -65,6 +70,43 @@ def _normalise(label: str) -> str:
 
 class NeoForgeProvider(Provider):
     id = "neoforge"
+
+    def fetch_input(
+        self,
+        input_spec: dict[str, Any],
+        source: dict[str, Any],
+        dest: Path,
+        cache: Path,
+    ) -> Path:
+        if input_spec["kind"] not in ("neoforge-installer", "http-file"):
+            return super().fetch_input(input_spec, source, dest, cache)
+        url = str(source["url"])
+        expected = input_spec["sha256"]
+        upstream = self._sidecar_hash(url)
+        if upstream != expected:
+            raise IntegrityError(
+                f"{url}.sha256 disagrees with the catalog: upstream says {upstream}, the record says {expected}",
+                url=f"{url}.sha256",
+                sidecar=upstream,
+                catalog=expected,
+            )
+        blob = net.download(url, net.Expectation(sha256=expected, size=input_spec.get("size")), cache)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(blob.read_bytes())
+        return dest
+
+    @staticmethod
+    def _sidecar_hash(url: str) -> str:
+        """The sha256 upstream publishes beside ``url``. Never cached: it is the freshness check."""
+        sidecar_url = f"{url}.sha256"
+        with tempfile.TemporaryDirectory(prefix="takaro-maint-sidecar-") as tmp:
+            sidecar = Path(tmp) / "sha256"
+            net.fetch(sidecar_url, sidecar, net.Expectation(), no_cache=True)
+            text = sidecar.read_text(encoding="utf-8", errors="replace").strip()
+        match = _SIDECAR.match(text)
+        if not match:
+            raise UpstreamUnavailable(f"{sidecar_url} is not a sha256 sidecar", url=sidecar_url)
+        return match.group(0)
 
     def observe(self, source: dict[str, Any]) -> ProviderResult:
         """The newest NeoForge version per (game version, branch), in publish order."""
@@ -216,7 +258,7 @@ class NeoForgeProvider(Provider):
         if not url or asset.get("sha256"):
             return observation
         try:
-            asset["sha256"] = readiness.fetch_sha256(url + ".sha256")
+            asset["sha256"] = self._sidecar_hash(url)
         except MaintError:
             # The scan is about to mark this whole source failed; a row built from the
             # listing it already recorded would be a claim on a source known to be broken.

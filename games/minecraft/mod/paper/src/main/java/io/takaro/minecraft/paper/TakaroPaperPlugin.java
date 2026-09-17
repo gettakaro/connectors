@@ -5,6 +5,8 @@ import io.takaro.minecraft.core.GameAdapter;
 import io.takaro.minecraft.core.TakaroConfig;
 import io.takaro.minecraft.core.TakaroConnector;
 import io.takaro.minecraft.core.model.*;
+import io.takaro.minecraft.core.target.RuntimeIdentity;
+import io.papermc.paper.ServerBuildInfo;
 import net.kyori.adventure.text.Component;
 import org.bukkit.*;
 import org.bukkit.ban.ProfileBanList;
@@ -60,6 +62,14 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
 
     public EventEmitter getEventEmitter() {
         return eventEmitter;
+    }
+
+    /** What Paper itself says it is — the guard compares this with the jar's stamp. */
+    @Override
+    public RuntimeIdentity getRuntimeIdentity() {
+        ServerBuildInfo info = ServerBuildInfo.buildInfo();
+        String build = info.buildNumber().isPresent() ? Integer.toString(info.buildNumber().getAsInt()) : "";
+        return new RuntimeIdentity(info.minecraftVersionId(), "paper", build, Runtime.version().feature());
     }
 
     // --- GameAdapter: Logging ---
@@ -118,7 +128,7 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
             if (stack != null && stack.getType() != Material.AIR) {
                 items.add(new InventoryItem(
                         stack.getType().getKey().toString(),
-                        stack.getType().name().toLowerCase(),
+                        PaperNames.itemName(stack.getType()),
                         stack.getAmount(),
                         ""
                 ));
@@ -136,7 +146,7 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
             if (mat.isItem() && !mat.isLegacy()) {
                 items.add(new GameItem(
                         mat.getKey().toString(),
-                        mat.name().toLowerCase(),
+                        PaperNames.itemName(mat),
                         ""
                 ));
             }
@@ -154,7 +164,7 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
                         ? "hostile" : "friendly";
                 entities.add(new GameEntity(
                         type.getKey().toString(),
-                        type.name().toLowerCase(),
+                        PaperNames.entityName(type),
                         "",
                         category
                 ));

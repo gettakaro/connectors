@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "id": "paper-1.21.11",
+  "game": "minecraft",
+  "platform": "paper",
+  "revision": "1.21.11",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-09-17",
+    "evidence": [],
+    "notes": "Pinned by #151; runtime verification against the fake Takaro passes at protocol level, hosted identify and gameplay evidence pending (#152)."
+  },
+  "inputs": {
+    "loader": {
+      "kind": "paper-build",
+      "source": "paper-data",
+      "hashOrigin": "upstream",
+      "project": "paper",
+      "gameVersion": "1.21.11",
+      "loaderVersion": "132",
+      "path": "/v1/objects/5ffef465eeeb5f2a3c23a24419d97c51afd7dbb4923ff42df9a3f58bba1ccfba/paper-1.21.11-132.jar",
+      "sha256": "5ffef465eeeb5f2a3c23a24419d97c51afd7dbb4923ff42df9a3f58bba1ccfba",
+      "size": 54846016,
+      "installPath": "paper-1.21.11-132.jar"
+    }
+  },
+  "runtime": {
+    "java": 21,
+    "container": {
+      "kind": "container-image",
+      "image": "itzg/minecraft-server",
+      "tag": "2026.9.1-java21",
+      "digest": "sha256:21b3d6bad32cc49ca15c8ceefcaffe94ac7fb6a53939fc7a5da066ec5dd0bc1d",
+      "env": {
+        "TYPE": "PAPER",
+        "VERSION": "1.21.11",
+        "PAPER_BUILD": "132",
+        "PAPER_CUSTOM_JAR": "/data/paper-1.21.11-132.jar"
+      }
+    }
+  },
+  "build": {
+    "system": "gradle",
+    "gradleProject": "paper-1.21.11",
+    "javaRelease": 21,
+    "gradleJvm": 25,
+    "gradleVersion": "9.5.1",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "eclipse-temurin",
+      "tag": "25-jdk",
+      "digest": "sha256:010ab2b79329b951bf052dbf515843ab345ae4e4f0ef72287d85c9fa54da275f"
+    },
+    "plugins": {
+      "shadow": "9.4.2"
+    },
+    "deps": {
+      "paper-api": {
+        "coordinate": "io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT",
+        "resolvedCoordinate": "io.papermc.paper:paper-api:1.21.11-R0.1-20260511.115010-91",
+        "sha256": "c577b181c11a8674310e56c92a91e31c010b7f04c9bd10b91c3be18374401070"
+      }
+    }
+  },
+  "components": [
+    {"role": "server-mod", "artifact": "takaro-minecraft-mod-paper-1.21.11-{version}.jar", "installDir": "plugins"}
+  ],
+  "verification": {"required": "protocol", "separate": []},
+  "preserve": [
+    "world*/",
+    "config/",
+    "plugins/TakaroMinecraft/",
+    "server.properties",
+    "bukkit.yml",
+    "spigot.yml",
+    "ops.json",
+    "whitelist.json",
+    "banned-*.json",
+    "usercache.json",
+    "eula.txt",
+    ".takaro/"
+  ],
+  "devServers": {"gameId": "minecraft-paper"},
+  "notes": "Build 132 is the newest STABLE Paper build for 1.21.11 (Fill v3, 2026-05-11). The jar URL is content-addressed by its sha256. Paperclip fetches and verifies the vanilla 1.21.11 server jar on first boot."
+}
