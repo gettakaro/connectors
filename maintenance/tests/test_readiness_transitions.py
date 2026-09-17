@@ -361,8 +361,15 @@ def rig(
     paper: bool = True,
     neoforge: bool = True,
 ) -> Iterator[Rig]:
-    """The whole rig: Mojang and the three frameworks on one fake upstream, a fake tracker."""
+    """The whole rig: Mojang and the three frameworks on one fake upstream, a fake tracker.
+
+    The clock is pinned, as in the #153 rig: Fabric and NeoForge publish no per-version
+    timestamp, so their observations carry the run's clock reading, and an unpinned clock
+    would make "the same head, observed again" render a different ``Observed`` cell
+    whenever two scans happened to straddle a second.
+    """
     readiness.reset_registry()
+    support.frozen_clock(monkeypatch)
     with FakeUpstream() as upstream, FakeGitHub() as fake:
         served = support.mojang_upstream(upstream, releases)
         frameworks_upstream(upstream, fabric=fabric, paper=paper, neoforge=neoforge)

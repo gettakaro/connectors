@@ -150,30 +150,38 @@ def head_event(
 ) -> str | None:
     """The head this key has rolled back *from*, or ``None`` when nothing moved backwards.
 
-    ``key`` is ``(game version, branch)`` and exists only for the error message; the
+    ``key`` is ``(game version, branch)`` and exists only for the caller's benefit; the
     decision is made from the checkpoint alone:
 
     1. the current head must already be in ``seen`` — a head nobody has seen is simply new;
-    2. the most recently first-seen revision of the same key must be a *different* head.
+    2. some other head of the same key must have been first seen *strictly later* than it.
 
-    Both revisions are compared as strings and only for equality. ``revs_of_key`` is the
-    provider's own "does this remembered revision belong to this key" predicate, because
-    only the provider knows how to read its own revision strings back.
+    Heads are compared only for equality, and first-seen times only for "is this one later".
+    When two heads share a first-seen time — which Fabric and NeoForge revisions routinely do,
+    since neither publishes a timestamp and a whole run shares one clock reading — the
+    checkpoint simply does not record which came first, and no rollback is claimed. Reaching
+    for the version strings to break that tie is exactly the comparison this module exists to
+    avoid.
 
-    A rollback is filed under :func:`rollback_rev`, so on the next run the latest entry for
-    the key is that rollback revision, whose head is the current head — and this returns
-    ``None`` again rather than re-filing the same event.
+    A rollback is filed under :func:`rollback_rev`, so it is new to the checkpoint exactly
+    once; on later runs that revision is already seen and is filtered out before it can
+    become a second issue.
     """
     del key  # named for the caller's benefit; the decision uses the checkpoint only
-    entries = [(rev, at) for rev, at in _seen(checkpoint_json) if revs_of_key(rev)]
-    if not entries:
+    latest_by_head: dict[str, str] = {}
+    for rev, at in _seen(checkpoint_json):
+        if not revs_of_key(rev):
+            continue
+        head, _ = split_rollback_rev(rev)
+        latest_by_head[head] = max(latest_by_head.get(head, ""), at)
+    if head_rev not in latest_by_head:
         return None
-    heads = {split_rollback_rev(rev)[0] for rev, _ in entries}
-    if head_rev not in heads:
+    head_seen_at = latest_by_head[head_rev]
+    later = [(head, at) for head, at in latest_by_head.items() if head != head_rev and at > head_seen_at]
+    if not later:
         return None
-    latest_rev, _ = max(entries, key=lambda entry: (entry[1], entry[0]))
-    previous, _ = split_rollback_rev(latest_rev)
-    return None if previous == head_rev else previous
+    # Ties keep the checkpoint's own order rather than inventing one from the revisions.
+    return max(later, key=lambda entry: entry[1])[0]
 
 
 SUPERSEDED_STATE = "superseded"
