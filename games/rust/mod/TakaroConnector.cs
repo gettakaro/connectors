@@ -12,7 +12,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("TakaroConnector", "Takaro", "0.0.5")] // x-release-please-version
+    [Info("TakaroConnector", "Takaro", "0.0.6")] // x-release-please-version
     [Description("Takaro Generic Connector — connects outbound to Takaro via WebSocket")]
     public class TakaroConnector : RustPlugin
     {
