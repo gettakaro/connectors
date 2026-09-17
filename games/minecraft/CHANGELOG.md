@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/gettakaro/connectors/compare/minecraft-v0.1.1...minecraft-v0.1.2) (2026-09-17)
+
+
+### Miscellaneous Chores
+
+* retire the legacy per-game compose files in favour of dev-servers ([#146](https://github.com/gettakaro/connectors/issues/146)) ([1f20486](https://github.com/gettakaro/connectors/commit/1f20486e470230c3c5ebb531f5827aa94ae4ba67))
+
 ## [0.1.1](https://github.com/gettakaro/connectors/compare/minecraft-v0.1.0...minecraft-v0.1.1) (2026-09-16)
 
 
