@@ -104,8 +104,26 @@ def add_release(
 
 
 def scan_repo(catalog_copy: Path, upstream: FakeUpstream) -> Path:
-    """Point every source of the copied catalog at the fake upstream."""
+    """Point the copied catalog at the fake upstream.
+
+    Most legacy scan scenarios serve only the recorded Mojang manifest. Keep framework
+    watches enabled only when the test upstream actually serves their listing endpoint;
+    otherwise those unrelated Fabric/Paper/NeoForge sources would 404 against the
+    Mojang-only fixture. Framework readiness tests populate those endpoints first, so
+    they still exercise the full multi-source path.
+    """
     point_at(catalog_copy, upstream.base_url)
+    game_file = catalog_copy / "catalog/minecraft/game.json"
+    game = json.loads(game_file.read_text(encoding="utf-8"))
+    served_paths = set(getattr(upstream, "files", {}))
+    for source in game["sources"].values():
+        watch = source.get("watch")
+        if not watch or watch.get("kind") != "framework":
+            continue
+        sentinel = watch.get("projectPath") or watch.get("metadataPath") or watch.get("gamePath")
+        if sentinel not in served_paths:
+            source.pop("watch", None)
+    game_file.write_text(json.dumps(game, indent=2) + "\n", encoding="utf-8")
     return catalog_copy
 
 
