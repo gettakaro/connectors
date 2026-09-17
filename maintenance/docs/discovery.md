@@ -252,6 +252,13 @@ The hidden JSON line is what makes a single source's update safe. Paper reconcil
 observation rewrites the Paper row and carries the others through untouched, and a run in
 which a framework source did not run at all leaves its row exactly as it was.
 
+Two consequences of that durability are worth knowing. A row is only ever rewritten by an
+observation, so a framework *withdrawing* a game version entirely — no build, no artifact,
+nothing left to observe — leaves the last row standing rather than moving it back to
+`missing`. And Fabric's preview ids share the release's fabric-api bucket (`26.3-rc-3`
+builds against `…+26.3`), so with its snapshot channel enabled a bucket reports one revision
+across the whole family rather than one per preview id.
+
 **The state.** `ready-for-agent` when any row is ready, `blocked-upstream` otherwise. It is
 applied only over the states readiness owns (`detected`, `blocked-upstream`,
 `ready-for-agent`); a later lifecycle state is returned unchanged, so a scan can never walk

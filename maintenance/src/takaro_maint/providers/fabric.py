@@ -210,7 +210,9 @@ class FabricProvider(Provider):
             # listing it already recorded would be a claim on a source known to be broken.
             readiness.registry().forget(observation.component)
             raise
-        return replace(observation, facts={**observation.facts, "artifact": asset})
+        enriched = replace(observation, facts={**observation.facts, "artifact": asset})
+        readiness.registry().observed(observation.component, enriched)
+        return enriched
 
 
 PROVIDER = FabricProvider()

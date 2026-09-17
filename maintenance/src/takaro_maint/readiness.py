@@ -61,6 +61,7 @@ STATE_MARK = "<!-- takaro-maint:state="
 BLOCKED = "blocked-upstream"
 READY_FOR_AGENT = "ready-for-agent"
 REVIEW = "review"
+SUPERSEDED = "superseded"
 
 #: Lifecycle states readiness is allowed to overwrite. Anything else (``implementation-pr``,
 #: ``awaiting-release``, ``released``, ``superseded``, ``declined``) was written by a later
@@ -101,6 +102,23 @@ class Registry:
     def watch_for(self, component: str) -> dict[str, Any] | None:
         found = self.results.get(component)
         return found[0] if found else None
+
+    def observed(self, component: str, observation: Any) -> None:
+        """Replace a recorded observation with the enriched version of itself.
+
+        ``observe()`` records cheap listings; ``enrich()`` returns a *new* observation
+        carrying the per-revision detail, and a row rendered from the listing alone would
+        show an artifact with no digest beside one the same run verified. The swap is by
+        identity, so an enrichment for a revision this result never listed is ignored.
+        """
+        found = self.results.get(component)
+        if found is None:
+            return
+        listed = getattr(found[1], "observations", [])
+        for index, existing in enumerate(listed):
+            if existing.identity == observation.identity:
+                listed[index] = observation
+                return
 
     def forget(self, component: str) -> None:
         """Drop a component's result: a source that failed claims nothing.
@@ -439,6 +457,7 @@ def reconcile_framework(
     game_version = str(observation.facts.get("gameVersion") or "")
     if not game_version:
         return _result("noop", None, False, "no-game-version")
+    recorded = registry().results.get(observation.component)
 
     found: list[tuple[str, dict[str, Any]]] = []
     for branch in ("release", "snapshot"):
@@ -459,12 +478,26 @@ def reconcile_framework(
         if not has_owned_readiness(body):
             outcome = _result("noop", number, False, "unrecognised-body")
             continue
-        fresh = {observation.component: row_from(observation.component, observation, branch=branch)}
-        rows = merge(parse_rows(body), fresh)
+        current = issues.existing_state(body)
+        if current == SUPERSEDED:
+            # A superseded preview needs no readiness: the release it was leading up to
+            # shipped. Its Readiness section holds the "Superseded by #n" sentence that says
+            # so, and a table rendered over the top would delete the only explanation the
+            # issue has. Every other state keeps its rows updated; only the state is kept.
+            outcome = _result("noop", number, False, "superseded")
+            continue
+        # The whole provider result, not this one observation: with several channels
+        # enabled a game version has a row per channel, and which of them happens to be
+        # reconciled last must not decide whether the platform reads ready or preview-only.
+        if recorded is not None:
+            row = row_for(observation.component, recorded[1], game_version, branch=branch)
+        else:
+            row = row_from(observation.component, observation, branch=branch)
+        rows = merge(parse_rows(body), {observation.component: row})
         new_body = replace_section(
             body,
             render_rows(rows, targets.platforms),
-            state_for(rows, branch=branch, current=issues.existing_state(body)),
+            state_for(rows, branch=branch, current=current),
         )
         if new_body == body:
             outcome = _result("noop", number, False, "readiness-current")

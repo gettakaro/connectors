@@ -317,6 +317,10 @@ class Rig(support.Rig):
     """``test_scan_support.Rig`` scanning every watched source, not only Mojang's."""
 
     def scan(self, run: Any, *flags: str) -> tuple[int, Any, str]:
+        # A CLI run is one process, so the registry starts empty every time. The rig drives
+        # several scans in one process; without this a later run would read the previous
+        # run's framework listings and these scenarios would not match a real one.
+        readiness.reset_registry()
         return run("scan", "--repo", support.REPO, "--api-url", self.fake.api_url, *flags, repo=self.root)
 
     def issue_with(self, **marker: str) -> dict[str, Any]:
@@ -750,3 +754,58 @@ def _seed_support_issue(harness: Rig, rev: str, *, branch: str = "release") -> d
     marker = identity.support_marker(observation)
     block = issues.render_owned_block(observation, support.golden_targets())
     return harness.seed_issue(issues.render_body(marker, block), title=f"Minecraft {rev}")
+
+
+def test_a_row_written_while_the_game_issue_is_filed_carries_its_digest(
+    run: Any, catalog_copy: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Fabric listing is observed before the game issue exists; the row still has the sha256.
+
+    The registry records the cheap listing, and only the per-revision ``enrich()`` knows the
+    digest. Without the enriched observation being swapped back in, an issue filed during the
+    same run would claim a ready artifact and show no digest for it.
+    """
+    with rig(catalog_copy, monkeypatch) as harness:
+        assert harness.scan(run, "--bootstrap", "--publish")[0] == 0
+
+        row = harness.rows(kind="support", rev="26.3")["fabric"]
+        assert row.status == "ready"
+        assert row.rev == "0.160.7+26.3"
+        assert row.sha256 == "1720e31ab65c62d4de6e963606d74db4d6063bf58b065f40296cdaa68b25759d"
+        body = str(harness.issue_with(kind="support", rev="26.3")["body"])
+        assert f"`{row.sha256}`" in body
+
+
+def test_a_preview_build_never_downgrades_a_stable_row(
+    run: Any, catalog_copy: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With two channels enabled, which observation reconciles last must not decide the row."""
+    enable_channel(catalog_copy, "paper-fill", "alpha")
+    with rig(catalog_copy, monkeypatch) as harness:
+        assert harness.scan(run, "--bootstrap", "--publish")[0] == 0
+
+        # The stable build is the newer one, so the alpha observation is reconciled second.
+        add_paper_build(harness.upstream, "26.3", 17, "ALPHA", time="2026-09-18T09:00:00Z")
+        add_paper_build(harness.upstream, "26.3", 18, "STABLE", time="2026-09-18T10:00:00Z")
+        code, _, stderr = harness.scan(run, "--publish")
+
+        assert code == 0, stderr
+        row = harness.rows(kind="support", rev="26.3")["paper"]
+        assert row.status == "ready"
+        assert row.rev == "26.3-18"
+
+
+def test_a_newer_stable_build_is_not_a_rollback_of_the_preview_channel(
+    run: Any, catalog_copy: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The alpha head did not move; a stable build appearing beside it is not a rollback."""
+    enable_channel(catalog_copy, "paper-fill", "alpha")
+    with rig(catalog_copy, monkeypatch) as harness:
+        assert harness.scan(run, "--bootstrap", "--publish")[0] == 0
+
+        add_paper_build(harness.upstream, "26.3", 18, "STABLE", time="2026-09-18T10:00:00Z")
+        code, payload, stderr = harness.scan(run, "--publish")
+
+        assert code == 0, stderr
+        assert [document["rev"] for document in payload["observations"] if "/rollback/" in document["rev"]] == []
+        assert harness.rows(kind="support", rev="26.3")["paper"].rollback_from is None

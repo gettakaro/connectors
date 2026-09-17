@@ -33,8 +33,9 @@ def _versions(document: Any, url: str) -> list[str]:
         raise UpstreamUnavailable(f"{url}: the project listing has no 'versions' mapping", url=url)
     flattened: list[str] = []
     for versions in families.values():
-        for version in versions or []:
-            flattened.append(str(version))
+        if not isinstance(versions, list):
+            raise UpstreamUnavailable(f"{url}: a version family is not a list", url=url)
+        flattened += [str(version) for version in versions]
     return flattened
 
 
@@ -46,7 +47,7 @@ class PaperProvider(Provider):
         watch = source.get("watch") or {}
         base_url = str(source["baseUrl"]).rstrip("/")
         project_url = base_url + str(watch["projectPath"])
-        listed = _versions(readiness.fetch_json(project_url, what="the project listing"), project_url)
+        versions = _versions(readiness.fetch_json(project_url, what="the project listing"), project_url)
 
         enabled = channels.enabled_channels(watch)
         declared = channels.declared_labels(watch)
@@ -59,17 +60,27 @@ class PaperProvider(Provider):
 
         seen: list[Observation] = []
         heads: dict[str, str] = {}
-        for game_version in listed[:window]:
+        for game_version in versions[:window]:
             builds_url = base_url + str(watch["buildsPath"]).format(version=game_version)
             builds = readiness.fetch_json(builds_url, what="the build listing")
             if not isinstance(builds, list):
                 raise UpstreamUnavailable(f"{builds_url}: the build listing is not a list", url=builds_url)
 
             newest: dict[str, dict[str, Any]] = {}
+            channel_of: dict[str, str] = {}
             for build in builds:  # listing order is newest first; the first of a label is its head
                 if not isinstance(build, dict) or build.get("id") is None:
                     continue
-                newest.setdefault(str(build.get("channel") or ""), build)
+                label = str(build.get("channel") or "")
+                # Upstream schema drift is this source failing, not this process crashing:
+                # an unexpected type here must still leave the other sources to finish.
+                try:
+                    channel_of.setdefault(str(int(build["id"])), label)
+                except (TypeError, ValueError) as exc:
+                    raise UpstreamUnavailable(
+                        f"{builds_url}: build id {build['id']!r} is not a number", url=builds_url
+                    ) from exc
+                newest.setdefault(label, build)
 
             for label, build in newest.items():
                 branch = by_label.get(label)
@@ -79,7 +90,7 @@ class PaperProvider(Provider):
                     seen.append(self._review(component, label, game_version, build, builds_url, checkpoint, now))
                     continue
                 observation = self._framework(
-                    component, branch, label, game_version, build, builds_url, checkpoint, now
+                    component, branch, label, game_version, build, builds_url, checkpoint, now, channel_of, by_label
                 )
                 seen.append(observation)
                 heads.setdefault(branch, channels.split_rollback_rev(observation.rev)[0])
@@ -115,9 +126,13 @@ class PaperProvider(Provider):
         builds_url: str,
         checkpoint: dict[str, Any] | None,
         now: str,
+        channel_of: dict[str, str],
+        by_label: dict[str, str],
     ) -> Observation:
         head = f"{game_version}-{build['id']}"
-        rollback_from = channels.head_event(checkpoint, (game_version, branch), head, _revs_of(game_version))
+        rollback_from = channels.head_event(
+            checkpoint, (game_version, branch), head, _revs_of(game_version, branch, channel_of, by_label)
+        )
         rev = channels.rollback_rev(head, rollback_from) if rollback_from else head
         download = self._download(build)
         facts: dict[str, Any] = {
@@ -180,18 +195,32 @@ class PaperProvider(Provider):
         )
 
 
-def _revs_of(game_version: str) -> Callable[[str], bool]:
-    """Remembered Paper revisions of one game version: ``<version>-<build>``, split once.
+def _revs_of(
+    game_version: str,
+    branch: str,
+    channel_of: dict[str, str],
+    by_label: dict[str, str],
+) -> Callable[[str], bool]:
+    """Remembered Paper revisions of one ``(game version, branch)``.
 
-    The build channel is not recoverable from a revision, so a key here is the game version
-    alone. That is exact while one channel is enabled (the shipped configuration) and, with
-    several enabled, only ever widens what counts as the same key — a rollback is reported,
-    never invented.
+    A revision is ``<version>-<build>`` and does not carry its channel, so the channel is
+    read back out of the *current* listing: a build still published on another channel
+    belongs to that channel's key, not this one. Without that, a new stable build would
+    make an unchanged alpha head look as though it had rolled back.
+
+    A build the listing no longer mentions has no channel to read — and a withdrawn build
+    is exactly what a rollback rolls back *from*, so it counts for every branch of its game
+    version. With one channel enabled (the shipped configuration) that is exact; with
+    several it can only ever widen the key, never narrow it.
     """
 
     def predicate(rev: str) -> bool:
         head, _ = channels.split_rollback_rev(rev)
-        return head.rsplit("-", 1)[0] == game_version if "-" in head else False
+        version, _, build = head.rpartition("-")
+        if not build or version != game_version:
+            return False
+        label = channel_of.get(build)
+        return label is None or by_label.get(label) == branch
 
     return predicate
 

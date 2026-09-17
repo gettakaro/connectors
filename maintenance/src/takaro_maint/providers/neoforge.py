@@ -95,8 +95,12 @@ class NeoForgeProvider(Provider):
             if label not in declared:
                 reviews.append((channels.branch_name(label), version))
                 continue
-            if game_version not in order:
-                order.append(game_version)
+            # Last occurrence wins: NeoForge does publish for an older Minecraft line
+            # after moving on, and the window is "the game versions most recently built
+            # for", not "the ones that appeared last in a decade of history".
+            if game_version in order:
+                order.remove(game_version)
+            order.append(game_version)
             branch = by_label.get(label)
             if branch is not None:
                 latest[(game_version, branch)] = version
@@ -218,7 +222,9 @@ class NeoForgeProvider(Provider):
             # listing it already recorded would be a claim on a source known to be broken.
             readiness.registry().forget(observation.component)
             raise
-        return replace(observation, facts={**observation.facts, "artifact": asset})
+        enriched = replace(observation, facts={**observation.facts, "artifact": asset})
+        readiness.registry().observed(observation.component, enriched)
+        return enriched
 
 
 def _revs_of(game_version: str, branch: str, watch: dict[str, Any]) -> Callable[[str], bool]:

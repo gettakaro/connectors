@@ -304,3 +304,31 @@ def test_disabled_channels_are_neither_observed_nor_reviewed(
         assert not harness.issues_with(kind="branch-review")
         assert harness.rows(kind="support", rev="26.3") == rows_before
         assert "beta" not in payload["sources"][NEOFORGE_KEY]["heads"]
+
+
+def test_a_superseded_preview_keeps_the_reference_a_framework_run_would_overwrite(
+    run: Any, catalog_copy: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The promotion's sentence lives in the Readiness section; readiness leaves it alone."""
+    rt.enable_snapshot(catalog_copy)
+    rt.enable_channel(catalog_copy, "paper-fill", "alpha")
+    with rt.rig(catalog_copy, monkeypatch) as harness:
+        assert harness.scan(run, "--bootstrap", "--publish")[0] == 0
+        rt.add_snapshot(harness.upstream, "26.4-rc-1", "2026-09-18T09:00:00Z")
+        rt.add_paper_version(harness.upstream, "26.4-rc-1", family="26.4")
+        assert harness.scan(run, "--publish")[0] == 0
+        support.add_release(harness.upstream, "26.4", release_time="2026-09-20T09:00:00Z")
+        assert harness.scan(run, "--publish")[0] == 0
+        preview = harness.issue_with(kind="support", branch="snapshot", rev="26.4-rc-1")
+        assert rt.state_of(str(preview["body"])) == "superseded"
+        patches = harness.patches(int(preview["number"]))
+
+        # A Paper build for the preview's own version now arrives.
+        rt.add_paper_build(harness.upstream, "26.4-rc-1", 1, "ALPHA", time="2026-09-21T09:00:00Z")
+        code, _, stderr = harness.scan(run, "--publish")
+
+        assert code == 0, stderr
+        body = str(harness.issue_with(kind="support", branch="snapshot", rev="26.4-rc-1")["body"])
+        assert "Superseded by #" in body
+        assert rt.state_of(body) == "superseded"
+        assert harness.patches(int(preview["number"])) == patches

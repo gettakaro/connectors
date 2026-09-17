@@ -184,7 +184,7 @@ def head_event(
     return max(later, key=lambda entry: entry[1])[0]
 
 
-SUPERSEDED_STATE = "superseded"
+SUPERSEDED_STATE = "superseded"  # the state readiness.SUPERSEDED names from the other side
 
 
 def supersede_previews(
