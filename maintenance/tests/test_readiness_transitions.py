@@ -718,7 +718,18 @@ def test_observations_never_edit_the_catalog(run: Any, catalog_copy: Path, monke
         assert catalog_digest(harness.root) == before
 
         snapshot = harness.dashboard_state()["targets"]["minecraft"]
-        assert snapshot == [{"id": "fabric-26.2", "platform": "fabric", "revision": "26.2", "status": "maintained"}]
+        expected = []
+        for path in sorted((harness.root / "catalog/minecraft/targets").glob("*.json")):
+            target = json.loads(path.read_text(encoding="utf-8"))
+            expected.append(
+                {
+                    "id": target["id"],
+                    "platform": target["platform"],
+                    "revision": target["revision"],
+                    "status": target["support"]["status"],
+                }
+            )
+        assert snapshot == expected
 
 
 def test_the_readiness_table_rows_are_durable_in_the_hidden_line(
