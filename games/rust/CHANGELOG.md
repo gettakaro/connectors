@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.6](https://github.com/gettakaro/connectors/compare/rust-v0.0.5...rust-v0.0.6) (2026-09-17)
+
+
+### Miscellaneous Chores
+
+* retire the legacy per-game compose files in favour of dev-servers ([#146](https://github.com/gettakaro/connectors/issues/146)) ([1f20486](https://github.com/gettakaro/connectors/commit/1f20486e470230c3c5ebb531f5827aa94ae4ba67))
+
 ## [0.0.5](https://github.com/gettakaro/connectors/compare/rust-v0.0.4...rust-v0.0.5) (2026-09-16)
 
 
