@@ -12,14 +12,70 @@
         "kind": "game",
         "component": "minecraft",
         "manifestPath": "/mc/game/version_manifest_v2.json",
-        "channels": {"release": {"branch": "release", "types": ["release"]}}
+        "channels": {
+          "release": {"branch": "release", "types": ["release"]},
+          "snapshot": {"branch": "snapshot", "types": ["snapshot"], "enabled": false}
+        }
       }
     },
     "mojang-data": {"provider": "mojang", "baseUrl": "https://piston-data.mojang.com"},
-    "fabric-meta": {"provider": "fabric", "baseUrl": "https://meta.fabricmc.net"},
+    "fabric-meta": {
+      "provider": "fabric",
+      "baseUrl": "https://meta.fabricmc.net",
+      "watch": {
+        "kind": "framework",
+        "component": "fabric",
+        "game": {"provider": "mojang", "component": "minecraft"},
+        "gamePath": "/v2/versions/game",
+        "loaderPath": "/v2/versions/loader",
+        "api": {
+          "source": "fabric-maven",
+          "path": "/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml",
+          "artifactPath": "/net/fabricmc/fabric-api/fabric-api/{version}/fabric-api-{version}.jar"
+        },
+        "window": 40,
+        "channels": {
+          "release": {"branch": "release", "stable": true},
+          "snapshot": {"branch": "snapshot", "stable": false, "enabled": false}
+        }
+      }
+    },
     "fabric-maven": {"provider": "fabric", "baseUrl": "https://maven.fabricmc.net"},
     "paper-data": {"provider": "paper", "baseUrl": "https://fill-data.papermc.io"},
-    "neoforge-maven": {"provider": "neoforge", "baseUrl": "https://maven.neoforged.net"}
+    "paper-fill": {
+      "provider": "paper",
+      "baseUrl": "https://fill.papermc.io",
+      "watch": {
+        "kind": "framework",
+        "component": "paper",
+        "game": {"provider": "mojang", "component": "minecraft"},
+        "projectPath": "/v3/projects/paper",
+        "buildsPath": "/v3/projects/paper/versions/{version}/builds",
+        "window": 8,
+        "channels": {
+          "release": {"branch": "release", "channel": "STABLE"},
+          "beta": {"branch": "beta", "channel": "BETA", "enabled": false},
+          "alpha": {"branch": "alpha", "channel": "ALPHA", "enabled": false}
+        }
+      }
+    },
+    "neoforge-maven": {
+      "provider": "neoforge",
+      "baseUrl": "https://maven.neoforged.net",
+      "watch": {
+        "kind": "framework",
+        "component": "neoforge",
+        "game": {"provider": "mojang", "component": "minecraft"},
+        "metadataPath": "/releases/net/neoforged/neoforge/maven-metadata.xml",
+        "installerPath": "/releases/net/neoforged/neoforge/{version}/neoforge-{version}-installer.jar",
+        "window": 12,
+        "channels": {
+          "release": {"branch": "release", "suffix": ""},
+          "beta": {"branch": "beta", "suffix": "-beta", "enabled": false},
+          "alpha": {"branch": "alpha", "suffix": "-alpha", "enabled": false}
+        }
+      }
+    }
   },
   "build": {
     "system": "gradle",
