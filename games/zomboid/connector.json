@@ -1,0 +1,18 @@
+{
+  "name": "Project Zomboid",
+  "tagline": "Java agent that connects a Project Zomboid Build 42 dedicated server to Takaro.",
+  "assetMode": "all",
+  "requirements": [
+    "Project Zomboid Build 42 dedicated server",
+    "Ability to set JAVA_TOOL_OPTIONS or edit vmArgs",
+    "Takaro registration token"
+  ],
+  "assets": [
+    {
+      "pattern": "TakaroConnector-*.jar",
+      "label": "Connector",
+      "hint": "Rename to TakaroConnector.jar, place in <Zomboid data dir>/Takaro/, then load it with -javaagent:.",
+      "required": true
+    }
+  ]
+}

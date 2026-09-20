@@ -1,0 +1,18 @@
+{
+  "name": "Rust",
+  "tagline": "Server-side plugin for Carbon and Oxide/uMod Rust servers.",
+  "assetMode": "all",
+  "requirements": [
+    "Carbon or Oxide/uMod",
+    "Ability to set environment variables on the server process",
+    "Takaro registration token"
+  ],
+  "assets": [
+    {
+      "pattern": "TakaroConnector.cs",
+      "label": "Plugin",
+      "hint": "Copy into carbon/plugins/ (Carbon) or oxide/plugins/ (Oxide/uMod); the framework compiles it at runtime.",
+      "required": true
+    }
+  ]
+}

@@ -8,6 +8,8 @@ own. Last live-tested against a **Valheim 1.0.7** dedicated server.
 
 ## Install
 
+Download the latest release: https://takaro.io/connectors/valheim
+
 ### 1. Before you start
 
 You need:

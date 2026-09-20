@@ -5,11 +5,14 @@
 #
 #   cleanup-pr-builds.sh <pr-number>
 set -euo pipefail
+cd "$(dirname "$0")/.."
 
 PR="${1:?usage: cleanup-pr-builds.sh <pr-number>}"
 REPO="${GH_REPO:-${GITHUB_REPOSITORY:?GITHUB_REPOSITORY or GH_REPO must be set}}"
 
-for connector in rust minecraft 7d2d; do
+CONNECTORS=$(jq -er '.packages | keys[] | ltrimstr("games/")' release-please-config.json)
+
+for connector in $CONNECTORS; do
   TAG="pr-${PR}-${connector}"
   if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
     echo "Removing ${TAG}..."

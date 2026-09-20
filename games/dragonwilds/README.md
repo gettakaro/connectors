@@ -10,6 +10,8 @@ inventories, items or entities. Install both.
 
 ## Install
 
+Download the latest release: https://takaro.io/connectors/dragonwilds
+
 ### 1. Before you start
 
 You need:

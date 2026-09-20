@@ -6,6 +6,8 @@ do not install anything and there is no Workshop item.
 
 ## Install
 
+Download the latest release: https://takaro.io/connectors/zomboid
+
 ### 1. Before you start
 
 You need:

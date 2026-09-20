@@ -1,0 +1,31 @@
+{
+  "name": "Minecraft",
+  "tagline": "One mod for Paper, Fabric and NeoForge servers.",
+  "assetMode": "pick-one",
+  "requirements": [
+    "Takaro registration token"
+  ],
+  "assets": [
+    {
+      "pattern": "takaro-fabric-*.jar",
+      "label": "Fabric",
+      "requires": "Minecraft 26.2 · Java 25 · Fabric API · Fabric Loader 0.19.5+",
+      "hint": "Copy into <server>/mods/, alongside the Fabric API jar.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-paper-*.jar",
+      "label": "Paper",
+      "requires": "Minecraft 1.21.11 · Java 21",
+      "hint": "Copy into <server>/plugins/.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-neoforge-*.jar",
+      "label": "NeoForge",
+      "requires": "Minecraft 1.21.11 · Java 21",
+      "hint": "Copy into <server>/mods/.",
+      "required": true
+    }
+  ]
+}

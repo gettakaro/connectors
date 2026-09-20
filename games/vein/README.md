@@ -4,6 +4,8 @@ A server-side-only connector (plugin + sidecar) for a VEIN **Linux dedicated ser
 
 ## Install
 
+Download the latest release: https://takaro.io/connectors/vein
+
 ### 1. Before you start
 
 - A **VEIN Linux dedicated server** (Steam app **2131400**) you can stop, start, copy files to and change the launch line of.

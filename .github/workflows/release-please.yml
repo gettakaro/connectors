@@ -181,3 +181,67 @@ jobs:
     with:
       version: ${{ needs.release-please.outputs.vein_version }}
       tag: ${{ needs.release-please.outputs.vein_tag }}
+
+  # takaro.io/connectors serves downloads from a committed snapshot of this repo's
+  # releases, so the website only learns about a release when we tell it. This dispatch
+  # opens a refresh PR there (gettakaro/static-sites, .github/workflows/connectors-refresh.yml).
+  #
+  # `always()` so one game's failed build does not silence the games that did ship; the
+  # per-game guards keep it to runs that actually published something.
+  notify-website:
+    needs:
+      - release-please
+      - release-rust
+      - release-minecraft
+      - release-7d2d
+      - release-zomboid
+      - release-valheim
+      - release-conan-exiles
+      - release-terraria
+      - release-enshrouded
+      - release-dragonwilds
+      - release-vein
+    if: |
+      always() && (
+        (needs.release-rust.result == 'success' && needs.release-please.outputs.rust_released == 'true') ||
+        (needs.release-minecraft.result == 'success' && needs.release-please.outputs.minecraft_released == 'true') ||
+        (needs.release-7d2d.result == 'success' && needs.release-please.outputs.sevend2d_released == 'true') ||
+        (needs.release-zomboid.result == 'success' && needs.release-please.outputs.zomboid_released == 'true') ||
+        (needs.release-valheim.result == 'success' && needs.release-please.outputs.valheim_released == 'true') ||
+        (needs.release-conan-exiles.result == 'success' && needs.release-please.outputs.conan_exiles_released == 'true') ||
+        (needs.release-terraria.result == 'success' && needs.release-please.outputs.terraria_released == 'true') ||
+        (needs.release-enshrouded.result == 'success' && needs.release-please.outputs.enshrouded_released == 'true') ||
+        (needs.release-dragonwilds.result == 'success' && needs.release-please.outputs.dragonwilds_released == 'true') ||
+        (needs.release-vein.result == 'success' && needs.release-please.outputs.vein_released == 'true')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.TAKARO_CI_APP_ID }}
+          private-key: ${{ secrets.TAKARO_CI_APP_PRIV_KEY }}
+          owner: gettakaro
+          repositories: static-sites
+
+      # One dispatch per run, carrying whichever tag released. The receiver reseeds every
+      # game regardless; the tag only titles the refresh PR.
+      - name: Dispatch the website refresh
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: >-
+            ${{ needs.release-please.outputs.rust_tag
+             || needs.release-please.outputs.minecraft_tag
+             || needs.release-please.outputs.sevend2d_tag
+             || needs.release-please.outputs.zomboid_tag
+             || needs.release-please.outputs.valheim_tag
+             || needs.release-please.outputs.conan_exiles_tag
+             || needs.release-please.outputs.terraria_tag
+             || needs.release-please.outputs.enshrouded_tag
+             || needs.release-please.outputs.dragonwilds_tag
+             || needs.release-please.outputs.vein_tag }}
+        run: |
+          gh api repos/gettakaro/static-sites/dispatches \
+            -f event_type=connector-released \
+            -f "client_payload[tag]=$TAG"

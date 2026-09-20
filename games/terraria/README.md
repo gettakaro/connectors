@@ -8,6 +8,8 @@ player coordinates, inventories, or coordinate teleports. Install both.
 
 ## Install
 
+Download the latest release: https://takaro.io/connectors/terraria
+
 ### 1. Before you start
 
 You need:

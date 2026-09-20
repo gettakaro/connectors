@@ -6,6 +6,8 @@ Linux dedicated server (SteamCMD app `443030`). Players do not install anything.
 
 ## Install
 
+Download the latest release: https://takaro.io/connectors/conan-exiles
+
 ### 1. Before you start
 
 You need:

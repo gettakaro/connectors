@@ -1,0 +1,25 @@
+{
+  "name": "VEIN",
+  "tagline": "Native plugin and sidecar for a VEIN Linux dedicated server.",
+  "assetMode": "all",
+  "requirements": [
+    "Takaro registration token",
+    "Docker Compose or Node.js 22 on the server host"
+  ],
+  "assets": [
+    {
+      "pattern": "takaro-vein-plugin.tar.gz",
+      "label": "Plugin",
+      "requires": "VEIN Linux dedicated server",
+      "hint": "Load with LD_PRELOAD on the game binary's launch line only.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-vein-sidecar.tar.gz",
+      "label": "Sidecar",
+      "requires": "Docker Compose · Node.js 22",
+      "hint": "Unpack and run alongside the game server.",
+      "required": true
+    }
+  ]
+}

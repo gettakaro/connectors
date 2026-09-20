@@ -1,0 +1,25 @@
+{
+  "name": "Enshrouded",
+  "tagline": "dbghelp.dll proxy plugin plus a TypeScript sidecar for an Enshrouded dedicated server.",
+  "assetMode": "all",
+  "requirements": [
+    "Takaro registration token",
+    "Docker Compose (or Node.js 22) on the server host"
+  ],
+  "assets": [
+    {
+      "pattern": "takaro-enshrouded-plugin.zip",
+      "label": "Plugin",
+      "requires": "Enshrouded dedicated server",
+      "hint": "Copy dbghelp.dll next to enshrouded_server.exe.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-enshrouded-sidecar.zip",
+      "label": "Sidecar",
+      "requires": "Docker Compose · Node.js 22",
+      "hint": "Unpack next to your compose file and rename the folder to sidecar/.",
+      "required": true
+    }
+  ]
+}

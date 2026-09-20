@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takaro.io/schemas/connector.schema.json",
+  "title": "Connector metadata",
+  "description": "Machine-readable metadata the takaro.io website uses to build a downloads page from a connector's GitHub releases.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "tagline",
+    "assetMode",
+    "requirements",
+    "assets"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Human display name, e.g. 'Minecraft'.",
+      "minLength": 1
+    },
+    "tagline": {
+      "type": "string",
+      "description": "One short sentence describing the connector.",
+      "minLength": 1
+    },
+    "assetMode": {
+      "type": "string",
+      "description": "'pick-one' when the user picks ONE of the assets; 'all' when every listed asset is needed together.",
+      "enum": [
+        "pick-one",
+        "all"
+      ]
+    },
+    "requirements": {
+      "type": "array",
+      "description": "Server-level prerequisites, as short strings.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "assets": {
+      "type": "array",
+      "description": "Release assets the website should render as download entries.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pattern",
+          "label",
+          "hint",
+          "required"
+        ],
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "Glob matching the release asset filename.",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string",
+            "description": "Short label shown on the download button.",
+            "minLength": 1
+          },
+          "requires": {
+            "type": "string",
+            "description": "Version/runtime constraints for this asset, using ' · ' as separator.",
+            "minLength": 1
+          },
+          "hint": {
+            "type": "string",
+            "description": "Short install hint for this asset.",
+            "minLength": 1
+          },
+          "required": {
+            "type": "boolean",
+            "description": "False for genuinely optional assets (e.g. a client-side companion)."
+          }
+        }
+      }
+    }
+  }
+}

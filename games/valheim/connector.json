@@ -1,0 +1,24 @@
+{
+  "name": "Valheim",
+  "tagline": "BepInEx plugin that connects a Valheim dedicated server to Takaro.",
+  "assetMode": "all",
+  "requirements": [
+    "BepInExPack Valheim (Thunderstore denikson/BepInExPack_Valheim)",
+    "Takaro registration token"
+  ],
+  "assets": [
+    {
+      "pattern": "takaro-valheim-plugin.zip",
+      "label": "Plugin",
+      "requires": "Valheim 1.0.7 · BepInEx 5 · .NET Framework 4.7.2",
+      "hint": "Unzip so the TakaroValheim folder lands directly inside BepInEx/plugins/.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-valheim-companion.zip",
+      "label": "Client companion",
+      "hint": "Optional client-side package; enable companionMode in the plugin config before deploying it.",
+      "required": false
+    }
+  ]
+}

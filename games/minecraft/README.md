@@ -6,6 +6,8 @@ The results below were proven on **Fabric / Minecraft 26.2 / Java 25**.
 
 ## Install
 
+Download the latest release: https://takaro.io/connectors/minecraft
+
 ### 1. Before you start
 
 You need:

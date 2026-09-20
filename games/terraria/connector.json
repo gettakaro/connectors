@@ -1,0 +1,25 @@
+{
+  "name": "Terraria",
+  "tagline": "TShock plugin and bridge service that connect a Terraria dedicated server to Takaro.",
+  "assetMode": "all",
+  "requirements": [
+    "Terraria dedicated server running TShock",
+    "Node.js 22 on the server host",
+    "Takaro registration token"
+  ],
+  "assets": [
+    {
+      "pattern": "takaro-terraria-plugin.zip",
+      "label": "Plugin",
+      "requires": "TShock stable image",
+      "hint": "Copy TakaroTerrariaEvents.dll into <server>/ServerPlugins/.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-terraria-bridge.zip",
+      "label": "Bridge",
+      "hint": "Unzip anywhere on the host, then run npm ci --omit=dev inside it.",
+      "required": true
+    }
+  ]
+}
