@@ -116,6 +116,21 @@ def scan_repo(catalog_copy: Path, upstream: FakeUpstream) -> Path:
     therefore never has to edit this helper.
     """
     point_at(catalog_copy, upstream.base_url)
+    # Discovery scenarios model the instant before the fake upstream's head has a
+    # catalog target. Keep that invariant when the real repository later gains the
+    # same target (for example Fabric 26.3), or these tests silently stop exercising
+    # issue creation and readiness transitions.
+    if MANIFEST_PATH in upstream.files:
+        manifest = json.loads(upstream.files[MANIFEST_PATH])
+        head = str(manifest["latest"]["release"])
+        for target_file in (catalog_copy / "catalog/minecraft/targets").glob("*.json"):
+            record = json.loads(target_file.read_text(encoding="utf-8"))
+            if str(record.get("revision")) == head and record["support"]["status"] == "maintained":
+                # Preserve the target file so catalog-digest assertions still model a
+                # stable repository. A candidate created by a test remains actionable
+                # and therefore continues to suppress duplicate issue creation.
+                record["support"]["status"] = "retired"
+                target_file.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     served_paths = set(getattr(upstream, "files", {}))
     for game_file in sorted((catalog_copy / "catalog").glob("*/game.json")):
         game = json.loads(game_file.read_text(encoding="utf-8"))
