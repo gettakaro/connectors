@@ -105,7 +105,7 @@ def test_the_build_leg_builds_twice_from_scratch_and_compares_every_artifact() -
     assert "path: dist/" in step(build, "upload-artifact")
 
 
-def test_the_plan_matrix_lists_the_four_minecraft_targets(run: Any) -> None:
+def test_the_plan_matrix_lists_the_minecraft_targets(run: Any) -> None:
     listing = ("targets", "list", "--game", "minecraft", "--status", "candidate,maintained", "--format", "gha")
     code, payload, _ = run(*listing)
 
@@ -115,6 +115,7 @@ def test_the_plan_matrix_lists_the_four_minecraft_targets(run: Any) -> None:
     assert {row["id"] for row in rows} == {
         "fabric-26.1.2",
         "fabric-26.2",
+        "fabric-26.3",
         "neoforge-1.21.11",
         "paper-1.21.11",
     }

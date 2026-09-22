@@ -27,6 +27,7 @@ The exact server builds this connector is maintained for:
 | --- | --- | --- | --- | --- | --- | --- |
 | `fabric-26.1.2` | 26.1.2 | fabric | loader 0.19.3 / API 0.155.3+26.1.2 | 25 | maintained | protocol |
 | `fabric-26.2` | 26.2 | fabric | loader 0.19.5 / API 0.160.0+26.2 | 25 | maintained | protocol |
+| `fabric-26.3` | 26.3 | fabric | loader 0.19.5 / API 0.161.0+26.3 | 25 | maintained | protocol |
 | `neoforge-1.21.11` | 1.21.11 | neoforge | loader 21.11.45 | 21 | maintained | protocol |
 | `paper-1.21.11` | 1.21.11 | paper | loader 132 | 21 | maintained | protocol |
 <!-- takaro-maint:targets:end -->
