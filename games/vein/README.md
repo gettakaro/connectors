@@ -4,7 +4,7 @@ A server-side-only connector (plugin + sidecar) for a VEIN **Linux dedicated ser
 
 ## Install
 
-Download the latest release: https://takaro.io/connectors/vein
+Download the latest release: [https://takaro.io/connectors/vein](https://github.com/gettakaro/connectors/releases/edit/vein-v0.2.2)
 
 ### 1. Before you start
 
