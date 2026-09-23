@@ -1,5 +1,5 @@
-# Read by .github/workflows/maintenance.yml on every scheduled run. Tracked so that enabling
-# scheduled publication is a reviewed change on main, not a repository setting.
+# Read by .github/workflows/maintenance.yml on every automatic run. Tracked so that enabling
+# automatic publication is a reviewed change on main, not a repository setting.
 # Values: disabled | enabled. The rollout ticket flipped it after the rollout was proven; flip it back
 # to pause publication (docs/recovery.md).
 publish_schedule: enabled

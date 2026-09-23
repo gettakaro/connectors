@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "vein",
+  "name": "VEIN",
+  "connector": "vein",
+  "platforms": [
+    "linux"
+  ],
+  "sources": {
+    "steam": {
+      "provider": "steam",
+      "baseUrl": "https://store.steampowered.com",
+      "watch": {
+        "kind": "game",
+        "component": "vein",
+        "app": 2131400,
+        "os": "linux",
+        "depots": [
+          "2131402"
+        ],
+        "channels": {
+          "public": {
+            "branch": "public"
+          }
+        },
+        "knownBranches": []
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "projectDir": "games/vein"
+  },
+  "componentRoles": {
+    "plugin": {
+      "description": "Native LD_PRELOAD plugin for the Linux dedicated server",
+      "artifactPattern": "takaro-vein-plugin.tar.gz"
+    },
+    "sidecar": {
+      "description": "Node.js sidecar connecting the native plugin to Takaro",
+      "artifactPattern": "takaro-vein-sidecar.tar.gz"
+    }
+  },
+  "legacyAssetAliases": {}
+}

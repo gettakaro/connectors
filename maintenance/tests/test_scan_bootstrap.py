@@ -170,3 +170,30 @@ def test_unseen_history_is_processed_once(run: Any, catalog_copy: Path, monkeypa
         assert [entry["action"] for entry in third["applied"]] == ["update-dashboard"]
         assert len(harness.support_issues()) == 2
         assert harness.requested(path) == 1  # never fetched again
+
+
+def test_repeated_bootstrap_initializes_new_watchers_without_losing_existing_release_history(
+    run: Any, catalog_copy: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with support.rig(catalog_copy, monkeypatch) as harness:
+        code, _, stderr = harness.scan(run, "--bootstrap", "--publish")
+        assert code == 0, stderr
+        second = support.add_second_watch_source(catalog_copy, harness.upstream)
+        support.add_release(harness.upstream, "26.4", release_time="2026-12-01T10:00:00+00:00")
+        support.add_release(harness.upstream, "26.5", release_time="2026-12-02T10:00:00+00:00")
+        support.mirror_manifest(harness.upstream)
+
+        code, payload, stderr = harness.scan(run, "--bootstrap", "--publish")
+
+        assert code == 0, stderr
+        assert payload["sources"][second]["status"] == "ok"
+        assert payload["sources"][second]["checkpoint"]["after"] is not None
+        # The existing watcher still processes both unseen releases, not only the new head.
+        assert {"26.4", "26.5"} <= set(harness.checkpoint_ids())
+        titles = [issue["title"] for issue in harness.support_issues()]
+        assert any("26.4" in title for title in titles)
+        assert any("26.5" in title for title in titles)
+        count = len(harness.fake.issues)
+        code, _, stderr = harness.scan(run, "--bootstrap", "--publish")
+        assert code == 0, stderr
+        assert len(harness.fake.issues) == count

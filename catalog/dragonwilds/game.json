@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "dragonwilds",
+  "name": "RuneScape: Dragonwilds",
+  "connector": "dragonwilds",
+  "platforms": [
+    "linux"
+  ],
+  "sources": {
+    "steam": {
+      "provider": "steam",
+      "baseUrl": "https://store.steampowered.com",
+      "watch": {
+        "kind": "game",
+        "component": "dragonwilds",
+        "app": 4019830,
+        "os": "linux",
+        "depots": [
+          "3501791"
+        ],
+        "channels": {
+          "public": {
+            "branch": "public"
+          }
+        },
+        "knownBranches": []
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "projectDir": "games/dragonwilds"
+  },
+  "componentRoles": {
+    "plugin": {
+      "description": "Native LD_PRELOAD plugin for the Linux dedicated server",
+      "artifactPattern": "takaro-dragonwilds-plugin.tar.gz"
+    },
+    "sidecar": {
+      "description": "Node.js sidecar connecting the native plugin to Takaro",
+      "artifactPattern": "takaro-dragonwilds-sidecar.tar.gz"
+    }
+  },
+  "legacyAssetAliases": {}
+}

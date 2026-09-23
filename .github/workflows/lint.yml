@@ -88,6 +88,8 @@ jobs:
           version: "0.12.15"
       - run: uv python install
       - run: uv sync --frozen --project maintenance
+      - name: Every connector has game-release maintenance coverage
+        run: maintenance/bin/takaro-maint catalog check-maintenance
       # The schema comes from the exact release-please version the pinned action bundles
       # (17.6.1), so a key this repository relies on cannot silently stop being supported.
       - name: release-please-config.json matches its schema

@@ -1,6 +1,12 @@
 name: Maintenance
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "catalog/**"
+      - "maintenance/config/schedule.yaml"
+      - ".github/workflows/maintenance.yml"
   workflow_dispatch:
     inputs:
       mode:
@@ -53,11 +59,12 @@ jobs:
           MODE: ${{ inputs.mode }}
         run: |
           mode="${MODE:-read-only}"
-          if [ "$EVENT" = schedule ]; then
+          if [ "$EVENT" = schedule ] || [ "$EVENT" = push ]; then
             if grep -qxE 'publish_schedule: *enabled' maintenance/config/schedule.yaml; then
               mode=publish
+              echo "bootstrap=true" >> "$GITHUB_OUTPUT"
             else
-              echo "::notice::scheduled publication is disabled by maintenance/config/schedule.yaml; nothing to do"
+              echo "::notice::automatic publication is disabled by maintenance/config/schedule.yaml; nothing to do"
               echo "skip=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -86,7 +93,7 @@ jobs:
           MODE: ${{ steps.decide.outputs.mode }}
           SOURCES: ${{ inputs.sources }}
           GAME: ${{ inputs.game }}
-          BOOTSTRAP: ${{ inputs.bootstrap }}
+          BOOTSTRAP: ${{ steps.decide.outputs.bootstrap || inputs.bootstrap }}
           TRACKER_REPO: ${{ inputs.repo || github.repository }}
         run: |
           mkdir -p "$RUNNER_TEMP/maint-out" "$RUNNER_TEMP/maint-steam"

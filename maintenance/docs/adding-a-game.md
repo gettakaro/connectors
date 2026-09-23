@@ -8,6 +8,25 @@ module under `src/takaro_maint` mentions the game at all.
 
 ## What a game adds
 
+Every connector registered by `games/*/connector.json` or a `games/*` release-please
+package must have one catalog game with an enabled `kind: game` watcher. The watcher
+must name the catalog game as its component and use a supported observation provider.
+Run `maintenance/bin/takaro-maint catalog check-maintenance` before submitting it.
+The unfiltered Lint workflow runs this check on every PR, including PRs that only add
+connector files and forget the catalog entirely.
+
+Merging catalog changes to `main` starts maintenance automatically. Both this run and
+the six-hour schedule pass `--bootstrap`: new sources initialize their checkpoints,
+record covered releases, and file only uncovered current heads. Existing sources
+continue from their checkpoints, processing unseen releases normally. No manual
+bootstrap dispatch is needed. The `publish_schedule` switch pauses both automatic
+triggers; manual read-only runs remain read-only.
+
+A discovery-only catalog game can start without exact targets or a build adapter.
+Vein and Dragonwilds use this arrangement until their exact targets are added. Their
+initial uncovered heads become maintenance work; discovery does not claim verified
+compatibility or add targets automatically.
+
 | File | What it holds |
 |---|---|
 | `catalog/<game>/game.json` | the sources it downloads from, the watch blocks it observes, its platforms and artifact roles |

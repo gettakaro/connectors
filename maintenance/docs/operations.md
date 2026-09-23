@@ -155,7 +155,9 @@ stored on the board.
 view rather than the whole board — ask without it for the board's own health.
 
 `uninitialized` means the catalog watches that source but no run has ever recorded a checkpoint
-for it — the fix is one `run --bootstrap --publish`, which records what is already published and
+for it. Automatic runs (catalog pushes to `main` and the six-hour schedule) pass
+`--bootstrap` and initialize new sources without a separate dispatch. For a manual
+run, use `run --bootstrap --publish`, which records what is already published and
 files only the heads nothing covers. A non-null `lastError` is the last thing that source's
 provider said; rerun once (upstream outages are common and transient), and if it persists, fix
 the source. `dashboard show` exits 0 whether the board is healthy or degraded: failing a process
@@ -186,13 +188,14 @@ The workflow carries `schedule: - cron: '17 */6 * * *'` — four times a day, at
 publisher at a time and a running one is never cancelled (a cancelled run could leave issues
 filed without their checkpoint).
 
-Scheduled publication is gated on a tracked file, `maintenance/config/schedule.yaml`:
+Catalog changes pushed to `main` also trigger an automatic run. Both automatic triggers
+initialize new sources with `--bootstrap` and are gated on a tracked file, `maintenance/config/schedule.yaml`:
 
 ```yaml
 publish_schedule: disabled
 ```
 
-While it says `disabled`, a scheduled run exits 0 after printing a `::notice::` and does nothing
+While it says `disabled`, an automatic run exits 0 after printing a `::notice::` and does nothing
 at all. Enabling it is a one-line change to that file, reviewed and merged like any other —
 deliberately not a repository setting somebody can flip unseen. Note that GitHub runs `schedule`
 events only on the default branch: the cron does not fire from a pull request branch, so the

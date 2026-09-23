@@ -25,6 +25,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     validate.set_defaults(handler=_validate, op="catalog validate")
 
+    coverage = inner.add_parser("check-maintenance", help="require release watchers for every connector")
+    coverage.set_defaults(handler=_check_maintenance, op="catalog check-maintenance")
+
     record = inner.add_parser(
         "record-hash",
         help="download an input twice and record the sha256 both downloads agree on",
@@ -39,6 +42,19 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     record.set_defaults(handler=_record_hash, op="catalog record-hash")
 
     parser.set_defaults(handler=None, op="catalog")
+
+
+def _check_maintenance(args: Any) -> int:
+    from ..catalog.coverage import check_maintenance
+
+    result = check_maintenance(paths.repo_root())
+    output.emit(
+        "catalog check-maintenance",
+        result.ok,
+        checks=[check.as_dict() for check in result.checks],
+        failures=[check.as_dict() for check in result.failures()],
+    )
+    return result.exit_code
 
 
 def _validate(args: Any) -> int:
