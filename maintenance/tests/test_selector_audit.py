@@ -28,7 +28,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CATALOG_GAMES = (
+# These shipped target sets must not disappear when discovery-only games are added.
+TARGETED_BASELINE = (
     "7d2d",
     "conan-exiles",
     "dune",
@@ -87,22 +88,22 @@ ALLOWLIST: tuple[Allow, ...] = (
     Allow(
         "games/dragonwilds/**",
         r".",
-        "Dragonwilds is outside the catalog connectors; onboarding is the milestone-2 follow-up (D2)",
+        "Dragonwilds has discovery only; exact targets and rig migration remain a milestone-2 follow-up (D2)",
     ),
     Allow(
         "games/vein/**",
         r".",
-        "VEIN is outside the catalog connectors; onboarding is the milestone-2 follow-up (D2)",
+        "VEIN has discovery only; exact targets and rig migration remain a milestone-2 follow-up (D2)",
     ),
     Allow(
         "dev-servers/compose/{dayz,dragonwilds,vein,palworld}.yml",
         r".",
-        "rig for a non-catalog game (DayZ, Palworld, Dragonwilds, VEIN); not a maintained target",
+        "rig without exact catalog targets (DayZ, Palworld, Dragonwilds, VEIN); not a maintained target",
     ),
     Allow(
         "dev-servers/images/{dayz,vein}/**",
         r".",
-        "image for a non-catalog game rig; not a maintained target",
+        "image for a rig without exact catalog targets; not a maintained target",
     ),
     Allow(
         "dev-servers/lib/common.sh",
@@ -329,8 +330,9 @@ def _order(hit: Hit) -> tuple[str, int, str]:
 
 def _games() -> dict[str, dict]:
     return {
-        game: json.loads((REPO_ROOT / "catalog" / game / "game.json").read_text(encoding="utf-8"))
-        for game in CATALOG_GAMES
+        path.parent.name: json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted((REPO_ROOT / "catalog").glob("*/game.json"))
+        if any((path.parent / "targets").glob("*.json"))
     }
 
 
@@ -441,7 +443,10 @@ def test_the_catalog_rigs_take_their_images_from_the_resolved_target() -> None:
 def test_every_catalog_game_registers_sources_roles_targets_and_declared_rigs() -> None:
     """Each connector is registered end to end; only the documented Enshrouded rig gap remains."""
     on_disk = {path.name for path in (REPO_ROOT / "catalog").iterdir() if path.is_dir() and path.name != "schema"}
-    assert set(CATALOG_GAMES) == on_disk
+    # Discovery-only games are covered by catalog check-maintenance. Audit every game
+    # with exact targets dynamically, while protecting the existing rollout from target loss.
+    assert set(TARGETED_BASELINE) <= on_disk
+    assert set(TARGETED_BASELINE) <= _games().keys()
     missing_rigs: list[str] = []
 
     for game, record in _games().items():

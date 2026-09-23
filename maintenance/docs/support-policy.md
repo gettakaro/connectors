@@ -108,16 +108,17 @@ readiness of every framework it depends on written into the issue.
 
 ## Connectors outside the catalog
 
-Not every connector in this repository is under maintenance yet.
+Every released connector has game-release discovery. Some still lack exact catalog targets
+and use their existing build/release path.
 
 | Connector | Today | Plan |
 |---|---|---|
-| RuneScape: Dragonwilds | Releases in legacy mode; its rig image and compose file carry their own tags | Onboarding is a milestone-2 follow-up: catalog records, a game adapter, watched Steam sources and a rig driven by the resolved target |
-| VEIN | Releases in legacy mode; same shape as above | Same follow-up |
+| RuneScape: Dragonwilds | Steam release discovery enabled; releases in legacy mode with its own rig tags | Exact targets, a game adapter and a rig driven by the resolved target remain a milestone-2 follow-up |
+| VEIN | Steam release discovery enabled; releases in legacy mode | Same follow-up |
 | DayZ | A `dev-servers/` rig only — no catalog record, no release path through the catalog | Not scheduled |
 | Palworld | A `dev-servers/` rig only | Not scheduled |
 
-Until they are onboarded, these four are the only places a floating selector is knowingly allowed
+Until their exact targets and rigs are migrated, these four are the only places a floating selector is knowingly allowed
 in a tracked entry point, and each one is listed with its reason in the selector audit
-(`maintenance/tests/test_selector_audit.py`). Onboarding a connector removes its allowlist entry;
+(`maintenance/tests/test_selector_audit.py`). Migrating a connector to exact targets removes its allowlist entry;
 that is the acceptance criterion the follow-up carries.
