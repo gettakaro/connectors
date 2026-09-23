@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/gettakaro/connectors/compare/dune-v0.1.0...dune-v0.2.0) (2026-09-23)
+
+
+### Features
+
+* **dune:** add Dune: Awakening connector ([#259](https://github.com/gettakaro/connectors/issues/259)) ([f350813](https://github.com/gettakaro/connectors/commit/f350813bc39b851b9339b1b213b2b7401aa0a5c3))
+
 ## 0.1.0 (2026-09-21)
 
 ### Features
