@@ -986,3 +986,15 @@ def test_a_steam_issue_carries_no_other_games_readiness_table(
             if (identity.parse_marker(str(issue.get("body") or "")) or {}).get("provider") == "mojang"
         ]
         assert minecraft and "| fabric |" in str(minecraft[0]["body"]), "Minecraft's own issue is unchanged"
+
+
+def test_vein_version_branches_are_known_without_suppressing_real_branch_reviews() -> None:
+    """VEIN keeps old version labels on Steam; they are not active support channels."""
+    from takaro_maint.providers.steam import _Watch
+
+    record = json.loads((REPO_ROOT / "catalog/vein/game.json").read_text())
+    watch = _Watch({"id": "steam", "game": "vein", **record["sources"]["steam"]})
+    for branch in ("0.022h10", "0.022h18", "0.023", "0.024", "0.024h8"):
+        assert watch.is_known(branch), branch
+    for branch in ("public", "experimental", "0.024h8-test"):
+        assert not watch.is_known(branch), branch
