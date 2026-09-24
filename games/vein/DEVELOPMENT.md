@@ -87,6 +87,39 @@ identity, tokens, admin SteamID64s, join password) lives in `dev-servers/.env`; 
 `dev-servers/.env.example` for the keys. Never test against a server anyone plays on: several
 checks (ban, shutdown, restart) are destructive.
 
+### Checking a newly detected Steam build
+
+The release watcher files an issue when Steam's public build changes. That issue is a
+request to test; discovery alone does not run a server. On an isolated test host, install
+the **exact build named by the issue** into the Vein rig, deploy the connector, start
+`vein` and `vein-takaro`, then run:
+
+```bash
+python3 games/vein/scripts/smoke-server.py --expected-build <Steam build id> \
+  --out reports/vein-smoke.json
+```
+
+This read-only gate first checks the Steam app manifest. It then checks the game's HTTP
+API, plugin self-checks and capabilities, sidecar registration with Takaro, and the
+plugin's player and item lookups. It fails if the installed build differs from the issue,
+so an old healthy server cannot be mistaken for proof of a new release. It never prints
+the plugin token. A passing report names the build, counts and elapsed time.
+
+For a client-present run, connect a **matching Vein client** to that isolated server and
+run the same command with `--require-player`. This additionally requires a player to be
+visible both to the game HTTP API and to the plugin. This gate confirms the join path;
+it does not prove chat, inventory, item delivery, teleport or event delivery to Takaro.
+Those require a scripted client, a controlled test account and assertions against the
+Takaro event and action APIs. The September 2026 live-player evidence describes the
+actions and game-side checks to reproduce. Store both reports on the maintenance issue;
+only call a build compatible after the client actions and events pass.
+
+To run these checks unattended after a release, the isolated game host and a matching
+client PC must be registered as dedicated runners. The release issue supplies the build
+id, the runner installs that exact depot and connector artifact, and the two gates write
+separate reports. Keep the game's auto-update disabled between runs; an update must be
+explicit and the manifest must match the issue before either report can pass.
+
 ## Symbol resolution and reflection
 
 The Linux depot's server binary is the only thing the plugin can rely on, so resolution is a
