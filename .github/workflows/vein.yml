@@ -53,6 +53,8 @@ jobs:
       - name: Test sidecar
         working-directory: games/vein/sidecar
         run: npm test
+      - name: Test runtime smoke gate
+        run: python3 -m unittest discover -s games/vein/scripts -p test_smoke_server.py
       - name: Build the plugin and run its unit tests (debian:bookworm toolchain)
         run: |
           chmod +x games/vein/mod/build.sh games/vein/mod/tests/run.sh
