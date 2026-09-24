@@ -1,0 +1,26 @@
+{
+  "name": "ARK: Survival Evolved",
+  "tagline": "Exact-build native Linux connector and Generic sidecar for ARK dedicated servers.",
+  "assetMode": "all",
+  "requirements": [
+    "ARK Linux dedicated server build 21241282 with the cataloged executable SHA-256",
+    "Takaro registration token",
+    "Docker or Node.js 22 for the sidecar"
+  ],
+  "assets": [
+    {
+      "pattern": "takaro-ark-native-*.zip",
+      "label": "Native server plugin",
+      "requires": "ARK Linux dedicated server build 21241282",
+      "hint": "Run the shipped TakaroArkNative/launch.sh against the exact server root; it verifies the executable before loading the plugin.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-ark-sidecar-*.zip",
+      "label": "Generic sidecar",
+      "requires": "Node.js 22",
+      "hint": "Run in the server network namespace with the native bearer token.",
+      "required": true
+    }
+  ]
+}

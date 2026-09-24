@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Shipped exact-build launcher. Usage: launch.sh /path/to/ark/install [ShooterGameServer args...]
+set -euo pipefail
+server_root="${1:?usage: launch.sh <server-root> [ShooterGameServer args...]}"
+shift
+exe="${server_root%/}/ShooterGame/Binaries/Linux/ShooterGameServer"
+plugin_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+plugin="$plugin_dir/libtakaro-ark-native.so"
+expected='@EXPECTED_SHA256@'
+test -f "$plugin" || { echo 'ARK native plugin missing' >&2; exit 7; }
+test -x "$exe" || { echo 'ARK dedicated server executable missing' >&2; exit 7; }
+test -n "${ARK_NATIVE_TOKEN:-}" || { echo 'ARK_NATIVE_TOKEN is required' >&2; exit 7; }
+actual=$(sha256sum "$exe")
+actual=${actual%% *}
+test "$actual" = "$expected" || { echo 'Unknown ARK executable; native connector refused' >&2; exit 7; }
+cd -- "$(dirname -- "$exe")"
+export LD_PRELOAD="$plugin"
+# Exact build recognizes FORCELOGFLUSH in its file-log Serialize path. This
+# makes save-completion diagnostics observable without changing game settings.
+exec "$exe" "$@" -FORCELOGFLUSH

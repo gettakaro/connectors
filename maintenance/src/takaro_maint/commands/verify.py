@@ -47,6 +47,10 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         help="extra docker label, repeatable (tm.run and tm.ttl are the harness's own)",
     )
     parser.add_argument("--keep-on-failure", action="store_true", help="keep the data dir when a check fails")
+    parser.add_argument(
+        "--ark-readonly-base",
+        help="verify ARK against a pinned existing base mounted read-only, with isolated writable runtime data",
+    )
     parser.add_argument("--cleanup-orphans", action="store_true", help="remove containers from an earlier run first")
     parser.add_argument(
         "--negative", action="store_true", help="also boot the sibling target's artifact and require it to be refused"
@@ -61,6 +65,8 @@ def _verify(args: Any) -> int:
             raise UsageError(f"--takaro hosted needs these environment variables: {', '.join(missing)}")
     if args.parallel != 1:
         raise UsageError("--parallel is reserved; only one target at a time is supported today")
+    if args.ark_readonly_base and (args.game != "ark" or args.takaro != "local"):
+        raise UsageError("--ark-readonly-base is only supported for local ARK verification")
     reserved = sorted({label.split("=", 1)[0] for label in args.label} & RESERVED_LABELS)
     if reserved:
         raise UsageError(
@@ -94,6 +100,7 @@ def _verify(args: Any) -> int:
         keep_on_failure=args.keep_on_failure,
         negative=args.negative,
         takaro=args.takaro,
+        ark_readonly_base=Path(args.ark_readonly_base).expanduser().resolve() if args.ark_readonly_base else None,
     )
     reports = run_targets(catalog, targets, options)
     ok = all(report["outcome"] == "pass" for report in reports)
