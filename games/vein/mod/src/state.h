@@ -3,11 +3,13 @@
 #include "common.h"
 
 #include <deque>
+#include <functional>
+#include <memory>
 
 struct EventRecord {
     uint64_t seq;
     std::string type;
-    std::string dataJson;
+    std::function<std::string()> serialize;
     std::string ts;
 };
 
@@ -23,6 +25,9 @@ public:
 
     // Thread-safe. Used by L2's event sources.
     void EmitEvent(const std::string& type, const std::string& dataJson);
+    // The serializer owns primitive snapshots, never game pointers. Invoked only
+    // by background readers after releasing the ring lock.
+    void EmitEventDeferred(const std::string& type, std::function<std::string()> serialize);
     // Events with seq > since, oldest first, at most `limit`.
     std::string EventsJson(uint64_t since, size_t limit) const;
     uint64_t LatestSeq() const;
@@ -34,7 +39,7 @@ private:
     PluginState() = default;
     mutable Mutex lock_;
     std::map<std::string, std::pair<std::string, std::string>> caps_;
-    std::deque<EventRecord> events_;
+    std::deque<std::shared_ptr<const EventRecord>> events_;
     uint64_t seq_ = 0;
 };
 
@@ -57,17 +62,26 @@ struct BanRecord {
     std::string name;
     std::string reason;
     std::string createdAt;   // ISO-8601 UTC
-    std::string expiresAt;   // ISO-8601 UTC, empty when permanent (the sidecar owns expiry)
+    std::string expiresAt;   // ISO-8601 UTC, empty when permanent (the native bridge owns expiry)
+};
+struct BanSnapshot {
+    std::vector<BanRecord> records;
+    uint64_t revision = 0;
 };
 
 // Reads bans.json. Safe to call before the game thread exists; called once from the plugin init.
 void BansLoad();
 // Cheap, thread-safe. Called from the PreLogin detour on the game thread.
 bool IsBanned(const std::string& gameId);
-bool BanAdd(const BanRecord& r);                // upserts and persists; false only on a write error
+bool BanAdd(const BanRecord& r);                // memory only; callers flush on a background thread
+bool BanAddIfRevision(const BanRecord& r, uint64_t expectedRevision); // atomic recovery guard
 bool BanRemove(const std::string& gameId);      // false when there was no such entry
 std::vector<BanRecord> BanList();
+BanSnapshot ReadBans(); // records and revision captured under the same lock
 std::string BansPath();
+uint64_t BanRevision();
+bool FlushBans(); // durable snapshot, no game-thread calls; retry after failure
+std::string BanPersistenceError();
 
 // Character names observed in the server log (`PlayerChar entered world [Account[XP:<puid>]
 // Character Name[<name>]`), used when the reflected/native getters come back empty.

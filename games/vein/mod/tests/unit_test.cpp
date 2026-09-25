@@ -334,6 +334,16 @@ static void TestRingBuffer() {
     // a cursor from a previous boot (ahead of latestSeq) yields nothing and a sane cursor
     CHECK(JsonParse(st.EventsJson(st.LatestSeq() + 1000, 10), v), "events json invalid");
     CHECK(v.get("events")->arr.empty(), "future cursor");
+    auto called = std::make_shared<bool>(false);
+    const uint64_t before = st.LatestSeq();
+    st.EmitEventDeferred("log", [called] {
+        *called = true;
+        // This read takes the ring lock: serialization must run outside it.
+        return "{\"observedSeq\":" + std::to_string(PluginState::Get().LatestSeq()) + "}";
+    });
+    CHECK(!*called, "event hooks must not serialize JSON");
+    CHECK(JsonParse(st.EventsJson(before, 1), v), "deferred snapshot JSON invalid");
+    CHECK(*called, "background event reader should serialize the owned snapshot");
 }
 
 static void TestCapabilities() {
@@ -365,7 +375,15 @@ static void TestPluginBanList() {
     r.gameId = "0123456789ABCDEF0123456789ABCDEF";  // upper case on purpose
     r.name = "takarotester";
     r.reason = "L3b test";
-    CHECK(state::BanAdd(r), "BanAdd should persist");
+    CHECK(state::BanAdd(r), "BanAdd should update enforcement memory");
+    CHECK(access(state::BansPath().c_str(), F_OK) != 0, "game-thread update must not write the file");
+    CHECK(mkdir(state::BansPath().c_str(), 0755) == 0, "inject an atomic rename failure");
+    CHECK(!state::FlushBans(), "failed persistence must be explicit");
+    CHECK(!state::BanPersistenceError().empty(), "persistence failure must remain visible");
+    CHECK(state::IsBanned(r.gameId), "persistence failure must retain live enforcement");
+    CHECK(rmdir(state::BansPath().c_str()) == 0, "remove injected failure");
+    CHECK(state::FlushBans(), "background retry should persist current bans");
+    CHECK(state::BanPersistenceError().empty(), "successful retry clears persistence error");
     CHECK(state::IsBanned("0123456789abcdef0123456789abcdef"), "lookup must be case-insensitive");
     CHECK(state::IsBanned("0123456789ABCDEF0123456789ABCDEF"), "lookup must be case-insensitive");
     CHECK(!state::IsBanned(""), "an empty id is never banned");
@@ -382,9 +400,28 @@ static void TestPluginBanList() {
     auto list = state::BanList();
     CHECK(list.size() == 1 && list[0].name == "takarotester", "BanList should report the entry");
 
+    const uint64_t observedRevision = state::BanRevision();
+    state::BanRecord newer = list[0];
+    newer.reason = "newer permanent ban";
+    CHECK(state::BanAdd(newer), "newer ban must update the revision");
+    state::BanRecord recovered = list[0];
+    recovered.expiresAt = "2099-01-01T00:00:00Z";
+    CHECK(!state::BanAddIfRevision(recovered, observedRevision), "stale recovery must not overwrite a newer ban");
+    EQ(state::BanList()[0].reason, "newer permanent ban");
+    CHECK(state::BanList()[0].expiresAt.empty(), "stale recovery must preserve permanent enforcement");
+    CHECK(state::BanAddIfRevision(recovered, state::BanRevision()), "matching revision permits recovery metadata");
+    EQ(state::BanList()[0].expiresAt, "2099-01-01T00:00:00Z");
+
     CHECK(state::BanRemove("0123456789abcdef0123456789abcdef"), "BanRemove should report a hit");
+    const auto beforeMissingRemove = state::ReadBans();
+    CHECK(beforeMissingRemove.records.empty(), "atomic snapshot pairs empty records with their revision");
     CHECK(!state::BanRemove("0123456789abcdef0123456789abcdef"), "a second remove is a miss");
+    CHECK(state::BanRevision() > beforeMissingRemove.revision,
+          "game-only unban attempt must invalidate previously verified recovery");
+    CHECK(!state::BanAddIfRevision(recovered, beforeMissingRemove.revision),
+          "recovery cannot recreate a plugin ban after a game-only unban attempt");
     CHECK(!state::IsBanned("0123456789abcdef0123456789abcdef"), "unbanned");
+    CHECK(state::FlushBans(), "background worker persists the removal");
     CHECK(ReadFile(state::BansPath(), text) && JsonParse(text, v) && v.get("bans")->arr.empty(),
           "the removal should be persisted");
     ::unlink(state::BansPath().c_str());

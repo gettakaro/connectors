@@ -2,7 +2,8 @@
 //
 // The engine object's Tick is hooked through its class vtable (exported as _ZTV14UJgxGameEngine /
 // _ZTV11UGameEngine). The detour calls the original first, then drains at most kJobsPerTick queued
-// jobs. Every piece of UObject work in this plugin runs from there; HTTP threads only enqueue.
+// jobs. UObject work runs there; native action and diagnostic workers enqueue owned jobs.
+// Networking, JSON, filesystem work and regex matching stay on background workers.
 #pragma once
 #include "common.h"
 
@@ -24,5 +25,12 @@ bool RunJson(std::function<std::string()> fn, std::string& out, uint32_t timeout
 bool Alive();          // a tick was seen in the last 5 s
 uint64_t TickCount();
 std::string StatsJson();
+
+#ifdef TAKARO_GAMETHREAD_TEST
+// Test harness runs the same production queue without a VEIN engine binary.
+void TestEnable();
+void TestPumpOnce();
+size_t TestQueued();
+#endif
 
 }  // namespace GameThread

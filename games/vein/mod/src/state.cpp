@@ -1,6 +1,7 @@
 #include "state.h"
 
 #include <cctype>
+#include <cerrno>
 
 PluginState& PluginState::Get() {
     static PluginState s;
@@ -44,33 +45,46 @@ std::string PluginState::CapabilityDetailsJson() const {
 }
 
 void PluginState::EmitEvent(const std::string& type, const std::string& dataJson) {
+    EmitEventDeferred(type, [dataJson] { return dataJson; });
+}
+
+void PluginState::EmitEventDeferred(const std::string& type, std::function<std::string()> serialize) {
+    auto event = std::make_shared<EventRecord>(EventRecord{0, type, std::move(serialize), IsoNowUtc()});
     Guard g(lock_);
-    EventRecord e{0, type, dataJson, IsoNowUtc()};
-    e.seq = ++seq_;
-    events_.push_back(std::move(e));
+    event->seq = ++seq_;
+    events_.push_back(std::move(event));
     while (events_.size() > kMaxEvents) events_.pop_front();
 }
 
 std::string PluginState::EventsJson(uint64_t since, size_t limit) const {
-    Guard g(lock_);
+    std::vector<std::shared_ptr<const EventRecord>> snapshot;
+    uint64_t latest, oldest;
+    {
+        Guard g(lock_);
+        latest = seq_;
+        oldest = events_.empty() ? seq_ + 1 : events_.front()->seq;
+        for (const auto& event : events_) {
+            if (event->seq <= since) continue;
+            if (snapshot.size() >= limit) break;
+            snapshot.push_back(event);
+        }
+    }
     std::string items;
     size_t n = 0;
     uint64_t lastSeq = since;
-    for (auto& e : events_) {
-        if (e.seq <= since) continue;
-        if (n >= limit) break;
+    for (const auto& entry : snapshot) {
+        const EventRecord& e = *entry;
         if (n) items += ",";
-        items += "{\"seq\":" + std::to_string(e.seq) + ",\"type\":" + JsonStr(e.type) + ",\"data\":" + e.dataJson +
+        items += "{\"seq\":" + std::to_string(e.seq) + ",\"type\":" + JsonStr(e.type) + ",\"data\":" + e.serialize() +
                  ",\"ts\":" + JsonStr(e.ts) + "}";
         lastSeq = e.seq;
         n++;
     }
     // `seq` is the cursor to pass back as `since`: the last returned event, or the current latest.
-    uint64_t cursor = n ? lastSeq : (seq_ > since ? since : seq_);
-    uint64_t oldest = events_.empty() ? seq_ + 1 : events_.front().seq;
+    uint64_t cursor = n ? lastSeq : (latest > since ? since : latest);
     return "{\"bootId\":" + JsonStr(BootId()) + ",\"seq\":" + std::to_string(cursor) +
-           ",\"latestSeq\":" + std::to_string(seq_) + ",\"truncated\":" +
-           ((since + 1 < oldest && since < seq_) ? "true" : "false") + ",\"events\":[" + items + "]}";
+           ",\"latestSeq\":" + std::to_string(latest) + ",\"truncated\":" +
+           ((since + 1 < oldest && since < latest) ? "true" : "false") + ",\"events\":[" + items + "]}";
 }
 
 uint64_t PluginState::LatestSeq() const {
@@ -118,9 +132,13 @@ bool state::ConsumeInjectedMessage(const std::string& text) {
 
 namespace {
 Mutex g_banLock;
+Mutex g_banWriteLock;
 std::map<std::string, state::BanRecord> g_bans;  // key = lower-cased gameId
 bool g_bansLoaded = false;
 std::string g_bansPath;
+uint64_t g_banRevision = 0, g_banSavedRevision = 0;
+std::string g_banError;
+bool g_banLoadFailed = false;
 
 std::string LowerId(const std::string& s) {
     std::string o;
@@ -128,12 +146,11 @@ std::string LowerId(const std::string& s) {
     return o;
 }
 
-// Callers hold g_banLock.
-bool BansSaveLocked() {
+// Serialize an owned snapshot without holding the lock used by PreLogin.
+std::string BansSerialize(const std::vector<state::BanRecord>& records) {
     std::string o = "{\"version\":1,\"bans\":[";
     bool first = true;
-    for (auto& kv : g_bans) {
-        const state::BanRecord& b = kv.second;
+    for (const auto& b : records) {
         if (!first) o += ",";
         first = false;
         o += "{\"gameId\":" + JsonStr(b.gameId) + ",\"name\":" + JsonStr(b.name) + ",\"reason\":" + JsonStr(b.reason) +
@@ -141,9 +158,7 @@ bool BansSaveLocked() {
              ",\"expiresAt\":" + (b.expiresAt.empty() ? std::string("null") : JsonStr(b.expiresAt)) + "}";
     }
     o += "]}\n";
-    if (WriteFileAtomic(g_bansPath, o)) return true;
-    PluginLog("state: could not write %s", g_bansPath.c_str());
-    return false;
+    return o;
 }
 }  // namespace
 
@@ -160,16 +175,28 @@ void state::BansLoad() {
     if (g_bansPath.empty()) g_bansPath = PluginDataDir() + "/bans.json";
     std::string text;
     if (!ReadFile(g_bansPath, text)) {
+        if (errno != ENOENT) {
+            g_banLoadFailed = true;
+            g_banError = "cannot read game-enforcement bans.json";
+            PluginLog("state: %s", g_banError.c_str());
+            return;
+        }
         PluginLog("state: no plugin ban list at %s (starting empty)", g_bansPath.c_str());
         return;
     }
     JsonValue v;
     if (!JsonParse(text, v)) {
-        PluginLog("state: %s is not valid JSON; ignoring it", g_bansPath.c_str());
+        g_banLoadFailed = true;
+        g_banError = "game-enforcement bans.json is corrupt; refusing to overwrite it";
+        PluginLog("state: %s", g_banError.c_str());
         return;
     }
     const JsonValue* arr = v.get("bans");
-    if (!arr || arr->type != JsonValue::Array) return;
+    if (!arr || arr->type != JsonValue::Array) {
+        g_banLoadFailed = true;
+        g_banError = "game-enforcement bans.json has no bans array";
+        return;
+    }
     for (const JsonValue& e : arr->arr) {
         const JsonValue* id = e.get("gameId");
         if (!id || !id->isStr() || id->str.empty()) continue;
@@ -194,31 +221,72 @@ bool state::IsBanned(const std::string& gameId) {
     return g_bans.find(LowerId(gameId)) != g_bans.end();
 }
 
-bool state::BanAdd(const state::BanRecord& r) {
+static bool AddBanRecord(const state::BanRecord& r, bool conditional, uint64_t expectedRevision) {
     if (r.gameId.empty()) return false;
     Guard g(g_banLock);
-    BanRecord b = r;
+    if (g_banLoadFailed || (conditional && g_banRevision != expectedRevision)) return false;
+    state::BanRecord b = r;
     b.gameId = LowerId(b.gameId);
     if (b.createdAt.empty()) b.createdAt = IsoNowUtc();
     auto it = g_bans.find(b.gameId);
     if (it != g_bans.end() && b.name.empty()) b.name = it->second.name;
     g_bans[b.gameId] = b;
-    return BansSaveLocked();
-}
-
-bool state::BanRemove(const std::string& gameId) {
-    Guard g(g_banLock);
-    auto it = g_bans.find(LowerId(gameId));
-    if (it == g_bans.end()) return false;
-    g_bans.erase(it);
-    BansSaveLocked();
+    ++g_banRevision;
     return true;
 }
 
-std::vector<state::BanRecord> state::BanList() {
+bool state::BanAdd(const BanRecord& r) { return AddBanRecord(r, false, 0); }
+bool state::BanAddIfRevision(const BanRecord& r, uint64_t expectedRevision) {
+    return AddBanRecord(r, true, expectedRevision);
+}
+
+bool state::BanRemove(const std::string& gameId) {
+    if (gameId.empty()) return false;
     Guard g(g_banLock);
-    std::vector<BanRecord> out;
-    for (auto& kv : g_bans) out.push_back(kv.second);
+    if (g_banLoadFailed) return false;
+    // Even a missing plugin record may still be banned in VEIN's own list.
+    // Invalidate background recovery before the caller mutates that game list.
+    ++g_banRevision;
+    auto it = g_bans.find(LowerId(gameId));
+    if (it == g_bans.end()) return false;
+    g_bans.erase(it);
+    return true;
+}
+
+uint64_t state::BanRevision() { Guard g(g_banLock); return g_banRevision; }
+std::string state::BanPersistenceError() { Guard g(g_banLock); return g_banError; }
+
+bool state::FlushBans() {
+    Guard writer(g_banWriteLock);
+    std::vector<BanRecord> records;
+    std::string path;
+    uint64_t revision;
+    {
+        Guard g(g_banLock);
+        if (g_banLoadFailed) return false;
+        if (g_banSavedRevision == g_banRevision) return true;
+        revision = g_banRevision;
+        path = g_bansPath;
+        for (const auto& kv : g_bans) records.push_back(kv.second);
+    }
+    const bool ok = WriteFileAtomic(path, BansSerialize(records));
+    {
+        Guard g(g_banLock);
+        if (ok) { g_banSavedRevision = revision; g_banError.clear(); }
+        else g_banError = "could not durably write game-enforcement bans.json";
+    }
+    return ok;
+}
+
+std::vector<state::BanRecord> state::BanList() {
+    return ReadBans().records;
+}
+
+state::BanSnapshot state::ReadBans() {
+    Guard g(g_banLock);
+    BanSnapshot out;
+    out.revision = g_banRevision;
+    for (auto& kv : g_bans) out.records.push_back(kv.second);
     return out;
 }
 

@@ -14,6 +14,7 @@
 #include "common.h"
 
 #include "actions.h"  // lane L2: Actions::Result is the return type of KillNearest below
+#include <functional>
 
 namespace Events {
 void Init();        // TODO(L2): install PostLogin / PreLogout / Logout / chat / death / kill hooks
@@ -21,6 +22,9 @@ void Housekeep();   // TODO(L2): log tail + re-hook sweep + dedupe expiry
 std::string DiagnosticsJson();
 // True when the PreLogin hook is installed, i.e. a ban refuses a rejoin on the running server.
 bool BanEnforcementLive();
+// Complete raw lines from the existing background tailer. The sink only enqueues
+// owned data; its consumer must redact before persisting or forwarding.
+void SetRawLogSink(std::function<void(std::string)> sink, bool customJoin = false, bool customChat = false);
 
 // ---- added by lane L2 (never a change to the signatures above) ---------------------------------
 // POST /debug/kill-nearest {gameId?, radius?}: kills the AI nearest to a player by driving

@@ -30,8 +30,17 @@ if [ "$NATIVE" = 0 ]; then
 fi
 
 CXX=${CXX:-g++}
-CXXFLAGS=(-std=c++17 -O2 -fPIC -fvisibility=hidden -Wall -Wextra -Isrc)
-LDFLAGS=(-shared -pthread -ldl -static-libstdc++ -static-libgcc)
+CXXFLAGS=(-std=c++17 -O2 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -Wextra -Isrc)
+LDFLAGS=(-shared -pthread -ldl -static-libstdc++ -static-libgcc -Wl,--exclude-libs,ALL \
+         -Wl,--version-script=exports.map)
+NATIVE_PREFIX=${TAKARO_NATIVE_PREFIX:-/opt/takaro-native}
+if [ ! -f "$NATIVE_PREFIX/lib/libwebsockets.a" ]; then
+  echo "missing pinned static dependencies in $NATIVE_PREFIX; use ./build.sh in the Bookworm builder" >&2
+  exit 1
+fi
+CXXFLAGS+=("-I$NATIVE_PREFIX/include")
+LDFLAGS+=("$NATIVE_PREFIX/lib/libwebsockets.a" "$NATIVE_PREFIX/lib/libssl.a" \
+          "$NATIVE_PREFIX/lib/libcrypto.a" "$NATIVE_PREFIX/lib/libpcre2-8.a")
 # DEBUG_CORRUPT_SIG=<name> produces a deliberately broken build for the degrade proof.
 if [ -n "${DEBUG_CORRUPT_SIG:-}" ]; then
   CXXFLAGS+=("-DTAKARO_DEBUG_CORRUPT_SIG=\"$DEBUG_CORRUPT_SIG\"")
@@ -62,10 +71,20 @@ if [ -n "$undef" ]; then
   exit 1
 fi
 echo "  OK  no undefined strong symbols outside the C/C++ runtime"
-( cd dist && sha256sum libtakaro-vein.so > SHA256SUMS )
+echo "  CXX dist/native-log-probe"
+"$CXX" -std=c++17 -O2 -Wall -Wextra "-I$NATIVE_PREFIX/include" \
+  tests/native_log_probe.cpp "$NATIVE_PREFIX/lib/libpcre2-8.a" \
+  -static-libstdc++ -static-libgcc -o dist/native-log-probe
+( cd dist && sha256sum libtakaro-vein.so native-log-probe > SHA256SUMS )
 echo "built dist/libtakaro-vein.so ($(stat -c %s dist/libtakaro-vein.so) bytes)"
+echo "built dist/native-log-probe ($(stat -c %s dist/native-log-probe) bytes)"
 cat dist/SHA256SUMS
 
 if [ "$TESTS" = 1 ]; then
   ./tests/run.sh --native
+  ./tests/run-timeout.sh --native
+  ./tests/run-transport.sh --native
+  ./tests/run-native-bridge.sh --native
+  ./tests/run-native-behavior.sh --native
+  ./tests/run-native-full-bridge.sh --native
 fi
