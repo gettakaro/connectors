@@ -1,0 +1,21 @@
+{
+  "VEIN_LOG_LOGIN_RE": [
+    "LogVein: PlayerState ID changed to 76561198000000001",
+    "LogNet: Login request: ?Name=SteamPersona?Password=[redacted] userId: Steam:76561198000000001"
+  ],
+  "VEIN_LOG_JOIN_RE": [
+    "LogVein: [] Player SteamPersona selected character 0123456789abcdef0123456789abcdef (aka Char)",
+    "LogNet: Join succeeded: SteamPersona"
+  ],
+  "VEIN_LOG_LEAVE_RE": [
+    "LogNet: UNetConnection::Close UniqueId: Steam:76561198000000001",
+    "LogNet: UChannel::CleanUp UniqueId: Steam:76561198000000001",
+    "LogNet: Connection closed PlayerName: SteamPersona"
+  ],
+  "VEIN_LOG_CHAT_RE": [
+    "LogVeinChat: [76561198000000001] SteamPersona (aka Char): hello world"
+  ],
+  "VEIN_LOG_READY_RE": [
+    "Created session GameSession."
+  ]
+}

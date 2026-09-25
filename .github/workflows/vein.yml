@@ -38,27 +38,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - name: Set up Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
-        with:
-          node-version: 22.x
-          cache: npm
-          cache-dependency-path: games/vein/sidecar/package-lock.json
-      - name: Install sidecar dependencies
-        working-directory: games/vein/sidecar
-        run: npm ci
-      - name: Typecheck sidecar
-        working-directory: games/vein/sidecar
-        run: npm run typecheck
-      - name: Test sidecar
-        working-directory: games/vein/sidecar
-        run: npm test
       - name: Build the plugin and run its unit tests (debian:bookworm toolchain)
         run: |
           chmod +x games/vein/mod/build.sh games/vein/mod/tests/run.sh
-          docker run --rm -v "$PWD/games/vein/mod":/src -w /src \
-            debian:bookworm bash -c 'apt-get update -qq && apt-get install -y -qq build-essential >/dev/null && ./build.sh --native --tests'
-          sudo chown -R "$(id -u):$(id -g)" games/vein/mod
+          games/vein/mod/build.sh --tests
+
+      - name: Test operator smoke and drain tools
+        run: python3 -m unittest discover -s games/vein/scripts -p 'test_*.py' -v
 
   package:
     runs-on: ubuntu-latest
@@ -82,18 +68,11 @@ jobs:
 
       - name: Generate token
         id: app-token
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           app-id: ${{ secrets.TAKARO_CI_APP_ID }}
           private-key: ${{ secrets.TAKARO_CI_APP_PRIV_KEY }}
-
-      - name: Set up Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
-        with:
-          node-version: 22.x
-          cache: npm
-          cache-dependency-path: games/vein/sidecar/package-lock.json
 
       - name: Make scripts executable
         run: chmod +x games/vein/scripts/*.sh games/vein/mod/*.sh games/vein/mod/tests/*.sh scripts/*.sh
@@ -123,7 +102,7 @@ jobs:
       # derived from a catalog, so this connector's asset names are unchanged.
       # Fork PRs get a read-only token, so they build for validation only.
       - name: Publish
-        if: ${{ steps.params.outputs.publish != 'none' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        if: ${{ steps.params.outputs.publish != 'none' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft)) }}
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         shell: bash
@@ -138,11 +117,10 @@ jobs:
             --dist "$RUNNER_TEMP/dist" \
             --out "$RUNNER_TEMP/assembled" \
             -- \
-            "$RUNNER_TEMP/dist/takaro-vein-plugin.tar.gz" \
-            "$RUNNER_TEMP/dist/takaro-vein-sidecar.tar.gz"
+            "$RUNNER_TEMP/dist/takaro-vein-plugin.tar.gz"
 
       - name: Comment PR build
-        if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft }}
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |

@@ -10,6 +10,7 @@
 
 #include <cstring>
 #include <atomic>
+#include <memory>
 #include <set>
 
 using UE::FName;
@@ -411,7 +412,7 @@ void Admin::Housekeep() {
     bool joined = Admin::ConsumeJoinEdge();
     if (!joined && lastPass && now - lastPass < kPassIntervalMs) return;
     lastPass = now;
-    GameThread::Run([&] { Perf::Scope sc("admin.pass"); Pass("", true, false, nullptr, nullptr); }, 5000);
+    GameThread::Run([] { Perf::Scope sc("admin.pass"); Pass("", true, false, nullptr, nullptr); }, 5000);
 }
 
 // Set from the events lane when a player is announced: the only moment a grant pass can matter.
@@ -447,11 +448,11 @@ Actions::Result Admin::SetAdminEndpoint(const JsonValue& body) {
     if (a && a->type != JsonValue::Bool) return {400, ErrJson("admin must be true or false")};
     bool admin = a ? a->b : true;
 
-    std::string err;
-    bool ok = false;
-    bool ran = GameThread::Run([&] { Pass(id, admin, true, &err, &ok); }, 5000);
+    struct SetResult { std::string err; bool ok = false; };
+    auto result = std::make_shared<SetResult>();
+    bool ran = GameThread::Run([id, admin, result] { Pass(id, admin, true, &result->err, &result->ok); }, 5000);
     if (!ran) return {503, ErrJson("game thread unavailable")};
-    if (!ok) return {501, ErrJson(err.empty() ? "SetAdmin unavailable" : err)};
+    if (!result->ok) return {501, ErrJson(result->err.empty() ? "SetAdmin unavailable" : result->err)};
 
     Guard g(g_lock);
     bool listed = false;

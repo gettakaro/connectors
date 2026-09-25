@@ -4,6 +4,7 @@
 #include "resolve.h"
 
 #include <cstring>
+#include <atomic>
 
 using namespace UE;
 
@@ -11,8 +12,7 @@ namespace {
 
 Reflect::Layout g_lay;
 bool g_ready = false;
-bool g_validated = false;
-std::string g_validateJson = "[]";
+std::atomic<bool> g_validated{false};
 
 // --- resolved game functions -------------------------------------------------------------------
 using FnFNameCtor = void (*)(FName*, const char16_t*, int /*EFindName*/);
@@ -251,6 +251,8 @@ struct Check {
     bool ok = false;
     std::string detail;
 };
+Mutex g_validationLock;
+std::vector<Check> g_validationChecks;
 
 // Walks the FField chain of one UStruct; returns the properties in declaration order.
 void WalkProps(void* strct, std::vector<void*>& out, size_t max) {
@@ -315,7 +317,7 @@ bool DiscoverPropertyLayout(void* cls, std::string& detail) {
 
 }  // namespace
 
-std::string Reflect::Validate() {
+void Reflect::Validate() {
     std::vector<Check> checks;
     auto add = [&](const char* n, bool ok, const std::string& d) { checks.push_back({n, ok, d}); };
     char b[512];
@@ -471,18 +473,13 @@ std::string Reflect::Validate() {
     }  // end of the checks that need a confirmed NamePrivate offset
 
     // Publish.
-    std::string json = "[";
     size_t okCount = 0;
     for (size_t i = 0; i < checks.size(); i++) {
-        if (i) json += ",";
-        json += "{\"check\":" + JsonStr(checks[i].name) + ",\"ok\":" + (checks[i].ok ? "true" : "false") +
-                ",\"detail\":" + JsonStr(checks[i].detail) + "}";
         if (checks[i].ok) okCount++;
         PluginLog("reflect-validate %-24s %s  %s", checks[i].name.c_str(), checks[i].ok ? "OK  " : "FAIL",
                   checks[i].detail.c_str());
     }
-    json += "]";
-    g_validateJson = json;
+    { Guard guard(g_validationLock); g_validationChecks = checks; }
     g_validated = true;
 
     try { CacheVersionStrings(); } catch (...) {}
@@ -497,13 +494,14 @@ std::string Reflect::Validate() {
     st.SetCapability("reflectProperties", propsOk ? "ok" : "degraded",
                      propsOk ? "" : "UStruct::ChildProperties / FField::NamePrivate not confirmed");
     PluginLog("reflect: %zu/%zu boot validations passed", okCount, checks.size());
-    return json;
 }
 
 namespace {
 std::string g_gameBuild, g_engineVersion;
+Mutex g_versionLock;
 
 void CacheVersionStrings() {
+    std::string gameBuild, engineVersion;
     using FnBuildVersion = const char16_t* (*)();
     using FnCurrent = const void* (*)();
     using FnVerToString = void (*)(FString* ret, const void* self, int component);  // FString return -> sret first
@@ -513,7 +511,7 @@ void CacheVersionStrings() {
         if (MemReadable(s, 2)) {
             int len = 0;
             while (len < 256 && MemReadable(s + len, 2) && s[len]) len++;
-            g_gameBuild = Reflect::Utf16To8(s, len);
+            gameBuild = Reflect::Utf16To8(s, len);
         }
     }
     auto cur = (FnCurrent)(uintptr_t)Resolve::Addr("FEngineVersion::Current");
@@ -523,15 +521,18 @@ void CacheVersionStrings() {
         if (v && MemReadable(v, 8)) {
             FString out;
             ts(&out, v, 3 /*EVersionComponent::Changelist*/);
-            g_engineVersion = Reflect::ToStd(out, true);
+            engineVersion = Reflect::ToStd(out, true);
         }
     }
-    PluginLog("reflect: gameBuild='%s' engineVersion='%s'", g_gameBuild.c_str(), g_engineVersion.c_str());
+    PluginLog("reflect: gameBuild='%s' engineVersion='%s'", gameBuild.c_str(), engineVersion.c_str());
+    Guard guard(g_versionLock);
+    g_gameBuild = std::move(gameBuild);
+    g_engineVersion = std::move(engineVersion);
 }
 }  // namespace
 
-std::string Reflect::GameBuild() { return g_gameBuild; }
-std::string Reflect::EngineVersion() { return g_engineVersion; }
+std::string Reflect::GameBuild() { Guard guard(g_versionLock); return g_gameBuild; }
+std::string Reflect::EngineVersion() { Guard guard(g_versionLock); return g_engineVersion; }
 
 // Reference offsets for this exact build. Two independent sources agree on every value below: the
 // depot's own DWARF (`VeinServer-Linux-Test.debug`, read by `tools/dwarfoffsets.py`) and UE4SS-Vein's
@@ -570,6 +571,15 @@ uint32_t LiveOffset(const std::string& key) {
 }  // namespace
 
 std::string Reflect::LayoutJson() {
+    std::vector<Check> checks;
+    { Guard guard(g_validationLock); checks = g_validationChecks; }
+    std::string validations = "[";
+    for (const auto& check : checks) {
+        if (validations.size() > 1) validations += ",";
+        validations += "{\"check\":" + JsonStr(check.name) + ",\"ok\":" + (check.ok ? "true" : "false") +
+                       ",\"detail\":" + JsonStr(check.detail) + "}";
+    }
+    validations += "]";
     auto n = [](const char* k, uint32_t v) { return "\"" + std::string(k) + "\":" + std::to_string(v) + ","; };
     std::string ref = "{\"source\":\"depot DWARF (VeinServer-Linux-Test.debug) and UE4SS-Vein "
                       "MemberVariableLayout.ini, which agree\",\"mismatches\":[";
@@ -588,7 +598,7 @@ std::string Reflect::LayoutJson() {
            n("structPropertiesSize", g_lay.structPropertiesSize) + n("classDefaultObject", g_lay.classDefaultObject) +
            n("funcFunc", g_lay.funcFunc) + n("fieldNext", g_lay.fieldNext) + n("fieldName", g_lay.fieldName) +
            n("propOffsetInternal", g_lay.propOffsetInternal) + n("funcFunctionFlags", g_lay.funcFunctionFlags) +
-           "\"reference\":" + ref + ",\"validations\":" + g_validateJson + "}";
+           "\"reference\":" + ref + ",\"validations\":" + validations + "}";
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -596,114 +606,118 @@ std::string Reflect::LayoutJson() {
 
 namespace {
 
-std::string DumpValue(void* obj, void* prop, const std::string& type, const std::string& propName) {
+using DebugSnapshot = Reflect::DebugSnapshot;
+DebugSnapshot Literal(std::string text) { return [text = std::move(text)] { return text; }; }
+template<class T> DebugSnapshot Numeric(T value) { return [value] { return std::to_string(value); }; }
+DebugSnapshot Text(std::string value) { return [value = std::move(value)] { return JsonStr(value); }; }
+DebugSnapshot DumpValue(void* obj, void* prop, const std::string& type, const std::string& propName) {
     int32_t off = Reflect::PropertyOffset(prop);
-    if (off < 0 || off > 0x100000) return "null";
+    if (off < 0 || off > 0x100000) return Literal("null");
     const void* p = (const char*)obj + off;
-    if (!MemReadable(p, 1)) return "null";
     auto rd = [&](size_t n) { return MemReadable(p, n); };
-    if (type == "BoolProperty") return rd(1) ? (*(const uint8_t*)p ? "true" : "false") : "null";
-    if (type == "ByteProperty" || type == "EnumProperty") return rd(1) ? std::to_string(*(const uint8_t*)p) : "null";
-    if (type == "Int8Property") return rd(1) ? std::to_string(*(const int8_t*)p) : "null";
-    if (type == "Int16Property") return rd(2) ? std::to_string(*(const int16_t*)p) : "null";
-    if (type == "UInt16Property") return rd(2) ? std::to_string(*(const uint16_t*)p) : "null";
-    if (type == "IntProperty") return rd(4) ? std::to_string(*(const int32_t*)p) : "null";
-    if (type == "UInt32Property") return rd(4) ? std::to_string(*(const uint32_t*)p) : "null";
-    if (type == "Int64Property") return rd(8) ? std::to_string(*(const int64_t*)p) : "null";
-    if (type == "UInt64Property") return rd(8) ? std::to_string(*(const uint64_t*)p) : "null";
-    if (type == "FloatProperty") return rd(4) ? JsonNum(*(const float*)p) : "null";
-    if (type == "DoubleProperty") return rd(8) ? JsonNum(*(const double*)p) : "null";
-    if (type == "NameProperty") {
-        if (!rd(8)) return "null";
-        FName n;
-        memcpy(&n, p, 8);
-        return JsonStr(Reflect::NameToString(n));
+    if (!rd(1)) return Literal("null");
+    if (type == "BoolProperty") return Literal(*(const uint8_t*)p ? "true" : "false");
+    if (type == "ByteProperty" || type == "EnumProperty") return Numeric(*(const uint8_t*)p);
+    if (type == "Int8Property") return Numeric(*(const int8_t*)p);
+    if (type == "Int16Property" && rd(2)) return Numeric(*(const int16_t*)p);
+    if (type == "UInt16Property" && rd(2)) return Numeric(*(const uint16_t*)p);
+    if (type == "IntProperty" && rd(4)) return Numeric(*(const int32_t*)p);
+    if (type == "UInt32Property" && rd(4)) return Numeric(*(const uint32_t*)p);
+    if (type == "Int64Property" && rd(8)) return Numeric(*(const int64_t*)p);
+    if (type == "UInt64Property" && rd(8)) return Numeric(*(const uint64_t*)p);
+    if (type == "FloatProperty" && rd(4)) { const float v = *(const float*)p; return [v] { return JsonNum(v); }; }
+    if (type == "DoubleProperty" && rd(8)) { const double v = *(const double*)p; return [v] { return JsonNum(v); }; }
+    if (type == "NameProperty" && rd(8)) {
+        FName n; memcpy(&n, p, 8);
+        return Text(Reflect::NameToString(n));
     }
-    if (type == "StrProperty") {
-        if (!rd(16)) return "null";
-        FString s;
-        memcpy(&s, p, 16);
-        // A property dump is not exempt from redaction: AVeinGameSession::Password holds the join
-        // password in cleartext, and /debug/object would otherwise hand it to anything that can read
-        // the response (an evidence file, a log, a screenshot).
-        return JsonStr(Redact(propName + "=" + Reflect::Utf16To8(s.Data, s.Num)).substr(propName.size() + 1));
+    if (type == "StrProperty" && rd(16)) {
+        FString value; memcpy(&value, p, 16);
+        if (value.Num < 0 || value.Num > 4096 || (value.Num && !MemReadable(value.Data, value.Num * 2)))
+            return Literal("null");
+        return [name = propName, text = Reflect::Utf16To8(value.Data, value.Num)] {
+            return JsonStr(Redact(name + "=" + text).substr(name.size() + 1));
+        };
     }
-    if (type == "ObjectProperty" || type == "ClassProperty" || type == "WeakObjectProperty" ||
-        type == "ObjectPtrProperty" || type == "SoftObjectProperty") {
-        if (!rd(8)) return "null";
+    if ((type == "ObjectProperty" || type == "ClassProperty" || type == "WeakObjectProperty" ||
+         type == "ObjectPtrProperty" || type == "SoftObjectProperty") && rd(8)) {
         void* o = *(void* const*)p;
-        if (!o || !MemReadable(o, 0x30)) return "null";
-        char b[256];
-        snprintf(b, sizeof b, "{\"ptr\":\"%p\",\"class\":\"%s\",\"name\":\"%s\"}", o,
-                 JsonEscape(Reflect::ClassName(o)).c_str(), JsonEscape(Reflect::ObjName(o)).c_str());
-        return b;
+        if (!o || !MemReadable(o, 0x30)) return Literal("null");
+        char address[32]; snprintf(address, sizeof address, "%p", o);
+        return [address = std::string(address), cls = Reflect::ClassName(o), name = Reflect::ObjName(o)] {
+            return "{\"ptr\":" + JsonStr(address) + ",\"class\":" + JsonStr(cls) + ",\"name\":" + JsonStr(name) + "}";
+        };
     }
-    if (type == "ArrayProperty") {
-        if (!rd(16)) return "null";
-        TArray<void*> a;
-        memcpy(&a, p, 16);
-        return "{\"arrayNum\":" + std::to_string(a.Num) + "}";
+    if (type == "ArrayProperty" && rd(16)) {
+        TArray<void*> array; memcpy(&array, p, 16);
+        return [count = array.Num] { return "{\"arrayNum\":" + std::to_string(count) + "}"; };
     }
-    return "null";
+    return Literal("null");
 }
+struct PropertyView {
+    std::string name, type;
+    int32_t offset;
+    DebugSnapshot value;
+};
+std::string PropertiesJson(const std::vector<PropertyView>& properties) {
+    std::string out = "[";
+    for (const auto& p : properties) {
+        if (out.size() > 1) out += ",";
+        out += "{\"name\":" + JsonStr(p.name) + ",\"type\":" + JsonStr(p.type) +
+               ",\"offset\":" + std::to_string(p.offset);
+        if (p.value) out += ",\"value\":" + p.value();
+        out += "}";
+    }
+    return out + "]";
+}
+std::vector<PropertyView> CaptureProperties(void* structure, void* object, int limit) {
+    std::vector<void*> props; WalkProps(structure, props, 512);
+    std::vector<PropertyView> out;
+    for (void* prop : props) {
+        if ((int)out.size() >= limit) break;
+        FName n;
+        if (!MemReadable((const char*)prop + g_lay.fieldName, 8)) continue;
+        memcpy(&n, (const char*)prop + g_lay.fieldName, 8);
+        PropertyView row{Reflect::NameToString(n), Reflect::PropertyTypeName(prop), Reflect::PropertyOffset(prop), {}};
+        if (object) row.value = DumpValue(object, prop, row.type, row.name);
+        out.push_back(std::move(row));
+    }
+    return out;
+}
+} // namespace
 
-}  // namespace
-
-std::string Reflect::DumpObject(void* obj, int maxProps) {
-    if (!obj || !MemReadable(obj, 0x40)) return "{\"error\":\"object pointer is not readable\"}";
-    std::string o = "{\"ptr\":\"" + [&] { char b[32]; snprintf(b, sizeof b, "%p", obj); return std::string(b); }() +
-                    "\",\"name\":" + JsonStr(ObjName(obj)) + ",\"class\":" + JsonStr(ClassName(obj)) +
-                    ",\"path\":" + JsonStr(ObjPathName(obj)) + ",\"classes\":[";
-    std::vector<void*> chain;
-    for (void* c = ObjClass(obj); c && chain.size() < 32; c = SuperStruct(c)) chain.push_back(c);
+Reflect::DebugSnapshot Reflect::DumpObject(void* obj, int maxProps) {
+    if (!obj || !MemReadable(obj, 0x40)) return Literal("{\"error\":\"object pointer is not readable\"}");
+    struct ClassView { std::string name; std::vector<PropertyView> properties; };
+    std::vector<ClassView> classes;
     int emitted = 0;
-    for (size_t i = 0; i < chain.size(); i++) {
-        if (i) o += ",";
-        o += "{\"class\":" + JsonStr(ObjName(chain[i])) + ",\"properties\":[";
-        std::vector<void*> props;
-        WalkProps(chain[i], props, 512);
-        bool first = true;
-        for (void* p : props) {
-            if (emitted >= maxProps) break;
-            FName n;
-            if (!MemReadable((const char*)p + g_lay.fieldName, 8)) continue;
-            memcpy(&n, (const char*)p + g_lay.fieldName, 8);
-            std::string type = PropertyTypeName(p);
-            if (!first) o += ",";
-            first = false;
-            emitted++;
-            o += "{\"name\":" + JsonStr(NameToString(n)) + ",\"type\":" + JsonStr(type) +
-                 ",\"offset\":" + std::to_string(PropertyOffset(p)) + ",\"value\":" + DumpValue(obj, p, type, NameToString(n)) + "}";
-        }
-        o += "]}";
-    }
-    o += "]";
-    // A UClass/UScriptStruct declares properties of its own; list them too, otherwise dumping a
-    // class object shows only the meta-properties of UClass itself (which are none).
     bool isStruct = false;
-    for (void* c : chain)
-        if (ObjName(c) == "Struct" || ObjName(c) == "Class" || ObjName(c) == "ScriptStruct") isStruct = true;
-    if (isStruct) {
-        o += ",\"declaredProperties\":[";
-        std::vector<void*> own;
-        WalkProps(obj, own, 512);
-        bool first = true;
-        for (void* p : own) {
-            FName n;
-            if (!MemReadable((const char*)p + g_lay.fieldName, 8)) continue;
-            memcpy(&n, (const char*)p + g_lay.fieldName, 8);
-            if (!first) o += ",";
-            first = false;
-            o += "{\"name\":" + JsonStr(NameToString(n)) + ",\"type\":" + JsonStr(PropertyTypeName(p)) +
-                 ",\"offset\":" + std::to_string(PropertyOffset(p)) + "}";
-        }
-        o += "]";
+    for (void* cls = ObjClass(obj); cls && classes.size() < 32; cls = SuperStruct(cls)) {
+        std::string name = ObjName(cls);
+        if (name == "Struct" || name == "Class" || name == "ScriptStruct") isStruct = true;
+        auto props = CaptureProperties(cls, obj, maxProps - emitted);
+        emitted += props.size();
+        classes.push_back({std::move(name), std::move(props)});
     }
-    o += ",\"truncated\":" + std::string(emitted >= maxProps ? "true" : "false") + "}";
-    return o;
+    auto declared = isStruct ? CaptureProperties(obj, nullptr, 512) : std::vector<PropertyView>();
+    char address[32]; snprintf(address, sizeof address, "%p", obj);
+    return [address = std::string(address), name = ObjName(obj), cls = ClassName(obj), path = ObjPathName(obj),
+            classes = std::move(classes), declared = std::move(declared), isStruct, truncated = emitted >= maxProps] {
+        std::string out = "{\"ptr\":" + JsonStr(address) + ",\"name\":" + JsonStr(name) +
+                          ",\"class\":" + JsonStr(cls) + ",\"path\":" + JsonStr(path) + ",\"classes\":[";
+        bool first = true;
+        for (const auto& c : classes) {
+            if (!first) out += ",";
+            first = false;
+            out += "{\"class\":" + JsonStr(c.name) + ",\"properties\":" + PropertiesJson(c.properties) + "}";
+        }
+        out += "]";
+        if (isStruct) out += ",\"declaredProperties\":" + PropertiesJson(declared);
+        return out + ",\"truncated\":" + (truncated ? "true" : "false") + "}";
+    };
 }
 
-std::string Reflect::DumpStruct(const std::string& name) {
+Reflect::DebugSnapshot Reflect::DumpStruct(const std::string& name) {
     static const char* kPackages[] = {"/Script/Vein", "/Script/Engine", "/Script/CoreUObject", "/Script/VeinRuntime"};
     void* s = nullptr;
     std::string pkg;
@@ -740,20 +754,12 @@ std::string Reflect::DumpStruct(const std::string& name) {
             }
         }
     }
-    if (!s) return "{\"error\":\"struct not found; pass the full path (/Script/Pkg.Name) or a plain class/struct name\"}";
-    std::string o = "{\"package\":" + JsonStr(pkg) + ",\"name\":" + JsonStr(ObjName(s)) +
-                    ",\"class\":" + JsonStr(ClassName(s)) +
-                    ",\"propertiesSize\":" + std::to_string(ReadU32(s, g_lay.structPropertiesSize, 0)) +
-                    ",\"super\":" + JsonStr(ObjName(SuperStruct(s))) + ",\"properties\":[";
-    std::vector<void*> props;
-    WalkProps(s, props, 512);
-    for (size_t i = 0; i < props.size(); i++) {
-        FName n;
-        if (!MemReadable((const char*)props[i] + g_lay.fieldName, 8)) continue;
-        memcpy(&n, (const char*)props[i] + g_lay.fieldName, 8);
-        if (i) o += ",";
-        o += "{\"name\":" + JsonStr(NameToString(n)) + ",\"type\":" + JsonStr(PropertyTypeName(props[i])) +
-             ",\"offset\":" + std::to_string(PropertyOffset(props[i])) + "}";
-    }
-    return o + "]}";
+    if (!s) return Literal("{\"error\":\"struct not found; pass the full path (/Script/Pkg.Name) or a plain class/struct name\"}");
+    auto properties = CaptureProperties(s, nullptr, 512);
+    return [pkg, name = ObjName(s), cls = ClassName(s), size = ReadU32(s, g_lay.structPropertiesSize, 0),
+            super = ObjName(SuperStruct(s)), properties = std::move(properties)] {
+        return "{\"package\":" + JsonStr(pkg) + ",\"name\":" + JsonStr(name) + ",\"class\":" + JsonStr(cls) +
+               ",\"propertiesSize\":" + std::to_string(size) + ",\"super\":" + JsonStr(super) +
+               ",\"properties\":" + PropertiesJson(properties) + "}";
+    };
 }

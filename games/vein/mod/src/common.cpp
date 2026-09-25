@@ -5,14 +5,22 @@
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include <cctype>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cerrno>
+#include <deque>
 
 static Mutex g_logLock;
+static Mutex g_logWriteLock;
+struct LogRecord { timespec time; long tid; std::string text; };
+static std::deque<LogRecord> g_logQueue;
+static size_t g_logBytes = 0;
+static uint64_t g_logDropped = 0;
 
 static long TidNow() { return (long)syscall(SYS_gettid); }
 
@@ -58,17 +66,43 @@ void PluginLog(const char* fmt, ...) {
     va_start(ap, fmt);
     vsnprintf(msg, sizeof msg, fmt, ap);
     va_end(ap);
-    std::string line = Redact(msg);
+    timespec ts{};
+    clock_gettime(CLOCK_REALTIME, &ts);
+    std::string line(msg);
     Guard g(g_logLock);
+    while (!g_logQueue.empty() && (g_logQueue.size() >= 1024 || g_logBytes + line.size() > 1024 * 1024)) {
+        g_logBytes -= g_logQueue.front().text.size();
+        g_logQueue.pop_front();
+        ++g_logDropped;
+    }
+    g_logBytes += line.size();
+    g_logQueue.push_back({ts, TidNow(), std::move(line)});
+}
+
+uint64_t PluginLogDropped() { Guard g(g_logLock); return g_logDropped; }
+
+void FlushPluginLogs() {
+    Guard writer(g_logWriteLock);
+    std::deque<LogRecord> batch;
+    {
+        Guard g(g_logLock);
+        batch.swap(g_logQueue);
+        g_logBytes = 0;
+    }
+    if (batch.empty()) return;
     static const std::string path = PluginDataDir() + "/plugin.log";
     FILE* f = fopen(path.c_str(), "a");
-    if (!f) return;
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    struct tm tmv;
-    gmtime_r(&ts.tv_sec, &tmv);
-    fprintf(f, "%04d-%02d-%02dT%02d:%02d:%02d.%03ldZ [%ld] %s\n", tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday,
-            tmv.tm_hour, tmv.tm_min, tmv.tm_sec, ts.tv_nsec / 1000000, TidNow(), line.c_str());
+    if (!f) { Guard g(g_logLock); g_logDropped += batch.size(); return; }
+    for (const auto& record : batch) {
+        struct tm tmv;
+        gmtime_r(&record.time.tv_sec, &tmv);
+        const std::string line = Redact(record.text);
+        if (fprintf(f, "%04d-%02d-%02dT%02d:%02d:%02d.%03ldZ [%ld] %s\n", tmv.tm_year + 1900,
+                    tmv.tm_mon + 1, tmv.tm_mday, tmv.tm_hour, tmv.tm_min, tmv.tm_sec,
+                    record.time.tv_nsec / 1000000, record.tid, line.c_str()) < 0) {
+            Guard g(g_logLock); ++g_logDropped;
+        }
+    }
     fclose(f);
 }
 
@@ -345,13 +379,29 @@ bool ReadFile(const std::string& path, std::string& out) {
 }
 
 bool WriteFileAtomic(const std::string& path, const std::string& content) {
-    std::string tmp = path + ".tmp";
-    FILE* f = fopen(tmp.c_str(), "wb");
-    if (!f) return false;
-    bool ok = fwrite(content.data(), 1, content.size(), f) == content.size();
-    ok = (fclose(f) == 0) && ok;
-    if (!ok) { ::remove(tmp.c_str()); return false; }
-    return ::rename(tmp.c_str(), path.c_str()) == 0;
+    std::string pattern = path + ".tmp.XXXXXX";
+    std::vector<char> tmp(pattern.begin(), pattern.end()); tmp.push_back('\0');
+    int fd = mkstemp(tmp.data());
+    if (fd < 0) return false;
+    bool ok = true;
+    size_t offset = 0;
+    while (offset < content.size()) {
+        ssize_t n = write(fd, content.data() + offset, content.size() - offset);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) { ok = false; break; }
+        offset += static_cast<size_t>(n);
+    }
+    if (ok && fsync(fd) != 0) ok = false;
+    if (close(fd) != 0) ok = false;
+    if (ok && rename(tmp.data(), path.c_str()) != 0) ok = false;
+    if (!ok) { unlink(tmp.data()); return false; }
+    const auto slash = path.rfind('/');
+    const std::string dir = slash == std::string::npos ? "." : slash == 0 ? "/" : path.substr(0, slash);
+    int parent = open(dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (parent < 0) return false;
+    ok = fsync(parent) == 0;
+    if (close(parent) != 0) ok = false;
+    return ok;
 }
 
 std::string ConfigValue(const char* envName, const char* jsonKey, const std::string& def) {
@@ -359,15 +409,14 @@ std::string ConfigValue(const char* envName, const char* jsonKey, const std::str
         const char* v = getenv(envName);
         if (v && *v) return v;
     }
-    static bool loaded = false;
-    static JsonValue cfg;
-    if (!loaded) {
-        loaded = true;
+    static const JsonValue cfg = [] {
+        JsonValue parsed;
         std::string text;
         if (ReadFile(PluginDataDir() + "/plugin.json", text)) {
-            if (!JsonParse(text, cfg)) PluginLog("config: plugin.json parse failed");
+            if (!JsonParse(text, parsed)) PluginLog("config: plugin.json parse failed");
         }
-    }
+        return parsed;
+    }();
     if (jsonKey) {
         auto* v = cfg.get(jsonKey);
         if (v && v->isStr() && !v->str.empty()) return v->str;

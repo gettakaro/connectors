@@ -2,10 +2,10 @@
 #
 # Steam app 2131400, Linux native dedicated server, launched as
 #   Vein/Binaries/Linux/VeinServer-Linux-Test -Port=7777 -QueryPort=27015 -log
-# Ready marker in the log: "Created session GameSession."
+# Readiness: game HTTP /status and Steam heartbeat in Vein.log.
 #
 # Host ports: game 7807 (udp+tcp), Steam query 27017/udp.
-# The built-in HTTP API (8080) and the Takaro plugin/sidecar ports (18890/18891)
+# The built-in HTTP API (8080) and optional native diagnostics (18890)
 # stay inside the container network namespace and are never published.
 name: takaro-dev-vein
 services:
@@ -37,6 +37,33 @@ services:
       # server build id, so the rig never updates itself behind our back.
       VEIN_AUTO_UPDATE: "false"
       TAKARO_PLUGIN_TOKEN: "${TAKARO_VEIN_PLUGIN_TOKEN:?required}"
+      TAKARO_PLUGIN_PORT: "${TAKARO_PLUGIN_PORT:-18890}"
+      TAKARO_WS_URL: "${TAKARO_WS_URL:-wss://connect.takaro.io/}"
+      TAKARO_RECONNECT_BASE_MS: "${TAKARO_RECONNECT_BASE_MS:-2000}"
+      TAKARO_RECONNECT_MAX_MS: "${TAKARO_RECONNECT_MAX_MS:-60000}"
+      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_VEIN:-takaro-dev-vein}"
+      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN:?required}"
+      TAKARO_SERVER_NAME: "${TAKARO_SERVER_NAME:-Takaro Dev Vein}"
+      TAKARO_SENDER_NAME: "${TAKARO_SENDER_NAME:-}"
+      TAKARO_SERVER_CHAT_NAME: "${TAKARO_SERVER_CHAT_NAME:-}"
+      # Keep existing game-enforcement bans.json under the mounted game data.
+      TAKARO_PLUGIN_DATA_DIR: "${TAKARO_PLUGIN_DATA_DIR:-/home/steam/vein/Vein/Binaries/Linux/takaro}"
+      # The legacy sidecar wrote these files at its /data root. An explicit
+      # path preserves them during upgrade; clean installs use connector-state.
+      TAKARO_STATE_DIR: "${TAKARO_STATE_DIR:-/opt/takaro-state}"
+      TAKARO_CURSOR_FILE: "${TAKARO_CURSOR_FILE:-}"
+      TAKARO_ONLINE_FILE: "${TAKARO_ONLINE_FILE:-}"
+      TAKARO_BAN_FILE: "${TAKARO_BAN_FILE:-}"
+      TAKARO_KNOWN_PLAYERS_FILE: "${TAKARO_KNOWN_PLAYERS_FILE:-}"
+      VEIN_LOG_FILE: "${VEIN_LOG_FILE:-/home/steam/vein/Vein/Saved/Logs/Vein.log}"
+      VEIN_HTTP_API: "${VEIN_HTTP_API-http://127.0.0.1:8080}"
+      VEIN_LOG_TAIL: "${VEIN_LOG_TAIL:-auto}"
+      VEIN_LOG_EVENTS: "${VEIN_LOG_EVENTS:-filtered}"
+      VEIN_LOG_LOGIN_RE: "${VEIN_LOG_LOGIN_RE:-}"
+      VEIN_LOG_JOIN_RE: "${VEIN_LOG_JOIN_RE:-}"
+      VEIN_LOG_LEAVE_RE: "${VEIN_LOG_LEAVE_RE:-}"
+      VEIN_LOG_CHAT_RE: "${VEIN_LOG_CHAT_RE:-}"
+      VEIN_LOG_READY_RE: "${VEIN_LOG_READY_RE:-}"
       # Consumed by the entrypoint: LD_PRELOAD on the game binary only, and only
       # when the file exists and is non-empty (an empty preload breaks ld.so).
       TAKARO_PLUGIN_SO: /opt/takaro/libtakaro-vein.so
@@ -44,56 +71,18 @@ services:
       # AVeinGameSession::SetAdmin (VEIN's AdminSteamIDs is NOT a config property,
       # so VEIN_ADMIN_STEAMIDS above can never open the in-game admin panel).
       TAKARO_ADMIN_STEAMIDS: "${VEIN_DEV_ADMIN_STEAMIDS:-}"
+      TAKARO_SUPERADMIN_STEAMIDS: "${TAKARO_SUPERADMIN_STEAMIDS:-}"
       TAKARO_PLUGIN_DEBUG: "1"
+      TAKARO_SYM_PATH: "${TAKARO_SYM_PATH:-}"
+      TAKARO_ITEM_NAMES: "${TAKARO_ITEM_NAMES:-0}"
+      TAKARO_BROADCAST_VIA: "${TAKARO_BROADCAST_VIA:-auto}"
+      TAKARO_CA_FILE: "${TAKARO_CA_FILE:-}"
     volumes:
       - ../_data/vein-dev:/home/steam/vein
       # The DIRECTORY is mounted read-only (not the .so itself) so compose still
       # starts before the plugin exists, and so SteamCMD can never touch it.
       - ../_data/vein-plugin:/opt/takaro:ro
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "3"
-
-  # Takaro sidecar (connector bridge). Shares the game container's network
-  # namespace so the plugin's loopback-only API (127.0.0.1:18890) and the game's
-  # own HTTP API (127.0.0.1:8080) are reachable without publishing either.
-  # Behind the `sidecar` profile: the source tree may not exist yet and `up -d`
-  # must not try to build it.
-  vein-takaro:
-    build: "${VEIN_SIDECAR_SRC:-../../games/vein/sidecar}"
-    image: takaro-vein-sidecar:dev
-    container_name: takaro-dev-vein-sidecar
-    restart: unless-stopped
-    network_mode: "service:vein"
-    depends_on:
-      - vein
-    profiles: ["sidecar"]
-    environment:
-      TAKARO_WS_URL: "${TAKARO_WS_URL:-wss://connect.takaro.io/}"
-      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_VEIN:-takaro-dev-vein}"
-      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN:?required}"
-      TAKARO_SERVER_NAME: "Takaro Dev Vein"
-      TAKARO_PLUGIN_URL: "http://127.0.0.1:18890"
-      TAKARO_PLUGIN_TOKEN: "${TAKARO_VEIN_PLUGIN_TOKEN:?required}"
-      VEIN_LOG_FILE: /home/steam/vein/Vein/Saved/Logs/Vein.log
-      VEIN_HTTP_API: "http://127.0.0.1:8080"
-      TAKARO_CURSOR_FILE: /data/event-cursor.json
-      SIDECAR_HEALTH_PORT: "18891"
-      # Self-recovery watchdog. The sidecar shares the game container's network
-      # namespace, so a `docker compose up`/recreate of `vein` leaves it holding a
-      # dead namespace. It exits after this long with BOTH the plugin and the
-      # game's own :8080 API unreachable, and `restart: unless-stopped` above
-      # brings it back in the new namespace.
-      SIDECAR_EXIT_AFTER_UNREACHABLE_MS: "${VEIN_SIDECAR_EXIT_AFTER_UNREACHABLE_MS:-45000}"
-      # Plugin gone but the game still answering = a plugin-only problem; much
-      # longer, so a slow server start never restart-loops the sidecar.
-      SIDECAR_EXIT_AFTER_PLUGIN_LOSS_MS: "${VEIN_SIDECAR_EXIT_AFTER_PLUGIN_LOSS_MS:-180000}"
-      DEBUG: "1"
-    volumes:
-      - ../_data/vein-dev:/home/steam/vein:ro
-      - ../_data/vein-sidecar:/data
+      - ../_data/vein-sidecar:/opt/takaro-state
     logging:
       driver: json-file
       options:

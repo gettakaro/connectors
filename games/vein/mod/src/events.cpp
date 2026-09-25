@@ -51,6 +51,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <set>
 
 using namespace UE;
@@ -458,7 +459,7 @@ void EmitJoin(const Ident& id) {
         Guard g(g_connLock);
         g_announced.insert(id.gameId);
     }
-    PluginState::Get().EmitEvent("player-connected", "{\"player\":" + PlayerJson(id) + "}");
+    PluginState::Get().EmitEventDeferred("player-connected", [id] { return "{\"player\":" + PlayerJson(id) + "}"; });
     g_join.emitted++;
     PluginLog("events: player-connected %s (%s)", id.gameId.c_str(), id.name.c_str());
 }
@@ -469,7 +470,7 @@ void EmitLeave(const Ident& id) {
         Guard g(g_connLock);
         g_announced.erase(id.gameId);
     }
-    PluginState::Get().EmitEvent("player-disconnected", "{\"player\":" + PlayerJson(id) + "}");
+    PluginState::Get().EmitEventDeferred("player-disconnected", [id] { return "{\"player\":" + PlayerJson(id) + "}"; });
     g_leave.emitted++;
     PluginLog("events: player-disconnected %s (%s)", id.gameId.c_str(), id.name.c_str());
 }
@@ -918,6 +919,7 @@ void EmitChat(const Ident& id, const std::string& msg, const std::string& channe
         return;
     }
     if (!ChatAllowed(id.gameId, msg)) return;
+    PluginState::Get().EmitEventDeferred("chat-message", [id, msg, channel, segment, source = std::string(source)] {
     std::string o = "{\"msg\":" + JsonStr(msg) + ",\"channel\":" + JsonStr(channel.empty() ? "global" : channel);
     if (segment >= 0) {
         const char* seg = ChatSegmentName(segment);
@@ -925,21 +927,25 @@ void EmitChat(const Ident& id, const std::string& msg, const std::string& channe
     }
     if (id.valid()) o += ",\"player\":" + PlayerJson(id);
     o += ",\"source\":" + JsonStr(source) + "}";
-    PluginState::Get().EmitEvent("chat-message", o);
+    return o;
+    });
     g_chat.emitted++;
     PluginLog("events: chat-message from %s via %s: %s", id.gameId.c_str(), source, msg.c_str());
 }
 
-void EmitDeath(const Ident& id, bool havePos, double x, double y, double z, const std::string& attackerJson,
+void EmitDeath(const Ident& id, bool havePos, double x, double y, double z, const Ident& attacker,
                const std::string& killerEntity, const std::string& cause, const char* source) {
     if (!id.valid() || !DeathAllowed(id.gameId)) return;
+    PluginState::Get().EmitEventDeferred("player-death", [id, havePos, x, y, z, attacker, killerEntity, cause,
+                                                         source = std::string(source)] {
     std::string o = "{\"player\":" + PlayerJson(id);
     if (havePos) o += ",\"position\":{\"x\":" + JsonNum(x) + ",\"y\":" + JsonNum(y) + ",\"z\":" + JsonNum(z) + "}";
-    if (!attackerJson.empty()) o += ",\"attacker\":" + attackerJson;
+    if (attacker.valid()) o += ",\"attacker\":" + PlayerJson(attacker);
     if (!killerEntity.empty()) o += ",\"killerEntity\":" + JsonStr(killerEntity);
     if (!cause.empty()) o += ",\"cause\":" + JsonStr(cause);
     o += ",\"source\":" + JsonStr(source) + "}";
-    PluginState::Get().EmitEvent("player-death", o);
+    return o;
+    });
     g_death.emitted++;
     PluginLog("events: player-death %s via %s (killer '%s', cause '%s')", id.gameId.c_str(), source,
               killerEntity.c_str(), cause.c_str());
@@ -1169,7 +1175,7 @@ DeathParams ReadDeathParams(void* func, void* params) {
 // event can give. (A genuine self-inflicted death is indistinguishable from a fall on this build -
 // the wire carries exactly the same three pointers - so it, too, is reported as environmental.)
 void AttributeFrom(const DeathParams& dp, void* victimActor, const Ident& victim,
-                   std::string& attackerJson, std::string& killerEntity, Ident* killerOut) {
+                   Ident& attackerResult, std::string& killerEntity, Ident* killerOut) {
     void* candidates[3] = {dp.instigator, dp.causer, victimActor ? InstigatorOf(victimActor) : nullptr};
     auto isVictim = [&](void* c) {
         if (c == victimActor) return true;
@@ -1184,7 +1190,7 @@ void AttributeFrom(const DeathParams& dp, void* victimActor, const Ident& victim
         Ident attacker;
         void* st = PlayerStateOf(c);
         if (st && IdentFromPlayerState(st, attacker) && attacker.valid()) {
-            attackerJson = PlayerJson(attacker);
+            attackerResult = attacker;
             if (killerOut) *killerOut = attacker;
             return;
         }
@@ -1207,17 +1213,18 @@ void HandlePlayerDeath(void* actor, const DeathParams& dp, const char* via) {
     double x = dp.x, y = dp.y, z = dp.z;
     bool havePos = dp.havePos;
     if (!havePos) havePos = ActorLocation(actor, x, y, z);
-    std::string attackerJson, killerEntity;
-    AttributeFrom(dp, actor, victim, attackerJson, killerEntity, nullptr);
+    Ident attacker;
+    std::string killerEntity;
+    AttributeFrom(dp, actor, victim, attacker, killerEntity, nullptr);
     // LANE L2c: when nothing and nobody killed him, `cause` is what is left to say. VEIN's own
     // DeathCause/DeathReason first, then the damage type the event carried (humanised, e.g.
     // "Vein Damage Type Fall"), and "environment" when the build exposes neither.
     std::string cause = CauseOf(actor);
-    if (cause.empty() && attackerJson.empty() && killerEntity.empty()) {
+    if (cause.empty() && !attacker.valid() && killerEntity.empty()) {
         if (ValidObject(dp.damageType)) cause = ActionsUtil::HumaniseCode(SafeClassName(dp.damageType));
         if (cause.empty()) cause = "environment";
     }
-    EmitDeath(victim, havePos, x, y, z, attackerJson, killerEntity, cause, via);
+    EmitDeath(victim, havePos, x, y, z, attacker, killerEntity, cause, via);
     {
         Guard g(g_healthLock);
         g_liveness[victim.gameId] = Live::Dead;
@@ -1261,6 +1268,8 @@ Ident KillerOf(void* actor, const DeathParams& dp, std::string& how) {
 }
 
 std::atomic<bool> g_aiDumped{false};
+Mutex g_debugReportLock;
+std::function<void()> g_debugReport;
 // Deaths of non-player, non-AI actors (doors, item instances, built actors share the same event).
 std::atomic<uint64_t> g_deathsIgnored{0};
 // Lane L2c: AI deaths with no player behind them (a zombie eating a wolf). Not Takaro events.
@@ -1274,9 +1283,14 @@ void HandleAiDeath(void* actor, const DeathParams& dp, const char* via) {
     if (!IsAnyAi(actor)) return;
     if (!KillAllowed(actor)) return;
 
-    if (DebugEnabled() && !g_aiDumped.exchange(true))
-        PluginLog("events: first AI death, %s properties = %s", SafeClassName(actor).c_str(),
-                  Reflect::DumpObject(actor, 256).c_str());
+    if (DebugEnabled() && !g_aiDumped.exchange(true)) {
+        auto snapshot = Reflect::DumpObject(actor, 256);
+        std::string name = SafeClassName(actor);
+        Guard guard(g_debugReportLock);
+        g_debugReport = [snapshot = std::move(snapshot), name] {
+            PluginLog("events: first AI death, %s properties = %s", name.c_str(), snapshot().c_str());
+        };
+    }
 
     std::string cls = SafeClassName(actor);
     std::string entity = EntityDisplayName(actor);
@@ -1316,6 +1330,8 @@ void HandleAiDeath(void* actor, const DeathParams& dp, const char* via) {
     // The actor instance name (BP_Zombie_Male_C_2147482301) is evidence, not identity - it makes a
     // kill traceable back to one spawned actor in plugin.log and /events.
     std::string instance = SafeObjName(actor);
+    PluginState::Get().EmitEventDeferred("entity-killed", [entity, instance, cls, how, weapon, havePos, x, y, z,
+                                                          killer, via = std::string(via)] {
     std::string o = "{\"entity\":" + JsonStr(entity) + ",\"entityInstance\":" + JsonStr(instance) +
                     ",\"entityCode\":" + JsonStr(cls) +
                     ",\"entityClass\":" + JsonStr(cls) +
@@ -1324,7 +1340,8 @@ void HandleAiDeath(void* actor, const DeathParams& dp, const char* via) {
     if (havePos) o += ",\"position\":{\"x\":" + JsonNum(x) + ",\"y\":" + JsonNum(y) + ",\"z\":" + JsonNum(z) + "}";
     if (killer.valid()) o += ",\"player\":" + PlayerJson(killer);
     o += "}";
-    PluginState::Get().EmitEvent("entity-killed", o);
+    return o;
+    });
     g_kill.emitted++;
     PluginLog("events: entity-killed '%s' (%s) via %s, killer %s [%s]", entity.c_str(), cls.c_str(), via,
               killer.gameId.c_str(), how.c_str());
@@ -1687,12 +1704,13 @@ void PollHealthEdges() {
         if (now == Live::Dead && prev == Live::Alive) {
             double x = 0, y = 0, z = 0;
             bool havePos = ActorLocation(pawn, x, y, z);
-            std::string attackerJson, killerEntity;
+            Ident attacker;
+            std::string killerEntity;
             DeathParams none;
-            AttributeFrom(none, pawn, c.second, attackerJson, killerEntity, nullptr);
+            AttributeFrom(none, pawn, c.second, attacker, killerEntity, nullptr);
             std::string cause = CauseOf(pawn);
-            if (cause.empty() && attackerJson.empty() && killerEntity.empty()) cause = "environment";
-            EmitDeath(c.second, havePos, x, y, z, attackerJson, killerEntity, cause, "health-edge");
+            if (cause.empty() && !attacker.valid() && killerEntity.empty()) cause = "environment";
+            EmitDeath(c.second, havePos, x, y, z, attacker, killerEntity, cause, "health-edge");
         }
     }
 }
@@ -1701,6 +1719,9 @@ void PollHealthEdges() {
 // log tail
 
 std::string g_logPath;
+Mutex g_rawLogLock;
+std::function<void(std::string)> g_rawLogSink;
+bool g_customLogJoin = false, g_customLogChat = false;
 int g_logFd = -1;
 uint64_t g_logInode = 0;
 off_t g_logOffset = 0;
@@ -1713,6 +1734,8 @@ const size_t kMaxLogPerCycle = 120;
 const size_t kMaxReadPerCycle = 512 * 1024;
 
 std::string DefaultLogPath() {
+    const char* legacy = getenv("VEIN_LOG_FILE");
+    if (legacy && *legacy) return legacy;
     std::string cfg = ConfigValue("TAKARO_LOG_PATH", "logPath", "");
     if (!cfg.empty()) return cfg;
     // <exe dir> = <root>/Vein/Binaries/Linux -> <root>/Vein/Saved/Logs/Vein.log
@@ -1779,9 +1802,9 @@ void FlushLogJoins() {
     }
 }
 
-void NoteLogLine(const std::string& line) {
+void NoteLogLine(const std::string& line, bool customJoin, bool customChat) {
     EventsParse::JoinLine j = EventsParse::ParseJoinLine(line);
-    if (j.ok) {
+    if (j.ok && !customJoin) {
         Guard g(g_logJoinLock);
         LogJoin& e = g_logJoins[j.gameId];
         if (e.seenMs == 0) e.seenMs = NowMs();
@@ -1789,7 +1812,7 @@ void NoteLogLine(const std::string& line) {
         return;
     }
     EventsParse::ChatLine c = EventsParse::ParseChatLine(line);
-    if (c.ok) {
+    if (c.ok && !customChat) {
         if (!c.characterName.empty()) ::state::NoteCharacterName(c.gameId, c.characterName);
         Ident id;
         id.gameId = c.gameId;
@@ -1836,9 +1859,19 @@ void PollLog() {
             std::string line = g_logPartial.substr(start, nl - start);
             start = nl + 1;
             while (!line.empty() && line.back() == '\r') line.pop_back();
+            std::function<void(std::string)> sink;
+            bool customJoin, customChat;
+            {
+                Guard lock(g_rawLogLock);
+                sink = g_rawLogSink; customJoin = g_customLogJoin; customChat = g_customLogChat;
+            }
             try {
-                NoteLogLine(line);
+                NoteLogLine(line, customJoin, customChat);
             } catch (...) {
+            }
+            if (sink) {
+                try { sink(std::move(line)); } catch (...) { ++g_logDropped; }
+                continue;
             }
             if (EventsParse::IsNoise(line)) continue;
             if (emitted >= kMaxLogPerCycle) { g_logDropped++; continue; }
@@ -2225,7 +2258,16 @@ std::string AiJson(const AiNear& a) {
     return o + "}";
 }
 
-std::string NearbyOnGameThread(const std::string& wantId, double radius, int& status) {
+struct DeferredBody {
+    std::string literal;
+    std::function<std::string()> render;
+    DeferredBody() = default;
+    DeferredBody(const char* text) : literal(text) {}
+    DeferredBody(std::function<std::string()> fn) : render(std::move(fn)) {}
+    std::string operator()() const { return render ? render() : literal; }
+};
+
+DeferredBody NearbyOnGameThread(const std::string& wantId, double radius, int& status) {
     status = 200;
     if (!g_bootDone) return "{\"error\":\"the event sources have not finished booting\"}";
     void* ctrl = nullptr;
@@ -2257,13 +2299,16 @@ std::string NearbyOnGameThread(const std::string& wantId, double radius, int& st
         return "{\"error\":\"the player's pawn has no readable location\"}";
     }
     std::vector<AiNear> ai = NearbyAi(px, py, pz, radius, pawn, 25);
-    std::string o = "{\"player\":" + JsonStr(who.gameId) + ",\"pawn\":" + JsonStr(SafeClassName(pawn)) +
+    for (auto& row : ai) row.actor = nullptr;
+    return DeferredBody{[id = who.gameId, pawnClass = SafeClassName(pawn), radius, ai = std::move(ai)] {
+    std::string o = "{\"player\":" + JsonStr(id) + ",\"pawn\":" + JsonStr(pawnClass) +
                     ",\"radius\":" + JsonNum(radius) + ",\"count\":" + std::to_string(ai.size()) + ",\"ai\":[";
     for (size_t i = 0; i < ai.size(); i++) o += std::string(i ? "," : "") + AiJson(ai[i]);
     return o + "]}";
+    }};
 }
 
-std::string KillNearestOnGameThread(const std::string& wantId, double radius, int& status) {
+DeferredBody KillNearestOnGameThread(const std::string& wantId, double radius, int& status) {
     status = 200;
     if (!g_bootDone) return "{\"error\":\"the event sources have not finished booting\"}";
 
@@ -2301,14 +2346,14 @@ std::string KillNearestOnGameThread(const std::string& wantId, double radius, in
     std::vector<AiNear> near = NearbyAi(px, py, pz, radius, pawn, 1);
     if (near.empty()) {
         status = 404;
-        return "{\"error\":\"no AI character within the radius\",\"radius\":" + JsonNum(radius) + "}";
+        return DeferredBody{[radius] { return "{\"error\":\"no AI character within the radius\",\"radius\":" + JsonNum(radius) + "}"; }};
     }
     AiNear target = near[0];
     void* victim = target.actor;
     void* comp = HealthCompOf(victim);
     if (!comp) {
         status = 409;
-        return "{\"error\":\"the AI has no readable health component\",\"entityClass\":" + JsonStr(target.cls) + "}";
+        return DeferredBody{[cls = target.cls] { return "{\"error\":\"the AI has no readable health component\",\"entityClass\":" + JsonStr(cls) + "}"; }};
     }
     // Hook this component's vtable now, so the NetMulticast_OnDeath it is about to send is seen even
     // if the periodic sweep has not reached this class yet.
@@ -2358,6 +2403,9 @@ std::string KillNearestOnGameThread(const std::string& wantId, double radius, in
     PluginLog("events: /debug/kill-nearest %s %s for %s via %s (health %.1f -> %.1f)", dead ? "killed" : "FAILED to kill",
               target.cls.c_str(), who.gameId.c_str(), mech.empty() ? "no mechanism" : mech.c_str(), hp0, hp1);
 
+    if (!dead) status = 500;
+    target.actor = nullptr;
+    return DeferredBody{[target, dead, mech, who, damage, haveHp, hp0, hp1, notes] {
     std::string body = std::string("{\"success\":") + (dead ? "true" : "false") + ",\"entityClass\":" +
                        JsonStr(target.cls) + ",\"healthComponent\":" + JsonStr(target.healthCls) +
                        ",\"distance\":" + JsonNum(target.dist) + ",\"mechanism\":" + JsonStr(mech) +
@@ -2369,8 +2417,8 @@ std::string KillNearestOnGameThread(const std::string& wantId, double radius, in
                            "endpoint"
                          : "the damage did not kill the AI - this endpoint reports what the health component "
                            "actually says, never a bare success");
-    if (!dead) status = 500;
     return body + "}";
+    }};
 }
 
 }  // namespace
@@ -2381,13 +2429,13 @@ std::string KillNearestOnGameThread(const std::string& wantId, double radius, in
 Actions::Result Events::Nearby(const std::string& gameId, double radius) {
     if (!Reflect::Validated()) return ErrJson(503, "the reflection layout has not been validated yet");
     if (!(radius > 0) || radius > 1.0e7) return ErrJson(400, "radius must be a positive number of centimetres");
-    std::string out;
-    int status = 200;
-    if (!GameThread::RunJson([&] { return NearbyOnGameThread(gameId, radius, status); }, out, 8000))
+    auto out = std::make_shared<DeferredBody>();
+    auto status = std::make_shared<int>(200);
+    if (!GameThread::Run([gameId, radius, status, out] { *out = NearbyOnGameThread(gameId, radius, *status); }, 8000))
         return ErrJson(503, "the game thread did not answer in time");
     Actions::Result res;
-    res.status = status;
-    res.body = out;
+    res.status = *status;
+    res.body = (*out)();
     return res;
 }
 
@@ -2401,17 +2449,24 @@ Actions::Result Events::KillNearest(const JsonValue& body) {
     if (r && r->isNum()) radius = r->num;
     if (!(radius > 0) || radius > 1.0e7) return ErrJson(400, "radius must be a positive number of centimetres");
 
-    std::string out;
-    int status = 200;
-    if (!GameThread::RunJson([&] { return KillNearestOnGameThread(gameId, radius, status); }, out, 8000))
+    auto out = std::make_shared<DeferredBody>();
+    auto status = std::make_shared<int>(200);
+    if (!GameThread::Run([gameId, radius, status, out] { *out = KillNearestOnGameThread(gameId, radius, *status); }, 8000))
         return ErrJson(503, "the game thread did not answer in time");
     Actions::Result res;
-    res.status = status;
-    res.body = out;
+    res.status = *status;
+    res.body = (*out)();
     return res;
 }
 
 // =================================================================================================
+
+void Events::SetRawLogSink(std::function<void(std::string)> sink, bool customJoin, bool customChat) {
+    Guard lock(g_rawLogLock);
+    g_rawLogSink = std::move(sink);
+    g_customLogJoin = customJoin;
+    g_customLogChat = customChat;
+}
 
 void Events::Init() {
     auto& st = PluginState::Get();
@@ -2520,6 +2575,9 @@ void MirrorCapabilities() {
 }  // namespace
 
 void Events::Housekeep() {
+    std::function<void()> report;
+    { Guard guard(g_debugReportLock); report.swap(g_debugReport); }
+    if (report) report();
     try {
         PollLog();
         FlushLogJoins();
@@ -2562,7 +2620,7 @@ void Events::Housekeep() {
     if (wantHealth) lastHealth = now;
     if (wantReap) lastReap = now;
     GameThread::Run(
-        [&] {
+        [wantBoot, wantSweep, wantGameMode, wantJoins, wantReap, wantHealth] {
             try {
                 Perf::Scope total("housekeep");
                 if (wantBoot) { Phase("boot"); Perf::Scope sc("housekeep.boot"); GameThreadInit(); }

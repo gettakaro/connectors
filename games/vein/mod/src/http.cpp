@@ -4,6 +4,7 @@
 #include "admin.h"
 #include "events.h"
 #include "gamethread.h"
+#include "native_bridge.h"
 #include "perf.h"
 #include "hooks.h"
 #include "reflect.h"
@@ -22,6 +23,7 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 
 namespace {
 
@@ -200,6 +202,25 @@ Response Health() {
 
     std::string status = "ok";
     if (!allOk || st.Capability("reflection") != "ok") status = "degraded";
+    const std::string nativeHealth = NativeBridge::HealthJson();
+    JsonValue native;
+    if (!JsonParse(nativeHealth, native)) status = "degraded";
+    else {
+        const JsonValue* connection = native.get("connection");
+        const JsonValue* identified = connection ? connection->get("identified") : nullptr;
+        const JsonValue* persistenceError = native.get("persistenceLastError");
+        const JsonValue* recovery = native.get("banRecoveryPending");
+        const JsonValue* banMetadataError = native.get("banMetadataError");
+        const JsonValue* behavior = native.get("behavior");
+        const JsonValue* logError = behavior ? behavior->get("logParserError") : nullptr;
+        if (!identified || identified->type != JsonValue::Bool || !identified->b ||
+            (persistenceError && persistenceError->isStr() && !persistenceError->str.empty()) ||
+            (recovery && recovery->type == JsonValue::Bool && recovery->b) ||
+            (banMetadataError && banMetadataError->isStr() && !banMetadataError->str.empty()) ||
+            (logError && logError->isStr() && !logError->str.empty()))
+            status = "degraded";
+    }
+    if (!state::BanPersistenceError().empty()) status = "degraded";
 
     StartMs();
     std::string o = "{\"status\":" + JsonStr(status) + ",\"version\":\"" TAKARO_PLUGIN_VERSION "\"" +
@@ -211,6 +232,7 @@ Response Health() {
                     ",\"capabilities\":" + st.CapabilitiesJson() +
                     ",\"capabilityDetails\":" + st.CapabilityDetailsJson() +
                     ",\"symCache\":" + Resolve::CacheJson() +
+                    ",\"native\":" + nativeHealth +
                     ",\"diagnostics\":{\"resolve\":" + Resolve::StatsJson() + ",\"selfChecks\":" + selfChecks +
                     ",\"reflect\":" + Reflect::LayoutJson() + ",\"gameThread\":" + GameThread::StatsJson() +
                     ",\"perf\":" + Perf::Json() +
@@ -228,10 +250,10 @@ Response DebugGameThread() {
     if (!GameThread::Alive() && GameThread::TickCount() == 0)
         return Err(503, "the game thread pump has not ticked yet");
     uint64_t t0 = NowMs();
-    long ranOn = 0;
-    bool ok = GameThread::Run([&] { ranOn = (long)syscall(SYS_gettid); }, 5000);
+    auto ranOn = std::make_shared<long>(0);
+    bool ok = GameThread::Run([ranOn] { *ranOn = (long)syscall(SYS_gettid); }, 5000);
     if (!ok) return Err(503, "game-thread job timed out");
-    return {200, "{\"ranOnThreadId\":" + std::to_string(ranOn) + ",\"httpThreadId\":" +
+    return {200, "{\"ranOnThreadId\":" + std::to_string(*ranOn) + ",\"httpThreadId\":" +
                      std::to_string((long)syscall(SYS_gettid)) + ",\"latencyMs\":" + std::to_string(NowMs() - t0) +
                      ",\"stats\":" + GameThread::StatsJson() + "}"};
 }
@@ -254,31 +276,33 @@ Response DebugObject(const Request& r) {
         target = (void*)(uintptr_t)v;
         if (!MemReadable(target, 0x40)) return Err(400, "ptr is not inside a readable mapping");
     }
-    std::string out;
-    bool ok = GameThread::RunJson(
-        [&]() -> std::string {
+    auto snapshot = std::make_shared<Reflect::DebugSnapshot>();
+    bool ok = GameThread::Run(
+        [target, path, snapshot] {
             void* obj = target;
             if (!obj) {
                 size_t dot = path.find('.');
-                if (path.size() < 2 || path[0] != '/' || dot == std::string::npos)
-                    return "{\"error\":\"path must look like /Script/Vein.PlayerChatComponent\"}";
+                if (path.size() < 2 || path[0] != '/' || dot == std::string::npos) {
+                    *snapshot = [] { return "{\"error\":\"path must look like /Script/Vein.PlayerChatComponent\"}"; };
+                    return;
+                }
                 obj = Reflect::FindObjectByPath(path.substr(0, dot), path.substr(dot + 1));
-                if (!obj) return "{\"error\":\"object not found\"}";
+                if (!obj) { *snapshot = [] { return "{\"error\":\"object not found\"}"; }; return; }
             }
-            return Reflect::DumpObject(obj);
+            *snapshot = Reflect::DumpObject(obj);
         },
-        out, 5000);
+        5000);
     if (!ok) return Err(503, "game thread unavailable");
-    return {200, out};
+    return {200, (*snapshot)()};
 }
 
 Response DebugStructs(const Request& r) {
     std::string name = QueryParam(r.query, "name");
     if (name.empty()) return Err(400, "pass ?name=ChatMessageData or ?name=/Script/Vein.ChatMessageData");
-    std::string out;
-    if (!GameThread::RunJson([&] { return Reflect::DumpStruct(name); }, out, 5000))
+    auto snapshot = std::make_shared<Reflect::DebugSnapshot>();
+    if (!GameThread::Run([name, snapshot] { *snapshot = Reflect::DumpStruct(name); }, 5000))
         return Err(503, "game thread unavailable");
-    return {200, out};
+    return {200, (*snapshot)()};
 }
 
 Response Events(const Request& r) {
@@ -422,7 +446,7 @@ void* ConnThread(void* arg) {
 void LoadToken() {
     g_token = ConfigValue("TAKARO_PLUGIN_TOKEN", "token", "");
     if (g_token.empty())
-        PluginLog("http: WARNING no token configured; every request will be rejected with 401");
+        PluginLog("http: diagnostics disabled (TAKARO_PLUGIN_TOKEN is not configured)");
     else
         PluginLog("http: token configured (%zu chars)", g_token.size());
     std::string port = ConfigValue("TAKARO_PLUGIN_PORT", "port", "");
@@ -481,6 +505,7 @@ std::string Http::StatsJson() {
 void Http::Start() {
     StartMs();
     LoadToken();
+    if (g_token.empty()) return;
     pthread_t t;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
