@@ -235,7 +235,7 @@ def _restore_conan_watch(root: Path) -> None:
 
 def _conan_target(root: Path) -> dict[str, Any]:
     """The shipped Conan record, re-pinned at the moved public head and marked maintained."""
-    record = json.loads((root / "catalog" / CONAN / "targets" / "linux-25356024.json").read_text(encoding="utf-8"))
+    record = json.loads((root / "catalog" / CONAN / "targets" / "linux-25488622.json").read_text(encoding="utf-8"))
     record["id"] = f"linux-{CONAN_MOVED_BUILD}"
     record["revision"] = str(CONAN_MOVED_BUILD)
     record["support"] = {"status": "maintained", "since": "2026-09-17", "evidence": [], "notes": "test fixture"}

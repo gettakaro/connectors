@@ -30,14 +30,14 @@ games/conan-exiles/
 
 catalog/conan-exiles/
     game.json                   # the Steam watch: app 443030, depot 443032, branch public
-    targets/linux-25356024.json # the pinned server build, image, deps and file hashes
+    targets/linux-25488622.json # the pinned server build, image, deps and file hashes
 ```
 
 ## The pinned server build
 
 The connector is built and verified against one exact server build, declared in
-`catalog/conan-exiles/targets/linux-25356024.json`: Steam app `443030`, branch `public`, build
-`25356024`, depot `443032` manifest `2572292872952587850` plus the Steamworks redistributable depot
+`catalog/conan-exiles/targets/linux-25488622.json`: Steam app `443030`, branch `public`, build
+`25488622`, depot `443032` manifest `2389917983000609164` plus the Steamworks redistributable depot
 `1006` manifest `4559160656493359681`, with six declared file hashes. Nothing here runs the Steam
 updater any more — the depot manifests are the bytes:
 
@@ -122,7 +122,7 @@ npm start
 A release is built per catalog target, through the shared maintenance command:
 
 ```bash
-maintenance/bin/takaro-maint build --game conan-exiles [--target linux-25356024] \
+maintenance/bin/takaro-maint build --game conan-exiles [--target linux-25488622] \
   --version 1.0.2 --out dist
 ```
 
@@ -132,7 +132,7 @@ no Node at all. Before `npm ci`, `check-exact-source.mjs` asserts that the lockf
 every catalog-pinned dependency to the recorded URL and that the tarball there still hashes to the
 recorded sha256; neither failure falls back to installing something else.
 
-The result is `takaro-conan-exiles-bridge-linux-25356024-<version>.zip` containing `dist/`,
+The result is `takaro-conan-exiles-bridge-linux-25488622-<version>.zip` containing `dist/`,
 `scripts/`, `package.json`, `package-lock.json`, `takaro-target.json`, `README.md`,
 `TakaroConfig.example.txt` and a generated `README.release.txt`, plus a `.meta.json` beside it that
 `takaro-maint artifact validate` reads. The zip contains no `src/`, so every runtime `package.json`
@@ -341,7 +341,7 @@ the release claims `contract` verification and nothing more.
 **Startup level — a real pinned server.** On a host that can boot it:
 
 ```bash
-maintenance/bin/takaro-maint verify --game conan-exiles --target linux-25356024 \
+maintenance/bin/takaro-maint verify --game conan-exiles --target linux-25488622 \
   --artifacts dist --out reports \
   --checks build,startup,bridge-identify,bridge-reachability,bridge-players,bridge-console,bridge-reconnect,shutdown,bridge-stop \
   --startup-timeout 600 --cleanup-orphans

@@ -29,6 +29,6 @@
       "artifactPattern": "takaro-conan-exiles-bridge-{target}-{version}.zip"
     }
   },
-  "legacyAssetAliases": {"takaro-conan-exiles-bridge.zip": "linux-25356024/bridge"},
+  "legacyAssetAliases": {"takaro-conan-exiles-bridge.zip": "linux-25488622/bridge"},
   "devServers": {"composeFile": "conan-exiles.yml"}
 }
