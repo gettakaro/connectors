@@ -8,7 +8,7 @@
   "support": {
     "status": "maintained",
     "since": "2026-09-22",
-    "evidence": ["takaro-maint verify 2026-09-22: protocol level on Minecraft 26.3 / Fabric Loader 0.19.5 / Java 25 (gettakaro/connectors#257)"],
+    "evidence": ["takaro-maint verify 2026-09-22: protocol level on Minecraft 26.3 / Fabric Loader 0.19.5 / Java 25 (gettakaro/connectors#257)", "connector-runner e2e 2026-09-23: real PC client through hosted Takaro MCP on this target - player-connected b4cc6cc2-518d-4a6e-a781-60787a7d5c33, chat-message 0597f7e7-03a9-435e-978a-386e39fb593e, command-executed b09b93e9-6496-40ce-bb4c-d30255797bff, player-disconnected 6350b023-466d-42f5-81fd-2e8694cfd839; testReachability, getPlayers, sendMessage and executeConsoleCommand passed (gettakaro/connectors#260)"],
     "notes": "Verified against Minecraft 26.3 with Fabric Loader 0.19.5 and Fabric API 0.161.0+26.3."
   },
   "inputs": {
