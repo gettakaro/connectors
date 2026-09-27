@@ -88,7 +88,7 @@ def test_list_filters_by_status(run: Any, catalog_copy: Path) -> None:
     )
 
     assert code == 0
-    assert [row["id"] for row in payload["targets"]] == ["fabric-26.2"]
+    assert [row["id"] for row in payload["targets"]] == ["fabric-26.2", "fabric-26.3"]
 
 
 def test_list_filters_by_rig_game(run: Any) -> None:

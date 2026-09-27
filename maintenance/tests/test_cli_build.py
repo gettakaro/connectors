@@ -215,19 +215,29 @@ def test_all_targets_covers_every_non_retired_target(
 ) -> None:
     from test_cli_targets import second_target
 
-    other = second_target(catalog_copy)
-    fingerprint = fingerprint_of(run, catalog_copy)
-    _, other_payload, _ = run("targets", "resolve", "--game", "minecraft", "--target", other, repo=catalog_copy)
-    other_libs = f"games/minecraft/mod/targets/{other}/build/libs"
-    gradle_stub(
-        catalog_copy,
-        {
-            f"{LIBS}/takaro-minecraft-mod-fabric-26.2-0.1.1.jar": artifact_spec(fingerprint),
-            f"{other_libs}/takaro-minecraft-mod-{other}-0.1.1.jar": artifact_spec(
-                other_payload["fingerprint"], target=other, revision="26.1.2"
-            ),
-        },
+    second_target(catalog_copy)
+    _, listing, _ = run(
+        "targets",
+        "list",
+        "--game",
+        "minecraft",
+        "--platform",
+        "fabric",
+        "--status",
+        "candidate,maintained",
+        repo=catalog_copy,
     )
+    files = {}
+    for row in listing["targets"]:
+        target = str(row["id"])
+        _, resolved, _ = run("targets", "resolve", "--game", "minecraft", "--target", target, repo=catalog_copy)
+        record = json.loads((catalog_copy / f"catalog/minecraft/targets/{target}.json").read_text())
+        artifact = record["components"][0]["artifact"].replace("{version}", "0.1.1")
+        project = record["build"]["gradleProject"]
+        files[f"games/minecraft/mod/targets/{project}/build/libs/{artifact}"] = artifact_spec(
+            resolved["fingerprint"], target=target, revision=record["revision"]
+        )
+    gradle_stub(catalog_copy, files)
     out = tmp_path / "dist"
 
     code, payload, _ = run(
@@ -245,8 +255,9 @@ def test_all_targets_covers_every_non_retired_target(
     )
 
     assert code == 0, payload
-    assert {row["target"] for row in payload["artifacts"]} == {"fabric-26.2", other}
-    assert len((out / "SHA256SUMS").read_text().strip().splitlines()) == 2
+    expected = {str(row["id"]) for row in listing["targets"]}
+    assert {row["target"] for row in payload["artifacts"]} == expected
+    assert len((out / "SHA256SUMS").read_text().strip().splitlines()) == len(expected)
 
 
 def test_the_output_directory_is_created_when_missing(
