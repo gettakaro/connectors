@@ -31,7 +31,7 @@ The exact server builds this connector is maintained for:
 <!-- takaro-maint:targets:begin -->
 | Target | Game version | Platform | Loader / API | Java | Support | Verified level |
 | --- | --- | --- | --- | --- | --- | --- |
-| `linux-1.0.16` | 1.0.16 | linux | — | None | candidate | contract |
+| `linux-1.0.16` | 1.0.16 | linux | — | None | maintained | contract |
 <!-- takaro-maint:targets:end -->
 
 Each target names the exact Steam depot manifest of the dedicated server **and** the exact

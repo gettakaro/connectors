@@ -40,7 +40,7 @@ answer, and the record is the authority.
 | Minecraft | `paper-1.21.11` | paper | 1.21.11 | maintained | protocol |
 | Rust | `carbon-25353106` | carbon | 25353106 | candidate | build |
 | Terraria | `tshock-v6.2.1` | tshock | v6.2.1 | maintained | contract |
-| Valheim | `linux-1.0.16` | linux | 1.0.16 | candidate | contract |
+| Valheim | `linux-1.0.16` | linux | 1.0.16 | maintained | contract |
 | Project Zomboid | `linux-42.20.4` | linux | 42.20.4 | candidate | contract |
 
 Exactly one target per (game, platform) is the default, and that is the one a command with no
