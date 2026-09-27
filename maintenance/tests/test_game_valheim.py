@@ -28,13 +28,13 @@ from takaro_maint.providers import provider_for
 from takaro_maint.publish.manifest import artifact_row, write_manifest, write_meta
 
 GAME = "valheim"
-TARGET = "linux-1.0.15"
-REVISION = "1.0.15"
+TARGET = "linux-1.0.16"
+REVISION = "1.0.16"
 VERSION = "3.0.3-dev.abc1234"
 DEPOT = "896661"
 PINNED_MANIFEST = "6686760496212527200"
 HEAD_MANIFEST = "1900000000000000002"
-PACK_VERSION = "5.4.2350"
+PACK_VERSION = "5.4.2351"
 PACK_PATH = f"/package/download/denikson/BepInExPack_Valheim/{PACK_VERSION}/"
 PACK_API = "/api/experimental/package/denikson/BepInExPack_Valheim/"
 MANAGED = "valheim_server_Data/Managed"
@@ -352,7 +352,7 @@ def test_the_latest_version_is_observed_as_a_heads_only_framework(upstream: Fake
     observation = result.observations[0]
     assert observation.rev == PACK_VERSION
     assert observation.kind == "framework"
-    assert observation.facts["releaseTime"] == "2026-09-09T12:30:43.920443Z"
+    assert observation.facts["releaseTime"] == "2026-09-24T06:11:48.030447Z"
     assert observation.facts["artifact"]["url"].endswith(PACK_PATH)
     assert observation.facts["artifact"]["sha256"] is None
     assert "heads-only" in observation.facts["observationLimit"]
@@ -417,7 +417,7 @@ def test_targets_resolve_env_for_valheim(run: Any) -> None:
 
     assert code == 0, payload
     env = payload["env"]
-    assert env["VALHEIM_STEAM_DEPOTS"] == f"{DEPOT}:{PINNED_MANIFEST}"
+    assert env["VALHEIM_STEAM_DEPOTS"] == f"{DEPOT}:1285123405092214913"
     assert env["VALHEIM_STEAM_APP"] == "896660"
     assert env["VALHEIM_STEAM_BRANCH"] == "public"
     assert env["VALHEIM_ARTIFACT_SERVER_PLUGIN"] == f"takaro-valheim-plugin-{TARGET}-{{version}}.zip"

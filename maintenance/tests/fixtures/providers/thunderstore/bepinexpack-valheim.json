@@ -3,14 +3,14 @@
   "name": "BepInExPack_Valheim",
   "full_name": "denikson-BepInExPack_Valheim",
   "date_created": "2021-02-14T18:07:34.498403Z",
-  "date_updated": "2026-09-09T12:30:44.554712Z",
+  "date_updated": "2026-09-24T06:11:48.612059Z",
   "latest": {
     "namespace": "denikson",
     "name": "BepInExPack_Valheim",
-    "version_number": "5.4.2350",
-    "full_name": "denikson-BepInExPack_Valheim-5.4.2350",
-    "download_url": "https://thunderstore.io/package/download/denikson/BepInExPack_Valheim/5.4.2350/",
-    "date_created": "2026-09-09T12:30:43.920443Z",
+    "version_number": "5.4.2351",
+    "full_name": "denikson-BepInExPack_Valheim-5.4.2351",
+    "download_url": "https://thunderstore.io/package/download/denikson/BepInExPack_Valheim/5.4.2351/",
+    "date_created": "2026-09-24T06:11:48.030447Z",
     "is_active": true
   }
 }

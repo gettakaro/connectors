@@ -6,7 +6,7 @@ need [README.md](README.md).
 ## The catalog target
 
 Everything here is built against one catalog target,
-[`catalog/valheim/targets/linux-1.0.15.json`](../../catalog/valheim/targets/linux-1.0.15.json).
+[`catalog/valheim/targets/linux-1.0.16.json`](../../catalog/valheim/targets/linux-1.0.16.json).
 Unlike the other games in this catalog, a Valheim target pins **two** inputs:
 
 - `inputs.server` — the Steam app, branch, build id and depot manifest that identify the
@@ -66,8 +66,8 @@ dotnet test mod/Takaro.Valheim.sln
 Fetch the target's inputs and build both release archives, in the pinned .NET SDK image:
 
 ```bash
-./scripts/setup-environment.sh --target linux-1.0.15
-./scripts/build-release.sh <version> dist --target linux-1.0.15
+./scripts/setup-environment.sh --target linux-1.0.16
+./scripts/build-release.sh <version> dist --target linux-1.0.16
 ```
 
 `--target` may be left out; the game's default target is resolved instead.
@@ -146,7 +146,7 @@ mean three different things:
 |---|---|
 | `productVersion` | the connector release version, full SemVer (`3.0.3`, `3.0.3-dev.abc1234`) |
 | `pluginVersion` | the numeric core BepInEx parses out of `[BepInPlugin]` (`3.0.3`) — the **plugin's** version |
-| `bepInExPack.version` | the pinned Thunderstore pack version (`5.4.2350`) |
+| `bepInExPack.version` | the pinned Thunderstore pack version (`5.4.2351`) |
 | `bepInExVersion` | the **loader assembly** version read out of the pack's `BepInEx.dll` (`5.4.23.5`) |
 
 `bepInExVersion` used to carry the connector's own numeric core, which presented the
@@ -429,8 +429,8 @@ aliases and a compatibility record naming the exact inputs.
 Locally, from `games/valheim/`:
 
 ```bash
-./scripts/setup-environment.sh --target linux-1.0.15
-./scripts/build-release.sh 0.1.0 dist --target linux-1.0.15
+./scripts/setup-environment.sh --target linux-1.0.16
+./scripts/build-release.sh 0.1.0 dist --target linux-1.0.16
 ```
 
 `setup-environment.sh` writes game compile references only to
@@ -446,8 +446,8 @@ installation. BepInEx comes from the pinned Thunderstore
 failed download or a hash mismatch leaves the previous pack exactly as it was.
 
 The release produces one zip per role per target, named after the target
-(`takaro-valheim-plugin-linux-1.0.15-<version>.zip`,
-`takaro-valheim-companion-linux-1.0.15-<version>.zip`), each with a `.meta.json` sidecar
+(`takaro-valheim-plugin-linux-1.0.16-<version>.zip`,
+`takaro-valheim-companion-linux-1.0.16-<version>.zip`), each with a `.meta.json` sidecar
 recording the target, the fingerprint and the role. The old unsuffixed names
 `takaro-valheim-plugin.zip` and `takaro-valheim-companion.zip` are published alongside as
 byte-identical aliases of the default target. The
