@@ -29,7 +29,7 @@ build is rejected at join time with `You are not using the same version as this 
 <!-- takaro-maint:targets:begin -->
 | Target | Game version | Platform | Loader / API | Java | Support | Verified level |
 | --- | --- | --- | --- | --- | --- | --- |
-| `tshock-v6.2.1` | v6.2.1 | tshock | — | None | candidate | contract |
+| `tshock-v6.2.1` | v6.2.1 | tshock | — | None | maintained | contract |
 <!-- takaro-maint:targets:end -->
 
 ### 2. Download

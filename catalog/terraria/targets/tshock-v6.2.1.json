@@ -6,9 +6,9 @@
   "revision": "v6.2.1",
   "default": true,
   "support": {
-    "status": "candidate",
+    "status": "maintained",
     "since": "2026-09-27",
-    "evidence": ["games/terraria/README.md (What works, what doesn't)"],
+    "evidence": ["games/terraria/README.md (What works, what doesn't)", "connector-runner e2e 2026-09-27: real PC client through hosted Takaro MCP on this target - player-connected 064ddecb-fe0f-4307-a94d-6c9eb454f506, chat-message 05fd323a-1c04-4cae-b1d1-7a32cbf4c5db, command-executed f66c7ea2-67bf-48b4-bed1-a8e902637dd3, player-disconnected 367f40f1-3da2-4560-967d-b810b3bfdb47; testReachability, getPlayers, sendMessage and executeConsoleCommand passed (gettakaro/connectors#322)"],
     "notes": "TShock 6.2.1 for Terraria 1.4.5.8 (OTAPI 3.3.14). Runtime bytes are the ghcr.io/pryaxis/tshock image by digest; the plugin compiles against that image's TShockAPI.dll, OTAPI.dll and TerrariaServer.dll (build.deps, self-recorded from two extractions) and verify re-hashes them inside the booted container. inputs.server is the upstream release zip of the same tag, its sha256 confirmed against GitHub's own asset digest. Startup, plugin load, bridge identify, listItems, sendMessage, console, reconnect and shutdown are proven on this pin by takaro-maint verify. The rig-hosted proof is recorded separately in the development evidence. Runtime CI and gameplay evidence are tracked separately."
   },
   "inputs": {
