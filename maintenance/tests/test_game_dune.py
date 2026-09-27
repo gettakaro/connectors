@@ -25,10 +25,10 @@ from takaro_maint.exit_codes import ConflictError
 from takaro_maint.games import adapter_for
 
 GAME = "dune"
-TARGET = "linux-25418155"
+TARGET = "linux-25486303"
 APP = 4754530
 DEPOT = "4754532"
-MANIFEST = "8999916414518380523"
+MANIFEST = "2355832717159755924"
 VERSION = "0.1.0-dev.abc1234"
 SIDECAR_ARTIFACT = f"takaro-dune-sidecar-{TARGET}-{VERSION}.tar.gz"
 PLUGIN_ARTIFACT = f"takaro-dune-plugin-{TARGET}-{VERSION}.tar.gz"
@@ -73,8 +73,8 @@ def test_catalog_validate_accepts_the_dune_target(run: Any) -> None:
 def test_the_steam_pin_is_exact_and_anonymous() -> None:
     server = record()["inputs"]["server"]
 
-    assert (server["app"], server["branch"], server["buildid"]) == (APP, "public", 25418155)
-    assert server["depots"] == {DEPOT: {"manifest": MANIFEST, "size": 5205934871}}
+    assert (server["app"], server["branch"], server["buildid"]) == (APP, "public", 25486303)
+    assert server["depots"] == {DEPOT: {"manifest": MANIFEST, "size": 5206359961, "files": 75}}
     # Tool app 4754530 is free to download and steamcmd still refuses it; DepotDownloader
     # reads it with the anonymous login, which is what `credentials: null` claims.
     assert server["credentials"] is None
@@ -112,7 +112,7 @@ def test_targets_resolve_env_for_dune(run: Any) -> None:
     env = resolved["env"]
 
     assert env["DUNE_TARGET"] == TARGET
-    assert env["DUNE_REVISION"] == "25418155"
+    assert env["DUNE_REVISION"] == "25486303"
     assert env["DUNE_STEAM_APP"] == str(APP)
     assert env["DUNE_STEAM_DEPOTS"] == f"{DEPOT}:{MANIFEST}"
     assert env["DUNE_ARTIFACT_SIDECAR"] == f"takaro-dune-sidecar-{TARGET}-{{version}}.tar.gz"
