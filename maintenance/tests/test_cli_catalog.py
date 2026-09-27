@@ -303,7 +303,7 @@ def test_the_wired_fixture_serves_exactly_the_targets_it_says(wired: Any) -> Non
         "neoforge-1.21.11": "no repinner for platform 'neoforge'",
         "paper-1.21.11": "no repinner for platform 'paper'",
         "proton-1024233": "no repinner for platform 'proton'",
-        "tshock-v6.1.0": "no repinner for platform 'tshock'",
+        "tshock-v6.2.1": "no repinner for platform 'tshock'",
     }
     remaining = sorted(
         json.loads(path.read_text(encoding="utf-8"))["id"] for path in (wired.root / "catalog").glob("*/targets/*.json")

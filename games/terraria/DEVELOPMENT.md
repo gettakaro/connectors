@@ -26,7 +26,7 @@ Takaro  <--websocket--  bridge/  --REST-->  TShock  --hooks-->  plugin
 ## The catalog target
 
 Nothing here names a TShock build, an image digest, a reference hash or an artifact name. One
-record does — `catalog/terraria/targets/tshock-v6.1.0.json` — and every script, the dev rig and CI
+record does — `catalog/terraria/targets/tshock-v6.2.1.json` — and every script, the dev rig and CI
 read it through `takaro-maint targets resolve`, so they all resolve the same bytes.
 
 ```bash
@@ -59,7 +59,7 @@ Moving to a new TShock build is a new target file, never an edit to this one:
 Extract the reference assemblies for the target once:
 
 ```bash
-games/terraria/scripts/setup-environment.sh [--target tshock-v6.1.0]
+games/terraria/scripts/setup-environment.sh [--target tshock-v6.2.1]
 ```
 
 They come out of the pinned image **by digest** (`docker create`, `docker cp`) into
@@ -70,7 +70,7 @@ and a digest the registry will not serve exits 4.
 Build the plugin:
 
 ```bash
-games/terraria/scripts/build-mod.sh [--target tshock-v6.1.0]
+games/terraria/scripts/build-mod.sh [--target tshock-v6.2.1]
 ```
 
 The compile runs inside the pinned .NET SDK image — never the host's `dotnet` — with
@@ -100,8 +100,8 @@ checked-out commit, so the zip entries carry no clock). A release build checks o
 archives rebuild byte for byte from that tag. A pull-request preview artifact is built from the
 merge commit GitHub synthesises, so its zip entries carry *that* commit's time: its DLL matches a
 local rebuild, its zip envelope does not. Pass `SOURCE_DATE_EPOCH` yourself to pin it. It writes
-`dist/takaro-terraria-plugin-tshock-v6.1.0-<version>.zip`,
-`dist/takaro-terraria-bridge-tshock-v6.1.0-<version>.zip` and a `.meta.json` beside each, which is
+`dist/takaro-terraria-plugin-tshock-v6.2.1-<version>.zip`,
+`dist/takaro-terraria-bridge-tshock-v6.2.1-<version>.zip` and a `.meta.json` beside each, which is
 how a zip carries its target identity (`takaro-maint artifact validate` reads it).
 
 ### Runtime commands

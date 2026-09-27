@@ -39,16 +39,16 @@ from takaro_maint.providers import provider_for
 from takaro_maint.publish.manifest import artifact_row, write_manifest, write_meta
 
 GAME = "terraria"
-TARGET = "tshock-v6.1.0"
+TARGET = "tshock-v6.2.1"
 VERSION = "0.2.2-dev.abc1234"
 PLUGIN_ZIP = f"takaro-terraria-plugin-{TARGET}-{VERSION}.zip"
 BRIDGE_ZIP = f"takaro-terraria-bridge-{TARGET}-{VERSION}.zip"
 BUILD_SCRIPT = "games/terraria/scripts/build-release.sh"
 
-IMAGE_REF = "ghcr.io/pryaxis/tshock:6.1.0@sha256:911459f0ce02014a64c197647a16e9ee57e4d16695de8cfda1f1b552af56ab43"
-TSHOCKAPI_SHA = "c94419a2c1039aee1797f8826e2733d51e0684d23940f4648352f8be3e386576"
+IMAGE_REF = "ghcr.io/pryaxis/tshock:6.2.1@sha256:70e59a8e6b4c79b5fad469d320962c1fc98625ed3a955510a2f2641dbff2f7e7"
+TSHOCKAPI_SHA = "d58260463d29f61ecc4590bff129a5ca1761b33e0ce6ede55c431aaa1b663705"
 ASSET_URL = (
-    "https://github.com/Pryaxis/TShock/releases/download/v6.1.0/TShock-6.1.0-for-Terraria-1.4.5.6-linux-x64-Release.zip"
+    "https://github.com/Pryaxis/TShock/releases/download/v6.2.1/TShock-6.2.1-for-Terraria-1.4.5.8-linux-x64-Release.zip"
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -261,7 +261,7 @@ def test_targets_resolve_env_for_terraria(run: Any) -> None:
     assert code == 0, payload
     env = payload["env"]
     assert env["TERRARIA_IMAGE"] == IMAGE_REF
-    assert env["TERRARIA_TSHOCK_TAG"] == "6.1.0"
+    assert env["TERRARIA_TSHOCK_TAG"] == "6.2.1"
     assert env["TERRARIA_BRIDGE_IMAGE"].startswith("docker.io/library/node:22.23.2-bookworm-slim@sha256:")
     assert env["TERRARIA_PLUGIN_ARTIFACT"] == f"takaro-terraria-plugin-{TARGET}-{{version}}.zip"
     assert env["TERRARIA_BRIDGE_ARTIFACT"] == f"takaro-terraria-bridge-{TARGET}-{{version}}.zip"
@@ -293,7 +293,7 @@ def test_install_places_the_pinned_distribution_and_refuses_altered_or_missing_b
 
     assert code == 0, f"{err}\n{payload}"
     ledger = json.loads((dest / ".takaro" / "installed-target.json").read_text())
-    assert ledger["inputs"][0]["path"] == "inputs/TShock-6.1.0-for-Terraria-1.4.5.6-linux-x64-Release.zip"
+    assert ledger["inputs"][0]["path"] == "inputs/TShock-6.2.1-for-Terraria-1.4.5.8-linux-x64-Release.zip"
     assert ledger["inputs"][0]["sha256"] == hashlib.sha256(pinned.payload).hexdigest()
     assert (dest / ledger["inputs"][0]["path"]).read_bytes() == pinned.payload
 
@@ -360,7 +360,7 @@ def write_build_stub(
         "            archive.writestr(f'{folder}/{path}', body)\n"
         "    (out / (name + '.meta.json')).write_text(json.dumps({\n"
         "        'target': %r, 'fingerprint': os.environ['FINGERPRINT'], 'connectorVersion': version,\n"
-        "        'game': 'terraria', 'platform': 'tshock', 'revision': 'v6.1.0', 'role': role}))\n"
+        "        'game': 'terraria', 'platform': 'tshock', 'revision': 'v6.2.1', 'role': role}))\n"
         "PY\n" % TARGET,
         encoding="utf-8",
     )
@@ -1341,13 +1341,13 @@ def test_the_game_watch_observes_tshock_releases_and_not_prereleases() -> None:
         result = provider_for("github-release").observe(source)
 
     revs = [observation.rev for observation in result.observations]
-    assert revs[0] == "v6.1.0"
+    assert revs[0] == "v6.2.1"
     assert all(not rev.endswith(("-pre1", "-pre2", "-pre3")) for rev in revs), revs
     newest = result.observations[0]
     assert newest.kind == "game"
     assert newest.component == "terraria"
     # The Terraria version this TShock is for lives in the release name and the asset name.
-    assert "1.4.5.6" in str(newest.facts.get("releaseName") or newest.facts.get("name") or "")
+    assert "1.4.5.8" in str(newest.facts.get("releaseName") or newest.facts.get("name") or "")
 
 
 # -- the dev-servers rig -------------------------------------------------------------------
