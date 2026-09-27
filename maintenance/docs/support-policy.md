@@ -39,7 +39,7 @@ answer, and the record is the authority.
 | Minecraft | `neoforge-1.21.11` | neoforge | 1.21.11 | maintained | protocol |
 | Minecraft | `paper-1.21.11` | paper | 1.21.11 | maintained | protocol |
 | Rust | `carbon-25353106` | carbon | 25353106 | candidate | build |
-| Terraria | `tshock-v6.1.0` | tshock | v6.1.0 | candidate | contract |
+| Terraria | `tshock-v6.2.1` | tshock | v6.2.1 | candidate | contract |
 | Valheim | `linux-1.0.15` | linux | 1.0.15 | candidate | contract |
 | Project Zomboid | `linux-42.20.4` | linux | 42.20.4 | candidate | contract |
 

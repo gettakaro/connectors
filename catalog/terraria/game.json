@@ -65,8 +65,8 @@
     }
   },
   "legacyAssetAliases": {
-    "takaro-terraria-plugin.zip": "tshock-v6.1.0/plugin",
-    "takaro-terraria-bridge.zip": "tshock-v6.1.0/bridge"
+    "takaro-terraria-plugin.zip": "tshock-v6.2.1/plugin",
+    "takaro-terraria-bridge.zip": "tshock-v6.2.1/bridge"
   },
   "devServers": {"composeFile": "terraria.yml"}
 }

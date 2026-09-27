@@ -20,8 +20,8 @@ You need:
 - A **Takaro account** with a game server created of type **Generic**, and its **registration
   token** (Takaro shows it when you create the game server).
 
-The plugin is compiled against **TShock 6.1.0 for Terraria 1.4.5.6**, using the assemblies
-inside `ghcr.io/pryaxis/tshock@sha256:911459f0ce02014a64c197647a16e9ee57e4d16695de8cfda1f1b552af56ab43`
+The plugin is compiled against **TShock 6.2.1 for Terraria 1.4.5.8**, using the assemblies
+inside `ghcr.io/pryaxis/tshock@sha256:70e59a8e6b4c79b5fad469d320962c1fc98625ed3a955510a2f2641dbff2f7e7`
 — the image by digest, never a floating `stable` tag. TShock must match the Terraria server
 protocol version, and Terraria clients must match the server — a client newer than the TShock
 build is rejected at join time with `You are not using the same version as this server.`
@@ -29,7 +29,7 @@ build is rejected at join time with `You are not using the same version as this 
 <!-- takaro-maint:targets:begin -->
 | Target | Game version | Platform | Loader / API | Java | Support | Verified level |
 | --- | --- | --- | --- | --- | --- | --- |
-| `tshock-v6.1.0` | v6.1.0 | tshock | — | None | candidate | contract |
+| `tshock-v6.2.1` | v6.2.1 | tshock | — | None | candidate | contract |
 <!-- takaro-maint:targets:end -->
 
 ### 2. Download
@@ -40,11 +40,11 @@ From the latest `terraria-vX.Y.Z` release on the releases page:
 
 Download both files. Their names carry the catalog target they were built for:
 
-- **`takaro-terraria-plugin-tshock-v6.1.0-<version>.zip`** — the TShock plugin
-- **`takaro-terraria-bridge-tshock-v6.1.0-<version>.zip`** — the bridge service
+- **`takaro-terraria-plugin-tshock-v6.2.1-<version>.zip`** — the TShock plugin
+- **`takaro-terraria-bridge-tshock-v6.2.1-<version>.zip`** — the bridge service
 
 Direct link pattern:
-`https://github.com/gettakaro/connectors/releases/download/terraria-v<version>/takaro-terraria-plugin-tshock-v6.1.0-<version>.zip`
+`https://github.com/gettakaro/connectors/releases/download/terraria-v<version>/takaro-terraria-plugin-tshock-v6.2.1-<version>.zip`
 
 The short names **`takaro-terraria-plugin.zip`** and **`takaro-terraria-bridge.zip`** are on every
 release too, byte-identical to the target-named files. They are kept for two releases so existing
@@ -163,6 +163,10 @@ On 2026-09-21 the connector was run against a real TShock 6.1.0 server (the pinn
 built plugin and bridge): once against a stand-in Takaro, which drove every action below that is
 marked proven, and once against Takaro itself, which identified the server and answered. The rows
 still marked "not verified in a live test" need a connected player, which that run did not have.
+The current target, `tshock-v6.2.1`, was proven the same way by `takaro-maint verify`
+(`build`, `startup`, `handshake`, `items`, `entities`, `action`, `references`, `reconnect` and
+`shutdown` all pass, reaching level `startup` against the required `contract`); the rig-hosted,
+client-adjacent proof below is still the one recorded on 6.1.0 and has not been rerun.
 ✅ = proven, ⚠️ = works with a caveat or unproven, ❌ = does not work.
 
 | What | | Notes |
