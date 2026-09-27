@@ -145,9 +145,7 @@ def test_the_adapter_names_one_file_per_role_and_never_a_glob(run: Any) -> None:
         "plugin": PLUGIN_ARTIFACT,
         "sidecar": SIDECAR_ARTIFACT,
     }
-    assert all(
-        path.parent == REPO_ROOT / "games/dragonwilds/_data/dist" / resolved["fp16"] for path in paths.values()
-    )
+    assert all(path.parent == REPO_ROOT / "games/dragonwilds/_data/dist" / resolved["fp16"] for path in paths.values())
 
 
 def test_the_adapter_defines_a_real_install_step() -> None:
