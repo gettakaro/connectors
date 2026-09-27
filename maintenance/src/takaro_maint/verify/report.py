@@ -29,9 +29,26 @@ LEVEL_CHECKS: dict[str, tuple[str, ...]] = {
         "shutdown",
     ),
 }
+GAME_PROTOCOL_CHECKS: dict[str, tuple[str, ...]] = {
+    "ark": (
+        "native-health",
+        "sidecar-identify",
+        "ark-heartbeat",
+        "roster",
+        "catalog",
+        "entities",
+        "ark-empty-broadcast",
+        "ark-targeted-offline",
+        "ark-console",
+        "ark-saveworld",
+        "native-shutdown",
+        "owned-save-reload",
+        "stop",
+    ),
+}
 
 
-def level_for(checks: list[dict[str, Any]]) -> str:
+def level_for(checks: list[dict[str, Any]], game: str | None = None) -> str:
     """The highest class whose checks all passed; ``none`` when not even ``build`` did.
 
     A skipped or failed check never counts as a pass, so a partial run (``--checks players``)
@@ -40,7 +57,11 @@ def level_for(checks: list[dict[str, Any]]) -> str:
     status = {check["id"]: check["status"] for check in checks}
     reached = "none"
     for level in LEVELS:
-        required = LEVEL_CHECKS[level]
+        required = (
+            GAME_PROTOCOL_CHECKS.get(game, LEVEL_CHECKS[level])
+            if level == "protocol" and game is not None
+            else LEVEL_CHECKS[level]
+        )
         if required and all(status.get(check_id) == "pass" for check_id in required):
             reached = level
         else:
@@ -97,6 +118,16 @@ def build_report(
     takaro: str = "local",
 ) -> dict[str, Any]:
     repo, revision, dirty = repo_identity(repo_root, watched_paths(target.game))
+    coverage: dict[str, Any] = {"gameplay": "not covered - recorded client evidence pending (#174)"}
+    if target.game == "ark":
+        # The ARK runner can be repaired without rebuilding the already shipped native
+        # and sidecar bytes. Keep their build-manifest source distinct from this tool.
+        runner_revision, runner_dirty = source_revision(repo_root, ["maintenance"])
+        coverage["verificationRunner"] = {"revision": runner_revision, "dirty": runner_dirty}
+        revision = manifest.get("sourceRevision", revision)
+        dirty = manifest.get("dirty", dirty)
+        if runtime.get("readOnlyBase") is not None:
+            coverage["readOnlyBase"] = runtime["readOnlyBase"]
     inputs: dict[str, Any] = {}
     for name, spec in target.record["inputs"].items():
         if spec["kind"] == "mojang-version":
@@ -155,13 +186,13 @@ def build_report(
             "java": runtime.get("java"),
         },
         "takaro": takaro,
-        "level": level_for(checks),
+        "level": level_for(checks, target.game),
         "checks": checks,
         "outcome": outcome_for(checks),
         "startedAt": started_at,
         "finishedAt": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
         "logs": [{"name": log.name, "sha256": net.sha256_file(log)} for log in logs if log.is_file()],
-        "coverage": {"gameplay": "not covered - recorded client evidence pending (#174)"},
+        "coverage": coverage,
     }
     del artifacts_dir
     return report

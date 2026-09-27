@@ -12,6 +12,7 @@ rust|rust.yml|-|rust|8|12|connector|Rust + Carbon + TakaroConnector.cs|rust
 zomboid|zomboid.yml|-|zomboid|8|16|connector|Project Zomboid B42 + Takaro javaagent|zomboid
 palworld|palworld.yml|-|palworld palworld-bridge|12|6|bridge|Palworld + third-party Takaro bridge (REST only)|palworld
 conan-exiles|conan-exiles.yml|-|conan-exiles conan-bridge|12|6|sidecar|Conan Exiles + Takaro TypeScript sidecar|conan-exiles
+ark|ark.yml|-|ark ark-sidecar|24|30|sidecar|ARK: Survival Evolved 21241282 + native connector + Takaro sidecar|ark
 dune|dune.yml|-|postgres admin-rmq game-rmq text-router director gateway survival dune-takaro|24|60|sidecar|Dune: Awakening self-hosted battlegroup (Steam tool 4754530) + Takaro TypeScript sidecar (RabbitMQ + Postgres); optional LD_PRELOAD plugin|dune-dev
 games/terraria/mod/src games/terraria/version.txt
 games/minecraft/mod/core games/minecraft/mod/paper games/minecraft/mod/gradle games/minecraft/mod/build.gradle.kts games/minecraft/mod/settings.gradle.kts
@@ -27,4 +28,5 @@ games/7d2d/mod/src games/7d2d/mod/Takaro.csproj games/7d2d/mod/ModInfo.xml games
 games/zomboid/mod/core games/zomboid/mod/agent games/zomboid/mod/gradle games/zomboid/mod/build.gradle.kts games/zomboid/mod/settings.gradle.kts games/zomboid/version.txt
 
 games/conan-exiles/bridge/src games/conan-exiles/bridge/package.json games/conan-exiles/bridge/tsconfig.json
+games/ark/mod/src games/ark/sidecar/src games/ark/sidecar/package-lock.json games/ark/scripts catalog/ark
 games/dune/mod games/dune/sidecar/src games/dune/version.txt catalog/dune

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "ark",
+  "name": "ARK: Survival Evolved",
+  "connector": "ark",
+  "platforms": ["linux"],
+  "sources": {
+    "steam": {
+      "provider": "steam",
+      "baseUrl": "https://store.steampowered.com",
+      "watch": {
+        "kind": "game",
+        "component": "ark",
+        "app": 376030,
+        "os": "linux",
+        "depots": ["376031"],
+        "channels": {"public": {"branch": "public"}},
+        "knownBranches": []
+      }
+    }
+  },
+  "build": {"system": "script", "projectDir": "games/ark"},
+  "componentRoles": {
+    "server-plugin": {
+      "description": "Exact-hash native Linux LD_PRELOAD connector for ShooterGameServer",
+      "artifactPattern": "takaro-ark-native-{target}-{version}.zip"
+    },
+    "sidecar": {
+      "description": "Node.js Generic WebSocket sidecar for the native connector",
+      "artifactPattern": "takaro-ark-sidecar-{target}-{version}.zip"
+    }
+  },
+  "legacyAssetAliases": {},
+  "devServers": {"composeFile": "ark.yml"}
+}

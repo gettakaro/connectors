@@ -1,0 +1,52 @@
+---
+name: takaro-dev-ark
+
+services:
+  ark:
+    image: "${ARK_IMAGE:-target-not-resolved}"
+    container_name: takaro-dev-ark
+    user: "${DEV_UID:-1000}:${DEV_GID:-1000}"
+    working_dir: /ark/ShooterGame/Binaries/Linux
+    command:
+      - /ark/TakaroArk/TakaroArkNative/launch.sh
+      - /ark
+      - TheIsland?listen?SessionName=Takaro-ARK?Port=7787?QueryPort=27025
+      - -server
+      - -log
+      - -NoBattlEye
+    environment:
+      HOME: /ark/.takaro/home
+      ARK_NATIVE_TOKEN: "${ARK_NATIVE_TOKEN:?set ARK_NATIVE_TOKEN in dev-servers/.env}"
+    ports:
+      - "7787:7787/udp"
+      - "7788:7788/udp"
+      - "27025:27025/udp"
+    volumes:
+      - ../_data/ark/server:/ark
+    init: true
+    stop_grace_period: 120s
+    restart: unless-stopped
+
+  ark-sidecar:
+    image: "${ARK_TOOLCHAIN:-target-not-resolved}"
+    container_name: takaro-dev-ark-sidecar
+    user: "${DEV_UID:-1000}:${DEV_GID:-1000}"
+    network_mode: service:ark
+    depends_on:
+      - ark
+    working_dir: /sidecar
+    command: ["sh", "-c", "npm ci --omit=dev --ignore-scripts --no-audit --no-fund && exec node dist/index.js"]
+    environment:
+      HOME: /tmp
+      npm_config_cache: /tmp/npm-cache
+      NODE_ENV: production
+      ARK_NATIVE_URL: http://127.0.0.1:18891
+      ARK_NATIVE_TOKEN: "${ARK_NATIVE_TOKEN:?set ARK_NATIVE_TOKEN in dev-servers/.env}"
+      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN:?set TAKARO_REGISTRATION_TOKEN in dev-servers/.env}"
+      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_ARK:-takaro-dev-ark}"
+      TAKARO_WS_URL: "${TAKARO_WS_URL:-wss://connect.takaro.io/}"
+      TAKARO_CURSOR_FILE: /data/event-cursor.json
+    volumes:
+      - ../_data/ark/server/TakaroArk/TakaroArkSidecar:/sidecar
+      - ../_data/ark/sidecar-data:/data
+    restart: unless-stopped

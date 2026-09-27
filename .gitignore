@@ -54,3 +54,13 @@ dev-servers/compose/*-*.yml
 
 # Campaign runtime state (locks, lane reports) lives in the private workspace, never here
 .runtime/
+
+# ARK native connector local diagnostics and generated output
+games/ark/mod/*.so
+games/ark/mod/src/diagnostic.cpp
+games/ark/scripts/start-diagnostic.sh
+games/ark/scripts/start-native-gate.sh
+games/ark/scripts/start-sidecar-gate.sh
+games/ark/sidecar/dist/
+**/__pycache__/
+.runner-reports/

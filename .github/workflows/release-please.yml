@@ -19,6 +19,9 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     outputs:
+      ark_released: ${{ steps.rp.outputs['games/ark--release_created'] }}
+      ark_tag: ${{ steps.rp.outputs['games/ark--tag_name'] }}
+      ark_version: ${{ steps.rp.outputs['games/ark--version'] }}
       rust_released: ${{ steps.rp.outputs['games/rust--release_created'] }}
       rust_tag: ${{ steps.rp.outputs['games/rust--tag_name'] }}
       rust_version: ${{ steps.rp.outputs['games/rust--version'] }}
@@ -72,6 +75,18 @@ jobs:
   # When a connector's Release PR is merged, release-please creates its tag + GitHub
   # Release; these jobs build the artifacts and attach them to that release in the
   # same run (no cross-workflow tag trigger needed — sidesteps the GITHUB_TOKEN trap).
+  release-ark:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.ark_released == 'true' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/ark.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.release-please.outputs.ark_version }}
+      tag: ${{ needs.release-please.outputs.ark_tag }}
+
   release-rust:
     needs: release-please
     if: ${{ needs.release-please.outputs.rust_released == 'true' }}
@@ -213,6 +228,7 @@ jobs:
   notify-website:
     needs:
       - release-please
+      - release-ark
       - release-rust
       - release-minecraft
       - release-7d2d
@@ -225,6 +241,7 @@ jobs:
       - release-vein
     if: |
       always() && (
+        (needs.release-ark.result == 'success' && needs.release-please.outputs.ark_released == 'true') ||
         (needs.release-rust.result == 'success' && needs.release-please.outputs.rust_released == 'true') ||
         (needs.release-minecraft.result == 'success' && needs.release-please.outputs.minecraft_released == 'true') ||
         (needs.release-7d2d.result == 'success' && needs.release-please.outputs.sevend2d_released == 'true') ||
@@ -253,7 +270,8 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TAG: >-
-            ${{ needs.release-please.outputs.rust_tag
+            ${{ needs.release-please.outputs.ark_tag
+             || needs.release-please.outputs.rust_tag
              || needs.release-please.outputs.minecraft_tag
              || needs.release-please.outputs.sevend2d_tag
              || needs.release-please.outputs.zomboid_tag

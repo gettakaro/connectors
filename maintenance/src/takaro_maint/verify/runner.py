@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 import datetime as dt
 import importlib
+import json
 import os
 import re
 import secrets
@@ -113,6 +114,17 @@ def bridge_gateway() -> str:
     return "172.17.0.1"
 
 
+def _command_env_secrets(argv: list[str]) -> list[str]:
+    """Find secret-valued `docker run -e KEY=value` arguments for kept logs."""
+    environment: dict[str, str] = {}
+    for index, argument in enumerate(argv[:-1]):
+        if argument in ("-e", "--env"):
+            key, separator, value = argv[index + 1].partition("=")
+            if separator:
+                environment[key] = value
+    return redact.secret_values(environment)
+
+
 @dataclass
 class Container:
     """One game server container, its log file and its lifecycle."""
@@ -132,7 +144,7 @@ class Container:
             handle.write(redact.redact(" ".join(shlex.quote(part) for part in self.argv), self.secrets) + "\n")
         result = subprocess.run(self.argv, capture_output=True, text=True, check=False)
         if result.returncode != 0:
-            raise UpstreamUnavailable(f"docker run failed: {result.stderr.strip()}")
+            raise UpstreamUnavailable(f"docker run failed: {redact.redact(result.stderr.strip(), self.secrets)}")
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
         log_handle = self.log_file.open("wb")
         self._follower = subprocess.Popen(
@@ -214,6 +226,73 @@ def cleanup_orphans(run_id: str) -> list[str]:
     return names
 
 
+def capture_ark_diagnostics(containers: list[Container], data_dir: Path, out: Path) -> list[Path]:
+    """Keep crash evidence before Docker removal and owned-data cleanup."""
+    captured_at = dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z")
+    files: list[Path] = []
+    states: list[dict[str, Any]] = []
+    for container in containers:
+        state = subprocess.run(
+            [*docker_command(), "inspect", "-f", "{{json .State}}", container.name],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        entry: dict[str, Any] = {"name": container.name, "capturedAt": captured_at}
+        if state.returncode == 0:
+            try:
+                entry["state"] = json.loads(state.stdout)
+            except json.JSONDecodeError:
+                entry["inspectError"] = "Docker returned malformed State JSON"
+        else:
+            entry["inspectError"] = state.stderr.strip()[:500]
+        states.append(entry)
+        stamped = subprocess.run(
+            [*docker_command(), "logs", "--timestamps", "--tail", "10000", container.name],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=20,
+        )
+        log_path = out / f"{container.name}-timestamped.log"
+        log_path.write_text(redact.redact(stamped.stdout + stamped.stderr, container.secrets), encoding="utf-8")
+        files.append(log_path)
+
+    saved = data_dir / "ShooterGame" / "Saved"
+    saved_files: list[dict[str, Any]] = []
+    copied_bytes = 0
+    for folder in (saved / "Logs", saved / "Crashes"):
+        if folder.is_symlink() or not folder.is_dir():
+            continue
+        for source in sorted(folder.rglob("*")):
+            if len(saved_files) >= 64:
+                break
+            if source.is_symlink() or not source.is_file():
+                continue
+            relative = source.relative_to(saved)
+            size = source.stat().st_size
+            row: dict[str, Any] = {"file": str(relative), "size": size, "copied": False}
+            if size <= 16 * 1024 * 1024 and copied_bytes + size <= 32 * 1024 * 1024:
+                destination = out / "owned-saved-diagnostics" / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+                files.append(destination)
+                copied_bytes += size
+                row["copied"] = True
+            saved_files.append(row)
+    world = saved / "SavedArks" / "TheIsland.ark"
+    if world.is_file() and not world.is_symlink():
+        saved_files.append({"file": "SavedArks/TheIsland.ark", "size": world.stat().st_size, "copied": False})
+    evidence = out / "ark-cleanup-diagnostics.json"
+    evidence.write_text(
+        json.dumps({"capturedAt": captured_at, "containers": states, "ownedSavedFiles": saved_files}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    files.append(evidence)
+    return files
+
+
 @dataclass
 class RunOptions:
     artifacts: Path
@@ -225,6 +304,7 @@ class RunOptions:
     keep_on_failure: bool = False
     negative: bool = False
     takaro: str = "local"
+    ark_readonly_base: Path | None = None
 
 
 class TargetRun:
@@ -252,6 +332,8 @@ class TargetRun:
         self.containers: list[Container] = []
         self.extra_logs: list[Path] = []
         self.results: list[base_checks.CheckResult] = []
+        self.readonly_inputs: list[dict[str, Any]] | None = None
+        self.readonly_provenance: dict[str, Any] | None = None
         self._cleaned = False
 
     # -- setup ----------------------------------------------------------------
@@ -272,6 +354,12 @@ class TargetRun:
 
     def install_and_deploy(self) -> dict[str, Any]:
         manifest_path = self.options.artifacts / "build-manifest.json"
+        if self.options.ark_readonly_base is not None:
+            if self.hooks.prepare_readonly_base is None:
+                raise UsageError(f"game '{self.target.game}' has no read-only base verification mode")
+            manifest = read_manifest(manifest_path)
+            self.readonly_inputs, self.readonly_provenance = self.hooks.prepare_readonly_base(self, manifest)
+            return manifest
         self._run_command(
             "install",
             ["install", "--game", self.target.game, "--target", self.target.id, "--dest", str(self.data_dir)],
@@ -303,6 +391,11 @@ class TargetRun:
 
     def container_mounts(self) -> list[str]:
         """The ``-v`` arguments this game's server needs; one data dir bound at /data by default."""
+        if self.options.ark_readonly_base is not None:
+            return [
+                f"{self.options.ark_readonly_base}:/ark-base:ro",
+                f"{self.data_dir}:/ark:rw",
+            ]
         return [str(mount) for mount in self.adapter.container_mounts(self.resolved, self.data_dir)]
 
     def ready_line(self) -> re.Pattern[str]:
@@ -347,6 +440,8 @@ class TargetRun:
         # A game that needs more than the run's own defaults appends them here -- docker
         # takes the last value of a repeated option, so these win over what is above.
         argv += [str(option) for option in self.adapter.container_options(self.resolved, self.data_dir)]
+        if self.options.ark_readonly_base is not None:
+            argv += ["--memory", "12g"]
         for key, value in sorted(environment.items()):
             argv += ["-e", f"{key}={value}"]
         for mount in self.container_mounts():
@@ -379,7 +474,7 @@ class TargetRun:
             argv=argv,
             log_file=self.out / log_name,
             docker_log=self.docker_log,
-            secrets=[self.registration_token, *(extra_env or {}).values()],
+            secrets=[self.registration_token, *(extra_env or {}).values(), *_command_env_secrets(argv)],
         )
         # Registered before it is started, not after: `docker run` has created the container
         # by the time `start()` returns, and an interrupt arriving during `start()` or the
@@ -507,9 +602,12 @@ class TargetRun:
     async def _run(self, started_at: str) -> dict[str, Any]:
         self._select_default_checks()
         manifest = self.install_and_deploy()
-        ledger = read_ledger(self.data_dir)
-        assert ledger is not None
-        ledger_inputs = ledger.data["inputs"]
+        if self.readonly_inputs is not None:
+            ledger_inputs = self.readonly_inputs
+        else:
+            ledger = read_ledger(self.data_dir)
+            assert ledger is not None
+            ledger_inputs = ledger.data["inputs"]
 
         if self.options.takaro == "hosted":
             if self.hooks.run_hosted is None:
@@ -527,7 +625,9 @@ class TargetRun:
         ws_url = f"ws://host.docker.internal:{port}/"
         output.info(f"fake Takaro listening on {fake.host}:{port} (no host ports published)")
 
-        runtime: dict[str, Any] = {}
+        runtime: dict[str, Any] = (
+            {"readOnlyBase": self.readonly_provenance} if self.readonly_provenance is not None else {}
+        )
         try:
             container = self.boot(ws_url)
             alive = container.alive
@@ -540,7 +640,7 @@ class TargetRun:
                         self.server_log,
                         self.startup_timeout,
                         alive,
-                        self.data_dir,
+                        self.options.ark_readonly_base or self.data_dir,
                         ledger_inputs,
                         self.ready_line(),
                     )
@@ -559,6 +659,8 @@ class TargetRun:
                     "loaderVersion": identity.get("loaderVersion"),
                     "java": self.target.record["runtime"]["java"],
                 }
+                if self.readonly_provenance is not None:
+                    runtime["readOnlyBase"] = self.readonly_provenance
 
                 if self.wanted("connector-load"):
                     self.record(
@@ -653,6 +755,13 @@ class TargetRun:
             return
         self._cleaned = True
         failed = any(result.status == "fail" for result in self.results)
+        if self.target.game == "ark":
+            try:
+                self.extra_logs.extend(capture_ark_diagnostics(self.containers, self.data_dir, self.out))
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                (self.out / "ark-cleanup-diagnostics-error.txt").write_text(
+                    f"{type(exc).__name__}: {exc}\n", encoding="utf-8"
+                )
         for container in self.containers:
             container.remove()
         if failed and self.options.keep_on_failure:

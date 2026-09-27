@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-21241282",
+  "game": "ark",
+  "platform": "linux",
+  "revision": "21241282",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-09-24",
+    "evidence": [
+      "games/ark/mod/tests/gate_http_test.cpp (authenticated native transport contract)",
+      "games/ark/sidecar/src/__tests__/sidecar.test.ts (Generic protocol and replay contract)",
+      ".runner-reports/pending-issue-ark-native-21241282/acceptance-ledger.json (first live PC and Takaro bidirectional chat gate)"
+    ],
+    "notes": "Candidate pinned to the one SHA-256-tested native Linux ShooterGameServer. Bidirectional chat and a real finite player location have passed the first live gate; inventory, catalog, moderation and broader compatibility remain under validation."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 376030,
+      "branch": "public",
+      "buildid": 21241282,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "1006": {"manifest": "4559160656493359681", "size": 111284048},
+        "376031": {"manifest": "6366771435093287465", "size": 22831022295}
+      },
+      "files": {
+        "ShooterGame/Binaries/Linux/ShooterGameServer": {
+          "sha256": "7e7ded49e0c658e74199801d79630bd33da407d3e468e039837bf61a9de7c520",
+          "size": 86269536
+        },
+        "linux64/steamclient.so": {
+          "sha256": "1a99f39637a505ce2dbfec697dafa118c2d1b8df7dea1412557e2d5ad0a2c7d4",
+          "size": 46728928
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844",
+      "env": {"HOME": "/ark/.takaro/home"}
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/ark/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844"
+    },
+    "references": ["inputs.server.files.ShooterGame/Binaries/Linux/ShooterGameServer"],
+    "deps": {
+      "ws": {
+        "coordinate": "npm:ws:8.21.3",
+        "sha256": "df3454ef205791ce50b5b9241762dcf9bfe1aa9f7f01d3057229be7dac0c2dc3",
+        "resolvedCoordinate": "https://registry.npmjs.org/ws/-/ws-8.21.3.tgz"
+      }
+    }
+  },
+  "components": [
+    {"role": "server-plugin", "artifact": "takaro-ark-native-linux-21241282-{version}.zip", "installDir": "TakaroArk"},
+    {"role": "sidecar", "artifact": "takaro-ark-sidecar-linux-21241282-{version}.zip", "installDir": "TakaroArk"}
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": ["startup", "native-health", "sidecar-identify", "roster", "location", "chat-in", "chat-out", "reconnect", "inventory", "catalog", "ark-console", "event", "stop", "negative-wrong-target"]
+  },
+  "preserve": ["ShooterGame/Saved/", "TakaroArk/", ".takaro/"],
+  "devServers": {"gameId": "ark"},
+  "notes": "Native code contains fixed addresses and refuses a different executable hash. Steam app 376030 public build 21241282 was observed with depot 376031 manifest 6366771435093287465 and Steamworks depot 1006 manifest 4559160656493359681."
+}

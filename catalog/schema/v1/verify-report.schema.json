@@ -128,7 +128,31 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["gameplay"],
-      "properties": {"gameplay": {"type": "string", "minLength": 1}}
+      "properties": {
+        "gameplay": {"type": "string", "minLength": 1},
+        "verificationRunner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["revision", "dirty"],
+          "properties": {
+            "revision": {"type": "string", "minLength": 1},
+            "dirty": {"type": "boolean"}
+          }
+        },
+        "readOnlyBase": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "readOnlyMount", "steamApp", "steamBuild", "depotManifests", "appManifestSha256"],
+          "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "readOnlyMount": {"const": true},
+            "steamApp": {"type": "string", "minLength": 1},
+            "steamBuild": {"type": "string", "minLength": 1},
+            "depotManifests": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "minLength": 1}},
+            "appManifestSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        }
+      }
     }
   }
 }

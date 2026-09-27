@@ -47,6 +47,10 @@ class GameHooks:
     #: Anything the server must find on disk before its container starts.
     before_boot: Callable[[Any, dict[str, str]], Any] | None = None
 
+    #: Optional game-specific preparation of a read-only, pre-existing server base.
+    #: Returns attested pinned inputs and provenance; it never writes to that base.
+    prepare_readonly_base: Callable[[Any, dict[str, Any]], tuple[list[dict[str, Any]], dict[str, Any]]] | None = None
+
     #: Anything that can only exist once the container does -- a sidecar on its network.
     after_boot: Callable[[Any, Any, dict[str, str]], Any] | None = None
 
