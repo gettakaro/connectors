@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "id": "linux-1.0.15",
+  "id": "linux-1.0.16",
   "game": "valheim",
   "platform": "linux",
-  "revision": "1.0.15",
+  "revision": "1.0.16",
   "default": true,
   "support": {
     "status": "candidate",
-    "since": "2026-09-21",
+    "since": "2026-09-27",
     "evidence": [
       "games/valheim/README.md (What works, what doesn't — last live run 2026-09-02 on Valheim 1.0.7, server plugin only)",
       "isolated takaro-maint verify on this exact pin (startup, identify, catalogue, console action, reconnect, stop)"
     ],
-    "notes": "Exact Steam pin of the public head at declaration time (buildid 25390671). The Windows depot 896662 of the same build is manifest 5870415687802853524; it is recorded here for compile-reference recovery only and is never installed. Companion (graphical client) behaviour is NOT covered by takaro-maint verify: a verification run boots a dedicated server, where the companion never loads. The companion-client proof is recorded separately in COMPANION.md and is not a takaro-maint verification check. The only companion evidence is the recorded client run in COMPANION.md and no target claims it. Runtime CI onboarding is a separate issue."
+    "notes": "Exact Steam pin of the public head at declaration time (buildid 25527701, Valheim 1.0.16, released 2026-09-25). Repins the previous 1.0.15/25390671 target after Valve moved the public branch (#301); depot 896661 manifest 1285123405092214913. Companion (graphical client) behaviour is NOT covered by takaro-maint verify: a verification run boots a dedicated server, where the companion never loads. The companion-client proof is recorded separately in COMPANION.md and is not a takaro-maint verification check. The only companion evidence is the recorded client run in COMPANION.md and no target claims it. Runtime CI onboarding is a separate issue."
   },
   "inputs": {
     "server": {
@@ -21,14 +21,14 @@
       "hashOrigin": "self-recorded",
       "app": 896660,
       "branch": "public",
-      "buildid": 25390671,
+      "buildid": 25527701,
       "os": "linux",
       "arch": "64",
       "depots": {
         "896661": {
-          "manifest": "6686760496212527200",
-          "size": 2078548675,
-          "files": 1012
+          "manifest": "1285123405092214913",
+          "size": 2075365216,
+          "files": 1008
         }
       },
       "files": {
@@ -37,8 +37,8 @@
           "size": 15160
         },
         "valheim_server_Data/Managed/Splatform.dll": {
-          "sha256": "79386a4ff21e5b6d61cfb4360bf62489c90b43e76f6d14ecdad10122e5bae193",
-          "size": 54272
+          "sha256": "73481fbed72b9ba19937204526d740bc1778e9e1aeeed2d99f8f36ceef80b725",
+          "size": 53248
         },
         "valheim_server_Data/Managed/UnityEngine.CoreModule.dll": {
           "sha256": "4cb2a683351f6644de26086d01e7b5879fcf228ee0dbd0d7cc0536570bd15681",
@@ -49,16 +49,16 @@
           "size": 158720
         },
         "valheim_server_Data/Managed/assembly_utils.dll": {
-          "sha256": "4e7f429c85fc6b11071eddbd2c0fac5ba695d4a7a82c247d7053bf3adff2cd5a",
+          "sha256": "be7015e775918ffbac66c5f045b9a84bf78779616744f7188a4e03e0040a29d0",
           "size": 239104
         },
         "valheim_server_Data/Managed/assembly_valheim.dll": {
-          "sha256": "6d79c900e3035141e7f02f716d26d8c42f28f82a25b2f92b42cd225603b07312",
-          "size": 2561536
+          "sha256": "50035055f9b158a025cacd25e038b603943f7c2a465da3021707b5f1e44e39fd",
+          "size": 2564096
         },
         "valheim_server_Data/globalgamemanagers": {
-          "sha256": "e98462ed5254b682dd85399d2fd32ab86a5e77f5dd9dd0793c1ed76b81b77c54",
-          "size": 208260
+          "sha256": "154d7bcbc30304d3113e5687956cfa24ecdc79c991eb91dc6b0cb31493a164a7",
+          "size": 205556
         }
       },
       "credentials": null
@@ -69,9 +69,9 @@
       "hashOrigin": "self-recorded",
       "namespace": "denikson",
       "name": "BepInExPack_Valheim",
-      "version": "5.4.2350",
-      "sha256": "37a91c000b4e88f2ed7a4bd7d812239852d2e36cbf0ff0a9f5faacfba46b105f",
-      "size": 706129,
+      "version": "5.4.2351",
+      "sha256": "bce631497976a93977ceb08e166712e6c31d15244956f89f17df092a9b62e29f",
+      "size": 702924,
       "installPath": "BepInExPack_Valheim"
     }
   },
@@ -121,12 +121,12 @@
   "components": [
     {
       "role": "client-companion",
-      "artifact": "takaro-valheim-companion-linux-1.0.15-{version}.zip",
+      "artifact": "takaro-valheim-companion-linux-1.0.16-{version}.zip",
       "installDir": "takaro-companion"
     },
     {
       "role": "server-plugin",
-      "artifact": "takaro-valheim-plugin-linux-1.0.15-{version}.zip",
+      "artifact": "takaro-valheim-plugin-linux-1.0.16-{version}.zip",
       "installDir": "BepInEx/plugins"
     }
   ],

@@ -3,7 +3,7 @@
   "tagline": "BepInEx plugin that connects a Valheim dedicated server to Takaro.",
   "assetMode": "all",
   "requirements": [
-    "BepInExPack Valheim 5.4.2350 (Thunderstore denikson/BepInExPack_Valheim)",
+    "BepInExPack Valheim 5.4.2351 (Thunderstore denikson/BepInExPack_Valheim)",
     "Takaro registration token"
   ],
   "assets": [

@@ -1,6 +1,6 @@
 # `GET /api/experimental/package/denikson/BepInExPack_Valheim/` (BepInExPack, the Valheim mod loader)
 
-Recorded 2026-09-21, unauthenticated:
+Recorded 2026-09-27, unauthenticated:
 
 ```
 curl -fsSL https://thunderstore.io/api/experimental/package/denikson/BepInExPack_Valheim/ \
@@ -19,5 +19,5 @@ version published and superseded between two scans is simply never seen. The end
 publishes no digest for the zip, so a pinned `sha256` is always self-recorded by whoever
 pinned it.
 
-What Thunderstore served that day: `latest` = `5.4.2350`, created 2026-09-09, downloadable
-from `…/package/download/denikson/BepInExPack_Valheim/5.4.2350/`.
+What Thunderstore served that day: `latest` = `5.4.2351`, created 2026-09-24, downloadable
+from `…/package/download/denikson/BepInExPack_Valheim/5.4.2351/`.

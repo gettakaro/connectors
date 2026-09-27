@@ -45,8 +45,8 @@
     }
   },
   "legacyAssetAliases": {
-    "takaro-valheim-plugin.zip": "linux-1.0.15/server-plugin",
-    "takaro-valheim-companion.zip": "linux-1.0.15/client-companion"
+    "takaro-valheim-plugin.zip": "linux-1.0.16/server-plugin",
+    "takaro-valheim-companion.zip": "linux-1.0.16/client-companion"
   },
   "devServers": {"composeFile": "valheim.yml"}
 }

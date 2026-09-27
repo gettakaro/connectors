@@ -31,13 +31,13 @@ The exact server builds this connector is maintained for:
 <!-- takaro-maint:targets:begin -->
 | Target | Game version | Platform | Loader / API | Java | Support | Verified level |
 | --- | --- | --- | --- | --- | --- | --- |
-| `linux-1.0.15` | 1.0.15 | linux | — | None | candidate | contract |
+| `linux-1.0.16` | 1.0.16 | linux | — | None | candidate | contract |
 <!-- takaro-maint:targets:end -->
 
 Each target names the exact Steam depot manifest of the dedicated server **and** the exact
 BepInExPack Valheim version it was built and checked against; the target record under
 [`catalog/valheim/targets/`](../../catalog/valheim/targets/) is the source of truth for
-both. This release pins **BepInExPack Valheim 5.4.2350**. A different server build or a
+both. This release pins **BepInExPack Valheim 5.4.2351**. A different server build or a
 different pack may well work — it simply has not been checked, and nothing here claims it
 has.
 
@@ -51,7 +51,7 @@ releases page:
 Each release carries one plugin zip per maintained target, named after it:
 
 `takaro-valheim-plugin-<target>-<version>.zip` — for example
-`takaro-valheim-plugin-linux-1.0.15-3.0.3.zip`, next to a `SHA256SUMS` file you can check
+`takaro-valheim-plugin-linux-1.0.16-3.0.3.zip`, next to a `SHA256SUMS` file you can check
 it against.
 
 The release also still carries **`takaro-valheim-plugin.zip`**, a byte-identical copy of
