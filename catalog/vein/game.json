@@ -23,7 +23,7 @@
             "branch": "public"
           }
         },
-        "knownBranches": ["regex:^[0-9]+(\\.[0-9]+)*(h[0-9]+)?$"]
+        "knownBranches": ["experimental", "regex:^[0-9]+(\\.[0-9]+)*(h[0-9]+)?$"]
       }
     }
   },

@@ -994,7 +994,17 @@ def test_vein_version_branches_are_known_without_suppressing_real_branch_reviews
 
     record = json.loads((REPO_ROOT / "catalog/vein/game.json").read_text())
     watch = _Watch({"id": "steam", "game": "vein", **record["sources"]["steam"]})
-    for branch in ("0.022h10", "0.022h18", "0.023", "0.024", "0.024h8"):
+    for branch in ("0.022h10", "0.022h18", "0.023", "0.024", "0.024h8", "experimental"):
         assert watch.is_known(branch), branch
-    for branch in ("public", "experimental", "0.024h8-test"):
+    for branch in ("public", "0.024h8-test"):
         assert not watch.is_known(branch), branch
+
+
+def test_zomboid_unstable_branch_is_known() -> None:
+    """Zomboid's unstable beta is not a support channel; only public builds need targets."""
+    from takaro_maint.providers.steam import _Watch
+
+    record = json.loads((REPO_ROOT / "catalog/zomboid/game.json").read_text())
+    watch = _Watch({"id": "steam", "game": "zomboid", **record["sources"]["steam"]})
+    assert watch.is_known("unstable")
+    assert not watch.is_known("public")
