@@ -66,9 +66,10 @@ does not know about, and that includes this one. With `docker-compose.example.ym
 directory next to the Steam tree, e.g. `<server>/takaro/libtakaro-dragonwilds.so`.
 
 **Sidecar.** `takaro-dragonwilds-sidecar.tar.gz` contains one folder,
-`TakaroDragonwildsSidecar/`, with `dist/`, `package.json`, `package-lock.json`, `Dockerfile`,
-`.dockerignore` and `.env.example`. `docker-compose.example.yml` builds the sidecar image from
-`./sidecar`, so unpack it next to the compose file and **rename the folder to `sidecar`**:
+`TakaroDragonwildsSidecar/`, with `dist/`, `package.json`, `package-lock.json`, `Dockerfile` and
+`env.example` (a dotfile is not a legal entry in a catalog release archive, so copy it to `.env`
+yourself — see step 5). `docker-compose.example.yml` builds the sidecar image from `./sidecar`, so
+unpack it next to the compose file and **rename the folder to `sidecar`**:
 
 ```
 <your compose dir>/
@@ -119,10 +120,12 @@ To confirm the plugin is really loaded: `grep libtakaro /proc/<server pid>/maps`
 
 ### 5. Configure
 
-Copy the example environment file and fill it in:
+Copy the example environment file and fill it in (`env.example` inside the unpacked `sidecar/`
+folder; renamed from `.env.example` because a dotfile cannot ship inside a catalog release
+archive):
 
 ```bash
-cp .env.example .env
+cp sidecar/env.example .env
 ```
 
 | Key | Where | What to put there |

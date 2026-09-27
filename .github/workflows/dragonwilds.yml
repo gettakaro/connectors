@@ -3,9 +3,21 @@ name: Dragonwilds Connector
 on:
   push:
     branches: [main]
-    paths: ['games/dragonwilds/**', 'scripts/**', '.github/workflows/dragonwilds.yml']
+    paths:
+      - 'games/dragonwilds/**'
+      - 'catalog/dragonwilds/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/dragonwilds.yml'
+      - '.github/workflows/connector-release.yml'
   pull_request:
-    paths: ['games/dragonwilds/**', 'scripts/**', '.github/workflows/dragonwilds.yml']
+    paths:
+      - 'games/dragonwilds/**'
+      - 'catalog/dragonwilds/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/dragonwilds.yml'
+      - '.github/workflows/connector-release.yml'
   workflow_call:
     inputs:
       version:
@@ -34,10 +46,18 @@ concurrency:
 
 jobs:
   test:
-    if: ${{ !inputs.tag }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The same commit the release job builds: a recovery run for an older tag is
+          # gated on that tag's sources and catalog, never on whatever main has become.
+          # The job is not gated on `!inputs.tag` -- `release` needs it, and a skipped
+          # dependency would skip the release with it.
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
@@ -47,6 +67,8 @@ jobs:
       - name: Install sidecar dependencies
         working-directory: games/dragonwilds/sidecar
         run: npm ci
+      # The contract check lives here: the real sidecar's own unit tests, so a hosted
+      # runner proves the protocol without a 5.4 GB game and a Steam-owned world.
       - name: Typecheck sidecar
         working-directory: games/dragonwilds/sidecar
         run: npm run typecheck
@@ -60,43 +82,21 @@ jobs:
             debian:bookworm bash -c 'apt-get update -qq && apt-get install -y -qq build-essential >/dev/null && ./build.sh --native --tests'
           sudo chown -R "$(id -u):$(id -g)" games/dragonwilds/mod
 
-  package:
+  params:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+    outputs:
+      version: ${{ steps.params.outputs.version }}
+      tag: ${{ steps.params.outputs.tag }}
+      publish: ${{ steps.params.outputs.publish }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           # A release or recovery run builds the tag, never whatever main has become.
           ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
           fetch-tags: true
-
-      # The tag, the version, the manifest and the checked-out commit must all agree
-      # before anything is built.
-      - name: Release guard
-        env:
-          IN_VERSION: ${{ inputs.version }}
-          IN_TAG: ${{ inputs.tag }}
-        run: scripts/release-guard.sh dragonwilds "$IN_VERSION" "$IN_TAG"
-
-      - name: Generate token
-        id: app-token
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
-        with:
-          app-id: ${{ secrets.TAKARO_CI_APP_ID }}
-          private-key: ${{ secrets.TAKARO_CI_APP_PRIV_KEY }}
-
-      - name: Set up Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
-        with:
-          node-version: 22.x
-          cache: npm
-          cache-dependency-path: games/dragonwilds/sidecar/package-lock.json
-
-      - name: Make scripts executable
-        run: chmod +x games/dragonwilds/scripts/*.sh games/dragonwilds/mod/*.sh games/dragonwilds/mod/tests/*.sh scripts/*.sh
 
       - name: Resolve release params
         id: params
@@ -108,46 +108,21 @@ jobs:
           DEV_SHA: ${{ github.event.pull_request.head.sha }}
         run: scripts/release-params.sh dragonwilds >> "$GITHUB_OUTPUT"
 
-      - name: Build release artifacts
-        run: games/dragonwilds/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
-
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
-        with:
-          version: "0.12.15"
-
-      - run: uv python install
-      - run: uv sync --frozen --project maintenance
-
-      # One publisher for every connector: the set is assembled, published and read
-      # back from GitHub. `--mode legacy` means the files are named here rather than
-      # derived from a catalog, so this connector's asset names are unchanged.
-      # Fork PRs get a read-only token, so they build for validation only.
-      - name: Publish
-        if: ${{ steps.params.outputs.publish != 'none' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        shell: bash
-        run: |
-          scripts/publish-release.sh publish \
-            --connector dragonwilds \
-            --channel "${{ steps.params.outputs.publish }}" \
-            --version "${{ steps.params.outputs.version }}" \
-            --tag "${{ steps.params.outputs.tag }}" \
-            --pr-number "${{ github.event.pull_request.number }}" \
-            --mode legacy \
-            --dist "$RUNNER_TEMP/dist" \
-            --out "$RUNNER_TEMP/assembled" \
-            -- \
-            "$RUNNER_TEMP/dist/takaro-dragonwilds-plugin.tar.gz" \
-            "$RUNNER_TEMP/dist/takaro-dragonwilds-sidecar.tar.gz"
-
-      - name: Comment PR build
-        if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository }}
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          scripts/comment-pr-build.sh dragonwilds \
-            "${{ github.event.pull_request.number }}" \
-            "${{ steps.params.outputs.tag }}" \
-            "${{ steps.params.outputs.version }}" \
-            "$RUNNER_TEMP/assembled"
+  release:
+    needs: [test, params]
+    uses: ./.github/workflows/connector-release.yml
+    secrets: inherit
+    with:
+      connector: dragonwilds
+      version: ${{ needs.params.outputs.version }}
+      tag: ${{ needs.params.outputs.tag }}
+      publish: ${{ needs.params.outputs.publish }}
+      pr_number: ${{ github.event.pull_request.number }}
+      # The Dragonwilds dedicated server is a 5.4 GB Steam depot, and the plugin loads
+      # with LD_PRELOAD onto a game binary this repository has no runtime image for yet
+      # (the operator supplies their own) -- a hosted runner can do neither, so the
+      # release claims contract verification (the sidecar's own tests and the plugin's
+      # unit tests, both run above on every build) and runtime onboarding is tracked
+      # separately, the same posture Dune: Awakening and Conan Exiles both took at this
+      # stage.
+      runtime: false

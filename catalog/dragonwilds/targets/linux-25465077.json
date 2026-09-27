@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-25465077",
+  "game": "dragonwilds",
+  "platform": "linux",
+  "revision": "25465077",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-09-27",
+    "evidence": [
+      "games/dragonwilds/README.md (What works, what doesn't)",
+      "games/dragonwilds/sidecar/src/__tests__/ (contract level, every build)",
+      "games/dragonwilds/mod/tests/unit_test.cpp (plugin unit level, every build)",
+      "PR #300: `takaro-maint build` run twice from a clean checkout, byte-identical artifacts; `takaro-maint install` and `takaro-maint deploy` run for real against the pinned Steam build (5.2 GB) on a maintainer's machine"
+    ],
+    "notes": "The first exact catalog target for this connector (#300). Steam pin of the public branch head observed 2026-09-25: tool app 4019830, Linux depot 3501791, build 25465077. The plugin's toolchain needs g++ on the same glibc as the dedicated server image; node:22.23.2-bookworm (not slim) is reused from the Dune: Awakening pin because it is the same base and already proven for this repository's script builds. `verification.required` is `contract` until this pin is proven at runtime: the plugin and sidecar unit/contract suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 4019830,
+      "branch": "public",
+      "buildid": 25465077,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "3501791": {
+          "manifest": "2601451637939157694",
+          "size": 5483957554,
+          "files": 56
+        }
+      },
+      "files": {
+        "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping": {
+          "sha256": "d26de80fd01f4b73b726aed855a20377996b7c140ff33f1ec40150c0dd73b259",
+          "size": 229636096
+        },
+        "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping.sym": {
+          "sha256": "592c822ae44334f36118baeef7f04916928c842a697353f3c51b5bc0fd9526f2",
+          "size": 301086683
+        },
+        "RSDragonwildsServer.sh": {
+          "sha256": "1cb3257de649da88c5b67c69a7aeb130c84878480e8862dbf4b9749c0b4f7d41",
+          "size": 310
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844",
+      "env": {
+        "HOME": "/tmp"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/dragonwilds/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844"
+    },
+    "deps": {
+      "ws": {
+        "coordinate": "npm:ws:8.21.3",
+        "sha256": "df3454ef205791ce50b5b9241762dcf9bfe1aa9f7f01d3057229be7dac0c2dc3",
+        "resolvedCoordinate": "https://registry.npmjs.org/ws/-/ws-8.21.3.tgz"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "plugin",
+      "artifact": "takaro-dragonwilds-plugin-linux-25465077-{version}.tar.gz",
+      "installDir": "TakaroDragonwilds"
+    },
+    {
+      "role": "sidecar",
+      "artifact": "takaro-dragonwilds-sidecar-linux-25465077-{version}.tar.gz",
+      "installDir": "TakaroDragonwildsSidecar"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup",
+      "connector-load",
+      "identify",
+      "heartbeat",
+      "players",
+      "console",
+      "shutdown"
+    ]
+  },
+  "preserve": [
+    "RSDragonwilds/Saved/",
+    "TakaroDragonwilds/",
+    "TakaroDragonwildsSidecar/"
+  ],
+  "devServers": {
+    "gameId": "dragonwilds"
+  },
+  "notes": "One image serves both halves of the build: the sidecar is TypeScript, and node:*-bookworm (not slim) carries the g++ the LD_PRELOAD plugin needs, on the same glibc as the dedicated server image (the same reasoning and the same pinned tag as the Dune: Awakening target). The server itself is a plain Steam depot install (no container images to load), so it installs through the shared Steam exact-install path like Conan Exiles rather than through Dune's arrangement."
+}
