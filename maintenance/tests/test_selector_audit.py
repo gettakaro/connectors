@@ -32,6 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 TARGETED_BASELINE = (
     "7d2d",
     "conan-exiles",
+    "dragonwilds",
     "dune",
     "enshrouded",
     "minecraft",
@@ -86,9 +87,10 @@ class Allow:
 
 ALLOWLIST: tuple[Allow, ...] = (
     Allow(
-        "games/dragonwilds/**",
-        r".",
-        "Dragonwilds has discovery only; exact targets and rig migration remain a milestone-2 follow-up (D2)",
+        "games/dragonwilds/docker-compose.example.yml",
+        r"dragonwilds-dedicated-server:latest",
+        "operator-supplied skeleton image for their own dedicated-server build, not an input this "
+        "repository resolves or ships (#300)",
     ),
     Allow(
         "games/vein/**",

@@ -81,7 +81,6 @@ a set may want the same name — including `SHA256SUMS` and the record itself.
 | conan-exiles | `takaro-conan-exiles-bridge.zip` |
 | terraria | `takaro-terraria-plugin.zip`, `takaro-terraria-bridge.zip` |
 | enshrouded | `takaro-enshrouded-plugin.zip`, `takaro-enshrouded-sidecar.zip` |
-| dragonwilds | `takaro-dragonwilds-plugin.tar.gz`, `takaro-dragonwilds-sidecar.tar.gz` |
 
 **Always.** `SHA256SUMS` (GNU format, sorted, covering every asset but itself),
 `takaro-<connector>-<version>.compat.json`, and one
@@ -173,7 +172,7 @@ A tag created before this machinery existed cannot be recovered this way: its tr
 `catalog/` or `maintenance/` to build from.
 
 **Legacy-mode connectors** (`--mode legacy`: 7d2d, rust, zomboid, valheim, conan-exiles,
-terraria, enshrouded, dragonwilds) do not yet package through `scripts/lib/package.sh`, and their
+terraria, enshrouded) do not yet package through `scripts/lib/package.sh`, and their
 builds have not been proven byte-reproducible, so a recovery rebuild of one of them can produce
 different bytes from the interrupted run's. The publisher then stops with exit 7 and uploads
 nothing, exactly as above. Because a stable release is still a draft until the publisher

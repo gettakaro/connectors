@@ -33,6 +33,7 @@ answer, and the record is the authority.
 |---|---|---|---|---|---|
 | 7 Days to Die | `linux-3.2.0.b10` | linux | 3.2.0.b10 | candidate | contract |
 | Conan Exiles | `linux-25356024` | linux | 25356024 | candidate | contract |
+| RuneScape: Dragonwilds | `linux-25465077` | linux | 25465077 | candidate | contract |
 | Enshrouded | `proton-1024233` | proton | 1024233 | candidate | contract |
 | Minecraft | `fabric-26.1.2` | fabric | 26.1.2 | maintained | protocol |
 | Minecraft | `fabric-26.2` | fabric | 26.2 | maintained | protocol |
@@ -113,12 +114,11 @@ and use their existing build/release path.
 
 | Connector | Today | Plan |
 |---|---|---|
-| RuneScape: Dragonwilds | Steam release discovery enabled; releases in legacy mode with its own rig tags | Exact targets, a game adapter and a rig driven by the resolved target remain a milestone-2 follow-up |
-| VEIN | Steam release discovery enabled; releases in legacy mode | Same follow-up |
+| VEIN | Steam release discovery enabled; releases in legacy mode | Exact targets, a game adapter and a rig driven by the resolved target remain a milestone-2 follow-up |
 | DayZ | A `dev-servers/` rig only — no catalog record, no release path through the catalog | Not scheduled |
 | Palworld | A `dev-servers/` rig only | Not scheduled |
 
-Until their exact targets and rigs are migrated, these four are the only places a floating selector is knowingly allowed
+Until their exact targets and rigs are migrated, these three are the only places a floating selector is knowingly allowed
 in a tracked entry point, and each one is listed with its reason in the selector audit
 (`maintenance/tests/test_selector_audit.py`). Migrating a connector to exact targets removes its allowlist entry;
 that is the acceptance criterion the follow-up carries.
