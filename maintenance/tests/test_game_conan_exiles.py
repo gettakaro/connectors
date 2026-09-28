@@ -103,12 +103,15 @@ def test_every_conan_verification_body_has_pass_and_failure_paths(
     assert set(check for check, _ in failed_run.skips) == set(hooks.CHECK_IDS)
 
 
-TARGET = "linux-25356024"
+TARGET = "linux-25488622"
 APP = 443030
 CONTENT_DEPOT = "443032"
 REDIST_DEPOT = "1006"
 PINNED = {CONTENT_DEPOT: "2572292872952587850", REDIST_DEPOT: "4559160656493359681"}
 MOVED = {CONTENT_DEPOT: "2600000000000000001", REDIST_DEPOT: "4600000000000000001"}
+# What the shipped target (the real repository, not the fixture depot trees below) actually
+# pins today -- used only by the tests that run against the real repo (``repo=None``).
+SHIPPED = {CONTENT_DEPOT: "2389917983000609164", REDIST_DEPOT: PINNED[REDIST_DEPOT]}
 VERSION = "1.0.2-dev.abc1234"
 ZIP_NAME = f"takaro-conan-exiles-bridge-{TARGET}-{VERSION}.zip"
 BRIDGE_FOLDER = "TakaroConanExiles"
@@ -182,7 +185,7 @@ def write_conan_build_stub(repo: Path, fingerprint: str, *, name: str = ZIP_NAME
         'printf \'{"name":"conan-exiles-takaro-bridge"}\\n\' > "$pkg/package.json"\n'
         f'cat > "$pkg/takaro-target.json" <<STAMP\n'
         f'{{"target": "{target}", "fingerprint": "{fingerprint}", "game": "conan-exiles", '
-        f'"platform": "linux", "revision": "25356024", "connectorVersion": "$version", '
+        f'"platform": "linux", "revision": "25488622", "connectorVersion": "$version", '
         f'"sourceRevision": "deadbeef"}}\n'
         "STAMP\n"
         '( cd "$stage" && python3 -c '
@@ -191,7 +194,7 @@ def write_conan_build_stub(repo: Path, fingerprint: str, *, name: str = ZIP_NAME
         f'cat > "$out/{name}.meta.json" <<JSON\n'
         f'{{"target": "{target}", "fingerprint": "{fingerprint}", "connectorVersion": "$version", '
         f'"sourceRevision": "deadbeef", "game": "conan-exiles", "platform": "linux", '
-        f'"revision": "25356024"}}\n'
+        f'"revision": "25488622"}}\n'
         "JSON\n",
         encoding="utf-8",
     )
@@ -266,10 +269,10 @@ def test_targets_resolve_env_for_conan_exiles(run: Any) -> None:
     env = payload["env"]
     assert env["CONAN_EXILES_STEAM_APP"] == "443030"
     assert env["CONAN_EXILES_STEAM_BRANCH"] == "public"
-    assert env["CONAN_EXILES_STEAM_BUILDID"] == "25356024"
+    assert env["CONAN_EXILES_STEAM_BUILDID"] == "25488622"
     # Sorted by depot id, so the string is the same whatever order the record lists them in.
     assert env["CONAN_EXILES_STEAM_DEPOTS"] == (
-        f"{REDIST_DEPOT}:{PINNED[REDIST_DEPOT]};{CONTENT_DEPOT}:{PINNED[CONTENT_DEPOT]}"
+        f"{REDIST_DEPOT}:{SHIPPED[REDIST_DEPOT]};{CONTENT_DEPOT}:{SHIPPED[CONTENT_DEPOT]}"
     )
     assert env["CONAN_EXILES_ARTIFACT"] == f"takaro-conan-exiles-bridge-{TARGET}-{{version}}.zip"
     assert env["CONAN_EXILES_BRIDGE_DIR"] == f"{INSTALL_DIR}/{BRIDGE_FOLDER}"
@@ -286,9 +289,9 @@ def test_targets_resolve_env_for_conan_exiles(run: Any) -> None:
     assert not any(key.endswith("_JAVA") for key in env)
 
     url = payload["resolvedUrls"]["server"]
-    assert url.startswith("steam://app/443030/branch/public/build/25356024/depot/")
-    assert f"{REDIST_DEPOT}/manifest/{PINNED[REDIST_DEPOT]}" in url
-    assert f"{CONTENT_DEPOT}/manifest/{PINNED[CONTENT_DEPOT]}" in url
+    assert url.startswith("steam://app/443030/branch/public/build/25488622/depot/")
+    assert f"{REDIST_DEPOT}/manifest/{SHIPPED[REDIST_DEPOT]}" in url
+    assert f"{CONTENT_DEPOT}/manifest/{SHIPPED[CONTENT_DEPOT]}" in url
 
 
 # -- discovery ---------------------------------------------------------------------------
@@ -354,6 +357,18 @@ def tracker(steam: Any, catalog_copy: Path, monkeypatch: pytest.MonkeyPatch) -> 
 def test_scan_observes_the_public_head_and_the_target_covers_it(run: Any, tracker: Any, steam: Any) -> None:
     """The shipped target pins exactly this app, branch, build and watched manifest."""
     key = f"{GAME}/steam"
+    # The recorded app_info fixture is a static snapshot older than the shipped target; move the
+    # fake head to what the target actually pins before asserting it is covered.
+    shipped = json.loads((REPO_ROOT / "catalog" / GAME / "targets" / f"{TARGET}.json").read_text(encoding="utf-8"))
+    server = shipped["inputs"]["server"]
+    steam.document = fake_steamcmd.move_head(
+        steam.document,
+        "public",
+        server["buildid"],
+        {CONTENT_DEPOT: server["depots"][CONTENT_DEPOT]["manifest"]},
+        timeupdated=1790074315,
+    )
+    steam.serve()
 
     code, payload, err = tracker.scan(run, "--bootstrap")
 
@@ -363,7 +378,9 @@ def test_scan_observes_the_public_head_and_the_target_covers_it(run: Any, tracke
     assert source["history"] == "heads-only"
     # Only 443032 is watched, so only it is in the head identity: the redistributable is
     # pinned in the target and belongs to app 1007.
-    assert source["heads"] == {"public": rev_of(25356024, {CONTENT_DEPOT: PINNED[CONTENT_DEPOT]})}
+    assert source["heads"] == {
+        "public": rev_of(int(server["buildid"]), {CONTENT_DEPOT: server["depots"][CONTENT_DEPOT]["manifest"]})
+    }
     assert payload["observations"] == []
     assert [entry["action"] for entry in payload["plan"] if entry["action"] == "create-issue"] == []
     assert tracker.support_issues() == []
@@ -648,7 +665,7 @@ def bridge_zip(path: Path, *, version: str = VERSION, escape: bool = False, root
         archive.writestr(f"{root}/dist/mod/pollerCli.js", "helper\n")
         archive.writestr(
             f"{root}/takaro-target.json",
-            json.dumps({"target": TARGET, "connectorVersion": version, "revision": "25356024"}),
+            json.dumps({"target": TARGET, "connectorVersion": version, "revision": "25488622"}),
         )
         if escape:
             archive.writestr("../escaped.txt", "nope")
@@ -909,7 +926,7 @@ def test_verify_hooks_know_the_conan_log_lines() -> None:
     assert hooks.IDENTIFIED_LINE.search("info: Identified with Takaro as gameServerId=00000000-0000-0000-0000-0")
     assert hooks.CLOSED_LINE.search("info: Takaro WebSocket closed code=1001 reason=going away")
     stamp = hooks.STAMP_LINE.search(
-        "info: Takaro target: linux-25356024 (0123456789abcdef) revision 25356024 connector 1.0.2 source deadbeef"
+        "info: Takaro target: linux-25488622 (0123456789abcdef) revision 25488622 connector 1.0.2 source deadbeef"
     )
     assert stamp and stamp.group("target") == TARGET and stamp.group("fp16") == "0123456789abcdef"
     command = hooks.RCON_COMMAND_LINE.search("IP PeerAddr: 172.17.0.3:51000 used rcon command: listplayers")
@@ -1226,9 +1243,9 @@ def test_the_stamp_line_the_harness_reads_is_the_one_the_bridge_writes() -> None
     # Every `${...}` becomes a value, and the literal text between them is the contract.
     sample = "".join(templates)
     values = {
-        "stamp.target": "linux-25356024",
+        "stamp.target": "linux-25488622",
         "stamp.fingerprint.slice(0, 16)": "0123456789abcdef",
-        "stamp.revision": "25356024",
+        "stamp.revision": "25488622",
         "stamp.connectorVersion": "1.2.3",
         "stamp.sourceRevision": "deadbeef",
     }
@@ -1238,7 +1255,7 @@ def test_the_stamp_line_the_harness_reads_is_the_one_the_bridge_writes() -> None
 
     found = hooks.STAMP_LINE.search(sample)
     assert found, f"{hooks.STAMP_LINE.pattern!r} does not match {sample!r}"
-    assert found.group("target") == "linux-25356024"
+    assert found.group("target") == "linux-25488622"
     assert found.group("fp16") == "0123456789abcdef"
-    assert found.group("revision") == "25356024"
+    assert found.group("revision") == "25488622"
     assert found.group("version") == "1.2.3"

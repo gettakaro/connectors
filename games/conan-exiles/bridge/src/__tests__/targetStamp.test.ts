@@ -25,11 +25,11 @@ function packageRoot(stamp?: unknown): string {
 }
 
 const RELEASE = {
-  target: 'linux-25356024',
+  target: 'linux-25488622',
   fingerprint: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
   game: 'conan-exiles',
   platform: 'linux',
-  revision: '25356024',
+  revision: '25488622',
   connectorVersion: '1.0.2',
   sourceRevision: 'deadbeefcafe',
 };
@@ -40,7 +40,7 @@ test('a released package names the catalog target it was built for', () => {
   assert.deepEqual(stamp, RELEASE);
   assert.equal(
     describeStamp(stamp),
-    'Takaro target: linux-25356024 (0123456789abcdef) revision 25356024 connector 1.0.2 source deadbeefcafe',
+    'Takaro target: linux-25488622 (0123456789abcdef) revision 25488622 connector 1.0.2 source deadbeefcafe',
   );
 });
 
