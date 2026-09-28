@@ -33,6 +33,9 @@ You need:
   token** (Takaro shows it when you create the game server).
 - **For in-game chat only:** the **Enhanced Pippi** mod on the server (workshop ID `3725018456`).
   Without a chat mod the bridge cannot write normal chat lines — see step 4 and the table below.
+  **Not yet compatible with server build 25488622:** on that build the server refuses to start
+  with Pippi installed (`LogModManager: Mod is too old and needs to be updated for this game
+  version`). Leave it out until Pippi publishes an update; chat is unavailable meanwhile.
 
 > **About the Takaro Conan mod.** This repo contains a specification for a Takaro-owned
 > `TakaroConan.pak` under `mod/TakaroConanBridge/`, but **no `.pak` is built or shipped**. Building
