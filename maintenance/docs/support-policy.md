@@ -118,7 +118,7 @@ and use their existing build/release path.
 | DayZ | A `dev-servers/` rig only — no catalog record, no release path through the catalog | Not scheduled |
 | Palworld | A `dev-servers/` rig only | Not scheduled |
 
-Until their exact targets and rigs are migrated, these four are the only places a floating selector is knowingly allowed
+Until their exact targets and rigs are migrated, these three are the only places a floating selector is knowingly allowed
 in a tracked entry point, and each one is listed with its reason in the selector audit
 (`maintenance/tests/test_selector_audit.py`). Migrating a connector to exact targets removes its allowlist entry;
 that is the acceptance criterion the follow-up carries.
