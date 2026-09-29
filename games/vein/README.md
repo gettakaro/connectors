@@ -24,17 +24,17 @@ For the bundled Compose layout, run `./scripts/smoke-server.py --expected-build 
 
 ## What works, what doesn't
 
-The table below records the **previous sidecar release's** real-client verification on 2026-09-17 against game build 25035268 (v0.024h8). It is a compatibility reference, not a claim that every row has passed on the native candidate. Native rows remain pending until the full PC-client and Takaro MCP campaign is recorded. ✅ = previously worked, ⚠️ = previous caveat, ❌ = unsupported.
+Verified on the native connector (v0.3.0) with a real game client and Takaro on VEIN 0.025 Hotfix 1 (server build 25581145), 2026-09-29. ✅ = works, ⚠️ = works with a caveat, ❌ = unsupported.
 
 | What | | Notes |
 |---|---|---|
-| Connection & heartbeat | ✅ | The server shows as reachable while the sidecar is up. |
+| Connection & heartbeat | ✅ | The plugin holds the Takaro connection itself; the server shows as reachable while the game runs. |
 | Player list | ✅ | Name, ping and spawned state; `gameId` is the SteamID64. |
 | Single player lookup | ✅ | Same data for one player; offline players answer with a last-known record. |
 | Player location | ✅ | The live position, following walking and teleports. |
 | Player inventory | ✅ | Matches the in-game bag; unavailable (404) without a character pawn, including before respawn. |
 | Give an item | ✅ | The item appears in the bag without a relog. |
-| Item catalogue | ✅ | Every loaded item class. Readable names need `TAKARO_ITEM_NAMES=1`. |
+| Item catalogue | ✅ | Every loaded item class, with the in-game display names. |
 | Entity catalogue | ⚠️ | Creature types sync, but Takaro never deletes rows from older builds. |
 | Locations / points of interest | ⚠️ | Served by the connector, but Takaro never asks for them. |
 | Run a console command | ✅ | The connector's own set: `help`, `players`, `say`, `give`, `tp`, `ban`, `save`, … |
@@ -62,25 +62,25 @@ The table below records the **previous sidecar release's** real-client verificat
 | Shop: buy in game | ✅ | Buying with the in-game chat command works. |
 | Shop: order in Takaro and claim in game | ✅ | The items are delivered to the player. |
 | Shop: bundle of several items | ✅ | One claim delivers every item in the listing. |
-| Shop: order while offline, claim later | ✅ | Refused while offline, succeeds after rejoining. |
+| Shop: order while offline, claim later | ✅ | The order is paid while offline and delivered when claimed after rejoining. |
 | Shop: not enough currency | ✅ | The purchase is refused and the balance is unchanged. |
 | Economy: currency | ✅ | Balances are set, read and debited by Takaro. |
-| Economy: balance / top list in game | ✅ | The in-game economy commands answer in chat. |
+| Economy: balance in game | ✅ | `@balance` answers in chat. |
 | Discord: game chat → Discord | ✅ | In-game chat is relayed to the linked channel. |
-| Discord: Discord → game chat | ⚠️ | Works, but only a real human post can confirm it — bots are ignored. |
+| Discord: Discord → game chat | ✅ | Real human posts are relayed into game chat; bot posts are ignored. |
 | Discord: module hook / cronjob posts | ✅ | Hooks and cronjobs post to Discord and edit their messages. |
 | Discord: join/leave notices | ✅ | Posted to Discord by the chat-bridge module. |
 | Discord: no echo of server messages | ✅ | Stock `chatBridge` re-posts server messages; the `chatBridgeNoEcho` fork does not. |
-| Events while the Takaro connection is down | ✅ | Kept and delivered in order once the connection is back. |
-| Reconnects after a server or container restart | ✅ | Re-identifies on its own; keep the sidecar's restart policy on. |
-| No duplicate events after a connector restart | ✅ | The event cursor is persisted, so nothing is replayed. |
+| Events while the Takaro connection is down | ✅ | Kept on disk and delivered once the connection is back (tested with a 2-minute outage). |
+| Reconnects after a server or container restart | ✅ | Re-identifies on its own after a restart, a crash or a container restart. |
+| No duplicate events after a connector restart | ✅ | Unconfirmed events are replayed once from the on-disk outbox; a lost confirmation can rarely cause one duplicate. |
 | Survives a network drop to Takaro | ✅ | The WebSocket reconnects by itself and re-identifies. |
 | Timed bans expire on their own | ✅ | Lifted at expiry, including across a restart. |
 | Keeps running after a game update breaks a feature | ✅ | The broken feature reports `degraded`; everything else keeps working. |
 
 ### Known issues
 
-- Discord → game chat can only be confirmed by a real human message; the bridge ignores bots.
+- Upgrading from the old sidecar release (v0.2.x) needs a short maintenance window; follow the [upgrade instructions](INSTALL.md).
 - A broadcast shows as a chat line prefixed with the server name; a whisper as an on-screen notification.
 - Local and global chat cannot be told apart — proximity chat also reports as global.
 - `AdminSteamIDs` in `Game.ini` is ignored by the game. Use `TAKARO_ADMIN_STEAMIDS` instead.
