@@ -6,7 +6,7 @@ minecraft-fabric-26.1.2|minecraft.yml|fabric-26-1-2|fabric-26-1-2|3|2|connector|
 valheim|valheim.yml|-|valheim|4|6|connector|Valheim + BepInEx + Takaro Valheim plugin|valheim
 dayz|dayz.yml|-|dayz dayz-takaro|6|4|sidecar|DayZ (Linux, app 223350) + @TakaroIntegration mod + Takaro TypeScript sidecar|dayz
 dragonwilds|dragonwilds.yml|-|dragonwilds dragonwilds-takaro|4|8|sidecar|RuneScape: Dragonwilds (Linux, app 4019830) + Takaro LD_PRELOAD plugin + TypeScript sidecar|dragonwilds-dev
-vein|vein.yml|-|vein vein-takaro|4|20|sidecar|VEIN (Linux, app 2131400) + Takaro LD_PRELOAD plugin + TS sidecar|vein-dev
+vein|vein.yml|-|vein|4|20|plugin|VEIN (Linux, app 2131400) + native Takaro LD_PRELOAD connector|vein-dev
 rust|rust.yml|-|rust|8|12|connector|Rust + Carbon + TakaroConnector.cs|rust
 7d2d|7d2d.yml|-|7d2d|8|32|connector|7 Days to Die + Takaro mod|7d2d
 zomboid|zomboid.yml|-|zomboid|8|16|connector|Project Zomboid B42 + Takaro javaagent|zomboid
@@ -21,7 +21,7 @@ games/minecraft/mod/core games/minecraft/mod/fabric games/minecraft/mod/targets 
 games/valheim/mod/src games/valheim/version.txt
 
 games/dragonwilds/mod games/dragonwilds/sidecar/src games/dragonwilds/version.txt
-games/vein/mod games/vein/sidecar/src games/vein/version.txt
+games/vein/mod games/vein/version.txt
 games/rust/mod games/rust/version.txt
 games/7d2d/mod/src games/7d2d/mod/Takaro.csproj games/7d2d/mod/ModInfo.xml games/7d2d/version.txt
 games/zomboid/mod/core games/zomboid/mod/agent games/zomboid/mod/gradle games/zomboid/mod/build.gradle.kts games/zomboid/mod/settings.gradle.kts games/zomboid/version.txt

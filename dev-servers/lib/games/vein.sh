@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# VEIN — an LD_PRELOAD plugin and a TypeScript sidecar.
+# VEIN — one native LD_PRELOAD connector in the game process.
 #
 # Sourced by dev-servers/lib/common.sh. It registers the game in the shared registry and
 # defines the steps install.sh, deploy-connector.sh and verify-connectors.sh dispatch to.
 
-ds_register 75 'vein|vein.yml|-|vein vein-takaro|4|20|sidecar|VEIN (Linux, app 2131400) + Takaro LD_PRELOAD plugin + TS sidecar|vein-dev'
+ds_register 75 'vein|vein.yml|-|vein|4|20|plugin|VEIN (Linux, app 2131400) + native Takaro LD_PRELOAD connector|vein-dev'
 
 install_vein() {
     # VEIN dev rig (Steam app 2131400, anonymous login). Version-locked after the
@@ -42,7 +42,7 @@ install_vein() {
 
     ds_fix_ownership "${DS_DATA}/vein-dev"
 
-    # The plugin and sidecar are built separately; a no-op until those trees exist.
+    # Build and load the native connector once the game is installed.
     "${DS_DIR}/scripts/deploy-connector.sh" vein
 }
 
@@ -86,43 +86,45 @@ deploy_vein() {
     fi
     ds_ok "no undefined symbols outside the C/C++ runtime"
 
-    if [ -d "${src}/sidecar" ]; then
-        ds_info "Rebuilding the VEIN sidecar image..."
-        ds_compose vein --profile sidecar build vein-takaro \
-            || ds_die "VEIN sidecar image build failed"
-    else
-        ds_warn "sidecar source not present yet (${src}/sidecar) — skipping its image build"
-    fi
-
     # The running game holds the .so open via LD_PRELOAD, so it cannot be replaced in
     # place: stop → swap → start, the whole sequence under the rig lock as one command.
     mkdir -p "$dest" "$(dirname "$VEIN_RIG_LOCK")"
     cp "$so" "${dest}/libtakaro-vein.so.new"
 
+    # A legacy sidecar can reconnect using the same Takaro identity, even when
+    # its Compose service has disappeared. Require the migration drain/removal
+    # procedure before deploying the native-only service.
+    if docker container inspect takaro-dev-vein-sidecar >/dev/null 2>&1; then
+        rm -f "${dest}/libtakaro-vein.so.new"
+        ds_die "legacy VEIN sidecar container still exists; drain and remove it before native deployment"
+    fi
+
     if ds_is_running vein; then
         ds_info "Swapping the plugin under the rig lock (stop → swap → start)..."
         flock -w 900 "$VEIN_RIG_LOCK" -c "
             set -e
+            if docker container inspect takaro-dev-vein-sidecar >/dev/null 2>&1; then
+                echo 'legacy VEIN sidecar container still exists; refusing native swap' >&2
+                exit 1
+            fi
             '${DS_DIR}/scripts/stop.sh' vein
             mv -f '${dest}/libtakaro-vein.so.new' '${dest}/libtakaro-vein.so'
             chmod 644 '${dest}/libtakaro-vein.so'
             '${DS_DIR}/scripts/start.sh' vein
         " || ds_die "plugin swap under the rig lock failed"
 
-        # The sidecar joins the game container's network namespace
-        # (network_mode: service:vein). When the game container is recreated the
-        # sidecar keeps the *dead* namespace and never recovers on its own — it has
-        # to be force-recreated, not merely restarted.
-        if [ -d "${src}/sidecar" ]; then
-            ds_info "Recreating the VEIN sidecar (its network namespace died with the game container)..."
-            ds_compose vein --profile sidecar up -d --force-recreate vein-takaro \
-                || ds_warn "sidecar force-recreate failed — recreate takaro-dev-vein-sidecar by hand"
-        fi
     else
-        mv -f "${dest}/libtakaro-vein.so.new" "${dest}/libtakaro-vein.so"
-        chmod 644 "${dest}/libtakaro-vein.so"
+        flock -w 900 "$VEIN_RIG_LOCK" -c "
+            set -e
+            if docker container inspect takaro-dev-vein-sidecar >/dev/null 2>&1; then
+                echo 'legacy VEIN sidecar container still exists; refusing native swap' >&2
+                exit 1
+            fi
+            mv -f '${dest}/libtakaro-vein.so.new' '${dest}/libtakaro-vein.so'
+            chmod 644 '${dest}/libtakaro-vein.so'
+        " || ds_die "plugin swap under the rig lock failed"
     fi
     ds_ok "${dest}/libtakaro-vein.so"
 }
 
-ds_source_paths_vein() { echo "games/vein/mod games/vein/sidecar/src games/vein/version.txt"; }
+ds_source_paths_vein() { echo "games/vein/mod games/vein/version.txt"; }

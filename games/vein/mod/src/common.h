@@ -46,8 +46,10 @@ const std::string& ExePath();      // /proc/self/exe
 const std::string& ExeDir();       // directory holding VeinServer-Linux-Test
 const std::string& PluginDataDir();  // <ExeDir>/takaro, created on first use (TAKARO_PLUGIN_DATA_DIR overrides)
 
-// Appends to <PluginDataDir>/plugin.log. Never calls into the game. Output is redacted.
+// Enqueues an owned bounded record. Hooks never open files or wait for disk I/O.
 void PluginLog(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+void FlushPluginLogs(); // background threads only; redacts before writing
+uint64_t PluginLogDropped();
 bool DebugEnabled();  // TAKARO_PLUGIN_DEBUG=1
 
 // Config: env first, then <PluginDataDir>/plugin.json. Returns `def` when neither has it.

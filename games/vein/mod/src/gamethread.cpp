@@ -248,6 +248,12 @@ bool GameThread::Alive() {
 
 uint64_t GameThread::TickCount() { return g_ticks.load(); }
 
+#ifdef TAKARO_GAMETHREAD_TEST
+void GameThread::TestEnable() { g_installed = true; }
+void GameThread::TestPumpOnce() { OnTick(); }
+size_t GameThread::TestQueued() { Guard g(g_q); return g_jobs.size(); }
+#endif
+
 bool GameThread::Run(std::function<void()> fn, uint32_t timeoutMs) {
     if (!g_installed) return false;
     Perf::RecordEntry();
@@ -255,7 +261,7 @@ bool GameThread::Run(std::function<void()> fn, uint32_t timeoutMs) {
     job->fn = std::move(fn);
     {
         Guard g(g_q);
-        if (g_jobs.size() > 256) return false;  // the pump is stuck; do not pile up
+        if (g_jobs.size() >= 256) return false;  // the pump is stuck; do not pile up
         g_jobs.push_back(job);
     }
     uint64_t deadline = NowMs() + timeoutMs;
@@ -279,15 +285,17 @@ bool GameThread::Run(std::function<void()> fn, uint32_t timeoutMs) {
 }
 
 bool GameThread::RunJson(std::function<std::string()> fn, std::string& out, uint32_t timeoutMs) {
-    std::string result;
-    bool ok = Run([&] {
+    // The job can continue after Run times out. Both the function and its result therefore belong
+    // to the queued job, never to this caller's stack.
+    auto result = std::make_shared<std::string>();
+    bool ok = Run([fn = std::move(fn), result] {
         try {
-            result = fn();
+            *result = fn();
         } catch (...) {
-            result = "{\"error\":\"handler threw on the game thread\"}";
+            *result = "{\"error\":\"handler threw on the game thread\"}";
         }
     }, timeoutMs);
-    if (ok) out = result;
+    if (ok) out = *result;
     return ok;
 }
 

@@ -1,14 +1,13 @@
-// Action handlers (lane L3). Each returns an HTTP status plus a JSON body; the HTTP layer does the
-// routing, auth, body validation and the try/catch. Handlers that touch UObjects must do their work
-// inside GameThread::RunJson() and return 503 when it returns false.
+// Background-callable action handlers shared by native Takaro and diagnostic HTTP.
+// UObject reads/calls use owned GameThread::Run jobs. Jobs return copied fields;
+// response encoding and plugin persistence run on the caller's background thread.
 //
 // Contract for L3:
 //   * Init() runs on the plugin init thread; register one capability per action with
 //     PluginState::SetCapability (players, playerLocation, playerInventory, giveItem, listItems,
 //     listEntities, listLocations, sendMessage, teleport, kick, ban, unban, listBans,
 //     executeCommand, shutdown).
-//   * Snapshot() runs on the game thread once per tick (when L3 enables it) and caches the player
-//     table so that GET /players never blocks on the pump.
+//   * Player snapshots stay lazy and cached; no new per-tick catalogue work.
 //   * Every handler returns {status, body} and never throws.
 #pragma once
 #include "common.h"
@@ -23,7 +22,6 @@ struct Result {
 void Init();
 void Housekeep();
 
-// TODO(L3): implement. Until then each returns 501 with a message naming the missing capability.
 Result Players();
 Result Player(const std::string& gameId);
 Result PlayerLocation(const std::string& gameId);
@@ -38,6 +36,11 @@ Result Give(const JsonValue& body);
 Result Kick(const JsonValue& body);
 Result Ban(const JsonValue& body);
 Result Unban(const JsonValue& body);
+// Expiry must recheck the captured revision on the game thread, before mutation.
+Result UnbanIfRevision(const JsonValue& body, uint64_t expectedRevision);
+// Includes cancelled queued jobs until the pump releases them, and started jobs
+// that outlive a caller timeout. Ban recovery must wait for this to reach zero.
+size_t PendingBanJobs();
 Result Command(const JsonValue& body);
 Result Shutdown();
 

@@ -32,6 +32,19 @@ last snapshot.
 
 **If a read can be served from the last snapshot, serve it, and do not touch the game thread.**
 
+## Native worker ownership
+
+The transport worker owns the socket and libwebsockets service context. Socket callbacks
+only move owned messages through bounded queues; they never wait for actions or storage.
+The bridge worker handles protocol messages, events, and persistent state. A separate
+action worker invokes the existing game handlers. Network, JSON, filesystem, and regex
+work belong on background workers, outside the engine tick.
+
+Queued jobs must own their callable arguments and completion storage. A timeout cancels
+a job that has not started. A started job may finish after its caller returns, keeping
+its data alive and discarding the late result. Capturing a caller's local variables by
+reference is unsafe even when an outer completion object uses shared ownership.
+
 ## Concrete limits in this plugin
 
 | Thing | Limit | Where |

@@ -1,212 +1,33 @@
-# VEIN connector — development
+# VEIN connector development
 
-Operator documentation is in [README.md](README.md). This file is for people who build,
-change or re-verify the connector.
+The Linux dedicated server loads one C++17 `libtakaro-vein.so` connector. See [INSTALL.md](INSTALL.md) for operator steps and [mod/docs/API.md](mod/docs/API.md) for the optional diagnostic HTTP interface. The former TypeScript sidecar remains in source control only as a compatibility and legacy-state migration reference; it is not built, packaged or run by the native release.
 
-## Layout
+## Ownership and threads
 
-```
-mod/       C++17, builds libtakaro-vein.so (LD_PRELOAD into the dedicated server)
-  src/       resolve.cpp reflect.cpp gamethread.cpp hooks.cpp http.cpp actions.cpp
-             actions_util.cpp admin.cpp events.cpp events_parse.cpp state.cpp common.cpp main.cpp
-  docs/      API.md — the plugin's HTTP contract (the source of truth for both sides)
-  tests/     host unit tests (JSON, ring buffer, redaction, resolver bookkeeping, action helpers)
-  tools/     symprobe.py, sigderive.py, dwarfoffsets.py — offline binary inspection
-  build.sh, Dockerfile.build, Makefile
-sidecar/   Node 22 + TypeScript, speaks the Takaro Generic Connector Protocol
-  Dockerfile      runtime image for the release tarball (expects a prebuilt dist/)
-  Dockerfile.dev  builds from src/ — what the dev rig and `build: ./sidecar` in a
-                  source checkout use
-scripts/   build-release.sh, render-readme-table.mjs
-docker-compose.example.yml, .env.example, version.txt, CHANGELOG.md
-```
+Native transport owns TLS, WebSocket identify, heartbeat and reconnect. All libwebsockets socket calls stay on its service thread; other workers wake it through the library's safe service-wakeup mechanism. The bridge worker owns Takaro protocol messages, event formatting, log grammar, online reconciliation, durable outbox and state writes. The action worker maps the 17 Takaro actions to the existing game action functions. Threads pass **owned** messages through bounded queues. A network callback never waits for game work.
 
-**Ownership rule: game truth lives in the plugin, Takaro protocol shape lives in the sidecar.**
-Never parse Takaro DTOs in C++; never guess game state in TypeScript. Change `mod/docs/API.md`
-first, then both sides.
+The VEIN game thread owns every UObject and engine call. Hooks enqueue minimal owned data; the game-thread pump drains within a 500 µs target and takes lazy snapshots only when an action needs them. Networking, JSON parsing, filesystem work and PCRE2 matching belong on background workers. A queued game job retains its arguments and completion state after a caller times out. Cancel jobs that have not started; let started jobs finish safely and discard late responses.
 
-## Architecture
+Keep the proven hook and action mechanisms: resolve symbols with the strategy chain, discover UPROPERTY offsets at runtime, and bind vtable slots on **live** objects. A resolved symbol does not prove a hook fires. `/health` reports `hooked` and `fired` counters and marks a broken capability `degraded` while keeping the game alive.
 
-```
-VeinServer-Linux-Test (UE 5.6.1, Linux dedicated server, Steam app 2131400)
-  └─ LD_PRELOAD=/opt/takaro/libtakaro-vein.so
-       ├─ resolves engine/game functions with a strategy chain (symtab -> depot .sym -> dynsym ->
-       │  string-xref signature scan); every entry records how it was found
-       ├─ reads every UPROPERTY offset via UStruct::FindPropertyByName at runtime (no fixed offsets)
-       ├─ hooks PostLogin / PreLogin / OnNetCleanup / ProcessEvent by vtable slot swap on LIVE objects
-       ├─ marshals all UObject work onto the engine tick (bounded job queue, timeout -> 503)
-       └─ HTTP API on 127.0.0.1:18890, Bearer token — see mod/docs/API.md
-sidecar/ (Node 22, TypeScript) — same network namespace as the game server
-  ├─ polls /events with a persisted cursor + bootId (no replay after a restart)
-  ├─ reconciles the online player set (emits disconnects after a server crash)
-  ├─ tails the server log for join/leave grammar and log events (secrets redacted)
-  ├─ lifts timed bans itself (Takaro sends no unbanPlayer at expiry)
-  └─ outbound WebSocket to Takaro (identify, action request/response, gameEvent)
-```
+The transport requires verified certificate chain and hostname, SNI, system CAs or an explicit `TAKARO_CA_FILE`; there is no insecure fallback. Incoming WebSocket messages are capped at 1 MiB and JSON nesting at 64. Pending actions are capped at 128/4 MiB; one response at 8 MiB and queued responses at 32 MiB. Reserve connection control and response capacity, and reject overloaded requests explicitly. The event outbox holds at most 5,000 events/32 MiB, dropping the oldest on overflow with a loss counter. Events leave the durable outbox only after a **later** ping gets its pong on that same connection. Takaro supplies no per-event application acknowledgment, so this is at-least-once transmission with a possible duplicate after a lost pong, not exactly-once storage.
 
-## Build and test
+Persistent files are versioned and written with temporary file, fsync and rename on a background worker. Preserve `event-cursor.json`, `online-players.json`, `timed-bans.json` and `known-players.json`; game-enforcement `bans.json` is separate. Explicit file paths take precedence over `TAKARO_STATE_DIR`, which defaults to `connector-state` under `TAKARO_PLUGIN_DATA_DIR`. Corrupt timed-ban input is an error, not an empty list. Persistence failures degrade connector health without stopping VEIN. Default log grammar and named captures use PCRE2; test custom `VEIN_LOG_*_RE` values against legacy fixtures before cutover.
+
+## Build, test and deploy
 
 ```bash
-./mod/build.sh                 # debian:bookworm container -> mod/dist/libtakaro-vein.so
-./mod/build.sh --native        # on the host (needs g++ >= 10)
-./mod/tests/run.sh             # plugin host unit tests (container; --native for the host)
-cd sidecar && npm ci && npm run typecheck && npm test && npm run build
-./scripts/build-release.sh     # both, packaged into dist/ with SHA256SUMS
+./mod/build.sh --tests          # pinned static deps, Debian Bookworm toolchain, native tests
+./scripts/build-release.sh      # one takaro-vein-plugin.tar.gz plus SHA256SUMS
+python3 -m unittest discover -s scripts -p test_smoke_server.py
 ```
 
-The toolchain image is `debian:bookworm` on purpose: it matches the glibc of the dedicated-server
-image, so the `.so` loads without a symbol-version error. Flags are
-`-std=c++17 -O2 -fPIC -fvisibility=hidden`, linked `-shared -pthread -ldl -static-libstdc++ -static-libgcc`.
+The build pins libwebsockets, OpenSSL, nlohmann/json and PCRE2 and hides bundled symbols. Check the actual server image loader and `ldd` before deployment, then verify the candidate hash in the game PID's `/proc/1/maps`. A local unit pass or HTTP response cannot replace a real PC-client trigger paired with Takaro MCP event UUIDs and action responses. The [native smoke](scripts/smoke-server.py) checks exact Steam server build, game status, native connection, queue/loss/persistence fields and durable outbox; it requires an authenticated diagnostic token, but the direct Takaro connection does not.
 
-`DEBUG_CORRUPT_SIG=<name> ./mod/build.sh` builds a `.so` with one resolution deliberately broken.
-That build must still load, keep the server running, and report exactly that capability as
-`degraded` in `/health` — it is how the degrade path is proven. The variable is passed **into** the
-container by `build.sh`; without that it silently produces an ordinary build.
+The isolated `dev-servers/` rig has its own world and a version-locked Steam installation. One operator owns its deployment and the PC client under the rig/client locks. `dev-servers/scripts/deploy-connector.sh vein` builds the library, checks loader symbols and swaps it under the rig lock. It refuses to deploy while a legacy sidecar container still exists. Do not auto-update the server behind the test client's VEIN version; matching game versions matter, while Steam build IDs may differ.
 
-The plugin version is a compile-time constant in `mod/src/common.h`
-(`// x-release-please-version`); release-please bumps it together with `version.txt` and the
-changelog. Never hand-edit it.
+The preload applies to `VeinServer-Linux-Test` only; SteamCMD is 32-bit. Mount the plugin directory read-only **outside** Steam's installation tree, because `app_update ... validate` removes unknown files. Never call `NetMulticast_SendChat` with a null sender, `FName::ToString` on an unvalidated value, or a game object from a background worker. A byte signature matching more than once is not a resolved symbol. Mutating Takaro actions may contain explicit JSON `null` for optional fields and a nested `player` object; preserve that behavior.
 
-## Dev rig
+## Compatibility and acceptance
 
-The connector is developed against a disposable dedicated server in this repository's
-`dev-servers/` harness — its own world, its own ports, auto-update off because client and server
-are version-locked:
-
-```bash
-dev-servers/scripts/install.sh vein        # SteamCMD anonymous app_update 2131400
-dev-servers/scripts/start.sh vein
-dev-servers/scripts/deploy-connector.sh vein   # build the .so, swap it in, rebuild the sidecar
-dev-servers/scripts/stop.sh vein
-```
-
-`deploy-connector.sh vein` builds the `.so` inside the toolchain container, checks it for undefined
-symbols before it is ever preloaded, copies it into the host directory that is bind-mounted
-read-only into the game container, and recreates the sidecar. The rig's configuration (ports,
-identity, tokens, admin SteamID64s, join password) lives in `dev-servers/.env`; see
-`dev-servers/.env.example` for the keys. Never test against a server anyone plays on: several
-checks (ban, shutdown, restart) are destructive.
-
-## Symbol resolution and reflection
-
-The Linux depot's server binary is the only thing the plugin can rely on, so resolution is a
-chain, tried in order, and each resolved name records *how* it was found:
-
-| Strategy | What it uses |
-|---|---|
-| `symtab` | a full `.symtab` in the ELF, if the depot ships one |
-| `depotsym` | a `.sym` side-file next to the binary (rva + name table; `vaddr = rva + the first PT_LOAD p_vaddr`) |
-| `dynsym` | exported dynamic symbols, including the `_ZTV*` vtables |
-| `signature` | string-xref signature scans; each signature must match exactly once or it is rejected |
-
-Resolved addresses are cached under the server directory, keyed by the ELF `.note.gnu.build-id`, so
-a game update invalidates the cache automatically. Before any resolved address is called, boot
-self-checks must pass: `_init`/`_fini` against the section addresses, `UObject::ProcessEvent`
-appearing exactly once in `_ZTV7UObject` (which also yields its vtable slot), every address inside
-`.text` and not `0x00`/`0xCC`, and `FindFunction(CDO, "<fn>")->Func == the resolved exec thunk`.
-All UPROPERTY offsets come from `FindPropertyByName` at runtime; only the UE 5.6 fixed struct facts
-are constants, and each is validated at boot.
-
-Debug endpoints (Bearer token **and** `TAKARO_PLUGIN_DEBUG=1`; otherwise `404`):
-
-| Endpoint | Use |
-|---|---|
-| `GET /debug/symbols` | what resolved, how, from cache or a fresh scan |
-| `GET /debug/gamethread` | job queue depth, tick hook state, last tick age |
-| `GET /debug/object?ptr=…\|path=…` | dump a live UObject's property tree — the discovery tool for new fields |
-| `GET /debug/structs?name=…` | resolved class/struct layout |
-| `POST /debug/set-admin` | grant or revoke in-game admin for a SteamID64 |
-| `POST /debug/kill-nearest` | drive a creature kill through the game's damage pipeline (entity-killed proof without a human) |
-
-`GET /health` is the operator-facing view of the same thing: plugin version, game build, engine
-version, per-capability `ok`/`degraded`, `diagnostics.resolved[{name, rva, how, hooked, fired}]`
-and the cache state. A capability must self-report from `hooked`, not from symbol resolution —
-reporting `ok` while the hook never bound is a bug that has happened before.
-
-## After a game update
-
-1. Start the server with the plugin and read `/health`. Everything that still resolves keeps
-   working; anything that does not is `degraded` and is also listed in Takaro's reachability reason.
-   The server itself never fails to start because of this.
-2. `GET /debug/symbols` shows which names disappeared or moved. Engine (`UObject`, `AGameSession`,
-   …) names are stable across patches; the `AVein*`/`UVein*` ones are the ones that get renamed.
-3. Re-verify the hooks that fire from player actions (`hooked`/`fired` counters in `/health`) with a
-   real client join and one chat line — hooks bind to the *live* object's vtable, and a new subclass
-   can make a hook silently stop firing.
-4. Run the sidecar test suite; it pins the Takaro wire shapes, not the game.
-
-## Degrade semantics
-
-Resolution and validation failures degrade one capability; they never crash the server and never
-abort load. Concretely: the boot validation for a feature fails → that capability is marked
-`degraded` with a reason → the matching HTTP endpoint answers `501`/`503` → the sidecar reports the
-action as unsupported and the reason surfaces in Takaro's reachability text. Every handler is
-wrapped in `try/catch(...)` with a readable-memory guard.
-
-## Gotchas
-
-- `LD_PRELOAD` goes on the **game binary only** — SteamCMD is 32-bit and fails with it set. Patch
-  exactly the server launch line of the image's entrypoint and fail the build if it does not match.
-- SteamCMD `validate` wipes the Steam tree: keep the `.so` outside it, mounted read-only. Mount the
-  *directory*, not the file, so compose still starts before the `.so` exists.
-- **Never call VEIN's `NetMulticast_SendChat` with a null sender** — it dereferences the sender and
-  SIGSEGVs the whole server. Broadcasts go through the sender-less multicast entry first and only
-  fall back to the chat path when a real player state exists.
-- Hooking a base-class vtable does nothing: live objects carry their own vtables. Hook the live
-  object's vtable and verify `fired` before believing it.
-- Never call `FName::ToString` on an unvalidated `FName`.
-- Takaro modules send explicit JSON `null` for optional arguments (`dimension`, `reason`,
-  `expiresAt`, `quality`, `opts`) where the API docs simply omit the key. Handle absent, `null` and
-  wrong type.
-- Player-mutating actions arrive with a full nested `player` object, not a flat id.
-- The server prints the join password and players' Steam session tickets into its own log — redact
-  in the plugin, the sidecar and anything you paste into a report.
-
-## The README status table
-
-The 49-row "What works, what doesn't" table is generated, not hand-edited:
-
-```bash
-node scripts/render-readme-table.mjs <path to capabilities.json> --write README.md
-```
-
-The row set is fixed in the script (it matches the Dragonwilds connector's table so the two stay
-comparable); only the ✅/⚠️/❌ symbol comes from the campaign's `capabilities.json`. Re-run it
-whenever a capability's status changes, and never claim a row works without an end-to-end check on
-both the Takaro side and the game side.
-
-## Restarting the game container (F17)
-
-The sidecar runs in the game container's network namespace (`network_mode: service:vein`). Docker gives the game
-a **new** namespace on every restart of that container and the sidecar keeps the old, dead one, so it loses the
-plugin and DNS at once. Since 2026-09-17 the sidecar handles this by itself: its health probe keeps running after
-the Takaro socket drops, and after `SIDECAR_EXIT_AFTER_UNREACHABLE_MS` (45 s) with both the plugin and the game's
-own `:8080` unreachable it exits(1); `restart: unless-stopped` re-creates it in the live namespace.
-
-So `docker compose restart vein` now needs **no** follow-up `docker restart <sidecar>` — expect the sidecar to be
-back within ~60 s (`docker inspect -f '{{.RestartCount}}'` goes up by one). If you are in a hurry, or if you
-deliberately run the sidecar with the watchdog disabled (`SIDECAR_EXIT_AFTER_UNREACHABLE_MS=0`), restart it by
-hand as before. Proof of the self-recovery: `evidence/2026-09-17-l4b-sidecar-fixes.md`.
-
-The second watchdog, `SIDECAR_EXIT_AFTER_PLUGIN_LOSS_MS` (default `180000`), exits the sidecar when the plugin
-alone has been unreachable for that long while the game's own `:8080` still answers — the shape of a game that
-came back without the preload. Both watchdogs are disabled by setting them to `0`.
-
-## Event delivery confirmation (F20)
-
-The Takaro protocol has no per-event acknowledgement, so the sidecar proves delivery with the WebSocket
-heartbeat: it pings every **5 s**, every written game event carries a monotonic `sendId`, and a pong releases
-everything written before that ping. The persisted cursor (`cursor.json`) advances only on that release, never
-on a bare `ws.send()`, and two unanswered pings (~10-15 s) tear the socket down; the whole unconfirmed window
-then goes back to the front of the pending queue and is re-sent in order after the next `identifyResponse`.
-Neither the ping interval nor the missed-pong budget is configurable by env — they are
-`TakaroWsClient` options defaulting to `5_000` / `2` in `sidecar/src/takaro/client.ts`. Trade-off: a pong lost after Takaro stored an event re-sends that event, so a duplicate is
-possible within one heartbeat. Proof: `evidence/2026-09-17-l4c-outage-delivery.md`.
-
-## Performance
-
-Measured on the dev rig over three 10-minute windows (no plugin / plugin / plugin after tuning), same
-world, one player online: the game thread went from **10.26 %** CPU without the plugin to **10.46 %**
-with it, and the plugin's own work inside one server tick averages **~3 µs** — about 0.01 % of the
-33 ms tick budget, worst observed tick 2.4 ms. A busy server with many players has never been
-measured, so treat these as a floor. `GET /debug/perf` reports the live figures on any server.
+The former sidecar's action and event fixtures are the behavior reference, including offline player responses, inventory aggregation, sender names, timed bans and log filtering. The native connector must re-prove all 17 action rows and six event rows, installation/upgrades/rollback, three clean starts, outage replay, server crashes and performance with the real client and Takaro MCP. Save UTC triggers, raw MCP responses, event UUIDs, screenshots, exact game/client builds and candidate hashes in the private evidence repository before the next cell. Preserve the honest limits: log events are wire-only, entity/location coverage is incomplete and whisper isolation requires another client. Discord-to-game proof needs a human-authored post.

@@ -59,6 +59,16 @@ struct JoinLine {
 };
 JoinLine ParseJoinLine(const std::string& raw);
 
+// `LogVein: Player <SteamID64> (gamer-<32hex>) failed to authenticate: <reason>` - the server
+// refused the login (banned, wrong password, full, ...). It follows the `Login request:` line, so
+// it cancels the log-only join fallback for that id.
+struct LoginRefusedLine {
+    std::string gameId;
+    std::string reason;
+    bool ok = false;
+};
+LoginRefusedLine ParseLoginRefusedLine(const std::string& raw);
+
 // `LogVein: PlayerState ID changed to <SteamID64>`. The game emits an empty variant first; that one
 // is rejected (ok=false), which is exactly why this is a function and not a substring test.
 struct PlayerStateIdLine {

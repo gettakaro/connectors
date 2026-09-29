@@ -26,16 +26,24 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstring>
 #include <functional>
+#include <memory>
 
 using UE::FName;
 using UE::FString;
 using UE::TArray;
 
 namespace {
+
+std::atomic<size_t> g_pendingBanJobs{0};
+struct BanJobLifetime {
+    BanJobLifetime() { ++g_pendingBanJobs; }
+    ~BanJobLifetime() { --g_pendingBanJobs; }
+};
 
 // ---------------------------------------------------------------------------------------------
 // resolved game functions (all SysV direct calls; every one may be null)
@@ -254,6 +262,13 @@ Actions::Result Fail(int status, const std::string& msg) { return {status, ErrJs
 struct JobOut {
     int status = 500;
     std::string body = "{\"error\":\"internal plugin error\"}";
+    std::function<std::string()> render;
+    JobOut() = default;
+    JobOut(int code, std::string text) : status(code), body(std::move(text)) {}
+    JobOut(int code, std::function<std::string()> serialize) : status(code), render(std::move(serialize)) {}
+    static JobOut Error(int code, std::string message) {
+        return {code, [message = std::move(message)] { return ErrJson(message); }};
+    }
 };
 
 // Runs `fn` on the game thread and WAITS for it; 503 when the pump is unavailable and 504 when the
@@ -265,30 +280,25 @@ struct JobOut {
 // handler - /message, /teleport, /give, /kick, /ban, /unban - goes through here, so they all share
 // this guarantee.
 Actions::Result OnGameThread(const char* what, std::function<JobOut()> fn, uint32_t timeoutMs = 5000) {
-    JobOut out;
-    bool ran = false;
+    auto out = std::make_shared<JobOut>();
+    // All callers pass a string literal. Perf retains this pointer as a metric key.
     bool ok = GameThread::Run(
-        [&] {
+        [out, fn = std::move(fn), what] {
             Perf::Scope sc(what);
             try {
-                out = fn();
+                *out = fn();
             } catch (const std::exception& e) {
-                out = {500, ErrJson(std::string("plugin error: ") + e.what())};
+                *out = JobOut::Error(500, std::string("plugin error: ") + e.what());
             } catch (...) {
-                out = {500, ErrJson("plugin error")};
+                *out = JobOut::Error(500, "plugin error");
             }
-            ran = true;
         },
         timeoutMs);
     if (!ok) {
         PluginLog("actions: %s did not run (game thread unavailable)", what);
         return Fail(503, "game thread unavailable");
     }
-    if (!ran) {
-        PluginLog("actions: %s did not complete on the game thread", what);
-        return Fail(504, "the game-thread job did not complete");
-    }
-    return {out.status, out.body};
+    return {out->status, out->render ? out->render() : out->body};
 }
 
 void SetCap(const char* name, const char* status, const std::string& detail = "") {
@@ -1553,9 +1563,9 @@ bool Broadcast(const std::string& text, const std::string& senderName, std::stri
 bool PollGameThread(std::function<bool()> probe, uint32_t timeoutMs, uint32_t stepMs = 250) {
     uint32_t waited = 0;
     for (;;) {
-        bool hit = false;
-        if (!GameThread::Run([&] { hit = probe(); }, 5000)) return false;
-        if (hit) return true;
+        auto hit = std::make_shared<bool>(false);
+        if (!GameThread::Run([probe, hit] { *hit = probe(); }, 5000)) return false;
+        if (*hit) return true;
         if (waited >= timeoutMs) return false;
         struct timespec ts {
             (time_t)(stepMs / 1000), (long)(stepMs % 1000) * 1000000L
@@ -1687,9 +1697,9 @@ void* ShutdownThread(void*) {
         0, 500 * 1000 * 1000
     };
     nanosleep(&half, nullptr);
-    bool saveRequested = false;
-    GameThread::Run(
-        [&] {
+    auto saveRequested = std::make_shared<bool>(false);
+    bool saveCompleted = GameThread::Run(
+        [saveRequested] {
             std::string why;
             void* admin = FindAdminComponent(why);
             auto save = Fn<FnAdminVoid>("UAdminComponent::Server_RequestDedicatedServerSave");
@@ -1698,11 +1708,11 @@ void* ShutdownThread(void*) {
                 return;
             }
             save(admin);
-            saveRequested = true;
+            *saveRequested = true;
         },
         5000);
-    PluginLog("shutdown: saveRequested=%d", (int)saveRequested);
-    if (saveRequested) {
+    PluginLog("shutdown: saveRequested=%d", (int)(saveCompleted && *saveRequested));
+    if (saveCompleted && *saveRequested) {
         for (int i = 0; i < 20; i++) {
             struct timespec ts {
                 0, 500 * 1000 * 1000
@@ -1975,14 +1985,17 @@ void Actions::Init() {
 }
 
 void Actions::Housekeep() {
+    // Also flush mutations that finished after a caller timed out.
+    state::FlushBans();
+    FlushPluginLogs();
     {
         Guard g(g_itemLock);
         if (g_itemsBuilt) return;
     }
     if (GameThread::TickCount() == 0) return;
-    bool built = false;
-    GameThread::Run([&] { Perf::Scope sc("catalogue.items"); built = BuildItems(); }, 5000);
-    if (built) {
+    auto built = std::make_shared<bool>(false);
+    bool completed = GameThread::Run([built] { Perf::Scope sc("catalogue.items"); *built = BuildItems(); }, 5000);
+    if (completed && *built) {
         Guard g(g_itemLock);
         SetCap("listItems", "ok",
                "every loaded non-abstract UClass deriving from UItem (" + std::to_string(g_items.size()) +
@@ -2044,17 +2057,17 @@ Actions::Result Actions::PlayerLocation(const std::string& gameId) {
 Actions::Result Actions::PlayerInventory(const std::string& gameId) {
     return OnGameThread("GET /players/{id}/inventory", [gameId]() -> JobOut {
         PlayerInfo p;
-        if (!FindPlayerById(gameId, p)) return {404, ErrJson("player not online")};
+        if (!FindPlayerById(gameId, p)) return JobOut::Error(404, "player not online");
         // LANE L3f: no current character means there is no inventory to report. Answering `[]`
         // here would be a lie that looks like "the player is carrying nothing"; answering with
         // some other container's items - which is what the old sweep did - is worse. 404 is the
         // honest answer, and it is the answer a player on the character screen or a player who is
         // dead and has not respawned gets.
         if (!p.spawned)
-            return {404, ErrJson(std::string("no character: ") +
+            return JobOut::Error(404, std::string("no character: ") +
                                  (p.pawn ? "the player's current pawn is " + Reflect::ClassName(p.pawn) +
                                            ", not a character"
-                                         : "the player has no pawn possessed"))};
+                                         : "the player has no pawn possessed"));
         std::string detail;
         auto items = ReadInventory(p, detail);
         if (items.empty() && !detail.empty()) {
@@ -2062,6 +2075,7 @@ Actions::Result Actions::PlayerInventory(const std::string& gameId) {
             return {200, "[]"};
         }
         SetCap("playerInventory", "ok", "");
+        return {200, [items = std::move(items)] {
         std::string o = "[";
         for (size_t i = 0; i < items.size(); i++) {
             if (i) o += ",";
@@ -2070,90 +2084,109 @@ Actions::Result Actions::PlayerInventory(const std::string& gameId) {
                  ",\"slot\":" + std::to_string(items[i].slot) + ",\"assetPath\":" +
                  JsonStr(items[i].path) + "}";
         }
-        return {200, o + "]"};
+        return o + "]";
+        }};
     });
 }
 
 // LANE L3f / finding F19: the diagnosis endpoint. Read-only, debug-gated.
 Actions::Result Actions::DebugInventories(const std::string& gameId) {
+    struct ObjectView {
+        bool valid = false;
+        std::string address, cls, name;
+        std::string Json() const {
+            return valid ? "{\"ptr\":" + JsonStr(address) + ",\"class\":" + JsonStr(cls) +
+                           ",\"name\":" + JsonStr(name) + "}" : "null";
+        }
+    };
+    struct Entry { int index, stack; std::string code; };
+    struct Entries {
+        int total = -1;
+        std::vector<Entry> rows;
+        std::string Json() const {
+            std::string out = "[";
+            for (const auto& e : rows) {
+                if (out.size() > 1) out += ",";
+                out += "{\"i\":" + std::to_string(e.index) + ",\"code\":" + JsonStr(e.code) +
+                       ",\"stack\":" + std::to_string(e.stack) + "}";
+            }
+            return out + "]";
+        }
+    };
+    struct Sweep {
+        ObjectView component, owner;
+        Entries entries;
+        bool ownerCurrent, ownerState, classAccepted, accepted;
+    };
     return OnGameThread("GET /debug/inventories", [gameId]() -> JobOut {
         PlayerInfo p;
-        if (!FindPlayerById(gameId, p)) return {404, ErrJson("player not online")};
+        if (!FindPlayerById(gameId, p)) return JobOut::Error(404, "player not online");
         VirtualItemLayout lay = ReadVirtualItemLayout();
-        auto ptrStr = [](void* o) {
-            char b[32];
-            snprintf(b, sizeof b, "%p", o);
-            return std::string(b);
+        auto describe = [](void* object) {
+            ObjectView out;
+            if (!object || !MemReadable(object, 0x40)) return out;
+            char address[32]; snprintf(address, sizeof address, "%p", object);
+            out.valid = true; out.address = address;
+            out.cls = Reflect::ClassName(object); out.name = Reflect::ObjName(object);
+            return out;
         };
-        auto describe = [&](void* o) {
-            if (!o || !MemReadable(o, 0x40)) return std::string("null");
-            return "{\"ptr\":" + JsonStr(ptrStr(o)) + ",\"class\":" + JsonStr(Reflect::ClassName(o)) +
-                   ",\"name\":" + JsonStr(Reflect::ObjName(o)) + "}";
-        };
-        // The raw entries a component holds, uninterpreted: this is the measurement that says
-        // which container an item is really in.
-        auto entries = [&](void* c, std::string& json) -> int {
-            json = "[]";
-            if (!lay.ok()) return -1;
-            int32_t itemsOff = Off(c, "Items");
-            if (itemsOff < 0) return -1;
-            itemsOff += lay.innerArray;
-            if (!MemReadable((const char*)c + itemsOff, 16)) return -1;
-            TArray<char> arr{};
-            memcpy(&arr, (const char*)c + itemsOff, sizeof arr);
-            if (arr.Num < 0 || arr.Num > 8192) return -1;
-            if (arr.Num && !MemReadable(arr.Data, (size_t)arr.Num * lay.stride)) return -1;
-            json = "[";
-            for (int32_t i = 0; i < arr.Num && i < 64; i++) {
+        auto entries = [&lay](void* c) {
+            Entries out;
+            if (!c || !lay.ok()) return out;
+            int32_t off = Off(c, "Items");
+            if (off < 0) return out;
+            off += lay.innerArray;
+            if (!MemReadable((const char*)c + off, 16)) return out;
+            TArray<char> arr{}; memcpy(&arr, (const char*)c + off, sizeof arr);
+            if (arr.Num < 0 || arr.Num > 8192) return out;
+            if (arr.Num && !MemReadable(arr.Data, (size_t)arr.Num * lay.stride)) return out;
+            out.total = arr.Num;
+            for (int32_t i = 0; i < arr.Num && i < 64; ++i) {
                 const char* e = arr.Data + (size_t)i * lay.stride;
                 int32_t stack = 0;
                 if (lay.stack >= 0 && MemReadable(e + lay.stack, 4)) memcpy(&stack, e + lay.stack, 4);
-                json += (i ? "," : "");
-                json += "{\"i\":" + std::to_string(i) + ",\"code\":" +
-                        JsonStr(ActionsUtil::ItemCodeFromSoftPath(SoftClassName(e + lay.item))) +
-                        ",\"stack\":" + std::to_string(stack) + "}";
+                out.rows.push_back({i, stack, ActionsUtil::ItemCodeFromSoftPath(SoftClassName(e + lay.item))});
             }
-            json += "]";
-            return arr.Num;
-        };
-        auto count = [&](void* c) -> int {
-            std::string ignored;
-            return entries(c, ignored);
+            return out;
         };
         std::string why;
         void* chosen = PawnInventory(p.pawn, why);
-
-        std::string o = "{\"gameId\":" + JsonStr(p.gameId) + ",\"name\":" + JsonStr(p.name) +
-                        ",\"characterId\":" + (p.characterId.empty() ? "null" : JsonStr(p.characterId)) +
-                        ",\"controller\":" + describe(p.controller) + ",\"controllerPawn\":" + describe(p.pawn) +
-                        ",\"playerStatePawn\":" + describe(p.statePawn) + ",\"pawnsAgree\":" +
-                        (p.pawn == p.statePawn ? "true" : "false") + ",\"spawned\":" +
-                        (p.spawned ? "true" : "false") + ",\"chosen\":" + describe(chosen) +
-                        ",\"chosenEntries\":" + std::to_string(chosen ? count(chosen) : -1) +
-                        ",\"chosenItems\":" + [&] {
-                            std::string j = "[]";
-                            if (chosen) entries(chosen, j);
-                            return j;
-                        }() +
-                        ",\"chosenRejectedBecause\":" + (chosen ? std::string("null") : JsonStr(why)) +
-                        ",\"legacySweep\":[";
-        // What the pre-L3f resolution would have returned, in the order it returned it.
-        bool first = true;
+        auto controller = describe(p.controller), pawn = describe(p.pawn), statePawn = describe(p.statePawn);
+        auto chosenView = describe(chosen);
+        auto chosenEntries = entries(chosen);
+        bool agree = p.pawn == p.statePawn, spawned = p.spawned, haveChosen = chosen != nullptr;
+        std::vector<Sweep> sweep;
         for (void* c : FindInventoryComponents(p)) {
-            // A UActorComponent has no reflected `Owner`: the owning actor is its Outer.
             void* owner = Reflect::ObjOuter(c);
-            if (!first) o += ",";
-            first = false;
-            std::string items;
-            int n = entries(c, items);
-            o += "{\"component\":" + describe(c) + ",\"owner\":" + describe(owner) + ",\"ownerIsCurrentPawn\":" +
-                 (owner && owner == p.pawn ? "true" : "false") + ",\"ownerIsPlayerStatePawn\":" +
-                 (owner && owner == p.statePawn ? "true" : "false") + ",\"entries\":" + std::to_string(n) +
-                 ",\"items\":" + items + ",\"classAccepted\":" +
-                 (ActionsUtil::IsPlayerInventoryClass(Reflect::ClassName(c)) ? "true" : "false") +
-                 ",\"acceptedNow\":" + (c == chosen ? "true" : "false") + "}";
+            sweep.push_back({describe(c), describe(owner), entries(c), owner && owner == p.pawn,
+                             owner && owner == p.statePawn,
+                             ActionsUtil::IsPlayerInventoryClass(Reflect::ClassName(c)), c == chosen});
         }
-        return {200, o + "]}"};
+        // Only owned strings, numbers and vectors survive this job; no UObject pointers.
+        return {200, [id = p.gameId, name = p.name, character = p.characterId, controller, pawn, statePawn,
+                      chosenView, chosenEntries = std::move(chosenEntries), agree, spawned, haveChosen,
+                      why, sweep = std::move(sweep)] {
+            std::string out = "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(name) +
+                ",\"characterId\":" + (character.empty() ? "null" : JsonStr(character)) +
+                ",\"controller\":" + controller.Json() + ",\"controllerPawn\":" + pawn.Json() +
+                ",\"playerStatePawn\":" + statePawn.Json() + ",\"pawnsAgree\":" + (agree ? "true" : "false") +
+                ",\"spawned\":" + (spawned ? "true" : "false") + ",\"chosen\":" + chosenView.Json() +
+                ",\"chosenEntries\":" + std::to_string(chosenEntries.total) +
+                ",\"chosenItems\":" + chosenEntries.Json() +
+                ",\"chosenRejectedBecause\":" + (haveChosen ? "null" : JsonStr(why)) + ",\"legacySweep\":[";
+            bool first = true;
+            for (const auto& row : sweep) {
+                if (!first) out += ",";
+                first = false;
+                out += "{\"component\":" + row.component.Json() + ",\"owner\":" + row.owner.Json() +
+                    ",\"ownerIsCurrentPawn\":" + (row.ownerCurrent ? "true" : "false") +
+                    ",\"ownerIsPlayerStatePawn\":" + (row.ownerState ? "true" : "false") +
+                    ",\"entries\":" + std::to_string(row.entries.total) + ",\"items\":" + row.entries.Json() +
+                    ",\"classAccepted\":" + (row.classAccepted ? "true" : "false") +
+                    ",\"acceptedNow\":" + (row.accepted ? "true" : "false") + "}";
+            }
+            return out + "]}";
+        }};
     });
 }
 
@@ -2199,7 +2232,7 @@ Actions::Result Actions::Entities() {
     Actions::Result r = OnGameThread("GET /entities", []() -> JobOut {
         void* classCls = Reflect::StaticClass("UClass::StaticClass");
         if (!classCls) classCls = Reflect::FindObjectByPath("/Script/CoreUObject", "Class");
-        if (!classCls) return {503, ErrJson("UClass class not found")};
+        if (!classCls) return JobOut::Error(503, "UClass class not found");
         struct Root {
             const char* sym;
             const char* path;
@@ -2250,10 +2283,11 @@ Actions::Result Actions::Entities() {
                     found[baseName] = {r.type, "base AI character class"};
             }
         }
-        if (!haveAny) return {503, ErrJson("no VEIN AI character class is loaded")};
+        if (!haveAny) return JobOut::Error(503, "no VEIN AI character class is loaded");
         SetCap("listEntities", "ok",
                "the AI character classes loaded so far (" + std::to_string(found.size()) +
                    "); VEIN streams its AI content, so this is not the full bestiary");
+        return {200, [found = std::move(found)] {
         std::string o = "[";
         bool first = true;
         for (auto& kv : found) {
@@ -2264,7 +2298,8 @@ Actions::Result Actions::Entities() {
             o += "{\"code\":" + JsonStr(kv.first) + ",\"name\":" + JsonStr(name) + ",\"type\":" +
                  JsonStr(kv.second.first) + ",\"description\":" + JsonStr(kv.second.second) + "}";
         }
-        return {200, o + "]"};
+        return o + "]";
+        }};
     });
     if (r.status == 200) {
         Guard g(g_entityCacheLock);
@@ -2276,24 +2311,29 @@ Actions::Result Actions::Entities() {
 
 Actions::Result Actions::Locations() {
     return OnGameThread("GET /locations", []() -> JobOut {
+        auto locations = ReadLocations();
+        return {200, [locations = std::move(locations)] {
         std::string o = "[";
         bool first = true;
-        for (auto& l : ReadLocations()) {
+        for (const auto& l : locations) {
             if (!first) o += ",";
             first = false;
             o += "{\"code\":" + JsonStr(l.code) + ",\"name\":" + JsonStr(l.name) + ",\"position\":{\"x\":" +
                  JsonNum(l.x) + ",\"y\":" + JsonNum(l.y) + ",\"z\":" + JsonNum(l.z) + "}}";
         }
-        return {200, o + "]"};
+        return o + "]";
+        }};
     });
 }
 
 Actions::Result Actions::Bans() {
     return OnGameThread("GET /bans", []() -> JobOut {
         std::string why;
+        auto gameRows = ReadGameBans(why);
+        return {200, [gameRows = std::move(gameRows), why] {
         std::map<std::string, GameBan> game;
         std::vector<std::string> order;
-        for (auto& b : ReadGameBans(why)) {
+        for (const auto& b : gameRows) {
             if (!game.count(b.gameId)) order.push_back(b.gameId);
             game[b.gameId] = b;
         }
@@ -2330,7 +2370,8 @@ Actions::Result Actions::Bans() {
                                                                : std::string("null")) +
                  ",\"enforcedBy\":" + JsonStr(inGame ? "game" : "plugin") + "}";
         }
-        return {200, o + "]"};
+        return o + "]";
+        }};
     });
 }
 
@@ -2350,7 +2391,7 @@ Actions::Result Actions::Message(const JsonValue& body) {
             std::string err, rendered, via;
             if (!Broadcast(text, sender, rendered, via, err)) {
                 SetCap("sendMessage", "degraded", err);
-                return {503, ErrJson(err)};
+                return JobOut::Error(503, err);
             }
             SetCap("sendMessage", "ok", std::string("broadcast via ") + via);
             size_t n = ReadPlayers().size();
@@ -2359,17 +2400,17 @@ Actions::Result Actions::Message(const JsonValue& body) {
             // it can only be seen on the client. So it does not claim `verified:true`; the 200 means
             // the multicast was dispatched on the game thread and the job ran to completion (L3d's
             // ack-after-effect), and `verifiedBy` says exactly that.
-            return {200, "{\"success\":true,\"verified\":false,\"verifiedBy\":\"dispatch-only: a chat "
+            return {200, [n, via] { return std::string("{\"success\":true,\"verified\":false,\"verifiedBy\":\"dispatch-only: a chat "
                          "multicast leaves no server-side state to read back\",\"delivered\":" +
-                             std::to_string(n) + ",\"via\":" + JsonStr(via) + "}"};
+                             std::to_string(n) + ",\"via\":" + JsonStr(via) + "}"); }};
         }
         PlayerInfo p;
-        if (!FindPlayerById(recipient, p)) return {404, ErrJson("player not online")};
+        if (!FindPlayerById(recipient, p)) return JobOut::Error(404, "player not online");
         std::string err;
         std::string rendered = RenderMessage(sender, text);
         if (!NotifyPlayer(p, rendered, err)) {
             SetCap("sendMessage", "degraded", err);
-            return {503, ErrJson(err)};
+            return JobOut::Error(503, err);
         }
         return {200, "{\"success\":true,\"verified\":false,\"verifiedBy\":\"dispatch-only: a client "
                      "notification RPC leaves no server-side state to read back\",\"delivered\":1,"
@@ -2469,7 +2510,19 @@ Actions::Result Actions::Teleport(const JsonValue& body) {
     double dest[3] = {x, y, z}, before[3] = {0, 0, 0}, rot[3] = {0, 0, 0};
     int lookupStatus = 0;
     std::string lookupErr;
-    Actions::Result pre = OnGameThread("POST /teleport (lookup)", [&]() -> JobOut {
+    struct TeleportLookup {
+        double dest[3], before[3] = {}, rot[3] = {};
+        int status = 0;
+        std::string err;
+        TeleportLookup(double x, double y, double z) : dest{x, y, z} {}
+    };
+    auto lookup = std::make_shared<TeleportLookup>(x, y, z);
+    Actions::Result pre = OnGameThread("POST /teleport (lookup)", [id, target, haveXyz, haveYaw, yaw, lookup]() -> JobOut {
+        auto* dest = lookup->dest;
+        auto* before = lookup->before;
+        auto* rot = lookup->rot;
+        auto& lookupStatus = lookup->status;
+        auto& lookupErr = lookup->err;
         PlayerInfo p;
         if (!FindPlayerById(id, p)) {
             lookupStatus = 404;
@@ -2503,6 +2556,11 @@ Actions::Result Actions::Teleport(const JsonValue& body) {
         return {200, "{}"};
     });
     if (pre.status != 200) return pre;
+    memcpy(dest, lookup->dest, sizeof dest);
+    memcpy(before, lookup->before, sizeof before);
+    memcpy(rot, lookup->rot, sizeof rot);
+    lookupStatus = lookup->status;
+    lookupErr = lookup->err;
     if (lookupStatus) return Fail(lookupStatus, lookupErr);
 
     auto posJson = [](const char* key, const double v[3]) {
@@ -2518,7 +2576,16 @@ Actions::Result Actions::Teleport(const JsonValue& body) {
         std::string via, err;
         bool called = false;
         double observed[3] = {0, 0, 0};
-        Actions::Result r = OnGameThread("POST /teleport", [&]() -> JobOut {
+        struct TeleportAttempt { std::string via, err; bool called = false; double observed[3] = {}; };
+        auto attempt = std::make_shared<TeleportAttempt>();
+        std::array<double, 3> jobDest{dest[0], dest[1], dest[2]}, jobRot{rot[0], rot[1], rot[2]};
+        Actions::Result r = OnGameThread("POST /teleport", [id, m, attempt, jobDest, jobRot]() -> JobOut {
+            auto& via = attempt->via;
+            auto& err = attempt->err;
+            auto& called = attempt->called;
+            auto* observed = attempt->observed;
+            const double* dest = jobDest.data();
+            const double* rot = jobRot.data();
             PlayerInfo p;
             if (!FindPlayerById(id, p) || !p.pawn) {
                 err = "the player left while the teleport was running";
@@ -2563,6 +2630,10 @@ Actions::Result Actions::Teleport(const JsonValue& body) {
             return {200, "{}"};
         });
         if (r.status != 200) return r;
+        via = attempt->via;
+        err = attempt->err;
+        called = attempt->called;
+        memcpy(observed, attempt->observed, sizeof observed);
         if (!called) {
             lastErr = err;
             continue;
@@ -2632,7 +2703,12 @@ Actions::Result Actions::Give(const JsonValue& body) {
     int before = 0;
     int lookupStatus = 0;
     std::string lookupErr;
-    Actions::Result pre = OnGameThread("POST /give (count before)", [&]() -> JobOut {
+    struct GiveLookup { int before = 0, status = 0; std::string err; };
+    auto lookup = std::make_shared<GiveLookup>();
+    Actions::Result pre = OnGameThread("POST /give (count before)", [id, resolvedCode, lookup]() -> JobOut {
+        auto& before = lookup->before;
+        auto& lookupStatus = lookup->status;
+        auto& lookupErr = lookup->err;
         PlayerInfo p;
         if (!FindPlayerById(id, p)) {
             lookupStatus = 404;
@@ -2650,6 +2726,9 @@ Actions::Result Actions::Give(const JsonValue& body) {
         return {200, "{}"};
     });
     if (pre.status != 200) return pre;
+    before = lookup->before;
+    lookupStatus = lookup->status;
+    lookupErr = lookup->err;
     if (lookupStatus) return Fail(lookupStatus, lookupErr);
 
     std::vector<std::string> attempted;
@@ -2660,7 +2739,16 @@ Actions::Result Actions::Give(const JsonValue& body) {
         std::string via, err;
         bool called = false;
         int observed = before, addResult = -1;
-        Actions::Result r = OnGameThread("POST /give", [&]() -> JobOut {
+        struct GiveAttempt { std::string via, err; bool called = false; int observed = 0, addResult = -1; };
+        auto attempt = std::make_shared<GiveAttempt>();
+        attempt->observed = before;
+        Actions::Result r = OnGameThread("POST /give", [id, m, amount, itemClass, resolvedCode, attempt]() -> JobOut {
+            auto& via = attempt->via;
+            auto& err = attempt->err;
+            auto& called = attempt->called;
+            auto& observed = attempt->observed;
+            auto& addResult = attempt->addResult;
+            void* itemClassLocal = itemClass;
             PlayerInfo p;
             if (!FindPlayerById(id, p)) {
                 err = "the player left while the give was running";
@@ -2684,8 +2772,8 @@ Actions::Result Actions::Give(const JsonValue& body) {
                 // corn in the player's hands while the plugin read the instance back as three.
                 // `ActionsUtil::StackSplit` is the same decision, made where it can be tested.
                 uint8_t last = 0;
-                for (int n : ActionsUtil::StackSplit(amount, MaxStackOf(itemClass)))
-                    last = AddOneStack(chain, inv, itemClass, n);
+                for (int n : ActionsUtil::StackSplit(amount, MaxStackOf(itemClassLocal)))
+                    last = AddOneStack(chain, inv, itemClassLocal, n);
                 called = true;
                 addResult = (int)last;
                 via = "FVirtualItemInstance::FromItem + UBaseInventoryComponent::AddItem";
@@ -2697,7 +2785,7 @@ Actions::Result Actions::Give(const JsonValue& body) {
                     err = admin ? "UAdminComponent::Server_GiveItem unresolved" : why;
                     return {200, "{}"};
                 }
-                give(admin, p.playerState, &itemClass, amount);  // &: passed by invisible reference
+                give(admin, p.playerState, &itemClassLocal, amount);  // &: passed by invisible reference
                 called = true;
                 via = "UAdminComponent::Server_GiveItem (requires an admin online)";
             }
@@ -2705,6 +2793,11 @@ Actions::Result Actions::Give(const JsonValue& body) {
             return {200, "{}"};
         });
         if (r.status != 200) return r;
+        via = attempt->via;
+        err = attempt->err;
+        called = attempt->called;
+        observed = attempt->observed;
+        addResult = attempt->addResult;
         if (!called) {
             if (!err.empty()) lastErr = err;
             continue;
@@ -2768,30 +2861,36 @@ Actions::Result Actions::Kick(const JsonValue& body) {
     // Resolve the player once, up front, so "not online" is a clean 404 rather than a failed kick.
     std::string gameId;
     bool online = false;
-    Actions::Result pre = OnGameThread("POST /kick (lookup)", [id, &gameId, &online]() -> JobOut {
+    struct KickLookup { std::string gameId; bool online = false; };
+    auto lookup = std::make_shared<KickLookup>();
+    Actions::Result pre = OnGameThread("POST /kick (lookup)", [id, lookup]() -> JobOut {
         PlayerInfo p;
-        online = FindPlayerById(id, p);
-        if (online) gameId = p.gameId;
+        lookup->online = FindPlayerById(id, p);
+        if (lookup->online) lookup->gameId = p.gameId;
         return {200, "{}"};
     });
     if (pre.status != 200) return pre;
+    gameId = lookup->gameId;
+    online = lookup->online;
     if (!online) return Fail(404, "player not online");
 
     std::vector<std::string> attempted;
     std::string lastErr;
     for (int m = 0; m < kKickMechanisms; m++) {
         SessionAttempt a;
-        Actions::Result r = OnGameThread("POST /kick", [&]() -> JobOut {
+        auto attempt = std::make_shared<SessionAttempt>();
+        Actions::Result r = OnGameThread("POST /kick", [id, reason, m, attempt]() -> JobOut {
             PlayerInfo p;
             if (!FindPlayerById(id, p)) {
-                a.called = false;
-                a.err = "gone";
+                attempt->called = false;
+                attempt->err = "gone";
                 return {200, "{}"};
             }
-            a = KickMechanism(m, p, reason, false);
+            *attempt = KickMechanism(m, p, reason, false);
             return {200, "{}"};
         });
         if (r.status != 200) return r;  // 503/504: the game thread, not the kick
+        a = *attempt;
         if (a.err == "gone") break;     // already left between mechanisms
         if (!a.called) {
             lastErr = a.err;
@@ -2830,7 +2929,8 @@ Actions::Result Actions::Ban(const JsonValue& body) {
     const JsonValue* exp = body.get("expiresAt");
     std::string expiresAt = exp && exp->isStr() ? exp->str : "";
 
-    return OnGameThread("POST /ban", [id, reason, expiresAt]() -> JobOut {
+    Result result = OnGameThread("POST /ban", [id, reason, expiresAt,
+                                              lifetime = std::make_shared<BanJobLifetime>()]() -> JobOut {
         std::string normalized = NormalizeGameId(id);
         PlayerInfo found;
         bool online = FindPlayerById(id, found);
@@ -2866,7 +2966,7 @@ Actions::Result Actions::Ban(const JsonValue& body) {
         }
         if (!persisted && !pluginList) {
             SetCap("ban", "degraded", "ban failed: " + err);
-            return {503, ErrJson("ban failed: " + err)};
+            return JobOut::Error(503, "ban failed: " + err);
         }
         std::string detail = err + (disconnect.empty() ? "" : ("; the online player was " + disconnect));
         // LANE L3e: read both lists back. `verified` means "the id is listed now", not "the write
@@ -2875,32 +2975,41 @@ Actions::Result Actions::Ban(const JsonValue& body) {
         bool verified = BanListedNow(normalized, inPlugin, inGame);
         if (!verified) {
             SetCap("ban", "degraded", "the ban was written but neither list shows it: " + err);
-            return {409, "{\"success\":false,\"verified\":false,\"gameId\":" + JsonStr(normalized) +
+            return {409, [normalized, err] { return "{\"success\":false,\"verified\":false,\"gameId\":" + JsonStr(normalized) +
                              ",\"error\":" + JsonStr("the ban was written but neither the plugin list nor the "
-                                                     "game's own list shows it: " + err) + "}"};
+                                                     "game's own list shows it: " + err) + "}"; }};
         }
         SetCap("ban", "ok", "verified by reading the ban lists back");
-        return {200, "{\"success\":true,\"verified\":true,\"gameId\":" + JsonStr(normalized) + ",\"online\":" +
+        return {200, [normalized, online, inGame, inPlugin, disconnect, detail] {
+            return "{\"success\":true,\"verified\":true,\"gameId\":" + JsonStr(normalized) + ",\"online\":" +
                          (online ? "true" : "false") + ",\"persisted\":" + (inGame ? "true" : "false") +
                          ",\"pluginList\":" + (inPlugin ? "true" : "false") + ",\"via\":" +
                          JsonStr(std::string(inGame ? "AVeinGameStateBase ban list (Game.ini)" : "") +
                                  (inGame && inPlugin ? " + " : "") + (inPlugin ? "the plugin ban list" : "")) +
                          ",\"enforcedBy\":" + JsonStr(inGame ? "game" : "plugin") + ",\"disconnected\":" +
-                         JsonStr(disconnect) + ",\"detail\":" + JsonStr(detail) + "}"};
+                         JsonStr(disconnect) + ",\"detail\":" + JsonStr(detail) + "}";
+        }};
     });
+    if (!state::FlushBans()) return Fail(503, state::BanPersistenceError());
+    return result;
 }
 
-Actions::Result Actions::Unban(const JsonValue& body) {
+size_t Actions::PendingBanJobs() { return g_pendingBanJobs.load(); }
+
+static Actions::Result UnbanWithRevision(const JsonValue& body, bool checkRevision, uint64_t expectedRevision) {
     std::string id = BodyString(body, "gameId");
     if (id.empty()) return Fail(400, "'gameId' is required");
-    return OnGameThread("POST /unban", [id]() -> JobOut {
+    Actions::Result result = OnGameThread("POST /unban", [id, checkRevision, expectedRevision,
+                                                         lifetime = std::make_shared<BanJobLifetime>()]() -> JobOut {
+        if (checkRevision && state::BanRevision() != expectedRevision)
+            return JobOut::Error(409, "ban changed before timed expiry; preserving current ban");
         std::string normalized = NormalizeGameId(id);
         bool pluginList = state::BanRemove(normalized);
         std::string err;
         bool persisted = WriteGameBan(normalized, "", false, err);
         if (!persisted && !pluginList) {
             SetCap("unban", "degraded", err);
-            return {503, ErrJson("unban failed: " + err)};
+            return JobOut::Error(503, "unban failed: " + err);
         }
         // LANE L3e: verified means the id is gone from BOTH lists on a fresh read - if either one
         // still holds it, PreLogin still refuses the rejoin and the unban did not happen.
@@ -2911,17 +3020,28 @@ Actions::Result Actions::Unban(const JsonValue& body) {
                               (inPlugin ? "the plugin ban list" : "") + (inPlugin && inGame ? " and " : "") +
                               (inGame ? "the game's own ban list" : "") + "; a rejoin would still be refused";
             SetCap("unban", "degraded", why);
-            return {409, "{\"success\":false,\"verified\":false,\"gameId\":" + JsonStr(normalized) +
+            return {409, [normalized, inPlugin, inGame, why] {
+                return "{\"success\":false,\"verified\":false,\"gameId\":" + JsonStr(normalized) +
                              ",\"pluginList\":" + (inPlugin ? "true" : "false") + ",\"persisted\":" +
-                             (inGame ? "true" : "false") + ",\"error\":" + JsonStr(why) + "}"};
+                             (inGame ? "true" : "false") + ",\"error\":" + JsonStr(why) + "}";
+            }};
         }
         SetCap("unban", "ok", "verified by reading both ban lists back empty for this id");
-        return {200, "{\"success\":true,\"verified\":true,\"gameId\":" + JsonStr(normalized) +
+        return {200, [normalized, pluginList, persisted, err] {
+            return "{\"success\":true,\"verified\":true,\"gameId\":" + JsonStr(normalized) +
                          ",\"removedFromPluginList\":" + (pluginList ? "true" : "false") +
                          ",\"removedFromGameList\":" + (persisted ? "true" : "false") +
                          ",\"via\":\"both ban lists re-read and empty for this id\",\"detail\":" +
-                         JsonStr(err) + "}"};
+                         JsonStr(err) + "}";
+        }};
     });
+    if (!state::FlushBans()) return Fail(503, state::BanPersistenceError());
+    return result;
+}
+
+Actions::Result Actions::Unban(const JsonValue& body) { return UnbanWithRevision(body, false, 0); }
+Actions::Result Actions::UnbanIfRevision(const JsonValue& body, uint64_t expectedRevision) {
+    return UnbanWithRevision(body, true, expectedRevision);
 }
 
 Actions::Result Actions::Shutdown() {
@@ -2956,7 +3076,9 @@ const char* kHelp =
     "locations | save | shutdown | raw <console command> | vein <admin exec command> | cheat <gameId> <cmd> | help";
 
 JobOut CommandOutput(bool success, const std::string& out) {
-    return {200, "{\"success\":" + std::string(success ? "true" : "false") + ",\"output\":" + JsonStr(out) + "}"};
+    return {200, [success, out] {
+        return "{\"success\":" + std::string(success ? "true" : "false") + ",\"output\":" + JsonStr(out) + "}";
+    }};
 }
 
 // UEngine::Exec with our own FOutputDevice, built by copying FOutputDeviceFile's vtable and
@@ -3120,8 +3242,8 @@ Actions::Result Actions::Command(const JsonValue& body) {
             std::string why;
             void* admin = FindAdminComponent(why);
             auto save = Fn<FnAdminVoid>("UAdminComponent::Server_RequestDedicatedServerSave");
-            if (!save) return {501, ErrJson("UAdminComponent::Server_RequestDedicatedServerSave unresolved")};
-            if (!admin) return {503, ErrJson(why)};
+            if (!save) return JobOut::Error(501, "UAdminComponent::Server_RequestDedicatedServerSave unresolved");
+            if (!admin) return JobOut::Error(503, why);
             save(admin);
             return CommandOutput(true, "save requested");
         });
@@ -3141,10 +3263,10 @@ Actions::Result Actions::Command(const JsonValue& body) {
             std::string why;
             void* admin = FindAdminComponent(why);
             auto exec = Fn<FnAdminString>("UAdminComponent::Server_Exec");
-            if (!exec) return {501, ErrJson("UAdminComponent::Server_Exec unresolved")};
-            if (!admin) return {503, ErrJson(why)};
+            if (!exec) return JobOut::Error(501, "UAdminComponent::Server_Exec unresolved");
+            if (!admin) return JobOut::Error(503, why);
             GameFString s(cmd);
-            if (!s.ok) return {503, ErrJson("could not allocate the command string")};
+            if (!s.ok) return JobOut::Error(503, "could not allocate the command string");
             exec(admin, &s.fs);
             return CommandOutput(true, "dispatched to UAdminComponent::Server_Exec (it returns no output)");
         });
@@ -3156,7 +3278,7 @@ Actions::Result Actions::Command(const JsonValue& body) {
             "command raw",
             [cmd]() -> JobOut {
                 std::string out, err;
-                if (!RunExec(cmd, out, err)) return {501, ErrJson(err)};
+                if (!RunExec(cmd, out, err)) return JobOut::Error(501, err);
                 return CommandOutput(true, out);
             },
             10000);
