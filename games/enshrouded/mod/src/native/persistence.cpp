@@ -271,15 +271,17 @@ bool Store::SaveOutbox() { return Write("outbox", paths_.outbox, OutboxJson(outb
 bool Store::SaveOnline() { return Write("online", paths_.online, PlayersJson(online_)); }
 bool Store::SaveKnown() { return Write("known", paths_.known, PlayersJson(known_)); }
 
-void Store::Remember(const JsonValue& player, int64_t nowMs) {
+bool Store::Remember(const JsonValue& player, int64_t nowMs) {
     const JsonValue* g = player.get("gameId");
-    if (!g || g->type != JsonValue::String || g->str.empty()) return;
+    if (!g || g->type != JsonValue::String || g->str.empty()) return false;
     JsonValue row = player;
     Put(row, "lastSeen", JNum((double)nowMs));
     for (auto& k : known_)
         if (k.get("gameId") && k.get("gameId")->str == g->str) {
+            JsonValue before = k;
             k = row;
-            return;
+            Put(before, "lastSeen", JNum((double)nowMs));
+            return JsonDump(before) != JsonDump(row);
         }
     known_.push_back(row);
     if (known_.size() > kMaxKnownPlayers) {
@@ -288,6 +290,7 @@ void Store::Remember(const JsonValue& player, int64_t nowMs) {
         });
         known_.erase(oldest);
     }
+    return true;
 }
 
 bool Store::SaveTimedBans() {

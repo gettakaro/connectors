@@ -260,8 +260,9 @@ void PersistenceTests() {
     {
         Store s(ResolveStatePaths(t::TempDir("persist-known"), env));
         s.Load();
-        s.Remember(t::J(R"({"gameId":"1","name":"A"})"), 10);
-        s.Remember(t::J(R"({"gameId":"1","name":"A2"})"), 20);
+        CHECK(s.Remember(t::J(R"({"gameId":"1","name":"A"})"), 10));
+        CHECK(!s.Remember(t::J(R"({"gameId":"1","name":"A"})"), 15));  // only lastSeen moved: nothing to write
+        CHECK(s.Remember(t::J(R"({"gameId":"1","name":"A2"})"), 20));
         CHECK_EQ(s.Known().size(), (size_t)1);
         CHECK_EQ(s.Known()[0].get("name")->str, std::string("A2"));
     }

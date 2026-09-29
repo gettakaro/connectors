@@ -427,10 +427,8 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
     int64_t wall = o_.wallMs();
 
     // State changes first: they happened in the game whether or not anyone still waits for the answer.
-    for (auto& p : out.seenPlayers) {
-        o_.store->Remember(p, wall);
-        knownDirty_ = viewDirty_ = true;
-    }
+    for (auto& p : out.seenPlayers)
+        if (o_.store->Remember(p, wall)) knownDirty_ = viewDirty_ = true;
     auto& bans = o_.store->TimedBans();
     if (out.ok && out.ban.op != BanChange::None && !o_.store->Fenced("timedBans")) {
         const std::string& gid = out.ban.ban.gameId;
@@ -516,6 +514,7 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
         errorResponses_++;
         PluginLog("native: Takaro request %s failed: %s", job->requestId.c_str(), error.c_str());
     }
+    if (ok && job->action == "shutdown") FlushState(now, true);  // the game quits about 500 ms from now
     maxRequestLatencyMs_ = std::max<int64_t>(maxRequestLatencyMs_, now - job->enqueuedMs);
     SendResponse(job->epoch, FrameKind::Response,
                  ok ? CreateResponse(job->requestId, payload) : CreateErrorResponse(job->requestId, error));
@@ -708,8 +707,7 @@ void Bridge::ObserveConnection(const std::string& type, const JsonValue& data, i
                  online.end());
     if (type == "player-connected") {
         online.push_back(player);
-        o_.store->Remember(player, o_.wallMs());
-        knownDirty_ = viewDirty_ = true;
+        if (o_.store->Remember(player, o_.wallMs())) knownDirty_ = viewDirty_ = true;
     }
     missingStrikes_.erase(*gid);
     onlineDirty_ = true;
@@ -887,7 +885,10 @@ void Bridge::RecoverBanIntents() {
 }
 
 void Bridge::FlushState(int64_t now, bool force) {
-    if (outboxDirty_ && (force || now - lastOutboxSave_ >= 250)) {
+    // The outbox file is rewritten whole: while Takaro is away and it grows, write it less often
+    // (250 ms when small, up to 5 s near the 32 MiB bound).
+    int64_t outboxGap = std::min<int64_t>(5000, 250 * (1 + (int64_t)(o_.store->Outbox().pendingBytes >> 18)));
+    if (outboxDirty_ && (force || now - lastOutboxSave_ >= outboxGap)) {
         lastOutboxSave_ = now;
         outboxDirty_ = !o_.store->SaveOutbox() && o_.store->OutboxUsable();
     }

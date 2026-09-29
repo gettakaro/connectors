@@ -78,7 +78,8 @@ public:
     std::vector<JsonValue>& Online() { return online_; }
     bool SaveOnline();
     std::vector<JsonValue>& Known() { return known_; }  // each has an extra "lastSeen" (ms)
-    void Remember(const JsonValue& player, int64_t nowMs);
+    // Records a player seen; true when that changes what is on disk beyond lastSeen (new player, new name...).
+    bool Remember(const JsonValue& player, int64_t nowMs);
     bool SaveKnown();
 
     // ---- timed bans + ban-intent journal ----
