@@ -1,0 +1,658 @@
+{
+ "cases": [
+  {
+   "input": {
+    "type": "player-connected",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     }
+    }
+   },
+   "expect": {
+    "type": "player-connected",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "player-disconnected",
+    "data": {
+     "gameId": "76561198000005875",
+     "name": "Limon",
+     "steamId": "76561198000005875",
+     "peerId": "0(1)"
+    }
+   },
+   "expect": {
+    "type": "player-disconnected",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "player-connected",
+    "data": {
+     "player": {
+      "gameId": "9(9)",
+      "name": "NoSteam"
+     }
+    }
+   },
+   "expect": {
+    "type": "player-connected",
+    "data": {
+     "player": {
+      "gameId": "9(9)",
+      "name": "NoSteam"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "player-connected",
+    "data": {
+     "player": {
+      "gameId": "x",
+      "name": "P",
+      "platformId": "steam:42",
+      "ip": "1.2.3.4",
+      "ping": 30
+     }
+    }
+   },
+   "expect": {
+    "type": "player-connected",
+    "data": {
+     "player": {
+      "gameId": "42",
+      "name": "P",
+      "steamId": "42",
+      "platformId": "steam:42",
+      "ip": "1.2.3.4",
+      "ping": 30
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "player-connected",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)",
+      "group": "Admins",
+      "permissions": [
+       "CanKickBan"
+      ],
+      "connectedAt": "2026-09-13T00:00:00.000Z",
+      "online": true
+     }
+    }
+   },
+   "expect": {
+    "type": "player-connected",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "chat-message",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     },
+     "message": "hi",
+     "channel": "Global"
+    }
+   },
+   "expect": {
+    "type": "chat-message",
+    "data": {
+     "msg": "hi",
+     "channel": "global",
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "chat-message",
+    "data": {
+     "msg": "sys",
+     "channel": "team"
+    }
+   },
+   "expect": {
+    "type": "chat-message",
+    "data": {
+     "msg": "sys",
+     "channel": "team"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "chat-message",
+    "data": {
+     "msg": "gg",
+     "channel": "global",
+     "chatType": 0,
+     "senderName": "Limon",
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     }
+    }
+   },
+   "expect": {
+    "type": "chat-message",
+    "data": {
+     "msg": "gg",
+     "channel": "global",
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "chat-message",
+    "data": {
+     "text": "  spaced ",
+     "channel": "WHISPER"
+    }
+   },
+   "expect": {
+    "type": "chat-message",
+    "data": {
+     "msg": "spaced",
+     "channel": "whisper"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "chat-message",
+    "data": {}
+   },
+   "expect": {
+    "type": "chat-message",
+    "data": {
+     "msg": "",
+     "channel": "global"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     },
+     "position": {
+      "x": 1,
+      "y": 2,
+      "z": 3
+     },
+     "attacker": {
+      "gameId": "x",
+      "name": "Bob",
+      "steamId": "42"
+     }
+    }
+   },
+   "expect": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     },
+     "attacker": {
+      "gameId": "42",
+      "name": "Bob",
+      "steamId": "42",
+      "platformId": "steam:42"
+     },
+     "position": {
+      "x": 1,
+      "y": 2,
+      "z": 3
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     },
+     "killerEntity": "Enemy_Fogger_Depleted",
+     "position": {
+      "x": 1,
+      "y": 2,
+      "z": 3
+     }
+    }
+   },
+   "expect": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     },
+     "position": {
+      "x": 1,
+      "y": 2,
+      "z": 3
+     },
+     "msg": "Limon was killed by Enemy_Fogger_Depleted"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     }
+    }
+   },
+   "expect": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     },
+     "attacker": {
+      "gameId": "76561198000005875",
+      "name": "Bob"
+     },
+     "killerEntity": "X"
+    }
+   },
+   "expect": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     },
+     "attacker": {
+      "gameId": "76561198000005875",
+      "name": "Bob",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     },
+     "killer": {
+      "code": "Wolf_Alpha"
+     }
+    }
+   },
+   "expect": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     },
+     "msg": "Limon was killed by Wolf_Alpha"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     },
+     "attacker": {
+      "foo": 1
+     },
+     "killerEntity": "Scavenger"
+    }
+   },
+   "expect": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     },
+     "msg": "Limon was killed by Scavenger"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     },
+     "position": {
+      "x": "a",
+      "y": 2,
+      "z": 3
+     }
+    }
+   },
+   "error": "Plugin returned an invalid position: {\"x\":\"a\",\"y\":2,\"z\":3}"
+  },
+  {
+   "input": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     },
+     "position": null
+    }
+   },
+   "expect": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "entity-killed",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     },
+     "entity": "Scavenger",
+     "weapon": "Sword_Iron"
+    }
+   },
+   "expect": {
+    "type": "entity-killed",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     },
+     "entity": "Scavenger",
+     "weapon": "Sword_Iron"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "entity-killed",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     },
+     "entity": {
+      "code": "Wolf"
+     }
+    }
+   },
+   "expect": {
+    "type": "entity-killed",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     },
+     "entity": "Wolf",
+     "weapon": ""
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "entity-killed",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     }
+    }
+   },
+   "expect": {
+    "type": "entity-killed",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     },
+     "entity": "unknown",
+     "weapon": ""
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "log",
+    "data": {
+     "msg": "line"
+    }
+   },
+   "expect": {
+    "type": "log",
+    "data": {
+     "msg": "line"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "log",
+    "data": {
+     "msg": "[server] Saved",
+     "level": "info"
+    }
+   },
+   "expect": {
+    "type": "log",
+    "data": {
+     "msg": "[server] Saved"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "log",
+    "data": "raw"
+   },
+   "expect": {
+    "type": "log",
+    "data": {
+     "msg": "raw"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "log",
+    "data": {
+     "line": "from line"
+    }
+   },
+   "expect": {
+    "type": "log",
+    "data": {
+     "msg": "from line"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "log",
+    "data": {
+     "level": "info"
+    }
+   },
+   "expect": {
+    "type": "log",
+    "data": {
+     "msg": "{\"level\":\"info\"}"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "log",
+    "data": 42
+   },
+   "expect": {
+    "type": "log",
+    "data": {
+     "msg": "42"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "player-sync",
+    "data": {}
+   },
+   "expect": null
+  },
+  {
+   "input": {
+    "type": "player-connected",
+    "data": {
+     "player": {}
+    }
+   },
+   "error": "Plugin player has no identifier: {\"player\":{}}"
+  },
+  {
+   "input": {
+    "type": "player-connected",
+    "data": {}
+   },
+   "error": "Plugin player has no identifier: {}"
+  }
+ ]
+}

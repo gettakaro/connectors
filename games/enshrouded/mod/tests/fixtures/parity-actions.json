@@ -1,0 +1,1471 @@
+{
+ "cases": [
+  {
+   "name": "getPlayers maps IGamePlayer with gameId=steamId, drops online:false",
+   "setup": {
+    "addPlayers": [
+     {
+      "gameId": "9(9)",
+      "name": "Offline",
+      "steamId": "1",
+      "online": false
+     }
+    ]
+   },
+   "steps": [
+    {
+     "action": "getPlayers",
+     "args": [],
+     "expect": {
+      "payload": [
+       {
+        "gameId": "76561198000005875",
+        "name": "Limon",
+        "steamId": "76561198000005875",
+        "platformId": "steam:76561198000005875"
+       },
+       {
+        "gameId": "76561198000001111",
+        "name": "Guest",
+        "steamId": "76561198000001111",
+        "platformId": "steam:76561198000001111"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "getPlayers with string args",
+   "steps": [
+    {
+     "action": "getPlayers",
+     "args": "[]",
+     "expect": {
+      "payload": [
+       {
+        "gameId": "76561198000005875",
+        "name": "Limon",
+        "steamId": "76561198000005875",
+        "platformId": "steam:76561198000005875"
+       },
+       {
+        "gameId": "76561198000001111",
+        "name": "Guest",
+        "steamId": "76561198000001111",
+        "platformId": "steam:76561198000001111"
+       }
+      ]
+     }
+    },
+    {
+     "action": "getPlayers",
+     "args": null,
+     "expect": {
+      "payload": [
+       {
+        "gameId": "76561198000005875",
+        "name": "Limon",
+        "steamId": "76561198000005875",
+        "platformId": "steam:76561198000005875"
+       },
+       {
+        "gameId": "76561198000001111",
+        "name": "Guest",
+        "steamId": "76561198000001111",
+        "platformId": "steam:76561198000001111"
+       }
+      ]
+     }
+    },
+    {
+     "action": "getPlayers",
+     "args": "",
+     "expect": {
+      "payload": [
+       {
+        "gameId": "76561198000005875",
+        "name": "Limon",
+        "steamId": "76561198000005875",
+        "platformId": "steam:76561198000005875"
+       },
+       {
+        "gameId": "76561198000001111",
+        "name": "Guest",
+        "steamId": "76561198000001111",
+        "platformId": "steam:76561198000001111"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "getPlayer flat, nested, JSON string, steam: prefix, name, platformId, playerRef; unknown -> {}",
+   "steps": [
+    {
+     "action": "getPlayer",
+     "args": {
+      "gameId": "76561198000005875"
+     },
+     "expect": {
+      "payload": {
+       "gameId": "76561198000005875",
+       "name": "Limon",
+       "steamId": "76561198000005875",
+       "platformId": "steam:76561198000005875"
+      }
+     }
+    },
+    {
+     "action": "getPlayer",
+     "args": {
+      "player": {
+       "gameId": "76561198000005875"
+      }
+     },
+     "expect": {
+      "payload": {
+       "gameId": "76561198000005875",
+       "name": "Limon",
+       "steamId": "76561198000005875",
+       "platformId": "steam:76561198000005875"
+      }
+     }
+    },
+    {
+     "action": "getPlayer",
+     "args": "{\"gameId\":\"76561198000005875\"}",
+     "expect": {
+      "payload": {
+       "gameId": "76561198000005875",
+       "name": "Limon",
+       "steamId": "76561198000005875",
+       "platformId": "steam:76561198000005875"
+      }
+     }
+    },
+    {
+     "action": "getPlayer",
+     "args": {
+      "gameId": "steam:76561198000005875"
+     },
+     "expect": {
+      "payload": {
+       "gameId": "76561198000005875",
+       "name": "Limon",
+       "steamId": "76561198000005875",
+       "platformId": "steam:76561198000005875"
+      }
+     }
+    },
+    {
+     "action": "getPlayer",
+     "args": {
+      "gameId": "limon"
+     },
+     "expect": {
+      "payload": {
+       "gameId": "76561198000005875",
+       "name": "Limon",
+       "steamId": "76561198000005875",
+       "platformId": "steam:76561198000005875"
+      }
+     }
+    },
+    {
+     "action": "getPlayer",
+     "args": {
+      "platformId": "steam:76561198000001111"
+     },
+     "expect": {
+      "payload": {
+       "gameId": "76561198000001111",
+       "name": "Guest",
+       "steamId": "76561198000001111",
+       "platformId": "steam:76561198000001111"
+      }
+     }
+    },
+    {
+     "action": "getPlayer",
+     "args": {
+      "playerRef": {
+       "steamId": "76561198000001111"
+      }
+     },
+     "expect": {
+      "payload": {
+       "gameId": "76561198000001111",
+       "name": "Guest",
+       "steamId": "76561198000001111",
+       "platformId": "steam:76561198000001111"
+      }
+     }
+    },
+    {
+     "action": "getPlayer",
+     "args": {
+      "gameId": "123"
+     },
+     "expect": {
+      "payload": {}
+     }
+    },
+    {
+     "action": "getPlayer",
+     "args": [],
+     "expect": {
+      "error": "Expected player identifier (gameId, or player.gameId)"
+     }
+    },
+    {
+     "action": "getPlayer",
+     "args": {
+      "gameId": null,
+      "steamId": null,
+      "player": {
+       "gameId": "76561198000005875"
+      }
+     },
+     "expect": {
+      "payload": {
+       "gameId": "76561198000005875",
+       "name": "Limon",
+       "steamId": "76561198000005875",
+       "platformId": "steam:76561198000005875"
+      }
+     }
+    },
+    {
+     "action": "getPlayer",
+     "args": {
+      "gameId": "   "
+     },
+     "expect": {
+      "error": "Expected player identifier (gameId, or player.gameId)"
+     }
+    }
+   ]
+  },
+  {
+   "name": "getPlayerLocation resolves steamId to plugin gameId; unknown is a 404 error",
+   "steps": [
+    {
+     "action": "getPlayerLocation",
+     "args": {
+      "player": {
+       "gameId": "76561198000005875"
+      }
+     },
+     "expect": {
+      "payload": {
+       "x": 10.5,
+       "y": 20,
+       "z": -3
+      }
+     },
+     "request": {
+      "method": "GET",
+      "path": "/players/76561198000005875/location",
+      "found": true
+     }
+    },
+    {
+     "action": "getPlayerLocation",
+     "args": {
+      "gameId": "nobody"
+     },
+     "expect": {
+      "error": "Enshrouded plugin HTTP 404 for /players/nobody/location: player not found"
+     }
+    },
+    {
+     "action": "getPlayerLocation",
+     "args": {
+      "gameId": "a b/c"
+     },
+     "expect": {
+      "error": "Enshrouded plugin HTTP 404 for /players/a%20b%2Fc/location: player not found"
+     }
+    }
+   ]
+  },
+  {
+   "name": "getPlayerLocation 501 without an event window is an error",
+   "setup": {
+    "unimplemented": [
+     "GET /players/:id/location"
+    ]
+   },
+   "steps": [
+    {
+     "action": "getPlayerLocation",
+     "args": {
+      "gameId": "76561198000005875"
+     },
+     "expect": {
+      "error": "Enshrouded connector cannot perform 'getPlayerLocation': Enshrouded plugin has not implemented /players/76561198000005875/location (HTTP 501): not implemented in this build"
+     }
+    }
+   ]
+  },
+  {
+   "name": "getPlayerInventory returns items with string quality",
+   "steps": [
+    {
+     "action": "getPlayerInventory",
+     "args": {
+      "gameId": "76561198000005875"
+     },
+     "expect": {
+      "payload": [
+       {
+        "code": "Wood",
+        "name": "Wood Log",
+        "amount": 25
+       },
+       {
+        "code": "Sword_Iron",
+        "name": "Iron Sword",
+        "amount": 1,
+        "quality": "3"
+       }
+      ]
+     }
+    },
+    {
+     "action": "getPlayerInventory",
+     "args": {
+      "gameId": "76561198000001111"
+     },
+     "expect": {
+      "payload": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "giveItem: item key, amount/quantity, quality, explicit nulls, errors",
+   "steps": [
+    {
+     "action": "giveItem",
+     "args": {
+      "player": {
+       "gameId": "76561198000005875"
+      },
+      "item": "Torch",
+      "amount": 5,
+      "quality": "2"
+     },
+     "expect": {
+      "payload": {}
+     },
+     "request": {
+      "method": "POST",
+      "path": "/give",
+      "body": {
+       "gameId": "76561198000005875",
+       "code": "Torch",
+       "amount": 5,
+       "quality": "2"
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "giveItem",
+     "args": "{\"gameId\":\"76561198000005875\",\"item\":\"Wood\",\"amount\":1}",
+     "expect": {
+      "payload": {}
+     },
+     "request": {
+      "method": "POST",
+      "path": "/give",
+      "body": {
+       "gameId": "76561198000005875",
+       "code": "Wood",
+       "amount": 1
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "giveItem",
+     "args": {
+      "gameId": "76561198000005875",
+      "item": "Wood",
+      "amount": 3,
+      "quality": null
+     },
+     "expect": {
+      "payload": {}
+     },
+     "request": {
+      "method": "POST",
+      "path": "/give",
+      "body": {
+       "gameId": "76561198000005875",
+       "code": "Wood",
+       "amount": 3
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "giveItem",
+     "args": {
+      "gameId": "76561198000005875",
+      "itemCode": "Wood",
+      "quantity": "7"
+     },
+     "expect": {
+      "payload": {}
+     },
+     "request": {
+      "method": "POST",
+      "path": "/give",
+      "body": {
+       "gameId": "76561198000005875",
+       "code": "Wood",
+       "amount": 7
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "giveItem",
+     "args": {
+      "gameId": "76561198000005875",
+      "item": {
+       "code": "Torch"
+      },
+      "amount": null,
+      "quality": 4
+     },
+     "expect": {
+      "payload": {}
+     },
+     "request": {
+      "method": "POST",
+      "path": "/give",
+      "body": {
+       "gameId": "76561198000005875",
+       "code": "Torch",
+       "amount": 1,
+       "quality": "4"
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "giveItem",
+     "args": {
+      "gameId": "76561198000005875",
+      "code": " Wood ",
+      "amount": 2,
+      "quality": ""
+     },
+     "expect": {
+      "payload": {}
+     },
+     "request": {
+      "method": "POST",
+      "path": "/give",
+      "body": {
+       "gameId": "76561198000005875",
+       "code": "Wood",
+       "amount": 2
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "giveItem",
+     "args": {
+      "gameId": "76561198000005875"
+     },
+     "expect": {
+      "error": "giveItem requires 'item'"
+     }
+    },
+    {
+     "action": "giveItem",
+     "args": {
+      "gameId": "76561198000005875",
+      "item": "Wood",
+      "amount": 0
+     },
+     "expect": {
+      "error": "giveItem amount must be positive"
+     }
+    },
+    {
+     "action": "giveItem",
+     "args": {
+      "gameId": "76561198000005875",
+      "item": "Wood",
+      "amount": -2
+     },
+     "expect": {
+      "error": "giveItem amount must be positive"
+     }
+    },
+    {
+     "action": "giveItem",
+     "args": {
+      "gameId": "nobody",
+      "item": "Wood",
+      "amount": 1
+     },
+     "expect": {
+      "error": "Enshrouded plugin HTTP 404 for /give: player not online"
+     }
+    }
+   ]
+  },
+  {
+   "name": "listItems / listEntities / listLocations",
+   "steps": [
+    {
+     "action": "listItems",
+     "args": {},
+     "expect": {
+      "payload": [
+       {
+        "code": "Wood",
+        "name": "Wood Log",
+        "description": "Basic material"
+       },
+       {
+        "code": "Torch",
+        "name": "Torch"
+       }
+      ]
+     }
+    },
+    {
+     "action": "listEntities",
+     "args": {},
+     "expect": {
+      "payload": [
+       {
+        "code": "Scavenger",
+        "name": "Scavenger",
+        "type": "hostile"
+       },
+       {
+        "code": "Blacksmith",
+        "name": "Blacksmith",
+        "type": "friendly"
+       },
+       {
+        "code": "Wolf",
+        "name": "Wolf",
+        "type": "neutral"
+       }
+      ]
+     }
+    },
+    {
+     "action": "listLocations",
+     "args": "{}",
+     "expect": {
+      "payload": [
+       {
+        "code": "cradle",
+        "name": "Cradle",
+        "position": {
+         "x": 0,
+         "y": 100,
+         "z": 0
+        },
+        "radius": 50
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "executeConsoleCommand returns CommandOutput",
+   "steps": [
+    {
+     "action": "executeConsoleCommand",
+     "args": {
+      "command": "save"
+     },
+     "expect": {
+      "payload": {
+       "success": true,
+       "rawResult": "ran save",
+       "errorMessage": null
+      }
+     },
+     "request": {
+      "method": "POST",
+      "path": "/command",
+      "body": {
+       "command": "save"
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "executeConsoleCommand",
+     "args": {},
+     "expect": {
+      "error": "executeConsoleCommand requires 'command'"
+     }
+    },
+    {
+     "action": "executeConsoleCommand",
+     "args": {
+      "command": null
+     },
+     "expect": {
+      "error": "executeConsoleCommand requires 'command'"
+     }
+    }
+   ]
+  },
+  {
+   "name": "executeConsoleCommand failure",
+   "setup": {
+    "commandResult": {
+     "success": false,
+     "output": "unknown command"
+    }
+   },
+   "steps": [
+    {
+     "action": "executeConsoleCommand",
+     "args": {
+      "command": "nope"
+     },
+     "expect": {
+      "payload": {
+       "success": false,
+       "rawResult": "unknown command",
+       "errorMessage": "unknown command"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "executeConsoleCommand failure without output",
+   "setup": {
+    "commandResult": {
+     "success": false,
+     "output": ""
+    }
+   },
+   "steps": [
+    {
+     "action": "executeConsoleCommand",
+     "args": {
+      "command": "nope"
+     },
+     "expect": {
+      "payload": {
+       "success": false,
+       "rawResult": "",
+       "errorMessage": "Command failed"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "sendMessage: global, opts.recipient, senderNameOverride, explicit nulls",
+   "steps": [
+    {
+     "action": "sendMessage",
+     "args": {
+      "message": "hello all"
+     },
+     "expect": {
+      "payload": {
+       "success": true
+      }
+     },
+     "request": {
+      "method": "POST",
+      "path": "/message",
+      "body": {
+       "text": "hello all"
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "sendMessage",
+     "args": {
+      "message": "Welcome",
+      "opts": {
+       "recipient": {
+        "gameId": "76561198000005875"
+       },
+       "senderNameOverride": "Takaro"
+      }
+     },
+     "expect": {
+      "payload": {
+       "success": true
+      }
+     },
+     "request": {
+      "method": "POST",
+      "path": "/message",
+      "body": {
+       "text": "Takaro: Welcome",
+       "recipientGameId": "76561198000005875"
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "sendMessage",
+     "args": {
+      "message": "hi",
+      "opts": null
+     },
+     "expect": {
+      "payload": {
+       "success": true
+      }
+     },
+     "request": {
+      "method": "POST",
+      "path": "/message",
+      "body": {
+       "text": "hi"
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "sendMessage",
+     "args": {
+      "message": "hi",
+      "opts": {
+       "recipient": null,
+       "senderNameOverride": null
+      }
+     },
+     "expect": {
+      "payload": {
+       "success": true
+      }
+     },
+     "request": {
+      "method": "POST",
+      "path": "/message",
+      "body": {
+       "text": "hi"
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "sendMessage",
+     "args": {
+      "message": "dm",
+      "opts": {
+       "recipient": {
+        "steamId": "steam:76561198000001111"
+       }
+      }
+     },
+     "expect": {
+      "payload": {
+       "success": true
+      }
+     },
+     "request": {
+      "method": "POST",
+      "path": "/message",
+      "body": {
+       "text": "dm",
+       "recipientGameId": "76561198000001111"
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "sendMessage",
+     "args": {
+      "message": "dm2",
+      "recipientGameId": "Limon"
+     },
+     "expect": {
+      "payload": {
+       "success": true
+      }
+     },
+     "request": {
+      "method": "POST",
+      "path": "/message",
+      "body": {
+       "text": "dm2",
+       "recipientGameId": "76561198000005875"
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "sendMessage",
+     "args": {
+      "message": "  padded  "
+     },
+     "expect": {
+      "payload": {
+       "success": true
+      }
+     },
+     "request": {
+      "method": "POST",
+      "path": "/message",
+      "body": {
+       "text": "padded"
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "sendMessage",
+     "args": {},
+     "expect": {
+      "error": "sendMessage requires 'message'"
+     }
+    },
+    {
+     "action": "sendMessage",
+     "args": {
+      "message": "   "
+     },
+     "expect": {
+      "error": "sendMessage requires 'message'"
+     }
+    }
+   ]
+  },
+  {
+   "name": "teleportPlayer numeric and string coordinates",
+   "steps": [
+    {
+     "action": "teleportPlayer",
+     "args": {
+      "player": {
+       "gameId": "76561198000005875"
+      },
+      "x": 1,
+      "y": "2",
+      "z": 3.5
+     },
+     "expect": {
+      "payload": {}
+     },
+     "request": {
+      "method": "POST",
+      "path": "/teleport",
+      "body": {
+       "gameId": "76561198000005875",
+       "x": 1,
+       "y": 2,
+       "z": 3.5
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "teleportPlayer",
+     "args": {
+      "gameId": "76561198000005875",
+      "x": 1
+     },
+     "expect": {
+      "error": "teleportPlayer requires numeric x, y, z"
+     }
+    },
+    {
+     "action": "teleportPlayer",
+     "args": {
+      "gameId": "76561198000005875",
+      "x": -0.25,
+      "y": 1000,
+      "z": "-7.5"
+     },
+     "expect": {
+      "payload": {}
+     },
+     "request": {
+      "method": "POST",
+      "path": "/teleport",
+      "body": {
+       "gameId": "76561198000005875",
+       "x": -0.25,
+       "y": 1000,
+       "z": -7.5
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "teleportPlayer",
+     "args": {
+      "gameId": "76561198000005875",
+      "x": "a",
+      "y": 1,
+      "z": 2
+     },
+     "expect": {
+      "error": "teleportPlayer requires numeric x, y, z"
+     }
+    },
+    {
+     "action": "teleportPlayer",
+     "args": {
+      "gameId": "nobody",
+      "x": 1,
+      "y": 2,
+      "z": 3
+     },
+     "expect": {
+      "error": "Enshrouded plugin HTTP 404 for /teleport: player not online"
+     }
+    }
+   ]
+  },
+  {
+   "name": "kickPlayer with and without reason",
+   "steps": [
+    {
+     "action": "kickPlayer",
+     "args": {
+      "player": {
+       "gameId": "76561198000005875"
+      },
+      "reason": "afk"
+     },
+     "expect": {
+      "payload": {}
+     },
+     "request": {
+      "method": "POST",
+      "path": "/kick",
+      "body": {
+       "gameId": "76561198000005875",
+       "reason": "afk"
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "kickPlayer",
+     "args": {
+      "gameId": "76561198000001111",
+      "reason": null
+     },
+     "expect": {
+      "payload": {}
+     },
+     "request": {
+      "method": "POST",
+      "path": "/kick",
+      "body": {
+       "gameId": "76561198000001111"
+      },
+      "found": true
+     }
+    }
+   ]
+  },
+  {
+   "name": "banPlayer / listBans / unbanPlayer round trip incl. offline steamId",
+   "steps": [
+    {
+     "action": "banPlayer",
+     "args": {
+      "player": {
+       "gameId": "76561198000005875"
+      },
+      "reason": "grief",
+      "expiresAt": "2030-01-01T00:00:00.000Z"
+     },
+     "expect": {
+      "payload": {}
+     },
+     "request": {
+      "method": "POST",
+      "path": "/ban",
+      "body": {
+       "gameId": "76561198000005875",
+       "reason": "grief",
+       "expiresAt": "2030-01-01T00:00:00.000Z"
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "banPlayer",
+     "args": {
+      "gameId": "76561198000009999"
+     },
+     "expect": {
+      "payload": {}
+     },
+     "request": {
+      "method": "POST",
+      "path": "/ban",
+      "body": {
+       "gameId": "76561198000009999"
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "listBans",
+     "args": {},
+     "expect": {
+      "payload": [
+       {
+        "player": {
+         "gameId": "76561198000005875",
+         "name": "Limon",
+         "steamId": "76561198000005875",
+         "platformId": "steam:76561198000005875"
+        },
+        "reason": "grief",
+        "expiresAt": "2030-01-01T00:00:00.000Z"
+       },
+       {
+        "player": {
+         "gameId": "76561198000009999",
+         "name": "76561198000009999",
+         "steamId": "76561198000009999",
+         "platformId": "steam:76561198000009999"
+        },
+        "reason": "",
+        "expiresAt": null
+       }
+      ]
+     }
+    },
+    {
+     "action": "unbanPlayer",
+     "args": {
+      "gameId": "76561198000009999"
+     },
+     "expect": {
+      "payload": {}
+     },
+     "request": {
+      "method": "POST",
+      "path": "/unban",
+      "body": {
+       "gameId": "76561198000009999"
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "listBans",
+     "args": {},
+     "expect": {
+      "payload": [
+       {
+        "player": {
+         "gameId": "76561198000005875",
+         "name": "Limon",
+         "steamId": "76561198000005875",
+         "platformId": "steam:76561198000005875"
+        },
+        "reason": "grief",
+        "expiresAt": "2030-01-01T00:00:00.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "action": "banPlayer",
+     "args": {
+      "gameId": "steam:76561198000001111",
+      "reason": null,
+      "expiresAt": null
+     },
+     "expect": {
+      "payload": {}
+     },
+     "request": {
+      "method": "POST",
+      "path": "/ban",
+      "body": {
+       "gameId": "76561198000001111"
+      },
+      "found": true
+     }
+    },
+    {
+     "action": "listBans",
+     "args": "[]",
+     "expect": {
+      "payload": [
+       {
+        "player": {
+         "gameId": "76561198000005875",
+         "name": "Limon",
+         "steamId": "76561198000005875",
+         "platformId": "steam:76561198000005875"
+        },
+        "reason": "grief",
+        "expiresAt": "2030-01-01T00:00:00.000Z"
+       },
+       {
+        "player": {
+         "gameId": "76561198000001111",
+         "name": "Guest",
+         "steamId": "76561198000001111",
+         "platformId": "steam:76561198000001111"
+        },
+        "reason": "",
+        "expiresAt": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "listBans maps the real plugin /bans shape",
+   "setup": {
+    "bans": [
+     {
+      "gameId": "76561198000005875",
+      "steamId": "76561198000005875",
+      "accountId": "1234",
+      "name": "Limon",
+      "characterName": "Hero",
+      "bannedAt": "2026-09-13T20:00:00Z",
+      "reason": "",
+      "expiresAt": null
+     }
+    ]
+   },
+   "steps": [
+    {
+     "action": "listBans",
+     "args": {},
+     "expect": {
+      "payload": [
+       {
+        "player": {
+         "gameId": "76561198000005875",
+         "name": "Limon",
+         "steamId": "76561198000005875",
+         "platformId": "steam:76561198000005875"
+        },
+        "reason": "",
+        "expiresAt": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "listBans minimal row",
+   "setup": {
+    "bans": [
+     {
+      "gameId": "76561198000005875",
+      "name": "Limon"
+     }
+    ]
+   },
+   "steps": [
+    {
+     "action": "listBans",
+     "args": {},
+     "expect": {
+      "payload": [
+       {
+        "player": {
+         "gameId": "76561198000005875",
+         "name": "Limon",
+         "steamId": "76561198000005875",
+         "platformId": "steam:76561198000005875"
+        },
+        "reason": "",
+        "expiresAt": null
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "listBans numeric expiry and nested player",
+   "setup": {
+    "bans": [
+     {
+      "player": {
+       "gameId": "76561198000001111",
+       "name": "Guest"
+      },
+      "reason": "x",
+      "expiresAt": 1893456000000
+     }
+    ]
+   },
+   "steps": [
+    {
+     "action": "listBans",
+     "args": {},
+     "expect": {
+      "payload": [
+       {
+        "player": {
+         "gameId": "76561198000001111",
+         "name": "Guest",
+         "steamId": "76561198000001111",
+         "platformId": "steam:76561198000001111"
+        },
+        "reason": "x",
+        "expiresAt": "2030-01-01T00:00:00.000Z"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "shutdown",
+   "steps": [
+    {
+     "action": "shutdown",
+     "args": {},
+     "expect": {
+      "payload": {}
+     },
+     "request": {
+      "method": "POST",
+      "path": "/shutdown",
+      "body": {},
+      "found": true
+     }
+    }
+   ]
+  },
+  {
+   "name": "plugin 501 becomes a clear error response and the connector keeps serving",
+   "setup": {
+    "unimplemented": [
+     "POST /teleport",
+     "GET /players/:id/inventory",
+     "GET /entities",
+     "POST /shutdown"
+    ]
+   },
+   "steps": [
+    {
+     "action": "teleportPlayer",
+     "args": {
+      "gameId": "76561198000005875",
+      "x": 1,
+      "y": 2,
+      "z": 3
+     },
+     "expect": {
+      "error": "Enshrouded connector cannot perform 'teleportPlayer': Enshrouded plugin has not implemented /teleport (HTTP 501): not implemented in this build"
+     }
+    },
+    {
+     "action": "getPlayerInventory",
+     "args": {
+      "gameId": "76561198000005875"
+     },
+     "expect": {
+      "error": "Enshrouded connector cannot perform 'getPlayerInventory': Enshrouded plugin has not implemented /players/76561198000005875/inventory (HTTP 501): not implemented in this build"
+     }
+    },
+    {
+     "action": "listEntities",
+     "args": {},
+     "expect": {
+      "error": "Enshrouded connector cannot perform 'listEntities': Enshrouded plugin has not implemented /entities (HTTP 501): not implemented in this build"
+     }
+    },
+    {
+     "action": "shutdown",
+     "args": {},
+     "expect": {
+      "error": "Enshrouded connector cannot perform 'shutdown': Enshrouded plugin has not implemented /shutdown (HTTP 501): not implemented in this build"
+     }
+    },
+    {
+     "action": "getPlayers",
+     "args": {},
+     "expect": {
+      "payload": [
+       {
+        "gameId": "76561198000005875",
+        "name": "Limon",
+        "steamId": "76561198000005875",
+        "platformId": "steam:76561198000005875"
+       },
+       {
+        "gameId": "76561198000001111",
+        "name": "Guest",
+        "steamId": "76561198000001111",
+        "platformId": "steam:76561198000001111"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "unknown action",
+   "steps": [
+    {
+     "action": "flyToMoon",
+     "args": {},
+     "expect": {
+      "error": "Unknown Takaro action 'flyToMoon'"
+     }
+    }
+   ]
+  },
+  {
+   "name": "testReachability reflects plugin /health",
+   "steps": [
+    {
+     "action": "testReachability",
+     "args": {},
+     "expect": {
+      "payload": {
+       "connectable": true,
+       "reason": null
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "testReachability degraded capability",
+   "setup": {
+    "health": {
+     "status": "ok",
+     "capabilities": {
+      "players": "ok",
+      "kick": "degraded",
+      "chatEvents": "unimplemented"
+     }
+    }
+   },
+   "steps": [
+    {
+     "action": "testReachability",
+     "args": {},
+     "expect": {
+      "payload": {
+       "connectable": true,
+       "reason": "capabilities not ok: kick=degraded"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "testReachability plugin degraded",
+   "setup": {
+    "health": {
+     "status": "degraded",
+     "capabilities": {
+      "logEvents": "degraded"
+     }
+    }
+   },
+   "steps": [
+    {
+     "action": "testReachability",
+     "args": {},
+     "expect": {
+      "payload": {
+       "connectable": true,
+       "reason": "Enshrouded plugin degraded; capabilities not ok: logEvents=degraded"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "testReachability plugin starting",
+   "setup": {
+    "health": {
+     "status": "starting"
+    }
+   },
+   "steps": [
+    {
+     "action": "testReachability",
+     "args": {},
+     "expect": {
+      "payload": {
+       "connectable": false,
+       "reason": "Enshrouded plugin status 'starting'"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "testReachability no status",
+   "setup": {
+    "health": {}
+   },
+   "steps": [
+    {
+     "action": "testReachability",
+     "args": {},
+     "expect": {
+      "payload": {
+       "connectable": false,
+       "reason": "Enshrouded plugin status 'undefined'"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "players list without Limon",
+   "setup": {
+    "removePlayers": [
+     "76561198000005875"
+    ]
+   },
+   "steps": [
+    {
+     "action": "getPlayer",
+     "args": {
+      "gameId": "76561198000005875"
+     },
+     "expect": {
+      "payload": {}
+     }
+    },
+    {
+     "action": "kickPlayer",
+     "args": {
+      "gameId": "76561198000005875"
+     },
+     "expect": {
+      "error": "Enshrouded plugin HTTP 404 for /kick: player not online"
+     }
+    }
+   ]
+  }
+ ]
+}
