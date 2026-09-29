@@ -68,8 +68,8 @@ jobs:
       - name: Typecheck sidecar
         working-directory: games/enshrouded/sidecar
         run: npm run typecheck
-      # The mock-plugin, protocol, actions, events and client suites: what the sidecar does
-      # with the plugin's answers, without a game.
+      # The 0.5.0 sidecar stays in the tree for one release, as the rollback path and as the
+      # source of the parity fixtures the native host tests replay; it is no longer shipped.
       - name: Test sidecar
         working-directory: games/enshrouded/sidecar
         run: npm test
@@ -94,11 +94,20 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ inputs.tag || github.ref }}
-      # The same pinned zig the release builder installs (Dockerfile.builder).
-      - name: Install zig 0.13.0
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.15"
+      - run: uv python install
+      - run: uv sync --frozen --project maintenance
+      # The zig the release builder uses, by the catalog target's URL and SHA-256: this job
+      # pins no toolchain of its own.
+      - name: Install the catalog's pinned zig
+        shell: bash
         run: |
-          curl -fsSL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz -o "$RUNNER_TEMP/zig.tar.xz"
-          echo "d45312e61ebcc48032b77bc4cf7fd6915c11fa16e4aad116b66c9468211230ea  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
+          . games/enshrouded/scripts/lib-target.sh
+          enshrouded_resolve_target
+          curl -fsSL "$ENSHROUDED_DEP_ZIG_URL" -o "$RUNNER_TEMP/zig.tar.xz"
+          echo "$ENSHROUDED_DEP_ZIG_SHA256  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/zig"
           tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components=1
           echo "ZIG=$RUNNER_TEMP/zig/zig" >> "$GITHUB_ENV"
