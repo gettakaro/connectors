@@ -442,6 +442,14 @@ def test_the_catalog_rigs_take_their_images_from_the_resolved_target() -> None:
 # --------------------------------------------------------------------------------------------
 
 
+#: Aliases kept on purpose for a component role a connector no longer ships, so the old
+#: asset name stays on record for a release. Anything else pointing at an unknown role is a typo.
+RETIRED_ALIASES = {
+    # The sidecar was dropped in enshrouded 0.6.0: the plugin connects to Takaro itself.
+    ("enshrouded", "takaro-enshrouded-sidecar.zip"): "proton-1024233/sidecar",
+}
+
+
 def test_every_catalog_game_registers_sources_roles_targets_and_declared_rigs() -> None:
     """Each connector is registered end to end; only the documented Enshrouded rig gap remains."""
     on_disk = {path.name for path in (REPO_ROOT / "catalog").iterdir() if path.is_dir() and path.name != "schema"}
@@ -470,6 +478,10 @@ def test_every_catalog_game_registers_sources_roles_targets_and_declared_rigs() 
 
         known = {f"{target['id']}/{role}" for target in targets for role in record["componentRoles"]}
         for alias, points_at in (record.get("legacyAssetAliases") or {}).items():
+            if RETIRED_ALIASES.get((game, alias)) == points_at:
+                # Publishing skips it (aliasesSkipped); the target must still exist.
+                assert points_at.partition("/")[0] in {t["id"] for t in targets}, f"{game} {alias}"
+                continue
             assert points_at in known, f"{game} legacy alias {alias} points at unknown {points_at}"
 
         compose_name = (record.get("devServers") or {}).get("composeFile")
