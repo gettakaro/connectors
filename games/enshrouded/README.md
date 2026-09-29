@@ -1,19 +1,68 @@
 # Takaro Enshrouded Connector
 
-A server-side-only connector (plugin + sidecar) that connects an Enshrouded dedicated
-server to Takaro. Players do not install anything.
+Connects an Enshrouded dedicated server to Takaro with one file: `dbghelp.dll`, placed next to
+`enshrouded_server.exe`. The DLL hooks the game and talks to Takaro itself; nothing else runs next to
+the server, and players do not install anything.
 
-It is built against one exact server: game build **1024233** (Steam app 2278520, branch
-`public`, Steam build 23178631) running under **GE-Proton10-30** in
-`mornedhels/enshrouded-server:1.7.2-proton`. That is the build every result in the table
-below was proven on. The plugin finds game code by shape rather than by fixed addresses, so
-it loads on other builds too — but on another build the affected capabilities self-check as
-`degraded` in `/health`, and nothing here says they work there. **Keep the game server on
-the build the plugin was released for**, and read "A game update can switch a feature off"
-under Known issues before you let anything update it.
+It is built for one exact server: game build **1024233** (Steam app 2278520, branch `public`, Steam
+build 23178631), tested under **GE-Proton10-30** in `mornedhels/enshrouded-server:1.7.2-proton`. On
+another game build the plugin still loads, but the features whose game code moved switch themselves
+off (see "A game update can switch a feature off" below). **Keep the server on the build the release
+was made for.**
 
-The plugin alone cannot talk to Takaro, and the sidecar alone cannot read player positions,
-inventories, items or entities. Install both.
+## What works, what doesn't
+
+Verified end to end on **2026-09-29** with the native connector on game build **1024233**, a real game
+client and Takaro. ✅ = works, ⚠️ = works with a caveat or not re-verified, ❌ = does not work.
+
+| What | | Notes |
+|---|---|---|
+| Connection & heartbeat | ✅ | The game server holds an encrypted connection to Takaro and shows as reachable while it runs. |
+| Player list | ✅ | `gameId` is the SteamID64. Names are Steam persona names, not in-game character names (the server never exposes those). |
+| Single player lookup | ✅ | Also answers for a player who is offline but has been seen before. |
+| Player location | ✅ | Matches the in-game position and follows teleports. |
+| Player inventory | ✅ | Matches the in-game backpack. |
+| Give an item | ✅ | The item arrives in the backpack. The game ignores the count, so the connector splits it into stacks of at most 64. |
+| Item catalogue | ⚠️ | 3,609 items sync, but the names are built from the game's internal codes (the dedicated server ships no translations), so they can differ from the in-game names, e.g. "Ward (Tier 1)" for the in-game "Spectral Ward". The list also holds a few non-items such as abilities. |
+| Entity catalogue | ⚠️ | 977 creature/NPC templates sync, with names built from internal codes in the same way; the list also holds some non-creatures such as containers and traps. |
+| Locations / points of interest | ⚠️ | The connector serves 1,031 locations, but Takaro never asks for them. |
+| Run a console command | ✅ | Enshrouded has no console; the connector provides its own set: `help`, `players`, `say`, `whisper`, `location`, `teleport`/`tp`, `inventory`, `give`, `item`, `kick`, `save-and-shutdown`. Unknown commands are refused with a hint. |
+| Broadcast a message | ✅ | Everyone sees it in chat, under the character name of an online player: Enshrouded has no "server" sender. |
+| Whisper a player | ⚠️ | Reaches the player; that nobody else sees it was not checked (one test account). |
+| Teleport a player | ✅ | Takaro rounds to whole coordinates and the game nudges the player to the nearest free spot. |
+| Kick a player | ✅ | The player must be online. Works for Admins-group players too. |
+| Ban a player (timed and permanent) | ✅ | The player must be online. The game only knows permanent bans; the connector remembers the end time and lifts a timed ban itself when it expires. |
+| Unban a player | ✅ | Works offline, for any player the connector has seen online once. |
+| Ban list | ✅ | The game's banned accounts. Timed bans show their reason and end time; permanent bans show no reason, because the game stores none. |
+| Shut the server down | ✅ | Saves first, then quits; the container's restart policy brings it back. |
+| Player joined / left events | ✅ | From real joins and leaves, kicks, bans and shutdowns; a player still online when the server crashed is reported as left on the next start. |
+| Player chat event | ✅ | Real player chat reaches Takaro with the player attached. |
+| Player death event | ✅ | Falls and creature kills, with the position; the killer is named in the message by its internal code, e.g. `Enemy_Wildbeast_Rat_hook`. |
+| Entity kill event | ⚠️ | Real kills reach Takaro, once each; the creature is its internal code and the weapon field is empty. Destroyed props are not reported. |
+| Log events | ⚠️ | Sent, but Takaro does not store server log lines as events. |
+| Map info | ⚠️ | Not verified in a live test. |
+| Map tiles | ❌ | Takaro does not support map tiles for Generic game servers. |
+| Modules: chat commands | ✅ | In-game `@` commands reach the module and answer in chat. |
+| Modules: hooks | ✅ | Chat and join hooks fire and run their code. |
+| Modules: cronjobs | ✅ | Scheduled and triggered runs message the server. |
+| Modules: teleports (`@settp`, `@tp`) | ✅ | Saved teleports move the player. |
+| Modules: server messages / onboarding | ✅ | Timed messages and the welcome message reach the game. |
+| Shop: buy in game | ✅ | `@shop … buy` deducts the currency and delivers the items. |
+| Shop: order in Takaro and claim | ✅ | The items reach the backpack. |
+| Shop: bundle of several items | ✅ | One purchase delivers every item in the listing. |
+| Shop: order while offline, claim later | ✅ | The order stays paid while the player is offline and is delivered after they rejoin. |
+| Shop: not enough currency | ✅ | Refused, no order, no deduction. |
+| Economy: currency and `@balance` | ✅ | Balances set in Takaro show in game. |
+| Discord: game chat → Discord | ⚠️ | Player chat reaches the chat-bridge module and Takaro's Discord post succeeds; the message was not read back in Discord on this run. |
+| Discord: Discord → game chat | ✅ | A real person's post in the linked channel appears in game chat; bot posts are ignored by design. |
+| Discord: module hook / cronjob posts | ✅ | Hooks and cronjobs post to Discord and can edit their messages. |
+| Discord: join/leave notices | ⚠️ | Takaro's Discord post succeeds on real joins and leaves; not read back in Discord on this run. |
+| Discord: no echo of server messages | ✅ | Use the `chatBridgeNoEcho` module: the stock `chatBridge` re-posts Takaro's own server messages. |
+| Reconnects after a restart or crash | ✅ | Back on its own within about 25 seconds after a graceful restart, a crash or a container restart. |
+| Survives a network drop to Takaro | ✅ | Notices a dead link within 20 seconds and reconnects by itself, without restarting the game. |
+| Events while Takaro is unreachable | ✅ | Kept on disk and delivered once the connection is back (tested with a 30-minute outage). A lost confirmation can cause one duplicate event after a reconnect. |
+| Timed bans expire on their own | ✅ | Lifted within seconds of the end time. |
+| A game update can switch a feature off | ✅ | A feature whose game code moved reports itself as degraded, Takaro's reachability reason names it, and everything else keeps working. |
 
 ## Install
 
@@ -21,259 +70,96 @@ Download the latest release: https://takaro.io/connectors/enshrouded
 
 ### 1. Before you start
 
-You need:
-
-- An **Enshrouded dedicated server** you can stop, start and copy files to. The tested setup is the
-  **Linux Docker image `mornedhels/enshrouded-server`**, where `enshrouded_server.exe` runs under
-  Wine/Proton. The plugin is a **Windows DLL**, so a native Windows dedicated server should work the
-  same way, but that has never been tried — only the Linux/Wine container is verified.
-- **Docker** with the Compose plugin on the same host (the sidecar runs as a container that shares
-  the game container's network). Node.js 22 on the host works too — see step 3.
-- A **Takaro account** with a game server created of type **Generic**, and its **registration
-  token** (Takaro shows it when you create the game server).
-
-Nothing has to be compiled: both parts are published as release assets.
+- An **Enshrouded dedicated server** on game build 1024233 that you can stop, start and copy files to.
+  The tested setup is the Linux Docker image `mornedhels/enshrouded-server`, where
+  `enshrouded_server.exe` runs under Wine/Proton. A Windows dedicated server should work the same
+  way (the plugin is a Windows DLL), but that has not been tried.
+- A **Takaro** game server of type **Generic**, and its **registration token**.
 
 ### 2. Download
 
-From the latest `enshrouded-vX.Y.Z` release on the releases page:
+From the latest `enshrouded-vX.Y.Z` release at https://github.com/gettakaro/connectors/releases download
+**`takaro-enshrouded-plugin-proton-1024233-<version>.zip`** and **`SHA256SUMS`**, and check the zip:
 
-> https://github.com/gettakaro/connectors/releases
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+```
 
-Download both files:
-
-- **`takaro-enshrouded-plugin-proton-1024233-<version>.zip`** — the game-server plugin
-  (`dbghelp.dll` proxy)
-- **`takaro-enshrouded-sidecar-proton-1024233-<version>.zip`** — the sidecar that talks to
-  Takaro
-
-The name in the middle is the server the connector was built against: Proton, game build
-1024233. `takaro-enshrouded-plugin.zip` and `takaro-enshrouded-sidecar.zip` are still
-published next to them and are the same bytes, so an old bookmark keeps working.
-
-Direct link pattern:
-`https://github.com/gettakaro/connectors/releases/download/enshrouded-v<version>/takaro-enshrouded-plugin-proton-1024233-<version>.zip`
-
-The two **"Source code (zip/tar.gz)"** links GitHub adds to every release are an archive of this
-whole repository, not the connector — do not download those. Also do not use the `enshrouded-dev`
-pre-release or a `pr-<number>-enshrouded` build; those are untested rolling builds.
+`takaro-enshrouded-plugin.zip` on the same release is the same file under its old name. Do not
+download GitHub's "Source code" archives, the `enshrouded-dev` pre-release or a `pr-<number>-enshrouded`
+build.
 
 ### 3. Copy it into place
 
-Stop the game server first — a running server holds `dbghelp.dll` open.
-
-**Plugin.** The plugin zip contains one folder:
-
-```
-TakaroEnshrouded/
-    dbghelp.dll
-    README.txt
-```
-
-The game server loads `dbghelp.dll` as a **dbghelp proxy**, so it has to sit next to
-`enshrouded_server.exe` and the server has to be told to prefer it over the system copy. With
-`docker-compose.example.yml`, copy **the DLL itself** (not the folder around it) to
-`data/enshrouded/server/takaro/plugin/dbghelp.dll`.
-
-**Sidecar.** The sidecar zip contains one folder, `TakaroEnshroudedSidecar/`, with
-`dist/`, `package.json`, `package-lock.json`, `Dockerfile`, `.dockerignore`, `.env.example` and
-`README.release.txt`. `docker-compose.example.yml` builds the sidecar image from `./sidecar`, so
-unzip it next to the compose file and **rename the folder to `sidecar`**:
+Stop the game server first: a running server holds `dbghelp.dll` open. The zip holds one folder,
+`TakaroEnshrouded/`, whose contents go **next to `enshrouded_server.exe`**:
 
 ```
-<your compose dir>/
-    docker-compose.example.yml
-    .env
-    server/
-        enshrouded-updater     <- from this folder in the repository (see below)
-    sidecar/                   <- TakaroEnshroudedSidecar renamed
-        Dockerfile
-        dist/
-        package.json
-        package-lock.json
-    data/
-        enshrouded/
-            server/            (game server data, created by the container)
-                takaro/
-                    plugin/
-                        dbghelp.dll   <- from the plugin zip
-        enshrouded-sidecar/    (sidecar cursor/online state, created by the container)
+<server folder>/
+    enshrouded_server.exe
+    dbghelp.dll                  <- from the zip
+    takaro/
+        plugin.json              <- takaro/plugin.json.example from the zip, renamed
 ```
 
-```bash
-mkdir -p data/enshrouded/server/takaro/plugin data/enshrouded-sidecar
-cp /path/to/TakaroEnshrouded/dbghelp.dll data/enshrouded/server/takaro/plugin/
-mv /path/to/TakaroEnshroudedSidecar ./sidecar
-```
-
-**The updater override.** The image runs its own updater program at every container start:
-it asks Steam what the branch head is and, when that differs from the installed build, runs
-`steamcmd +app_update` over the install. On a plugin pinned to one build that is exactly
-what must not happen, so `docker-compose.example.yml` bind-mounts
-[`server/enshrouded-updater`](server/enshrouded-updater) (tracked next to this README) read-only over
-the image's copy. It starts the server and does nothing else. Copy that one file next to
-your compose file, keep it executable, and never run
-`supervisorctl start enshrouded-force-update` inside the container.
-
-If you would rather not use Docker for the sidecar, run it with Node.js 22 instead:
-`npm ci --omit=dev && node dist/index.js`, with the same environment variables the compose service
-sets (see `README.release.txt` inside the zip). It must reach the plugin on
-`http://127.0.0.1:18890`, i.e. run on the game server's network.
-
-The compose file bind-mounts the DLL **read-only** to `/opt/enshrouded/server/dbghelp.dll`, so
-nothing inside the container can overwrite or delete it, and sets
-`WINEDLLOVERRIDES: "dbghelp=n,b"` on the game container so the server loads this DLL instead of the
-system one. It also pins the image by digest
-(`mornedhels/enshrouded-server:1.7.2-proton@sha256:85978a10…`), because a newer image carries a
-different Proton. If you use your own compose file or a native Windows server, you must reproduce
-all of that yourself.
-
-### 4. Configure
-
-Copy the example environment file and fill it in:
-
-```bash
-cp .env.example .env
-```
-
-`games/enshrouded/.env` keys:
+Rename `takaro/plugin.json.example` to `takaro/plugin.json` and fill in:
 
 | Key | What to put there |
 |---|---|
-| `TAKARO_REGISTRATION_TOKEN` | Your Takaro registration token. Required. |
-| `TAKARO_IDENTITY_ENSHROUDED` | A name that identifies this server to Takaro, e.g. `my-enshrouded-server`. |
-| `TAKARO_ENSHROUDED_PLUGIN_TOKEN` | A long random shared secret, e.g. `openssl rand -hex 32`. The same value is passed to the game container (as `TAKARO_PLUGIN_TOKEN`) and to the sidecar; without it the plugin rejects every request with 401. Required. |
-| `ENSHROUDED_ADMIN_PASSWORD` | Password for the server's Admins role. Required. |
-| `ENSHROUDED_PLAYER_PASSWORD` | Password for the Friends role. Required. |
-| `ENSHROUDED_GUEST_PASSWORD` | Password for the Guests role. Required. |
+| `registrationToken` | The registration token of your Takaro Generic game server. Required. |
+| `identityToken` | Any stable name for this server, e.g. `my-enshrouded-server`. Required; keep it the same across upgrades. |
+| `name` | The server name shown in Takaro. |
+| `url` | Leave `wss://connect.takaro.io/`. |
+| `token` | Optional: a long random secret (e.g. `openssl rand -hex 32`) to read the plugin's diagnostics at `http://127.0.0.1:18890/health`. |
 
-Everything else already has a working default in `docker-compose.example.yml`
-(`TAKARO_WS_URL` = `wss://connect.takaro.io/`, `TAKARO_PLUGIN_URL` = `http://127.0.0.1:18890`,
-log tailing, cursor file, health port 18891). Change `SERVER_NAME`, `SERVER_SLOT_COUNT`,
-`TAKARO_SERVER_NAME` and `TZ` in the compose file to taste.
+Instead of the file you can set the environment variables `TAKARO_REGISTRATION_TOKEN`,
+`TAKARO_IDENTITY_TOKEN`, `TAKARO_SERVER_NAME`, `TAKARO_WS_URL` and `TAKARO_PLUGIN_TOKEN` on the game
+server; a variable that is set wins over the file.
 
-UDP port **15637** is published for game clients. The plugin's HTTP API stays on loopback inside the
-container and is never exposed to the host.
+Under **Wine/Proton** the server must prefer this DLL over its own: set
+`WINEDLLOVERRIDES=dbghelp=n,b` on the game server. A Windows server loads the local file already.
 
-### 5. Check that it worked
-
-Start everything:
+**With Docker**, use [`docker-compose.example.yml`](docker-compose.example.yml) and
+[`.env.example`](.env.example) from this folder, and [`server/enshrouded-updater`](server/enshrouded-updater)
+next to them (keep it executable). The compose file pins the image by digest, sets
+`WINEDLLOVERRIDES`, passes the Takaro settings from `.env` as environment variables, and bind-mounts
+the DLL read-only from `data/enshrouded/server/takaro/plugin/dbghelp.dll`:
 
 ```bash
-docker compose -f docker-compose.example.yml --env-file .env up -d --build
-docker compose -f docker-compose.example.yml logs -f
+mkdir -p data/enshrouded/server/takaro/plugin
+cp TakaroEnshrouded/dbghelp.dll data/enshrouded/server/takaro/plugin/
+cp .env.example .env    # fill in TAKARO_REGISTRATION_TOKEN, TAKARO_IDENTITY_ENSHROUDED and the role passwords
+docker compose -f docker-compose.example.yml --env-file .env up -d
 ```
 
-In the plugin's own log, `data/enshrouded/server/takaro/plugin.log`:
+`server/enshrouded-updater` replaces the image's updater program, which would otherwise update the
+game at every container start and move it off the build the plugin was made for. If you host the
+server some other way, turn automatic game updates off there too.
+
+### 4. Check that it worked
+
+`<server folder>/takaro/plugin.log` shows, within about 20 seconds of the start:
 
 ```
 takaro enshrouded plugin <version> starting (pid ...)
-http: token from env TAKARO_PLUGIN_TOKEN
-http: listening on 127.0.0.1:18890
-game build: 1024233
-capabilities: {...}
+native: starting direct Takaro connection to wss://connect.takaro.io/ as '<name>' ...
+native: identified with Takaro gameServerId=...
 ```
 
-`<version>` is the release you downloaded — that line is how you confirm which plugin build is
-actually loaded.
+and the game server turns **online** in Takaro. `native: direct Takaro connection OFF: ...` names what
+is missing (usually a token). `<version>` is the release you installed.
 
-If you see `http: WARNING no token configured; all requests will be rejected with 401`, the shared
-secret did not reach the game container — re-check `TAKARO_ENSHROUDED_PLUGIN_TOKEN` in `.env`.
+### 5. Upgrading
 
-In the sidecar log (`docker logs enshrouded-takaro-sidecar`):
+Stop the server, replace `dbghelp.dll`, start it again; `takaro/plugin.json` and the connector's state
+in `takaro/connector-state/` stay as they are.
 
-```
-Connecting to Takaro at wss://connect.takaro.io/
-Takaro WebSocket open, sending identify
-Takaro confirmed WebSocket connection
-Identified with Takaro (gameServerId=...)
-Sidecar health on http://127.0.0.1:18891/health; plugin http://127.0.0.1:18890
-```
-
-And in Takaro, the game server shows as **online**. If it stays offline, the registration token in
-`.env` is the first thing to re-check. From inside the container,
-`curl http://127.0.0.1:18891/health` shows per-capability status; anything reported as `degraded`
-means a game update moved code the plugin hooks (see Known issues).
-
-### 6. Upgrading
-
-**Stop the game container first** — the running server holds `dbghelp.dll` open.
-
-```bash
-docker compose -f docker-compose.example.yml stop enshrouded
-# replace the DLL in place, keeping the bind mount valid
-cp /path/to/new/TakaroEnshrouded/dbghelp.dll data/enshrouded/server/takaro/plugin/dbghelp.dll
-# replace the sidecar folder with the new one, then rebuild
-rm -rf sidecar && mv /path/to/new/TakaroEnshroudedSidecar ./sidecar
-docker compose -f docker-compose.example.yml up -d --build
-```
-
-Download both zips from the same release and upgrade them together. Your `.env`, the world in
-`data/enshrouded/server/savegame/` and the sidecar state in `data/enshrouded-sidecar/` (event
-cursor, online players) survive the upgrade — keep the cursor file so events are not replayed.
-Confirm the new version in the `takaro enshrouded plugin <version> starting` log line.
-
-A release is named for the server build it was made for. If a release's name carries a game
-build other than the one your server runs, update the server to that build in the same
-maintenance window — plugin and game build belong together.
-
-## What works, what doesn't
-
-Verified end to end on **2026-09-13/14** against a real dedicated server (game build **1024233**,
-plugin **0.4.2**) with a real game client connected.
-✅ = works, ⚠️ = works with a caveat or was not verified live, ❌ = does not work.
-
-| What | | Notes |
-|---|---|---|
-| Connection & heartbeat | ✅ | The sidecar keeps an outbound WebSocket to Takaro and reconnects by itself. |
-| Server restart / reconnect | ✅ | Comes back on its own after a game-container restart; takes up to ~3 minutes. Players still online when the server died are reconciled and reported as disconnected. |
-| Player list | ✅ | Names are the Steam persona names, not the in-game character names — the server never exposes those. `gameId` is the SteamID64. |
-| Single player lookup | ✅ | Same data as the player list. |
-| Player location | ✅ | Matches the in-game position within 0.2 m and follows teleports. |
-| Player inventory | ✅ | Matches the in-game backpack. Takaro's inventory history only records changes, so unchanged starting equipment never shows up there. |
-| Item catalogue | ✅ | 3,609 items synced. Names are derived from the template codes, as for entities: the dedicated server ships no localisation. |
-| Entity catalogue | ✅ | 979 creature/NPC templates (Takaro stored 977 — two share a code). This is the fixed template list, not live creatures. Names are derived from the template codes: the dedicated server ships no localisation to read real display names from, and every distinct code gets a distinct name. |
-| Locations / points of interest | ⚠️ | The plugin has 1,031 map locations and the sidecar serves them, but Takaro never asks for them, so this cannot be checked end to end. Names are derived from the template codes, as for entities, and every distinct code gets a distinct name. |
-| Chat messages from players | ✅ | Real player chat reaches Takaro with the player attached. |
-| Broadcast a message | ✅ | Shown to everyone in the server chat, but under the character name of an online player — Enshrouded has no "server" sender. |
-| Whisper a player | ⚠️ | The message reaches the intended player. Only one player account was available, so "nobody else sees it" was never confirmed. |
-| Give an item | ✅ | Works for normal players and for Admins-group players. The game ignores the count, so the plugin splits the request into stacks of at most 64. |
-| Teleport a player | ✅ | Takaro rounds the coordinates to whole numbers and the game nudges the player to the nearest free spot. |
-| Run a console command | ✅ | Enshrouded has no console; the plugin provides its own set: `help`, `players`, `say`, `whisper`, `location`, `teleport`/`tp`, `inventory`, `give`, `item`, `kick`, `save-and-shutdown`. There is no time-of-day command. |
-| Kick | ✅ | The player must be online. Also works on Admins-group players: the game normally refuses that, and plugin 0.4.2 lifts the check for the one call. Plugin 0.4.1 and older silently did nothing for those players. |
-| Ban (timed and permanent) | ⚠️ | Bans work on **online** players only, and are always permanent until unbanned — the game has no ban reason and no expiry, so a timed ban from Takaro becomes a permanent one. |
-| Unban | ✅ | The player must have been seen online at least once while the connector was running (the game identifies accounts by a hash, not the SteamID). |
-| Ban list | ✅ | Matches the server's own banned-accounts list. |
-| Shut the server down | ✅ | Saves first, then quits; the container restart policy brings it back. |
-| Player joined event | ✅ | From real joins; hooks fire from it. |
-| Player left event | ✅ | From real leaves, and from sidecar reconciliation after the server was killed with a player online. |
-| Player chat event | ✅ | See "Chat messages from players". |
-| Player death event | ⚠️ | Falls and deaths by a creature both reach Takaro. The creature name is now included in the message text; that change was only unit-tested, never re-checked live. |
-| Entity kill event | ✅ | Real kills reach Takaro. The weapon field stays empty, and destroyed props/voxels are filtered out. |
-| Log events | ⚠️ | The sidecar sends them, but Takaro does not store server log lines as events, so they cannot be searched or used in modules. |
-| Map info | ⚠️ | Not verified in a live test; nothing in the evidence records a map-info call for this connector. |
-| Map tiles | ❌ | The Takaro API does not support map tiles for Generic-connector servers. |
-| Discord chat bridge | ⚠️ | Game → Discord, Discord → game (from a real human account) and join/leave notices were all seen. The built-in `chatBridge` also posts Takaro's own server messages back to Discord (a Takaro-core echo affecting every game); use the `chatBridgeNoEcho` fork, which skips player-less chat and was proven to relay player chat without the echo. |
-| Shop & economy | ⚠️ | Buying in game, ordering through Takaro and claiming later, refusal when the balance is too low, and balance/top-list commands were all exercised in the 2026-09-14 hard test, but there is no evidence file for that run in the workspace. Currency transfer was only tried player-to-self (one account), and in-game `@claim` needs the player's account linked to Takaro. A failed purchase shows the generic in-game message "Oops, something went wrong". |
-
-### Known issues
-
-- **Bans cannot expire and need the player online.** Enshrouded has no ban reason or end date, so
-  every ban is permanent until you unban; unban needs the player to have joined once while the
-  connector was running.
-- **Whispers are not proven private.** They reach the right player, but with a single test account
-  it was never confirmed that others do not see them.
-- **Discord bridge echoes with the stock module.** Takaro stores its own outgoing server messages as
-  chat and `chatBridge` relays them to Discord. Use `chatBridgeNoEcho`.
-- **A game update can switch a feature off.** The plugin finds game code by shape and self-checks at
-  load; after a game update a mismatching feature reports `degraded` in `/health` and in Takaro's
-  reachability reason, while the server and everything else keep running. It then needs a new
-  plugin build with re-derived signatures. The compose file in this folder is set up so the game
-  can only move when you decide it does: the image is pinned by digest, the install comes from
-  exactly the pinned Steam manifests, and the image's own updater program is replaced by
-  `server/enshrouded-updater`. If you host the server some other way, keep automatic game updates
-  off there too.
-- **Player names are Steam persona names**, not the in-game character names.
+**From 0.5.0 (plugin + sidecar):** 0.6.0 replaces the sidecar. Stop and remove the sidecar before the
+new DLL starts, because both must never connect with the same identity at once; move the tokens from
+the sidecar's settings into `takaro/plugin.json` (or the game server's environment), and copy the
+sidecar's `event-cursor.json` and `online-players.json` into `takaro/connector-state/` so nothing is
+sent twice. [INSTALL.md](INSTALL.md) (also inside the zip) has the exact steps and the rollback to
+0.5.0.
 
 ---
 

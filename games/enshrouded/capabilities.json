@@ -1,10 +1,10 @@
 {
   "game": "Enshrouded",
-  "connector": "Takaro Enshrouded plugin + sidecar",
-  "architecture": "in-process native plugin (dbghelp.dll proxy loaded by enshrouded_server.exe under Wine/Proton) exposing a loopback HTTP API, plus a Node.js sidecar that speaks the Takaro Generic Connector Protocol",
-  "runtime": "enshrouded_server.exe game build 1024233 (Steam build 23178631) in mornedhels/enshrouded-server; plugin 0.4.2",
+  "connector": "Takaro Enshrouded native connector (dbghelp.dll)",
+  "architecture": "in-process native plugin (dbghelp.dll proxy loaded by enshrouded_server.exe under Wine/Proton) that hooks the game and holds the Takaro Generic Connector WebSocket itself (WinHTTP, TLS); loopback HTTP 127.0.0.1:18890 serves diagnostics only",
+  "runtime": "enshrouded_server.exe game build 1024233 (Steam build 23178631) under GE-Proton10-30 in mornedhels/enshrouded-server:1.7.2-proton; native connector (0.6.0 candidate)",
   "takaroConnection": "outbound_websocket",
-  "updated": "2026-09-14",
+  "updated": "2026-09-29",
   "oracle": "Takaro MCP (takaro-mcp 127.0.0.1:3000/mcp)",
   "statusDefinitions": {
     "proven": "observed end-to-end via MCP plus game-side check",
@@ -21,7 +21,7 @@
     },
     "getPlayer": {
       "status": "proven",
-      "note": "via playerongameserverSearch/playerGetOne"
+      "note": "online via player updates; offline: a real IGamePlayer from known-players.json (module command for an offline player succeeded)"
     },
     "getPlayerLocation": {
       "status": "proven",
@@ -36,16 +36,16 @@
       "note": "non-admin player; game ignores count, plugin splits into full-stack + single actions (max 64); Admin-group player: give x5 + x4 arrived in client, a later client-driven backpack move was accepted server-side, no crash. Persistence across restart not verified (server was hard-killed before save and the character rolled back)"
     },
     "listItems": {
-      "status": "proven",
-      "note": "3609 items via syncItems job, MCP itemSearch"
+      "status": "partial",
+      "note": "3609 items via syncItems; names are derived from template codes (no localisation ships with the dedicated server) and can differ from in-game names ('Ward (Tier 1)' vs 'Spectral Ward'); a few non-items (abilities) included"
     },
     "listEntities": {
-      "status": "proven",
-      "note": "979 templates, Takaro stored 977 (2 duplicate codes), MCP entitySearch; static data, live entity list only as /debug/nearby"
+      "status": "partial",
+      "note": "977 templates via syncEntities; code-derived names; some non-creatures (containers, traps) included"
     },
     "listLocations": {
       "status": "partial",
-      "note": "1031 locations via plugin and sidecar adapter; Takaro app-api never calls listLocations and MCP has no location tool, so not observable via MCP"
+      "note": "1031 locations served by the native connector; Takaro app-api never calls listLocations, so not observable end to end"
     },
     "executeConsoleCommand": {
       "status": "proven",
@@ -53,7 +53,7 @@
     },
     "sendMessage": {
       "status": "partial",
-      "note": "broadcast proven (renders as \"<character name of an online player>: text\"). Whisper reaches the recipient, but exclusion of other players is NOT verified: only one player account is available. Accepted limitation (user decision 2026-09-14)"
+      "note": "broadcast and whisper proven on the native connector (2026-09-29). Whisper exclusion of other players is NOT verified: only one player account is available"
     },
     "teleportPlayer": {
       "status": "proven",
@@ -65,14 +65,15 @@
     },
     "banPlayer": {
       "status": "proven",
-      "note": "online players only; reason/expiresAt not supported by the game. Re-proven 2026-09-14 on 0.4.2 with an Admins-group player (ban dialog, bannedAccounts entry, rejoin refused)"
+      "note": "online players only (game rule). Timed bans: the connector records expiresAt and lifts the ban itself at expiry (proven 2026-09-29, lifted 3.7 s after expiry); permanent bans too"
     },
     "unbanPlayer": {
       "status": "proven",
-      "note": "requires the player to have been seen online once (hash cache); re-proven 2026-09-14 on 0.4.2 (unban log line, list empty, rejoin succeeded)"
+      "note": "requires the player to have been seen online once (hash cache); re-proven 2026-09-29 on the native connector"
     },
     "listBans": {
-      "status": "proven"
+      "status": "proven",
+      "note": "timed bans carry reason + expiresAt from the connector's store; permanent bans have no reason (the game stores none)"
     },
     "shutdown": {
       "status": "proven"
@@ -81,11 +82,11 @@
   "events": {
     "player-connected": {
       "status": "proven",
-      "note": "stored records 7f2fa9b2, 4038ab40 from real joins; playerOnboarding hook fired from them"
+      "note": "real joins (2026-09-29, native); at-least-once delivery can store one duplicate after a reconnect"
     },
     "player-disconnected": {
       "status": "proven",
-      "note": "stored 7757b852 from a real leave; 9b618661 from sidecar reconciliation after the server was killed with the player online"
+      "note": "real leaves, kick, shutdown, and reconciliation on the next boot after a SIGKILL with the player online (2026-09-29, native)"
     },
     "log": {
       "status": "partial",
@@ -96,11 +97,11 @@
     },
     "player-death": {
       "status": "proven",
-      "note": "fall death and death by enemy proven earlier. Non-player killer is now forwarded in the base msg field ('<name> was killed by <code>'; Takaro schema has no killerEntity and forbids unknown fields). Unit-tested only; not re-proven live after the change"
+      "note": "fall (position, no killer) and creature death ('Limon was killed by Enemy_Wildbeast_Rat_hook') proven live 2026-09-29; killer is the template code"
     },
     "entity-killed": {
       "status": "proven",
-      "note": "weapon is empty (weapon category not mapped); props/voxel destructibles are filtered out"
+      "note": "exactly one row per kill; entity is the template code and weapon is empty; props/voxel destructibles are filtered out"
     }
   },
   "modules": {
@@ -129,32 +130,41 @@
     },
     "chatBridge": {
       "status": "proven",
-      "note": "built-in chatBridge: D1, D4 and a human D2 proven. Replaced on this server by chatBridgeNoEcho (5ca72768) because of the Takaro-core echo"
+      "note": "stock chatBridge relays Takaro's own server messages back to Discord (Takaro-core echo); use chatBridgeNoEcho"
     },
     "chatBridgeNoEcho": {
       "status": "proven",
-      "note": "fork of chatBridge. GameToDiscord skips player-less chat. No echo proven, and player chat still relayed"
+      "note": "player chat -> Discord post succeeded (HTTP 200), Takaro-sent chat not relayed, and a human Discord post reached game chat (2026-09-29, native)"
     }
   },
   "resilience": {
     "containerRestartReconnect": {
       "status": "proven",
-      "note": "reachability false during restart, sidecar self-exit after 180 s, reconnected, connectable:true"
-    },
-    "sidecarRestartNoReplay": {
-      "status": "proven",
-      "note": "cursor 693 persisted; no Takaro records created by the restart; new chat after restart forwarded once"
+      "note": "graceful restart, SIGKILL crash, gameserverShutdown and container recreate: identified again within 24 s each (2026-09-29)"
     },
     "serverRestartOnlineReconcile": {
-      "status": "proven"
-    },
-    "pluginRestartDetection": {
       "status": "proven",
-      "note": "seq-reset path proven live (0.4.0); plugin 0.4.1 adds bootId (cursor now stores it, used live after redeploy); bootId-only case unit-tested"
+      "note": "SIGKILL with the player online -> player-disconnected on the next boot"
+    },
+    "wsDropReconnect": {
+      "status": "proven",
+      "note": "socket killed (ss -K) and a 40 s silent blackhole: dead link detected within 20 s, reconnect without a game restart, chat in between delivered"
+    },
+    "outageNoLoss": {
+      "status": "proven",
+      "note": "30-minute outage: 275 events kept in the durable outbox and delivered after reconnect, 0 losses"
+    },
+    "timedBanExpiry": {
+      "status": "proven",
+      "note": "connector lifted a timed ban at expiry; across a restart only host-tested"
     },
     "signatureSelfCheckDegrade": {
       "status": "proven",
-      "note": "debug build with corrupted addComponent pattern: teleport=degraded, all other capabilities ok, server kept running, MCP reachability reason 'capabilities not ok: teleport=degraded'; release 0.4.1 restored with all ok. Degraded teleport request not exercised with a player online"
+      "note": "debug build with corrupted addMessage signature: chatEvents+sendMessage degraded, reachability reason names them, server and connection keep running (2026-09-29)"
+    },
+    "noHelperProcess": {
+      "status": "proven",
+      "note": "the game process owns the Takaro socket; no other process or container"
     }
   }
 }
