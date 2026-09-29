@@ -1,9 +1,16 @@
-// Minimal HTTP/1.1 server on 127.0.0.1:18890 (one short-lived thread per connection, Connection: close).
+// Plugin contract router (mod/docs/API.md) and the diagnostic HTTP/1.1 server on 127.0.0.1:18890 (one
+// short-lived thread per connection, Connection: close).
+//
+// The native Takaro connector calls Route in-process (PluginCall). Over the socket, only the diagnostics
+// (GET /health, GET /events, GET /debug/perf) are served by default; TAKARO_LEGACY_HTTP=1 re-enables every
+// action route for the legacy sidecar (cutover and rollback, one release).
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
 #include "common.h"
 #include "hooks.h"
+#include "perf.h"
+#include "plugin_api.h"
 #include "state.h"
 #include "world.h"
 
@@ -35,6 +42,7 @@ namespace {
 
 const int kPort = 18890;
 std::string g_token;
+bool g_legacyHttp = false;
 
 struct Request {
     std::string method, path, query, body;
@@ -575,10 +583,15 @@ Response Route(const Request& r) {
     const std::string& p0 = parts[0];
 
     if (p0 == "health" && parts.size() == 1 && get) {
+        std::string diag = HookDiagnosticsJson();
+        diag.pop_back();  // splice perf + native connector diagnostics into the object
+        diag += ",\"perf\":" + PerfJson() + ",\"native\":" + NativeHealthJson() + "}";
         return {200, "{\"status\":\"ok\",\"version\":\"" TAKARO_PLUGIN_VERSION "\",\"bootId\":" + JsonStr(BootId()) + ",\"gameBuild\":" +
                          JsonStr(GameBuild()) + ",\"capabilities\":" + st.CapabilitiesJson() +
-                         ",\"capabilityDetails\":" + st.CapabilityDetailsJson() +
-                         ",\"diagnostics\":" + HookDiagnosticsJson() + "}"};
+                         ",\"capabilityDetails\":" + st.CapabilityDetailsJson() + ",\"diagnostics\":" + diag + "}"};
+    }
+    if (p0 == "debug" && parts.size() == 2 && parts[1] == "perf" && get) {
+        return {200, PerfJson(QueryParam(r.query, "reset") == "1")};
     }
     if (p0 == "players" && get) {
         if (parts.size() == 1) return {200, st.PlayersJson()};
@@ -764,6 +777,14 @@ Response Route(const Request& r) {
     return Err(404, "not found");
 }
 
+// The routes the socket serves when the legacy sidecar routes are off: read-only diagnostics.
+bool DiagnosticRoute(const Request& r) {
+    if (r.method != "GET") return false;
+    auto parts = Split(r.path);
+    if (parts.size() == 1 && (parts[0] == "health" || parts[0] == "events")) return true;
+    return parts.size() == 2 && parts[0] == "debug" && parts[1] == "perf";
+}
+
 DWORD WINAPI ConnThread(LPVOID arg) {
     SOCKET c = (SOCKET)(uintptr_t)arg;
     DWORD to = 10000;
@@ -772,7 +793,12 @@ DWORD WINAPI ConnThread(LPVOID arg) {
     Request r;
     int errStatus = 0;
     if (ReadRequest(c, r, errStatus)) {
-        Response resp = TokenOk(r) ? Route(r) : Err(401, g_token.empty() ? "plugin token not configured" : "unauthorized");
+        Response resp;
+        if (!TokenOk(r)) resp = Err(401, g_token.empty() ? "plugin token not configured" : "unauthorized");
+        else if (!g_legacyHttp && !DiagnosticRoute(r))
+            resp = Err(404, "not served over HTTP: the plugin talks to Takaro directly (set TAKARO_LEGACY_HTTP=1 for the "
+                            "legacy sidecar routes)");
+        else resp = Route(r);
         Send(c, resp);
     } else if (errStatus) {
         Send(c, Err(errStatus, "bad request"));
@@ -855,7 +881,23 @@ void AccountsHousekeep() {
     }
 }
 
+PluginResponse PluginCall(const std::string& method, const std::string& target, const std::string& body) {
+    Request r;
+    r.method = method;
+    size_t q = target.find('?');
+    r.path = target.substr(0, q);
+    if (q != std::string::npos) r.query = target.substr(q + 1);
+    r.body = body;
+    Response resp = Route(r);
+    return {resp.status, resp.body};
+}
+
 void HttpStart() {
+    char legacy[8] = {0};
+    DWORD n = GetEnvironmentVariableA("TAKARO_LEGACY_HTTP", legacy, sizeof legacy);
+    g_legacyHttp = n > 0 && n < sizeof legacy && strcmp(legacy, "1") == 0;
+    PluginLog("http: %s", g_legacyHttp ? "TAKARO_LEGACY_HTTP=1: serving every contract route (legacy sidecar mode)"
+                                        : "serving diagnostics only (/health, /events, /debug/perf)");
     LoadToken();
     HANDLE h = CreateThread(nullptr, 0, ListenThread, nullptr, 0, nullptr);
     if (h) CloseHandle(h);

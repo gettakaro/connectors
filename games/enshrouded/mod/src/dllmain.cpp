@@ -2,6 +2,7 @@
 // we forward it to the system copy and start the plugin on a separate thread (no work under loader lock).
 #include "common.h"
 #include "hooks.h"
+#include "plugin_api.h"
 #include "state.h"
 
 HMODULE g_selfModule = nullptr;
@@ -32,6 +33,7 @@ static DWORD WINAPI InitThread(LPVOID) {
     HttpStart();
     HooksInit();
     PluginLog("capabilities: %s", PluginState::Get().CapabilitiesJson().c_str());
+    NativeStart();  // direct Takaro connection; its own threads, never the game thread
     for (unsigned n = 1;; n++) {
         Sleep(250);
         PluginState::Get().Housekeep();
