@@ -552,6 +552,110 @@
   },
   {
    "input": {
+    "type": "log",
+    "data": {
+     "msg": "line"
+    }
+   },
+   "expect": {
+    "type": "log",
+    "data": {
+     "msg": "line"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "log",
+    "data": {
+     "msg": "[server] Saved",
+     "level": "info"
+    }
+   },
+   "expect": {
+    "type": "log",
+    "data": {
+     "msg": "[server] Saved"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "log",
+    "data": "raw"
+   },
+   "expect": {
+    "type": "log",
+    "data": {
+     "msg": "raw"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "log",
+    "data": {
+     "line": "from line"
+    }
+   },
+   "expect": {
+    "type": "log",
+    "data": {
+     "msg": "from line"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "log",
+    "data": {
+     "level": "info"
+    }
+   },
+   "expect": {
+    "type": "log",
+    "data": {
+     "msg": "{\"level\":\"info\"}"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "log",
+    "data": 42
+   },
+   "expect": {
+    "type": "log",
+    "data": {
+     "msg": "42"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "player-sync",
+    "data": {}
+   },
+   "expect": null
+  },
+  {
+   "input": {
+    "type": "player-connected",
+    "data": {
+     "player": {}
+    }
+   },
+   "error": "Plugin player has no identifier: {\"player\":{}}"
+  },
+  {
+   "input": {
+    "type": "player-connected",
+    "data": {}
+   },
+   "error": "Plugin player has no identifier: {}"
+  },
+  {
+   "input": {
     "type": "entity-killed",
     "data": {
      "entity": "Rat",
@@ -666,110 +770,6 @@
      "weapon": "Unarmed"
     }
    }
-  },
-  {
-   "input": {
-    "type": "log",
-    "data": {
-     "msg": "line"
-    }
-   },
-   "expect": {
-    "type": "log",
-    "data": {
-     "msg": "line"
-    }
-   }
-  },
-  {
-   "input": {
-    "type": "log",
-    "data": {
-     "msg": "[server] Saved",
-     "level": "info"
-    }
-   },
-   "expect": {
-    "type": "log",
-    "data": {
-     "msg": "[server] Saved"
-    }
-   }
-  },
-  {
-   "input": {
-    "type": "log",
-    "data": "raw"
-   },
-   "expect": {
-    "type": "log",
-    "data": {
-     "msg": "raw"
-    }
-   }
-  },
-  {
-   "input": {
-    "type": "log",
-    "data": {
-     "line": "from line"
-    }
-   },
-   "expect": {
-    "type": "log",
-    "data": {
-     "msg": "from line"
-    }
-   }
-  },
-  {
-   "input": {
-    "type": "log",
-    "data": {
-     "level": "info"
-    }
-   },
-   "expect": {
-    "type": "log",
-    "data": {
-     "msg": "{\"level\":\"info\"}"
-    }
-   }
-  },
-  {
-   "input": {
-    "type": "log",
-    "data": 42
-   },
-   "expect": {
-    "type": "log",
-    "data": {
-     "msg": "42"
-    }
-   }
-  },
-  {
-   "input": {
-    "type": "player-sync",
-    "data": {}
-   },
-   "expect": null
-  },
-  {
-   "input": {
-    "type": "player-connected",
-    "data": {
-     "player": {}
-    }
-   },
-   "error": "Plugin player has no identifier: {\"player\":{}}"
-  },
-  {
-   "input": {
-    "type": "player-connected",
-    "data": {}
-   },
-   "error": "Plugin player has no identifier: {}"
   },
   {
    "input": {

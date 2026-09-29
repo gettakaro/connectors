@@ -32,7 +32,7 @@ check() {  # check <name> <condition command...>
   if "$@"; then log "PASS $name"; else log "FAIL $name"; FAILED+=("$name"); fi
 }
 
-# shellcheck disable=SC2329  # invoked by the EXIT trap below
+# shellcheck disable=SC2317,SC2329  # invoked by the EXIT trap below
 teardown() {
   [ -n "${KEEP:-}" ] && { log "KEEP=1: containers left running, work dir $WORK"; return; }
   # files the Wine process created belong to its uid: hand them back before the host cleans up

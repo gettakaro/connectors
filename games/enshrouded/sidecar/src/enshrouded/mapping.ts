@@ -134,7 +134,8 @@ export function mapPluginEvent(event: { type: string; data: unknown; ts?: unknow
       }
       if (d.position) out.position = mapPosition(d.position);
       // Takaro's EventPlayerDeath only has a player `attacker`; a creature/NPC killer goes into the base `msg` field.
-      const killerEntity = str(d.killerEntity) ?? str(asRecord(d.killer).code);
+      // A 0.6 plugin names the killer as the entity catalogue does; older plugins send only the code.
+      const killerEntity = str(d.killerEntityName) ?? str(d.killerEntity) ?? str(asRecord(d.killer).code);
       if (!out.attacker && killerEntity) {
         const who = (out.player as TakaroPlayer).name;
         out.msg = `${who} was killed by ${killerEntity}`;
