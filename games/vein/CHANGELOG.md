@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/gettakaro/connectors/compare/vein-v0.3.0...vein-v0.3.1) (2026-09-29)
+
+
+### Documentation
+
+* **vein:** record native v0.3.0 verification in the works table ([#336](https://github.com/gettakaro/connectors/issues/336)) ([02ffc2d](https://github.com/gettakaro/connectors/commit/02ffc2d3fc92e0243be8a1f06dd199afd2a88a0b))
+
 ## [0.3.0](https://github.com/gettakaro/connectors/compare/vein-v0.2.3...vein-v0.3.0) (2026-09-29)
 
 
