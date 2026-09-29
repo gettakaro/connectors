@@ -1,42 +1,27 @@
-# Takaro Vein plugin: HTTP API (contract v0.1, lane L1)
+# Takaro VEIN plugin: optional diagnostic HTTP API
+
+The native connector calls its game actions and reads its event ring directly. HTTP is an optional operator diagnostic interface, not its Takaro transport. It listens only on loopback port 18890 when `TAKARO_PLUGIN_TOKEN` is configured; without that token the listener is disabled. The historical endpoint shapes below remain useful for testing and migration, but the old sidecar no longer owns the protocol.
 
 The plugin is `libtakaro-vein.so`, loaded into `VeinServer-Linux-Test` through
-`LD_PRELOAD`. It serves this API on `127.0.0.1:18890`, inside the server's network namespace (the
-container). The sidecar codes against this document.
+`LD_PRELOAD`. With diagnostics enabled, it serves this API on `127.0.0.1:18890` inside the server's network namespace.
 
 Contract shape, status codes and the `/events` cursor semantics are the Takaro Enshrouded plugin's
 `API.md` v0.4; identity, endpoints and diagnostics are adapted to Vein.
 
 ## Status of this document
-The **contract** (paths, status codes, cursor semantics, payload shapes) is fixed and inherited
-unchanged from the Dragonwilds plugin, which implements the same API against a different game. What
-is *implemented on VEIN* is a separate question and is stated per section:
 
-- **Implemented (lane L1):** `GET /health`, `GET /events`, `GET /debug/gamethread|symbols|object|structs|inventories`.
-- **Implemented, not yet proven (lane L3):** `/players*`, `/items`, `/entities`, `/locations`,
-  `/bans`, `POST /message|/teleport|/give|/kick|/ban|/unban|/command|/shutdown`. All fifteen action
-  capabilities are wired against VEIN's own code paths and every symbol they need resolves in the
-  depot `.sym`, but **none of them has executed inside the game process yet** (M0 was blocked when
-  they were written). `/health.capabilityDetails` says `UNVERIFIED` for each one until the M2/M3
-  runs replace that with evidence. The mechanism chosen per action, with its `.sym` evidence, is in
-  `docs/actions-design.md`.
-- **Implemented (lane L2):** all six event types, the log tail and `POST /debug/kill-nearest`.
-  Which symbol or UFunction each one binds to, and what is still unproven on a live server, is in
-  `docs/events-design.md`. "Implemented" means the hooks are installed and reported in
-  `/health.diagnostics.eventSources`; it does **not** mean any of them has been seen firing — that
-  is what M2 settles, and `context/games/vein/evidence/` is the only place a proof lives.
+This document describes the diagnostic contract and response shapes. Its original lane/M0 planning status is historical: actions and events have since run in a real VEIN server. Live coverage remains specific to each tested connector build; endpoint availability alone does not prove real-client effects or Takaro receipt. See the connector README for the compatibility reference and the candidate's validation results for current coverage.
 
-Payload examples below that are marked *(shape)* come from the Dragonwilds implementation of this
-same contract. They document the wire format, **not** a proven VEIN behaviour. A cell is only proven
-when `context/games/vein/evidence/` says so.
+Mechanism details are in `docs/actions-design.md` and `docs/events-design.md`. Examples marked *(shape)* describe the wire format, not evidence of a particular live run. Symbol health, installed hooks and HTTP success do not replace real-client and Takaro verification.
 
 ## Transport and auth
 - HTTP/1.1, one short-lived thread per connection, every response closes it (`Connection: close`).
   Bodies are JSON (`Content-Type: application/json`), UTF-8.
 - Every request needs `Authorization: Bearer <token>`.
   - Token from env `TAKARO_PLUGIN_TOKEN`, else `<server binary dir>/takaro/plugin.json` `{"token":"..."}`.
-  - Wrong or missing token: `401 {"error":"unauthorized"}`. No token configured at all:
-    `401 {"error":"plugin token not configured"}`.
+  - Wrong or missing request token: `401 {"error":"unauthorized"}`. When no token is
+    configured, the HTTP listener is disabled. Direct native Takaro communication does
+    not require this diagnostics token.
 - Errors are always `{"error":"<message>"}`:
   - `400` bad body or missing field · `404` unknown path or player not online · `405` known path,
     wrong method · `409` the game refused the action · `413` body over 1 MiB ·
@@ -48,7 +33,7 @@ when `context/games/vein/evidence/` says so.
 ## Configuration
 | env | `plugin.json` key | default | meaning |
 |---|---|---|---|
-| `TAKARO_PLUGIN_TOKEN` | `token` | — | bearer token; without it every request is 401 |
+| `TAKARO_PLUGIN_TOKEN` | `token` | — | bearer token; without it HTTP diagnostics are disabled |
 | `TAKARO_PLUGIN_PORT` | `port` | `18890` | loopback port |
 | `TAKARO_PLUGIN_DEBUG` | `debug` | off | enables `/debug/*` and per-request logging |
 | `TAKARO_SYM_PATH` | `symPath` | `<exe>.sym` | depot symbol database for the `depotsym` strategy |
@@ -76,6 +61,14 @@ found by scanning the struct's first words for the SteamID64 bit pattern
 that runs game code. *(Not proven yet.)*
 
 ## GET /health
+
+The additional top-level `native` object reports `connection` (state, identified,
+epoch), queue counts, completion bytes, delivery losses, overloads, persistence
+errors, and capture/confirmation sequences. During the opt-in
+[native transport gate](native-gate.md), `native.gate.experimental` is true and
+`native.gate.durableOutbox` is false. Those fields explicitly distinguish the
+experimental transport from a completed persistent migration.
+
 ```json
 {"status":"ok","version":"0.1.0","bootId":"c07f7763cfbf47c9","pid":48,
  "gameBuild":"++vein+staging-CL-240163","engineVersion":"5.6.1-240163",

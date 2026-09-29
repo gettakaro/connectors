@@ -23,7 +23,7 @@ for connector, Takaro API and Takaro module testing with a handful of human play
 | Valheim | `valheim` | Takaro BepInEx server plugin (WebSocket) | 4 GB | 4 GB |
 | DayZ | `dayz` | `@TakaroIntegration` Enforce mod → loopback HTTP → Takaro TypeScript sidecar (WebSocket) | 6 GB | 4 GB² |
 | RuneScape: Dragonwilds | `dragonwilds` | `libtakaro-dragonwilds.so` `LD_PRELOAD` plugin → loopback HTTP → Takaro TypeScript sidecar (WebSocket) | 4 GB | 8 GB³ |
-| VEIN | `vein` | `libtakaro-vein.so` `LD_PRELOAD` plugin → loopback HTTP → Takaro TypeScript sidecar (WebSocket) | 4 GB | 20 GB |
+| VEIN | `vein` | `libtakaro-vein.so` `LD_PRELOAD` native connector → Takaro WebSocket | 4 GB | 20 GB |
 | Dune: Awakening | `dune` | Takaro TypeScript sidecar → the battlegroup's **RabbitMQ** (GM commands + chat) and **Postgres** (state); optional `libtakaro-dune.so` `LD_PRELOAD` plugin for kills/live location | 24 GB | 60 GB⁴ |
 | Rust | `rust` | `TakaroConnector.cs` Carbon plugin (WebSocket) | 8 GB | 12 GB |
 | 7 Days to Die | `7d2d` | Takaro mod (WebSocket) | 8 GB | 32 GB¹ |
@@ -243,7 +243,7 @@ bind to `127.0.0.1` only** — reach them over an SSH tunnel or a private VPN, e
 | DayZ | 2302-2306/udp, 27116/udp (Steam query; 27016 inside the container) | 2310 BattlEye RCON, 8088 sidecar HTTP (inside the game netns only) |
 | Terraria | 7777/tcp | 7878 TShock REST |
 | RuneScape: Dragonwilds | 7797/udp | 18890 plugin HTTP, 18891 sidecar health — both inside the game netns only, never published |
-| VEIN | 7807/udp + 7807/tcp game, 27017/udp Steam query | 8080 built-in HTTP API, 18890 plugin HTTP, 18891 sidecar health — all inside the game netns only, never published |
+| VEIN | 7807/udp + 7807/tcp game, 27017/udp Steam query | 8080 built-in HTTP API, optional authenticated 18890 native diagnostics — inside the game netns only, never published |
 | Conan Exiles | 7787/udp, 7788/udp, 27015/udp | 25580 RCON, 3010 sidecar HTTP |
 | Palworld | 8211/udp, 27016/udp | 8212 REST, 25581 RCON, 3001 bridge HTTP |
 

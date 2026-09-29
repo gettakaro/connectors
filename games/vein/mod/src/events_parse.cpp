@@ -192,6 +192,31 @@ EventsParse::JoinLine EventsParse::ParseJoinLine(const std::string& raw) {
     return out;
 }
 
+EventsParse::LoginRefusedLine EventsParse::ParseLoginRefusedLine(const std::string& raw) {
+    LoginRefusedLine out;
+    LogLine l = SplitLogLine(raw);
+    if (l.category != "LogVein") return out;
+    static const char* kMark = "Player ";
+    static const char* kTail = " failed to authenticate";
+    if (l.message.compare(0, strlen(kMark), kMark) != 0) return out;
+    size_t tail = l.message.find(kTail);
+    if (tail == std::string::npos) return out;
+    size_t idStart = strlen(kMark);
+    size_t idEnd = idStart;
+    while (idEnd < l.message.size() && isdigit((unsigned char)l.message[idEnd])) idEnd++;
+    std::string id = l.message.substr(idStart, idEnd - idStart);
+    if (!LooksLikeSteamId64(id)) return out;
+    out.gameId = id;
+    size_t colon = l.message.find(':', tail);
+    if (colon != std::string::npos) {
+        size_t r = colon + 1;
+        while (r < l.message.size() && l.message[r] == ' ') r++;
+        out.reason = l.message.substr(r);
+    }
+    out.ok = true;
+    return out;
+}
+
 EventsParse::PlayerStateIdLine EventsParse::ParsePlayerStateIdLine(const std::string& raw) {
     PlayerStateIdLine out;
     LogLine l = SplitLogLine(raw);

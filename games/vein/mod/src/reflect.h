@@ -7,6 +7,7 @@
 // Property offsets of game structs are never constants: they come from UStruct::FindPropertyByName.
 #pragma once
 #include "common.h"
+#include <functional>
 
 namespace UE {
 
@@ -73,7 +74,7 @@ bool Ready();
 
 // Runs the boot validations. MUST be called on the game thread. Idempotent; returns a JSON array of
 // {check, ok, detail}. Sets the `reflect*` capabilities.
-std::string Validate();
+void Validate(); // game-thread reads only; diagnostics serialize the copied checks off-thread
 bool Validated();
 
 // ---- string helpers ----
@@ -107,10 +108,11 @@ bool GetObjectsOfClass(void* cls, std::vector<void*>& out, bool includeDerived =
 bool GetObjectsWithOuter(void* outer, std::vector<void*>& out, bool includeNested = true);
 
 // ---- diagnostics ----
-// JSON dump of an object's UPROPERTY tree, walking up the class chain.
-std::string DumpObject(void* obj, int maxProps = 512);
-// JSON dump of a UStruct/UClass found by name (package optional, "" = search a few known packages).
-std::string DumpStruct(const std::string& name);
+// Capture owned property values on the game thread; invoke the returned renderer
+// on a background thread. Renderers never retain or dereference game pointers.
+using DebugSnapshot = std::function<std::string()>;
+DebugSnapshot DumpObject(void* obj, int maxProps = 512);
+DebugSnapshot DumpStruct(const std::string& name);
 std::string LayoutJson();
 
 // Cached build strings; filled by Validate() on the game thread, "" until then.
