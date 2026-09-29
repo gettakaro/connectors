@@ -29,6 +29,7 @@ class CannedSocket:
         self.requests: list[tuple[str, Any, float | None]] = []
         self.disconnects: list[tuple[int, str]] = []
         self.ping_error: Exception | None = None
+        self.app_pings = 0
 
     async def request(self, action: str, params: Any, timeout: float | None = None) -> Any:
         self.requests.append((action, params, timeout))
@@ -39,10 +40,11 @@ class CannedSocket:
             return answer(action, params)
         return answer
 
-    async def ping(self, timeout: float | None = None) -> None:
-        del timeout
+    async def ping(self, timeout: float | None = None, payload: bytes | None = None) -> float:
+        del timeout, payload
         if self.ping_error is not None:
             raise self.ping_error
+        return 0.001
 
     async def disconnect(self, code: int, reason: str) -> None:
         self.disconnects.append((code, reason))

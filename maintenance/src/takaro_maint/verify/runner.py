@@ -34,6 +34,7 @@ from . import checks as base_checks
 from .fake_takaro import FakeTakaro
 from .hooks import GameHooks
 from .report import build_report, write_report
+from .tls import make_test_pki
 
 CHECK_IDS = (
     "build",
@@ -252,6 +253,9 @@ class TargetRun:
         self.containers: list[Container] = []
         self.extra_logs: list[Path] = []
         self.results: list[base_checks.CheckResult] = []
+        #: The CA a ``wss://`` fake Takaro was signed by, when the game asked for TLS.
+        self.takaro_ca_file: Path | None = None
+        self._tls_dir: Path | None = None
         self._cleaned = False
 
     # -- setup ----------------------------------------------------------------
@@ -522,9 +526,18 @@ class TargetRun:
         else:
             self.skip("build", self.not_selected_reason("build"))
 
-        fake = FakeTakaro(host=bridge_gateway(), log_path=self.fake_log)
+        # A connector that refuses plaintext gets a TLS fake, signed by a CA made for this run
+        # alone; its private half stays in a directory nothing else reads or keeps.
+        ssl_context = None
+        if self.hooks.takaro_tls:
+            self._tls_dir = Path(tempfile.mkdtemp(prefix="takaro-verify-tls-"))
+            pki = make_test_pki(self._tls_dir, "host.docker.internal")
+            ssl_context = pki.context
+            self.takaro_ca_file = pki.ca_pem
+        fake = FakeTakaro(host=bridge_gateway(), log_path=self.fake_log, ssl_context=ssl_context)
         port = await fake.start()
-        ws_url = f"ws://host.docker.internal:{port}/"
+        scheme = "wss" if ssl_context is not None else "ws"
+        ws_url = f"{scheme}://host.docker.internal:{port}/"
         output.info(f"fake Takaro listening on {fake.host}:{port} (no host ports published)")
 
         runtime: dict[str, Any] = {}
@@ -652,6 +665,8 @@ class TargetRun:
         if self._cleaned:
             return
         self._cleaned = True
+        if self._tls_dir is not None:
+            shutil.rmtree(self._tls_dir, ignore_errors=True)
         failed = any(result.status == "fail" for result in self.results)
         for container in self.containers:
             container.remove()

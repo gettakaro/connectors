@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import ssl
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,16 +29,19 @@ class FakeTakaro:
     port: int = 0
     log_path: Path | None = None
     game_server_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    #: Serve ``wss://`` with this context; ``None`` is plain ``ws://``.
+    ssl_context: ssl.SSLContext | None = None
 
     _server: Server | None = field(default=None, init=False)
     _connection: ServerConnection | None = field(default=None, init=False)
     _pending: dict[str, asyncio.Future[Any]] = field(default_factory=dict, init=False)
     identified: dict[str, Any] | None = field(default=None, init=False)
     identify_count: int = field(default=0, init=False)
+    app_pings: int = field(default=0, init=False)
     events: list[dict[str, Any]] = field(default_factory=list, init=False)
 
     async def start(self) -> int:
-        self._server = await serve(self._handle, self.host, self.port)
+        self._server = await serve(self._handle, self.host, self.port, ssl=self.ssl_context)
         self.port = next(iter(self._server.sockets)).getsockname()[1]
         return self.port
 
@@ -48,7 +52,8 @@ class FakeTakaro:
 
     @property
     def url(self) -> str:
-        return f"ws://{self.host}:{self.port}/"
+        scheme = "wss" if self.ssl_context is not None else "ws"
+        return f"{scheme}://{self.host}:{self.port}/"
 
     def _log(self, direction: str, frame: Any) -> None:
         if self.log_path is None:
@@ -108,6 +113,12 @@ class FakeTakaro:
             return
         if kind == "gameEvent":
             self.events.append(frame.get("payload", {}))
+            return
+        # The application heartbeat some connectors send; real Takaro answers it like this,
+        # and a connector that confirms delivery by a later pong depends on the answer.
+        if kind == "ping":
+            self.app_pings += 1
+            await self._send(connection, {"type": "pong", "payload": None, "requestId": str(uuid.uuid4())})
 
     async def wait_for_identify(self, timeout: float, *, minimum: int = 1) -> dict[str, Any]:
         """Resolve once at least ``minimum`` identify frames have arrived (the first by default).
@@ -150,12 +161,15 @@ class FakeTakaro:
         finally:
             self._pending.pop(request_id, None)
 
-    async def ping(self, *, timeout: float = 5.0) -> float:
-        """One RFC 6455 ping, awaited to its pong. Returns the round trip in seconds."""
+    async def ping(self, *, timeout: float = 5.0, payload: bytes | None = None) -> float:
+        """One RFC 6455 ping, awaited to its pong. Returns the round trip in seconds.
+
+        ``payload=b""`` sends the empty ping real Takaro sends; the default is a random one.
+        """
         if self._connection is None:
             raise RuntimeError("no connector is connected")
         loop = asyncio.get_running_loop()
         started = loop.time()
-        pong_waiter = await self._connection.ping()
+        pong_waiter = await self._connection.ping(payload)
         await asyncio.wait_for(pong_waiter, timeout)
         return loop.time() - started
