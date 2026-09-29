@@ -22,13 +22,13 @@ You need:
 
 ### 2. Download the connector
 
-Download **`takaro-zomboid-agent-linux-42.20.4-<version>.jar`** from the latest
+Download **`takaro-zomboid-agent-linux-42.21.0-<version>.jar`** from the latest
 `zomboid-vX.Y.Z` release on the releases page:
 
 > https://github.com/gettakaro/connectors/releases
 
 Direct link pattern:
-`https://github.com/gettakaro/connectors/releases/download/zomboid-v<version>/takaro-zomboid-agent-linux-42.20.4-<version>.jar`
+`https://github.com/gettakaro/connectors/releases/download/zomboid-v<version>/takaro-zomboid-agent-linux-42.21.0-<version>.jar`
 
 The old name `TakaroConnector-<version>.jar` is published beside it as a byte-identical copy and
 will be kept for two more releases.
@@ -36,9 +36,10 @@ will be kept for two more releases.
 Use `zomboid-v1.0.0` or newer. The results in the table below were proven on the code that
 shipped in 1.0.0. Do not use the `zomboid-dev` pre-release; that is an untested rolling build.
 
-**Supported server build:** Project Zomboid 42.20.4, Steam build 24909836. The connector checks
-the server jar when it starts and refuses to hook another build unless you set
-`TAKARO_TARGET_POLICY=warn` on the server process.
+**Supported server build:** Project Zomboid 42.21.0, Steam build 25485538 (the current `public`
+branch). The connector checks the server jar when it starts and refuses to hook another build
+unless you set `TAKARO_TARGET_POLICY=warn` on the server process. Releases up to 1.1.0 were built
+for 42.20.4 and refuse a 42.21.0 server; update the connector when you update the game.
 
 The download is a **single self-contained jar** — everything it needs (ByteBuddy, the WebSocket
 client, Gson) is already inside it. There is nothing to unzip.
@@ -133,7 +134,10 @@ the upgrade. Never swap the jar under a running server; the agent is loaded into
 ## What works, what doesn't
 
 Verified end to end on **2026-09-13/14** against a real dedicated server (game build
-**42.20.4 b0bbce05d5**) with a real game client connected.
+**42.20.4 b0bbce05d5**) with a real game client connected. On **42.21.0** (2026-09-29) startup,
+hook binding, identify, reachability, player list, console commands, broadcast, ban list and both
+catalogues were re-proven on the server; the player-scoped rows have not yet been re-run with a
+client on 42.21.0.
 ✅ = works, ⚠️ = works with a caveat or is unverified, ❌ = does not work.
 
 | What | | Notes |
@@ -145,7 +149,7 @@ Verified end to end on **2026-09-13/14** against a real dedicated server (game b
 | Player location | ✅ | Live X/Y/Z, and it follows teleports. |
 | Player inventory | ✅ | Matches what the player is carrying, including item condition. |
 | Item catalogue | ✅ | 5,092 items synced. |
-| Entity catalogue | ✅ | 242 entities synced (zombies and vehicles). |
+| Entity catalogue | ✅ | 242 entities synced (zombies and vehicles), vehicles under their in-game names ("Dash Bulldriver", "Burnt Chevalier Cossette"). |
 | Locations / points of interest | ⚠️ | Build 42 has no named-location registry, so only player-claimed safehouses can be listed — on a world with no safehouses the list is empty. |
 | Chat messages from players | ✅ | Real player chat reaches Takaro with the player and channel attached. |
 | Broadcast a message | ✅ | Shown to everyone in the server chat. |

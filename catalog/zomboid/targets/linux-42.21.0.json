@@ -1,18 +1,17 @@
 {
   "schemaVersion": 1,
-  "id": "linux-42.20.4",
+  "id": "linux-42.21.0",
   "game": "zomboid",
   "platform": "linux",
-  "revision": "42.20.4",
-  "default": false,
+  "revision": "42.21.0",
+  "default": true,
   "support": {
-    "status": "retired",
+    "status": "candidate",
     "since": "2026-09-29",
     "evidence": [
-      "games/zomboid/README.md (What works, what doesn't — verified 2026-09-13/14 on 42.20.4 b0bbce05d5 / connector 1.0.0)",
-      "release hard-test 2026-09-16 on zomboid-v1.0.0/1.0.1"
+      "hooks + 99 direct API refs + 2 reflective fields unchanged vs 42.20.4 (static diff); zomboid-v1.1.0 agent with TAKARO_TARGET_POLICY=warn binds all hooks, identifies and answers reachability/getPlayers/executeConsoleCommand/sendMessage/listBans live on neo 2026-09-29"
     ],
-    "notes": "Exact Steam pin of Build 42 42.20.4 (build hash b0bbce05d5), the build the 2026-09-13/14 hard test and the 2026-09-16 release hard test proved; startup, hook binding, a representative action and reconnect were re-proven on this pin in an isolated run. Runtime CI onboarding and player-lifecycle firing evidence are tracked separately. Retired after public moved to build 25485538 (42.21.0) on 2026-09-29; Steam no longer serves depot 380871 manifest 8198713088050651526 to anonymous accounts (401), so this pin cannot be rebuilt anonymously. Retained so reports and exact-target operations still resolve."
+    "notes": "Exact Steam pin of Build 42 42.21.0 (build 4a0e9546ec, Steam build 25485538). Candidate until the real-client gate passes on this pin."
   },
   "inputs": {
     "server": {
@@ -21,7 +20,7 @@
       "hashOrigin": "self-recorded",
       "app": 380870,
       "branch": "public",
-      "buildid": 24909836,
+      "buildid": 25485538,
       "os": "linux",
       "arch": "64",
       "depots": {
@@ -31,13 +30,13 @@
           "files": 4
         },
         "380871": {
-          "manifest": "8198713088050651526",
-          "size": 6886641123,
-          "files": 40404
+          "manifest": "5337933334995336130",
+          "size": 6873739602,
+          "files": 40403
         },
         "380873": {
-          "manifest": "4894029153115054997",
-          "size": 217979308,
+          "manifest": "494608608446689230",
+          "size": 221091764,
           "files": 352
         }
       },
@@ -47,8 +46,8 @@
           "size": 95976
         },
         "java/projectzomboid.jar": {
-          "sha256": "80e405a4bfc42f6072e75b3735f458a6514143da011d3226007ded305a442f44",
-          "size": 64514905
+          "sha256": "e1a69eb743ede60b213a0fe7f8b83d4fcab773036d256cc4543a336f3b058a33",
+          "size": 65682033
         },
         "jre64/release": {
           "sha256": "27ad7e504b56763f94e531232feb7cd04ddbd3a1b710d070721f60704addc77d",
@@ -117,7 +116,7 @@
   "components": [
     {
       "role": "agent",
-      "artifact": "takaro-zomboid-agent-linux-42.20.4-{version}.jar",
+      "artifact": "takaro-zomboid-agent-linux-42.21.0-{version}.jar",
       "installDir": "Takaro"
     }
   ],
