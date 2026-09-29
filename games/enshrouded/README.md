@@ -23,8 +23,8 @@ client and Takaro. ✅ = works, ⚠️ = works with a caveat or not re-verified,
 | Player location | ✅ | Matches the in-game position and follows teleports. |
 | Player inventory | ✅ | Matches the in-game backpack. |
 | Give an item | ✅ | The item arrives in the backpack. The game ignores the count, so the connector splits it into stacks of at most 64. |
-| Item catalogue | ⚠️ | 3,609 items sync, but the names are built from the game's internal codes (the dedicated server ships no translations), so they can differ from the in-game names, e.g. "Ward (Tier 1)" for the in-game "Spectral Ward". The list also holds a few non-items such as abilities. |
-| Entity catalogue | ⚠️ | 977 creature/NPC templates sync, with names built from internal codes in the same way; the list also holds some non-creatures such as containers and traps. |
+| Item catalogue | ✅ | 3,317 items sync with their in-game English names, e.g. "Spectral Ward". Items the game never names and abilities are left out; giving an item by its code works for every item. |
+| Entity catalogue | ⚠️ | 397 creature and NPC templates sync. Bosses, NPCs and fish have their in-game names (e.g. "Fell Thunderbrute", "Oswald Anders"). The game shows no name for other creatures, so they get a readable name built from the internal code, e.g. "Rat". |
 | Locations / points of interest | ⚠️ | The connector serves 1,031 locations, but Takaro never asks for them. |
 | Run a console command | ✅ | Enshrouded has no console; the connector provides its own set: `help`, `players`, `say`, `whisper`, `location`, `teleport`/`tp`, `inventory`, `give`, `item`, `kick`, `save-and-shutdown`. Unknown commands are refused with a hint. |
 | Broadcast a message | ✅ | Everyone sees it in chat, under the character name of an online player: Enshrouded has no "server" sender. |
@@ -37,8 +37,8 @@ client and Takaro. ✅ = works, ⚠️ = works with a caveat or not re-verified,
 | Shut the server down | ✅ | Saves first, then quits; the container's restart policy brings it back. |
 | Player joined / left events | ✅ | From real joins and leaves, kicks, bans and shutdowns; a player still online when the server crashed is reported as left on the next start. |
 | Player chat event | ✅ | Real player chat reaches Takaro with the player attached. |
-| Player death event | ✅ | Falls and creature kills, with the position; the killer is named in the message by its internal code, e.g. `Enemy_Wildbeast_Rat_hook`. |
-| Entity kill event | ⚠️ | Real kills reach Takaro, once each; the creature is its internal code and the weapon field is empty. Destroyed props are not reported. |
+| Player death event | ✅ | Falls and creature kills, with the position; the creature that killed the player is named in the message the same way as in the entity catalogue, e.g. "Limon was killed by Rat". |
+| Entity kill event | ⚠️ | Real kills reach Takaro, once each, with the weapon's in-game name (melee and bow tested). The creature is named the same way as in the entity catalogue, e.g. "Rat". Kills with magic are not tested yet. Destroyed props are not reported. |
 | Log events | ⚠️ | Sent, but Takaro does not store server log lines as events. |
 | Map info | ⚠️ | Not verified in a live test. |
 | Map tiles | ❌ | Takaro does not support map tiles for Generic game servers. |

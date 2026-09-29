@@ -36,12 +36,12 @@
       "note": "non-admin player; game ignores count, plugin splits into full-stack + single actions (max 64); Admin-group player: give x5 + x4 arrived in client, a later client-driven backpack move was accepted server-side, no crash. Persistence across restart not verified (server was hard-killed before save and the character rolled back)"
     },
     "listItems": {
-      "status": "partial",
-      "note": "3609 items via syncItems; names are derived from template codes (no localisation ships with the dedicated server) and can differ from in-game names ('Ward (Tier 1)' vs 'Spectral Ward'); a few non-items (abilities) included"
+      "status": "proven",
+      "note": "3317 of 3609 items, named with the game client's En_Us names ('Spectral Ward', 'Rattlesnake Bow'); the 280 items the client never names and 12 Ability_ rows are left out (giveItem still takes any code). Takaro's sync never deletes, so a gameserver synced by an older build keeps those rows with their old names"
     },
     "listEntities": {
       "status": "partial",
-      "note": "977 templates via syncEntities; code-derived names; some non-creatures (containers, traps) included"
+      "note": "397 creature/NPC templates (colliders, weak spots, traps, projectiles, props and dev templates left out). 78 carry the client's name (bosses via their health bar, NPCs, fish); the client names no regular creature, so the other 319 get a readable name from the code ('Rat', 'Scavenger Ranger'). Takaro's sync never deletes, so an older build's rows stay"
     },
     "listLocations": {
       "status": "partial",
@@ -97,11 +97,11 @@
     },
     "player-death": {
       "status": "proven",
-      "note": "fall (position, no killer) and creature death ('Limon was killed by Enemy_Wildbeast_Rat_hook') proven live 2026-09-29; killer is the template code"
+      "note": "fall (position, no killer) and creature death proven live 2026-09-29 (then 'Limon was killed by Enemy_Wildbeast_Rat_hook'); the killer is now named like entity-killed ('Limon was killed by Rat'), host-tested, live re-proof pending"
     },
     "entity-killed": {
       "status": "proven",
-      "note": "exactly one row per kill; entity is the template code and weapon is empty; props/voxel destructibles are filtered out"
+      "note": "exactly one row per kill; weapon is the in-game item name (melee and bow live-proven); entity is the creature's name as the client shows it (bosses, NPCs, fish) or a readable name from the code ('Rat'), code kept in plugin data as entityCode (host-tested, live re-proof pending); props/voxel destructibles are filtered out"
     }
   },
   "modules": {
