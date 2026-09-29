@@ -5,6 +5,7 @@ minecraft-fabric|minecraft.yml|fabric|fabric|3|2|connector|Fabric (catalog targe
 minecraft-fabric-26.1.2|minecraft.yml|fabric-26-1-2|fabric-26-1-2|3|2|connector|Fabric 26.1.2 (catalog target) + Takaro Fabric mod|minecraft/fabric-26.1.2
 valheim|valheim.yml|-|valheim|4|6|connector|Valheim + BepInEx + Takaro Valheim plugin|valheim
 dayz|dayz.yml|-|dayz dayz-takaro|6|4|sidecar|DayZ (Linux, app 223350) + @TakaroIntegration mod + Takaro TypeScript sidecar|dayz
+enshrouded|enshrouded.yml|-|enshrouded|6|40|plugin|Enshrouded (Proton, app 2278520) + native Takaro dbghelp.dll connector|enshrouded
 dragonwilds|dragonwilds.yml|-|dragonwilds dragonwilds-takaro|4|8|sidecar|RuneScape: Dragonwilds (Linux, app 4019830) + Takaro LD_PRELOAD plugin + TypeScript sidecar|dragonwilds-dev
 vein|vein.yml|-|vein|4|20|plugin|VEIN (Linux, app 2131400) + native Takaro LD_PRELOAD connector|vein-dev
 rust|rust.yml|-|rust|8|12|connector|Rust + Carbon + TakaroConnector.cs|rust
@@ -20,6 +21,7 @@ games/minecraft/mod/core games/minecraft/mod/fabric games/minecraft/mod/targets 
 games/minecraft/mod/core games/minecraft/mod/fabric games/minecraft/mod/targets games/minecraft/mod/buildSrc games/minecraft/mod/gradle games/minecraft/mod/build.gradle.kts games/minecraft/mod/settings.gradle.kts catalog/minecraft
 games/valheim/mod/src games/valheim/version.txt
 
+games/enshrouded/mod/src games/enshrouded/version.txt
 games/dragonwilds/mod games/dragonwilds/sidecar/src games/dragonwilds/version.txt
 games/vein/mod games/vein/version.txt
 games/rust/mod games/rust/version.txt
