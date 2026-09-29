@@ -4,19 +4,59 @@ Developer, architecture and build notes. Operator install instructions live in [
 
 ## Architecture
 
-Enshrouded has no modding API, RCON or scripting. The connector has two parts:
+Enshrouded has no modding API, RCON or scripting. The connector is one in-process plugin:
 
 ```
 enshrouded_server.exe (Wine/Proton, container)
   └─ dbghelp.dll  ← mod/ (C++17, MinHook). Proxy DLL loaded by the server.
        ├─ resolves game functions by string-xref + prologue signatures (never fixed RVAs)
        ├─ tails game state (players, chat, deaths, kills) into an event ring buffer
-       └─ HTTP API on 127.0.0.1:18890 (Bearer token), see mod/docs/API.md
-sidecar/ (Node 22, TypeScript) — runs in the game container's network namespace
-  ├─ polls plugin events (persisted cursor + bootId, no replay on restart)
-  ├─ reconciles online players (emits disconnects after a server crash)
-  └─ outbound WebSocket to Takaro (identify, action requests, events)
+       ├─ native connector (src/native/): WSS to Takaro, 17 actions, event outbox, timed bans
+       └─ diagnostics on 127.0.0.1:18890 (Bearer token): /health, /events, /debug/perf; see mod/docs/API.md
+sidecar/ (Node 22, TypeScript) — LEGACY, kept one release as the rollback path and the parity reference;
+  needs TAKARO_LEGACY_HTTP=1 (action routes over HTTP) and TAKARO_NATIVE_DISABLE=1 in the game container
 ```
+
+### Native connector
+
+`src/native/` is game-independent: it never includes `world.h` or `hooks.h` and reaches the game only through
+`native/game_api.h`, which `src/native_glue.cpp` implements by calling the plugin's own contract router
+in-process (`PluginCall`). Threads:
+
+- **transport** (`transport_winhttp.cpp`): WinHTTP in **async** mode, the only mode that passed the G0 probe under
+  GE-Proton10-30 (sync receives cannot be cancelled and sync sends wedge under Takaro's protocol pings). Per
+  connection ("epoch") one supervisor, one send thread (one send outstanding, buffer alive until WRITE_COMPLETE) and
+  one receive thread. Reconnect backoff 2 s doubling to 60 s, reset on identify. Application heartbeat: Takaro
+  answers `{"type":"ping"}` with `{"type":"pong"}` in order; a ping every 5 s (plus one 1 s after an event burst),
+  and 20 s without any message closes the link (WinHTTP's receive timeout does not apply to WebSockets under Wine).
+  TLS: system trust, or only the root in `TAKARO_CA_FILE`/`caFile` (pinned root, hostname and dates checked);
+  an unusable CA file fails closed.
+- **bridge** (`bridge.cpp`): owns all protocol state and the state files. Drains transport notices 512 at a time.
+  Requests: `requestId` <= 128 bytes, JSON nesting <= 64, duplicates and overload (128 pending) answered with an
+  error. Outbound priority: control > bridge errors > responses > events.
+- **action workers** (4, `adapter.cpp`): the sidecar's `adapter.ts`/`mapping.ts` ported line for line. They may wait
+  on the game's queues (bounded, see hooks.h); a request still running after 30 s is answered with an error and its
+  late result is dropped, but its state changes (a ban) are recorded. Queued game jobs that never started are
+  cancelled.
+
+Events: the bridge reads the plugin ring (`/events`, 512 at a time), maps and filters them (the sidecar's
+`NOISY_LOG` filter, `ENSHROUDED_LOG_EVENTS`), and appends them to a durable outbox (at most 5000 events / 32 MiB;
+when full, the oldest `log` events go first, counted as losses). An event leaves the outbox only when the pong of a
+**later** ping arrives on the same connection; after a reconnect everything unconfirmed is sent again (at least
+once). Kept from the sidecar: the 60 s location fallback after a connect/disconnect, online reconciliation at start,
+on a new plugin bootId and every 30 s (two misses in a row), and the log-tail fallback while `logEvents`/`players`
+are degraded.
+
+State lives in `<server dir>\takaro\connector-state\` (`TAKARO_STATE_DIR`): `event-outbox.json` (scan and
+confirmed cursors per bootId, pending events), `online-players.json` (the sidecar's format; `TAKARO_ONLINE_FILE`),
+`known-players.json`, `timed-bans.json`, `ban-intent.json`. Writes are tmp file, `FlushFileBuffers`, then
+`MoveFileExW(REPLACE_EXISTING|WRITE_THROUGH)`. A file that exists but does not parse fences its area (never
+overwritten, never read as empty) and turns `connectorState` degraded. On the first start the sidecar's
+`event-cursor.json` (`TAKARO_CURSOR_FILE`) is imported once.
+
+Timed bans (new over the sidecar, which banned permanently): `banPlayer` with `expiresAt` bans in the game and
+records the expiry; every 5 s the bridge lifts expired bans itself (`/unban`, retried with backoff) and `listBans`
+reports the expiry. The intent is journalled before the game acts, so a crash mid-ban is recovered at the next start.
 
 - `mod/`: `src/` source, `third_party/minhook` (vendored, see VENDORED.txt), `tools/gen_gamedata.py`
   (item/entity/location tables from the server kfc), `tests/` (host-side correlator test).
@@ -117,6 +157,11 @@ For a quick loop without the packaging step:
 # plugin: cross-compile dbghelp.dll with zig 0.13 (set ZIG=/path/to/zig if not on PATH)
 ./mod/build.sh                 # -> mod/build/dbghelp.dll
 ./mod/tests/run.sh             # host-side plugin tests (needs docker; pinned gcc:14 by digest)
+NATIVE_ONLY=1 ./mod/tests/run.sh   # just the native connector tests
+./mod/tests/wine/run.sh        # the real DLL under the pinned Proton image against tests/fake_takaro_ws.py
+
+# parity fixtures: the sidecar produces them, the native host tests replay them
+cd sidecar && npm run parity-fixtures   # after an intentional behaviour change only
 
 # sidecar
 cd sidecar && npm ci && npm run typecheck && npm test && npm run build
@@ -231,6 +276,13 @@ instead of creating an empty tree and a directory named `dbghelp.dll`.
 
 | Variable | Where | Purpose |
 |---|---|---|
+| `TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN` | game container (plugin) | native connector; or `identityToken` / `registrationToken` in `takaro\plugin.json`. Without both the connection stays off and `/health` says why |
+| `TAKARO_SERVER_NAME`, `TAKARO_WS_URL`, `TAKARO_CA_FILE` | game container (plugin) | or `name`, `url`, `caFile` in `plugin.json`; defaults `Takaro Dev Enshrouded`, `wss://connect.takaro.io/`, system trust. Relative `caFile` resolves against the server dir |
+| `TAKARO_RECONNECT_BASE_MS`, `TAKARO_RECONNECT_MAX_MS` | game container (plugin) | reconnect backoff, default 2000 / 60000 |
+| `TAKARO_ACTION_TIMEOUT_MS`, `TAKARO_ACTION_WORKERS`, `TAKARO_POLL_INTERVAL_MS` | game container (plugin) | default 30000 / 4 / 250 |
+| `TAKARO_STATE_DIR`, `TAKARO_ONLINE_FILE`, `TAKARO_CURSOR_FILE` | game container (plugin) | connector state (default `takaro\connector-state`), online-player file, sidecar cursor to import once |
+| `TAKARO_NATIVE_DISABLE=1`, `TAKARO_LEGACY_HTTP=1` | game container (plugin) | turn the native connection off; serve the action routes over HTTP for the legacy sidecar |
+| `ENSHROUDED_LOG_TAIL`, `ENSHROUDED_LOG_FILE`, `ENSHROUDED_LOG_EVENTS` | game container (plugin) and sidecar | log-tail fallback (`auto`), log path (default `logs\enshrouded_server.log`), `log` events (`filtered`) |
 | `TAKARO_ENSHROUDED_PLUGIN_TOKEN` | .env | Shared secret; passed as `TAKARO_PLUGIN_TOKEN` to both the game container (plugin) and the sidecar |
 | `ENSHROUDED_ADMIN_PASSWORD` / `_PLAYER_` / `_GUEST_` | .env | Server role passwords |
 | `TAKARO_REGISTRATION_TOKEN` | .env | Takaro registration token |

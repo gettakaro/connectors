@@ -86,7 +86,7 @@ public:
     struct Params {
         int64_t intervalMs = 5000;  // regular ping
         int64_t idleMs = 20000;     // no inbound frame for this long = dead link
-        int64_t eagerMs = 200;      // min gap for the extra ping that confirms a finished event burst
+        int64_t eagerMs = 1000;     // min gap for the extra ping that confirms a finished event burst
         size_t maxOutstanding = 8;
     };
     Heartbeat() = default;

@@ -70,7 +70,7 @@ void HeartbeatTests() {
     Heartbeat::Params p;
     p.intervalMs = 5000;
     p.idleMs = 20000;
-    p.eagerMs = 200;
+    p.eagerMs = 1000;
     Heartbeat hb(p);
     hb.Reset(1000);
     CHECK(!hb.PingDue(1100, true));
@@ -79,8 +79,9 @@ void HeartbeatTests() {
     hb.OnEventWritten(7);
     CHECK_EQ(hb.OnPong(), (uint64_t)0);
     // a later ping covers it
-    CHECK(hb.PingDue(6300, true));  // eager: written 7 > covered 0, 300 ms since the last ping
-    CHECK(!hb.PingDue(6300, false));  // not while events are still queued
+    CHECK(!hb.PingDue(6500, true));   // eager ping waits for the 1 s gap
+    CHECK(hb.PingDue(7100, true));    // eager: written 7 > covered 0, 1.1 s since the last ping
+    CHECK(!hb.PingDue(7100, false));  // not while events are still queued
     hb.OnPingSent(6300);
     hb.OnEventWritten(9);  // written after the second ping
     CHECK_EQ(hb.OnPong(), (uint64_t)7);
