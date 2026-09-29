@@ -31,6 +31,14 @@ ds_require_token
 # lib/games/<game>.sh. A game that defines none has no Takaro connector to prove.
 ds_success_pattern() { ds_dispatch_or __NO_CONNECTOR__ ds_success_pattern "$1"; }
 
+# Where that line appears. Container output by default; a game whose connector writes its
+# own log file defines ds_connector_logs_<game> in lib/games/<game>.sh.
+ds_connector_logs() {
+    local fn
+    fn="ds_connector_logs_$(ds_fn_id "$1")"
+    if declare -F "$fn" >/dev/null; then "$fn"; else ds_compose "$1" logs --tail 2000 2>/dev/null; fi
+}
+
 ds_failure_pattern() {
     # A socket that opens and immediately closes is a failure, not a pass.
     echo "Identify failed|identify failed|Invalid registrationToken|Takaro identify failed|reconnect disabled|WebSocket connection closed: 1006|Cannot send message - WebSocket not connected"
@@ -62,7 +70,7 @@ for game in "${GAMES[@]}"; do
     ds_info "Waiting up to ${TIMEOUT}s for Takaro contact..."
     waited=0; outcome="TIMEOUT — no Takaro contact"
     while [ "$waited" -lt "$TIMEOUT" ]; do
-        logs="$(ds_compose "$game" logs --tail 2000 2>/dev/null || true)"
+        logs="$(ds_connector_logs "$game" || true)"
         if grep -qE "$(ds_failure_pattern)" <<< "$logs"; then
             outcome="REJECTED — $(grep -oE "$(ds_failure_pattern)[^\"]{0,60}" <<< "$logs" | tail -1)"
             break
