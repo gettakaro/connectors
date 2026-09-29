@@ -323,6 +323,7 @@ jobs:
       && (needs.verify.result == 'success' || (needs.verify.result == 'skipped' && !inputs.runtime))
       && (needs.legacy.result == 'success' || needs.legacy.result == 'skipped')
       && inputs.publish != 'none'
+      && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ubuntu-latest
     permissions:
       contents: write
