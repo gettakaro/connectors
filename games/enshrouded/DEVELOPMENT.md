@@ -240,10 +240,12 @@ container, the bearer token on stdin. It reports:
 | `stop` | the server saves, supervisord respawns it, the container stops 0, no update path ran and every pinned file still hashes the same |
 | `negative-degraded-hooks` | with `--negative`: a build with one corrupted signature identifies on its own, is reported `degraded`, **fails** the claim and names the capability in the reachability reason, while the server stays alive |
 
-This rewrite of the hooks is covered by `maintenance/tests/test_game_enshrouded.py` and
-`test_verify_tls.py`; a full `verify` run of it against a booted server is still owed (the
-live proof of the native connector came from the rig and a real client, not from this
-harness).
+A full run with `--negative` passed every selected check on 2026-09-29 against the pinned
+install and image (the plugin had identified over TLS by the time the server reached
+HostOnline, 24.5 s after the boot; it re-identified 2.2 s after a
+1001 close, and the corrupted `addComponent` build reported `teleport=degraded` in the
+reachability reason). It proves the release artifact against a fake Takaro; the live proof
+with a real client and real Takaro is separate.
 
 `--negative` needs zig on the host (`TAKARO_MAINT_ZIG=/path/to/zig`); without it the check
 is skipped with that reason rather than passed.
