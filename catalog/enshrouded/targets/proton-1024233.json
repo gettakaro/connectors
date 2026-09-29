@@ -9,9 +9,9 @@
     "status": "candidate",
     "since": "2026-09-14",
     "evidence": [
-      "games/enshrouded/README.md (What works, what doesn't - verified 2026-09-13/14 on game build 1024233 / Steam build 23178631 / plugin 0.4.2)"
+      "games/enshrouded/README.md (What works, what doesn't - verified 2026-09-29 with the native connector on game build 1024233 / Steam build 23178631; the sidecar-era proof was 2026-09-13/14 with plugin 0.4.2)"
     ],
-    "notes": "Exact Steam pin of the build the 2026-09-13/14 hard test proved. The native plugin resolves game code by signature and is proven ONLY on this build: on any other build the affected capabilities self-check as degraded and takaro-maint verify fails plugin-health; that is the hook-compatibility claim, not a process-alive check. Wine/Proton runtime CI is a separate follow-up (#173); gameplay evidence #174."
+    "notes": "Exact Steam pin of the build the 2026-09-13/14 hard test proved. The native plugin resolves game code by signature and is proven ONLY on this build: on any other build the affected capabilities self-check as degraded and takaro-maint verify fails plugin-health; that is the hook-compatibility claim, not a process-alive check. The native connector runs under this target's Proton image in CI against a fake Takaro (no game server); booting the server itself in CI is a separate follow-up (#173); gameplay evidence #174."
   },
   "inputs": {
     "server": {
@@ -65,27 +65,21 @@
         "coordinate": "ziglang:zig-linux-x86_64:0.13.0",
         "sha256": "d45312e61ebcc48032b77bc4cf7fd6915c11fa16e4aad116b66c9468211230ea",
         "resolvedCoordinate": "https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz"
-      },
-      "sidecar-runtime": {
-        "coordinate": "docker:node:22-alpine",
-        "sha256": "b6f26b36c8ff49624cfdac716b8ea1138d606df02586a77d364bb5536a634f85",
-        "resolvedCoordinate": "node:22-alpine@sha256:b6f26b36c8ff49624cfdac716b8ea1138d606df02586a77d364bb5536a634f85"
       }
     }
   },
   "components": [
-    {"role": "server-plugin", "artifact": "takaro-enshrouded-plugin-proton-1024233-{version}.zip", "installDir": "takaro/plugin"},
-    {"role": "sidecar", "artifact": "takaro-enshrouded-sidecar-proton-1024233-{version}.zip", "installDir": "takaro/sidecar"}
+    {"role": "server-plugin", "artifact": "takaro-enshrouded-plugin-proton-1024233-{version}.zip", "installDir": "takaro/plugin"}
   ],
   "verification": {
     "required": "contract",
     "separate": [
       "startup",
       "plugin-health",
-      "sidecar-identify",
-      "sidecar-players",
-      "sidecar-catalog",
-      "sidecar-console",
+      "native-identify",
+      "native-players",
+      "native-catalog",
+      "native-console",
       "action",
       "reconnect",
       "event",

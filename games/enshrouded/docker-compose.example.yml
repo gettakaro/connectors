@@ -43,10 +43,17 @@ services:
       BACKUP_MAX_COUNT: "24"
       TZ: Europe/Brussels
       WINEDLLOVERRIDES: "dbghelp=n,b"
-      TAKARO_PLUGIN_TOKEN: "${TAKARO_ENSHROUDED_PLUGIN_TOKEN:?required}"
+      # The Takaro connection lives in dbghelp.dll. These win over takaro/plugin.json; leave
+      # them out and fill in data/enshrouded/server/takaro/plugin.json instead if you prefer.
+      TAKARO_WS_URL: "${TAKARO_WS_URL:-wss://connect.takaro.io/}"
+      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_ENSHROUDED:-my-enshrouded-server}"
+      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN:?required}"
+      TAKARO_SERVER_NAME: "My Enshrouded Server"
+      # Optional: a secret for the plugin's diagnostics at 127.0.0.1:18890/health.
+      TAKARO_PLUGIN_TOKEN: "${TAKARO_ENSHROUDED_PLUGIN_TOKEN:-}"
     volumes:
-      # `create_host_path: false` on both: lay the tree down first (README step 3 --
-      # `mkdir -p data/enshrouded/server/takaro/plugin` and copy the DLL there). Without
+      # `create_host_path: false` on both: lay the tree down first (README, "Copy it into
+      # place" -- `mkdir -p data/enshrouded/server/takaro/plugin` and copy the DLL there). Without
       # it compose would create a DIRECTORY named dbghelp.dll and the server would boot
       # with no plugin loaded; with it compose stops at "bind source path does not exist".
       - type: bind
@@ -54,8 +61,8 @@ services:
         target: /opt/enshrouded/server
         bind:
           create_host_path: false
-      # Takaro plugin (dbghelp.dll proxy), placed by `takaro-maint deploy` and mounted
-      # read-only so nothing inside the container can replace it.
+      # Takaro plugin (dbghelp.dll proxy), mounted read-only so nothing inside the
+      # container can replace it.
       - type: bind
         source: ./data/enshrouded/server/takaro/plugin/dbghelp.dll
         target: /opt/enshrouded/server/dbghelp.dll
@@ -64,44 +71,6 @@ services:
           create_host_path: false
       # No boot of this server ever runs SteamCMD.
       - ./server/enshrouded-updater:/usr/local/etc/enshrouded/enshrouded-updater:ro
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "3"
-
-  # Takaro sidecar (connector bridge). Shares the game container's network namespace so the plugin's
-  # loopback-only API (127.0.0.1:18890) is reachable and never exposed on the host.
-  # ./sidecar is the TakaroEnshroudedSidecar folder from takaro-enshrouded-sidecar-*.zip,
-  # renamed: the Dockerfile it ships builds from the packaged dist/ and needs no sources.
-  enshrouded-takaro:
-    build: ./sidecar
-    image: takaro-enshrouded-sidecar:local
-    container_name: enshrouded-takaro-sidecar
-    restart: unless-stopped
-    network_mode: "service:enshrouded"
-    depends_on:
-      - enshrouded
-    environment:
-      TAKARO_WS_URL: "${TAKARO_WS_URL:-wss://connect.takaro.io/}"
-      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_ENSHROUDED:-my-enshrouded-server}"
-      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN:?required}"
-      TAKARO_SERVER_NAME: "My Enshrouded Server"
-      TAKARO_PLUGIN_URL: "http://127.0.0.1:18890"
-      TAKARO_PLUGIN_TOKEN: "${TAKARO_ENSHROUDED_PLUGIN_TOKEN:?required}"
-      ENSHROUDED_LOG_TAIL: "auto"
-      ENSHROUDED_LOG_EVENTS: "${ENSHROUDED_LOG_EVENTS:-filtered}"
-      ENSHROUDED_LOG_FILE: /opt/enshrouded/server/logs/enshrouded_server.log
-      TAKARO_CURSOR_FILE: /data/event-cursor.json
-      SIDECAR_HEALTH_PORT: "18891"
-    volumes:
-      - type: bind
-        source: ./data/enshrouded/server
-        target: /opt/enshrouded/server
-        read_only: true
-        bind:
-          create_host_path: false
-      - ./data/enshrouded-sidecar:/data
     logging:
       driver: json-file
       options:

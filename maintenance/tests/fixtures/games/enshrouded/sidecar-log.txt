@@ -1,8 +1,0 @@
-[2026-09-13T18:05:12.004Z] Connecting to Takaro at ws://172.17.0.1:27178/
-[2026-09-13T18:05:12.281Z] Takaro WebSocket open, sending identify
-[2026-09-13T18:05:12.402Z] Identified with Takaro (gameServerId=<redacted>)
-[2026-09-13T18:05:13.117Z] Forwarded plugin log (sent=true)
-[2026-09-13T18:20:44.006Z] Takaro WebSocket closed code=1001 reason=going away
-[2026-09-13T18:20:46.009Z] Reconnecting to Takaro in 2000ms
-[2026-09-13T18:20:48.221Z] Takaro WebSocket open, sending identify
-[2026-09-13T18:20:48.317Z] Identified with Takaro (gameServerId=<redacted>)

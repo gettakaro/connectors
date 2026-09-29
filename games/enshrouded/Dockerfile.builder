@@ -1,13 +1,13 @@
-# The one image both Enshrouded components are built in.
+# The image the Enshrouded connector is built in.
 #
-# The plugin is cross-compiled for Windows with zig and the sidecar is compiled with the
-# Node toolchain, so one image carries both and neither build depends on what the host has
-# installed. The base and the zig tarball are the catalog target's `build.toolchain` and
-# `build.deps.zig`; the build script passes both from the resolved record.
+# The plugin (which also holds the Takaro connection) is cross-compiled for Windows with
+# zig, so the build never depends on what the host has installed. The base and the zig
+# tarball are the catalog target's `build.toolchain` and `build.deps.zig`; the build script
+# passes both from the resolved record.
 ARG TOOLCHAIN
 FROM ${TOOLCHAIN}
 
-# zip is what packages the release archives, xz-utils unpacks zig, git answers the build
+# zip is what packages the release archive, xz-utils unpacks zig, git answers the build
 # script's revision questions. The base image has none of them.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl xz-utils zip git \

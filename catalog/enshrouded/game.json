@@ -26,12 +26,8 @@
   "build": {"system": "script", "projectDir": "games/enshrouded"},
   "componentRoles": {
     "server-plugin": {
-      "description": "Native dbghelp.dll proxy plugin loaded by enshrouded_server.exe (TakaroEnshrouded/)",
+      "description": "Native dbghelp.dll proxy plugin loaded by enshrouded_server.exe; it holds the Takaro connection itself (TakaroEnshrouded/)",
       "artifactPattern": "takaro-enshrouded-plugin-{target}-{version}.zip"
-    },
-    "sidecar": {
-      "description": "Node.js sidecar that speaks the Takaro Generic Connector Protocol (TakaroEnshroudedSidecar/)",
-      "artifactPattern": "takaro-enshrouded-sidecar-{target}-{version}.zip"
     }
   },
   "legacyAssetAliases": {

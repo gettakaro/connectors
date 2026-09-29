@@ -4,3 +4,15 @@
 [2026-09-13T18:05:06.740Z] resolve addComponent rva=0x8812a0 hooked=1
 [2026-09-13T18:05:06.802Z] capabilities: {"logEvents":"ok","players":"ok","teleport":"ok"}
 [2026-09-13T18:05:06.911Z] http: listening on 127.0.0.1:18890
+2026-09-29 19:20:48.468 [208] native: starting direct Takaro connection to wss://host.docker.internal:40123/ as 'takaro-verify-test' (state Z:\opt\enshrouded\server\takaro\connector-state)
+2026-09-29 19:20:48.809 [312] native: Takaro WebSocket upgraded (epoch 1, tls custom-ca, subject 'host.docker.internal', issuer 'takaro-maint verify test CA')
+2026-09-29 19:20:48.809 [292] native: Takaro WebSocket open (epoch 1), sending identify
+2026-09-29 19:20:48.811 [292] native: Takaro confirmed WebSocket connection
+2026-09-29 19:20:50.204 [292] native: identified with Takaro gameServerId=<redacted>
+2026-09-29 19:30:24.700 [312] native: Takaro WebSocket epoch 1 ended: no message from Takaro for 20s (dead link)
+2026-09-29 19:30:24.701 [292] native: Takaro WebSocket closed (epoch 1): no message from Takaro for 20s (dead link)
+2026-09-29 19:30:26.702 [312] native: reconnecting to Takaro in 2000ms
+2026-09-29 19:30:28.911 [292] native: Takaro WebSocket open (epoch 2), sending identify
+2026-09-29 19:30:29.004 [292] native: identified with Takaro gameServerId=<redacted>
+2026-09-29 19:41:29.725 [452] native: Takaro WebSocket epoch 2 ended: server closed the connection (code 1001 going away)
+2026-09-29 19:41:29.725 [432] native: Takaro WebSocket closed (epoch 2): server closed the connection (code 1001 going away)
