@@ -83,9 +83,10 @@ docker run --rm \
       cp /opt/zig/lib/libcxxabi/LICENSE.TXT "$PKG/licenses/libcxxabi-LICENSE.txt"
       cp /opt/zig/lib/libunwind/LICENSE.TXT "$PKG/licenses/libunwind-LICENSE.txt"
       cp /opt/zig/lib/libc/mingw/COPYING "$PKG/licenses/mingw-w64-COPYING.txt"
-      # Every file in the folder, by path, so an operator can check what they unpacked.
-      ( cd "$PKG" && find . -type f ! -name SHA256SUMS | sed "s|^\./||" | LC_ALL=C sort \
-          | xargs -r sha256sum > SHA256SUMS.tmp && mv SHA256SUMS.tmp SHA256SUMS )
+      # Every file in the folder, by path, so an operator can check what they unpacked. The
+      # listing is written outside the folder first, so the sums never list their own file.
+      ( cd "$PKG" && find . -type f | sed "s|^\./||" | LC_ALL=C sort | xargs -r sha256sum ) > "$STAGE/SHA256SUMS"
+      mv "$STAGE/SHA256SUMS" "$PKG/SHA256SUMS"
 
       . /repo/scripts/lib/package.sh
       pkg_zip "$STAGE" TakaroEnshrouded "/out/${PLUGIN_ZIP}"
