@@ -4,6 +4,7 @@
 #include "names.h"
 #include "scan.h"
 #include "state.h"
+#include "weapon.h"
 
 #include "MinHook.h"
 #include "perf.h"
@@ -26,7 +27,8 @@ const uint32_t kCurrentTransform = 0x027ac564;  // keen::WorldTransform, 56 B
 const uint32_t kTeleport = 0x23384d40;          // 80 B, server_only
 const uint32_t kInventorySetup = 0xc24df82a;    // 84 B
 const uint32_t kInventory = 0xb19528a9;         // ItemStack[] (12 B each)
-const uint32_t kItemState = 0x3a2fac75;         // PIDE entity: rarity @16, level @17
+const uint32_t kItemState = 0x3a2fac75;         // PIDE entity: itemId @8, rarity @16, level @17
+const uint32_t kImpactHierarchy = 0xcd3947e0;   // impact/projectile entity: weaponPideId @8 (16 B)
 const uint32_t kPlayerInput = 0xfb4f945a;       // 1320 B
 const uint32_t kServerConsumed = 0xeff8ed59;    // 216 B
 
@@ -362,6 +364,23 @@ std::string PlayerJsonForSlot(uint64_t server, int slot, std::string* nameOut = 
 
 volatile LONG64 g_lastCombatSys = 0;
 
+// The weapon of a killing blow: HitEvent.weaponPideId (0xac) or, for a projectile/impact source
+// without it, that source's ImpactHierarchy.weaponPideId; then the PIDE's ItemState.itemId. Two
+// component reads at most, once per killing blow; the name lookup is a binary search over a
+// static table (weapon.cpp).
+void KillWeaponItem(uint64_t world, const uint8_t* e, uint32_t& pide, uint32_t& itemId) {
+    pide = *(const uint32_t*)(e + 0xac);
+    uint32_t source = *(const uint32_t*)(e + 0xa4), root = *(const uint32_t*)(e + 0x90);
+    if (!pide && source && source != root) {
+        CompRef h = Read(world, kImpactHierarchy, source);
+        if (h.ptr && h.size >= 12) pide = *(const uint32_t*)((const uint8_t*)h.ptr + 8);
+    }
+    itemId = 0;
+    if (!pide) return;
+    CompRef is = Read(world, kItemState, pide);
+    if (is.ptr && is.size >= 12) itemId = *(const uint32_t*)((const uint8_t*)is.ptr + 8);
+}
+
 uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t d) {
     InterlockedIncrement64(&g_combatTicks);
     InterlockedExchange64(&g_lastCombatSys, (LONG64)sys);
@@ -415,15 +434,31 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                         continue;
                     }
                     InterlockedIncrement64(&g_kills);
-                    std::string dataJson = "{\"entity\":" + JsonStr(code) + ",\"weapon\":\"\",\"victimEntityId\":" +
+                    uint32_t category = *(uint32_t*)(e + 0xd8), source = *(uint32_t*)(e + 0xa4);
+                    uint32_t pide = 0, itemId = 0;
+                    KillWeaponItem(World(server), e, pide, itemId);
+                    const ItemDef* wd = nullptr;
+                    const char* label = itemId ? ItemLabelById(itemId) : nullptr;
+                    if (itemId && !label)  // only then is the code needed (derived-name fallback)
+                        for (size_t q = 0; q < kItemCount && !wd; q++)
+                            if (kItems[q].itemId == itemId) wd = &kItems[q];
+                    KillWeapon kw = ResolveKillWeapon(itemId, wd ? wd->code : nullptr, category);
+                    const char* catName = WeaponCategoryName(category);
+                    std::string dataJson = "{\"entity\":" + JsonStr(code) + ",\"weapon\":" + JsonStr(kw.name) +
+                                           ",\"weaponSource\":" + JsonStr(kw.source) + ",\"weaponItemId\":" +
+                                           std::to_string(itemId) + ",\"weaponPideId\":" + std::to_string(pide) +
+                                           ",\"sourceEntityId\":" + std::to_string(source) + ",\"victimEntityId\":" +
                                            std::to_string(victim) + ",\"templateGuid\":" + JsonStr(guidS) +
                                            ",\"killerName\":" + JsonStr(killerName) +
-                                           ",\"weaponCategory\":" + std::to_string(*(uint32_t*)(e + 0xd8));
+                                           ",\"weaponCategory\":" + std::to_string(category) +
+                                           ",\"weaponCategoryName\":" + JsonStr(catName ? catName : "");
                     if (!pj.empty()) dataJson += ",\"player\":" + pj;
                     dataJson += "}";
                     PluginState::Get().EmitEvent("entity-killed", dataJson);
-                    PluginLog("kill: killer=%u (%s) victim=%u code=%s guid=%s form=%s", killer, killerName.c_str(),
-                              victim, code.c_str(), guidS.c_str(), form.c_str());
+                    PluginLog("kill: killer=%u (%s) victim=%u code=%s guid=%s form=%s weapon=%s (%s) item=%u pide=%u src=%u "
+                              "cat=%u",
+                              killer, killerName.c_str(), victim, code.c_str(), guidS.c_str(), form.c_str(),
+                              kw.name.c_str(), kw.source, itemId, pide, source, category);
                 }
             }
         }
