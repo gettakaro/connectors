@@ -193,7 +193,9 @@ std::optional<MappedEvent> MapPluginEvent(const std::string& type, const JsonVal
         }
         if (Truthy(d.get("position"))) Put(ev.data, "position", MapPosition(d.get("position")));
         // Takaro's EventPlayerDeath only has a player `attacker`; a creature/NPC killer goes into `msg`.
-        auto killer = Or(Str(d.get("killerEntity")), Str(AsRecord(d.get("killer")).get("code")));
+        // The plugin sends the creature's display name beside its template code; older plugins send the code only.
+        auto killer = Or(Or(Str(d.get("killerEntityName")), Str(d.get("killerEntity"))),
+                         Str(AsRecord(d.get("killer")).get("code")));
         if (!Has(ev.data, "attacker") && killer) {
             std::string who = ev.data.get("player")->get("name")->str;
             Put(ev.data, "msg", JStr(who + " was killed by " + *killer));

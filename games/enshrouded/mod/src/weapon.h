@@ -30,6 +30,9 @@ extern const size_t kWeaponCategoryLabelCount;
 
 // English display name of an item, or nullptr when the client has none for it.
 const char* ItemLabelById(uint32_t itemId);
+// Whether an item belongs in listItems: the client names it (label is ItemLabelById's answer)
+// and it is not an Ability_ row, which is a skill the game models as an item.
+bool IsCatalogueItem(const char* code, const char* label);
 // Readable name of a WeaponCategoryId, or nullptr when unknown.
 const char* WeaponCategoryName(uint32_t categoryId);
 

@@ -554,7 +554,9 @@
    "input": {
     "type": "entity-killed",
     "data": {
-     "entity": "Enemy_Wildbeast_Rat_hook",
+     "entity": "Rat",
+     "entityCode": "Enemy_Wildbeast_Rat_hook",
+     "entityNameSource": "code",
      "weapon": "Scrappy Sword",
      "weaponSource": "item",
      "weaponItemId": 1275936258,
@@ -582,7 +584,7 @@
       "steamId": "76561198000005875",
       "platformId": "steam:76561198000005875"
      },
-     "entity": "Enemy_Wildbeast_Rat_hook",
+     "entity": "Rat",
      "weapon": "Scrappy Sword"
     }
    }
@@ -591,7 +593,9 @@
    "input": {
     "type": "entity-killed",
     "data": {
-     "entity": "Enemy_Wildbeast_Rat_hook",
+     "entity": "Rat",
+     "entityCode": "Enemy_Wildbeast_Rat_hook",
+     "entityNameSource": "code",
      "weapon": "Forest Longbow",
      "weaponSource": "item",
      "weaponItemId": 327157552,
@@ -619,7 +623,7 @@
       "steamId": "76561198000005875",
       "platformId": "steam:76561198000005875"
      },
-     "entity": "Enemy_Wildbeast_Rat_hook",
+     "entity": "Rat",
      "weapon": "Forest Longbow"
     }
    }
@@ -628,7 +632,9 @@
    "input": {
     "type": "entity-killed",
     "data": {
-     "entity": "Enemy_Wildbeast_Rat_hook",
+     "entity": "Rat",
+     "entityCode": "Enemy_Wildbeast_Rat_hook",
+     "entityNameSource": "code",
      "weapon": "Unarmed",
      "weaponSource": "category",
      "weaponItemId": 0,
@@ -656,7 +662,7 @@
       "steamId": "76561198000005875",
       "platformId": "steam:76561198000005875"
      },
-     "entity": "Enemy_Wildbeast_Rat_hook",
+     "entity": "Rat",
      "weapon": "Unarmed"
     }
    }
@@ -764,6 +770,76 @@
     "data": {}
    },
    "error": "Plugin player has no identifier: {}"
+  },
+  {
+   "input": {
+    "type": "player-death",
+    "data": {
+     "entityId": 2402,
+     "playerName": "Limon",
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     },
+     "position": {
+      "x": 1,
+      "y": 2,
+      "z": 3
+     },
+     "killerEntity": "Enemy_Fogger_Heavy_BossHealthBar",
+     "killerEntityName": "Fell Thunderbrute"
+    }
+   },
+   "expect": {
+    "type": "player-death",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     },
+     "position": {
+      "x": 1,
+      "y": 2,
+      "z": 3
+     },
+     "msg": "Limon was killed by Fell Thunderbrute"
+    }
+   }
+  },
+  {
+   "input": {
+    "type": "entity-killed",
+    "data": {
+     "entity": "Fell Thunderbrute",
+     "entityCode": "Enemy_Fogger_Heavy_BossHealthBar",
+     "entityNameSource": "client",
+     "weapon": "Apex Machete",
+     "weaponSource": "item",
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "peerId": "0(1)"
+     }
+    }
+   },
+   "expect": {
+    "type": "entity-killed",
+    "data": {
+     "player": {
+      "gameId": "76561198000005875",
+      "name": "Limon",
+      "steamId": "76561198000005875",
+      "platformId": "steam:76561198000005875"
+     },
+     "entity": "Fell Thunderbrute",
+     "weapon": "Apex Machete"
+    }
+   }
   }
  ]
 }

@@ -1,12 +1,12 @@
 // Display names for item, entity and location templates, derived from their codes.
 //
-// The dedicated server ships no localisation: gamedata.h is baked from the code by
-// tools/gen_gamedata.py and carries no display-name source for any of the three tables. A
-// catalogue answer therefore has to derive its names, and it has to derive them well
-// enough that an operator reading listItems, listEntities or listLocations sees words
-// rather than the asset pipeline's bookkeeping.
+// The dedicated server ships no localisation. Items and the entities the game client names
+// take the client's En_Us names instead (itemlabels.cpp, entitylabels.cpp); this derivation
+// is the fallback for what the client never names (most creatures, a killing weapon without
+// a label) and the answer for listLocations. It has to be good enough that an operator sees
+// words rather than the asset pipeline's bookkeeping.
 //
-// DisplayName is the derivation for one code. DistinctNames is what the catalogue answers
+// DisplayName is the derivation for one code. DistinctNames is what listLocations answers
 // with: the same derivation over a whole table, re-derived at a more detailed level for
 // any codes that would otherwise share a name, so two different codes never collide.
 //

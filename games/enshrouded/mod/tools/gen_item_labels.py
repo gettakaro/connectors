@@ -10,6 +10,7 @@ items-en.tsv (itemId, debugName, En_Us name, category, weaponCategoryId).
     gen_item_labels.py <export-dir> [build note]
 """
 import os
+import re
 import sys
 import json
 
@@ -36,7 +37,8 @@ def main():
         f = line.rstrip('\n').split('\t')
         if len(f) < 5 or not f[0]:
             continue
-        name = ' '.join(f[2].split())
+        # The client's markup (<npc>, <lorename>, <craftingstation>, ...) is styling, not text.
+        name = ' '.join(re.sub(r'</?[A-Za-z]+>', '', f[2]).split())
         if name:
             items[int(f[0])] = name
         if f[4]:

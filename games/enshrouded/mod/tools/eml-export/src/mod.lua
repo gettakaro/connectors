@@ -1,4 +1,4 @@
--- Offline export (emm run -e): English (En_Us) display names for items and weapon categories.
+-- Offline export (emm run -e): English (En_Us) display names for items, weapon categories and entity templates.
 local loc = game.assets.get_resources_by_type("keen::LocaTagCollectionResource")[1].data
 local hash = nil
 local langs = {}
@@ -36,3 +36,28 @@ for _, r in ipairs(game.assets.get_resources_by_type("keen::ItemInfo")) do
   end
 end
 io.export("weapon-categories.tsv", table.concat(cats, "\n") .. "\n")
+-- Entity templates: the client names a creature only where it shows one, which is a boss health bar
+-- (BossHealthBar.displayName), an NPC (NpcSetup.name or the template's LocaTagComponent) or a
+-- BossDisplay. Regular creatures carry no display name at all.
+local function ref(r)
+  if not r or r == "00000000-0000-0000-0000-000000000000" then return "" end
+  return clean(dict[game.guid.hash(r)])
+end
+local tmpl = {}
+for _, r in ipairs(game.assets.get_resources_by_type("keen::ecs::TemplateResource")) do
+  local boss, npc, bossd, tag = "", "", "", ""
+  for _, c in ipairs(r.data.components) do
+    local t, v = c.type, c.value
+    if t == "keen::ecs::BossHealthBar" then boss = ref(v.displayName)
+    elseif t == "keen::ecs::NpcSetup" then npc = ref(v.name)
+    elseif t == "keen::ecs::BossDisplay" then bossd = clean(dict[v.displayName.value or v.displayName])
+    elseif t == "keen::ecs::LocaTagComponent" then tag = ref(v.locaTag) end
+  end
+  local name, src = "", ""
+  if boss ~= "" then name, src = boss, "bossHealthBar"
+  elseif npc ~= "" then name, src = npc, "npcSetup"
+  elseif bossd ~= "" then name, src = bossd, "bossDisplay"
+  elseif tag ~= "" then name, src = tag, "locaTag" end
+  tmpl[#tmpl + 1] = tostring(r.guid) .. "\t" .. r.data.name .. "\t" .. name .. "\t" .. src
+end
+io.export("templates-en.tsv", table.concat(tmpl, "\n") .. "\n")

@@ -140,7 +140,15 @@ int main() {
     Expect("Animal_Baby_T1_Goat", NameKind::Entity, "Baby Goat (Tier 1)");
     Expect("Enemy_Skeleton_Heavy", NameKind::Entity, "Skeleton Heavy");
     Expect("NPC_Workshop_cryptKeeper01", NameKind::Entity, "Workshop Crypt Keeper");
-    Expect("Animal_Wildlife_Cat_01_black_AG2", NameKind::Entity, "Wildlife Cat Black");
+    Expect("Animal_Wildlife_Cat_01_black_AG2", NameKind::Entity, "Cat Black");
+    // A creature the client never names: the kind of template (Enemy, Wildbeast) and how it
+    // is hooked into the world (_hook, _hookPtE, _SummonStone) are not part of its name.
+    Expect("Enemy_Wildbeast_Rat_hook", NameKind::Entity, "Rat");
+    Expect("Enemy_Wildbeast_Wolf_hook_AG2", NameKind::Entity, "Wolf");
+    Expect("Enemy_Fog_Bug_Critter_hook", NameKind::Entity, "Fog Bug Critter");
+    Expect("Enemy_Fogger_Heavy_hookPtE", NameKind::Entity, "Fogger Heavy");
+    Expect("Enemy_Fogger_MageHeavy_bossHealtBar", NameKind::Entity, "Fogger Mage Heavy");
+    Expect("Enemy_Wildbeast_Rat_Coldheights_Variation_hook", NameKind::Entity, "Rat Coldheights");
     Expect("AutomatedPlayer", NameKind::Entity, "Automated Player");
     Expect("8KMapLabel_deepforest_camp_01_HuntressCamp_1", NameKind::Location, "Huntress Camp 1");
     Expect("8kMapLabel_AncientDungeon_NightTemple_general", NameKind::Location,

@@ -3,12 +3,18 @@
 #include "names.h"
 
 #include <algorithm>
+#include <cstring>
 
 const char* ItemLabelById(uint32_t itemId) {
     const ItemLabel* end = kItemLabels + kItemLabelCount;
     const ItemLabel* it =
         std::lower_bound(kItemLabels, end, itemId, [](const ItemLabel& l, uint32_t id) { return l.itemId < id; });
     return it != end && it->itemId == itemId ? it->name : nullptr;
+}
+
+bool IsCatalogueItem(const char* code, const char* label) {
+    if (!label || !*label) return false;
+    return !(code && std::strncmp(code, "Ability_", 8) == 0);
 }
 
 const char* WeaponCategoryName(uint32_t categoryId) {

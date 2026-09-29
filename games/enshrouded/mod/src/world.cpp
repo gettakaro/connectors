@@ -1,5 +1,6 @@
 #include "world.h"
 
+#include "entity.h"
 #include "hooks.h"
 #include "names.h"
 #include "scan.h"
@@ -415,13 +416,14 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                     std::string killerName, pj = PlayerJsonForSlot(server, ks, &killerName);
                     std::string code = "entity#" + std::to_string(victim), guidS, form = "none";
                     bool actor = !g_tmplOf;  // without the template lookup every killing blow is reported
+                    const EntityDef* victimDef = nullptr;
                     if (g_tmplOf) {
                         uint8_t guid[16] = {0};
                         g_tmplOf(sys, guid, victim);
                         guidS = GuidStr(guid);
                         const char* f = "none";
-                        if (const EntityDef* ed = EntityByGuid(guid, &f)) {
-                            code = ed->code;
+                        if ((victimDef = EntityByGuid(guid, &f)) != nullptr) {
+                            code = victimDef->code;
                             actor = true;
                         }
                         form = f;
@@ -444,7 +446,12 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                             if (kItems[q].itemId == itemId) wd = &kItems[q];
                     KillWeapon kw = ResolveKillWeapon(itemId, wd ? wd->code : nullptr, category);
                     const char* catName = WeaponCategoryName(category);
-                    std::string dataJson = "{\"entity\":" + JsonStr(code) + ",\"weapon\":" + JsonStr(kw.name) +
+                    // `entity` is what Takaro shows: the client's name, else the code-derived one;
+                    // the template code stays in `entityCode`.
+                    EntityName en = victimDef ? ResolveEntityName(victimDef->guid, victimDef->code)
+                                              : ResolveEntityName(nullptr, nullptr, code);
+                    std::string dataJson = "{\"entity\":" + JsonStr(en.name) + ",\"entityCode\":" + JsonStr(code) +
+                                           ",\"entityNameSource\":" + JsonStr(en.source) + ",\"weapon\":" + JsonStr(kw.name) +
                                            ",\"weaponSource\":" + JsonStr(kw.source) + ",\"weaponItemId\":" +
                                            std::to_string(itemId) + ",\"weaponPideId\":" + std::to_string(pide) +
                                            ",\"sourceEntityId\":" + std::to_string(source) + ",\"victimEntityId\":" +
@@ -455,9 +462,9 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                     if (!pj.empty()) dataJson += ",\"player\":" + pj;
                     dataJson += "}";
                     PluginState::Get().EmitEvent("entity-killed", dataJson);
-                    PluginLog("kill: killer=%u (%s) victim=%u code=%s guid=%s form=%s weapon=%s (%s) item=%u pide=%u src=%u "
-                              "cat=%u",
-                              killer, killerName.c_str(), victim, code.c_str(), guidS.c_str(), form.c_str(),
+                    PluginLog("kill: killer=%u (%s) victim=%u code=%s entity=%s (%s) guid=%s form=%s weapon=%s (%s) item=%u "
+                              "pide=%u src=%u cat=%u",
+                              killer, killerName.c_str(), victim, code.c_str(), en.name.c_str(), en.source, guidS.c_str(), form.c_str(),
                               kw.name.c_str(), kw.source, itemId, pide, source, category);
                 }
             }
@@ -503,7 +510,10 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                             g_tmplOf(sys, guid, killer);
                             const char* f = "none";
                             const EntityDef* ed = EntityByGuid(guid, &f);
-                            dataJson += ",\"killerEntity\":" + JsonStr(ed ? ed->code : "entity#" + std::to_string(killer));
+                            std::string raw = ed ? ed->code : "entity#" + std::to_string(killer);
+                            EntityName en = ed ? ResolveEntityName(ed->guid, ed->code) : ResolveEntityName(nullptr, nullptr, raw);
+                            // killerEntity stays the template code; the death message uses the name
+                            dataJson += ",\"killerEntity\":" + JsonStr(raw) + ",\"killerEntityName\":" + JsonStr(en.name);
                         }
                     }
                     dataJson += "}";
@@ -901,8 +911,9 @@ bool WorldInventoryJson(const std::string& name, std::string& json, std::string&
                         char idHex[16];
                         snprintf(idHex, sizeof idHex, "0x%08x", st[0]);
                         std::string code = d ? d->code : idHex;
+                        const char* label = ItemLabelById(st[0]);
                         o += std::string(first ? "" : ",") + "{\"code\":" + JsonStr(code) + ",\"name\":" +
-                             JsonStr(d ? d->name : code) + ",\"amount\":" + std::to_string(st[1]) + ",\"inventory\":" +
+                             JsonStr(label ? std::string(label) : d ? DisplayName(d->code, NameKind::Item) : code) + ",\"amount\":" + std::to_string(st[1]) + ",\"inventory\":" +
                              JsonStr(cat < 6 ? kInvCategory[cat] : "unknown") + ",\"slot\":" + std::to_string(j);
                         if (st[2]) {
                             CompRef is = Read(world, kItemState, st[2]);
@@ -1184,16 +1195,19 @@ const std::string& ItemsJson() {
     static SrwLock l;
     Guard g(l);
     if (s.empty()) {
-        std::vector<const char*> codes;
-        codes.reserve(kItemCount);
-        for (size_t i = 0; i < kItemCount; i++) codes.push_back(kItems[i].code);
-        std::vector<std::string> names;
-        DistinctNames(NameKind::Item, codes.data(), codes.size(), names);
+        // Only what the game client names: an item without an En_Us name is never shown to a
+        // player (character-creator parts, placement tools, cut content), and an Ability_ row
+        // is a skill, not an item. giveItem still takes any code (FindItemByCode).
         s = "[";
-        for (size_t i = 0; i < kItemCount; i++)
-            s += std::string(i ? "," : "") + "{\"code\":" + JsonStr(kItems[i].code) + ",\"name\":" + JsonStr(names[i]) +
+        bool first = true;
+        for (size_t i = 0; i < kItemCount; i++) {
+            const char* name = ItemLabelById(kItems[i].itemId);
+            if (!IsCatalogueItem(kItems[i].code, name)) continue;
+            s += std::string(first ? "" : ",") + "{\"code\":" + JsonStr(kItems[i].code) + ",\"name\":" + JsonStr(name) +
                  ",\"description\":" + JsonStr(std::string(kItems[i].category) + ", " + kItems[i].rarity) +
                  ",\"itemId\":" + std::to_string(kItems[i].itemId) + ",\"maxStackSize\":" + std::to_string(kItems[i].maxStack) + "}";
+            first = false;
+        }
         s += "]";
     }
     return s;
@@ -1204,16 +1218,14 @@ const std::string& EntitiesJson() {
     static SrwLock l;
     Guard g(l);
     if (s.empty()) {
-        std::vector<const char*> codes;
-        codes.reserve(kEntityCount);
-        for (size_t i = 0; i < kEntityCount; i++) codes.push_back(kEntities[i].code);
+        std::vector<const EntityDef*> rows;
         std::vector<std::string> names;
-        DistinctNames(NameKind::Entity, codes.data(), codes.size(), names);
+        CatalogueEntities(rows, names);
         s = "[";
-        for (size_t i = 0; i < kEntityCount; i++)
-            s += std::string(i ? "," : "") + "{\"code\":" + JsonStr(kEntities[i].code) + ",\"name\":" +
-                 JsonStr(names[i]) + ",\"type\":" + JsonStr(kEntities[i].type) + ",\"description\":" +
-                 JsonStr(std::string("faction ") + kEntities[i].faction + ", family " + kEntities[i].family) + "}";
+        for (size_t i = 0; i < rows.size(); i++)
+            s += std::string(i ? "," : "") + "{\"code\":" + JsonStr(rows[i]->code) + ",\"name\":" +
+                 JsonStr(names[i]) + ",\"type\":" + JsonStr(rows[i]->type) + ",\"description\":" +
+                 JsonStr(std::string("faction ") + rows[i]->faction + ", family " + rows[i]->family) + "}";
         s += "]";
     }
     return s;
