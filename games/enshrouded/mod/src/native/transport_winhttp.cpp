@@ -351,7 +351,7 @@ std::string WinHttpTransport::StatsJson() {
         .N("bytesReceived", (double)bytesReceived_)
         .N("sendErrors", (double)sendErrors_)
         .N("maxSendMs", (double)maxSendMs_)
-        .N("wineStreamDesyncs", (double)desyncs_)
+        .N("receive12152", (double)desyncs_)
         .S("tls", tlsMode_)
         .S("tlsSubject", tlsSubject_)
         .S("tlsIssuer", tlsIssuer_)
@@ -695,8 +695,10 @@ void WinHttpTransport::RecvLoop(Epoch* e) {
             if (r == 12152) {
                 std::lock_guard<std::mutex> g(mu_);
                 desyncs_++;
-                PluginLog("native: WARNING WinHTTP receive failed with 12152: Wine's WinHTTP did not drain a "
-                          "WebSocket PING payload and the stream desynced; reconnecting");
+                // Wine reports an aborted TCP connection this way, and also a stream desynced by a server PING
+                // with a payload (its WinHTTP never drains PING payloads; Takaro's pings are empty today).
+                PluginLog("native: WARNING WinHTTP receive failed with 12152 (connection aborted, or a WebSocket "
+                          "PING payload Wine did not drain); reconnecting");
             }
             std::string name = ErrName(r);
             MarkDead(e, "receive error " + std::to_string(r) + (name.empty() ? "" : " (" + name + ")"));
