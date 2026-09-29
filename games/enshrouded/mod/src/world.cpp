@@ -6,8 +6,10 @@
 #include "state.h"
 
 #include "MinHook.h"
+#include "perf.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -101,10 +103,13 @@ const char* Hx(uint64_t v) {
 }
 
 // ---- world-thread queue (drained after Server::updatePlayers on the server main thread) ----
+// Owns its callable and completion; a caller that times out cancels it if it has not started (see hooks.cpp).
 struct WorldTask {
+    enum { kQueued = 0, kRunning = 1, kDone = 2, kCancelled = 3 };
     std::function<std::string(uint64_t)> fn;
     std::string result;
     HANDLE done = nullptr;
+    std::atomic<int> state{kQueued};
     ~WorldTask() {
         if (done) CloseHandle(done);
     }
@@ -114,6 +119,7 @@ std::deque<std::shared_ptr<WorldTask>> g_wq;
 
 uint64_t __fastcall UpdDetour(uint64_t server, uint64_t b, uint64_t c, uint64_t d) {
     uint64_t ret = g_origUpd(server, b, c, d);
+    PerfScope perf(kPerfUpdatePlayers);
     InterlockedIncrement64(&g_updTicks);
     InterlockedExchange64(&g_server, (LONG64)server);
     for (int budget = 0; budget < 16; budget++) {
@@ -124,8 +130,12 @@ uint64_t __fastcall UpdDetour(uint64_t server, uint64_t b, uint64_t c, uint64_t 
             t = g_wq.front();
             g_wq.pop_front();
         }
+        int expected = WorldTask::kQueued;
+        if (!t->state.compare_exchange_strong(expected, WorldTask::kRunning)) continue;  // caller gave up
         t->result = t->fn(server);
+        t->state = WorldTask::kDone;
         SetEvent(t->done);
+        perf.jobs++;
     }
     return ret;
 }
@@ -147,7 +157,10 @@ bool RunOnWorld(std::function<std::string(uint64_t)> fn, std::string& result, st
         g_wq.push_back(t);
     }
     if (WaitForSingleObject(t->done, timeoutMs) != WAIT_OBJECT_0) {
-        err = "server thread did not run the task in time";
+        int expected = WorldTask::kQueued;
+        bool cancelled = t->state.compare_exchange_strong(expected, WorldTask::kCancelled);
+        err = cancelled ? "server thread did not run the task in time"
+                        : "server thread did not finish the task in time";
         return false;
     }
     result = t->result;
