@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/gettakaro/connectors/compare/vein-v0.2.3...vein-v0.3.0) (2026-09-29)
+
+
+### Features
+
+* **vein:** connect the Linux plugin directly to Takaro ([#299](https://github.com/gettakaro/connectors/issues/299)) ([d6141aa](https://github.com/gettakaro/connectors/commit/d6141aa7a18d1ea7a58f24a0be86a936dd5a193b))
+
 ## [0.2.3](https://github.com/gettakaro/connectors/compare/vein-v0.2.2...vein-v0.2.3) (2026-09-23)
 
 
