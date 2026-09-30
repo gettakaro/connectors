@@ -1,0 +1,360 @@
+{
+ "forward": [
+  {
+   "mode": "filtered",
+   "msg": "-------------- Session ----------------",
+   "expect": false
+  },
+  {
+   "mode": "filtered",
+   "msg": "  m#0(128): up 0 (0), down 0 (0)",
+   "expect": false
+  },
+  {
+   "mode": "filtered",
+   "msg": "[server] Player 'Limon' logged in with Permissions:",
+   "expect": true
+  },
+  {
+   "mode": "all",
+   "msg": "Machines:",
+   "expect": true
+  },
+  {
+   "mode": "none",
+   "msg": "[server] Saved",
+   "expect": false
+  },
+  {
+   "mode": "filtered",
+   "msg": "Machines:",
+   "expect": false
+  },
+  {
+   "mode": "filtered",
+   "msg": "Machines: 2",
+   "expect": true
+  },
+  {
+   "mode": "filtered",
+   "msg": "[ecss] Stats: 1",
+   "expect": false
+  },
+  {
+   "mode": "filtered",
+   "msg": "[Water] tick",
+   "expect": false
+  },
+  {
+   "mode": "filtered",
+   "msg": "Could not prune enough replication states (12)",
+   "expect": false
+  },
+  {
+   "mode": "filtered",
+   "msg": "   ",
+   "expect": false
+  },
+  {
+   "mode": "filtered",
+   "msg": "",
+   "expect": false
+  },
+  {
+   "mode": "filtered",
+   "msg": 42,
+   "expect": false
+  },
+  {
+   "mode": "filtered",
+   "msg": "----",
+   "expect": true
+  },
+  {
+   "mode": "filtered",
+   "msg": "x -----",
+   "expect": true
+  }
+ ],
+ "tail": [
+  {
+   "mode": "never",
+   "health": null,
+   "expect": false
+  },
+  {
+   "mode": "always",
+   "health": {
+    "status": "ok"
+   },
+   "expect": true
+  },
+  {
+   "mode": "auto",
+   "health": null,
+   "expect": true
+  },
+  {
+   "mode": "auto",
+   "health": {
+    "status": "ok",
+    "capabilities": {
+     "logEvents": "ok",
+     "players": "ok",
+     "chatEvents": "unimplemented"
+    }
+   },
+   "expect": false
+  },
+  {
+   "mode": "auto",
+   "health": {
+    "status": "ok",
+    "capabilities": {
+     "logEvents": "degraded",
+     "players": "degraded"
+    }
+   },
+   "expect": true
+  },
+  {
+   "mode": "auto",
+   "health": {
+    "status": "ok",
+    "capabilities": {
+     "logEvents": "ok",
+     "players": "degraded"
+    }
+   },
+   "expect": true
+  },
+  {
+   "mode": "auto",
+   "health": {
+    "status": "starting"
+   },
+   "expect": true
+  },
+  {
+   "mode": "auto",
+   "health": {
+    "status": "DEGRADED",
+    "capabilities": {}
+   },
+   "expect": false
+  },
+  {
+   "mode": "auto",
+   "health": {
+    "status": "ok"
+   },
+   "expect": false
+  }
+ ],
+ "parser": [
+  {
+   "name": "join then leave",
+   "lines": [
+    "[I 00:03:52,650] [online] Session accepted with peer (steamid:76561198000005875)",
+    "[I 00:03:52,650] [online] Added peer 0(1) (steamid:76561198000005875)",
+    "[E 00:03:53,170] [online] Begin auth session with peer 0(1)",
+    "[I 00:03:54,478] [online] Client '76561198000005875' authenticated by steam",
+    "[I 00:03:54,548] [session] Remote player added. Player handle: 0(0)",
+    "[I 00:04:24,062] [server] Machine '1': Player '0(0)' logged in",
+    "[I 00:04:24,063] [server] Player 'Limon' logged in with Permissions:",
+    "[I 00:04:24,063] \t - CanKickBan",
+    "[I 00:07:46,469] [Server] Sending Character Savegame 'Limon' Size:22'899",
+    "[I 00:07:46,564] [server] Remove Entity for Player 'Limon'",
+    "[I 00:07:46,566] [server] Remove Player 'Limon'",
+    "[I 00:07:46,704] [online] Disconnecting peer 0(1)",
+    "[I 00:07:46,704] [online] Removed peer 0(1)"
+   ],
+   "expect": [
+    {
+     "type": "player-connected",
+     "data": {
+      "player": {
+       "gameId": "76561198000005875",
+       "name": "Limon",
+       "steamId": "76561198000005875",
+       "platformId": "steam:76561198000005875"
+      }
+     }
+    },
+    {
+     "type": "player-disconnected",
+     "data": {
+      "player": {
+       "gameId": "76561198000005875",
+       "name": "Limon",
+       "steamId": "76561198000005875",
+       "platformId": "steam:76561198000005875"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "two overlapping joins by machine index",
+   "lines": [
+    "[I 1] [online] Added peer 0(1) (steamid:111)",
+    "[I 2] [online] Added peer 1(2) (steamid:222)",
+    "[I 3] [server] Machine '2': Player '1(0)' logged in",
+    "[I 3] [server] Player 'Second' logged in with Permissions:",
+    "[I 4] [server] Machine '1': Player '0(0)' logged in",
+    "[I 4] [server] Player 'First' logged in with Permissions:"
+   ],
+   "expect": [
+    {
+     "type": "player-connected",
+     "data": {
+      "player": {
+       "gameId": "222",
+       "name": "Second",
+       "steamId": "222",
+       "platformId": "steam:222"
+      }
+     }
+    },
+    {
+     "type": "player-connected",
+     "data": {
+      "player": {
+       "gameId": "111",
+       "name": "First",
+       "steamId": "111",
+       "platformId": "steam:111"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "peer removed without Remove Player; unnamed drop silent",
+   "lines": [
+    "[I 00:03:52,650] [online] Session accepted with peer (steamid:76561198000005875)",
+    "[I 00:03:52,650] [online] Added peer 0(1) (steamid:76561198000005875)",
+    "[E 00:03:53,170] [online] Begin auth session with peer 0(1)",
+    "[I 00:03:54,478] [online] Client '76561198000005875' authenticated by steam",
+    "[I 00:03:54,548] [session] Remote player added. Player handle: 0(0)",
+    "[I 00:04:24,062] [server] Machine '1': Player '0(0)' logged in",
+    "[I 00:04:24,063] [server] Player 'Limon' logged in with Permissions:",
+    "[I 00:04:24,063] \t - CanKickBan",
+    "[I 9] [online] Removed peer 0(1)",
+    "[I 1] [online] Added peer 0(3) (steamid:333)",
+    "[I 2] [online] Removed peer 0(3)"
+   ],
+   "expect": [
+    {
+     "type": "player-connected",
+     "data": {
+      "player": {
+       "gameId": "76561198000005875",
+       "name": "Limon",
+       "steamId": "76561198000005875",
+       "platformId": "steam:76561198000005875"
+      }
+     }
+    },
+    {
+     "type": "player-disconnected",
+     "data": {
+      "player": {
+       "gameId": "76561198000005875",
+       "name": "Limon",
+       "steamId": "76561198000005875",
+       "platformId": "steam:76561198000005875"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "ignored lines and CRLF",
+   "lines": [
+    "[I 1] [Server] Sending Character Savegame 'Limon' Size:1",
+    "[I 2] [session] Congestion x\r",
+    "[I 3] [server] Player 'Ghost' logged in with Permissions:\r"
+   ],
+   "expect": []
+  },
+  {
+   "name": "login without machine line picks oldest unnamed",
+   "lines": [
+    "[I 1] [online] Added peer 0(5) (steamid:555)",
+    "[I 2] [online] Added peer 0(6) (steamid:666)",
+    "[I 3] [server] Player 'A' logged in with Permissions:",
+    "[I 4] [server] Player 'B' logged in with Permissions:",
+    "[I 5] [server] Remove Player 'B'"
+   ],
+   "expect": [
+    {
+     "type": "player-connected",
+     "data": {
+      "player": {
+       "gameId": "555",
+       "name": "A",
+       "steamId": "555",
+       "platformId": "steam:555"
+      }
+     }
+    },
+    {
+     "type": "player-connected",
+     "data": {
+      "player": {
+       "gameId": "666",
+       "name": "B",
+       "steamId": "666",
+       "platformId": "steam:666"
+      }
+     }
+    },
+    {
+     "type": "player-disconnected",
+     "data": {
+      "player": {
+       "gameId": "666",
+       "name": "B",
+       "steamId": "666",
+       "platformId": "steam:666"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "name with quote",
+   "lines": [
+    "[I 1] [online] Added peer 0(1) (steamid:777)",
+    "[I 2] [server] Machine '1': Player '0(0)' logged in",
+    "[I 3] [server] Player 'Al'ice' logged in with Permissions:",
+    "[I 4] [server] Remove Player 'Al'ice'"
+   ],
+   "expect": [
+    {
+     "type": "player-connected",
+     "data": {
+      "player": {
+       "gameId": "777",
+       "name": "Al'ice",
+       "steamId": "777",
+       "platformId": "steam:777"
+      }
+     }
+    },
+    {
+     "type": "player-disconnected",
+     "data": {
+      "player": {
+       "gameId": "777",
+       "name": "Al'ice",
+       "steamId": "777",
+       "platformId": "steam:777"
+      }
+     }
+    }
+   ]
+  }
+ ]
+}

@@ -68,17 +68,62 @@ jobs:
       - name: Typecheck sidecar
         working-directory: games/enshrouded/sidecar
         run: npm run typecheck
-      # The mock-plugin, protocol, actions, events and client suites: what the sidecar does
-      # with the plugin's answers, without a game.
+      # The 0.5.0 sidecar stays in the tree for one release, as the rollback path and as the
+      # source of the parity fixtures the native host tests replay; it is no longer shipped.
       - name: Test sidecar
         working-directory: games/enshrouded/sidecar
         run: npm test
-      # The native plugin's host-testable parts (the log correlator and the admin-protection
-      # helpers), compiled in the pinned gcc image against a small windows.h shim.
+      # The native plugin's host-testable parts, compiled in the pinned gcc image against a
+      # small windows.h shim: the log correlator, the admin-protection helpers, the display
+      # names, and the direct Takaro connector (sidecar parity fixtures, bridge, outbox,
+      # timed bans, persistence, heartbeat).
       - name: Plugin host tests
         run: |
           chmod +x games/enshrouded/mod/tests/run.sh
           games/enshrouded/mod/tests/run.sh
+
+  # The real dbghelp.dll, loaded by a tiny host exe under the pinned Proton image, talks WSS
+  # to a fake Takaro: identify, heartbeat, requests, confirm-on-later-pong, reconnect with
+  # resend, TLS rejection, token-gated diagnostics. No game runs (game capabilities degrade).
+  native-wine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.15"
+      - run: uv python install
+      - run: uv sync --frozen --project maintenance
+      # The zig the release builder uses, by the catalog target's URL and SHA-256: this job
+      # pins no toolchain of its own.
+      - name: Install the catalog's pinned zig
+        shell: bash
+        run: |
+          . games/enshrouded/scripts/lib-target.sh
+          enshrouded_resolve_target ""
+          curl -fsSL "$ENSHROUDED_DEP_ZIG_URL" -o "$RUNNER_TEMP/zig.tar.xz"
+          echo "$ENSHROUDED_DEP_ZIG_SHA256  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/zig"
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "ZIG=$RUNNER_TEMP/zig/zig" >> "$GITHUB_ENV"
+      - name: Native connector under Wine
+        env:
+          WORK: ${{ runner.temp }}/native-wine
+        run: |
+          chmod +x games/enshrouded/mod/build.sh games/enshrouded/mod/tests/wine/run.sh
+          games/enshrouded/mod/tests/wine/run.sh
+      - name: Keep the Wine test logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: enshrouded-native-wine-results
+          path: ${{ runner.temp }}/native-wine/results
+          if-no-files-found: ignore
 
   params:
     runs-on: ubuntu-latest
@@ -106,7 +151,7 @@ jobs:
         run: scripts/release-params.sh enshrouded >> "$GITHUB_OUTPUT"
 
   release:
-    needs: [test, params]
+    needs: [test, native-wine, params]
     uses: ./.github/workflows/connector-release.yml
     secrets: inherit
     with:

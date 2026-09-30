@@ -5,7 +5,7 @@ and a stub build script, so what is asserted is what a maintainer, the rig and C
 exit codes, the JSON on stdout, the argv the tools were handed and the bytes on disk.
 
 The pieces that cannot be exercised without a Windows server under Proton -- the plugin's
-signature self-check and the sidecar's socket -- are covered here by their *classification*
+signature self-check and its own Takaro socket -- are covered here by their *classification*
 (``classify_health``) and their recorded log lines. Booting the real thing is what
 ``takaro-maint verify --game enshrouded`` does, and its evidence lives outside this repo.
 """
@@ -28,7 +28,7 @@ import pytest
 
 import fake_depotdownloader as fake_dd
 import fake_steamcmd
-from fake_verify import CannedSocket, FakeContainer, FakeRun
+from fake_verify import CannedSocket, FakeRun
 from takaro_maint.catalog import ids
 from takaro_maint.games import adapter_for
 from takaro_maint.games.enshrouded import verify as hooks
@@ -43,7 +43,6 @@ PINNED = {GAME_DEPOT: "2174935030716737236", REDIST_DEPOT: "7604377918839582995"
 MOVED = {GAME_DEPOT: "2900000000000000001", REDIST_DEPOT: "7900000000000000001"}
 VERSION = "0.4.3-dev.abc1234"
 PLUGIN_ZIP = f"takaro-enshrouded-plugin-{TARGET}-{VERSION}.zip"
-SIDECAR_ZIP = f"takaro-enshrouded-sidecar-{TARGET}-{VERSION}.zip"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).parent / "fixtures" / "games" / "enshrouded"
@@ -161,8 +160,8 @@ def test_targets_resolve_env_for_enshrouded(run: Any) -> None:
     assert env["ENSHROUDED_STEAM_BRANCH"] == "public"
     assert env["ENSHROUDED_STEAM_BUILDID"] == "23178631"
     assert env["ENSHROUDED_ARTIFACT_SERVER_PLUGIN"] == f"takaro-enshrouded-plugin-{TARGET}-{{version}}.zip"
-    assert env["ENSHROUDED_ARTIFACT_SIDECAR"] == f"takaro-enshrouded-sidecar-{TARGET}-{{version}}.zip"
-    assert env["ENSHROUDED_SIDECAR_RUNTIME"].startswith("node:22-alpine@sha256:")
+    # One component: the plugin holds the Takaro connection, so nothing else is built or pinned.
+    assert not [key for key in env if "SIDECAR" in key]
     assert env["ENSHROUDED_PROTON"] == "GE-Proton10-30"
     # The hook-compatibility statement, and the fact that it is the pinned build itself.
     assert env["ENSHROUDED_HOOKS_PROVEN_BUILD"] == env["ENSHROUDED_REVISION"] == "1024233"
@@ -272,7 +271,7 @@ def test_install_pins_both_depots_and_prepares_the_pinned_layout(
 
     assert (dest / "steamapps" / "compatdata" / str(APP)).is_dir()
     assert (dest / "takaro" / "plugin").is_dir()
-    assert (dest / "takaro" / "sidecar").is_dir()
+    assert not (dest / "takaro" / "sidecar").exists()
     assert "never runs SteamCMD" in (dest / "takaro" / "PINNED.txt").read_text()
     # Both depots' contents really landed in one tree.
     assert (dest / "enshrouded_server.exe").is_file()
@@ -402,8 +401,8 @@ def test_preserve_keeps_config_saves_and_plugin_state_across_an_upgrade_and_roll
 # --------------------------------------------------------------------------- 9-10 build, deploy
 
 
-def write_build_stub(repo: Path, fingerprint: str, *, produces: tuple[str, ...] = (PLUGIN_ZIP, SIDECAR_ZIP)) -> None:
-    """A stand-in for the real release script: the same contract, no zig and no Node."""
+def write_build_stub(repo: Path, fingerprint: str, *, produces: tuple[str, ...] = (PLUGIN_ZIP,)) -> None:
+    """A stand-in for the real release script: the same contract, no zig."""
     script = repo / BUILD_SCRIPT
     body = [
         "#!/usr/bin/env bash",
@@ -412,23 +411,13 @@ def write_build_stub(repo: Path, fingerprint: str, *, produces: tuple[str, ...] 
         'mkdir -p "$out"',
     ]
     for name in produces:
-        folder = "TakaroEnshrouded" if "plugin" in name else "TakaroEnshroudedSidecar"
         body += [
-            f'stage="$out/stage-{folder}"',
-            f'mkdir -p "$stage/{folder}"',
-            (
-                f"printf 'the dll\\n' > \"$stage/{folder}/dbghelp.dll\""
-                if folder == "TakaroEnshrouded"
-                else f"mkdir -p \"$stage/{folder}/dist\" && printf 'console.log(1)\\n' > "
-                f'"$stage/{folder}/dist/index.js" && printf \'FROM scratch\\n\' > "$stage/{folder}/Dockerfile"'
-            ),
-            (
-                f'printf \'Takaro Enshrouded Plugin %s\\n\' "$version" > "$stage/{folder}/README.txt"'
-                if folder == "TakaroEnshrouded"
-                else ":"
-            ),
-            f"( cd \"$stage\" && python3 -c \"import shutil,sys; shutil.make_archive(sys.argv[1], 'zip', '.', "
-            f'\'{folder}\')" "$out/{name[:-4]}" )',
+            'stage="$out/stage-TakaroEnshrouded"',
+            'mkdir -p "$stage/TakaroEnshrouded"',
+            "printf 'the dll\\n' > \"$stage/TakaroEnshrouded/dbghelp.dll\"",
+            'printf \'Takaro Enshrouded Connector %s\\n\' "$version" > "$stage/TakaroEnshrouded/README.txt"',
+            "( cd \"$stage\" && python3 -c \"import shutil,sys; shutil.make_archive(sys.argv[1], 'zip', '.', "
+            f'\'TakaroEnshrouded\')" "$out/{name[:-4]}" )',
             f'cat > "$out/{name}.meta.json" <<JSON',
             f'{{"target": "{TARGET}", "fingerprint": "{fingerprint}", "connectorVersion": "$version", '
             f'"game": "enshrouded", "platform": "proton", "revision": "1024233"}}',
@@ -438,7 +427,7 @@ def write_build_stub(repo: Path, fingerprint: str, *, produces: tuple[str, ...] 
     script.chmod(0o755)
 
 
-def test_build_produces_both_roles_by_exact_name(run: Any, repo: Path, tmp_path: Path) -> None:
+def test_build_produces_the_one_role_by_exact_name(run: Any, repo: Path, tmp_path: Path) -> None:
     resolved = resolve(run, repo)
     write_build_stub(repo, resolved["fingerprint"])
     out = tmp_path / "dist"
@@ -448,22 +437,21 @@ def test_build_produces_both_roles_by_exact_name(run: Any, repo: Path, tmp_path:
     )
 
     assert code == 0, f"{err}\n{payload}"
-    assert sorted(row["role"] for row in payload["artifacts"]) == ["server-plugin", "sidecar"]
-    assert sorted(row["file"] for row in payload["artifacts"]) == sorted([PLUGIN_ZIP, SIDECAR_ZIP])
-    for name in (PLUGIN_ZIP, SIDECAR_ZIP):
-        assert (out / name).is_file()
-        assert (out / f"{name}.meta.json").is_file()
+    assert [row["role"] for row in payload["artifacts"]] == ["server-plugin"]
+    assert [row["file"] for row in payload["artifacts"]] == [PLUGIN_ZIP]
+    assert (out / PLUGIN_ZIP).is_file()
+    assert (out / f"{PLUGIN_ZIP}.meta.json").is_file()
 
-    # A build that produces one role is a broken release, not a partial success.
-    write_build_stub(repo, resolved["fingerprint"], produces=(PLUGIN_ZIP,))
+    # A build that produces nothing is a broken release, not a success.
+    write_build_stub(repo, resolved["fingerprint"], produces=())
     code, payload, _ = run(
-        "build", "--game", GAME, "--target", TARGET, "--version", VERSION, "--out", str(tmp_path / "half"), repo=repo
+        "build", "--game", GAME, "--target", TARGET, "--version", VERSION, "--out", str(tmp_path / "none"), repo=repo
     )
     assert code == 7, payload
     assert "did not produce" in payload["error"]
 
     # Nor is one that falls back to the legacy, target-less name.
-    write_build_stub(repo, resolved["fingerprint"], produces=("takaro-enshrouded-plugin.zip", SIDECAR_ZIP))
+    write_build_stub(repo, resolved["fingerprint"], produces=("takaro-enshrouded-plugin.zip",))
     code, payload, _ = run(
         "build", "--game", GAME, "--target", TARGET, "--version", VERSION, "--out", str(tmp_path / "legacy"), repo=repo
     )
@@ -475,20 +463,10 @@ def _plugin_zip(path: Path, *, version: str = VERSION, escape: bool = False, no_
     with zipfile.ZipFile(path, "w") as archive:
         if not no_dll:
             archive.writestr("TakaroEnshrouded/dbghelp.dll", "the dll")
-        archive.writestr("TakaroEnshrouded/README.txt", f"Takaro Enshrouded Plugin {version}\n")
+        archive.writestr("TakaroEnshrouded/README.txt", f"Takaro Enshrouded Connector {version}\n")
+        archive.writestr("TakaroEnshrouded/takaro/plugin.json.example", '{"registrationToken": ""}\n')
         if escape:
             archive.writestr("../escaped.txt", "nope")
-
-
-def _sidecar_zip(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr("TakaroEnshroudedSidecar/dist/index.js", "console.log(1)\n")
-        archive.writestr("TakaroEnshroudedSidecar/Dockerfile", "FROM scratch\n")
-        archive.writestr("TakaroEnshroudedSidecar/package.json", "{}\n")
-        # The real zip ships these two, and a docker build from the folder needs them.
-        archive.writestr("TakaroEnshroudedSidecar/.dockerignore", "node_modules\n")
-        archive.writestr("TakaroEnshroudedSidecar/.env.example", "TAKARO_WS_URL=\n")
 
 
 def _manifest_for(run: Any, repo: Path, directory: Path, files: dict[str, Path]) -> Path:
@@ -508,20 +486,19 @@ def _manifest_for(run: Any, repo: Path, directory: Path, files: dict[str, Path])
     )
 
 
-def test_deploy_places_the_dll_and_the_sidecar_folder_and_refuses_escapes(
-    run: Any, repo: Path, dd_log: Path, tmp_path: Path
-) -> None:
+def test_deploy_places_the_dll_and_refuses_escapes(run: Any, repo: Path, dd_log: Path, tmp_path: Path) -> None:
     dest = tmp_path / "server"
     assert install(run, repo, dest)[0] == 0
     stale = dest / "takaro" / "plugin" / f"takaro-enshrouded-plugin-{TARGET}-0.4.1.zip"
     stale.parent.mkdir(parents=True, exist_ok=True)
     stale.write_bytes(b"an older deploy")
+    # A folder a 0.5.0 deploy left behind is the operator's rollback copy: never touched.
+    legacy = dest / "takaro" / "sidecar" / "TakaroEnshroudedSidecar" / "dist" / "index.js"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("console.log(1)\n", encoding="utf-8")
     directory = tmp_path / "dist"
     _plugin_zip(directory / PLUGIN_ZIP)
-    _sidecar_zip(directory / SIDECAR_ZIP)
-    manifest = _manifest_for(
-        run, repo, directory, {"server-plugin": directory / PLUGIN_ZIP, "sidecar": directory / SIDECAR_ZIP}
-    )
+    manifest = _manifest_for(run, repo, directory, {"server-plugin": directory / PLUGIN_ZIP})
 
     code, payload, err = run(
         "deploy", "--game", GAME, "--target", TARGET, "--dest", str(dest), "--from", str(manifest), repo=repo
@@ -532,26 +509,17 @@ def test_deploy_places_the_dll_and_the_sidecar_folder_and_refuses_escapes(
     assert dll.read_bytes() == b"the dll"
     assert oct(dll.stat().st_mode)[-3:] == "644"
     assert not stale.exists()
-    unpacked = dest / "takaro" / "sidecar" / "TakaroEnshroudedSidecar"
-    assert (unpacked / "dist" / "index.js").is_file()
-    assert (unpacked / "Dockerfile").is_file()
-    # The dotfiles a `docker build` from this folder needs: they are ordinary zip entries,
-    # not the record-supplied install paths whose first character has to be alphanumeric.
-    assert (unpacked / ".dockerignore").is_file()
-    assert (unpacked / ".env.example").is_file()
-    # The unpack stages beside the live folder and swaps; no staging is left behind.
-    assert not [p.name for p in unpacked.parent.iterdir() if p.name.startswith(".")]
+    assert legacy.read_text(encoding="utf-8") == "console.log(1)\n"
     ledger = json.loads((dest / ".takaro" / "installed-target.json").read_text())
     by_role = {row["role"]: row["path"] for row in ledger["artifacts"]}
+    assert list(by_role) == ["server-plugin"]
     assert by_role["server-plugin"].endswith(PLUGIN_ZIP)
-    assert by_role["sidecar"].endswith(SIDECAR_ZIP)
 
     for broken in ({"escape": True}, {"no_dll": True}):
         shutil.rmtree(dest / "takaro" / "plugin")
         bad = tmp_path / f"bad-{'escape' if 'escape' in broken else 'nodll'}"
         _plugin_zip(bad / PLUGIN_ZIP, **broken)  # type: ignore[arg-type]
-        _sidecar_zip(bad / SIDECAR_ZIP)
-        bad_manifest = _manifest_for(run, repo, bad, {"server-plugin": bad / PLUGIN_ZIP, "sidecar": bad / SIDECAR_ZIP})
+        bad_manifest = _manifest_for(run, repo, bad, {"server-plugin": bad / PLUGIN_ZIP})
 
         code, payload, _ = run(
             "deploy", "--game", GAME, "--target", TARGET, "--dest", str(dest), "--from", str(bad_manifest), repo=repo
@@ -562,36 +530,14 @@ def test_deploy_places_the_dll_and_the_sidecar_folder_and_refuses_escapes(
         assert not (tmp_path / "escaped.txt").exists()
 
 
-def test_a_valid_zip_missing_the_sidecar_tree_leaves_the_deployed_sidecar_alone(
-    run: Any, repo: Path, dd_log: Path, tmp_path: Path
-) -> None:
-    dest = tmp_path / "server"
-    assert install(run, repo, dest)[0] == 0
-    directory = tmp_path / "dist"
-    _plugin_zip(directory / PLUGIN_ZIP)
-    _sidecar_zip(directory / SIDECAR_ZIP)
-    files = {"server-plugin": directory / PLUGIN_ZIP, "sidecar": directory / SIDECAR_ZIP}
-    manifest = _manifest_for(run, repo, directory, files)
-    assert (
-        run("deploy", "--game", GAME, "--target", TARGET, "--dest", str(dest), "--from", str(manifest), repo=repo)[0]
-        == 0
-    )
-    live = dest / "takaro" / "sidecar" / "TakaroEnshroudedSidecar" / "dist" / "index.js"
-    before = live.read_bytes()
-    installed_archive = dest / "takaro" / "sidecar" / SIDECAR_ZIP
-    archive_before = installed_archive.read_bytes()
+def test_after_deploy_refuses_a_role_the_target_no_longer_has(tmp_path: Path) -> None:
+    from takaro_maint.exit_codes import ConflictError
 
-    with zipfile.ZipFile(directory / SIDECAR_ZIP, "w"):
-        pass
-    broken = _manifest_for(run, repo, directory, files)
-    code, payload, _ = run(
-        "deploy", "--game", GAME, "--target", TARGET, "--dest", str(dest), "--from", str(broken), repo=repo
-    )
-
-    assert code == 7, payload
-    assert "is missing" in payload["error"]
-    assert live.read_bytes() == before
-    assert installed_archive.read_bytes() == archive_before
+    archive = tmp_path / "takaro-enshrouded-sidecar.zip"
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr("TakaroEnshroudedSidecar/dist/index.js", "console.log(1)\n")
+    with pytest.raises(ConflictError, match="one component"):
+        adapter_for(GAME).after_deploy(tmp_path, {"role": "sidecar", "installDir": "takaro/sidecar"}, archive)
 
 
 # --------------------------------------------------------------------------- 11-12 verify hooks
@@ -702,7 +648,8 @@ def test_every_enshrouded_verification_body_has_pass_and_failure_paths(
     target = type("Target", (), {"id": TARGET, "fp16": "0123456789abcdef", "record": record})()
     run = FakeRun(tmp_path, target=target)
     run.resolved = _degraded_resolved()
-    sidecar = FakeContainer(run.out / "sidecar.log")
+    container = run.container
+    assert container is not None
     answers = _derived_answers()
     fake = CannedSocket(
         {
@@ -715,9 +662,11 @@ def test_every_enshrouded_verification_body_has_pass_and_failure_paths(
         },
         identify_count=1,
     )
+    fake.identified = {"identityToken": "takaro-verify-body-tests", "registrationToken": "x"}
+    fake.app_pings = 1
     fake.events = [{"type": "log", "data": {"msg": "Start Saving"}}]
-    monkeypatch.setattr(hooks, "start_sidecar", lambda *args, **kwargs: sidecar)
-    monkeypatch.setattr(hooks, "_sidecar_health", lambda name: {"takaroIdentified": True})
+    identified = {"diagnostics": {"native": {"state": "identified", "identified": True, "config": {"url": "x"}}}}
+    monkeypatch.setattr(hooks, "plugin_health", lambda *args: identified)
     monkeypatch.setattr(
         hooks,
         "_check_plugin_health",
@@ -732,17 +681,18 @@ def test_every_enshrouded_verification_body_has_pass_and_failure_paths(
         "run",
         lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "", ""),
     )
-    monkeypatch.setattr(hooks, "_remove_images", lambda run: None)
 
-    assert asyncio.run(hooks._check_identify(run, fake, sidecar, sidecar.alive)).status == "pass"
+    passed = asyncio.run(hooks._check_identify(run, fake, container.alive))
+    assert passed.status == "pass", passed.detail["problems"]
+    assert "config" not in passed.detail["native"], "the report keeps state, never configuration"
     assert asyncio.run(hooks._check_players(run, fake)).status == "pass"
     assert asyncio.run(hooks._check_catalog(run, fake)).status == "pass"
     assert asyncio.run(hooks._check_console(run, fake)).status == "pass"
     assert asyncio.run(hooks._check_action(run, fake)).status == "pass"
-    assert asyncio.run(hooks._check_reconnect(run, fake, sidecar, sidecar.alive)).status == "pass"
+    assert asyncio.run(hooks._check_reconnect(run, fake, container.alive)).status == "pass"
     assert asyncio.run(hooks._check_event(run, fake, "shutdown requested")).status == "pass"
     assert asyncio.run(hooks._check_stop(run, [])).status == "pass"
-    asyncio.run(hooks.after_protocol(run, fake, sidecar.alive))
+    asyncio.run(hooks.after_protocol(run, fake, container.alive))
     asyncio.run(hooks.after_shutdown(run, fake, run.ws_url, []))
 
     plugin_dir = run.data_dir / "takaro" / "plugin"
@@ -751,11 +701,15 @@ def test_every_enshrouded_verification_body_has_pass_and_failure_paths(
     built = tmp_path / "degraded.dll"
     built.write_bytes(b"degraded")
     monkeypatch.setattr(hooks, "_build_degraded", lambda *args, **kwargs: built)
-    monkeypatch.setattr(hooks, "_plugin_health", lambda *args: _health("plugin-health-degraded.json"))
+    monkeypatch.setattr(hooks, "plugin_health", lambda *args: _health("plugin-health-degraded.json"))
+    (run.data_dir / "takaro" / "plugin.log").write_text("the release run's log\n", encoding="utf-8")
     degraded_fake = CannedSocket(
         {"testReachability": {"connectable": True, "reason": "degraded teleport"}}, identify_count=1
     )
     assert asyncio.run(hooks._check_negative(run, degraded_fake, run.ws_url, "")).status == "pass"
+    # The release run's log is set aside, so the degraded boot's lines are its own.
+    assert (run.data_dir / "takaro" / "plugin-release.log").read_text() == "the release run's log\n"
+    assert (plugin_dir / hooks.PLUGIN_DLL).read_bytes() == b"release", "the release DLL is restored"
     asyncio.run(hooks.negative(run, degraded_fake, run.ws_url, {}))
 
     failed_run = FakeRun(tmp_path / "failed", target=target, wanted=set())
@@ -768,18 +722,24 @@ def test_every_enshrouded_verification_body_has_pass_and_failure_paths(
         },
         reconnects=False,
     )
-    monkeypatch.setattr(hooks, "_sidecar_health", lambda name: {"takaroIdentified": False})
+    failed.ping_error = TimeoutError("no pong")
+    monkeypatch.setattr(hooks, "plugin_health", lambda *args: {"diagnostics": {"native": {"state": "connecting"}}})
+    monkeypatch.setattr(hooks, "APP_PING_BUDGET", 0.0)
     monkeypatch.setattr(hooks.checks, "wait_for_line", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         hooks.checks_lifecycle, "identify_within", lambda *args, **kwargs: asyncio.sleep(0, result=None)
     )
     monkeypatch.setattr(hooks.checks_lifecycle, "wait_for_count", lambda *args, **kwargs: 0)
     monkeypatch.setattr(hooks, "EVENT_BUDGET", 0.0)
-    assert asyncio.run(hooks._check_identify(failed_run, failed, sidecar, sidecar.alive)).status == "fail"
+    unidentified = asyncio.run(hooks._check_identify(failed_run, failed, container.alive))
+    assert unidentified.status == "fail"
+    problems = " ".join(unidentified.detail["problems"])
+    for expected in ("identify frame", "identityToken", "native: identified", "state='connecting'", "application ping"):
+        assert expected in problems, expected
     assert asyncio.run(hooks._check_players(failed_run, failed)).status == "fail"
     assert asyncio.run(hooks._check_console(failed_run, failed)).status == "fail"
     assert asyncio.run(hooks._check_action(failed_run, failed)).status == "fail"
-    assert asyncio.run(hooks._check_reconnect(failed_run, failed, sidecar, sidecar.alive)).status == "fail"
+    assert asyncio.run(hooks._check_reconnect(failed_run, failed, container.alive)).status == "fail"
     assert asyncio.run(hooks._check_event(failed_run, failed, "no shutdown")).status == "fail"
     failed_run.container = None
     assert asyncio.run(hooks._check_stop(failed_run, [{"path": "missing"}])).status == "fail"
@@ -884,21 +844,31 @@ def test_verify_hooks_prepare_the_run_and_match_the_recorded_lines(tmp_path: Pat
     class Target:
         record = _record()
 
+    ca = tmp_path / "pki" / "ca.pem"
+    ca.parent.mkdir()
+    ca.write_text("-----BEGIN CERTIFICATE-----\n", encoding="utf-8")
+
     class Run:
         data_dir = tmp_path
         target = Target()
+        takaro_ca_file = ca
 
         def __init__(self, only: list[str] | None = None) -> None:
             self.options = RunOptions(artifacts=tmp_path, out=tmp_path, run_id="test", only=only)
 
-    takaro_env = {"TAKARO_REGISTRATION_TOKEN": "a-throwaway-registration-token"}
+    takaro_env = {
+        "TAKARO_WS_URL": "wss://host.docker.internal:40123/",
+        "TAKARO_IDENTITY_TOKEN": "takaro-verify-test",
+        "TAKARO_REGISTRATION_TOKEN": "a-throwaway-registration-token",
+    }
     run = Run()
     written = hooks.before_boot(run, takaro_env)
 
     # A bare `verify --game enshrouded` runs this target's own checks and nothing else: the
-    # base protocol ladder watches the game container for a connector that is in the sidecar.
-    # The runner narrows the selection; these hooks owe the declaration.
+    # base protocol ladder waits for lines and answers another connector gives. The runner
+    # narrows the selection; these hooks owe the declaration.
     declared = game_hooks("enshrouded")
+    assert declared.takaro_tls is True, "the plugin refuses plaintext, so the fake has to serve wss://"
     assert set(declared.unsupported_checks) == {
         "connector-load",
         "identify",
@@ -919,9 +889,23 @@ def test_verify_hooks_prepare_the_run_and_match_the_recorded_lines(tmp_path: Pat
 
     assert written == tmp_path / "takaro" / "plugin.json"
     assert oct(written.stat().st_mode)[-3:] == "600"
-    token = json.loads(written.read_text())["token"]
+    config = json.loads(written.read_text())
+    token = config["token"]
     assert token == plugin_token(takaro_env), "every boot of one run derives the same token"
     assert token != takaro_env["TAKARO_REGISTRATION_TOKEN"]
+    # Every Takaro value reaches the plugin through this file, never a docker command line.
+    assert config["url"] == takaro_env["TAKARO_WS_URL"]
+    assert config["identityToken"] == "takaro-verify-test"
+    assert config["registrationToken"] == takaro_env["TAKARO_REGISTRATION_TOKEN"]
+    assert config["name"] == "takaro-verify-test"
+    # The CA is resolved by the plugin from the exe directory, as a Windows path.
+    assert config["caFile"] == "takaro\\verify-ca.pem"
+    assert (tmp_path / "takaro" / "verify-ca.pem").read_text() == ca.read_text()
+    runtime_env = adapter_for(GAME).runtime_env(
+        {"runtime": {"container": {"env": {"WINEDLLOVERRIDES": "dbghelp=n,b"}}}}, takaro_env
+    )
+    assert not [key for key in runtime_env if key.startswith("TAKARO_")]
+    assert takaro_env["TAKARO_REGISTRATION_TOKEN"] not in " ".join(runtime_env.values())
 
     boot = (FIXTURES / "docker-log-boot.txt").read_text()
     assert hooks.READY_LINE.search(boot)
@@ -934,10 +918,10 @@ def test_verify_hooks_prepare_the_run_and_match_the_recorded_lines(tmp_path: Pat
     assert not hooks.DRIFT_LINE.search(boot)
     assert hooks.DRIFT_LINE.search("INFO - Enshrouded server needs to be updated")
 
-    sidecar = (FIXTURES / "sidecar-log.txt").read_text()
-    assert len(hooks.IDENTIFIED_LINE.findall(sidecar)) == 2
-    assert hooks.CLOSED_LINE.search(sidecar)
-    assert hooks.PLUGIN_LISTENING.search((FIXTURES / "plugin-log.txt").read_text())
+    plugin_log = (FIXTURES / "plugin-log.txt").read_text()
+    assert hooks.PLUGIN_LISTENING.search(plugin_log)
+    assert len(hooks.IDENTIFIED_LINE.findall(plugin_log)) == 2
+    assert len(hooks.CLOSED_LINE.findall(plugin_log)) == 1, "only the 1001 close counts, not a dead link"
 
     adapter = adapter_for(GAME)
     assert adapter.parse_runtime_identity(
@@ -972,7 +956,6 @@ def _record() -> dict[str, Any]:
 def test_every_container_selector_is_pinned_and_never_schedules_updates() -> None:
     record = _record()
     image = ids.container_ref(record["runtime"]["container"])
-    sidecar_runtime = record["build"]["deps"]["sidecar-runtime"]["resolvedCoordinate"]
     toolchain = ids.container_ref(record["build"]["toolchain"])
     forbidden = re.compile(r"UPDATE_CRON|RESTART_CRON|GAME_BRANCH|STEAMCMD_ARGS|:latest")
 
@@ -1035,9 +1018,10 @@ def test_every_container_selector_is_pinned_and_never_schedules_updates() -> Non
             for block in blocks:
                 assert "create_host_path: false" in block, f"{relative}: {source} may create its own source"
 
-    for relative in ("games/enshrouded/sidecar/Dockerfile", "games/enshrouded/sidecar/Dockerfile.release"):
-        froms = [line.split()[1] for line in (REPO_ROOT / relative).read_text().splitlines() if line.startswith("FROM")]
-        assert froms and all(base == sidecar_runtime for base in froms), f"{relative}: {froms}"
+    # Neither compose file runs a second container next to the game any more.
+    for relative in ("dev-servers/compose/enshrouded.yml", "games/enshrouded/docker-compose.example.yml"):
+        services = re.findall(r"^  ([a-z0-9-]+):$", (REPO_ROOT / relative).read_text(encoding="utf-8"), re.MULTILINE)
+        assert services == ["enshrouded"], f"{relative}: {services}"
 
     builder = (REPO_ROOT / "games/enshrouded/Dockerfile.builder").read_text(encoding="utf-8")
     assert "ARG TOOLCHAIN\nFROM ${TOOLCHAIN}\n" in builder
@@ -1130,7 +1114,7 @@ def git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True, env=env).stdout.strip()
 
 
-def test_compat_record_carries_both_roles_and_the_steam_pin(run: Any, repo: Path, tmp_path: Path) -> None:
+def test_compat_record_carries_the_one_role_and_the_steam_pin(run: Any, repo: Path, tmp_path: Path) -> None:
     git(repo, "init", "-q", "-b", "main")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "fixture")
@@ -1138,11 +1122,7 @@ def test_compat_record_carries_both_roles_and_the_steam_pin(run: Any, repo: Path
     resolved = resolve(run, repo)
     directory = tmp_path / "dist" / TARGET
     _plugin_zip(directory / PLUGIN_ZIP)
-    _sidecar_zip(directory / SIDECAR_ZIP)
-    rows = [
-        artifact_row("server-plugin", TARGET, resolved["fingerprint"], directory / PLUGIN_ZIP),
-        artifact_row("sidecar", TARGET, resolved["fingerprint"], directory / SIDECAR_ZIP),
-    ]
+    rows = [artifact_row("server-plugin", TARGET, resolved["fingerprint"], directory / PLUGIN_ZIP)]
     for row in rows:
         write_meta(directory, row, connector=GAME, version=VERSION, revision=commit)
     write_manifest(
@@ -1180,8 +1160,8 @@ def test_compat_record_carries_both_roles_and_the_steam_pin(run: Any, repo: Path
     assert code == 0, f"{err}\n{payload}"
     record = json.loads((out / f"takaro-{GAME}-{VERSION}.compat.json").read_text())
     entry = record["targets"][TARGET]
-    assert sorted(row["role"] for row in entry["artifacts"]) == ["server-plugin", "sidecar"]
-    assert sorted(row["name"] for row in entry["artifacts"]) == sorted([PLUGIN_ZIP, SIDECAR_ZIP])
+    assert [row["role"] for row in entry["artifacts"]] == ["server-plugin"]
+    assert [row["name"] for row in entry["artifacts"]] == [PLUGIN_ZIP]
     assert entry["verification"] == {
         "required": "contract",
         "executed": None,
@@ -1194,9 +1174,13 @@ def test_compat_record_carries_both_roles_and_the_steam_pin(run: Any, repo: Path
     assert "1004/manifest/7604377918839582995" in url
     assert "2278521/manifest/2174935030716737236" in url
 
-    # Both legacy names still resolve, to exactly the bytes their target-named files carry.
+    # The plugin's legacy name still resolves, to exactly the bytes of the target-named file.
     assert (out / "takaro-enshrouded-plugin.zip").read_bytes() == (out / PLUGIN_ZIP).read_bytes()
-    assert (out / "takaro-enshrouded-sidecar.zip").read_bytes() == (out / SIDECAR_ZIP).read_bytes()
+    # The sidecar alias stays in the catalog for old links, but there is nothing to copy: it
+    # is recorded as skipped and no sidecar asset is published.
+    assert not (out / "takaro-enshrouded-sidecar.zip").exists()
+    assert "takaro-enshrouded-sidecar.zip" in payload["aliasesSkipped"]
+    assert not [path.name for path in out.iterdir() if "sidecar" in path.name]
     assert (out / "SHA256SUMS").is_file()
 
 

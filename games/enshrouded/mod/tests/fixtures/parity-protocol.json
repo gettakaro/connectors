@@ -1,0 +1,195 @@
+{
+ "normalizeArgs": [
+  {
+   "input": [],
+   "expect": {}
+  },
+  {
+   "input": {},
+   "expect": {}
+  },
+  {
+   "input": null,
+   "expect": {}
+  },
+  {
+   "input": "",
+   "expect": {}
+  },
+  {
+   "input": "[]",
+   "expect": {}
+  },
+  {
+   "input": "{}",
+   "expect": {}
+  },
+  {
+   "input": "{\"gameId\":\"1\"}",
+   "expect": {
+    "gameId": "1"
+   }
+  },
+  {
+   "input": "not json",
+   "expect": {}
+  },
+  {
+   "input": {
+    "a": 1
+   },
+   "expect": {
+    "a": 1
+   }
+  },
+  {
+   "input": "  {\"a\":[1,2]}  ",
+   "expect": {
+    "a": [
+     1,
+     2
+    ]
+   }
+  },
+  {
+   "input": 42,
+   "expect": {}
+  },
+  {
+   "input": true,
+   "expect": {}
+  },
+  {
+   "input": "\"str\"",
+   "expect": {}
+  },
+  {
+   "input": "[1,2]",
+   "expect": {}
+  }
+ ],
+ "frames": [
+  {
+   "kind": "identify",
+   "input": {
+    "identityToken": "id",
+    "registrationToken": "reg",
+    "serverName": "S"
+   },
+   "expect": {
+    "type": "identify",
+    "payload": {
+     "identityToken": "id",
+     "registrationToken": "reg",
+     "name": "S"
+    }
+   }
+  },
+  {
+   "kind": "identify",
+   "input": {
+    "identityToken": "id",
+    "registrationToken": "",
+    "serverName": ""
+   },
+   "expect": {
+    "type": "identify",
+    "payload": {
+     "identityToken": "id"
+    }
+   }
+  },
+  {
+   "kind": "response",
+   "input": {
+    "requestId": "r",
+    "payload": null
+   },
+   "expect": {
+    "type": "response",
+    "requestId": "r",
+    "payload": {}
+   }
+  },
+  {
+   "kind": "response",
+   "input": {
+    "requestId": "r",
+    "payload": [
+     1
+    ]
+   },
+   "expect": {
+    "type": "response",
+    "requestId": "r",
+    "payload": [
+     1
+    ]
+   }
+  },
+  {
+   "kind": "error",
+   "input": {
+    "requestId": "r",
+    "error": "boom"
+   },
+   "expect": {
+    "type": "response",
+    "requestId": "r",
+    "error": "boom"
+   }
+  },
+  {
+   "kind": "gameEvent",
+   "input": {
+    "type": "log",
+    "data": {
+     "msg": "x"
+    }
+   },
+   "expect": {
+    "type": "gameEvent",
+    "payload": {
+     "type": "log",
+     "data": {
+      "msg": "x"
+     }
+    }
+   }
+  }
+ ],
+ "entityTypes": [
+  {
+   "input": "Enemy",
+   "expect": "hostile"
+  },
+  {
+   "input": "friendly",
+   "expect": "friendly"
+  },
+  {
+   "input": null,
+   "expect": "neutral"
+  },
+  {
+   "input": "animal",
+   "expect": "neutral"
+  },
+  {
+   "input": "Shroud_Boss",
+   "expect": "hostile"
+  },
+  {
+   "input": "npc",
+   "expect": "friendly"
+  },
+  {
+   "input": "Pet",
+   "expect": "friendly"
+  },
+  {
+   "input": "hostile",
+   "expect": "hostile"
+  }
+ ]
+}

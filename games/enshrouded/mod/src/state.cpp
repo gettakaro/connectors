@@ -1,5 +1,6 @@
 #include "state.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -55,8 +56,12 @@ std::string PluginState::EventsJson(uint64_t since, size_t limit) const {
     size_t n = 0;
     std::string items;
     uint64_t lastSeq = since;
-    for (auto& e : events_) {
-        if (e.seq <= since) continue;
+    // seqs are strictly increasing: skip the already-read prefix without walking it (the lock is shared
+    // with the game's log-sink hook)
+    auto from = std::upper_bound(events_.begin(), events_.end(), since,
+                                 [](uint64_t s, const EventRecord& e) { return s < e.seq; });
+    for (auto it = from; it != events_.end(); ++it) {
+        const EventRecord& e = *it;
         if (n >= limit) break;
         if (n) items += ",";
         items += "{\"seq\":" + std::to_string(e.seq) + ",\"type\":" + JsonStr(e.type) + ",\"data\":" + e.dataJson +

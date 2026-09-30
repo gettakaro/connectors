@@ -1,9 +1,11 @@
 """Enshrouded's verification hooks: what the generic runner cannot know about this game.
 
-The connector is two processes, so a run boots two containers. The game container runs the
-Windows server under Proton with the native plugin loaded; a second container -- built from
-the *shipped* sidecar zip, so what is proven is the release artifact and not the source
-tree -- joins the game's network namespace and talks to the plugin's loopback API.
+The connector is one ``dbghelp.dll`` the game loads: it hooks the server and holds the
+Takaro connection itself, so a run boots one container. The plugin accepts only
+``wss://`` and validates the certificate, so the run's fake Takaro serves TLS from a
+throwaway CA (``GameHooks.takaro_tls``) and ``takaro/plugin.json`` tells the plugin to
+trust that CA. Every Takaro value reaches the plugin through that file, never through a
+docker command line.
 
 The claim this file exists to make is a compatibility claim, not a liveness one. The plugin
 resolves game code by pinned signatures and keeps the server running when one of them no
@@ -13,11 +15,12 @@ the server process is perfectly alive -- and ``--negative`` proves that failure 
 booting a deliberately corrupted build.
 
 The base ``connector-load``/``identify``/``heartbeat``/``players``/``catalog-*``/
-``console``/``shutdown`` checks look for lines and answers that arrive from the *sidecar*
-here, so they stay out of an Enshrouded run -- :data:`UNSUPPORTED_CHECKS` is what keeps
-them out, and the runner applies it to every game -- and each ``sidecar-*`` check says
-which one it replaces. That is why an Enshrouded report reaches ``startup`` and never
-claims ``protocol``.
+``console``/``shutdown`` checks look for lines and answers another connector gives (a
+target-check line, Minecraft ids, a log line on the container's stdout, an exit code), so
+they stay out of an Enshrouded run -- :data:`UNSUPPORTED_CHECKS` is what keeps them out,
+and the runner applies it to every game -- and each ``native-*`` check says which one it
+replaces. ``/health`` is read with ``curl`` inside the game container, with the bearer
+token on stdin rather than on any command line.
 """
 
 from __future__ import annotations
@@ -26,23 +29,24 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from ... import net, output
 from ...verify import checks, checks_lifecycle
 from ...verify.hooks import GameHooks
-from ...verify.runner import Container, docker_command
-from . import PLUGIN_DLL, SERVER_DIR, plugin_token
+from ...verify.runner import docker_command
+from . import PLUGIN_DLL, plugin_token
 
 CHECK_IDS = (
     "plugin-health",
-    "sidecar-identify",
-    "sidecar-players",
-    "sidecar-catalog",
-    "sidecar-console",
+    "native-identify",
+    "native-players",
+    "native-catalog",
+    "native-console",
     "action",
     "reconnect",
     "event",
@@ -56,15 +60,19 @@ READY_LINE = re.compile(r"\[Session\] 'HostOnline' \(up\)!")
 #: Base checks this connector cannot satisfy, and the check that stands in for each.
 #: A run that names no ``--checks`` excludes these rather than failing them.
 UNSUPPORTED_CHECKS = {
-    "connector-load": (
-        "the connector lives in the sidecar, not the game container; `plugin-health` asserts the plugin"
+    "connector-load": ("waits for the Java connectors' target-check line; `plugin-health` asserts the plugin"),
+    "identify": (
+        "waits for a line on the container's stdout; the plugin logs to takaro/plugin.log, "
+        "and `native-identify` asserts the frame, that line and /health"
     ),
-    "identify": ("the sidecar identifies to Takaro; `sidecar-identify` asserts that frame"),
-    "heartbeat": ("the sidecar answers Takaro, not the game container; `sidecar-identify` covers the link"),
-    "players": ("the player list comes from the sidecar; `sidecar-players` asserts it"),
-    "catalog-items": ("spot-checks a Minecraft item id; `sidecar-catalog` spot-checks an Enshrouded one"),
-    "catalog-entities": ("spot-checks a Minecraft entity id; `sidecar-catalog` covers Enshrouded's entities"),
-    "console": ("the base console check drives a Minecraft command; `sidecar-console` drives an Enshrouded one"),
+    "heartbeat": (
+        "sends a random-payload RFC 6455 ping; `native-identify` covers the application ping/pong "
+        "and the empty ping Takaro really sends"
+    ),
+    "players": ("`native-players` asserts the same empty list plus the reachability answer"),
+    "catalog-items": ("spot-checks a Minecraft item id; `native-catalog` spot-checks Enshrouded's names"),
+    "catalog-entities": ("spot-checks a Minecraft entity id; `native-catalog` covers Enshrouded's entities"),
+    "console": ("the base console check drives a Minecraft command; `native-console` drives an Enshrouded one"),
     "shutdown": ("asserts an exit code this server's teardown does not give; `stop` asserts the shutdown"),
 }
 
@@ -75,42 +83,57 @@ RESPAWN_LINE = re.compile(r"spawned: 'enshrouded-server'")
 # Any line that would mean the image updated the game underneath the pinned hooks.
 DRIFT_LINE = re.compile(r"steamcmd|app_update|needs to be updated", re.IGNORECASE)
 
-# What the sidecar says.
-IDENTIFIED_LINE = re.compile(r"Identified with Takaro")
-CLOSED_LINE = re.compile(r"Takaro WebSocket closed code=1001")
+# What the plugin's native connector writes into <server>/takaro/plugin.log.
+IDENTIFIED_LINE = re.compile(r"native: identified with Takaro")
+CLOSED_LINE = re.compile(r"native: Takaro WebSocket closed \(epoch \d+\): server closed the connection \(code 1001\b")
 
 # What the plugin writes into <server>/takaro/plugin.log.
 PLUGIN_LISTENING = re.compile(r"http: listening on 127\.0\.0\.1:18890")
 
 PLUGIN_PORT = 18890
-SIDECAR_PORT = 18891
 PLUGIN_BUDGET = 120.0
 IDENTIFY_BUDGET = 120.0
-# The sidecar backs off from 2 s to a 60 s cap, so one full cycle has to fit.
+# The plugin sends its application ping every 5 s; two intervals are plenty.
+APP_PING_BUDGET = 15.0
+# The connector backs off from 2 s to a 60 s cap, so one full cycle has to fit.
 RECONNECT_BUDGET = 90.0
 EVENT_BUDGET = 60.0
 STOP_BUDGET = 120.0
 STOP_TIMEOUT = 120
 
 PLUGIN_CONFIG = Path("takaro") / "plugin.json"
-SIDECAR_FOLDER = Path("takaro") / "sidecar" / "TakaroEnshroudedSidecar"
+PLUGIN_LOG = Path("takaro") / "plugin.log"
+#: The run's throwaway CA, next to the config; the plugin resolves ``caFile`` from the exe dir.
+VERIFY_CA = Path("takaro") / "verify-ca.pem"
 
 
 # --------------------------------------------------------------------------- run setup
 
 
 def before_boot(run: Any, takaro_env: dict[str, str]) -> Path:
-    """This run's check selection and the plugin's only configuration, before the boot.
+    """The plugin's whole configuration for this boot, before the container starts.
 
-    ``before_boot`` is the first hook an Enshrouded run reaches and every check the default
-    selection leaves out runs after it, so the selection is settled here.
-
-    The token never reaches the docker command line: the plugin reads it from this file
-    when ``TAKARO_PLUGIN_TOKEN`` is unset, and the sidecar is given the same derived value.
+    The plugin reads ``takaro/plugin.json`` for every key the environment leaves unset, so
+    the Takaro URL, both tokens, the CA to trust and the diagnostics secret all go into this
+    file (mode 0600) and none of them reaches a docker command line. The diagnostics secret
+    is derived from the run's throwaway registration token, so every boot agrees on it.
     """
+    config: dict[str, str] = {
+        "token": plugin_token(takaro_env),
+        "url": takaro_env.get("TAKARO_WS_URL", ""),
+        "identityToken": takaro_env.get("TAKARO_IDENTITY_TOKEN", ""),
+        "registrationToken": takaro_env["TAKARO_REGISTRATION_TOKEN"],
+        "name": f"takaro-verify-{run.options.run_id}",
+    }
+    ca_file = getattr(run, "takaro_ca_file", None)
+    if ca_file is not None:
+        ca = run.data_dir / VERIFY_CA
+        ca.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ca_file, ca)
+        config["caFile"] = str(PureWindowsPath(*VERIFY_CA.parts))
     path = run.data_dir / PLUGIN_CONFIG
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"token": plugin_token(takaro_env)}) + "\n", encoding="utf-8")
+    path.write_text(json.dumps({k: v for k, v in config.items() if v}) + "\n", encoding="utf-8")
     os.chmod(path, 0o600)
     output.info(f"wrote {PLUGIN_CONFIG.as_posix()} for this run (mode 0600)")
     return path
@@ -140,82 +163,7 @@ def _proton_version(container_ref: str) -> str:
     return completed.stdout.split()[-1] if completed.stdout.split() else ""
 
 
-# --------------------------------------------------------------------------- the sidecar
-
-
-def sidecar_image(run: Any, suffix: str) -> str:
-    return f"takaro-enshrouded-sidecar:tm-{run.options.run_id}{suffix}"
-
-
-def start_sidecar(run: Any, fake: Any, *, suffix: str = "") -> Container:
-    """Build the SHIPPED sidecar zip's folder and run it in the game's network namespace.
-
-    A container that joins another's namespace cannot take ``--add-host``, so the sidecar
-    is handed the bridge gateway address directly instead of ``host.docker.internal``.
-    """
-    source = run.data_dir / SIDECAR_FOLDER
-    if not (source / "Dockerfile").is_file():
-        raise RuntimeError(f"{source}/Dockerfile is missing; the shipped sidecar zip did not deploy")
-    image = sidecar_image(run, suffix)
-    build_log = run.out / "sidecar-build.log"
-    completed = subprocess.run(
-        [*docker_command(), "build", "-t", image, "--label", f"tm.run={run.options.run_id}", str(source)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    build_log.write_text(completed.stdout + completed.stderr, encoding="utf-8")
-    if completed.returncode != 0:
-        raise RuntimeError(f"the shipped sidecar image did not build; see {build_log.name}")
-
-    takaro_env = run.takaro_env(f"ws://{fake.host}:{fake.port}/")
-    token = plugin_token(takaro_env)
-    name = f"{run.container.name}-sidecar"
-    ttl = int(time.time()) + 3 * 3600
-    argv = [
-        *docker_command(),
-        "run",
-        "-d",
-        "--name",
-        name,
-        "--label",
-        f"tm.run={run.options.run_id}",
-        "--label",
-        f"tm.ttl={ttl}",
-    ]
-    for label in run.options.labels:
-        argv += ["--label", label]
-    argv += ["--network", f"container:{run.container.name}", "--memory", "512m"]
-    environment = {
-        "TAKARO_WS_URL": takaro_env["TAKARO_WS_URL"],
-        "TAKARO_IDENTITY_TOKEN": takaro_env["TAKARO_IDENTITY_TOKEN"],
-        "TAKARO_REGISTRATION_TOKEN": takaro_env["TAKARO_REGISTRATION_TOKEN"],
-        "TAKARO_SERVER_NAME": f"takaro-verify-{run.options.run_id}",
-        "TAKARO_PLUGIN_URL": f"http://127.0.0.1:{PLUGIN_PORT}",
-        "TAKARO_PLUGIN_TOKEN": token,
-        "TAKARO_CURSOR_FILE": "/data/event-cursor.json",
-        "ENSHROUDED_LOG_FILE": f"{SERVER_DIR}/logs/enshrouded_server.log",
-        "ENSHROUDED_LOG_EVENTS": "filtered",
-        "SIDECAR_HEALTH_PORT": str(SIDECAR_PORT),
-        "DEBUG": "1",
-    }
-    for key, value in sorted(environment.items()):
-        argv += ["-e", f"{key}={value}"]
-    sidecar_data = run.data_dir / ".takaro" / "runtime" / f"sidecar-data{suffix}"
-    sidecar_data.mkdir(parents=True, exist_ok=True)
-    argv += ["-v", f"{sidecar_data}:/data", "-v", f"{run.data_dir}:{SERVER_DIR}:ro", image]
-
-    container = Container(
-        name=name,
-        argv=argv,
-        log_file=run.out / f"sidecar{suffix}.log",
-        docker_log=run.docker_log,
-        secrets=[takaro_env["TAKARO_REGISTRATION_TOKEN"], token],
-    )
-    run.containers.append(container)
-    run.extra_logs.append(container.log_file)
-    container.start()
-    return container
+# --------------------------------------------------------------------------- diagnostics
 
 
 def connector_version(run: Any) -> str | None:
@@ -237,29 +185,49 @@ def connector_version(run: Any) -> str | None:
     return version.split("-", 1)[0]
 
 
-def _exec_json(container_name: str, argv: list[str]) -> Any:
-    """Run a command inside a container and parse its stdout as JSON.
+def plugin_health(container_name: str, token: str) -> Any:
+    """``GET /health`` from inside the game container, where the loopback listener is.
 
-    Used with the sidecar container, which shares the game's namespace and therefore
-    reaches both loopback APIs. The bearer token is on this argv and nowhere else.
+    ``curl -H @-`` reads the header from stdin, so the bearer token is on no command line,
+    neither the host's ``docker exec`` nor the container's ``curl``.
     """
     completed = subprocess.run(
-        [*docker_command(), "exec", container_name, *argv], capture_output=True, text=True, check=False
+        [
+            *docker_command(),
+            "exec",
+            "-i",
+            container_name,
+            "curl",
+            "-fsS",
+            "-m",
+            "10",
+            "-H",
+            "@-",
+            f"http://127.0.0.1:{PLUGIN_PORT}/health",
+        ],
+        input=f"Authorization: Bearer {token}\n",
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if completed.returncode != 0:
-        raise RuntimeError(f"docker exec exited {completed.returncode}: {completed.stderr.strip()[:200]}")
+        raise RuntimeError(f"docker exec curl exited {completed.returncode}: {completed.stderr.strip()[:200]}")
     return json.loads(completed.stdout)
 
 
-def _plugin_health(container_name: str, token: str) -> Any:
-    return _exec_json(
-        container_name,
-        ["wget", "-qO-", "--header", f"Authorization: Bearer {token}", f"http://127.0.0.1:{PLUGIN_PORT}/health"],
-    )
+def native_diagnostics(health: Any) -> dict[str, Any]:
+    """The native connector's own block of ``/health``: ``diagnostics.native``."""
+    if not isinstance(health, dict):
+        return {}
+    diagnostics = health.get("diagnostics")
+    native = diagnostics.get("native") if isinstance(diagnostics, dict) else None
+    return native if isinstance(native, dict) else {}
 
 
-def _sidecar_health(container_name: str) -> Any:
-    return _exec_json(container_name, ["wget", "-qO-", f"http://127.0.0.1:{SIDECAR_PORT}/health"])
+def _redacted_native(native: dict[str, Any]) -> dict[str, Any]:
+    """What a report may keep of the native block: state and counters, no configuration."""
+    keep = ("enabled", "state", "epoch", "identified", "lastError", "lastIdentifyError", "requests", "outbox")
+    return {key: native[key] for key in keep if key in native}
 
 
 # --------------------------------------------------------------------------- the claim
@@ -325,21 +293,18 @@ def classify_health(health: Any, expected_build: str, expected_version: str | No
 
 
 async def after_protocol(run: Any, fake: Any, alive: Any) -> None:
-    sidecar: Container | None = None
-    if run.wanted("plugin-health") or _any_sidecar_check(run):
-        sidecar = await asyncio.to_thread(start_sidecar, run, fake)
     if run.wanted("plugin-health"):
-        run.record(await asyncio.to_thread(_check_plugin_health, run, sidecar))
+        run.record(await asyncio.to_thread(_check_plugin_health, run))
     else:
         run.skip("plugin-health", "not selected by --checks")
 
     for check_id, coroutine in (
-        ("sidecar-identify", lambda: _check_identify(run, fake, sidecar, alive)),
-        ("sidecar-players", lambda: _check_players(run, fake)),
-        ("sidecar-catalog", lambda: _check_catalog(run, fake)),
-        ("sidecar-console", lambda: _check_console(run, fake)),
+        ("native-identify", lambda: _check_identify(run, fake, alive)),
+        ("native-players", lambda: _check_players(run, fake)),
+        ("native-catalog", lambda: _check_catalog(run, fake)),
+        ("native-console", lambda: _check_console(run, fake)),
         ("action", lambda: _check_action(run, fake)),
-        ("reconnect", lambda: _check_reconnect(run, fake, sidecar, alive)),
+        ("reconnect", lambda: _check_reconnect(run, fake, alive)),
     ):
         if run.wanted(check_id):
             run.record(await coroutine())
@@ -347,32 +312,20 @@ async def after_protocol(run: Any, fake: Any, alive: Any) -> None:
             run.skip(check_id, "not selected by --checks")
 
 
-def _any_sidecar_check(run: Any) -> bool:
-    return any(run.wanted(check) for check in CHECK_IDS if check.startswith("sidecar-")) or any(
-        run.wanted(check) for check in ("action", "reconnect", "event")
-    )
-
-
-def _sidecar_name(run: Any, sidecar: Container | None) -> str:
-    if sidecar is None:
-        raise RuntimeError("the sidecar container was never started")
-    return sidecar.name
-
-
-def _check_plugin_health(run: Any, sidecar: Container | None) -> checks.CheckResult:
+def _check_plugin_health(run: Any) -> checks.CheckResult:
     """The compatibility claim: the hooks resolved, on the build they were proven on."""
     with checks._Timer() as timer:
         problems: list[str] = []
         verdict: dict[str, Any] = {}
         proton = ""
         expected_proton = str(run.target.record["runtime"]["container"].get("env", {}).get("TAKARO_PINNED_PROTON", ""))
-        plugin_log = run.data_dir / "takaro" / "plugin.log"
+        plugin_log = run.data_dir / PLUGIN_LOG
         listening = checks.wait_for_line(plugin_log, PLUGIN_LISTENING, PLUGIN_BUDGET, run.container.alive)
         if not listening:
             problems.append(f"the plugin never logged that it was listening within {PLUGIN_BUDGET:.0f} s")
         version = connector_version(run)
         try:
-            health = _plugin_health(_sidecar_name(run, sidecar), plugin_token(run.takaro_env("")))
+            health = plugin_health(run.container.name, plugin_token(run.takaro_env("")))
         except Exception as exc:  # noqa: BLE001 - reported as a check failure
             problems.append(f"the plugin's /health could not be read: {exc}")
         else:
@@ -416,44 +369,65 @@ def _container_proton(container_name: str) -> str:
     return completed.stdout.strip()
 
 
-async def _check_identify(run: Any, fake: Any, sidecar: Container | None, alive: Any) -> checks.CheckResult:
-    """Enshrouded's ``identify``: the sidecar, not the game, registers with Takaro."""
+async def _check_identify(run: Any, fake: Any, alive: Any) -> checks.CheckResult:
+    """Enshrouded's ``identify``/``heartbeat``: the game process itself registers and keeps the link.
+
+    Four things have to hold: an identify frame reached the fake, the plugin logged that
+    it is identified, ``/health`` says the same, and the link carries both heartbeats --
+    the plugin's application ping answered by the fake's pong, and the empty RFC 6455 ping
+    Takaro sends answered by the plugin.
+    """
+    log_file = run.data_dir / PLUGIN_LOG
     with checks._Timer() as timer:
         problems: list[str] = []
-        health: Any = None
+        native: dict[str, Any] = {}
+        round_trip_ms: int | None = None
         try:
             await fake.wait_for_identify(IDENTIFY_BUDGET)
         except TimeoutError as exc:
             problems.append(str(exc))
-        log_file = run.out / "sidecar.log"
+        identity = fake.identified or {}
+        for key in ("identityToken", "registrationToken"):
+            if key not in identity:
+                problems.append(f"the identify frame carried no {key}")
         line = await asyncio.to_thread(checks.wait_for_line, log_file, IDENTIFIED_LINE, 30, alive)
         if not line:
-            problems.append("the sidecar log never showed 'Identified with Takaro'")
+            problems.append(f"{log_file.name} never showed 'native: identified with Takaro'")
         try:
-            health = await asyncio.to_thread(_sidecar_health, _sidecar_name(run, sidecar))
+            health = await asyncio.to_thread(plugin_health, run.container.name, plugin_token(run.takaro_env("")))
         except Exception as exc:  # noqa: BLE001 - reported as a check failure
-            problems.append(f"the sidecar's /health could not be read: {exc}")
-        if isinstance(health, dict) and health.get("takaroIdentified") is not True:
-            problems.append(f"the sidecar reports takaroIdentified={health.get('takaroIdentified')!r}")
+            problems.append(f"the plugin's /health could not be read: {exc}")
+        else:
+            native = native_diagnostics(health)
+            if native.get("identified") is not True or native.get("state") != "identified":
+                problems.append(
+                    f"/health diagnostics.native reports state={native.get('state')!r} "
+                    f"identified={native.get('identified')!r}"
+                )
+        deadline = time.monotonic() + APP_PING_BUDGET
+        while getattr(fake, "app_pings", 0) < 1 and time.monotonic() < deadline:
+            await asyncio.sleep(0.5)
+        if getattr(fake, "app_pings", 0) < 1:
+            problems.append(f"the plugin sent no application ping within {APP_PING_BUDGET:.0f} s")
+        try:
+            round_trip_ms = int(await fake.ping(timeout=5, payload=b"") * 1000)
+        except (TimeoutError, RuntimeError) as exc:
+            problems.append(f"an empty RFC 6455 ping was not answered: {exc}")
     return checks.CheckResult(
-        "sidecar-identify",
+        "native-identify",
         "pass" if not problems else "fail",
         timer.elapsed_ms,
         {
             "identifyFrames": fake.identify_count,
-            "identifyKeys": sorted(fake.identified or {}),
-            "sidecarHealth": _redacted_health(health),
-            "note": "Enshrouded's `identify`: the sidecar registers, the game server never speaks to Takaro",
+            "identifyKeys": sorted(identity),
+            "appPings": getattr(fake, "app_pings", 0),
+            "pingRoundTripMs": round_trip_ms,
+            "native": _redacted_native(native),
+            "note": "Enshrouded's `identify` and `heartbeat`: the game process holds the Takaro connection",
             "problems": problems,
         },
         {"file": log_file.name, "line": line[0]} if line else {"file": log_file.name},
     )
-
-
-def _redacted_health(health: Any) -> Any:
-    if not isinstance(health, dict):
-        return health
-    return {key: value for key, value in health.items() if "token" not in key.lower()}
 
 
 async def _check_players(run: Any, fake: Any) -> checks.CheckResult:
@@ -480,7 +454,7 @@ async def _check_players(run: Any, fake: Any) -> checks.CheckResult:
         elif players:
             problems.append(f"getPlayers returned {len(players)} player(s); nobody joins a verification run")
     return checks.CheckResult(
-        "sidecar-players",
+        "native-players",
         "pass" if not problems else "fail",
         timer.elapsed_ms,
         {
@@ -591,7 +565,7 @@ async def _check_catalog(run: Any, fake: Any) -> checks.CheckResult:
                 examples = "; ".join(f"{name} <- {', '.join(codes)}" for name, codes in shared[:3])
                 problems.append(f"{action}: {len(shared)} names are shared by more than one code, e.g. {examples}")
     return checks.CheckResult(
-        "sidecar-catalog",
+        "native-catalog",
         "pass" if not problems else "fail",
         timer.elapsed_ms,
         {
@@ -624,7 +598,7 @@ async def _check_console(run: Any, fake: Any) -> checks.CheckResult:
             if build not in raw:
                 problems.append(f"the console answer {raw!r} does not name game build {build}")
     return checks.CheckResult(
-        "sidecar-console",
+        "native-console",
         "pass" if not problems else "fail",
         timer.elapsed_ms,
         {
@@ -658,16 +632,16 @@ async def _check_action(run: Any, fake: Any) -> checks.CheckResult:
             "result": result,
             "note": (
                 "with nobody online the plugin broadcasts to no one and answers success: what this "
-                "proves is the request/response path through the sidecar into the game, not delivery"
+                "proves is the request/response path from Takaro into the game, not delivery"
             ),
             "problems": problems,
         },
     )
 
 
-async def _check_reconnect(run: Any, fake: Any, sidecar: Container | None, alive: Any) -> checks.CheckResult:
-    """Takaro drops the socket; the sidecar comes back and is usable again."""
-    log_file = run.out / "sidecar.log"
+async def _check_reconnect(run: Any, fake: Any, alive: Any) -> checks.CheckResult:
+    """Takaro drops the socket; the plugin comes back by itself and is usable again."""
+    log_file = run.data_dir / PLUGIN_LOG
     with checks._Timer() as timer:
         problems: list[str] = []
         reachable: Any = None
@@ -678,7 +652,7 @@ async def _check_reconnect(run: Any, fake: Any, sidecar: Container | None, alive
             problems.append(f"no identify frame arrived within {RECONNECT_BUDGET:.0f} s of the close")
         else:
             try:
-                await fake.ping(timeout=5)
+                await fake.ping(timeout=5, payload=b"")
             except (TimeoutError, RuntimeError) as exc:
                 problems.append(f"the reconnected socket did not answer a ping: {exc}")
             try:
@@ -689,13 +663,12 @@ async def _check_reconnect(run: Any, fake: Any, sidecar: Container | None, alive
                 problems.append(f"testReachability returned {reachable!r}, expected connectable true")
         closed = await asyncio.to_thread(checks.wait_for_line, log_file, CLOSED_LINE, 30, alive)
         if not closed:
-            problems.append("the sidecar never logged the 1001 close")
+            problems.append(f"{log_file.name} never logged the 1001 close")
         confirmations = await asyncio.to_thread(
             checks_lifecycle.wait_for_count, log_file, IDENTIFIED_LINE, 2, 30, alive
         )
         if confirmations < 2:
-            problems.append(f"the sidecar identified {confirmations} time(s), expected at least 2")
-        del sidecar
+            problems.append(f"the plugin identified {confirmations} time(s), expected at least 2")
     return checks.CheckResult(
         "reconnect",
         "pass" if not problems else "fail",
@@ -825,11 +798,9 @@ async def _check_stop(run: Any, ledger_inputs: list[dict[str, Any]]) -> checks.C
         intact, changed = _rehash(run.data_dir, ledger_inputs)
         if changed:
             problems.append("the pinned inputs changed during the run: " + "; ".join(changed))
-        # The sidecars go first: an image cannot be removed while a container still holds it.
         for other in run.containers:
             if other is not container:
                 other.remove()
-        _remove_images(run)
     return checks.CheckResult(
         "stop",
         "pass" if not problems else "fail",
@@ -845,13 +816,6 @@ async def _check_stop(run: Any, ledger_inputs: list[dict[str, Any]]) -> checks.C
         },
         {"file": run.server_log.name},
     )
-
-
-def _remove_images(run: Any) -> None:
-    for suffix in ("", "-degraded"):
-        subprocess.run(
-            [*docker_command(), "rmi", sidecar_image(run, suffix)], capture_output=True, text=True, check=False
-        )
 
 
 def _rehash(data_dir: Path, ledger_inputs: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
@@ -891,6 +855,7 @@ async def _check_negative(run: Any, fake: Any, ws_url: str, zig: str) -> checks.
 
     dll = run.data_dir / "takaro" / "plugin" / PLUGIN_DLL
     kept = dll.with_name(PLUGIN_DLL + ".release")
+    plugin_log = run.data_dir / PLUGIN_LOG
     corrupted = "addComponent"
     mod = maint_paths.repo_root() / "games" / "enshrouded" / "mod"
     with checks._Timer() as timer:
@@ -904,6 +869,11 @@ async def _check_negative(run: Any, fake: Any, ws_url: str, zig: str) -> checks.
             dll.replace(kept)
             dll.write_bytes(built.read_bytes())
             os.chmod(dll, 0o644)
+            # The release run's log is kept aside, so the lines waited for below can only be
+            # the degraded plugin's own.
+            if plugin_log.is_file():
+                plugin_log.replace(plugin_log.with_name("plugin-release.log"))
+            before = fake.identify_count
             container = run.boot(ws_url, suffix="-degraded", log_name="server-degraded.log")
             ready = bool(
                 await asyncio.to_thread(
@@ -916,21 +886,12 @@ async def _check_negative(run: Any, fake: Any, ws_url: str, zig: str) -> checks.
             )
             if not ready:
                 problems.append("the server never reached HostOnline with the degraded plugin")
-            before = fake.identify_count
-            sidecar = await asyncio.to_thread(start_sidecar, run, fake, suffix="-degraded")
-            await asyncio.to_thread(
-                checks.wait_for_line,
-                run.data_dir / "takaro" / "plugin.log",
-                PLUGIN_LISTENING,
-                PLUGIN_BUDGET,
-                container.alive,
-            )
-            # The first run's sidecar was torn down with the first container, so the fake has
-            # nobody to ask until this one has identified. Without the wait, every request
-            # below answers "no connector is connected" and says nothing about the plugin.
+            await asyncio.to_thread(checks.wait_for_line, plugin_log, PLUGIN_LISTENING, PLUGIN_BUDGET, container.alive)
+            # The degraded plugin connects by itself; until it has identified, the fake has
+            # nobody to ask and every request below would say nothing about the plugin.
             if await checks_lifecycle.identify_within(fake, before + 1, IDENTIFY_BUDGET, container.alive) is None:
-                problems.append(f"the degraded run's sidecar never identified within {IDENTIFY_BUDGET:.0f} s")
-            health = await asyncio.to_thread(_plugin_health, sidecar.name, plugin_token(run.takaro_env("")))
+                problems.append(f"the degraded plugin never identified within {IDENTIFY_BUDGET:.0f} s")
+            health = await asyncio.to_thread(plugin_health, container.name, plugin_token(run.takaro_env("")))
             verdict = classify_health(health, str(run.target.record["revision"]), None)
             if verdict["ok"]:
                 problems.append("a plugin built with a corrupted signature was reported healthy")
@@ -940,7 +901,7 @@ async def _check_negative(run: Any, fake: Any, ws_url: str, zig: str) -> checks.
                 reachable = await fake.request("testReachability", {})
             except Exception as exc:  # noqa: BLE001 - reported as a check failure
                 problems.append(f"testReachability failed against the degraded plugin: {exc}")
-            # The sidecar deliberately still reports the server connectable when the plugin's
+            # The connector deliberately still reports the server connectable when the plugin's
             # overall status is ok and only some capabilities self-checked as degraded --
             # the server IS reachable, those actions are not. The reason is what has to name
             # them, so the reason is what this asserts.
@@ -1071,4 +1032,5 @@ HOOKS = GameHooks(
     after_shutdown=after_shutdown,
     negative=negative,
     scan_runtime_identity=scan_runtime_identity,
+    takaro_tls=True,
 )

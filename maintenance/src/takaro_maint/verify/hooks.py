@@ -40,6 +40,10 @@ class GameHooks:
     #: Check ids that only a hosted run can produce.
     hosted_check_ids: tuple[str, ...] = ()
 
+    #: The connector accepts only ``wss://``: the fake Takaro then serves TLS with a
+    #: throwaway CA, and ``run.takaro_ca_file`` is the certificate the connector must trust.
+    takaro_tls: bool = False
+
     #: Base check id -> why it cannot pass on this game, and which check stands in for it.
     #: A run that names no ``--checks`` excludes these rather than failing them.
     unsupported_checks: Mapping[str, str] = field(default_factory=dict)

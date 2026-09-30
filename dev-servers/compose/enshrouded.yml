@@ -14,8 +14,9 @@ services:
   #
   # The game files under _data/enshrouded/server are installed by
   #   takaro-maint install --game enshrouded --dest dev-servers/_data/enshrouded/server
-  # and the plugin and sidecar are placed under _data/enshrouded/server/takaro/ by
-  # `takaro-maint deploy`.
+  # and the plugin is placed under _data/enshrouded/server/takaro/plugin/ by
+  # `takaro-maint deploy`. The plugin holds the Takaro connection itself: there is no
+  # second container.
   enshrouded:
     image: "${ENSHROUDED_IMAGE:-mornedhels/enshrouded-server:1.7.2-proton@sha256:85978a10f88a85ab0a0aa92e9821d30424895d38bf81fe543532451219c42d0d}"
     container_name: takaro-dev-enshrouded
@@ -47,7 +48,19 @@ services:
       BACKUP_MAX_COUNT: "24"
       TZ: "${TZ:-Etc/UTC}"
       WINEDLLOVERRIDES: "dbghelp=n,b"
+      # The native connector in dbghelp.dll. Environment wins over takaro/plugin.json.
+      TAKARO_WS_URL: "${TAKARO_WS_URL:-wss://connect.takaro.io/}"
+      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_ENSHROUDED:-takaro-dev-enshrouded}"
+      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN:?required}"
+      TAKARO_SERVER_NAME: "Takaro Dev Enshrouded"
+      ENSHROUDED_LOG_TAIL: "auto"
+      ENSHROUDED_LOG_EVENTS: "${ENSHROUDED_LOG_EVENTS:-filtered}"
+      # Diagnostics only: the bearer secret for 127.0.0.1:18890/health inside the container.
       TAKARO_PLUGIN_TOKEN: "${TAKARO_ENSHROUDED_PLUGIN_TOKEN:?required}"
+      # Rollback to the 0.5.0 plugin + sidecar pair only (games/enshrouded/INSTALL.md):
+      # 1/1 turns the native connection off and serves the legacy HTTP routes again.
+      TAKARO_NATIVE_DISABLE: "${ENSHROUDED_NATIVE_DISABLE:-0}"
+      TAKARO_LEGACY_HTTP: "${ENSHROUDED_LEGACY_HTTP:-0}"
     volumes:
       # Both binds refuse to be created: `create_host_path: false` makes compose stop with
       # "bind source path does not exist" instead of laying down an empty tree and a
@@ -70,45 +83,6 @@ services:
           create_host_path: false
       # No boot of this rig ever runs SteamCMD.
       - ../../games/enshrouded/server/enshrouded-updater:/usr/local/etc/enshrouded/enshrouded-updater:ro
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "3"
-
-  # Takaro sidecar (connector bridge). Shares the game container's network namespace so the
-  # plugin's loopback-only API (127.0.0.1:18890) is reachable and never exposed on the host.
-  # The build context defaults to the deployed release folder, so the rig runs the bytes a
-  # release ships; ENSHROUDED_SIDECAR_SRC points it at the source tree while developing.
-  enshrouded-takaro:
-    build: "${ENSHROUDED_SIDECAR_SRC:-../_data/enshrouded/server/takaro/sidecar/TakaroEnshroudedSidecar}"
-    image: takaro-enshrouded-sidecar:dev
-    container_name: takaro-dev-enshrouded-sidecar
-    restart: unless-stopped
-    network_mode: "service:enshrouded"
-    depends_on:
-      - enshrouded
-    environment:
-      TAKARO_WS_URL: "${TAKARO_WS_URL:-wss://connect.takaro.io/}"
-      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_ENSHROUDED:-takaro-dev-enshrouded}"
-      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN:?required}"
-      TAKARO_SERVER_NAME: "Takaro Dev Enshrouded"
-      TAKARO_PLUGIN_URL: "http://127.0.0.1:18890"
-      TAKARO_PLUGIN_TOKEN: "${TAKARO_ENSHROUDED_PLUGIN_TOKEN:?required}"
-      ENSHROUDED_LOG_TAIL: "auto"
-      ENSHROUDED_LOG_EVENTS: "${ENSHROUDED_LOG_EVENTS:-filtered}"
-      ENSHROUDED_LOG_FILE: /opt/enshrouded/server/logs/enshrouded_server.log
-      TAKARO_CURSOR_FILE: /data/event-cursor.json
-      SIDECAR_HEALTH_PORT: "18891"
-      DEBUG: "1"
-    volumes:
-      - type: bind
-        source: ../_data/enshrouded/server
-        target: /opt/enshrouded/server
-        read_only: true
-        bind:
-          create_host_path: false
-      - ../_data/enshrouded-sidecar:/data
     logging:
       driver: json-file
       options:

@@ -80,7 +80,7 @@ a set may want the same name — including `SHA256SUMS` and the record itself.
 | valheim | `takaro-valheim-plugin.zip`, `takaro-valheim-companion.zip` |
 | conan-exiles | `takaro-conan-exiles-bridge.zip` |
 | terraria | `takaro-terraria-plugin.zip`, `takaro-terraria-bridge.zip` |
-| enshrouded | `takaro-enshrouded-plugin.zip`, `takaro-enshrouded-sidecar.zip` |
+| enshrouded | `takaro-enshrouded-plugin.zip` (and `takaro-enshrouded-sidecar.zip` up to 0.5.0) |
 
 **Always.** `SHA256SUMS` (GNU format, sorted, covering every asset but itself),
 `takaro-<connector>-<version>.compat.json`, and one

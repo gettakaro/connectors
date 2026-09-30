@@ -1,7 +1,15 @@
 # Takaro Enshrouded plugin: HTTP API (contract v0.4)
 
-The plugin is `dbghelp.dll`, a proxy DLL loaded by `enshrouded_server.exe`. It serves this API on
-`127.0.0.1:18890`, inside the server's network namespace (the container). The sidecar codes against this document.
+The plugin is `dbghelp.dll`, a proxy DLL loaded by `enshrouded_server.exe`. This document is the contract between
+the game side of the plugin and the Takaro side:
+
+- **Native connector (default from plugin 0.6.0).** The plugin's own Takaro connection (`src/native/`) calls these
+  routes in-process (`PluginCall` in `plugin_api.h`): no socket, no token. See DEVELOPMENT.md, "Native connector".
+- **Diagnostics over HTTP.** `127.0.0.1:18890`, inside the server's network namespace, serves only `GET /health`,
+  `GET /events` and `GET /debug/perf` by default. Every other route answers
+  `404 {"error":"not served over HTTP: the plugin talks to Takaro directly ..."}`.
+- **Legacy sidecar (one release, for cutover and rollback).** `TAKARO_LEGACY_HTTP=1` serves every route below over
+  HTTP again, for the TypeScript sidecar. Run it with `TAKARO_NATIVE_DISABLE=1`, never both with the same identity.
 
 ## Transport and auth
 - HTTP/1.1. Every response closes the connection (`Connection: close`). Bodies are JSON (`Content-Type: application/json`) and UTF-8.
@@ -40,7 +48,19 @@ The plugin is `dbghelp.dll`, a proxy DLL loaded by `enshrouded_server.exe`. It s
     `listItems`, `listEntities`, `listLocations`, `executeCommand` (all implemented in v0.4).
   - `ok` means "resolved and hooked" (world capabilities additionally wait for the first server tick), not "proven";
     live proof is in `context/games/enshrouded/evidence/` and `API_GOAL_MATRIX.json`.
+- `connectorState` (native connector, plugin >= 0.6.0): `ok`, or `degraded` when a connector state file under
+  `takaro\connector-state` is unreadable (corrupt files are never overwritten) or cannot be written; the detail
+  names the file. `testReachability` therefore reports it like any other degraded capability.
+- `diagnostics.perf`: microseconds of plugin work per entry into the hooked game calls (`tick`, `updatePlayers`,
+  `moderation` queue drains and the `logSink` hook): `entries`, `entriesPerSec`, `jobs`, `jobsPerSec`, `avgUs`,
+  `p99Us` (last 2048 entries), `maxUs`, over `windowS` seconds since start or the last reset.
+- `diagnostics.native`: the Takaro connection (`enabled`, `reason` when off, `state`, `epoch`, `identified`, the
+  transport's queues and heartbeat, request counters, event outbox cursors and counts, timed bans, log-tail state,
+  state-file errors). Token values never appear.
 - `capabilityDetails` and `diagnostics` are informational. Do not code against their exact shape.
+
+### GET /debug/perf[?reset=1]
+`diagnostics.perf` on its own; `reset=1` starts a new measurement window (for A/B runs). Served over HTTP by default.
 
 ### GET /players
 Returns the players who are online, meaning logged in with their permission block received.

@@ -1,13 +1,17 @@
 #include "world.h"
 
+#include "entity.h"
 #include "hooks.h"
 #include "names.h"
 #include "scan.h"
 #include "state.h"
+#include "weapon.h"
 
 #include "MinHook.h"
+#include "perf.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -24,7 +28,8 @@ const uint32_t kCurrentTransform = 0x027ac564;  // keen::WorldTransform, 56 B
 const uint32_t kTeleport = 0x23384d40;          // 80 B, server_only
 const uint32_t kInventorySetup = 0xc24df82a;    // 84 B
 const uint32_t kInventory = 0xb19528a9;         // ItemStack[] (12 B each)
-const uint32_t kItemState = 0x3a2fac75;         // PIDE entity: rarity @16, level @17
+const uint32_t kItemState = 0x3a2fac75;         // PIDE entity: itemId @8, rarity @16, level @17
+const uint32_t kImpactHierarchy = 0xcd3947e0;   // impact/projectile entity: weaponPideId @8 (16 B)
 const uint32_t kPlayerInput = 0xfb4f945a;       // 1320 B
 const uint32_t kServerConsumed = 0xeff8ed59;    // 216 B
 
@@ -101,10 +106,13 @@ const char* Hx(uint64_t v) {
 }
 
 // ---- world-thread queue (drained after Server::updatePlayers on the server main thread) ----
+// Owns its callable and completion; a caller that times out cancels it if it has not started (see hooks.cpp).
 struct WorldTask {
+    enum { kQueued = 0, kRunning = 1, kDone = 2, kCancelled = 3 };
     std::function<std::string(uint64_t)> fn;
     std::string result;
     HANDLE done = nullptr;
+    std::atomic<int> state{kQueued};
     ~WorldTask() {
         if (done) CloseHandle(done);
     }
@@ -114,6 +122,7 @@ std::deque<std::shared_ptr<WorldTask>> g_wq;
 
 uint64_t __fastcall UpdDetour(uint64_t server, uint64_t b, uint64_t c, uint64_t d) {
     uint64_t ret = g_origUpd(server, b, c, d);
+    PerfScope perf(kPerfUpdatePlayers);
     InterlockedIncrement64(&g_updTicks);
     InterlockedExchange64(&g_server, (LONG64)server);
     for (int budget = 0; budget < 16; budget++) {
@@ -124,8 +133,12 @@ uint64_t __fastcall UpdDetour(uint64_t server, uint64_t b, uint64_t c, uint64_t 
             t = g_wq.front();
             g_wq.pop_front();
         }
+        int expected = WorldTask::kQueued;
+        if (!t->state.compare_exchange_strong(expected, WorldTask::kRunning)) continue;  // caller gave up
         t->result = t->fn(server);
+        t->state = WorldTask::kDone;
         SetEvent(t->done);
+        perf.jobs++;
     }
     return ret;
 }
@@ -147,7 +160,10 @@ bool RunOnWorld(std::function<std::string(uint64_t)> fn, std::string& result, st
         g_wq.push_back(t);
     }
     if (WaitForSingleObject(t->done, timeoutMs) != WAIT_OBJECT_0) {
-        err = "server thread did not run the task in time";
+        int expected = WorldTask::kQueued;
+        bool cancelled = t->state.compare_exchange_strong(expected, WorldTask::kCancelled);
+        err = cancelled ? "server thread did not run the task in time"
+                        : "server thread did not finish the task in time";
         return false;
     }
     result = t->result;
@@ -349,6 +365,23 @@ std::string PlayerJsonForSlot(uint64_t server, int slot, std::string* nameOut = 
 
 volatile LONG64 g_lastCombatSys = 0;
 
+// The weapon of a killing blow: HitEvent.weaponPideId (0xac) or, for a projectile/impact source
+// without it, that source's ImpactHierarchy.weaponPideId; then the PIDE's ItemState.itemId. Two
+// component reads at most, once per killing blow; the name lookup is a binary search over a
+// static table (weapon.cpp).
+void KillWeaponItem(uint64_t world, const uint8_t* e, uint32_t& pide, uint32_t& itemId) {
+    pide = *(const uint32_t*)(e + 0xac);
+    uint32_t source = *(const uint32_t*)(e + 0xa4), root = *(const uint32_t*)(e + 0x90);
+    if (!pide && source && source != root) {
+        CompRef h = Read(world, kImpactHierarchy, source);
+        if (h.ptr && h.size >= 12) pide = *(const uint32_t*)((const uint8_t*)h.ptr + 8);
+    }
+    itemId = 0;
+    if (!pide) return;
+    CompRef is = Read(world, kItemState, pide);
+    if (is.ptr && is.size >= 12) itemId = *(const uint32_t*)((const uint8_t*)is.ptr + 8);
+}
+
 uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t d) {
     InterlockedIncrement64(&g_combatTicks);
     InterlockedExchange64(&g_lastCombatSys, (LONG64)sys);
@@ -383,13 +416,14 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                     std::string killerName, pj = PlayerJsonForSlot(server, ks, &killerName);
                     std::string code = "entity#" + std::to_string(victim), guidS, form = "none";
                     bool actor = !g_tmplOf;  // without the template lookup every killing blow is reported
+                    const EntityDef* victimDef = nullptr;
                     if (g_tmplOf) {
                         uint8_t guid[16] = {0};
                         g_tmplOf(sys, guid, victim);
                         guidS = GuidStr(guid);
                         const char* f = "none";
-                        if (const EntityDef* ed = EntityByGuid(guid, &f)) {
-                            code = ed->code;
+                        if ((victimDef = EntityByGuid(guid, &f)) != nullptr) {
+                            code = victimDef->code;
                             actor = true;
                         }
                         form = f;
@@ -402,15 +436,36 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                         continue;
                     }
                     InterlockedIncrement64(&g_kills);
-                    std::string dataJson = "{\"entity\":" + JsonStr(code) + ",\"weapon\":\"\",\"victimEntityId\":" +
+                    uint32_t category = *(uint32_t*)(e + 0xd8), source = *(uint32_t*)(e + 0xa4);
+                    uint32_t pide = 0, itemId = 0;
+                    KillWeaponItem(World(server), e, pide, itemId);
+                    const ItemDef* wd = nullptr;
+                    const char* label = itemId ? ItemLabelById(itemId) : nullptr;
+                    if (itemId && !label)  // only then is the code needed (derived-name fallback)
+                        for (size_t q = 0; q < kItemCount && !wd; q++)
+                            if (kItems[q].itemId == itemId) wd = &kItems[q];
+                    KillWeapon kw = ResolveKillWeapon(itemId, wd ? wd->code : nullptr, category);
+                    const char* catName = WeaponCategoryName(category);
+                    // `entity` is what Takaro shows: the client's name, else the code-derived one;
+                    // the template code stays in `entityCode`.
+                    EntityName en = victimDef ? ResolveEntityName(victimDef->guid, victimDef->code)
+                                              : ResolveEntityName(nullptr, nullptr, code);
+                    std::string dataJson = "{\"entity\":" + JsonStr(en.name) + ",\"entityCode\":" + JsonStr(code) +
+                                           ",\"entityNameSource\":" + JsonStr(en.source) + ",\"weapon\":" + JsonStr(kw.name) +
+                                           ",\"weaponSource\":" + JsonStr(kw.source) + ",\"weaponItemId\":" +
+                                           std::to_string(itemId) + ",\"weaponPideId\":" + std::to_string(pide) +
+                                           ",\"sourceEntityId\":" + std::to_string(source) + ",\"victimEntityId\":" +
                                            std::to_string(victim) + ",\"templateGuid\":" + JsonStr(guidS) +
                                            ",\"killerName\":" + JsonStr(killerName) +
-                                           ",\"weaponCategory\":" + std::to_string(*(uint32_t*)(e + 0xd8));
+                                           ",\"weaponCategory\":" + std::to_string(category) +
+                                           ",\"weaponCategoryName\":" + JsonStr(catName ? catName : "");
                     if (!pj.empty()) dataJson += ",\"player\":" + pj;
                     dataJson += "}";
                     PluginState::Get().EmitEvent("entity-killed", dataJson);
-                    PluginLog("kill: killer=%u (%s) victim=%u code=%s guid=%s form=%s", killer, killerName.c_str(),
-                              victim, code.c_str(), guidS.c_str(), form.c_str());
+                    PluginLog("kill: killer=%u (%s) victim=%u code=%s entity=%s (%s) guid=%s form=%s weapon=%s (%s) item=%u "
+                              "pide=%u src=%u cat=%u",
+                              killer, killerName.c_str(), victim, code.c_str(), en.name.c_str(), en.source, guidS.c_str(), form.c_str(),
+                              kw.name.c_str(), kw.source, itemId, pide, source, category);
                 }
             }
         }
@@ -455,7 +510,10 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                             g_tmplOf(sys, guid, killer);
                             const char* f = "none";
                             const EntityDef* ed = EntityByGuid(guid, &f);
-                            dataJson += ",\"killerEntity\":" + JsonStr(ed ? ed->code : "entity#" + std::to_string(killer));
+                            std::string raw = ed ? ed->code : "entity#" + std::to_string(killer);
+                            EntityName en = ed ? ResolveEntityName(ed->guid, ed->code) : ResolveEntityName(nullptr, nullptr, raw);
+                            // killerEntity stays the template code; the death message uses the name
+                            dataJson += ",\"killerEntity\":" + JsonStr(raw) + ",\"killerEntityName\":" + JsonStr(en.name);
                         }
                     }
                     dataJson += "}";
@@ -853,8 +911,9 @@ bool WorldInventoryJson(const std::string& name, std::string& json, std::string&
                         char idHex[16];
                         snprintf(idHex, sizeof idHex, "0x%08x", st[0]);
                         std::string code = d ? d->code : idHex;
+                        const char* label = ItemLabelById(st[0]);
                         o += std::string(first ? "" : ",") + "{\"code\":" + JsonStr(code) + ",\"name\":" +
-                             JsonStr(d ? d->name : code) + ",\"amount\":" + std::to_string(st[1]) + ",\"inventory\":" +
+                             JsonStr(label ? std::string(label) : d ? DisplayName(d->code, NameKind::Item) : code) + ",\"amount\":" + std::to_string(st[1]) + ",\"inventory\":" +
                              JsonStr(cat < 6 ? kInvCategory[cat] : "unknown") + ",\"slot\":" + std::to_string(j);
                         if (st[2]) {
                             CompRef is = Read(world, kItemState, st[2]);
@@ -1136,16 +1195,19 @@ const std::string& ItemsJson() {
     static SrwLock l;
     Guard g(l);
     if (s.empty()) {
-        std::vector<const char*> codes;
-        codes.reserve(kItemCount);
-        for (size_t i = 0; i < kItemCount; i++) codes.push_back(kItems[i].code);
-        std::vector<std::string> names;
-        DistinctNames(NameKind::Item, codes.data(), codes.size(), names);
+        // Only what the game client names: an item without an En_Us name is never shown to a
+        // player (character-creator parts, placement tools, cut content), and an Ability_ row
+        // is a skill, not an item. giveItem still takes any code (FindItemByCode).
         s = "[";
-        for (size_t i = 0; i < kItemCount; i++)
-            s += std::string(i ? "," : "") + "{\"code\":" + JsonStr(kItems[i].code) + ",\"name\":" + JsonStr(names[i]) +
+        bool first = true;
+        for (size_t i = 0; i < kItemCount; i++) {
+            const char* name = ItemLabelById(kItems[i].itemId);
+            if (!IsCatalogueItem(kItems[i].code, name)) continue;
+            s += std::string(first ? "" : ",") + "{\"code\":" + JsonStr(kItems[i].code) + ",\"name\":" + JsonStr(name) +
                  ",\"description\":" + JsonStr(std::string(kItems[i].category) + ", " + kItems[i].rarity) +
                  ",\"itemId\":" + std::to_string(kItems[i].itemId) + ",\"maxStackSize\":" + std::to_string(kItems[i].maxStack) + "}";
+            first = false;
+        }
         s += "]";
     }
     return s;
@@ -1156,16 +1218,14 @@ const std::string& EntitiesJson() {
     static SrwLock l;
     Guard g(l);
     if (s.empty()) {
-        std::vector<const char*> codes;
-        codes.reserve(kEntityCount);
-        for (size_t i = 0; i < kEntityCount; i++) codes.push_back(kEntities[i].code);
+        std::vector<const EntityDef*> rows;
         std::vector<std::string> names;
-        DistinctNames(NameKind::Entity, codes.data(), codes.size(), names);
+        CatalogueEntities(rows, names);
         s = "[";
-        for (size_t i = 0; i < kEntityCount; i++)
-            s += std::string(i ? "," : "") + "{\"code\":" + JsonStr(kEntities[i].code) + ",\"name\":" +
-                 JsonStr(names[i]) + ",\"type\":" + JsonStr(kEntities[i].type) + ",\"description\":" +
-                 JsonStr(std::string("faction ") + kEntities[i].faction + ", family " + kEntities[i].family) + "}";
+        for (size_t i = 0; i < rows.size(); i++)
+            s += std::string(i ? "," : "") + "{\"code\":" + JsonStr(rows[i]->code) + ",\"name\":" +
+                 JsonStr(names[i]) + ",\"type\":" + JsonStr(rows[i]->type) + ",\"description\":" +
+                 JsonStr(std::string("faction ") + rows[i]->faction + ", family " + rows[i]->family) + "}";
         s += "]";
     }
     return s;

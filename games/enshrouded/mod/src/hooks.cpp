@@ -5,8 +5,10 @@
 #include "state.h"
 
 #include "MinHook.h"
+#include "perf.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <deque>
@@ -43,6 +45,7 @@ thread_local int t_inSink = 0;
 uint64_t __fastcall SinkDetour(uint64_t threshold, uint64_t level, const TextRef* text, uint64_t r9) {
     uint64_t ret = g_origSink(threshold, level, text, r9);
     if (t_inSink) return ret;
+    PerfScope perf(kPerfLogSink);
     t_inSink++;
     uint8_t th = (uint8_t)threshold, lv = (uint8_t)level;
     if (text && text->ptr && text->len > 0 && text->len < (1u << 20) && th >= lv) {
@@ -67,12 +70,31 @@ uint64_t __fastcall SinkDetour(uint64_t threshold, uint64_t level, const TextRef
 using TickFn = uint64_t(__fastcall*)(uint64_t, uint64_t, uint64_t, uint64_t);
 TickFn g_origTick = nullptr;
 
+// A queued game-thread job owns its callable (and so its arguments) and its completion. A caller that times
+// out cancels the job if it has not started; a started job finishes and its late result is dropped.
 struct GameTask {
+    enum { kQueued = 0, kRunning = 1, kDone = 2, kCancelled = 3 };
     std::function<std::string()> fn;
     std::string result;
     HANDLE done = nullptr;
+    std::atomic<int> state{kQueued};
     ~GameTask() {
         if (done) CloseHandle(done);
+    }
+    bool Begin() {
+        int expected = kQueued;
+        return state.compare_exchange_strong(expected, kRunning);
+    }
+    void Finish() {
+        state = kDone;
+        SetEvent(done);
+    }
+    // Waits for the job; on timeout cancels it when it has not started. True only when it completed.
+    bool Wait(DWORD timeoutMs) {
+        if (WaitForSingleObject(done, timeoutMs) == WAIT_OBJECT_0) return true;
+        int expected = kQueued;
+        if (state.compare_exchange_strong(expected, kCancelled)) return false;
+        return false;  // running: it finishes on the game thread and nobody reads the result
     }
 };
 SrwLock g_queueLock;
@@ -83,6 +105,7 @@ volatile LONG g_tickThreadChanges = 0;
 
 uint64_t __fastcall TickDetour(uint64_t a, uint64_t b, uint64_t c, uint64_t d) {
     uint64_t ret = g_origTick(a, b, c, d);
+    PerfScope perf(kPerfTick);
     InterlockedIncrement64(&g_tickCount);
     LONG tid = (LONG)GetCurrentThreadId();
     LONG prev = InterlockedExchange(&g_tickThread, tid);
@@ -95,8 +118,10 @@ uint64_t __fastcall TickDetour(uint64_t a, uint64_t b, uint64_t c, uint64_t d) {
             task = g_queue.front();
             g_queue.pop_front();
         }
+        if (!task->Begin()) continue;  // cancelled by a caller that timed out
         task->result = task->fn();
-        SetEvent(task->done);
+        task->Finish();
+        perf.jobs++;
     }
     return ret;
 }
@@ -221,6 +246,7 @@ std::deque<std::shared_ptr<GameTask>> g_modQueue;
 
 uint64_t __fastcall ModSysDetour(uint64_t a, uint64_t b, uint64_t server, uint64_t d) {
     uint64_t ret = g_origModSys(a, b, server, d);
+    PerfScope perf(kPerfModeration);
     InterlockedIncrement64(&g_modTicks);
     // the original bails out early unless these server members are set; require the same before acting
     if (server && *(uint64_t*)(server + 0x10) && *(uint64_t*)(server + 0x38)) InterlockedExchange64(&g_server, (LONG64)server);
@@ -232,8 +258,10 @@ uint64_t __fastcall ModSysDetour(uint64_t a, uint64_t b, uint64_t server, uint64
             task = g_modQueue.front();
             g_modQueue.pop_front();
         }
+        if (!task->Begin()) continue;
         task->result = task->fn();
-        SetEvent(task->done);
+        task->Finish();
+        perf.jobs++;
     }
     return ret;
 }
@@ -360,7 +388,7 @@ bool RunOnModerationThread(std::function<std::string(uint64_t server)> fn, std::
         Guard g(g_modLock);
         g_modQueue.push_back(task);
     }
-    if (WaitForSingleObject(task->done, timeoutMs) != WAIT_OBJECT_0) return false;
+    if (!task->Wait(timeoutMs)) return false;
     result = task->result;
     return true;
 }
@@ -410,7 +438,7 @@ bool AccountAction(uint64_t accountId, uint8_t type, std::string& err, DWORD tim
         Guard g(g_modLock);
         g_modQueue.push_back(task);
     }
-    if (WaitForSingleObject(task->done, timeoutMs) != WAIT_OBJECT_0) {
+    if (!task->Wait(timeoutMs)) {
         err = "moderation system did not run the task in time";
         return false;
     }
@@ -583,7 +611,7 @@ bool RunOnGameThread(std::function<std::string()> fn, std::string& result, DWORD
         Guard g(g_queueLock);
         g_queue.push_back(task);
     }
-    if (WaitForSingleObject(task->done, timeoutMs) != WAIT_OBJECT_0) return false;
+    if (!task->Wait(timeoutMs)) return false;
     result = task->result;
     return true;
 }

@@ -14,6 +14,6 @@ for f in $MH/src/hook.c $MH/src/buffer.c $MH/src/trampoline.c $MH/src/hde/hde64.
   "$ZIG" cc -target $TARGET -O2 -I$MH/include -c "$f" -o "$OUT/obj/$(basename "$f" .c).o"
 done
 "$ZIG" c++ -target $TARGET -O2 -std=c++17 "${DEFS[@]}" -Wall -Wno-unused-function -I$MH/include -Isrc \
-  -shared -s -o "$OUT/dbghelp.dll" src/*.cpp "$OUT"/obj/*.o -lws2_32
+  -shared -s -o "$OUT/dbghelp.dll" src/*.cpp src/native/*.cpp "$OUT"/obj/*.o -lws2_32 -lwinhttp -lcrypt32
 rm -f "$OUT"/*.lib "$OUT"/*.pdb
 echo "built $OUT/dbghelp.dll ($(stat -c %s "$OUT/dbghelp.dll") bytes)"

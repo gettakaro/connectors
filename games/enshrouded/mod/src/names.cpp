@@ -34,8 +34,8 @@ const char* const kAtomic[] = {"8kmaplabel", "maplabel",   "mapmarker",   "place
 // token: what kind of thing the template is, which is what the type, family and faction
 // fields already say.
 const char* const kLeadingEntity[] = {"base",  "prop",  "teleport", "enemy",     "animal",  "npc",
-                                      "townsfolk", "player", "trap", "fish",     "shroud",  "zone",
-                                      "attack", "projectile", "collider"};
+                                      "townsfolk", "player", "trap",             "shroud",  "zone",
+                                      "attack", "projectile", "collider", "wildbeast", "wildlife"};
 
 // The same for items: the item's category, which listItems answers in its description.
 const char* const kLeadingItem[] = {"block",    "buildtool",   "voxel",       "prop",    "decoration",
@@ -56,6 +56,11 @@ const char* const kNoise[] = {"8kmaplabel", "maplabel",  "mapmarker", "ag2",    
 
 // The same for items, plus the words the item pipeline uses to park an asset.
 const char* const kNoiseItem[] = {"unused", "hasbugs", "lvlxx", "tx", "testitem"};
+
+// The same for entities: how a template is spawned or hooked into the world, not what it is
+// (Enemy_Wildbeast_Rat_hook is a rat; Enemy_Fogger_Heavy_SummonStone the Heavy a summoning
+// stone calls up), and the wild-beast family word wherever it sits.
+const char* const kNoiseEntity[] = {"hook", "hookpte", "bosshealthbar", "bosshealtbar", "summonstone", "wildbeast"};
 
 bool IsDigits(const std::string& s) {
     if (s.empty()) return false;
@@ -97,6 +102,7 @@ bool IsNoise(const std::string& token, NameKind kind) {
     const std::string lowered = Lower(token);
     if (In(kNoise, sizeof kNoise / sizeof *kNoise, lowered)) return true;
     if (kind == NameKind::Item && In(kNoiseItem, sizeof kNoiseItem / sizeof *kNoiseItem, lowered)) return true;
+    if (kind == NameKind::Entity && In(kNoiseEntity, sizeof kNoiseEntity / sizeof *kNoiseEntity, lowered)) return true;
     return IsHint(lowered) || IsVersion(lowered) || IsTierRange(token);
 }
 

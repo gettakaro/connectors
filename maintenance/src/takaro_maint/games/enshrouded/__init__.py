@@ -1,12 +1,11 @@
-"""The Enshrouded adapter: a Windows server under Proton, a native plugin and a sidecar.
+"""The Enshrouded adapter: a Windows server under Proton and one native plugin.
 
-Three things set this game apart from every other adapter here. The server is a Windows
+Two things set this game apart from every other adapter here. The server is a Windows
 binary that only runs under Proton inside the pinned Linux image, so the "platform" names
-the deployment runtime rather than a mod loader. The connector is two components rather
-than one -- a native ``dbghelp.dll`` proxy the game loads and a Node sidecar that speaks
-the Takaro protocol -- so a deploy places a DLL *and* unpacks a folder. And the image this
-server runs in updates the game from SteamCMD at every boot unless it is stopped, so the
-install lays down a pinned tree and the compose files mount a tracked override over the
+the deployment runtime rather than a mod loader; the connector is a ``dbghelp.dll`` proxy
+the game loads, which hooks the game and holds the Takaro connection itself. And the image
+this server runs in updates the game from SteamCMD at every boot unless it is stopped, so
+the install lays down a pinned tree and the compose files mount a tracked override over the
 image's updater program; nothing here ever asks Steam what the branch head is.
 """
 
@@ -15,7 +14,6 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import shutil
 import subprocess
 import zipfile
 from pathlib import Path
@@ -24,7 +22,7 @@ from typing import Any
 from ... import output, paths
 from ...exit_codes import OK, BuildFailed, ConflictError
 from ...steam import install as steam_install
-from ..base import BaseAdapter, BuildResult, common_env, replace_directory
+from ..base import BaseAdapter, BuildResult, common_env
 
 GAME_ID = "enshrouded"
 DIST_ROOT = "games/enshrouded/_data/dist"
@@ -33,8 +31,8 @@ UPDATER_OVERRIDE = "games/enshrouded/server/enshrouded-updater"
 IMAGE_UPDATER_PATH = "/usr/local/etc/enshrouded/enshrouded-updater"
 SERVER_DIR = "/opt/enshrouded/server"
 
-#: The one folder each artifact zip may hold, by role.
-ZIP_FOLDER = {"server-plugin": "TakaroEnshrouded", "sidecar": "TakaroEnshroudedSidecar"}
+#: The one folder the plugin zip may hold.
+ZIP_FOLDER = "TakaroEnshrouded"
 PLUGIN_DLL = "dbghelp.dll"
 
 #: The game's own build id, printed by the server at every start. The plugin pins its
@@ -92,8 +90,6 @@ class EnshroudedAdapter(BaseAdapter):
             f"{prefix}_STEAM_DEPOTS": depots,
             f"{prefix}_PROTON": str(container_env.get("TAKARO_PINNED_PROTON", "")),
             f"{prefix}_SERVER_EXE_SHA256": str(server["files"]["enshrouded_server.exe"]["sha256"]),
-            # The image this connector's sidecar zip builds FROM, by manifest digest.
-            f"{prefix}_SIDECAR_RUNTIME": str(deps["sidecar-runtime"]["resolvedCoordinate"]),
         }
         for role, artifact in sorted(resolved["artifactFileNames"].items()):
             env[f"{prefix}_ARTIFACT_{_env_key(role)}"] = str(artifact)
@@ -131,7 +127,7 @@ class EnshroudedAdapter(BaseAdapter):
         gradle_args: list[str] | None = None,
         source_revision: str | None = None,
     ) -> BuildResult:
-        """Run the tracked release script, which builds both roles in the pinned image.
+        """Run the tracked release script, which builds the plugin in the pinned image.
 
         ``toolchain`` is accepted for parity with the Gradle games and changes nothing: the
         host has neither zig nor zip, so ``host`` would be a promise this adapter cannot
@@ -154,14 +150,14 @@ class EnshroudedAdapter(BaseAdapter):
             )
             if stamp.returncode == 0 and stamp.stdout.strip().isdigit():
                 environment["SOURCE_DATE_EPOCH"] = stamp.stdout.strip()
-        # A build that produces one role must be a failure, not a partial success reported
-        # over the leftovers of the previous one, so the names this build claims are cleared
-        # before the script runs.
+        # A build that produces nothing must be a failure, not a success reported over the
+        # leftovers of the previous one, so the names this build claims are cleared before
+        # the script runs.
         for stale in self.artifact_paths(resolved, version, repo_root).values():
             stale.unlink(missing_ok=True)
             stale.with_name(stale.name + ".meta.json").unlink(missing_ok=True)
         command = ["bash", str(repo_root / BUILD_SCRIPT), version, str(dist), "--target", str(resolved["id"])]
-        output.info(f"building {resolved['id']} {version} (plugin + sidecar, pinned builder image)")
+        output.info(f"building {resolved['id']} {version} (native plugin, pinned builder image)")
         completed = subprocess.run(
             command, cwd=str(repo_root), capture_output=True, text=True, env=environment, check=False
         )
@@ -176,9 +172,10 @@ class EnshroudedAdapter(BaseAdapter):
     def runtime_env(self, resolved: dict[str, Any], takaro: dict[str, str]) -> dict[str, str]:
         """The image's own environment.
 
-        The plugin is Takaro-agnostic, so none of the Takaro values reach the game
-        container; its shared secret is written to ``takaro/plugin.json`` by the
-        verification hooks instead of onto a docker command line.
+        The plugin connects to Takaro itself, but none of the Takaro values go onto a docker
+        command line: the verification hooks write the URL, both tokens, the trusted CA and
+        the diagnostics secret into ``takaro/plugin.json`` (mode 0600), which the plugin
+        reads when the matching environment variables are unset.
         """
         return {
             **{str(k): str(v) for k, v in resolved["runtime"]["container"].get("env", {}).items()},
@@ -244,7 +241,6 @@ class EnshroudedAdapter(BaseAdapter):
             f"steamapps/compatdata/{app}",
             "takaro",
             "takaro/plugin",
-            "takaro/sidecar",
             "savegame",
             "logs",
             "backups",
@@ -254,52 +250,26 @@ class EnshroudedAdapter(BaseAdapter):
 
     # -- deploy ---------------------------------------------------------------
     def after_deploy(self, dest: Path, component: dict[str, Any], artifact: Path) -> None:
-        """Place the DLL, or unpack the sidecar folder the rig and verify build from."""
+        """Place the DLL the game loads; there is nothing else to deploy."""
         role = str(component["role"])
+        if role != "server-plugin":
+            raise ConflictError(f"Enshrouded ships one component, server-plugin; refusing role '{role}'")
         install_dir = dest / paths.safe_relative(component["installDir"], field="components[].installDir")
-        folder = ZIP_FOLDER[role]
         with zipfile.ZipFile(artifact) as archive:
-            names = self._checked_names(archive, artifact, folder)
-            if role == "server-plugin":
-                self._place_dll(archive, artifact, install_dir, names)
-            else:
-                required = [f"{folder}/{name}" for name in ("dist/index.js", "Dockerfile", "package.json")]
-                missing = [name for name in required if name not in names]
-                if missing:
-                    raise ConflictError(
-                        f"{artifact.name} is missing {', '.join(missing)}; the installed sidecar is untouched"
-                    )
-                self._place_folder(archive, install_dir, folder)
-        stale_prefix = f"takaro-enshrouded-{'plugin' if role == 'server-plugin' else 'sidecar'}-"
-        for stale in sorted(install_dir.glob(f"{stale_prefix}*.zip")):
+            names = self._checked_names(archive, artifact, ZIP_FOLDER)
+            self._place_dll(archive, artifact, install_dir, names)
+        for stale in sorted(install_dir.glob("takaro-enshrouded-plugin-*.zip")):
             if stale.name != artifact.name:
                 stale.unlink()
-
-    def _place_folder(self, archive: zipfile.ZipFile, install_dir: Path, folder: str) -> None:
-        """Unpack beside the live folder and swap, so a failure leaves the old one in service.
-
-        Extracting over the folder the rig and ``verify`` build their sidecar image from
-        would turn a half-written zip into a half-written deployment: the old sidecar is
-        already gone by the time extraction fails.
-        """
-        install_dir.mkdir(parents=True, exist_ok=True)
-        staging = install_dir / f".{folder}.incoming"
-        shutil.rmtree(staging, ignore_errors=True)
-        try:
-            archive.extractall(staging)
-            destination = install_dir / folder
-            replace_directory(staging / folder, destination, subject=f"{folder}/")
-        finally:
-            shutil.rmtree(staging, ignore_errors=True)
 
     def _checked_names(self, archive: zipfile.ZipFile, artifact: Path, folder: str) -> list[str]:
         """Every entry, refused unless it lives inside the single expected top-level folder.
 
-        This checks zip entries rather than record-supplied install paths, so it cannot use
-        ``paths.safe_relative``: that one requires every segment to start alphanumerically,
-        and the sidecar zip legitimately ships ``.dockerignore`` and ``.env.example``. What
-        has to hold here is containment -- nothing absolute, no backslash a Windows-built
-        archive might smuggle in, and no segment that climbs back out of the folder.
+        This checks zip entries rather than record-supplied install paths, so it does not use
+        ``paths.safe_relative``, which requires every segment to start alphanumerically and
+        is stricter than a zip entry needs to be. What has to hold here is containment --
+        nothing absolute, no backslash a Windows-built archive might smuggle in, and no
+        segment that climbs back out of the folder.
         """
         names: list[str] = []
         for name in archive.namelist():
@@ -320,7 +290,7 @@ class EnshroudedAdapter(BaseAdapter):
 
     def _place_dll(self, archive: zipfile.ZipFile, artifact: Path, install_dir: Path, names: list[str]) -> None:
         """The one file the game loads, written atomically so a boot never sees half of it."""
-        folder = ZIP_FOLDER["server-plugin"]
+        folder = ZIP_FOLDER
         entry = f"{folder}/{PLUGIN_DLL}"
         if entry not in names:
             raise ConflictError(f"{artifact.name} holds no {entry}; nothing was extracted")
