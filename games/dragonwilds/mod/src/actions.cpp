@@ -770,6 +770,118 @@ bool GameStateBan(const std::string& gameId, const KnownPlayerLayout& k, int32_t
     return true;
 }
 
+// The game's login check does not read KnownPlayerList: ADominionGameMode::PreLogin asks
+// UDomMatchmakerSubsystem::IsOnlineUserBanned, which forwards to the FNetworkMatcherSession it owns.
+// That session keeps a TMap<FUniqueNetIdWrapper, TSharedRef<FOnlineUser const>> of banned users,
+// loaded from the settings at start-up. A player banned when the server started therefore stays
+// refused ("PreLogin failure: PLogBanned") after any unban - Takaro's or the timed-ban expiry - until
+// the next restart, unless the session's own RequestRemoveBanPlayer is called with the FOnlineUser
+// the map holds. Nothing here is assumed: the session pointer's offset is read out of the
+// subsystem's forwarding stub, the map's offset out of RequestRemoveBanPlayer, and a map element is
+// only used when its key resolves to exactly the player being unbanned.
+using FnRequestRemoveBan = void (*)(void* session, void* userRef /* TSharedRef<FOnlineUser const>* */);
+
+// UDomMatchmakerSubsystem::IsOnlineUserBanned is `mov rdi,[rdi+disp32]; jmp FNetworkMatcherSession::IsOnlineUserBanned`.
+int32_t MatcherSessionOffset(std::string& why) {
+    uint64_t f = Sym::Addr("UDomMatchmakerSubsystem::IsOnlineUserBanned");
+    uint64_t want = Sym::Addr("FNetworkMatcherSession::IsOnlineUserBanned");
+    if (!f || !want) { why = "matchmaker ban-check symbols unresolved"; return -1; }
+    const uint8_t* b = (const uint8_t*)(uintptr_t)f;
+    if (!MemReadable(b, 12)) { why = "matchmaker ban-check stub not readable"; return -1; }
+    if (b[0] != 0x48 || b[1] != 0x8b || b[2] != 0xbf || b[7] != 0xe9) { why = "unexpected matchmaker ban-check stub"; return -1; }
+    int32_t disp = 0, rel = 0;
+    memcpy(&disp, b + 3, 4);
+    memcpy(&rel, b + 8, 4);
+    if (f + 12 + (int64_t)rel != want) { why = "matchmaker stub does not forward to the session ban check"; return -1; }
+    if (disp <= 0 || disp > 0x10000 || disp % 8) { why = "implausible matcher-session offset"; return -1; }
+    return disp;
+}
+
+// RequestRemoveBanPlayer addresses the banned-user map as `lea r12,[rbx+disp32]` (4C 8D A3 disp32).
+int32_t BannedMapOffset(std::string& why) {
+    uint64_t f = Sym::Addr("FNetworkMatcherSession::RequestRemoveBanPlayer");
+    if (!f) { why = "FNetworkMatcherSession::RequestRemoveBanPlayer unresolved"; return -1; }
+    const uint8_t* b = (const uint8_t*)(uintptr_t)f;
+    if (!MemReadable(b, 512)) { why = "RequestRemoveBanPlayer not readable"; return -1; }
+    for (int i = 0; i + 7 <= 512; i++) {
+        if (b[i] != 0x4c || b[i + 1] != 0x8d || b[i + 2] != 0xa3) continue;
+        int32_t disp = 0;
+        memcpy(&disp, b + i + 3, 4);
+        if (disp > 0 && disp < 0x10000 && disp % 8 == 0) return disp;
+    }
+    why = "banned-user map offset not found in RequestRemoveBanPlayer";
+    return -1;
+}
+
+void* MatcherSession(std::string& why) {
+    int32_t off = MatcherSessionOffset(why);
+    if (off < 0) return nullptr;
+    void* cls = Reflect::StaticClass("UDomMatchmakerSubsystem::StaticClass");
+    if (!cls) { why = "UDomMatchmakerSubsystem class not found"; return nullptr; }
+    std::vector<void*> objs;
+    if (!Reflect::GetObjectsOfClass(cls, objs, true)) { why = "no UDomMatchmakerSubsystem objects"; return nullptr; }
+    for (void* o : objs) {
+        if (!o || !MemReadable((char*)o + off, 8)) continue;
+        if (Reflect::ObjName(o).rfind("Default__", 0) == 0) continue;
+        void* session = *(void**)((char*)o + off);
+        if (session && MemReadable(session, 0x400)) return session;
+    }
+    why = "the matchmaker subsystem has no matcher session";
+    return nullptr;
+}
+
+// Removes `gameId` from the session's banned-user map through the game's own RequestRemoveBanPlayer
+// (which also rebuilds the login-check set and saves the ban config). Returns true when the player
+// was in the map and is gone afterwards; `detail` says what happened otherwise.
+bool SessionUnban(const std::string& gameId, std::string& detail) {
+    std::string why;
+    void* session = MatcherSession(why);
+    int32_t mapOff = session ? BannedMapOffset(why) : -1;
+    auto removeFn = Fn<FnRequestRemoveBan>("FNetworkMatcherSession::RequestRemoveBanPlayer");
+    if (!session || mapOff < 0 || !removeFn) { detail = why.empty() ? "session unban unavailable" : why; return false; }
+    const size_t kStride = 0x38;  // TSetElement<TTuple<FUniqueNetIdWrapper(0x20), TSharedRef(0x10)>> + hash links
+    auto find = [&](void*& obj, void*& ctrl) -> bool {
+        // TSparseArray {TArray Data/Num/Max @0, TBitArray AllocationFlags {inline words @0x10,
+        // secondary data @0x20, NumBits @0x28}}: a removed element keeps its bytes, so only slots
+        // whose allocation bit is set are ever looked at.
+        char* sa = (char*)session + mapOff;
+        char* data = *(char**)sa;
+        int32_t num = *(int32_t*)(sa + 8);
+        if (!data || num <= 0 || num > 4096 || !MemReadable(data, (size_t)num * kStride)) return false;
+        const uint32_t* bits = *(const uint32_t* const*)(sa + 0x20);
+        if (!bits) bits = (const uint32_t*)(sa + 0x10);
+        int32_t numBits = *(int32_t*)(sa + 0x28);
+        if (numBits < num || !MemReadable(bits, (size_t)((num + 31) / 32) * 4)) return false;
+        for (int32_t i = 0; i < num; i++) {
+            if (!(bits[i / 32] & (1u << (i % 32)))) continue;
+            char* e = data + (size_t)i * kStride;
+            std::string id;
+            for (int w = 0; w < 4 && id.empty(); w++) {
+                std::string s = NetIdString(ReadPtrAt(e, w * 8));
+                if (!s.empty()) id = NormalizeGameId(s);
+            }
+            if (id != gameId) continue;
+            obj = *(void**)(e + 0x20);
+            ctrl = *(void**)(e + 0x28);
+            if (obj && ctrl && MemReadable(obj, 0x40) && MemWritable((char*)ctrl + 8, 8)) return true;
+        }
+        return false;
+    };
+    void* obj = nullptr;
+    void* ctrl = nullptr;
+    if (!find(obj, ctrl)) { detail = "not in the login ban set"; return false; }
+    // The argument is a TSharedRef passed by value, i.e. by pointer to a caller-owned copy. Take one
+    // shared reference for that copy and never release it: one FOnlineUser outlives the unban.
+    __atomic_add_fetch((int32_t*)((char*)ctrl + 8), 1, __ATOMIC_SEQ_CST);
+    void* ref[2] = {obj, ctrl};
+    removeFn(session, ref);
+    void* o2 = nullptr;
+    void* c2 = nullptr;
+    if (find(o2, c2)) { detail = "RequestRemoveBanPlayer left the player in the login ban set"; return false; }
+    detail = "removed from the login ban set";
+    return true;
+}
+
 // Sets or clears bIsBanned for one known player and persists the settings to DedicatedServer.ini.
 bool WriteBans(const std::string& gameId, const std::string& /*userName*/, bool add, std::string& err) {
     KnownPlayerLayout k = ReadKnownPlayers();
@@ -795,8 +907,15 @@ bool WriteBans(const std::string& gameId, const std::string& /*userName*/, bool 
         saveFn(k.settings);
         // Make it effective without a restart as well.
         bool live = add ? GameStateBan(needle, k, i) : GameStateUnban(needle);
+        std::string sessionDetail;
+        if (!add) {
+            bool removed = SessionUnban(needle, sessionDetail);
+            PluginLog("actions: unban %s: %s", needle.c_str(), sessionDetail.c_str());
+            (void)removed;
+        }
         err = std::string(already == add ? (add ? "already banned; " : "not banned; ") : "") +
-              (live ? "live ban list updated" : "live ban list unchanged (restart to apply)");
+              (live ? "live ban list updated" : "live ban list unchanged (restart to apply)") +
+              (sessionDetail.empty() ? "" : "; " + sessionDetail);
         return true;
     }
     err = "the server has never seen that player (no KnownPlayerList entry), so it cannot be banned offline";

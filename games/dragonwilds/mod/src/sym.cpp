@@ -70,6 +70,13 @@ const Want kWanted[] = {
     {"UDedicatedServerSettings::SetBannedUsers", nullptr},
     {"UDedicatedServerSettings::PerformConfigSave", nullptr},
     {"UDedicatedServerSettings::TryGetKnownPlayer", nullptr},
+    // The login check itself: ADominionGameMode::PreLogin -> UDomMatchmakerSubsystem::IsOnlineUserBanned
+    // -> FNetworkMatcherSession::IsOnlineUserBanned, a set built at start-up from the settings. An unban
+    // must go through the session's own remove or it only takes effect after a restart.
+    {"UDomMatchmakerSubsystem::StaticClass", nullptr},
+    {"UDomMatchmakerSubsystem::IsOnlineUserBanned", "UDomMatchmakerSubsystem::IsOnlineUserBanned(FUniqueNetIdWrapper const&) const"},
+    {"FNetworkMatcherSession::IsOnlineUserBanned", "FNetworkMatcherSession::IsOnlineUserBanned(FUniqueNetIdWrapper const&) const"},
+    {"FNetworkMatcherSession::RequestRemoveBanPlayer", nullptr},
     // --- chat ---
     {"UPlayerChatComponent::Server_SendChatMessage", "UPlayerChatComponent::Server_SendChatMessage(FChatMessageData const&, FChatPlayerFilterData const&)"},
     {"UPlayerChatComponent::execServer_SendChatMessage", "UPlayerChatComponent::execServer_SendChatMessage(UObject*, FFrame&, void*)"},

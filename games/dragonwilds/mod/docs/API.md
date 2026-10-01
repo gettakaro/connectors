@@ -92,7 +92,7 @@ an installation. `plugin.log` lines are redacted (`*Password`, `*Token`, `Ticket
 | `sendMessage` | no recipient = everyone; `opts.recipient.{gameId,epicOnlineServicesId,steamId,platformId}` = that player; sender `opts.senderNameOverride` → `TAKARO_SENDER_NAME` → `TAKARO_SERVER_NAME` → `Server`. Rendered under the receiving player's name as `[sender] text` |
 | `teleportPlayer` | numeric `x,y,z` (numbers or numeric strings) or a named `target`; `yaw` optional; `dimension` ignored |
 | `kickPlayer` | `reason` optional |
-| `banPlayer` / `unbanPlayer` | plugin `bans.json` + `KnownPlayerList[].bIsBanned` + `PerformConfigSave` + `BanPlayer` when online, PostLogin kick on rejoin; `expiresAt` (ISO string or epoch ms; `null`/`0`/garbage = permanent) |
+| `banPlayer` / `unbanPlayer` | plugin `bans.json` + `KnownPlayerList[].bIsBanned` + `PerformConfigSave` + `BanPlayer` when online, PostLogin kick on rejoin; `expiresAt` (ISO string or epoch ms; `null`/`0`/garbage = permanent); an unban also removes the player from the game's login ban set (`FNetworkMatcherSession`, loaded at start-up) through its own `RequestRemoveBanPlayer`, so a player who was banned when the server started can rejoin without a restart |
 | `listBans` | bare array `[{player, reason, expiresAt}]`; a scheduled timed ban the game no longer lists is still reported until it expires |
 | `shutdown` | see above |
 
