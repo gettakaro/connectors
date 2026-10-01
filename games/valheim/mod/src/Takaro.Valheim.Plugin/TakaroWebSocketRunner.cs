@@ -22,6 +22,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan PongTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan IdentifyTimeout = TimeSpan.FromSeconds(30);
     private DateTimeOffset connectedAt = DateTimeOffset.MaxValue;
     private static readonly string PingFrame = """{"type":"ping"}""";
@@ -219,20 +220,17 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 socket = client;
                 // A connect into a black-holed route can hang for minutes on Mono; give up after
                 // 15 s and let the backoff loop try again.
-                using (var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                if (attempt > 0)
                 {
-                    connectTimeout.CancelAfter(ConnectTimeout);
-                    try
-                    {
-                        await client.ConnectAsync(new Uri(config.TakaroWsUrl), connectTimeout.Token);
-                    }
-                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                    {
-                        client.Abort();
-                        throw new TimeoutException($"Takaro WebSocket connect timed out after {ConnectTimeout.TotalSeconds:0} s.");
-                    }
+                    log($"Takaro Valheim WebSocket reconnect attempt {attempt}.");
                 }
 
+                await WithTimeout(
+                    client.ConnectAsync(new Uri(config.TakaroWsUrl), cancellationToken),
+                    ConnectTimeout,
+                    "connect",
+                    client,
+                    cancellationToken);
                 connectedAt = DateTimeOffset.UtcNow;
                 log("Takaro Valheim WebSocket connected.");
                 await SendAsync(client, TakaroProtocol.CreateIdentify(config), cancellationToken);
@@ -453,7 +451,12 @@ public sealed class TakaroWebSocketRunner : IDisposable
         {
             if (socket.State == WebSocketState.Open)
             {
-                await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
+                await WithTimeout(
+                    socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken),
+                    SendTimeout,
+                    "send",
+                    socket,
+                    cancellationToken);
             }
         }
         finally
@@ -473,12 +476,38 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 throw new WebSocketException("Takaro WebSocket closed before a queued event could be sent.");
             }
 
-            await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
+            await WithTimeout(
+                socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken),
+                SendTimeout,
+                "send",
+                socket,
+                cancellationToken);
         }
         finally
         {
             sendLock.Release();
         }
+    }
+
+    // Mono's ClientWebSocket can ignore cancellation while the route black-holes packets, so
+    // connect and send are bounded by a timer; on expiry the socket is aborted and the runner
+    // reconnects. The abandoned task's exception is observed so it cannot surface later.
+    private static async Task WithTimeout(Task operation, TimeSpan timeout, string what, ClientWebSocket socket, CancellationToken cancellationToken)
+    {
+        using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var delay = Task.Delay(timeout, timer.Token);
+        var finished = await Task.WhenAny(operation, delay).ConfigureAwait(false);
+        if (finished == operation)
+        {
+            timer.Cancel();
+            await operation.ConfigureAwait(false);
+            return;
+        }
+
+        _ = operation.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+        cancellationToken.ThrowIfCancellationRequested();
+        socket.Abort();
+        throw new TimeoutException($"Takaro WebSocket {what} timed out after {timeout.TotalSeconds:0} s.");
     }
 
     private static bool ContainsIgnoreCase(string text, string value) =>
