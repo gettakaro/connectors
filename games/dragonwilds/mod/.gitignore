@@ -2,3 +2,5 @@ dist/
 build/
 *.o
 tests/build/
+core
+core.*

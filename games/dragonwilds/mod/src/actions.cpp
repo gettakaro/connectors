@@ -1,7 +1,8 @@
-// Lane L3: the 15 action capabilities behind the plugin's HTTP surface.
+// Lane L3: the 15 action capabilities behind the native Takaro bridge (and diagnostic HTTP).
 //
-// Every handler that touches a UObject runs its work inside GameThread::RunJson(); HTTP threads
-// only build JSON out of what the job produced. Nothing here hard-codes a game struct offset: every
+// Every handler that touches a UObject runs its work in an owned GameThread::Run job; the calling
+// background thread (native bridge action worker or diagnostic HTTP) builds the JSON out of what
+// the job copied out. Nothing here hard-codes a game struct offset: every
 // UPROPERTY is looked up through UStruct::FindPropertyByName at runtime and cached per class, and
 // every function address comes from sym.cpp. A missing symbol or property degrades one capability
 // with a reason; it never throws out of a handler and never takes the server down.
@@ -9,6 +10,7 @@
 
 #include "events.h"
 #include "gamethread.h"
+#include "perf.h"
 #include "reflect.h"
 #include "state.h"
 #include "sym.h"
@@ -20,12 +22,23 @@
 #include <atomic>
 #include <cstring>
 #include <cmath>
+#include <functional>
+#include <memory>
+#include <set>
 
 using UE::FName;
 using UE::FString;
 using UE::TArray;
 
 namespace {
+
+// Ban/unban jobs that are queued or running on the game thread, including ones whose caller timed
+// out. Timed-ban recovery must wait for this to reach zero before it reads the lists back.
+std::atomic<size_t> g_pendingBanJobs{0};
+struct BanJobLifetime {
+    BanJobLifetime() { ++g_pendingBanJobs; }
+    ~BanJobLifetime() { --g_pendingBanJobs; }
+};
 
 // ---------------------------------------------------------------------------------------------
 // resolved game functions (all SysV direct calls; every one may be null)
@@ -159,23 +172,36 @@ std::string NormalizeGameId(const std::string& raw) {
 std::string ErrJson(const std::string& msg) { return "{\"error\":" + JsonStr(msg) + "}"; }
 Actions::Result Fail(int status, const std::string& msg) { return {status, ErrJson(msg)}; }
 
-// A job result carried out of the game thread.
+// A job result carried out of the game thread. A job that has a lot to say returns `render`: a
+// closure over owned copies (strings, numbers - never UObject pointers it dereferences) that the
+// calling background thread turns into JSON, so the serialisation never runs on the game thread.
 struct JobOut {
     int status = 500;
     std::string body = "{\"error\":\"internal plugin error\"}";
+    std::function<std::string()> render;
+    JobOut() = default;
+    JobOut(int code, std::string text) : status(code), body(std::move(text)) {}
+    JobOut(int code, std::function<std::string()> serialize) : status(code), render(std::move(serialize)) {}
+    static JobOut Error(int code, std::string message) {
+        return {code, [message = std::move(message)] { return ErrJson(message); }};
+    }
 };
 
-// Runs `fn` on the game thread; 503 when the pump is unavailable.
+// Runs `fn` on the game thread and waits; 503 when the pump is unavailable or the job timed out.
+// The job owns its function and its result: after a caller timeout a started job may still finish,
+// so nothing it touches may live on the caller's stack.
 Actions::Result OnGameThread(const char* what, std::function<JobOut()> fn, uint32_t timeoutMs = 5000) {
-    JobOut out;
+    auto out = std::make_shared<JobOut>();
+    // All callers pass a string literal. Perf retains this pointer as a metric key.
     bool ok = GameThread::Run(
-        [&] {
+        [out, fn = std::move(fn), what] {
+            Perf::Scope sc(what);
             try {
-                out = fn();
+                *out = fn();
             } catch (const std::exception& e) {
-                out = {500, ErrJson(std::string("plugin error: ") + e.what())};
+                *out = JobOut::Error(500, std::string("plugin error: ") + e.what());
             } catch (...) {
-                out = {500, ErrJson("plugin error")};
+                *out = JobOut::Error(500, "plugin error");
             }
         },
         timeoutMs);
@@ -183,7 +209,7 @@ Actions::Result OnGameThread(const char* what, std::function<JobOut()> fn, uint3
         PluginLog("actions: %s did not run (game thread unavailable)", what);
         return Fail(503, "game thread unavailable");
     }
-    return {out.status, out.body};
+    return {out->status, out->render ? out->render() : out->body};
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -925,9 +951,9 @@ void* ShutdownThread(void*) {
     // The HTTP response is already on the wire; give it a moment, then save and leave.
     struct timespec half{0, 500 * 1000 * 1000};
     nanosleep(&half, nullptr);
-    bool saveRequested = false;
-    GameThread::Run(
-        [&] {
+    auto saveRequested = std::make_shared<bool>(false);
+    bool saveCompleted = GameThread::Run(
+        [saveRequested] {
             void* gm = GameModeOf(FindWorld());
             auto canSave = Fn<FnCanSave>("ADominionGameMode::CanSave");
             auto request = Fn<FnVoidSelf>("ADominionGameMode::RequestSaveGame");
@@ -937,11 +963,11 @@ void* ShutdownThread(void*) {
             PluginLog("shutdown: CanSave=%d", (int)ok);
             if (ok) {
                 request(gm);
-                saveRequested = true;
+                *saveRequested = true;
             }
         },
         5000);
-    if (saveRequested) {
+    if (saveCompleted && *saveRequested) {
         // Wait for the save to land (bounded); the game logs it, but we only need the time.
         for (int i = 0; i < 20; i++) {
             struct timespec ts{0, 500 * 1000 * 1000};
@@ -949,6 +975,7 @@ void* ShutdownThread(void*) {
         }
     }
     PluginLog("shutdown: sending SIGTERM to pid %d", getpid());
+    FlushPluginLogs();
     kill(getpid(), SIGTERM);
     return nullptr;
 }
@@ -1011,15 +1038,18 @@ void Actions::Init() {
 }
 
 void Actions::Housekeep() {
+    // Also flush mutations that finished after a caller timed out.
+    state::FlushBans();
+    FlushPluginLogs();
     // Build the item catalogue once the world is up; it never changes afterwards.
     {
         Guard g(g_itemLock);
         if (g_itemsBuilt) return;
     }
     if (GameThread::TickCount() == 0) return;
-    bool built = false;
-    GameThread::Run([&] { built = BuildItems(); }, 5000);
-    if (built) {
+    auto built = std::make_shared<bool>(false);
+    bool completed = GameThread::Run([built] { Perf::Scope sc("catalogue.items"); *built = BuildItems(); }, 5000);
+    if (completed && *built) {
         Guard g(g_itemLock);
         SetCap("listItems", "ok", "");
         PluginLog("actions: item catalogue built (%zu items)", g_items.size());
@@ -1031,22 +1061,27 @@ void Actions::Housekeep() {
 
 Actions::Result Actions::Players() {
     return OnGameThread("GET /players", []() -> JobOut {
-        std::string o = "[";
-        bool first = true;
-        for (auto& p : ReadPlayers()) {
-            if (!first) o += ",";
-            first = false;
-            o += PlayerJson(p);
-        }
-        return {200, o + "]"};
+        auto players = ReadPlayers();
+        for (auto& p : players) p.playerState = p.controller = p.pawn = nullptr;  // render needs no pointers
+        return {200, [players = std::move(players)] {
+            std::string o = "[";
+            bool first = true;
+            for (auto& p : players) {
+                if (!first) o += ",";
+                first = false;
+                o += PlayerJson(p);
+            }
+            return o + "]";
+        }};
     });
 }
 
 Actions::Result Actions::Player(const std::string& gameId) {
     return OnGameThread("GET /players/{id}", [gameId]() -> JobOut {
         PlayerInfo p;
-        if (!FindPlayerById(gameId, p)) return {404, ErrJson("player not online")};
-        return {200, PlayerJson(p)};
+        if (!FindPlayerById(gameId, p)) return JobOut::Error(404, "player not online");
+        p.playerState = p.controller = p.pawn = nullptr;
+        return {200, [p] { return PlayerJson(p); }};
     });
 }
 
@@ -1072,14 +1107,16 @@ Actions::Result Actions::PlayerInventory(const std::string& gameId) {
             SetCap("playerInventory", "degraded", detail);
             return {503, ErrJson(detail)};
         }
-        std::string o = "[";
-        for (size_t i = 0; i < items.size(); i++) {
-            if (i) o += ",";
-            o += "{\"code\":" + JsonStr(items[i].code) + ",\"name\":" + JsonStr(items[i].name) +
-                 ",\"amount\":" + std::to_string(items[i].amount) + ",\"inventory\":" + JsonStr(items[i].inventory) +
-                 ",\"slot\":" + std::to_string(items[i].slot) + "}";
-        }
-        return {200, o + "]"};
+        return {200, [items = std::move(items)] {
+            std::string o = "[";
+            for (size_t i = 0; i < items.size(); i++) {
+                if (i) o += ",";
+                o += "{\"code\":" + JsonStr(items[i].code) + ",\"name\":" + JsonStr(items[i].name) +
+                     ",\"amount\":" + std::to_string(items[i].amount) + ",\"inventory\":" +
+                     JsonStr(items[i].inventory) + ",\"slot\":" + std::to_string(items[i].slot) + "}";
+            }
+            return o + "]";
+        }};
     });
 }
 
@@ -1283,75 +1320,90 @@ Actions::Result Actions::Entities() {
         // One naming rule for the whole connector: `code` is the class/asset name, `name` is the
         // AIName display text whenever any AI of that class has been seen. entity-killed uses the
         // same cache, so Takaro's entity list and its kill events line up.
-        for (auto& kv : found) {
-            std::string nm = state::EntityName(kv.first);
-            if (!nm.empty()) kv.second.first = nm;
-        }
-        std::string o = "[";
-        bool first = true;
-        for (auto& kv : found) {
-            if (!first) o += ",";
-            first = false;
-            o += "{\"code\":" + JsonStr(kv.first) + ",\"name\":" + JsonStr(kv.second.first) +
-                 ",\"type\":\"hostile\",\"description\":" + JsonStr(kv.second.second) + "}";
-        }
-        return {200, o + "]"};
+        return {200, [found = std::move(found)]() mutable {
+            for (auto& kv : found) {
+                std::string nm = state::EntityName(kv.first);
+                if (!nm.empty()) kv.second.first = nm;
+            }
+            std::string o = "[";
+            bool first = true;
+            for (auto& kv : found) {
+                if (!first) o += ",";
+                first = false;
+                o += "{\"code\":" + JsonStr(kv.first) + ",\"name\":" + JsonStr(kv.second.first) +
+                     ",\"type\":\"hostile\",\"description\":" + JsonStr(kv.second.second) + "}";
+            }
+            return o + "]";
+        }};
     });
 }
 
 Actions::Result Actions::Locations() {
     return OnGameThread("GET /locations", []() -> JobOut {
-        std::string o = "[";
-        bool first = true;
-        for (auto& l : ReadLocations()) {
-            if (!first) o += ",";
-            first = false;
-            o += "{\"code\":" + JsonStr(l.code) + ",\"name\":" + JsonStr(l.code) + ",\"position\":{\"x\":" +
-                 JsonNum(l.x) + ",\"y\":" + JsonNum(l.y) + ",\"z\":" + JsonNum(l.z) + "}}";
-        }
-        return {200, o + "]"};
+        auto locations = ReadLocations();
+        return {200, [locations = std::move(locations)] {
+            std::string o = "[";
+            bool first = true;
+            for (auto& l : locations) {
+                if (!first) o += ",";
+                first = false;
+                o += "{\"code\":" + JsonStr(l.code) + ",\"name\":" + JsonStr(l.code) + ",\"position\":{\"x\":" +
+                     JsonNum(l.x) + ",\"y\":" + JsonNum(l.y) + ",\"z\":" + JsonNum(l.z) + "}}";
+            }
+            return o + "]";
+        }};
     });
 }
 
 Actions::Result Actions::Bans() {
     return OnGameThread("GET /bans", []() -> JobOut {
         // The union of the two lists: the game's own KnownPlayerList flags (which it re-reads at
-        // start-up) and the plugin list (which the PreLogin hook enforces live). `enforcedBy` says
-        // which mechanism refuses the rejoin *now*: "plugin" when the PreLogin hook is installed and
-        // the id is in our list, "game" for an entry only the restarted server would honour.
+        // start-up) and the plugin list (which the PreLogin hook - when bound - and the PostLogin
+        // ban kick enforce live). `enforcedBy` says which mechanism refuses the rejoin *now*:
+        // "plugin" when the PreLogin hook is installed and the id is in our list, "game" for an
+        // entry only the game's own list holds. `inGameList` / `inPluginList` are the raw facts the
+        // native bridge's ban recovery verifies against.
+        auto gameRows = ReadBans();
         bool live = Events::BanEnforcementLive();
-        std::map<std::string, std::string> names;  // gameId -> name, from the game's list
-        std::vector<std::string> order;
-        for (auto& b : ReadBans()) {
-            if (b.gameId.empty()) continue;
-            if (!names.count(b.gameId)) order.push_back(b.gameId);
-            names[b.gameId] = b.name;
-        }
-        std::map<std::string, state::BanRecord> plugin;
-        for (auto& b : state::BanList()) {
-            plugin[b.gameId] = b;
-            if (!names.count(b.gameId)) {
+        return {200, [gameRows = std::move(gameRows), live] {
+            std::map<std::string, std::string> names;  // gameId -> name, from the game's list
+            std::set<std::string> inGame;
+            std::vector<std::string> order;
+            for (auto& b : gameRows) {
+                if (b.gameId.empty()) continue;
+                if (!names.count(b.gameId)) order.push_back(b.gameId);
                 names[b.gameId] = b.name;
-                order.push_back(b.gameId);
+                inGame.insert(b.gameId);
             }
-        }
-        std::string o = "[";
-        bool first = true;
-        for (auto& id : order) {
-            auto it = plugin.find(id);
-            bool inPlugin = it != plugin.end();
-            if (!first) o += ",";
-            first = false;
-            std::string name = names[id];
-            if (name.empty() && inPlugin) name = it->second.name;
-            o += "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(name) + ",\"reason\":" +
-                 JsonStr(inPlugin ? it->second.reason : std::string()) + ",\"expiresAt\":" +
-                 ((inPlugin && !it->second.expiresAt.empty()) ? JsonStr(it->second.expiresAt) : std::string("null")) +
-                 ",\"createdAt\":" + ((inPlugin && !it->second.createdAt.empty()) ? JsonStr(it->second.createdAt)
-                                                                                 : std::string("null")) +
-                 ",\"enforcedBy\":" + JsonStr((live && inPlugin) ? "plugin" : "game") + "}";
-        }
-        return {200, o + "]"};
+            std::map<std::string, state::BanRecord> plugin;
+            for (auto& b : state::BanList()) {
+                plugin[b.gameId] = b;
+                if (!names.count(b.gameId)) {
+                    names[b.gameId] = b.name;
+                    order.push_back(b.gameId);
+                }
+            }
+            std::string o = "[";
+            bool first = true;
+            for (auto& id : order) {
+                auto it = plugin.find(id);
+                bool inPlugin = it != plugin.end();
+                if (!first) o += ",";
+                first = false;
+                std::string name = names[id];
+                if (name.empty() && inPlugin) name = it->second.name;
+                o += "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(name) + ",\"reason\":" +
+                     JsonStr(inPlugin ? it->second.reason : std::string()) + ",\"expiresAt\":" +
+                     ((inPlugin && !it->second.expiresAt.empty()) ? JsonStr(it->second.expiresAt)
+                                                                  : std::string("null")) +
+                     ",\"createdAt\":" + ((inPlugin && !it->second.createdAt.empty()) ? JsonStr(it->second.createdAt)
+                                                                                      : std::string("null")) +
+                     ",\"enforcedBy\":" + JsonStr((live && inPlugin) ? "plugin" : "game") +
+                     ",\"inGameList\":" + (inGame.count(id) ? "true" : "false") +
+                     ",\"inPluginList\":" + (inPlugin ? "true" : "false") + "}";
+            }
+            return o + "]";
+        }};
     });
 }
 
@@ -1531,67 +1583,101 @@ Actions::Result Actions::Ban(const JsonValue& body) {
     std::string id = BodyString(body, "gameId");
     if (id.empty()) return Fail(400, "'gameId' is required");
     std::string reason = BodyString(body, "reason");
-    return OnGameThread("POST /ban", [id, reason]() -> JobOut {
+    // ISO-8601 UTC; empty = permanent. The plugin only stores it: the native bridge lifts the ban
+    // when it expires (Takaro never sends an unban for a timed ban).
+    std::string expiresAt = BodyString(body, "expiresAt");
+    Result result = OnGameThread("POST /ban", [id, reason, expiresAt,
+                                              lifetime = std::make_shared<BanJobLifetime>()]() -> JobOut {
         bool online = false;
         PlayerInfo found;
         std::string name = FindPlayerById(id, found) ? (found.characterName.empty() ? found.name : found.characterName)
                                                      : std::string();
         // The plugin list is written first and unconditionally: it accepts a gameId the server has
-        // never seen, it survives a restart on its own, and it is what PreLogin refuses a rejoin
-        // with while the server keeps running.
+        // never seen, it survives a restart on its own (flushed by the caller, off the game
+        // thread), and it is what PreLogin / the PostLogin ban kick refuse a rejoin with while the
+        // server keeps running.
         state::BanRecord rec;
         rec.gameId = NormalizeGameId(id);
         rec.name = name;
         rec.reason = reason;
+        rec.expiresAt = expiresAt;
         bool pluginList = state::BanAdd(rec);
+        std::string normalized = NormalizeGameId(id);
+        const char* enforcedBy = Events::BanEnforcementLive() ? "plugin" : "game";
         JobOut r = SessionAction(id, reason, true, online);
         if (online) {
             // ADominionGameSession::BanPlayer disconnects the player but (on this build) does not
             // flag them in KnownPlayerList, so the persistent flag is always written here too.
             std::string err;
-            bool persisted = WriteBans(NormalizeGameId(id), "", true, err);
-            return {r.status, r.status == 200
-                                 ? ("{\"success\":true,\"gameId\":" + JsonStr(NormalizeGameId(id)) +
-                                    ",\"online\":true,\"persisted\":" + (persisted ? "true" : "false") +
-                                    ",\"pluginList\":" + (pluginList ? "true" : "false") + ",\"enforcedBy\":" +
-                                    JsonStr(Events::BanEnforcementLive() ? "plugin" : "game") + ",\"detail\":" +
-                                    JsonStr(err) + "}")
-                                 : r.body};
+            bool persisted = WriteBans(normalized, "", true, err);
+            if (r.status != 200) return r;
+            return {200, [normalized, persisted, pluginList, enforcedBy, err] {
+                return "{\"success\":true,\"gameId\":" + JsonStr(normalized) + ",\"online\":true,\"persisted\":" +
+                       (persisted ? "true" : "false") + ",\"pluginList\":" + (pluginList ? "true" : "false") +
+                       ",\"enforcedBy\":" + JsonStr(enforcedBy) + ",\"detail\":" + JsonStr(err) + "}";
+            }};
         }
         // Offline: edit the settings list and persist it to DedicatedServer.ini. That only works
         // for a player the server has seen before; the plugin list (written above) always does.
         std::string err;
-        bool gameList = WriteBans(NormalizeGameId(id), name, true, err);
+        bool gameList = WriteBans(normalized, name, true, err);
         if (!gameList && !pluginList) {
             SetCap("ban", "degraded", "offline ban failed: " + err);
-            return {503, ErrJson("offline ban failed: " + err)};
+            return JobOut::Error(503, "offline ban failed: " + err);
         }
-        return {200, "{\"success\":true,\"gameId\":" + JsonStr(NormalizeGameId(id)) +
-                         ",\"online\":false,\"persisted\":" + (gameList ? "true" : "false") + ",\"pluginList\":" +
-                         (pluginList ? "true" : "false") + ",\"enforcedBy\":" +
-                         JsonStr(Events::BanEnforcementLive() ? "plugin" : "game") + ",\"detail\":" +
-                         JsonStr(gameList ? (err.empty() ? "added to the server ban list" : err)
-                                          : ("the game's own list refused it (" + err +
-                                             "); the plugin ban list carries it")) + "}"};
+        return {200, [normalized, gameList, pluginList, enforcedBy, err] {
+            return "{\"success\":true,\"gameId\":" + JsonStr(normalized) + ",\"online\":false,\"persisted\":" +
+                   (gameList ? "true" : "false") + ",\"pluginList\":" + (pluginList ? "true" : "false") +
+                   ",\"enforcedBy\":" + JsonStr(enforcedBy) + ",\"detail\":" +
+                   JsonStr(gameList ? (err.empty() ? "added to the server ban list" : err)
+                                    : ("the game's own list refused it (" + err + "); the plugin ban list carries it")) +
+                   "}";
+        }};
     });
+    if (!state::FlushBans()) return Fail(503, state::BanPersistenceError());
+    return result;
 }
 
-Actions::Result Actions::Unban(const JsonValue& body) {
+size_t Actions::PendingBanJobs() { return g_pendingBanJobs.load(); }
+
+static Actions::Result UnbanWithRevision(const JsonValue& body, bool checkRevision, uint64_t expectedRevision) {
     std::string id = BodyString(body, "gameId");
     if (id.empty()) return Fail(400, "'gameId' is required");
-    return OnGameThread("POST /unban", [id]() -> JobOut {
+    Actions::Result result = OnGameThread("POST /unban", [id, checkRevision, expectedRevision,
+                                                         lifetime = std::make_shared<BanJobLifetime>()]() -> JobOut {
+        // A timed-ban expiry captured the ban revision when it was scheduled; a newer ban (a
+        // permanent one, or a longer one) must never be lifted by the old job.
+        if (checkRevision && state::BanRevision() != expectedRevision)
+            return JobOut::Error(409, "ban changed before timed expiry; preserving current ban");
+        std::string normalized = NormalizeGameId(id);
         std::string err;
-        bool pluginList = state::BanRemove(NormalizeGameId(id));
-        bool gameList = WriteBans(NormalizeGameId(id), "", false, err);
+        bool pluginList = state::BanRemove(normalized);
+        bool gameList = WriteBans(normalized, "", false, err);
         if (!gameList && !pluginList) {
-            SetCap("unban", "degraded", err);
-            return {503, ErrJson("unban failed: " + err)};
+            // Neither list holds it: for a player the server never saw and we never banned that is
+            // the desired state already.
+            bool knownToGame = err.find("never seen") == std::string::npos;
+            if (knownToGame) {
+                SetCap("unban", "degraded", err);
+                return JobOut::Error(503, "unban failed: " + err);
+            }
         }
-        return {200, "{\"success\":true,\"gameId\":" + JsonStr(NormalizeGameId(id)) + ",\"pluginList\":" +
-                         (pluginList ? "true" : "false") + ",\"persisted\":" + (gameList ? "true" : "false") +
-                         ",\"detail\":" + JsonStr(gameList ? (err.empty() ? "removed from the server ban list" : err)
-                                                             : "removed from the plugin ban list") + "}"};
+        return {200, [normalized, pluginList, gameList, err] {
+            return "{\"success\":true,\"gameId\":" + JsonStr(normalized) + ",\"pluginList\":" +
+                   (pluginList ? "true" : "false") + ",\"persisted\":" + (gameList ? "true" : "false") +
+                   ",\"detail\":" +
+                   JsonStr(gameList ? (err.empty() ? "removed from the server ban list" : err)
+                                    : (pluginList ? "removed from the plugin ban list" : "no ban held for that id")) +
+                   "}";
+        }};
     });
+    if (!state::FlushBans()) return Fail(503, state::BanPersistenceError());
+    return result;
+}
+
+Actions::Result Actions::Unban(const JsonValue& body) { return UnbanWithRevision(body, false, 0); }
+Actions::Result Actions::UnbanIfRevision(const JsonValue& body, uint64_t expectedRevision) {
+    return UnbanWithRevision(body, true, expectedRevision);
 }
 
 // ================================================================================================
