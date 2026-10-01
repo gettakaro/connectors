@@ -555,7 +555,7 @@ int main() {
             Check(log.Configure(key, detail) && log.TailConnections(), "tail always");
             const std::string DCG = "41C4B04F4C9C038FEB767888BADD003F";
             std::vector<std::string> join = {
-                "LogNet: NotifyAcceptingConnection accepted from: 192.168.129.15:58308",
+                "LogNet: NotifyAcceptingConnection accepted from: 203.0.113.15:58308",
                 "LogNet: Login request: ?p=cGFzc3dvcmQ=?pf=PC?cpx=1?Name=Limon userId: RedpointEOS:" + A + " platform: RedpointEOS",
                 "LogNet: Join succeeded: Limon",
                 "LogDominionPlayerControllerBase: PlayerChar entered world [Account[XP:" + A + "] Character Name[takarotester] Guid[DCG:" + DCG + "] Type[0]]",
