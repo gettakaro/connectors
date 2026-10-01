@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/gettakaro/connectors/compare/7d2d-v0.2.0...7d2d-v0.2.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* **7d2d:** inventory give, report rejected identify, no lost events on dead links, name killed entities ([#344](https://github.com/gettakaro/connectors/issues/344)) ([c9293a3](https://github.com/gettakaro/connectors/commit/c9293a35b6150b60f3d7f10fc931c5e6077206a8))
+
 ## [0.2.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.1.6...7d2d-v0.2.0) (2026-09-22)
 
 
