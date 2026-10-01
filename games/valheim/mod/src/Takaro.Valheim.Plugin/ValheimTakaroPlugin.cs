@@ -18,8 +18,6 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
     public const string ReleaseVersion = TakaroBuildVersion.ReleaseVersion;
 
     private TakaroWebSocketRunner? runner;
-    private CompanionServerBridge? companionBridge;
-    private CompanionInventoryCache? companionInventory;
     private QueuedMainThreadActionScheduler? mainThreadActions;
     private Harmony? harmony;
     private bool shutdownRequested;
@@ -34,9 +32,6 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             return;
         }
 
-        harmony = new Harmony(PluginGuid);
-        harmony.PatchAll(typeof(ValheimChatEventBridge).Assembly);
-
         var values = new Dictionary<string, string>
         {
             ["registrationToken"] = Bind("Takaro", "registrationToken", "", "Takaro registration token.").Value,
@@ -47,12 +42,7 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             ["enableLogEvents"] = Bind("Takaro", "enableLogEvents", "true", "Forward connector log events to Takaro.").Value,
             ["commandAllowlistExact"] = Bind("Takaro", "commandAllowlistExact", "help", "Semicolon-separated exact console commands allowed for executeConsoleCommand.").Value,
             ["commandAllowlistPrefixes"] = Bind("Takaro", "commandAllowlistPrefixes", "", "Semicolon-separated console command prefixes allowed for executeConsoleCommand.").Value,
-            ["companionMode"] = Bind(
-                "Takaro",
-                "companionMode",
-                "disabled",
-                "Client companion policy: disabled, optional, or required. Defaults to disabled because this connector is server-side only; only set optional or required if you deploy the client companion package."
-            ).Value
+            ["chatSenderName"] = Bind("Takaro", "chatSenderName", ConnectorConfig.DefaultChatSenderName, "Name shown in game chat for Takaro messages (unless Takaro sends its own sender name).").Value
         };
 
         if (!ConnectorConfig.TryFromDictionary(values, out var config, out var error) || config is null)
@@ -62,30 +52,17 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
         }
 
         mainThreadActions = new QueuedMainThreadActionScheduler();
-        companionInventory = new CompanionInventoryCache();
         var playerResolver = new ValheimPlayerResolver(Logger);
-        var adapter = new ValheimServerAdapter(
-            Logger,
-            config,
-            RequestShutdown,
-            companionInventory,
-            playerResolver,
-            (peer, sender, message) => companionBridge?.TrySendServerChat(peer, sender, message) == true,
-            (peer, code, amount, quality) => companionBridge?.TrySendItemGrant(peer, code, amount, quality) == true);
+        var adapter = new ValheimServerAdapter(Logger, config, RequestShutdown, playerResolver);
         runner = new TakaroWebSocketRunner(
             config,
             adapter,
             message => Logger.LogInfo(message),
             mainThreadActions);
-        companionBridge = config.CompanionMode == CompanionMode.Disabled
-            ? null
-            : new CompanionServerBridge(
-                runner,
-                playerResolver,
-                companionInventory,
-                config.CompanionMode,
-                Logger.LogInfo);
-        ValheimChatEventBridge.Initialize(runner, Logger.LogInfo);
+        TakaroChatParticipant.Initialize(config.ChatSenderName, Logger.LogInfo);
+        ValheimServerEventBridge.Initialize(runner, playerResolver, Logger.LogInfo);
+        harmony = new Harmony(PluginGuid);
+        harmony.PatchAll(typeof(ValheimServerEventBridge).Assembly);
         _ = runner.StartAsync();
 
         Logger.LogInfo("Takaro Valheim connector started.");
@@ -94,8 +71,7 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
     private void Update()
     {
         mainThreadActions?.Drain();
-        companionBridge?.Update();
-        ValheimChatEventBridge.Update();
+        ValheimServerEventBridge.Update();
 
         if (shutdownRequested && Time.realtimeSinceStartup >= shutdownRequestedAt)
         {
@@ -108,10 +84,8 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
     private void OnDestroy()
     {
         harmony?.UnpatchSelf();
-        companionBridge?.Dispose();
-        ValheimChatEventBridge.Shutdown();
+        ValheimServerEventBridge.Shutdown();
         runner?.Dispose();
-        companionInventory?.Clear();
         mainThreadActions?.Dispose();
     }
 

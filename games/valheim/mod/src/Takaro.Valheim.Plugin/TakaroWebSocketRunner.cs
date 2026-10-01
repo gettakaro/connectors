@@ -17,7 +17,10 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private readonly PlayerLifecyclePollCoordinator lifecycleCoordinator = new();
     private readonly SuppressedResponseLogLimiter suppressedResponseLogs = new(TimeSpan.FromMinutes(1));
     private static readonly TimeSpan PlayerLifecyclePollInterval = TimeSpan.FromSeconds(5);
+    private readonly PendingEventQueue pendingEvents = new(capacity: 1000);
+    private readonly SemaphoreSlim flushLock = new(1, 1);
     private ClientWebSocket? socket;
+    private volatile bool identified;
     private Task? runLoop;
 
     public TakaroWebSocketRunner(
@@ -41,18 +44,38 @@ public sealed class TakaroWebSocketRunner : IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Queues a game event and delivers it once the socket is open and identified. Called from
+    /// game hooks: serialisation and sending run on a pool thread, never on the game thread.
+    /// </summary>
     public Task SendGameEventAsync(string eventType, object data, CancellationToken cancellationToken = default) =>
-        Task.Run(() => SendGameEventCoreAsync(eventType, data, cancellationToken), cancellationToken);
-
-    private async Task SendGameEventCoreAsync(string eventType, object data, CancellationToken cancellationToken)
-    {
-        var activeSocket = socket;
-        if (activeSocket is null || activeSocket.State != WebSocketState.Open)
+        Task.Run(async () =>
         {
-            return;
-        }
+            pendingEvents.Enqueue(TakaroProtocol.CreateGameEvent(eventType, data));
+            await FlushPendingEventsAsync(cancellationToken);
+        }, cancellationToken);
 
-        await SendAsync(activeSocket, TakaroProtocol.CreateGameEvent(eventType, data), cancellationToken);
+    private async Task FlushPendingEventsAsync(CancellationToken cancellationToken)
+    {
+        await flushLock.WaitAsync(cancellationToken);
+        try
+        {
+            while (identified && pendingEvents.TryPeek(out var frame))
+            {
+                var activeSocket = socket;
+                if (activeSocket is null || activeSocket.State != WebSocketState.Open)
+                {
+                    return;
+                }
+
+                await SendOpenAsync(activeSocket, frame, cancellationToken);
+                pendingEvents.Acknowledge(frame);
+            }
+        }
+        finally
+        {
+            flushLock.Release();
+        }
     }
 
     public void Dispose()
@@ -60,6 +83,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
         shutdown.Cancel();
         socket?.Dispose();
         sendLock.Dispose();
+        flushLock.Dispose();
         shutdown.Dispose();
     }
 
@@ -71,6 +95,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
             try
             {
                 using var client = new ClientWebSocket();
+                identified = false;
                 socket = client;
                 await client.ConnectAsync(new Uri(config.TakaroWsUrl), cancellationToken);
                 log("Takaro Valheim WebSocket connected.");
@@ -109,6 +134,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
             }
             finally
             {
+                identified = false;
                 socket = null;
             }
         }
@@ -157,8 +183,8 @@ public sealed class TakaroWebSocketRunner : IDisposable
                         continue;
                     }
 
-                    await SendAsync(socket, TakaroProtocol.CreateGameEvent(evt.Type, evt.Data), cancellationToken);
-                    log($"Takaro Valheim {evt.Type} lifecycle frame written for {evt.Player.Name} ({evt.Player.GameId}); Takaro persistence is not acknowledged by the Generic Connector transport.");
+                    pendingEvents.Enqueue(TakaroProtocol.CreateGameEvent(evt.Type, evt.Data));
+                    log($"Takaro Valheim {evt.Type} lifecycle event queued for {evt.Player.Name} ({evt.Player.GameId}).");
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -168,6 +194,19 @@ public sealed class TakaroWebSocketRunner : IDisposable
             catch (Exception ex)
             {
                 log($"Takaro Valheim player lifecycle polling failed: {ex.Message}");
+            }
+
+            try
+            {
+                await FlushPendingEventsAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                log($"Takaro Valheim pending event flush failed: {ex.Message}");
             }
 
             await Task.Delay(PlayerLifecyclePollInterval, cancellationToken);
@@ -205,7 +244,18 @@ public sealed class TakaroWebSocketRunner : IDisposable
             if (ContainsIgnoreCase(message, "\"type\":\"identifyResponse\"")
                 || ContainsIgnoreCase(message, "\"type\": \"identifyResponse\""))
             {
-                LogIdentifyResponse(message);
+                if (LogIdentifyResponse(message))
+                {
+                    identified = true;
+                    var waiting = pendingEvents.Count;
+                    if (waiting > 0)
+                    {
+                        log($"Takaro Valheim delivering {waiting} event(s) queued before identify.");
+                    }
+
+                    _ = Task.Run(() => FlushPendingEventsAsync(cancellationToken), cancellationToken);
+                }
+
                 continue;
             }
 
@@ -268,10 +318,29 @@ public sealed class TakaroWebSocketRunner : IDisposable
         }
     }
 
+    private async Task SendOpenAsync(ClientWebSocket socket, string json, CancellationToken cancellationToken)
+    {
+        var bytes = Encoding.UTF8.GetBytes(json);
+        await sendLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (socket.State != WebSocketState.Open)
+            {
+                throw new WebSocketException("Takaro WebSocket closed before a queued event could be sent.");
+            }
+
+            await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
+        }
+        finally
+        {
+            sendLock.Release();
+        }
+    }
+
     private static bool ContainsIgnoreCase(string text, string value) =>
         text.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
 
-    private void LogIdentifyResponse(string message)
+    private bool LogIdentifyResponse(string message)
     {
         try
         {
@@ -286,7 +355,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 && error.ValueKind != JsonValueKind.Undefined)
             {
                 log($"Takaro Valheim identification failed: {error}");
-                return;
+                return false;
             }
 
             if (payload.ValueKind == JsonValueKind.Object
@@ -294,14 +363,16 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 && gameServerId.ValueKind == JsonValueKind.String)
             {
                 log($"Takaro Valheim identified as gameServerId={gameServerId.GetString()}.");
-                return;
+                return true;
             }
 
             log("Takaro Valheim identifyResponse received without gameServerId.");
+            return false;
         }
         catch (Exception ex)
         {
             log($"Takaro Valheim could not parse identifyResponse: {ex.Message}");
+            return false;
         }
     }
 

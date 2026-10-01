@@ -12,7 +12,7 @@ Monorepo for connector plugins that implement the [Takaro Generic Connector Prot
 | Project Zomboid | [`games/zomboid/`](games/zomboid/) | Java 25 (`-javaagent`, ByteBuddy) | Gradle |
 | Conan Exiles | [`games/conan-exiles/`](games/conan-exiles/) | TypeScript | Node.js |
 | Terraria | [`games/terraria/`](games/terraria/) | C# / .NET 9 | TShock reference build |
-| Valheim | [`games/valheim/`](games/valheim/) | C# / .NET | BepInEx dedicated-server plugin and graphical-client companion |
+| Valheim | [`games/valheim/`](games/valheim/) | C# / .NET | BepInEx dedicated-server plugin |
 | Enshrouded | [`games/enshrouded/`](games/enshrouded/) | C++ (`dbghelp.dll` proxy) + TypeScript sidecar | zig cross-compile + Node.js |
 | RuneScape: Dragonwilds | [`games/dragonwilds/`](games/dragonwilds/) | C++ (`LD_PRELOAD` native plugin) + TypeScript sidecar | `debian:bookworm` g++ + Node.js |
 | VEIN | [`games/vein/`](games/vein/) | C++ (`LD_PRELOAD` native connector) | `debian:bookworm` g++ |
@@ -95,7 +95,7 @@ just build-release-valheim 2.0.0
 - `games/conan-exiles/` is a server-side TypeScript sidecar that connects through Takaro WebSocket, Conan RCON, optional log tailing, optional save DB reads, and an optional server-side chat helper.
 - `games/terraria/` is a server-side TShock plugin that emits Takaro event markers and
   coordinate helper commands. It stores local build references under `games/terraria/_data/`.
-- [`games/valheim/`](games/valheim/README.md) provides a dedicated-server connector and a separately packaged graphical-client companion. Takaro credentials remain on the server; the companion reports client-owned gameplay observations through the server.
+- [`games/valheim/`](games/valheim/README.md) is a BepInEx dedicated-server plugin. Players join with a vanilla client; chat, deaths and kills are observed on the server.
 
 ## Documentation
 

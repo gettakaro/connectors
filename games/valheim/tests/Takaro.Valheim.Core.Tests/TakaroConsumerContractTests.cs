@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Takaro.Valheim.Companion.Protocol;
 using Takaro.Valheim.Core;
 
 namespace Takaro.Valheim.Core.Tests;
@@ -215,100 +214,29 @@ public sealed class TakaroConsumerContractTests
     }
 
     [TestMethod]
-    public void CompanionProcessorOutputsMatchPinnedTakaroGameEventShapes()
+    public void ServerObservedEventsMatchPinnedTakaroGameEventShapes()
     {
-        const long peerId = 42;
-        const string nonce = "server-session";
         var now = DateTimeOffset.Parse("2026-07-11T12:00:00+00:00");
         var player = new TakaroPlayer("Steam_real", "Odin", "real", "steam:real", null, null);
-        var capabilities = CompanionCapability.Chat
-            | CompanionCapability.PlayerDeath
-            | CompanionCapability.EntityKilled;
-        var sessions = new CompanionSessionRegistry(
-            CompanionProtocol.CurrentVersion,
-            CompanionProtocol.CurrentVersion,
-            capabilities,
-            TimeSpan.FromSeconds(5),
-            TimeSpan.FromMinutes(1));
-        sessions.Begin(peerId, now, nonce);
-        Assert.AreEqual(
-            CompanionSessionDecision.Accept,
-            sessions.CompleteHelloAck(
-                peerId,
-                nonce,
-                CompanionProtocol.CurrentVersion,
-                "1.0.0",
-                capabilities,
-                sequence: 1,
-                now));
-        var processor = new CompanionReportProcessor(
-            sessions,
-            new CompanionRateLimiter(10, 1, TimeSpan.FromMinutes(1)),
-            new BoundedEventDeduplicator(10),
-            new CompanionInventoryCache());
 
-        var outputs = new[]
-        {
-            processor.Process(
-                peerId,
-                player,
-                ReportEnvelope(
-                    nonce,
-                    sequence: 2,
-                    CompanionMessageTypes.Chat,
-                    new CompanionChatReport("chat-1", now.ToUnixTimeMilliseconds(), "hello")),
-                now),
-            processor.Process(
-                peerId,
-                player,
-                ReportEnvelope(
-                    nonce,
-                    sequence: 3,
-                    CompanionMessageTypes.PlayerDeath,
-                    new CompanionPlayerDeathReport(
-                        "death-1",
-                        now.ToUnixTimeMilliseconds(),
-                        new CompanionPosition(1, 2, 3),
-                        null,
-                        null)),
-                now),
-            processor.Process(
-                peerId,
-                player,
-                ReportEnvelope(
-                    nonce,
-                    sequence: 4,
-                    CompanionMessageTypes.EntityKilled,
-                    new CompanionEntityKilledReport(
-                        "kill-1",
-                        now.ToUnixTimeMilliseconds(),
-                        new CompanionPosition(4, 5, 6),
-                        "Greydwarf",
-                        "SwordIron")),
-                now)
-        };
+        using var chat = ParseGameEvent(
+            ValheimEventType.ChatMessage,
+            EventFactory.ChatMessage(player, "global", now, "hello"));
+        var chatData = chat.RootElement.GetProperty("payload").GetProperty("data");
+        AssertPropertySet(chatData, "channel", "msg", "player", "timestamp");
+        Assert.AreEqual("Steam_real", chatData.GetProperty("player").GetProperty("gameId").GetString());
+        Assert.AreEqual("hello", chatData.GetProperty("msg").GetString());
 
-        var events = outputs.Select(RequireAcceptedEvent).ToArray();
-        CollectionAssert.AreEqual(
-            new[] { "chat-message", "player-death", "entity-killed" },
-            events.Select(gameEvent => gameEvent.Type).ToArray());
+        using var death = ParseGameEvent(
+            ValheimEventType.PlayerDeath,
+            EventFactory.PlayerDeath(player, now, new TakaroPosition(1, 2, 3, "valheim"), attacker: null, weapon: null));
+        var deathData = death.RootElement.GetProperty("payload").GetProperty("data");
+        AssertPropertySet(deathData, "player", "position", "timestamp");
+        Assert.IsFalse(deathData.TryGetProperty("attacker", out _));
 
-        using var chat = ParseGameEvent(events[0]);
-        AssertPropertySet(
-            chat.RootElement.GetProperty("payload").GetProperty("data"),
-            "channel", "msg", "player", "timestamp");
-        Assert.AreEqual(
-            "Steam_real",
-            chat.RootElement.GetProperty("payload").GetProperty("data").GetProperty("player").GetProperty("gameId").GetString());
-
-        using var death = ParseGameEvent(events[1]);
-        AssertPropertySet(
-            death.RootElement.GetProperty("payload").GetProperty("data"),
-            "player", "position", "timestamp");
-        Assert.IsFalse(
-            death.RootElement.GetProperty("payload").GetProperty("data").TryGetProperty("attacker", out _));
-
-        using var killed = ParseGameEvent(events[2]);
+        using var killed = ParseGameEvent(
+            ValheimEventType.EntityKilled,
+            EventFactory.EntityKilled(player, "Greydwarf", now, "SwordIron"));
         var killedData = killed.RootElement.GetProperty("payload").GetProperty("data");
         AssertPropertySet(killedData, "entity", "player", "timestamp", "weapon");
         Assert.IsTrue(PinnedTakaroEventValidationAccepts("entity-killed", killedData));
@@ -426,29 +354,8 @@ public sealed class TakaroConsumerContractTests
         return payload.Clone();
     }
 
-    private static CompanionEnvelope ReportEnvelope<T>(
-        string nonce,
-        long sequence,
-        string type,
-        T payload) =>
-        new(
-            CompanionProtocol.CurrentVersion,
-            nonce,
-            sequence,
-            $"message-{sequence}",
-            type,
-            JsonSerializer.SerializeToElement(
-                payload,
-                new JsonSerializerOptions(JsonSerializerDefaults.Web)));
-
-    private static JsonDocument ParseGameEvent(CompanionAcceptedEvent gameEvent) =>
-        JsonDocument.Parse(TakaroProtocol.CreateGameEvent(gameEvent.Type, gameEvent.Data));
-
-    private static CompanionAcceptedEvent RequireAcceptedEvent(CompanionReportOutput? output)
-    {
-        Assert.IsInstanceOfType<CompanionAcceptedEvent>(output);
-        return (CompanionAcceptedEvent)output!;
-    }
+    private static JsonDocument ParseGameEvent(string type, object data) =>
+        JsonDocument.Parse(TakaroProtocol.CreateGameEvent(type, data));
 
     private static void AssertPropertySet(JsonElement element, params string[] expected)
     {

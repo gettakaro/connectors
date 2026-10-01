@@ -341,10 +341,9 @@ Server data lives in `dev-servers/_data/minecraft/fabric/`; connector config is
 `logs/latest.log` (raw WebSocket frames when `TAKARO_DEBUG=true`).
 
 ### Valheim
-`companionMode` defaults to `optional` (set via `VALHEIM_COMPANION_MODE`), so vanilla
-clients can join. The shipped production default is `required`, which needs
-`takaro-valheim-companion.zip` installed into **every player's Valheim client**. Set it to
-`required` in `.env` and reinstall to test that path.
+The connector is a dedicated-server plugin only; players join with a vanilla Valheim client.
+The name Takaro messages show in game chat is the plugin's `chatSenderName` (set via
+`VALHEIM_CHAT_SENDER_NAME`, default `Takaro`).
 
 The compile-reference cache (`games/valheim/_data/server`) and the runnable server
 (`dev-servers/_data/valheim`) are deliberately separate directories —

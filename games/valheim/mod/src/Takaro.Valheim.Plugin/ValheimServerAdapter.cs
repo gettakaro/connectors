@@ -11,11 +11,8 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     private readonly ManualLogSource logger;
     private readonly ConsoleCommandPolicy commandPolicy;
     private readonly Action requestShutdown;
-    private readonly CompanionInventoryCache companionInventory;
-    private readonly CompanionMode companionMode;
     private readonly ValheimPlayerResolver playerResolver;
-    private readonly Func<ZNetPeer, string, string, bool> sendCompanionChat;
-    private readonly Func<ZNetPeer, string, int, int, bool> sendCompanionItemGrant;
+    private readonly string chatSenderName;
     private readonly PlayerPositionCache playerPositions = new(TimeSpan.FromSeconds(30));
     private readonly Dictionary<string, HashSet<string>> banAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> banNames = new(StringComparer.OrdinalIgnoreCase);
@@ -23,47 +20,14 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     public ValheimServerAdapter(
         ManualLogSource logger,
         ConnectorConfig config,
-        Action requestShutdown)
-        : this(
-            logger,
-            config,
-            requestShutdown,
-            new CompanionInventoryCache(),
-            new ValheimPlayerResolver(logger))
-    {
-    }
-
-    public ValheimServerAdapter(
-        ManualLogSource logger,
-        ConnectorConfig config,
         Action requestShutdown,
-        CompanionInventoryCache companionInventory)
-        : this(
-            logger,
-            config,
-            requestShutdown,
-            companionInventory,
-            new ValheimPlayerResolver(logger))
-    {
-    }
-
-    public ValheimServerAdapter(
-        ManualLogSource logger,
-        ConnectorConfig config,
-        Action requestShutdown,
-        CompanionInventoryCache companionInventory,
-        ValheimPlayerResolver playerResolver,
-        Func<ZNetPeer, string, string, bool>? sendCompanionChat = null,
-        Func<ZNetPeer, string, int, int, bool>? sendCompanionItemGrant = null)
+        ValheimPlayerResolver playerResolver)
     {
         this.logger = logger;
         commandPolicy = new ConsoleCommandPolicy(config.CommandAllowlistExact, config.CommandAllowlistPrefixes);
         this.requestShutdown = requestShutdown;
-        this.companionInventory = companionInventory ?? throw new ArgumentNullException(nameof(companionInventory));
-        companionMode = config.CompanionMode;
         this.playerResolver = playerResolver ?? throw new ArgumentNullException(nameof(playerResolver));
-        this.sendCompanionChat = sendCompanionChat ?? ((_, _, _) => false);
-        this.sendCompanionItemGrant = sendCompanionItemGrant ?? ((_, _, _, _) => false);
+        chatSenderName = config.ChatSenderName;
     }
 
     public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
@@ -141,32 +105,12 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             $"Valheim player '{identifier}' is not online and has no fresh server-observed position."));
     }
 
-    public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default)
-    {
-        if (companionMode == CompanionMode.Disabled)
-        {
-            return Task.FromResult(CompanionInventoryActionPolicy.FromResolvedPlayer(
-                companionMode,
-                player: null,
-                companionInventory,
-                DateTimeOffset.UtcNow));
-        }
-
-        if (!playerResolver.TryResolvePlayer(identifier, out _, out _, out var player) || player is null)
-        {
-            return Task.FromResult(CompanionInventoryActionPolicy.FromResolvedPlayer(
-                companionMode,
-                player: null,
-                companionInventory,
-                DateTimeOffset.UtcNow));
-        }
-
-        return Task.FromResult(CompanionInventoryActionPolicy.FromResolvedPlayer(
-            companionMode,
-            player,
-            companionInventory,
-            DateTimeOffset.UtcNow));
-    }
+    // A Valheim player's inventory lives in the client's character profile. The dedicated
+    // server only sees the equipped items' visuals, so it cannot answer this truthfully.
+    public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default) =>
+        Task.FromResult(TakaroActionResult.Error(
+            "server_only_unsupported",
+            "Valheim keeps player inventories on the game client; a dedicated server cannot read them."));
 
     public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default)
     {
@@ -216,23 +160,6 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
         var itemDisplayName = DisplayName(itemDrop.m_itemData.m_shared?.m_name, prefab.name);
 
-        // Prefer delivering into the player's inventory through their companion. The send is
-        // fire-and-forget: the companion decides against the live inventory and world-drops
-        // anything that does not fit, so nothing is ever lost. A false return means this peer
-        // has no companion able to take the grant, and the server-side drop below applies.
-        if (sendCompanionItemGrant(peer, prefab.name, amount, qualityLevel))
-        {
-            logger.LogInfo($"Takaro Valheim routed giveItem to the companion for {player.Name} ({player.GameId}): item={prefab.name}, amount={amount}, quality={qualityLevel}.");
-            return Task.FromResult(TakaroActionResult.Ok(new
-            {
-                delivered = true,
-                delivery = "companion",
-                player,
-                item = new { code = prefab.name, name = itemDisplayName, amount, quality = qualityLevel.ToString() },
-                position = new TakaroPosition(position.x, position.y, position.z, "valheim")
-            }));
-        }
-
         var dropCount = 0;
         foreach (var stack in stackPlan.Stacks)
         {
@@ -241,7 +168,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             dropCount++;
         }
 
-        SendHudMessage(peer, $"Dropped {amount}x {itemDisplayName} near you.");
+        SendHudMessage(peer, $"{amount}x {itemDisplayName} dropped at your feet.");
 
         logger.LogInfo($"Takaro Valheim dropped {amount}x {prefab.name} for {player.Name} ({player.GameId}) at x={position.x}, y={position.y}, z={position.z}.");
         return Task.FromResult(TakaroActionResult.Ok(new
@@ -257,66 +184,61 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, string? senderNameOverride, CancellationToken cancellationToken = default)
     {
-        var sender = string.IsNullOrWhiteSpace(senderNameOverride)
-            ? "Takaro"
-            : senderNameOverride!.Trim();
+        if (ZRoutedRpc.instance is null || ZNet.instance is null)
+        {
+            return Task.FromResult(TakaroActionResult.Error("rpc_unavailable", "Valheim routed RPC is not available yet."));
+        }
+
+        var text = message?.Trim() ?? string.Empty;
+        if (text.Length == 0)
+        {
+            return Task.FromResult(TakaroActionResult.Error("invalid_message", "Valheim chat messages cannot be empty."));
+        }
+
+        if (!TakaroChatParticipant.Active)
+        {
+            return Task.FromResult(TakaroActionResult.Error(
+                "chat_participant_unavailable",
+                "The Takaro chat participant is not active on this Valheim build, so server chat cannot be shown."));
+        }
+
+        var sender = string.IsNullOrWhiteSpace(senderNameOverride) ? chatSenderName : senderNameOverride!.Trim();
+        TakaroChatParticipant.EnsureName(sender);
 
         if (!string.IsNullOrWhiteSpace(recipientIdentifier))
         {
-            if (!playerResolver.TryResolvePlayer(recipientIdentifier!, out _, out var peer, out var recipient) || peer is null || recipient is null)
+            if (!playerResolver.TryResolvePlayer(recipientIdentifier!, out _, out var peer, out var recipient) || peer is null || recipient is null || !peer.IsReady())
             {
                 return Task.FromResult(TakaroActionResult.Error("player_not_found", $"Valheim player '{recipientIdentifier}' is not online."));
             }
 
-            if (!sendCompanionChat(peer, sender, message))
-            {
-                return Task.FromResult(TakaroActionResult.Error(
-                    "companion_server_chat_unavailable",
-                    $"Valheim player '{recipientIdentifier}' does not have an active compatible Takaro companion chat session."));
-            }
-
-            logger.LogInfo($"Takaro Valheim server message routed to {recipient.Name} ({recipient.GameId}).");
-            return Task.FromResult(TakaroActionResult.Ok(new { sent = true, recipient }));
+            TakaroChatParticipant.Send(peer, text);
+            logger.LogInfo($"Takaro Valheim server chat sent as '{sender}' to {recipient.Name} ({recipient.GameId}).");
+            return Task.FromResult(TakaroActionResult.Ok(new { sent = true, recipients = 1 }));
         }
 
         var sent = 0;
-        var skipped = 0;
-        foreach (var peer in ZNet.instance?.GetPeers() ?? [])
+        foreach (var peer in ZNet.instance.GetPeers())
         {
-            if (!peer.IsReady())
+            if (peer.IsReady())
             {
-                continue;
-            }
-
-            if (sendCompanionChat(peer, sender, message))
-            {
+                TakaroChatParticipant.Send(peer, text);
                 sent++;
             }
-            else
-            {
-                skipped++;
-            }
         }
 
-        if (sent == 0)
-        {
-            return Task.FromResult(TakaroActionResult.Error(
-                "companion_server_chat_unavailable",
-                "No ready Valheim peer has an active compatible Takaro companion chat session."));
-        }
-
-        logger.LogInfo($"Takaro Valheim server message routed to {sent} peer(s); skipped {skipped} peer(s) without compatible companion chat.");
-        return Task.FromResult(TakaroActionResult.Ok(new { sent = true, recipients = sent, skipped }));
+        logger.LogInfo($"Takaro Valheim server chat sent as '{sender}' to {sent} player(s).");
+        return Task.FromResult(TakaroActionResult.Ok(new { sent = true, recipients = sent }));
     }
 
     public Task<TakaroActionResult> ExecuteConsoleCommandAsync(string command, CancellationToken cancellationToken = default)
     {
         logger.LogInfo($"Takaro command requested: {command}");
-        ValheimChatEventBridge.EmitLog("info", $"Takaro command requested: {command}");
+        ValheimServerEventBridge.EmitLog("info", $"Takaro command requested: {command}");
         if (!commandPolicy.IsAllowed(command))
         {
             logger.LogWarning($"Takaro Valheim blocked non-allowlisted console command: {command}");
-            ValheimChatEventBridge.EmitLog("warning", $"Blocked non-allowlisted console command: {command}");
+            ValheimServerEventBridge.EmitLog("warning", $"Blocked non-allowlisted console command: {command}");
             return Task.FromResult(TakaroActionResult.Ok(new { success = false, rawResult = "command_not_allowed: Console command is not allowlisted." }));
         }
 
@@ -334,7 +256,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         }
 
         logger.LogInfo($"Takaro Valheim executed allowlisted console command: {command}");
-        ValheimChatEventBridge.EmitLog("info", $"Executed allowlisted console command: {command}");
+        ValheimServerEventBridge.EmitLog("info", $"Executed allowlisted console command: {command}");
         return Task.FromResult(TakaroActionResult.Ok(new { success = true, rawResult = $"Executed allowlisted Valheim console command: {command}" }));
     }
 
@@ -574,41 +496,11 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     }
 
     private static void SendHudMessage(ZNetPeer peer, string message) =>
-        SendClientMessage(peer, $"Takaro: {message}");
-
-    private static void SendClientMessage(ZNetPeer peer, string message)
-    {
-        SendPlayerMessage(peer, MessageHud.MessageType.Center, message);
-        SendPlayerMessage(peer, MessageHud.MessageType.TopLeft, message);
-
-        ZRoutedRpc.instance.InvokeRoutedRPC(
-            peer.m_uid,
-            "ShowMessage",
-            (int)MessageHud.MessageType.Center,
-            message);
-
         ZRoutedRpc.instance.InvokeRoutedRPC(
             peer.m_uid,
             "ShowMessage",
             (int)MessageHud.MessageType.TopLeft,
-            message);
-    }
-
-    private static void SendPlayerMessage(ZNetPeer peer, MessageHud.MessageType type, string message)
-    {
-        if (peer.m_characterID.IsNone())
-        {
-            return;
-        }
-
-        ZRoutedRpc.instance.InvokeRoutedRPC(
-            peer.m_uid,
-            peer.m_characterID,
-            "Message",
-            (int)type,
-            message,
-            0);
-    }
+            $"Takaro: {message}");
 
     private void RememberBanAliases(string primaryIdentifier, string displayName, string requestedIdentifier, TakaroPlayer? player, ZNetPeer? peer)
     {
@@ -722,7 +614,8 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         var rawName = itemDrop.m_itemData.m_shared?.m_name;
         return Matches(prefab.name, itemCode)
             || Matches(DisplayName(rawName, prefab.name), itemCode)
-            || Matches(rawName, itemCode);
+            || Matches(rawName, itemCode)
+            || Matches(rawName?.Trim().TrimStart('$'), itemCode);
     }
 
     private static bool TryResolveQuality(string? quality, ItemDrop itemDrop, out int qualityLevel, out string? error)
@@ -790,16 +683,8 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         return string.IsNullOrWhiteSpace(steamId) ? null : $"steam:{steamId}";
     }
 
-    private static string DisplayName(string? rawName, string fallback)
-    {
-        if (string.IsNullOrWhiteSpace(rawName))
-        {
-            return fallback;
-        }
-
-        var displayName = rawName!.Trim().Trim('$');
-        return string.IsNullOrWhiteSpace(displayName) ? fallback : displayName;
-    }
+    private static string DisplayName(string? rawName, string fallback) =>
+        ValheimLocalizer.Localize(rawName, fallback);
 }
 #else
 namespace Takaro.Valheim.Plugin;

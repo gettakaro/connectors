@@ -107,7 +107,10 @@ public sealed class PluginScaffoldContractTests
     [TestMethod]
     public void PluginBridgeDoesNotDeclareClientSideRpcContracts()
     {
-        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+        var source = string.Join(
+            '\n',
+            ReadPluginSource("ValheimServerEventBridge.cs"),
+            ReadPluginSource("TakaroChatParticipant.cs"));
 
         foreach (var marker in new[]
                  {
@@ -119,7 +122,9 @@ public sealed class PluginScaffoldContractTests
                      "TakaroTeleportPlayer",
                      "TakaroPlayerDeath",
                      "TakaroEntityKilled",
-                     "Player.m_localPlayer"
+                     "Player.m_localPlayer",
+                     ".Register(",
+                     "Companion"
                  })
         {
             Assert.IsFalse(source.Contains(marker, StringComparison.Ordinal), marker);
@@ -139,34 +144,27 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void PluginAdapterUsesCompanionInventoryWithoutPlayerComponentAccess()
+    public void PluginAdapterReportsInventoryAsServerOnlyUnsupported()
     {
         var source = ReadPluginSource("ValheimServerAdapter.cs");
+        var realAdapter = source[..source.IndexOf("#else", StringComparison.Ordinal)];
         var location = SliceMethod(
-            source,
+            realAdapter,
             "public Task<TakaroActionResult> GetPlayerLocationAsync",
             "public Task<TakaroActionResult> GetPlayerInventoryAsync");
         var inventory = SliceMethod(
-            source,
+            realAdapter,
             "public Task<TakaroActionResult> GetPlayerInventoryAsync",
             "public Task<TakaroActionResult> GiveItemAsync");
 
         StringAssert.Contains(location, "player_position_unavailable");
         Assert.IsFalse(location.Contains("new TakaroPosition(0, 0, 0", StringComparison.Ordinal));
-        StringAssert.Contains(inventory, "CompanionMode.Disabled");
-        StringAssert.Contains(inventory, "TryResolvePlayer(identifier");
-        StringAssert.Contains(inventory, "CompanionInventoryActionPolicy.FromResolvedPlayer");
-        Assert.IsFalse(inventory.Contains("PlayerMapper.Find", StringComparison.Ordinal));
-        Assert.IsFalse(inventory.Contains("GetPlayerList()", StringComparison.Ordinal));
+        StringAssert.Contains(inventory, "server_only_unsupported");
+        Assert.IsFalse(inventory.Contains("TakaroActionResult.Ok", StringComparison.Ordinal));
         Assert.IsFalse(inventory.Contains("Array.Empty<object>()", StringComparison.Ordinal));
         Assert.IsFalse(inventory.Contains("GetInventory()", StringComparison.Ordinal));
         Assert.IsFalse(inventory.Contains("TryFindPlayerComponent", StringComparison.Ordinal));
-        Assert.IsFalse(inventory.Contains("companionInventory.TryGet(identifier", StringComparison.Ordinal));
-
-        var policy = ReadValheimFile("mod/src/Takaro.Valheim.Core/CompanionInventoryActionPolicy.cs");
-        StringAssert.Contains(policy, "cache.TryGetStable");
-        Assert.IsFalse(policy.Contains("player.Name", StringComparison.Ordinal));
-        Assert.IsFalse(policy.Contains("cache.TryGet(alias", StringComparison.Ordinal));
+        Assert.IsFalse(File.Exists(ValheimPath("mod/src/Takaro.Valheim.Core/CompanionInventoryActionPolicy.cs")));
     }
 
     [TestMethod]
@@ -224,52 +222,55 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void PluginCompanionBridgeKeepsTrustedReportsSeparateFromRoutedDiagnostics()
+    public void ServerEventBridgeBindsRoutedPacketsToTheArrivalPeer()
     {
-        var bridge = ReadPluginSource("CompanionServerBridge.cs");
-        var diagnostics = ReadPluginSource("ValheimChatEventBridge.cs");
+        var bridge = ReadPluginSource("ValheimServerEventBridge.cs");
 
-        StringAssert.Contains(bridge, "CompanionServerMessageHandler");
-        StringAssert.Contains(bridge, "TryResolveConnectedPeer(sender");
-        StringAssert.Contains(bridge, "CompanionAcceptedEvent acceptedEvent");
-        StringAssert.Contains(diagnostics, "untrusted routed RPC diagnostics");
-        StringAssert.Contains(diagnostics, "observation only");
-        Assert.IsFalse(diagnostics.Contains("CompanionProtocol.RpcName", StringComparison.Ordinal));
+        StringAssert.Contains(bridge, "[HarmonyPatch(typeof(ZRoutedRpc), \"RPC_RoutedRPC\")]");
+        StringAssert.Contains(bridge, "[HarmonyPatch(typeof(ZDOMan), \"RPC_DestroyZDO\")]");
+        StringAssert.Contains(bridge, "arrivalPeer = FindPeer(rpc);");
+        StringAssert.Contains(bridge, "ReferenceEquals(peer.m_rpc, rpc)");
+        StringAssert.Contains(bridge, "RoutedPacketBindingPolicy.Evaluate(origin, requireOwnCharacter: true)");
+        StringAssert.Contains(bridge, "ChatPolicy.Evaluate(origin, characterScoped");
+        StringAssert.Contains(bridge, "resolver.TryResolvePeerPlayer(peer, out var player)");
+        StringAssert.Contains(bridge, "peer.m_uid != sender");
+        StringAssert.Contains(bridge, "ZNet.instance.IsDedicated()");
+        Assert.IsFalse(bridge.Contains("TryResolveConnectedPeer(", StringComparison.Ordinal));
+        Assert.IsFalse(File.Exists(ValheimPath("mod/src/Takaro.Valheim.Plugin/CompanionServerBridge.cs")));
+        Assert.IsFalse(File.Exists(ValheimPath("mod/src/Takaro.Valheim.Plugin/ValheimChatEventBridge.cs")));
     }
 
     [TestMethod]
-    public void PluginWiresOneSharedCompanionGraphOnTheMainThread()
+    public void PluginWiresTheServerEventGraphOnce()
     {
         var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
 
-        StringAssert.Contains(entrypoint, "[\"companionMode\"]");
-        Assert.IsFalse(entrypoint.Contains("companionCommandPrefixes", StringComparison.Ordinal));
-        StringAssert.Contains(entrypoint, "private CompanionInventoryCache? companionInventory;");
-        StringAssert.Contains(entrypoint, "private CompanionServerBridge? companionBridge;");
+        StringAssert.Contains(entrypoint, "[\"chatSenderName\"]");
+        StringAssert.Contains(entrypoint, "ConnectorConfig.DefaultChatSenderName");
+        Assert.IsFalse(entrypoint.Contains("companion", StringComparison.OrdinalIgnoreCase));
         StringAssert.Contains(entrypoint, "new ValheimPlayerResolver(Logger)");
-        StringAssert.Contains(entrypoint, "companionInventory,");
-        StringAssert.Contains(entrypoint, "playerResolver,");
-        StringAssert.Contains(entrypoint, "config.CompanionMode");
-        StringAssert.Contains(entrypoint, "config.CompanionMode == CompanionMode.Disabled");
+        StringAssert.Contains(entrypoint, "TakaroChatParticipant.Initialize(config.ChatSenderName");
 
-        var cacheAt = entrypoint.IndexOf("companionInventory = new CompanionInventoryCache()", StringComparison.Ordinal);
         var resolverAt = entrypoint.IndexOf("new ValheimPlayerResolver(Logger)", StringComparison.Ordinal);
         var adapterAt = entrypoint.IndexOf("new ValheimServerAdapter(", StringComparison.Ordinal);
         var runnerAt = entrypoint.IndexOf("new TakaroWebSocketRunner(", StringComparison.Ordinal);
-        var bridgeAt = entrypoint.IndexOf("new CompanionServerBridge(", StringComparison.Ordinal);
-        Assert.IsTrue(cacheAt >= 0 && cacheAt < resolverAt);
-        Assert.IsTrue(resolverAt < adapterAt);
+        var participantAt = entrypoint.IndexOf("TakaroChatParticipant.Initialize(", StringComparison.Ordinal);
+        var bridgeAt = entrypoint.IndexOf("ValheimServerEventBridge.Initialize(runner, playerResolver", StringComparison.Ordinal);
+        var patchAt = entrypoint.IndexOf("harmony.PatchAll(", StringComparison.Ordinal);
+        var startAt = entrypoint.IndexOf("runner.StartAsync()", StringComparison.Ordinal);
+        Assert.IsTrue(resolverAt >= 0 && resolverAt < adapterAt);
         Assert.IsTrue(adapterAt < runnerAt);
-        Assert.IsTrue(runnerAt < bridgeAt);
-
-        var update = SliceMethod(entrypoint, "private void Update()", "private void OnDestroy()");
-        Assert.IsTrue(
-            update.IndexOf("mainThreadActions?.Drain()", StringComparison.Ordinal)
-            < update.IndexOf("companionBridge?.Update()", StringComparison.Ordinal));
+        Assert.IsTrue(runnerAt < participantAt);
+        Assert.IsTrue(participantAt < bridgeAt);
+        Assert.IsTrue(bridgeAt < patchAt);
+        Assert.IsTrue(patchAt < startAt);
 
         var destroy = SliceMethod(entrypoint, "private void OnDestroy()", "private void RequestShutdown()");
         Assert.IsTrue(
-            destroy.IndexOf("companionBridge?.Dispose()", StringComparison.Ordinal)
+            destroy.IndexOf("harmony?.UnpatchSelf()", StringComparison.Ordinal)
+            < destroy.IndexOf("ValheimServerEventBridge.Shutdown()", StringComparison.Ordinal));
+        Assert.IsTrue(
+            destroy.IndexOf("ValheimServerEventBridge.Shutdown()", StringComparison.Ordinal)
             < destroy.IndexOf("runner?.Dispose()", StringComparison.Ordinal));
         Assert.IsTrue(
             destroy.IndexOf("runner?.Dispose()", StringComparison.Ordinal)
@@ -277,44 +278,45 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void RealPluginAdapterExposesCompanionInventoryCacheInjection()
+    public void RealPluginAdapterTakesResolverAndChatSenderNameFromConfig()
     {
         var source = ReadPluginSource("ValheimServerAdapter.cs");
         var realAdapter = source[..source.IndexOf("#else", StringComparison.Ordinal)];
 
-        StringAssert.Contains(realAdapter, "private readonly CompanionInventoryCache companionInventory;");
-        StringAssert.Contains(realAdapter, "CompanionInventoryCache companionInventory");
-        StringAssert.Contains(realAdapter, "this.companionInventory = companionInventory");
         StringAssert.Contains(realAdapter, "private readonly ValheimPlayerResolver playerResolver;");
-        StringAssert.Contains(realAdapter, "new ValheimPlayerResolver(logger)");
-        StringAssert.Contains(realAdapter, "ValheimPlayerResolver playerResolver");
+        StringAssert.Contains(realAdapter, "ValheimPlayerResolver playerResolver)");
         StringAssert.Contains(realAdapter, "this.playerResolver = playerResolver");
+        StringAssert.Contains(realAdapter, "chatSenderName = config.ChatSenderName;");
+        Assert.IsFalse(realAdapter.Contains("Companion", StringComparison.Ordinal));
     }
 
     [TestMethod]
-    public void ServerMessagesUseAuthenticatedCompanionChatInsteadOfHudOverlays()
+    public void ServerMessagesUseTheChatParticipantInsteadOfHudOverlays()
     {
         var source = ReadPluginSource("ValheimServerAdapter.cs");
         var send = SliceMethod(
             source,
             "public Task<TakaroActionResult> SendMessageAsync",
             "public Task<TakaroActionResult> ExecuteConsoleCommandAsync");
-        var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
+        var participant = ReadPluginSource("TakaroChatParticipant.cs");
 
-        StringAssert.Contains(source, "Func<ZNetPeer, string, string, bool> sendCompanionChat");
-        StringAssert.Contains(send, "var sender = string.IsNullOrWhiteSpace(senderNameOverride)");
-        StringAssert.Contains(send, "? \"Takaro\"");
-        StringAssert.Contains(send, ": senderNameOverride!.Trim()");
-        StringAssert.Contains(send, "sendCompanionChat(peer, sender, message)");
-        StringAssert.Contains(send, "companion_server_chat_unavailable");
-        StringAssert.Contains(send, "skipped");
+        StringAssert.Contains(send, "if (!TakaroChatParticipant.Active)");
+        StringAssert.Contains(send, "chat_participant_unavailable");
         StringAssert.Contains(
-            entrypoint,
-            "(peer, sender, message) => companionBridge?.TrySendServerChat(peer, sender, message) == true");
+            send,
+            "var sender = string.IsNullOrWhiteSpace(senderNameOverride) ? chatSenderName : senderNameOverride!.Trim();");
+        StringAssert.Contains(send, "TakaroChatParticipant.EnsureName(sender)");
+        StringAssert.Contains(send, "TakaroChatParticipant.Send(peer, text)");
         Assert.IsFalse(send.Contains("SendHudMessage", StringComparison.Ordinal));
         Assert.IsFalse(send.Contains("MessageHud", StringComparison.Ordinal));
         Assert.IsFalse(send.Contains("ShowMessage", StringComparison.Ordinal));
         Assert.IsFalse(send.Contains("SendPlayerMessage", StringComparison.Ordinal));
+
+        StringAssert.Contains(participant, "[HarmonyPatch(typeof(ZNet), \"WritePlayerInfo\")]");
+        StringAssert.Contains(participant, "ZNet.instance.IsDedicated()");
+        StringAssert.Contains(participant, "rebuilt.GetArray().SequenceEqual(vanilla.GetArray())");
+        StringAssert.Contains(participant, "return vanilla;");
+        StringAssert.Contains(participant, "InvokeRoutedRPC(peer.m_uid, \"ChatMessage\"");
     }
 
     [TestMethod]
@@ -363,7 +365,12 @@ public sealed class PluginScaffoldContractTests
         Assert.IsFalse(shutdown.Contains("Application.Quit", StringComparison.Ordinal));
         StringAssert.Contains(entrypoint, "Application.Quit()");
         StringAssert.Contains(entrypoint, "shutdownRequestedAt");
-        StringAssert.Contains(runner, "Task.Run(() => SendGameEventCoreAsync");
+        var sendGameEvent = SliceMethod(
+            runner,
+            "public Task SendGameEventAsync(",
+            "private async Task FlushPendingEventsAsync(");
+        StringAssert.Contains(sendGameEvent, "Task.Run(");
+        StringAssert.Contains(sendGameEvent, "pendingEvents.Enqueue(TakaroProtocol.CreateGameEvent(eventType, data))");
     }
 
     [TestMethod]
@@ -416,15 +423,25 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void PluginBridgeDoesNotEmitIdentityEventsFromRoutedPayloads()
+    public void ServerEventBridgeGatesEveryEventThroughTheAcceptancePolicy()
     {
-        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+        var source = ReadPluginSource("ValheimServerEventBridge.cs");
 
         StringAssert.Contains(source, "OnDeathHash");
         StringAssert.Contains(source, "data.m_methodHash == OnDeathHash");
-        StringAssert.Contains(source, "ValheimEventAcceptancePolicy");
+        StringAssert.Contains(
+            source,
+            "ValheimEventAcceptancePolicy.CanEmit(ValheimEventType.ChatMessage, ValheimEventObservationSource.PeerBoundRoutedRpc)");
+        StringAssert.Contains(
+            source,
+            "ValheimEventAcceptancePolicy.CanEmit(ValheimEventType.PlayerDeath, ValheimEventObservationSource.PeerBoundRoutedRpc)");
+        StringAssert.Contains(
+            source,
+            "ValheimEventAcceptancePolicy.CanEmit(ValheimEventType.EntityKilled, ValheimEventObservationSource.ServerZdoState)");
+        StringAssert.Contains(
+            source,
+            "ValheimEventAcceptancePolicy.CanEmit(ValheimEventType.Log, ValheimEventObservationSource.Connector)");
         Assert.IsFalse(source.Contains("EmitPlayerDeathFromRoutedRpc", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("EventFactory.ChatMessage", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("\"chat-message\"", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("\"player-death\"", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("\"TakaroPlayerDeath\"", StringComparison.Ordinal));
@@ -433,7 +450,7 @@ public sealed class PluginScaffoldContractTests
     [TestMethod]
     public void DestroyZdoIsNotTreatedAsAChatDiagnosticCandidate()
     {
-        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+        var source = ReadPluginSource("ValheimServerEventBridge.cs");
 
         Assert.IsFalse(source.Contains("199378019", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("UndecodedDedicatedServerChatHashes", StringComparison.Ordinal));
@@ -441,33 +458,58 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void DestroyZdoHousekeepingDoesNotConsumeGenericRpcDiagnostics()
+    public void RoutedRpcHookOnlyInspectsChatAndDeathAndRestoresThePackage()
     {
-        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+        var source = ReadPluginSource("ValheimServerEventBridge.cs");
+        var arrived = SliceMethod(
+            source,
+            "internal static void OnRoutedRpcArrived(",
+            "internal static void OnRoutedRpcDone()");
+        var destroyed = SliceMethod(
+            source,
+            "internal static void OnDestroyZdo(",
+            "private static void ObserveChat(");
 
-        StringAssert.Contains(source, "DestroyZdoHash = \"DestroyZDO\".GetStableHashCode()");
-        var ignore = source.IndexOf("data.m_methodHash == DestroyZdoHash", StringComparison.Ordinal);
-        var genericDiagnostic = source.IndexOf("if (routedDiagnosticsRemaining > 0)", StringComparison.Ordinal);
-        Assert.IsTrue(ignore >= 0 && ignore < genericDiagnostic);
+        StringAssert.Contains(
+            arrived,
+            "data.m_methodHash != SayHash && data.m_methodHash != ChatMessageHash && data.m_methodHash != OnDeathHash");
+        StringAssert.Contains(arrived, "var start = package.GetPos();");
+        StringAssert.Contains(arrived, "finally");
+        StringAssert.Contains(arrived, "package.SetPos(start);");
+        StringAssert.Contains(destroyed, "package.SetPos(start);");
+        StringAssert.Contains(source, "private static void Finalizer() => ValheimServerEventBridge.OnRoutedRpcDone();");
     }
 
     [TestMethod]
-    public void UnsupportedEntityKilledEventHasNoPluginEmitterOrHarmonyPatch()
+    public void EntityKilledComesFromServerObservedCreatureObjects()
     {
-        var source = ReadPluginSource("ValheimChatEventBridge.cs");
+        var source = ReadPluginSource("ValheimServerEventBridge.cs");
+        var observe = SliceMethod(
+            source,
+            "private static void ObserveDestroyed(",
+            "private static string? EquippedItemName(");
 
-        Assert.IsFalse(source.Contains("EmitEntityKilled", StringComparison.Ordinal));
+        StringAssert.Contains(observe, "prefab.GetComponent<Player>() is not null");
+        StringAssert.Contains(observe, "ZDOVars.s_attackers + candidate.m_playerName");
+        StringAssert.Contains(observe, "KillAttributionPolicy.Choose(candidates, destroyer.m_uid)");
+        StringAssert.Contains(observe, "Kills.TryAccept(id.ToString()");
+        StringAssert.Contains(observe, "KillWeaponPolicy.Describe(");
+        StringAssert.Contains(observe, "ValheimLocalizer.Localize(character.m_name, prefab.name)");
         Assert.IsFalse(source.Contains("TakaroCharacterOnDeathPatch", StringComparison.Ordinal));
-        Assert.IsFalse(source.Contains("entity-killed event sent", StringComparison.Ordinal));
     }
 
     [TestMethod]
-    public void LifecycleTransportLogsFrameWriteWithoutClaimingPersistence()
+    public void GameEventsAreQueuedAndOnlyFlushedAfterIdentify()
     {
         var source = ReadPluginSource("TakaroWebSocketRunner.cs");
 
-        StringAssert.Contains(source, "lifecycle frame written");
+        StringAssert.Contains(source, "lifecycle event queued");
         Assert.IsFalse(source.Contains("event sent for", StringComparison.Ordinal));
+        StringAssert.Contains(source, "while (identified && pendingEvents.TryPeek(out var frame))");
+        StringAssert.Contains(source, "pendingEvents.Acknowledge(frame);");
+        var identifiedAt = source.IndexOf("if (LogIdentifyResponse(message))", StringComparison.Ordinal);
+        Assert.IsTrue(identifiedAt >= 0);
+        Assert.IsTrue(source.IndexOf("identified = true;", identifiedAt, StringComparison.Ordinal) > identifiedAt);
         StringAssert.Contains(source, "TakaroProtocol.TryCreateActionResponse");
     }
 
@@ -516,20 +558,41 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void DocumentationKeepsServerAndClientProcessRolesSeparate()
+    public void ServerPluginIsTheOnlyShippedComponent()
     {
-        var readme = ReadValheimFile("README.md");
-        var companion = ReadValheimFile("COMPANION.md");
+        // The README may name the removed client mod only in its 3.x upgrade steps.
+        var fullReadme = ReadValheimFile("README.md");
+        var upgradeStart = fullReadme.IndexOf("### Upgrade from 3.x", StringComparison.Ordinal);
+        Assert.IsTrue(upgradeStart >= 0, "README must keep its upgrade-from-3.x steps");
+        var upgradeEnd = fullReadme.IndexOf("\n## ", upgradeStart, StringComparison.Ordinal);
+        var readme = fullReadme.Remove(upgradeStart, upgradeEnd - upgradeStart);
+        var connector = ReadValheimFile("connector.json");
+        var solution = ReadValheimFile("mod/Takaro.Valheim.sln");
+        var release = ReadValheimFile("scripts/build-release.sh");
         var serverEntrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
-        var clientEntrypoint = ReadValheimFile(
-            "mod/src/Takaro.Valheim.Companion/ValheimCompanionPlugin.cs");
 
         StringAssert.Contains(readme, "takaro-valheim-plugin.zip");
-        StringAssert.Contains(readme, "takaro-valheim-companion.zip");
-        StringAssert.Contains(companion, "Never copy `TakaroValheim.dll` into the client");
-        StringAssert.Contains(companion, "Never copy `Takaro.Valheim.Companion.dll` into the dedicated server");
         StringAssert.Contains(serverEntrypoint, "if (!IsDedicatedServerProcess())");
-        StringAssert.Contains(clientEntrypoint, "if (!IsGraphicalValheimClient())");
+        foreach (var (name, text) in new[]
+                 {
+                     ("README.md", readme),
+                     ("connector.json", connector),
+                     ("Takaro.Valheim.sln", solution),
+                     ("build-release.sh", release)
+                 })
+        {
+            Assert.IsFalse(text.Contains("companion", StringComparison.OrdinalIgnoreCase), name);
+        }
+
+        Assert.IsFalse(File.Exists(ValheimPath("COMPANION.md")));
+        foreach (var project in new[] { "Takaro.Valheim.Companion", "Takaro.Valheim.Companion.Protocol" })
+        {
+            var directory = ValheimPath($"mod/src/{project}");
+            Assert.IsFalse(
+                Directory.Exists(directory)
+                && Directory.EnumerateFiles(directory, "*.cs*", SearchOption.TopDirectoryOnly).Any(),
+                project);
+        }
     }
 
     [TestMethod]

@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Takaro.Valheim.Companion.Protocol;
 using Takaro.Valheim.Core;
 
 namespace Takaro.Valheim.Core.Tests;
@@ -107,7 +106,7 @@ public sealed class RequestDispatcherTests
     {
         var adapter = new FakeAdapter();
         var dispatcher = new TakaroRequestDispatcher(adapter);
-        var sender = new string('s', CompanionProtocol.MaximumCodeCharacters + 1);
+        var sender = new string('s', TakaroRequestDispatcher.MaximumSenderNameCharacters + 1);
 
         var response = await dispatcher.DispatchAsync(new TakaroRequest(
             "sender-too-long",

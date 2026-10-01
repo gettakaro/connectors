@@ -49,7 +49,6 @@ public sealed class CapabilityRegistryTests
     private static readonly HashSet<string> AllowedOwnership =
     [
         "server-owned",
-        "client-reported",
         "upstream-blocked",
         "unsupported"
     ];
@@ -95,24 +94,27 @@ public sealed class CapabilityRegistryTests
     }
 
     [TestMethod]
-    public void RegistryPublishesLiveProvenClientOwnedPaths()
+    public void RegistryPublishesServerOnlyOwnership()
     {
-        using var registry = ReadRegistry();
+        var raw = ReadValheimFile("capabilities.json");
+        Assert.IsFalse(raw.Contains("companion", StringComparison.OrdinalIgnoreCase));
+
+        using var registry = JsonDocument.Parse(raw);
         var root = registry.RootElement;
 
-        Assert.AreEqual("live-supported", root.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
+        Assert.AreEqual("dedicated-server-plugin", root.GetProperty("architecture").GetString());
+        Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getMapInfo").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getMapTile").GetString());
         Assert.AreEqual("schema-fallback", root.GetProperty("actions").GetProperty("listLocations").GetString());
-        Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("player-connected").GetString());
-        Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("player-disconnected").GetString());
-        Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("chat-message").GetString());
-        Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("player-death").GetString());
-        Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty("entity-killed").GetString());
+        foreach (var eventName in RequiredEvents)
+        {
+            Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty(eventName).GetString(), eventName);
+        }
 
         var ownership = root.GetProperty("ownership");
         Assert.AreEqual(
-            "client-reported",
+            "unsupported",
             ownership.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
         Assert.AreEqual(
             "upstream-blocked",
@@ -120,10 +122,18 @@ public sealed class CapabilityRegistryTests
         Assert.AreEqual(
             "unsupported",
             ownership.GetProperty("actions").GetProperty("getMapInfo").GetString());
+        foreach (var action in new[] { "giveItem", "sendMessage" })
+        {
+            Assert.AreEqual(
+                "server-owned",
+                ownership.GetProperty("actions").GetProperty(action).GetString(),
+                action);
+        }
+
         foreach (var eventName in new[] { "chat-message", "player-death", "entity-killed" })
         {
             Assert.AreEqual(
-                "client-reported",
+                "server-owned",
                 ownership.GetProperty("events").GetProperty(eventName).GetString(),
                 eventName);
         }
@@ -141,7 +151,7 @@ public sealed class CapabilityRegistryTests
         var developerDoc = ReadValheimFile("DEVELOPMENT.md");
 
         // These four were live-proven on 2026-09-02 against a real dedicated server and a
-        // real graphical client. Each must stay backed by a dated note recording that run,
+        // real game client. Each must stay backed by a dated note recording that run,
         // so a future status change cannot quietly drop the evidence behind it.
         foreach (var action in new[] { "kickPlayer", "banPlayer", "unbanPlayer", "shutdown" })
         {
@@ -213,63 +223,6 @@ public sealed class CapabilityRegistryTests
                     $"Developer doc status mismatch for {entry.Name}.");
             }
         }
-    }
-
-    [TestMethod]
-    public void CompanionDocumentationCoversSafeInstallUpgradeRemovalAndTrustBoundary()
-    {
-        var companion = ReadValheimFile("COMPANION.md");
-        var developerDoc = ReadValheimFile("DEVELOPMENT.md");
-        var combined = companion + "\n" + developerDoc;
-
-        foreach (var marker in new[]
-                 {
-                     "takaro-valheim-plugin.zip",
-                     "takaro-valheim-companion.zip",
-                     "Install",
-                     "Upgrade",
-                     "Remove",
-                     "required",
-                     "protocol",
-                     "client-reported",
-                     "untrusted",
-                     "No Takaro token",
-                     "BepInEx/plugins/TakaroValheimCompanion"
-                 })
-        {
-            StringAssert.Contains(combined, marker);
-        }
-
-        StringAssert.Contains(companion, "registrationToken stays on the dedicated server");
-        StringAssert.Contains(companion, "expected and actual protocol versions");
-        StringAssert.Contains(developerDoc, "server plugin still refuses graphical-client processes");
-    }
-
-    [TestMethod]
-    public void ServerMessageDocumentationRequiresAuthenticatedNormalChatRendering()
-    {
-        var companion = ReadValheimFile("COMPANION.md");
-        var developerDoc = ReadValheimFile("DEVELOPMENT.md");
-        var combined = developerDoc + "\n" + companion;
-        using var registry = ReadRegistry();
-        var notes = registry.RootElement.GetProperty("notes")
-            .EnumerateArray()
-            .Select(note => note.GetString() ?? string.Empty)
-            .ToArray();
-
-        StringAssert.Contains(developerDoc, "normal Valheim chat history");
-        StringAssert.Contains(developerDoc, "active negotiated companion");
-        StringAssert.Contains(companion, "server-chat");
-        StringAssert.Contains(companion, "normal chat history");
-        StringAssert.Contains(companion, "never rendered through the HUD overlay APIs");
-        StringAssert.Contains(combined, "opts.senderNameOverride");
-        StringAssert.Contains(combined, "dynamic per message");
-        StringAssert.Contains(combined, "missing or blank");
-        StringAssert.Contains(combined, "`Takaro`");
-        Assert.IsTrue(notes.Any(note =>
-            note.Contains("sendMessage", StringComparison.Ordinal)
-            && note.Contains("normal chat", StringComparison.OrdinalIgnoreCase)
-            && note.Contains("negotiated companion", StringComparison.OrdinalIgnoreCase)));
     }
 
     private static JsonDocument ReadRegistry()

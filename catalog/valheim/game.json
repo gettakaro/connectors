@@ -36,17 +36,12 @@
   "build": {"system": "script", "projectDir": "games/valheim"},
   "componentRoles": {
     "server-plugin": {
-      "description": "Dedicated-server BepInEx plugin folder (BepInEx/plugins/TakaroValheim); the only half that holds the Takaro token",
+      "description": "Dedicated-server BepInEx plugin folder (BepInEx/plugins/TakaroValheim); the only component Valheim ships",
       "artifactPattern": "takaro-valheim-plugin-{target}-{version}.zip"
-    },
-    "client-companion": {
-      "description": "Graphical-client BepInEx companion (BepInEx/plugins/TakaroValheimCompanion); optional, never loaded by the dedicated server",
-      "artifactPattern": "takaro-valheim-companion-{target}-{version}.zip"
     }
   },
   "legacyAssetAliases": {
-    "takaro-valheim-plugin.zip": "linux-1.0.16/server-plugin",
-    "takaro-valheim-companion.zip": "linux-1.0.16/client-companion"
+    "takaro-valheim-plugin.zip": "linux-1.0.16/server-plugin"
   },
   "devServers": {"composeFile": "valheim.yml"}
 }

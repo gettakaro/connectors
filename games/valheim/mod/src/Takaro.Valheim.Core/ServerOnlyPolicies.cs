@@ -120,9 +120,9 @@ public enum ValheimEventObservationSource
 {
     Connector,
     ServerPlayerSnapshot,
-    ServerCharacterState,
-    ClientCompanion,
-    RoutedRpcPayload
+    PeerBoundRoutedRpc,
+    ServerZdoState,
+    UnboundRoutedRpc
 }
 
 public static class ValheimEventType
@@ -135,6 +135,11 @@ public static class ValheimEventType
     public const string EntityKilled = "entity-killed";
 }
 
+/// <summary>
+/// Explicit allowlist of which server-side observation may produce which Takaro event. Every
+/// event is server-observed: identity always comes from the network peer a packet arrived on,
+/// never from a value the client wrote into the packet.
+/// </summary>
 public static class ValheimEventAcceptancePolicy
 {
     public static bool CanEmit(string eventType, ValheimEventObservationSource source) =>
@@ -143,9 +148,9 @@ public static class ValheimEventAcceptancePolicy
             (ValheimEventType.Log, ValheimEventObservationSource.Connector) => true,
             (ValheimEventType.PlayerConnected, ValheimEventObservationSource.ServerPlayerSnapshot) => true,
             (ValheimEventType.PlayerDisconnected, ValheimEventObservationSource.ServerPlayerSnapshot) => true,
-            (ValheimEventType.ChatMessage, ValheimEventObservationSource.ClientCompanion) => true,
-            (ValheimEventType.PlayerDeath, ValheimEventObservationSource.ClientCompanion) => true,
-            (ValheimEventType.EntityKilled, ValheimEventObservationSource.ClientCompanion) => true,
+            (ValheimEventType.ChatMessage, ValheimEventObservationSource.PeerBoundRoutedRpc) => true,
+            (ValheimEventType.PlayerDeath, ValheimEventObservationSource.PeerBoundRoutedRpc) => true,
+            (ValheimEventType.EntityKilled, ValheimEventObservationSource.ServerZdoState) => true,
             _ => false
         };
 }

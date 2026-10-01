@@ -1,4 +1,4 @@
-"""The Valheim adapter: a Steam-delivered server, a pinned BepInEx pack, two artifact roles.
+"""The Valheim adapter: a Steam-delivered server, a pinned BepInEx pack, one server plugin.
 
 Valheim differs from the other Steam game in this catalog in three ways, and each one is a
 method here.
@@ -9,11 +9,9 @@ game will load anything. So the exact install is the depot set plus the pack, an
 recorded in the ledger — a replaced ``BepInEx/core/BepInEx.dll`` is as much a drifted
 install as a replaced ``valheim_server.x86_64``.
 
-*Two artifact roles.* The dedicated-server plugin and the graphical-client companion are
-built from the same source tree and published as two zips. Only the plugin is ever loaded
-by a dedicated server, so only the plugin is unpacked on deploy; the companion is parked
-beside it (``takaro-companion/``) so the role has a recorded home and a reviewer can see
-exactly which bytes a release shipped.
+*One artifact role.* The connector is a dedicated-server BepInEx plugin and nothing else:
+there is no client-side component. The one zip is unpacked into ``BepInEx/plugins`` on
+deploy, and any other role a record names is refused.
 
 *A runtime image that installs things.* The image used for verification can fetch the game
 with SteamCMD and the pack from Thunderstore's ``latest`` on every boot. Both are switched
@@ -140,7 +138,6 @@ class ValheimAdapter(BaseAdapter):
             f"{prefix}_STEAM_BUILDID": str(server["buildid"]),
             f"{prefix}_STEAM_DEPOTS": depots,
             f"{prefix}_ARTIFACT_SERVER_PLUGIN": str(artifacts["server-plugin"]),
-            f"{prefix}_ARTIFACT_CLIENT_COMPANION": str(artifacts["client-companion"]),
             f"{prefix}_REFERENCES_DIR": f"{REFERENCES_ROOT}/{resolved['fp16']}",
             f"{prefix}_BEPINEX_DIR": f"{DEPS_ROOT}/{resolved['fp16']}",
             f"{prefix}_BEPINEX_PACKAGE": f"{pack['namespace']}/{pack['name']}",
@@ -320,7 +317,6 @@ class ValheimAdapter(BaseAdapter):
             self._unpack(archive_path, staging, spec, name)
             for folder in ("config", "plugins", "patchers"):
                 (staging / "BepInEx" / folder).mkdir(parents=True, exist_ok=True)
-            (staging / "takaro-companion").mkdir(parents=True, exist_ok=True)
 
         return post_install
 
@@ -393,20 +389,16 @@ class ValheimAdapter(BaseAdapter):
 
     # -- deploy ---------------------------------------------------------------
     def after_deploy(self, dest: Path, component: dict[str, Any], artifact: Path) -> None:
-        """Unpack the server plugin where BepInEx loads it; leave the companion packed.
+        """Unpack the server plugin where BepInEx loads it.
 
-        The dedicated server never loads the companion, so unpacking it would put a client
-        assembly on the plugin search path. It stays a zip in ``takaro-companion/``: the
-        role has a recorded home, and what a release shipped can be read off the server.
+        ``server-plugin`` is the only role Valheim ships; any other role is refused before
+        anything is written, so a stray record cannot put foreign assemblies on the
+        dedicated server's plugin search path.
         """
         install_dir = dest / paths.safe_relative(component["installDir"], field="components[].installDir")
         role = str(component["role"])
-        if role == "client-companion":
-            for stale in sorted(install_dir.glob("takaro-valheim-companion-*.zip")):
-                if stale.name != artifact.name:
-                    stale.unlink()
-            output.info(f"parked {artifact.name} in {component['installDir']}/ (never loaded by the dedicated server)")
-            return
+        if role != "server-plugin":
+            raise ConflictError(f"Valheim ships only a server-plugin artifact, not '{role}'; nothing was deployed")
 
         folder = install_dir / PLUGIN_FOLDER
         install_dir.mkdir(parents=True, exist_ok=True)

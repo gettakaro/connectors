@@ -1,12 +1,5 @@
 namespace Takaro.Valheim.Core;
 
-public enum CompanionMode
-{
-    Disabled,
-    Optional,
-    Required
-}
-
 public sealed record ConnectorConfig(
     string RegistrationToken,
     string ServerName,
@@ -17,7 +10,10 @@ public sealed record ConnectorConfig(
     IReadOnlyList<string> CommandAllowlistExact,
     IReadOnlyList<string> CommandAllowlistPrefixes)
 {
-    public CompanionMode CompanionMode { get; init; } = CompanionMode.Disabled;
+    public const string DefaultChatSenderName = "Takaro";
+    public const int MaximumChatSenderNameCharacters = 128;
+
+    public string ChatSenderName { get; init; } = DefaultChatSenderName;
 
     public static bool TryFromDictionary(
         IReadOnlyDictionary<string, string> values,
@@ -59,7 +55,7 @@ public sealed record ConnectorConfig(
             CommandAllowlistExact: ParseList(Optional(values, "commandAllowlistExact"), defaultValues: new[] { "help" }),
             CommandAllowlistPrefixes: ParseList(Optional(values, "commandAllowlistPrefixes"), defaultValues: Array.Empty<string>()))
         {
-            CompanionMode = ParseCompanionMode(Optional(values, "companionMode"))
+            ChatSenderName = ParseChatSenderName(Optional(values, "chatSenderName"))
         };
     }
 
@@ -98,30 +94,20 @@ public sealed record ConnectorConfig(
             || value.Equals("on", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static CompanionMode ParseCompanionMode(string? value)
+    private static string ParseChatSenderName(string? value)
     {
         if (value is null)
         {
-            return CompanionMode.Disabled;
+            return DefaultChatSenderName;
         }
 
-        if (value.Equals("disabled", StringComparison.OrdinalIgnoreCase))
+        if (value.Length > MaximumChatSenderNameCharacters)
         {
-            return CompanionMode.Disabled;
+            throw new ArgumentException(
+                $"Valheim Takaro chatSenderName must contain at most {MaximumChatSenderNameCharacters} characters.");
         }
 
-        if (value.Equals("optional", StringComparison.OrdinalIgnoreCase))
-        {
-            return CompanionMode.Optional;
-        }
-
-        if (value.Equals("required", StringComparison.OrdinalIgnoreCase))
-        {
-            return CompanionMode.Required;
-        }
-
-        throw new ArgumentException(
-            $"Invalid Valheim Takaro companionMode '{value}'. Expected disabled, optional, or required.");
+        return value;
     }
 
     private static IReadOnlyList<string> ParseList(string? value, IReadOnlyList<string> defaultValues)

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Builds the two Valheim roles -- the dedicated-server plugin and the graphical-client
-# companion -- for one catalog target, and packages each as its own deterministic archive
-# named by the target record.
+# Builds the Valheim dedicated-server plugin for one catalog target and packages it as one
+# deterministic archive named by the target record. There is no client-side component.
 #
 # By default the compile itself happens inside the .NET SDK image the target pins, so the
 # bytes do not depend on which SDK the caller happens to have: the script prepares the
@@ -118,9 +117,8 @@ fi
 echo "  BepInEx loader: ${BEPINEX_LOADER_VERSION} (pack ${BEPINEX_PACK_VERSION})"
 
 SERVER_ARCHIVE="${VALHEIM_ARTIFACT_SERVER_PLUGIN/\{version\}/${VALHEIM_RELEASE_VERSION}}"
-COMPANION_ARCHIVE="${VALHEIM_ARTIFACT_CLIENT_COMPANION/\{version\}/${VALHEIM_RELEASE_VERSION}}"
 
-echo "Building Valheim connector and companion v${VALHEIM_RELEASE_VERSION} for ${VALHEIM_TARGET} (${VALHEIM_FP16})..."
+echo "Building Valheim connector v${VALHEIM_RELEASE_VERSION} for ${VALHEIM_TARGET} (${VALHEIM_FP16})..."
 
 # A release is built from nothing but the sources and the pinned inputs: msbuild's
 # intermediate output decides what is copied into the package, so it never carries over
@@ -156,9 +154,8 @@ verify_pinned_nupkg \
 dotnet test mod/Takaro.Valheim.sln --no-restore -v minimal
 
 SERVER_PUBLISH="$(mktemp -d)"
-CLIENT_PUBLISH="$(mktemp -d)"
 STAGE="$(mktemp -d)"
-trap 'rm -rf "$SERVER_PUBLISH" "$CLIENT_PUBLISH" "$STAGE"' EXIT
+trap 'rm -rf "$SERVER_PUBLISH" "$STAGE"' EXIT
 
 dotnet publish mod/src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj \
   -c Release \
@@ -180,31 +177,9 @@ dotnet publish mod/src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj \
   -p:Deterministic=true \
   -p:PathMap="$(pwd)=/src"
 
-dotnet publish mod/src/Takaro.Valheim.Companion/Takaro.Valheim.Companion.csproj \
-  -c Release \
-  -f net472 \
-  --no-restore \
-  -o "$CLIENT_PUBLISH" \
-  -p:EnableValheimCompanionBuild=true \
-  -p:BepInExReferencePath="$BEPINEX_REFERENCE_PATH" \
-  -p:ValheimReferencePath="$VALHEIM_REFERENCE_PATH" \
-  -p:TakaroValheimCompanionReleaseVersion="$VALHEIM_RELEASE_VERSION" \
-  -p:TakaroValheimCompanionBepInExVersion="$VALHEIM_BEPINEX_VERSION" \
-  -p:Version="$VALHEIM_RELEASE_VERSION" \
-  -p:PackageVersion="$VALHEIM_RELEASE_VERSION" \
-  -p:AssemblyVersion="$VALHEIM_ASSEMBLY_VERSION" \
-  -p:FileVersion="$VALHEIM_ASSEMBLY_VERSION" \
-  -p:InformationalVersion="$VALHEIM_RELEASE_VERSION" \
-  -p:IncludeSourceRevisionInInformationalVersion=false \
-  -p:ContinuousIntegrationBuild=true \
-  -p:Deterministic=true \
-  -p:PathMap="$(pwd)=/src"
-
 SERVER_DIR="$STAGE/TakaroValheim"
-CLIENT_DIR="$STAGE/TakaroValheimCompanion"
-mkdir -p "$SERVER_DIR" "$CLIENT_DIR"
+mkdir -p "$SERVER_DIR"
 cp "$SERVER_PUBLISH"/*.dll "$SERVER_DIR/"
-cp "$CLIENT_PUBLISH"/*.dll "$CLIENT_DIR/"
 
 strip_host_assemblies() {
   local package_dir="$1"
@@ -220,9 +195,6 @@ strip_host_assemblies() {
     "$package_dir/ServerSync.dll"
 }
 strip_host_assemblies "$SERVER_DIR"
-strip_host_assemblies "$CLIENT_DIR"
-rm -f "$SERVER_DIR/Takaro.Valheim.Companion.dll"
-rm -f "$CLIENT_DIR/TakaroValheim.dll" "$CLIENT_DIR/Takaro.Valheim.Core.dll"
 
 cat > "$SERVER_DIR/README.txt" << EOF
 Takaro Valheim Connector ${VALHEIM_RELEASE_VERSION}
@@ -233,27 +205,12 @@ Dedicated server install:
 1. Install BepInExPack Valheim ${BEPINEX_PACK_VERSION} on the dedicated server.
 2. Copy TakaroValheim into BepInEx/plugins/TakaroValheim.
 3. Start once, then configure BepInEx/config/com.takaro.valheim.cfg.
-4. Set the server registrationToken and companionMode.
+4. Set registrationToken (and optionally chatSenderName, the name Takaro messages show in chat).
 5. Restart the dedicated server so the saved configuration is loaded.
 
 Upgrade note: after replacing this folder, delete BepInEx/cache/chainloader_typeloader.dat before restarting. Deterministic archive timestamps can otherwise leave cached metadata from a previous same-size DLL.
 
-This server package is not a client mod. Never commit live registration tokens.
-EOF
-
-cat > "$CLIENT_DIR/README.txt" << EOF
-Takaro Valheim Companion ${VALHEIM_RELEASE_VERSION}
-
-Built against: ${VALHEIM_TARGET} (Valheim ${VALHEIM_REVISION}, BepInExPack ${BEPINEX_PACK_VERSION}).
-
-Graphical client install:
-1. Install BepInExPack Valheim ${BEPINEX_PACK_VERSION} in the graphical Valheim client.
-2. Copy TakaroValheimCompanion into BepInEx/plugins/TakaroValheimCompanion.
-3. Restart Valheim. No Takaro token or cloud credential belongs on the client.
-
-Upgrade note: after replacing this folder, delete BepInEx/cache/chainloader_typeloader.dat before restarting. Deterministic archive timestamps can otherwise leave cached metadata from a previous same-size DLL.
-
-This client package is not the dedicated-server connector.
+This is a dedicated-server plugin only; players need no mod. Never commit live registration tokens.
 EOF
 
 # Three different BepInEx-shaped numbers, each named for what it is:
@@ -279,21 +236,16 @@ write_manifest() {
     "revision": "${VALHEIM_REVISION}",
     "fingerprint": "${VALHEIM_FINGERPRINT}"
   },
-  "processRole": "${role}",
-  "protocol": { "minimum": 2, "current": 2, "maximum": 2 }
+  "processRole": "${role}"
 }
 EOF
 }
 
 write_manifest "$SERVER_DIR/manifest.json" TakaroValheim dedicated-server
-write_manifest "$CLIENT_DIR/manifest.json" TakaroValheimCompanion graphical-client
 
 for required in \
   "$SERVER_DIR/TakaroValheim.dll" \
-  "$SERVER_DIR/Takaro.Valheim.Core.dll" \
-  "$SERVER_DIR/Takaro.Valheim.Companion.Protocol.dll" \
-  "$CLIENT_DIR/Takaro.Valheim.Companion.dll" \
-  "$CLIENT_DIR/Takaro.Valheim.Companion.Protocol.dll"; do
+  "$SERVER_DIR/Takaro.Valheim.Core.dll"; do
   [ -f "$required" ] || {
     echo "Publish output is missing required DLL: $required" >&2
     exit 1
@@ -319,27 +271,24 @@ normalize_and_zip() {
 }
 
 # The output directory is per target, not per version, so the previous build of another
-# version is still sitting in it -- and two archives of one role are ambiguous about which
-# bytes a release meant, which is why the packaging check below refuses them. Drop the
-# earlier output of exactly these two roles (the names come from the target record, with
-# the version wildcarded) before writing this build's.
+# version is still sitting in it -- and two plugin archives are ambiguous about which bytes
+# a release meant, which is why the packaging check below refuses them. Drop the earlier
+# output of the plugin role (the name comes from the target record, with the version
+# wildcarded) before writing this build's.
 drop_previous_role_archives() {
   local template="$1" pattern
   pattern="${template/\{version\}/*}"
   find "$OUT_DIR" -maxdepth 1 -type f \
     \( -name "$pattern" -o -name "${pattern}.meta.json" \) \
     ! -name "$SERVER_ARCHIVE" ! -name "${SERVER_ARCHIVE}.meta.json" \
-    ! -name "$COMPANION_ARCHIVE" ! -name "${COMPANION_ARCHIVE}.meta.json" \
     -delete
 }
 
 drop_previous_role_archives "$VALHEIM_ARTIFACT_SERVER_PLUGIN"
-drop_previous_role_archives "$VALHEIM_ARTIFACT_CLIENT_COMPANION"
 
 normalize_and_zip TakaroValheim "$SERVER_ARCHIVE"
-normalize_and_zip TakaroValheimCompanion "$COMPANION_ARCHIVE"
 
-# The identity each artifact carries: `takaro-maint artifact validate` reads these files,
+# The identity the artifact carries: `takaro-maint artifact validate` reads these files,
 # because a zip has no manifest of its own to stamp.
 write_meta() {
   local archive="$1" role="$2"
@@ -358,7 +307,6 @@ JSON
 }
 
 write_meta "$SERVER_ARCHIVE" server-plugin
-write_meta "$COMPANION_ARCHIVE" client-companion
 
 VALHEIM_TARGET_ID="$VALHEIM_TARGET" \
 VALHEIM_TARGET_FINGERPRINT="$VALHEIM_FINGERPRINT" \
@@ -366,5 +314,4 @@ VALHEIM_BEPINEX_VERSION_EXPECTED="$BEPINEX_PACK_VERSION" \
   bash tests/release-package-behavior.sh "$VALHEIM_RELEASE_VERSION" "$OUT_DIR"
 
 echo "  -> $OUT_DIR/$SERVER_ARCHIVE"
-echo "  -> $OUT_DIR/$COMPANION_ARCHIVE"
-sha256sum "$OUT_DIR/$SERVER_ARCHIVE" "$OUT_DIR/$COMPANION_ARCHIVE"
+sha256sum "$OUT_DIR/$SERVER_ARCHIVE"
