@@ -7,12 +7,18 @@
 #pragma once
 #include "common.h"
 
+#include <atomic>
+
 namespace Hooks {
 
 // Registry used by /health. `how` explains where the address came from.
 void RecordResolve(const std::string& name, uint64_t addr, const std::string& how, bool hooked);
 void MarkHooked(const std::string& name, bool hooked);
-void MarkFired(const std::string& name);  // cheap, lock-free enough for hot paths
+void MarkFired(const std::string& name);  // takes the registry lock: cold paths only
+// Hot paths (the Tick detour) resolve their counter ONCE at install time and then bump it with a
+// relaxed atomic add. The returned pointer stays valid for the process's life (the registry is a
+// std::map, whose nodes never move).
+std::atomic<uint64_t>* FiredCounter(const std::string& name);
 std::string ResolvedJson();               // merged symbol table + hook state
 
 // Swaps one slot of a vtable in place. `slot` is the C++ vtable index (slot 0 = first virtual

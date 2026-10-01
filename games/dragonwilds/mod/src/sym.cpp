@@ -1,5 +1,7 @@
 #include "sym.h"
 
+#include <atomic>
+
 #include <dlfcn.h>
 #include <elf.h>
 #include <fcntl.h>
@@ -609,6 +611,36 @@ Mutex g_mapsLock;
 std::vector<MapRange> g_maps;
 uint64_t g_mapsAt = 0;
 
+// The hot paths - the ProcessEvent detour and every reflected read behind it - call MemReadable
+// several times per engine RPC. Taking a mutex and re-reading /proc/self/maps there cost ~3 us per
+// ProcessEvent call on the VEIN rig (same code). The authoritative table below is still rebuilt
+// under the mutex, but each rebuild *publishes an immutable copy* that readers consult without any
+// lock. A snapshot is never freed (a few KB, rebuilt only when the map layout changes), so a reader
+// can hold the pointer for as long as it likes.
+struct MapSnapshot {
+    std::vector<MapRange> ranges;
+};
+std::atomic<const MapSnapshot*> g_snap{nullptr};
+
+void PublishSnapshotLocked() {
+    auto* snap = new MapSnapshot();
+    snap->ranges = g_maps;
+    g_snap.store(snap, std::memory_order_release);
+}
+
+// Lock-free lookup in the published snapshot. `false` only means "not in this snapshot"; the caller
+// decides whether that is worth a locked refresh.
+bool SnapshotHas(uintptr_t a, size_t len, bool needWrite) {
+    const MapSnapshot* snap = g_snap.load(std::memory_order_acquire);
+    if (!snap) return false;
+    const std::vector<MapRange>& v = snap->ranges;
+    auto it = std::upper_bound(v.begin(), v.end(), a,
+                               [](uintptr_t x, const MapRange& m) { return x < m.lo; });
+    if (it == v.begin()) return false;
+    --it;
+    return a >= it->lo && a + len <= it->hi && it->r && (!needWrite || it->w);
+}
+
 void ReloadMapsLocked() {
     std::string text;
     if (!ReadFile("/proc/self/maps", text)) return;
@@ -628,12 +660,14 @@ void ReloadMapsLocked() {
     std::sort(out.begin(), out.end(), [](const MapRange& a, const MapRange& b) { return a.lo < b.lo; });
     g_maps.swap(out);
     g_mapsAt = NowMs();
+    PublishSnapshotLocked();
 }
 
 bool Check(const void* addr, size_t len, bool needWrite) {
     if (!addr || !len) return false;
     uintptr_t a = (uintptr_t)addr;
     if (a + len < a) return false;
+    if (SnapshotHas(a, len, needWrite)) return true;  // lock-free fast path (the overwhelming case)
     Guard g(g_mapsLock);
     for (int attempt = 0; attempt < 2; attempt++) {
         if (g_maps.empty() || (attempt == 1)) ReloadMapsLocked();
