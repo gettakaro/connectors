@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net.WebSockets;
 using System.Text;
@@ -38,10 +39,40 @@ namespace Oxide.Plugins
         private readonly object _sendLock = new object();
         private readonly Dictionary<string, Vector3> _lastPosition = new Dictionary<string, Vector3>();
 
+        // --- Timed Bans ---
+        //
+        // Rust's native ban list (ServerUsers) has no expiry, so timed bans are kept
+        // in the plugin's own data file and enforced on login. Permanent bans still
+        // go through the native ban list.
+
+        private const string BanDataFile = "TakaroConnector_bans";
+        private const float BanSweepInterval = 60f;
+
+        private readonly Dictionary<ulong, TimedBan> _timedBans = new Dictionary<ulong, TimedBan>();
+        private Timer _banSweepTimer;
+
+        private class TimedBan
+        {
+            [JsonProperty("steamId")]
+            public string SteamId { get; set; }
+
+            [JsonProperty("name")]
+            public string Name { get; set; }
+
+            [JsonProperty("reason")]
+            public string Reason { get; set; }
+
+            [JsonProperty("expiresAt")]
+            public string ExpiresAt { get; set; }
+        }
+
         // --- Lifecycle ---
 
         private void Init()
         {
+            LoadTimedBans();
+            _banSweepTimer = timer.Every(BanSweepInterval, () => PruneExpiredBans());
+
             _wsUrl = Environment.GetEnvironmentVariable("TAKARO_WS_URL") ?? "wss://connect.takaro.io/";
             _registrationToken = Environment.GetEnvironmentVariable("TAKARO_REGISTRATION_TOKEN") ?? "";
             _identityToken = Environment.GetEnvironmentVariable("TAKARO_IDENTITY_TOKEN") ?? "";
@@ -70,6 +101,8 @@ namespace Oxide.Plugins
             _connected = false;
             _cts?.Cancel();
             try { _ws?.Dispose(); } catch { }
+            _banSweepTimer?.Destroy();
+            _banSweepTimer = null;
             _lastPosition.Clear();
         }
 
@@ -462,6 +495,14 @@ namespace Oxide.Plugins
 
         // --- Action Handlers ---
 
+        // Takaro sends the player either flat ({gameId}) or nested ({player:{gameId}}),
+        // depending on the route, so every handler accepts both.
+        private static string GameIdFrom(JObject args)
+        {
+            var nested = (args["player"] as JObject)?.Value<string>("gameId");
+            return string.IsNullOrEmpty(nested) ? args.Value<string>("gameId") : nested;
+        }
+
         private BasePlayer FindPlayerByGameId(string gameId)
         {
             if (string.IsNullOrEmpty(gameId)) return null;
@@ -490,7 +531,7 @@ namespace Oxide.Plugins
 
         private JToken HandleGetPlayer(JObject args)
         {
-            var gameId = args.Value<string>("gameId");
+            var gameId = GameIdFrom(args);
             var player = FindPlayerByGameId(gameId);
             return player != null ? (JToken)PlayerToJson(player) : JValue.CreateNull();
         }
@@ -505,7 +546,7 @@ namespace Oxide.Plugins
 
         private JToken HandleGetPlayerLocation(JObject args)
         {
-            var gameId = args.Value<string>("gameId");
+            var gameId = GameIdFrom(args);
             var player = FindPlayerByGameId(gameId);
 
             if (player != null)
@@ -535,7 +576,7 @@ namespace Oxide.Plugins
 
         private JToken HandleGetPlayerInventory(JObject args)
         {
-            var gameId = args.Value<string>("gameId");
+            var gameId = GameIdFrom(args);
             var player = FindPlayerByGameId(gameId);
             if (player == null) return JValue.CreateNull();
 
@@ -834,12 +875,15 @@ namespace Oxide.Plugins
             LogInfo($"console: {CommandSummary(command)}");
             try
             {
-                var result = ConsoleSystem.Run(ConsoleSystem.Option.Server, command);
+                var result = ConsoleSystem.Run(ConsoleSystem.Option.Server, command) ?? "";
+                // A command that throws does not throw here: Rust hands back its message
+                // as "Error: <command> - <message>" in place of the output.
+                var failed = result.StartsWith("Error: ", StringComparison.Ordinal);
                 return new JObject
                 {
-                    ["success"] = true,
-                    ["rawResult"] = result ?? "",
-                    ["errorMessage"] = ""
+                    ["success"] = !failed,
+                    ["rawResult"] = result,
+                    ["errorMessage"] = failed ? result : ""
                 };
             }
             catch (Exception ex)
@@ -879,8 +923,7 @@ namespace Oxide.Plugins
 
         private void HandleGiveItem(JObject args)
         {
-            var playerObj = args["player"] as JObject;
-            var gameId = playerObj?.Value<string>("gameId");
+            var gameId = GameIdFrom(args);
             var itemCode = args.Value<string>("item");
             var amount = args.Value<int?>("amount") ?? 1;
 
@@ -899,8 +942,7 @@ namespace Oxide.Plugins
 
         private void HandleTeleportPlayer(JObject args)
         {
-            var playerObj = args["player"] as JObject;
-            var gameId = playerObj?.Value<string>("gameId");
+            var gameId = GameIdFrom(args);
             var x = args.Value<float?>("x") ?? 0;
             var y = args.Value<float?>("y") ?? 0;
             var z = args.Value<float?>("z") ?? 0;
@@ -913,8 +955,7 @@ namespace Oxide.Plugins
 
         private void HandleKickPlayer(JObject args)
         {
-            var playerObj = args["player"] as JObject;
-            var gameId = playerObj?.Value<string>("gameId");
+            var gameId = GameIdFrom(args);
             var reason = args.Value<string>("reason") ?? "";
 
             var player = FindPlayerByGameId(gameId);
@@ -925,9 +966,9 @@ namespace Oxide.Plugins
 
         private void HandleBanPlayer(JObject args)
         {
-            var playerObj = args["player"] as JObject;
-            var gameId = playerObj?.Value<string>("gameId");
+            var gameId = GameIdFrom(args);
             var reason = args.Value<string>("reason") ?? "";
+            var expiresAt = args.Value<string>("expiresAt");
 
             if (string.IsNullOrEmpty(gameId)) throw new Exception("gameId required");
             if (!ulong.TryParse(gameId, out var steamId)) throw new Exception("Invalid gameId");
@@ -935,17 +976,41 @@ namespace Oxide.Plugins
             var player = FindPlayerByGameId(gameId);
             var name = player?.displayName ?? gameId;
 
-            ServerUsers.Set(steamId, ServerUsers.UserGroup.Banned, name, reason);
-            ServerUsers.Save();
+            DateTimeOffset expiry;
+            if (TryParseExpiry(expiresAt, out expiry))
+            {
+                // Timed ban: keep it in our own data file, native ban list has no expiry.
+                ServerUsers.Remove(steamId);
+                ServerUsers.Save();
+
+                _timedBans[steamId] = new TimedBan
+                {
+                    SteamId = gameId,
+                    Name = name,
+                    Reason = reason,
+                    ExpiresAt = ToIso8601(expiry)
+                };
+                SaveTimedBans();
+                LogInfo($"Timed ban for {gameId} until {ToIso8601(expiry)}");
+            }
+            else
+            {
+                if (_timedBans.Remove(steamId)) SaveTimedBans();
+
+                ServerUsers.Set(steamId, ServerUsers.UserGroup.Banned, name, reason);
+                ServerUsers.Save();
+            }
 
             player?.Kick($"Banned: {reason}");
         }
 
         private void HandleUnbanPlayer(JObject args)
         {
-            var gameId = args.Value<string>("gameId");
+            var gameId = GameIdFrom(args);
             if (string.IsNullOrEmpty(gameId)) throw new Exception("gameId required");
             if (!ulong.TryParse(gameId, out var steamId)) throw new Exception("Invalid gameId");
+
+            if (_timedBans.Remove(steamId)) SaveTimedBans();
 
             ServerUsers.Remove(steamId);
             ServerUsers.Save();
@@ -953,6 +1018,8 @@ namespace Oxide.Plugins
 
         private JToken HandleListBans()
         {
+            PruneExpiredBans();
+
             var arr = new JArray();
             var bans = ServerUsers.GetAll(ServerUsers.UserGroup.Banned);
             foreach (var ban in bans)
@@ -968,12 +1035,138 @@ namespace Oxide.Plugins
                     ["expiresAt"] = null
                 });
             }
+
+            foreach (var ban in _timedBans.Values)
+            {
+                arr.Add(new JObject
+                {
+                    ["player"] = new JObject
+                    {
+                        ["gameId"] = ban.SteamId ?? "",
+                        ["name"] = ban.Name ?? ""
+                    },
+                    ["reason"] = ban.Reason ?? "",
+                    ["expiresAt"] = ban.ExpiresAt
+                });
+            }
+
             return arr;
         }
 
+        // --- Timed Ban Storage & Enforcement ---
+
+        private static bool TryParseExpiry(string expiresAt, out DateTimeOffset expiry)
+        {
+            expiry = default(DateTimeOffset);
+            if (string.IsNullOrEmpty(expiresAt)) return false;
+
+            DateTimeOffset parsed;
+            if (!DateTimeOffset.TryParse(
+                    expiresAt,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal,
+                    out parsed))
+            {
+                return false;
+            }
+
+            expiry = parsed.ToUniversalTime();
+            return expiry > DateTimeOffset.UtcNow;
+        }
+
+        private static string ToIso8601(DateTimeOffset value) =>
+            value.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
+
+        private void LoadTimedBans()
+        {
+            _timedBans.Clear();
+            try
+            {
+                var stored = Interface.Oxide.DataFileSystem
+                    .ReadObject<Dictionary<string, TimedBan>>(BanDataFile);
+                if (stored == null) return;
+
+                foreach (var entry in stored)
+                {
+                    ulong steamId;
+                    if (entry.Value == null || !ulong.TryParse(entry.Key, out steamId)) continue;
+                    if (string.IsNullOrEmpty(entry.Value.SteamId)) entry.Value.SteamId = entry.Key;
+                    _timedBans[steamId] = entry.Value;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"Could not read timed ban data: {ex.Message}");
+            }
+
+            PruneExpiredBans();
+        }
+
+        private void SaveTimedBans()
+        {
+            try
+            {
+                var toStore = new Dictionary<string, TimedBan>();
+                foreach (var entry in _timedBans) toStore[entry.Key.ToString()] = entry.Value;
+                Interface.Oxide.DataFileSystem.WriteObject(BanDataFile, toStore);
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"Could not write timed ban data: {ex.Message}");
+            }
+        }
+
+        /// <summary>Drops timed bans whose expiry has passed. Returns true if anything changed.</summary>
+        private bool PruneExpiredBans()
+        {
+            if (_timedBans.Count == 0) return false;
+
+            var now = DateTimeOffset.UtcNow;
+            var expired = new List<ulong>();
+            foreach (var entry in _timedBans)
+            {
+                DateTimeOffset expiry = default(DateTimeOffset);
+                var parseable = !string.IsNullOrEmpty(entry.Value?.ExpiresAt)
+                    && DateTimeOffset.TryParse(
+                        entry.Value.ExpiresAt,
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal,
+                        out expiry);
+
+                // An unreadable expiry would never lift, so drop it rather than ban forever.
+                if (!parseable || expiry.ToUniversalTime() <= now) expired.Add(entry.Key);
+            }
+
+            if (expired.Count == 0) return false;
+
+            foreach (var steamId in expired)
+            {
+                _timedBans.Remove(steamId);
+                LogInfo($"Timed ban for {steamId} expired, lifted");
+            }
+            SaveTimedBans();
+            return true;
+        }
+
+        private object CanUserLogin(string name, string id, string ip)
+        {
+            ulong steamId;
+            if (!ulong.TryParse(id, out steamId)) return null;
+
+            TimedBan ban;
+            if (!_timedBans.TryGetValue(steamId, out ban)) return null;
+
+            PruneExpiredBans();
+            if (!_timedBans.TryGetValue(steamId, out ban)) return null;
+
+            return string.IsNullOrEmpty(ban.Reason) ? "Banned" : $"Banned: {ban.Reason}";
+        }
+
+        // The response is sent after this returns, so quitting here would kill the
+        // process before Takaro hears back. Quit a moment later instead.
         private void HandleShutdown()
         {
-            ConsoleSystem.Run(ConsoleSystem.Option.Server, "quit");
+            timer.Once(2f, () => ConsoleSystem.Run(ConsoleSystem.Option.Server, "quit"));
         }
 
         // --- Game Event Hooks ---
