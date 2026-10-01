@@ -164,7 +164,7 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertEqual(6, actions.count("WebSocketMessage.CreateResponse(requestId, null)"))
         self.assertEqual(1, give_item.count("WebSocketMessage.CreateResponse(requestId, null)"))
 
-    def test_give_item_uses_only_the_first_party_world_drop_delivery_seam(self):
+    def test_give_item_delivers_into_the_inventory_through_one_seam(self):
         actions = self.source("src/WebSocket/ActionHandlers.cs")
         self.assertIn("GiveItemHandler.Handle(requestId, args)", actions)
         give_item = self.source("src/WebSocket/GiveItemHandler.cs")
@@ -172,12 +172,16 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertNotIn("NetPackageEntityCollect", give_item)
         self.assertNotIn("EntityFactory.CreateEntity", give_item)
         self.assertNotIn("RemoveEntity", give_item)
-        self.assertIn("PlayerProximateItemDelivery.Drop(iv, args.Amount, player)", give_item)
+        self.assertIn("PlayerProximateItemDelivery.Deliver(iv, args.Amount, player, cInfo)", give_item)
         delivery = self.source("src/Services/PlayerProximateItemDelivery.cs")
-        self.assertIn("EntityPlayer player", delivery)
+        # Inventory delivery: the client collects an item entity owned by the player.
+        self.assertIn("EntityFactory.CreateEntity", delivery)
+        self.assertIn("belongsPlayerId = player.entityId", delivery)
+        self.assertIn("NetPackageEntityCollect", delivery)
+        self.assertIn("RemoveEntity(entityItem.entityId", delivery)
+        # Fallback without a client: the old ground drop at the player's feet.
         self.assertIn("player.GetDropPosition()", delivery)
-        self.assertNotIn("player.entityId", delivery)
-        self.assertIn("Vector3.zero", delivery)
+        self.assertIn("ItemDropServer(itemStack, player.GetDropPosition(), Vector3.zero)", delivery)
 
     def test_missing_inventory_is_an_array(self):
         reads = self.source("src/WebSocket/ReadHandlers.cs")

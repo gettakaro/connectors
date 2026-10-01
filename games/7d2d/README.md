@@ -110,8 +110,13 @@ Mod initialized successfully
 WebSocket connection confirmed
 ```
 
-And in Takaro, the game server shows as **online**. If it stays offline, the registration token in
-`Config.xml` is the first thing to re-check.
+And in Takaro, the game server shows as **online**. If the token is wrong, the log says so instead:
+
+```
+Takaro rejected identify: Invalid registrationToken provided. Check RegistrationToken and IdentityToken in Takaro/Config.xml; retrying with backoff
+```
+
+Fix the token in `Config.xml` and restart the server.
 
 ### 6. Upgrading
 
@@ -121,24 +126,24 @@ survive the upgrade. Never swap `Takaro.dll` under a running server; it can cras
 
 ## What works, what doesn't
 
-Verified end to end on **2026-09-15** against a real dedicated server (game build **V 3.2.0 b10**,
-mod **0.1.4**) with a real game client connected.
+Verified end to end on **2026-10-01** against a real dedicated server (game build **V 3.2.0 b10**,
+this release's mod) with a real game client connected.
 ✅ = works, ⚠️ = works with a caveat, ❌ = does not work.
 
 | What | | Notes |
 |---|---|---|
-| Connection & heartbeat | ✅ | Reconnects by itself after outages and server restarts; up to ~90 s of events right after an outage begins can be lost. |
+| Connection & heartbeat | ✅ | Reconnects by itself after outages and server restarts, within about a minute of the network coming back. Events from during the outage are delivered afterwards, none lost. A wrong registration token is logged as an error. |
 | Server restart / reconnect | ✅ | The mod comes back on its own after a server restart, including with a player online. |
 | Player list | ✅ | Name, platform id, IP and ping. This is how Takaro loads players for 7D2D. |
 | Single player lookup | ⚠️ | The data is correct, but Takaro never asks for one player at a time on this game — it uses the player list instead. |
 | Player location | ✅ | Polled about every 30 s; matches the server's own `lp` output. |
 | Player inventory | ✅ | Matches what the player is carrying in game. |
-| Item catalogue | ✅ | 26,329 items synced. |
-| Entity catalogue | ✅ | 175 entities synced. |
+| Item catalogue | ✅ | Items with player-facing names; internal game entries that have no name are no longer sent (they can still be given by code). Takaro keeps rows it already has, so a server set up with an older version still lists those entries. |
+| Entity catalogue | ✅ | 175 entities synced, with their in-game names. |
 | Chat messages from players | ✅ | Real player chat reaches Takaro with the player attached. |
 | Broadcast a message | ✅ | Shown to everyone in the server chat. |
 | Whisper a player | ⚠️ | The message reaches the intended player. Only one client was connected, so "nobody else sees it" has not been confirmed. |
-| Give an item | ⚠️ | Works, but the item **drops as a bag at the player's feet** — the player has to walk over it and press E to collect. |
+| Give an item | ✅ | Goes straight into the player's inventory, with the right amount and quality, and stacks onto what they already carry. If the inventory is full, what does not fit lands at the player's feet. |
 | Teleport a player | ⚠️ | Works; the height (Y) is snapped to the ground, so the player lands on solid ground rather than at the exact Y you asked for. |
 | Run a console command | ✅ | Output and success/failure are returned, including the error text for unknown commands. |
 | Kick a player | ✅ | The player is dropped from the server with the reason shown. |
@@ -150,13 +155,13 @@ mod **0.1.4**) with a real game client connected.
 | Player left event | ✅ | Arrives in Takaro shortly after the player disconnects. |
 | Player chat event | ✅ | See "Chat messages from players". |
 | Player death event | ✅ | Includes the position where the player died. |
-| Entity kill event | ✅ | Proven with a real kill (zombie, Steel Club); the weapon used is included. |
+| Entity kill event | ✅ | Proven with real kills; reports the creature's in-game name (for example "Boe") and the weapon ("Steel Club", "Hunting Knife"). |
 | Log events | ⚠️ | The mod sends them, but Takaro does not store server log lines as events, so they cannot be searched or used in modules. |
 | Map info | ⚠️ | The mod answers, but Takaro has no map view for this connector type yet. |
 | Map tiles | ❌ | Not supported by Takaro for this connector type yet (the legacy native 7DTD integration has a map; this one does not). |
 | Locations / points of interest | ❌ | The mod collects them (368 found), but Takaro has no way to ask for them yet. |
-| Discord chat bridge | ⚠️ | Game → Discord works. Takaro records its own outgoing messages as chat, so the bridge echoes a message back and forth a few times before it stops (Takaro-side). Discord → game relayed from a **human** Discord account was never confirmed in the hard test. |
-| Shop & economy | ✅ | Buying in game (`/shop`), ordering through the Takaro API, currency grants and balance checks all work. Purchases arrive as a bag at the player's feet. |
+| Discord chat bridge | ⚠️ | Both directions work: game chat reaches Discord, and a message posted in Discord shows up in game. Takaro also forwards the game's copy of a Discord message back to Discord once (Takaro-side echo). |
+| Shop & economy | ✅ | Buying in game (`/shop`), ordering through the Takaro API, currency grants and balance checks all work. Purchases go straight into the player's inventory. |
 
 ### Known issues
 
@@ -167,11 +172,11 @@ mod **0.1.4**) with a real game client connected.
   route for it yet.
 - **No map.** Takaro's API does not support map tiles for Generic-connector servers yet; nothing on
   the game server side changes that.
-- **~90 s of events can be lost when a network outage starts.** The mod needs about that long to
-  notice a dead connection; events sent into it in the meantime do not arrive. Everything after
-  that is buffered and delivered once the connection is back.
-- **Buffered events carry the time they were sent, not the time they happened.** After an outage,
-  the delivered events are stamped with the moment they were flushed to Takaro.
+- **Events from an outage arrive late, stamped with the delivery time.** Takaro records the moment
+  it received an event, so after an outage the events from it show the reconnect time, not when they
+  happened.
+- **An event can arrive twice after an outage.** The mod resends anything Takaro had not yet
+  confirmed when the connection died; if Takaro had in fact received it, it shows up twice.
 
 ---
 
