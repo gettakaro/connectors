@@ -105,6 +105,13 @@ public sealed class TakaroRequestDispatcher
     {
         try
         {
+            // Reachability must answer even while the game loop is busy or frozen, so it
+            // reads the adapter's published readiness instead of queueing for the main thread.
+            if (request.Action == TakaroActionNames.TestReachability)
+            {
+                return await adapter.TestReachabilityAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             return await mainThreadActions.ScheduleAsync(
                 () => DispatchScheduled(request, cancellationToken),
                 cancellationToken).ConfigureAwait(false);

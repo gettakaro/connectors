@@ -30,8 +30,39 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         chatSenderName = config.ChatSenderName;
     }
 
-    public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(TakaroActionResult.Ok(new { connectable = true }));
+    private static readonly TimeSpan MainLoopStallLimit = TimeSpan.FromSeconds(8);
+    private static volatile string? notReadyReason = "Valheim server networking has not started yet.";
+    private static long lastMainLoopTicks = DateTime.UtcNow.Ticks;
+    private static float nextReadinessRefresh;
+
+    /// <summary>Called from the plugin's Update, at most once a second: publishes readiness.</summary>
+    public static void RefreshReadiness()
+    {
+        Interlocked.Exchange(ref lastMainLoopTicks, DateTime.UtcNow.Ticks);
+        if (Time.realtimeSinceStartup < nextReadinessRefresh)
+        {
+            return;
+        }
+
+        nextReadinessRefresh = Time.realtimeSinceStartup + 1f;
+        notReadyReason = ZNet.instance is null || !ZNet.instance.IsServer()
+            ? "Valheim server networking has not started yet."
+            : ZoneSystem.instance is null || !ZoneSystem.instance.LocationsGenerated
+                ? "Valheim world is still loading; players cannot join yet."
+                : null;
+    }
+
+    // Answered off the main thread from the readiness the game loop last published.
+    public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default)
+    {
+        var stalledFor = DateTime.UtcNow - new DateTime(Interlocked.Read(ref lastMainLoopTicks), DateTimeKind.Utc);
+        var reason = stalledFor > MainLoopStallLimit
+            ? $"Valheim server main loop has not run for {stalledFor.TotalSeconds:0} s."
+            : notReadyReason;
+        return Task.FromResult(reason is null
+            ? TakaroActionResult.Ok(new { connectable = true })
+            : TakaroActionResult.Ok(new { connectable = false, reason }));
+    }
 
     public Task<TakaroActionResult> GetPlayersAsync(CancellationToken cancellationToken = default)
     {

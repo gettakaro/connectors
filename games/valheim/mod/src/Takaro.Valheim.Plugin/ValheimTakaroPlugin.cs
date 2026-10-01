@@ -70,6 +70,7 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
 
     private void Update()
     {
+        ValheimServerAdapter.RefreshReadiness();
         mainThreadActions?.Drain();
         ValheimServerEventBridge.Update();
 

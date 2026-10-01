@@ -8,6 +8,23 @@ namespace Takaro.Valheim.Core.Tests;
 public sealed class RequestDispatcherTests
 {
     [TestMethod]
+    public async Task ReachabilityAnswersWhileTheGameLoopIsStalled()
+    {
+        var dispatcher = new TakaroRequestDispatcher(new FakeAdapter(), new NeverRunningScheduler());
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest("r", "testReachability", JsonDocument.Parse("{}").RootElement))
+            .WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.IsTrue(response.Success);
+    }
+
+    private sealed class NeverRunningScheduler : IMainThreadActionScheduler
+    {
+        public Task<T> ScheduleAsync<T>(Func<T> action, CancellationToken cancellationToken = default) =>
+            new TaskCompletionSource<T>().Task;
+    }
+
+    [TestMethod]
     public async Task DispatchesAdminMvpActionsThroughAdapter()
     {
         var adapter = new FakeAdapter();

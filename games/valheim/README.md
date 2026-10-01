@@ -132,15 +132,16 @@ Tested on Valheim 1.0.16 with BepInExPack 5.4.2351 and a vanilla game client, 20
 | Log events | ✅ | Connector log lines forwarded (`enableLogEvents`). |
 | Map info | ❌ | Not available for Generic game servers. |
 | Map tiles | ❌ | Not available for Generic game servers. |
-| Modules: chat commands | ⚠️ | Not re-tested in 4.0. |
-| Modules: hooks | ⚠️ | Not re-tested in 4.0. |
-| Modules: cronjobs | ⚠️ | Not re-tested in 4.0. |
-| Modules: teleports | ⚠️ | Not re-tested in 4.0. |
-| Discord: game chat → Discord | ⚠️ | Not re-tested in 4.0. |
+| Modules: chat commands | ✅ | `@` commands work; replies show in normal chat. |
+| Modules: hooks | ✅ | Join, leave and chat hooks fire. |
+| Modules: cronjobs | ✅ | Run on schedule for this server. |
+| Modules: teleports | ✅ | `@settp` and `@tp` move the player. |
+| Discord: game chat → Discord | ⚠️ | Takaro posts chat, joins and leaves; Discord view not yet re-checked. |
 | Discord: Discord → game chat | ⚠️ | Not re-tested in 4.0. |
-| Shop & economy | ⚠️ | Not re-tested in 4.0. |
+| Shop & economy | ✅ | Chat purchases deliver at the buyer's feet. |
 | Reconnects after a server restart | ✅ | Re-identifies on its own; events resume. |
 | Events raised while connecting | ✅ | Held until Takaro accepts the server, then sent. |
+| Takaro outage | ✅ | Events are kept and delivered after reconnecting. |
 
 ### Known issues
 
