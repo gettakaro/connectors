@@ -191,7 +191,7 @@ internal static class ValheimServerEventBridge
         Send(
             ValheimEventType.ChatMessage,
             EventFactory.ChatMessage(player, "global", DateTimeOffset.UtcNow, decision.Text),
-            $"Takaro Valheim chat-message forwarded (server-bound) for {player.Name} ({player.GameId}).");
+            $"Takaro Valheim chat-message queued (server-bound) for {player.Name} ({player.GameId}).");
     }
 
     // Animation triggers are broadcast for the player's own character; only weapon attack
@@ -259,7 +259,7 @@ internal static class ValheimServerEventBridge
         Send(
             ValheimEventType.PlayerDeath,
             EventFactory.PlayerDeath(player, DateTimeOffset.UtcNow, new TakaroPosition(where.x, where.y, where.z, "valheim"), attacker: null, weapon: null),
-            $"Takaro Valheim player-death forwarded (server-bound) for {player.Name} ({player.GameId}).");
+            $"Takaro Valheim player-death queued (server-bound) for {player.Name} ({player.GameId}).");
     }
 
     private static void ObserveDestroyed(ZNetPeer destroyer, ZDOID id)
@@ -315,7 +315,7 @@ internal static class ValheimServerEventBridge
         Send(
             ValheimEventType.EntityKilled,
             EventFactory.EntityKilled(player, entity, DateTimeOffset.UtcNow, weapon),
-            $"Takaro Valheim entity-killed forwarded (server-observed, {attribution.Reason}) for {player.Name}: {entity} with {weapon}.");
+            $"Takaro Valheim entity-killed queued (server-observed, {attribution.Reason}) for {player.Name}: {entity} with {weapon}.");
     }
 
     /// <summary>
@@ -398,7 +398,7 @@ internal static class ValheimServerEventBridge
             && InferredKillPolicy.AttackedJustBefore(attackAt, pending.DestroyedAt);
         if (killer is null
             || !attacked
-            || !InferredKillPolicy.KillerCloseEnough(distance)
+            || !InferredKillPolicy.KillerCloseEnough(distance, HoldsRangedWeapon(killer))
             || !Kills.TryAccept(pending.Creature.ToString(), DateTimeOffset.UtcNow)
             || resolver is null
             || !resolver.TryResolvePeerPlayer(killer, out var player)
@@ -415,7 +415,28 @@ internal static class ValheimServerEventBridge
         Send(
             ValheimEventType.EntityKilled,
             EventFactory.EntityKilled(player, pending.Entity, DateTimeOffset.UtcNow, weapon),
-            $"Takaro Valheim entity-killed forwarded (server-observed, single-blow: attack + ragdoll {distance:0.0} m from {player.Name}): {pending.Entity} with {weapon}.");
+            $"Takaro Valheim entity-killed queued (server-observed, single-blow: attack + ragdoll {distance:0.0} m from {player.Name}): {pending.Entity} with {weapon}.");
+    }
+
+    private static bool HoldsRangedWeapon(ZNetPeer peer)
+    {
+        var characterZdo = ZDOMan.instance.GetZDO(peer.m_characterID);
+        if (characterZdo is null || ObjectDB.instance is null)
+        {
+            return false;
+        }
+
+        foreach (var slot in new[] { ZDOVars.s_rightItem, ZDOVars.s_leftItem })
+        {
+            var item = ObjectDB.instance.GetItemPrefab(characterZdo.GetInt(slot));
+            var skill = item?.GetComponent<ItemDrop>()?.m_itemData?.m_shared?.m_skillType;
+            if (skill is Skills.SkillType.Bows or Skills.SkillType.Crossbows or Skills.SkillType.ElementalMagic or Skills.SkillType.BloodMagic)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // The player's own reference position is refreshed by the client every frame it moves; the

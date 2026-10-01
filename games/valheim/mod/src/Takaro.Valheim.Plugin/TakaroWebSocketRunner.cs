@@ -19,6 +19,15 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private static readonly TimeSpan PlayerLifecyclePollInterval = TimeSpan.FromSeconds(5);
     private readonly PendingEventQueue pendingEvents = new(capacity: 1000);
     private readonly SemaphoreSlim flushLock = new(1, 1);
+    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan PongTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan IdentifyTimeout = TimeSpan.FromSeconds(30);
+    private DateTimeOffset connectedAt = DateTimeOffset.MaxValue;
+    private static readonly string PingFrame = """{"type":"ping"}""";
+    private DateTimeOffset oldestUnansweredPingAt = DateTimeOffset.MaxValue;
+    private DateTimeOffset lastPingAt = DateTimeOffset.MinValue;
+    private readonly object heartbeatLock = new();
     private ClientWebSocket? socket;
     private volatile bool identified;
     private Task? runLoop;
@@ -55,12 +64,15 @@ public sealed class TakaroWebSocketRunner : IDisposable
             await FlushPendingEventsAsync(cancellationToken);
         }, cancellationToken);
 
+    // Writes every not-yet-written event, then a ping. Takaro answers pings in order, so the
+    // pong for that ping confirms delivery of everything written before it.
     private async Task FlushPendingEventsAsync(CancellationToken cancellationToken)
     {
         await flushLock.WaitAsync(cancellationToken);
         try
         {
-            while (identified && pendingEvents.TryPeek(out var frame))
+            var wrote = false;
+            while (identified && pendingEvents.TryPeekUnsent(out var frame))
             {
                 var activeSocket = socket;
                 if (activeSocket is null || activeSocket.State != WebSocketState.Open)
@@ -69,12 +81,108 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 }
 
                 await SendOpenAsync(activeSocket, frame, cancellationToken);
-                pendingEvents.Acknowledge(frame);
+                pendingEvents.MarkSent(frame);
+                wrote = true;
+            }
+
+            if (wrote)
+            {
+                await SendCheckpointPingAsync(cancellationToken);
             }
         }
         finally
         {
             flushLock.Release();
+        }
+    }
+
+    private async Task SendCheckpointPingAsync(CancellationToken cancellationToken)
+    {
+        var activeSocket = socket;
+        if (activeSocket is null || activeSocket.State != WebSocketState.Open)
+        {
+            return;
+        }
+
+        lock (heartbeatLock)
+        {
+            pendingEvents.AddCheckpoint();
+            var now = DateTimeOffset.UtcNow;
+            lastPingAt = now;
+            if (oldestUnansweredPingAt == DateTimeOffset.MaxValue)
+            {
+                oldestUnansweredPingAt = now;
+            }
+        }
+
+        await SendOpenAsync(activeSocket, PingFrame, cancellationToken);
+    }
+
+    private void OnPong()
+    {
+        int confirmed;
+        lock (heartbeatLock)
+        {
+            confirmed = pendingEvents.ConfirmOldestCheckpoint();
+            oldestUnansweredPingAt = pendingEvents.OutstandingCheckpoints == 0
+                ? DateTimeOffset.MaxValue
+                : DateTimeOffset.UtcNow;
+        }
+
+        if (confirmed > 0)
+        {
+            log($"Takaro Valheim confirmed delivery of {confirmed} event(s).");
+        }
+    }
+
+    // Detects a dead link that still looks open (no FIN, packets silently dropped): a ping
+    // goes out every 10 s and an unanswered one older than 15 s aborts the socket, so the
+    // runner reconnects and re-sends unconfirmed events.
+    private async Task HeartbeatAsync(ClientWebSocket activeSocket, CancellationToken cancellationToken)
+    {
+        if (activeSocket.State != WebSocketState.Open)
+        {
+            return;
+        }
+
+        if (!identified)
+        {
+            if (DateTimeOffset.UtcNow - connectedAt > IdentifyTimeout)
+            {
+                log($"Takaro Valheim got no identify answer within {IdentifyTimeout.TotalSeconds:0} s; reconnecting.");
+                activeSocket.Abort();
+            }
+
+            return;
+        }
+
+        DateTimeOffset oldest;
+        DateTimeOffset last;
+        lock (heartbeatLock)
+        {
+            oldest = oldestUnansweredPingAt;
+            last = lastPingAt;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (oldest != DateTimeOffset.MaxValue && now - oldest > PongTimeout)
+        {
+            log($"Takaro Valheim WebSocket heartbeat lost (no pong for {(now - oldest).TotalSeconds:0} s); reconnecting and re-sending {pendingEvents.Count} unconfirmed event(s).");
+            activeSocket.Abort();
+            return;
+        }
+
+        if (now - last >= HeartbeatInterval)
+        {
+            await flushLock.WaitAsync(cancellationToken);
+            try
+            {
+                await SendCheckpointPingAsync(cancellationToken);
+            }
+            finally
+            {
+                flushLock.Release();
+            }
         }
     }
 
@@ -96,8 +204,36 @@ public sealed class TakaroWebSocketRunner : IDisposable
             {
                 using var client = new ClientWebSocket();
                 identified = false;
+                lock (heartbeatLock)
+                {
+                    var resend = pendingEvents.ResetForNewConnection();
+                    if (resend > 0)
+                    {
+                        log($"Takaro Valheim will re-send {resend} event(s) Takaro did not confirm on the previous connection.");
+                    }
+
+                    oldestUnansweredPingAt = DateTimeOffset.MaxValue;
+                    lastPingAt = DateTimeOffset.MinValue;
+                }
+
                 socket = client;
-                await client.ConnectAsync(new Uri(config.TakaroWsUrl), cancellationToken);
+                // A connect into a black-holed route can hang for minutes on Mono; give up after
+                // 15 s and let the backoff loop try again.
+                using (var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                {
+                    connectTimeout.CancelAfter(ConnectTimeout);
+                    try
+                    {
+                        await client.ConnectAsync(new Uri(config.TakaroWsUrl), connectTimeout.Token);
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                    {
+                        client.Abort();
+                        throw new TimeoutException($"Takaro WebSocket connect timed out after {ConnectTimeout.TotalSeconds:0} s.");
+                    }
+                }
+
+                connectedAt = DateTimeOffset.UtcNow;
                 log("Takaro Valheim WebSocket connected.");
                 await SendAsync(client, TakaroProtocol.CreateIdentify(config), cancellationToken);
                 log("Takaro Valheim identify sent.");
@@ -199,6 +335,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
             try
             {
                 await FlushPendingEventsAsync(cancellationToken);
+                await HeartbeatAsync(socket, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -229,6 +366,13 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 || ContainsIgnoreCase(message, "\"type\": \"ping\""))
             {
                 await SendAsync(socket, """{"type":"pong"}""", cancellationToken);
+                continue;
+            }
+
+            if (ContainsIgnoreCase(message, "\"type\":\"pong\"")
+                || ContainsIgnoreCase(message, "\"type\": \"pong\""))
+            {
+                OnPong();
                 continue;
             }
 

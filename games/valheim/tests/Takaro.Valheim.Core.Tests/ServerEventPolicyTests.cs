@@ -186,19 +186,55 @@ public sealed class ServerEventPolicyTests
     }
 
     [TestMethod]
-    public void PendingEventsSurviveUntilAcknowledged()
+    public void WrittenEventsStayQueuedUntilAPongConfirmsThem()
     {
-        var queue = new PendingEventQueue(capacity: 2);
+        var queue = new PendingEventQueue(capacity: 10);
         queue.Enqueue("one");
         queue.Enqueue("two");
 
-        Assert.IsTrue(queue.TryPeek(out var head));
-        Assert.AreEqual("one", head);
-        Assert.AreEqual(2, queue.Count, "peeking must not remove: a failed send keeps the event");
+        Assert.IsTrue(queue.TryPeekUnsent(out var frame));
+        queue.MarkSent(frame);
+        Assert.IsTrue(queue.TryPeekUnsent(out frame));
+        Assert.AreEqual("two", frame);
+        queue.MarkSent(frame);
+        Assert.IsFalse(queue.TryPeekUnsent(out _));
+        Assert.AreEqual(2, queue.Count, "a write alone is not delivery");
 
-        queue.Acknowledge(head);
-        Assert.IsTrue(queue.TryPeek(out head));
-        Assert.AreEqual("two", head);
+        queue.AddCheckpoint();
+        Assert.AreEqual(2, queue.ConfirmOldestCheckpoint());
+        Assert.AreEqual(0, queue.Count);
+    }
+
+    [TestMethod]
+    public void APongOnlyConfirmsFramesWrittenBeforeItsPing()
+    {
+        var queue = new PendingEventQueue(capacity: 10);
+        queue.Enqueue("before");
+        queue.TryPeekUnsent(out var frame);
+        queue.MarkSent(frame);
+        queue.AddCheckpoint();
+        queue.Enqueue("after");
+        queue.TryPeekUnsent(out frame);
+        queue.MarkSent(frame);
+
+        Assert.AreEqual(1, queue.ConfirmOldestCheckpoint());
+        Assert.AreEqual(1, queue.Count);
+        Assert.AreEqual(0, queue.ConfirmOldestCheckpoint(), "no ping was written after 'after'");
+    }
+
+    [TestMethod]
+    public void UnconfirmedEventsAreResentAfterAReconnect()
+    {
+        var queue = new PendingEventQueue(capacity: 10);
+        queue.Enqueue("lost in outage");
+        queue.TryPeekUnsent(out var frame);
+        queue.MarkSent(frame);
+        queue.AddCheckpoint();
+
+        Assert.AreEqual(1, queue.ResetForNewConnection());
+        Assert.AreEqual(0, queue.OutstandingCheckpoints, "pongs of a dead connection never come");
+        Assert.IsTrue(queue.TryPeekUnsent(out frame));
+        Assert.AreEqual("lost in outage", frame);
     }
 
     [TestMethod]
@@ -210,22 +246,8 @@ public sealed class ServerEventPolicyTests
         queue.Enqueue("three");
 
         Assert.AreEqual(1L, queue.Dropped);
-        Assert.IsTrue(queue.TryPeek(out var head));
+        Assert.IsTrue(queue.TryPeekUnsent(out var head));
         Assert.AreEqual("two", head);
-    }
-
-    [TestMethod]
-    public void AcknowledgingAStaleFrameDoesNotDropTheNewHead()
-    {
-        var queue = new PendingEventQueue(capacity: 1);
-        queue.Enqueue("old");
-        queue.TryPeek(out var sent);
-        queue.Enqueue("new");
-
-        queue.Acknowledge(sent);
-
-        Assert.IsTrue(queue.TryPeek(out var head));
-        Assert.AreEqual("new", head);
     }
 
     [DataTestMethod]
@@ -250,13 +272,15 @@ public sealed class ServerEventPolicyTests
     }
 
     [DataTestMethod]
-    [DataRow(0f, true)]
-    [DataRow(20f, true)]
-    [DataRow(20.5f, false)]
-    [DataRow(float.NaN, false)]
-    [DataRow(-1f, false)]
-    public void SingleBlowKillsNeedTheKillerNearby(float distance, bool expected)
+    [DataRow(0f, false, true)]
+    [DataRow(8f, false, true)]
+    [DataRow(13f, false, false)]
+    [DataRow(13f, true, true)]
+    [DataRow(50.5f, true, false)]
+    [DataRow(float.NaN, true, false)]
+    [DataRow(-1f, false, false)]
+    public void SingleBlowKillsNeedTheKillerNearby(float distance, bool ranged, bool expected)
     {
-        Assert.AreEqual(expected, InferredKillPolicy.KillerCloseEnough(distance));
+        Assert.AreEqual(expected, InferredKillPolicy.KillerCloseEnough(distance, ranged));
     }
 }

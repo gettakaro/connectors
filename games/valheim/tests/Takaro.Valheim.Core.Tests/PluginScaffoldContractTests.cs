@@ -505,8 +505,11 @@ public sealed class PluginScaffoldContractTests
 
         StringAssert.Contains(source, "lifecycle event queued");
         Assert.IsFalse(source.Contains("event sent for", StringComparison.Ordinal));
-        StringAssert.Contains(source, "while (identified && pendingEvents.TryPeek(out var frame))");
-        StringAssert.Contains(source, "pendingEvents.Acknowledge(frame);");
+        StringAssert.Contains(source, "while (identified && pendingEvents.TryPeekUnsent(out var frame))");
+        StringAssert.Contains(source, "pendingEvents.MarkSent(frame);");
+        StringAssert.Contains(source, "pendingEvents.ConfirmOldestCheckpoint();");
+        StringAssert.Contains(source, "pendingEvents.ResetForNewConnection();");
+        StringAssert.Contains(source, "activeSocket.Abort();");
         var identifiedAt = source.IndexOf("if (LogIdentifyResponse(message))", StringComparison.Ordinal);
         Assert.IsTrue(identifiedAt >= 0);
         Assert.IsTrue(source.IndexOf("identified = true;", identifiedAt, StringComparison.Ordinal) > identifiedAt);

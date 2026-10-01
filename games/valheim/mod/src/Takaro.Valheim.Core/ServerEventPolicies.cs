@@ -255,16 +255,19 @@ public static class ValheimDisplayName
 /// the server. Such a death still counts as a player kill when three server-visible facts line
 /// up: the creature's ragdoll appears from the same game, that game's player started a weapon
 /// attack (its animation trigger passes through the server) just before, and that player stood
-/// close enough to have dealt the blow.
+/// close enough to have dealt the blow (8 m in melee, 50 m with a bow, crossbow or staff).
 /// </summary>
 public static class InferredKillPolicy
 {
-    public const float MaximumKillerDistance = 20f;
+    public const float MaximumMeleeKillerDistance = 8f;
+    public const float MaximumRangedKillerDistance = 50f;
     public static readonly TimeSpan EvidenceWindow = TimeSpan.FromSeconds(8);
     public static readonly TimeSpan AttackLeadWindow = TimeSpan.FromSeconds(4);
 
-    public static bool KillerCloseEnough(float distance) =>
-        !float.IsNaN(distance) && distance >= 0 && distance <= MaximumKillerDistance;
+    public static bool KillerCloseEnough(float distance, bool rangedWeapon) =>
+        !float.IsNaN(distance)
+        && distance >= 0
+        && distance <= (rangedWeapon ? MaximumRangedKillerDistance : MaximumMeleeKillerDistance);
 
     public static bool StillWaiting(DateTimeOffset destroyedAt, DateTimeOffset now) =>
         now - destroyedAt < EvidenceWindow;
