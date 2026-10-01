@@ -818,6 +818,8 @@ bool DeathAllowed(const std::string& gameId) {
     return true;
 }
 
+std::string CreatureDisplayName(void* actor);
+
 void EmitDeath(const Ident& id, double x, double y, double z, bool havePos, const Ident& attacker,
                const std::string& killerEntity, const char* source) {
     if (!id.valid() || !DeathAllowed(id.gameId)) return;
@@ -880,7 +882,7 @@ void HandleDeathTelemetry(void* self, void* func, void* params) {
         if (instOff >= 0 && ReadAt(dmg, instOff, inst) && ValidObject(inst)) {
             void* st = PlayerStateOf(inst);
             if (st) IdentFromPlayerState(st, attacker);
-            if (!attacker.valid()) killerEntity = SafeClassName(inst);
+            if (!attacker.valid()) killerEntity = CreatureDisplayName(inst);
         }
     }
     Ident victim;
@@ -1003,6 +1005,24 @@ std::string TextAt(void* base, int32_t off) {
     const FString* s = disp(p);
     if (!s || !MemReadable(s, 16) || s->Num <= 0 || s->Num > (1 << 16)) return "";
     return Reflect::Utf16To8(s->Data, s->Num);
+}
+
+// Player-facing name of a creature: the AI's own AIName FText, else the one on the UAIDataAsset it
+// was configured with (cached per Blueprint class so GET /entities reports it too), else the cached
+// name for its class, else the class name made readable. Never a raw BP_..._C when avoidable.
+std::string CreatureDisplayName(void* actor) {
+    if (!ValidObject(actor)) return "";
+    std::string cls = SafeClassName(actor);
+    std::string entity = TextAt(actor, PropOffOf(actor, "AIName"));
+    void* data = nullptr;
+    int32_t dataOff = PropOffOf(actor, "LoadedData");
+    if (entity.empty() && dataOff >= 0 && ReadAt(actor, dataOff, data) && ValidObject(data))
+        entity = TextAt(data, PropOffOf(data, "AIName"));
+    if (!entity.empty()) ::state::NoteEntityName(cls, entity);
+    if (entity.empty()) entity = ::state::EntityName(cls);
+    if (entity.empty()) entity = HumanizeClassName(cls);
+    if (entity.empty()) entity = cls;
+    return entity;
 }
 
 struct WeaponRef {
@@ -1235,19 +1255,11 @@ void HandleActorDeath(void* actor, const char* via) {
     }
 
     std::string cls = SafeClassName(actor);
-    // Readable name: the AI's own AIName FText, else the one on the UAIDataAsset it was configured
-    // with. Whatever is found is cached per Blueprint class so GET /entities reports it too.
-    std::string entity = TextAt(actor, PropOffOf(actor, "AIName"));
     std::string dataAsset;
     void* data = nullptr;
     int32_t dataOff = PropOffOf(actor, "LoadedData");
-    if (dataOff >= 0 && ReadAt(actor, dataOff, data) && ValidObject(data)) {
-        dataAsset = SafeObjName(data);
-        if (entity.empty()) entity = TextAt(data, PropOffOf(data, "AIName"));
-    }
-    if (!entity.empty()) ::state::NoteEntityName(cls, entity);
-    if (entity.empty()) entity = ::state::EntityName(cls);
-    if (entity.empty()) entity = cls;
+    if (dataOff >= 0 && ReadAt(actor, dataOff, data) && ValidObject(data)) dataAsset = SafeObjName(data);
+    std::string entity = CreatureDisplayName(actor);
 
     void* dmgInstigator = nullptr;
     void* dmgSource = nullptr;

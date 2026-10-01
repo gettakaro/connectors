@@ -61,6 +61,11 @@ std::string Redact(const std::string& s);
 
 // ---- time ----
 std::string IsoNowUtc();
+
+// Player-facing fallback name for an Unreal class/asset name when the game has no display text for
+// it yet: "BP_AI_KalphiteGuardian_Character_C" -> "Kalphite Guardian". Empty for engine base classes
+// that are not a creature of their own (BP_DominionAICharacter_C, *_Base_C).
+std::string HumanizeClassName(const std::string& code);
 uint64_t NowMs();  // monotonic milliseconds
 
 // ---- minimal JSON ----

@@ -854,10 +854,19 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p) {
             Json pending = Array(Parse(p.view->timedBansJson)), mapped = Json::array();
             std::map<std::string, Json> byId;
             for (auto& b : pending) byId[Lower(Str(Object(b), "gameId"))] = b;
+            // The game's ban list carries the platform account name (KnownPlayerList UserName); Takaro
+            // knows this player by the character name every other action reports, so prefer that.
+            std::map<std::string, std::string> knownNames;
+            for (auto& x : Array(Parse(p.view->knownPlayersJson))) {
+                std::string id = Lower(Str(Object(x), "gameId")), nm = Str(Object(x), "name");
+                if (!id.empty() && !nm.empty()) knownNames[id] = nm;
+            }
             for (auto& row : Rows(call(Actions::Bans()), "bans")) {
                 Json b;
                 try { b = Ban(row); } catch (...) { continue; }
                 std::string key = Lower(Str(b["player"], "gameId"));
+                if (auto kn = knownNames.find(key); kn != knownNames.end() && b["player"].is_object())
+                    b["player"]["name"] = kn->second;
                 auto it = byId.find(key);
                 if (it != byId.end()) {
                     if (it->second.contains("expiresAt") && it->second["expiresAt"].is_string())

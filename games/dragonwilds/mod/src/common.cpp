@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cstdarg>
 #include <cstdio>
@@ -60,6 +61,53 @@ bool DebugEnabled() {
     return on;
 }
 
+std::string HumanizeClassName(const std::string& code) {
+    std::string s = code;
+    auto stripPrefix = [&](const char* p) {
+        size_t n = strlen(p);
+        if (s.size() > n && s.compare(0, n, p) == 0) { s.erase(0, n); return true; }
+        return false;
+    };
+    auto stripSuffix = [&](const char* p) {
+        size_t n = strlen(p);
+        if (s.size() > n && s.compare(s.size() - n, n, p) == 0) { s.erase(s.size() - n); return true; }
+        return false;
+    };
+    stripSuffix("_C");
+    if (stripSuffix("_Base") || s.find("_Base_") != std::string::npos) return "";
+    for (const char* p : {"BP_AI_", "BP_", "AI_", "DA_AI_", "DA_"}) if (stripPrefix(p)) break;
+    stripPrefix("Miniboss_");
+    for (const char* p : {"_Character", "AICharacter", "Character", "_AI"}) if (stripSuffix(p)) break;
+    if (s.empty() || s == "Dominion" || s == "DominionAI") return "";
+    std::string out;
+    for (size_t i = 0; i < s.size(); i++) {
+        char c = s[i];
+        if (c == '_') { if (!out.empty() && out.back() != ' ') out += ' '; continue; }
+        bool upper = isupper((unsigned char)c);
+        if (upper && i > 0 && !out.empty() && out.back() != ' ' &&
+            (islower((unsigned char)s[i - 1]) || (i + 1 < s.size() && islower((unsigned char)s[i + 1]))))
+            out += ' ';
+        out += c;
+    }
+    while (!out.empty() && out.back() == ' ') out.pop_back();
+    if (out.rfind("Dominion ", 0) == 0) out.erase(0, 9);
+    // Combat-variant tags are not part of a creature's name ("1H Melee Black Knight" -> "Black Knight"),
+    // nor are variant numbers ("Deer 03" -> "Deer").
+    std::string kept, word;
+    auto flush = [&] {
+        static const char* kTags[] = {"1H", "2H", "Melee", "Melee1H", "Melee2H", "Ranged", "Character"};
+        bool tag = !word.empty() && std::all_of(word.begin(), word.end(), [](char ch) { return isdigit((unsigned char)ch); });
+        for (const char* t : kTags) tag = tag || word == t;
+        if (!word.empty() && !tag) kept += (kept.empty() ? "" : " ") + word;
+        word.clear();
+    };
+    for (char c : out) { if (c == ' ') flush(); else word += c; }
+    flush();
+    return kept.empty() ? out : kept;
+}
+
+constexpr off_t kPluginLogMaxBytes = 32LL * 1024 * 1024;
+
 void PluginLog(const char* fmt, ...) {
     char msg[4096];
     va_list ap;
@@ -91,6 +139,10 @@ void FlushPluginLogs() {
     }
     if (batch.empty()) return;
     static const std::string path = PluginDataDir() + "/plugin.log";
+    // Size cap: a long-running server (or TAKARO_WIRE_DEBUG) must not fill the disk. At 32 MiB the
+    // file moves to plugin.log.1 (replacing the previous one), so at most ~64 MiB is ever kept.
+    struct stat st {};
+    if (stat(path.c_str(), &st) == 0 && st.st_size > kPluginLogMaxBytes) rename(path.c_str(), (path + ".1").c_str());
     FILE* f = fopen(path.c_str(), "a");
     if (!f) { Guard g(g_logLock); g_logDropped += batch.size(); return; }
     for (const auto& record : batch) {

@@ -1026,8 +1026,8 @@ void Actions::Init() {
     SetCap("unban", banList ? "ok" : "unimplemented", banList ? "" : "PerformConfigSave unresolved");
     SetCap("listBans", "ok",
            "the union of the game's KnownPlayerList entries with bIsBanned=True and the plugin ban list "
-           "(reason and createdAt come from the plugin list; the game stores neither, and the sidecar owns "
-           "timed-ban expiry)");
+           "(reason and createdAt come from the plugin list; the game stores neither; the connector "
+           "lifts timed bans at expiresAt itself)");
     SetCap("executeCommand", "ok",
            "plugin command set (players, say, whisper, give, tp, kick, ban, unban, bans, items, entities, "
            "locations, save, shutdown, help) plus `raw <cmd>` through UEngine::Exec with captured output; "
@@ -1261,7 +1261,9 @@ Actions::Result Actions::Entities() {
                 int32_t bossOff = Off(a, "bIsBoss");
                 bool boss = bossOff >= 0 && MemReadable((const char*)a + bossOff, 1) &&
                             *(const uint8_t*)((const char*)a + bossOff);
-                found[code] = {name.empty() ? code : name, boss ? "boss" : "AI data asset"};
+                if (name.empty()) name = HumanizeClassName(code);
+                if (name.empty()) continue;
+                found[code] = {name, boss ? "boss" : "AI data asset"};
             }
         }
         void* aiCls = Reflect::StaticClass("ADominionAICharacter::StaticClass");
@@ -1275,7 +1277,10 @@ Actions::Result Actions::Entities() {
                 if (!derives || c == aiCls) continue;
                 std::string code = Reflect::ObjName(c);
                 if (code.empty() || code.rfind("SKEL_", 0) == 0 || code.rfind("REINST_", 0) == 0) continue;
-                if (!found.count(code)) found[code] = {code, "AI character class"};
+                if (found.count(code)) continue;
+                std::string human = HumanizeClassName(code);
+                if (human.empty()) continue;  // engine base class, not a creature of its own
+                found[code] = {human, "AI character class"};
                 // NOT the class default object: a Blueprint CDO's AIName is not initialised on this
                 // build and reads back as another asset's text (BP_AI_KalphiteGuardian_Character_C
                 // came back as "Giant Rat"). Only a spawned AI's AIName is trustworthy.
@@ -1308,7 +1313,10 @@ Actions::Result Actions::Entities() {
                     PluginLog("actions: asset-registry entity list unavailable: %s", g_registryWhy.c_str());
             }
             for (auto& ra : g_registryEntities)
-                if (!found.count(ra.name)) found[ra.name] = {ra.name, "AI data asset (asset registry)"};
+                if (!found.count(ra.name)) {
+                    std::string human = HumanizeClassName(ra.name);
+                    if (!human.empty()) found[ra.name] = {human, "AI data asset (asset registry)"};
+                }
             SetCap("listEntities", g_entitiesFromRegistry ? "ok" : "degraded",
                    g_entitiesFromRegistry
                        ? "every cooked UAIDataAsset, enumerated through the asset registry, plus the AI "
@@ -1734,15 +1742,21 @@ Actions::Result Actions::KillNearest(const JsonValue& body) {
         double bestDist = radius;
         size_t considered = 0;
         std::string listed;
+        auto liveHealth = Fn<FnGetLocalHealth>("UHealthComponent::GetLocalHealth");
         for (void* a : ais) {
             if (!a || !MemReadable(a, 0x40)) continue;
             std::string cn = Reflect::ClassName(a);
             if (cn.rfind("Default__", 0) == 0) continue;
+            // A corpse is still an ADominionAICharacter until it despawns: never pick a dead one.
+            if (void* hc0 = HealthComponentOf(a); hc0 && liveHealth && liveHealth(hc0) <= 0.f) continue;
             double loc[3] = {0, 0, 0}, r2[3] = {0, 0, 0};
             if (!PawnLocation(a, loc, r2)) continue;
             considered++;
             double d = Dist(me, loc);
-            if (listed.size() < 400) listed += (listed.empty() ? "" : ",") + cn + "@" + std::to_string((long)d);
+            if (listed.size() < 1200)
+                listed += (listed.empty() ? "" : ",") + cn + "@" + std::to_string((long)d) + "(" +
+                          std::to_string((long)loc[0]) + " " + std::to_string((long)loc[1]) + " " +
+                          std::to_string((long)loc[2]) + ")";
             if (d < bestDist) { bestDist = d; best = a; }
         }
         if (!best)
@@ -1853,7 +1867,8 @@ void CaptureSerializeTime(void* self, const char16_t* msg, int verbosity, const 
 // file handle, so calling FOutputDeviceFile's own Flush/TearDown on it would fault.
 bool NoopSlot(void*) { return false; }
 
-bool RunExec(const std::string& cmd, std::string& out, std::string& err) {
+bool RunExec(const std::string& cmd, std::string& out, std::string& err, bool& handled) {
+    handled = false;
     auto exec = Fn<FnEngineExec>("UEngine::Exec");
     if (!exec) {
         err = "UEngine::Exec unresolved";
@@ -1910,9 +1925,8 @@ bool RunExec(const std::string& cmd, std::string& out, std::string& err) {
     auto w = Reflect::Utf8To16(cmd);
     Guard g(g_execLock);
     g_execOutput.clear();
-    bool handled = exec(engine, world, w.data(), &dev);
+    handled = exec(engine, world, w.data(), &dev);
     out = g_execOutput;
-    if (!handled && out.empty()) out = "(command not recognised by the engine)";
     return true;
 }
 
@@ -2039,7 +2053,10 @@ Actions::Result Actions::Command(const JsonValue& body) {
         std::string cmd = Rest(command, 1);
         return OnGameThread("command raw", [cmd]() -> JobOut {
             std::string out, err;
-            if (!RunExec(cmd, out, err)) return {501, ErrJson(err)};
+            bool handled = false;
+            if (!RunExec(cmd, out, err, handled)) return {501, ErrJson(err)};
+            // UEngine::Exec returning false with no output = no exec handler took the command.
+            if (!handled && out.empty()) return {400, ErrJson("command not recognised by the engine: " + cmd)};
             return CommandOutput(true, out);
         }, 10000);
     }
