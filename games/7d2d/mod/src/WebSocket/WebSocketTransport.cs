@@ -81,6 +81,7 @@ namespace Takaro.WebSocket
         private long _openedAtTicks;
         private long _lastInboundTicks;
         private int _reconnectAttempts;
+
         // Kept short: a retry is one cheap TLS handshake, and with the 45 s
         // dead-link timeout a 300 s cap left the server unreachable for up to
         // five minutes after Takaro came back (2026-10-01 outage test).
@@ -446,7 +447,10 @@ namespace Takaro.WebSocket
         private bool AckPingDue()
         {
             long now = DateTime.UtcNow.Ticks;
-            if (now - _lastAckPingTicks < TimeSpan.TicksPerMillisecond * ACK_PING_MIN_INTERVAL_MILLISECONDS)
+            if (
+                now - _lastAckPingTicks
+                < TimeSpan.TicksPerMillisecond * ACK_PING_MIN_INTERVAL_MILLISECONDS
+            )
                 return false;
             _lastAckPingTicks = now;
             return true;

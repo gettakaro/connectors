@@ -61,7 +61,14 @@ namespace Takaro.Services
             if (string.IsNullOrEmpty(json))
                 return 0;
 
-            _pending.AddLast(new Entry { Json = json, Replayable = replayable, IsPing = isPing });
+            _pending.AddLast(
+                new Entry
+                {
+                    Json = json,
+                    Replayable = replayable,
+                    IsPing = isPing,
+                }
+            );
             return TrimPending();
         }
 
@@ -128,7 +135,11 @@ namespace Takaro.Services
         public int RequeueInFlight(long newGeneration)
         {
             int requeued = _inFlight.Count;
-            for (LinkedListNode<KeyValuePair<long, Entry>> node = _inFlight.Last; node != null; node = node.Previous)
+            for (
+                LinkedListNode<KeyValuePair<long, Entry>> node = _inFlight.Last;
+                node != null;
+                node = node.Previous
+            )
                 _pending.AddFirst(node.Value.Value);
 
             _inFlight.Clear();

@@ -53,10 +53,9 @@ namespace Takaro.Services
             if (error == null || error.Type == JTokenType.Null)
                 return false;
 
-            reason =
-                error is JObject errorObject
-                    ? ExtractErrorMessage(errorObject)
-                    : NormalizeAndBound(error.ToString(), MaxMessageLength);
+            reason = error is JObject errorObject
+                ? ExtractErrorMessage(errorObject)
+                : NormalizeAndBound(error.ToString(), MaxMessageLength);
             return true;
         }
 

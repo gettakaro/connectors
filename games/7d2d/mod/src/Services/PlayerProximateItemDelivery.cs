@@ -21,7 +21,12 @@ namespace Takaro.Services
     {
         public const float ItemLifetimeSeconds = 60f;
 
-        public static bool Deliver(ItemValue itemValue, int amount, EntityPlayer player, ClientInfo client)
+        public static bool Deliver(
+            ItemValue itemValue,
+            int amount,
+            EntityPlayer player,
+            ClientInfo client
+        )
         {
             var itemStack = new ItemStack(itemValue, amount);
             if (client == null)
@@ -31,18 +36,19 @@ namespace Takaro.Services
             }
 
             World world = GameManager.Instance.World;
-            var entityItem = (EntityItem)EntityFactory.CreateEntity(
-                new EntityCreationData
-                {
-                    entityClass = EntityClass.FromString("item"),
-                    id = EntityFactory.nextEntityID++,
-                    itemStack = itemStack,
-                    pos = player.GetDropPosition(),
-                    rot = new Vector3(20f, 0f, 20f),
-                    lifetime = ItemLifetimeSeconds,
-                    belongsPlayerId = player.entityId,
-                }
-            );
+            var entityItem = (EntityItem)
+                EntityFactory.CreateEntity(
+                    new EntityCreationData
+                    {
+                        entityClass = EntityClass.FromString("item"),
+                        id = EntityFactory.nextEntityID++,
+                        itemStack = itemStack,
+                        pos = player.GetDropPosition(),
+                        rot = new Vector3(20f, 0f, 20f),
+                        lifetime = ItemLifetimeSeconds,
+                        belongsPlayerId = player.entityId,
+                    }
+                );
             world.SpawnEntityInWorld(entityItem);
             client.SendPackage(
                 NetPackageManager

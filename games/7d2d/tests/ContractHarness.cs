@@ -265,16 +265,29 @@ public static class ContractHarness
             ProtocolDiagnostics.TryGetIdentifyRejection(
                 "{\"type\":\"identifyResponse\",\"payload\":{\"error\":\"plain text reason\"}}",
                 out string plain
-            ) && plain == "plain text reason",
+            )
+                && plain == "plain text reason",
             "string error is a rejection with its text"
         );
     }
 
     private static void AssertMissingLocalisationIsNotShown()
     {
-        Equal<string>(null, Takaro.Shared.LocalizedOrNull("driftwoodDesc", "driftwoodDesc"), "untranslated key is hidden");
-        Equal<string>(null, Takaro.Shared.LocalizedOrNull("woodMaster", ""), "empty localisation is hidden");
-        Equal("Steel Club", Takaro.Shared.LocalizedOrNull("meleeWpnClubT3SteelClub", "Steel Club"), "real name is kept");
+        Equal<string>(
+            null,
+            Takaro.Shared.LocalizedOrNull("driftwoodDesc", "driftwoodDesc"),
+            "untranslated key is hidden"
+        );
+        Equal<string>(
+            null,
+            Takaro.Shared.LocalizedOrNull("woodMaster", ""),
+            "empty localisation is hidden"
+        );
+        Equal(
+            "Steel Club",
+            Takaro.Shared.LocalizedOrNull("meleeWpnClubT3SteelClub", "Steel Club"),
+            "real name is kept"
+        );
     }
 
     private static void AssertOutboundLedgerReplaysUnconfirmedEvents()
@@ -543,7 +556,11 @@ public static class ContractHarness
             "valid giveItem"
         );
         Equal(0, GameManager.Instance.ItemDrops.Count, "valid giveItem leaves no ground drop");
-        Equal(1, GameManager.Instance.World.Spawned.Count, "valid giveItem spawns one collect entity");
+        Equal(
+            1,
+            GameManager.Instance.World.Spawned.Count,
+            "valid giveItem spawns one collect entity"
+        );
         Equal(
             2,
             GameManager.Instance.World.Spawned[0].CreationData.itemStack.count,
@@ -1822,7 +1839,8 @@ public sealed class NetPackageEntityCollect : NetPackage
 
 public static class NetPackageManager
 {
-    public static T GetPackage<T>() where T : NetPackage, new()
+    public static T GetPackage<T>()
+        where T : NetPackage, new()
     {
         return new T();
     }
