@@ -27,6 +27,12 @@ fixture() {
 printf '{"targets": [{"id": "fabric-26.2"}]}\n'
 STUB
       ;;
+    retired-first)
+      cat >"$root/maintenance/bin/takaro-maint" <<'STUB'
+#!/usr/bin/env bash
+printf '{"targets": [{"id": "fabric-26.1", "status": "retired"}, {"id": "fabric-26.2", "status": "candidate"}]}\n'
+STUB
+      ;;
     none)
       cat >"$root/maintenance/bin/takaro-maint" <<'STUB'
 #!/usr/bin/env bash
@@ -73,6 +79,10 @@ check() {
 # 1. A game the catalog drives resolves to its target id.
 check "a catalog-driven game resolves its target" "ok:fabric-26.2" \
   "$(probe "$(fixture catalog target)" 2>/dev/null)"
+
+# 1b. A retired target listed first is skipped; its depots are usually gone from Steam.
+check "a retired target is not picked over a live one" "ok:fabric-26.2" \
+  "$(probe "$(fixture retired retired-first)" 2>/dev/null)"
 
 # 2. A successful call with an empty list is the real "this game has no catalog target".
 check "no target is an empty answer, not a failure" "ok:" \

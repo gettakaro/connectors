@@ -25,6 +25,8 @@ ds_target() {
     printf '%s' "$listing" | REPO_ROOT="$REPO_ROOT" python3 -c 'import json,os,sys
 targets = json.load(sys.stdin)["targets"]
 def is_default(t):
+    if not t.get("game"):
+        return False
     path = os.path.join(os.environ["REPO_ROOT"], "catalog", t["game"], "targets", t["id"] + ".json")
     try:
         with open(path) as f:
