@@ -210,7 +210,9 @@ relay is running.
   with several hitters and none of them the destroyer, the kill is not guessed. A creature
   killed by a single blow carries no mark on the server, because mark and destroy happen in
   the same frame; that kill is credited only if the creature's ragdoll appears from the
-  same game within 8 seconds and that game's player stood within 20 m. The weapon is the
+  same game within 8 seconds, that player started a weapon attack (its animation trigger
+  passes through the server) within 4 seconds before, and stood within 8 m (50 m with a bow,
+  crossbow or staff). The weapon is the
   killer's equipped right or left item display name (the bow for ranged), or `Unarmed`.
 - Game events are queued until Takaro accepts identify and flushed afterwards, so events
   raised while identifying are not lost.
