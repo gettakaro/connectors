@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/gettakaro/connectors/compare/rust-v0.1.0...rust-v0.1.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* **rust:** restore timed bans, reply before shutdown, target the 2026-10-01 Rust update ([#346](https://github.com/gettakaro/connectors/issues/346)) ([4e85099](https://github.com/gettakaro/connectors/commit/4e85099670420318da88e75892f2e01e5f8d5513))
+
 ## [0.1.0](https://github.com/gettakaro/connectors/compare/rust-v0.0.5...rust-v0.1.0) (2026-09-22)
 
 
