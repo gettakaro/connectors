@@ -83,4 +83,45 @@ class CatalogTest {
         assertEquals("", Catalog.formatQuality(5, 0));
         assertEquals("", Catalog.formatQuality(0, -1));
     }
+
+    private static final java.util.Map<String, String> VEHICLE_TEXT = java.util.Map.of(
+            "IGUI_VehicleNamePickUpVan", "Dash Bulldriver",
+            "IGUI_VehicleNameSportsCar", "Chevalier Cossette",
+            "IGUI_VehicleNameBurntCar", "Burnt %1",
+            "IGUI_VehicleNameModernCar", "Dash Elite");
+
+    private static String vehicleText(String key, String arg) {
+        String text = VEHICLE_TEXT.get(key);
+        return text == null || arg == null ? text : text.replace("%1", arg);
+    }
+
+    @Test
+    void vehicleDisplayNamePrefersCarModelTranslation() {
+        assertEquals("Dash Bulldriver",
+                Catalog.vehicleDisplayName("PickUpVan_Camo", "PickUpVan", CatalogTest::vehicleText));
+        assertEquals("Chevalier Cossette",
+                Catalog.vehicleDisplayName("SportsCar", null, CatalogTest::vehicleText));
+    }
+
+    @Test
+    void vehicleDisplayNameWrapsBurntVariants() {
+        assertEquals("Burnt Chevalier Cossette",
+                Catalog.vehicleDisplayName("SportsCarBurnt", null, CatalogTest::vehicleText));
+    }
+
+    @Test
+    void vehicleDisplayNameFallsBackToScriptName() {
+        assertEquals("MysteryVan",
+                Catalog.vehicleDisplayName("MysteryVan", "", CatalogTest::vehicleText));
+    }
+
+    @Test
+    void vehicleDisplayNameUsesBaseModelForUntranslatedVariants() {
+        assertEquals("Wrecked Dash Elite",
+                Catalog.vehicleDisplayName("ModernCarSmashedLeft", null, CatalogTest::vehicleText));
+        assertEquals("Dash Elite",
+                Catalog.vehicleDisplayName("ModernCar_Martin", null, CatalogTest::vehicleText));
+        assertEquals("Chevalier Cossette",
+                Catalog.vehicleDisplayName("SportsCar_ez", null, CatalogTest::vehicleText));
+    }
 }

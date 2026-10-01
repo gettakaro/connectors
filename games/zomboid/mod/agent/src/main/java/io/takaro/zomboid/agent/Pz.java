@@ -19,6 +19,7 @@ import zombie.characters.IsoGameCharacter;
 import zombie.characters.IsoPlayer;
 import zombie.characters.Roles;
 import zombie.chat.ChatMessage;
+import zombie.core.Translator;
 import zombie.core.logger.LoggerManager;
 import zombie.core.logger.ZLogger;
 import zombie.core.raknet.UdpConnection;
@@ -479,8 +480,10 @@ public final class Pz {
                     if (code == null || code.isEmpty()) {
                         continue;
                     }
-                    out.add(new GameEntity(code, v.getName() != null ? v.getName() : code,
-                            "Vehicle", "neutral"));
+                    String name = Catalog.vehicleDisplayName(v.getName(), v.getCarModelName(),
+                            (key, arg) -> arg == null ? Translator.getTextOrNull(key)
+                                    : Translator.getTextOrNull(key, arg));
+                    out.add(new GameEntity(code, name != null ? name : code, "Vehicle", "neutral"));
                 }
             }
         }

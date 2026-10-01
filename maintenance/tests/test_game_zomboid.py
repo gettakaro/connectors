@@ -33,6 +33,9 @@ TARGET = "linux-42.20.4"
 VERSION = "1.0.2-dev.abc1234"
 JAR_NAME = f"takaro-zomboid-agent-{TARGET}-{VERSION}.jar"
 GAME_JAR = "java/projectzomboid.jar"
+# The release builds only non-retired targets; the legacy TakaroConnector alias points here.
+RELEASE_TARGET = "linux-42.21.0"
+RELEASE_JAR = f"takaro-zomboid-agent-{RELEASE_TARGET}-{VERSION}.jar"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).parent / "fixtures" / "games" / GAME
@@ -234,8 +237,8 @@ def dd_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return log
 
 
-def resolve(run: Any, repo: Path) -> dict[str, Any]:
-    code, payload, err = run("targets", "resolve", "--game", GAME, "--target", TARGET, repo=repo)
+def resolve(run: Any, repo: Path, target: str = TARGET) -> dict[str, Any]:
+    code, payload, err = run("targets", "resolve", "--game", GAME, "--target", target, repo=repo)
     assert code == 0, err
     return dict(payload)
 
@@ -775,10 +778,10 @@ def test_compat_record_carries_the_steam_pin_and_the_legacy_alias(run: Any, repo
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "fixture")
     commit = git(repo, "rev-parse", "HEAD")
-    resolved = resolve(run, repo)
-    directory = tmp_path / "dist" / TARGET
-    jar = make_jar(directory / JAR_NAME, target=TARGET, fingerprint=resolved["fingerprint"])
-    row = artifact_row("agent", TARGET, resolved["fingerprint"], jar)
+    resolved = resolve(run, repo, RELEASE_TARGET)
+    directory = tmp_path / "dist" / RELEASE_TARGET
+    jar = make_jar(directory / RELEASE_JAR, target=RELEASE_TARGET, fingerprint=resolved["fingerprint"])
+    row = artifact_row("agent", RELEASE_TARGET, resolved["fingerprint"], jar)
     write_meta(directory, row, connector=GAME, version=VERSION, revision=commit)
     write_manifest(
         directory,
@@ -814,13 +817,13 @@ def test_compat_record_carries_the_steam_pin_and_the_legacy_alias(run: Any, repo
 
     assert code == 0, f"{err}\n{payload}"
     record = json.loads((out / f"takaro-{GAME}-{VERSION}.compat.json").read_text())
-    entry = record["targets"][TARGET]
+    entry = record["targets"][RELEASE_TARGET]
     assert entry["verification"]["required"] == "contract"
     url = entry["inputs"]["server"]["url"]
     assert url.startswith("steam://app/380870/branch/public/")
     assert re.search(r"manifest/[0-9]+", url)
-    assert (out / JAR_NAME).is_file()
-    assert (out / f"TakaroConnector-{VERSION}.jar").read_bytes() == (out / JAR_NAME).read_bytes()
+    assert (out / RELEASE_JAR).is_file()
+    assert (out / f"TakaroConnector-{VERSION}.jar").read_bytes() == (out / RELEASE_JAR).read_bytes()
     assert (out / "SHA256SUMS").is_file()
 
 

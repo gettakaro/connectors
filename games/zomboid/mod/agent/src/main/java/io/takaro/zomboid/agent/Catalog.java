@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiFunction;
 
 /**
  * Pure (game-class-free) transforms for the item catalogue and a player's
@@ -97,6 +98,43 @@ public final class Catalog {
             out.add(new InventoryItem(code, names.get(code), e.getValue()[0], qualities.get(code)));
         }
         return out;
+    }
+
+    /**
+     * A vehicle's player-facing name, resolved the way the game's own UI does it
+     * ({@code ISVehicleMechanics.lua}): {@code IGUI_VehicleName<carModelName or script name>},
+     * and for a {@code *Burnt*} script the unburnt model's name wrapped in
+     * {@code IGUI_VehicleNameBurntCar}. {@code textOrNull} is {@code Translator.getTextOrNull}
+     * (key, optional argument). Falls back to the script name when no translation exists.
+     */
+    public static String vehicleDisplayName(String scriptName, String carModelName,
+                                            BiFunction<String, String, String> textOrNull) {
+        String key = carModelName != null && !carModelName.isEmpty() ? carModelName : scriptName;
+        String name = key == null ? null : textOrNull.apply("IGUI_VehicleName" + key, null);
+        if (scriptName != null && scriptName.contains("Burnt")) {
+            String unburnt = textOrNull.apply("IGUI_VehicleName" + scriptName.replace("Burnt", ""), null);
+            if (unburnt != null) {
+                name = unburnt;
+            }
+            if (name != null) {
+                String burnt = textOrNull.apply("IGUI_VehicleNameBurntCar", name);
+                if (burnt != null) {
+                    name = burnt;
+                }
+            }
+        }
+        if ((name == null || name.isBlank()) && key != null) {
+            // Variants PZ ships without a translation (ModernCarSmashedLeft, SportsCar_ez):
+            // name them after their base model, as the translated CarLightsSmashed* ones are.
+            String base = key.replaceFirst("_[^_]+$", "");
+            boolean smashed = base.matches(".*Smashed(Front|Rear|Left|Right)$");
+            base = base.replaceFirst("Smashed(Front|Rear|Left|Right)$", "");
+            String baseName = base.equals(key) ? null : textOrNull.apply("IGUI_VehicleName" + base, null);
+            if (baseName != null) {
+                name = smashed ? "Wrecked " + baseName : baseName;
+            }
+        }
+        return name == null || name.isBlank() ? scriptName : name;
     }
 
     /** Quality as {@code condition/conditionMax}; blank when the item has no condition track. */

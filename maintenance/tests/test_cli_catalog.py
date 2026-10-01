@@ -301,6 +301,7 @@ def test_the_wired_fixture_serves_exactly_the_targets_it_says(wired: Any) -> Non
         "linux-25488622": "no repinner for platform 'linux'",
         "linux-3.2.0.b10": "no repinner for platform 'linux'",
         "linux-42.20.4": "no repinner for platform 'linux'",
+        "linux-42.21.0": "no repinner for platform 'linux'",
         "neoforge-1.21.11": "no repinner for platform 'neoforge'",
         "paper-1.21.11": "no repinner for platform 'paper'",
         "proton-1024233": "no repinner for platform 'proton'",

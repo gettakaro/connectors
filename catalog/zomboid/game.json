@@ -28,6 +28,6 @@
       "artifactPattern": "takaro-zomboid-agent-{target}-{version}.jar"
     }
   },
-  "legacyAssetAliases": {"TakaroConnector-{version}.jar": "linux-42.20.4/agent"},
+  "legacyAssetAliases": {"TakaroConnector-{version}.jar": "linux-42.21.0/agent"},
   "devServers": {"composeFile": "zomboid.yml"}
 }
