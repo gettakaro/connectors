@@ -1,6 +1,8 @@
-# Takaro Dragonwilds connector — example deployment (SKELETON).
-# Adapt to your own dedicated-server image; the only hard requirements are marked REQUIRED.
-# Copy .env.example to .env first.
+# Takaro RuneScape: Dragonwilds native connector — example deployment.
+# Adapt to your own dedicated-server image; the hard requirements are marked REQUIRED.
+# Copy env.example (.env.example in the repository) to .env first.
+#
+# One service: the plugin inside the game process connects to Takaro itself.
 
 services:
   dragonwilds:
@@ -9,7 +11,7 @@ services:
     image: dragonwilds-dedicated-server:latest
     container_name: dragonwilds
     restart: unless-stopped
-    stop_grace_period: 60s
+    stop_grace_period: 2m
     ports:
       - "${DRAGONWILDS_PORT:-7777}:7777/udp"
     environment:
@@ -19,36 +21,31 @@ services:
       WORLD_PASSWORD: "${DRAGONWILDS_WORLD_PASSWORD:-}"
       ADMIN_PASSWORD: "${DRAGONWILDS_ADMIN_PASSWORD:?}"
       ENABLE_AUTO_UPDATE: "false"          # client and server are version-locked
-      # REQUIRED: the plugin, and the shared secret it serves its HTTP API with
+      # REQUIRED: the plugin, preloaded by the entrypoint onto the game binary only
       TAKARO_PLUGIN_SO: /opt/takaro/libtakaro-dragonwilds.so
-      TAKARO_PLUGIN_TOKEN: "${TAKARO_PLUGIN_TOKEN:?}"
+      # REQUIRED: the Takaro connection
+      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN:?}"
+      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_TOKEN:-dragonwilds}"
+      TAKARO_WS_URL: "${TAKARO_WS_URL:-wss://connect.takaro.io/}"
+      TAKARO_SERVER_NAME: "${TAKARO_SERVER_NAME:-Dragonwilds}"
+      TAKARO_SENDER_NAME: "${TAKARO_SENDER_NAME:-}"
+      TAKARO_CA_FILE: "${TAKARO_CA_FILE:-}"
+      # Optional authenticated loopback diagnostics; the Takaro connection does not use them
+      TAKARO_PLUGIN_TOKEN: "${TAKARO_PLUGIN_TOKEN:-}"
       TAKARO_PLUGIN_PORT: "${TAKARO_PLUGIN_PORT:-18890}"
+      TAKARO_PLUGIN_DEBUG: "${TAKARO_PLUGIN_DEBUG:-0}"
+      TAKARO_TICK_BUDGET_US: "${TAKARO_TICK_BUDGET_US:-500}"
+      # REQUIRED: persistent connector state (outbox, cursor, players, timed bans)
+      TAKARO_STATE_DIR: /opt/takaro-state
+      TAKARO_CURSOR_FILE: "${TAKARO_CURSOR_FILE:-}"
+      TAKARO_ONLINE_FILE: "${TAKARO_ONLINE_FILE:-}"
+      TAKARO_BAN_FILE: "${TAKARO_BAN_FILE:-}"
+      TAKARO_KNOWN_PLAYERS_FILE: "${TAKARO_KNOWN_PLAYERS_FILE:-}"
+      DRAGONWILDS_LOG_FILE: "${DRAGONWILDS_LOG_FILE:-/game/RSDragonwilds/Saved/Logs/RSDragonwilds.log}"
+      DRAGONWILDS_LOG_TAIL: "${DRAGONWILDS_LOG_TAIL:-auto}"
+      DRAGONWILDS_LOG_EVENTS: "${DRAGONWILDS_LOG_EVENTS:-filtered}"
     volumes:
       - ./data/dragonwilds:/game
       # REQUIRED: read-only, and OUTSIDE the Steam tree - SteamCMD `validate` deletes unknown files
-      - ./data/dragonwilds-plugin/libtakaro-dragonwilds.so:/opt/takaro/libtakaro-dragonwilds.so:ro
-
-  dragonwilds-takaro:
-    # REQUIRED: same network namespace, so the plugin API stays loopback-only
-    network_mode: service:dragonwilds
-    build: ./sidecar
-    container_name: dragonwilds-takaro
-    restart: unless-stopped
-    depends_on:
-      - dragonwilds
-    environment:
-      TAKARO_WS_URL: "${TAKARO_WS_URL:-wss://connect.takaro.io/}"
-      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN:?}"
-      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_TOKEN:-dragonwilds}"
-      TAKARO_SERVER_NAME: "${TAKARO_SERVER_NAME:-Dragonwilds}"
-      TAKARO_PLUGIN_URL: "${TAKARO_PLUGIN_URL:-http://127.0.0.1:18890}"
-      TAKARO_PLUGIN_TOKEN: "${TAKARO_PLUGIN_TOKEN:?}"
-      TAKARO_CURSOR_FILE: /data/event-cursor.json
-      TAKARO_ONLINE_FILE: /data/online.json
-      DRAGONWILDS_LOG_FILE: /game/RSDragonwilds/Saved/Logs/RSDragonwilds.log
-      SIDECAR_HEALTH_PORT: "18891"
-      SIDECAR_EXIT_AFTER_UNREACHABLE_MS: "180000"
-      DEBUG: "${DEBUG:-0}"
-    volumes:
-      - ./data/dragonwilds:/game:ro
-      - ./data/dragonwilds-sidecar:/data
+      - ./data/dragonwilds-plugin:/opt/takaro:ro
+      - ./data/dragonwilds-state:/opt/takaro-state
