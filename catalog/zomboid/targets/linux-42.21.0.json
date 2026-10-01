@@ -9,9 +9,10 @@
     "status": "candidate",
     "since": "2026-09-29",
     "evidence": [
-      "hooks + 99 direct API refs + 2 reflective fields unchanged vs 42.20.4 (static diff); zomboid-v1.1.0 agent with TAKARO_TARGET_POLICY=warn binds all hooks, identifies and answers reachability/getPlayers/executeConsoleCommand/sendMessage/listBans live on neo 2026-09-29"
+      "hooks + 99 direct API refs + 2 reflective fields unchanged vs 42.20.4 (static diff); zomboid-v1.1.0 agent with TAKARO_TARGET_POLICY=warn binds all hooks, identifies and answers reachability/getPlayers/executeConsoleCommand/sendMessage/listBans live on neo 2026-09-29",
+      "real-client run 2026-10-01 on 42.21.0 4a0e9546ec: player-connected/disconnected, chat-message, player-death events; getPlayers, location, inventory, giveItem, broadcast + whisper, teleport, kick, ban/listBans/unban all proven through Takaro MCP (gettakaro#339 comment); entity-killed hook bound but no kill landed"
     ],
-    "notes": "Exact Steam pin of Build 42 42.21.0 (build 4a0e9546ec, Steam build 25485538). Candidate until the real-client gate passes on this pin."
+    "notes": "Exact Steam pin of Build 42 42.21.0 (build 4a0e9546ec, Steam build 25485538). Startup, hook binding and the player-scoped actions and events were proven with a real client on 2026-10-01; entity-killed firing is not yet re-proven on this pin."
   },
   "inputs": {
     "server": {

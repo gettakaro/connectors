@@ -134,10 +134,11 @@ the upgrade. Never swap the jar under a running server; the agent is loaded into
 ## What works, what doesn't
 
 Verified end to end on **2026-09-13/14** against a real dedicated server (game build
-**42.20.4 b0bbce05d5**) with a real game client connected. On **42.21.0** (2026-09-29) startup,
-hook binding, identify, reachability, player list, console commands, broadcast, ban list and both
-catalogues were re-proven on the server; the player-scoped rows have not yet been re-run with a
-client on 42.21.0.
+**42.20.4 b0bbce05d5**) with a real game client connected. Re-verified on **42.21.0 4a0e9546ec** on 2026-10-01
+with a real game client: connection, restart/reconnect, player list and lookup, location, inventory,
+both catalogues, chat, broadcast, whisper, give item, teleport, console commands, kick, permanent
+ban, unban, ban list and the join, leave, chat and death events. Not yet re-run on 42.21.0:
+timed-ban expiry, shutdown and the zombie-kill event.
 ✅ = works, ⚠️ = works with a caveat or is unverified, ❌ = does not work.
 
 | What | | Notes |
