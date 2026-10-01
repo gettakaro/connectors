@@ -160,7 +160,7 @@ this release's mod) with a real game client connected.
 | Map info | ⚠️ | The mod answers, but Takaro has no map view for this connector type yet. |
 | Map tiles | ❌ | Not supported by Takaro for this connector type yet (the legacy native 7DTD integration has a map; this one does not). |
 | Locations / points of interest | ❌ | The mod collects them (368 found), but Takaro has no way to ask for them yet. |
-| Discord chat bridge | ⚠️ | Game → Discord works. Takaro records its own outgoing messages as chat, so the bridge echoes a message back and forth a few times before it stops (Takaro-side). Discord → game relayed from a **human** Discord account was never confirmed in the hard test. |
+| Discord chat bridge | ⚠️ | Both directions work: game chat reaches Discord, and a message posted in Discord shows up in game. Takaro also forwards the game's copy of a Discord message back to Discord once (Takaro-side echo). |
 | Shop & economy | ✅ | Buying in game (`/shop`), ordering through the Takaro API, currency grants and balance checks all work. Purchases go straight into the player's inventory. |
 
 ### Known issues
