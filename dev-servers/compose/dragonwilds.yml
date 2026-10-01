@@ -46,6 +46,8 @@ services:
       TAKARO_PLUGIN_TOKEN: "${TAKARO_DRAGONWILDS_PLUGIN_TOKEN:?required}"
       TAKARO_PLUGIN_PORT: "18890"
       TAKARO_PLUGIN_DEBUG: "1"
+      # Every Takaro frame in plugin.log (dev rig only; the log is the wire-level oracle).
+      TAKARO_WIRE_DEBUG: "1"
       TAKARO_TICK_BUDGET_US: "${TAKARO_TICK_BUDGET_US:-500}"
       # Connector state (durable outbox, cursor, online/known players, timed bans).
       TAKARO_STATE_DIR: /opt/takaro-state

@@ -69,6 +69,14 @@ std::unique_ptr<NativePersistence::Store> durable;
 std::unique_ptr<NativeBehavior::Engine> behavior;
 std::unordered_map<uint64_t, uint64_t> sentEpochByOutboxId;
 std::atomic<bool> gateMode{false};
+// TAKARO_WIRE_DEBUG=1: log every Takaro frame (requests, responses, events, error frames) to
+// plugin.log, truncated. Off by default; tokens never appear in these frames.
+bool wireDebug = false;
+void WireLog(const char* dir, const std::string& text) {
+    if (!wireDebug) return;
+    std::string t = text.size() > 1500 ? text.substr(0, 1500) + "...(+" + std::to_string(text.size() - 1500) + " bytes)" : text;
+    PluginLog("wire: %s %s", dir, t.c_str());
+}
 bool actionApplied = true;
 struct ShutdownResponse {
     NativeTransport::Frame frame;
@@ -265,6 +273,7 @@ Json MapEvent(const Json& e) {
 void SendError(const std::string& id, uint64_t epoch, const std::string& message) {
     if (id.empty()) return;
     Json frame = {{"type", "response"}, {"requestId", id}, {"error", message}};
+    WireLog("SEND", frame.dump());
     auto result = NativeTransport::Queue({NativeTransport::Kind::CriticalResponse,
         std::make_shared<const std::string>(frame.dump()), epoch, 0, false});
     if (!result) {
@@ -301,6 +310,7 @@ void HandleFrame(const NativeTransport::Notice& n) {
     Json f = Json::parse(n.text, nullptr, false);
     if (f.is_discarded() || !f.is_object()) { lastError = "malformed Takaro frame"; return; }
     std::string type = Str(f, "type");
+    if (type != "ping") WireLog("RECV", n.text);
     if (type == "identifyResponse") {
         Json p = Record(f.value("payload", Json::object()));
         if (p.contains("error") && !p["error"].is_null()) {
@@ -495,6 +505,7 @@ void FlushEvents() {
                                                   currentEpoch, e.outboxId, false});
             if (!queued) break;
             sentEpochByOutboxId[e.outboxId] = currentEpoch;
+            if (wireDebug && e.frame) WireLog("SEND", *e.frame);
             Json frame = Json::parse(*e.frame, nullptr, false);
             if (frame.is_object()) {
                 Json payload = Record(frame.value("payload", Json::object()));
@@ -988,6 +999,7 @@ void BridgeLoop() {
                         PumpShutdown();
                     }
                 } else {
+                    WireLog("SEND", encoded);
                     auto queued = NativeTransport::Queue({NativeTransport::Kind::Response,
                         std::make_shared<const std::string>(std::move(encoded)), currentEpoch, 0, false});
                     if (!queued) SendError(completed.id, currentEpoch, "native response queue overloaded");
@@ -1248,6 +1260,7 @@ bool Start() {
             rawLogBytes += line.size(); rawLogLines.push_back(std::move(line)); cv.notify_one();
         });
     }
+    { const char* w = getenv("TAKARO_WIRE_DEBUG"); wireDebug = w && std::string(w) == "1"; }
     const char* id = getenv("TAKARO_IDENTITY_TOKEN"); identity = id && *id ? id : "dragonwilds";
     const char* reg = getenv("TAKARO_REGISTRATION_TOKEN"); registration = reg ? reg : "";
     while (!registration.empty() && std::isspace(static_cast<unsigned char>(registration.front())))

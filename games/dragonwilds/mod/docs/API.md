@@ -41,6 +41,7 @@ Environment of the game process; the `plugin.json` column is `<data dir>/plugin.
 | `TAKARO_PLUGIN_TOKEN` | `token` | — | enables the diagnostic HTTP listener; not needed for Takaro |
 | `TAKARO_PLUGIN_PORT` | `port` | `18890` | diagnostic listener port (loopback only) |
 | `TAKARO_PLUGIN_DEBUG` | `debug` | off | enables `/debug/*` and per-request logging |
+| `TAKARO_WIRE_DEBUG` | — | off | `1` logs every Takaro frame (requests, responses, events, error frames; truncated to 1500 bytes) to `plugin.log`; the identify frame is never logged |
 | `TAKARO_SYM_PATH` | `symPath` | `<exe>.sym` | symbol database |
 | `TAKARO_PLUGIN_DATA_DIR` | — | `<exe dir>/takaro` | `plugin.log`, `symcache.json`, `plugin.json`, `bans.json` |
 
