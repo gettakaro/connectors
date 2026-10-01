@@ -51,10 +51,13 @@ timeout 8 cat <&3
 
 
 def command(*args: str, timeout: int = 15) -> str:
-    result = subprocess.run(args, text=True, capture_output=True, timeout=timeout, check=False)
+    # Bytes, decoded by hand: text mode would turn the HTTP "\r\n" separators into "\n".
+    result = subprocess.run(args, capture_output=True, timeout=timeout, check=False)
+    stdout = result.stdout.decode("utf-8", errors="replace")
     if result.returncode:
-        raise RuntimeError(f"{' '.join(args[:3])} failed ({result.returncode}): {result.stderr[-300:]}")
-    return result.stdout
+        stderr = result.stderr.decode("utf-8", errors="replace")
+        raise RuntimeError(f"{' '.join(args[:3])} failed ({result.returncode}): {stderr[-300:]}")
+    return stdout
 
 
 def parse_http(raw: str) -> Any:
@@ -297,6 +300,8 @@ def main() -> int:
             return 1
         finally:
             write(args.evidence_dir / "import-report.json", report)
+            summary = {key: report[key] for key in ("outcome", "error") if key in report}
+            print(json.dumps(summary), file=sys.stderr if report.get("error") else sys.stdout)
 
     report = {"outcome": "incomplete", "exactBarrier": False, "samples": []}
     sidecar_stopped = False
@@ -359,6 +364,8 @@ def main() -> int:
         return 1
     finally:
         write(args.evidence_dir / "drain-report.json", report)
+        summary = {key: report[key] for key in ("outcome", "error", "recovery") if key in report}
+        print(json.dumps(summary), file=sys.stderr if report.get("error") else sys.stdout)
 
 
 def snapshot_without_sidecar() -> dict[str, Any]:

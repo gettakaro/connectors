@@ -67,6 +67,11 @@ class CleanTest(unittest.TestCase):
 
 
 class HttpTest(unittest.TestCase):
+    def test_command_keeps_http_line_endings(self):
+        # Text-mode subprocess output turned "\r\n" into "\n" and every live HTTP read failed.
+        raw = drain.command("printf", "HTTP/1.1 200 OK\\r\\nContent-Length: 2\\r\\n\\r\\n[]")
+        self.assertEqual(drain.parse_http(raw), [])
+
     def test_plain_and_chunked_bodies(self):
         plain = 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{"seq": 12}'
         self.assertEqual(drain.parse_http(plain), {"seq": 12})
