@@ -20,9 +20,22 @@ ds_target() {
         ds_warn "takaro-maint targets list --rig-game ${1} failed; see the error above"
         return 1
     fi
-    printf '%s' "$listing" | python3 -c 'import json,sys
+    # Prefer the catalog default, then any target that is not retired. A retired target's
+    # depots are usually gone from Steam, so it is only picked when nothing else exists.
+    printf '%s' "$listing" | REPO_ROOT="$REPO_ROOT" python3 -c 'import json,os,sys
 targets = json.load(sys.stdin)["targets"]
-print(targets[0]["id"] if targets else "")'
+def is_default(t):
+    if not t.get("game"):
+        return False
+    path = os.path.join(os.environ["REPO_ROOT"], "catalog", t["game"], "targets", t["id"] + ".json")
+    try:
+        with open(path) as f:
+            return json.load(f).get("default") is True
+    except OSError:
+        return False
+live = [t for t in targets if t.get("status") != "retired"]
+pick = next((t for t in live if is_default(t)), None) or (live or targets or [None])[0]
+print(pick["id"] if pick else "")'
 }
 
 # ds_target_failed <rig-game-id> — the message every caller of ds_target stops with.
