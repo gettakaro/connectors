@@ -32,6 +32,7 @@ namespace Takaro.Services
             new LinkedList<KeyValuePair<long, Entry>>();
         private readonly Queue<long> _pingMarks = new Queue<long>();
         private long _writeSequence;
+        private long _lastPingMark;
 
         public OutboundLedger(int maxPending, int maxInFlight)
         {
@@ -45,6 +46,14 @@ namespace Takaro.Services
         public int PendingCount => _pending.Count;
 
         public int InFlightCount => _inFlight.Count;
+
+        /// <summary>
+        /// True when events were written after the last ping, so nothing on the
+        /// wire will confirm them yet. The transport answers with a ping straight
+        /// away: the shorter the gap between an event and the pong that confirms
+        /// it, the fewer events a dying socket can force us to send twice.
+        /// </summary>
+        public bool NeedsAckPing => _inFlight.Count > 0 && _lastPingMark < _writeSequence;
 
         /// <summary>Appends a frame; returns how many oldest frames were dropped to stay under the cap.</summary>
         public int Enqueue(string json, bool replayable, bool isPing)
@@ -79,7 +88,10 @@ namespace Takaro.Services
             }
 
             if (head.IsPing)
+            {
                 _pingMarks.Enqueue(_writeSequence);
+                _lastPingMark = _writeSequence;
+            }
         }
 
         /// <summary>The head frame cannot be sent at all; give up on it.</summary>
@@ -121,6 +133,7 @@ namespace Takaro.Services
 
             _inFlight.Clear();
             _pingMarks.Clear();
+            _lastPingMark = _writeSequence;
             Generation = newGeneration;
             TrimPending();
             return requeued;

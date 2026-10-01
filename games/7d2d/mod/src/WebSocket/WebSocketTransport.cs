@@ -81,7 +81,10 @@ namespace Takaro.WebSocket
         private long _openedAtTicks;
         private long _lastInboundTicks;
         private int _reconnectAttempts;
-        private const int MAX_RECONNECT_INTERVAL_SECONDS = 300;
+        // Kept short: a retry is one cheap TLS handshake, and with the 45 s
+        // dead-link timeout a 300 s cap left the server unreachable for up to
+        // five minutes after Takaro came back (2026-10-01 outage test).
+        private const int MAX_RECONNECT_INTERVAL_SECONDS = 60;
 
         // How long an open-but-silent connection must survive before we treat it
         // as good. Takaro normally answers identify well inside this window.
@@ -101,6 +104,10 @@ namespace Takaro.WebSocket
         private const int INBOUND_TIMEOUT_SECONDS = HEARTBEAT_INTERVAL_SECONDS * 3;
 
         private const string PONG_MESSAGE_TYPE = "pong";
+
+        // At most one acknowledgement ping per second, however busy the events.
+        private const int ACK_PING_MIN_INTERVAL_MILLISECONDS = 1000;
+        private long _lastAckPingTicks;
         private const string IDENTIFY_RESPONSE_TYPE = "identifyResponse";
 
         // Takaro's connector sends this the moment the socket is accepted,
@@ -369,8 +376,24 @@ namespace Takaro.WebSocket
                 }
             }
 
-            while (_ledger.PendingCount > 0)
+            while (true)
             {
+                if (_ledger.PendingCount == 0)
+                {
+                    // Confirm what was just written instead of waiting for the
+                    // next heartbeat; a duplicate after a dead link is then only
+                    // possible for events written within one round trip of it.
+                    if (!_ledger.NeedsAckPing || !AckPingDue())
+                        return;
+                    _ledger.Enqueue(
+                        Newtonsoft.Json.JsonConvert.SerializeObject(
+                            WebSocketMessage.CreateHeartbeat()
+                        ),
+                        false,
+                        true
+                    );
+                }
+
                 if (!_isConnected || !_isConfirmed || IsInboundStale())
                     return;
 
@@ -418,6 +441,15 @@ namespace Takaro.WebSocket
                 _headFailureCount = 0;
                 _pendingOverflowLogged = false;
             }
+        }
+
+        private bool AckPingDue()
+        {
+            long now = DateTime.UtcNow.Ticks;
+            if (now - _lastAckPingTicks < TimeSpan.TicksPerMillisecond * ACK_PING_MIN_INTERVAL_MILLISECONDS)
+                return false;
+            _lastAckPingTicks = now;
+            return true;
         }
 
         private void ConnectToServer()

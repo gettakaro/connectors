@@ -305,6 +305,20 @@ public static class ContractHarness
         Equal(0, ledger.AcknowledgePong(), "pings from the dead socket do not confirm anything");
         Equal(2, ledger.InFlightCount, "events on the new socket wait for a new pong");
 
+        var acked = new OutboundLedger(10, 10);
+        acked.RequeueInFlight(1);
+        True(!acked.NeedsAckPing, "nothing written needs no ack ping");
+        acked.Enqueue("a", true, false);
+        acked.MarkHeadWritten();
+        True(acked.NeedsAckPing, "a written event needs an ack ping");
+        acked.Enqueue("p", false, true);
+        acked.MarkHeadWritten();
+        True(!acked.NeedsAckPing, "a ping after the event covers it");
+        Equal(1, acked.AcknowledgePong(), "its pong confirms the event");
+        acked.Enqueue("r", false, false);
+        acked.MarkHeadWritten();
+        True(!acked.NeedsAckPing, "responses never need an ack ping");
+
         var capped = new OutboundLedger(3, 2);
         for (int i = 0; i < 4; i++)
             capped.Enqueue("x" + i, true, false);
