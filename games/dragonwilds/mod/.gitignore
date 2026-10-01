@@ -4,3 +4,4 @@ build/
 tests/build/
 core
 core.*
+__pycache__/

@@ -1,6 +1,7 @@
 // Host-side unit tests: the .sym parser (against a synthetic fixture), JSON, the event ring buffer
 // and password redaction. No game process involved.
 #include "common.h"
+#include "perf.h"
 #include "state.h"
 
 #include <sys/stat.h>
@@ -194,6 +195,8 @@ static void TestRedaction() {
     // key without a value must not eat the rest of the line
     EQ(Redact("WorldPassword"), "WorldPassword");
     EQ(Redact("WorldPassword="), "WorldPassword=");
+    EQ(Redact("Ticket=abcdef rest"), "Ticket=*** rest");
+    EQ(Redact("TAKARO_PLUGIN_TOKEN=xyz"), "TAKARO_PLUGIN_TOKEN=***");
 }
 
 static void TestRingBuffer() {
@@ -260,7 +263,9 @@ static void TestPluginBanList() {
     r.gameId = "0123456789ABCDEF0123456789ABCDEF";  // upper case on purpose
     r.name = "takarotester";
     r.reason = "L3b test";
-    CHECK(state::BanAdd(r), "BanAdd should persist");
+    CHECK(state::BanAdd(r), "BanAdd should accept the record");
+    // BanAdd is memory-only (it runs on the game thread); persistence is a background flush.
+    CHECK(state::FlushBans(), "FlushBans should persist");
     CHECK(state::IsBanned("0123456789abcdef0123456789abcdef"), "lookup must be case-insensitive");
     CHECK(state::IsBanned("0123456789ABCDEF0123456789ABCDEF"), "lookup must be case-insensitive");
     CHECK(!state::IsBanned(""), "an empty id is never banned");
@@ -279,10 +284,63 @@ static void TestPluginBanList() {
 
     CHECK(state::BanRemove("0123456789abcdef0123456789abcdef"), "BanRemove should report a hit");
     CHECK(!state::BanRemove("0123456789abcdef0123456789abcdef"), "a second remove is a miss");
+    CHECK(state::FlushBans(), "FlushBans after remove");
     CHECK(!state::IsBanned("0123456789abcdef0123456789abcdef"), "unbanned");
     CHECK(ReadFile(state::BansPath(), text) && JsonParse(text, v) && v.get("bans")->arr.empty(),
           "the removal should be persisted");
     ::unlink(state::BansPath().c_str());
+}
+
+// Timed-ban expiry and crash recovery depend on the revision guard: any mutation, including a
+// remove of an id the plugin list never held (it may still be in the game's own list), bumps it.
+static void TestBanRevision() {
+    uint64_t r0 = state::BanRevision();
+    state::BanRecord r;
+    r.gameId = "fedcba9876543210fedcba9876543210";
+    r.expiresAt = "2030-01-01T00:00:00.000Z";
+    CHECK(state::BanAddIfRevision(r, r0), "conditional add at the current revision");
+    CHECK(state::BanRevision() == r0 + 1, "add bumps the revision");
+    CHECK(!state::BanAddIfRevision(r, r0), "a stale revision is refused");
+    auto snap = state::ReadBans();
+    CHECK(snap.revision == r0 + 1 && snap.records.size() == 1, "snapshot carries records + revision");
+    EQ(snap.records[0].expiresAt, "2030-01-01T00:00:00.000Z");
+    CHECK(state::FlushBans(), "flush timed ban");
+    std::string text;
+    CHECK(ReadFile(state::BansPath(), text) && text.find("2030-01-01T00:00:00.000Z") != std::string::npos,
+          "expiresAt persisted in bans.json");
+    CHECK(!state::BanRemove("00000000000000000000000000000000"), "missing id is a miss");
+    CHECK(state::BanRevision() == r0 + 2, "but still bumps the revision");
+    CHECK(state::BanRemove("fedcba9876543210fedcba9876543210"), "remove");
+    CHECK(state::FlushBans(), "flush");
+    EQ(state::BanPersistenceError(), "");
+    ::unlink(state::BansPath().c_str());
+}
+
+// The ring stores serialisers, not JSON: hooks capture owned values and readers render later.
+static void TestDeferredEvents() {
+    auto& st = PluginState::Get();
+    uint64_t before = st.LatestSeq();
+    int renders = 0;
+    st.EmitEventDeferred("chat-message", [&renders] { ++renders; return std::string("{\"msg\":\"later\"}"); });
+    CHECK(renders == 0, "emit must not serialise");
+    JsonValue v;
+    CHECK(JsonParse(st.EventsJson(before, 10), v), "events json invalid");
+    CHECK(renders == 1, "rendered once by the reader");
+    EQ(v.get("events")->arr[0].get("data")->get("msg")->str, "later");
+}
+
+static void TestPerfJson() {
+    Perf::RecordTick(12000, 2, false);
+    Perf::RecordFilter(500, true, false);
+    Perf::RecordFilter(300, false, true);
+    Perf::RecordEntry();
+    { Perf::Scope sc("unit.sweep"); }
+    JsonValue v;
+    CHECK(JsonParse(Perf::Json(), v), "perf json invalid");
+    CHECK(v.get("tick") && v.get("tick")->get("p99Us"), "tick p99");
+    CHECK(v.get("processEventFilter") && v.get("processEventFilter")->get("avgNs")->num == 400, "filter avg ns");
+    CHECK(v.get("gameThreadEntries")->get("count")->num == 1, "entries");
+    CHECK(v.get("sweeps")->get("unit.sweep") != nullptr, "named sweep");
 }
 
 // The character name the server prints in its join line is the fallback for /players.
@@ -301,6 +359,9 @@ int main() {
     TestRingBuffer();
     TestCapabilities();
     TestPluginBanList();
+    TestBanRevision();
+    TestDeferredEvents();
+    TestPerfJson();
     TestCharacterNameCache();
     printf("%s: %d checks, %d failed\n", g_failed ? "FAILED" : "PASSED", g_ran, g_failed);
     return g_failed ? 1 : 0;
