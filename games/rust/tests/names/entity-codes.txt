@@ -16,6 +16,7 @@ bandit_shopkeeper_sitting
 boat_shopkeeper
 missionprovider_test
 stables_shopkeeper
+livestockvendor_stables
 farm_access_guard
 gingerbread_dungeon
 gingerbread_meleedungeon

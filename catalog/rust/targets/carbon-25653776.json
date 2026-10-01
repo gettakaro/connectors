@@ -1,17 +1,15 @@
 {
   "schemaVersion": 1,
-  "id": "carbon-25454815",
+  "id": "carbon-25653776",
   "game": "rust",
   "platform": "carbon",
-  "revision": "25454815",
-  "default": false,
+  "revision": "25653776",
+  "default": true,
   "support": {
-    "status": "retired",
-    "since": "2026-09-21",
-    "evidence": [
-      "games/rust/README.md (live hard test with a real client on 2026-10-01, PR #346)"
-    ],
-    "notes": "Rust Dedicated Server public build 25454815 (2026-09-22) with Carbon production build v2.0.259 (protocol 2026.09.03.0, commit 21063e8, GitHub release asset id 547241271). The current plugin compiles against this exact pair; load, identify, reachability, catalogues, console, broadcast, reconnect and shutdown were last proven by takaro-maint verify on build 25353106 with the same Carbon bytes and no client. Player hooks and gameplay are not proven. Carbon's production_build tag is re-uploaded in place, so what pins these bytes is the recorded sha256/size, not the tag. Carbon publishes no machine-readable Rust-build compatibility, so a new Rust head is filed blocked-upstream until a target pinning a compatible Carbon lands. Runtime CI is #167; gameplay evidence #174. Retired 2026-10-01: the wipe update replaced public build 25454815 with 25653776, Steam no longer serves these depot manifests anonymously, and Carbon re-uploaded production_build as v2.0.261 so the recorded Carbon bytes are no longer downloadable."
+    "status": "candidate",
+    "since": "2026-10-01",
+    "evidence": [],
+    "notes": "Rust Dedicated Server public build 25653776 (2026-10-01 wipe update, 17:29 UTC) with Carbon production build v2.0.261 (commit c74c4ca, GitHub release asset id 603773614, uploaded 2026-10-01 17:33 UTC). Carbon's production_build tag is re-uploaded in place, so what pins these bytes is the recorded sha256/size, not the tag."
   },
   "inputs": {
     "server": {
@@ -20,45 +18,45 @@
       "hashOrigin": "self-recorded",
       "app": 258550,
       "branch": "public",
-      "buildid": 25454815,
+      "buildid": 25653776,
       "os": "linux",
       "arch": "64",
       "depots": {
         "258552": {
-          "manifest": "8780771730265493247",
-          "size": 813056674,
-          "files": 720
+          "manifest": "6058160675125849744",
+          "size": 826567862,
+          "files": 740
         },
         "258554": {
-          "manifest": "2040047463972636387",
-          "size": 5064067434,
-          "files": 1278
+          "manifest": "8191265431586090956",
+          "size": 5284548310,
+          "files": 1326
         }
       },
       "files": {
         "Bundles/shared/items.preload.bundle": {
-          "sha256": "d6ddb4d5f34a9a9c709214407806cfee4c937c9cb5d56d83028b63c4afc3b75f",
-          "size": 8327952
+          "sha256": "0d400865b0330e3f44d2b57b5ed7e6c27cfd273e91ce4e7ab6082460c9103665",
+          "size": 8712832
         },
         "RustDedicated": {
           "sha256": "2d5dfd1ce678d78d7bdcb80d457f1284511b3740837e3e059b385c48e537f3a9",
           "size": 4952
         },
         "RustDedicated_Data/Managed/Assembly-CSharp.dll": {
-          "sha256": "e0e4e66229b2b792ea072ea8088fab143f8c46f37156cf314a88df29fa0b6a92",
-          "size": 9754960
+          "sha256": "cb2bf76bb351b17f10be1ee5b31c293eb6effed419e079f2f9d3d3e5c24d8450",
+          "size": 10490704
         },
         "RustDedicated_Data/Managed/Facepunch.Network.dll": {
-          "sha256": "27dfe82b462f4cda263a0258fc44814847543baf410524db308607646c93fea5",
-          "size": 122192
+          "sha256": "fbeae46ee305b7079435a05d4175c50e9ca61c3c8bafbe6d09df915ea3030c25",
+          "size": 122704
         },
         "RustDedicated_Data/Managed/Rust.Data.dll": {
-          "sha256": "af17f865213afb4e08de5d3b1810469d6a48fdfb383719ccde1b2093bbfe11f1",
-          "size": 2023248
+          "sha256": "78240587931a7cb5dccf8c3c275803ec63a957fa620a98125d6044b284ec913d",
+          "size": 2049872
         },
         "RustDedicated_Data/Managed/Rust.Global.dll": {
-          "sha256": "c545e713e37a5fa9b834ceb6e4f1b91b9cb8cf87fd9a7ce161ac93d038ef762a",
-          "size": 127824
+          "sha256": "00ed2e28021d7b42834944385113bf879888e175b6f5e3c8090effcb7d23383f",
+          "size": 129872
         },
         "steam_appid.txt": {
           "sha256": "1fa5d1a35b57a9d3f59f87403c1e9cd7f737b292b5b2b8d3e4b126cc0f04cb66",
@@ -74,9 +72,9 @@
       "repo": "CarbonCommunity/Carbon",
       "tag": "production_build",
       "asset": "Carbon.Linux.Release.tar.gz",
-      "sha256": "bfc3cf3d638d588fab94fd4d05a7e8ab2fae28fbbfb5962ecc8fdbd9bb7bb306",
-      "size": 21387905,
-      "updatedAt": "2026-09-06T13:42:20Z",
+      "sha256": "a9d1c51cb71166fec0ff9e68ef38194ea94e08b0a33f3cbecd04da3c90d7c9b0",
+      "size": 21389982,
+      "updatedAt": "2026-10-01T17:33:07Z",
       "installPath": "takaro/Carbon.Linux.Release.tar.gz"
     }
   },
@@ -120,7 +118,7 @@
   "components": [
     {
       "role": "plugin",
-      "artifact": "takaro-rust-plugin-carbon-25454815-{version}.cs",
+      "artifact": "takaro-rust-plugin-carbon-25653776-{version}.cs",
       "installDir": "takaro"
     }
   ],

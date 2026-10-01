@@ -4,8 +4,8 @@ A server-side-only plugin that connects a Rust dedicated server to Takaro. It is
 **Oxide/uMod** plugin API (`Oxide.Plugins` / `RustPlugin`) and is developed and verified on
 **Carbon**, which runs the same plugins. Players do not install anything.
 
-**Tested live against Rust public build 25454815 (2026-09-22) with Carbon v2.0.259, with a real
-game client.** Other Rust builds and other Carbon builds are unverified — the plugin will very likely
+**Tested live against Rust public build 25653776 (the 2026-10-01 "Livestock" update) with Carbon
+v2.0.261, with a real game client.** Other Rust builds and other Carbon builds are unverified — the plugin will very likely
 still load, but nothing here was checked against them.
 
 ## Install
@@ -33,7 +33,7 @@ From the latest `rust-vX.Y.Z` release on the releases page
 
 download either name — they are the same bytes:
 
-- **`takaro-rust-plugin-carbon-25454815-<version>.cs`** — the build's own name, which says exactly
+- **`takaro-rust-plugin-carbon-25653776-<version>.cs`** — the build's own name, which says exactly
   which Rust build and which Carbon it was verified against.
 - **`TakaroConnector.cs`** — the same file under the name the framework loads. Direct link pattern:
   `https://github.com/gettakaro/connectors/releases/download/rust-v<version>/TakaroConnector.cs`
@@ -118,8 +118,9 @@ variables are untouched by the upgrade, so the server keeps its identity.
 
 ## What works, what doesn't
 
-✅ means it was proven live on 2026-10-01 on Rust build 25454815 with Carbon 2.0.259, with a real
-Rust game client joined to the server and every result checked in Takaro and in the game.
+✅ means it was proven live on 2026-10-01 with a real Rust game client joined to the server and every
+result checked in Takaro and in the game — first on build 25454815 with Carbon 2.0.259, then again
+on build 25653776 with Carbon 2.0.261 after that day's update.
 ⚠️ means the plugin implements it but it has not been confirmed live. ❌ means it is not
 implemented or not supported.
 

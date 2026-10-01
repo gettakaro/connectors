@@ -730,6 +730,7 @@ namespace Oxide.Plugins
                     { "bandit_shopkeeper_sitting", "Bandit Shopkeeper (Sitting)" },
                     { "boat_shopkeeper", "Boat Shopkeeper" },
                     { "stables_shopkeeper", "Stables Shopkeeper" },
+                    { "livestockvendor_stables", "Stables Livestock Vendor" },
                     { "waterwell_shopkeeper", "Water Well Shopkeeper" },
                     { "missionprovider_bandit_a", "Bandit Mission Provider A" },
                     { "missionprovider_bandit_b", "Bandit Mission Provider B" },
