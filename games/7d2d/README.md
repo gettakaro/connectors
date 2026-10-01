@@ -138,7 +138,7 @@ this release's mod) with a real game client connected.
 | Single player lookup | ⚠️ | The data is correct, but Takaro never asks for one player at a time on this game — it uses the player list instead. |
 | Player location | ✅ | Polled about every 30 s; matches the server's own `lp` output. |
 | Player inventory | ✅ | Matches what the player is carrying in game. |
-| Item catalogue | ✅ | About 2,300 items with player-facing names. Internal game entries that have no name are left out; they can still be given by code. |
+| Item catalogue | ✅ | Items with player-facing names; internal game entries that have no name are no longer sent (they can still be given by code). Takaro keeps rows it already has, so a server set up with an older version still lists those entries. |
 | Entity catalogue | ✅ | 175 entities synced, with their in-game names. |
 | Chat messages from players | ✅ | Real player chat reaches Takaro with the player attached. |
 | Broadcast a message | ✅ | Shown to everyone in the server chat. |
