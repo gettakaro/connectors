@@ -6,6 +6,8 @@
 
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <chrono>
+#include <deque>
 #include <cctype>
 #include <cstdlib>
 #include <map>
@@ -113,7 +115,12 @@ const char* kSecretAssignment = R"(((?:\w*)(?:Token|Ticket))(\s*[=:]\s*)("?)([^\
 // Unreal/EOS chatter worthless to an admin: Takaro rate-limits `log` per server, and the server
 // prints thousands of Redpoint EOS verbose lines (the plugin's old ring filter plus the sidecar's).
 const char* kNoise =
-    R"(LogRedpointEOS:\s*Verbose|LogRedpointEOSCore:\s*Verbose|LogEOSHTTP|LogEOSAnalytics|LogEOSNetworkAuth|LogRedpointEOSHTTP|SendBackendEvent|^\s*$)";
+    R"(:\s*(?:Verbose|VeryVerbose):|LogRedpointEOS\w*:\s*Verbose|LogEOSHTTP|LogEOSAnalytics|LogEOSNetworkAuth|LogRedpointEOSHTTP|LogStreamableManager|LogSpudData|SendBackendEvent|^\s*$)";
+// Takaro drops `log` events above ~50 per 30 s per server (event-rate-limited). The connector stays
+// under that on its own: at most kLogRateMax lines per kLogRateWindowMs, the rest are counted and
+// summarised in one line once the window reopens. DRAGONWILDS_LOG_RATE overrides the count (0 = off).
+constexpr int64_t kLogRateWindowMs = 30000;
+constexpr int kLogRateDefault = 40;
 }  // namespace
 
 struct Parser::Impl {
@@ -123,6 +130,9 @@ struct Parser::Impl {
     std::map<std::string, std::string> loginIds;  // platform name -> puid (Login request:)
     std::map<std::string, std::string> known;     // character name -> puid, for a name-only leave
     std::string mode = "auto", events = "filtered";
+    int rateMax = kLogRateDefault;
+    std::deque<int64_t> sent;  // steady-clock ms of the log events admitted in the current window
+    uint64_t suppressed = 0;
     std::string lastError;
     bool configured = false;
 };
@@ -167,6 +177,17 @@ bool Parser::Configure(std::string& key, std::string& detail) {
         detail = "must be all|filtered|none";
         return false;
     }
+    std::string rate = Trim(Env("DRAGONWILDS_LOG_RATE"));
+    if (!rate.empty()) {
+        char* end = nullptr;
+        long v = strtol(rate.c_str(), &end, 10);
+        if (!end || *end || v < 0 || v > 100000) {
+            key = "DRAGONWILDS_LOG_RATE";
+            detail = "must be a number of log lines per 30 s (0 = unlimited)";
+            return false;
+        }
+        s.rateMax = (int)v;
+    }
     s.configured = true;
     return true;
 }
@@ -208,8 +229,28 @@ std::vector<Parsed> Parser::Feed(const std::string& raw) {
         if (h.limitExceeded) s.lastError = re.label + ": PCRE2 match/depth limit exceeded";
         return h;
     };
-    if (s.events == "all" || (s.events == "filtered" && !Noise(line)))
-        out.push_back({"log", Json{{"msg", Redact(line)}}.dump()});
+    if (s.events == "all" || (s.events == "filtered" && !Noise(line))) {
+        bool admit = true;
+        if (s.rateMax > 0) {
+            const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      std::chrono::steady_clock::now().time_since_epoch()).count();
+            while (!s.sent.empty() && nowMs - s.sent.front() >= kLogRateWindowMs) s.sent.pop_front();
+            if ((int)s.sent.size() >= s.rateMax) {
+                admit = false;
+                ++s.suppressed;
+            } else {
+                if (s.suppressed && (int)s.sent.size() + 1 < s.rateMax) {
+                    out.push_back({"log", Json{{"msg", "[takaro] " + std::to_string(s.suppressed) +
+                                                          " server log line(s) not forwarded (connector log rate "
+                                                          "limit, " + std::to_string(s.rateMax) + " per 30 s)"}}.dump()});
+                    s.sent.push_back(nowMs);
+                    s.suppressed = 0;
+                }
+                s.sent.push_back(nowMs);
+            }
+        }
+        if (admit) out.push_back({"log", Json{{"msg", Redact(line)}}.dump()});
+    }
 
     const bool tail = TailConnections();
     auto player = [](const std::string& id, const std::string& name) {

@@ -32,7 +32,8 @@ Environment of the game process; the `plugin.json` column is `<data dir>/plugin.
 | `TAKARO_STATE_DIR` | — | `<data dir>` | connector state, see `native-state.md` |
 | `TAKARO_CURSOR_FILE`, `TAKARO_ONLINE_FILE`, `TAKARO_BAN_FILE`, `TAKARO_KNOWN_PLAYERS_FILE` | — | in the state dir | 0.2.x file locations, see `native-state.md` |
 | `DRAGONWILDS_LOG_TAIL` | — | `auto` | `auto`: the log tail takes over join/leave while the `players` capability is degraded; `always`; `never` |
-| `DRAGONWILDS_LOG_EVENTS` | — | `filtered` | `log` events: `filtered` drops UE/EOS noise; `all`; `none` |
+| `DRAGONWILDS_LOG_EVENTS` | — | `filtered` | `log` events: `filtered` drops UE/EOS noise and every `Verbose`/`VeryVerbose` line; `all`; `none` |
+| `DRAGONWILDS_LOG_RATE` | — | `40` | most `log` events forwarded per 30 s (Takaro rate-limits `log` at ~50 per 30 s per server); the rest are counted and summarised in one `[takaro] N server log line(s) not forwarded` line; `0` = unlimited |
 | `DRAGONWILDS_LOG_FILE` | — | — | server log path; honoured only if it exists in the game process (it was the sidecar's mount path) |
 | `TAKARO_LOG_PATH` | `logPath` | `<game>/Saved/Logs/RSDragonwilds.log` | server log path |
 | `TAKARO_TICK_BUDGET_US` | `tickBudgetUs` | `500` | game-thread job budget per tick (50..33000) |

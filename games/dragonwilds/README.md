@@ -43,7 +43,7 @@ Set these in the **game process** environment (`.env` with the Compose example):
 | `TAKARO_SENDER_NAME` | no | Sender name for broadcasts; default is the server name. |
 | `TAKARO_STATE_DIR` | yes | A persistent, writable directory, e.g. `/opt/takaro-state`. |
 | `DRAGONWILDS_LOG_FILE` | yes | The server log, `<server>/RSDragonwilds/Saved/Logs/RSDragonwilds.log`. |
-| `DRAGONWILDS_LOG_TAIL` / `DRAGONWILDS_LOG_EVENTS` | no | `auto` / `filtered` by default. |
+| `DRAGONWILDS_LOG_TAIL` / `DRAGONWILDS_LOG_EVENTS` / `DRAGONWILDS_LOG_RATE` | no | `auto` / `filtered` / `40` (log lines per 30 s) by default. |
 | `TAKARO_PLUGIN_TOKEN` | no | Enables loopback diagnostics on `127.0.0.1:18890`. |
 | `TAKARO_CA_FILE` | no | Extra trusted CA file; certificate checks always stay on. |
 | `TAKARO_TICK_BUDGET_US` | no | Game-thread time per tick for the connector, default `500`. |
