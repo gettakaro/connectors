@@ -150,12 +150,12 @@ implemented or not supported.
 | Player left event | ✅ | Also sent when a player is kicked or banned. |
 | Player chat event | ✅ | With the player and the chat channel. |
 | Player death event | ✅ | With the position; includes the killer only when another player did it. |
-| Entity kill event | ⚠️ | Implemented (player kills an animal or NPC, with the weapon). Not confirmed live yet. |
+| Entity kill event | ✅ | When a player kills an animal or NPC, with the weapon used. Kill rewards pay out. |
 | Log events | ⚠️ | Server console lines are forwarded, minus Carbon's and the plugin's own. Takaro does not store them as events. |
 | Chat commands (modules) | ✅ | Commands like `help`, `ping`, `balance`, `settp` and `tp` run and answer in game. |
 | Welcome message & scheduled messages | ✅ | Both show in game. |
 | Shop & economy | ✅ | Currency, buying a listing and delivering it into the player's inventory. |
-| Discord chat bridge | ⚠️ | Game → Discord works. Discord → game not confirmed live yet. |
+| Discord chat bridge | ✅ | Both ways: game chat appears in Discord, Discord messages appear in game. |
 | Oxide / uMod | ⚠️ | Written against the Oxide plugin API, but only Carbon has been run. |
 | Map info | ❌ | The plugin does not implement it. |
 | Map tiles | ❌ | Not supported by Takaro for Generic-connector servers. |
