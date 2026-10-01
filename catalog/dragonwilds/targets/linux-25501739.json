@@ -12,7 +12,7 @@
       "games/dragonwilds/README.md (What works, what doesn't)",
       "games/dragonwilds/mod/tests/ (plugin unit and native connector tests, every build)"
     ],
-    "notes": "Steam pin of the public branch head observed 2026-10-01: tool app 4019830, Linux depot 3501791, build 25501739, the first target for the native connector (no sidecar). An anonymous SteamCMD delta update from the previous build fails with Access Denied on the old manifest; a fresh `app_update 4019830 validate` install reaches this build. `verification.required` is `contract` until this pin is proven at runtime: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
+    "notes": "Steam pin of the public branch head observed 2026-10-01: tool app 4019830, Linux depot 3501791, build 25501739, the first target for the native connector (no sidecar). An anonymous SteamCMD delta update from the previous build fails with Access Denied on the old manifest; a fresh SteamCMD install with validation reaches this build. `verification.required` is `contract` until this pin is proven at runtime: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
   },
   "inputs": {
     "server": {
