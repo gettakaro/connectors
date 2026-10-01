@@ -47,7 +47,9 @@ class VeinAdapter(BaseAdapter):
     def artifact_paths(self, resolved: dict[str, Any], version: str, repo_root: Path) -> dict[str, Path]:
         component = resolved["components"][0]
         return {
-            "plugin": repo_root / "games/vein/_data/dist" / resolved["fp16"]
+            "plugin": repo_root
+            / "games/vein/_data/dist"
+            / resolved["fp16"]
             / component["artifact"].replace("{version}", version)
         }
 
@@ -70,7 +72,11 @@ class VeinAdapter(BaseAdapter):
             environment["TAKARO_SOURCE_REVISION"] = source_revision
         completed = subprocess.run(
             ["bash", str(repo_root / BUILD_SCRIPT), version, str(target.parent)],
-            cwd=repo_root, capture_output=True, text=True, env=environment, check=False,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            env=environment,
+            check=False,
         )
         log = completed.stdout + completed.stderr
         if completed.returncode:
@@ -93,8 +99,11 @@ class VeinAdapter(BaseAdapter):
             document = steam_install.rollback(target, dest=dest)
         else:
             document = steam_install.install_exact(
-                target, dest=dest, preserve=self.preserve_globs(resolved),
-                cache=paths.cache_dir(), log=paths.cache_dir() / "steam/logs/vein-install.log",
+                target,
+                dest=dest,
+                preserve=self.preserve_globs(resolved),
+                cache=paths.cache_dir(),
+                log=paths.cache_dir() / "steam/logs/vein-install.log",
                 dry_run=bool(getattr(args, "dry_run", False)),
             )
         output.emit("install", True, **document)
