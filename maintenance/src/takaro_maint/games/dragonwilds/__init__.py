@@ -1,4 +1,4 @@
-"""The RuneScape: Dragonwilds adapter: an LD_PRELOAD plugin and a Node sidecar beside it.
+"""The RuneScape: Dragonwilds adapter: one native LD_PRELOAD plugin that talks to Takaro itself.
 
 The dedicated server is a plain Steam depot install -- one binary, its `.sym` symbol
 table, a launcher script -- so it installs through the shared Steam exact-install path,
@@ -6,24 +6,22 @@ the way Conan Exiles does. There is no framework layer and nothing here to compi
 plugin against: it resolves the game's functions from the depot's own `.sym` file at
 runtime rather than linking against server code, so `build.references` names nothing.
 
-Two artifacts ship, the way Dune: Awakening's do. The sidecar is the connector: it opens
-the outbound WebSocket to Takaro and answers the whole Generic Connector Protocol on its
-own. The plugin is server-side only, loaded with `LD_PRELOAD` onto the game binary (never
-onto SteamCMD, which is 32-bit and fails outright with a 64-bit preload); it exposes a
-loopback-only HTTP API the sidecar polls for players, positions, inventories and events.
-Both are required -- the plugin alone cannot talk to Takaro, and the sidecar alone cannot
-read anything the plugin does not report.
+One artifact ships. The plugin is loaded with `LD_PRELOAD` onto the game binary (never
+onto SteamCMD, which is 32-bit and fails outright with a 64-bit preload) and holds the
+outbound Takaro WebSocket, the durable event outbox, timed bans and the log tail itself.
+There is no sidecar.
 
-One pinned Node image builds both halves: node:*-bookworm (not slim) carries the g++ the
-plugin needs, on the same glibc as the dedicated-server image -- a `.so` linked against a
-newer glibc could not be preloaded into the game binary. This is the same reasoning, and
-the same pinned tag, as the Dune: Awakening target.
+The plugin is built in an image made from the pinned node:*-bookworm toolchain (g++ on
+the same glibc as the dedicated-server image -- a `.so` linked against a newer glibc could
+not be preloaded into the game binary) plus the four static libraries the target pins by
+source archive hash in `build.deps`.
 
-No runtime container exists for this game yet: the operator supplies their own dedicated
-server image, and this repository's `dev-servers/` rig for it is not built out. So this
-adapter defines no `container_mounts`/`container_options`/`container_command`, and the
-target names `contract` as its required verification level with runtime proof tracked as
-a follow-up, the same posture Dune: Awakening and Conan Exiles both took at this stage.
+No runtime container exists for this game in the catalog: the operator supplies their own
+dedicated server image, and the repository's `dev-servers/` rig is a separate, manual
+harness. So this adapter defines no `container_mounts`/`container_options`/
+`container_command`, and the target names `contract` as its required verification level
+with runtime proof tracked as a follow-up, the same posture Dune: Awakening and Conan
+Exiles both took at this stage.
 """
 
 from __future__ import annotations
@@ -48,7 +46,7 @@ BUILD_SCRIPT = "games/dragonwilds/scripts/build-release.sh"
 
 #: The single top-level folder each role's archive may write, and the folder the operator
 #: ends up using.
-ROLE_FOLDER = {"plugin": "TakaroDragonwilds", "sidecar": "TakaroDragonwildsSidecar"}
+ROLE_FOLDER = {"plugin": "TakaroDragonwilds"}
 
 LAUNCHER = "RSDragonwildsServer.sh"
 SERVER_BINARY = "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping"
@@ -96,7 +94,7 @@ class DragonwildsAdapter(BaseAdapter):
             env[f"{prefix}_ARTIFACT_{_env_key(role)}"] = str(name)
         for component in resolved["components"]:
             env[f"{prefix}_INSTALL_DIR_{_env_key(str(component['role']))}"] = str(component["installDir"])
-        # The dependency URLs and hashes the build checks the lockfile against.
+        # The native source archives the builder image downloads and hash-checks.
         for name, dep in sorted(resolved["build"]["deps"].items()):
             key = _env_key(name)
             env[f"{prefix}_DEP_{key}_URL"] = str(dep.get("resolvedCoordinate", dep["coordinate"]))
@@ -137,8 +135,8 @@ class DragonwildsAdapter(BaseAdapter):
         """Run the tracked release script; it always builds inside the pinned image.
 
         ``toolchain`` is accepted for parity with the Gradle games and changes nothing:
-        the host is not assumed to have Node or a C++ toolchain, so ``host`` would be a
-        promise this adapter cannot keep. ``gradle_args`` mean nothing to a script build;
+        the host is not assumed to have a C++ toolchain or the pinned static libraries, so
+        ``host`` would be a promise this adapter cannot keep. ``gradle_args`` mean nothing to a script build;
         determinism comes from ``SOURCE_DATE_EPOCH`` and a clean stage.
         """
         del toolchain, gradle_args
@@ -162,7 +160,7 @@ class DragonwildsAdapter(BaseAdapter):
             if stamp.returncode == 0 and stamp.stdout.strip().isdigit():
                 environment["SOURCE_DATE_EPOCH"] = stamp.stdout.strip()
         command = ["bash", str(repo_root / BUILD_SCRIPT), version, str(dist), "--target", str(resolved["id"])]
-        output.info(f"building {resolved['id']} {version} (node container toolchain)")
+        output.info(f"building {resolved['id']} {version} (pinned Bookworm builder image)")
         completed = subprocess.run(
             command, cwd=str(repo_root), capture_output=True, text=True, env=environment, check=False
         )

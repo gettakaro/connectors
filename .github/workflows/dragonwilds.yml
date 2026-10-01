@@ -58,29 +58,16 @@ jobs:
           # dependency would skip the release with it.
           ref: ${{ inputs.tag || github.ref }}
           fetch-tags: true
-      - name: Set up Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
-        with:
-          node-version: 22.x
-          cache: npm
-          cache-dependency-path: games/dragonwilds/sidecar/package-lock.json
-      - name: Install sidecar dependencies
-        working-directory: games/dragonwilds/sidecar
-        run: npm ci
-      # The contract check lives here: the real sidecar's own unit tests, so a hosted
-      # runner proves the protocol without a 5.4 GB game and a Steam-owned world.
-      - name: Typecheck sidecar
-        working-directory: games/dragonwilds/sidecar
-        run: npm run typecheck
-      - name: Test sidecar
-        working-directory: games/dragonwilds/sidecar
-        run: npm test
-      - name: Build the plugin and run its unit tests (debian:bookworm toolchain)
+      # The contract check lives here: the plugin's unit tests and the native connector's
+      # tests against a fake Takaro (WebSocket, outbox, timed bans, log tail), in the plugin's
+      # debian:bookworm toolchain with the pinned static libraries. A hosted runner proves the
+      # protocol without a 5.4 GB game and a Steam-owned world.
+      - name: Build the plugin and run its tests (debian:bookworm toolchain)
         run: |
-          chmod +x games/dragonwilds/mod/build.sh games/dragonwilds/mod/tests/run.sh
-          docker run --rm -v "$PWD/games/dragonwilds/mod":/src -w /src \
-            debian:bookworm bash -c 'apt-get update -qq && apt-get install -y -qq build-essential >/dev/null && ./build.sh --native --tests'
-          sudo chown -R "$(id -u):$(id -g)" games/dragonwilds/mod
+          chmod +x games/dragonwilds/mod/build.sh games/dragonwilds/mod/tests/*.sh
+          games/dragonwilds/mod/build.sh --tests
+      - name: Test the 0.2.x drain and state import tool
+        run: python3 -m unittest discover -s games/dragonwilds/scripts -p 'test_*.py' -v
 
   params:
     runs-on: ubuntu-latest
@@ -121,8 +108,8 @@ jobs:
       # The Dragonwilds dedicated server is a 5.4 GB Steam depot, and the plugin loads
       # with LD_PRELOAD onto a game binary this repository has no runtime image for yet
       # (the operator supplies their own) -- a hosted runner can do neither, so the
-      # release claims contract verification (the sidecar's own tests and the plugin's
-      # unit tests, both run above on every build) and runtime onboarding is tracked
+      # release claims contract verification (the plugin's unit and native connector
+      # tests, run above and again by the release build) and runtime onboarding is tracked
       # separately, the same posture Dune: Awakening and Conan Exiles both took at this
       # stage.
       runtime: false
