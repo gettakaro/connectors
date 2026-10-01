@@ -143,7 +143,7 @@ this release's mod) with a real game client connected.
 | Chat messages from players | ✅ | Real player chat reaches Takaro with the player attached. |
 | Broadcast a message | ✅ | Shown to everyone in the server chat. |
 | Whisper a player | ⚠️ | The message reaches the intended player. Only one client was connected, so "nobody else sees it" has not been confirmed. |
-| Give an item | ⚠️ | Works, but the item **drops as a bag at the player's feet** — the player has to walk over it and press E to collect. |
+| Give an item | ✅ | Goes straight into the player's inventory, with the right amount and quality, and stacks onto what they already carry. If the inventory is full, what does not fit lands at the player's feet. |
 | Teleport a player | ⚠️ | Works; the height (Y) is snapped to the ground, so the player lands on solid ground rather than at the exact Y you asked for. |
 | Run a console command | ✅ | Output and success/failure are returned, including the error text for unknown commands. |
 | Kick a player | ✅ | The player is dropped from the server with the reason shown. |
@@ -161,7 +161,7 @@ this release's mod) with a real game client connected.
 | Map tiles | ❌ | Not supported by Takaro for this connector type yet (the legacy native 7DTD integration has a map; this one does not). |
 | Locations / points of interest | ❌ | The mod collects them (368 found), but Takaro has no way to ask for them yet. |
 | Discord chat bridge | ⚠️ | Game → Discord works. Takaro records its own outgoing messages as chat, so the bridge echoes a message back and forth a few times before it stops (Takaro-side). Discord → game relayed from a **human** Discord account was never confirmed in the hard test. |
-| Shop & economy | ✅ | Buying in game (`/shop`), ordering through the Takaro API, currency grants and balance checks all work. Purchases arrive as a bag at the player's feet. |
+| Shop & economy | ✅ | Buying in game (`/shop`), ordering through the Takaro API, currency grants and balance checks all work. Purchases go straight into the player's inventory. |
 
 ### Known issues
 

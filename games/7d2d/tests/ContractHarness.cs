@@ -477,27 +477,40 @@ public static class ContractHarness
         GameManager.Instance.ResetItemDrops();
         var itemValue = new ItemValue(42, true) { Quality = 3 };
         var player = new EntityPlayer(73, new UnityEngine.Vector3(10.5f, 20.25f, 30.75f));
+        var client = new ClientInfo { entityId = 73 };
 
-        PlayerProximateItemDelivery.Drop(itemValue, 7, player);
-
-        Equal(1, GameManager.Instance.ItemDrops.Count, "delivery issues exactly one world drop");
-        ItemDropCall drop = GameManager.Instance.ItemDrops[0];
-        Equal(42, drop.Stack.itemValue.type, "delivery preserves item type");
-        Equal((ushort)3, drop.Stack.itemValue.Quality, "delivery preserves item quality");
-        Equal(7, drop.Stack.count, "delivery creates one stack with the requested amount");
-        Equal(10.5f, drop.Position.x, "delivery uses target player x");
-        Equal(20.25f, drop.Position.y, "delivery uses target player y");
-        Equal(30.75f, drop.Position.z, "delivery uses target player z");
-        Equal(0f, drop.RandomPosition.x, "delivery disables random x offset");
-        Equal(0f, drop.RandomPosition.y, "delivery disables random y offset");
-        Equal(0f, drop.RandomPosition.z, "delivery disables random z offset");
-        Equal(
-            -1,
-            drop.BelongsPlayerId,
-            "delivery matches the first-party remote give path without an owning entity"
+        True(
+            PlayerProximateItemDelivery.Deliver(itemValue, 7, player, client),
+            "delivery to a connected player goes into the inventory"
         );
-        Equal(60f, drop.Lifetime, "delivery preserves the first-party lifetime");
-        Equal(false, drop.RelativeToHead, "delivery uses the resolved world position");
+
+        World world = GameManager.Instance.World;
+        Equal(0, GameManager.Instance.ItemDrops.Count, "inventory delivery leaves no ground drop");
+        Equal(1, world.Spawned.Count, "delivery spawns exactly one item entity");
+        EntityItem spawned = world.Spawned[0];
+        EntityCreationData data = spawned.CreationData;
+        Equal(42, data.itemStack.itemValue.type, "delivery preserves item type");
+        Equal((ushort)3, data.itemStack.itemValue.Quality, "delivery preserves item quality");
+        Equal(7, data.itemStack.count, "delivery creates one stack with the requested amount");
+        Equal(73, data.belongsPlayerId, "the item entity belongs to the receiving player");
+        Equal(10.5f, data.pos.x, "item entity spawns at the player x");
+        Equal(30.75f, data.pos.z, "item entity spawns at the player z");
+        Equal(1, client.SentPackages.Count, "exactly one package goes to the receiving client");
+        var collect = client.SentPackages[0] as NetPackageEntityCollect;
+        True(collect != null, "the package is an entity collect");
+        Equal(spawned.entityId, collect.EntityId, "collect names the spawned item entity");
+        Equal(73, collect.PlayerId, "collect is for the receiving player");
+        Equal(1, world.Removed.Count, "the item entity is removed after the collect");
+        Equal(spawned.entityId, world.Removed[0], "the removed entity is the spawned one");
+
+        GameManager.Instance.ResetItemDrops();
+        True(
+            !PlayerProximateItemDelivery.Deliver(itemValue, 2, player, null),
+            "without a client the delivery falls back"
+        );
+        Equal(1, GameManager.Instance.ItemDrops.Count, "fallback drops one stack at the player");
+        Equal(2, GameManager.Instance.ItemDrops[0].Stack.count, "fallback keeps the amount");
+        Equal(0, world.Spawned.Count, "fallback spawns no collect entity");
     }
 
     private static void AssertGiveItemProductionValidationAndCardinality()
@@ -529,8 +542,18 @@ public static class ContractHarness
             WebSocketMessage.MessageTypes.Response,
             "valid giveItem"
         );
-        Equal(1, GameManager.Instance.ItemDrops.Count, "valid giveItem creates one drop");
-        Equal(2, GameManager.Instance.ItemDrops[0].Stack.count, "valid giveItem preserves amount");
+        Equal(0, GameManager.Instance.ItemDrops.Count, "valid giveItem leaves no ground drop");
+        Equal(1, GameManager.Instance.World.Spawned.Count, "valid giveItem spawns one collect entity");
+        Equal(
+            2,
+            GameManager.Instance.World.Spawned[0].CreationData.itemStack.count,
+            "valid giveItem preserves amount"
+        );
+        Equal(
+            1,
+            ConnectionManager.Instance.Clients.FixtureClient.SentPackages.Count,
+            "valid giveItem tells the receiving client to collect it"
+        );
     }
 
     private static TakaroGiveItemArgs GiveItemArgs(
@@ -1604,6 +1627,12 @@ public sealed class ClientInfo
     public string ip { get; set; }
     public int ping { get; set; }
     public int entityId { get; set; }
+    public readonly List<NetPackage> SentPackages = new List<NetPackage>();
+
+    public void SendPackage(NetPackage package)
+    {
+        SentPackages.Add(package);
+    }
 }
 
 public enum EChatType
@@ -1718,6 +1747,85 @@ public sealed class EntityPlayerCollection
 public sealed class World
 {
     public readonly EntityPlayerCollection Players = new EntityPlayerCollection();
+    public readonly List<EntityItem> Spawned = new List<EntityItem>();
+    public readonly List<int> Removed = new List<int>();
+
+    public void SpawnEntityInWorld(EntityItem entity)
+    {
+        Spawned.Add(entity);
+    }
+
+    public void RemoveEntity(int entityId, EnumRemoveEntityReason reason)
+    {
+        Removed.Add(entityId);
+    }
+}
+
+public enum EnumRemoveEntityReason
+{
+    Killed,
+}
+
+public sealed class EntityCreationData
+{
+    public int entityClass;
+    public int id;
+    public ItemStack itemStack;
+    public UnityEngine.Vector3 pos;
+    public UnityEngine.Vector3 rot;
+    public float lifetime;
+    public int belongsPlayerId;
+}
+
+public class Entity
+{
+    public int entityId;
+}
+
+public sealed class EntityItem : Entity
+{
+    public EntityCreationData CreationData;
+}
+
+public static class EntityClass
+{
+    public static int FromString(string name)
+    {
+        return name == "item" ? 1 : -1;
+    }
+}
+
+public static class EntityFactory
+{
+    public static int nextEntityID = 1000;
+
+    public static Entity CreateEntity(EntityCreationData data)
+    {
+        return new EntityItem { entityId = data.id, CreationData = data };
+    }
+}
+
+public abstract class NetPackage { }
+
+public sealed class NetPackageEntityCollect : NetPackage
+{
+    public int EntityId;
+    public int PlayerId;
+
+    public NetPackageEntityCollect Setup(int entityId, int playerId)
+    {
+        EntityId = entityId;
+        PlayerId = playerId;
+        return this;
+    }
+}
+
+public static class NetPackageManager
+{
+    public static T GetPackage<T>() where T : NetPackage, new()
+    {
+        return new T();
+    }
 }
 
 public sealed class ItemDropCall
@@ -1739,6 +1847,8 @@ public sealed class GameManager
     public void ResetItemDrops()
     {
         ItemDrops.Clear();
+        World.Spawned.Clear();
+        World.Removed.Clear();
     }
 
     public void ResetGiveItemFixture()

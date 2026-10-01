@@ -101,7 +101,7 @@ namespace Takaro.WebSocket
                     iv.Quality = quality;
                 }
 
-                PlayerProximateItemDelivery.Drop(iv, args.Amount, player);
+                PlayerProximateItemDelivery.Deliver(iv, args.Amount, player, cInfo);
 
                 Send(WebSocketMessage.CreateResponse(requestId, null));
             });
