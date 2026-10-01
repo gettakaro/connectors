@@ -249,9 +249,26 @@ namespace Takaro
             return null;
         }
 
+        /// <summary>
+        /// The game's localisation returns the key itself when it has no text
+        /// for it ("driftwoodDesc"), which is not something to show a player.
+        /// </summary>
+        public static string LocalizedOrNull(string key, string localized)
+        {
+            if (string.IsNullOrWhiteSpace(localized) || localized == key)
+                return null;
+            return localized;
+        }
+
+        public static string ItemDescription(string itemCode)
+        {
+            string key = itemCode + "Desc";
+            return LocalizedOrNull(key, Localization.Get(key, true));
+        }
+
         public static TakaroItem TransformItemToTakaroItem(ItemClass itemClass)
         {
-            string Description = Localization.Get($"{itemClass.GetItemName()}Desc", true);
+            string Description = ItemDescription(itemClass.GetItemName());
 
             TakaroItem takaroItem = new TakaroItem
             {

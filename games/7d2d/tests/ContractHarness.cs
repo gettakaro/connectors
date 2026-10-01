@@ -33,6 +33,9 @@ public static class ContractHarness
             AssertRouterParsingAndCardinality(fixture);
             AssertControlFramesDoNotEnterRequestDispatch();
             AssertProtocolErrorsAreBoundedAndSafe();
+            AssertIdentifyRejectionIsDetected();
+            AssertMissingLocalisationIsNotShown();
+            AssertOutboundLedgerReplaysUnconfirmedEvents();
             AssertCorrelatedMalformedRequestsTerminate();
             AssertRawRequestsAreNotLogged();
             AssertMapCatalog();
@@ -209,11 +212,109 @@ public static class ContractHarness
         Equal(30.75f, (float)deathData["position"]["z"], "death position z");
 
         WebSocketTransport.Instance.TerminalMessages.Clear();
-        GameEventPublisher.SendEntityKilled(identity, "Rabbit", "animal", null);
+        GameEventPublisher.SendEntityKilled(identity, "Rabbit", null);
         AssertPublishedEvent("entity-killed", out JObject killedData);
         TokenEqual(identityJson, killedData["player"], "entity kill uses stable identity");
-        Equal("animal", (string)killedData["entity"], "entity kill type");
+        Equal("Rabbit", (string)killedData["entity"], "entity kill uses the display name");
         Equal("unknown", (string)killedData["weapon"], "entity kill weapon fallback");
+
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        GameEventPublisher.SendEntityKilled(identity, null, "Steel Club");
+        AssertPublishedEvent("entity-killed", out JObject unnamedKill);
+        Equal("unknown", (string)unnamedKill["entity"], "entity kill name fallback");
+        Equal("Steel Club", (string)unnamedKill["weapon"], "entity kill weapon name");
+    }
+
+    private static void AssertIdentifyRejectionIsDetected()
+    {
+        // Verbatim shape of Takaro's reply to a stale registration token.
+        string rejected =
+            "{\"type\":\"identifyResponse\",\"payload\":{\"error\":{\"name\":\"BadRequestError\","
+            + "\"message\":\"Invalid registrationToken provided\",\"http\":400}},\"requestId\":\"r1\"}";
+        True(
+            ProtocolDiagnostics.TryGetIdentifyRejection(rejected, out string reason),
+            "identify error is a rejection"
+        );
+        Equal("Invalid registrationToken provided", reason, "identify rejection reason");
+
+        string accepted =
+            "{\"type\":\"identifyResponse\",\"payload\":{\"gameServerId\":\"gs-1\"},\"requestId\":\"r2\"}";
+        True(
+            !ProtocolDiagnostics.TryGetIdentifyRejection(accepted, out _),
+            "identify with gameServerId is accepted"
+        );
+        True(
+            !ProtocolDiagnostics.TryGetIdentifyRejection(
+                "{\"type\":\"identifyResponse\",\"payload\":{\"error\":null}}",
+                out _
+            ),
+            "null error is not a rejection"
+        );
+        True(
+            !ProtocolDiagnostics.TryGetIdentifyRejection(
+                "{\"type\":\"pong\",\"payload\":{\"error\":{\"message\":\"x\"}}}",
+                out _
+            ),
+            "only identifyResponse can reject identify"
+        );
+        True(
+            !ProtocolDiagnostics.TryGetIdentifyRejection("not json", out _),
+            "malformed frame is not a rejection"
+        );
+        True(
+            ProtocolDiagnostics.TryGetIdentifyRejection(
+                "{\"type\":\"identifyResponse\",\"payload\":{\"error\":\"plain text reason\"}}",
+                out string plain
+            ) && plain == "plain text reason",
+            "string error is a rejection with its text"
+        );
+    }
+
+    private static void AssertMissingLocalisationIsNotShown()
+    {
+        Equal<string>(null, Takaro.Shared.LocalizedOrNull("driftwoodDesc", "driftwoodDesc"), "untranslated key is hidden");
+        Equal<string>(null, Takaro.Shared.LocalizedOrNull("woodMaster", ""), "empty localisation is hidden");
+        Equal("Steel Club", Takaro.Shared.LocalizedOrNull("meleeWpnClubT3SteelClub", "Steel Club"), "real name is kept");
+    }
+
+    private static void AssertOutboundLedgerReplaysUnconfirmedEvents()
+    {
+        var ledger = new OutboundLedger(5, 4);
+        ledger.RequeueInFlight(1);
+
+        ledger.Enqueue("e1", true, false);
+        ledger.Enqueue("ping1", false, true);
+        ledger.Enqueue("e2", true, false);
+        ledger.Enqueue("resp", false, false);
+        for (int i = 0; i < 4; i++)
+            ledger.MarkHeadWritten();
+        Equal(2, ledger.InFlightCount, "written events stay in flight, responses and pings do not");
+
+        Equal(1, ledger.AcknowledgePong(), "pong confirms only events written before its ping");
+        Equal(1, ledger.InFlightCount, "event written after the ping is still unconfirmed");
+        Equal(0, ledger.AcknowledgePong(), "a pong without an outstanding ping confirms nothing");
+
+        // The socket dies: the unconfirmed event goes back in front of newer traffic.
+        ledger.Enqueue("e3", true, false);
+        Equal(1, ledger.RequeueInFlight(2), "unconfirmed event is requeued");
+        Equal(2L, ledger.Generation, "requeue starts a new generation");
+        Equal("e2", ledger.PeekHead().Json, "requeued event keeps its place before newer events");
+        ledger.MarkHeadWritten();
+        Equal("e3", ledger.PeekHead().Json, "newer event follows the requeued one");
+        ledger.MarkHeadWritten();
+        Equal(0, ledger.AcknowledgePong(), "pings from the dead socket do not confirm anything");
+        Equal(2, ledger.InFlightCount, "events on the new socket wait for a new pong");
+
+        var capped = new OutboundLedger(3, 2);
+        for (int i = 0; i < 4; i++)
+            capped.Enqueue("x" + i, true, false);
+        Equal(3, capped.PendingCount, "backlog is capped");
+        Equal("x1", capped.PeekHead().Json, "oldest frame is dropped first");
+        for (int i = 0; i < 3; i++)
+            capped.MarkHeadWritten();
+        Equal(2, capped.InFlightCount, "in-flight list is capped");
+        Equal(2, capped.RequeueInFlight(1), "capped in-flight events are requeued");
+        Equal("x2", capped.PeekHead().Json, "requeue keeps the newest unconfirmed events in order");
     }
 
     private static void AssertPublishedEvent(string expectedType, out JObject eventData)

@@ -111,13 +111,22 @@ namespace Takaro
                 if (ea == null)
                     return;
 
-                string entityType;
-                if (data.KilledEntitiy.entityType == EntityType.Zombie)
-                    entityType = "zombie";
-                else if (data.KilledEntitiy.entityType == EntityType.Animal)
-                    entityType = "animal";
-                else
-                    entityType = data.KilledEntitiy.entityType.ToString().ToLower();
+                // The player-facing name, as entitySearch lists it ("Boe"); the
+                // broad type ("zombie") is only a fallback for unnamed classes.
+                string entityName = StateMirror.EntityDisplayName(
+                    EntityClass.list.Dict.TryGetValue(ea.entityClass, out EntityClass entityClass)
+                        ? entityClass.entityClassName
+                        : null
+                );
+                if (string.IsNullOrEmpty(entityName))
+                {
+                    if (data.KilledEntitiy.entityType == EntityType.Zombie)
+                        entityName = "zombie";
+                    else if (data.KilledEntitiy.entityType == EntityType.Animal)
+                        entityName = "animal";
+                    else
+                        entityName = data.KilledEntitiy.entityType.ToString().ToLower();
+                }
 
                 // Try to get weapon information from player's held item
                 string weapon = null;
@@ -133,7 +142,7 @@ namespace Takaro
                 }
 
                 TakaroPlayer killer = Shared.TransformClientInfoToTakaroPlayerIdentity(killerInfo);
-                GameEventPublisher.SendEntityKilled(killer, ea.EntityName, entityType, weapon);
+                GameEventPublisher.SendEntityKilled(killer, entityName, weapon);
             }
         }
 

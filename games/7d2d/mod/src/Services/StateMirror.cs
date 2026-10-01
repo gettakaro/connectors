@@ -414,12 +414,24 @@ namespace Takaro.Services
                 if (item == null || !seenCodes.Add(item.GetItemName()))
                     continue;
 
+                // Entries the game never names for players (imposters, test
+                // blocks, perk-tier helpers, zombie hands: 275 of 2600 on
+                // V3.2.0) are internal and do not belong in the catalogue.
+                // giveItem resolves codes against the game itself, so they can
+                // still be given by code.
+                string name = Shared.LocalizedOrNull(
+                    item.GetItemName(),
+                    item.GetLocalizedItemName()
+                );
+                if (name == null)
+                    continue;
+
                 records.Add(
                     new ItemRecord
                     {
                         Code = item.GetItemName(),
-                        Name = item.GetLocalizedItemName(),
-                        Description = Localization.Get($"{item.GetItemName()}Desc", true),
+                        Name = name,
+                        Description = Shared.ItemDescription(item.GetItemName()),
                     }
                 );
             }
@@ -429,6 +441,20 @@ namespace Takaro.Services
                 Database.Instance.Items.DeleteAll();
                 Database.Instance.Items.InsertBulk(records);
             });
+        }
+
+        /// <summary>
+        /// Player-facing name for an entity class ("zombieBoe" -> "Boe"), falling
+        /// back to the class name when the game has no localisation for it.
+        /// Shared by the entity catalogue and entity-killed so they agree.
+        /// </summary>
+        public static string EntityDisplayName(string entityClassName)
+        {
+            if (string.IsNullOrEmpty(entityClassName))
+                return entityClassName;
+
+            string localizedName = Localization.Get(entityClassName, true);
+            return string.IsNullOrEmpty(localizedName) ? entityClassName : localizedName;
         }
 
         private void SeedEntities()
@@ -453,9 +479,7 @@ namespace Takaro.Services
                 if (string.IsNullOrEmpty(code) || !seenCodes.Add(code))
                     continue;
 
-                string localizedName = Localization.Get(code, true);
-                if (string.IsNullOrEmpty(localizedName))
-                    localizedName = code;
+                string localizedName = EntityDisplayName(code);
 
                 records.Add(
                     new EntityRecord
@@ -692,7 +716,7 @@ namespace Takaro.Services
                     {
                         Code = itemClass.GetItemName(),
                         Name = itemClass.GetLocalizedItemName(),
-                        Description = Localization.Get($"{itemClass.GetItemName()}Desc", true),
+                        Description = Shared.ItemDescription(itemClass.GetItemName()),
                         Amount = item.count,
                         Quality = itemValue.Quality.ToString(),
                     }
@@ -716,7 +740,7 @@ namespace Takaro.Services
                     {
                         Code = itemClass.GetItemName(),
                         Name = itemClass.GetLocalizedItemName(),
-                        Description = Localization.Get($"{itemClass.GetItemName()}Desc", true),
+                        Description = Shared.ItemDescription(itemClass.GetItemName()),
                         Amount = 1,
                         Quality = itemValue.Quality.ToString(),
                     }

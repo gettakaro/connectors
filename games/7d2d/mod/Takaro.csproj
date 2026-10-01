@@ -96,6 +96,7 @@
     <Compile Include="src\ServiceRegistry.cs" />
     <Compile Include="src\Services\DbWriter.cs" />
     <Compile Include="src\Services\LogService.cs" />
+    <Compile Include="src\Services\OutboundLedger.cs" />
     <Compile Include="src\Services\MainThreadDispatcher.cs" />
     <Compile Include="src\Services\BanExpiry.cs" />
     <Compile Include="src\Services\ConsoleCommandOutcome.cs" />

@@ -97,7 +97,6 @@ namespace Takaro.WebSocket
         public static void SendEntityKilled(
             TakaroPlayer killer,
             string entityName,
-            string entityType,
             string weapon = null
         )
         {
@@ -107,7 +106,7 @@ namespace Takaro.WebSocket
             var eventData = new Dictionary<string, object>
             {
                 { "player", killer },
-                { "entity", entityType },
+                { "entity", string.IsNullOrEmpty(entityName) ? "unknown" : entityName },
                 { "weapon", string.IsNullOrEmpty(weapon) ? "unknown" : weapon },
             };
 

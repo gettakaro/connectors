@@ -31,6 +31,7 @@ docker compose --project-directory "${PROJECT_ROOT}" run --rm --no-deps \
       /app/mod/src/Services/BanExpiry.cs \
       /app/mod/src/Services/ConsoleCommandOutcome.cs \
       /app/mod/src/Services/ProtocolDiagnostics.cs \
+      /app/mod/src/Services/OutboundLedger.cs \
       /app/mod/src/Services/PlayerLocationReadWindow.cs \
       /app/mod/src/Services/ServerMessageEchoGuard.cs \
       /app/mod/src/Services/MapCatalog.cs \
