@@ -1,7 +1,11 @@
 # RuneScape: Dragonwilds — TAKARO DEV RIG (disposable).
 #
+# One native LD_PRELOAD connector in the game process; it holds the Takaro
+# WebSocket itself. No sidecar.
+#
 # Host UDP port: 7797 — Conan Exiles already publishes 7787/udp, which
-# `just dev-validate` rejects as a collision.
+# `just dev-validate` rejects as a collision. The plugin's optional loopback
+# diagnostics (18890) stay inside the container and are never published.
 name: takaro-dev-dragonwilds
 services:
   dragonwilds:
@@ -27,49 +31,34 @@ services:
       BACKUP_DAILY: "false"
       BACKUP_AFTER_UPDATE: "false"
       ENABLE_DISCORD_NOTIF: "false"
-      TAKARO_PLUGIN_TOKEN: "${TAKARO_DRAGONWILDS_PLUGIN_TOKEN:?required}"
       # Consumed by the patched entrypoint wrapper: LD_PRELOAD on the game binary only.
       TAKARO_PLUGIN_SO: /opt/takaro/libtakaro-dragonwilds.so
-    volumes:
-      - ../_data/dragonwilds-dev:/home/ubuntu/Steam
-      # The DIRECTORY is mounted read-only (not the .so itself) so compose still starts
-      # while the plugin does not exist yet, and so SteamCMD `validate` can never touch it.
-      - ../_data/dragonwilds-plugin:/opt/takaro:ro
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "3"
-
-  # Takaro sidecar (connector bridge). Shares the game container's network namespace so the
-  # plugin's loopback-only API (127.0.0.1:18890) is reachable and never exposed on the host.
-  # Behind the `sidecar` profile: the source tree does not exist yet, and `up -d` without the
-  # profile must not try to build it.
-  dragonwilds-takaro:
-    build: ${DRAGONWILDS_SIDECAR_SRC:-../../games/dragonwilds/sidecar}
-    image: takaro-dragonwilds-sidecar:dev
-    container_name: takaro-dev-dragonwilds-sidecar
-    restart: unless-stopped
-    network_mode: "service:dragonwilds"
-    depends_on:
-      - dragonwilds
-    profiles: ["sidecar"]
-    environment:
+      # Direct Takaro connection from the plugin.
       TAKARO_WS_URL: "${TAKARO_WS_URL:-wss://connect.takaro.io/}"
       TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_DRAGONWILDS:-takaro-dev-dragonwilds}"
       TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN:?required}"
       TAKARO_SERVER_NAME: "Takaro Dev Dragonwilds"
-      TAKARO_PLUGIN_URL: "http://127.0.0.1:18890"
+      TAKARO_SENDER_NAME: "${TAKARO_SENDER_NAME:-}"
+      TAKARO_RECONNECT_BASE_MS: "${TAKARO_RECONNECT_BASE_MS:-2000}"
+      TAKARO_RECONNECT_MAX_MS: "${TAKARO_RECONNECT_MAX_MS:-60000}"
+      TAKARO_CA_FILE: "${TAKARO_CA_FILE:-}"
+      # Authenticated loopback diagnostics; the Takaro connection does not use it.
       TAKARO_PLUGIN_TOKEN: "${TAKARO_DRAGONWILDS_PLUGIN_TOKEN:?required}"
+      TAKARO_PLUGIN_PORT: "18890"
+      TAKARO_PLUGIN_DEBUG: "1"
+      TAKARO_TICK_BUDGET_US: "${TAKARO_TICK_BUDGET_US:-500}"
+      # Connector state (durable outbox, cursor, online/known players, timed bans).
+      TAKARO_STATE_DIR: /opt/takaro-state
       DRAGONWILDS_LOG_FILE: /home/ubuntu/Steam/RSDragonwilds/Saved/Logs/RSDragonwilds.log
-      DRAGONWILDS_LOG_TAIL: "auto"
+      DRAGONWILDS_LOG_TAIL: "${DRAGONWILDS_LOG_TAIL:-auto}"
       DRAGONWILDS_LOG_EVENTS: "${DRAGONWILDS_LOG_EVENTS:-filtered}"
-      TAKARO_CURSOR_FILE: /data/event-cursor.json
-      SIDECAR_HEALTH_PORT: "18891"
-      DEBUG: "1"
     volumes:
-      - ../_data/dragonwilds-dev:/home/ubuntu/Steam:ro
-      - ../_data/dragonwilds-sidecar:/data
+      - ../_data/dragonwilds-dev:/home/ubuntu/Steam
+      # The rig's own plugin DIRECTORY, mounted read-only (not the .so itself) so compose
+      # still starts while the plugin does not exist yet, and so SteamCMD `validate` can
+      # never touch it. Never `_data/dragonwilds-plugin`: a server outside this repo uses it.
+      - ../_data/dragonwilds-dev-plugin:/opt/takaro:ro
+      - ../_data/dragonwilds-dev-state:/opt/takaro-state
     logging:
       driver: json-file
       options:

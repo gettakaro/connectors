@@ -1,25 +1,17 @@
 {
   "name": "RuneScape: Dragonwilds",
-  "tagline": "Native plugin and sidecar for a Dragonwilds Linux dedicated server. In development — no stable release yet.",
+  "tagline": "Native connector for a RuneScape: Dragonwilds Linux dedicated server.",
   "assetMode": "all",
   "requirements": [
     "Takaro registration token",
-    "Docker Compose or Node.js 22 on the server host",
-    "A launch line that can set LD_PRELOAD on the game binary"
+    "Control of the Dragonwilds Linux dedicated server startup command"
   ],
   "assets": [
     {
       "pattern": "takaro-dragonwilds-plugin.tar.gz",
       "label": "Plugin",
       "requires": "Dragonwilds Linux dedicated server",
-      "hint": "Load with LD_PRELOAD on the game binary's launch line only.",
-      "required": true
-    },
-    {
-      "pattern": "takaro-dragonwilds-sidecar.tar.gz",
-      "label": "Sidecar",
-      "requires": "Docker Compose · Node.js 22",
-      "hint": "Unpack next to your compose file and rename the folder to sidecar/.",
+      "hint": "Load with LD_PRELOAD on the game binary's launch line only; the archive includes configuration, licenses and upgrade instructions.",
       "required": true
     }
   ]

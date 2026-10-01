@@ -33,17 +33,12 @@
   },
   "componentRoles": {
     "plugin": {
-      "description": "Native LD_PRELOAD plugin for the Linux dedicated server, pinned to the exact build it resolves symbols against",
+      "description": "Native LD_PRELOAD plugin for the Linux dedicated server; it holds the Takaro connection itself and is pinned to the exact build it resolves symbols against",
       "artifactPattern": "takaro-dragonwilds-plugin-{target}-{version}.tar.gz"
-    },
-    "sidecar": {
-      "description": "Node.js sidecar connecting the native plugin to Takaro; the only required artifact",
-      "artifactPattern": "takaro-dragonwilds-sidecar-{target}-{version}.tar.gz"
     }
   },
   "legacyAssetAliases": {
-    "takaro-dragonwilds-plugin.tar.gz": "linux-25465077/plugin",
-    "takaro-dragonwilds-sidecar.tar.gz": "linux-25465077/sidecar"
+    "takaro-dragonwilds-plugin.tar.gz": "linux-25501739/plugin"
   },
   "devServers": {"composeFile": "dragonwilds.yml"}
 }

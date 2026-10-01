@@ -1,25 +1,23 @@
 # Dragonwilds connector — development
 
-Operator documentation is in [README.md](README.md). This file is for people who build,
-change or re-verify the connector.
+Operator documentation is in [README.md](README.md) and [INSTALL.md](INSTALL.md). This file is for
+people who build, change or re-verify the connector.
 
 ## Layout
 
 ```
 mod/       C++17, builds libtakaro-dragonwilds.so (LD_PRELOAD into the dedicated server)
-  src/       sym.cpp reflect.cpp gamethread.cpp hooks.cpp http.cpp actions.cpp events.cpp state.cpp common.cpp main.cpp
-  docs/      API.md — the plugin's HTTP contract (the source of truth for both sides)
-  tests/     host unit tests (.sym parser, JSON, ring buffer, redaction)
-  tools/     symdump.py — offline .sym inspection
+  src/       game side (sym, reflect, gamethread, hooks, actions, events, state) and the native
+             Takaro connector (transport, bridge, persistence, log tail)
+  docs/      API.md — the optional loopback diagnostic HTTP API
+  tests/     host unit tests and native connector tests against a fake Takaro
+  third_party/  pinned native dependency notes and license texts (shipped in the release)
   build.sh, Dockerfile.build, Makefile
-sidecar/   Node 22 + TypeScript, speaks the Takaro Generic Connector Protocol
-scripts/   build-release.sh
-docker-compose.example.yml, .env.example, version.txt, CHANGELOG.md
+scripts/   build-release.sh, drain-legacy.py (0.2.x sidecar drain + state import), lib-target.sh,
+           check-exact-source.mjs
+Dockerfile.builder   release builder: catalog toolchain + catalog-pinned native sources
+docker-compose.example.yml, .env.example, INSTALL.md, version.txt, CHANGELOG.md
 ```
-
-**Ownership rule: game truth lives in the plugin, Takaro protocol shape lives in the sidecar.**
-Never parse Takaro DTOs in C++; never guess game state in TypeScript. Change `mod/docs/API.md`
-first, then both sides.
 
 ## Architecture
 
@@ -29,29 +27,39 @@ RSDragonwildsServer-Linux-Shipping (UE 5.6.1, Linux dedicated server)
        ├─ resolves engine/game functions by demangled name from the depot's own .sym (never fixed RVAs)
        ├─ reads every UPROPERTY offset via UStruct::FindPropertyByName at runtime
        ├─ hooks PostLogin / OnNetCleanup / PreLogout / Logout / ProcessEvent by vtable slot swap
-       ├─ marshals all UObject work onto the engine tick (bounded job queue, 5 s timeout -> 503)
-       └─ HTTP API on 127.0.0.1:18890, Bearer token — see mod/docs/API.md
-sidecar/ (Node 22, TypeScript) — same network namespace as the game server
-  ├─ polls /events with a persisted cursor + bootId (no replay after a restart)
-  ├─ reconciles the online player set (emits disconnects after a server crash)
-  ├─ tails the server log for join/leave grammar and log events (secrets redacted)
-  ├─ lifts timed bans itself (Takaro sends no unbanPlayer at expiry)
-  └─ outbound WebSocket to Takaro (identify, action request/response, gameEvent)
+       ├─ marshals all UObject work onto the engine tick (bounded job queue, TAKARO_TICK_BUDGET_US)
+       ├─ native Takaro connector on background threads:
+       │    TLS WebSocket (identify, heartbeat, reconnect), action dispatch, durable event outbox,
+       │    online-player reconciliation, timed-ban expiry, server-log tail (secrets redacted)
+       └─ optional authenticated diagnostics on 127.0.0.1:18890 (TAKARO_PLUGIN_TOKEN)
 ```
+
+Networking, JSON, filesystem work and log matching never run on the game thread; hooks enqueue owned
+data and the game-thread pump stays inside its tick budget. The rule and its budget are in
+`mod/docs/gamethread-policy.md`; read it before adding anything that touches the game thread.
+
+Connector state lives in `TAKARO_STATE_DIR`: the durable `event-outbox.json` and `ban-intent.json`
+plus the 0.2.x sidecar's `event-cursor.json`, `online-players.json`, `known-players.json` and
+`timed-bans.json`, read in place with the same formats. The game-enforcement `bans.json`,
+`symcache.json` and `plugin.log` stay in the plugin data dir (`<exe dir>/takaro`).
 
 ## Build and test
 
 ```bash
-./mod/build.sh                 # debian:bookworm container -> mod/dist/libtakaro-dragonwilds.so + SHA256SUMS
-./mod/build.sh --native        # on the host (needs g++ >= 10)
-./mod/tests/run.sh             # plugin host unit tests
-cd sidecar && npm ci && npm run typecheck && npm test && npm run build
-./scripts/build-release.sh     # both, packaged into dist/ with SHA256SUMS
+./mod/build.sh --tests                     # debian:bookworm container, pinned static deps, all tests
+python3 -m unittest discover -s scripts -p 'test_*.py'   # drain-legacy
+./scripts/build-release.sh 0.0.0-dev dist  # takaro-dragonwilds-plugin-<target>-<version>.tar.gz
 ```
 
-The toolchain image is `debian:bookworm` on purpose: it matches the glibc of the dedicated-server
-image, so the `.so` loads without a symbol-version error. Flags are
-`-std=c++17 -O2 -fPIC -fvisibility=hidden`, linked `-shared -pthread -ldl -static-libstdc++ -static-libgcc`.
+The release is built per catalog target (`catalog/dragonwilds/targets/`). `build-release.sh` resolves
+the target, builds `Dockerfile.builder` from the target's toolchain image and its `build.deps`
+(OpenSSL, libwebsockets, PCRE2, nlohmann/json, each checked by SHA-256), runs
+`check-exact-source.mjs` so `mod/Dockerfile.build` cannot drift from those pins, then builds and
+tests the plugin and packages it with `pkg_tar_gz`. Bump a dependency in both files together.
+
+The toolchain is Debian Bookworm on purpose: it matches the glibc of the dedicated-server image, so
+the `.so` loads without a symbol-version error. `build.sh` refuses a `.so` with undefined strong
+symbols, because `LD_PRELOAD` would crash-loop the server.
 
 `DEBUG_CORRUPT_SIG=<symbol> ./mod/build.sh` builds a `.so` with one resolution deliberately broken.
 That build must still load, keep the server running, and report exactly that capability as
@@ -103,24 +111,26 @@ reporting `ok` while the hook never bound was a real bug (a kill hook said `ok` 
 3. Re-verify the hooks that fire from player actions (`hooked`/`fired` counters in `/health`) with a
    real client join, one chat line, one death and one creature kill — hooks bind to the *live*
    object's vtable, and a new subclass can make a hook silently stop firing.
-4. Run the sidecar test suite; it pins the Takaro wire shapes, not the game.
+4. Run `./mod/build.sh --tests`; the native connector tests pin the Takaro wire shapes.
 
 ## Degrade semantics
 
 Resolution and validation failures degrade one capability, they never crash the server and never
 abort load. Concretely: the boot validation for a feature fails → that capability is marked
-`degraded` with a reason → the matching HTTP endpoint answers `501`/`503` → the sidecar reports the
-action as unsupported and the reason surfaces in Takaro's reachability text. Every handler is
+`degraded` with a reason → the connector answers that action with a failure naming the reason, and
+the reason surfaces in Takaro's reachability text. Every handler is
 wrapped in `try/catch(...)` with a readable-memory guard. Never call `FName::ToString` on an
 unvalidated `FName`: that crash-looped the server during development.
 
 ## Dev rig
 
 The connector is developed against a disposable dedicated server in the repo's `dev-servers/`
-harness (its own world, its own port, auto-update off because client and server are version
-locked). Deploy = build the `.so`, copy it to the host directory that is bind-mounted read-only
-into the game container, rebuild the sidecar image, restart. Never test against a server anyone
-plays on: several cells (ban, shutdown, restart) are destructive.
+harness (its own world, port 7797, auto-update off because client and server are version locked).
+`dev-servers/scripts/deploy-connector.sh dragonwilds` builds the `.so`, refuses undefined symbols,
+and swaps it into `_data/dragonwilds-dev-plugin` under the rig lock (stop, swap, start). Connector
+state is `_data/dragonwilds-dev-state`. It refuses to deploy while the legacy sidecar container
+still exists. Never use `_data/dragonwilds-plugin`: a server outside this repository mounts it.
+Never test against a server anyone plays on: several cells (ban, shutdown, restart) are destructive.
 
 ## Gotchas
 
@@ -130,8 +140,8 @@ plays on: several cells (ban, shutdown, restart) are destructive.
 - The game rewrites `DedicatedServer.ini` on shutdown, so ban edits go through
   `SetBannedUsers` + `PerformConfigSave`, never a text edit; the running server's login check uses a
   start-up snapshot, so the plugin also enforces bans at `PostLogin`.
-- The server prints `WorldPassword` in cleartext into its log — redact in the plugin, the sidecar
-  and anything you paste into a report.
+- The server prints `WorldPassword` in cleartext into its log — redact in the plugin and in
+  anything you paste into a report.
 - Hooking a base-class vtable does nothing: live objects carry their own vtables (the engine object
   is a `UDomGameEngine`). Hook the live object's vtable and verify `fired` before believing it.
 - Takaro modules send explicit JSON `null` for optional arguments (`dimension`, `reason`,

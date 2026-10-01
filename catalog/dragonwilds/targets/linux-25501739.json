@@ -1,19 +1,18 @@
 {
   "schemaVersion": 1,
-  "id": "linux-25465077",
+  "id": "linux-25501739",
   "game": "dragonwilds",
   "platform": "linux",
-  "revision": "25465077",
-  "default": false,
+  "revision": "25501739",
+  "default": true,
   "support": {
     "status": "candidate",
-    "since": "2026-09-27",
+    "since": "2026-10-01",
     "evidence": [
       "games/dragonwilds/README.md (What works, what doesn't)",
-      "games/dragonwilds/mod/tests/ (plugin unit and native connector tests, every build)",
-      "PR #300: `takaro-maint build` run twice from a clean checkout, byte-identical artifacts; `takaro-maint install` and `takaro-maint deploy` run for real against the pinned Steam build (5.2 GB) on a maintainer's machine"
+      "games/dragonwilds/mod/tests/ (plugin unit and native connector tests, every build)"
     ],
-    "notes": "The first exact catalog target for this connector (#300). Steam pin of the public branch head observed 2026-09-25: tool app 4019830, Linux depot 3501791, build 25465077. Superseded as the default by linux-25501739; kept so a server still on this build gets a matching plugin. The plugin now holds the Takaro connection itself; its four static native libraries are pinned by source archive hash in `build.deps`, built on the same Bookworm glibc as the dedicated server image. `verification.required` is `contract` until this pin is proven at runtime: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
+    "notes": "Steam pin of the public branch head observed 2026-10-01: tool app 4019830, Linux depot 3501791, build 25501739, the first target for the native connector (no sidecar). An anonymous SteamCMD delta update from the previous build fails with Access Denied on the old manifest; a fresh `app_update 4019830 validate` install reaches this build. `verification.required` is `contract` until this pin is proven at runtime: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
   },
   "inputs": {
     "server": {
@@ -22,24 +21,24 @@
       "hashOrigin": "self-recorded",
       "app": 4019830,
       "branch": "public",
-      "buildid": 25465077,
+      "buildid": 25501739,
       "os": "linux",
       "arch": "64",
       "depots": {
         "3501791": {
-          "manifest": "2601451637939157694",
-          "size": 5483957554,
+          "manifest": "6714393990492196440",
+          "size": 5483987592,
           "files": 56
         }
       },
       "files": {
         "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping": {
-          "sha256": "d26de80fd01f4b73b726aed855a20377996b7c140ff33f1ec40150c0dd73b259",
-          "size": 229636096
+          "sha256": "d12145525d88f3828ebeac0aec3865f5b16ba4771861efe65108754a89bbb090",
+          "size": 229648384
         },
         "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping.sym": {
-          "sha256": "592c822ae44334f36118baeef7f04916928c842a697353f3c51b5bc0fd9526f2",
-          "size": 301086683
+          "sha256": "0a3ee81c23bd2e7b801d4983525e82579428eeed65f008b09ddd8d105485d41d",
+          "size": 301107092
         },
         "RSDragonwildsServer.sh": {
           "sha256": "1cb3257de649da88c5b67c69a7aeb130c84878480e8862dbf4b9749c0b4f7d41",
@@ -96,7 +95,7 @@
   "components": [
     {
       "role": "plugin",
-      "artifact": "takaro-dragonwilds-plugin-linux-25465077-{version}.tar.gz",
+      "artifact": "takaro-dragonwilds-plugin-linux-25501739-{version}.tar.gz",
       "installDir": "TakaroDragonwilds"
     }
   ],

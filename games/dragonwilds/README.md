@@ -1,293 +1,165 @@
 # Takaro RuneScape: Dragonwilds Connector
 
-A server-side-only connector (plugin + sidecar) that connects a RuneScape: Dragonwilds **Linux
-dedicated server** to Takaro. Tested against Steam build **25110402** (UE 5.6.1
-`++dominion+staging-CL-240163`) with a real game client (client build **25111146**) connected.
-Players install nothing.
-
-The plugin alone cannot talk to Takaro, and the sidecar alone cannot read players, positions,
-inventories, items or entities. Install both.
+The RuneScape: Dragonwilds **Linux dedicated server** loads one native `libtakaro-dragonwilds.so`
+connector. It connects directly to Takaro; there is no sidecar. Players install nothing and keep the
+vanilla game client. The library must be preloaded on the game binary's launch line.
 
 ## Install
 
-Download the latest release: https://takaro.io/connectors/dragonwilds
+### 1. Prepare the server
 
-### 1. Before you start
+You need a Dragonwilds **Linux dedicated server** (Steam app 4019830) whose launch command you can
+change, with its `RSDragonwildsServer-Linux-Shipping.sym` file next to the server binary (SteamCMD
+downloads it; `app_update 4019830 validate` restores it). Create a Takaro **Generic** game server and
+copy its registration token. Client and server must run the same game version.
 
-You need:
+### 2. Download and copy
 
-- A **Dragonwilds Linux dedicated server** (Steam app **4019830**) you can stop, start and copy
-  files to, and the ability to change how the server binary is launched (this connector is loaded
-  with `LD_PRELOAD`; there is no mod folder).
-- The server's own **`RSDragonwildsServer-Linux-Shipping.sym`** file, which SteamCMD downloads next
-  to the server binary. The plugin reads it to find the game's functions. If you deleted it to save
-  space, re-run `app_update 4019830 validate` to get it back.
-- **Docker** with the Compose plugin on the same host (the sidecar runs as a container that shares
-  the game container's network), or **Node.js 22** on the game server host.
-- A **Takaro account** with a game server created of type **Generic**, and its **registration
-  token** (Takaro shows it when you create the game server).
-
-Nothing has to be compiled: both parts are published as release assets.
-
-### 2. Download
-
-From the latest `dragonwilds-vX.Y.Z` release on the releases page:
-
-> https://github.com/gettakaro/connectors/releases
-
-Download both files:
-
-- **`takaro-dragonwilds-plugin.tar.gz`** — the game-server plugin (`libtakaro-dragonwilds.so`)
-- **`takaro-dragonwilds-sidecar.tar.gz`** — the sidecar that talks to Takaro
-
-Direct link pattern:
-`https://github.com/gettakaro/connectors/releases/download/dragonwilds-v<version>/takaro-dragonwilds-plugin.tar.gz`
-
-The two **"Source code (zip/tar.gz)"** links GitHub adds to every release are an archive of this
-whole repository, not the connector — do not download those. Do not use the `dragonwilds-dev`
-pre-release or a `pr-<number>-dragonwilds` build either; those are untested rolling builds.
-
-### 3. Copy it into place
-
-Stop the game server first.
-
-**Plugin.** `takaro-dragonwilds-plugin.tar.gz` contains one folder:
-
-```
-TakaroDragonwilds/
-    libtakaro-dragonwilds.so
-    README.txt
-```
-
-Put the `.so` **outside the Steam/game tree** — a SteamCMD `app_update … validate` deletes files it
-does not know about, and that includes this one. With `docker-compose.example.yml` that is
-`data/dragonwilds-plugin/libtakaro-dragonwilds.so` on the host, bind-mounted **read-only** to
-`/opt/takaro/libtakaro-dragonwilds.so` in the game container. On a plain (non-Docker) server, use a
-directory next to the Steam tree, e.g. `<server>/takaro/libtakaro-dragonwilds.so`.
-
-**Sidecar.** `takaro-dragonwilds-sidecar.tar.gz` contains one folder,
-`TakaroDragonwildsSidecar/`, with `dist/`, `package.json`, `package-lock.json`, `Dockerfile` and
-`env.example` (a dotfile is not a legal entry in a catalog release archive, so copy it to `.env`
-yourself — see step 5). `docker-compose.example.yml` builds the sidecar image from `./sidecar`, so
-unpack it next to the compose file and **rename the folder to `sidecar`**:
-
-```
-<your compose dir>/
-    docker-compose.example.yml
-    .env
-    sidecar/                       <- TakaroDragonwildsSidecar renamed
-    data/
-        dragonwilds/               (game server data, created by the container)
-        dragonwilds-plugin/
-            libtakaro-dragonwilds.so
-        dragonwilds-sidecar/       (event cursor and online state, created by the container)
-```
+Download `takaro-dragonwilds-plugin.tar.gz` and `SHA256SUMS` from the latest release at
+<https://takaro.io/connectors/dragonwilds>. Do not use the "Source code" archives. Check and unpack:
 
 ```bash
-mkdir -p data/dragonwilds-plugin data/dragonwilds-sidecar
+sha256sum -c SHA256SUMS --ignore-missing
 tar -xzf takaro-dragonwilds-plugin.tar.gz
+mkdir -p data/dragonwilds-plugin data/dragonwilds-state
 cp TakaroDragonwilds/libtakaro-dragonwilds.so data/dragonwilds-plugin/
-tar -xzf takaro-dragonwilds-sidecar.tar.gz && mv TakaroDragonwildsSidecar ./sidecar
+cp TakaroDragonwilds/env.example .env
 ```
+
+Keep the library **outside the Steam tree**: SteamCMD `validate` deletes files it does not know. The
+archive also holds `docker-compose.example.yml`, `INSTALL.md` (upgrade and rollback), the
+`scripts/drain-legacy.py` upgrade tool and the licenses.
+
+### 3. Configure
+
+Set these in the **game process** environment (`.env` with the Compose example):
+
+| Key | Required | What to put there |
+|---|---|---|
+| `TAKARO_REGISTRATION_TOKEN` | yes | The Generic game server's registration token. |
+| `TAKARO_IDENTITY_TOKEN` | yes | A stable name for this server, e.g. `my-dragonwilds`. |
+| `TAKARO_WS_URL` | no | Default `wss://connect.takaro.io/`. |
+| `TAKARO_SERVER_NAME` | no | Server name shown in Takaro. |
+| `TAKARO_SENDER_NAME` | no | Sender name for broadcasts; default is the server name. |
+| `TAKARO_STATE_DIR` | yes | A persistent, writable directory, e.g. `/opt/takaro-state`. |
+| `DRAGONWILDS_LOG_FILE` | yes | The server log, `<server>/RSDragonwilds/Saved/Logs/RSDragonwilds.log`. |
+| `DRAGONWILDS_LOG_TAIL` / `DRAGONWILDS_LOG_EVENTS` | no | `auto` / `filtered` by default. |
+| `TAKARO_PLUGIN_TOKEN` | no | Enables loopback diagnostics on `127.0.0.1:18890`. |
+| `TAKARO_CA_FILE` | no | Extra trusted CA file; certificate checks always stay on. |
+| `TAKARO_TICK_BUDGET_US` | no | Game-thread time per tick for the connector, default `500`. |
+| `TAKARO_SYM_PATH` | no | Only if the `.sym` file is not next to the binary. |
+
+Never commit or share a filled-in `.env`.
 
 ### 4. Load the plugin into the server
 
-The plugin is loaded with `LD_PRELOAD`, and **only onto the game binary**. SteamCMD is 32-bit and
-fails outright if it sees a 64-bit preload, so never set `LD_PRELOAD` globally for the container or
-the user account — set it on the launch line of the server binary itself.
-
-Plain server (shell script or systemd unit):
+Preload the library **on the game binary only**. SteamCMD is 32-bit and fails with a 64-bit preload,
+so never set `LD_PRELOAD` for the whole container, user or service:
 
 ```bash
-LD_PRELOAD=/opt/takaro/libtakaro-dragonwilds.so \
-TAKARO_PLUGIN_TOKEN=<your shared secret> \
-  ./RSDragonwildsServer.sh -log
+LD_PRELOAD=/opt/takaro/libtakaro-dragonwilds.so ./RSDragonwildsServer.sh -log
 ```
 
-Pterodactyl / Pelican — put the same two variables in front of the server binary in the egg's
-startup command, for example:
+With Docker, mount `data/dragonwilds-plugin` read-only at `/opt/takaro` and `data/dragonwilds-state`
+at `/opt/takaro-state`; the image's entrypoint must apply `LD_PRELOAD="${TAKARO_PLUGIN_SO}"` to the
+server launch line only (see `docker-compose.example.yml`). Start only the game service.
 
-```
-LD_PRELOAD=/home/container/takaro/libtakaro-dragonwilds.so TAKARO_PLUGIN_TOKEN={{TAKARO_PLUGIN_TOKEN}} ./RSDragonwildsServer.sh -log
-```
+### 5. Verify
 
-(add `TAKARO_PLUGIN_TOKEN` as an egg variable; leave the SteamCMD install script untouched).
+- `grep libtakaro /proc/<server pid>/maps` lists `libtakaro-dragonwilds.so`.
+- Takaro shows the game server as **online** within a minute of the world loading.
 
-Docker — `docker-compose.example.yml` shows the shape: the image's entrypoint must apply
-`LD_PRELOAD="${TAKARO_PLUGIN_SO}"` to the server launch line only.
+If it stays offline, re-check the registration token, then `<server>/RSDragonwilds/Binaries/Linux/takaro/plugin.log`.
 
-To confirm the plugin is really loaded: `grep libtakaro /proc/<server pid>/maps`.
+### 6. Upgrade from the 0.2.x sidecar
 
-### 5. Configure
-
-Copy the example environment file and fill it in (`env.example` inside the unpacked `sidecar/`
-folder; renamed from `.env.example` because a dotfile cannot ship inside a catalog release
-archive):
+The old sidecar and the native connector must never run with the same Takaro identity at once. Close
+new joins with a firewall rule, wait until nobody is online, then drain and import the sidecar's state:
 
 ```bash
-cp sidecar/env.example .env
+install -d -m 700 ./dragonwilds-migration
+python3 TakaroDragonwilds/scripts/drain-legacy.py --evidence-dir ./dragonwilds-migration \
+  --fence-proof ./fence-proof.json --fence-check ./fence-check \
+  --game-container dragonwilds --sidecar-container dragonwilds-takaro --game-port 7777 \
+  --legacy-state-dir ./data/dragonwilds-sidecar --native-state-dir ./data/dragonwilds-state
 ```
 
-| Key | Where | What to put there |
-|---|---|---|
-| `TAKARO_PLUGIN_TOKEN` | game server **and** sidecar | A long random shared secret, e.g. `openssl rand -hex 32`. Without it the plugin rejects every request with 401. Required. |
-| `TAKARO_PLUGIN_PORT` | game server | Plugin loopback HTTP port, default `18890`. |
-| `TAKARO_REGISTRATION_TOKEN` | sidecar | Your Takaro registration token. Required. |
-| `TAKARO_IDENTITY_TOKEN` | sidecar | A name that identifies this server to Takaro, e.g. `my-dragonwilds-server`. Required. |
-| `TAKARO_PLUGIN_URL` | sidecar | Where the plugin is, default `http://127.0.0.1:18890`. |
-| `DRAGONWILDS_LOG_FILE` | sidecar | The server's log, e.g. `/game/RSDragonwilds/Saved/Logs/RSDragonwilds.log`. Used for join/leave lines and log events. |
-| `TAKARO_CURSOR_FILE` | sidecar | Persisted event cursor, so a sidecar restart replays nothing. |
+It stops the sidecar and the game only when every event is delivered, removes the sidecar container,
+and copies the cursor, player lists and timed bans into the native state directory. Then delete the
+sidecar service from your Compose file, replace the plugin, add the settings above, and start the game.
+`INSTALL.md` explains the fence files, a manual import and rollback.
 
-Instead of environment variables the plugin also reads `<serverdir>/takaro/plugin.json`
-(`{"token": "...", "port": 18890}`) — handy on hosts where you cannot set variables on the process.
-
-**The sidecar must reach the plugin on loopback.** The plugin's HTTP API binds `127.0.0.1` only and
-is never exposed to the network, so the sidecar has to share the game server's network namespace
-(compose: `network_mode: "service:dragonwilds"`) or run directly on the game server host.
-
-### 6. Check that it worked
-
-Start everything:
-
-```bash
-docker compose -f docker-compose.example.yml --env-file .env up -d --build
-```
-
-In the plugin's own log, `<serverdir>/takaro/plugin.log`:
-
-```
-takaro dragonwilds plugin <version> starting (pid ..., bootId ...)
-http: listening on 127.0.0.1:18890
-```
-
-If you see a warning that no token is configured, `TAKARO_PLUGIN_TOKEN` did not reach the game
-process. From the sidecar (or the game host):
-
-```bash
-curl -H "Authorization: Bearer $TAKARO_PLUGIN_TOKEN" http://127.0.0.1:18890/health
-```
-
-must answer `"status": "ok"`. The sidecar's own health endpoint,
-`curl http://127.0.0.1:18891/health`, answers `"status": "ok"` too and lists each capability; a
-capability reported as `degraded` means a game update moved code the plugin uses (see Known issues)
-— everything else keeps working.
-
-In the sidecar log (`docker logs dragonwilds-takaro`):
-
-```
-Takaro WebSocket open, sending identify
-Identified with Takaro (gameServerId=...)
-```
-
-And in **Takaro the game server shows as online**. If it stays offline, the registration token is
-the first thing to re-check.
-
-### 7. Upgrading
-
-**After a game update** you normally do nothing: the plugin resolves the game's functions from the
-`.sym` file that ships with the update, notices the new build id, throws away its cache and
-re-resolves on the next start. Check `/health` afterwards — if a capability reports `degraded`, the
-game renamed something and that one feature needs a new plugin build.
-
-**To upgrade the connector**, stop the game server (it holds the `.so` open), replace
-`data/dragonwilds-plugin/libtakaro-dragonwilds.so`, replace the `sidecar/` folder with the new one,
-and start again with `--build`. Take both files from the same release. Your `.env`, the world and
-the sidecar state in `data/dragonwilds-sidecar/` (event cursor, online players) survive the upgrade
-— keep the cursor file so events are not replayed. Confirm the new version in the
-`takaro dragonwilds plugin <version> starting` log line.
+**After a game update** you normally do nothing: the plugin re-reads the new `.sym` file on start. To
+upgrade the connector, stop the server, replace `libtakaro-dragonwilds.so`, keep the state directory,
+and start again.
 
 ## What works, what doesn't
 
-Verified end to end on **2026-09-16** against a real dedicated server (game build **25110402**,
-plugin **0.1.0**) with a real game client connected: every row was driven from Takaro and checked
-again on the game side.
-✅ = works, ⚠️ = works with a caveat or was not verified live, ❌ = does not work.
+The native connector has not been re-tested end to end yet; every row below awaits that run.
+✅ = works, ⚠️ = works with a caveat or not yet verified, ❌ = unsupported.
 
 | What | | Notes |
 |---|---|---|
-| Connection & heartbeat | ✅ | The sidecar keeps an outbound WebSocket to Takaro and the server shows as reachable while it is up. |
-| Player list | ✅ | Character name, ping and position state. `gameId` is the player's EOS Product User Id (the 32-character id at the bottom of the in-game Settings screen); `platformId` is `epic:<that id>`. |
-| Single player lookup | ✅ | Same data as the player list, for one player. |
-| Player location | ✅ | Matches the in-game position to the metre and follows walking and teleports. |
-| Player inventory | ✅ | Matches what the player is carrying, item by item. |
-| Give an item | ✅ | The item appears in the player's inventory without a relog. |
-| Item catalogue | ✅ | 1,536 items synced — the server's full item list. |
-| Entity catalogue | ⚠️ | Only creatures that have been loaded in the world so far. Dragonwilds streams creatures in on demand, so this is never the complete bestiary and it grows as the world is played. |
-| Locations / points of interest | ⚠️ | The connector serves the world's lodestones, but Takaro does not use this, so it cannot be checked end to end. |
-| Run a console command | ✅ | Dragonwilds has no operator console; the connector provides its own set (`help`, `players`, `say`, `whisper`, `give`, `tp`, `kick`, `ban`, `save`, `shutdown`, …). An unknown command comes back as a failure with the reason. |
-| Broadcast a message | ⚠️ | Everyone sees the message, but it appears under the receiving player's own name with a `[sender]` prefix — the game has no server sender. |
-| Whisper a player | ⚠️ | The message reaches the intended player (stored by Takaro as a whisper). With a single test account it could not be confirmed that nobody else sees it. |
-| Teleport a player | ✅ | The player is moved to the requested position; the game snaps them to the ground. |
-| Kick a player | ✅ | The player is dropped from the server and can rejoin afterwards. |
-| Ban a player (timed and permanent) | ⚠️ | The player is disconnected immediately and refused on rejoin — the game's own login gate only reads its ban list at start-up, so the plugin enforces the ban at login and drops the player again within two seconds. Timed bans are lifted by the connector when they expire; the game has no expiry of its own. |
-| Unban a player | ✅ | Clears the ban in the server config and in the plugin, and the player can rejoin. |
-| Ban list | ✅ | Shows the server's own bans. Reason and expiry are kept by the connector, because the game stores neither. |
-| Shut the server down | ✅ | Saves the world first, then quits; your restart policy brings it back. |
-| Player joined event | ✅ | Arrives in Takaro on every join. |
-| Player left event | ✅ | Arrives on a clean quit, on a kick, and after a server crash by reconciliation. |
-| Player chat event | ✅ | Real player chat reaches Takaro; messages the connector itself sent are not echoed back. |
-| Player death event | ✅ | Reaches Takaro with the death message. |
-| Entity kill event | ✅ | Proven with real sword kills: the creature's readable name (e.g. Magpie, Giant Rat), the killing player and the weapon held (e.g. Adamant Sword) arrive in Takaro. With several players nearby, the killer is the one holding the weapon that dealt the blow; if that cannot be read, the nearest player is reported. |
-| Log events | ⚠️ | The connector forwards server log lines (with passwords redacted), but Takaro does not store log lines as events, so they cannot be searched or used in modules. |
-| Map info | ❌ | Not implemented by this connector. |
-| Map tiles | ❌ | Not supported by Takaro for this connector type. |
-| Modules: chat commands | ✅ | In-game chat commands with the domain's prefix reach the module and answer in chat. |
-| Modules: hooks | ✅ | Chat and join hooks fire and run their module code. |
-| Modules: cronjobs | ✅ | Scheduled module runs fire and can message the server. |
-| Modules: teleports (`@settp`, `@tp`, …) | ✅ | The teleports module's in-game commands move the player. |
-| Modules: server messages / onboarding | ✅ | Timed server messages and the welcome message on join are delivered in game. |
-| Shop: buy in game | ✅ | Buying from the shop with the in-game chat command. |
-| Shop: order in Takaro and claim in game | ✅ | An order placed in Takaro delivers the items to the player. |
-| Shop: bundle of several items | ✅ | One claim delivers every item in the listing. |
-| Shop: order while offline, claim later | ✅ | The claim is refused while the player is offline and succeeds after rejoining. |
-| Shop: not enough currency | ✅ | The purchase is refused and the balance is unchanged. |
-| Economy: currency | ✅ | Balances are set, read and debited by Takaro. |
-| Economy: balance / top list in game | ✅ | The in-game economy commands answer in chat. |
-| Discord: game chat → Discord | ✅ | In-game chat is relayed to the linked Discord channel. |
-| Discord: Discord → game chat | ✅ | A message posted in the linked Discord channel appears in the game chat as `[D] <name>: <text>`. |
-| Discord: module hook / cronjob posts | ✅ | Module hooks and cronjobs can post to Discord and edit their own messages. |
-| Discord: join/leave notices | ✅ | Join and leave notices posted to Discord by the chat-bridge module. |
-| Discord: no echo of server messages | ✅ | The stock `chatBridge` module re-posts Takaro's own server messages to Discord (a Takaro-core echo affecting every game); the `chatBridgeNoEcho` fork does not. |
-| Events while the Takaro connection is down | ✅ | Events that happen while Takaro is unreachable are kept and delivered in order once the connection is back; the connector notices a dead socket within about 30 seconds. |
-| Reconnects after a server or container restart | ✅ | The connector comes back and re-identifies on its own, and players who were online are reported as disconnected. If the sidecar shares the game container's network (the docker-compose example), restart the sidecar together with the game container; on its own it recovers within about three minutes. |
-| No duplicate events after a connector restart | ✅ | The event cursor is persisted, so a sidecar restart replays nothing. |
-| Survives a network drop to Takaro | ✅ | The WebSocket reconnects by itself with a backoff of 2 to 60 seconds and re-identifies as the same server. |
-| Timed bans expire on their own | ✅ | The connector lifts a timed ban when it runs out, including when it was restarted in between. |
-| Keeps running after a game update breaks a feature | ⚠️ | The plugin self-checks at load and a feature it can no longer find reports `degraded` in `/health` and in Takaro's reachability reason while the server and everything else keep running. Exercised in development, not in a live game update. |
+| Connection & heartbeat | ⚠️ | Pending native re-test. |
+| Player list | ⚠️ | Pending native re-test. |
+| Single player lookup | ⚠️ | Pending native re-test. |
+| Player location | ⚠️ | Pending native re-test. |
+| Player inventory | ⚠️ | Pending native re-test. |
+| Give an item | ⚠️ | Pending native re-test. |
+| Item catalogue | ⚠️ | Pending native re-test. |
+| Entity catalogue | ⚠️ | Pending native re-test. |
+| Locations / points of interest | ⚠️ | Pending native re-test. |
+| Run a console command | ⚠️ | Pending native re-test. |
+| Broadcast a message | ⚠️ | Pending native re-test. |
+| Whisper a player | ⚠️ | Pending native re-test. |
+| Teleport a player | ⚠️ | Pending native re-test. |
+| Kick a player | ⚠️ | Pending native re-test. |
+| Ban a player (timed and permanent) | ⚠️ | Pending native re-test. |
+| Unban a player | ⚠️ | Pending native re-test. |
+| Ban list | ⚠️ | Pending native re-test. |
+| Shut the server down | ⚠️ | Pending native re-test. |
+| Player joined event | ⚠️ | Pending native re-test. |
+| Player left event | ⚠️ | Pending native re-test. |
+| Player chat event | ⚠️ | Pending native re-test. |
+| Player death event | ⚠️ | Pending native re-test. |
+| Entity kill event | ⚠️ | Pending native re-test. |
+| Log events | ⚠️ | Pending native re-test. |
+| Map info | ❌ | Takaro has no map info for Generic game servers. |
+| Map tiles | ❌ | Takaro has no map tiles for Generic game servers. |
+| Modules: chat commands | ⚠️ | Pending native re-test. |
+| Modules: hooks | ⚠️ | Pending native re-test. |
+| Modules: cronjobs | ⚠️ | Pending native re-test. |
+| Modules: teleports (`@settp`, `@tp`, …) | ⚠️ | Pending native re-test. |
+| Modules: server messages / onboarding | ⚠️ | Pending native re-test. |
+| Shop: buy in game | ⚠️ | Pending native re-test. |
+| Shop: order in Takaro and claim in game | ⚠️ | Pending native re-test. |
+| Shop: bundle of several items | ⚠️ | Pending native re-test. |
+| Shop: order while offline, claim later | ⚠️ | Pending native re-test. |
+| Shop: not enough currency | ⚠️ | Pending native re-test. |
+| Economy: currency | ⚠️ | Pending native re-test. |
+| Economy: balance in game | ⚠️ | Pending native re-test. |
+| Discord: game chat → Discord | ⚠️ | Pending native re-test. |
+| Discord: Discord → game chat | ⚠️ | Pending native re-test. |
+| Discord: module hook / cronjob posts | ⚠️ | Pending native re-test. |
+| Discord: join/leave notices | ⚠️ | Pending native re-test. |
+| Discord: no echo of server messages | ⚠️ | Pending native re-test; use the `chatBridgeNoEcho` module. |
+| Events while the Takaro connection is down | ⚠️ | Pending native re-test. |
+| Reconnects after a server or container restart | ⚠️ | Pending native re-test. |
+| No duplicate events after a connector restart | ⚠️ | Pending native re-test. |
+| Survives a network drop to Takaro | ⚠️ | Pending native re-test. |
+| Timed bans expire on their own | ⚠️ | Pending native re-test. |
+| Keeps running after a game update breaks a feature | ⚠️ | Pending native re-test. |
 
 ### Known issues
 
-- **The server needs an owner id before it starts a world.** Dragonwilds' dedicated server idles on
-  its start-up map until `OwnerId` is set to the owner's EOS Product User Id (the 32-character id at
-  the bottom of the in-game Settings screen). That is a game requirement, not a connector one, but
-  the connector reports the server as degraded until a world exists.
-- **Client and server are version-locked.** After a game update, players on the old client cannot
-  join. Update the server and the client together, and keep automatic updates off if you want to
-  choose the moment.
-- **`LD_PRELOAD` must be set on the game binary only.** SteamCMD is a 32-bit program and fails
-  immediately if it inherits a 64-bit preload, so never set it for the whole container, user or
-  service — only on the line that starts the server binary.
-- **A SteamCMD `validate` deletes the plugin if it lives in the Steam tree.** Keep
-  `libtakaro-dragonwilds.so` in a directory outside the game install (mounted read-only in Docker).
-- **The server writes the world password into its own log in cleartext.** The connector redacts it
-  before anything is forwarded to Takaro, but the file on disk still contains it — do not paste
-  server logs into public issues.
-- **Broadcasts and whispers render under the receiving player's name**, with a `[sender]` prefix.
-  The game has no "server" chat sender, so this cannot be fixed from the outside. Whispers reach the
-  right player, but with a single test account it was never confirmed that no one else sees them.
-- **Bans are enforced by the plugin, not by the game's login gate.** The game only reads its ban
-  list when it starts, so a banned player briefly connects and is dropped again by the plugin within
-  about two seconds. Timed bans are lifted by the connector; if the connector is down at the moment a
-  ban expires, it is lifted when it comes back.
-- **The entity catalogue is not the full bestiary.** Dragonwilds streams creatures in on demand, so
-  only the ones the server has loaded so far are known.
-- **Log events are forwarded but not stored.** Takaro does not keep server log lines as searchable
-  events, so they cannot be used in modules.
-- **There is no map.** Takaro does not support map tiles for this connector type.
-- **A game update can switch a feature off.** The plugin finds game code by name in the server's own
-  symbol file and self-checks at load; after a game update a feature it can no longer find reports
-  `degraded` in `/health` and in Takaro's reachability reason, while the server and everything else
-  keep running. That feature then needs a new plugin build.
+- The server idles until `OwnerId` is set to the owner's EOS Player ID.
+- Client and server are version-locked: update both together.
+- Upgrading from the 0.2.x sidecar needs a short maintenance window.
+- Broadcasts and whispers show under the receiving player's name, with a prefix.
+- A banned player connects briefly before the plugin drops them again.
+- The entity catalogue only lists creatures the server has loaded so far.
+- The server log holds the world password; the connector redacts it from Takaro.
+- A game update can switch off one feature; the rest keeps working.
 
 ---
 
