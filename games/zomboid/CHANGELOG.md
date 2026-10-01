@@ -4,6 +4,13 @@ All notable changes to the Takaro Project Zomboid connector are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0](https://github.com/gettakaro/connectors/compare/zomboid-v1.1.0...zomboid-v1.2.0) (2026-10-01)
+
+
+### Features
+
+* **zomboid:** pin Build 42.21.0 target and name vehicles like the game does ([#339](https://github.com/gettakaro/connectors/issues/339)) ([06682da](https://github.com/gettakaro/connectors/commit/06682dad6b71a412d663444693f049b94e8ed67a))
+
 ## [1.1.0](https://github.com/gettakaro/connectors/compare/zomboid-v1.0.2...zomboid-v1.1.0) (2026-09-22)
 
 
