@@ -95,60 +95,59 @@ and start again.
 
 ## What works, what doesn't
 
-The native connector has not been re-tested end to end yet; every row below awaits that run.
 ✅ = works, ⚠️ = works with a caveat or not yet verified, ❌ = unsupported.
 
 | What | | Notes |
 |---|---|---|
-| Connection & heartbeat | ⚠️ | Pending native re-test. |
-| Player list | ⚠️ | Pending native re-test. |
-| Single player lookup | ⚠️ | Pending native re-test. |
-| Player location | ⚠️ | Pending native re-test. |
-| Player inventory | ⚠️ | Pending native re-test. |
-| Give an item | ⚠️ | Pending native re-test. |
-| Item catalogue | ⚠️ | Pending native re-test. |
-| Entity catalogue | ⚠️ | Pending native re-test. |
-| Locations / points of interest | ⚠️ | Pending native re-test. |
-| Run a console command | ⚠️ | Pending native re-test. |
-| Broadcast a message | ⚠️ | Pending native re-test. |
-| Whisper a player | ⚠️ | Pending native re-test. |
-| Teleport a player | ⚠️ | Pending native re-test. |
-| Kick a player | ⚠️ | Pending native re-test. |
-| Ban a player (timed and permanent) | ⚠️ | Pending native re-test. |
-| Unban a player | ⚠️ | Pending native re-test. |
-| Ban list | ⚠️ | Pending native re-test. |
-| Shut the server down | ⚠️ | Pending native re-test. |
-| Player joined event | ⚠️ | Pending native re-test. |
-| Player left event | ⚠️ | Pending native re-test. |
-| Player chat event | ⚠️ | Pending native re-test. |
-| Player death event | ⚠️ | Pending native re-test. |
-| Entity kill event | ⚠️ | Pending native re-test. |
-| Log events | ⚠️ | Pending native re-test. |
+| Connection & heartbeat | ✅ | Plugin connects to Takaro itself; no sidecar. |
+| Player list | ✅ | Character name and EOS id. |
+| Single player lookup | ⚠️ | Works online; Takaro never asks about offline players. |
+| Player location | ✅ |  |
+| Player inventory | ✅ |  |
+| Give an item | ✅ | Appears in the inventory without a relog. |
+| Item catalogue | ✅ | 1536 items with in-game names. |
+| Entity catalogue | ⚠️ | Only creatures the server has loaded so far. |
+| Locations / points of interest | ⚠️ | Lodestones only; Takaro does not use this list. |
+| Run a console command | ✅ | Connector command set; unknown commands are refused. |
+| Broadcast a message | ✅ | Shows under the receiving player's name. |
+| Whisper a player | ✅ |  |
+| Teleport a player | ✅ | Module teleports included. |
+| Kick a player | ✅ |  |
+| Ban a player (timed and permanent) | ✅ | Banned players are dropped about a second after joining. |
+| Unban a player | ✅ | Works immediately, also after a restart. |
+| Ban list | ✅ | Includes the expiry of timed bans. |
+| Shut the server down | ✅ | Saves first, then stops. |
+| Player joined event | ✅ |  |
+| Player left event | ✅ |  |
+| Player chat event | ✅ |  |
+| Player death event | ✅ | Names the creature that killed the player. |
+| Entity kill event | ✅ | Creature name and held weapon. |
+| Log events | ✅ | Passwords removed; rate-limited to stay under Takaro's limit. |
 | Map info | ❌ | Takaro has no map info for Generic game servers. |
 | Map tiles | ❌ | Takaro has no map tiles for Generic game servers. |
-| Modules: chat commands | ⚠️ | Pending native re-test. |
-| Modules: hooks | ⚠️ | Pending native re-test. |
-| Modules: cronjobs | ⚠️ | Pending native re-test. |
-| Modules: teleports (`@settp`, `@tp`, …) | ⚠️ | Pending native re-test. |
-| Modules: server messages / onboarding | ⚠️ | Pending native re-test. |
-| Shop: buy in game | ⚠️ | Pending native re-test. |
-| Shop: order in Takaro and claim in game | ⚠️ | Pending native re-test. |
-| Shop: bundle of several items | ⚠️ | Pending native re-test. |
-| Shop: order while offline, claim later | ⚠️ | Pending native re-test. |
-| Shop: not enough currency | ⚠️ | Pending native re-test. |
-| Economy: currency | ⚠️ | Pending native re-test. |
-| Economy: balance in game | ⚠️ | Pending native re-test. |
-| Discord: game chat → Discord | ⚠️ | Pending native re-test. |
-| Discord: Discord → game chat | ⚠️ | Pending native re-test. |
-| Discord: module hook / cronjob posts | ⚠️ | Pending native re-test. |
-| Discord: join/leave notices | ⚠️ | Pending native re-test. |
-| Discord: no echo of server messages | ⚠️ | Pending native re-test; use the `chatBridgeNoEcho` module. |
-| Events while the Takaro connection is down | ⚠️ | Pending native re-test. |
-| Reconnects after a server or container restart | ⚠️ | Pending native re-test. |
-| No duplicate events after a connector restart | ⚠️ | Pending native re-test. |
-| Survives a network drop to Takaro | ⚠️ | Pending native re-test. |
-| Timed bans expire on their own | ⚠️ | Pending native re-test. |
-| Keeps running after a game update breaks a feature | ⚠️ | Pending native re-test. |
+| Modules: chat commands | ✅ |  |
+| Modules: hooks | ✅ |  |
+| Modules: cronjobs | ✅ |  |
+| Modules: teleports (`@settp`, `@tp`, …) | ✅ |  |
+| Modules: server messages / onboarding | ✅ |  |
+| Shop: buy in game | ✅ |  |
+| Shop: order in Takaro and claim in game | ✅ |  |
+| Shop: bundle of several items | ✅ |  |
+| Shop: order while offline, claim later | ✅ |  |
+| Shop: not enough currency | ✅ | Refused, nothing deducted. |
+| Economy: currency | ✅ |  |
+| Economy: balance in game | ✅ |  |
+| Discord: game chat → Discord | ✅ | Use the `chatBridgeNoEcho` module. |
+| Discord: Discord → game chat | ⚠️ | Not yet verified with the native connector. |
+| Discord: module hook / cronjob posts | ✅ |  |
+| Discord: join/leave notices | ✅ |  |
+| Discord: no echo of server messages | ✅ | Use the `chatBridgeNoEcho` module. |
+| Events while the Takaro connection is down | ✅ | Queued on disk and delivered after reconnect. |
+| Reconnects after a server or container restart | ✅ |  |
+| No duplicate events after a connector restart | ✅ |  |
+| Survives a network drop to Takaro | ✅ |  |
+| Timed bans expire on their own | ✅ | Lifted by the connector, also across restarts. |
+| Keeps running after a game update breaks a feature | ✅ | That feature reports degraded; the rest keeps working. |
 
 ### Known issues
 
@@ -157,9 +156,9 @@ The native connector has not been re-tested end to end yet; every row below awai
 - Upgrading from the 0.2.x sidecar needs a short maintenance window.
 - Broadcasts and whispers show under the receiving player's name, with a prefix.
 - A banned player connects briefly before the plugin drops them again.
+- Whispers are delivered; hiding them from other players is not yet verified.
 - The entity catalogue only lists creatures the server has loaded so far.
 - The server log holds the world password; the connector redacts it from Takaro.
-- A game update can switch off one feature; the rest keeps working.
 
 ---
 
