@@ -125,28 +125,6 @@ public sealed class EventFactoryTests
     }
 
     [TestMethod]
-    public void CompanionPlayerDeathHintsNeverInventAnAttackerPlayer()
-    {
-        var timestamp = new DateTimeOffset(2026, 7, 11, 8, 3, 0, TimeSpan.Zero);
-
-        var json = TakaroProtocol.CreateGameEvent(
-            "player-death",
-            EventFactory.CompanionPlayerDeath(
-                Player("Steam_real", "Odin"),
-                timestamp,
-                new TakaroPosition(1, 2, 3, "valheim"),
-                "fall damage",
-                "Deathsquito"));
-        using var document = JsonDocument.Parse(json);
-        var data = document.RootElement.GetProperty("payload").GetProperty("data");
-
-        Assert.AreEqual("Steam_real", data.GetProperty("player").GetProperty("gameId").GetString());
-        StringAssert.Contains(data.GetProperty("msg").GetString(), "fall damage");
-        StringAssert.Contains(data.GetProperty("msg").GetString(), "Deathsquito");
-        Assert.IsFalse(data.TryGetProperty("attacker", out _));
-    }
-
-    [TestMethod]
     public void EntityKilledUsesTakaroPayloadShape()
     {
         var timestamp = new DateTimeOffset(2026, 7, 11, 8, 4, 0, TimeSpan.Zero);

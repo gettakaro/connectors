@@ -40,38 +40,6 @@ public static class EventFactory
         return data;
     }
 
-    public static object CompanionPlayerDeath(
-        TakaroPlayer player,
-        DateTimeOffset timestamp,
-        TakaroPosition position,
-        string? causeHint,
-        string? attackerCodeHint)
-    {
-        var data = new Dictionary<string, object?>
-        {
-            ["player"] = player,
-            ["timestamp"] = timestamp,
-            ["position"] = position
-        };
-        var hints = new List<string>(capacity: 2);
-        if (!string.IsNullOrWhiteSpace(causeHint))
-        {
-            hints.Add(causeHint!.Trim());
-        }
-
-        if (!string.IsNullOrWhiteSpace(attackerCodeHint))
-        {
-            hints.Add($"attacker: {attackerCodeHint!.Trim()}");
-        }
-
-        if (hints.Count > 0)
-        {
-            data["msg"] = string.Join("; ", hints);
-        }
-
-        return data;
-    }
-
     public static object EntityKilled(
         TakaroPlayer player,
         string entity,

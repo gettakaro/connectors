@@ -48,7 +48,7 @@ is the one place a server owner finds out what they are actually getting.
 - **Links to takaro.io**: write them absolute (`https://takaro.io/connectors/rust`). The sync
   rewrites them to root-relative (`/connectors/rust`) so the published page does not make a
   round trip out to the public site and back.
-- **Links to sibling files in this repo** (`DEVELOPMENT.md`, `COMPANION.md`): write them relative,
+- **Links to sibling files in this repo** (`DEVELOPMENT.md`): write them relative,
   as you would for a reader on GitHub. The sync rewrites them to GitHub blob URLs, so they keep
   working on the published page.
 

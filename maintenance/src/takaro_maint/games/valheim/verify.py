@@ -8,11 +8,12 @@ What a Valheim report may claim, and what it may not:
   ``action``, ``reconnect`` and ``stop`` below are this game's equivalents and say so in
   their details. ``items`` and ``entities`` run by default and fail until the plugin
   translates its catalogue names, so a bare verification reports that limitation.
-* **Companion (graphical-client) behaviour is not covered by any of this.** A ``verify``
-  run boots a dedicated server in a container; the companion is a client plugin and never
-  loads there. Nothing in a report produced here is evidence that companion features work —
-  the target record's ``support.notes``, the connector README and ``COMPANION.md`` say the
-  same thing in the places a reader looks.
+* **Player-driven events are not covered by any of this.** A ``verify`` run boots a
+  dedicated server in a container with no game client connected, so chat, deaths, kills and
+  server chat to players are never exercised. The optional graphical-client inventory
+  companion never loads on a dedicated server either, so player inventory is not covered.
+  Nothing in a report produced here is evidence that any of these work; that proof comes
+  from a live client run.
 
 Three things differ from a Minecraft run and each one is a hook here. The server says it is
 up with its own line. The plugin is configured by a BepInEx ``.cfg`` in the game directory,
@@ -93,9 +94,6 @@ serverName = takaro-verify
 logLevel = Information
 enableLogEvents = true
 
-## The default: the graphical-client companion is off unless a server operator turns it on.
-companionMode = disabled
-
 ## Console commands Takaro is allowed to run.
 commandAllowlistExact = help
 commandAllowlistPrefixes =
@@ -121,7 +119,7 @@ def render_config(data_dir: Path, takaro_env: dict[str, str]) -> Path:
 
 def before_boot(run: Any, takaro_env: dict[str, str]) -> None:
     render_config(run.data_dir, takaro_env)
-    output.info(f"wrote {CONFIG_RELATIVE.as_posix()} for this run (mode 0600, companionMode = disabled)")
+    output.info(f"wrote {CONFIG_RELATIVE.as_posix()} for this run (mode 0600)")
 
 
 def scan_runtime_identity(adapter: Any, log_file: Path) -> dict[str, Any]:
@@ -318,8 +316,8 @@ async def _check_action(run: Any, fake: Any) -> checks.CheckResult:
             "command": "help",
             "rawResult": result,
             "note": (
-                "the only command the default allow-list permits; chat and broadcast are "
-                "companion_server_chat_unavailable by design on a dedicated server"
+                "the only command the default allow-list permits; chat and broadcast need a "
+                "connected game client and are not exercised by this run"
             ),
             "problems": problems,
         },

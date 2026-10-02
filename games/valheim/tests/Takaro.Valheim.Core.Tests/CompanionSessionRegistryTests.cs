@@ -19,12 +19,7 @@ public sealed class CompanionSessionRegistryTests
 
     private static readonly TimeSpan HandshakeGrace = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan HeartbeatGrace = TimeSpan.FromSeconds(30);
-    private static readonly CompanionCapability SupportedCapabilities =
-        CompanionCapability.Chat
-        | CompanionCapability.Inventory
-        | CompanionCapability.PlayerDeath
-        | CompanionCapability.EntityKilled
-        | CompanionCapability.ServerChat;
+    private static readonly CompanionCapability SupportedCapabilities = CompanionCapability.Inventory;
 
     [TestMethod]
     public void ReportBeforeHelloAckIsRejected()
@@ -58,7 +53,7 @@ public sealed class CompanionSessionRegistryTests
             "nonce-from-another-session",
             selectedProtocolVersion: 1,
             ProductVersion,
-            CompanionCapability.Chat,
+            CompanionCapability.Inventory,
             sequence: 1,
             Now.AddSeconds(1));
 
@@ -70,7 +65,7 @@ public sealed class CompanionSessionRegistryTests
             CurrentNonce,
             selectedProtocolVersion: 1,
             ProductVersion,
-            CompanionCapability.Chat,
+            CompanionCapability.Inventory,
             sequence: 1,
             Now.AddSeconds(1));
 
@@ -429,26 +424,18 @@ public sealed class CompanionSessionRegistryTests
     }
 
     [TestMethod]
-    public void HelloAckRejectsUnsupportedVersionInvalidProductAndCapabilitiesWithoutMutation()
+    public void HelloAckRejectsInvalidProductCapabilitiesAndSequenceWithoutMutation()
     {
-        var registry = CreateRegistry(supportedCapabilities: CompanionCapability.Chat);
+        var registry = CreateRegistry();
         registry.Begin(PeerId, Now, CurrentNonce);
         var pending = Snapshot(registry, PeerId);
 
         AssertRejectedNegotiationDoesNotMutate(
             registry,
             pending,
-            selectedProtocolVersion: MaximumProtocolVersion + 1,
-            ProductVersion,
-            CompanionCapability.Chat,
-            sequence: 1,
-            CompanionSessionDecision.RejectVersion);
-        AssertRejectedNegotiationDoesNotMutate(
-            registry,
-            pending,
             selectedProtocolVersion: 1,
             "   ",
-            CompanionCapability.Chat,
+            CompanionCapability.Inventory,
             sequence: 1,
             CompanionSessionDecision.RejectMetadata);
         AssertRejectedNegotiationDoesNotMutate(
@@ -456,14 +443,6 @@ public sealed class CompanionSessionRegistryTests
             pending,
             selectedProtocolVersion: 1,
             new string('v', CompanionProtocol.MaximumProductVersionCharacters + 1),
-            CompanionCapability.Chat,
-            sequence: 1,
-            CompanionSessionDecision.RejectMetadata);
-        AssertRejectedNegotiationDoesNotMutate(
-            registry,
-            pending,
-            selectedProtocolVersion: 1,
-            ProductVersion,
             CompanionCapability.Inventory,
             sequence: 1,
             CompanionSessionDecision.RejectMetadata);
@@ -480,13 +459,66 @@ public sealed class CompanionSessionRegistryTests
             pending,
             selectedProtocolVersion: 1,
             ProductVersion,
-            CompanionCapability.Chat,
+            CompanionCapability.Inventory,
             sequence: 0,
             CompanionSessionDecision.RejectSequence);
 
         Assert.AreEqual(
             CompanionSessionDecision.Accept,
             Negotiate(registry, PeerId, CurrentNonce, sequence: 1, Now.AddSeconds(1)));
+    }
+
+    [TestMethod]
+    public void HelloAckWithUnsupportedVersionLatchesARejectionThatNeverNegotiates()
+    {
+        var registry = CreateRegistry();
+        registry.Begin(PeerId, Now, CurrentNonce);
+
+        Assert.AreEqual(
+            CompanionSessionDecision.RejectVersion,
+            registry.CompleteHelloAck(
+                PeerId,
+                CurrentNonce,
+                MaximumProtocolVersion + 1,
+                ProductVersion,
+                CompanionCapability.Inventory,
+                sequence: 1,
+                Now.AddSeconds(1)));
+
+        var rejected = Snapshot(registry, PeerId);
+        Assert.IsTrue(rejected.IsRejected);
+        Assert.IsFalse(rejected.IsNegotiated);
+        Assert.AreEqual(MaximumProtocolVersion + 1, rejected.RejectedMaximumVersion);
+        Assert.AreEqual(
+            CompanionSessionDecision.RejectSequence,
+            Negotiate(registry, PeerId, CurrentNonce, sequence: 2, Now.AddSeconds(2)));
+        Assert.IsFalse(registry.IsActive(PeerId, Now.AddSeconds(2)));
+    }
+
+    [TestMethod]
+    public void HelloNackRangeIsRecordedAsIncompatibleOnlyForTheCurrentNonce()
+    {
+        var registry = CreateRegistry();
+        registry.Begin(PeerId, Now, CurrentNonce);
+
+        Assert.AreEqual(
+            CompanionSessionDecision.RejectNonce,
+            registry.RecordIncompatible(PeerId, "other", 2, 2, Now.AddSeconds(1)));
+        Assert.IsFalse(Snapshot(registry, PeerId).IsRejected);
+        Assert.AreEqual(
+            CompanionSessionDecision.RejectUnknownPeer,
+            registry.RecordIncompatible(PeerId + 1, CurrentNonce, 2, 2, Now.AddSeconds(1)));
+        Assert.AreEqual(
+            CompanionSessionDecision.RejectVersion,
+            registry.RecordIncompatible(PeerId, CurrentNonce, 2, 2, Now.AddSeconds(1)));
+
+        var rejected = Snapshot(registry, PeerId);
+        Assert.IsTrue(rejected.IsRejected);
+        Assert.AreEqual(2, rejected.RejectedMinimumVersion);
+        Assert.AreEqual(2, rejected.RejectedMaximumVersion);
+        Assert.AreEqual(
+            CompanionSessionDecision.RejectSequence,
+            registry.RecordIncompatible(PeerId, CurrentNonce, 2, 2, Now.AddSeconds(2)));
     }
 
     [TestMethod]
@@ -518,37 +550,33 @@ public sealed class CompanionSessionRegistryTests
         var registry = CreateRegistry();
         registry.Begin(PeerId, Now, CurrentNonce);
 
+        Assert.IsFalse(registry.IsActive(PeerId, Now.AddSeconds(1)));
         Assert.IsFalse(registry.TryGetActiveSession(
             PeerId,
-            CompanionCapability.ServerChat,
+            CompanionCapability.Inventory,
             Now.AddSeconds(1),
             out _));
         Assert.AreEqual(
             CompanionSessionDecision.Accept,
-            registry.CompleteHelloAck(
-                PeerId,
-                CurrentNonce,
-                selectedProtocolVersion: 1,
-                ProductVersion,
-                CompanionCapability.Chat | CompanionCapability.ServerChat,
-                sequence: 1,
-                Now.AddSeconds(1)));
+            Negotiate(registry, PeerId, CurrentNonce, sequence: 1, Now.AddSeconds(1)));
 
+        Assert.IsTrue(registry.IsActive(PeerId, Now.AddSeconds(2)));
         Assert.IsTrue(registry.TryGetActiveSession(
             PeerId,
-            CompanionCapability.ServerChat,
+            CompanionCapability.Inventory,
             Now.AddSeconds(2),
             out var active));
         Assert.IsNotNull(active);
         Assert.AreEqual(CurrentNonce, active.Nonce);
         Assert.IsFalse(registry.TryGetActiveSession(
             PeerId,
-            CompanionCapability.Inventory,
+            CompanionCapability.None,
             Now.AddSeconds(2),
             out _));
+        Assert.IsFalse(registry.IsActive(PeerId, Now.AddSeconds(1) + HeartbeatGrace));
         Assert.IsFalse(registry.TryGetActiveSession(
             PeerId,
-            CompanionCapability.ServerChat,
+            CompanionCapability.Inventory,
             Now.AddSeconds(1) + HeartbeatGrace,
             out _));
     }
@@ -594,7 +622,7 @@ public sealed class CompanionSessionRegistryTests
             nonce,
             selectedProtocolVersion: 1,
             ProductVersion,
-            CompanionCapability.Chat,
+            CompanionCapability.Inventory,
             sequence,
             now);
 

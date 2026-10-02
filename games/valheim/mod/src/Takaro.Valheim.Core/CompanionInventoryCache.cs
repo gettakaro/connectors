@@ -387,7 +387,7 @@ public sealed class CompanionInventoryCache
             || string.IsNullOrWhiteSpace(stack.Code)
             || stack.Code.Length > CompanionProtocol.MaximumCodeCharacters
             || string.IsNullOrWhiteSpace(stack.Name)
-            || stack.Name.Length > CompanionProtocol.MaximumChatCharacters
+            || stack.Name.Length > CompanionProtocol.MaximumNameCharacters
             || stack.Amount <= 0
             || stack.Amount > CompanionProtocol.MaximumInventoryAmount
             || stack.Quality <= 0

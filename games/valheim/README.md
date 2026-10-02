@@ -1,30 +1,22 @@
 # Takaro Valheim Connector
 
-A server-side-only BepInEx plugin (version **3.0.1**) that connects a Valheim dedicated
-server to Takaro. It is the only half that holds your Takaro token, it runs inside the
-dedicated-server process, and players install nothing. Client-side Takaro mods are
-rejected by rule for this connector, so everything below is what the plugin does on its
-own. Last live-tested against a **Valheim 1.0.7** dedicated server.
+A BepInEx plugin (version **4.0.0**) that runs inside a Valheim dedicated server and connects it
+to Takaro. Players do not install anything: they join with plain, unmodified Valheim. Only
+reading a player's inventory needs an optional mod on that player's game
+([step 7](#7-optional-inventory-mod-for-players)). Built against **Valheim 1.0.16** with
+**BepInExPack Valheim 5.4.2351**.
 
 ## Install
-
-Download the latest release: https://takaro.io/connectors/valheim
 
 ### 1. Before you start
 
 You need:
 
-- A **Valheim dedicated server** (Linux or Windows) that you can stop, start and copy
-  files to.
-- **BepInExPack Valheim** (the `denikson/BepInExPack_Valheim` package from Thunderstore)
-  already installed on that server. The plugin is a BepInEx **5** plugin built for .NET
-  Framework 4.7.2 — the pack ships exactly that loader. Install it and start the server
-  once before going further; if `BepInEx/plugins/` does not exist yet, BepInEx is not
-  installed.
-- A **Takaro account** with a game server created of type **Generic**, and its
-  **registration token** (Takaro shows it when you create the game server).
-- Outbound network access to `wss://connect.takaro.io/`. The plugin dials out; nothing
-  needs to be port-forwarded to it.
+- A **Valheim dedicated server** (Linux or Windows) that you can stop, start and copy files to.
+- **BepInExPack Valheim 5.4.2351** (`denikson/BepInExPack_Valheim` on Thunderstore) installed on
+  that server. Start the server once after installing it; `BepInEx/plugins/` must exist.
+- A Takaro game server of type **Generic** and its **registration token**.
+- Outbound access to `wss://connect.takaro.io/`. Nothing needs to be port-forwarded.
 
 The exact server builds this connector is maintained for:
 
@@ -34,185 +26,150 @@ The exact server builds this connector is maintained for:
 | `linux-1.0.16` | 1.0.16 | linux | — | None | maintained | contract |
 <!-- takaro-maint:targets:end -->
 
-Each target names the exact Steam depot manifest of the dedicated server **and** the exact
-BepInExPack Valheim version it was built and checked against; the target record under
-[`catalog/valheim/targets/`](../../catalog/valheim/targets/) is the source of truth for
-both. This release pins **BepInExPack Valheim 5.4.2351**. A different server build or a
-different pack may well work — it simply has not been checked, and nothing here claims it
-has.
+### 2. Download
 
-### 2. Download the plugin
-
-Download the plugin for your server build from the latest `valheim-vX.Y.Z` release on the
-releases page:
-
-> https://github.com/gettakaro/connectors/releases
-
-Each release carries one plugin zip per maintained target, named after it:
-
-`takaro-valheim-plugin-<target>-<version>.zip` — for example
-`takaro-valheim-plugin-linux-1.0.16-3.0.3.zip`, next to a `SHA256SUMS` file you can check
-it against.
-
-The release also still carries **`takaro-valheim-plugin.zip`**, a byte-identical copy of
-the default target's zip under the old name. That alias stays for two more releases so
-existing links keep working; new installs should take the target-named file.
-
-Direct link pattern:
-`https://github.com/gettakaro/connectors/releases/download/valheim-v<version>/takaro-valheim-plugin-<target>-<version>.zip`
-
-Use `valheim-v3.0.1` or newer. The same release also carries the companion
-(`takaro-valheim-companion-<target>-<version>.zip`, alias `takaro-valheim-companion.zip`);
-that one is a **client** package and is not part of this install — do not copy it onto the
-server. Do not use the `valheim-dev` pre-release either, that is an untested rolling
-build.
-
-The zip contains a single folder, `TakaroValheim/`. That whole folder is the plugin.
+From the latest `valheim-v4.x.x` release at <https://github.com/gettakaro/connectors/releases>
+(also linked from <https://takaro.io/connectors/valheim>), download
+**`takaro-valheim-plugin.zip`**. The same zip is also published under its target name, for
+example `takaro-valheim-plugin-linux-1.0.16-4.0.0.zip`, next to a `SHA256SUMS` file. Do not use
+the `valheim-dev` pre-release.
 
 ### 3. Copy it into place
 
-Stop the server, then unzip so that the `TakaroValheim` folder ends up directly inside
-`BepInEx/plugins/`:
+Stop the server. Unzip so the `TakaroValheim` folder lands directly in `BepInEx/plugins/`:
 
 ```
 <server>/BepInEx/plugins/TakaroValheim/
     TakaroValheim.dll
     Takaro.Valheim.Core.dll
-    Takaro.Valheim.Companion.Protocol.dll
-    Microsoft.Bcl.AsyncInterfaces.dll
-    System.Buffers.dll
-    System.Memory.dll
-    System.Numerics.Vectors.dll
-    System.Runtime.CompilerServices.Unsafe.dll
-    System.Text.Encodings.Web.dll
-    System.Text.Json.dll
-    System.Threading.Tasks.Extensions.dll
-    System.ValueTuple.dll
+    ...the other DLLs from the zip
     manifest.json
     README.txt
 ```
 
-All of those files are needed — copy the folder as-is, do not cherry-pick the DLLs.
-
-Examples:
-
-- Linux: `/home/steam/valheim-dedicated-server/BepInEx/plugins/TakaroValheim/`
-- Windows: `C:\ValheimServer\BepInEx\plugins\TakaroValheim\`
+Copy the whole folder as-is.
 
 ### 4. Configure
 
-Start the server once and let it finish loading, then stop it again. The plugin creates
-its config at:
-
-```
-<server>/BepInEx/config/com.takaro.valheim.cfg
-```
-
-Open that file and set two things under the `[Takaro]` section:
+Start the server once so the plugin creates `BepInEx/config/com.takaro.valheim.cfg`, then stop
+it and edit the `[Takaro]` section:
 
 ```ini
 [Takaro]
-
-## Takaro registration token.
 registrationToken = your-registration-token-here
-
-## Client companion policy: disabled, optional, or required.
-companionMode = disabled
+serverName = My Valheim Server
 ```
 
-`companionMode` defaults to `disabled`; only change it if you deploy the client companion.
+| Key | Required | What it does |
+|---|---|---|
+| `registrationToken` | yes | Your Takaro registration token. |
+| `serverName` | yes | The server name shown in Takaro. |
+| `identityToken` | no | Filled in by the plugin after the first registration; leave it alone. |
+| `takaroWsUrl` | no | Takaro endpoint; keep the default. |
+| `logLevel` | no | Connector log level (default `Information`). |
+| `enableLogEvents` | no | Forward connector log lines to Takaro (default `true`). |
+| `commandAllowlistExact` | no | Console commands Takaro may run, `;`-separated (default `help`). |
+| `commandAllowlistPrefixes` | no | Console command prefixes Takaro may run, `;`-separated. |
+| `chatSenderName` | no | Name shown in game chat for Takaro messages (default `Takaro`, max 128 characters). Used unless Takaro sends its own sender name. |
 
-Leave `takaroWsUrl` as it is, and leave `identityToken` alone — the plugin fills it in by
-itself after the first successful registration. Save the file. Restart the dedicated server
-so the saved configuration is loaded.
+Save the file. Restart the dedicated server so the saved configuration is loaded.
 
 ### 5. Check that it worked
 
-In `BepInEx/LogOutput.log` on the server:
+In `BepInEx/LogOutput.log` on the server, look for:
 
 ```
-[Info   :   BepInEx] Loading [Takaro Valheim 3.0.1]
-[Info   :Takaro Valheim] Takaro Valheim connector started.
-[Info   :Takaro Valheim] Takaro Valheim WebSocket connected.
-[Info   :Takaro Valheim] Takaro Valheim identified as gameServerId=<your game server id>.
+Takaro Valheim identified as gameServerId=<your game server id>.
+Takaro Valheim chat participant 'Takaro' active (server-side chat relay).
 ```
 
-The `identified as gameServerId=` line is the one that matters — it means Takaro accepted
-your registration token. And in Takaro, the game server shows as **online**. If it stays
-offline, `registrationToken` in the config file is the first thing to re-check.
+The game server then shows as **online** in Takaro. If it stays offline, re-check
+`registrationToken`.
 
 ### 6. Upgrading
 
-**Stop the server first.** Delete `<server>/BepInEx/plugins/TakaroValheim/` and unzip the
-new version in its place. Then **delete `<server>/BepInEx/cache/chainloader_typeloader.dat`**
-before starting the server again — the release archives use fixed timestamps, so BepInEx
-can otherwise keep cached metadata from the previous DLL of the same size and load the old
-plugin. Leave `BepInEx/config/com.takaro.valheim.cfg` alone; your token and identity
-survive the upgrade.
+Stop the server, delete `BepInEx/plugins/TakaroValheim/` and unzip the new version in its place.
+Delete `BepInEx/cache/chainloader_typeloader.dat` before starting again, or BepInEx may keep
+loading the old plugin. Your config file stays as it is.
+
+### 7. Optional: inventory mod for players
+
+Everything except **Player inventory** works without it. A player who wants Takaro to see their
+inventory installs it on their own game; nobody else needs it, and players without it play
+normally on the same server.
+
+1. On the player's PC, install **BepInExPack Valheim 5.4.2351** into the Valheim game folder
+   (`steamapps/common/Valheim`) and start the game once.
+2. From the same release, download **`takaro-valheim-inventory-companion.zip`** and unzip it so
+   the `TakaroValheimInventoryCompanion` folder lands in `BepInEx/plugins/` of that game folder.
+3. Start Valheim and join the server.
+
+It holds no Takaro token and only talks to the Valheim server the player is connected to. In the
+server's `BepInEx/LogOutput.log` a working mod shows
+`Takaro Valheim inventory companion negotiated with peer ...`. A mod from another version is
+logged as ignored; the player stays connected.
+
+### Upgrade from 3.x
+
+Version 4.0.0 needs nothing on the game clients any more.
+
+1. Replace the `TakaroValheim` folder as above.
+2. Players remove the old client companion mod (`TakaroValheimCompanion`); it no longer works
+   with this server. For inventory, install the new optional mod from step 7 instead.
+3. The old `companionMode` config key is ignored and can be deleted.
 
 ## What works, what doesn't
 
-Status for the dedicated-server plugin **on its own**, with ordinary unmodified Valheim
-clients. The most recent live run was **2026-09-02** against a real dedicated server with
-a real game client attached.
-✅ = works, ⚠️ = works with a caveat or is unproven, ❌ = does not work.
+Tested on Valheim 1.0.16 with BepInExPack 5.4.2351 and a vanilla game client, 2026-10-01.
+✅ = works, ⚠️ = works with a caveat or not re-tested, ❌ = unsupported.
 
 | What | | Notes |
 |---|---|---|
-| Connection & heartbeat | ✅ | Dials out to Takaro and stays identified; the server shows online in Takaro. |
-| Server restart / reconnect | ✅ | After a dedicated-server restart the plugin re-identifies with no config change and events resume. |
-| Player list | ✅ | Name, Steam id and online state. This is how Takaro loads players for Valheim. |
-| Single player lookup | ⚠️ | Implemented, but Takaro exposes no route that asks for one player at a time, so it has never been proven end to end. |
-| Player location | ✅ | The server's own known position for the player; a position is never invented. A disconnected player keeps a real last-known position for 30 seconds. |
-| Player inventory | ❌ | Valheim keeps a player's inventory on their own client — the dedicated server holds no inventory for a remote player, so there is nothing to read. The plugin returns an error rather than a fake empty bag. |
-| Item catalogue | ⚠️ | 821 item prefabs synced. Takaro only asks for this when its sync job runs, so a freshly registered server shows an empty catalogue until then. **Names are Valheim's translation keys** (`item_sword_bronze`), not the words a player reads: Valheim's translator lives in an assembly the server plugin does not compile against. Codes (`SwordBronze`) are exact. `takaro-maint verify` reports `items` as failed until the plugin translates. |
-| Entity catalogue | ⚠️ | 101 character prefabs synced, same sync-job timing and the same translation-key names as above. `takaro-maint verify` reports `entities` as failed until the plugin translates. |
-| Locations / points of interest | ❌ | The plugin finds them (11,293 in a live run), but Takaro's own route for this throws `NotImplementedError`, so they never reach you. |
-| Chat messages from players | ❌ | Valheim sends normal chat between clients, not to the dedicated server. A live probe produced visible in-game chat and no server-side trace at all. |
-| Broadcast a message | ❌ | Valheim gives a dedicated server no way to put text in a player's chat window; the plugin returns `companion_server_chat_unavailable`. |
-| Whisper a player | ❌ | Same reason as broadcast. |
-| Give an item | ⚠️ | The items **drop on the ground at the player's feet** — anyone nearby can pick them up, and they can be lost if the player is falling or swimming. |
-| Teleport a player | ✅ | Uses Valheim's own teleport; proven live moving a player to exact coordinates. |
-| Run a console command | ⚠️ | Only commands you allowlist run. The default allowlist is just `help`, so this does nothing useful until you add commands to `commandAllowlistExact` / `commandAllowlistPrefixes`. |
-| Kick a player | ✅ | The player is dropped with Valheim's built-in kick and the reason is logged; the headless server stays up. |
-| Ban a player (timed and permanent) | ⚠️ | The ban lands in Valheim's own ban list and the player is disconnected, but **the reason is thrown away** — Valheim's ban list stores one id per line and nothing else. Takaro reads the reason back as empty. |
-| Unban a player | ✅ | Removes the id from Valheim's ban list; the ban list then reads back empty. |
-| Ban list | ✅ | Matches Valheim's own ban entries. |
-| Shut the server down | ✅ | Answers Takaro first, then Valheim shuts down cleanly and the process exits. |
-| Player joined event | ✅ | Arrives in Takaro once the server has seen a real position for the player. |
-| Player left event | ✅ | Arrives in Takaro after the player disconnects, carrying their real last-known position. |
-| Player chat event | ❌ | Nothing to report — see "Chat messages from players". |
-| Player death event | ❌ | The server sees a death packet go past but cannot tell whose character it is from its own state, so it deliberately emits nothing rather than guess. |
-| Entity kill event | ❌ | Kills are resolved on the killing player's client; the dedicated server never sees who killed what. |
-| Log events | ✅ | Connector log lines are forwarded to Takaro (`enableLogEvents`, on by default). |
-| Map info | ❌ | Valheim's dedicated server has no map metadata to hand out. |
-| Map tiles | ❌ | Takaro's API does not support map tiles for Generic-connector servers. |
-| Discord chat bridge | ❌ | Never tested on Valheim, and it cannot work in either direction: player chat never reaches the server, and the server cannot write into a player's chat window. |
-| Shop & economy | ⚠️ | Proven end to end: a player bought from the in-game shop, 100 currency was deducted and the goods arrived. But shop deliveries go through "Give an item", so **purchases land on the ground at the buyer's feet**, lootable by anyone nearby. |
-
-Companion (client) rows are not verified by the maintenance harness: a `takaro-maint
-verify` run boots a dedicated server, where the companion never loads. Their evidence is
-the recorded client run described in [COMPANION.md](COMPANION.md), and no target record
-claims it.
-
-Several ❌ rows above are ❌ only because Valheim keeps that information on the player's
-own client. A separately published client package changes some of them; it is outside the
-server-side-only install this README covers, and is documented in
-[COMPANION.md](COMPANION.md).
+| Connection & heartbeat | ✅ | Dials out to Takaro; server shows online. |
+| Player list | ✅ | Name, Steam id and online state. |
+| Single player lookup | ❌ | Takaro offers no route to ask for one player. |
+| Player location | ✅ | The server's known position; never invented. |
+| Player inventory | ⚠️ | Works only for players with the optional inventory mod. |
+| Give an item | ✅ | Dropped at the player's feet; picked up automatically. |
+| Item catalogue | ✅ | English in-game names, filled when Takaro syncs. |
+| Entity catalogue | ✅ | English in-game names, filled when Takaro syncs. |
+| Locations / points of interest | ❌ | Found by the plugin, but Takaro's route is not implemented. |
+| Run a console command | ⚠️ | Only allowlisted commands run; default allows just `help`. |
+| Broadcast a message | ✅ | Shown in normal chat with the sender name. |
+| Whisper a player | ✅ | Shown in that player's normal chat only. |
+| Teleport a player | ✅ | Moves the player to the requested position. |
+| Kick a player | ✅ | Player is dropped; the server stays up. |
+| Ban a player | ⚠️ | Player is banned and dropped; the reason is discarded. |
+| Unban a player | ✅ | Removed from Valheim's ban list. |
+| Ban list | ✅ | Matches Valheim's own ban list. |
+| Shut the server down | ✅ | Answers Takaro, then shuts down cleanly. |
+| Player joined event | ✅ | Arrives once the player has spawned. |
+| Player left event | ✅ | Arrives with the last-known position. |
+| Player chat event | ✅ | Works even when a player is alone. |
+| Player death event | ✅ | Player and position included. |
+| Entity kill event | ✅ | Every player kill counted; with the mod, assists aren't counted as kills. |
+| Log events | ✅ | Connector log lines forwarded (`enableLogEvents`). |
+| Map info | ❌ | Not available for Generic game servers. |
+| Map tiles | ❌ | Not available for Generic game servers. |
+| Modules: chat commands | ✅ | `@` commands work; replies show in normal chat. |
+| Modules: hooks | ✅ | Join, leave and chat hooks fire. |
+| Modules: cronjobs | ✅ | Run on schedule for this server. |
+| Modules: teleports | ✅ | `@settp` and `@tp` move the player. |
+| Discord: game chat → Discord | ⚠️ | Takaro posts chat, joins and leaves; Discord view not yet re-checked. |
+| Discord: Discord → game chat | ⚠️ | Not re-tested in 4.0. |
+| Shop & economy | ✅ | Chat purchases deliver at the buyer's feet. |
+| Reconnects after a server restart | ✅ | Re-identifies on its own; events resume. |
+| Events raised while connecting | ✅ | Held until Takaro accepts the server, then sent. |
+| Takaro outage | ✅ | Events are kept and delivered after reconnecting. |
 
 ### Known issues
 
-- **No chat in either direction.** Valheim's dedicated server neither sees player chat nor
-  can write into a player's chat window, so chat events, broadcasts, whispers and any
-  Discord bridge are all off the table on a server-side-only install.
-- **Shop purchases land on the ground.** They are lootable by anyone nearby and can be
-  lost if the buyer is falling or swimming. Worth knowing before running an economy.
-- **Bans lose their reason.** Valheim's ban list has nowhere to store one, so Takaro reads
-  it back as empty.
-- **Console commands are allowlisted and the allowlist starts almost empty.** Add what you
-  need to `commandAllowlistExact` / `commandAllowlistPrefixes` or the action is useless.
-  And when upgrading, delete `BepInEx/cache/chainloader_typeloader.dat` or BepInEx may keep
-  loading the old plugin.
+- Players see a "Takaro" entry in the in-game player list; it is how server chat works.
+- Without the mod, a kill finished by a creature after the player hit it still counts for the player.
+- Ban reasons are discarded: Valheim's ban list stores only the player id.
+- Given and shop items drop at the player's feet; anyone nearby could grab them first.
+- Console commands only run when allowlisted; the default allowlist is just `help`.
+- After upgrading, delete `BepInEx/cache/chainloader_typeloader.dat` or BepInEx may load the old plugin.
 
 ---
 

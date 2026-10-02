@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Takaro.Valheim.Companion.Protocol;
 using Takaro.Valheim.Core;
 
 namespace Takaro.Valheim.Core.Tests;
@@ -8,6 +7,23 @@ namespace Takaro.Valheim.Core.Tests;
 [TestClass]
 public sealed class RequestDispatcherTests
 {
+    [TestMethod]
+    public async Task ReachabilityAnswersWhileTheGameLoopIsStalled()
+    {
+        var dispatcher = new TakaroRequestDispatcher(new FakeAdapter(), new NeverRunningScheduler());
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest("r", "testReachability", JsonDocument.Parse("{}").RootElement))
+            .WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.IsTrue(response.Success);
+    }
+
+    private sealed class NeverRunningScheduler : IMainThreadActionScheduler
+    {
+        public Task<T> ScheduleAsync<T>(Func<T> action, CancellationToken cancellationToken = default) =>
+            new TaskCompletionSource<T>().Task;
+    }
+
     [TestMethod]
     public async Task DispatchesAdminMvpActionsThroughAdapter()
     {
@@ -107,7 +123,7 @@ public sealed class RequestDispatcherTests
     {
         var adapter = new FakeAdapter();
         var dispatcher = new TakaroRequestDispatcher(adapter);
-        var sender = new string('s', CompanionProtocol.MaximumCodeCharacters + 1);
+        var sender = new string('s', TakaroRequestDispatcher.MaximumSenderNameCharacters + 1);
 
         var response = await dispatcher.DispatchAsync(new TakaroRequest(
             "sender-too-long",

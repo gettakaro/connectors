@@ -2,8 +2,15 @@ namespace Takaro.Valheim.Core;
 
 public static class CompanionInventoryActionPolicy
 {
+    public const string UnsupportedErrorCode = "server_only_unsupported";
+    public const string StaleErrorCode = "inventory_snapshot_stale";
+
+    /// <summary>
+    /// Answers getPlayerInventory from the optional companion's snapshot. Without a fresh
+    /// snapshot the answer is an error, never an empty list: Valheim keeps inventories on the
+    /// game client, so the server cannot confirm that a player carries nothing.
+    /// </summary>
     public static TakaroActionResult FromResolvedPlayer(
-        CompanionMode mode,
         TakaroPlayer? player,
         CompanionInventoryCache cache,
         DateTimeOffset now)
@@ -11,13 +18,6 @@ public static class CompanionInventoryActionPolicy
         if (cache is null)
         {
             throw new ArgumentNullException(nameof(cache));
-        }
-
-        if (mode == CompanionMode.Disabled)
-        {
-            return TakaroActionResult.Error(
-                "player_component_unavailable",
-                "Valheim companion inventory reporting is disabled.");
         }
 
         if (player is null)
@@ -32,16 +32,25 @@ public static class CompanionInventoryActionPolicy
             .Select(alias => alias!)
             .Distinct(StringComparer.OrdinalIgnoreCase);
 
+        var sawExpired = false;
         foreach (var alias in aliases)
         {
-            if (cache.TryGetStable(alias, now, out var items) == CompanionInventoryState.Fresh)
+            switch (cache.TryGetStable(alias, now, out var items))
             {
-                return TakaroActionResult.Ok(items);
+                case CompanionInventoryState.Fresh:
+                    return TakaroActionResult.Ok(items);
+                case CompanionInventoryState.Expired:
+                    sawExpired = true;
+                    break;
             }
         }
 
-        return TakaroActionResult.Error(
-            "player_component_unavailable",
-            $"Valheim player '{player.GameId}' has no fresh companion inventory snapshot.");
+        return sawExpired
+            ? TakaroActionResult.Error(
+                StaleErrorCode,
+                $"Valheim player '{player.GameId}' has no fresh inventory snapshot from the optional inventory companion.")
+            : TakaroActionResult.Error(
+                UnsupportedErrorCode,
+                "Valheim keeps player inventories on the game client; this player does not run the optional Takaro inventory companion.");
     }
 }

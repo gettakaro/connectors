@@ -116,10 +116,8 @@ public sealed class CompanionRateLimiter
         || messageType == CompanionMessageTypes.HelloAck
         || messageType == CompanionMessageTypes.HelloNack
         || messageType == CompanionMessageTypes.Heartbeat
-        || messageType == CompanionMessageTypes.Chat
         || messageType == CompanionMessageTypes.InventorySnapshot
-        || messageType == CompanionMessageTypes.PlayerDeath
-        || messageType == CompanionMessageTypes.EntityKilled;
+        || messageType == CompanionMessageTypes.KillVerdict;
 
     private sealed class Bucket
     {

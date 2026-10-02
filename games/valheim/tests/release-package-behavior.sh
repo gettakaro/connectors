@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # What a Valheim release has to be true of, checked against the archives themselves.
 #
-# Two roles, two archives, and the rule that matters: neither may carry the other's
-# assemblies, and the client may carry nothing that talks to Takaro. Since the connector
-# archives are named by the target record, so this also checks the names, the .meta.json
-# sidecar each one carries, and the three different
-# BepInEx-shaped numbers in manifest.json.
+# Two roles, two archives -- the dedicated-server plugin and the optional client inventory
+# companion -- and the rule that matters: neither may carry the other's own assemblies (both
+# ship the shared Takaro.Valheim.Companion.Protocol.dll), and the client may carry nothing
+# that talks to Takaro. The archives are named by the target record, so this also checks the
+# names, the .meta.json sidecar each one carries, the wire protocol version and the three
+# different BepInEx-shaped numbers in manifest.json.
 #
 # Usage: release-package-behavior.sh <version> <dist-dir>
 #   VALHEIM_TARGET_ID, VALHEIM_TARGET_FINGERPRINT   when set, the names and sidecars are
@@ -45,10 +46,10 @@ one_archive() {
   printf '%s\n' "${found[0]}"
 }
 
-# takaro-valheim-plugin.zip and takaro-valheim-companion.zip are the legacy names; the
-# publisher still ships them as aliases of the target-named archives.
+# takaro-valheim-plugin.zip and takaro-valheim-inventory-companion.zip are the legacy names;
+# the publisher still ships them as aliases of the target-named archives.
 server_zip="$(one_archive 'takaro-valheim-plugin*.zip' 'server plugin')"
-client_zip="$(one_archive 'takaro-valheim-companion*.zip' 'client companion')"
+client_zip="$(one_archive 'takaro-valheim-inventory-companion*.zip' 'client companion')"
 
 # When the build knows its target, the archive names and their sidecars have to say so:
 # an archive nobody can place against a target cannot be published as evidence of one.
@@ -81,7 +82,7 @@ check_target_identity() {
 }
 
 check_target_identity "$server_zip" plugin server-plugin
-check_target_identity "$client_zip" companion client-companion
+check_target_identity "$client_zip" inventory-companion client-companion
 
 for archive in "$server_zip" "$client_zip"; do
   [ -f "$archive" ] || {
@@ -103,13 +104,13 @@ unzip -q "$server_zip" -d "$server_extract"
 unzip -q "$client_zip" -d "$client_extract"
 
 server_dir="$server_extract/TakaroValheim"
-client_dir="$client_extract/TakaroValheimCompanion"
+client_dir="$client_extract/TakaroValheimInventoryCompanion"
 [ -d "$server_dir" ] || {
   printf 'server archive is missing TakaroValheim root\n' >&2
   exit 1
 }
 [ -d "$client_dir" ] || {
-  printf 'client archive is missing TakaroValheimCompanion root\n' >&2
+  printf 'client archive is missing TakaroValheimInventoryCompanion root\n' >&2
   exit 1
 }
 
@@ -184,9 +185,9 @@ validate_manifest() {
       and .productVersion == $version
       and .pluginVersion == $plugin
       and .processRole == $role
-      and .protocol.minimum == 2
-      and .protocol.current == 2
-      and .protocol.maximum == 2
+      and .protocol.minimum == 3
+      and .protocol.current == 3
+      and .protocol.maximum == 3
       and .bepInExPack.namespace == "denikson"
       and .bepInExPack.name == "BepInExPack_Valheim"
       and (.bepInExPack.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
@@ -202,11 +203,11 @@ validate_manifest() {
 }
 
 validate_manifest "$server_dir/manifest.json" "TakaroValheim" "dedicated-server"
-validate_manifest "$client_dir/manifest.json" "TakaroValheimCompanion" "graphical-client"
+validate_manifest "$client_dir/manifest.json" "TakaroValheimInventoryCompanion" "graphical-client"
 
 for marker in registrationToken identityToken takaroWsUrl connect.takaro.io \
   ClientWebSocket TakaroWebSocketRunner ValheimServerAdapter; do
-  if rg -a -q "$marker" "$client_extract/TakaroValheimCompanion"; then
+  if rg -a -q "$marker" "$client_extract/TakaroValheimInventoryCompanion"; then
     printf 'client artifact contains banned marker: %s\n' "$marker" >&2
     exit 1
   fi

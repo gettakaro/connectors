@@ -145,7 +145,7 @@ public sealed class CompanionInventoryReaderContractTests
         var items = Enumerable.Range(0, CompanionProtocol.MaximumInventoryStacks + 40)
             .Select(index => Item(
                 new string('c', CompanionProtocol.MaximumCodeCharacters + 20),
-                new string('n', CompanionProtocol.MaximumChatCharacters + 20),
+                new string('n', CompanionProtocol.MaximumNameCharacters + 20),
                 amount: CompanionProtocol.MaximumInventoryAmount + 20,
                 slot: index,
                 quality: CompanionProtocol.MaximumItemQuality + 20,
@@ -158,7 +158,7 @@ public sealed class CompanionInventoryReaderContractTests
         foreach (var stack in snapshot.Stacks)
         {
             Assert.IsTrue(stack.Code.Length <= CompanionProtocol.MaximumCodeCharacters);
-            Assert.IsTrue(stack.Name.Length <= CompanionProtocol.MaximumChatCharacters);
+            Assert.IsTrue(stack.Name.Length <= CompanionProtocol.MaximumNameCharacters);
             Assert.IsTrue(stack.Amount >= 1 && stack.Amount <= CompanionProtocol.MaximumInventoryAmount);
             Assert.IsTrue(stack.Quality >= 1 && stack.Quality <= CompanionProtocol.MaximumItemQuality);
             Assert.IsTrue(stack.Durability >= 0 && stack.Durability <= CompanionProtocol.MaximumDurability);

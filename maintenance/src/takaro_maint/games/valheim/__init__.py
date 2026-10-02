@@ -9,11 +9,11 @@ game will load anything. So the exact install is the depot set plus the pack, an
 recorded in the ledger — a replaced ``BepInEx/core/BepInEx.dll`` is as much a drifted
 install as a replaced ``valheim_server.x86_64``.
 
-*Two artifact roles.* The dedicated-server plugin and the graphical-client companion are
-built from the same source tree and published as two zips. Only the plugin is ever loaded
-by a dedicated server, so only the plugin is unpacked on deploy; the companion is parked
-beside it (``takaro-companion/``) so the role has a recorded home and a reviewer can see
-exactly which bytes a release shipped.
+*Two artifact roles.* The dedicated-server plugin and the optional graphical-client
+inventory companion are built from the same source tree and published as two zips. Only the
+plugin is ever loaded by a dedicated server, so only the plugin is unpacked on deploy; the
+companion is parked beside it (``takaro-companion/``) so the role has a recorded home and a
+reviewer can see exactly which bytes a release shipped. Any other role is refused.
 
 *A runtime image that installs things.* The image used for verification can fetch the game
 with SteamCMD and the pack from Thunderstore's ``latest`` on every boot. Both are switched
@@ -398,15 +398,20 @@ class ValheimAdapter(BaseAdapter):
         The dedicated server never loads the companion, so unpacking it would put a client
         assembly on the plugin search path. It stays a zip in ``takaro-companion/``: the
         role has a recorded home, and what a release shipped can be read off the server.
+        Any role other than these two is refused before anything is written.
         """
         install_dir = dest / paths.safe_relative(component["installDir"], field="components[].installDir")
         role = str(component["role"])
         if role == "client-companion":
-            for stale in sorted(install_dir.glob("takaro-valheim-companion-*.zip")):
+            for stale in sorted(install_dir.glob("takaro-valheim-inventory-companion-*.zip")):
                 if stale.name != artifact.name:
                     stale.unlink()
             output.info(f"parked {artifact.name} in {component['installDir']}/ (never loaded by the dedicated server)")
             return
+        if role != "server-plugin":
+            raise ConflictError(
+                f"Valheim ships only server-plugin and client-companion artifacts, not '{role}'; nothing was deployed"
+            )
 
         folder = install_dir / PLUGIN_FOLDER
         install_dir.mkdir(parents=True, exist_ok=True)

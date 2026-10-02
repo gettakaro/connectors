@@ -23,13 +23,7 @@ public sealed class CompanionClientState
     public static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(5);
 
     private const int MaximumRetiredNonces = 16;
-    private const CompanionCapability KnownCapabilities =
-        CompanionCapability.Chat
-        | CompanionCapability.Inventory
-        | CompanionCapability.PlayerDeath
-        | CompanionCapability.EntityKilled
-        | CompanionCapability.ServerChat
-        | CompanionCapability.ItemGrant;
+    private const CompanionCapability KnownCapabilities = CompanionCapability.Inventory;
 
     private static readonly JsonSerializerOptions WireJson = new()
     {
@@ -48,7 +42,6 @@ public sealed class CompanionClientState
     private CompanionCapability activeCapabilities;
     private long generation;
     private long nextSequence;
-    private long lastServerSequence;
     private TimeSpan nextHeartbeatAt = TimeSpan.MaxValue;
 
     public CompanionClientState(
@@ -142,7 +135,7 @@ public sealed class CompanionClientState
         }
 
         Reset(retireCurrentSession: true);
-        var acceptedCapabilities = hello.Capabilities & supportedCapabilities;
+        var acceptedCapabilities = (CompanionCapability)hello.Capabilities & supportedCapabilities;
         if (!TryCreateEnvelope(
                 selectedProtocolVersion,
                 helloEnvelope.SessionNonce,
@@ -186,7 +179,6 @@ public sealed class CompanionClientState
         activeProtocolVersion = prepared.Envelope.ProtocolVersion;
         activeCapabilities = helloAck.AcceptedCapabilities;
         nextSequence = 2;
-        lastServerSequence = prepared.Envelope.Sequence;
         nextHeartbeatAt = SaturatingAdd(monotonicNow, HeartbeatInterval);
         pendingHelloAck = null;
         CanReport = true;
@@ -228,10 +220,8 @@ public sealed class CompanionClientState
         out CompanionEnvelope? envelope)
     {
         envelope = null;
-        if (messageType != CompanionMessageTypes.Chat
-            && messageType != CompanionMessageTypes.InventorySnapshot
-            && messageType != CompanionMessageTypes.PlayerDeath
-            && messageType != CompanionMessageTypes.EntityKilled)
+        if (messageType != CompanionMessageTypes.InventorySnapshot
+            && messageType != CompanionMessageTypes.KillVerdict)
         {
             return false;
         }
@@ -243,68 +233,6 @@ public sealed class CompanionClientState
         }
 
         return TryCreateOutboundEnvelope(messageType, payload, out envelope);
-    }
-
-    /// <summary>
-    /// Validates an inbound item grant against the same session, nonce, protocol and
-    /// monotonic server-sequence rules as server chat. It deliberately shares
-    /// <c>lastServerSequence</c> with every other inbound type so grants and chat stay
-    /// ordered on one stream and neither can be replayed.
-    /// </summary>
-    public bool TryAcceptItemGrant(
-        CompanionEnvelope envelope,
-        out CompanionItemGrant? grant)
-    {
-        grant = null;
-        if (!CanReport
-            || activeNonce is null
-            || (activeCapabilities & CompanionCapability.ItemGrant) == 0
-            || envelope is null
-            || envelope.Type != CompanionMessageTypes.ItemGrant
-            || envelope.ProtocolVersion != activeProtocolVersion
-            || !string.Equals(envelope.SessionNonce, activeNonce, StringComparison.Ordinal)
-            || envelope.Sequence <= lastServerSequence
-            || !IsStrictlyValidEnvelope(envelope)
-            || !CompanionEnvelopeCodec.TryDecodePayload<CompanionItemGrant>(
-                envelope,
-                out var decoded,
-                out _)
-            || decoded is null)
-        {
-            return false;
-        }
-
-        lastServerSequence = envelope.Sequence;
-        grant = decoded;
-        return true;
-    }
-
-    public bool TryAcceptServerChat(
-        CompanionEnvelope envelope,
-        out CompanionServerChatMessage? message)
-    {
-        message = null;
-        if (!CanReport
-            || activeNonce is null
-            || (activeCapabilities & CompanionCapability.ServerChat) == 0
-            || envelope is null
-            || envelope.Type != CompanionMessageTypes.ServerChat
-            || envelope.ProtocolVersion != activeProtocolVersion
-            || !string.Equals(envelope.SessionNonce, activeNonce, StringComparison.Ordinal)
-            || envelope.Sequence <= lastServerSequence
-            || !IsStrictlyValidEnvelope(envelope)
-            || !CompanionEnvelopeCodec.TryDecodePayload<CompanionServerChatMessage>(
-                envelope,
-                out var decoded,
-                out _)
-            || decoded is null)
-        {
-            return false;
-        }
-
-        lastServerSequence = envelope.Sequence;
-        message = decoded;
-        return true;
     }
 
     public void Reset() => Reset(retireCurrentSession: true);
@@ -359,7 +287,6 @@ public sealed class CompanionClientState
         activeProtocolVersion = 0;
         activeCapabilities = CompanionCapability.None;
         nextSequence = 0;
-        lastServerSequence = 0;
         nextHeartbeatAt = TimeSpan.MaxValue;
         CanReport = false;
         generation = NextGeneration(generation);
@@ -429,22 +356,10 @@ public sealed class CompanionClientState
         }
     }
 
-    private static CompanionCapability RequiredCapability(string messageType)
-    {
-        switch (messageType)
-        {
-            case CompanionMessageTypes.Chat:
-                return CompanionCapability.Chat;
-            case CompanionMessageTypes.InventorySnapshot:
-                return CompanionCapability.Inventory;
-            case CompanionMessageTypes.PlayerDeath:
-                return CompanionCapability.PlayerDeath;
-            case CompanionMessageTypes.EntityKilled:
-                return CompanionCapability.EntityKilled;
-            default:
-                return CompanionCapability.None;
-        }
-    }
+    private static CompanionCapability RequiredCapability(string messageType) =>
+        messageType == CompanionMessageTypes.InventorySnapshot
+            ? CompanionCapability.Inventory
+            : CompanionCapability.None;
 
     private static long NextGeneration(long value) =>
         value == long.MaxValue ? 1 : value + 1;

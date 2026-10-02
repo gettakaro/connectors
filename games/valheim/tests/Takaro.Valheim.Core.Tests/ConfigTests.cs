@@ -78,7 +78,7 @@ public sealed class ConfigTests
     }
 
     [TestMethod]
-    public void FromDictionaryAppliesExactCompanionDefaults()
+    public void FromDictionaryDefaultsChatSenderNameToTakaro()
     {
         var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
         {
@@ -86,42 +86,25 @@ public sealed class ConfigTests
             ["serverName"] = "Meadows"
         });
 
-        Assert.AreEqual("Disabled", ReadCompanionMode(config));
+        Assert.AreEqual("Takaro", config.ChatSenderName);
+        Assert.AreEqual(ConnectorConfig.DefaultChatSenderName, config.ChatSenderName);
     }
 
-    [DataTestMethod]
-    [DataRow("disabled", "Disabled")]
-    [DataRow("oPtIoNaL", "Optional")]
-    [DataRow("REQUIRED", "Required")]
-    public void FromDictionaryParsesEveryCompanionModeCaseInsensitively(
-        string configuredValue,
-        string expectedMode)
+    [TestMethod]
+    public void FromDictionaryTrimsConfiguredChatSenderName()
     {
         var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
         {
             ["registrationToken"] = "reg-123",
             ["serverName"] = "Meadows",
-            ["companionMode"] = configuredValue
+            ["chatSenderName"] = "  Server Bot  "
         });
 
-        Assert.AreEqual(expectedMode, ReadCompanionMode(config));
+        Assert.AreEqual("Server Bot", config.ChatSenderName);
     }
 
     [TestMethod]
-    public void FromDictionaryTrimsCompanionModeWhitespace()
-    {
-        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
-        {
-            ["registrationToken"] = "reg-123",
-            ["serverName"] = "Meadows",
-            ["companionMode"] = "  optional  "
-        });
-
-        Assert.AreEqual("Optional", ReadCompanionMode(config));
-    }
-
-    [TestMethod]
-    public void FromDictionaryDefaultsBlankOrNullCompanionMode()
+    public void FromDictionaryDefaultsBlankOrNullChatSenderName()
     {
         foreach (var value in new string?[] { "", "   ", null })
         {
@@ -129,38 +112,54 @@ public sealed class ConfigTests
             {
                 ["registrationToken"] = "reg-123",
                 ["serverName"] = "Meadows",
-                ["companionMode"] = value!
+                ["chatSenderName"] = value!
             });
 
-            Assert.AreEqual("Disabled", ReadCompanionMode(config));
+            Assert.AreEqual("Takaro", config.ChatSenderName);
         }
     }
 
-    [DataTestMethod]
-    [DataRow("enabled")]
-    [DataRow("1")]
-    [DataRow("optional|required")]
-    public void TryFromDictionaryRejectsEveryOtherNonblankCompanionMode(string configuredValue)
+    [TestMethod]
+    public void FromDictionaryAcceptsChatSenderNameAtTheLengthLimit()
+    {
+        var name = new string('n', ConnectorConfig.MaximumChatSenderNameCharacters);
+        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
+        {
+            ["registrationToken"] = "reg-123",
+            ["serverName"] = "Meadows",
+            ["chatSenderName"] = name
+        });
+
+        Assert.AreEqual(128, ConnectorConfig.MaximumChatSenderNameCharacters);
+        Assert.AreEqual(name, config.ChatSenderName);
+    }
+
+    [TestMethod]
+    public void TryFromDictionaryRejectsOverlongChatSenderName()
     {
         var ok = ConnectorConfig.TryFromDictionary(new Dictionary<string, string>
         {
             ["registrationToken"] = "reg-123",
             ["serverName"] = "Meadows",
-            ["companionMode"] = configuredValue
+            ["chatSenderName"] = new string('n', ConnectorConfig.MaximumChatSenderNameCharacters + 1)
         }, out var config, out var error);
 
         Assert.IsFalse(ok);
         Assert.IsNull(config);
-        StringAssert.Contains(error, "companionMode");
+        StringAssert.Contains(error, "chatSenderName");
     }
 
-    private static string ReadCompanionMode(ConnectorConfig config)
+    [TestMethod]
+    public void FromDictionaryIgnoresRetiredCompanionModeKey()
     {
-        var property = typeof(ConnectorConfig).GetProperty("CompanionMode")
-            ?? throw new AssertFailedException("ConnectorConfig is missing CompanionMode.");
+        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
+        {
+            ["registrationToken"] = "reg-123",
+            ["serverName"] = "Meadows",
+            ["companionMode"] = "required"
+        });
 
-        return property.GetValue(config)?.ToString()
-            ?? throw new AssertFailedException("ConnectorConfig.CompanionMode is null.");
+        Assert.AreEqual("Meadows", config.ServerName);
+        Assert.IsNull(typeof(ConnectorConfig).GetProperty("CompanionMode"));
     }
-
 }

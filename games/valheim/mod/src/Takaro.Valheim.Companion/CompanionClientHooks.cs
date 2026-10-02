@@ -1,196 +1,140 @@
 #if TAKARO_VALHEIM_COMPANION
 using HarmonyLib;
+using Takaro.Valheim.Companion.Protocol;
 
 namespace Takaro.Valheim.Companion;
 
-internal sealed class CompanionChatHookState
-{
-    public static readonly CompanionChatHookState None = new(false, false, null);
-
-    public CompanionChatHookState(
-        bool suppressOriginal,
-        bool reportAfterOriginal,
-        string? message)
-    {
-        SuppressOriginal = suppressOriginal;
-        ReportAfterOriginal = reportAfterOriginal;
-        Message = message;
-    }
-
-    public bool SuppressOriginal { get; }
-
-    public bool ReportAfterOriginal { get; }
-
-    public string? Message { get; }
-}
-
+/// <summary>
+/// The one game hook: a creature this client owns is about to die. The prefix only reads a
+/// few fields (cheap, no allocation beyond one small object); the postfix sends one
+/// rate-limited verdict. Nothing waits for the server.
+/// </summary>
 internal static class CompanionClientHooks
 {
-    private static CompanionClientBridge? bridge;
-    private static CompanionChatPolicy policy = new(Array.Empty<string>());
-    private static readonly CompanionCombatReader combatReader = new();
-    private static Action<string> log = _ => { };
+    private static readonly System.Reflection.FieldInfo? LastHitField =
+        AccessTools.Field(typeof(Character), "m_lastHit");
 
-    public static void Initialize(
-        CompanionClientBridge clientBridge,
-        string? commandPrefixes,
-        Action<string>? logger)
+    private static CompanionClientBridge? bridge;
+    private static Action<string> log = _ => { };
+    private static bool loggedFailure;
+
+    public static void Initialize(CompanionClientBridge clientBridge, Action<string>? logger)
     {
         bridge = clientBridge ?? throw new ArgumentNullException(nameof(clientBridge));
-        var prefixes = CompanionChatPolicy.ParsePrefixes(commandPrefixes);
-        policy = new CompanionChatPolicy(prefixes);
         log = logger ?? (_ => { });
-        log($"Takaro Valheim Companion chat hooks initialized with {prefixes.Count} command prefix(es).");
+        if (LastHitField is null)
+        {
+            log("Takaro Valheim Inventory Companion could not find Character.m_lastHit; kill verdicts will report lastHitAttackerKind=none.");
+        }
     }
 
     public static void Shutdown()
     {
         bridge = null;
-        policy = new CompanionChatPolicy(Array.Empty<string>());
-        combatReader.Reset();
         log = _ => { };
     }
 
-    public static CompanionChatHookState BeforeTalkerSay(
-        Talker __instance,
-        string text)
+    public static CompanionKillObservation? Observe(Character character)
     {
-        var activeBridge = bridge;
-        var isLocalPlayer = __instance.GetComponent<Player>() == Player.m_localPlayer;
-        var decision = policy.Evaluate(isLocalPlayer, text);
-        if (activeBridge is null || decision.Message is null)
+        try
         {
-            return CompanionChatHookState.None;
-        }
+            var localPlayer = Player.m_localPlayer;
+            if (bridge is null
+                || localPlayer == null
+                || character == null
+                || character is Player
+                || character.GetComponent<Player>() != null)
+            {
+                return null;
+            }
 
-        if (decision.ShouldAttemptCommandReport)
+            var view = character.GetComponent<ZNetView>();
+            if (view == null || !view.IsValid() || !view.IsOwner())
+            {
+                return null;
+            }
+
+            var zdo = view.GetZDO();
+            if (zdo is null || !zdo.GetBool(ZDOVars.s_attackers + localPlayer.GetPlayerName()))
+            {
+                return null;
+            }
+
+            var prefab = ZNetScene.instance?.GetPrefab(zdo.GetPrefab());
+            var prefabName = prefab != null
+                ? prefab.name
+                : character.gameObject.name.Replace("(Clone)", string.Empty);
+            return new CompanionKillObservation(
+                zdo.m_uid.UserID,
+                zdo.m_uid.ID,
+                prefabName,
+                character.m_name,
+                localPlayerMarkedAsAttacker: true,
+                AttackerKind(character, localPlayer));
+        }
+        catch (Exception ex)
         {
-            var commandAccepted = activeBridge.TrySendChat(decision.Message);
-            return new CompanionChatHookState(
-                suppressOriginal: commandAccepted,
-                reportAfterOriginal: false,
-                decision.Message);
+            LogOnce($"Takaro Valheim Inventory Companion could not read a creature death: {ex.Message}");
+            return null;
         }
-
-        return decision.ShouldReportAfterOriginal
-            ? new CompanionChatHookState(
-                suppressOriginal: false,
-                reportAfterOriginal: true,
-                decision.Message)
-            : CompanionChatHookState.None;
     }
 
-    public static void AfterTalkerSay(CompanionChatHookState state)
+    public static void Report(CompanionKillObservation? observation)
     {
         var activeBridge = bridge;
-        if (state.ReportAfterOriginal
-            && state.Message is not null
-            && activeBridge is not null)
-        {
-            _ = activeBridge.TrySendChat(state.Message);
-        }
-    }
-
-    public static void OnLocalPlayerDeath(Player __instance)
-    {
-        var activeBridge = bridge;
-        if (activeBridge is null
-            || __instance != Player.m_localPlayer)
+        if (activeBridge is null || observation is null)
         {
             return;
         }
 
         try
         {
-            if (combatReader.TryCreateLocalPlayerDeath(
-                    __instance,
-                    MonotonicNow(),
-                    DateTimeOffset.UtcNow,
-                    out var report)
-                && report is not null)
+            var verdict = CompanionKillVerdictPolicy.ToVerdict(observation);
+            if (verdict is not null)
             {
-                _ = activeBridge.TrySendPlayerDeath(report);
+                _ = activeBridge.TrySendKillVerdict(verdict);
             }
         }
         catch (Exception ex)
         {
-            log($"Takaro Valheim Companion could not report local player death: {ex.Message}");
+            LogOnce($"Takaro Valheim Inventory Companion could not send a kill verdict: {ex.Message}");
         }
     }
 
-    public static void OnCharacterDeath(Character character)
+    private static string AttackerKind(Character character, Player localPlayer)
     {
-        var activeBridge = bridge;
-        if (activeBridge is null
-            || character is Player
-            || character.GetComponent<Player>() != null)
+        var attacker = (LastHitField?.GetValue(character) as HitData)?.GetAttacker();
+        if (attacker == null)
         {
-            return;
+            return CompanionAttackerKind.None;
         }
 
-        try
+        if (attacker == localPlayer)
         {
-            var hit = CompanionCombatReader.GetLastHit(character);
-            if (hit?.GetAttacker() != Player.m_localPlayer)
-            {
-                return;
-            }
+            return CompanionAttackerKind.LocalPlayer;
+        }
 
-            if (combatReader.TryCreateEntityKilled(
-                    character,
-                    hit,
-                    MonotonicNow(),
-                    DateTimeOffset.UtcNow,
-                    out var report)
-                && report is not null)
-            {
-                _ = activeBridge.TrySendEntityKilled(report);
-            }
-        }
-        catch (Exception ex)
-        {
-            log($"Takaro Valheim Companion could not report local entity kill: {ex.Message}");
-        }
+        return attacker is Player ? CompanionAttackerKind.OtherPlayer : CompanionAttackerKind.Creature;
     }
 
-    private static TimeSpan MonotonicNow() =>
-        UnityEngine.Time.realtimeSinceStartup > 0
-            ? TimeSpan.FromSeconds(UnityEngine.Time.realtimeSinceStartup)
-            : TimeSpan.Zero;
-}
-
-[HarmonyPatch(typeof(Talker), "Say")]
-internal static class CompanionTalkerSayPatch
-{
-    private static bool Prefix(
-        Talker __instance,
-        string text,
-        out CompanionChatHookState __state)
+    private static void LogOnce(string message)
     {
-        __state = CompanionClientHooks.BeforeTalkerSay(__instance, text);
-        return !__state.SuppressOriginal;
-    }
-
-    private static void Postfix(CompanionChatHookState __state)
-    {
-        if (__state.ReportAfterOriginal)
+        if (!loggedFailure)
         {
-            CompanionClientHooks.AfterTalkerSay(__state);
+            loggedFailure = true;
+            log(message);
         }
     }
-}
-
-[HarmonyPatch(typeof(Player), "OnDeath")]
-internal static class CompanionPlayerOnDeathPatch
-{
-    private static void Postfix(Player __instance) =>
-        CompanionClientHooks.OnLocalPlayerDeath(__instance);
 }
 
 [HarmonyPatch(typeof(Character), "OnDeath")]
 internal static class CompanionCharacterOnDeathPatch
 {
-    private static void Postfix(Character __instance) =>
-        CompanionClientHooks.OnCharacterDeath(__instance);
+    // Read before the death runs: OnDeath destroys the creature's network object.
+    private static void Prefix(Character __instance, out CompanionKillObservation? __state) =>
+        __state = CompanionClientHooks.Observe(__instance);
+
+    private static void Postfix(CompanionKillObservation? __state) =>
+        CompanionClientHooks.Report(__state);
 }
 #endif

@@ -10,7 +10,7 @@ namespace Takaro.Valheim.Companion;
 public sealed class ValheimCompanionPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.takaro.valheim.companion";
-    public const string PluginName = "Takaro Valheim Companion";
+    public const string PluginName = "Takaro Valheim Inventory Companion";
     public const string PluginVersion = TakaroCompanionBuildVersion.BepInExVersion;
     public const string ProductVersion = TakaroCompanionBuildVersion.ProductVersion;
     public const int ProtocolVersion = TakaroCompanionBuildVersion.ProtocolVersion;
@@ -22,27 +22,19 @@ public sealed class ValheimCompanionPlugin : BaseUnityPlugin
     {
         if (!IsGraphicalValheimClient())
         {
-            Logger.LogWarning("Takaro Valheim Companion only runs in the graphical Valheim client; plugin disabled.");
+            Logger.LogWarning("Takaro Valheim Inventory Companion only runs in the graphical Valheim client; dedicated server process detected, mod disabled.");
             enabled = false;
             return;
         }
 
         try
         {
-            var commandPrefixes = Config.Bind(
-                "Takaro",
-                "companionCommandPrefixes",
-                "$",
-                "Semicolon-separated chat prefixes handled as Takaro commands.").Value;
             harmony = new Harmony(PluginGuid);
             clientBridge = new CompanionClientBridge(Logger.LogInfo);
             clientBridge.Initialize();
-            CompanionClientHooks.Initialize(
-                clientBridge,
-                commandPrefixes,
-                Logger.LogInfo);
+            CompanionClientHooks.Initialize(clientBridge, Logger.LogInfo);
             harmony.PatchAll(typeof(ValheimCompanionPlugin).Assembly);
-            Logger.LogInfo($"Takaro Valheim Companion {ProductVersion} started with protocol {ProtocolVersion}.");
+            Logger.LogInfo($"Takaro Valheim Inventory Companion {ProductVersion} started with protocol {ProtocolVersion}. Optional: it only reports this character's inventory (and kill verdicts) to a Takaro server; it holds no Takaro credentials.");
         }
         catch (Exception ex)
         {
@@ -52,7 +44,7 @@ public sealed class ValheimCompanionPlugin : BaseUnityPlugin
             harmony?.UnpatchSelf();
             harmony = null;
             enabled = false;
-            Logger.LogError($"Takaro Valheim Companion startup failed and was rolled back: {ex.Message}");
+            Logger.LogError($"Takaro Valheim Inventory Companion startup failed and was rolled back: {ex.Message}");
         }
     }
 
@@ -85,7 +77,7 @@ namespace Takaro.Valheim.Companion;
 public sealed class ValheimCompanionPlugin
 {
     public const string PluginGuid = "com.takaro.valheim.companion";
-    public const string PluginName = "Takaro Valheim Companion";
+    public const string PluginName = "Takaro Valheim Inventory Companion";
     public const string PluginVersion = TakaroCompanionBuildVersion.BepInExVersion;
     public const string ProductVersion = TakaroCompanionBuildVersion.ProductVersion;
     public const int ProtocolVersion = TakaroCompanionBuildVersion.ProtocolVersion;

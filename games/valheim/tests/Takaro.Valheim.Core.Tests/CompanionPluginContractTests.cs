@@ -154,25 +154,6 @@ public sealed class CompanionPluginContractTests
     }
 
     [TestMethod]
-    public void CompanionPatchesOnlyLocalTalkerSayForChatReports()
-    {
-        var hooks = ReadCompanionSource("CompanionClientHooks.cs");
-        var bridge = ReadCompanionSource("CompanionClientBridge.cs");
-        var entrypoint = ReadCompanionSource("ValheimCompanionPlugin.cs");
-
-        StringAssert.Contains(hooks, "[HarmonyPatch(typeof(Talker), \"Say\")]");
-        StringAssert.Contains(hooks, "__instance.GetComponent<Player>() == Player.m_localPlayer");
-        StringAssert.Contains(hooks, "private static bool Prefix(");
-        StringAssert.Contains(hooks, "out CompanionChatHookState __state");
-        StringAssert.Contains(hooks, "private static void Postfix(CompanionChatHookState __state)");
-        Assert.IsFalse(hooks.Contains("RPC_Say", StringComparison.Ordinal));
-        StringAssert.Contains(bridge, "TrySendChat(string message)");
-        StringAssert.Contains(entrypoint, "CompanionClientHooks.Initialize(");
-        StringAssert.Contains(entrypoint, "CompanionClientHooks.Shutdown()");
-        StringAssert.Contains(entrypoint, "companionCommandPrefixes");
-    }
-
-    [TestMethod]
     public void CompanionPollsBoundedInventoryOnlyAfterNegotiation()
     {
         var reader = ReadCompanionSource("CompanionInventoryReader.cs");
@@ -194,35 +175,69 @@ public sealed class CompanionPluginContractTests
     }
 
     [TestMethod]
-    public void CompanionCombatReportsShareNegotiatedExactServerTransport()
+    public void CompanionKillHookReadsOnlyOwnedCreaturesTheLocalPlayerIsMarkedOn()
     {
+        var hooks = ReadCompanionSource("CompanionClientHooks.cs");
         var bridge = ReadCompanionSource("CompanionClientBridge.cs");
 
-        StringAssert.Contains(bridge, "TrySendPlayerDeath(CompanionPlayerDeathReport report)");
-        StringAssert.Contains(bridge, "TrySendEntityKilled(CompanionEntityKilledReport report)");
-        StringAssert.Contains(bridge, "CompanionMessageTypes.PlayerDeath");
-        StringAssert.Contains(bridge, "CompanionMessageTypes.EntityKilled");
-        StringAssert.Contains(bridge, "TrySendReport(");
-        Assert.IsFalse(bridge.Contains("InvokeRoutedRPC(CompanionMessageTypes", StringComparison.Ordinal));
+        StringAssert.Contains(hooks, "[HarmonyPatch(typeof(Character), \"OnDeath\")]");
+        StringAssert.Contains(hooks, "private static void Prefix(Character __instance, out CompanionKillObservation? __state)");
+        StringAssert.Contains(hooks, "view.IsOwner()");
+        StringAssert.Contains(hooks, "character is Player");
+        StringAssert.Contains(hooks, "ZDOVars.s_attackers + localPlayer.GetPlayerName()");
+        StringAssert.Contains(hooks, "AccessTools.Field(typeof(Character), \"m_lastHit\")");
+        StringAssert.Contains(hooks, "attacker == localPlayer");
+        StringAssert.Contains(bridge, "killVerdictLimiter.TryConsume(");
+        StringAssert.Contains(bridge, "CompanionMessageTypes.KillVerdict");
+        Assert.IsFalse(hooks.Contains("typeof(Player), \"OnDeath\"", StringComparison.Ordinal));
     }
 
     [TestMethod]
-    public void CompanionRendersAuthenticatedServerMessagesOnlyInNormalChat()
+    public void ServerBridgeIsOptionalNeverKicksNeverWaitsAndBindsToTheArrivalPeer()
     {
-        var bridge = ReadCompanionSource("CompanionClientBridge.cs");
+        var bridge = ReadValheimFile("mod/src/Takaro.Valheim.Plugin/InventoryCompanionBridge.cs");
+        var entrypoint = ReadValheimFile("mod/src/Takaro.Valheim.Plugin/ValheimTakaroPlugin.cs");
+        var config = ReadValheimFile("mod/src/Takaro.Valheim.Core/ConnectorConfig.cs");
 
-        StringAssert.Contains(bridge, "CompanionCapability.ServerChat");
-        StringAssert.Contains(bridge, "sender != serverPeer.m_uid");
-        StringAssert.Contains(bridge, "state.TryAcceptServerChat(");
-        StringAssert.Contains(
-            bridge,
-            "Chat.instance.AddString(chat.Sender, chat.Message, Talker.Type.Normal)");
-        StringAssert.Contains(
-            bridge,
-            "AccessTools.Field(typeof(Chat), \"m_hideTimer\")?.SetValue(Chat.instance, 0f)");
-        Assert.IsFalse(bridge.Contains("MessageHud", StringComparison.Ordinal));
-        Assert.IsFalse(bridge.Contains("ShowMessage", StringComparison.Ordinal));
-        Assert.IsFalse(bridge.Contains("Chat.instance.SendText", StringComparison.Ordinal));
+        foreach (var forbidden in new[] { "\"Kicked\"", ".Disconnect(", "await ", "companionMode", "CompanionMode", "ShowMessage" })
+        {
+            Assert.IsFalse(bridge.Contains(forbidden, StringComparison.Ordinal), forbidden);
+        }
+
+        Assert.IsFalse(config.Contains("companion", StringComparison.OrdinalIgnoreCase));
+        StringAssert.Contains(bridge, "playerResolver.TryResolveConnectedPeer(sender, out var peer, out var player)");
+        StringAssert.Contains(bridge, "MatchesTrackedPeer(sender, peer)");
+        StringAssert.Contains(bridge, "ReferenceEquals(peer.m_rpc, arrival)");
+        StringAssert.Contains(bridge, "[HarmonyPatch(typeof(ZRoutedRpc), \"RPC_RoutedRPC\")]");
+        StringAssert.Contains(bridge, "InvokeRoutedRPC(peer.m_uid, CompanionProtocol.RpcName");
+        StringAssert.Contains(bridge, "CompanionProtocol.NegotiationEnvelopeVersion");
+        StringAssert.Contains(bridge, "snapshot.IsRejected");
+        StringAssert.Contains(bridge, "MaximumHelloRetry");
+        StringAssert.Contains(entrypoint, "inventoryCompanion?.Update();");
+        StringAssert.Contains(entrypoint, "ValheimServerAdapter.RefreshReadiness();");
+        StringAssert.Contains(entrypoint, "ValheimServerEventBridge.Update();");
+        StringAssert.Contains(entrypoint, "inventoryCompanion?.Dispose();");
+    }
+
+    [TestMethod]
+    public void CompanionHasNoConfigChatOrItemHandling()
+    {
+        var combined = ReadAllCompanionText();
+        foreach (var forbidden in new[]
+                 {
+                     "Config.Bind",
+                     "companionCommandPrefixes",
+                     "typeof(Talker)",
+                     "Chat.instance",
+                     "ServerChat",
+                     "ItemGrant",
+                     "AddItem(",
+                     "\"Kicked\"",
+                     "Disconnect("
+                 })
+        {
+            Assert.IsFalse(combined.Contains(forbidden, StringComparison.Ordinal), forbidden);
+        }
     }
 
     private static string ReadAllCompanionText() =>

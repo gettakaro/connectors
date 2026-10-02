@@ -86,6 +86,21 @@ public sealed class ValheimPlayerResolver
         return false;
     }
 
+    /// <summary>Maps an authenticated network peer to its Takaro player.</summary>
+    public bool TryResolvePeerPlayer(ZNetPeer peer, out TakaroPlayer? player)
+    {
+        if (peer is null || !peer.IsReady())
+        {
+            player = null;
+            return false;
+        }
+
+        player = TryFindPlayerInfoForPeer(peer, out var playerInfo)
+            ? ToTakaroPlayer(playerInfo)
+            : ToTakaroPlayer(peer);
+        return true;
+    }
+
     public bool TryResolveConnectedPeer(
         long sender,
         out ZNetPeer? peer,

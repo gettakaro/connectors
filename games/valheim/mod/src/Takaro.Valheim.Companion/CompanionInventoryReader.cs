@@ -204,10 +204,9 @@ public sealed class CompanionInventoryReader
                 var code = item.m_dropPrefab != null
                     ? item.m_dropPrefab.name
                     : rawName;
-                var readableName = string.IsNullOrWhiteSpace(rawName)
-                    || rawName!.StartsWith("$", StringComparison.Ordinal)
-                        ? code
-                        : rawName;
+                // The item's "$item_..." token: the server turns it into the English display
+                // name, so every player's inventory reads the same whatever their language.
+                var readableName = string.IsNullOrWhiteSpace(rawName) ? code : rawName;
                 var slotValue = ((long)item.m_gridPos.y * width) + item.m_gridPos.x;
                 var slot = slotValue < int.MinValue || slotValue > int.MaxValue
                     ? -1
@@ -248,7 +247,7 @@ public sealed class CompanionInventoryReader
 
         var name = BoundedRequired(
             item.Name,
-            CompanionProtocol.MaximumChatCharacters) ?? code;
+            CompanionProtocol.MaximumNameCharacters) ?? code;
         var durability = float.IsNaN(item.Durability)
             || float.IsInfinity(item.Durability)
                 ? 0

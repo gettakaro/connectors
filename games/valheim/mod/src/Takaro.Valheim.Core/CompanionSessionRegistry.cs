@@ -29,17 +29,14 @@ public sealed record CompanionSessionSnapshot(
     CompanionCapability Capabilities,
     long LastSequence,
     DateTimeOffset? LastHeartbeat,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt,
+    bool IsRejected = false,
+    int? RejectedMinimumVersion = null,
+    int? RejectedMaximumVersion = null);
 
 public sealed class CompanionSessionRegistry
 {
-    private const CompanionCapability KnownCapabilities =
-        CompanionCapability.Chat
-        | CompanionCapability.Inventory
-        | CompanionCapability.PlayerDeath
-        | CompanionCapability.EntityKilled
-        | CompanionCapability.ServerChat
-        | CompanionCapability.ItemGrant;
+    private const CompanionCapability KnownCapabilities = CompanionCapability.Inventory;
 
     private readonly int minimumProtocolVersion;
     private readonly int maximumProtocolVersion;
@@ -138,13 +135,16 @@ public sealed class CompanionSessionRegistry
             {
                 return CompanionSessionDecision.Expired;
             }
-            if (session.IsNegotiated)
+            if (session.IsNegotiated || session.IsRejected)
             {
                 return CompanionSessionDecision.RejectSequence;
             }
             if (selectedProtocolVersion < minimumProtocolVersion
                 || selectedProtocolVersion > maximumProtocolVersion)
             {
+                session.IsRejected = true;
+                session.RejectedMinimumVersion = selectedProtocolVersion;
+                session.RejectedMaximumVersion = selectedProtocolVersion;
                 return CompanionSessionDecision.RejectVersion;
             }
             if (!IsValidProductVersion(productVersion)
@@ -228,6 +228,44 @@ public sealed class CompanionSessionRegistry
         }
     }
 
+    /// <summary>
+    /// Latches a version mismatch the companion reported for the current session (or that
+    /// its hello-ack revealed). A rejected session is never negotiated and never retried
+    /// until the peer reconnects; the player stays connected and plays vanilla.
+    /// </summary>
+    public CompanionSessionDecision RecordIncompatible(
+        long peerId,
+        string nonce,
+        int remoteMinimumVersion,
+        int remoteMaximumVersion,
+        DateTimeOffset now)
+    {
+        lock (syncRoot)
+        {
+            if (!sessions.TryGetValue(peerId, out var session))
+            {
+                return CompanionSessionDecision.RejectUnknownPeer;
+            }
+            if (!NonceMatches(session, nonce))
+            {
+                return CompanionSessionDecision.RejectNonce;
+            }
+            if (session.IsNegotiated || session.IsRejected)
+            {
+                return CompanionSessionDecision.RejectSequence;
+            }
+            if (IsExpired(session, now))
+            {
+                return CompanionSessionDecision.Expired;
+            }
+
+            session.IsRejected = true;
+            session.RejectedMinimumVersion = remoteMinimumVersion;
+            session.RejectedMaximumVersion = remoteMaximumVersion;
+            return CompanionSessionDecision.RejectVersion;
+        }
+    }
+
     public bool TryGetSnapshot(long peerId, out CompanionSessionSnapshot snapshot)
     {
         lock (syncRoot)
@@ -240,6 +278,17 @@ public sealed class CompanionSessionRegistry
 
             snapshot = CreateSnapshot(session);
             return true;
+        }
+    }
+
+    /// <summary>True while the peer has a negotiated session whose heartbeat is fresh.</summary>
+    public bool IsActive(long peerId, DateTimeOffset now)
+    {
+        lock (syncRoot)
+        {
+            return sessions.TryGetValue(peerId, out var session)
+                && session.IsNegotiated
+                && !IsExpired(session, now);
         }
     }
 
@@ -361,7 +410,10 @@ public sealed class CompanionSessionRegistry
             session.Capabilities,
             session.LastSequence,
             session.LastHeartbeat,
-            expiresAt);
+            expiresAt,
+            session.IsRejected,
+            session.RejectedMinimumVersion,
+            session.RejectedMaximumVersion);
     }
 
     private static bool NonceMatches(Session session, string nonce) =>
@@ -428,5 +480,11 @@ public sealed class CompanionSessionRegistry
         public long LastSequence { get; set; }
 
         public DateTimeOffset? LastHeartbeat { get; set; }
+
+        public bool IsRejected { get; set; }
+
+        public int? RejectedMinimumVersion { get; set; }
+
+        public int? RejectedMaximumVersion { get; set; }
     }
 }

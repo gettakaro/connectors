@@ -1,20 +1,13 @@
 using Takaro.Valheim.Companion.Protocol;
 
 #if TAKARO_VALHEIM_COMPANION
-using HarmonyLib;
 using System.Diagnostics;
 
 namespace Takaro.Valheim.Companion;
 
 internal sealed class CompanionClientBridge : IDisposable
 {
-    private const CompanionCapability SupportedCapabilities =
-        CompanionCapability.Chat
-        | CompanionCapability.Inventory
-        | CompanionCapability.PlayerDeath
-        | CompanionCapability.EntityKilled
-        | CompanionCapability.ServerChat
-        | CompanionCapability.ItemGrant;
+    private const CompanionCapability SupportedCapabilities = CompanionCapability.Inventory;
     private static readonly TimeSpan InventoryPollInterval = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan InventoryRefreshInterval = TimeSpan.FromSeconds(20);
 
@@ -25,6 +18,7 @@ internal sealed class CompanionClientBridge : IDisposable
         SupportedCapabilities);
     private readonly Stopwatch monotonicClock = Stopwatch.StartNew();
     private readonly CompanionInventoryReader inventoryReader = new();
+    private readonly CompanionSendLimiter killVerdictLimiter = new(capacity: 4, refillPerSecond: 2);
     private ZNet? observedNetwork;
     private ZRoutedRpc? registeredRpc;
     private ZNetPeer? activeServerPeer;
@@ -51,7 +45,7 @@ internal sealed class CompanionClientBridge : IDisposable
         }
 
         initialized = true;
-        log($"Takaro Valheim Companion initialized for protocol {TakaroCompanionBuildVersion.ProtocolVersion}.");
+        log($"Takaro Valheim Inventory Companion initialized for protocol {TakaroCompanionBuildVersion.ProtocolVersion}.");
     }
 
     public void Update()
@@ -67,7 +61,7 @@ internal sealed class CompanionClientBridge : IDisposable
         }
         catch (Exception ex)
         {
-            log($"Takaro Valheim Companion update failed: {ex.Message}");
+            log($"Takaro Valheim Inventory Companion update failed: {ex.Message}");
         }
     }
 
@@ -115,55 +109,14 @@ internal sealed class CompanionClientBridge : IDisposable
         PollInventory(routedRpc, network, serverPeer);
     }
 
-    internal bool TrySendChat(string message)
-    {
-        if (!initialized
-            || disposed
-            || string.IsNullOrWhiteSpace(message)
-            || message.Length > CompanionProtocol.MaximumChatCharacters)
-        {
-            return false;
-        }
-
-        try
-        {
-            var network = ZNet.instance;
-            var routedRpc = ZRoutedRpc.instance;
-            SynchronizeRegistration(network, routedRpc);
-            if (network is null
-                || routedRpc is null
-                || !registrationSucceeded
-                || !ReferenceEquals(network, observedNetwork)
-                || !ReferenceEquals(routedRpc, registeredRpc)
-                || !SynchronizeReadyContext(network, routedRpc, out var serverPeer)
-                || !state.TryCreateReport(
-                    CompanionMessageTypes.Chat,
-                    new CompanionChatReport(
-                        $"chat-{Guid.NewGuid():N}",
-                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                        message),
-                    out var envelope)
-                || envelope is null)
-            {
-                return false;
-            }
-
-            return TrySendEnvelope(routedRpc, network, serverPeer, envelope);
-        }
-        catch (Exception ex)
-        {
-            log($"Takaro Valheim Companion could not report local chat: {ex.Message}");
-            return false;
-        }
-    }
-
-    internal bool TrySendPlayerDeath(CompanionPlayerDeathReport report) =>
-        report is not null
-        && TrySendReport(CompanionMessageTypes.PlayerDeath, report);
-
-    internal bool TrySendEntityKilled(CompanionEntityKilledReport report) =>
-        report is not null
-        && TrySendReport(CompanionMessageTypes.EntityKilled, report);
+    /// <summary>
+    /// Sends one kill verdict for a creature this client owned, rate-limited. Fire and forget:
+    /// the server never answers it, and nothing here waits for the server.
+    /// </summary>
+    internal bool TrySendKillVerdict(CompanionKillVerdict verdict) =>
+        verdict is not null
+        && killVerdictLimiter.TryConsume(monotonicClock.Elapsed)
+        && TrySendReport(CompanionMessageTypes.KillVerdict, verdict);
 
     private bool TrySendReport<TPayload>(
         string messageType,
@@ -198,7 +151,7 @@ internal sealed class CompanionClientBridge : IDisposable
         }
         catch (Exception ex)
         {
-            log($"Takaro Valheim Companion could not report {messageType}: {ex.Message}");
+            log($"Takaro Valheim Inventory Companion could not report {messageType}: {ex.Message}");
             return false;
         }
     }
@@ -238,11 +191,11 @@ internal sealed class CompanionClientBridge : IDisposable
                 CompanionProtocol.RpcName,
                 (sender, json) => HandleEnvelope(sourceRpc, sender, json));
             registrationSucceeded = true;
-            log("Takaro Valheim Companion RPC registered.");
+            log("Takaro Valheim Inventory Companion RPC registered.");
         }
         catch (Exception ex)
         {
-            log($"Takaro Valheim Companion RPC registration failed for this routed-RPC instance: {ex.Message}");
+            log($"Takaro Valheim Inventory Companion RPC registration failed for this routed-RPC instance: {ex.Message}");
         }
     }
 
@@ -321,7 +274,7 @@ internal sealed class CompanionClientBridge : IDisposable
         }
         catch (Exception ex)
         {
-            log($"Takaro Valheim Companion ignored an invalid server envelope: {ex.Message}");
+            log($"Takaro Valheim Inventory Companion ignored an invalid server envelope: {ex.Message}");
         }
     }
 
@@ -346,55 +299,6 @@ internal sealed class CompanionClientBridge : IDisposable
             return;
         }
 
-        if (envelope.Type == CompanionMessageTypes.ServerChat)
-        {
-            if (!state.TryAcceptServerChat(envelope, out var chat)
-                || chat is null
-                || Chat.instance is null)
-            {
-                return;
-            }
-
-            Chat.instance.AddString(chat.Sender, chat.Message, Talker.Type.Normal);
-            AccessTools.Field(typeof(Chat), "m_hideTimer")?.SetValue(Chat.instance, 0f);
-            log($"Takaro Valheim Companion rendered a server message from {chat.Sender} in chat.");
-            return;
-        }
-
-        if (envelope.Type == CompanionMessageTypes.ItemGrant)
-        {
-            if (!state.TryAcceptItemGrant(envelope, out var grant) || grant is null)
-            {
-                return;
-            }
-
-            var outcome = CompanionInventoryWriter.Apply(
-                grant.Code,
-                grant.Amount,
-                grant.Quality,
-                out var itemName);
-            if (!outcome.Resolved)
-            {
-                log($"Takaro Valheim Companion could not apply an item grant for '{grant.Code}'.");
-                return;
-            }
-
-            var notice = CompanionItemGrantMath.DescribeOutcome(outcome, itemName);
-            if (!string.IsNullOrEmpty(notice) && Chat.instance is not null)
-            {
-                Chat.instance.AddString("Takaro", notice, Talker.Type.Normal);
-                AccessTools.Field(typeof(Chat), "m_hideTimer")?.SetValue(Chat.instance, 0f);
-            }
-
-            // Force the next poll to publish immediately so Takaro's inventory view reflects
-            // the grant without waiting for the ordinary change-detection interval.
-            inventoryReader.Reset();
-            nextInventoryPollAt = monotonicClock.Elapsed;
-
-            log($"Takaro Valheim Companion applied an item grant: {outcome.Delivered}x {itemName} to inventory, {outcome.Dropped} dropped.");
-            return;
-        }
-
         if (!state.TryPrepareHelloAck(
                 envelope,
                 TakaroCompanionBuildVersion.ProductVersion,
@@ -411,6 +315,17 @@ internal sealed class CompanionClientBridge : IDisposable
             return;
         }
 
+        if (prepared.Envelope.Type == CompanionMessageTypes.HelloNack)
+        {
+            state.Reset();
+            inventoryReader.Reset();
+            var serverRange = CompanionEnvelopeCodec.TryDecodePayload<CompanionHello>(envelope, out var hello, out _) && hello is not null
+                ? CompanionVersionPolicy.DescribeRange(hello.MinimumVersion, hello.MaximumVersion)
+                : "unknown";
+            log($"Takaro Valheim Inventory Companion: the server speaks companion protocol {serverRange}, this mod speaks {CompanionVersionPolicy.DescribeRange(CompanionProtocol.MinimumVersion, CompanionProtocol.CurrentVersion)}. Inventory reporting stays off; you can keep playing normally. Install the inventory companion that matches the server's Takaro connector.");
+            return;
+        }
+
         if (!state.ConfirmHelloAckSent(prepared, monotonicClock.Elapsed))
         {
             state.Reset();
@@ -421,7 +336,7 @@ internal sealed class CompanionClientBridge : IDisposable
         inventoryReader.Reset();
         nextInventoryPollAt = monotonicClock.Elapsed;
 
-        log($"Takaro Valheim Companion negotiated protocol {prepared.Envelope.ProtocolVersion} with the connected server.");
+        log($"Takaro Valheim Inventory Companion negotiated protocol {prepared.Envelope.ProtocolVersion} with the connected server; reporting this character's inventory to it.");
     }
 
     private bool TrySendEnvelope(
@@ -494,7 +409,7 @@ internal sealed class CompanionClientBridge : IDisposable
         }
         catch (Exception ex)
         {
-            log($"Takaro Valheim Companion could not send to the connected server: {ex.Message}");
+            log($"Takaro Valheim Inventory Companion could not send to the connected server: {ex.Message}");
             return false;
         }
     }
@@ -542,30 +457,17 @@ internal sealed class CompanionClientBridge : IDisposable
         }
 
         initialized = true;
-        log($"Takaro Valheim Companion initialized for protocol {TakaroCompanionBuildVersion.ProtocolVersion}.");
+        log($"Takaro Valheim Inventory Companion initialized for protocol {TakaroCompanionBuildVersion.ProtocolVersion}.");
     }
 
     public void Update()
     {
-        if (!initialized || disposed)
-        {
-            return;
-        }
     }
 
-    internal bool TrySendChat(string message) => false;
-
-    internal bool TrySendPlayerDeath(CompanionPlayerDeathReport report) => false;
-
-    internal bool TrySendEntityKilled(CompanionEntityKilledReport report) => false;
+    internal bool TrySendKillVerdict(CompanionKillVerdict verdict) => false;
 
     public void Dispose()
     {
-        if (disposed)
-        {
-            return;
-        }
-
         disposed = true;
         initialized = false;
     }

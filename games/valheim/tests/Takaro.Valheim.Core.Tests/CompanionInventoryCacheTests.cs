@@ -49,7 +49,7 @@ public sealed class CompanionInventoryCacheTests
             new[] { valid with { Code = " " } },
             new[] { valid with { Code = new string('c', CompanionProtocol.MaximumCodeCharacters + 1) } },
             new[] { valid with { Name = " " } },
-            new[] { valid with { Name = new string('n', CompanionProtocol.MaximumChatCharacters + 1) } },
+            new[] { valid with { Name = new string('n', CompanionProtocol.MaximumNameCharacters + 1) } },
             new[] { valid with { Amount = 0 } },
             new[] { valid with { Amount = -1 } },
             new[] { valid with { Amount = CompanionProtocol.MaximumInventoryAmount + 1 } },

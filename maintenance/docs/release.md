@@ -77,7 +77,7 @@ a set may want the same name — including `SHA256SUMS` and the record itself.
 | rust | `TakaroConnector.cs` |
 | 7d2d | `takaro-7d2d-mod.zip` |
 | zomboid | the shadow jar in `dist/` |
-| valheim | `takaro-valheim-plugin.zip`, `takaro-valheim-companion.zip` |
+| valheim | `takaro-valheim-plugin.zip`, `takaro-valheim-inventory-companion.zip` |
 | conan-exiles | `takaro-conan-exiles-bridge.zip` |
 | terraria | `takaro-terraria-plugin.zip`, `takaro-terraria-bridge.zip` |
 | enshrouded | `takaro-enshrouded-plugin.zip` (and `takaro-enshrouded-sidecar.zip` up to 0.5.0) |

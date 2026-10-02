@@ -8,7 +8,6 @@ public static class CompanionEnvelopeCodec
     public const int MaximumSessionNonceCharacters = 128;
     public const int MaximumMessageIdCharacters = 64;
 
-    private const float MaximumAbsolutePositionCoordinate = 1_000_000f;
     private const long MaximumTimestampUnixMilliseconds = 253_402_300_799_999L;
 
     private const string EnvelopeTooLargeError = "envelope-too-large";
@@ -60,26 +59,6 @@ public static class CompanionEnvelopeCodec
 
     private static readonly string[] HeartbeatFields = ["timestampUnixMilliseconds"];
 
-    private static readonly string[] ChatFields =
-    [
-        "eventId",
-        "timestampUnixMilliseconds",
-        "message"
-    ];
-
-    private static readonly string[] ServerChatFields =
-    [
-        "sender",
-        "message"
-    ];
-
-    private static readonly string[] ItemGrantFields =
-    [
-        "code",
-        "amount",
-        "quality"
-    ];
-
     private static readonly string[] InventoryFields = ["stacks"];
 
     private static readonly string[] InventoryStackFields =
@@ -93,33 +72,14 @@ public static class CompanionEnvelopeCodec
         "slot"
     ];
 
-    private static readonly string[] PlayerDeathRequiredFields =
+    private static readonly string[] KillVerdictFields =
     [
-        "eventId",
-        "timestampUnixMilliseconds",
-        "position"
+        "creatureZdo",
+        "prefab",
+        "enemyToken",
+        "lastHitByLocalPlayer",
+        "lastHitAttackerKind"
     ];
-
-    private static readonly string[] PlayerDeathOptionalFields =
-    [
-        "causeHint",
-        "attackerCodeHint"
-    ];
-
-    private static readonly string[] EntityKilledRequiredFields =
-    [
-        "eventId",
-        "timestampUnixMilliseconds",
-        "position"
-    ];
-
-    private static readonly string[] EntityKilledOptionalFields =
-    [
-        "entityCodeHint",
-        "weaponCodeHint"
-    ];
-
-    private static readonly string[] PositionFields = ["x", "y", "z"];
 
     public static string EncodeEnvelope(CompanionEnvelope envelope)
     {
@@ -158,7 +118,8 @@ public static class CompanionEnvelopeCodec
             return false;
         }
 
-        if (Encoding.UTF8.GetByteCount(json) > CompanionProtocol.MaximumEnvelopeUtf8Bytes)
+        if (json.Length > CompanionProtocol.MaximumEnvelopeUtf8Bytes
+            || Encoding.UTF8.GetByteCount(json) > CompanionProtocol.MaximumEnvelopeUtf8Bytes)
         {
             errorCode = EnvelopeTooLargeError;
             return false;
@@ -170,7 +131,7 @@ public static class CompanionEnvelopeCodec
             var root = document.RootElement;
 
             if (root.ValueKind != JsonValueKind.Object
-                || !HasStrictFields(root, EnvelopeFields, Array.Empty<string>()))
+                || !HasStrictFields(root, EnvelopeFields))
             {
                 errorCode = InvalidEnvelopeFieldsError;
                 return false;
@@ -247,25 +208,10 @@ public static class CompanionEnvelopeCodec
 
             return true;
         }
-        catch (JsonException)
-        {
-            payload = null;
-            errorCode = InvalidPayloadError;
-            return false;
-        }
-        catch (NotSupportedException)
-        {
-            payload = null;
-            errorCode = InvalidPayloadError;
-            return false;
-        }
-        catch (ObjectDisposedException)
-        {
-            payload = null;
-            errorCode = InvalidPayloadError;
-            return false;
-        }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (ex is JsonException
+                                   or NotSupportedException
+                                   or ObjectDisposedException
+                                   or InvalidOperationException)
         {
             payload = null;
             errorCode = InvalidPayloadError;
@@ -273,78 +219,29 @@ public static class CompanionEnvelopeCodec
         }
     }
 
-    public static bool TryInspectHelloAck(
-        CompanionEnvelope envelope,
-        out CompanionHelloAck? helloAck)
-    {
-        helloAck = null;
-        try
-        {
-            if (envelope is null
-                || envelope.Type != CompanionMessageTypes.HelloAck
-                || envelope.Payload.ValueKind != JsonValueKind.Object
-                || !HasStrictFields(
-                    envelope.Payload,
-                    HelloAckFields,
-                    Array.Empty<string>())
-                || !TryReadInt32(
-                    envelope.Payload,
-                    "protocolVersion",
-                    out var protocolVersion)
-                || protocolVersion <= 0
-                || !TryReadString(
-                    envelope.Payload,
-                    "productVersion",
-                    out var productVersion)
-                || !IsRequiredString(
-                    productVersion,
-                    CompanionProtocol.MaximumProductVersionCharacters)
-                || !TryReadInt32(
-                    envelope.Payload,
-                    "acceptedCapabilities",
-                    out var capabilityValue))
-            {
-                return false;
-            }
-
-            var capabilities = (CompanionCapability)capabilityValue;
-            if (!HasKnownCapabilities(capabilities))
-            {
-                return false;
-            }
-
-            helloAck = new CompanionHelloAck(
-                protocolVersion,
-                productVersion!,
-                capabilities);
-            return true;
-        }
-        catch (ObjectDisposedException)
-        {
-            helloAck = null;
-            return false;
-        }
-        catch (InvalidOperationException)
-        {
-            helloAck = null;
-            return false;
-        }
-    }
+    /// <summary>
+    /// Negotiation messages are readable at any envelope version so that a version mismatch
+    /// can always be answered and logged; every other message must use exactly the
+    /// protocol this build speaks.
+    /// </summary>
+    public static bool IsAcceptedEnvelopeVersion(string? messageType, int protocolVersion) =>
+        CompanionMessageTypes.IsNegotiation(messageType)
+            ? protocolVersion >= 1 && protocolVersion <= CompanionProtocol.MaximumNegotiableVersion
+            : protocolVersion >= CompanionProtocol.MinimumVersion && protocolVersion <= CompanionProtocol.CurrentVersion;
 
     private static bool TryValidateEnvelopeMetadata(CompanionEnvelope envelope, out string errorCode)
     {
         errorCode = string.Empty;
 
-        if (envelope.ProtocolVersion < CompanionProtocol.MinimumVersion
-            || envelope.ProtocolVersion > CompanionProtocol.CurrentVersion)
-        {
-            errorCode = UnsupportedProtocolVersionError;
-            return false;
-        }
-
         if (!IsKnownMessageType(envelope.Type))
         {
             errorCode = UnknownMessageTypeError;
+            return false;
+        }
+
+        if (!IsAcceptedEnvelopeVersion(envelope.Type, envelope.ProtocolVersion))
+        {
+            errorCode = UnsupportedProtocolVersionError;
             return false;
         }
 
@@ -376,18 +273,10 @@ public static class CompanionEnvelopeCodec
                 return TryNormalizePayload<CompanionHelloNack>(envelope, out normalizedPayload, out errorCode);
             case CompanionMessageTypes.Heartbeat:
                 return TryNormalizePayload<CompanionHeartbeat>(envelope, out normalizedPayload, out errorCode);
-            case CompanionMessageTypes.Chat:
-                return TryNormalizePayload<CompanionChatReport>(envelope, out normalizedPayload, out errorCode);
-            case CompanionMessageTypes.ServerChat:
-                return TryNormalizePayload<CompanionServerChatMessage>(envelope, out normalizedPayload, out errorCode);
-            case CompanionMessageTypes.ItemGrant:
-                return TryNormalizePayload<CompanionItemGrant>(envelope, out normalizedPayload, out errorCode);
             case CompanionMessageTypes.InventorySnapshot:
                 return TryNormalizePayload<CompanionInventoryReport>(envelope, out normalizedPayload, out errorCode);
-            case CompanionMessageTypes.PlayerDeath:
-                return TryNormalizePayload<CompanionPlayerDeathReport>(envelope, out normalizedPayload, out errorCode);
-            case CompanionMessageTypes.EntityKilled:
-                return TryNormalizePayload<CompanionEntityKilledReport>(envelope, out normalizedPayload, out errorCode);
+            case CompanionMessageTypes.KillVerdict:
+                return TryNormalizePayload<CompanionKillVerdict>(envelope, out normalizedPayload, out errorCode);
             default:
                 errorCode = UnknownMessageTypeError;
                 return false;
@@ -407,14 +296,9 @@ public static class CompanionEnvelopeCodec
             return false;
         }
 
-        normalizedPayload = SerializeToElement(payload!);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload!, WireJsonOptions));
+        normalizedPayload = document.RootElement.Clone();
         return true;
-    }
-
-    private static JsonElement SerializeToElement<T>(T value)
-    {
-        using var document = JsonDocument.Parse(JsonSerializer.Serialize(value, WireJsonOptions));
-        return document.RootElement.Clone();
     }
 
     private static bool TryValidatePayloadShape(
@@ -434,34 +318,22 @@ public static class CompanionEnvelopeCodec
         switch (messageType)
         {
             case CompanionMessageTypes.Hello:
-                validFields = HasStrictFields(payload, HelloFields, Array.Empty<string>());
+                validFields = HasStrictFields(payload, HelloFields);
                 break;
             case CompanionMessageTypes.HelloAck:
-                validFields = HasStrictFields(payload, HelloAckFields, Array.Empty<string>());
+                validFields = HasStrictFields(payload, HelloAckFields);
                 break;
             case CompanionMessageTypes.HelloNack:
-                validFields = HasStrictFields(payload, HelloNackFields, Array.Empty<string>());
+                validFields = HasStrictFields(payload, HelloNackFields);
                 break;
             case CompanionMessageTypes.Heartbeat:
-                validFields = HasStrictFields(payload, HeartbeatFields, Array.Empty<string>());
-                break;
-            case CompanionMessageTypes.Chat:
-                validFields = HasStrictFields(payload, ChatFields, Array.Empty<string>());
-                break;
-            case CompanionMessageTypes.ServerChat:
-                validFields = HasStrictFields(payload, ServerChatFields, Array.Empty<string>());
-                break;
-            case CompanionMessageTypes.ItemGrant:
-                validFields = HasStrictFields(payload, ItemGrantFields, Array.Empty<string>());
+                validFields = HasStrictFields(payload, HeartbeatFields);
                 break;
             case CompanionMessageTypes.InventorySnapshot:
-                validFields = HasStrictFields(payload, InventoryFields, Array.Empty<string>());
+                validFields = HasStrictFields(payload, InventoryFields);
                 break;
-            case CompanionMessageTypes.PlayerDeath:
-                validFields = HasStrictFields(payload, PlayerDeathRequiredFields, PlayerDeathOptionalFields);
-                break;
-            case CompanionMessageTypes.EntityKilled:
-                validFields = HasStrictFields(payload, EntityKilledRequiredFields, EntityKilledOptionalFields);
+            case CompanionMessageTypes.KillVerdict:
+                validFields = HasStrictFields(payload, KillVerdictFields);
                 break;
             default:
                 errorCode = PayloadTypeMismatchError;
@@ -491,7 +363,7 @@ public static class CompanionEnvelopeCodec
                     return false;
                 }
 
-                if (!HasStrictFields(stack, InventoryStackFields, Array.Empty<string>()))
+                if (!HasStrictFields(stack, InventoryStackFields))
                 {
                     errorCode = InvalidPayloadFieldsError;
                     return false;
@@ -499,51 +371,29 @@ public static class CompanionEnvelopeCodec
             }
         }
 
-        if (messageType == CompanionMessageTypes.PlayerDeath
-            || messageType == CompanionMessageTypes.EntityKilled)
+        if (messageType == CompanionMessageTypes.KillVerdict
+            && (payload.GetProperty("lastHitByLocalPlayer").ValueKind is not (JsonValueKind.True or JsonValueKind.False)))
         {
-            var position = payload.GetProperty("position");
-            if (position.ValueKind != JsonValueKind.Object)
-            {
-                errorCode = InvalidPayloadError;
-                return false;
-            }
-
-            if (!HasStrictFields(position, PositionFields, Array.Empty<string>()))
-            {
-                errorCode = InvalidPayloadFieldsError;
-                return false;
-            }
+            errorCode = InvalidPayloadError;
+            return false;
         }
 
         return true;
     }
 
-    private static bool HasStrictFields(
-        JsonElement element,
-        IReadOnlyCollection<string> requiredFields,
-        IReadOnlyCollection<string> optionalFields)
+    private static bool HasStrictFields(JsonElement element, IReadOnlyCollection<string> requiredFields)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var property in element.EnumerateObject())
         {
-            if (!seen.Add(property.Name)
-                || (!requiredFields.Contains(property.Name) && !optionalFields.Contains(property.Name)))
+            if (!seen.Add(property.Name) || !requiredFields.Contains(property.Name))
             {
                 return false;
             }
         }
 
-        foreach (var requiredField in requiredFields)
-        {
-            if (!seen.Contains(requiredField))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return requiredFields.All(seen.Contains);
     }
 
     private static bool IsPayloadTypeForMessage(Type payloadType, string messageType)
@@ -552,12 +402,8 @@ public static class CompanionEnvelopeCodec
             || (payloadType == typeof(CompanionHelloAck) && messageType == CompanionMessageTypes.HelloAck)
             || (payloadType == typeof(CompanionHelloNack) && messageType == CompanionMessageTypes.HelloNack)
             || (payloadType == typeof(CompanionHeartbeat) && messageType == CompanionMessageTypes.Heartbeat)
-            || (payloadType == typeof(CompanionChatReport) && messageType == CompanionMessageTypes.Chat)
-            || (payloadType == typeof(CompanionServerChatMessage) && messageType == CompanionMessageTypes.ServerChat)
             || (payloadType == typeof(CompanionInventoryReport) && messageType == CompanionMessageTypes.InventorySnapshot)
-            || (payloadType == typeof(CompanionPlayerDeathReport) && messageType == CompanionMessageTypes.PlayerDeath)
-            || (payloadType == typeof(CompanionEntityKilledReport) && messageType == CompanionMessageTypes.EntityKilled)
-            || (payloadType == typeof(CompanionItemGrant) && messageType == CompanionMessageTypes.ItemGrant);
+            || (payloadType == typeof(CompanionKillVerdict) && messageType == CompanionMessageTypes.KillVerdict);
     }
 
     private static bool IsSemanticallyValidPayload(object payload)
@@ -565,51 +411,32 @@ public static class CompanionEnvelopeCodec
         switch (payload)
         {
             case CompanionHello hello:
+                // Capabilities in a hello are informational: an older server advertises bits
+                // this protocol no longer knows, and the companion must still be able to read
+                // that hello in order to answer it with a nack.
                 return hello.MinimumVersion > 0
                     && hello.MaximumVersion >= hello.MinimumVersion
-                    && HasKnownCapabilities(hello.Capabilities);
+                    && hello.Capabilities >= 0;
             case CompanionHelloAck helloAck:
-                return helloAck.ProtocolVersion >= CompanionProtocol.MinimumVersion
-                    && helloAck.ProtocolVersion <= CompanionProtocol.CurrentVersion
-                    && IsRequiredString(
-                        helloAck.ProductVersion,
-                        CompanionProtocol.MaximumProductVersionCharacters)
+                // The selected version is range-checked by the session, which logs a mismatch.
+                return helloAck.ProtocolVersion > 0
+                    && IsRequiredString(helloAck.ProductVersion, CompanionProtocol.MaximumProductVersionCharacters)
                     && HasKnownCapabilities(helloAck.AcceptedCapabilities);
             case CompanionHelloNack helloNack:
                 return helloNack.MinimumVersion > 0
                     && helloNack.MaximumVersion >= helloNack.MinimumVersion
-                    && IsRequiredString(
-                        helloNack.ProductVersion,
-                        CompanionProtocol.MaximumProductVersionCharacters);
+                    && IsRequiredString(helloNack.ProductVersion, CompanionProtocol.MaximumProductVersionCharacters);
             case CompanionHeartbeat heartbeat:
-                return IsValidTimestamp(heartbeat.TimestampUnixMilliseconds);
-            case CompanionChatReport chat:
-                return IsEventId(chat.EventId)
-                    && IsValidTimestamp(chat.TimestampUnixMilliseconds)
-                    && IsRequiredString(chat.Message, CompanionProtocol.MaximumChatCharacters);
-            case CompanionServerChatMessage serverChat:
-                return IsRequiredString(serverChat.Sender, CompanionProtocol.MaximumChatCharacters)
-                    && IsRequiredString(serverChat.Message, CompanionProtocol.MaximumChatCharacters);
-            case CompanionItemGrant itemGrant:
-                return IsRequiredString(itemGrant.Code, CompanionProtocol.MaximumCodeCharacters)
-                    && itemGrant.Amount > 0
-                    && itemGrant.Amount <= CompanionProtocol.MaximumInventoryAmount
-                    && itemGrant.Quality > 0
-                    && itemGrant.Quality <= CompanionProtocol.MaximumItemQuality;
+                return heartbeat.TimestampUnixMilliseconds >= 0
+                    && heartbeat.TimestampUnixMilliseconds <= MaximumTimestampUnixMilliseconds;
             case CompanionInventoryReport inventory:
                 return IsValidInventory(inventory);
-            case CompanionPlayerDeathReport playerDeath:
-                return IsEventId(playerDeath.EventId)
-                    && IsValidTimestamp(playerDeath.TimestampUnixMilliseconds)
-                    && IsValidPosition(playerDeath.Position)
-                    && IsOptionalString(playerDeath.CauseHint, CompanionProtocol.MaximumChatCharacters)
-                    && IsOptionalString(playerDeath.AttackerCodeHint, CompanionProtocol.MaximumCodeCharacters);
-            case CompanionEntityKilledReport entityKilled:
-                return IsEventId(entityKilled.EventId)
-                    && IsValidTimestamp(entityKilled.TimestampUnixMilliseconds)
-                    && IsValidPosition(entityKilled.Position)
-                    && IsOptionalString(entityKilled.EntityCodeHint, CompanionProtocol.MaximumCodeCharacters)
-                    && IsOptionalString(entityKilled.WeaponCodeHint, CompanionProtocol.MaximumCodeCharacters);
+            case CompanionKillVerdict verdict:
+                return IsZdoId(verdict.CreatureZdo)
+                    && IsRequiredString(verdict.Prefab, CompanionProtocol.MaximumCodeCharacters)
+                    && IsRequiredString(verdict.EnemyToken, CompanionProtocol.MaximumCodeCharacters)
+                    && CompanionAttackerKind.IsKnown(verdict.LastHitAttackerKind)
+                    && verdict.LastHitByLocalPlayer == (verdict.LastHitAttackerKind == CompanionAttackerKind.LocalPlayer);
             default:
                 return false;
         }
@@ -626,12 +453,13 @@ public static class CompanionEnvelopeCodec
         {
             if (stack is null
                 || !IsRequiredString(stack.Code, CompanionProtocol.MaximumCodeCharacters)
-                || !IsRequiredString(stack.Name, CompanionProtocol.MaximumChatCharacters)
+                || !IsRequiredString(stack.Name, CompanionProtocol.MaximumNameCharacters)
                 || stack.Amount <= 0
                 || stack.Amount > CompanionProtocol.MaximumInventoryAmount
                 || stack.Quality <= 0
                 || stack.Quality > CompanionProtocol.MaximumItemQuality
-                || !IsFinite(stack.Durability)
+                || float.IsNaN(stack.Durability)
+                || float.IsInfinity(stack.Durability)
                 || stack.Durability < 0
                 || stack.Durability > CompanionProtocol.MaximumDurability
                 || stack.Slot < 0
@@ -644,37 +472,26 @@ public static class CompanionEnvelopeCodec
         return true;
     }
 
-    private static bool IsValidPosition(CompanionPosition? position)
+    /// <summary>A ZDOID in Valheim's "userID:id" text form.</summary>
+    public static bool IsZdoId(string? value)
     {
-        return position is not null
-            && IsValidPositionCoordinate(position.X)
-            && IsValidPositionCoordinate(position.Y)
-            && IsValidPositionCoordinate(position.Z);
+        if (string.IsNullOrEmpty(value) || value!.Length > CompanionProtocol.MaximumZdoIdCharacters)
+        {
+            return false;
+        }
+
+        var separator = value.IndexOf(':');
+        if (separator <= 0 || separator != value.LastIndexOf(':') || separator == value.Length - 1)
+        {
+            return false;
+        }
+
+        return long.TryParse(value.Substring(0, separator), System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out _)
+            && uint.TryParse(value.Substring(separator + 1), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out _);
     }
 
-    private static bool IsValidPositionCoordinate(float value)
-    {
-        return IsFinite(value)
-            && value >= -MaximumAbsolutePositionCoordinate
-            && value <= MaximumAbsolutePositionCoordinate;
-    }
-
-    private static bool IsFinite(float value)
-    {
-        return !float.IsNaN(value) && !float.IsInfinity(value);
-    }
-
-    private static bool HasKnownCapabilities(CompanionCapability capabilities)
-    {
-        const CompanionCapability knownCapabilities = CompanionCapability.Chat
-            | CompanionCapability.Inventory
-            | CompanionCapability.PlayerDeath
-            | CompanionCapability.EntityKilled
-            | CompanionCapability.ServerChat
-            | CompanionCapability.ItemGrant;
-
-        return (capabilities & ~knownCapabilities) == 0;
-    }
+    private static bool HasKnownCapabilities(CompanionCapability capabilities) =>
+        (capabilities & ~CompanionCapability.Inventory) == CompanionCapability.None;
 
     private static bool IsKnownMessageType(string? messageType)
     {
@@ -682,32 +499,13 @@ public static class CompanionEnvelopeCodec
             || messageType == CompanionMessageTypes.HelloAck
             || messageType == CompanionMessageTypes.HelloNack
             || messageType == CompanionMessageTypes.Heartbeat
-            || messageType == CompanionMessageTypes.Chat
-            || messageType == CompanionMessageTypes.ServerChat
             || messageType == CompanionMessageTypes.InventorySnapshot
-            || messageType == CompanionMessageTypes.PlayerDeath
-            || messageType == CompanionMessageTypes.EntityKilled
-            || messageType == CompanionMessageTypes.ItemGrant;
-    }
-
-    private static bool IsEventId(string? value)
-    {
-        return IsRequiredString(value, CompanionProtocol.MaximumEventIdCharacters);
-    }
-
-    private static bool IsValidTimestamp(long value)
-    {
-        return value >= 0 && value <= MaximumTimestampUnixMilliseconds;
+            || messageType == CompanionMessageTypes.KillVerdict;
     }
 
     private static bool IsRequiredString(string? value, int maximumCharacters)
     {
         return !string.IsNullOrWhiteSpace(value) && value!.Length <= maximumCharacters;
-    }
-
-    private static bool IsOptionalString(string? value, int maximumCharacters)
-    {
-        return value is null || IsRequiredString(value, maximumCharacters);
     }
 
     private static bool TryReadInt32(JsonElement element, string propertyName, out int value)

@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Takaro.Valheim.Companion.Protocol;
 
 namespace Takaro.Valheim.Core;
 
@@ -89,6 +88,8 @@ public sealed record TakaroPosition(double X, double Y, double Z, string? Dimens
 
 public sealed class TakaroRequestDispatcher
 {
+    public const int MaximumSenderNameCharacters = 128;
+
     private readonly IValheimTakaroAdapter adapter;
     private readonly IMainThreadActionScheduler mainThreadActions;
 
@@ -104,6 +105,13 @@ public sealed class TakaroRequestDispatcher
     {
         try
         {
+            // Reachability must answer even while the game loop is busy or frozen, so it
+            // reads the adapter's published readiness instead of queueing for the main thread.
+            if (request.Action == TakaroActionNames.TestReachability)
+            {
+                return await adapter.TestReachabilityAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             return await mainThreadActions.ScheduleAsync(
                 () => DispatchScheduled(request, cancellationToken),
                 cancellationToken).ConfigureAwait(false);
@@ -203,10 +211,10 @@ public sealed class TakaroRequestDispatcher
             return null;
         }
 
-        if (value!.Length > CompanionProtocol.MaximumCodeCharacters)
+        if (value!.Length > MaximumSenderNameCharacters)
         {
             throw new ArgumentException(
-                $"Expected string argument 'opts.senderNameOverride' to contain at most {CompanionProtocol.MaximumCodeCharacters} characters.");
+                $"Expected string argument 'opts.senderNameOverride' to contain at most {MaximumSenderNameCharacters} characters.");
         }
 
         return value;

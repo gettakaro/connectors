@@ -24,15 +24,11 @@ ds_render_config() {
         valheim)
             export IDENTITY_TOKEN="${TAKARO_IDENTITY_VALHEIM:-takaro-dev-valheim}"
             export SERVER_NAME="${VALHEIM_SERVER_NAME:-Takaro Dev Valheim}"
-            export COMPANION_MODE="${VALHEIM_COMPANION_MODE:-optional}"
+            export CHAT_SENDER_NAME="${VALHEIM_CHAT_SENDER_NAME:-Takaro}"
             export LOG_LEVEL="${VALHEIM_LOG_LEVEL:-Information}"
-            case "$COMPANION_MODE" in
-                disabled|optional|required) ;;
-                *) ds_die "VALHEIM_COMPANION_MODE must be disabled, optional or required (got '${COMPANION_MODE}')" ;;
-            esac
             ds_render "${DS_TEMPLATES}/valheim/com.takaro.valheim.cfg" \
                 "${data}/config/bepinex/com.takaro.valheim.cfg"
-            ds_ok "${data}/config/bepinex/com.takaro.valheim.cfg (companionMode=${COMPANION_MODE})"
+            ds_ok "${data}/config/bepinex/com.takaro.valheim.cfg (chatSenderName=${CHAT_SENDER_NAME})"
             ;;
         conan-exiles)
             export IDENTITY_TOKEN="${TAKARO_IDENTITY_CONAN:-takaro-dev-conan}"
