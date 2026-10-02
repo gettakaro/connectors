@@ -73,59 +73,103 @@ internal static class TakaroChatParticipant
         ZRoutedRpc.instance.InvokeRoutedRPC(peer.m_uid, "ChatMessage", peer.m_refPos + AboveHead, (int)Talker.Type.Normal, info, text);
     }
 
-    internal static ZPackage AppendTo(List<ZNet.PlayerInfo> players, ZPackage vanilla)
+    /// <summary>
+    /// Replaces vanilla SendPlayerList on the dedicated server: every ready peer gets the
+    /// vanilla list plus the "Takaro" chat entry plus a kill witness for that peer (see
+    /// <see cref="WitnessFor"/>). Returns false, so vanilla runs instead, if the vanilla
+    /// format cannot be reproduced byte for byte.
+    /// </summary>
+    internal static bool SendPerPeer(ZNet znet)
     {
         try
         {
-            var rebuilt = Write(players, includeParticipant: false);
+            AccessTools.Method(typeof(ZNet), "UpdatePlayerList")?.Invoke(znet, Array.Empty<object>());
+            var peers = znet.GetPeers();
+            if (peers.Count == 0)
+            {
+                return true;
+            }
+
+            var players = znet.GetPlayerList();
             if (!formatVerified)
             {
-                if (!rebuilt.GetArray().SequenceEqual(vanilla.GetArray()))
+                var vanilla = AccessTools.Method(typeof(ZNet), "WritePlayerInfo")?.Invoke(znet, new object[] { players }) as ZPackage;
+                if (vanilla is null || !Write(players, false, null).GetArray().SequenceEqual(vanilla.GetArray()))
                 {
                     if (!formatMismatchLogged)
                     {
                         formatMismatchLogged = true;
-                        log("Takaro Valheim chat participant disabled: this Valheim build writes its player list in an unknown format, so player chat and server messages are unavailable.");
+                        log("Takaro Valheim chat participant disabled: this Valheim build writes its player list in an unknown format, so player chat, server messages and kill reports are unavailable.");
                     }
 
                     Active = false;
-                    return vanilla;
+                    return false;
                 }
 
                 formatVerified = true;
-                log($"Takaro Valheim chat participant '{currentListedName}' active (server-side chat relay).");
+                log($"Takaro Valheim chat participant '{currentListedName}' active (server-side chat relay and kill witness).");
             }
 
             Active = true;
-            return Write(players, includeParticipant: true);
+            for (var index = 0; index < peers.Count; index++)
+            {
+                var peer = peers[index];
+                if (peer.IsReady())
+                {
+                    peer.m_rpc.Invoke("PlayerList", Write(players, true, WitnessFor(peer, players)));
+                }
+            }
+
+            return true;
         }
         catch (Exception ex)
         {
             Active = false;
             log($"Takaro Valheim chat participant skipped: {ex.Message}");
-            return vanilla;
+            return false;
         }
     }
 
-    private static ZPackage Write(List<ZNet.PlayerInfo> players, bool includeParticipant)
+    /// <summary>
+    /// When a creature dies, the game that simulated it sends a kill report to every player
+    /// whose name is marked on the creature as having hit it (Character.OnDeath ->
+    /// Game.RegisterKill). The report for that game's own player stays local, so the server
+    /// never saw solo kills. The witness is a second entry for the receiving player, with the
+    /// same name and platform id but a character id owned by the server: the game then also
+    /// addresses its own player's kill report to the server. Same platform id keeps the
+    /// in-game player list from showing a second row.
+    /// </summary>
+    internal static ZNet.PlayerInfo? WitnessFor(ZNetPeer peer, List<ZNet.PlayerInfo> players)
     {
-        var package = new ZPackage();
-        package.Write(players.Count + (includeParticipant ? 1 : 0));
         foreach (var player in players)
         {
-            WriteEntry(
-                package,
-                player.m_name,
-                player.m_characterID,
-                player.m_userInfo.m_id.ToString(),
-                player.m_userInfo.m_displayName,
-                player.m_userInfo.m_serverAssignedDisplayName,
-                player.m_userInfo.m_playfabId,
-                player.m_publicPosition,
-                player.m_position);
+            if (!peer.m_characterID.IsNone() && player.m_characterID == peer.m_characterID)
+            {
+                var witness = player;
+                witness.m_characterID = new ZDOID(ServerUid, KillWitnessBase + (uint)(peer.m_uid & 0xFFFF));
+                witness.m_publicPosition = false;
+                return witness;
+            }
         }
 
-        if (includeParticipant)
+        return null;
+    }
+
+    public const uint KillWitnessBase = 0x7A4C0000;
+
+    public static bool IsKillWitnessTarget(long targetPeerId) => Active && targetPeerId != 0 && targetPeerId == ServerUid;
+
+    private static ZPackage Write(List<ZNet.PlayerInfo> players, bool participants, ZNet.PlayerInfo? witness)
+    {
+        var extra = participants ? (witness is null ? 1 : 2) : 0;
+        var package = new ZPackage();
+        package.Write(players.Count + extra);
+        foreach (var player in players)
+        {
+            WriteEntry(package, player);
+        }
+
+        if (participants)
         {
             WriteEntry(
                 package,
@@ -137,10 +181,26 @@ internal static class TakaroChatParticipant
                 string.Empty,
                 false,
                 Vector3.zero);
+            if (witness is { } self)
+            {
+                WriteEntry(package, self);
+            }
         }
 
         return package;
     }
+
+    private static void WriteEntry(ZPackage package, ZNet.PlayerInfo player) =>
+        WriteEntry(
+            package,
+            player.m_name,
+            player.m_characterID,
+            player.m_userInfo.m_id.ToString(),
+            player.m_userInfo.m_displayName,
+            player.m_userInfo.m_serverAssignedDisplayName,
+            player.m_userInfo.m_playfabId,
+            player.m_publicPosition,
+            player.m_position);
 
     private static void WriteEntry(
         ZPackage package,
@@ -167,15 +227,10 @@ internal static class TakaroChatParticipant
     }
 }
 
-[HarmonyPatch(typeof(ZNet), "WritePlayerInfo")]
+[HarmonyPatch(typeof(ZNet), "SendPlayerList")]
 internal static class TakaroPlayerListPatch
 {
-    private static void Postfix(List<ZNet.PlayerInfo> playerInfoList, ref ZPackage __result)
-    {
-        if (ZNet.instance is not null && ZNet.instance.IsDedicated())
-        {
-            __result = TakaroChatParticipant.AppendTo(playerInfoList, __result);
-        }
-    }
+    private static bool Prefix(ZNet __instance) =>
+        !(__instance.IsDedicated() && TakaroChatParticipant.SendPerPeer(__instance));
 }
 #endif

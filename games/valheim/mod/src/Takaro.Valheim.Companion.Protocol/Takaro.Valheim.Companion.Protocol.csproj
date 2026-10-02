@@ -8,6 +8,5 @@
 
   <ItemGroup>
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
-    <ProjectReference Include="..\Takaro.Valheim.Companion.Protocol\Takaro.Valheim.Companion.Protocol.csproj" />
   </ItemGroup>
 </Project>

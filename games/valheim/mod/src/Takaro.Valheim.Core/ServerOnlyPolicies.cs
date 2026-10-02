@@ -121,7 +121,7 @@ public enum ValheimEventObservationSource
     Connector,
     ServerPlayerSnapshot,
     PeerBoundRoutedRpc,
-    ServerZdoState,
+    GameKillReport,
     UnboundRoutedRpc
 }
 
@@ -150,7 +150,7 @@ public static class ValheimEventAcceptancePolicy
             (ValheimEventType.PlayerDisconnected, ValheimEventObservationSource.ServerPlayerSnapshot) => true,
             (ValheimEventType.ChatMessage, ValheimEventObservationSource.PeerBoundRoutedRpc) => true,
             (ValheimEventType.PlayerDeath, ValheimEventObservationSource.PeerBoundRoutedRpc) => true,
-            (ValheimEventType.EntityKilled, ValheimEventObservationSource.ServerZdoState) => true,
+            (ValheimEventType.EntityKilled, ValheimEventObservationSource.GameKillReport) => true,
             _ => false
         };
 }

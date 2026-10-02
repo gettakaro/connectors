@@ -4,16 +4,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <AssemblyName>TakaroValheim</AssemblyName>
-    <EnableValheimPluginBuild Condition="'$(EnableValheimPluginBuild)' == ''">false</EnableValheimPluginBuild>
-    <TakaroValheimReleaseVersion Condition="'$(TakaroValheimReleaseVersion)' == ''">0.1.0</TakaroValheimReleaseVersion>
-    <TakaroValheimBepInExVersion Condition="'$(TakaroValheimBepInExVersion)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(TakaroValheimReleaseVersion)', '[-+].*$', ''))</TakaroValheimBepInExVersion>
-    <Version>$(TakaroValheimReleaseVersion)</Version>
-    <PackageVersion>$(TakaroValheimReleaseVersion)</PackageVersion>
+    <AssemblyName>Takaro.Valheim.Companion</AssemblyName>
+    <EnableValheimCompanionBuild Condition="'$(EnableValheimCompanionBuild)' == ''">false</EnableValheimCompanionBuild>
+    <TakaroValheimCompanionReleaseVersion Condition="'$(TakaroValheimCompanionReleaseVersion)' == ''">0.1.0</TakaroValheimCompanionReleaseVersion>
+    <TakaroValheimCompanionBepInExVersion Condition="'$(TakaroValheimCompanionBepInExVersion)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(TakaroValheimCompanionReleaseVersion)', '[-+].*$', ''))</TakaroValheimCompanionBepInExVersion>
+    <Version>$(TakaroValheimCompanionReleaseVersion)</Version>
+    <PackageVersion>$(TakaroValheimCompanionReleaseVersion)</PackageVersion>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(EnableValheimPluginBuild)' == 'true'">
-    <DefineConstants>$(DefineConstants);TAKARO_VALHEIM_PLUGIN</DefineConstants>
+  <PropertyGroup Condition="'$(EnableValheimCompanionBuild)' == 'true'">
+    <DefineConstants>$(DefineConstants);TAKARO_VALHEIM_COMPANION</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'net472' and '$(TargetFrameworkRootPath)' == ''">
@@ -22,12 +22,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Takaro.Valheim.Companion.Protocol\Takaro.Valheim.Companion.Protocol.csproj" />
-    <ProjectReference Include="..\Takaro.Valheim.Core\Takaro.Valheim.Core.csproj" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(EnableValheimPluginBuild)' == 'true'">
+  <ItemGroup Condition="'$(EnableValheimCompanionBuild)' == 'true'">
     <Reference Include="0Harmony">
       <HintPath>$(BepInExReferencePath)\0Harmony.dll</HintPath>
       <Private>false</Private>
@@ -58,16 +57,16 @@
     </Reference>
   </ItemGroup>
 
-  <Target Name="GenerateTakaroValheimBuildVersion" BeforeTargets="CoreCompile">
+  <Target Name="GenerateTakaroValheimCompanionBuildVersion" BeforeTargets="CoreCompile">
     <PropertyGroup>
-      <TakaroBuildVersionFile>$(IntermediateOutputPath)TakaroBuildVersion.g.cs</TakaroBuildVersionFile>
+      <TakaroCompanionBuildVersionFile>$(IntermediateOutputPath)TakaroCompanionBuildVersion.g.cs</TakaroCompanionBuildVersionFile>
     </PropertyGroup>
     <WriteLinesToFile
-      File="$(TakaroBuildVersionFile)"
-      Lines="namespace Takaro.Valheim.Plugin { internal static class TakaroBuildVersion { public const string ReleaseVersion = &quot;$(TakaroValheimReleaseVersion)&quot;%3B public const string BepInExVersion = &quot;$(TakaroValheimBepInExVersion)&quot;%3B } }"
+      File="$(TakaroCompanionBuildVersionFile)"
+      Lines="namespace Takaro.Valheim.Companion { internal static class TakaroCompanionBuildVersion { public const string ProductVersion = &quot;$(TakaroValheimCompanionReleaseVersion)&quot;%3B public const string BepInExVersion = &quot;$(TakaroValheimCompanionBepInExVersion)&quot;%3B public const int ProtocolVersion = Takaro.Valheim.Companion.Protocol.CompanionProtocol.CurrentVersion%3B } }"
       Overwrite="true" />
     <ItemGroup>
-      <Compile Include="$(TakaroBuildVersionFile)" />
+      <Compile Include="$(TakaroCompanionBuildVersionFile)" />
     </ItemGroup>
   </Target>
 </Project>

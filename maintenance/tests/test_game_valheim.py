@@ -39,6 +39,7 @@ PACK_PATH = f"/package/download/denikson/BepInExPack_Valheim/{PACK_VERSION}/"
 PACK_API = "/api/experimental/package/denikson/BepInExPack_Valheim/"
 MANAGED = "valheim_server_Data/Managed"
 PLUGIN_ZIP = f"takaro-valheim-plugin-{TARGET}-{VERSION}.zip"
+COMPANION_ZIP = f"takaro-valheim-inventory-companion-{TARGET}-{VERSION}.zip"
 
 FIXTURES = Path(__file__).parent / "fixtures"
 VALHEIM_FIXTURES = FIXTURES / "games" / "valheim"
@@ -420,7 +421,7 @@ def test_targets_resolve_env_for_valheim(run: Any) -> None:
     assert env["VALHEIM_STEAM_APP"] == "896660"
     assert env["VALHEIM_STEAM_BRANCH"] == "public"
     assert env["VALHEIM_ARTIFACT_SERVER_PLUGIN"] == f"takaro-valheim-plugin-{TARGET}-{{version}}.zip"
-    assert not any("COMPANION" in key for key in env)
+    assert env["VALHEIM_ARTIFACT_CLIENT_COMPANION"] == f"takaro-valheim-inventory-companion-{TARGET}-{{version}}.zip"
     assert env["VALHEIM_BEPINEX_PACK_VERSION"] == PACK_VERSION
     assert env["VALHEIM_BEPINEX_PACKAGE"] == "denikson/BepInExPack_Valheim"
     assert env["VALHEIM_BEPINEX_URL"].endswith(f"/{PACK_VERSION}/")
@@ -496,7 +497,7 @@ def test_install_places_the_exact_depot_and_the_pinned_pack(
     assert "bepinex:BepInEx.dll" in names
     for folder in ("config", "plugins", "patchers"):
         assert (dest / "BepInEx" / folder).is_dir()
-    assert not (dest / "takaro-companion").exists()
+    assert (dest / "takaro-companion").is_dir()
 
     before = len(upstream.requested)
     code, payload, err = install(run, repo, dest)
@@ -634,11 +635,9 @@ def test_an_upgrade_preserves_config_and_plugins_and_can_be_rolled_back(
 # --------------------------------------------------------------------------- build
 
 
-def write_build_stub(
-    repo: Path, fingerprint: str, *, names: tuple[str, ...] = (PLUGIN_ZIP,), roles: dict[str, str] | None = None
-) -> None:
+def write_build_stub(repo: Path, fingerprint: str, *, names: tuple[str, ...] = (PLUGIN_ZIP, COMPANION_ZIP)) -> None:
     """A stand-in for the release script: the same contract, none of the .NET SDK."""
-    roles = roles or {}
+    roles = {PLUGIN_ZIP: "server-plugin", COMPANION_ZIP: "client-companion"}
     lines = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
@@ -646,8 +645,8 @@ def write_build_stub(
         'mkdir -p "$out"',
     ]
     for name in names:
-        folder = "TakaroValheim"
-        role = roles.get(name, "server-plugin")
+        folder = "TakaroValheim" if "plugin" in name else "TakaroValheimInventoryCompanion"
+        role = roles.get(name, "server-plugin" if "plugin" in name else "client-companion")
         lines += [
             f'stage="$out/stage-{folder}"',
             f'mkdir -p "$stage/{folder}"',
@@ -666,7 +665,7 @@ def write_build_stub(
     script.chmod(0o755)
 
 
-def test_build_selects_the_one_server_plugin_zip_by_exact_name(run: Any, repo: Path, tmp_path: Path) -> None:
+def test_build_selects_both_role_zips_by_exact_name(run: Any, repo: Path, tmp_path: Path) -> None:
     resolved = resolve(run, repo)
     write_build_stub(repo, resolved["fingerprint"])
     out = tmp_path / "dist"
@@ -676,11 +675,11 @@ def test_build_selects_the_one_server_plugin_zip_by_exact_name(run: Any, repo: P
     )
 
     assert code == 0, f"{err}\n{payload}"
-    assert [row["role"] for row in payload["artifacts"]] == ["server-plugin"]
-    assert [row["file"] for row in payload["artifacts"]] == [PLUGIN_ZIP]
-    assert (out / PLUGIN_ZIP).is_file()
-    assert (out / f"{PLUGIN_ZIP}.meta.json").is_file()
-    assert not any("companion" in path.name for path in out.iterdir())
+    assert sorted(row["role"] for row in payload["artifacts"]) == ["client-companion", "server-plugin"]
+    assert {row["file"] for row in payload["artifacts"]} == {PLUGIN_ZIP, COMPANION_ZIP}
+    for name in (PLUGIN_ZIP, COMPANION_ZIP):
+        assert (out / name).is_file()
+        assert (out / f"{name}.meta.json").is_file()
 
 
 def test_the_build_re_execs_into_the_pinned_image_unless_the_caller_asks_for_the_host(
@@ -726,9 +725,9 @@ def test_the_build_re_execs_into_the_pinned_image_unless_the_caller_asks_for_the
     assert chosen.read_text(encoding="utf-8").strip() == "host"
 
 
-def test_a_build_missing_the_plugin_is_refused(run: Any, repo: Path, tmp_path: Path) -> None:
+def test_a_build_missing_the_companion_is_refused(run: Any, repo: Path, tmp_path: Path) -> None:
     resolved = resolve(run, repo)
-    write_build_stub(repo, resolved["fingerprint"], names=())
+    write_build_stub(repo, resolved["fingerprint"], names=(PLUGIN_ZIP,))
 
     code, payload, _ = run(
         "build", "--game", GAME, "--target", TARGET, "--version", VERSION, "--out", str(tmp_path / "dist"), repo=repo
@@ -740,7 +739,9 @@ def test_a_build_missing_the_plugin_is_refused(run: Any, repo: Path, tmp_path: P
 
 def test_a_build_that_writes_the_legacy_names_is_refused(run: Any, repo: Path, tmp_path: Path) -> None:
     resolved = resolve(run, repo)
-    write_build_stub(repo, resolved["fingerprint"], names=("takaro-valheim-plugin.zip",))
+    write_build_stub(
+        repo, resolved["fingerprint"], names=("takaro-valheim-plugin.zip", "takaro-valheim-inventory-companion.zip")
+    )
 
     code, payload, _ = run(
         "build", "--game", GAME, "--target", TARGET, "--version", VERSION, "--out", str(tmp_path / "dist"), repo=repo
@@ -766,7 +767,10 @@ def role_zip(path: Path, folder: str, *, escape: bool = False, second_folder: bo
 
 def manifest_for(run: Any, repo: Path, directory: Path) -> Path:
     resolved = resolve(run, repo)
-    rows = [artifact_row("server-plugin", TARGET, resolved["fingerprint"], directory / PLUGIN_ZIP)]
+    rows = [
+        artifact_row("client-companion", TARGET, resolved["fingerprint"], directory / COMPANION_ZIP),
+        artifact_row("server-plugin", TARGET, resolved["fingerprint"], directory / PLUGIN_ZIP),
+    ]
     for row in rows:
         write_meta(directory, row, connector=GAME, version=VERSION, revision="deadbeef")
     return write_manifest(
@@ -781,7 +785,7 @@ def manifest_for(run: Any, repo: Path, directory: Path) -> Path:
     )
 
 
-def test_deploy_unpacks_the_plugin(run: Any, repo: Path, dd_log: Path, tmp_path: Path) -> None:
+def test_deploy_unpacks_the_plugin_and_parks_the_companion(run: Any, repo: Path, dd_log: Path, tmp_path: Path) -> None:
     dest = tmp_path / "server"
     assert install(run, repo, dest)[0] == 0
     stale_cache = dest / "BepInEx" / "cache" / "chainloader_typeloader.dat"
@@ -790,6 +794,7 @@ def test_deploy_unpacks_the_plugin(run: Any, repo: Path, dd_log: Path, tmp_path:
     (dest / "BepInEx" / "plugins" / "takaro-valheim-plugin-linux-1.0.15-3.0.2.zip").write_bytes(b"older")
     directory = tmp_path / "dist"
     role_zip(directory / PLUGIN_ZIP, "TakaroValheim")
+    role_zip(directory / COMPANION_ZIP, "TakaroValheimInventoryCompanion")
     manifest = manifest_for(run, repo, directory)
 
     code, payload, err = run(
@@ -800,25 +805,27 @@ def test_deploy_unpacks_the_plugin(run: Any, repo: Path, dd_log: Path, tmp_path:
     assert (dest / "BepInEx" / "plugins" / "TakaroValheim" / "TakaroValheim.dll").is_file()
     assert not stale_cache.exists()
     assert not (dest / "BepInEx" / "plugins" / "takaro-valheim-plugin-linux-1.0.15-3.0.2.zip").exists()
-    assert not (dest / "takaro-companion").exists()
+    parked = dest / "takaro-companion" / COMPANION_ZIP
+    assert parked.is_file()
+    assert not (dest / "takaro-companion" / "TakaroValheimInventoryCompanion").exists()
     ledger = json.loads((dest / ".takaro" / "installed-target.json").read_text())
     by_role = {row["role"]: row["path"] for row in ledger["artifacts"]}
-    assert list(by_role) == ["server-plugin"]
     assert by_role["server-plugin"].endswith(PLUGIN_ZIP)
+    assert by_role["client-companion"].endswith(COMPANION_ZIP)
 
 
-def test_deploy_refuses_any_role_other_than_the_server_plugin(tmp_path: Path) -> None:
+def test_deploy_refuses_a_role_valheim_does_not_ship(tmp_path: Path) -> None:
     from takaro_maint.exit_codes import ConflictError
 
     dest = tmp_path / "server"
-    artifact = tmp_path / "dist" / "takaro-valheim-companion.zip"
-    role_zip(artifact, "TakaroValheimCompanion")
+    artifact = tmp_path / "dist" / "takaro-valheim-bogus.zip"
+    role_zip(artifact, "TakaroValheimBogus")
 
-    with pytest.raises(ConflictError, match="only a server-plugin"):
-        adapter_for(GAME).after_deploy(dest, {"role": "client-companion", "installDir": "takaro-companion"}, artifact)
+    with pytest.raises(ConflictError, match="not 'bogus'"):
+        adapter_for(GAME).after_deploy(dest, {"role": "bogus", "installDir": "BepInEx/plugins"}, artifact)
 
-    assert not (dest / "takaro-companion").exists()
-    assert not (dest / "BepInEx" / "plugins" / "TakaroValheimCompanion").exists()
+    assert not (dest / "BepInEx" / "plugins" / "TakaroValheimBogus").exists()
+    assert not (dest / "BepInEx" / "plugins" / "TakaroValheim").exists()
 
 
 def test_a_plugin_zip_with_a_second_top_level_folder_is_refused(
@@ -828,6 +835,7 @@ def test_a_plugin_zip_with_a_second_top_level_folder_is_refused(
     assert install(run, repo, dest)[0] == 0
     directory = tmp_path / "dist"
     role_zip(directory / PLUGIN_ZIP, "TakaroValheim", second_folder=True)
+    role_zip(directory / COMPANION_ZIP, "TakaroValheimInventoryCompanion")
     manifest = manifest_for(run, repo, directory)
 
     code, payload, _ = run(
@@ -847,6 +855,7 @@ def test_a_plugin_zip_that_fails_half_way_leaves_the_installed_plugin_in_place(
     assert install(run, repo, dest)[0] == 0
     directory = tmp_path / "dist"
     role_zip(directory / PLUGIN_ZIP, "TakaroValheim")
+    role_zip(directory / COMPANION_ZIP, "TakaroValheimInventoryCompanion")
     manifest = manifest_for(run, repo, directory)
     assert (
         run("deploy", "--game", GAME, "--target", TARGET, "--dest", str(dest), "--from", str(manifest), repo=repo)[0]
@@ -943,7 +952,7 @@ def git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True, env=env).stdout.strip()
 
 
-def test_compat_record_carries_the_plugin_the_steam_pin_and_the_pack(run: Any, repo: Path, tmp_path: Path) -> None:
+def test_compat_record_carries_both_roles_the_steam_pin_and_the_pack(run: Any, repo: Path, tmp_path: Path) -> None:
     git(repo, "init", "-q", "-b", "main")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "fixture")
@@ -951,7 +960,11 @@ def test_compat_record_carries_the_plugin_the_steam_pin_and_the_pack(run: Any, r
     resolved = resolve(run, repo)
     directory = tmp_path / "dist" / TARGET
     role_zip(directory / PLUGIN_ZIP, "TakaroValheim")
-    rows = [artifact_row("server-plugin", TARGET, resolved["fingerprint"], directory / PLUGIN_ZIP)]
+    role_zip(directory / COMPANION_ZIP, "TakaroValheimInventoryCompanion")
+    rows = [
+        artifact_row("client-companion", TARGET, resolved["fingerprint"], directory / COMPANION_ZIP),
+        artifact_row("server-plugin", TARGET, resolved["fingerprint"], directory / PLUGIN_ZIP),
+    ]
     for row in rows:
         write_meta(directory, row, connector=GAME, version=VERSION, revision=commit)
     write_manifest(
@@ -989,15 +1002,16 @@ def test_compat_record_carries_the_plugin_the_steam_pin_and_the_pack(run: Any, r
     assert code == 0, f"{err}\n{payload}"
     record = json.loads((out / f"takaro-valheim-{VERSION}.compat.json").read_text())
     entry = record["targets"][TARGET]
-    assert [row["role"] for row in entry["artifacts"]] == ["server-plugin"]
-    assert [row["name"] for row in entry["artifacts"]] == [PLUGIN_ZIP]
+    assert sorted(row["role"] for row in entry["artifacts"]) == ["client-companion", "server-plugin"]
+    assert {row["name"] for row in entry["artifacts"]} == {PLUGIN_ZIP, COMPANION_ZIP}
     assert entry["inputs"]["server"]["url"].startswith("steam://app/896660/")
     assert entry["inputs"]["bepinex"]["url"].endswith(f"/{PACK_VERSION}/")
     assert entry["verification"]["required"] == "contract"
     assert entry["verification"]["executed"] is None
-    assert (out / PLUGIN_ZIP).is_file()
+    for name in (PLUGIN_ZIP, COMPANION_ZIP):
+        assert (out / name).is_file()
     assert (out / "takaro-valheim-plugin.zip").read_bytes() == (out / PLUGIN_ZIP).read_bytes()
-    assert not (out / "takaro-valheim-companion.zip").exists()
+    assert (out / "takaro-valheim-inventory-companion.zip").read_bytes() == (out / COMPANION_ZIP).read_bytes()
 
 
 # --------------------------------------------------------------------------- the rig

@@ -13,6 +13,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\mod\src\Takaro.Valheim.Companion\Takaro.Valheim.Companion.csproj" />
+    <ProjectReference Include="..\..\mod\src\Takaro.Valheim.Companion.Protocol\Takaro.Valheim.Companion.Protocol.csproj" />
     <ProjectReference Include="..\..\mod\src\Takaro.Valheim.Core\Takaro.Valheim.Core.csproj" />
     <ProjectReference Include="..\..\mod\src\Takaro.Valheim.Plugin\Takaro.Valheim.Plugin.csproj" />
   </ItemGroup>

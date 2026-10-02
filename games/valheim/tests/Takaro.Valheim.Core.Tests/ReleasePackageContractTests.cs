@@ -18,7 +18,7 @@ public sealed class ReleasePackageContractTests
     private const string LoaderVersion = "5.4.23.5";
 
     [TestMethod]
-    public void ValidServerPluginFixturePasses()
+    public void ValidSeparateServerAndClientFixturesPass()
     {
         using var fixture = CreateFixture();
 
@@ -28,19 +28,19 @@ public sealed class ReleasePackageContractTests
     }
 
     [DataTestMethod]
-    [DataRow("missing-server-dll")]
-    [DataRow("missing-core-dll")]
-    [DataRow("wrong-server-role")]
-    [DataRow("companion-dll-in-server")]
-    [DataRow("config-in-server")]
-    [DataRow("pdb-in-server")]
-    [DataRow("deps-in-server")]
-    [DataRow("host-dll-in-server")]
-    [DataRow("jotunn-in-server")]
-    [DataRow("extra-top-level-entry")]
-    [DataRow("second-plugin-archive")]
+    [DataRow("missing-client-dll")]
+    [DataRow("wrong-client-role")]
+    [DataRow("server-dll-in-client")]
+    [DataRow("client-dll-in-server")]
+    [DataRow("core-dll-in-client")]
+    [DataRow("config-in-client")]
+    [DataRow("pdb-in-client")]
+    [DataRow("deps-in-client")]
+    [DataRow("host-dll-in-client")]
+    [DataRow("jotunn-in-client")]
+    [DataRow("cloud-marker-in-client")]
     [DataRow("product-version-mismatch")]
-    [DataRow("companion-protocol-in-manifest")]
+    [DataRow("protocol-version-mismatch")]
     [DataRow("bepinex-version-equals-plugin-version")]
     [DataRow("pack-version-floating")]
     [DataRow("missing-plugin-version")]
@@ -55,43 +55,41 @@ public sealed class ReleasePackageContractTests
     }
 
     [TestMethod]
-    public void ReleaseScriptsAndWorkflowPublishOnlyTheServerPluginArchive()
+    public void ReleaseScriptsAndWorkflowPublishBothRoleSpecificArchives()
     {
         var harness = ReadValheimFile("tests/release-package-behavior.sh");
         var release = ReadValheimFile("scripts/build-release.sh");
         var workflow = ReadRepositoryFile(".github/workflows/valheim.yml");
         var game = ReadRepositoryFile("catalog/valheim/game.json");
 
-        // The release script spells no archive name: it takes it from the resolved target,
-        // so a re-pin renames the artifact on its own.
+        // The release script spells neither archive name: it takes both from the resolved
+        // target, one key per role, so a re-pin renames the artifacts on its own.
         StringAssert.Contains(release, "VALHEIM_ARTIFACT_SERVER_PLUGIN");
+        StringAssert.Contains(release, "VALHEIM_ARTIFACT_CLIENT_COMPANION");
         Assert.IsFalse(
             release.Contains("takaro-valheim-plugin", StringComparison.Ordinal),
             "the release script must not hard-code an archive name the catalog owns.");
-        Assert.IsFalse(release.Contains("companion", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(release.Contains("CLIENT_", StringComparison.Ordinal));
-        Assert.AreEqual(
-            1,
-            release.Split("dotnet publish ", StringSplitOptions.None).Length - 1,
-            "the release builds exactly one project.");
-        StringAssert.Contains(release, "mod/src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj");
 
-        // The harness finds the one plugin archive by name, whatever the target is.
+        // The harness still finds one archive per role by name, whatever the target is.
         StringAssert.Contains(harness, "takaro-valheim-plugin");
-        Assert.IsFalse(harness.Contains("TakaroValheimCompanion", StringComparison.Ordinal));
+        StringAssert.Contains(harness, "takaro-valheim-inventory-companion");
 
-        // The pattern and the legacy alias are declared in one place: the game record.
+        // Both patterns and both legacy aliases are declared in one place: the game record.
         StringAssert.Contains(game, "takaro-valheim-plugin-{target}-{version}.zip");
+        StringAssert.Contains(game, "takaro-valheim-inventory-companion-{target}-{version}.zip");
         StringAssert.Contains(game, "\"takaro-valheim-plugin.zip\"");
+        StringAssert.Contains(game, "\"takaro-valheim-inventory-companion.zip\"");
         StringAssert.Contains(game, "server-plugin");
-        Assert.IsFalse(game.Contains("companion", StringComparison.OrdinalIgnoreCase));
+        StringAssert.Contains(game, "client-companion");
 
+        StringAssert.Contains(harness, "rg -a -q");
+        Assert.IsFalse(harness.Contains("rg -q \"$marker\" \"$client_zip\"", StringComparison.Ordinal));
         StringAssert.Contains(release, "SOURCE_DATE_EPOCH");
         StringAssert.Contains(release, "zip -X");
         StringAssert.Contains(release, "LC_ALL=C sort");
         StringAssert.Contains(release, "release-package-behavior.sh");
 
-        // One publisher for every connector: the workflow hands the role to the shared
+        // One publisher for every connector: the workflow hands both roles to the shared
         // release workflow instead of naming assets itself.
         StringAssert.Contains(workflow, "./.github/workflows/connector-release.yml");
         StringAssert.Contains(workflow, "connector: valheim");
@@ -122,80 +120,98 @@ public sealed class ReleasePackageContractTests
         const string cachePath = "BepInEx/cache/chainloader_typeloader.dat";
 
         Assert.AreEqual(
-            1,
+            2,
             release.Split(cachePath, StringSplitOptions.None).Length - 1,
-            "The packaged server README must invalidate BepInEx's metadata cache.");
+            "Both packaged role READMEs must invalidate BepInEx's metadata cache.");
         StringAssert.Contains(release, "before restarting");
     }
 
     private static TemporaryDirectory CreateFixture(string? mutation = null)
     {
         var fixture = new TemporaryDirectory();
-        var stage = Path.Combine(fixture.Path, "server");
-        var server = Path.Combine(stage, "TakaroValheim");
+        var server = Path.Combine(fixture.Path, "server", "TakaroValheim");
+        var client = Path.Combine(fixture.Path, "client", "TakaroValheimInventoryCompanion");
         Directory.CreateDirectory(server);
+        Directory.CreateDirectory(client);
 
         Write(Path.Combine(server, "TakaroValheim.dll"), "server fixture");
         Write(Path.Combine(server, "Takaro.Valheim.Core.dll"), "core fixture");
+        Write(Path.Combine(server, "Takaro.Valheim.Companion.Protocol.dll"), "protocol fixture");
         Write(Path.Combine(server, "README.txt"), "server install fixture");
         WriteManifest(Path.Combine(server, "manifest.json"), "dedicated-server");
+
+        Write(Path.Combine(client, "Takaro.Valheim.Companion.dll"), "client fixture");
+        Write(Path.Combine(client, "Takaro.Valheim.Companion.Protocol.dll"), "protocol fixture");
+        Write(Path.Combine(client, "README.txt"), "client install fixture");
+        WriteManifest(Path.Combine(client, "manifest.json"), "graphical-client");
 
         switch (mutation)
         {
             case null:
                 break;
-            case "missing-server-dll":
-                File.Delete(Path.Combine(server, "TakaroValheim.dll"));
+            case "missing-client-dll":
+                File.Delete(Path.Combine(client, "Takaro.Valheim.Companion.dll"));
                 break;
-            case "missing-core-dll":
-                File.Delete(Path.Combine(server, "Takaro.Valheim.Core.dll"));
+            case "wrong-client-role":
+                WriteManifest(Path.Combine(client, "manifest.json"), "dedicated-server");
                 break;
-            case "wrong-server-role":
-                WriteManifest(Path.Combine(server, "manifest.json"), "graphical-client");
+            case "client-dll-in-server":
+                Write(Path.Combine(server, "Takaro.Valheim.Companion.dll"), "wrong role");
                 break;
-            case "companion-dll-in-server":
-                Write(Path.Combine(server, "Takaro.Valheim.Companion.Protocol.dll"), "retired role");
+            case "server-dll-in-client":
+                Write(Path.Combine(client, "TakaroValheim.dll"), "wrong role");
                 break;
-            case "config-in-server":
-                Write(Path.Combine(server, "com.takaro.valheim.cfg"), "registrationToken=secret");
+            case "core-dll-in-client":
+                Write(Path.Combine(client, "Takaro.Valheim.Core.dll"), "wrong role");
                 break;
-            case "pdb-in-server":
-                Write(Path.Combine(server, "TakaroValheim.pdb"), "debug");
+            case "config-in-client":
+                Write(Path.Combine(client, "com.takaro.valheim.cfg"), "registrationToken=secret");
                 break;
-            case "deps-in-server":
-                Write(Path.Combine(server, "TakaroValheim.deps.json"), "{}");
+            case "pdb-in-client":
+                Write(Path.Combine(client, "Takaro.Valheim.Companion.pdb"), "debug");
                 break;
-            case "host-dll-in-server":
-                Write(Path.Combine(server, "BepInEx.dll"), "host");
+            case "deps-in-client":
+                Write(Path.Combine(client, "Takaro.Valheim.Companion.deps.json"), "{}");
                 break;
-            case "jotunn-in-server":
-                Write(Path.Combine(server, "Jotunn.dll"), "host");
+            case "host-dll-in-client":
+                Write(Path.Combine(client, "BepInEx.dll"), "host");
                 break;
-            case "extra-top-level-entry":
-                Write(Path.Combine(stage, "Other", "Other.dll"), "stray");
+            case "jotunn-in-client":
+                Write(Path.Combine(client, "Jotunn.dll"), "host");
                 break;
-            case "second-plugin-archive":
-                ZipFile.CreateFromDirectory(
-                    stage,
-                    Path.Combine(fixture.Path, "takaro-valheim-plugin-linux-1.0.16-2.0.0.zip"),
-                    CompressionLevel.NoCompression,
-                    includeBaseDirectory: false);
+            case "cloud-marker-in-client":
+                Write(Path.Combine(client, "Takaro.Valheim.Companion.dll"), "ClientWebSocket connect.takaro.io");
                 break;
             case "product-version-mismatch":
-                WriteManifest(Path.Combine(server, "manifest.json"), "dedicated-server", version: "2.0.1");
+                WriteManifest(
+                    Path.Combine(client, "manifest.json"),
+                    "graphical-client",
+                    version: "2.0.1");
                 break;
-            case "companion-protocol-in-manifest":
-                WriteManifest(Path.Combine(server, "manifest.json"), "dedicated-server", withProtocol: true);
+            case "protocol-version-mismatch":
+                WriteManifest(
+                    Path.Combine(client, "manifest.json"),
+                    "graphical-client",
+                    protocolCurrent: 4);
                 break;
             // The loader version, pack version and plugin version are independent fields.
             case "bepinex-version-equals-plugin-version":
-                WriteManifest(Path.Combine(server, "manifest.json"), "dedicated-server", loaderVersion: PluginVersion);
+                WriteManifest(
+                    Path.Combine(client, "manifest.json"),
+                    "graphical-client",
+                    loaderVersion: PluginVersion);
                 break;
             case "pack-version-floating":
-                WriteManifest(Path.Combine(server, "manifest.json"), "dedicated-server", packVersion: "latest");
+                WriteManifest(
+                    Path.Combine(client, "manifest.json"),
+                    "graphical-client",
+                    packVersion: "latest");
                 break;
             case "missing-plugin-version":
-                WriteManifest(Path.Combine(server, "manifest.json"), "dedicated-server", pluginVersion: null);
+                WriteManifest(
+                    Path.Combine(client, "manifest.json"),
+                    "graphical-client",
+                    pluginVersion: null);
                 break;
             default:
                 Assert.Fail($"Unknown fixture mutation {mutation}.");
@@ -203,8 +219,13 @@ public sealed class ReleasePackageContractTests
         }
 
         ZipFile.CreateFromDirectory(
-            stage,
+            Path.Combine(fixture.Path, "server"),
             Path.Combine(fixture.Path, "takaro-valheim-plugin.zip"),
+            CompressionLevel.NoCompression,
+            includeBaseDirectory: false);
+        ZipFile.CreateFromDirectory(
+            Path.Combine(fixture.Path, "client"),
+            Path.Combine(fixture.Path, "takaro-valheim-inventory-companion.zip"),
             CompressionLevel.NoCompression,
             includeBaseDirectory: false);
         return fixture;
@@ -214,14 +235,16 @@ public sealed class ReleasePackageContractTests
         string path,
         string role,
         string version = Version,
-        bool withProtocol = false,
+        int protocolCurrent = 3,
         string? pluginVersion = PluginVersion,
         string packVersion = PackVersion,
         string loaderVersion = LoaderVersion)
     {
         var manifest = new Dictionary<string, object?>
         {
-            ["name"] = "TakaroValheim",
+            ["name"] = role == "dedicated-server"
+                ? "TakaroValheim"
+                : "TakaroValheimInventoryCompanion",
             ["productVersion"] = version,
             ["bepInExPack"] = new
             {
@@ -230,13 +253,14 @@ public sealed class ReleasePackageContractTests
                 version = packVersion
             },
             ["bepInExVersion"] = loaderVersion,
-            ["processRole"] = role
+            ["processRole"] = role,
+            ["protocol"] = new
+            {
+                minimum = 3,
+                current = protocolCurrent,
+                maximum = 3
+            }
         };
-        if (withProtocol)
-        {
-            manifest["protocol"] = new { minimum = 2, current = 2, maximum = 2 };
-        }
-
         if (pluginVersion is not null)
         {
             manifest["pluginVersion"] = pluginVersion;

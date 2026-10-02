@@ -49,6 +49,7 @@ public sealed class CapabilityRegistryTests
     private static readonly HashSet<string> AllowedOwnership =
     [
         "server-owned",
+        "client-reported",
         "upstream-blocked",
         "unsupported"
     ];
@@ -97,13 +98,13 @@ public sealed class CapabilityRegistryTests
     public void RegistryPublishesServerOnlyOwnership()
     {
         var raw = ReadValheimFile("capabilities.json");
-        Assert.IsFalse(raw.Contains("companion", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(raw.Contains("companionMode", StringComparison.OrdinalIgnoreCase));
 
         using var registry = JsonDocument.Parse(raw);
         var root = registry.RootElement;
 
-        Assert.AreEqual("dedicated-server-plugin", root.GetProperty("architecture").GetString());
-        Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
+        Assert.AreEqual("dedicated-server-plugin-with-optional-inventory-companion", root.GetProperty("architecture").GetString());
+        Assert.AreEqual("live-supported", root.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getMapInfo").GetString());
         Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getMapTile").GetString());
         Assert.AreEqual("schema-fallback", root.GetProperty("actions").GetProperty("listLocations").GetString());
@@ -113,8 +114,9 @@ public sealed class CapabilityRegistryTests
         }
 
         var ownership = root.GetProperty("ownership");
+        // Only the optional inventory mod can answer getPlayerInventory; its data is client-reported.
         Assert.AreEqual(
-            "unsupported",
+            "client-reported",
             ownership.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
         Assert.AreEqual(
             "upstream-blocked",

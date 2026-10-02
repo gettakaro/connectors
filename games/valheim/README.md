@@ -1,8 +1,10 @@
 # Takaro Valheim Connector
 
 A BepInEx plugin (version **4.0.0**) that runs inside a Valheim dedicated server and connects it
-to Takaro. Players do not install anything: they join with plain, unmodified Valheim. Built
-against **Valheim 1.0.16** with **BepInExPack Valheim 5.4.2351**.
+to Takaro. Players do not install anything: they join with plain, unmodified Valheim. Only
+reading a player's inventory needs an optional mod on that player's game
+([step 7](#7-optional-inventory-mod-for-players)). Built against **Valheim 1.0.16** with
+**BepInExPack Valheim 5.4.2351**.
 
 ## Install
 
@@ -90,13 +92,30 @@ Stop the server, delete `BepInEx/plugins/TakaroValheim/` and unzip the new versi
 Delete `BepInEx/cache/chainloader_typeloader.dat` before starting again, or BepInEx may keep
 loading the old plugin. Your config file stays as it is.
 
+### 7. Optional: inventory mod for players
+
+Everything except **Player inventory** works without it. A player who wants Takaro to see their
+inventory installs it on their own game; nobody else needs it, and players without it play
+normally on the same server.
+
+1. On the player's PC, install **BepInExPack Valheim 5.4.2351** into the Valheim game folder
+   (`steamapps/common/Valheim`) and start the game once.
+2. From the same release, download **`takaro-valheim-inventory-companion.zip`** and unzip it so
+   the `TakaroValheimInventoryCompanion` folder lands in `BepInEx/plugins/` of that game folder.
+3. Start Valheim and join the server.
+
+It holds no Takaro token and only talks to the Valheim server the player is connected to. In the
+server's `BepInEx/LogOutput.log` a working mod shows
+`Takaro Valheim inventory companion negotiated with peer ...`. A mod from another version is
+logged as ignored; the player stays connected.
+
 ### Upgrade from 3.x
 
 Version 4.0.0 needs nothing on the game clients any more.
 
-1. Replace the `TakaroValheim` folder as above. If `Takaro.Valheim.Companion.Protocol.dll` is
-   still in it, delete it.
-2. Players can remove the old client companion mod; it is no longer used.
+1. Replace the `TakaroValheim` folder as above.
+2. Players remove the old client companion mod (`TakaroValheimCompanion`); it no longer works
+   with this server. For inventory, install the new optional mod from step 7 instead.
 3. The old `companionMode` config key is ignored and can be deleted.
 
 ## What works, what doesn't
@@ -110,7 +129,7 @@ Tested on Valheim 1.0.16 with BepInExPack 5.4.2351 and a vanilla game client, 20
 | Player list | ✅ | Name, Steam id and online state. |
 | Single player lookup | ❌ | Takaro offers no route to ask for one player. |
 | Player location | ✅ | The server's known position; never invented. |
-| Player inventory | ❌ | Inventories live on the game client; server can't read them. |
+| Player inventory | ⚠️ | Works only for players with the optional inventory mod. |
 | Give an item | ✅ | Dropped at the player's feet; picked up automatically. |
 | Item catalogue | ✅ | English in-game names, filled when Takaro syncs. |
 | Entity catalogue | ✅ | English in-game names, filled when Takaro syncs. |
@@ -128,7 +147,7 @@ Tested on Valheim 1.0.16 with BepInExPack 5.4.2351 and a vanilla game client, 20
 | Player left event | ✅ | Arrives with the last-known position. |
 | Player chat event | ✅ | Works even when a player is alone. |
 | Player death event | ✅ | Player and position included. |
-| Entity kill event | ⚠️ | Single-blow kills only counted when a player stood nearby. |
+| Entity kill event | ✅ | Every player kill counted; with the mod, assists aren't counted as kills. |
 | Log events | ✅ | Connector log lines forwarded (`enableLogEvents`). |
 | Map info | ❌ | Not available for Generic game servers. |
 | Map tiles | ❌ | Not available for Generic game servers. |
@@ -146,6 +165,7 @@ Tested on Valheim 1.0.16 with BepInExPack 5.4.2351 and a vanilla game client, 20
 ### Known issues
 
 - Players see a "Takaro" entry in the in-game player list; it is how server chat works.
+- Without the mod, a kill finished by a creature after the player hit it still counts for the player.
 - Ban reasons are discarded: Valheim's ban list stores only the player id.
 - Given and shop items drop at the player's feet; anyone nearby could grab them first.
 - Console commands only run when allowlisted; the default allowlist is just `help`.

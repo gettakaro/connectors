@@ -33,6 +33,7 @@ dependency URL or an artifact name. `scripts/lib-target.sh` resolves the target 
 | `VALHEIM_BEPINEX_PACKAGE/_PACK_VERSION/_URL/_SHA256/_SIZE/_FILE` | the pack pin |
 | `VALHEIM_REFERENCES_DIR`, `VALHEIM_BEPINEX_DIR`, `VALHEIM_DEP_*` | where the build's inputs land, and where they come from |
 | `VALHEIM_ARTIFACT_SERVER_PLUGIN` | the server plugin artifact name, with `{version}` still to substitute |
+| `VALHEIM_ARTIFACT_CLIENT_COMPANION` | the optional client inventory companion artifact name, likewise |
 
 What lands where, for the fingerprint of the target you resolved:
 
@@ -40,7 +41,7 @@ What lands where, for the fingerprint of the target you resolved:
 |---|---|
 | `_data/references/<fp16>/` | the game's compile references and `.takaro/references.json` |
 | `_data/deps/bepinex/<fp16>/` | the unpacked BepInEx pack and `.takaro/loader-version` |
-| `_data/dist/<fp16>/` | the server plugin zip and its `.meta.json` sidecar |
+| `_data/dist/<fp16>/` | the server plugin zip, the optional inventory companion zip, and their `.meta.json` sidecars |
 
 A different target has a different fingerprint and therefore its own directories; nothing
 is shared between builds for different server versions.
@@ -86,6 +87,17 @@ Build the plugin by hand against references you already have:
 dotnet build mod/src/Takaro.Valheim.Plugin/Takaro.Valheim.Plugin.csproj \
   -f net472 \
   -p:EnableValheimPluginBuild=true \
+  -p:BepInExReferencePath=/path/to/BepInEx/core \
+  -p:ValheimReferencePath=/path/to/valheim_server_Data/Managed
+```
+
+Build the optional client inventory companion the same way. It compiles against the same
+`assembly_valheim` the server ships, so the server's `Managed` folder works as reference:
+
+```bash
+dotnet publish mod/src/Takaro.Valheim.Companion/Takaro.Valheim.Companion.csproj \
+  -c Release -f net472 -o out/TakaroValheimInventoryCompanion \
+  -p:EnableValheimCompanionBuild=true \
   -p:BepInExReferencePath=/path/to/BepInEx/core \
   -p:ValheimReferencePath=/path/to/valheim_server_Data/Managed
 ```
@@ -145,7 +157,8 @@ mean three different things:
 connector's version as BepInEx's. It now carries the real loader version, recorded by
 `scripts/bepinex-loader-version.proj` into `_data/deps/bepinex/<fp16>/.takaro/loader-version`
 at setup time. `target.{game,id,revision,fingerprint}` names the build the zip was made
-for, and `processRole` is always `dedicated-server`.
+for. `processRole` is `dedicated-server` in the plugin zip and `graphical-client` in the
+inventory companion zip; both carry `protocol: {minimum: 3, current: 3, maximum: 3}`.
 
 ## Catalogue names
 
@@ -169,19 +182,68 @@ the harness does not look.
 
 Valheim has no RCON and no remote admin API, so the connector is a BepInEx plugin that
 runs **inside the dedicated server process** and dials out to `wss://connect.takaro.io/`.
-Players use plain vanilla Valheim; nothing is installed on clients.
+Players use plain vanilla Valheim; the only client mod is the optional inventory companion
+below, and nothing depends on it except `getPlayerInventory`.
 
 - `mod/src/Takaro.Valheim.Core` — the game-independent protocol, configuration, models,
-  policies and request dispatcher.
+  policies and request dispatcher, plus the server-side companion session, inventory cache
+  and kill-verdict store.
 - `mod/src/Takaro.Valheim.Plugin` — the dedicated-server BepInEx adapter
   (`com.takaro.valheim`, plugin name `Takaro Valheim`).
+- `mod/src/Takaro.Valheim.Companion.Protocol` — the wire contract shared by both roles.
+- `mod/src/Takaro.Valheim.Companion` — the optional graphical-client inventory companion
+  (`com.takaro.valheim.companion`, plugin name `Takaro Valheim Inventory Companion`).
 - `tests/Takaro.Valheim.Core.Tests` — protocol, behavior, packaging and capability-registry
   tests.
 - `capabilities.json` — the machine-readable support registry.
 
 The plugin disables itself before Harmony patching or connector startup when it is not
 running in a dedicated-server process; the server plugin still refuses graphical-client
-processes. Never copy `TakaroValheim.dll` into a game client.
+processes. Never copy `TakaroValheim.dll` into a game client. The companion likewise disables
+itself in a dedicated-server process.
+
+### Optional inventory companion
+
+A client mod a player may install so Takaro can read their inventory. It holds no Takaro
+credentials and talks only to the Valheim server it is connected to, over one routed RPC
+channel (`TakaroCompanionV1`). Everything it sends is client-reported and untrusted.
+
+- **Negotiation.** When a peer is ready, the server sends a `hello` (protocol 3, in a
+  protocol-2 envelope so an old companion can still read it and answer). A protocol-3
+  companion answers `hello-ack`; a companion on another version answers `hello-nack` with
+  its range. The server logs the mismatch and ignores that companion until the player
+  reconnects — it never kicks, warns the player, or waits. A vanilla client never answers;
+  the server re-offers with backoff (30 s doubling to 5 min), so it costs one small RPC
+  every few minutes. There is no `companionMode` setting and no required mode.
+- **Peer binding.** The server accepts an envelope only from the ready peer it offered the
+  session to, on the connection the RPC physically arrived on (an `RPC_RoutedRPC` arrival
+  patch), with that session's nonce and a strictly rising sequence. Payloads carry no
+  identity.
+- **Inventory.** The companion reads `Player.m_localPlayer`'s inventory every 2 s and sends
+  a snapshot when it changes, or every 20 s anyway. The server keeps the latest snapshot per
+  session for 30 s. `getPlayerInventory` returns those items (names localized to English on
+  the server); without a fresh snapshot it returns `server_only_unsupported` (or
+  `inventory_snapshot_stale`), which the runner suppresses for array actions — never `[]`.
+- **Kill verdicts.** When a non-player creature the local client owns dies and the local
+  player's name is marked on it (`ZDOVars.s_attackers + name`), the companion sends one
+  `kill-verdict` {`creatureZdo`, `prefab`, `enemyToken`, `lastHitByLocalPlayer`,
+  `lastHitAttackerKind`}, at most 4 in a burst and 2/s. The server keeps them per peer for
+  30 s (32 max) and exposes them through `CompanionKillVerdicts.HasSession` /
+  `TryTake`, used only to veto or confirm a kill the server detected itself.
+- **Game thread.** The client hook reads a few fields in a `Character.OnDeath` prefix and
+  sends in the postfix; nothing awaits the server. Server work is per-message, bounded (64
+  KiB envelopes, 256 stacks) and rate-limited per peer and message type.
+
+Server log lines to grep in `BepInEx/LogOutput.log`:
+
+```
+Takaro Valheim inventory companion RPC registered (optional client mod, protocol 3).
+Takaro Valheim inventory companion hello sent to peer <uid> (protocol 3; a vanilla client ignores it).
+Takaro Valheim inventory companion negotiated with peer <uid> (<name>): protocol 3, companion <version>. ...
+Takaro Valheim inventory companion snapshot accepted from peer <uid> (<name>): <n> stack(s), client-reported.
+Takaro Valheim inventory companion kill verdict from peer <uid> (<name>): creature=... (client-reported).
+Takaro Valheim inventory companion on peer <uid> (<name>) speaks protocol <x>; this server needs protocol 3. Ignoring it: ...
+```
 
 ### Server-side chat relay
 
@@ -204,16 +266,20 @@ relay is running.
   arrived on and, for `Say` and `OnDeath`, it targets that peer's own character. Spoofed
   senders are rejected (unit-tested). The copies of one chat line a client sends (one per
   player-list entry) are collapsed within 3 seconds.
-- `entity-killed` comes from the creature's network object when its owning game destroys
-  it. The creature carries `Attackers<playerName>` marks and a kill-style modifier. The
-  killer is the destroying player if it hit the creature, else the only player that hit it;
-  with several hitters and none of them the destroyer, the kill is not guessed. A creature
-  killed by a single blow carries no mark on the server, because mark and destroy happen in
-  the same frame; that kill is credited only if the creature's ragdoll appears from the
-  same game within 8 seconds, that player started a weapon attack (its animation trigger
-  passes through the server) within 4 seconds before, and stood within 8 m (50 m with a bow,
-  crossbow or staff). The weapon is the
-  killer's equipped right or left item display name (the bow for ranged), or `Unarmed`.
+- `entity-killed` uses Valheim's own kill credit. When a creature dies, `Character.OnDeath` on
+  the game that simulated it calls `Game.RegisterKill` for every player marked
+  `Attackers<playerName>` on the creature. Reports for other players travel through the server;
+  the report for that game's own player stays local. The server therefore sends each player a
+  per-peer `PlayerList` that also lists that player a second time (same name and platform id,
+  a server-owned character id, the "kill witness"), so the own-player report is routed to the
+  server too (`Game.RPC_RegisterKill` is disabled on the dedicated server). Reports are
+  accepted only from the authenticated peer they arrive on. The weapon is the killer's equipped
+  item display name (bow for ranged kills) or `Unarmed`.
+- Limit: Valheim credits every player who hit the creature, and the last hit
+  (`Character.m_lastHit`) never leaves the simulating game, so without the optional mod a
+  creature the player hit but something else finished still counts as the player's kill. With
+  the mod, its client-reported last-hit verdict vetoes such kills; the server waits at most 3 s
+  for it and otherwise uses its own credit. The mod never creates a kill.
 - Game events are queued until Takaro accepts identify and flushed afterwards, so events
   raised while identifying are not lost.
 
@@ -262,7 +328,7 @@ Ownership values are `server-owned`, `upstream-blocked` or `unsupported`.
 | `getPlayers` | `live-supported` | Reads the Valheim dedicated-server player list. The `Takaro` chat entry is never included. |
 | `getPlayer` | `unsupported` | Filtering exists, but Takaro exposes no single-player route to prove the final response shape. |
 | `getPlayerLocation` | `live-supported` | Uses only a real peer/public position or a fresh 30-second server-observed last-known position; an unavailable lookup is rejected through a schema-valid payload error. |
-| `getPlayerInventory` | `unsupported` | Valheim keeps inventories in the client profile; the server only sees equipped visuals. Returns an error instead of a fabricated `[]`. |
+| `getPlayerInventory` | `live-supported` | Ownership `client-reported`: needs the optional inventory companion on that player's game (live-proven 2026-10-02). Valheim keeps inventories in the client profile and the server only sees equipped visuals, so without a fresh companion snapshot it returns an error instead of a fabricated `[]`. |
 | `giveItem` | `live-supported` | Drops the items at the player's server-known position; the vanilla client's auto-pickup puts them in the bag (2026-10-01: 5 Raspberries and a Club landed in the inventory). |
 | `sendMessage` | `live-supported` | Sent as normal chat from the `Takaro` player-list entry, globally or to one recipient. The trimmed `opts.senderNameOverride` is used for that message; a missing or blank value displays as `chatSenderName` (default `Takaro`). |
 | `executeConsoleCommand` | `live-supported` | Runs only exact or prefix-allowlisted commands. |
@@ -310,8 +376,8 @@ required numeric fields plus `payload.error`. At Takaro source commit `0c63cf1c`
 connector validates that payload and `Generic.requestFromServer` rejects `payload.error`
 before returning a position. Root-level response metadata is not used by that consumer.
 
-Remote inventory is unavailable on the dedicated server, so `getPlayerInventory` never
-becomes a fabricated empty array.
+The dedicated server cannot read inventories itself; `getPlayerInventory` answers only from
+a fresh inventory-companion snapshot and otherwise never becomes a fabricated empty array.
 
 Other failure-capable actions return immediately. At Takaro source commit `0c63cf1c`,
 validation-free actions such as `giveItem`, messaging, teleport, moderation and shutdown
@@ -377,13 +443,18 @@ installation. BepInEx comes from the pinned Thunderstore
 `manifest.json` declares, and published atomically into `_data/deps/bepinex/<fp16>`: a
 failed download or a hash mismatch leaves the previous pack exactly as it was.
 
-The release produces one zip per target, named after the target
-(`takaro-valheim-plugin-linux-1.0.16-<version>.zip`), with a `.meta.json` sidecar recording
-the target, the fingerprint and the role (`server-plugin`). The old unsuffixed name
-`takaro-valheim-plugin.zip` is published alongside as a byte-identical alias of the default
-target. The zip contains the dedicated-server plugin, Core and required runtime
-dependencies, and excludes host-provided game, Unity, BepInEx, Harmony, Jotunn, debug and
-host files. There is no client-side package.
+The release produces two zips per target, named after the target
+(`takaro-valheim-plugin-linux-1.0.16-<version>.zip` and
+`takaro-valheim-inventory-companion-linux-1.0.16-<version>.zip`), each with a `.meta.json`
+sidecar recording the target, the fingerprint and the role (`server-plugin` or
+`client-companion`). The unsuffixed names `takaro-valheim-plugin.zip` and
+`takaro-valheim-inventory-companion.zip` are published alongside as byte-identical aliases of
+the default target. The plugin zip contains the dedicated-server plugin, Core, the shared
+protocol and required runtime dependencies; the companion zip contains only the companion,
+the shared protocol and its runtime dependencies. Neither carries the other's assemblies,
+the companion carries nothing that talks to Takaro, and both exclude host-provided game,
+Unity, BepInEx, Harmony, Jotunn, debug and host files. `takaro-maint deploy` unpacks the
+plugin and only parks the companion zip in `takaro-companion/`.
 
 ## Versioning
 

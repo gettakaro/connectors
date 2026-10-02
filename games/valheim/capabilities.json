@@ -1,11 +1,11 @@
 {
-  "architecture": "dedicated-server-plugin",
+  "architecture": "dedicated-server-plugin-with-optional-inventory-companion",
   "actions": {
     "testReachability": "live-supported",
     "getPlayers": "live-supported",
     "getPlayer": "unsupported",
     "getPlayerLocation": "live-supported",
-    "getPlayerInventory": "unsupported",
+    "getPlayerInventory": "live-supported",
     "giveItem": "live-supported",
     "sendMessage": "live-supported",
     "executeConsoleCommand": "live-supported",
@@ -35,7 +35,7 @@
       "getPlayers": "server-owned",
       "getPlayer": "server-owned",
       "getPlayerLocation": "server-owned",
-      "getPlayerInventory": "unsupported",
+      "getPlayerInventory": "client-reported",
       "giveItem": "server-owned",
       "sendMessage": "server-owned",
       "executeConsoleCommand": "server-owned",
@@ -61,18 +61,18 @@
     }
   },
   "notes": [
-    "The connector runs only inside the dedicated server as a BepInEx plugin. Players use plain vanilla Valheim; nothing is installed on clients, and every Takaro token and cloud setting stays on the dedicated server.",
+    "The connector runs inside the dedicated server as a BepInEx plugin. Players use plain vanilla Valheim and need nothing installed; every Takaro token and cloud setting stays on the dedicated server. The one exception is optional: a client inventory mod (takaro-valheim-inventory-companion.zip) that only getPlayerInventory needs.",
     "Server chat works through one 'Takaro' entry the server adds to the player list it sends to clients (outgoing packet only; the server's own player list and history never contain it). Vanilla clients send each chat line once per player-list entry and only render chat from listed senders, so player chat reaches the server even when a player is alone and server messages render as normal chat with the sender name.",
     "chat-message and player-death come from routed Say, ChatMessage, and OnDeath RPCs, accepted only when the packet's claimed sender equals the authenticated peer it arrived on and, for Say and OnDeath, the target is that peer's own character. Spoofed senders are rejected. Copies of one chat line are collapsed within 3 seconds.",
     "Game events are queued until Takaro accepts identify and flushed afterwards, so events raised while identifying are not lost.",
     "getPlayer is implemented by filtering the dedicated server player list, but its final Takaro response shape has not been independently live-proven, so it remains unsupported.",
     "getPlayerLocation uses only a real ready-peer/public observation or a fresh 30-second player-keyed last-known observation. If neither exists, a required-coordinate payload with error is rejected by current Takaro Generic.requestFromServer rather than returned as a position.",
-    "getPlayerInventory is unsupported: Valheim keeps inventories in the client profile, and the dedicated server only sees equipped visuals. The connector refuses rather than fabricating an inventory.",
+    "getPlayerInventory requires the optional inventory mod on each player's game. Valheim keeps inventories in the client profile and the dedicated server only sees equipped visuals, so the only source is that mod's client-reported snapshot (protocol 3, bound to the authenticated peer it arrives on, at most 30 seconds old). Without a fresh snapshot the action returns the server_only_unsupported error, never an empty list. It stays unsupported here until it is live-proven.",
+    "The optional inventory mod also sends one client-reported kill verdict when a creature its player owns dies with that player marked as an attacker. The server uses it only to veto or confirm a kill it detected itself; it never creates a kill. A mod speaking another protocol version is logged and ignored, and the player is never kicked.",
     "giveItem drops the items at the player's server-known position; the vanilla client's auto-pickup puts them in the player's bag. Takaro returns the empty success payload, so the API alone cannot tell whether the player has picked them up yet.",
     "sendMessage is server-owned: the server sends a normal chat line from the Takaro player-list entry, using opts.senderNameOverride when set and otherwise the configured chatSenderName (default Takaro). Global messages go to every peer; recipient messages go to that peer only.",
     "teleportPlayer routes Valheim's built-in RPC_TeleportTo to the server-known character ZDO owner.",
     "Item and entity names in listItems, listEntities, giveItem resolution, and events are the English display names from the game's own Localization (for example 'Crude Bow', 'Raspberries') rather than prefab tokens such as item_bow.",
-    "entity-killed coverage is partial. The event comes from the creature's network object when its owning game destroys it: the creature carries Attackers<playerName> marks and a kill-style modifier; the killer is the destroying player if it hit the creature, else the only player that hit it, and several hitters with none the destroyer are not guessed. A creature killed by a single blow carries no mark on the server, so that kill is credited only if its ragdoll appears from the same game within 8 seconds, that player started a weapon attack within 4 seconds before, and stood within 8 m (50 m with a bow, crossbow or staff). The weapon is the killer's equipped right or left item display name (the bow for ranged), or Unarmed.",
     "Player lifecycle frames are derived from dedicated-server player snapshots. Turn-3 Takaro eventSearch persisted two player-connected and two player-disconnected events; transport logs still claim only that a frame was written, not persistence acknowledgement.",
     "listLocations is schema-fallback: turn 4 live-proved the official raw Generic Connector action/schema with 11293 nested server-owned locations in a 1815046-byte response, but Takaro 0c63cf1c Generic.listLocations throws NotImplementedError, so the standard Takaro route is unavailable pending upstream support.",
     "getMapInfo and getMapTile are part of the exhaustive Takaro 0c63cf1c action list but unsupported at the dedicated-server-only boundary because Valheim exposes neither client map metadata nor rendered map tiles there.",
@@ -90,11 +90,14 @@
     "2026-10-01 server-only run (Valheim 1.0.16, vanilla client): teleportPlayer is live-supported. A Takaro teleport moved the player to the requested coordinates.",
     "2026-10-01 server-only run (Valheim 1.0.16, vanilla client): listItems and listEntities return English display names from the game's Localization (for example 'Crude Bow', 'Raspberries').",
     "2026-10-01 server-only run (Valheim 1.0.16, vanilla client): the identify-gated event queue held events raised before Takaro accepted identify and delivered them afterwards.",
-    "2026-10-01 server-only run (Valheim 1.0.16, vanilla client): entity-killed is live-supported with partial coverage. A Greyling killed bare-handed arrived with weapon 'Unarmed' and Boars killed with an Iron Sword arrived with weapon 'Iron Sword'; single-blow kills are credited only when the killer's attack animation and the creature's ragdoll are both seen and the killer is within 8 m (50 m with a ranged weapon). Creatures killed by anything else were not credited.",
     "2026-10-01 server-only run (Valheim 1.0.16, vanilla client): modules work through the vanilla chat path: @ping answered 'Pong!' in normal chat, @settp home and @tp home moved the player, economyUtils @balance answered and '@shop 1 1 buy' delivered 5 Wood that auto-pickup put in the bag.",
     "2026-10-01 server-only run (Valheim 1.0.16, vanilla client): kickPlayer, banPlayer, unbanPlayer and listBans re-proved: the client showed 'kicked' and 'Banned', listBans returned the ban, unban emptied it and the player rejoined.",
     "2026-10-01 server-only run (Valheim 1.0.16, vanilla client): shutdown re-proved: the response frame was written before the scheduled Application.Quit on the main thread.",
     "2026-10-01 server-only run (Valheim 1.0.16, vanilla client): resilience: after a game-server restart the connector re-identified and fresh connect, chat and death events arrived; during a 90 s Takaro outage the chat line and death raised while offline were re-sent after reconnect and stored once each (delivery is confirmed by a ping/pong round trip, a dead link is detected within 15 s, connect and send are bounded by timers).",
-    "2026-10-01 server-only run (Valheim 1.0.16, vanilla client): testReachability answers off the main thread: connectable false with a reason while networking starts or the world loads (and if the main loop stalls for more than 8 s), true once players can join."
+    "2026-10-01 server-only run (Valheim 1.0.16, vanilla client): testReachability answers off the main thread: connectable false with a reason while networking starts or the world loads (and if the main loop stalls for more than 8 s), true once players can join.",
+    "entity-killed comes from Valheim's own kill credit. When a creature dies, the game that simulated it sends Game.RegisterKill to every player marked as having hit it; for that game's own player the report stays local, so the server lists each player a second time (same name and platform id, a server-owned character id) in the PlayerList it sends to that player, which routes the own-player report to the server. The report is accepted only from the authenticated peer it arrived on.",
+    "2026-10-02 run (Valheim 1.0.16, build 4.0.0-dev.12): vanilla client, 79 kill trials: every player kill counted - one-hit melee 17/17, multi-hit melee 10/10, bow 4/4, fire damage over time 7/7, poison damage over time 3/3, tamed creature 6/6; creatures the player never hit (39, incl. one dying next to the player) 0 counted. Not decidable server-only: a creature the player hit but something else finished (9/9 counted as the player's kill, matching Valheim's own kill statistics), because Character.m_lastHit never leaves the simulating game.",
+    "2026-10-02 run (Valheim 1.0.16, build 4.0.0-dev.12): with the optional inventory mod, its client-reported last-hit verdict vetoes a kill whose last hit was not the player: 14/14 player-finished kills credited, 10/10 creature-finished kills (player hit first) not credited, 0 wrong. Without a verdict within 3 s the server's own credit stands; the mod never creates a kill and the same kill is never counted twice.",
+    "2026-10-02 run (Valheim 1.0.16, build 4.0.0-dev.12): getPlayerInventory is live-supported with the optional inventory mod: after giving Iron Sword, 7 Raspberries, 23 Wood, 5 Cooked Boar Meat and Iron Scale Mail, Takaro's inventory read showed exactly those five stacks with English names, matching the client's inventory screen. A vanilla client gets no answer (server_only_unsupported, the request expires), never an invented empty list."
   ]
 }

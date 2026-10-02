@@ -17,42 +17,15 @@ internal static class ValheimServerEventBridge
     private static readonly int ChatMessageHash = "ChatMessage".GetStableHashCode();
     private static readonly int SayHash = "Say".GetStableHashCode();
     private static readonly int OnDeathHash = "OnDeath".GetStableHashCode();
-    private static readonly int SetTriggerHash = "SetTrigger".GetStableHashCode();
-    private static readonly Dictionary<long, DateTimeOffset> LastAttack = new();
-    private static HashSet<string>? attackAnimations;
+    private static readonly int RegisterKillHash = "RPC_RegisterKill".GetStableHashCode();
+    private static readonly TimeSpan CompanionVerdictWait = TimeSpan.FromSeconds(3);
+    private static readonly List<PendingKill> PendingKills = new();
     private static readonly ServerChatRelayPolicy ChatPolicy = new();
     private static readonly OnceWithinWindow Deaths = new(TimeSpan.FromSeconds(5));
-    private static readonly OnceWithinWindow Kills = new(TimeSpan.FromSeconds(30));
     private static TakaroWebSocketRunner? runner;
     private static ValheimPlayerResolver? resolver;
     private static Action<string> log = _ => { };
     private static int rejectedLogsRemaining = 50;
-    private static readonly List<PendingDeath> PendingDeaths = new();
-    private static readonly Dictionary<int, int[]> RagdollPrefabs = new();
-    private static readonly OnceWithinWindow UsedRagdolls = new(TimeSpan.FromMinutes(2));
-    private static float nextPendingCheck;
-
-    private sealed class PendingDeath
-    {
-        public PendingDeath(ZDOID creature, long destroyerUid, Vector3 position, string prefabName, string entity, int[] ragdollHashes, DateTimeOffset destroyedAt)
-        {
-            Creature = creature;
-            DestroyerUid = destroyerUid;
-            Position = position;
-            PrefabName = prefabName;
-            Entity = entity;
-            RagdollHashes = ragdollHashes;
-            DestroyedAt = destroyedAt;
-        }
-
-        public ZDOID Creature { get; }
-        public long DestroyerUid { get; }
-        public Vector3 Position { get; }
-        public string PrefabName { get; }
-        public string Entity { get; }
-        public int[] RagdollHashes { get; }
-        public DateTimeOffset DestroyedAt { get; }
-    }
 
     [ThreadStatic]
     private static ZNetPeer? arrivalPeer;
@@ -62,7 +35,7 @@ internal static class ValheimServerEventBridge
         runner = activeRunner;
         resolver = playerResolver;
         log = logger ?? (_ => { });
-        log("Takaro Valheim server-side events active: chat-message and player-death from peer-bound routed RPCs, entity-killed from creature network objects.");
+        log("Takaro Valheim server-side events active: chat-message and player-death from peer-bound routed RPCs, entity-killed from the game's own kill reports.");
     }
 
     public static void Shutdown()
@@ -89,7 +62,7 @@ internal static class ValheimServerEventBridge
         {
             var data = new ZRoutedRpc.RoutedRPCData();
             data.Deserialize(package);
-            if (data.m_methodHash != SayHash && data.m_methodHash != ChatMessageHash && data.m_methodHash != OnDeathHash && data.m_methodHash != SetTriggerHash)
+            if (data.m_methodHash != SayHash && data.m_methodHash != ChatMessageHash && data.m_methodHash != OnDeathHash && data.m_methodHash != RegisterKillHash)
             {
                 return;
             }
@@ -101,9 +74,9 @@ internal static class ValheimServerEventBridge
                 peer is null || peer.m_characterID.IsNone() ? null : peer.m_characterID.ToString(),
                 data.m_targetZDO.IsNone() ? null : data.m_targetZDO.ToString());
 
-            if (data.m_methodHash == SetTriggerHash)
+            if (data.m_methodHash == RegisterKillHash)
             {
-                ObserveAttack(peer, origin, data);
+                ObserveKillReport(peer, origin, data);
             }
             else if (data.m_methodHash == OnDeathHash)
             {
@@ -125,33 +98,6 @@ internal static class ValheimServerEventBridge
     }
 
     internal static void OnRoutedRpcDone() => arrivalPeer = null;
-
-    internal static void OnDestroyZdo(long sender, ZPackage package)
-    {
-        var peer = arrivalPeer;
-        if (peer is null || peer.m_uid != sender || ZDOMan.instance is null || ZNetScene.instance is null)
-        {
-            return;
-        }
-
-        var start = package.GetPos();
-        try
-        {
-            var count = package.ReadInt();
-            for (var i = 0; i < count && i < 4096; i++)
-            {
-                ObserveDestroyed(peer, package.ReadZDOID());
-            }
-        }
-        catch (Exception ex)
-        {
-            log($"Takaro Valheim could not inspect destroyed objects: {ex.Message}");
-        }
-        finally
-        {
-            package.SetPos(start);
-        }
-    }
 
     private static void ObserveChat(ZNetPeer? peer, RoutedPacketOrigin origin, ZRoutedRpc.RoutedRPCData data)
     {
@@ -194,45 +140,133 @@ internal static class ValheimServerEventBridge
             $"Takaro Valheim chat-message queued (server-bound) for {player.Name} ({player.GameId}).");
     }
 
-    // Animation triggers are broadcast for the player's own character; only weapon attack
-    // animations (taken from the game's item definitions) count as an attack.
-    private static void ObserveAttack(ZNetPeer? peer, RoutedPacketOrigin origin, ZRoutedRpc.RoutedRPCData data)
+    // The game that simulated a creature reports its death to every player marked as having
+    // hit it (Character.OnDeath -> Game.RegisterKill). Reports for other players are routed
+    // through the server to them; the report for that game's own player reaches the server
+    // through the kill witness entry in its player list (TakaroChatParticipant.WitnessFor).
+    private static void ObserveKillReport(ZNetPeer? peer, RoutedPacketOrigin origin, ZRoutedRpc.RoutedRPCData data)
     {
-        if (peer is null || RoutedPacketBindingPolicy.Evaluate(origin, requireOwnCharacter: true) != RoutedBindingResult.Bound)
+        if (peer is null || RoutedPacketBindingPolicy.Evaluate(origin, requireOwnCharacter: false) != RoutedBindingResult.Bound)
+        {
+            LogRejected($"Takaro Valheim rejected a kill report (unbound): arrivalPeer={origin.ArrivalPeerUid}, claimedSender={origin.ClaimedSenderPeerId}.");
+            return;
+        }
+
+        ZNetPeer? killer;
+        string path;
+        if (TakaroChatParticipant.IsKillWitnessTarget(data.m_targetPeerID))
+        {
+            killer = peer;
+            path = OwnKill;
+        }
+        else
+        {
+            killer = ZNet.instance?.GetPeer(data.m_targetPeerID);
+            path = "relayed to the killer";
+        }
+
+        data.m_parameters.SetPos(0);
+        var enemyToken = data.m_parameters.ReadString();
+        data.m_parameters.ReadInt();
+        var modifier = data.m_parameters.ReadInt();
+        var attackers = data.m_parameters.ReadInt();
+        if (killer is null
+            || resolver is null
+            || !resolver.TryResolvePeerPlayer(killer, out var player)
+            || player is null)
         {
             return;
         }
 
-        data.m_parameters.SetPos(0);
-        var trigger = InferredKillPolicy.AttackAnimationBase(data.m_parameters.ReadString());
-        if (trigger.Length > 0 && AttackAnimations().Contains(trigger))
+        var entity = ValheimLocalizer.Localize(enemyToken, ValheimDisplayName.FromToken(enemyToken.TrimStart('$'), enemyToken));
+        var weapon = KillWeaponPolicy.Describe(
+            modifier,
+            EquippedItemName(killer, ZDOVars.s_rightItem),
+            EquippedItemName(killer, ZDOVars.s_leftItem));
+        var kill = new PendingKill(killer.m_uid, player, enemyToken, entity, weapon, path, attackers, DateTimeOffset.UtcNow);
+
+        // Valheim credits every player who hit the creature, even when something else dealt
+        // the last blow, and the last hit never leaves the simulating game. A player who runs
+        // the optional companion reports it; for that player's own kills the event waits up to
+        // 3 s for the report. Without a companion the game's own credit is used as is.
+        if (path == OwnKill && CompanionKillVerdicts.HasSession(killer.m_uid))
         {
-            LastAttack[peer.m_uid] = DateTimeOffset.UtcNow;
+            PendingKills.Add(kill);
+            return;
+        }
+
+        Emit(kill, "server: game kill credit");
+    }
+
+    private const string OwnKill = "own kill";
+
+    private sealed class PendingKill
+    {
+        public PendingKill(long killerUid, TakaroPlayer player, string enemyToken, string entity, string weapon, string path, int attackers, DateTimeOffset at)
+        {
+            KillerUid = killerUid;
+            Player = player;
+            EnemyToken = enemyToken;
+            Entity = entity;
+            Weapon = weapon;
+            Path = path;
+            Attackers = attackers;
+            At = at;
+        }
+
+        public long KillerUid { get; }
+        public TakaroPlayer Player { get; }
+        public string EnemyToken { get; }
+        public string Entity { get; }
+        public string Weapon { get; }
+        public string Path { get; }
+        public int Attackers { get; }
+        public DateTimeOffset At { get; }
+    }
+
+    /// <summary>Called from the plugin's Update; only works while a kill waits for a companion report.</summary>
+    internal static void Update()
+    {
+        if (PendingKills.Count == 0)
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        for (var i = PendingKills.Count - 1; i >= 0; i--)
+        {
+            var kill = PendingKills[i];
+            if (CompanionKillVerdicts.TryTake(kill.KillerUid, kill.EnemyToken, kill.At, CompanionVerdictWait, out var lastHitByPlayer, out var lastHitKind))
+            {
+                PendingKills.RemoveAt(i);
+                if (lastHitByPlayer)
+                {
+                    Emit(kill, "server: game kill credit, last hit confirmed by companion");
+                }
+                else
+                {
+                    log($"Takaro Valheim did not credit {kill.Player.Name} with {kill.Entity}: the companion reports the last hit came from {lastHitKind} (client-reported).");
+                }
+            }
+            else if (now - kill.At >= CompanionVerdictWait)
+            {
+                PendingKills.RemoveAt(i);
+                Emit(kill, "server: game kill credit, no companion report");
+            }
         }
     }
 
-    private static HashSet<string> AttackAnimations()
+    private static void Emit(PendingKill kill, string source)
     {
-        if (attackAnimations is not null && attackAnimations.Count > 0)
+        if (!ValheimEventAcceptancePolicy.CanEmit(ValheimEventType.EntityKilled, ValheimEventObservationSource.GameKillReport))
         {
-            return attackAnimations;
+            return;
         }
 
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var item in ObjectDB.instance?.m_items ?? new List<GameObject>())
-        {
-            var shared = item?.GetComponent<ItemDrop>()?.m_itemData?.m_shared;
-            foreach (var attack in new[] { shared?.m_attack, shared?.m_secondaryAttack })
-            {
-                if (!string.IsNullOrWhiteSpace(attack?.m_attackAnimation))
-                {
-                    names.Add(attack!.m_attackAnimation);
-                }
-            }
-        }
-
-        attackAnimations = names;
-        return names;
+        Send(
+            ValheimEventType.EntityKilled,
+            EventFactory.EntityKilled(kill.Player, kill.Entity, kill.At, kill.Weapon),
+            $"Takaro Valheim entity-killed queued ({source}; {kill.Path}, {kill.Attackers} attacker(s)) for {kill.Player.Name}: {kill.Entity} with {kill.Weapon}.");
     }
 
     private static void ObserveDeath(ZNetPeer? peer, RoutedPacketOrigin origin, ZRoutedRpc.RoutedRPCData data)
@@ -262,199 +296,6 @@ internal static class ValheimServerEventBridge
             $"Takaro Valheim player-death queued (server-bound) for {player.Name} ({player.GameId}).");
     }
 
-    private static void ObserveDestroyed(ZNetPeer destroyer, ZDOID id)
-    {
-        var zdo = ZDOMan.instance.GetZDO(id);
-        if (zdo is null)
-        {
-            return;
-        }
-
-        var prefab = ZNetScene.instance.GetPrefab(zdo.GetPrefab());
-        if (prefab is null || !prefab.TryGetComponent<Character>(out var character) || prefab.GetComponent<Player>() is not null)
-        {
-            return;
-        }
-
-        var peers = (ZNet.instance?.GetPeers() ?? new List<ZNetPeer>())
-            .Where(candidate => candidate.IsReady() && !candidate.m_characterID.IsNone() && !string.IsNullOrEmpty(candidate.m_playerName))
-            .ToArray();
-        var candidates = peers
-            .Select(candidate => new KillCandidate(candidate.m_uid, zdo.GetBool(ZDOVars.s_attackers + candidate.m_playerName)))
-            .ToArray();
-        var attribution = KillAttributionPolicy.Choose(candidates, destroyer.m_uid);
-        if (attribution.PeerUid is null)
-        {
-            if (attribution.Reason == "no-player-hit")
-            {
-                QueueForRagdollEvidence(destroyer, id, zdo, prefab, character);
-            }
-            else
-            {
-                log($"Takaro Valheim did not attribute the death of {prefab.name} ({attribution.Reason}).");
-            }
-
-            return;
-        }
-
-        var killer = peers.First(candidate => candidate.m_uid == attribution.PeerUid);
-        if (!Kills.TryAccept(id.ToString(), DateTimeOffset.UtcNow)
-            || !ValheimEventAcceptancePolicy.CanEmit(ValheimEventType.EntityKilled, ValheimEventObservationSource.ServerZdoState)
-            || resolver is null
-            || !resolver.TryResolvePeerPlayer(killer, out var player)
-            || player is null)
-        {
-            return;
-        }
-
-        var entity = ValheimLocalizer.Localize(character.m_name, prefab.name);
-        var weapon = KillWeaponPolicy.Describe(
-            zdo.GetInt(ZDOVars.s_modifiers, (int)ValheimKillModifier.CountNone),
-            EquippedItemName(killer, ZDOVars.s_rightItem),
-            EquippedItemName(killer, ZDOVars.s_leftItem));
-        Send(
-            ValheimEventType.EntityKilled,
-            EventFactory.EntityKilled(player, entity, DateTimeOffset.UtcNow, weapon),
-            $"Takaro Valheim entity-killed queued (server-observed, {attribution.Reason}) for {player.Name}: {entity} with {weapon}.");
-    }
-
-    /// <summary>
-    /// Called from the plugin's Update. Does work only while a creature death waits for its
-    /// ragdoll, at most twice a second, scanning the creature's own zone neighbourhood.
-    /// </summary>
-    internal static void Update()
-    {
-        if (PendingDeaths.Count == 0 || Time.realtimeSinceStartup < nextPendingCheck || ZDOMan.instance is null)
-        {
-            return;
-        }
-
-        nextPendingCheck = Time.realtimeSinceStartup + 0.5f;
-        var now = DateTimeOffset.UtcNow;
-        var nearby = new List<ZDO>();
-        for (var i = PendingDeaths.Count - 1; i >= 0; i--)
-        {
-            var pending = PendingDeaths[i];
-            nearby.Clear();
-            ZDOMan.instance.FindSectorObjects(ZoneSystem.GetZone(pending.Position), new SimulationDistance(1, 0, classic: true), nearby);
-            var ragdoll = nearby.FirstOrDefault(candidate =>
-                candidate.m_uid.UserID == pending.DestroyerUid
-                && pending.RagdollHashes.Contains(candidate.GetPrefab())
-                && Vector3.Distance(candidate.GetPosition(), pending.Position) <= 6f
-                && UsedRagdolls.TryAccept(candidate.m_uid.ToString(), now));
-            if (ragdoll is not null)
-            {
-                PendingDeaths.RemoveAt(i);
-                EmitInferredKill(pending);
-            }
-            else if (!InferredKillPolicy.StillWaiting(pending.DestroyedAt, now))
-            {
-                PendingDeaths.RemoveAt(i);
-            }
-        }
-    }
-
-    private static void QueueForRagdollEvidence(ZNetPeer destroyer, ZDOID id, ZDO zdo, GameObject prefab, Character character)
-    {
-        var hashes = RagdollHashesFor(prefab, character);
-        if (hashes.Length == 0 || PendingDeaths.Count >= 64)
-        {
-            return;
-        }
-
-        PendingDeaths.Add(new PendingDeath(
-            id,
-            destroyer.m_uid,
-            zdo.GetPosition(),
-            prefab.name,
-            ValheimLocalizer.Localize(character.m_name, prefab.name),
-            hashes,
-            DateTimeOffset.UtcNow));
-    }
-
-    private static int[] RagdollHashesFor(GameObject prefab, Character character)
-    {
-        var key = prefab.name.GetStableHashCode();
-        if (RagdollPrefabs.TryGetValue(key, out var cached))
-        {
-            return cached;
-        }
-
-        var hashes = (character.m_deathEffects?.m_effectPrefabs ?? Array.Empty<EffectList.EffectData>())
-            .Where(effect => effect?.m_prefab is not null && effect.m_prefab.GetComponent<Ragdoll>() is not null)
-            .Select(effect => effect.m_prefab.name.GetStableHashCode())
-            .Distinct()
-            .ToArray();
-        RagdollPrefabs[key] = hashes;
-        return hashes;
-    }
-
-    private static void EmitInferredKill(PendingDeath pending)
-    {
-        var killer = (ZNet.instance?.GetPeers() ?? new List<ZNetPeer>())
-            .FirstOrDefault(candidate => candidate.m_uid == pending.DestroyerUid && candidate.IsReady() && !candidate.m_characterID.IsNone());
-        var distance = killer is null ? float.NaN : DistanceToPlayer(killer, pending.Position);
-        var attacked = killer is not null && LastAttack.TryGetValue(killer.m_uid, out var attackAt)
-            && InferredKillPolicy.AttackedJustBefore(attackAt, pending.DestroyedAt);
-        if (killer is null
-            || !attacked
-            || !InferredKillPolicy.KillerCloseEnough(distance, HoldsRangedWeapon(killer))
-            || !Kills.TryAccept(pending.Creature.ToString(), DateTimeOffset.UtcNow)
-            || resolver is null
-            || !resolver.TryResolvePeerPlayer(killer, out var player)
-            || player is null)
-        {
-            log($"Takaro Valheim saw {pending.PrefabName} die but did not credit a kill (attack seen: {attacked}, distance: {distance:0.0} m).");
-            return;
-        }
-
-        var weapon = KillWeaponPolicy.Describe(
-            (int)ValheimKillModifier.CountNone,
-            EquippedItemName(killer, ZDOVars.s_rightItem),
-            EquippedItemName(killer, ZDOVars.s_leftItem));
-        Send(
-            ValheimEventType.EntityKilled,
-            EventFactory.EntityKilled(player, pending.Entity, DateTimeOffset.UtcNow, weapon),
-            $"Takaro Valheim entity-killed queued (server-observed, single-blow: attack + ragdoll {distance:0.0} m from {player.Name}): {pending.Entity} with {weapon}.");
-    }
-
-    private static bool HoldsRangedWeapon(ZNetPeer peer)
-    {
-        var characterZdo = ZDOMan.instance.GetZDO(peer.m_characterID);
-        if (characterZdo is null || ObjectDB.instance is null)
-        {
-            return false;
-        }
-
-        foreach (var slot in new[] { ZDOVars.s_rightItem, ZDOVars.s_leftItem })
-        {
-            var item = ObjectDB.instance.GetItemPrefab(characterZdo.GetInt(slot));
-            var skill = item?.GetComponent<ItemDrop>()?.m_itemData?.m_shared?.m_skillType;
-            if (skill is Skills.SkillType.Bows or Skills.SkillType.Crossbows or Skills.SkillType.ElementalMagic or Skills.SkillType.BloodMagic)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    // The player's own reference position is refreshed by the client every frame it moves; the
-    // character object's position on the server can lag behind it.
-    private static float DistanceToPlayer(ZNetPeer peer, Vector3 position)
-    {
-        var best = peer.m_refPos != Vector3.zero ? Vector3.Distance(peer.m_refPos, position) : float.NaN;
-        var characterZdo = ZDOMan.instance.GetZDO(peer.m_characterID);
-        if (characterZdo is not null)
-        {
-            var fromCharacter = Vector3.Distance(characterZdo.GetPosition(), position);
-            best = float.IsNaN(best) ? fromCharacter : Math.Min(best, fromCharacter);
-        }
-
-        return best;
-    }
-
-    // A drawn weapon is in the hand slot; a sheathed one moves to the matching back slot.
     private static string? EquippedItemName(ZNetPeer peer, int slotHash)
     {
         var characterZdo = ZDOMan.instance.GetZDO(peer.m_characterID);
@@ -550,17 +391,14 @@ internal static class TakaroRoutedRpcArrivalPatch
     private static void Finalizer() => ValheimServerEventBridge.OnRoutedRpcDone();
 }
 
-[HarmonyPatch(typeof(ZDOMan), "RPC_DestroyZDO")]
-internal static class TakaroDestroyZdoPatch
+// The dedicated server has no player of its own; a kill report addressed to it (the kill
+// witness) must not touch the server's placeholder profile.
+[HarmonyPatch(typeof(Game), "RPC_RegisterKill")]
+internal static class TakaroServerKillReportPatch
 {
-    private static void Prefix(long sender, ZPackage pkg)
-    {
-        if (ZNet.instance is not null && ZNet.instance.IsDedicated())
-        {
-            ValheimServerEventBridge.OnDestroyZdo(sender, pkg);
-        }
-    }
+    private static bool Prefix() => !(ZNet.instance is not null && ZNet.instance.IsDedicated());
 }
+
 #else
 namespace Takaro.Valheim.Plugin;
 #endif

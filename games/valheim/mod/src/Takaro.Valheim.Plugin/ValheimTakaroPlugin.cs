@@ -18,6 +18,8 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
     public const string ReleaseVersion = TakaroBuildVersion.ReleaseVersion;
 
     private TakaroWebSocketRunner? runner;
+    private InventoryCompanionBridge? inventoryCompanion;
+    private CompanionInventoryCache? companionInventory;
     private QueuedMainThreadActionScheduler? mainThreadActions;
     private Harmony? harmony;
     private bool shutdownRequested;
@@ -53,7 +55,8 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
 
         mainThreadActions = new QueuedMainThreadActionScheduler();
         var playerResolver = new ValheimPlayerResolver(Logger);
-        var adapter = new ValheimServerAdapter(Logger, config, RequestShutdown, playerResolver);
+        companionInventory = new CompanionInventoryCache();
+        var adapter = new ValheimServerAdapter(Logger, config, RequestShutdown, playerResolver, companionInventory);
         runner = new TakaroWebSocketRunner(
             config,
             adapter,
@@ -61,6 +64,8 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             mainThreadActions);
         TakaroChatParticipant.Initialize(config.ChatSenderName, Logger.LogInfo);
         ValheimServerEventBridge.Initialize(runner, playerResolver, Logger.LogInfo);
+        // Optional: only players who install the inventory companion ever answer it.
+        inventoryCompanion = new InventoryCompanionBridge(playerResolver, companionInventory, Logger.LogInfo);
         harmony = new Harmony(PluginGuid);
         harmony.PatchAll(typeof(ValheimServerEventBridge).Assembly);
         _ = runner.StartAsync();
@@ -73,6 +78,7 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
         ValheimServerAdapter.RefreshReadiness();
         mainThreadActions?.Drain();
         ValheimServerEventBridge.Update();
+        inventoryCompanion?.Update();
 
         if (shutdownRequested && Time.realtimeSinceStartup >= shutdownRequestedAt)
         {
@@ -86,7 +92,10 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
     {
         harmony?.UnpatchSelf();
         ValheimServerEventBridge.Shutdown();
+        inventoryCompanion?.Dispose();
+        inventoryCompanion = null;
         runner?.Dispose();
+        companionInventory?.Clear();
         mainThreadActions?.Dispose();
     }
 

@@ -161,37 +161,6 @@ public sealed class OnceWithinWindow
     }
 }
 
-public readonly record struct KillCandidate(long PeerUid, bool HitTheCreature);
-
-public readonly record struct KillAttribution(long? PeerUid, string Reason);
-
-/// <summary>
-/// Valheim marks every player that damaged a creature on the creature's own network object
-/// ("Attackers" + player name). When the creature's object is destroyed, the server picks the
-/// killer from those marks: the player whose game destroyed it if that player hit it, else the
-/// only player that hit it. Several hitters and none of them the destroyer is left ambiguous.
-/// </summary>
-public static class KillAttributionPolicy
-{
-    public static KillAttribution Choose(IReadOnlyCollection<KillCandidate> candidates, long destroyingPeerUid)
-    {
-        var hitters = candidates.Where(candidate => candidate.HitTheCreature).Select(candidate => candidate.PeerUid).Distinct().ToArray();
-        if (hitters.Length == 0)
-        {
-            return new KillAttribution(null, "no-player-hit");
-        }
-
-        if (hitters.Contains(destroyingPeerUid))
-        {
-            return new KillAttribution(destroyingPeerUid, "destroyer-hit");
-        }
-
-        return hitters.Length == 1
-            ? new KillAttribution(hitters[0], "single-hitter")
-            : new KillAttribution(null, "ambiguous-hitters");
-    }
-}
-
 public enum ValheimKillModifier
 {
     MixedAndTotal = 0,
@@ -246,52 +215,5 @@ public static class ValheimDisplayName
 
         var value = token!.Trim();
         return value.StartsWith("$", StringComparison.Ordinal) ? fallback : value;
-    }
-}
-
-/// <summary>
-/// A creature killed by a single blow never shows the server who hit it: the killer's game
-/// marks the attacker and destroys the creature in the same frame, so only the destroy reaches
-/// the server. Such a death still counts as a player kill when three server-visible facts line
-/// up: the creature's ragdoll appears from the same game, that game's player started a weapon
-/// attack (its animation trigger passes through the server) just before, and that player stood
-/// close enough to have dealt the blow (8 m in melee, 50 m with a bow, crossbow or staff).
-/// </summary>
-public static class InferredKillPolicy
-{
-    public const float MaximumMeleeKillerDistance = 8f;
-    public const float MaximumRangedKillerDistance = 50f;
-    public static readonly TimeSpan EvidenceWindow = TimeSpan.FromSeconds(8);
-    public static readonly TimeSpan AttackLeadWindow = TimeSpan.FromSeconds(4);
-
-    public static bool KillerCloseEnough(float distance, bool rangedWeapon) =>
-        !float.IsNaN(distance)
-        && distance >= 0
-        && distance <= (rangedWeapon ? MaximumRangedKillerDistance : MaximumMeleeKillerDistance);
-
-    public static bool StillWaiting(DateTimeOffset destroyedAt, DateTimeOffset now) =>
-        now - destroyedAt < EvidenceWindow;
-
-    public static bool AttackedJustBefore(DateTimeOffset? lastAttackAt, DateTimeOffset destroyedAt) =>
-        lastAttackAt is { } attack
-        && attack <= destroyedAt + TimeSpan.FromMilliseconds(500)
-        && destroyedAt - attack <= AttackLeadWindow;
-
-    /// <summary>Valheim appends the combo step to attack triggers ("swing_longsword2").</summary>
-    public static string AttackAnimationBase(string? trigger)
-    {
-        if (string.IsNullOrWhiteSpace(trigger))
-        {
-            return string.Empty;
-        }
-
-        var value = trigger!.Trim();
-        var end = value.Length;
-        while (end > 0 && char.IsDigit(value[end - 1]))
-        {
-            end--;
-        }
-
-        return value.Substring(0, end);
     }
 }

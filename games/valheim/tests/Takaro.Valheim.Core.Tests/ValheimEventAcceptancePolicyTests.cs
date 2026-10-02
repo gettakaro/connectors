@@ -30,18 +30,18 @@ public sealed class ValheimEventAcceptancePolicyTests
             ValheimEventObservationSource.PeerBoundRoutedRpc));
         Assert.IsFalse(ValheimEventAcceptancePolicy.CanEmit(
             eventType,
-            ValheimEventObservationSource.ServerZdoState));
+            ValheimEventObservationSource.GameKillReport));
         Assert.IsFalse(ValheimEventAcceptancePolicy.CanEmit(
             eventType,
             ValheimEventObservationSource.ServerPlayerSnapshot));
     }
 
     [TestMethod]
-    public void AcceptsEntityKilledOnlyFromServerZdoState()
+    public void AcceptsEntityKilledOnlyFromGameKillReports()
     {
         Assert.IsTrue(ValheimEventAcceptancePolicy.CanEmit(
             "entity-killed",
-            ValheimEventObservationSource.ServerZdoState));
+            ValheimEventObservationSource.GameKillReport));
         Assert.IsFalse(ValheimEventAcceptancePolicy.CanEmit(
             "entity-killed",
             ValheimEventObservationSource.PeerBoundRoutedRpc));
@@ -87,7 +87,7 @@ public sealed class ValheimEventAcceptancePolicyTests
     public void ObservationSourcesAreExactlyTheServerSideSet()
     {
         CollectionAssert.AreEquivalent(
-            new[] { "Connector", "ServerPlayerSnapshot", "PeerBoundRoutedRpc", "ServerZdoState", "UnboundRoutedRpc" },
+            new[] { "Connector", "ServerPlayerSnapshot", "PeerBoundRoutedRpc", "GameKillReport", "UnboundRoutedRpc" },
             Enum.GetNames(typeof(ValheimEventObservationSource)));
     }
 

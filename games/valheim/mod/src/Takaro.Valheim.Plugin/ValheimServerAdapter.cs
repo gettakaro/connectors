@@ -12,6 +12,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     private readonly ConsoleCommandPolicy commandPolicy;
     private readonly Action requestShutdown;
     private readonly ValheimPlayerResolver playerResolver;
+    private readonly CompanionInventoryCache companionInventory;
     private readonly string chatSenderName;
     private readonly PlayerPositionCache playerPositions = new(TimeSpan.FromSeconds(30));
     private readonly Dictionary<string, HashSet<string>> banAliases = new(StringComparer.OrdinalIgnoreCase);
@@ -21,12 +22,14 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         ManualLogSource logger,
         ConnectorConfig config,
         Action requestShutdown,
-        ValheimPlayerResolver playerResolver)
+        ValheimPlayerResolver playerResolver,
+        CompanionInventoryCache companionInventory)
     {
         this.logger = logger;
         commandPolicy = new ConsoleCommandPolicy(config.CommandAllowlistExact, config.CommandAllowlistPrefixes);
         this.requestShutdown = requestShutdown;
         this.playerResolver = playerResolver ?? throw new ArgumentNullException(nameof(playerResolver));
+        this.companionInventory = companionInventory ?? throw new ArgumentNullException(nameof(companionInventory));
         chatSenderName = config.ChatSenderName;
     }
 
@@ -136,12 +139,25 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             $"Valheim player '{identifier}' is not online and has no fresh server-observed position."));
     }
 
-    // A Valheim player's inventory lives in the client's character profile. The dedicated
-    // server only sees the equipped items' visuals, so it cannot answer this truthfully.
-    public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default) =>
-        Task.FromResult(TakaroActionResult.Error(
-            "server_only_unsupported",
-            "Valheim keeps player inventories on the game client; a dedicated server cannot read them."));
+    // A Valheim player's inventory lives in the client's character profile; the dedicated
+    // server only sees equipped items' visuals. The only source is the optional inventory
+    // companion's client-reported snapshot. Without a fresh one the answer is an error
+    // (server_only_unsupported), never a made-up empty list.
+    public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default)
+    {
+        playerResolver.TryResolvePlayer(identifier, out _, out _, out var player);
+        var result = CompanionInventoryActionPolicy.FromResolvedPlayer(player, companionInventory, DateTimeOffset.UtcNow);
+        if (result.Success && result.Payload is IEnumerable<TakaroInventoryItem> items)
+        {
+            var named = items
+                .Select(item => item with { Name = DisplayName(item.Name, item.Code) })
+                .ToArray();
+            logger.LogInfo($"Takaro Valheim getPlayerInventory returned {named.Length} client-reported stack(s) for '{identifier}' from the inventory companion.");
+            return Task.FromResult(TakaroActionResult.Ok(named));
+        }
+
+        return Task.FromResult(result);
+    }
 
     public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default)
     {

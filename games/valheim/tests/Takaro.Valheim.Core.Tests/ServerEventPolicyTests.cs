@@ -119,48 +119,6 @@ public sealed class ServerEventPolicyTests
         Assert.IsTrue(once.TryAccept("a", Now.AddSeconds(5)));
     }
 
-    [TestMethod]
-    public void KillGoesToTheDestroyerWhenItHitTheCreature()
-    {
-        var result = KillAttributionPolicy.Choose(
-            new[] { new KillCandidate(1, true), new KillCandidate(2, true) },
-            destroyingPeerUid: 2);
-
-        Assert.AreEqual(2L, result.PeerUid);
-        Assert.AreEqual("destroyer-hit", result.Reason);
-    }
-
-    [TestMethod]
-    public void KillGoesToTheOnlyHitterWhenAnotherGameDestroyedIt()
-    {
-        var result = KillAttributionPolicy.Choose(
-            new[] { new KillCandidate(1, true), new KillCandidate(2, false) },
-            destroyingPeerUid: 2);
-
-        Assert.AreEqual(1L, result.PeerUid);
-        Assert.AreEqual("single-hitter", result.Reason);
-    }
-
-    [TestMethod]
-    public void KillIsNotAttributedWithoutAPlayerHit()
-    {
-        var result = KillAttributionPolicy.Choose(new[] { new KillCandidate(1, false) }, destroyingPeerUid: 1);
-
-        Assert.IsNull(result.PeerUid);
-        Assert.AreEqual("no-player-hit", result.Reason);
-    }
-
-    [TestMethod]
-    public void KillIsNotGuessedBetweenSeveralHitters()
-    {
-        var result = KillAttributionPolicy.Choose(
-            new[] { new KillCandidate(1, true), new KillCandidate(2, true) },
-            destroyingPeerUid: 3);
-
-        Assert.IsNull(result.PeerUid);
-        Assert.AreEqual("ambiguous-hitters", result.Reason);
-    }
-
     [DataTestMethod]
     [DataRow((int)ValheimKillModifier.Unarmed, "Iron Sword", null, "Unarmed")]
     [DataRow((int)ValheimKillModifier.Melee, "Iron Sword", "Wood Shield", "Iron Sword")]
@@ -248,39 +206,5 @@ public sealed class ServerEventPolicyTests
         Assert.AreEqual(1L, queue.Dropped);
         Assert.IsTrue(queue.TryPeekUnsent(out var head));
         Assert.AreEqual("two", head);
-    }
-
-    [DataTestMethod]
-    [DataRow("swing_longsword2", "swing_longsword")]
-    [DataRow("unarmed_attack0", "unarmed_attack")]
-    [DataRow("bow_fire", "bow_fire")]
-    [DataRow("  ", "")]
-    [DataRow(null, "")]
-    public void StripsTheComboStepFromAttackTriggers(string? trigger, string expected)
-    {
-        Assert.AreEqual(expected, InferredKillPolicy.AttackAnimationBase(trigger));
-    }
-
-    [TestMethod]
-    public void SingleBlowKillsNeedARecentAttackByThatPlayer()
-    {
-        Assert.IsTrue(InferredKillPolicy.AttackedJustBefore(Now.AddSeconds(-1), Now));
-        Assert.IsTrue(InferredKillPolicy.AttackedJustBefore(Now.AddMilliseconds(300), Now), "destroy and trigger can arrive in either order");
-        Assert.IsFalse(InferredKillPolicy.AttackedJustBefore(Now.AddSeconds(-5), Now));
-        Assert.IsFalse(InferredKillPolicy.AttackedJustBefore(Now.AddSeconds(2), Now));
-        Assert.IsFalse(InferredKillPolicy.AttackedJustBefore(null, Now));
-    }
-
-    [DataTestMethod]
-    [DataRow(0f, false, true)]
-    [DataRow(8f, false, true)]
-    [DataRow(13f, false, false)]
-    [DataRow(13f, true, true)]
-    [DataRow(50.5f, true, false)]
-    [DataRow(float.NaN, true, false)]
-    [DataRow(-1f, false, false)]
-    public void SingleBlowKillsNeedTheKillerNearby(float distance, bool ranged, bool expected)
-    {
-        Assert.AreEqual(expected, InferredKillPolicy.KillerCloseEnough(distance, ranged));
     }
 }

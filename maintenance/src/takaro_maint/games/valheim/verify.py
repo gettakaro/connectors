@@ -10,8 +10,10 @@ What a Valheim report may claim, and what it may not:
   translates its catalogue names, so a bare verification reports that limitation.
 * **Player-driven events are not covered by any of this.** A ``verify`` run boots a
   dedicated server in a container with no game client connected, so chat, deaths, kills and
-  server chat to players are never exercised. Nothing in a report produced here is evidence
-  that they work; that proof comes from a live client run.
+  server chat to players are never exercised. The optional graphical-client inventory
+  companion never loads on a dedicated server either, so player inventory is not covered.
+  Nothing in a report produced here is evidence that any of these work; that proof comes
+  from a live client run.
 
 Three things differ from a Minecraft run and each one is a hook here. The server says it is
 up with its own line. The plugin is configured by a BepInEx ``.cfg`` in the game directory,
