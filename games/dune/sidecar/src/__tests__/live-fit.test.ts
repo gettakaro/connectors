@@ -234,6 +234,7 @@ describe('global sendMessage survives a missing chat exchange', () => {
         timestampFormat: 'ue',
         channelEnumForm: 'short',
         senderNameField: 'm_UserNameFrom',
+        whisperChannelType: 'Map',
         contentKey: 'Content',
         contentType: 'Content',
         amqpType: 'text_chat',

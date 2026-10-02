@@ -12,6 +12,7 @@ the whole honesty of this connector's release.
 
 from __future__ import annotations
 
+import fnmatch
 import io
 import json
 import subprocess
@@ -25,10 +26,10 @@ from takaro_maint.exit_codes import ConflictError
 from takaro_maint.games import adapter_for
 
 GAME = "dune"
-TARGET = "linux-25418155"
+TARGET = "linux-25635074"
 APP = 4754530
 DEPOT = "4754532"
-MANIFEST = "8999916414518380523"
+MANIFEST = "5212661890512609510"
 VERSION = "0.1.0-dev.abc1234"
 SIDECAR_ARTIFACT = f"takaro-dune-sidecar-{TARGET}-{VERSION}.tar.gz"
 PLUGIN_ARTIFACT = f"takaro-dune-plugin-{TARGET}-{VERSION}.tar.gz"
@@ -73,8 +74,8 @@ def test_catalog_validate_accepts_the_dune_target(run: Any) -> None:
 def test_the_steam_pin_is_exact_and_anonymous() -> None:
     server = record()["inputs"]["server"]
 
-    assert (server["app"], server["branch"], server["buildid"]) == (APP, "public", 25418155)
-    assert server["depots"] == {DEPOT: {"manifest": MANIFEST, "size": 5205934871}}
+    assert (server["app"], server["branch"], server["buildid"]) == (APP, "public", 25635074)
+    assert server["depots"] == {DEPOT: {"manifest": MANIFEST, "size": 5209358233, "files": 75}}
     # Tool app 4754530 is free to download and steamcmd still refuses it; DepotDownloader
     # reads it with the anonymous login, which is what `credentials: null` claims.
     assert server["credentials"] is None
@@ -112,7 +113,7 @@ def test_targets_resolve_env_for_dune(run: Any) -> None:
     env = resolved["env"]
 
     assert env["DUNE_TARGET"] == TARGET
-    assert env["DUNE_REVISION"] == "25418155"
+    assert env["DUNE_REVISION"] == "25635074"
     assert env["DUNE_STEAM_APP"] == str(APP)
     assert env["DUNE_STEAM_DEPOTS"] == f"{DEPOT}:{MANIFEST}"
     assert env["DUNE_ARTIFACT_SIDECAR"] == f"takaro-dune-sidecar-{TARGET}-{{version}}.tar.gz"
@@ -238,3 +239,24 @@ def test_the_registry_row_is_registered_from_the_game_file() -> None:
 
     assert listing.returncode == 0, listing.stderr
     assert GAME in listing.stdout.split()
+
+
+def test_the_sidecar_release_docker_build_can_see_its_prebuilt_dist() -> None:
+    """The release Dockerfile COPYs dist/; the source tree's .dockerignore excludes it for Dockerfile.dev."""
+    project = REPO_ROOT / "games" / "dune"
+    dockerfile = (project / "sidecar" / "Dockerfile").read_text(encoding="utf-8")
+    release_ignore = (project / "scripts" / "templates" / "sidecar.dockerignore.release").read_text(encoding="utf-8")
+    build = (project / "scripts" / "build-release.sh").read_text(encoding="utf-8")
+
+    ignored = [line.strip().rstrip("/") for line in release_ignore.splitlines() if line.strip() and not line.startswith("#")]
+    copied = [
+        source.rstrip("/")
+        for line in dockerfile.splitlines()
+        if line.startswith("COPY ") and "--from=" not in line
+        for source in line.split()[1:-1]
+    ]
+    assert "dist" in copied
+    # Every path the release Dockerfile copies must survive the packaged .dockerignore.
+    assert [s for s in copied if any(fnmatch.fnmatch(s, pattern) for pattern in ignored)] == []
+    assert 'templates/sidecar.dockerignore.release" "${SPKG}/.dockerignore"' in build
+    assert '"${PROJECT_ROOT}/sidecar/.dockerignore"' not in build
