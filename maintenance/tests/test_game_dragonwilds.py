@@ -24,12 +24,14 @@ from takaro_maint.exit_codes import ConflictError
 from takaro_maint.games import adapter_for
 
 GAME = "dragonwilds"
-TARGET = "linux-25501739"
-PREVIOUS = "linux-25465077"
+TARGET = "linux-25630937"
+PREVIOUS = "linux-25501739"
+OLDEST = "linux-25465077"
 APP = 4019830
 DEPOT = "3501791"
-MANIFEST = "6714393990492196440"
-PREVIOUS_MANIFEST = "2601451637939157694"
+MANIFEST = "5180331908424149228"
+PREVIOUS_MANIFEST = "6714393990492196440"
+OLDEST_MANIFEST = "2601451637939157694"
 VERSION = "0.3.0-dev.abc1234"
 PLUGIN_ARTIFACT = f"takaro-dragonwilds-plugin-{TARGET}-{VERSION}.tar.gz"
 PLUGIN_FOLDER = "TakaroDragonwilds"
@@ -38,6 +40,7 @@ NATIVE_DEPS = {"openssl", "libwebsockets", "pcre2", "nlohmann-json"}
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TARGET_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{TARGET}.json"
 PREVIOUS_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{PREVIOUS}.json"
+OLDEST_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{OLDEST}.json"
 GAME_PATH = REPO_ROOT / "catalog" / GAME / "game.json"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "dragonwilds.yml"
 
@@ -59,7 +62,7 @@ def test_catalog_validate_accepts_the_dragonwilds_target(run: Any) -> None:
     code, payload, _ = run("catalog", "validate")
 
     assert code == 0, payload
-    for target in (TARGET, PREVIOUS):
+    for target in (TARGET, PREVIOUS, OLDEST):
         rows = [check for check in payload["checks"] if check["file"].endswith(f"{target}.json")]
         assert rows, f"the dragonwilds target {target} produced no checks"
         assert {check["id"] for check in rows} >= {
@@ -74,7 +77,11 @@ def test_catalog_validate_accepts_the_dragonwilds_target(run: Any) -> None:
 
 @pytest.mark.parametrize(
     ("path", "buildid", "manifest"),
-    [(TARGET_PATH, 25501739, MANIFEST), (PREVIOUS_PATH, 25465077, PREVIOUS_MANIFEST)],
+    [
+        (TARGET_PATH, 25630937, MANIFEST),
+        (PREVIOUS_PATH, 25501739, PREVIOUS_MANIFEST),
+        (OLDEST_PATH, 25465077, OLDEST_MANIFEST),
+    ],
 )
 def test_the_steam_pin_is_exact_and_anonymous(path: Path, buildid: int, manifest: str) -> None:
     server = record(path)["inputs"]["server"]
@@ -90,9 +97,10 @@ def test_the_steam_pin_is_exact_and_anonymous(path: Path, buildid: int, manifest
 def test_the_newest_build_is_the_one_default() -> None:
     assert record()["default"] is True
     assert record(PREVIOUS_PATH)["default"] is False
+    assert record(OLDEST_PATH)["default"] is False
 
 
-@pytest.mark.parametrize("path", [TARGET_PATH, PREVIOUS_PATH])
+@pytest.mark.parametrize("path", [TARGET_PATH, PREVIOUS_PATH, OLDEST_PATH])
 def test_every_target_ships_the_plugin_alone(path: Path) -> None:
     document = record(path)
 
@@ -103,7 +111,7 @@ def test_every_target_ships_the_plugin_alone(path: Path) -> None:
     assert not [entry for entry in document["preserve"] if "Sidecar" in entry]
 
 
-@pytest.mark.parametrize("path", [TARGET_PATH, PREVIOUS_PATH])
+@pytest.mark.parametrize("path", [TARGET_PATH, PREVIOUS_PATH, OLDEST_PATH])
 def test_the_target_claims_contract_verification_and_a_steam_install(path: Path) -> None:
     document = record(path)
 
@@ -144,7 +152,7 @@ def test_targets_resolve_env_for_dragonwilds(run: Any) -> None:
     env = resolved["env"]
 
     assert env["DRAGONWILDS_TARGET"] == TARGET
-    assert env["DRAGONWILDS_REVISION"] == "25501739"
+    assert env["DRAGONWILDS_REVISION"] == "25630937"
     assert env["DRAGONWILDS_STEAM_APP"] == str(APP)
     assert env["DRAGONWILDS_STEAM_DEPOTS"] == f"{DEPOT}:{MANIFEST}"
     assert env["DRAGONWILDS_ARTIFACT_PLUGIN"] == f"takaro-dragonwilds-plugin-{TARGET}-{{version}}.tar.gz"
@@ -168,7 +176,8 @@ def test_the_default_target_resolves_to_the_newest_build(run: Any) -> None:
 
     assert code == 0, err
     assert payload["env"]["DRAGONWILDS_TARGET"] == TARGET
-    assert resolve(run, PREVIOUS)["env"]["DRAGONWILDS_REVISION"] == "25465077"
+    assert resolve(run, PREVIOUS)["env"]["DRAGONWILDS_REVISION"] == "25501739"
+    assert resolve(run, OLDEST)["env"]["DRAGONWILDS_REVISION"] == "25465077"
 
 
 def test_the_adapter_names_one_file_per_role_and_never_a_glob(run: Any) -> None:

@@ -22,7 +22,7 @@ struct Want {
     const char* key;
     const char* sig;  // exact demangled line, or nullptr for "base name, lowest rva"
 };
-const Want kWanted[] = {
+constexpr Want kWanted[] = {
     // --- anchors used by the boot cross-checks ---
     {"_init", "_init"},
     {"_fini", "_fini"},
@@ -153,7 +153,7 @@ const Want kWanted[] = {
     {"UHealthComponent::DecreaseHealth", "UHealthComponent::DecreaseHealth(float, FString const&)"},
     {"UHealthComponent::GetLocalHealth", "UHealthComponent::GetLocalHealth() const"},
     {"UHealthComponent::StaticClass", nullptr},
-    {"ADominionAICharacter::StaticClass", nullptr},
+    // ADominionAICharacter::StaticClass is wanted above (lane L3).
     // --- lane L3c: which weapon made the kill ---
     // The equipped main-hand item. ELoadoutSlot is a plain UENUM, so its numeric values are read
     // out of the live UEnum by name instead of being hard-coded.
@@ -163,6 +163,20 @@ const Want kWanted[] = {
     {"UEquipment::StaticClass", nullptr},
 };
 const size_t kWantedCount = sizeof(kWanted) / sizeof(kWanted[0]);
+
+// A key listed twice is only ever filled once by a fresh .sym scan (the lookup maps keep one index
+// per key), so /health would under-report the resolved count after every game update.
+constexpr bool SameKey(const char* a, const char* b) {
+    while (*a && *a == *b) { ++a; ++b; }
+    return *a == *b;
+}
+constexpr bool KeysUnique() {
+    for (size_t i = 0; i < kWantedCount; i++)
+        for (size_t j = i + 1; j < kWantedCount; j++)
+            if (SameKey(kWanted[i].key, kWanted[j].key)) return false;
+    return true;
+}
+static_assert(KeysUnique(), "kWanted lists a key twice");
 
 std::vector<SymEntry> g_entries;
 std::unordered_map<std::string, size_t> g_index;
