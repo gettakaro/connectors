@@ -151,6 +151,7 @@ describe('the sender name is actually carried on the wire', () => {
     deliveryMode: 1 as const,
     bodyType: 'TextChat',
     senderNameField: 'm_UserNameFrom',
+    whisperChannelType: 'Map',
   };
 
   it('m_UserNameFrom is sent alongside the spoof pair, as the counterpart of m_UserNameTo', () => {
