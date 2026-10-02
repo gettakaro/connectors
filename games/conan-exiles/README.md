@@ -3,7 +3,7 @@
 A Node.js bridge (version **1.0.2**) that runs next to a Conan Exiles dedicated server and connects
 it to Takaro over RCON and the server's log files. Players do not install anything.
 
-It is built against one exact server build: **Conan Exiles Dedicated Server build 25488622**
+It is built against one exact server build: **Conan Exiles Dedicated Server build 25639945**
 (Steam app `443030`, branch `public`, the native Linux Enhanced server). The bridge may run beside
 another build, but nothing here says it was proven there.
 
@@ -33,9 +33,11 @@ You need:
   token** (Takaro shows it when you create the game server).
 - **For in-game chat only:** the **Enhanced Pippi** mod on the server (workshop ID `3725018456`).
   Without a chat mod the bridge cannot write normal chat lines — see step 4 and the table below.
-  **Not yet compatible with server build 25488622:** on that build the server refuses to start
-  with Pippi installed (`LogModManager: Mod is too old and needs to be updated for this game
-  version`). Leave it out until Pippi publishes an update; chat is unavailable meanwhile.
+  **Not yet compatible with server build 25639945** (nor with 25488622 before it): the server
+  only accepts mods built with Dev Kit version 1002 (`SetCompatibleDevkitVersions: [1002]`) and
+  refuses to start with Pippi installed (`LogModManager: Mod is too old and needs to be updated
+  for this game version`). Pippi's last Workshop update is 2026-06-11. Leave it out until Pippi
+  publishes an update; chat is unavailable meanwhile.
 
 > **About the Takaro Conan mod.** This repo contains a specification for a Takaro-owned
 > `TakaroConan.pak` under `mod/TakaroConanBridge/`, but **no `.pak` is built or shipped**. Building
@@ -46,13 +48,13 @@ You need:
 
 ### 2. Download the bridge
 
-Download **`takaro-conan-exiles-bridge-linux-25488622-<version>.zip`** from the latest
+Download **`takaro-conan-exiles-bridge-linux-25639945-<version>.zip`** from the latest
 `conan-exiles-vX.Y.Z` release on the releases page:
 
 > https://github.com/gettakaro/connectors/releases
 
 Direct link pattern:
-`https://github.com/gettakaro/connectors/releases/download/conan-exiles-v<version>/takaro-conan-exiles-bridge-linux-25488622-<version>.zip`
+`https://github.com/gettakaro/connectors/releases/download/conan-exiles-v<version>/takaro-conan-exiles-bridge-linux-25639945-<version>.zip`
 
 `takaro-conan-exiles-bridge.zip` is still published next to it and is the same bytes, so an old
 bookmark keeps working. The name in the middle is the server build the bridge was built against.
@@ -164,7 +166,7 @@ The bridge logs the same identity on its first line, which is the quickest way t
 apart:
 
 ```text
-Takaro target: linux-25488622 (<fingerprint>) revision 25488622 connector 1.0.2 source <commit>
+Takaro target: linux-25639945 (<fingerprint>) revision 25639945 connector 1.0.2 source <commit>
 ```
 
 And in Takaro, the game server shows as **online** and lists your online players. If it stays
@@ -183,9 +185,9 @@ restart.
 Status below comes from the recorded capability data and the live checks run on **2026-06-20** and
 **2026-06-21** against a real Conan Exiles Enhanced dedicated server with Enhanced Pippi and one
 real player connected. The rig re-checks below (identify, reachability, players, console, shutdown)
-were last run on build 25356024; the current pin is build 25488622, and this bridge speaks RCON and
+were last run on build 25356024; the current pin is build 25639945, and this bridge speaks RCON and
 compiles against no server assembly, so nothing about the repin itself changes its behaviour, but
-runtime re-verification on 25488622 is tracked separately. Anything that was never exercised in a
+runtime re-verification on 25639945 is tracked separately. Anything that was never exercised in a
 live test says so.
 ✅ = works, ⚠️ = works with a caveat or is unproven, ❌ = does not work.
 

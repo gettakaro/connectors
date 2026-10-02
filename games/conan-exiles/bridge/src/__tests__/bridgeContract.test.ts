@@ -23,11 +23,11 @@ import { startFakeRconServer, type FakeRconServer } from './helpers/fakeRcon.js'
 // literal UUID in a test reads like a real one somebody pasted in.
 const GAME_SERVER_ID = 'contract-test-game-server';
 const STAMP: TargetStamp = {
-  target: 'linux-25488622',
+  target: 'linux-25639945',
   fingerprint: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
   game: 'conan-exiles',
   platform: 'linux',
-  revision: '25488622',
+  revision: '25639945',
   connectorVersion: '1.0.2-test',
   sourceRevision: 'deadbeef',
 };
@@ -179,7 +179,7 @@ test('the bridge answers every supported Takaro action over a real RCON socket',
   assert.equal(health.ok, true);
   assert.equal(health.takaroIdentified, true);
   assert.equal(health.gameServerId, GAME_SERVER_ID);
-  assert.equal(health.target.target, 'linux-25488622');
+  assert.equal(health.target.target, 'linux-25639945');
   assert.equal(health.target.connectorVersion, '1.0.2-test');
 
   assert.deepEqual(await takaro.request('testReachability'), { connectable: true, reason: null });

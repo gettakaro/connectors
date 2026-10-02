@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "linux-25488622",
+  "id": "linux-25639945",
   "game": "conan-exiles",
   "platform": "linux",
-  "revision": "25488622",
+  "revision": "25639945",
   "default": true,
   "support": {
     "status": "candidate",
@@ -11,9 +11,9 @@
     "evidence": [
       "games/conan-exiles/README.md (What works, what doesn't — live checks 2026-06-20/21 on an earlier Enhanced Linux build with Enhanced Pippi)",
       "games/conan-exiles/bridge/src/__tests__/bridgeContract.test.ts (contract level, every build: fake RCON + fake Takaro)",
-      "games/conan-exiles/DEVELOPMENT.md#findings-from-the-25356024-rig-lane-2026-09-21 (startup level on build 25356024 in an isolated dev-servers rig against hosted Takaro; runtime re-verification on 25488622 is tracked separately)"
+      "games/conan-exiles/DEVELOPMENT.md#findings-from-the-25356024-rig-lane-2026-09-21 (startup level on build 25356024 in an isolated dev-servers rig against hosted Takaro; runtime re-verification on 25639945 is tracked separately)"
     ],
-    "notes": "Exact Steam pin of the public head observed 2026-09-24 (native Linux dedicated server; depot 443032 manifest 2389917983000609164). The bridge is contract-level proven on every build by the fake-RCON/fake-Takaro suite; it was last re-proven at startup level in an isolated dev-servers rig on build 25356024: target stamp, identify with hosted Takaro, reachability over RCON, an empty player list, a console command, reconnect after a dropped socket, and a Takaro shutdown that exits the server process cleanly (slowly: about four and a half minutes). This bridge speaks RCON and does not compile against any server assembly, so nothing about the repin itself needed a code change. Chat delivery needs Enhanced Pippi plus the helper, the Takaro-owned TakaroConan.pak needs the Windows Epic DevKit and is not part of this target, and gameplay-level events are unverified. `takaro-maint verify --game conan-exiles` waits for the shared runner seam that lets a game name its container command and options; the adapter already ships both hooks."
+    "notes": "Exact Steam pin of the public head observed 2026-10-02 (native Linux dedicated server; depot 443032 manifest 8611640520811009059; versus 25488622 only the server binary changed). The bridge is contract-level proven on every build by the fake-RCON/fake-Takaro suite; it was last re-proven at startup level in an isolated dev-servers rig on build 25356024: target stamp, identify with hosted Takaro, reachability over RCON, an empty player list, a console command, reconnect after a dropped socket, and a Takaro shutdown that exits the server process cleanly (slowly: about four and a half minutes). This bridge speaks RCON and does not compile against any server assembly, so nothing about the repin itself needed a code change. Chat delivery needs Enhanced Pippi plus the helper, the Takaro-owned TakaroConan.pak needs the Windows Epic DevKit and is not part of this target, and gameplay-level events are unverified. `takaro-maint verify --game conan-exiles` waits for the shared runner seam that lets a game name its container command and options; the adapter already ships both hooks."
   },
   "inputs": {
     "server": {
@@ -22,7 +22,7 @@
       "hashOrigin": "self-recorded",
       "app": 443030,
       "branch": "public",
-      "buildid": 25488622,
+      "buildid": 25639945,
       "os": "linux",
       "arch": "64",
       "depots": {
@@ -32,14 +32,14 @@
           "files": 4
         },
         "443032": {
-          "manifest": "2389917983000609164",
-          "size": 4180710048,
+          "manifest": "8611640520811009059",
+          "size": 4180709896,
           "files": 251
         }
       },
       "files": {
         "ConanSandbox/Binaries/Linux/ConanSandboxServer-Linux-Shipping": {
-          "sha256": "d6741644c3a97f944f03d0fc590c881390c61d07666dd723b0272a4e0b79c830",
+          "sha256": "97fb973e6f4cf25daf0c2690a07790fefddbff7062fd93179f3010e6b66698b2",
           "size": 201481352
         },
         "ConanSandbox/Binaries/Linux/libDreamworld.so": {
@@ -112,7 +112,7 @@
   "components": [
     {
       "role": "bridge",
-      "artifact": "takaro-conan-exiles-bridge-linux-25488622-{version}.zip",
+      "artifact": "takaro-conan-exiles-bridge-linux-25639945-{version}.zip",
       "installDir": "TakaroBridge"
     }
   ],
