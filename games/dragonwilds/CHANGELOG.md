@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.2.0...dragonwilds-v0.3.0) (2026-10-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dragonwilds:** connect the Linux plugin directly to Takaro and drop the sidecar ([#352](https://github.com/gettakaro/connectors/issues/352))
+
+### Features
+
+* **dragonwilds:** add first catalog target for Steam build 25465077 ([#325](https://github.com/gettakaro/connectors/issues/325)) ([44365ec](https://github.com/gettakaro/connectors/commit/44365ec41193d8dff57a813b88746b958ffbb9b5))
+* **dragonwilds:** connect the Linux plugin directly to Takaro and drop the sidecar ([#352](https://github.com/gettakaro/connectors/issues/352)) ([6682328](https://github.com/gettakaro/connectors/commit/66823289ddef447c307dedefb0cdde89392471e4))
+
 ## [0.2.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.1.0...dragonwilds-v0.2.0) (2026-09-22)
 
 
