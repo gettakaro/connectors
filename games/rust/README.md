@@ -5,7 +5,8 @@ A server-side-only plugin that connects a Rust dedicated server to Takaro. It is
 **Carbon**, which runs the same plugins. Players do not install anything.
 
 **Tested live against Rust public build 25653776 (the 2026-10-01 "Livestock" update) with Carbon
-v2.0.261, with a real game client.** Other Rust builds and other Carbon builds are unverified — the plugin will very likely
+v2.0.261, with a real game client.** Releases are built for the 2026-10-02 hotfix build 25670169
+with Carbon v2.0.262; that pair has not yet been re-tested with a game client. Other Rust builds and other Carbon builds are unverified — the plugin will very likely
 still load, but nothing here was checked against them.
 
 ## Install
@@ -33,7 +34,7 @@ From the latest `rust-vX.Y.Z` release on the releases page
 
 download either name — they are the same bytes:
 
-- **`takaro-rust-plugin-carbon-25653776-<version>.cs`** — the build's own name, which says exactly
+- **`takaro-rust-plugin-carbon-25670169-<version>.cs`** — the build's own name, which says exactly
   which Rust build and which Carbon it was verified against.
 - **`TakaroConnector.cs`** — the same file under the name the framework loads. Direct link pattern:
   `https://github.com/gettakaro/connectors/releases/download/rust-v<version>/TakaroConnector.cs`
