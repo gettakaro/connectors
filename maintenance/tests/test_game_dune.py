@@ -248,7 +248,9 @@ def test_the_sidecar_release_docker_build_can_see_its_prebuilt_dist() -> None:
     release_ignore = (project / "scripts" / "templates" / "sidecar.dockerignore.release").read_text(encoding="utf-8")
     build = (project / "scripts" / "build-release.sh").read_text(encoding="utf-8")
 
-    ignored = [line.strip().rstrip("/") for line in release_ignore.splitlines() if line.strip() and not line.startswith("#")]
+    ignored = [
+        line.strip().rstrip("/") for line in release_ignore.splitlines() if line.strip() and not line.startswith("#")
+    ]
     copied = [
         source.rstrip("/")
         for line in dockerfile.splitlines()
