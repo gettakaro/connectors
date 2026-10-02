@@ -545,13 +545,22 @@ void Sym::Init() {
 
 bool Sym::Ready() { return g_ready; }
 
+#ifdef TAKARO_DEBUG_CORRUPT_SIG
+// Degrade-proof build (DEVELOPMENT.md): this one symbol is treated as unresolved everywhere.
+static bool CorruptedSymbol(const char* name) { return name && strcmp(name, TAKARO_DEBUG_CORRUPT_SIG) == 0; }
+#else
+static bool CorruptedSymbol(const char*) { return false; }
+#endif
+
 uint64_t Sym::Addr(const char* name) {
+    if (CorruptedSymbol(name)) return 0;
     auto it = g_index.find(name);
     if (it == g_index.end()) return 0;
     return g_entries[it->second].addr;
 }
 
 const SymEntry* Sym::Entry(const char* name) {
+    if (CorruptedSymbol(name)) return nullptr;
     auto it = g_index.find(name);
     if (it == g_index.end()) return nullptr;
     return &g_entries[it->second];

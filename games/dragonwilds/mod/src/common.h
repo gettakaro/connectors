@@ -10,7 +10,7 @@
 #include <vector>
 
 #ifdef TAKARO_DEBUG_CORRUPT_SIG
-#define TAKARO_PLUGIN_VERSION "0.1.0-debug-corrupt-" TAKARO_DEBUG_CORRUPT_SIG
+#define TAKARO_PLUGIN_VERSION "debug-corrupt-" TAKARO_DEBUG_CORRUPT_SIG
 #else
 #define TAKARO_PLUGIN_VERSION "0.2.0" // x-release-please-version
 #endif

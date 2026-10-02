@@ -95,7 +95,7 @@ std::string HumanizeClassName(const std::string& code) {
     // nor are variant numbers ("Deer 03" -> "Deer").
     std::string kept, word;
     auto flush = [&] {
-        static const char* kTags[] = {"1H", "2H", "Melee", "Melee1H", "Melee2H", "Ranged", "Character"};
+        static const char* kTags[] = {"1H", "2H", "Melee", "Melee1H", "Melee2H", "Ranged", "Character", "Actor"};
         bool tag = !word.empty() && std::all_of(word.begin(), word.end(), [](char ch) { return isdigit((unsigned char)ch); });
         for (const char* t : kTags) tag = tag || word == t;
         if (!word.empty() && !tag) kept += (kept.empty() ? "" : " ") + word;

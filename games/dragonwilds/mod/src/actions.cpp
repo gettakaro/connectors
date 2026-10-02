@@ -1060,6 +1060,10 @@ std::vector<NamedLocation> ReadLocations() {
 // capability bookkeeping
 
 void SetCap(const char* name, const char* status, const std::string& detail = "") {
+    // A capability this build should have but whose symbol did not resolve is not a static gap: it
+    // is what a game update looks like, so it is reported as degraded (and so named in
+    // testReachability's reason) rather than unimplemented.
+    if (strcmp(status, "unimplemented") == 0 && detail.find("unresolved") != std::string::npos) status = "degraded";
     PluginState::Get().SetCapability(name, status, detail);
 }
 
