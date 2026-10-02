@@ -5,6 +5,7 @@ import {
   RCON_EXEC_COMMAND,
   decodePacket,
   encodePacket,
+  PersistentRconClient,
   sendRconCommand,
 } from '../rcon/client.js';
 import { startFakeRconServer } from './helpers/fakeRcon.js';
@@ -85,4 +86,38 @@ test('rejects invalid RCON credentials', async () => {
       }),
     /RCON authentication failed/,
   );
+});
+
+test('runs every command over one authenticated connection', async () => {
+  const server = await fakeRcon('secret', { listplayers: 'none', listbans: '' }, RCON_AUTH_RESPONSE, 0, 'auth');
+  const client = new PersistentRconClient({ host: '127.0.0.1', port: server.port, password: 'secret', timeoutMs: 1000 });
+
+  const replies = await Promise.all([client.run('listplayers'), client.run('help'), client.run('listbans')]);
+  client.close();
+
+  assert.deepEqual(replies, ['none', 'ran:help', '']);
+  assert.deepEqual(server.commands, ['listplayers', 'help', 'listbans']);
+  assert.equal(server.connections(), 1);
+});
+
+test('reconnects on the next command after the server drops the connection', async () => {
+  const server = await fakeRcon('secret', {});
+  const client = new PersistentRconClient({ host: '127.0.0.1', port: server.port, password: 'secret', timeoutMs: 1000 });
+
+  assert.equal(await client.run('first'), 'ran:first');
+  server.dropConnections();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(await client.run('second'), 'ran:second');
+  client.close();
+
+  assert.equal(server.connections(), 2);
+});
+
+test('rejects a wrong password without keeping the connection', async () => {
+  const server = await fakeRcon('secret', {});
+  const client = new PersistentRconClient({ host: '127.0.0.1', port: server.port, password: 'wrong', timeoutMs: 1000 });
+
+  await assert.rejects(client.run('help'), /RCON authentication failed/);
+  await assert.rejects(client.run('help'), /RCON authentication failed/);
+  assert.equal(server.connections(), 2);
 });
