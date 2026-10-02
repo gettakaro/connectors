@@ -34,7 +34,7 @@ std::string DefaultLogPath(const std::string& exe) {
 
 __attribute__((constructor)) void Init() {
     const std::string exe = ExePath();
-    // steamcmd, the launcher script and anything else in the container inherit LD_PRELOAD too.
+    // The launcher script and every other process in the container inherit LD_PRELOAD too.
     if (exe.find("ConanSandboxServer-Linux-Shipping") == std::string::npos) return;
     SetNativeLogPath(EnvOr("TAKARO_CONAN_NATIVE_LOG", DefaultLogPath(exe)));
     NativeLog("Takaro Conan native " TAKARO_CONAN_NATIVE_VERSION " loading (pid %d)", (int)getpid());
