@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.0.0](https://github.com/gettakaro/connectors/compare/valheim-v3.1.0...valheim-v4.0.0) (2026-10-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* **valheim:** server-only connector, drop the client companion ([#353](https://github.com/gettakaro/connectors/issues/353))
+
+### Features
+
+* **valheim:** add target for Steam build 25527701 ([#326](https://github.com/gettakaro/connectors/issues/326)) ([9c0c9da](https://github.com/gettakaro/connectors/commit/9c0c9da6b9d09aa78616320b56d348ca71ef26ec))
+* **valheim:** server-only connector, drop the client companion ([#353](https://github.com/gettakaro/connectors/issues/353)) ([6763f05](https://github.com/gettakaro/connectors/commit/6763f054665e27f3ea3dad086e2a517f293b8f95))
+
 ## [3.1.0](https://github.com/gettakaro/connectors/compare/valheim-v3.0.3...valheim-v3.1.0) (2026-09-22)
 
 
