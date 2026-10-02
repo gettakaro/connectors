@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.2.0...minecraft-v0.3.0) (2026-10-02)
+
+
+### Features
+
+* **minecraft:** add Fabric 26.3 target ([#260](https://github.com/gettakaro/connectors/issues/260)) ([f57ae8a](https://github.com/gettakaro/connectors/commit/f57ae8a73697e3b2e0939f783030b138e284f1ef))
+
 ## [0.2.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.1.1...minecraft-v0.2.0) (2026-09-21)
 
 
