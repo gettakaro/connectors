@@ -69,6 +69,11 @@ void Hooks::MarkFired(const std::string& name) {
     g_records[name].fired++;
 }
 
+std::atomic<uint64_t>* Hooks::FiredCounter(const std::string& name) {
+    Guard g(g_lock);
+    return &g_records[name].fired;
+}
+
 bool Hooks::SwapVTableSlot(const std::string& name, void* ztvSymbolAddr, size_t slot, void* detour, void** origOut,
                            std::string& err) {
     if (!ztvSymbolAddr) { err = "vtable symbol not found"; return false; }

@@ -1,6 +1,7 @@
 #include "gamethread.h"
 
 #include "hooks.h"
+#include "perf.h"
 #include "state.h"
 #include "sym.h"
 
@@ -36,11 +37,33 @@ std::atomic<uint64_t> g_maxDrainMs{0};
 bool g_installed = false;
 std::string g_how = "not installed";
 
+// LANE L9: per-tick budget for the job queue. Jobs that do not fit wait for the next tick; one job
+// always runs so a single slow job can never starve the queue. TAKARO_TICK_BUDGET_US overrides.
+uint64_t TickBudgetNs() {
+    static uint64_t cached = 0;
+    if (!cached) {
+        std::string v = ConfigValue("TAKARO_TICK_BUDGET_US", "tickBudgetUs", "500");
+        long us = strtol(v.c_str(), nullptr, 10);
+        if (us < 50) us = 50;
+        if (us > 33000) us = 33000;
+        cached = (uint64_t)us * 1000ull;
+    }
+    return cached;
+}
+
 void OnTick() {
+    uint64_t t0 = Perf::NowNs();
+    size_t jobsRan = 0;
+    bool budgetHit = false;
     uint64_t now = NowMs();
-    long tid = (long)syscall(SYS_gettid);
-    long prev = g_tickTid.exchange(tid);
-    if (prev && prev != tid) g_tickChanges++;
+    // gettid() is a real syscall; the game thread never changes identity mid-run, so it is sampled
+    // once and then only every 256th tick as a cheap sanity check (L9).
+    long tid = g_tickTid.load();
+    if (!tid || (g_ticks.load() & 0xff) == 0) {
+        tid = (long)syscall(SYS_gettid);
+        long prev = g_tickTid.exchange(tid);
+        if (prev && prev != tid) g_tickChanges++;
+    }
     if (!g_ticks++) {
         g_firstTickMs = now;
         PluginLog("gamethread: first tick on thread %ld", tid);
@@ -48,7 +71,9 @@ void OnTick() {
     }
     g_lastTickMs = now;
 
+    const uint64_t budget = TickBudgetNs();
     for (size_t n = 0; n < GameThread::kJobsPerTick; n++) {
+        if (n && Perf::NowNs() - t0 >= budget) { budgetHit = true; break; }
         std::shared_ptr<Job> job;
         {
             Guard g(g_q);
@@ -69,35 +94,47 @@ void OnTick() {
         uint64_t took = NowMs() - t0;
         if (took > g_maxDrainMs) g_maxDrainMs = took;
         g_jobsRun++;
+        jobsRan++;
         {
             Guard g(g_q);
             job->done = true;
             pthread_cond_broadcast(&g_cv);
         }
     }
+    Perf::RecordTick(Perf::NowNs() - t0, jobsRan, budgetHit);
 }
 
 using FnTick = void (*)(void* self, float dt, bool idle);
-FnTick g_origJgx = nullptr;
-FnTick g_origGame = nullptr;
 
-void TickJgx(void* self, float dt, bool idle) {
-    if (g_origJgx) g_origJgx(self, dt, idle);
-    Hooks::MarkFired("UJgxGameEngine::Tick");
+// One detour slot per Tick candidate. On this build the live engine is UDomGameEngine, whose slot 98
+// holds the inherited UJgxGameEngine::Tick; UGameEngine::Tick is kept as the stock fallback.
+struct TickHook {
+    const char* symbol;
+    FnTick orig;
+    std::atomic<uint64_t>* fired;  // L9: resolved once at install; no lock on the tick path
+};
+TickHook g_tick[] = {
+    {"UJgxGameEngine::Tick", nullptr, nullptr},
+    {"UGameEngine::Tick", nullptr, nullptr},
+};
+const size_t kTickCount = sizeof(g_tick) / sizeof(g_tick[0]);
+
+template <size_t I>
+void TickDetour(void* self, float dt, bool idle) {
+    if (g_tick[I].orig) g_tick[I].orig(self, dt, idle);
+    if (g_tick[I].fired) g_tick[I].fired->fetch_add(1, std::memory_order_relaxed);
     try { OnTick(); } catch (...) {}
 }
-void TickGame(void* self, float dt, bool idle) {
-    if (g_origGame) g_origGame(self, dt, idle);
-    Hooks::MarkFired("UGameEngine::Tick");
-    try { OnTick(); } catch (...) {}
-}
+void* const kDetours[kTickCount] = {(void*)&TickDetour<0>, (void*)&TickDetour<1>};
 
-// Swaps every exported vtable slot that holds `target`.
+// Swaps every *exported* vtable slot that holds `target`.
 //
 // Hooking only the declaring class is not enough: a derived class that inherits the implementation
-// gets its own vtable with its own copy of the same function pointer. On this build the live engine
-// is UDomGameEngine, whose slot 98 holds UJgxGameEngine::Tick - swapping only _ZTV14UJgxGameEngine
-// never fires. So we sweep .dynsym for every `_ZTV*` that contains the address.
+// gets its own vtable with its own copy of the same function pointer, so swapping the base class
+// alone can bind a vtable that never fires: on this build swapping only _ZTV14UJgxGameEngine never
+// fires, because the live UDomGameEngine carries its own copy. We therefore sweep .dynsym for every
+// `_ZTV*` that contains the address. On a binary that exports no vtables at all this finds nothing
+// and the live engine object below is the only route.
 size_t SwapEverywhere(const char* symName, void* detour, size_t& slotOut, std::string& howOut) {
     uint64_t target = Sym::Addr(symName);
     if (!target) return 0;
@@ -126,21 +163,65 @@ size_t SwapEverywhere(const char* symName, void* detour, size_t& slotOut, std::s
     return hooked;
 }
 
-bool InstallOne(const char* symName, void* detour, FnTick* orig) {
+// Fallback for a binary that exports no `_ZTV*`: take the vtable off the **live** engine object
+// (GEngine), find the slot that holds the resolved Tick address and swap that one slot. The slot is
+// measured, never assumed.
+size_t SwapLiveEngine(const char* symName, void* detour, size_t& slotOut, std::string& howOut) {
+    uint64_t target = Sym::Addr(symName);
+    uint64_t gengineSym = Sym::Addr("GEngine");
+    if (!target || !gengineSym) return 0;
+    if (!MemReadable((const void*)(uintptr_t)gengineSym, 8)) return 0;
+    void* engine = *(void* const*)(uintptr_t)gengineSym;
+    if (!engine || !MemReadable(engine, sizeof(void*))) return 0;
+    void* vt = *(void* const*)engine;
+    if (!vt || !MemReadable(vt, 8 * 512)) return 0;
+    auto* words = (const uint64_t*)vt;
+    size_t hits = 0, slot = SIZE_MAX;
+    for (size_t i = 0; i < 512; i++) {
+        if (words[i] == target) { slot = i; hits++; }
+    }
+    if (hits != 1) {
+        PluginLog("gamethread: %s appears %zu times in the live engine vtable (exactly one required)", symName, hits);
+        return 0;
+    }
+    std::string err;
+    if (!Hooks::HookObjectVTable(symName, engine, slot, detour, nullptr, err)) {
+        PluginLog("gamethread: live engine vtable slot %zu not swapped: %s", slot, err.c_str());
+        return 0;
+    }
+    slotOut = slot;
+    char b[160];
+    snprintf(b, sizeof b, "live GEngine object %p vtable %p", engine, vt);
+    howOut = b;
+    return 1;
+}
+
+bool InstallOne(size_t idx) {
+    const char* symName = g_tick[idx].symbol;
     uint64_t addr = Sym::Addr(symName);
     if (!addr) {
         PluginLog("gamethread: %s unresolved", symName);
         return false;
     }
     // The original is the symbol itself: every swapped slot held exactly that address.
-    *orig = (FnTick)(uintptr_t)addr;
+    g_tick[idx].orig = (FnTick)(uintptr_t)addr;
     size_t slot = SIZE_MAX;
     std::string tables;
-    size_t n = SwapEverywhere(symName, detour, slot, tables);
-    if (!n) return false;
-    PluginLog("gamethread: %s hooked in %zu vtables at slot %zu (%s)", symName, n, slot, tables.c_str());
+    size_t n = SwapEverywhere(symName, kDetours[idx], slot, tables);
+    std::string via = "exported vtables";
+    if (!n) {
+        n = SwapLiveEngine(symName, kDetours[idx], slot, tables);
+        via = "live engine object";
+    }
+    if (!n) {
+        g_tick[idx].orig = nullptr;
+        return false;
+    }
+    g_tick[idx].fired = Hooks::FiredCounter(symName);
+    PluginLog("gamethread: %s hooked in %zu vtable(s) at slot %zu via %s (%s)", symName, n, slot, via.c_str(),
+              tables.c_str());
     g_how += std::string(g_how.empty() ? "" : "; ") + symName + " x" + std::to_string(n) + " slot " +
-             std::to_string(slot) + " [" + tables + "]";
+             std::to_string(slot) + " via " + via + " [" + tables + "]";
     return true;
 }
 
@@ -149,9 +230,7 @@ bool InstallOne(const char* symName, void* detour, FnTick* orig) {
 void GameThread::Init() {
     if (g_installed) return;
     g_how.clear();
-    bool a = InstallOne("UJgxGameEngine::Tick", (void*)&TickJgx, &g_origJgx);
-    bool b = InstallOne("UGameEngine::Tick", (void*)&TickGame, &g_origGame);
-    g_installed = a || b;
+    for (size_t i = 0; i < kTickCount; i++) g_installed = InstallOne(i) || g_installed;
     if (g_how.empty()) g_how = "not installed";
     if (!g_installed) {
         PluginState::Get().SetCapability("gameThread", "degraded", "no engine Tick vtable slot could be hooked");
@@ -169,13 +248,20 @@ bool GameThread::Alive() {
 
 uint64_t GameThread::TickCount() { return g_ticks.load(); }
 
+#ifdef TAKARO_GAMETHREAD_TEST
+void GameThread::TestEnable() { g_installed = true; }
+void GameThread::TestPumpOnce() { OnTick(); }
+size_t GameThread::TestQueued() { Guard g(g_q); return g_jobs.size(); }
+#endif
+
 bool GameThread::Run(std::function<void()> fn, uint32_t timeoutMs) {
     if (!g_installed) return false;
+    Perf::RecordEntry();
     auto job = std::make_shared<Job>();
     job->fn = std::move(fn);
     {
         Guard g(g_q);
-        if (g_jobs.size() > 256) return false;  // the pump is stuck; do not pile up
+        if (g_jobs.size() >= 256) return false;  // the pump is stuck; do not pile up
         g_jobs.push_back(job);
     }
     uint64_t deadline = NowMs() + timeoutMs;
@@ -199,15 +285,17 @@ bool GameThread::Run(std::function<void()> fn, uint32_t timeoutMs) {
 }
 
 bool GameThread::RunJson(std::function<std::string()> fn, std::string& out, uint32_t timeoutMs) {
-    std::string result;
-    bool ok = Run([&] {
+    // The job can continue after Run times out. Both the function and its result therefore belong
+    // to the queued job, never to this caller's stack.
+    auto result = std::make_shared<std::string>();
+    bool ok = Run([fn = std::move(fn), result] {
         try {
-            result = fn();
+            *result = fn();
         } catch (...) {
-            result = "{\"error\":\"handler threw on the game thread\"}";
+            *result = "{\"error\":\"handler threw on the game thread\"}";
         }
     }, timeoutMs);
-    if (ok) out = result;
+    if (ok) out = *result;
     return ok;
 }
 
@@ -228,5 +316,6 @@ std::string GameThread::StatsJson() {
            ",\"jobsRun\":" + std::to_string(g_jobsRun.load()) +
            ",\"jobsTimedOut\":" + std::to_string(g_jobsTimedOut.load()) +
            ",\"jobsQueued\":" + std::to_string(queued) +
-           ",\"maxJobMs\":" + std::to_string(g_maxDrainMs.load()) + "}";
+           ",\"maxJobMs\":" + std::to_string(g_maxDrainMs.load()) +
+           ",\"tickBudgetUs\":" + std::to_string(TickBudgetNs() / 1000) + "}";
 }

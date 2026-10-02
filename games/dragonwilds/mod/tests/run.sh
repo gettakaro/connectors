@@ -10,5 +10,5 @@ CXX=${CXX:-g++}
 mkdir -p tests/build
 set -x
 $CXX -std=c++17 -O1 -g -Wall -Wextra -Isrc -Itests \
-    tests/unit_test.cpp src/common.cpp src/state.cpp -o tests/build/unit_test -pthread
+    tests/unit_test.cpp src/common.cpp src/state.cpp src/perf.cpp -o tests/build/unit_test -pthread
 ./tests/build/unit_test

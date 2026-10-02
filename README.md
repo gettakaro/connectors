@@ -14,7 +14,7 @@ Monorepo for connector plugins that implement the [Takaro Generic Connector Prot
 | Terraria | [`games/terraria/`](games/terraria/) | C# / .NET 9 | TShock reference build |
 | Valheim | [`games/valheim/`](games/valheim/) | C# / .NET | BepInEx dedicated-server plugin |
 | Enshrouded | [`games/enshrouded/`](games/enshrouded/) | C++ (`dbghelp.dll` proxy) + TypeScript sidecar | zig cross-compile + Node.js |
-| RuneScape: Dragonwilds | [`games/dragonwilds/`](games/dragonwilds/) | C++ (`LD_PRELOAD` native plugin) + TypeScript sidecar | `debian:bookworm` g++ + Node.js |
+| RuneScape: Dragonwilds | [`games/dragonwilds/`](games/dragonwilds/) | C++ (`LD_PRELOAD` native connector) | `debian:bookworm` g++ |
 | VEIN | [`games/vein/`](games/vein/) | C++ (`LD_PRELOAD` native connector) | `debian:bookworm` g++ |
 | Dune: Awakening | [`games/dune/`](games/dune/) | TypeScript sidecar + optional C++ (`LD_PRELOAD` native plugin) | Node.js + `debian:bookworm` g++ |
 

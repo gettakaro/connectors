@@ -2,3 +2,6 @@ dist/
 build/
 *.o
 tests/build/
+core
+core.*
+__pycache__/

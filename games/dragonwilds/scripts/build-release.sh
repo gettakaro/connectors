@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
-# Builds the Takaro RuneScape: Dragonwilds release artifacts for one catalog target and
-# packages them deterministically as <out-dir>/<catalog artifact name>:
+# Builds the Takaro RuneScape: Dragonwilds connector for one catalog target and packages it
+# deterministically as <out-dir>/<catalog artifact name> plus a .meta.json, and
+# <out-dir>/SHA256SUMS:
 #
-#   takaro-dragonwilds-plugin-<target>-<version>.tar.gz    the LD_PRELOAD plugin
-#   takaro-dragonwilds-sidecar-<target>-<version>.tar.gz   the sidecar (REQUIRED, the connector)
-#   SHA256SUMS                                             checksums of everything above
+#   TakaroDragonwilds/
+#     libtakaro-dragonwilds.so        the plugin, which also holds the Takaro connection
+#     env.example                     the configuration, to be copied to .env
+#     docker-compose.example.yml      the game service with the plugin preloaded
+#     README.txt, INSTALL.md          install, upgrade from the 0.2.x sidecar, rollback
+#     scripts/drain-legacy.py         the one-time 0.2.x sidecar drain and state import
+#     THIRD-PARTY.md, licenses/       what is linked into the plugin, and its license texts
+#     takaro-target.json              the catalog target this build is pinned to
+#     SHA256SUMS                      every file above
 #
 # Usage: build-release.sh <version> <out-dir> [--target <catalog target id>]
 #
-# The host needs neither Node nor a C++ toolchain: both halves are built inside the image
-# the catalog pins as this target's toolchain. node:*-bookworm (not slim) is that image
-# precisely because it carries g++ on the same glibc as the dedicated server image -- a
-# plugin linked against a newer glibc could not be preloaded into the game binary.
+# The host needs no C++ toolchain: the plugin is built and tested inside an image made from
+# the catalog's pinned Bookworm toolchain and its pinned, hash-checked native sources.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -38,14 +43,19 @@ esac
 mkdir -p "${OUT_DIR}"
 OUT_DIR=$(cd -- "${OUT_DIR}" && pwd)
 PLUGIN_ARTIFACT="${DRAGONWILDS_ARTIFACT_PLUGIN/\{version\}/${VERSION}}"
-SIDECAR_ARTIFACT="${DRAGONWILDS_ARTIFACT_SIDECAR/\{version\}/${VERSION}}"
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "${REPO_ROOT}" log -1 --format=%ct)}"
 export TZ=UTC
 SOURCE_REVISION="${TAKARO_SOURCE_REVISION:-$(git -C "${REPO_ROOT}" rev-parse HEAD)}"
 
-# Every dependency the resolved target declares, discovered rather than listed here: a
-# dependency added to the catalog must not be able to slip past the check below because
-# somebody forgot to add a line to this script.
+for required in "${PROJECT_ROOT}/mod/third_party/README.md" "${PROJECT_ROOT}/mod/third_party/licenses"; do
+    [ -e "${required}" ] || { echo "build-release: missing ${required}; the release must carry its licenses" >&2; exit 1; }
+done
+
+echo "Building the Dragonwilds connector ${VERSION} for ${DRAGONWILDS_TARGET} (${DRAGONWILDS_FP16})..."
+dragonwilds_builder_image || { echo "the pinned builder image did not build" >&2; exit 6; }
+
+# Every dependency the resolved target declares, handed over as environment: the source check
+# inside the container compares the developer Dockerfile against exactly this set.
 DEP_ARGS=()
 while IFS='=' read -r key _; do
     case "$key" in
@@ -54,40 +64,61 @@ while IFS='=' read -r key _; do
 done < <(env)
 [ ${#DEP_ARGS[@]} -gt 0 ] || { echo "the resolved target declares no build dependencies" >&2; exit 2; }
 
-# Built in the pinned toolchain image, mounted at its own path so every path inside the
-# container is the path outside it. The dependency check runs first: `npm ci` would
-# otherwise install whatever the lockfile points at, recorded or not.
+# Built and tested in the builder image, mounted at its own path so every path inside the
+# container is the path outside it. A release starts from no earlier object file.
 docker run --rm \
     --user "$(id -u):$(id -g)" \
     -e HOME=/tmp \
-    -e npm_config_cache=/tmp/npm-cache \
     -e SOURCE_DATE_EPOCH \
     -e TZ \
     "${DEP_ARGS[@]}" \
     -v "${REPO_ROOT}:${REPO_ROOT}" \
-    -w "${REPO_ROOT}/games/dragonwilds" \
-    "${DRAGONWILDS_TOOLCHAIN}" \
-    bash -c 'set -eu
-        cd sidecar
-        node ../scripts/check-exact-source.mjs
-        rm -rf dist node_modules
-        npm ci --no-audit --no-fund
-        npm run typecheck
-        npm test
-        npm run build
-        cd ../mod
+    -w "${PROJECT_ROOT}" \
+    "${BUILDER_IMAGE}" \
+    bash -euo pipefail -c '
+        node scripts/check-exact-source.mjs mod/Dockerfile.build
+        rm -rf mod/build mod/dist mod/tests/build
+        cd mod
         ./build.sh --native --tests'
+
+SO="${PROJECT_ROOT}/mod/dist/libtakaro-dragonwilds.so"
+[ -f "${SO}" ] || { echo "build-release: expected ${SO} after the build" >&2; exit 1; }
 
 # shellcheck source=../../../scripts/lib/package.sh
 . "${REPO_ROOT}/scripts/lib/package.sh"
 
 STAGE="${PROJECT_ROOT}/_data/build/stage-${DRAGONWILDS_FP16}"
 rm -rf "${STAGE}"
-mkdir -p "${STAGE}"
+PKG="${STAGE}/TakaroDragonwilds"
+mkdir -p "${PKG}/licenses" "${PKG}/scripts"
 
-# dragonwilds_stamp <folder> — the identity the running component logs and `deploy` reads.
-dragonwilds_stamp() {
-    cat > "${1}/takaro-target.json" <<JSON
+cp "${SO}" "${PKG}/"
+# A dotfile is not a legal artifact archive entry (`paths.safe_relative` refuses a segment
+# that does not start with an alphanumeric), so the example env ships as env.example.
+cp "${PROJECT_ROOT}/.env.example" "${PKG}/env.example"
+cp "${PROJECT_ROOT}/docker-compose.example.yml" "${PKG}/docker-compose.example.yml"
+cp "${PROJECT_ROOT}/INSTALL.md" "${PKG}/INSTALL.md"
+cp "${PROJECT_ROOT}/scripts/drain-legacy.py" "${PKG}/scripts/drain-legacy.py"
+cp "${PROJECT_ROOT}/mod/third_party/README.md" "${PKG}/THIRD-PARTY.md"
+cp "${PROJECT_ROOT}"/mod/third_party/licenses/* "${PKG}/licenses/"
+
+cat > "${PKG}/README.txt" <<TXT
+Takaro RuneScape: Dragonwilds connector ${VERSION}
+
+Built for Steam build ${DRAGONWILDS_REVISION} (see takaro-target.json).
+
+Server-side only. Players install nothing.
+libtakaro-dragonwilds.so is loaded into the Linux dedicated server with LD_PRELOAD and
+connects to Takaro itself; there is no sidecar. Preload it on the game binary's own launch
+line only, never onto SteamCMD (32-bit; it fails with a 64-bit preload).
+
+Install, upgrade from the 0.2.x sidecar, and rollback: INSTALL.md.
+Check the files you unpacked: sha256sum -c SHA256SUMS
+
+Never commit or share a filled-in .env: it holds your Takaro registration token.
+TXT
+
+cat > "${PKG}/takaro-target.json" <<JSON
 {
   "target": "${DRAGONWILDS_TARGET}",
   "fingerprint": "${DRAGONWILDS_FINGERPRINT}",
@@ -98,12 +129,21 @@ dragonwilds_stamp() {
   "sourceRevision": "${SOURCE_REVISION}"
 }
 JSON
-}
 
-# dragonwilds_meta <artifact> — the identity beside the archive, because a tarball has no
-# manifest to stamp. `takaro-maint artifact validate` reads this file.
-dragonwilds_meta() {
-    cat > "${OUT_DIR}/${1}.meta.json" <<JSON
+# Every file in the folder, by path, so an operator can check what they unpacked. The listing
+# is written outside the folder first, so the sums never list their own file.
+( cd "${PKG}" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | xargs -r sha256sum ) > "${STAGE}/SHA256SUMS"
+mv "${STAGE}/SHA256SUMS" "${PKG}/SHA256SUMS"
+
+pkg_tar_gz "${STAGE}" TakaroDragonwilds "${OUT_DIR}/${PLUGIN_ARTIFACT}"
+
+# A previous release run may have populated this output directory. Never leave a stale
+# sidecar archive from an older build beside the one-component release.
+rm -f "${OUT_DIR}"/takaro-dragonwilds-sidecar-*.tar.gz "${OUT_DIR}"/takaro-dragonwilds-sidecar-*.tar.gz.meta.json
+
+# The identity beside the archive, because a tarball has no manifest to stamp.
+# `takaro-maint artifact validate` reads this file.
+cat > "${OUT_DIR}/${PLUGIN_ARTIFACT}.meta.json" <<JSON
 {
   "target": "${DRAGONWILDS_TARGET}",
   "fingerprint": "${DRAGONWILDS_FINGERPRINT}",
@@ -114,62 +154,7 @@ dragonwilds_meta() {
   "revision": "${DRAGONWILDS_REVISION}"
 }
 JSON
-}
-
-# ── the plugin: pinned to this exact server build ────────────────────────────
-PPKG="${STAGE}/TakaroDragonwilds"
-mkdir -p "${PPKG}"
-cp "${PROJECT_ROOT}/mod/dist/libtakaro-dragonwilds.so" "${PPKG}/"
-cat > "${PPKG}/README.txt" <<TXT
-Takaro RuneScape: Dragonwilds plugin ${VERSION}
-
-Built for build ${DRAGONWILDS_REVISION} (see takaro-target.json).
-
-Server-side only. Players install nothing.
-The plugin is loaded into the Linux dedicated server with LD_PRELOAD and serves a
-loopback HTTP API on 127.0.0.1:18890 for the sidecar. See the connector README for the
-full install steps; the plugin must be loaded onto the game binary's own launch line only,
-never onto SteamCMD (32-bit; it fails with a 64-bit preload).
-
-You also need takaro-dragonwilds-sidecar-*.tar.gz -- the plugin alone does not talk to
-Takaro.
-TXT
-dragonwilds_stamp "${PPKG}"
-pkg_tar_gz "${STAGE}" TakaroDragonwilds "${OUT_DIR}/${PLUGIN_ARTIFACT}"
-dragonwilds_meta "${PLUGIN_ARTIFACT}"
 echo "  -> ${OUT_DIR}/${PLUGIN_ARTIFACT}"
-
-# ── the sidecar: the connector itself ─────────────────────────────────────────
-SPKG="${STAGE}/TakaroDragonwildsSidecar"
-mkdir -p "${SPKG}"
-cp -R "${PROJECT_ROOT}/sidecar/dist" "${SPKG}/"
-cp "${PROJECT_ROOT}/sidecar/package.json" "${PROJECT_ROOT}/sidecar/package-lock.json" \
-   "${PROJECT_ROOT}/sidecar/Dockerfile" "${SPKG}/"
-rm -rf "${SPKG}/dist/__tests__" "${SPKG}/dist/testing"
-# A dotfile is not a legal artifact archive entry (`paths.safe_relative` refuses a segment
-# that does not start with an alphanumeric, the same guard that keeps a component archive
-# from ever writing outside its install directory), so the example env file the README
-# tells an operator to copy ships as a non-dotfile name instead.
-cp "${PROJECT_ROOT}/sidecar/.env.example" "${SPKG}/env.example"
-
-# The release must be runnable with `npm ci --omit=dev`, so the entrypoint package.json
-# points at has to exist in the packaged dist/.
-[ -f "${SPKG}/dist/index.js" ] || { echo "build-release: missing dist/index.js in the sidecar package" >&2; exit 1; }
-
-cat > "${SPKG}/README.release.txt" <<TXT
-Takaro RuneScape: Dragonwilds sidecar ${VERSION}
-
-Built for build ${DRAGONWILDS_REVISION} (see takaro-target.json). The sidecar reads the
-plugin's loopback API (http://127.0.0.1:18890) and the server log, so it must share the
-game server's network namespace (compose: network_mode: "service:dragonwilds") or run on
-the same host. See the connector README for the full setup.
-
-Never commit or share live registration tokens or plugin tokens.
-TXT
-dragonwilds_stamp "${SPKG}"
-pkg_tar_gz "${STAGE}" TakaroDragonwildsSidecar "${OUT_DIR}/${SIDECAR_ARTIFACT}"
-dragonwilds_meta "${SIDECAR_ARTIFACT}"
-echo "  -> ${OUT_DIR}/${SIDECAR_ARTIFACT}"
 
 pkg_sha256sums "${OUT_DIR}"
 echo "==> ${OUT_DIR}/SHA256SUMS"

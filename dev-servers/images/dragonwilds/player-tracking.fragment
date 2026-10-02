@@ -1,0 +1,37 @@
+                # Takaro patch: track players by their network connection, not by name. The join
+                # line carries the platform name and the quit line the character name, so the
+                # stock name match never removed anyone and the server looked busy forever.
+                if [[ "$line" == *"LogNet: NotifyAcceptedConnection:"* ]]; then
+                    PENDING_CONN=$(echo "$line" | grep -oE 'Name: [A-Za-z]+NetConnection_[0-9]+' | head -n1 | sed 's/^Name: //')
+                fi
+
+                if [[ "$line" == *"LogNet: Join succeeded:"* ]]; then
+                    player=$(echo "$line" | grep -oE 'LogNet: Join succeeded: ([^[:space:]]+)' | sed 's/.*LogNet: Join succeeded: //')
+                    if [ -n "$player" ]; then
+                        local conn="${PENDING_CONN:-$player}"
+                        PENDING_CONN=""
+                        grep -q "^${conn} " "$PLAYERS_FILE" 2>/dev/null || echo "$conn $player" >> "$PLAYERS_FILE"
+                        local count
+                        count=$(wc -l < "$PLAYERS_FILE")
+                        echo "$count" > "$PLAYER_COUNT_FILE"
+                        date +%s > "$LAST_ACTIVITY_FILE"
+                        log "Player connected: $player (online: $count)"
+                        send_discord "🟢 Player connected: $player"
+                    fi
+                fi
+
+                # A closed control channel ends the connection on quit, kick and timeout alike.
+                if [[ "$line" == *"ChIndex == 0"* || "$line" == *"UNetConnection::Close"* ]]; then
+                    local closed
+                    closed=$(echo "$line" | grep -oE 'Name: [A-Za-z]+NetConnection_[0-9]+' | head -n1 | sed 's/^Name: //')
+                    if [ -n "$closed" ] && grep -q "^${closed} " "$PLAYERS_FILE" 2>/dev/null; then
+                        player=$(grep -m1 "^${closed} " "$PLAYERS_FILE" | cut -d' ' -f2-)
+                        sed -i "/^${closed} /d" "$PLAYERS_FILE"
+                        local count
+                        count=$(wc -l < "$PLAYERS_FILE")
+                        echo "$count" > "$PLAYER_COUNT_FILE"
+                        date +%s > "$LAST_ACTIVITY_FILE"
+                        log "Player disconnected: $player (online: $count)"
+                        send_discord "🔴 Player disconnected: $player"
+                    fi
+                fi

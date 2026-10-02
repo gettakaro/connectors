@@ -10,7 +10,7 @@
 #include <vector>
 
 #ifdef TAKARO_DEBUG_CORRUPT_SIG
-#define TAKARO_PLUGIN_VERSION "0.1.0-debug-corrupt-" TAKARO_DEBUG_CORRUPT_SIG
+#define TAKARO_PLUGIN_VERSION "debug-corrupt-" TAKARO_DEBUG_CORRUPT_SIG
 #else
 #define TAKARO_PLUGIN_VERSION "0.2.0" // x-release-please-version
 #endif
@@ -46,8 +46,10 @@ const std::string& ExePath();      // /proc/self/exe
 const std::string& ExeDir();       // directory holding RSDragonwildsServer-Linux-Shipping
 const std::string& PluginDataDir();  // <ExeDir>/takaro, created on first use (TAKARO_PLUGIN_DATA_DIR overrides)
 
-// Appends to <PluginDataDir>/plugin.log. Never calls into the game. Output is redacted.
+// Enqueues an owned bounded record. Hooks never open files or wait for disk I/O.
 void PluginLog(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+void FlushPluginLogs(); // background threads only; redacts before writing
+uint64_t PluginLogDropped();
 bool DebugEnabled();  // TAKARO_PLUGIN_DEBUG=1
 
 // Config: env first, then <PluginDataDir>/plugin.json. Returns `def` when neither has it.
@@ -59,6 +61,11 @@ std::string Redact(const std::string& s);
 
 // ---- time ----
 std::string IsoNowUtc();
+
+// Player-facing fallback name for an Unreal class/asset name when the game has no display text for
+// it yet: "BP_AI_KalphiteGuardian_Character_C" -> "Kalphite Guardian". Empty for engine base classes
+// that are not a creature of their own (BP_DominionAICharacter_C, *_Base_C).
+std::string HumanizeClassName(const std::string& code);
 uint64_t NowMs();  // monotonic milliseconds
 
 // ---- minimal JSON ----

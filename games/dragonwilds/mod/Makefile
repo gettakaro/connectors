@@ -4,8 +4,8 @@ build:            ## build the .so in the debian:bookworm container
 	./build.sh
 native:           ## build on the host toolchain
 	./build.sh --native
-test:             ## run the unit tests in the container
-	./tests/run.sh
+test:             ## build and run every test suite in the container
+	./build.sh --tests
 symbols:          ## dump the wanted symbol table for the installed server
 	python3 tools/symdump.py
 clean:

@@ -24,6 +24,7 @@
 
 #include "gamethread.h"
 #include "hooks.h"
+#include "perf.h"
 #include "reflect.h"
 #include "state.h"
 #include "sym.h"
@@ -35,8 +36,11 @@
 #include <atomic>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <functional>
+#include <memory>
 #include <set>
 
 using namespace UE;
@@ -84,14 +88,16 @@ std::string NoteOf(SourceStat& s) {
 }
 
 void Degrade(const char* cap, SourceStat& s, const std::string& why) {
+    bool changed = NoteOf(s) != why || PluginState::Get().Capability(cap) != "degraded";
     Note(s, why);
     PluginState::Get().SetCapability(cap, "degraded", why);
-    PluginLog("events: %s degraded: %s", cap, why.c_str());
+    if (changed) PluginLog("events: %s degraded: %s", cap, why.c_str());
 }
 void Ok(const char* cap, SourceStat& s, const std::string& how) {
+    bool changed = NoteOf(s) != how || PluginState::Get().Capability(cap) != "ok";
     Note(s, how);
     PluginState::Get().SetCapability(cap, "ok", "");
-    PluginLog("events: %s ok (%s)", cap, how.c_str());
+    if (changed) PluginLog("events: %s ok (%s)", cap, how.c_str());
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -325,7 +331,13 @@ struct Conn {
     uint64_t firstSeenMs = 0;
     bool announced = false;
     bool left = false;
+    // A banned player is kicked on sight and never reported: no join, and no leave for the kick.
+    bool refused = false;
 };
+
+// Set by the join/leave hooks; the next housekeeping pass sweeps for new vtables at once instead of
+// waiting for its cadence.
+std::atomic<bool> g_worldDirty{false};
 
 Mutex g_connLock;
 std::vector<Conn> g_conns;  // small (max 6 players)
@@ -340,13 +352,13 @@ void ClearLeaveMarker(const std::string& gameId);
 
 void EmitJoin(const Ident& id) {
     ClearLeaveMarker(id.gameId);
-    PluginState::Get().EmitEvent("player-connected", "{\"player\":" + PlayerJson(id) + "}");
+    PluginState::Get().EmitEventDeferred("player-connected", [id] { return "{\"player\":" + PlayerJson(id) + "}"; });
     g_join.emitted++;
     PluginLog("events: player-connected %s (%s)", id.gameId.c_str(), id.name.c_str());
 }
 
 void EmitLeave(const Ident& id) {
-    PluginState::Get().EmitEvent("player-disconnected", "{\"player\":" + PlayerJson(id) + "}");
+    PluginState::Get().EmitEventDeferred("player-disconnected", [id] { return "{\"player\":" + PlayerJson(id) + "}"; });
     g_leave.emitted++;
     PluginLog("events: player-disconnected %s (%s)", id.gameId.c_str(), id.name.c_str());
 }
@@ -490,11 +502,22 @@ void OnLeave(void* controller, const char* which) {
         Conn* c = FindConn(controller);
         if (c) {
             if (c->left) return;  // deduped: PreLogout and Logout both fire for one connection
+            if (c->refused) {
+                if (DebugEnabled())
+                    PluginLog("events: %s for refused (banned) %s not reported", which, c->id.gameId.c_str());
+                for (size_t i = 0; i < g_conns.size(); i++)
+                    if (g_conns[i].controller == controller) {
+                        g_conns.erase(g_conns.begin() + (long)i);
+                        break;
+                    }
+                return;
+            }
             c->left = true;
             id = c->id;
             announced = c->announced;
         }
     }
+    g_worldDirty = true;
     if (!id.valid()) id = IdentFromController(controller);
     if (!id.valid()) {
         if (DebugEnabled())
@@ -525,6 +548,7 @@ void DetourPostLogin(void* self, void* pc) {
     if (g_origPostLogin) g_origPostLogin(self, pc);
     Hooks::MarkFired("ADominionGameMode::PostLogin");
     g_join.fired++;
+    g_worldDirty = true;
     try {
         Guard g(g_connLock);
         if (!FindConn(pc)) {
@@ -656,8 +680,12 @@ void ResolvePendingJoins() {
             c.id = id;
             c.playerState = PlayerStateOf(c.controller);
             c.announced = true;
-            toAnnounce.push_back({c.controller, id});
-            if (::state::IsBanned(id.gameId)) banned.push_back(id.gameId);
+            if (::state::IsBanned(id.gameId)) {
+                c.refused = true;
+                banned.push_back(id.gameId);
+            } else {
+                toAnnounce.push_back({c.controller, id});
+            }
         }
         for (void* d : drop)
             for (size_t i = 0; i < g_conns.size(); i++)
@@ -671,7 +699,7 @@ void ResolvePendingJoins() {
     for (auto& a : toAnnounce) EmitJoin(a.second);
     // Belt and braces: PreLogin should have refused these, so reaching here is worth a log line.
     for (auto& id : banned) {
-        PluginLog("events: banned player %s got past PreLogin; kicking", id.c_str());
+        PluginLog("events: banned player %s got past PreLogin; kicking without a join event", id.c_str());
         Actions::KickBanned(id);
     }
 }
@@ -684,7 +712,8 @@ void ReapGoneConnections() {
     {
         Guard g(g_connLock);
         for (auto& c : g_conns)
-            if (c.announced && !c.left && c.playerState) announced.push_back({c.controller, c.playerState});
+            if (c.announced && !c.left && !c.refused && c.playerState)
+                announced.push_back({c.controller, c.playerState});
     }
     if (announced.empty()) return;
     if (!g_clsPlayerState) return;
@@ -705,8 +734,68 @@ struct PeEntry {
     void* vtable = nullptr;
     void* orig = nullptr;
 };
-PeEntry g_pe[128];
+PeEntry g_pe[256];
 std::atomic<size_t> g_peCount{0};
+
+// The ProcessEvent filter runs for EVERY UFunction the engine dispatches on a hooked vtable, so it
+// has to cost next to nothing (docs/gamethread-policy.md). Three things keep it cheap:
+//  1. the vtable -> original lookup is an O(1) open-addressed table instead of a linear scan;
+//  2. the per-UFunction decision ("is this one of ours?") is cached by UFunction pointer, so a raw
+//     FName compare happens once per distinct function, and a cached "not ours" is the
+//     overwhelming case;
+//  3. MemReadable() is a lock-free snapshot lookup (sym.cpp) - the self pointer is not even checked,
+//     because the engine just dispatched through its vtable.
+// The filter still never stringifies an FName.
+const size_t kPeSlots = 1024;  // power of two; open addressing, never resized
+struct PeSlot {
+    std::atomic<void*> vtable{nullptr};
+    void* orig = nullptr;
+};
+PeSlot g_peSlots[kPeSlots];
+
+inline size_t PtrHash(void* p) {
+    uint64_t v = (uint64_t)(uintptr_t)p;
+    v ^= v >> 33; v *= 0xff51afd7ed558ccdull; v ^= v >> 33;
+    return (size_t)v & (kPeSlots - 1);
+}
+
+void PeRemember(void* vt, void* orig) {
+    size_t i = PtrHash(vt);
+    for (size_t n = 0; n < 32; n++, i = (i + 1) & (kPeSlots - 1)) {
+        void* cur = g_peSlots[i].vtable.load(std::memory_order_acquire);
+        if (cur == vt) return;
+        if (!cur) {
+            g_peSlots[i].orig = orig;
+            g_peSlots[i].vtable.store(vt, std::memory_order_release);
+            return;
+        }
+    }
+}
+
+inline void* PeLookup(void* vt) {
+    size_t i = PtrHash(vt);
+    for (size_t n = 0; n < 32; n++, i = (i + 1) & (kPeSlots - 1)) {
+        void* cur = g_peSlots[i].vtable.load(std::memory_order_acquire);
+        if (!cur) return nullptr;
+        if (cur == vt) return g_peSlots[i].orig;
+    }
+    return nullptr;
+}
+
+// UFunction* -> decision cache. `kind` is what we already decided for this function; a cached 0
+// means "we looked at this function once and it is not ours".
+const size_t kFnSlots = 2048;
+struct FnSlot {
+    std::atomic<void*> func{nullptr};
+    uint8_t kind = 0;
+};
+FnSlot g_fnSlots[kFnSlots];
+
+inline size_t FnHash(void* p) {
+    uint64_t v = (uint64_t)(uintptr_t)p;
+    v ^= v >> 29; v *= 0xbf58476d1ce4e5b9ull; v ^= v >> 32;
+    return (size_t)v & (kFnSlots - 1);
+}
 
 // Raw FNames of the UFunctions we care about (filled on the game thread once).
 FName g_fnChat, g_fnDeath, g_fnAiKilled, g_fnPlayerEvent, g_fnBpOnDeath, g_fnOnDeathEvent;
@@ -729,16 +818,20 @@ bool DeathAllowed(const std::string& gameId) {
     return true;
 }
 
-void EmitDeath(const Ident& id, double x, double y, double z, bool havePos, const std::string& attackerJson,
+std::string CreatureDisplayName(void* actor);
+
+void EmitDeath(const Ident& id, double x, double y, double z, bool havePos, const Ident& attacker,
                const std::string& killerEntity, const char* source) {
     if (!id.valid() || !DeathAllowed(id.gameId)) return;
-    std::string o = "{\"player\":" + PlayerJson(id);
-    if (havePos)
-        o += ",\"position\":{\"x\":" + JsonNum(x) + ",\"y\":" + JsonNum(y) + ",\"z\":" + JsonNum(z) + "}";
-    if (!attackerJson.empty()) o += ",\"attacker\":" + attackerJson;
-    if (!killerEntity.empty()) o += ",\"killerEntity\":" + JsonStr(killerEntity);
-    o += ",\"source\":" + JsonStr(source) + "}";
-    PluginState::Get().EmitEvent("player-death", o);
+    PluginState::Get().EmitEventDeferred("player-death", [id, x, y, z, havePos, attacker, killerEntity,
+                                                         source = std::string(source)] {
+        std::string o = "{\"player\":" + PlayerJson(id);
+        if (havePos)
+            o += ",\"position\":{\"x\":" + JsonNum(x) + ",\"y\":" + JsonNum(y) + ",\"z\":" + JsonNum(z) + "}";
+        if (attacker.valid()) o += ",\"attacker\":" + PlayerJson(attacker);
+        if (!killerEntity.empty()) o += ",\"killerEntity\":" + JsonStr(killerEntity);
+        return o + ",\"source\":" + JsonStr(source) + "}";
+    });
     g_death.emitted++;
     PluginLog("events: player-death %s via %s (killer '%s')", id.gameId.c_str(), source, killerEntity.c_str());
 }
@@ -754,10 +847,11 @@ void HandleChat(void* self, void* params) {
     void* st = PlayerStateOf(self);
     Ident id;
     if (st) IdentFromPlayerState(st, id);
-    std::string o = "{\"msg\":" + JsonStr(msg) + ",\"channel\":\"global\"";
-    if (id.valid()) o += ",\"player\":" + PlayerJson(id);
-    o += "}";
-    PluginState::Get().EmitEvent("chat-message", o);
+    PluginState::Get().EmitEventDeferred("chat-message", [msg, id] {
+        std::string o = "{\"msg\":" + JsonStr(msg) + ",\"channel\":\"global\"";
+        if (id.valid()) o += ",\"player\":" + PlayerJson(id);
+        return o + "}";
+    });
     g_chat.emitted++;
     PluginLog("events: chat-message from %s: %s", id.gameId.c_str(), msg.c_str());
 }
@@ -774,7 +868,8 @@ void HandleDeathTelemetry(void* self, void* func, void* params) {
 
     double x = 0, y = 0, z = 0;
     bool havePos = false;
-    std::string killerEntity, attackerJson;
+    std::string killerEntity;
+    Ident attacker;
     if (g_damageStruct) {
         int32_t locOff = PropOff(g_damageStruct, "VictimLocation");
         if (locOff >= 0 && MemReadable((const char*)dmg + locOff, 24)) {
@@ -785,11 +880,9 @@ void HandleDeathTelemetry(void* self, void* func, void* params) {
         int32_t instOff = PropOff(g_damageStruct, "Instigator");
         void* inst = nullptr;
         if (instOff >= 0 && ReadAt(dmg, instOff, inst) && ValidObject(inst)) {
-            Ident attacker;
             void* st = PlayerStateOf(inst);
             if (st) IdentFromPlayerState(st, attacker);
-            if (attacker.valid()) attackerJson = PlayerJson(attacker);
-            else killerEntity = SafeClassName(inst);
+            if (!attacker.valid()) killerEntity = CreatureDisplayName(inst);
         }
     }
     Ident victim;
@@ -797,7 +890,7 @@ void HandleDeathTelemetry(void* self, void* func, void* params) {
     if (st) IdentFromPlayerState(st, victim);
     if (!victim.valid()) return;
     if (havePos && !MemReadable(dmg, 8)) havePos = false;
-    EmitDeath(victim, x, y, z, havePos, attackerJson, killerEntity, "telemetry");
+    EmitDeath(victim, x, y, z, havePos, attacker, killerEntity, "telemetry");
 }
 
 void HandleAiKilled(void* self, void* func, void* params) {
@@ -842,10 +935,11 @@ void HandleAiKilled(void* self, void* func, void* params) {
         }
     }
     if (entity.empty()) entity = "unknown";
-    std::string o = "{\"entity\":" + JsonStr(entity) + ",\"weapon\":" + JsonStr(weapon);
-    if (killer.valid()) o += ",\"player\":" + PlayerJson(killer);
-    o += "}";
-    PluginState::Get().EmitEvent("entity-killed", o);
+    PluginState::Get().EmitEventDeferred("entity-killed", [entity, weapon, killer] {
+        std::string o = "{\"entity\":" + JsonStr(entity) + ",\"weapon\":" + JsonStr(weapon);
+        if (killer.valid()) o += ",\"player\":" + PlayerJson(killer);
+        return o + "}";
+    });
     g_kill.emitted++;
     PluginLog("events: entity-killed '%s' by %s", entity.c_str(), killer.gameId.c_str());
 }
@@ -890,6 +984,9 @@ void* g_enumLoadoutSlot = nullptr;
 int64_t g_slotHeldRight = -1;
 int64_t g_slotHeldLeft = -1;
 std::atomic<bool> g_dmgDumped{false};
+// Debug property dumps are captured on the game thread and written to plugin.log from housekeeping.
+Mutex g_debugReportLock;
+std::function<void()> g_debugReport;
 std::atomic<uint64_t> g_weaponResolved{0};
 std::atomic<uint64_t> g_weaponUnresolved{0};
 
@@ -908,6 +1005,24 @@ std::string TextAt(void* base, int32_t off) {
     const FString* s = disp(p);
     if (!s || !MemReadable(s, 16) || s->Num <= 0 || s->Num > (1 << 16)) return "";
     return Reflect::Utf16To8(s->Data, s->Num);
+}
+
+// Player-facing name of a creature: the AI's own AIName FText, else the one on the UAIDataAsset it
+// was configured with (cached per Blueprint class so GET /entities reports it too), else the cached
+// name for its class, else the class name made readable. Never a raw BP_..._C when avoidable.
+std::string CreatureDisplayName(void* actor) {
+    if (!ValidObject(actor)) return "";
+    std::string cls = SafeClassName(actor);
+    std::string entity = TextAt(actor, PropOffOf(actor, "AIName"));
+    void* data = nullptr;
+    int32_t dataOff = PropOffOf(actor, "LoadedData");
+    if (entity.empty() && dataOff >= 0 && ReadAt(actor, dataOff, data) && ValidObject(data))
+        entity = TextAt(data, PropOffOf(data, "AIName"));
+    if (!entity.empty()) ::state::NoteEntityName(cls, entity);
+    if (entity.empty()) entity = ::state::EntityName(cls);
+    if (entity.empty()) entity = HumanizeClassName(cls);
+    if (entity.empty()) entity = cls;
+    return entity;
 }
 
 struct WeaponRef {
@@ -1000,9 +1115,14 @@ bool FatalDamageFacts(void* aiActor, void*& instigator, void*& source) {
     int32_t off = PropOffOf(aiActor, "AiDamageComponent");
     if (off >= 0) ReadAt(aiActor, off, dmg);
     if (!ValidObject(dmg)) return false;
-    if (DebugEnabled() && !g_dmgDumped.exchange(true))
-        PluginLog("events: first fatal damage component %s = %s", SafeClassName(dmg).c_str(),
-                  Reflect::DumpObject(dmg, 64).c_str());
+    if (DebugEnabled() && !g_dmgDumped.exchange(true)) {
+        auto snapshot = Reflect::DumpObject(dmg, 64);
+        std::string name = SafeClassName(dmg);
+        Guard guard(g_debugReportLock);
+        g_debugReport = [snapshot = std::move(snapshot), name] {
+            PluginLog("events: first fatal damage component %s = %s", name.c_str(), snapshot().c_str());
+        };
+    }
 
     int32_t arrOff = PropOffOf(dmg, "AppliedFatalDamageEvents");
     int32_t instOff = g_damageStruct ? PropOff(g_damageStruct, "Instigator") : -1;
@@ -1125,24 +1245,21 @@ void HandleActorDeath(void* actor, const char* via) {
 
     // Once per boot, write the dying AI's whole property tree to plugin.log: the next lane can pick
     // the exact instigator property out of it instead of guessing again.
-    if (DebugEnabled() && !g_aiDumped.exchange(true))
-        PluginLog("events: first AI death, %s properties = %s", SafeClassName(actor).c_str(),
-                  Reflect::DumpObject(actor, 256).c_str());
+    if (DebugEnabled() && !g_aiDumped.exchange(true)) {
+        auto snapshot = Reflect::DumpObject(actor, 256);
+        std::string name = SafeClassName(actor);
+        Guard guard(g_debugReportLock);
+        g_debugReport = [snapshot = std::move(snapshot), name] {
+            PluginLog("events: first AI death, %s properties = %s", name.c_str(), snapshot().c_str());
+        };
+    }
 
     std::string cls = SafeClassName(actor);
-    // Readable name: the AI's own AIName FText, else the one on the UAIDataAsset it was configured
-    // with. Whatever is found is cached per Blueprint class so GET /entities reports it too.
-    std::string entity = TextAt(actor, PropOffOf(actor, "AIName"));
     std::string dataAsset;
     void* data = nullptr;
     int32_t dataOff = PropOffOf(actor, "LoadedData");
-    if (dataOff >= 0 && ReadAt(actor, dataOff, data) && ValidObject(data)) {
-        dataAsset = SafeObjName(data);
-        if (entity.empty()) entity = TextAt(data, PropOffOf(data, "AIName"));
-    }
-    if (!entity.empty()) ::state::NoteEntityName(cls, entity);
-    if (entity.empty()) entity = ::state::EntityName(cls);
-    if (entity.empty()) entity = cls;
+    if (dataOff >= 0 && ReadAt(actor, dataOff, data) && ValidObject(data)) dataAsset = SafeObjName(data);
+    std::string entity = CreatureDisplayName(actor);
 
     void* dmgInstigator = nullptr;
     void* dmgSource = nullptr;
@@ -1157,15 +1274,17 @@ void HandleActorDeath(void* actor, const char* via) {
     if (weapon.ok()) g_weaponResolved++;
     else g_weaponUnresolved++;
 
-    std::string o = "{\"entity\":" + JsonStr(entity) + ",\"entityCode\":" + JsonStr(cls) +
-                    ",\"entityClass\":" + JsonStr(cls);
-    if (!dataAsset.empty()) o += ",\"entityDataAsset\":" + JsonStr(dataAsset);
-    o += ",\"weapon\":" + JsonStr(weapon.name) + ",\"weaponCode\":" + JsonStr(weapon.code) +
-         ",\"weaponSource\":" + JsonStr(weapon.ok() ? weapon.how : std::string("unresolved")) +
-         ",\"source\":" + JsonStr(via) + ",\"attribution\":" + JsonStr(how);
-    if (killer.valid()) o += ",\"player\":" + PlayerJson(killer);
-    o += "}";
-    PluginState::Get().EmitEvent("entity-killed", o);
+    PluginState::Get().EmitEventDeferred("entity-killed", [entity, cls, dataAsset, weapon, how, killer,
+                                                          via = std::string(via)] {
+        std::string o = "{\"entity\":" + JsonStr(entity) + ",\"entityCode\":" + JsonStr(cls) +
+                        ",\"entityClass\":" + JsonStr(cls);
+        if (!dataAsset.empty()) o += ",\"entityDataAsset\":" + JsonStr(dataAsset);
+        o += ",\"weapon\":" + JsonStr(weapon.name) + ",\"weaponCode\":" + JsonStr(weapon.code) +
+             ",\"weaponSource\":" + JsonStr(weapon.ok() ? weapon.how : std::string("unresolved")) +
+             ",\"source\":" + JsonStr(via) + ",\"attribution\":" + JsonStr(how);
+        if (killer.valid()) o += ",\"player\":" + PlayerJson(killer);
+        return o + "}";
+    });
     g_kill.emitted++;
     PluginLog("events: entity-killed '%s' (%s) via %s, killer %s [%s], weapon '%s' [%s]", entity.c_str(),
               cls.c_str(), via, killer.gameId.c_str(), how.c_str(), weapon.name.c_str(),
@@ -1173,33 +1292,50 @@ void HandleActorDeath(void* actor, const char* via) {
 }
 
 void DetourProcessEvent(void* self, void* func, void* params) {
+    uint64_t tFilter0 = Perf::NowNs();
     FnProcessEvent orig = nullptr;
-    if (self && MemReadable(self, 8)) {
-        void* vt = *(void**)self;
-        size_t n = g_peCount.load();
-        for (size_t i = 0; i < n && i < 128; i++)
-            if (g_pe[i].vtable == vt) { orig = (FnProcessEvent)g_pe[i].orig; break; }
-    }
+    if (self) orig = (FnProcessEvent)PeLookup(*(void**)self);  // the engine just dispatched through it
     if (!orig) orig = g_processEvent;
 
     // Read what we need *before* the call: RPC parameter buffers do not survive it.
-    int what = 0;  // 1 chat, 2 death, 3 ai-killed
+    int what = 0;  // 1 chat, 2 death, 3 ai-killed, 4 BP_OnDeath, 5 OnDeathEvent
+    bool cacheHit = false;
     try {
         if (g_fnNamesReady && func) {
-            FName fn;
-            if (ObjNameRaw(func, fn)) {
-                if (fn == g_fnChat) what = 1;
-                else if (fn == g_fnDeath) what = 2;
-                else if (fn == g_fnAiKilled) what = 3;
-                else if (fn == g_fnBpOnDeath) what = 4;
-                else if (fn == g_fnOnDeathEvent) what = 5;
+            size_t si = FnHash(func);
+            FnSlot* free_ = nullptr;
+            for (size_t n = 0; n < 16; n++, si = (si + 1) & (kFnSlots - 1)) {
+                void* cur = g_fnSlots[si].func.load(std::memory_order_acquire);
+                if (cur == func) {
+                    cacheHit = true;
+                    what = g_fnSlots[si].kind;
+                    break;
+                }
+                if (!cur) { free_ = &g_fnSlots[si]; break; }
+            }
+            if (!cacheHit) {
+                FName fn;
+                if (ObjNameRaw(func, fn)) {
+                    if (fn == g_fnChat) what = 1;
+                    else if (fn == g_fnDeath) what = 2;
+                    else if (fn == g_fnAiKilled) what = 3;
+                    else if (fn == g_fnBpOnDeath) what = 4;
+                    else if (fn == g_fnOnDeathEvent) what = 5;
+                    if (free_) {  // remember the decision - including "not ours"
+                        free_->kind = (uint8_t)what;
+                        free_->func.store(func, std::memory_order_release);
+                    }
+                }
             }
         }
+        Perf::RecordFilter(Perf::NowNs() - tFilter0, what != 0, cacheHit);
+        uint64_t tHandler0 = what ? Perf::NowNs() : 0;
         if (what == 1) { g_chat.fired++; HandleChat(self, params); }
         else if (what == 2) { g_death.fired++; HandleDeathTelemetry(self, func, params); }
         else if (what == 3) { g_kill.fired++; HandleAiKilled(self, func, params); }
         else if (what == 4) { g_kill.fired++; HandleActorDeath(self, "BP_OnDeath"); }
         else if (what == 5) { g_kill.fired++; HandleActorDeath(OwnerOf(self), "OnDeathEvent"); }
+        if (tHandler0) Perf::RecordHandler(Perf::NowNs() - tHandler0);
     } catch (...) {
         PluginLog("events: ProcessEvent handler threw (what=%d)", what);
     }
@@ -1220,6 +1356,7 @@ bool HookObjectProcessEvent(const std::string& name, void* obj) {
     }
     size_t slot = Sym::ProcessEventSlot();
     if (slot == SIZE_MAX) return false;
+    if (g_peCount.load() >= 256) return false;
     void* orig = nullptr;
     std::string err;
     if (!Hooks::HookObjectVTable(name, obj, slot, (void*)&DetourProcessEvent, &orig, err)) {
@@ -1227,11 +1364,10 @@ bool HookObjectProcessEvent(const std::string& name, void* obj) {
         return false;
     }
     size_t idx = g_peCount.load();
-    if (idx < 128) {
-        g_pe[idx].vtable = vt;
-        g_pe[idx].orig = orig;
-        g_peCount.store(idx + 1);
-    }
+    g_pe[idx].vtable = vt;
+    g_pe[idx].orig = orig;
+    g_peCount.store(idx + 1);
+    PeRemember(vt, orig);  // the O(1) table the detour actually reads
     Guard g(g_vtLock);
     g_hookedVts.insert(vt);
     PluginLog("events: ProcessEvent hooked on %s (vtable %p, orig %p)", name.c_str(), vt, orig);
@@ -1309,7 +1445,7 @@ void PollHealthEdges() {
     {
         Guard g(g_connLock);
         for (auto& c : g_conns)
-            if (c.announced && !c.left) conns.push_back({c.controller, c.id});
+            if (c.announced && !c.left && !c.refused) conns.push_back({c.controller, c.id});
     }
     for (auto& c : conns) {
         void* st = PlayerStateOf(c.first);
@@ -1338,7 +1474,7 @@ void PollHealthEdges() {
             }
             // Only a genuine alive -> dead transition is a death; the first sample just seeds.
             if (now == Live::Dead && prev == Live::Alive)
-                EmitDeath(c.second, 0, 0, 0, false, "", "", "health-edge");
+                EmitDeath(c.second, 0, 0, 0, false, Ident(), "", "health-edge");
             break;
         }
     }
@@ -1348,6 +1484,8 @@ void PollHealthEdges() {
 // log tail
 
 std::string g_logPath;
+Mutex g_rawLogLock;
+std::function<void(std::string)> g_rawLogSink;
 int g_logFd = -1;
 uint64_t g_logInode = 0;
 off_t g_logOffset = 0;
@@ -1403,6 +1541,11 @@ bool IsNoise(const std::string& line) {
 }
 
 std::string DefaultLogPath() {
+    // DRAGONWILDS_LOG_FILE is the 0.2.x sidecar's key. It pointed at the log as mounted into the
+    // sidecar container, so it is only honoured when that path exists in this (the game's) process.
+    const char* legacy = getenv("DRAGONWILDS_LOG_FILE");
+    struct stat st{};
+    if (legacy && *legacy && stat(legacy, &st) == 0) return legacy;
     std::string cfg = ConfigValue("TAKARO_LOG_PATH", "logPath", "");
     if (!cfg.empty()) return cfg;
     // <exe dir> = <game>/Binaries/Linux -> <game>/Saved/Logs/RSDragonwilds.log
@@ -1452,6 +1595,16 @@ void PollLog() {
             start = nl + 1;
             while (!line.empty() && (line.back() == '\r')) line.pop_back();
             NoteJoinLine(line);
+            std::function<void(std::string)> sink;
+            {
+                Guard lock(g_rawLogLock);
+                sink = g_rawLogSink;
+            }
+            if (sink) {
+                // The native bridge owns `log` events: it redacts, filters and makes them durable.
+                try { sink(std::move(line)); } catch (...) { g_logDropped++; }
+                continue;
+            }
             if (IsNoise(line)) continue;
             if (emitted >= kMaxLogPerCycle) { g_logDropped++; continue; }
             PluginState::Get().EmitEvent("log", "{\"msg\":" + JsonStr(RedactLogLine(line)) + "}");
@@ -1628,35 +1781,89 @@ void Events::Init() {
     PluginLog("events: init done (UObject work deferred to the game thread)");
 }
 
+namespace {
+// Game-thread policy (docs/gamethread-policy.md): housekeeping used to enter the game thread every
+// 2 s and run every phase. Each phase now decides for itself, and when no phase wants to run the
+// game thread is not entered at all - an idle server with nobody online costs one entry per
+// kIdleSweepMs from this path.
+const uint64_t kIdleSweepMs = 30000;    // nobody online: no kills/chat to miss, safety net only
+const uint64_t kOnlineSweepMs = 5000;   // AI streams in around players; a new AI vtable needs a hook
+const uint64_t kHealthIntervalMs = 5000;
+const uint64_t kReapIntervalMs = 5000;
+
+size_t PendingJoins() {
+    Guard g(g_connLock);
+    size_t n = 0;
+    for (auto& c : g_conns)
+        if (!c.announced && !c.left) n++;
+    return n;
+}
+
+size_t AnnouncedConnections() {
+    Guard g(g_connLock);
+    size_t n = 0;
+    for (auto& c : g_conns)
+        if (c.announced && !c.left && !c.refused) n++;
+    return n;
+}
+}  // namespace
+
 void Events::Housekeep() {
+    std::function<void()> report;
+    { Guard guard(g_debugReportLock); report.swap(g_debugReport); }
+    if (report) report();
     try {
         PollLog();
     } catch (...) {
     }
     if (!Reflect::Validated()) return;  // never touch UObjects before the layout is confirmed
-    GameThread::Run(
-        [] {
-            try {
-                if (!g_bootDone) { Phase("boot"); GameThreadInit(); }
-                Phase("sweep");
-                SweepProcessEventTargets();
-                HookLivePreLogin();
-                Phase("joins");
-                ResolvePendingJoins();
-                Phase("reap");
-                ReapGoneConnections();
-                Phase("health");
-                PollHealthEdges();
-                Phase("idle");
-            } catch (...) {
-                PluginLog("events: housekeeping job threw");
-            }
-        },
-        5000);
-    if (g_bootDone) GameThread::Run([] { RefreshKillCapability(); }, 2000);
+
+    const uint64_t now = NowMs();
+    const bool dirty = g_worldDirty.exchange(false);
+    static uint64_t lastSweep = 0, lastHealth = 0, lastReap = 0;
+    const size_t online = AnnouncedConnections();
+    const bool wantBoot = !g_bootDone;
+    const bool wantSweep = wantBoot || dirty || now - lastSweep >= (online ? kOnlineSweepMs : kIdleSweepMs);
+    const bool wantJoins = PendingJoins() > 0;
+    const bool wantReap = online > 0 && now - lastReap >= kReapIntervalMs;
+    const bool wantHealth = online > 0 && now - lastHealth >= kHealthIntervalMs;
+    if (wantBoot || wantSweep || wantJoins || wantReap || wantHealth) {
+        if (wantSweep) lastSweep = now;
+        if (wantHealth) lastHealth = now;
+        if (wantReap) lastReap = now;
+        GameThread::Run(
+            [wantBoot, wantSweep, wantJoins, wantReap, wantHealth] {
+                try {
+                    Perf::Scope total("housekeep");
+                    if (wantBoot) { Phase("boot"); Perf::Scope sc("housekeep.boot"); GameThreadInit(); }
+                    if (wantSweep) {
+                        Phase("sweep");
+                        Perf::Scope sc("housekeep.sweep");
+                        SweepProcessEventTargets();
+                        // The live game mode's PreLogin slot never binds on this build; retrying it
+                        // is a GetObjectsOfClass walk of its own, so it shares the sweep cadence.
+                        HookLivePreLogin();
+                    }
+                    if (wantJoins) { Phase("joins"); Perf::Scope sc("housekeep.joins"); ResolvePendingJoins(); }
+                    if (wantReap) { Phase("reap"); Perf::Scope sc("housekeep.reap"); ReapGoneConnections(); }
+                    if (wantHealth) { Phase("health"); Perf::Scope sc("housekeep.health"); PollHealthEdges(); }
+                    Phase("idle");
+                } catch (...) {
+                    PluginLog("events: housekeeping job threw");
+                }
+            },
+            5000);
+    }
+    // Capability bookkeeping reads our own counters only; it never needs the game thread.
+    if (g_bootDone) RefreshKillCapability();
     // A chat vtable may only appear once a player connects; flip the capability when it does.
     if (g_bootDone && g_targets[0].hooked && PluginState::Get().Capability("chatEvents") != "ok" && g_msgBodyOff >= 0)
         Ok("chatEvents", g_chat, "ProcessEvent slot hook on " + std::to_string(g_targets[0].hooked) + " chat vtable(s)");
+}
+
+void Events::SetRawLogSink(std::function<void(std::string)> sink) {
+    Guard lock(g_rawLogLock);
+    g_rawLogSink = std::move(sink);
 }
 
 bool Events::BanEnforcementLive() { return g_preLoginHooked.load(); }

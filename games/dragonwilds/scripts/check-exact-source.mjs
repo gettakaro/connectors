@@ -1,81 +1,65 @@
 #!/usr/bin/env node
-// Does this lockfile still describe the dependencies the catalog recorded?
+// Do the plugin's developer build and the catalog target pin the same native sources?
 //
-// A release is only as exact as the bytes it was built from, and `npm ci` will happily
-// install whatever the lockfile points at. So before anything is installed, every
-// dependency the catalog pins is checked twice: the lockfile must resolve it to exactly
-// the recorded URL, and the tarball at that URL must hash to exactly the recorded sha256.
-// Neither failure falls back to "install it anyway" -- a build that cannot reproduce the
-// recorded inputs is not this target's build.
+// The release is built in Dockerfile.builder from the URLs and SHA-256s the catalog records
+// in `build.deps`; every archive is hash-checked there before it is unpacked. Developers and
+// the dev rig build with mod/Dockerfile.build instead. If the two disagreed, the plugin a
+// developer tested would not be the plugin that ships. So every catalog dependency must
+// appear in mod/Dockerfile.build with exactly the same URL and hash, and that file may fetch
+// nothing the catalog does not record.
 //
 // Reads DRAGONWILDS_DEP_<NAME>_URL / _SHA256 pairs from the environment, which
 // `takaro-maint targets resolve` writes from `build.deps`.
 //
-// Exit codes: 0 fine, 5 a hash disagrees, 7 the lockfile drifted.
+// Usage: node check-exact-source.mjs [path/to/Dockerfile.build]
+// Exit codes: 0 fine, 7 the two drifted.
 
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const LOCKFILE = 'package-lock.json';
 const DRIFT = 7;
-const MISMATCH = 5;
+const DEFAULT_DOCKERFILE = join(dirname(fileURLToPath(import.meta.url)), '..', 'mod', 'Dockerfile.build');
 
-function pinnedDeps() {
+function pinnedDeps(env) {
   const deps = [];
-  for (const [key, value] of Object.entries(process.env)) {
+  for (const [key, value] of Object.entries(env)) {
     const found = /^DRAGONWILDS_DEP_(.+)_URL$/.exec(key);
     if (!found) continue;
-    const sha256 = process.env[`DRAGONWILDS_DEP_${found[1]}_SHA256`];
+    const sha256 = env[`DRAGONWILDS_DEP_${found[1]}_SHA256`];
     if (!sha256) {
       console.error(`${key} is set but DRAGONWILDS_DEP_${found[1]}_SHA256 is not`);
       process.exit(DRIFT);
     }
-    // The catalog keys `build.deps` by package name; the env key is that name upper-cased.
-    deps.push({ name: found[1].toLowerCase(), url: value, sha256 });
+    deps.push({ name: found[1], url: value, sha256: sha256.toLowerCase() });
   }
   return deps.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function main() {
-  const deps = pinnedDeps();
+function main() {
+  const deps = pinnedDeps(process.env);
   if (deps.length === 0) {
     console.error('no DRAGONWILDS_DEP_*_URL in the environment; resolve the target first');
     process.exit(DRIFT);
   }
-
-  const lock = JSON.parse(readFileSync(LOCKFILE, 'utf8'));
-  const packages = lock.packages ?? {};
-
-  for (const dep of deps) {
-    const entry = packages[`node_modules/${dep.name}`];
-    if (!entry) {
-      console.error(`${LOCKFILE} holds no node_modules/${dep.name}; the catalog pins it`);
-      process.exit(DRIFT);
-    }
-    if (entry.resolved !== dep.url) {
-      console.error(
-        `${LOCKFILE} drifted for ${dep.name}:\n  lockfile: ${entry.resolved}\n  catalog:  ${dep.url}`,
-      );
-      process.exit(DRIFT);
-    }
-  }
+  const path = process.argv[2] ?? DEFAULT_DOCKERFILE;
+  const text = readFileSync(path, 'utf8');
+  const problems = [];
 
   for (const dep of deps) {
-    const response = await fetch(dep.url);
-    if (!response.ok) {
-      console.error(`could not read ${dep.url}: HTTP ${response.status}`);
-      process.exit(MISMATCH);
-    }
-    const digest = createHash('sha256').update(Buffer.from(await response.arrayBuffer())).digest('hex');
-    if (digest !== dep.sha256) {
-      console.error(
-        `${dep.name} is not the recorded tarball, and this build is not falling back to it:\n` +
-          `  expected: ${dep.sha256}\n  actual:   ${digest}\n  url:      ${dep.url}`,
-      );
-      process.exit(MISMATCH);
-    }
-    console.log(`exact source: ${dep.name} ${digest}`);
+    if (!text.includes(dep.url)) problems.push(`${dep.name}: ${path} does not fetch ${dep.url}`);
+    if (!text.toLowerCase().includes(dep.sha256)) problems.push(`${dep.name}: ${path} does not check ${dep.sha256}`);
   }
+  const recorded = new Set(deps.map((dep) => dep.url));
+  for (const url of text.match(/https:\/\/[^\s'"\\]+/g) ?? []) {
+    if (!recorded.has(url)) problems.push(`${path} fetches ${url}, which the catalog target does not record`);
+  }
+
+  if (problems.length) {
+    console.error(`the developer build and the catalog target drifted:\n  ${problems.join('\n  ')}`);
+    process.exit(DRIFT);
+  }
+  for (const dep of deps) console.log(`exact source: ${dep.name} ${dep.sha256}`);
 }
 
-await main();
+main();

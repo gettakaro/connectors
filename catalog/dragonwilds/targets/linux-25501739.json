@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-25501739",
+  "game": "dragonwilds",
+  "platform": "linux",
+  "revision": "25501739",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-10-01",
+    "evidence": [
+      "games/dragonwilds/README.md (What works, what doesn't)",
+      "games/dragonwilds/mod/tests/ (plugin unit and native connector tests, every build)"
+    ],
+    "notes": "Steam pin of the public branch head observed 2026-10-01: tool app 4019830, Linux depot 3501791, build 25501739, the first target for the native connector (no sidecar). An anonymous SteamCMD delta update from the previous build fails with Access Denied on the old manifest; a fresh SteamCMD install with validation reaches this build. `verification.required` is `contract` until this pin is proven at runtime: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 4019830,
+      "branch": "public",
+      "buildid": 25501739,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "3501791": {
+          "manifest": "6714393990492196440",
+          "size": 5483987592,
+          "files": 56
+        }
+      },
+      "files": {
+        "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping": {
+          "sha256": "d12145525d88f3828ebeac0aec3865f5b16ba4771861efe65108754a89bbb090",
+          "size": 229648384
+        },
+        "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping.sym": {
+          "sha256": "0a3ee81c23bd2e7b801d4983525e82579428eeed65f008b09ddd8d105485d41d",
+          "size": 301107092
+        },
+        "RSDragonwildsServer.sh": {
+          "sha256": "1cb3257de649da88c5b67c69a7aeb130c84878480e8862dbf4b9749c0b4f7d41",
+          "size": 310
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844",
+      "env": {
+        "HOME": "/tmp"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/dragonwilds/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844"
+    },
+    "deps": {
+      "openssl": {
+        "coordinate": "github:openssl/openssl:openssl-3.5.8",
+        "sha256": "a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2",
+        "resolvedCoordinate": "https://github.com/openssl/openssl/releases/download/openssl-3.5.8/openssl-3.5.8.tar.gz"
+      },
+      "libwebsockets": {
+        "coordinate": "github:warmcat/libwebsockets:v4.5.8",
+        "sha256": "b6ade658f4af3a823d0dc806ae5ef0623f0f4f5e2aeb895a0f77c4783840c30e",
+        "resolvedCoordinate": "https://github.com/warmcat/libwebsockets/archive/refs/tags/v4.5.8.tar.gz"
+      },
+      "pcre2": {
+        "coordinate": "github:PCRE2Project/pcre2:pcre2-10.47",
+        "sha256": "47fe8c99461250d42f89e6e8fdaeba9da057855d06eb7fc08d9ca03fd08d7bc7",
+        "resolvedCoordinate": "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.47/pcre2-10.47.tar.bz2"
+      },
+      "nlohmann-json": {
+        "coordinate": "github:nlohmann/json:v3.12.0",
+        "sha256": "42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa",
+        "resolvedCoordinate": "https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "plugin",
+      "artifact": "takaro-dragonwilds-plugin-linux-25501739-{version}.tar.gz",
+      "installDir": "TakaroDragonwilds"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup",
+      "connector-load",
+      "identify",
+      "heartbeat",
+      "players",
+      "console",
+      "shutdown"
+    ]
+  },
+  "preserve": [
+    "RSDragonwilds/Saved/",
+    "TakaroDragonwilds/"
+  ],
+  "devServers": {
+    "gameId": "dragonwilds"
+  },
+  "notes": "One image builds and tests the plugin: node:*-bookworm (not slim) carries g++ on the same glibc as the dedicated server image, and Dockerfile.builder adds the four pinned static libraries on top of it. The server itself is a plain Steam depot install (no container images to load), so it installs through the shared Steam exact-install path like Conan Exiles."
+}
