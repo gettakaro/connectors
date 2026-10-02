@@ -117,7 +117,7 @@ export interface OutboundChatArgs {
   /** Name shown in game as the sender (`TAKARO_SENDER_NAME`), carried by the spoofed-username fields. */
   senderName: string;
   senderFuncomId: string;
-  /** `m_ChannelType`: `Whispers` for a private reply, `Map` for a server-wide one. */
+  /** `m_ChannelType`: `ChatWireVariant.whisperChannelType` for a private reply, `Map` for a server-wide one. */
   channel: string;
   /** Recipient's character name (`m_UserNameTo`); empty for a broadcast. */
   userNameTo?: string;
@@ -346,7 +346,7 @@ export class DuneRmq {
         msg,
         senderName: this.options.senderName,
         senderFuncomId: this.options.announcerFuncomId,
-        channel: 'Whispers',
+        channel: this.options.wire.whisperChannelType,
         userNameTo,
         messageId: id,
         now: this.options.now?.(),

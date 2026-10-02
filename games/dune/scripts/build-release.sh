@@ -124,7 +124,14 @@ cp -R "${PROJECT_ROOT}/sidecar/dist" \
       "${PROJECT_ROOT}/sidecar/data" "${SPKG}/"
 cp "${PROJECT_ROOT}/sidecar/package.json" "${PROJECT_ROOT}/sidecar/package-lock.json" \
    "${PROJECT_ROOT}/sidecar/Dockerfile" "${PROJECT_ROOT}/sidecar/docker-entrypoint.sh" \
-   "${PROJECT_ROOT}/sidecar/.dockerignore" "${PROJECT_ROOT}/sidecar/.env.example" "${SPKG}/"
+   "${PROJECT_ROOT}/sidecar/.env.example" "${SPKG}/"
+# Not the source tree's .dockerignore: that one excludes dist/ for Dockerfile.dev, which builds it,
+# and the release Dockerfile COPYs the prebuilt dist/ instead.
+cp "${SCRIPT_DIR}/templates/sidecar.dockerignore.release" "${SPKG}/.dockerignore"
+if grep -qx 'dist/\{0,1\}' "${SPKG}/.dockerignore"; then
+  echo "build-release: the sidecar package's .dockerignore excludes dist/, which its Dockerfile copies" >&2
+  exit 1
+fi
 rm -rf "${SPKG}/dist/__tests__" "${SPKG}/dist/testing"
 
 # The release must be runnable with `npm ci --omit=dev`, so the entrypoint package.json

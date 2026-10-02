@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-25635074",
+  "game": "dune",
+  "platform": "linux",
+  "revision": "25635074",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-10-02",
+    "evidence": [
+      "games/dune/README.md (What works, what doesn't — 51 of 52 matrix cells proven on the earlier pin 25418155 against hosted Takaro, 2026-09-21/22; the real-client re-proof on this pin is in the pull request that added it)",
+      "games/dune/sidecar/src/__tests__/ (contract level, every build: 255 tests over a mock battlegroup — RabbitMQ, Postgres, the GM command bus and the plugin's HTTP API)",
+      "games/dune/mod/tests/unit_test.cpp (plugin unit level, every build: 331 checks; the resolver's own self-degradation logic included)",
+      "games/dune/DEVELOPMENT.md (how the pin is re-verified, and what the rig needs that CI cannot have)"
+    ],
+    "notes": "Exact Steam pin of the self-hosted server package head observed 2026-10-02 (public branch moved to build 25635074 on 2026-09-30): tool app 4754530, Linux depot 4754532, image bundle 2134304-0-shipping, UE 5.2.1. The bundle's database tooling applies four new upgrade patches over the 2118731 schema (updatedb), and the map binary's vtable layout and the plugin's three byte signatures were re-checked against it: every hooked slot and every signature still resolves exactly once. The depot is not a game install — it is seven container image tarballs plus Funcom's k3s setup scripts, so install means DepotDownloader followed by `docker load`. Two things CI cannot do for this target, both by the game's design rather than ours: a world only becomes joinable with an operator's own Funcom self-hosting token (there is no anonymous boot and no direct connect — clients find worlds through FLS), and the package is 4.9 GB on top of a 10.8 GB server image. So `verification.required` is `contract` and every runtime level is listed as separate, proven on the rig on this exact pin rather than on a hosted runner. `takaro-maint install --game dune` waits for the shared seam that lets a steam-depots input declare a post-download step (`docker load` of an image bundle), which is also why this record declares no `devServers` block: the rig resolves its pins from here but still performs the download and the image load itself, and a ledger for this target would claim an install path that does not exist yet. The optional plugin is keyed to the map binary's ELF build id, which is why the pin matters: on any other server build it reports the affected capability as degraded instead of guessing."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 4754530,
+      "branch": "public",
+      "buildid": 25635074,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "4754532": {
+          "manifest": "5212661890512609510",
+          "size": 5209358233,
+          "files": 75
+        }
+      },
+      "files": {
+        "images/battlegroup/server-bg-director.tar": {
+          "sha256": "8fae297794903aa693043c89e5738c259e61e34f5d5e5415c244e91fb27753c2",
+          "size": 91948032
+        },
+        "images/battlegroup/server-db-utils.tar": {
+          "sha256": "f42a8bdcb34bbb6fb75b2cd232a2271ffd42f4b7c29ac6d4a9496d9b7cf1196f",
+          "size": 40289280
+        },
+        "images/battlegroup/server-gateway.tar": {
+          "sha256": "444151ca1ca7d6672edafc0b277a331a4a3775196bf4aafea9e8d38e3d86f8cb",
+          "size": 27399168
+        },
+        "images/battlegroup/server-rabbitmq.tar": {
+          "sha256": "ea357e88ae96459f2228198a087376cffa1cc7fc57f83fc053831b049a8eadb2",
+          "size": 86023168
+        },
+        "images/battlegroup/server-text-router.tar": {
+          "sha256": "fcef8ebe703b8cbfafaac993526299b929192a706607b74177724fa16359b8cd",
+          "size": 91212288
+        },
+        "images/battlegroup/server.tar": {
+          "sha256": "9304080f7691522e6eea77ba619f0ec55939bd9ab3103a09de952462ff8f9fba",
+          "size": 4458905088
+        },
+        "images/battlegroup/version.txt": {
+          "sha256": "247b3043b5e016357cc75ceda91effc71dea9847d11251b936714a2ed657d1d7",
+          "size": 18
+        },
+        "images/operators/version.txt": {
+          "sha256": "754a821d671b2f29d4723900e691dcdc04936bb43446b7208d17cf76be46376f",
+          "size": 6
+        },
+        "images/prerequisites/igw-postgres.tar": {
+          "sha256": "740113dca15e96808abf02ee09e51e36c3422acd64a5b9692c2df686d5e0b48b",
+          "size": 147850240
+        },
+        "scripts/battlegroup.sh": {
+          "sha256": "4e4b94aec678e4ce7f25f5d53aaa0af20697f97b886ba1dacfbf64426d8c6171",
+          "size": 31689
+        },
+        "scripts/setup/world.sh": {
+          "sha256": "e3da2963a018a8654bd6b247ac1b3d2967e5ba8541b5d7072040f2548630eee4",
+          "size": 5670
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844",
+      "env": {
+        "HOME": "/tmp"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/dune/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844"
+    },
+    "references": [
+      "images/battlegroup/server.tar"
+    ],
+    "deps": {
+      "amqplib": {
+        "coordinate": "npm:amqplib:0.10.9",
+        "sha256": "f3102ba19abf66322e179f236756ecd8c7c835c2f7d56ab3236c7fc7572b7357",
+        "resolvedCoordinate": "https://registry.npmjs.org/amqplib/-/amqplib-0.10.9.tgz"
+      },
+      "pg": {
+        "coordinate": "npm:pg:8.23.0",
+        "sha256": "d9db7902694dbe59fd5ca21d6521b054cf030aa9360eba7a2f301ad1af10f4ac",
+        "resolvedCoordinate": "https://registry.npmjs.org/pg/-/pg-8.23.0.tgz"
+      },
+      "ws": {
+        "coordinate": "npm:ws:8.21.3",
+        "sha256": "df3454ef205791ce50b5b9241762dcf9bfe1aa9f7f01d3057229be7dac0c2dc3",
+        "resolvedCoordinate": "https://registry.npmjs.org/ws/-/ws-8.21.3.tgz"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "sidecar",
+      "artifact": "takaro-dune-sidecar-linux-25635074-{version}.tar.gz",
+      "installDir": "TakaroDuneSidecar"
+    },
+    {
+      "role": "plugin",
+      "artifact": "takaro-dune-plugin-linux-25635074-{version}.tar.gz",
+      "installDir": "TakaroDunePlugin"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup",
+      "connector-load",
+      "identify",
+      "heartbeat",
+      "players",
+      "catalog-items",
+      "catalog-entities",
+      "console",
+      "shutdown"
+    ]
+  },
+  "preserve": [
+    "saved/",
+    "postgres/",
+    "rmq-admin/",
+    "rmq-game/",
+    "tls/",
+    "TakaroDuneSidecar/",
+    "TakaroDunePlugin/"
+  ],
+  "notes": "One pinned Node image serves both halves of the build: the sidecar is TypeScript, and node:*-bookworm (not slim) carries the g++ the LD_PRELOAD plugin needs, on the same glibc 2.36 as the Funcom server image — a plugin built on anything newer would fail to preload. The server itself is not run from this image: it is Funcom's own seabass-server image, loaded out of the depot above and tagged 2134304-0-shipping. The matching game client build id is 25611704; it is a different Steam app (1172710) and is not pinned here."
+}
