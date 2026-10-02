@@ -414,6 +414,35 @@ shared verifier:
 
 Until both land, the rig lane above is this target's startup-level evidence.
 
+### Findings from the 25639945 real-client lane (2026-10-02)
+
+The exact target was installed with `takaro-maint install` into an isolated directory, run in the
+pinned Node image with no mods, and joined from a Conan Exiles Enhanced client (revision
+378,132) on the Windows gamer PC. Everything was driven through the Takaro MCP against hosted
+Takaro; evidence lives under the runner's `.runner-reports/349/e2e/linux-25639945/`.
+
+- **No chat mod loads.** The server logs `SetCompatibleDevkitVersions: [1002]` and refuses both
+  Enhanced Pippi (last Workshop update 2026-06-11) and the July `TakaroConan.pak` with `Mod is
+  too old and needs to be updated for this game version`, then exits. Takaro chat delivery
+  (`sendMessage`, Discord → game) is therefore unavailable on this build; the bridge refuses it
+  with `Conan chat bridge is not connected` and never falls back to `broadcast`.
+- **Inbound chat works without a mod.** Vanilla `ChatWindow: Character … said:` lines became
+  `chat-message` events, and an `@`-prefixed module command typed in game ran.
+- **Bans need an online player.** `banplayer platformid <id>` (and `userid <id>`) for an offline
+  player answers `No player with platform ID <id>.` and bans nothing. The bridge used to report
+  that as success; it now returns a failed action. Banning an online player kicks them, writes
+  `Saved/blacklist.txt` and refuses the rejoin with `PreLogin failure: UserBanned`.
+  `unbanplayer <steam64>` works offline.
+- **`listbans` prints bare Steam IDs**, one per line, with no reason.
+- **RCON karma and connection churn.** The bridge used to open one RCON connection per command.
+  At the default 10 s poll plus Takaro's reachability checks, Conan's karma denied every
+  connection after about 70 minutes (`Rcon connection … triggered karma system and has been
+  denied`), for ten minutes at a time, so a Takaro shutdown in that window failed with
+  `write EPIPE`. Conan serves several commands on one connection and answers them in order (its
+  reply ids lag one request behind), so the bridge now keeps one authenticated socket and
+  reconnects only after it drops.
+- `shutdown` → `LogExit: Exiting.` and exit 0 took about three minutes on this build.
+
 ## Live verification
 
 ```bash

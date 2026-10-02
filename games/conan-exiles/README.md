@@ -184,11 +184,11 @@ restart.
 
 Status below comes from the recorded capability data and the live checks run on **2026-06-20** and
 **2026-06-21** against a real Conan Exiles Enhanced dedicated server with Enhanced Pippi and one
-real player connected. The rig re-checks below (identify, reachability, players, console, shutdown)
-were last run on build 25356024; the current pin is build 25639945, and this bridge speaks RCON and
-compiles against no server assembly, so nothing about the repin itself changes its behaviour, but
-runtime re-verification on 25639945 is tracked separately. Anything that was never exercised in a
-live test says so.
+real player connected, and a real-client re-check on **2026-10-02** against the pinned build
+25639945: a Conan Exiles Enhanced client (revision 378,132) on a Windows PC joined an isolated
+server without mods, and every row marked "2026-10-02" was driven through Takaro and seen in
+that client. No chat mod loads on that build (see step 1), so chat rows were not re-checked.
+Anything that was never exercised in a live test says so.
 ✅ = works, ⚠️ = works with a caveat or is unproven, ❌ = does not work.
 
 The bridge's own end-to-end test suite re-runs the protocol rows on every build against a fake
@@ -211,23 +211,23 @@ until somebody checks it in game.
 | Chat messages from players | ⚠️ | Live player chat reached Takaro with the correct player attached, but only via Enhanced Pippi's log lines. Without Pippi, chat parsing is best effort and may pick up nothing. |
 | Broadcast a message | ⚠️ | Confirmed visible in game, but only through Enhanced Pippi's `server` command with the chat helper running. Vanilla Conan has no way to write a normal chat line. |
 | Whisper a player | ⚠️ | Pippi accepted the direct message and reported it sent; it was not confirmed on a client, and it needs the player's Conan **character** name to resolve. |
-| Give an item | ⚠️ | Spawns the item through Conan's admin relay and the server reports success; the player must be **online**, and the item actually landing in their inventory was not confirmed in game. |
-| Teleport a player | ⚠️ | Triggers Conan's teleport streaming for an **online** player; the move was not confirmed on a client. |
-| Run a console command | ✅ | Commands are sent over RCON and the raw output comes back to Takaro. Re-proven on build 25356024: `help` through Takaro returned the server's full RCON command list. |
-| Kick a player | ⚠️ | The command exists on the server and the bridge sends it, but no live kick was performed. |
-| Ban a player (timed and permanent) | ⚠️ | Same: the ban command is wired up but was never executed against a live player. |
-| Unban a player | ⚠️ | Same: wired up, never executed live. |
-| Ban list | ⚠️ | Reads Conan's `listbans`. Verified against an empty list; output from a server with many bans is the weaker case and Conan's format varies by version. |
+| Give an item | ✅ | Spawns the item through Conan's admin relay; the player must be **online**. 2026-10-02: 7 Stone (`10001`) appeared in the client's inventory. |
+| Teleport a player | ✅ | `TeleportPlayer` through Conan's admin relay, raw world units, **online** players only. 2026-10-02: the client moved to the requested spot. |
+| Run a console command | ✅ | Commands are sent over RCON and the raw output comes back to Takaro. 2026-10-02: `broadcast …` through Takaro showed a "Server admin message" popup in the client. |
+| Kick a player | ✅ | 2026-10-02: the client got "Kicked from Server" with the Takaro reason. Kicking a player who is not online fails with Conan's "No player with platform ID" answer. |
+| Ban a player (timed and permanent) | ⚠️ | **Online players only.** 2026-10-02: banning a connected player kicked them, wrote `blacklist.txt`, and their rejoin was refused ("User is banned from this server"). Conan answers a ban of an offline player with "No player with platform ID" and bans nothing; the bridge reports that as a failed action. Timed bans were not checked. |
+| Unban a player | ✅ | `unbanplayer <steam64>` works for offline players. 2026-10-02: after the unban the same client rejoined. |
+| Ban list | ✅ | Reads Conan's `listbans`, which on build 25639945 prints one bare Steam ID per line (no reason). 2026-10-02: populated after a ban, empty after the unban. |
 | Shut the server down | ✅ | Proven on build 25356024: Takaro's shutdown reached the server over RCON and the server process exited cleanly (code 0). It is **slow** — about four and a half minutes of unloading and saving between the command and `LogExit: Exiting.`, with no output for most of it. Do not assume it failed. |
-| Player joined event | ⚠️ | Derived from changes in the player list, so it can lag by up to one poll (10 s by default). Not confirmed arriving in Takaro in a live test. |
-| Player left event | ⚠️ | Same as joins: derived from the player list, not confirmed live. |
-| Player chat event | ⚠️ | See "Chat messages from players" — Enhanced Pippi only. |
+| Player joined event | ✅ | Derived from changes in the player list, so it can lag by up to one poll (10 s by default). 2026-10-02: arrived in Takaro for each client join. |
+| Player left event | ✅ | Same as joins: derived from the player list. 2026-10-02: arrived for a kick, a ban and a client timeout. |
+| Player chat event | ✅ | 2026-10-02 on build 25639945 **without any mod**: vanilla `ChatWindow` log lines reached Takaro as `chat-message` with the player attached, and `@`-prefixed Takaro commands typed in game ran. |
 | Player death event | ⚠️ | Best effort, parsed out of Conan's log lines. No live death was captured in a test. |
 | Entity kill event | ⚠️ | Best effort from the same log lines, with the killer resolved only if they are online. No live kill was captured. |
 | Log events | ⚠️ | Log tailing works against real Conan logs, but Takaro does not store server log lines as searchable events. |
 | Map info | ⚠️ | The bridge answers with an empty/disabled map; Conan exposes no map metadata. |
 | Map tiles | ❌ | The Takaro API does not support map tiles for Generic-connector servers. Nothing on the game server side changes that. |
-| Discord chat bridge | ⚠️ | Never tested for Conan. Game → Discord depends on Pippi chat parsing; Discord → game depends on the Pippi chat helper. |
+| Discord chat bridge | ⚠️ | Game → Discord ✅ 2026-10-02: the chatBridge module relayed in-game chat and join/leave posts to Discord. Discord → game needs Takaro chat delivery, which needs Enhanced Pippi and the chat helper, so it is unavailable while no chat mod loads. |
 | Shop & economy | ⚠️ | Never tested for Conan. Item delivery would go through the same online-player-only spawn route as "Give an item". |
 
 ### Known issues
@@ -240,8 +240,11 @@ until somebody checks it in game.
   location lists are empty unless `databasePath` points at Conan's `game_0.db` on the same host.
 - **Give item and teleport only work on online players.** They go through Conan's admin relay to a
   connected client; offline players cannot be targeted.
-- **Conan's RCON throttles you.** Polling faster than the default 10 s, or running several tools
-  against the same server at once, trips Conan's RCON karma and requests start being denied.
+- **Conan's RCON throttles you.** Conan's karma system charges every new RCON connection. The
+  bridge keeps one connection open and reuses it; before it did, the default 10 s poll alone
+  tripped karma after about an hour on build 25639945 and locked out every RCON action, shutdown
+  included, for ten minutes at a time. Running several tools against the same server at once
+  still trips it.
 - **No map.** Takaro's API does not support map tiles for Generic-connector servers.
 - **Shutdown takes minutes.** On build 25356024 the server closed its net driver
   immediately, then spent about four and a half minutes unloading and saving — logging
