@@ -402,6 +402,22 @@ test('dispatches moderation commands with identifiers and reasons', async () => 
   ]);
 });
 
+test('reports a moderation command Conan could not apply as a failure', async () => {
+  const adapter = new ConanAdapter(async (command) =>
+    command.startsWith('unbanplayer') ? 'Player 76561198000735875 unbanned.' : 'No player with platform ID 76561198000735875.',
+  );
+
+  for (const action of ['kickPlayer', 'banPlayer'] as const) {
+    const result = (await adapter.handleAction(action, { gameId: '76561198000735875' })) as Record<string, unknown>;
+    assert.equal(result.success, false);
+    assert.equal(result.error, 'Conan refused the command: No player with platform ID 76561198000735875.');
+  }
+  assert.deepEqual(await adapter.handleAction('unbanPlayer', { gameId: '76561198000735875' }), {
+    success: true,
+    rawResult: 'Player 76561198000735875 unbanned.',
+  });
+});
+
 test('routes unbanPlayer through Conan plain platform identifiers', async () => {
   const calls: string[] = [];
   const adapter = new ConanAdapter(async (command) => {
