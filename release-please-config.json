@@ -55,7 +55,13 @@
     "games/conan-exiles": {
       "release-type": "simple",
       "component": "conan-exiles",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "native/src/common.h"
+        }
+      ]
     },
     "games/enshrouded": {
       "release-type": "simple",

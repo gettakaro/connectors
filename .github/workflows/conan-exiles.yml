@@ -80,6 +80,20 @@ jobs:
       - name: Build
         run: npm run build
 
+  # The in-game chat library (LD_PRELOAD into the Linux server): unit tests and the real poller
+  # against a fake strict-mode bridge, built in the pinned toolchain image.
+  native:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
+      - name: Build and test the native library
+        run: games/conan-exiles/native/build.sh --tests
+
   params:
     runs-on: ubuntu-latest
     permissions:
@@ -107,7 +121,7 @@ jobs:
         run: scripts/release-params.sh conan-exiles >> "$GITHUB_OUTPUT"
 
   release:
-    needs: [test, params]
+    needs: [test, native, params]
     uses: ./.github/workflows/connector-release.yml
     secrets: inherit
     with:

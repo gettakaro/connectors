@@ -68,6 +68,10 @@ docker run --rm \
         npm test
         npm run build'
 
+# The in-game chat library (LD_PRELOAD into the server), built in its own pinned toolchain
+# (native/Dockerfile.build) with its tests. It guards on this target's server build-id itself.
+"${PROJECT_ROOT}/native/build.sh" --tests
+
 STAGE="${PROJECT_ROOT}/_data/build/stage-${CONAN_EXILES_FP16}"
 PACKAGE_DIR="${STAGE}/TakaroConanExiles"
 rm -rf "${STAGE}"
@@ -77,11 +81,14 @@ cp -R "${PROJECT_ROOT}/bridge/scripts" "${PACKAGE_DIR}/scripts"
 cp "${PROJECT_ROOT}/bridge/package.json" "${PROJECT_ROOT}/bridge/package-lock.json" "${PACKAGE_DIR}/"
 cp "${PROJECT_ROOT}/README.md" "${PROJECT_ROOT}/TakaroConfig.example.txt" "${PACKAGE_DIR}/"
 rm -rf "${PACKAGE_DIR}/dist/__tests__"
+mkdir -p "${PACKAGE_DIR}/native"
+cp "${PROJECT_ROOT}/native/dist/libtakaro-conan-native.so" "${PROJECT_ROOT}/native/dist/SHA256SUMS" \
+   "${PACKAGE_DIR}/native/"
 
 # The release must be runnable with `npm ci --omit=dev`, so every entrypoint a
 # package.json script points at has to exist in the packaged dist/ -- the bridge and the
 # chat helper both, because they are one artifact and two processes.
-for required in dist/index.js dist/mod/pollerCli.js; do
+for required in dist/index.js dist/mod/pollerCli.js native/libtakaro-conan-native.so; do
   if [ ! -f "${PACKAGE_DIR}/${required}" ]; then
     echo "build-release: missing ${required} in release package" >&2
     exit 1
@@ -111,12 +118,16 @@ Install:
 2. Run npm ci --omit=dev.
 3. Copy TakaroConfig.example.txt to TakaroConfig.txt.
 4. Configure Takaro registration and Conan RCON values.
-5. Start with npm start.
-6. For in-game chat, start the helper as a second process: npm run mod-helper
-   (see README.md for TAKARO_CONAN_CHAT_MOD / TAKARO_CONAN_RENDER_COMMAND).
+5. Start with npm start, on the same host (or in the same container network
+   namespace) as the Conan server: the bridge's chat API listens on 127.0.0.1.
+6. For in-game chat (sendMessage, Discord to game), start the Conan server with
+   the native library preloaded; no client or server mod is needed:
+     LD_PRELOAD=/path/to/TakaroConanExiles/native/libtakaro-conan-native.so ./ConanSandboxServer.sh ...
+   It only hooks build ${CONAN_EXILES_REVISION}; on any other build it does nothing
+   and logs why in ConanSandbox/Saved/Logs/TakaroConanNative.log.
+   TAKARO_CONAN_BRIDGE_URL (default http://127.0.0.1:3010) points it at the bridge.
 
-Both npm start and npm run mod-helper run from dist/ and need only production
-dependencies.
+npm start runs from dist/ and needs only production dependencies.
 
 Do not commit live registration tokens or RCON passwords.
 EOF

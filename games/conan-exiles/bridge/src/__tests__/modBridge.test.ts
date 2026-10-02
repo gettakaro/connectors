@@ -343,3 +343,50 @@ test('mod command bridge rejects events that fail strict validation before forwa
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test('strict mode accepts the native library (TakaroConan-native) with its exact request shape', async () => {
+  const bridge = new ModCommandBridge({ resultTimeoutMs: 1000, requireSourceAttribution: true });
+  const server = http.createServer((req, res) => {
+    void bridge.handleHttpRequest(req, res);
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert(address && typeof address !== 'string');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  // games/conan-exiles/native/src/http.cpp: the poll carries the source as query and header,
+  // the result only as header.
+  const headers = { 'x-takaro-mod-source': 'TakaroConan-native', 'user-agent': 'TakaroConan-native/1.1.0' };
+
+  try {
+    const pending = bridge.sendMessage('native strict check', '76561198000735875', 'TakaroDM');
+    const poll = await fetch(`${baseUrl}/mod/poll?source=TakaroConan-native`, { headers });
+    assert.equal(poll.status, 200);
+    const body = (await poll.json()) as {
+      hasCommand: boolean;
+      command: { requestId: string; action: string; args: Record<string, unknown> };
+    };
+    assert.equal(body.hasCommand, true);
+    assert.equal(body.command.action, 'sendMessage');
+    assert.deepEqual(body.command.args, {
+      message: 'native strict check',
+      recipient: '76561198000735875',
+      senderNameOverride: 'TakaroDM',
+    });
+
+    const result = await fetch(`${baseUrl}/mod/result`, {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        requestId: body.command.requestId,
+        result: { success: true, delivered: 1, transport: 'TakaroConan-native' },
+      }),
+    });
+    assert.equal(result.status, 200);
+    assert.deepEqual(await pending, { success: true, delivered: 1, transport: 'TakaroConan-native' });
+    assert.equal(bridge.status().lastPollSource, 'TakaroConan-native');
+    assert.equal(bridge.status().lastResultSource, 'TakaroConan-native');
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

@@ -1,7 +1,8 @@
 # Takaro Conan Exiles Connector
 
-A Node.js bridge (version **1.0.2**) that runs next to a Conan Exiles dedicated server and connects
-it to Takaro over RCON and the server's log files. Players do not install anything.
+A Node.js bridge that runs next to a Conan Exiles dedicated server and connects it to Takaro over
+RCON and the server's log files, plus a small native library the Linux server preloads for in-game
+chat. Players do not install anything, and neither the server nor the clients need a mod.
 
 It is built against one exact server build: **Conan Exiles Dedicated Server build 25639945**
 (Steam app `443030`, branch `public`, the native Linux Enhanced server). The bridge may run beside
@@ -31,20 +32,14 @@ You need:
   (`-RconEnabled=1 -RconPassword=YourRconPassword -RconPort=25575`). Restart Conan afterwards.
 - A **Takaro account** with a game server created of type **Generic**, and its **registration
   token** (Takaro shows it when you create the game server).
-- **For in-game chat only:** the **Enhanced Pippi** mod on the server (workshop ID `3725018456`).
-  Without a chat mod the bridge cannot write normal chat lines — see step 4 and the table below.
-  **Not yet compatible with server build 25639945** (nor with 25488622 before it): the server
-  only accepts mods built with Dev Kit version 1002 (`SetCompatibleDevkitVersions: [1002]`) and
-  refuses to start with Pippi installed (`LogModManager: Mod is too old and needs to be updated
-  for this game version`). Pippi's last Workshop update is 2026-06-11. Leave it out until Pippi
-  publishes an update; chat is unavailable meanwhile.
+- **For in-game chat only:** the **Linux** dedicated server, because chat comes from
+  `native/libtakaro-conan-native.so` in the zip, which the server loads with `LD_PRELOAD` (step 4).
+  It works only on server build 25639945 and does nothing on any other build. A Windows server
+  gets everything except Takaro → game chat.
 
-> **About the Takaro Conan mod.** This repo contains a specification for a Takaro-owned
-> `TakaroConan.pak` under `mod/TakaroConanBridge/`, but **no `.pak` is built or shipped**. Building
-> it needs the Conan Exiles Enhanced Dev Kit (Epic Games Store, Windows) and its Unreal cook
-> toolchain; no build host for it exists in this project, so **nothing in a release is that mod**
-> and there is nothing to download. Everything below works without it; chat delivery uses Enhanced
-> Pippi instead.
+> **No mods.** Build 25639945 only loads mods built with Dev Kit 1002, so Enhanced Pippi and the
+> older `TakaroConan.pak` design under `mod/TakaroConanBridge/` both stop the server from starting
+> (`Mod is too old`). Install neither. The native library replaces them.
 
 ### 2. Download the bridge
 
@@ -71,7 +66,8 @@ go inside the Conan game folder:
 
 ```
 <anywhere>/TakaroConanExiles/
-    dist/                      # the compiled bridge and the chat helper
+    dist/                      # the compiled bridge
+    native/                    # libtakaro-conan-native.so: in-game chat (Linux server, step 4)
     scripts/
     package.json
     package-lock.json
@@ -133,16 +129,20 @@ itemCatalogPath=
   polls faster.
 - Leave `requireModSourceAttribution=false`; it is only for validating an unreleased Takaro `.pak`.
 
-**For in-game chat**, start the chat helper as a second process, pointed at Enhanced Pippi:
+**For in-game chat**, start the Conan server with the native library preloaded:
 
 ```bash
-BRIDGE_CONFIG=/path/to/TakaroConfig.txt \
-TAKARO_CONAN_CHAT_MOD=pippi \
-npm run mod-helper
+LD_PRELOAD=/path/to/TakaroConanExiles/native/libtakaro-conan-native.so \
+  ./ConanSandboxServer.sh -log ...your usual flags...
 ```
 
-The helper ships compiled in the released zip and runs on `npm ci --omit=dev`, same as the bridge.
-Without this helper, Takaro messages fail with a clear error instead of appearing in chat.
+- It reaches the bridge at `http://127.0.0.1:3010`, so run the bridge on the same host as the
+  server. With Docker, start the bridge container with `--network container:<conan container>`.
+  Set `TAKARO_CONAN_BRIDGE_URL` in the server's environment if you changed `httpPort`.
+- It logs to `ConanSandbox/Saved/Logs/TakaroConanNative.log`. On any server build other than
+  25639945 it writes why it stayed off and changes nothing. `TAKARO_CONAN_NATIVE_DISABLE=1` turns
+  it off.
+- Without it, Takaro messages fail with a clear error instead of appearing in chat.
 
 Then start the bridge:
 
@@ -159,7 +159,8 @@ curl http://127.0.0.1:3010/health
 ```
 
 It reports the connection state, the `gameServerId` Takaro assigned, and under `target` the server
-build this package was built for. If the registration token was rejected, `/health` shows
+build this package was built for. With the native library running, `modBridge.connected` is `true`
+and `modBridge.lastPollSource` is `TakaroConan-native`. If the registration token was rejected, `/health` shows
 `takaroIdentifyError` and the bridge stops retrying until you fix the token.
 
 The bridge logs the same identity on its first line, which is the quickest way to tell two installs
@@ -175,10 +176,10 @@ password, and that the bridge process is still running.
 
 ### 6. Upgrading
 
-Stop the bridge (and the chat helper). Unzip the new version over the old folder, or into a new
-folder and copy your `TakaroConfig.txt` across — the config is not part of the zip, so it survives.
-Run `npm ci --omit=dev` again, then start the bridge. The Conan server itself does not need to
-restart.
+Stop the bridge. Unzip the new version over the old folder, or into a new folder and copy your
+`TakaroConfig.txt` across — the config is not part of the zip, so it survives. Run
+`npm ci --omit=dev` again, then start the bridge. Restart the Conan server only if
+`native/libtakaro-conan-native.so` changed; the server loads it at start.
 
 ## What works, what doesn't
 
@@ -187,7 +188,8 @@ Status below comes from the recorded capability data and the live checks run on 
 real player connected, and a real-client re-check on **2026-10-02** against the pinned build
 25639945: a Conan Exiles Enhanced client (revision 378,132) on a Windows PC joined an isolated
 server without mods, and every row marked "2026-10-02" was driven through Takaro and seen in
-that client. No chat mod loads on that build (see step 1), so chat rows were not re-checked.
+that client. The chat rows marked "native" were checked the same way on 2026-10-02 with the
+native library preloaded and no mods on the server or the client.
 Anything that was never exercised in a live test says so.
 ✅ = works, ⚠️ = works with a caveat or is unproven, ❌ = does not work.
 
@@ -208,9 +210,8 @@ until somebody checks it in game.
 | Item catalogue | ⚠️ | Not a real catalogue — it lists only the item ids that already exist in the save database, and only with `databasePath` set. |
 | Entity catalogue | ⚠️ | Same: only the creature/actor classes already present in the save database, and only with `databasePath` set. |
 | Locations / points of interest | ⚠️ | Returns saved player character positions, not real Conan points of interest, and only with `databasePath` set. |
-| Chat messages from players | ⚠️ | Live player chat reached Takaro with the correct player attached, but only via Enhanced Pippi's log lines. Without Pippi, chat parsing is best effort and may pick up nothing. |
-| Broadcast a message | ⚠️ | Confirmed visible in game, but only through Enhanced Pippi's `server` command with the chat helper running. Vanilla Conan has no way to write a normal chat line. |
-| Whisper a player | ⚠️ | Pippi accepted the direct message and reported it sent; it was not confirmed on a client, and it needs the player's Conan **character** name to resolve. |
+| Broadcast a message | ✅ | Native, Linux server only. 2026-10-02: `[Takaro]: …` appeared as a normal line in every connected client's chat feed, with accents and symbols intact and the Takaro sender name override applied. Needs at least one player online. |
+| Whisper a player | ✅ | Native, Linux server only. 2026-10-02: a message to the player's Steam64 id showed only in that client's chat. A player who is not online gets "Recipient … is not online" and nothing is sent. |
 | Give an item | ✅ | Spawns the item through Conan's admin relay; the player must be **online**. 2026-10-02: 7 Stone (`10001`) appeared in the client's inventory. |
 | Teleport a player | ✅ | `TeleportPlayer` through Conan's admin relay, raw world units, **online** players only. 2026-10-02: the client moved to the requested spot. |
 | Run a console command | ✅ | Commands are sent over RCON and the raw output comes back to Takaro. 2026-10-02: `broadcast …` through Takaro showed a "Server admin message" popup in the client. |
@@ -227,15 +228,14 @@ until somebody checks it in game.
 | Log events | ⚠️ | Log tailing works against real Conan logs, but Takaro does not store server log lines as searchable events. |
 | Map info | ⚠️ | The bridge answers with an empty/disabled map; Conan exposes no map metadata. |
 | Map tiles | ❌ | The Takaro API does not support map tiles for Generic-connector servers. Nothing on the game server side changes that. |
-| Discord chat bridge | ⚠️ | Game → Discord ✅ 2026-10-02: the chatBridge module relayed in-game chat and join/leave posts to Discord. Discord → game needs Takaro chat delivery, which needs Enhanced Pippi and the chat helper, so it is unavailable while no chat mod loads. |
+| Discord chat bridge | ⚠️ | Game → Discord ✅ 2026-10-02: the chatBridge module relayed in-game chat and join/leave posts to Discord. Discord → game uses the native chat path above; not yet checked with a real Discord post. |
 | Shop & economy | ⚠️ | Never tested for Conan. Item delivery would go through the same online-player-only spawn route as "Give an item". |
 
 ### Known issues
 
-- **Chat needs Enhanced Pippi.** Conan has no vanilla command that writes a normal chat line —
-  `broadcast` shows a screen overlay instead. Without Enhanced Pippi and the chat helper, Takaro
-  messages fail rather than appear. Use the Enhanced workshop item `3725018456`; the legacy Pippi
-  `880454836` loads but registers no commands.
+- **Chat needs the native library, on Linux, on build 25639945.** Conan has no command that writes
+  a normal chat line (`broadcast` shows a screen overlay), and no mod loads on this build. On a
+  Windows server or another build, Takaro messages fail with a clear error.
 - **Half the read features need the save database.** Location, inventory, and the item, entity and
   location lists are empty unless `databasePath` points at Conan's `game_0.db` on the same host.
 - **Give item and teleport only work on online players.** They go through Conan's admin relay to a

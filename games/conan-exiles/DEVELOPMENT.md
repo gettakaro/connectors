@@ -202,6 +202,43 @@ queues one Takaro `sendMessage` through MCP, handles it through `/mod/poll` and 
 the host poller. It proves the HTTP contract the future `.pak` must use; it is not installed-mod
 proof and does not satisfy the final `TakaroConan` source gates.
 
+## Native chat library (`native/`)
+
+`libtakaro-conan-native.so` is a `/mod/poll` client that lives inside the Linux server process
+(`LD_PRELOAD`). It serves only `sendMessage`, by calling
+`ConanPlayerController::ClientReceiveChatMessage` on the game thread, so a vanilla client renders
+an ordinary chat line. It replaces Pippi and the `.pak` on build 25639945, which loads no mods
+older than Dev Kit 1002.
+
+- **Build pin.** The server binary is stripped and non-PIE, so `src/ue.h` holds fixed addresses
+  for 25639945: `ProcessEvent`, `GUObjectArray` and the `FNamePool` blocks. The library hooks
+  nothing unless the GNU build-id (`3a05a6ef…`) and the 20-byte ProcessEvent prologue both
+  match. A new server build needs new addresses. They were found with a small live-memory
+  explorer (reads `/proc/<pid>/mem` of the running server), which is kept with the game notes
+  outside this repository.
+- **Everything else is reflection.** At first use the library walks the object array in
+  16384-object slices on the game thread. It finds the chat `UFunction`, `GameStateBase` and the
+  live GameState, then reads property offsets by name and type: `PlayerArray`, `Owner`,
+  `UserIDFromURLOptions` and `PlayerNamePrivate`. Each send reads `GameState.PlayerArray`, maps
+  each PlayerState to its owner controller, and filters by Steam64
+  (`UserIDFromURLOptions`) or player name. Live cost on 25639945: 1.48M objects scanned in 47 ms
+  total, spread over about 90 ticks; a send costs about 0.02 ms of game-thread time.
+- **ChatRpcData** (0x80 bytes): Timestamp is FILETIME, not FDateTime. userName is at 0x48,
+  Channel (`Global`) at 0x58, Message at 0x68 and generated at 0x78, all FStrings. The engine
+  copies the strings while it serialises the client RPC.
+- **Threads.** A background poller does HTTP and JSON. The ProcessEvent detour only drains the
+  queue when a job is pending (`GameThread::g_pending`), at most 4 jobs or 500 µs per drain.
+- **Toolchain.** `Dockerfile.build` is Debian buster pinned by digest, with packages from its
+  dated snapshot. glibc 2.28 is the newest the server binary needs, and `build.sh` refuses a
+  library that needs anything newer, exports a symbol, or has an unresolved strong symbol.
+  Builds are byte-reproducible.
+- **Tests.** Run `native/build.sh --tests`: unit tests, then the real poller and game-thread
+  queue against `tests/fake_bridge_test.py`, a strict-mode fake of `commandBridge.ts`.
+  `bridge/src/__tests__/modBridge.test.ts` checks the bridge side of the same request shape.
+- **Degrade proof.** `DEBUG_WRONG_BUILD_ID=1 native/build.sh` builds a library that expects
+  another build-id. The server must start unhooked, and `sendMessage` must report the bridge as
+  not connected.
+
 ## Host-side chat renderer
 
 ```bash
