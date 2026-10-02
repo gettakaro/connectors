@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v1.1.0...conan-exiles-v1.2.0) (2026-10-02)
+
+
+### Features
+
+* **conan-exiles:** add target for Steam build 25488622 ([#324](https://github.com/gettakaro/connectors/issues/324)) ([e6162d2](https://github.com/gettakaro/connectors/commit/e6162d204fe605d27bff4c02a16f06c351a33b9a))
+
 ## [1.1.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v1.0.2...conan-exiles-v1.1.0) (2026-09-22)
 
 
