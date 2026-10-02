@@ -353,7 +353,7 @@ Ownership values are `server-owned`, `upstream-blocked` or `unsupported`.
 | `player-disconnected` | `live-supported` | Derived from the same snapshot tracker. |
 | `chat-message` | `live-supported` | Routed `Say`/`ChatMessage` RPCs from the authenticated peer, collapsed within 3 seconds; works when a player is alone. |
 | `player-death` | `live-supported` | Routed `OnDeath` RPC targeting the authenticated peer's own character, with player, position and timestamp. |
-| `entity-killed` | `live-supported` | Creature destroy with `Attackers` marks; coverage is partial for single-blow kills (see *Event sources and trust*). |
+| `entity-killed` | `live-supported` | Valheim's own kill credit (`Game.RegisterKill`) via the kill-witness player-list entry; every player kill counted; assists vetoed only with the optional mod (see *Event sources and trust*). |
 
 ## Server-owned action semantics
 
