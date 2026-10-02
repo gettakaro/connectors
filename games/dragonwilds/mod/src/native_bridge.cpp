@@ -495,21 +495,49 @@ void PollEvents() {
     }
 }
 
+// Takaro rate-limits `log` events per server (~50 per 30 s). The log parser already admits at most
+// DRAGONWILDS_LOG_RATE per 30 s, but a reconnect after an outage would flush everything that queued
+// up at once. So the send side keeps the same budget: a log event over it is not sent and is
+// confirmed together with the next delivered event (counted in rawLogLosses). Every other event
+// type is sent in order, never delayed by logs.
+std::deque<int64_t> logSendTimes;
+bool LogSendAllowed() {
+    static const int limit = [] {
+        const char* v = getenv("DRAGONWILDS_LOG_RATE");
+        if (!v || !*v) return 40;
+        char* end = nullptr;
+        long n = strtol(v, &end, 10);
+        return (end && !*end && n >= 0 && n <= 100000) ? (int)n : 40;
+    }();
+    if (limit == 0) return true;
+    const int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch()).count();
+    while (!logSendTimes.empty() && now - logSendTimes.front() >= 30000) logSendTimes.pop_front();
+    if ((int)logSendTimes.size() >= limit) return false;
+    logSendTimes.push_back(now);
+    return true;
+}
+
 void FlushEvents() {
     if (!identified) return;
     if (!gateMode) {
         if (!durable->EventOutboxDurable()) return;
         for (const auto& e : durable->Current().pending) {
             if (sentEpochByOutboxId[e.outboxId] == currentEpoch) continue;
+            Json frame = e.frame ? Json::parse(*e.frame, nullptr, false) : Json();
+            Json payload = frame.is_object() ? Record(frame.value("payload", Json::object())) : Json::object();
+            std::string type = Str(payload, "type");
+            if (type == "log" && !LogSendAllowed()) {
+                sentEpochByOutboxId[e.outboxId] = currentEpoch;
+                ++rawLogLosses;
+                continue;
+            }
             auto queued = NativeTransport::Queue({NativeTransport::Kind::Event, e.frame,
                                                   currentEpoch, e.outboxId, false});
             if (!queued) break;
             sentEpochByOutboxId[e.outboxId] = currentEpoch;
             if (wireDebug && e.frame) WireLog("SEND", *e.frame);
-            Json frame = Json::parse(*e.frame, nullptr, false);
             if (frame.is_object()) {
-                Json payload = Record(frame.value("payload", Json::object()));
-                std::string type = Str(payload, "type");
                 if (type == "player-connected" || type == "player-disconnected") {
                     Json data = Record(payload.value("data", Json::object()));
                     behavior->NoteEventQueued(Str(Record(data.value("player", Json::object())), "gameId"));
