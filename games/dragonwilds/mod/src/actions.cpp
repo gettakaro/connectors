@@ -1478,7 +1478,12 @@ Actions::Result Actions::Locations() {
             for (auto& l : locations) {
                 if (!first) o += ",";
                 first = false;
-                o += "{\"code\":" + JsonStr(l.code) + ",\"name\":" + JsonStr(l.code) + ",\"position\":{\"x\":" +
+                // The lodestone actor carries no display name on this build (its object name is an
+                // editor id such as StaticMeshActor_UAID_...), so the name players see is built from
+                // what it is and where it stands, in metres; `code` keeps the actor name for teleports.
+                char where[96];
+                snprintf(where, sizeof where, "Lodestone (%ld, %ld)", lround(l.x / 100.0), lround(l.y / 100.0));
+                o += "{\"code\":" + JsonStr(l.code) + ",\"name\":" + JsonStr(where) + ",\"position\":{\"x\":" +
                      JsonNum(l.x) + ",\"y\":" + JsonNum(l.y) + ",\"z\":" + JsonNum(l.z) + "}}";
             }
             return o + "]";
