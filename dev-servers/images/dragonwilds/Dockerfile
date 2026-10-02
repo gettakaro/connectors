@@ -33,3 +33,13 @@ RUN set -eux; \
     bash -n "$f"
 
 ENV TAKARO_PLUGIN_SO=""
+
+# Second change: the stock player monitor adds a player by platform name on join but removes
+# by character name on quit, so the count never dropped and the idle-gated update and daily
+# backup waited forever. Track players by network connection instead (see the fragment).
+COPY player-tracking.fragment patch-player-tracking.pl /tmp/takaro-patch/
+RUN set -eux; \
+    LC_ALL=C perl /tmp/takaro-patch/patch-player-tracking.pl /home/ubuntu/entrypoint-wrapper.sh /tmp/takaro-patch/player-tracking.fragment; \
+    grep -q 'NotifyAcceptedConnection' /home/ubuntu/entrypoint-wrapper.sh; \
+    bash -n /home/ubuntu/entrypoint-wrapper.sh; \
+    rm -rf /tmp/takaro-patch
