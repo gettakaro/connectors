@@ -112,3 +112,133 @@ export async function sendRconCommand(options: RconCommandOptions): Promise<stri
     });
   });
 }
+
+export type RconConnectionOptions = Omit<RconCommandOptions, 'command'>;
+
+/**
+ * One authenticated RCON socket reused for every command.
+ *
+ * Conan's karma system charges each new RCON connection; a connection per command at the
+ * bridge's poll rate drains it in about an hour, after which every connection is denied for
+ * ten minutes and every RCON-backed action fails with `write EPIPE`. Commands are sent one
+ * at a time: Conan answers with the auth packet id, so a reply cannot be matched to a
+ * request by id and the next reply on the socket is the answer to the outstanding command.
+ * Any socket error, close or timeout drops the connection and the next command reconnects.
+ */
+export class PersistentRconClient {
+  private socket: net.Socket | null = null;
+  private connecting: Promise<net.Socket> | null = null;
+  private buffer = Buffer.alloc(0);
+  private pending: { resolve: (body: string) => void; reject: (err: Error) => void } | null = null;
+  private tail: Promise<unknown> = Promise.resolve();
+
+  constructor(private readonly options: RconConnectionOptions) {}
+
+  run(command: string): Promise<string> {
+    const result = this.tail.then(() => this.exchange(command));
+    this.tail = result.catch(() => undefined);
+    return result;
+  }
+
+  close(): void {
+    this.drop(new Error('RCON client closed'));
+  }
+
+  private async exchange(command: string): Promise<string> {
+    const socket = await this.connect();
+    return new Promise<string>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.drop(new Error(`RCON command timed out after ${this.options.timeoutMs}ms`));
+      }, this.options.timeoutMs);
+      this.pending = {
+        resolve: (body) => {
+          clearTimeout(timeout);
+          resolve(body);
+        },
+        reject: (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        },
+      };
+      socket.write(encodePacket({ id: 1, type: RCON_EXEC_COMMAND, body: command }));
+    });
+  }
+
+  private connect(): Promise<net.Socket> {
+    if (this.socket) return Promise.resolve(this.socket);
+    if (this.connecting) return this.connecting;
+
+    this.connecting = new Promise<net.Socket>((resolve, reject) => {
+      const socket = net.createConnection({ host: this.options.host, port: this.options.port });
+      let authenticated = false;
+      const fail = (err: Error): void => {
+        clearTimeout(timeout);
+        socket.destroy();
+        this.connecting = null;
+        reject(err);
+      };
+      const timeout = setTimeout(
+        () => fail(new Error(`RCON authentication timed out after ${this.options.timeoutMs}ms`)),
+        this.options.timeoutMs,
+      );
+
+      this.buffer = Buffer.alloc(0);
+      socket.on('connect', () => {
+        socket.write(encodePacket({ id: 1, type: RCON_AUTH, body: this.options.password }));
+      });
+      socket.on('data', (chunk) => {
+        this.buffer = Buffer.concat([this.buffer, typeof chunk === 'string' ? Buffer.from(chunk) : chunk]);
+        try {
+          while (true) {
+            const decoded = decodePacket(this.buffer);
+            if (!decoded.packet) break;
+            this.buffer = this.buffer.subarray(decoded.bytesRead);
+
+            if (!authenticated) {
+              if (decoded.packet.id === -1) {
+                fail(new Error('RCON authentication failed'));
+                return;
+              }
+              if (
+                decoded.packet.type === RCON_AUTH_RESPONSE ||
+                decoded.packet.body.toLowerCase().includes('authenticated')
+              ) {
+                authenticated = true;
+                clearTimeout(timeout);
+                this.socket = socket;
+                this.connecting = null;
+                resolve(socket);
+              }
+              continue;
+            }
+
+            const pending = this.pending;
+            this.pending = null;
+            pending?.resolve(decoded.packet.body);
+          }
+        } catch (err) {
+          this.drop(err as Error);
+        }
+      });
+      socket.on('error', (err) => {
+        if (authenticated) this.drop(err);
+        else fail(err);
+      });
+      socket.on('close', () => {
+        if (authenticated) this.drop(new Error('RCON connection closed before response'));
+        else fail(new Error('RCON connection closed before authentication'));
+      });
+    });
+    return this.connecting;
+  }
+
+  private drop(err: Error): void {
+    const socket = this.socket;
+    this.socket = null;
+    this.buffer = Buffer.alloc(0);
+    socket?.destroy();
+    const pending = this.pending;
+    this.pending = null;
+    pending?.reject(err);
+  }
+}

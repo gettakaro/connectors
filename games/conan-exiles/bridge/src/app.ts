@@ -8,7 +8,7 @@ import { LogTailer } from './logs/logTailer.js';
 import { ModCommandBridge } from './mod/commandBridge.js';
 import { validateStrictModEvent } from './mod/strictEventValidation.js';
 import { RconCommandQueue } from './rcon/commandQueue.js';
-import { sendRconCommand } from './rcon/client.js';
+import { PersistentRconClient } from './rcon/client.js';
 import { loadConanItemCatalog } from './conan/itemCatalog.js';
 import { ConanSaveDbReader } from './conan/saveDb.js';
 import { TakaroWsClient } from './takaro/client.js';
@@ -58,16 +58,13 @@ export async function startBridge(config: BridgeConfig, options: StartBridgeOpti
     options.reconnectMs?.max,
   );
 
-  const rconQueue = new RconCommandQueue((command) =>
-    sendRconCommand({
-      host: config.rcon.host,
-      port: config.rcon.port,
-      password: config.rcon.password,
-      command,
-      timeoutMs: config.rcon.timeoutMs,
-    }),
-    config.rcon.commandGapMs,
-  );
+  const rcon = new PersistentRconClient({
+    host: config.rcon.host,
+    port: config.rcon.port,
+    password: config.rcon.password,
+    timeoutMs: config.rcon.timeoutMs,
+  });
+  const rconQueue = new RconCommandQueue((command) => rcon.run(command), config.rcon.commandGapMs);
 
   const emit = (type: GameEventType, data: unknown): void => {
     logger.info(`Emitting Takaro game event type=${type}`);
@@ -139,6 +136,7 @@ export async function startBridge(config: BridgeConfig, options: StartBridgeOpti
       playerPoller.stop();
       for (const tailer of logTailers) tailer.stop();
       takaro.shutdown();
+      rcon.close();
       await health.stop();
     },
     healthPort(): number {
