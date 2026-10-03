@@ -639,6 +639,14 @@ ActionResult ReadService::ExecuteImpl(const std::string& action, const JsonValue
             if (it != known_.end() && it->second.haveLocation)
                 return Raw(Vec(it->second.loc[0], it->second.loc[1], it->second.loc[2]));
         }
+        // Online without a character and never seen before (a new character's intro cinematic:
+        // the controller has no pawn yet): the controller's own root follows the view. Takaro
+        // asks for the location right after player-connected and drops the event on an error.
+        if (p && p->pc) {
+            Location loc;
+            PlayerReader reader(*r_, layout_);
+            if (reader.Location(p->pc, loc, error)) return Raw(Vec(loc.x, loc.y, loc.z));
+        }
         errors_++;
         return Fail("getPlayerLocation: player " + ids.front() + (p ? " has no character in the world right now" : " is not online"));
     }
