@@ -45,4 +45,10 @@ std::vector<Controller> OnlineControllers();
 // The ClientReceiveChatMessage UFunction (game thread only, after Ready()).
 void* ChatFunction();
 
+// Raw globals for the other reflection users (core/conan/actions_ue.*); 0 before SetGlobals().
+uintptr_t ObjObjectsAddress();
+uintptr_t NameBlocksAddress();
+// Game thread only, after Ready(): a live GameState (a world context object), or 0.
+uintptr_t LiveGameState();
+
 }  // namespace UE

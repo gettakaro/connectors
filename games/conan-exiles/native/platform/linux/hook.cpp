@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "gamethread.h"
+#include "hooks.h"
 #include "pins/pins.h"
 
 #include <sys/mman.h>
@@ -39,6 +40,11 @@ void Detour(void* obj, void* func, void* parms) {
             GameThread::Drain();
             t_draining = false;
         }
+    }
+    // Registered UFunction hooks (core/hooks.h), game thread only.
+    if (Hooks::g_count.load(std::memory_order_acquire) > 0) {
+        if (t_isGameThread < 0) t_isGameThread = (pid_t)syscall(SYS_gettid) == g_gameThread;
+        if (t_isGameThread) Hooks::Dispatch(obj, func, parms);
     }
     g_original(obj, func, parms);
 }
