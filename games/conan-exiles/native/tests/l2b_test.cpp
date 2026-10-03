@@ -575,6 +575,7 @@ struct World {
     std::vector<uintptr_t> execSpecific, execWorld;
     bool tpCheat = true, tpSnap = false;
     float durPct = -1;
+    float dur = 0;
     int addCalls = 0, addIndex = 0;
     std::string logPath;
 };
@@ -700,6 +701,7 @@ static void BuildWorld(const std::string& dir) {
         memcpy(&ctx, p + 8, 8);
         memcpy(&q, p + 16, 4);
         memcpy(&G.durPct, p + 24, 4);
+        memcpy(&G.dur, p + 28, 4);
         G.addCalls++;
         G.addIndex = idx;
         CHECK(ctx == 0 && p[20] == 0, "Context None, loot false");
@@ -821,8 +823,8 @@ static void TestReflectedGame() {
     Mutations m(mo, game);
 
     auto r = m.Execute("giveItem", J("{\"gameId\":\"76561198000735875\",\"item\":\"stone\",\"amount\":2500}"));
-    CHECK(r.ok && G.counts[10001] == 2500 && G.addCalls == 3 && G.addIndex == -1 && G.durPct == 1.0f,
-          "giveItem by name through AddItemTemplate: %s (calls %d)", r.error.c_str(), G.addCalls);
+    CHECK(r.ok && G.counts[10001] == 2500 && G.addCalls == 3 && G.addIndex == -1 && G.durPct == 1.0f && G.dur == -1.0f,
+          "giveItem by name through AddItemTemplate, full durability (-1 = by percentage): %s (calls %d)", r.error.c_str(), G.addCalls);
     r = m.Execute("giveItem", J("{\"gameId\":\"76561198000735875\",\"item\":\"Siptah_Gem\",\"amount\":2}"));
     CHECK(r.ok && G.counts[53001] == 2, "DLC table row after a hole: %s", r.error.c_str());
     r = m.Execute("giveItem", J("{\"gameId\":\"76561198000735875\",\"item\":\"Garbage\",\"amount\":2}"));
