@@ -280,8 +280,44 @@ static void TestPins() {
     r = pins::Resolve("linux", "x", none, false);
     CHECK(!r.ok && r.reason.find("unsupported server build (x)") == 0 && r.reason.find("no match") != std::string::npos,
           "%s", r.reason.c_str());
-    r = pins::Resolve("windows", "x", regions, true);
-    CHECK(!r.ok && r.reason.find("no signatures for platform windows") != std::string::npos, "%s", r.reason.c_str());
+    r = pins::Resolve("freebsd", "x", regions, true);
+    CHECK(!r.ok && r.reason.find("no signatures for platform freebsd") != std::string::npos, "%s", r.reason.c_str());
+
+    // Windows: ASLR relocates the image, so the pinned anchors are RVAs. Three code sites of the pinned
+    // build, placed at their real RVAs under two different bases, each with a rip32 capture.
+    const auto& wsigs = pins::SignaturesFor("windows");
+    CHECK(wsigs.size() == 3, "3 windows signatures");
+    const pins::BuildPin* wpin = nullptr;
+    for (auto& b : pins::PinnedBuilds())
+        if (std::string(b.platform) == "windows") wpin = &b;
+    CHECK(wpin && std::string(wpin->buildId) == "a0e8d0c4-b619000", "windows build pinned by PE identity");
+    for (uintptr_t wbase : {(uintptr_t)0x140000000ull, (uintptr_t)0x7ff7b2f10000ull}) {
+        std::vector<std::vector<uint8_t>> bufs(3, std::vector<uint8_t>(0x100, 0xCC));
+        const uintptr_t siteRva[3] = {0x16408d0, 0x15494c9, 0x145ff52};
+        const uintptr_t target[3] = {0, 0xa92cdc0, 0xa85e010};
+        std::vector<pins::Region> wregions;
+        for (int i = 0; i < 3; i++) {
+            std::vector<int> p;
+            pins::ParsePattern(wsigs[i].pattern, p);
+            for (size_t k = 0; k < p.size(); k++) bufs[i][0x40 + k] = p[k] < 0 ? 0xEE : (uint8_t)p[k];
+            uintptr_t site = wbase + siteRva[i];
+            if (wsigs[i].capture == pins::Capture::Rip32) {
+                int32_t disp = (int32_t)((wbase + target[i]) - (site + wsigs[i].offset + 4));
+                memcpy(&bufs[i][0x40 + wsigs[i].offset], &disp, 4);
+            }
+            wregions.push_back({bufs[i].data(), bufs[i].size(), site - 0x40});
+        }
+        r = pins::Resolve("windows", "a0e8d0c4-b619000", wregions, false, wbase);
+        CHECK(r.ok && r.build == "25639945", "windows pinned build verified at base %llx: %s",
+              (unsigned long long)wbase, r.reason.c_str());
+        CHECK(r.anchors.processEvent == wbase + 0x16408d0 && r.anchors.objObjects == wbase + 0xa92cdc0 &&
+                  r.anchors.nameBlocks == wbase + 0xa85e010,
+              "windows anchors are absolute in the relocated image");
+        r = pins::Resolve("windows", "a0e8d0c4-b619000", wregions, false, 0);
+        CHECK(!r.ok && r.reason.find("disagrees") != std::string::npos, "unrelocated comparison refused");
+        r = pins::Resolve("windows", "deadbeef-1000", wregions, false, wbase);
+        CHECK(!r.ok && r.reason.find("unsupported server build (deadbeef-1000)") == 0, "%s", r.reason.c_str());
+    }
     // A pattern straddling the end of a region must not read past it.
     std::vector<uint8_t> tail(10, 0x89);
     std::vector<pins::Region> small = {{tail.data(), tail.size(), 0x1000}};
@@ -381,8 +417,11 @@ static void TestCoverage() {
     CHECK(std::string(ActionCoverage("sendMessage")->implementation) == "native", "chat native");
     CHECK(std::string(ActionCoverage("getMapInfo")->status) == "schema-fallback", "map fallback");
     CHECK(std::string(ActionCoverage("getMapTile")->status) == "unsupported", "tile unsupported");
-    for (auto* a : {"getPlayers", "giveItem", "kickPlayer", "banPlayer", "shutdown", "executeConsoleCommand"})
+    for (auto* a : {"giveItem", "kickPlayer", "banPlayer", "shutdown", "executeConsoleCommand"})
         CHECK(std::string(ActionCoverage(a)->implementation) == "pending", "%s still pending", a);
+    for (auto* a : {"getPlayers", "getPlayer", "getPlayerLocation", "getPlayerInventory", "listItems", "listEntities",
+                    "listLocations"})
+        CHECK(std::string(ActionCoverage(a)->implementation) == "native", "%s native (lane L2a)", a);
     JsonValue v;
     CHECK(JsonParse(RegistryJson(), v), "registry json");
 }

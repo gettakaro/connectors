@@ -3,7 +3,7 @@
 # --tests); --native uses the toolchain of the current machine (the container calls it that way).
 #   unit_test     core logic (protocol, config, outbox, heartbeat, pins, adapter, registry, text)
 #   pins_oracle   the signature scan over the real 25639945 binary (CONAN_SERVER_BINARY; skipped
-#                 when not given)
+#                 when not given); pins_oracle_pe the same over the Windows exe (CONAN_SERVER_BINARY_WIN)
 #   drift_test    capabilities.json / pins.json equal the compiled tables
 #   wire_test     the production Takaro half against a fake Takaro (TLS WebSocket), incl. a 20 s outage
 #   so_test       the real dist/libtakaro-conan-native.so preloaded into a stand-in server
@@ -15,7 +15,7 @@ fi
 CXX=${CXX:-g++}
 PREFIX=${TAKARO_NATIVE_PREFIX:-/opt/takaro-native}
 FLAGS=(-std=c++17 -O1 -g -Wall -Wextra -Werror -Icore -Iplatform/linux "-I$PREFIX/include" -pthread)
-CORE=(core/*.cpp core/*/*.cpp platform/linux/fileio_posix.cpp platform/linux/elfscan.cpp)
+CORE=(core/*.cpp core/*/*.cpp platform/linux/fileio_posix.cpp platform/linux/elfscan.cpp platform/linux/selfmem_posix.cpp)
 LWS=("$PREFIX/lib/libwebsockets.a" "$PREFIX/lib/libssl.a" "$PREFIX/lib/libcrypto.a" -ldl)
 mkdir -p tests/build
 [ -f dist/libtakaro-conan-native.so ] || { echo "build the library first (platform/linux/build.sh)" >&2; exit 1; }
@@ -24,6 +24,10 @@ echo "== unit_test"
 "$CXX" "${FLAGS[@]}" tests/unit_test.cpp "${CORE[@]}" -o tests/build/unit_test
 ./tests/build/unit_test
 
+echo "== reads_test"
+"$CXX" "${FLAGS[@]}" tests/reads_test.cpp "${CORE[@]}" -o tests/build/reads_test
+./tests/build/reads_test
+
 echo "== pins_oracle"
 "$CXX" "${FLAGS[@]}" -O2 tests/pins_oracle.cpp core/pins/pins.cpp core/common.cpp platform/linux/elfscan.cpp \
     -o tests/build/pins_oracle
@@ -31,6 +35,14 @@ if [ -n "${CONAN_SERVER_BINARY:-}" ]; then
   ./tests/build/pins_oracle "$CONAN_SERVER_BINARY"
 else
   echo "SKIP pins_oracle: set CONAN_SERVER_BINARY to a 25639945 ConanSandboxServer-Linux-Shipping"
+fi
+
+echo "== pins_oracle_pe"
+"$CXX" "${FLAGS[@]}" -O2 tests/pins_oracle_pe.cpp core/pins/pins.cpp core/common.cpp -o tests/build/pins_oracle_pe
+if [ -n "${CONAN_SERVER_BINARY_WIN:-}" ]; then
+  ./tests/build/pins_oracle_pe "$CONAN_SERVER_BINARY_WIN"
+else
+  echo "SKIP pins_oracle_pe: set CONAN_SERVER_BINARY_WIN to a 25639945 ConanSandboxServer-Win64-Shipping.exe"
 fi
 
 echo "== harness + drift_test"

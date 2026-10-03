@@ -1,6 +1,6 @@
 // Win32 file primitives for core/takaro/fileio.h, ported unchanged from the Enshrouded native
-// connector (games/enshrouded/mod/src/native/fileio.cpp, proven under Proton). Not built yet:
-// the Windows lane wires it into its build.
+// connector (games/enshrouded/mod/src/native/fileio.cpp, proven under Proton). Built into the
+// Windows DLL by platform/windows/build.sh.
 #include "takaro/fileio.h"
 
 #define WIN32_LEAN_AND_MEAN
