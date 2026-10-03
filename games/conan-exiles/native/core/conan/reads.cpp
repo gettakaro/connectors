@@ -528,6 +528,17 @@ ActionResult ReadService::ListResult(const std::string& action) {
 
 // ---------------------------------------------------------------- dispatch
 ActionResult ReadService::Execute(const std::string& action, const JsonValue& args) {
+    const uint64_t t0 = NowNs();
+    ActionResult r = ExecuteImpl(action, args);
+    // One line per read request: the evidence trail of what Takaro was answered.
+    std::string body = r.ok ? takaro::JsonDump(r.payload) : r.error;
+    std::string rows = r.ok && r.payload.type == JsonValue::Array ? " " + std::to_string(r.payload.arr.size()) + " rows" : "";
+    NativeLog("reads: %s %s -> %s%s (%.2f ms): %.400s", action.c_str(), takaro::JsonDump(args).substr(0, 120).c_str(),
+              r.ok ? "ok" : "ERROR", rows.c_str(), (NowNs() - t0) / 1e6, body.c_str());
+    return r;
+}
+
+ActionResult ReadService::ExecuteImpl(const std::string& action, const JsonValue& args) {
     if (action == "listItems" || action == "listEntities" || action == "listLocations") {
         {
             std::lock_guard<std::mutex> g(mu_);

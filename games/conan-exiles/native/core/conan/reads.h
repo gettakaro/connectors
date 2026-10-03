@@ -67,6 +67,7 @@ public:
     int32_t ResolveItemCode(const std::string& code);
 
 private:
+    takaro::ActionResult ExecuteImpl(const std::string& action, const JsonValue& args);
     bool EnsureIndex(std::string& error);
     bool EnsureGameStates(std::string& error);
     bool Snapshot(std::vector<PlayerRecord>& out, std::string& error);
