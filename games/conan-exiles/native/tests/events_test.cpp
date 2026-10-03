@@ -4,11 +4,14 @@
 #include "common.h"
 #include "conan/events_payload.h"
 #include "conan/hook_dispatch.h"
+#include "conan/identity.h"
 #include "conan/logtail.h"
 #include "takaro/fileio.h"
 #include "takaro/json_util.h"
 
 #include <cstdio>
+#include <cstring>
+#include <map>
 #include <cstdlib>
 #include <string>
 #include <unistd.h>
@@ -303,7 +306,74 @@ static void TestDispatch() {
     CHECK(HookDispatch::Match((void*)0x7f0000900010) == nullptr, "empty table");
 }
 
+
+// A fake address space: regions at made-up addresses.
+struct FakeMem : UE::Mem {
+    std::map<uintptr_t, std::vector<uint8_t>> regions;
+    bool Read(uintptr_t a, void* out, size_t n) const override {
+        for (auto& r : regions)
+            if (a >= r.first && a + n <= r.first + r.second.size()) {
+                memcpy(out, r.second.data() + (a - r.first), n);
+                return true;
+            }
+        return false;
+    }
+    void Put(uintptr_t a, const void* p, size_t n) {
+        auto& v = regions[a];
+        v.assign((const uint8_t*)p, (const uint8_t*)p + n);
+    }
+};
+
+static void TestIdentity() {
+    EQ(ExtractSteam64("STEAM:76561198000735875"), "76561198000735875");
+    EQ(ExtractSteam64("76561198000735875"), "76561198000735875");
+    EQ(ExtractSteam64("A-1HFFLI28NN"), "");
+    EQ(ExtractSteam64("1765611980007358751"), "");
+    CHECK(IsSteam64Number(76561198000735875ULL) && !IsSteam64Number(154), "range");
+
+    // Layout 1: FUniqueNetIdRepl -> object with the Steam64 as a uint64 at +0x18.
+    FakeMem m;
+    uint64_t repl[6] = {0x500000, 0x500100, 0, 0, 0, 0};
+    m.Put(0x400000, repl, sizeof repl);
+    uint8_t obj[0x80] = {0};
+    uint64_t sid = 76561198000735875ULL;
+    memcpy(obj + 0x18, &sid, 8);
+    m.Put(0x500000, obj, sizeof obj);
+    UniqueIdProbe p = Steam64FromUniqueId(m, 0x400000);
+    CHECK(p.steam64 == "76561198000735875" && p.how == "uint64@+0x18", "uint64: '%s' %s", p.steam64.c_str(), p.how.c_str());
+
+    // Layout 2: an FString "STEAM:7656..." at +0x20 (FLS wrapper).
+    FakeMem m2;
+    m2.Put(0x400000, repl, sizeof repl);
+    uint8_t obj2[0x80] = {0};
+    const char* txt = "STEAM:76561198000735875";
+    std::u16string w(txt, txt + strlen(txt));
+    w.push_back(0);
+    uint64_t data = 0x600000;
+    int32_t num = (int32_t)w.size(), max = num;
+    memcpy(obj2 + 0x20, &data, 8);
+    memcpy(obj2 + 0x28, &num, 4);
+    memcpy(obj2 + 0x2c, &max, 4);
+    m2.Put(0x500000, obj2, sizeof obj2);
+    m2.Put(0x600000, w.data(), w.size() * 2);
+    p = Steam64FromUniqueId(m2, 0x400000);
+    CHECK(p.steam64 == "76561198000735875" && p.how.rfind("fstring@+0x20", 0) == 0, "fstring: '%s' %s", p.steam64.c_str(),
+          p.how.c_str());
+
+    // An FLS-only id and an empty UniqueID give no Steam64, and never crash.
+    FakeMem m3;
+    uint64_t empty[6] = {0, 0, 0, 0, 0, 0};
+    m3.Put(0x400000, empty, sizeof empty);
+    CHECK(Steam64FromUniqueId(m3, 0x400000).steam64.empty(), "empty");
+    CHECK(Steam64FromUniqueId(m3, 0x999000).steam64.empty(), "unreadable");
+    FakeMem m4;
+    m4.Put(0x400000, repl, sizeof repl);
+    m4.Put(0x500000, obj2, sizeof obj2);  // FString data pointer unreadable
+    CHECK(Steam64FromUniqueId(m4, 0x400000).steam64.empty(), "dangling string");
+}
+
 int main() {
+    TestIdentity();
     TestPayloads();
     TestSanitize();
     TestNaming();

@@ -3,11 +3,13 @@
 #include "common.h"
 #include "conan/events_payload.h"
 #include "conan/hook_dispatch.h"
+#include "conan/identity.h"
 #include "conan/logtail.h"
 #include "conan/text.h"
 #include "gamethread.h"
 #include "takaro/fileio.h"
 #include "takaro/json_util.h"
+#include "ue/mem.h"
 #include "ue/reflect.h"
 #include "ue/ue.h"
 
@@ -46,13 +48,13 @@ enum N {
     N_UserIDFromURLOptions, N_PlayerState, N_PlayerNamePrivate, N_SavedNetworkAddress, N_Controller,
     N_m_CharacterName, N_SourceSpawnTable, N_OwnerItem, N_TemplateId, N_ConanPlayerController,
     N_ConanCharacter, N_InventoryItemBase, N_GameItem, N_Conv_TextToString, N_GetItemName,
-    N_K2_GetActorLocation, N_InText, N_ReturnValue, N_Pawn, N_Count
+    N_K2_GetActorLocation, N_InText, N_ReturnValue, N_Pawn, N_UniqueID, N_Count
 };
 const char* const kNames[N_Count] = {
     "UserIDFromURLOptions", "PlayerState", "PlayerNamePrivate", "SavedNetworkAddress", "Controller",
     "m_CharacterName", "SourceSpawnTable", "OwnerItem", "TemplateId", "ConanPlayerController",
     "ConanCharacter", "InventoryItemBase", "GameItem", "Conv_TextToString", "GetItemName",
-    "K2_GetActorLocation", "InText", "ReturnValue", "Pawn",
+    "K2_GetActorLocation", "InText", "ReturnValue", "Pawn", "UniqueID",
 };
 uint32_t g_n[N_Count];
 std::atomic<bool> g_namesReady{false};
@@ -111,7 +113,8 @@ struct GT {
     std::unordered_map<uint32_t, std::string> entityBySpawnRow;  // SourceSpawnTable FName -> name
     std::unordered_map<int32_t, std::string> weaponByTemplate;
     LazyOff offUserId, offPlayerState, offPlayerName, offIp, offPawnController, offCharName, offSpawnRow,
-        offOwnerItem, offTemplateId, offControllerPawn;
+        offOwnerItem, offTemplateId, offControllerPawn, offUniqueId;
+    bool loggedIdSource = false;
     UER::TextConv conv;
     bool convTried = false;
 };
@@ -152,19 +155,39 @@ void Push(Captured c) {
 
 bool IsPlayerController(uintptr_t pc) { return UER::Alive(pc) && UER::IsA(pc, g_n[N_ConanPlayerController]); }
 
-// Steam64, PlayerNamePrivate, SavedNetworkAddress of a ConanPlayerController.
+// Steam64, PlayerNamePrivate, SavedNetworkAddress of a ConanPlayerController. The Steam64 comes
+// from PlayerState.UniqueID (conan/identity.h); UserIDFromURLOptions only when it is a Steam64
+// itself (on FLS accounts it holds the Funcom id).
 bool ReadIdentity(uintptr_t pc, PlayerId& out) {
     GT& g = G();
     if (!IsPlayerController(pc)) return false;
-    int32_t u = g.offUserId.Get(pc, N_UserIDFromURLOptions);
-    if (u < 0) return false;
-    out.steam64 = UER::ReadFString(pc + (uintptr_t)u, 64);
     int32_t pso = g.offPlayerState.Get(pc, N_PlayerState);
     uintptr_t ps = pso >= 0 ? rd<uintptr_t>(pc + (uintptr_t)pso) : 0;
+    std::string how;
     if (UER::Live(ps)) {
         int32_t n = g.offPlayerName.Get(ps, N_PlayerNamePrivate), ip = g.offIp.Get(ps, N_SavedNetworkAddress);
         if (n >= 0) out.name = UER::ReadFString(ps + (uintptr_t)n, 256);
         if (ip >= 0) out.ip = UER::ReadFString(ps + (uintptr_t)ip, 128);
+        int32_t uo = g.offUniqueId.Get(ps, N_UniqueID);
+        if (uo >= 0) {
+            UniqueIdProbe p = Steam64FromUniqueId(UE::SelfMem(), ps + (uintptr_t)uo);
+            out.steam64 = p.steam64;
+            how = "PlayerState.UniqueID " + p.how;
+        }
+    }
+    std::string url;
+    int32_t u = g.offUserId.Get(pc, N_UserIDFromURLOptions);
+    if (u >= 0) url = UER::ReadFString(pc + (uintptr_t)u, 64);
+    if (out.steam64.empty()) {
+        out.steam64 = ExtractSteam64(url);
+        if (!out.steam64.empty()) how += (how.empty() ? "" : "; ") + std::string("UserIDFromURLOptions");
+    }
+    if (!g.loggedIdSource && !out.steam64.empty()) {
+        g.loggedIdSource = true;
+        NativeLog("events: Steam64 from %s (UserIDFromURLOptions is %s)", how.c_str(),
+                  url == out.steam64 ? "the same Steam64" : ("'" + url + "'").c_str());
+    } else if (out.steam64.empty()) {
+        NativeLog("events: no Steam64 for a player controller (%s; UserIDFromURLOptions '%s')", how.c_str(), url.c_str());
     }
     return out.Valid();
 }
@@ -417,7 +440,7 @@ bool OnLogout(const Call& c, void*) {
     } else if (UER::Alive(pc) && UER::IsA(pc, g_n[N_ConanPlayerController])) {
         // Loaded after this login (or the login was missed): the Steam64 is still readable.
         int32_t u = g.offUserId.Get(pc, N_UserIDFromURLOptions);
-        if (u >= 0) id.steam64 = UER::ReadFString(pc + (uintptr_t)u, 64);
+        if (u >= 0) id.steam64 = ExtractSteam64(UER::ReadFString(pc + (uintptr_t)u, 64));
         auto s = g.bySteam.find(id.steam64);
         if (s != g.bySteam.end()) id = s->second;
     }
