@@ -190,14 +190,21 @@ public:
                 }
                 const Func* conv = Fn(rx::ClassOf(l.textLibrary), "Conv_StringToText",
                                       {{"InString", "StrProperty", 16}, {"ReturnValue", "TextProperty", 16}}, error);
+                // ClientWasKicked makes the Conan client remember the reason; its main menu then
+                // shows "Kicked from Server / <reason>" (live 2026-10-03). The return alone shows
+                // nothing.
+                const Func* told = Fn(rx::ClassOf(pc), "ClientWasKicked", {{"KickReason", "TextProperty", 16}}, error);
                 const Func* kick = Fn(rx::ClassOf(pc), "ClientReturnToMainMenuWithTextReason",
                                       {{"ReturnReason", "TextProperty", 16}}, error);
-                if (!conv || !kick) return;
+                if (!conv || !told || !kick) return;
                 Frame c(*conv);
                 c.Str("InString", text);
                 if (!rx::Call(l.textLibrary, *conv, c, &error)) return;
                 // The FText keeps one reference to its text data; the RPC serializes a copy. That
                 // one reference (a few bytes per kick) is intentionally never released.
+                Frame w(*told);
+                w.Raw("KickReason", c.At("ReturnValue"), 16);
+                if (!rx::Call(pc, *told, w, &error)) return;
                 Frame k(*kick);
                 k.Raw("ReturnReason", c.At("ReturnValue"), 16);
                 ok = rx::Call(pc, *kick, k, &error);
