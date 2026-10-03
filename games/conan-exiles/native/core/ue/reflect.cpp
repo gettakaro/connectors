@@ -34,7 +34,7 @@ bool Plausible(uintptr_t p) { return p >= 0x10000 && p < 0x800000000000ULL && (p
 char Low(char c) { return (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c; }
 
 uintptr_t ItemAt(int32_t index) {
-    uintptr_t arr = UE::ObjObjectsAddr();
+    uintptr_t arr = UE::ObjObjectsAddress();
     if (!arr) return 0;
     uintptr_t objects = rd<uintptr_t>(arr);
     int32_t num = rd<int32_t>(arr + 8);
@@ -48,7 +48,7 @@ uintptr_t ItemAt(int32_t index) {
 
 size_t LookupNames(const std::vector<std::string>& names, std::vector<uint32_t>& idx) {
     idx.assign(names.size(), kNoName);
-    const uintptr_t blocks = UE::NameBlocksAddr();
+    const uintptr_t blocks = UE::NameBlocksAddress();
     if (!blocks || names.empty()) return 0;
     size_t missing = names.size();
     uint32_t cur = rd<uint32_t>(blocks - 8), cursor = rd<uint32_t>(blocks - 4);
@@ -82,7 +82,7 @@ size_t LookupNames(const std::vector<std::string>& names, std::vector<uint32_t>&
 }
 
 std::string NameString(uint32_t i) {
-    const uintptr_t blocks = UE::NameBlocksAddr();
+    const uintptr_t blocks = UE::NameBlocksAddress();
     if (!blocks || i == kNoName) return "";
     uint32_t cur = rd<uint32_t>(blocks - 8);
     if ((i >> 16) > cur) return "";
@@ -128,7 +128,7 @@ bool ClassIsA(uintptr_t cls, uint32_t nameIdx) {
 }
 
 int32_t ObjectCount() {
-    uintptr_t arr = UE::ObjObjectsAddr();
+    uintptr_t arr = UE::ObjObjectsAddress();
     return arr ? rd<int32_t>(arr + 8) : 0;
 }
 
