@@ -25,6 +25,10 @@ constexpr int kSliceGapMs = 30;     // at most ~one scan slice per server tick
 constexpr int kJobTimeoutMs = 2000;
 constexpr int kVerifyEveryMs = 30000;
 constexpr int kRetryMinMs = 10000, kRetryMaxEarlyMs = 30000, kRetryMaxMs = 120000;
+// While the engine names are not loaded or the game thread is busy loading the map, a retry costs
+// no game-thread time, so it runs every second: the first scan then lands right after the map
+// load, before the first player can log in (a 74 s backoff missed an early player-connected).
+constexpr int kRetryCheapMs = 1000;
 constexpr uint64_t kEarlyMs = 10 * 60 * 1000;  // the world loads in the first minutes
 
 std::atomic<uint64_t> g_hits[kMaxSubs];
@@ -149,7 +153,9 @@ bool Scan(const Names& names, const std::vector<std::string>& funcNames, const s
 
 // One resolve round: names, scan, then match and offsets on the game thread. Returns true when
 // every subscription matched at least one function and every requested object was found.
-bool Resolve() {
+// `scanned` is false when it gave up before the object scan (nothing ran on the game thread).
+bool Resolve(bool& scanned) {
+    scanned = false;
     std::vector<Subscription> subs;
     std::vector<std::string> requested;
     {
@@ -182,6 +188,7 @@ bool Resolve() {
         return false;
     }
 
+    scanned = true;
     std::vector<std::pair<uintptr_t, HandlerRef>> entries;
     std::vector<std::vector<std::string>> matched(subs.size());
     std::vector<std::string> missing(subs.size());
@@ -265,6 +272,7 @@ void Loop() {
     int retryMs = kRetryMinMs;
     bool complete = false;
     uint64_t nextResolve = 0, nextVerify = 0;
+    int32_t objectsAtScan = 0;
     const uint64_t started = NowMs();
     for (;;) {
         bool dirty;
@@ -277,11 +285,19 @@ void Loop() {
         }
         if (!UE::HaveGlobals()) continue;
         const uint64_t now = NowMs();
-        if (dirty || (!complete && now >= nextResolve)) {
-            complete = Resolve();
+        // The map load adds about a million objects (Blueprint overrides such as BaseGameMode_C.K2_PostLogin
+        // among them): the table is rescanned at once instead of waiting out the backoff, so the first
+        // login after a restart is not missed. ObjectCount is one aligned int read of the engine's
+        // object array header, fine on this thread.
+        const int32_t objects = UER::ObjectCount();
+        const bool grew = objectsAtScan > 0 && objects > objectsAtScan + objectsAtScan / 4;
+        if (dirty || grew || (!complete && now >= nextResolve)) {
+            bool scanned = false;
+            complete = Resolve(scanned);
+            if (scanned) objectsAtScan = objects;
             const int cap = NowMs() - started < kEarlyMs ? kRetryMaxEarlyMs : kRetryMaxMs;
             retryMs = complete ? kRetryMinMs : std::min(cap, retryMs * 3 / 2);
-            nextResolve = NowMs() + (uint64_t)retryMs;
+            nextResolve = NowMs() + (uint64_t)(complete || scanned ? retryMs : kRetryCheapMs);
             nextVerify = NowMs() + kVerifyEveryMs;
         } else if (complete && now >= nextVerify) {
             nextVerify = now + kVerifyEveryMs;
