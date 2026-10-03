@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "gamethread.h"
+#include "gtstats.h"
 #include "takaro/json_util.h"
 #include "ue/reflect.h"
 #include "ue/ue.h"
@@ -343,6 +344,11 @@ uintptr_t FoundObject(const std::string& name) {
 }
 
 void Invoke(const Slot* slot, void* obj, void* func, void* parms, OriginalFn original) {
+    uint64_t handlerNs = 0;
+    struct Account {  // handler time (not the original call) on every exit path
+        uint64_t& ns;
+        ~Account() { GtStats::AddHook(ns); }
+    } account{handlerNs};
     Call c;
     c.obj = (uintptr_t)obj;
     c.func = (uintptr_t)func;
@@ -354,8 +360,10 @@ void Invoke(const Slot* slot, void* obj, void* func, void* parms, OriginalFn ori
         const uint64_t t0 = NowNs();
         c.off = h.off;
         if (!h.fn(c, h.ctx)) run = false;
+        const uint64_t dt = NowNs() - t0;
+        handlerNs += dt;
         g_hits[h.sub & (kMaxSubs - 1)].fetch_add(1, std::memory_order_relaxed);
-        g_ns[h.sub & (kMaxSubs - 1)].fetch_add(NowNs() - t0, std::memory_order_relaxed);
+        g_ns[h.sub & (kMaxSubs - 1)].fetch_add(dt, std::memory_order_relaxed);
     }
     if (!run) {
         g_vetoes.fetch_add(1, std::memory_order_relaxed);
@@ -368,8 +376,10 @@ void Invoke(const Slot* slot, void* obj, void* func, void* parms, OriginalFn ori
         const uint64_t t0 = NowNs();
         c.off = h.off;
         h.fn(c, h.ctx);
+        const uint64_t dt = NowNs() - t0;
+        handlerNs += dt;
         g_hits[h.sub & (kMaxSubs - 1)].fetch_add(1, std::memory_order_relaxed);
-        g_ns[h.sub & (kMaxSubs - 1)].fetch_add(NowNs() - t0, std::memory_order_relaxed);
+        g_ns[h.sub & (kMaxSubs - 1)].fetch_add(dt, std::memory_order_relaxed);
     }
 }
 
