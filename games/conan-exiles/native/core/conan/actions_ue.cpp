@@ -511,10 +511,49 @@ bool ItemNameMap(const std::unordered_map<std::string, int32_t>*& out, std::stri
     return true;
 }
 
+namespace {
+bool Plausible(uintptr_t p) { return p >= 0x10000 && p < 0x800000000000ULL && (p & 7) == 0; }
+
+// Reads a short FString at `at` without trusting it: nullptr data, odd lengths and non-ASCII are "".
+std::string ShortAsciiFString(uintptr_t at) {
+    const uintptr_t data = Rd<uintptr_t>(at);
+    const int32_t num = Rd<int32_t>(at + 8), max = Rd<int32_t>(at + 12);
+    if (!Plausible(data & ~(uintptr_t)7) || num < 2 || num > 64 || max < num) return "";
+    std::string out;
+    for (int32_t i = 0; i < num - 1; i++) {
+        const char16_t c = Rd<char16_t>(data + 2 * (uintptr_t)i);
+        if (c < 0x20 || c > 0x7e) return "";
+        out.push_back((char)c);
+    }
+    return Rd<char16_t>(data + 2 * (uintptr_t)(num - 1)) == 0 ? out : "";
+}
+}  // namespace
+
+std::string Steam64Of(uintptr_t pc, const std::string& userIdFromUrl) {
+    Param psProp, uidProp;
+    if (FindProperty(ClassOf(pc), "PlayerState", "ObjectProperty", 8, psProp)) {
+        const uintptr_t ps = Rd<uintptr_t>(pc + (uintptr_t)psProp.offset);
+        if (Alive(ps) && FindProperty(ClassOf(ps), "UniqueID", "StructProperty", 48, uidProp)) {
+            const uintptr_t id = Rd<uintptr_t>(ps + (uintptr_t)uidProp.offset + kNetIdReplObject);
+            if (Plausible(id)) {
+                std::string s = ShortAsciiFString(id + kNetIdString);
+                if (s.size() > 6 && EqualsIgnoreCase(s.substr(0, 6), "steam:")) s = s.substr(6);
+                if (IsSteam64(s)) return s;
+            }
+        }
+    }
+    return IsSteam64(userIdFromUrl) ? userIdFromUrl : std::string();
+}
+
+std::vector<OnlinePc> OnlinePcs() {
+    std::vector<OnlinePc> out;
+    for (const auto& c : UE::OnlineControllers()) out.push_back({c.object, Steam64Of(c.object, c.userId), c.playerName});
+    return out;
+}
+
 uintptr_t ControllerFor(const std::string& who) {
-    for (const auto& c : UE::OnlineControllers()) {
-        if (IsSteam64(who) ? c.userId == who : (c.userId == who || EqualsIgnoreCase(c.playerName, who)))
-            return c.object;
+    for (const auto& c : OnlinePcs()) {
+        if (IsSteam64(who) ? c.steam64 == who : (c.steam64 == who || EqualsIgnoreCase(c.name, who))) return c.pc;
     }
     return 0;
 }

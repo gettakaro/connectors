@@ -32,7 +32,9 @@ public:
         if (!rx::EnsureWorld(error)) return false;
         bool ran = GameThread::Run(
             [&] {
-                for (auto& c : UE::OnlineControllers()) out.push_back({c.userId, c.playerName});
+                // Players without a resolvable Steam64 cannot be targeted or banned; they are skipped.
+                for (auto& c : rx::OnlinePcs())
+                    if (!c.steam64.empty()) out.push_back({c.steam64, c.name});
             },
             kJobTimeoutMs);
         if (!ran) error = "game thread did not respond";
@@ -221,8 +223,8 @@ public:
                 Frame fc(*frameFn);
                 if (!rx::Call(lib, *frameFn, fc, &r.error)) return;
                 r.frame = fc.GetInt64("ReturnValue");
-                auto pcs = UE::OnlineControllers();
-                const uintptr_t pc = pcs.empty() ? 0 : pcs.front().object;
+                auto pcs = rx::OnlinePcs();
+                const uintptr_t pc = pcs.empty() ? 0 : pcs.front().pc;
                 const uintptr_t world = pc ? pc : UE::LiveGameState();
                 if (!world) {
                     r.error = "no live world";
@@ -241,7 +243,7 @@ public:
                 f.Obj("WorldContextObject", world).Str("Command", cmd).Obj("SpecificPlayer", pc);
                 r.ok = rx::Call(lib, *exec, f, &r.error);
                 if (adminByte && rx::Alive(pc)) rx::Wr<uint8_t>(adminByte, saved);
-                r.context = pc ? "player " + pcs.front().userId : std::string("engine");
+                r.context = pc ? "player " + pcs.front().steam64 : std::string("engine");
                 r.gameThreadMs = (NowNs() - t0) / 1e6;
             },
             kJobTimeoutMs);

@@ -639,7 +639,13 @@ static void BuildWorld(const std::string& dir) {
     SetOnline(true);
     W<uintptr_t>(G.ps + 360, G.pc);   // Owner
     NewFStr(G.ps + 896, u"Limon#67642");  // PlayerNamePrivate
-    NewFStr(G.pc + 2992, u"76561198000735875");  // UserIDFromURLOptions
+    // A Funcom Live Services account: UserIDFromURLOptions holds the FLS id, not the Steam64 (lane L3).
+    // The Steam64 is the FUniqueNetId behind PlayerState.UniqueID: object pointer at +8, FString at +16.
+    NewFStr(G.pc + 2992, u"A-1HFFLI28NN");
+    W<uintptr_t>(G.pc + 760, G.ps);  // Controller.PlayerState
+    uintptr_t netId = (uintptr_t)Alloc(64);
+    NewFStr(netId + 16, u"76561198000735875");
+    W<uintptr_t>(G.ps + 768 + 8, netId);  // PlayerState.UniqueID -> FUniqueNetId
     W<uintptr_t>(G.pc + 816, G.pawn);  // Pawn
 
     // item-name tables: one plain, one with a hole, and a decoy the connector must not use
@@ -789,6 +795,18 @@ static void TestReflectedGame() {
           "m_IsAdmin");
     CHECK(rx::IsA(G.pawn, "ConanCharacter") && !rx::IsA(G.pc, "ConanCharacter"), "IsA by name");
 
+    CHECK(rx::Steam64Of(G.pc, "A-1HFFLI28NN") == kSteam, "Steam64 from PlayerState.UniqueID, not the FLS id");
+    fake::W<uintptr_t>(G.ps + 768 + 8, 0);
+    CHECK(rx::Steam64Of(G.pc, "A-1HFFLI28NN").empty() && rx::Steam64Of(G.pc, kSteam) == kSteam,
+          "no net id: only a Steam64 URL id is accepted");
+    fake::W<uintptr_t>(G.ps + 768 + 8, 0x10);
+    CHECK(rx::Steam64Of(G.pc, "").empty(), "implausible net id pointer is not followed");
+    {
+        uintptr_t netId = (uintptr_t)fake::Alloc(64);
+        fake::NewFStr(netId + 16, u"STEAM:76561198000735875");
+        fake::W<uintptr_t>(G.ps + 768 + 8, netId);
+        CHECK(rx::Steam64Of(G.pc, "A-1HFFLI28NN") == kSteam, "STEAM: prefix stripped");
+    }
     auto game = MakeUeMutationGame();
     std::vector<OnlinePlayer> online;
     CHECK(game->OnlinePlayers(online, err) && online.size() == 1 && online[0].steam64 == kSteam &&
