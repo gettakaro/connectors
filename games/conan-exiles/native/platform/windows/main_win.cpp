@@ -200,6 +200,9 @@ void StartConnector() {
     ao.savedDir = saved;
     const std::string shutdownSeconds = Env("TAKARO_CONAN_SHUTDOWN_SECONDS");
     ao.mutationOptions.shutdownSeconds = atoi(shutdownSeconds.empty() ? "60" : shutdownSeconds.c_str());
+    // Takaro and the clients' Discord notices see a logout for everyone the exit drops; 2 s for the
+    // outbox to send them (the exit itself takes minutes on this server).
+    ao.mutationOptions.beforeExit = [] { conan::EmitShutdownLogouts(2000); };
     const std::string buildId = PeIdentity();
     const uintptr_t base = ImageBase();
     pins::Result pr = pins::Resolve("windows", buildId, ExecutableRegions(),

@@ -47,6 +47,10 @@ struct EventsOptions {
 };
 
 void StartEvents(const EventsOptions& o);
+// Shutdown: queues player-disconnected for every player still logged in (taking them out of the
+// login cache, so a late K2_OnLogout cannot send a second one) and waits up to waitMs for the
+// events worker to hand them to the outbox. Returns the number queued. Any non-game thread.
+int EmitShutdownLogouts(int waitMs);
 void StopEvents();
 std::string EventsHealthJson();
 

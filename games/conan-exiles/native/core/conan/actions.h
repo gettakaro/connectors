@@ -75,6 +75,9 @@ struct MutationOptions {
     int consoleSettleMs = 450;  // wait for the server log to flush the command's lines (p90 201 ms)
     int sweepIdleMs = 2000;     // ban sweep cadence while bans exist
     bool startThreads = true;   // host tests drive SweepOnce() themselves
+    // Runs right before the engine exit (production: player-disconnected for everyone still
+    // logged in, since the exit drops the clients without a logout Takaro would see).
+    std::function<void()> beforeExit;
 };
 
 class Mutations {
