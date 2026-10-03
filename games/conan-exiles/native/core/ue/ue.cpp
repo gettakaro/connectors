@@ -23,7 +23,15 @@ constexpr size_t kObjFlags = 0x08, kObjIndex = 0x0C, kObjClass = 0x10, kObjName 
 constexpr size_t kStructSuper = 0x40, kStructChildProps = 0x50;
 constexpr size_t kFieldClass = 0x08, kFieldNext = 0x18, kFieldName = 0x20;
 constexpr size_t kFieldClassName = 0x08;
+// FProperty follows FField (0x2C bytes of members). Clang (Itanium ABI, the Linux server) packs ArrayDim
+// into FField's tail padding (+0x2C, ElementSize +0x30); MSVC (the Windows server) does not reuse a base's
+// tail padding (ArrayDim +0x30, ElementSize +0x34). PropertyFlags realigns to +0x38, so Offset_Internal is
+// +0x44 on both (live dump of build 25639945, El-Limon evidence native-stage2/L3).
+#ifdef _WIN32
+constexpr size_t kPropElementSize = 0x34, kPropOffset = 0x44;
+#else
 constexpr size_t kPropElementSize = 0x30, kPropOffset = 0x44;
+#endif
 
 constexpr uint32_t kRfSkip = 0x10 | 0x20 | 0x8000 | 0x10000;  // CDO, archetype, begin/finish destroyed
 constexpr uint32_t kInternalDead = 0x10000000 | 0x20000000;   // unreachable, garbage
