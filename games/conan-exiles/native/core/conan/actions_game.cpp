@@ -101,7 +101,9 @@ public:
                     .Int("quantity", quantity)
                     .Bool("loot", false)
                     .Float("durabilityPercentage", 1.0f)
-                    .Float("durability", 0.0f);
+                    // A durability >= 0 is an absolute value: 0 spawned weapons and tools broken
+                    // (live 2026-10-03, Stone Sword 0/180). -1 = use durabilityPercentage (full).
+                    .Float("durability", -1.0f);
                 if (!rx::Call(inv, *add, a, &st.error)) return;
                 Frame c2(*count);
                 c2.Int("TemplateId", templateId);
