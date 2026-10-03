@@ -21,7 +21,9 @@ struct PlayerLayout {
     int32_t psOwner = -1;            // Actor.Owner (PlayerState -> its controller)
     int32_t psName = -1;             // PlayerState.PlayerNamePrivate (FString, platform name)
     int32_t psAddress = -1;          // PlayerState.SavedNetworkAddress (FString)
-    int32_t pcUserId = -1;           // ConanPlayerController.UserIDFromURLOptions (FString, Steam64)
+    int32_t pcUserId = -1;           // ConanPlayerController.UserIDFromURLOptions (FString: Steam64 on old
+                                     // accounts, the Funcom account id "A-..." on newer ones)
+    int32_t psUniqueId = -1;         // PlayerState.UniqueID (FUniqueNetIdRepl): the platform id, Steam64
     int32_t pcPawn = -1;             // Controller.Pawn
     int32_t rootComponent = -1;      // Actor.RootComponent
     int32_t attachParent = -1;       // SceneComponent.AttachParent
@@ -32,10 +34,21 @@ struct PlayerLayout {
     int32_t templateId = -1;         // GameItem.TemplateId
     int32_t ownerInventory = -1;     // GameItem.m_OwnerInventory
     // pinned to build 25639945, not reflected
-    static constexpr int32_t kExactPing = 824;           // PlayerState float (GetPingInMilliseconds)
+    // PlayerState float (GetPingInMilliseconds), 8 bytes before SavedNetworkAddress on both servers:
+    // 824 under clang (Linux), 840 under MSVC (Windows, SavedNetworkAddress at 848; live 2026-10-03).
+#ifdef _WIN32
+    static constexpr int32_t kExactPing = 840;
+#else
+    static constexpr int32_t kExactPing = 824;
+#endif
     static constexpr int32_t kComponentToWorldT = 0x210;  // SceneComponent FTransform.Translation
     static constexpr int32_t kIntStats = 0x128, kFloatStats = 0x138;  // GameItem TArray, stride 48
     static constexpr int32_t kStatStride = 48, kStatId = 0xC, kStatValue = 0x14;
+    // FUniqueNetIdRepl: vtable, then TSharedPtr<FUniqueNetId> (object at +8). The object is an
+    // FUniqueNetIdString (Type FName "STEAM") whose id FString sits at +0x10 on Linux (live
+    // 2026-10-03: "76561198000735875"); the reader tries the nearby slots for the MSVC layout.
+    static constexpr int32_t kNetIdPtr = 8;
+    static constexpr int32_t kNetIdStringSlots[4] = {0x10, 0x18, 0x08, 0x20};
 
     // Resolves every reflected offset; false with the missing names in `error`.
     bool Resolve(const UE::Reflection& r, std::string& error);
@@ -43,7 +56,9 @@ struct PlayerLayout {
 
 struct PlayerRecord {
     uintptr_t ps = 0, pc = 0, pawn = 0;
-    std::string steam64, name, characterName, ip;
+    std::string steam64;  // the Takaro gameId: Steam64 from PlayerState.UniqueID (else the best id we have)
+    std::string uniqueId, urlId;  // PlayerState.UniqueID string, UserIDFromURLOptions (may be "A-...")
+    std::string name, characterName, ip;
     float ping = -1;  // ExactPing (ms); < 0 = unknown
 };
 
@@ -84,6 +99,9 @@ public:
     // Decoded int/float stats of one item: {id -> value}.
     bool Stats(uintptr_t item, std::vector<std::pair<int, int32_t>>& ints,
                std::vector<std::pair<int, float>>& floats) const;
+
+    // The id string behind PlayerState.UniqueID ("" when unreadable).
+    std::string UniqueIdString(uintptr_t ps) const;
 
 private:
     bool ReadPtrArray(uintptr_t arrayAt, int32_t maxNum, std::vector<uintptr_t>& out) const;

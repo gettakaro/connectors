@@ -26,7 +26,13 @@ constexpr size_t kObjHeader = 0x28;
 constexpr size_t kStructSuper = 0x40, kStructChildren = 0x48, kStructChildProps = 0x50, kStructSize = 0x58;
 constexpr size_t kUFieldNext = 0x28;
 constexpr size_t kFieldClass = 0x08, kFieldNext = 0x18, kFieldName = 0x20, kFieldClassName = 0x08;
+// ElementSize: +0x30 under clang (Linux server), +0x34 under MSVC (Windows server), which does not
+// reuse FField's tail padding; see ue.cpp.
+#ifdef _WIN32
+constexpr size_t kPropElementSize = 0x34, kPropOffset = 0x44;
+#else
 constexpr size_t kPropElementSize = 0x30, kPropOffset = 0x44;
+#endif
 constexpr size_t kFuncParmsSize = 0xB6;
 constexpr uint32_t kRfClassDefault = 0x10, kRfArchetype = 0x20, kRfBeginDestroyed = 0x8000,
                    kRfFinishDestroyed = 0x10000;
