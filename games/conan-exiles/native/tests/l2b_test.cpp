@@ -570,7 +570,7 @@ struct World {
     uintptr_t players = 0;  // PlayerArray data
     std::map<int32_t, int32_t> counts;
     double loc[3] = {10, 20, 30};
-    std::vector<std::string> kicks, commands;
+    std::vector<std::string> kicks, told, commands;
     std::vector<int> adminDuringCall;
     std::vector<uintptr_t> execSpecific, execWorld;
     bool tpCheat = true, tpSnap = false;
@@ -732,6 +732,12 @@ static void BuildWorld(const std::string& dir) {
         uint64_t magic = 0x7e47;
         memcpy(p + 24, &magic, 8);
     };
+    H["PlayerController.ClientWasKicked"] = [](uintptr_t o, uint8_t* p) {
+        CHECK(o == G.pc, "the kicked controller is told the reason");
+        uintptr_t ptr;
+        memcpy(&ptr, p, 8);
+        G.told.push_back(Utf16To8(*(std::u16string*)ptr));
+    };
     H["PlayerController.ClientReturnToMainMenuWithTextReason"] = [](uintptr_t o, uint8_t* p) {
         CHECK(o == G.pc, "kick the controller");
         uintptr_t ptr;
@@ -843,7 +849,7 @@ static void TestReflectedGame() {
           "admin flag set only during the call");
 
     r = m.Execute("kickPlayer", J("{\"gameId\":\"76561198000735875\",\"reason\":\"Bye now\"}"));
-    CHECK(r.ok && G.kicks.size() == 1 && G.kicks[0] == "Bye now", "kick with the reason: %s", r.error.c_str());
+    CHECK(r.ok && G.kicks.size() == 1 && G.kicks[0] == "Bye now" && G.told.size() == 1 && G.told[0] == "Bye now", "kick with the reason: %s", r.error.c_str());
 
     // with nobody online the console is the engine's
     r = m.Execute("executeConsoleCommand", J("{\"command\":\"stat fps\"}"));

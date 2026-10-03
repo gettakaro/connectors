@@ -873,6 +873,24 @@
     {
       "kind": "function",
       "owner": "PlayerController",
+      "name": "ClientWasKicked",
+      "layout": "runtime",
+      "usedBy": "kickPlayer, ban kicks: the reason the client's main menu shows",
+      "baseline": {
+        "parmsSize": 16,
+        "params": [
+          [
+            "KickReason",
+            "TextProperty",
+            0,
+            16
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "PlayerController",
       "name": "ClientReturnToMainMenuWithTextReason",
       "layout": "runtime",
       "usedBy": "kickPlayer, ban kicks",

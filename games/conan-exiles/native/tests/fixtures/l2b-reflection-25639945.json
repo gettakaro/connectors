@@ -60,6 +60,20 @@
    "properties": [],
    "functions": [
     {
+     "name": "ClientWasKicked",
+     "flags": "0x1020cc2",
+     "parmsSize": 16,
+     "params": [
+      {
+       "name": "KickReason",
+       "type": "TextProperty",
+       "offset": 0,
+       "size": 16,
+       "flags": "0x10000008000082"
+      }
+     ]
+    },
+    {
      "name": "ClientReturnToMainMenuWithTextReason",
      "flags": "0x1020cc2",
      "parmsSize": 16,
