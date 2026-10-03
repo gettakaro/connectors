@@ -47,7 +47,7 @@ class Image:
         self.text = None
         self.ranges = []  # (lo, hi) address ranges of mapped data and code, for the address heuristic
         self.sections = []  # (name, lo, hi, writable) of every mapped section
-        self.identity = ""  # GNU build-id (ELF) or the PE code id (TimeDateStamp + SizeOfImage)
+        self.identity = ""  # GNU build-id (ELF) or the PE identity "<TimeDateStamp>-<SizeOfImage>"
         if d[:2] == b"MZ":
             self.kind = "pe"
             pe_off, = struct.unpack_from("<I", d, 0x3C)
@@ -57,9 +57,9 @@ class Image:
             sec_off = pe_off + 24 + opt_size
             self.base, = struct.unpack_from("<Q", d, pe_off + 24 + 24)
             size_of_image, = struct.unpack_from("<I", d, pe_off + 24 + 56)
-            # The key Microsoft symbol servers use for an image: stable per build, readable at runtime
-            # from the loaded module's own headers.
-            self.identity = "%08X%X" % (stamp, size_of_image)
+            # TimeDateStamp-SizeOfImage: stable per build, readable at runtime from the loaded
+            # module's own headers; the same string platform/windows/pe_image.cpp PeIdentity() builds.
+            self.identity = "%x-%x" % (stamp, size_of_image)
             for i in range(nsec):
                 o = sec_off + i * 40
                 name = d[o:o + 8].rstrip(b"\0").decode()

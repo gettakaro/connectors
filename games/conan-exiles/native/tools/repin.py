@@ -757,10 +757,12 @@ def cmd_catalog(a):
     for b in pins["builds"]:
         if not pins["signatures"].get(b["platform"]):
             fails.append("build %s is pinned for %s, which has no signatures" % (b["build"], b["platform"]))
+        listed = b["platform"] in game.get("platforms", [])
         if not any(t["platform"] == b["platform"] and str(t["revision"]) == str(b["build"]) for t in targets):
-            fails.append("pins.json pins %s build %s but catalog has no target %s-%s" % (
+            # A platform the catalog does not ship yet (pinned ahead of its release) only warns.
+            (fails if listed else warns).append("pins.json pins %s build %s but catalog has no target %s-%s" % (
                 b["platform"], b["build"], b["platform"], b["build"]))
-        if b["platform"] not in game.get("platforms", []):
+        if not listed:
             warns.append("pins.json pins a %s build but catalog game.json lists platforms %s" % (
                 b["platform"], game.get("platforms")))
     for t in targets:

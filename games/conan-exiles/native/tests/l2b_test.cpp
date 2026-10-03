@@ -797,8 +797,8 @@ static void TestReflectedGame() {
 
     CHECK(rx::Steam64Of(G.pc, "A-1HFFLI28NN") == kSteam, "Steam64 from PlayerState.UniqueID, not the FLS id");
     fake::W<uintptr_t>(G.ps + 768 + 8, 0);
-    CHECK(rx::Steam64Of(G.pc, "A-1HFFLI28NN").empty() && rx::Steam64Of(G.pc, kSteam) == kSteam,
-          "no net id: only a Steam64 URL id is accepted");
+    CHECK(rx::Steam64Of(G.pc, "A-1HFFLI28NN") == "A-1HFFLI28NN" && rx::Steam64Of(G.pc, kSteam) == kSteam,
+          "no net id: the URL id, the same gameId getPlayers reports (conan/identity.h)");
     fake::W<uintptr_t>(G.ps + 768 + 8, 0x10);
     CHECK(rx::Steam64Of(G.pc, "").empty(), "implausible net id pointer is not followed");
     {

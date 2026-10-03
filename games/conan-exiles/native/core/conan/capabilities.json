@@ -19,7 +19,7 @@
       "implementation": "native",
       "responseShape": "public Takaro player DTO array",
       "verification": "Live 2026-10-03 rig 349 (native l2a, bridge stopped): MCP gameserverGetPlayers -> {gameId 76561198000735875, name Limon#67642, steamId, platformId, ip 192.168.129.15, ping}; client Player List shows werwerwer / Limon#67642 (El-Limon evidence native-stage2/L2a)",
-      "reason": "Worker-thread safe self-reads (process_vm_readv): GameStateBase.PlayerArray -> PlayerState -> Owner controller; Steam64 from UserIDFromURLOptions, name PlayerNamePrivate, ip SavedNetworkAddress, ping ExactPing (PlayerState+824, checked once against GetPingInMilliseconds). No RCON."
+      "reason": "Worker-thread safe self-reads (process_vm_readv): GameStateBase.PlayerArray -> PlayerState -> Owner controller; gameId = Steam64 from PlayerState.UniqueID (conan/identity, shared by every action and event; UserIDFromURLOptions only as a fallback), name PlayerNamePrivate, ip SavedNetworkAddress, ping ExactPing (PlayerState+824, checked once against GetPingInMilliseconds). No RCON."
     },
     "getPlayerLocation": {
       "status": "live-supported",

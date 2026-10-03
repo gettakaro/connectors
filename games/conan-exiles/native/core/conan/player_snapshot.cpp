@@ -1,5 +1,6 @@
 #include "conan/player_snapshot.h"
 
+#include "conan/identity.h"
 #include "conan/text.h"
 
 #include <cstring>
@@ -98,12 +99,9 @@ bool PlayerReader::Players(const std::vector<uintptr_t>& gameStates, std::vector
             p.pc = m_.Rd<uintptr_t>(ps + (uintptr_t)l_.psOwner);
             if (!r_.Alive(p.pc) || !r_.InstanceOf(p.pc, l_.pcClass)) continue;
             m_.ReadFString(p.pc + (uintptr_t)l_.pcUserId, p.urlId, 64);
-            p.uniqueId = UniqueIdString(ps);
-            // gameId = Steam64 everywhere: PlayerState.UniqueID first (the login URL id is the Funcom
-            // account id "A-..." for newer accounts), then the URL id if it is a Steam64.
-            if (IsSteam64(p.uniqueId)) p.steam64 = p.uniqueId;
-            else if (IsSteam64(p.urlId)) p.steam64 = p.urlId;
-            else p.steam64 = !p.uniqueId.empty() ? p.uniqueId : p.urlId;
+            const UniqueIdProbe uid = Steam64FromUniqueId(m_, ps + (uintptr_t)l_.psUniqueId);
+            p.uniqueId = uid.steam64.empty() ? uid.raw : uid.steam64;
+            p.steam64 = GameIdFrom(uid, p.urlId);  // conan/identity.h: the one gameId rule
             if (p.steam64.empty()) continue;
             bool dup = false;
             for (auto& o : out) dup = dup || o.steam64 == p.steam64;
@@ -128,18 +126,8 @@ bool PlayerReader::Players(const std::vector<uintptr_t>& gameStates, std::vector
 }
 
 std::string PlayerReader::UniqueIdString(uintptr_t ps) const {
-    uintptr_t id = m_.Rd<uintptr_t>(ps + (uintptr_t)l_.psUniqueId + PlayerLayout::kNetIdPtr);
-    if (!UE::Plausible(id)) return "";
-    std::string first;
-    for (int32_t slot : PlayerLayout::kNetIdStringSlots) {
-        std::string s;
-        if (!m_.ReadFString(id + (uintptr_t)slot, s, 128) || s.empty()) continue;
-        if (IsSteam64(s)) return s;
-        bool printable = true;
-        for (char c : s) printable = printable && c > 32 && c < 127;
-        if (printable && first.empty()) first = s;
-    }
-    return first;
+    const UniqueIdProbe uid = Steam64FromUniqueId(m_, ps + (uintptr_t)l_.psUniqueId);
+    return uid.steam64.empty() ? uid.raw : uid.steam64;
 }
 
 bool PlayerReader::Location(uintptr_t pawn, conan::Location& out, std::string& error) const {

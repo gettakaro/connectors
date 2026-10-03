@@ -193,6 +193,9 @@ void StartConnector() {
     // 2. pins (RVAs against the ASLR base)
     conan::AdapterOptions ao;
     ao.version = TAKARO_CONAN_NATIVE_VERSION;
+    ao.savedDir = saved;
+    const std::string shutdownSeconds = Env("TAKARO_CONAN_SHUTDOWN_SECONDS");
+    ao.mutationOptions.shutdownSeconds = atoi(shutdownSeconds.empty() ? "60" : shutdownSeconds.c_str());
     const std::string buildId = PeIdentity();
     const uintptr_t base = ImageBase();
     pins::Result pr = pins::Resolve("windows", buildId, ExecutableRegions(),

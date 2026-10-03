@@ -1,6 +1,7 @@
 #include "conan/chat.h"
 
 #include "common.h"
+#include "conan/actions_ue.h"
 #include "conan/text.h"
 #include "gamethread.h"
 #include "ue/ue.h"
@@ -51,9 +52,10 @@ bool EnsureReady(std::string& error) {
     return ready;
 }
 
-bool Matches(const UE::Controller& c, const std::string& recipient) {
-    if (IsSteam64(recipient)) return c.userId == recipient;
-    return c.userId == recipient || EqualsIgnoreCase(c.playerName, recipient);
+// `gameId` comes from rx::Steam64Of (conan/identity.h), the same id getPlayers and events report.
+bool Matches(const std::string& gameId, const UE::Controller& c, const std::string& recipient) {
+    if (IsSteam64(recipient)) return gameId == recipient;
+    return gameId == recipient || EqualsIgnoreCase(c.playerName, recipient);
 }
 }  // namespace
 
@@ -86,9 +88,12 @@ ChatOutcome SendChat(const ChatRequest& cmd) {
             void* func = UE::ChatFunction();
             for (const auto& c : UE::OnlineControllers()) {
                 online++;
-                if (!cmd.recipient.empty() && !Matches(c, cmd.recipient)) {
-                    if (seen.size() < 512) seen += (seen.empty() ? "" : ", ") + c.userId + "/" + c.playerName;
-                    continue;
+                if (!cmd.recipient.empty()) {
+                    const std::string gameId = rx::Steam64Of(c.object, c.userId);
+                    if (!Matches(gameId, c, cmd.recipient)) {
+                        if (seen.size() < 512) seen += (seen.empty() ? "" : ", ") + gameId + "/" + c.playerName;
+                        continue;
+                    }
                 }
                 alignas(16) uint8_t parms[ChatRpc::kSize];
                 PackChatRpc(parms, ticks, user, channel, message);
@@ -103,7 +108,7 @@ ChatOutcome SendChat(const ChatRequest& cmd) {
 
     NativeLog("sendMessage %s: online=%d delivered=%d game-thread=%.3f ms%s%s",
               cmd.recipient.empty() ? "global" : "targeted", online, delivered, jobNs / 1e6,
-              delivered == 0 && !seen.empty() ? "; online userId/name: " : "", delivered == 0 ? seen.c_str() : "");
+              delivered == 0 && !seen.empty() ? "; online gameId/name: " : "", delivered == 0 ? seen.c_str() : "");
     ChatOutcome o;
     o.online = online;
     o.delivered = delivered;

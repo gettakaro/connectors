@@ -153,13 +153,9 @@ bool EnsureLookups(Lookups& out, std::string& error);
 // Lower-cased item code -> template id, from every ItemNameToTemplateID table (built once).
 bool ItemNameMap(const std::unordered_map<std::string, int32_t>*& out, std::string& error);
 
-// Game thread: the Steam64 of a player controller, or "" when it has none. Conan's
-// UserIDFromURLOptions is NOT always the Steam64 (a Funcom Live Services account gets its FLS id
-// there, e.g. "A-1HFFLI28NN"; lane L3). The Steam64 is the FUniqueNetId behind
-// Controller.PlayerState -> PlayerState.UniqueID (FUniqueNetIdRepl, 48 bytes): its shared object
-// pointer is at +8, and that object's id FString at +16 (read live on 25639945: "76561198000735875").
-// An optional "STEAM:" prefix is stripped. UserIDFromURLOptions is used only when it is a Steam64.
-constexpr size_t kNetIdReplObject = 8, kNetIdString = 16;
+// Game thread: the Takaro gameId (Steam64) of a player controller: Controller.PlayerState ->
+// PlayerState.UniqueID decoded by conan/identity.h (the one rule every path uses), with
+// UserIDFromURLOptions as the fallback the rule allows. "" when the controller has neither.
 std::string Steam64Of(uintptr_t pc, const std::string& userIdFromUrl);
 
 struct OnlinePc {
