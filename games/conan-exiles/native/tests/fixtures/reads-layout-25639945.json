@@ -46,6 +46,12 @@
      "type": "StrProperty",
      "offset": 896,
      "size": 16
+    },
+    {
+     "name": "UniqueID",
+     "type": "StructProperty",
+     "offset": 768,
+     "size": 48
     }
    ],
    "functions": [

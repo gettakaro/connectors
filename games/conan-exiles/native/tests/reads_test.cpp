@@ -252,6 +252,9 @@ struct World {
             W<uintptr_t>(data + 0x18, ref);
             W<uintptr_t>(ref + 0x18, entry);
             FString(entry + 0x10, s);
+        } else if (kind == 3) {  // a vtable the seeds do not know, laid out like the plain one
+            W<uintptr_t>(data, 0xbeef000);
+            FString(data + 0x20, s);
         } else {
             W<uintptr_t>(data, 0xdead000);
         }
@@ -296,6 +299,7 @@ struct Server {
     float pingOverride = -1;  // GetPingInMilliseconds returns this instead of ExactPing when >= 0
     bool textLies = false;     // Conv_TextToString disagrees with the worker decode
     int gameJobs = 0;
+    int textCalls = 0;
 
     uintptr_t Item(uintptr_t inv, int32_t templateId, int32_t stack, float dur, float maxDur) {
         uintptr_t it = w.Obj(w.classes["GameItem"], "GameItem", 0, 600);
@@ -341,7 +345,7 @@ struct Server {
     }
     void Player(uintptr_t& ps, uintptr_t& pc, uintptr_t& pawn, uintptr_t& root, const std::string& steam,
                 const std::string& name, const std::string& character, const std::string& ip, float ping, double x, double y,
-                double z) {
+                double z, const std::string& urlId) {
         ps = w.Obj(w.classes["PlayerState"], "PlayerState", 0, 1000);
         pc = w.Obj(w.classes["ConanPlayerController"], "FunCombat_PlayerController_C", 0, 6000);
         pawn = w.Obj(w.classes["BasePlayerChar_C"], "BasePlayerChar_C", 0, 16000);
@@ -350,7 +354,15 @@ struct Server {
         w.FString(ps + Off(w, "PlayerState", "PlayerNamePrivate"), name);
         w.FString(ps + Off(w, "PlayerState", "SavedNetworkAddress"), ip);
         w.W<float>(ps + 824, ping);
-        w.FString(pc + Off(w, "ConanPlayerController", "UserIDFromURLOptions"), steam);
+        w.FString(pc + Off(w, "ConanPlayerController", "UserIDFromURLOptions"), urlId);
+        // PlayerState.UniqueID: FUniqueNetIdRepl {vtable, TSharedPtr<FUniqueNetIdString>} -> id FString at +0x10
+        uintptr_t netId = w.Alloc(0x40);
+        w.W<uintptr_t>(netId, 0x16dbe80);
+        w.FString(netId + 0x10, steam);
+        w.FNameAt(netId + 0x20, "STEAM");
+        int32_t uid = Off(w, "PlayerState", "UniqueID");
+        w.W<uintptr_t>(ps + uid, 0x1272598);
+        w.W<uintptr_t>(ps + uid + 8, netId);
         w.W<uintptr_t>(pc + Off(w, "Controller", "Pawn"), pawn);
         w.W<uintptr_t>(pawn + Off(w, "Actor", "RootComponent"), root);
         w.FString(pawn + Off(w, "BaseBPChar_C", "CharacterName"), character);
@@ -370,8 +382,9 @@ struct Server {
         w.Obj(gsClass, "Default__BaseGameState_C", 0, 900, 0x10);  // the CDO is not a live GameState
         gs = w.Obj(gsClass, "BaseGameState_C", persistent, 900, 0, false, 2147480827);
         Player(ps1, pc1, pawn1, root1, "76561198000735875", "Limon#67642", "werwerwer", "192.168.129.15", 55.5f, 101746.72,
-               319894.28, -21582.48);
-        Player(ps2, pc2, pawn2, root2, "76561198000000002", "Second", "rider", "10.0.0.2", 120.4f, 1, 2, 3);
+               319894.28, -21582.48, "76561198000735875");
+        Player(ps2, pc2, pawn2, root2, "76561198000000002", "Second", "rider", "10.0.0.2", 120.4f, 1, 2, 3,
+               "A-1HFFLI28NN");  // a newer account: the login URL carries the Funcom id, not the Steam64
         // player 2 rides a mount: AttachParent set, RelativeLocation is local, ComponentToWorld is the world
         w.W<uintptr_t>(root2 + Off(w, "SceneComponent", "AttachParent"), root1);
         double world2[3] = {5000.5, -6000.25, -100};
@@ -440,7 +453,9 @@ struct Server {
                      {"51205", itemRow("XX_Unarmed Left", "XX_ShortDesc")},
                      {"77777", itemRow("Dev Thing", "x")},
                      {"387", itemRow("5th Anniversary Cake", "XX_ShortDesc")},
-                     {"60000", itemRow("Mystery Text", "Unknown vtable row", 2)}});
+                     {"60000", itemRow("Mystery Text", "Unknown vtable row", 2)},
+                     {"60001", itemRow("Learned One", "x", 3)},
+                     {"60002", itemRow("Learned Two", "y", 3)}});
         auto codeRow = [&](int32_t id) {
             uintptr_t row = w.Alloc(8);
             w.W<int32_t>(row, id);
@@ -514,6 +529,7 @@ struct Server {
                                                              : 0;
                 memcpy(p + 4, &v, 4);
             } else if (name == "Conv_TextToString") {
+                textCalls++;
                 // Find which FText was copied in (by its ITextData pointer).
                 uintptr_t data;
                 memcpy(&data, p, 8);
@@ -644,6 +660,8 @@ static void TestReads() {
        "{\"code\":\"95916\",\"name\":\"Anvil Keeper Greataxe\",\"description\":\"Greataxe\"},"
        "{\"code\":\"8934\",\"name\":\"\\\"Guardian in the Unnamed City\\\" by Vladimir Shapovalov\",\"description\":\"A "
        "framed painting\"},"
+       "{\"code\":\"60001\",\"name\":\"Learned One\",\"description\":\"x\"},"
+       "{\"code\":\"60002\",\"name\":\"Learned Two\",\"description\":\"y\"},"
        "{\"code\":\"60000\",\"name\":\"Mystery Text\",\"description\":\"Unknown vtable row\"},"
        "{\"code\":\"PlantFiber\",\"name\":\"Plant Fiber\",\"description\":\"Fiber\"},"
        "{\"code\":\"Stone\",\"name\":\"Stone\",\"description\":\"Roughly hewn chunk of stone\"},"
@@ -685,6 +703,12 @@ static void TestReads() {
                 "\"platformId\":\"steam:76561198000099999\"}");
     r = rs->Execute("getPlayer", J("{}"));
     CHECK(!r.ok, "no identifier");
+    r = rs->Execute("getPlayer", J("{\"gameId\":\"A-1HFFLI28NN\"}"));
+    CHECK(Dump(r).find("\"gameId\":\"76561198000000002\"") != std::string::npos,
+          "a Funcom account id finds the player, whose gameId stays the Steam64: %s", Dump(r).c_str());
+    // Conv_TextToString ran for the unknown vtables only (2 rows of 0xdead000, 1 to learn 0xbeef000) plus the
+    // self-check samples, not for every text.
+    CHECK(s.textCalls <= 2 + 1 + 12, "game-thread text calls: %d", s.textCalls);
 
     // ---- location
     r = rs->Execute("getPlayerLocation", J("{\"gameId\":\"76561198000735875\"}"));
