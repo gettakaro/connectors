@@ -94,6 +94,34 @@ jobs:
       - name: Build and test the native library
         run: games/conan-exiles/native/build.sh --tests
 
+  # The Windows native connector (winmm.dll proxy), cross-compiled with the zig the Enshrouded
+  # release builder pins (same URL and SHA-256). The build checks the vendored MinHook hashes and
+  # the DLL's exports, and zeroes the link timestamps so the bytes are reproducible.
+  native-windows:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
+      - name: Install the pinned zig 0.13.0
+        shell: bash
+        run: |
+          curl -fsSL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz -o "$RUNNER_TEMP/zig.tar.xz"
+          echo "d45312e61ebcc48032b77bc4cf7fd6915c11fa16e4aad116b66c9468211230ea  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/zig"
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "ZIG=$RUNNER_TEMP/zig/zig" >> "$GITHUB_ENV"
+      - name: Build the Windows DLL twice and compare
+        shell: bash
+        run: |
+          games/conan-exiles/native/platform/windows/build.sh
+          cp games/conan-exiles/native/dist-windows/winmm.dll "$RUNNER_TEMP/first.dll"
+          games/conan-exiles/native/platform/windows/build.sh
+          cmp "$RUNNER_TEMP/first.dll" games/conan-exiles/native/dist-windows/winmm.dll
+
   params:
     runs-on: ubuntu-latest
     permissions:

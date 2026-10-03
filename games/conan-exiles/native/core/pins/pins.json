@@ -21,7 +21,26 @@
         "offset": 9
       }
     ],
-    "windows": []
+    "windows": [
+      {
+        "anchor": "processEvent",
+        "pattern": "40 55 56 57 41 54 41 55 41 56 41 57 ?? ?? ?? ?? 01 00 00 48 8D 6C 24 30 48 ?? ?? ?? ?? 00 ?? ?? ?? ?? ?? ?? ?? ?? 48 33 C5 48 ?? ?? ?? ?? 00 00 8B",
+        "capture": "start",
+        "offset": 0
+      },
+      {
+        "anchor": "objObjects",
+        "pattern": "4C 8B 15 ?? ?? ?? ?? 0F B7 CB",
+        "capture": "rip32",
+        "offset": 3
+      },
+      {
+        "anchor": "nameBlocks",
+        "pattern": "4C 8D 05 ?? ?? ?? ?? 4C 3B F7",
+        "capture": "rip32",
+        "offset": 3
+      }
+    ]
   },
   "builds": [
     {
@@ -32,6 +51,16 @@
         "processEvent": "0x3f12340",
         "objObjects": "0xc35a580",
         "nameBlocks": "0xc2a5d40"
+      }
+    },
+    {
+      "platform": "windows",
+      "buildId": "a0e8d0c4-b619000",
+      "build": "25639945",
+      "anchors": {
+        "processEvent": "0x16408d0",
+        "objObjects": "0xa92cdc0",
+        "nameBlocks": "0xa85e010"
       }
     }
   ]

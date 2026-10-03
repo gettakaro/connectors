@@ -3,7 +3,7 @@
 # --tests); --native uses the toolchain of the current machine (the container calls it that way).
 #   unit_test     core logic (protocol, config, outbox, heartbeat, pins, adapter, registry, text)
 #   pins_oracle   the signature scan over the real 25639945 binary (CONAN_SERVER_BINARY; skipped
-#                 when not given)
+#                 when not given); pins_oracle_pe the same over the Windows exe (CONAN_SERVER_BINARY_WIN)
 #   drift_test    capabilities.json / pins.json equal the compiled tables
 #   wire_test     the production Takaro half against a fake Takaro (TLS WebSocket), incl. a 20 s outage
 #   so_test       the real dist/libtakaro-conan-native.so preloaded into a stand-in server
@@ -31,6 +31,14 @@ if [ -n "${CONAN_SERVER_BINARY:-}" ]; then
   ./tests/build/pins_oracle "$CONAN_SERVER_BINARY"
 else
   echo "SKIP pins_oracle: set CONAN_SERVER_BINARY to a 25639945 ConanSandboxServer-Linux-Shipping"
+fi
+
+echo "== pins_oracle_pe"
+"$CXX" "${FLAGS[@]}" -O2 tests/pins_oracle_pe.cpp core/pins/pins.cpp core/common.cpp -o tests/build/pins_oracle_pe
+if [ -n "${CONAN_SERVER_BINARY_WIN:-}" ]; then
+  ./tests/build/pins_oracle_pe "$CONAN_SERVER_BINARY_WIN"
+else
+  echo "SKIP pins_oracle_pe: set CONAN_SERVER_BINARY_WIN to a 25639945 ConanSandboxServer-Win64-Shipping.exe"
 fi
 
 echo "== harness + drift_test"

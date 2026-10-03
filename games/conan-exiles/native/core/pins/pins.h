@@ -38,9 +38,9 @@ struct Anchors {
 
 struct BuildPin {
     const char* platform;  // "linux" | "windows"
-    const char* buildId;   // GNU build-id (linux) / PE identity (windows)
+    const char* buildId;   // GNU build-id (linux) / PE identity "<TimeDateStamp>-<SizeOfImage>" (windows)
     const char* build;     // Steam build id, for people
-    Anchors expected;
+    Anchors expected;      // linux: absolute (non-PIE); windows: RVAs (ASLR), compared after subtracting the base
 };
 
 // One readable code region of the server image, as mapped in this process.
@@ -74,8 +74,10 @@ std::vector<uintptr_t> FindMatches(const std::vector<Region>& regions, const std
 
 // Scans and checks. `allowUnpinned` (TAKARO_CONAN_ALLOW_UNPINNED_BUILD=1, re-pin work only)
 // accepts a build that is not in the table when every signature still matches exactly once.
+// `imageBase` is the runtime base of a relocated image (Windows): the found anchors stay absolute,
+// the pinned ones are RVAs and are compared as found - imageBase. 0 for the non-PIE Linux image.
 Result Resolve(const std::string& platform, const std::string& buildId, const std::vector<Region>& regions,
-               bool allowUnpinned);
+               bool allowUnpinned, uintptr_t imageBase = 0);
 
 // The compiled-in table as JSON, for the drift test against pins.json.
 std::string TableJson();
