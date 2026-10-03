@@ -37,15 +37,30 @@ uintptr_t RowStructOf(const Reflection& r, uintptr_t table) {
 int64_t Elapsed(uint64_t t0) { return (int64_t)(NowNs() - t0); }
 }  // namespace
 
+TextVtables DefaultTextVtables() {
+#ifdef _WIN32
+    return {};  // learned at runtime
+#else
+    return {{TextLayout::kPlainVtable, TextKind::Plain}, {TextLayout::kStringTableVtable, TextKind::StringTable}};
+#endif
+}
+
 TextKind DecodeText(const Mem& m, uintptr_t at, std::string& out) {
+    static const TextVtables def = DefaultTextVtables();
+    return DecodeText(m, at, out, def);
+}
+
+TextKind DecodeText(const Mem& m, uintptr_t at, std::string& out, const TextVtables& vtables) {
     using namespace TextLayout;
     out.clear();
     uintptr_t data = m.Rd<uintptr_t>(at);
     if (!UE::Plausible(data)) return TextKind::Unreadable;
     uintptr_t vt = 0;
     if (!m.Get(data, vt)) return TextKind::Unreadable;
-    if (vt == kPlainVtable) return m.ReadFString(data + kPlainString, out) ? TextKind::Plain : TextKind::Unreadable;
-    if (vt == kStringTableVtable) {
+    auto it = vtables.find(vt);
+    TextKind kind = it == vtables.end() ? TextKind::UnknownVtable : it->second;
+    if (kind == TextKind::Plain) return m.ReadFString(data + kPlainString, out) ? TextKind::Plain : TextKind::Unreadable;
+    if (kind == TextKind::StringTable) {
         uintptr_t ref = m.Rd<uintptr_t>(data + kStRef);
         uintptr_t entry = UE::Plausible(ref) ? m.Rd<uintptr_t>(ref + kStEntry) : 0;
         if (!UE::Plausible(entry)) return TextKind::Unreadable;
@@ -149,7 +164,26 @@ std::string Catalogue::Text(const Reflection& r, const SlowTextFn& slow, uintptr
         stats_.textMissing++;
         return "";
     }
-    TextKind k = DecodeText(r.mem(), addr, s);
+    TextKind k = DecodeText(r.mem(), addr, s, vtables_);
+    if (k == TextKind::UnknownVtable && slow) {
+        // Learn this vtable once: ask the engine, then see which worker layout yields the same string.
+        uintptr_t vt = r.mem().Rd<uintptr_t>(r.mem().Rd<uintptr_t>(addr));
+        if (!slowOnly_.count(vt) && slow(addr, s)) {
+            stats_.textSlow++;
+            for (TextKind cand : {TextKind::Plain, TextKind::StringTable}) {
+                TextVtables probe{{vt, cand}};
+                std::string w;
+                if (!s.empty() && DecodeText(r.mem(), addr, w, probe) == cand && w == s) {
+                    vtables_[vt] = cand;
+                    NativeLog("reads: text vtable %#llx learned as %s", (unsigned long long)vt,
+                              cand == TextKind::Plain ? "plain" : "string-table");
+                    return s;
+                }
+            }
+            if (!s.empty()) slowOnly_[vt] = true;
+            return s;
+        }
+    }
     if (k == TextKind::Plain || k == TextKind::StringTable) {
         size_t& n = k == TextKind::Plain ? stats_.textPlain : stats_.textStringTable;
         // The first rows of each kind are re-checked against Conv_TextToString at startup.

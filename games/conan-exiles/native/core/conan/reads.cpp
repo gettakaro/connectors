@@ -409,6 +409,15 @@ bool ReadService::WarmupStep(std::string& status) {
             lastScanMs_ = NowMs();
             if (r_->Scan(kScanNames) > 0) changed |= cat->BuildLocations(*r_, slow, Region(), locErr);
         }
+        if (cat->HaveLocations() && cat->HaveItems() && cat->HaveEntities()) {
+            // A player has joined and the world is fully up: build items and entities once more,
+            // so texts that were not loaded during the early build (start-up) are picked up.
+            auto fresh = std::make_shared<Catalogue>();
+            std::string e1, e2, e3;
+            if (fresh->BuildItems(*r_, slow, e1) && fresh->BuildEntities(*r_, slow, e2) &&
+                fresh->BuildLocations(*r_, slow, Region(), e3))
+                cat = fresh;
+        }
     }
     if (changed) {
         const CatalogueStats& s = cat->Stats();
@@ -505,7 +514,7 @@ std::vector<std::string> ReadService::Candidates(const JsonValue& args) {
 const PlayerRecord* ReadService::Match(const std::vector<PlayerRecord>& players, const std::vector<std::string>& ids) {
     for (auto& id : ids)
         for (auto& p : players)
-            if (p.steam64 == id) return &p;
+            if (p.steam64 == id || (!p.urlId.empty() && p.urlId == id) || (!p.uniqueId.empty() && p.uniqueId == id)) return &p;
     for (auto& id : ids)
         for (auto& p : players)
             if (EqualsIgnoreCase(p.name, id) || EqualsIgnoreCase(p.characterName, id)) return &p;
@@ -527,6 +536,17 @@ ActionResult ReadService::ListResult(const std::string& action) {
 
 // ---------------------------------------------------------------- dispatch
 ActionResult ReadService::Execute(const std::string& action, const JsonValue& args) {
+    const uint64_t t0 = NowNs();
+    ActionResult r = ExecuteImpl(action, args);
+    // One line per read request: the evidence trail of what Takaro was answered.
+    std::string body = r.ok ? takaro::JsonDump(r.payload) : r.error;
+    std::string rows = r.ok && r.payload.type == JsonValue::Array ? " " + std::to_string(r.payload.arr.size()) + " rows" : "";
+    NativeLog("reads: %s %s -> %s%s (%.2f ms): %.400s", action.c_str(), takaro::JsonDump(args).substr(0, 120).c_str(),
+              r.ok ? "ok" : "ERROR", rows.c_str(), (NowNs() - t0) / 1e6, body.c_str());
+    return r;
+}
+
+ActionResult ReadService::ExecuteImpl(const std::string& action, const JsonValue& args) {
     if (action == "listItems" || action == "listEntities" || action == "listLocations") {
         {
             std::lock_guard<std::mutex> g(mu_);
