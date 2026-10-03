@@ -1,18 +1,47 @@
 #!/usr/bin/env bash
-# Tests: unit tests, then the real poller against a fake bridge. Default runs inside the build
-# container; --native uses the host toolchain.
+# Every host test. Default runs inside the buster build container (via platform/linux/build.sh
+# --tests); --native uses the toolchain of the current machine (the container calls it that way).
+#   unit_test     core logic (protocol, config, outbox, heartbeat, pins, adapter, registry, text)
+#   pins_oracle   the signature scan over the real 25639945 binary (CONAN_SERVER_BINARY; skipped
+#                 when not given)
+#   drift_test    capabilities.json / pins.json equal the compiled tables
+#   wire_test     the production Takaro half against a fake Takaro (TLS WebSocket), incl. a 20 s outage
+#   so_test       the real dist/libtakaro-conan-native.so preloaded into a stand-in server
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [ "${1:-}" != "--native" ]; then
-  docker build -q -t takaro-conan-native-build -f Dockerfile.build . >/dev/null
-  exec docker run --rm -v "$PWD":/src -w /src -u "$(id -u):$(id -g)" takaro-conan-native-build ./tests/run.sh --native
+  exec platform/linux/build.sh --tests
 fi
 CXX=${CXX:-g++}
-FLAGS=(-std=c++17 -O1 -g -Wall -Wextra -Werror -Isrc -pthread)
+PREFIX=${TAKARO_NATIVE_PREFIX:-/opt/takaro-native}
+FLAGS=(-std=c++17 -O1 -g -Wall -Wextra -Werror -Icore -Iplatform/linux "-I$PREFIX/include" -pthread)
+CORE=(core/*.cpp core/*/*.cpp platform/linux/fileio_posix.cpp platform/linux/elfscan.cpp)
+LWS=("$PREFIX/lib/libwebsockets.a" "$PREFIX/lib/libssl.a" "$PREFIX/lib/libcrypto.a" -ldl)
 mkdir -p tests/build
-set -x
-"$CXX" "${FLAGS[@]}" tests/unit_test.cpp src/common.cpp src/proto.cpp -o tests/build/unit_test
+[ -f dist/libtakaro-conan-native.so ] || { echo "build the library first (platform/linux/build.sh)" >&2; exit 1; }
+
+echo "== unit_test"
+"$CXX" "${FLAGS[@]}" tests/unit_test.cpp "${CORE[@]}" -o tests/build/unit_test
 ./tests/build/unit_test
-"$CXX" "${FLAGS[@]}" -DTAKARO_CONAN_TEST tests/poller_test.cpp src/poller.cpp src/http.cpp src/common.cpp \
-    src/proto.cpp src/gamethread.cpp -o tests/build/poller_test
-python3 tests/fake_bridge_test.py tests/build/poller_test
+
+echo "== pins_oracle"
+"$CXX" "${FLAGS[@]}" -O2 tests/pins_oracle.cpp core/pins/pins.cpp core/common.cpp platform/linux/elfscan.cpp \
+    -o tests/build/pins_oracle
+if [ -n "${CONAN_SERVER_BINARY:-}" ]; then
+  ./tests/build/pins_oracle "$CONAN_SERVER_BINARY"
+else
+  echo "SKIP pins_oracle: set CONAN_SERVER_BINARY to a 25639945 ConanSandboxServer-Linux-Shipping"
+fi
+
+echo "== harness + drift_test"
+"$CXX" "${FLAGS[@]}" tests/harness.cpp "${CORE[@]}" platform/linux/transport_lws.cpp "${LWS[@]}" \
+    -o tests/build/harness
+python3 tests/drift_test.py tests/build/harness
+
+echo "== wire_test"
+python3 tests/wire_test.py tests/build/harness
+
+echo "== so_test"
+gcc -O1 -Wall -Werror tests/fake_server.c -o tests/build/fake_server
+python3 tests/so_test.py dist/libtakaro-conan-native.so tests/build/fake_server
+echo "ALL TESTS PASSED"

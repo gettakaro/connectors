@@ -202,42 +202,70 @@ queues one Takaro `sendMessage` through MCP, handles it through `/mod/poll` and 
 the host poller. It proves the HTTP contract the future `.pak` must use; it is not installed-mod
 proof and does not satisfy the final `TakaroConan` source gates.
 
-## Native chat library (`native/`)
+## Native connector (`native/`)
 
-`libtakaro-conan-native.so` is a `/mod/poll` client that lives inside the Linux server process
-(`LD_PRELOAD`). It serves only `sendMessage`, by calling
-`ConanPlayerController::ClientReceiveChatMessage` on the game thread, so a vanilla client renders
-an ordinary chat line. It replaces Pippi and the `.pak` on build 25639945, which loads no mods
-older than Dev Kit 1002.
+`libtakaro-conan-native.so` runs inside the Linux server process (`LD_PRELOAD`) and holds the
+Takaro WebSocket itself: no sidecar and no RCON. It is being built up in stages; today it serves
+`testReachability`, `sendMessage` and the map fallbacks natively and answers every other action
+with a structured "not implemented by the native Conan connector yet" error
+(`core/conan/capabilities.json` is the honest per-action state). The Node bridge in `bridge/` is
+the released connector until the native one replaces it.
 
-- **Build pin.** The server binary is stripped and non-PIE, so `src/ue.h` holds fixed addresses
-  for 25639945: `ProcessEvent`, `GUObjectArray` and the `FNamePool` blocks. The library hooks
-  nothing unless the GNU build-id (`3a05a6ef…`) and the 20-byte ProcessEvent prologue both
-  match. A new server build needs new addresses. They were found with a small live-memory
-  explorer (reads `/proc/<pid>/mem` of the running server), which is kept with the game notes
-  outside this repository.
+```
+native/
+  core/            portable, no OS headers
+    takaro/        Takaro protocol: ITransport + frame queues + heartbeat, bridge, durable outbox, config
+    conan/         the Conan adapter, sendMessage, the coverage registry (+ capabilities.json)
+    ue/            UE reflection (names, object walk, property offsets, controllers)
+    pins/          startup signature scan + pinned builds (+ pins.json)
+  platform/linux/  LD_PRELOAD entry, ProcessEvent detour, /proc/self/maps + build-id, libwebsockets transport,
+                   buster Dockerfile.build and build.sh
+  platform/windows/ stub interfaces for the Windows DLL (proxy DLL, WinHTTP transport, PE scan)
+  tests/           unit tests, pins oracle, drift test, fake Takaro wire tests, real-library test
+  tools/           sigderive.py (signatures for ELF and PE)
+```
+
+- **Config.** Environment first (`TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN`,
+  `TAKARO_WS_URL`, `TAKARO_SERVER_NAME`, `TAKARO_CA_FILE`, `TAKARO_STATE_DIR`), then
+  `ConanSandbox/Saved/Config/Takaro/takaro.json` (keys `identityToken`, `registrationToken`, `url`,
+  `name`, `caFile`, `stateDir`; `TAKARO_CONAN_CONFIG` moves the file). It fails closed: missing
+  tokens, a `ws://` URL or a file that does not parse leave the library inert, with the reason in
+  `ConanSandbox/Saved/Logs/TakaroConanNative.log`. Token values are never logged.
+- **Pins.** Only the three raw globals come from fixed knowledge: `ProcessEvent`,
+  `GUObjectArray.ObjObjects` and the `FNamePool` block table. At load the library scans the
+  server's executable mappings for their signatures (`core/pins/pins.cpp`, derived with
+  `tools/sigderive.py`, about 140 ms) and accepts the build only when every signature matches
+  exactly once and the GNU build-id is pinned with the same addresses (25639945:
+  `3a05a6ef…`). On any other build it installs no hook, still connects and identifies, sends one
+  critical notice (a `log` event) and refuses every action with a structured error.
+  `TAKARO_CONAN_ALLOW_UNPINNED_BUILD=1` accepts a clean scan of an unpinned build, for re-pin work.
 - **Everything else is reflection.** At first use the library walks the object array in
   16384-object slices on the game thread. It finds the chat `UFunction`, `GameStateBase` and the
   live GameState, then reads property offsets by name and type: `PlayerArray`, `Owner`,
-  `UserIDFromURLOptions` and `PlayerNamePrivate`. Each send reads `GameState.PlayerArray`, maps
-  each PlayerState to its owner controller, and filters by Steam64
-  (`UserIDFromURLOptions`) or player name. Live cost on 25639945: 1.48M objects scanned in 47 ms
-  total, spread over about 90 ticks; a send costs about 0.02 ms of game-thread time.
+  `UserIDFromURLOptions` and `PlayerNamePrivate`. Live cost on 25639945: 1.48M objects scanned in
+  47 ms total, spread over about 90 ticks; a send costs about 0.02 ms of game-thread time.
 - **ChatRpcData** (0x80 bytes): Timestamp is FILETIME, not FDateTime. userName is at 0x48,
-  Channel (`Global`) at 0x58, Message at 0x68 and generated at 0x78, all FStrings. The engine
-  copies the strings while it serialises the client RPC.
-- **Threads.** A background poller does HTTP and JSON. The ProcessEvent detour only drains the
-  queue when a job is pending (`GameThread::g_pending`), at most 4 jobs or 500 µs per drain.
-- **Toolchain.** `Dockerfile.build` is Debian buster pinned by digest, with packages from its
-  dated snapshot. glibc 2.28 is the newest the server binary needs, and `build.sh` refuses a
-  library that needs anything newer, exports a symbol, or has an unresolved strong symbol.
-  Builds are byte-reproducible.
-- **Tests.** Run `native/build.sh --tests`: unit tests, then the real poller and game-thread
-  queue against `tests/fake_bridge_test.py`, a strict-mode fake of `commandBridge.ts`.
-  `bridge/src/__tests__/modBridge.test.ts` checks the bridge side of the same request shape.
-- **Degrade proof.** `DEBUG_WRONG_BUILD_ID=1 native/build.sh` builds a library that expects
-  another build-id. The server must start unhooked, and `sendMessage` must report the bridge as
-  not connected.
+  Channel (`Global`) at 0x58, Message at 0x68 and generated at 0x78, all FStrings.
+- **Threads.** The libwebsockets service thread owns the socket; the bridge thread owns protocol
+  state and the outbox; action workers run actions. The ProcessEvent detour only drains the
+  game-thread queue when a job is pending, at most 4 jobs or 500 µs per drain.
+- **Delivery.** Every event goes through a durable outbox (`<Saved>/Takaro/state/event-outbox.json`,
+  tmp + fsync + rename) and leaves it only when the pong of a later WebSocket ping confirms it, so a
+  Takaro outage or a server restart replays the unconfirmed tail. Reconnect backoff doubles from
+  2 s to 60 s and resets after a successful identify. A health snapshot is written to
+  `<Saved>/Takaro/state/health.json`.
+- **Toolchain.** `platform/linux/Dockerfile.build` is Debian buster pinned by digest, with
+  packages from its dated snapshot, and builds OpenSSL 3.5.8 and libwebsockets 4.5.8 statically
+  from SHA-256-checked archives. glibc 2.28 is the newest the server binary needs, and `build.sh`
+  refuses a library that needs anything newer, exports a symbol, or has an unresolved strong symbol.
+- **Tests.** `make -C native test` (or `native/build.sh --tests`) builds the library and runs, in
+  the buster container: unit tests; the drift test (`capabilities.json` and `pins.json` equal the
+  compiled tables); wire tests of the production Takaro half against a fake Takaro over TLS
+  (identify, ping/pong, request correlation, every args shape, events, a forced 20 s outage with
+  outbox replay, a killed process replaying from disk, identify rejection, unknown-build refusal);
+  and the real library preloaded into a stand-in server executable. With
+  `CONAN_SERVER_BINARY=<25639945 ConanSandboxServer-Linux-Shipping>` it also checks that the scan
+  reproduces the stage 1 addresses.
 
 ## Host-side chat renderer
 

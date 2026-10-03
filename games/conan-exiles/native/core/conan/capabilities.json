@@ -1,0 +1,188 @@
+{
+  "_comment": "Native connector coverage registry. Must equal core/conan/coverage.cpp (tests/drift_test.py). 'status' is evidence (live-supported needs MCP plus client evidence); 'implementation' says whether native code exists ('native') or the action still answers a structured not-ported error ('pending').",
+  "statusLegend": {
+    "live-supported": "Native code exists and was proven live through Takaro with MCP and client evidence.",
+    "schema-fallback": "Answers the schema-valid empty DTO Takaro requires because the data does not exist for this game.",
+    "unsupported": "Answers a structured error because neither the game nor Takaro can back it.",
+    "pending": "Native code is missing or not yet proven live; transitional, must be gone before release."
+  },
+  "functions": {
+    "getPlayer": {
+      "status": "pending",
+      "implementation": "pending",
+      "responseShape": "public Takaro player DTO or null",
+      "verification": "MCP gameserverGetPlayers then the player, with the client online",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: PlayerArray -> PlayerState -> controller (read path proven in stage 1)."
+    },
+    "getPlayers": {
+      "status": "pending",
+      "implementation": "pending",
+      "responseShape": "public Takaro player DTO array",
+      "verification": "MCP gameserverGetPlayers with the client online",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: PlayerArray -> PlayerState -> controller, plus ping and IP."
+    },
+    "getPlayerLocation": {
+      "status": "pending",
+      "implementation": "pending",
+      "responseShape": "{ x: number, y: number, z: number }",
+      "verification": "MCP location vs client coordinates",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: K2_GetActorLocation through ProcessEvent."
+    },
+    "getPlayerInventory": {
+      "status": "pending",
+      "implementation": "pending",
+      "responseShape": "Takaro item DTO array",
+      "verification": "MCP inventory vs the client inventory screen",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: UItemInventory by reflection (no sqlite)."
+    },
+    "giveItem": {
+      "status": "pending",
+      "implementation": "pending",
+      "responseShape": "{}",
+      "verification": "MCP plus the item in the client",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: CheatSpawnItem or the in-process console executor."
+    },
+    "listItems": {
+      "status": "pending",
+      "implementation": "pending",
+      "responseShape": "Takaro item DTO array with display names",
+      "verification": "MCP sample has display names and zero class names",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: ItemTable rows with localized names."
+    },
+    "listEntities": {
+      "status": "pending",
+      "implementation": "pending",
+      "responseShape": "Takaro entity DTO array with display names",
+      "verification": "MCP sample has display names and zero class names",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: class walk with a humaniser."
+    },
+    "listLocations": {
+      "status": "pending",
+      "implementation": "pending",
+      "responseShape": "Takaro location DTO array",
+      "verification": "MCP sample",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback."
+    },
+    "executeConsoleCommand": {
+      "status": "pending",
+      "implementation": "pending",
+      "responseShape": "{ success: boolean, rawResult: string }",
+      "verification": "MCP rawResult",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: the engine's own console executor in-process (never RCON)."
+    },
+    "sendMessage": {
+      "status": "pending",
+      "implementation": "native",
+      "responseShape": "{}",
+      "verification": "MCP gameserverSendMessage plus a client screenshot and the native log line",
+      "reason": "ClientReceiveChatMessage on each online ConanPlayerController through ProcessEvent on the game thread; global, or directed by Steam64 / character name. Promoted to live-supported only with live evidence on the native transport."
+    },
+    "teleportPlayer": {
+      "status": "pending",
+      "implementation": "pending",
+      "responseShape": "{}",
+      "verification": "MCP plus the client position",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback."
+    },
+    "testReachability": {
+      "status": "pending",
+      "implementation": "native",
+      "responseShape": "{ connectable: boolean, reason: string | null }",
+      "verification": "MCP gameserverTestReachability",
+      "reason": "In-process: connectable when the server build is pinned and the ProcessEvent hook is installed; an unknown build answers connectable=false with the reason."
+    },
+    "kickPlayer": {
+      "status": "pending",
+      "implementation": "pending",
+      "responseShape": "{}",
+      "verification": "client disconnected",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback."
+    },
+    "banPlayer": {
+      "status": "pending",
+      "implementation": "pending",
+      "responseShape": "{}",
+      "verification": "rejoin refused, blacklist.txt",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback."
+    },
+    "unbanPlayer": {
+      "status": "pending",
+      "implementation": "pending",
+      "responseShape": "{}",
+      "verification": "rejoin allowed, blacklist.txt",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback."
+    },
+    "listBans": {
+      "status": "pending",
+      "implementation": "pending",
+      "responseShape": "Takaro ban DTO array",
+      "verification": "MCP gameserverListBans",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback."
+    },
+    "shutdown": {
+      "status": "pending",
+      "implementation": "pending",
+      "responseShape": "{}",
+      "verification": "countdown in the client plus process exit",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: Conan's own admin shutdown with its countdown."
+    },
+    "getMapInfo": {
+      "status": "schema-fallback",
+      "implementation": "native",
+      "responseShape": "{ enabled: false, mapBlockSize: 0, maxZoom: 0, mapSizeX: 0, mapSizeY: 0, mapSizeZ: 0 }",
+      "verification": "MCP gameserverGetMapInfo",
+      "reason": "Hosted Takaro shows no map tiles for Generic servers; answers the disabled MapInfo DTO Takaro validates."
+    },
+    "getMapTile": {
+      "status": "unsupported",
+      "implementation": "native",
+      "responseShape": "structured error",
+      "verification": "MCP gameserverGetMapTile returns the structured error",
+      "reason": "Hosted Takaro shows no map tiles for Generic servers; no tile renderer exists for Conan."
+    }
+  },
+  "events": {
+    "player-connected": {
+      "status": "pending",
+      "implementation": "pending",
+      "payloadShape": "{ player }",
+      "verification": "eventSearch on a real join",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); nothing is emitted for it. Planned: K2_PostLogin or a PlayerArray diff."
+    },
+    "player-disconnected": {
+      "status": "pending",
+      "implementation": "pending",
+      "payloadShape": "{ player }",
+      "verification": "eventSearch on a real leave",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); nothing is emitted for it. Planned: K2_OnLogout or a PlayerArray diff."
+    },
+    "chat-message": {
+      "status": "pending",
+      "implementation": "pending",
+      "payloadShape": "{ player, msg, channel }",
+      "verification": "eventSearch plus the Discord post",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); nothing is emitted for it. Planned: ServerSendChatMessage in the detour (proven hook point)."
+    },
+    "player-death": {
+      "status": "pending",
+      "implementation": "pending",
+      "payloadShape": "{ player, attacker?, position? }",
+      "verification": "real death in the client",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); nothing is emitted for it."
+    },
+    "entity-killed": {
+      "status": "pending",
+      "implementation": "pending",
+      "payloadShape": "{ player, entity, weapon }",
+      "verification": "real kill in the client",
+      "reason": "Not ported to the native connector yet (stage 2 Phase 2); nothing is emitted for it."
+    },
+    "log": {
+      "status": "pending",
+      "implementation": "native",
+      "payloadShape": "{ msg }",
+      "verification": "eventSearch for the critical notice",
+      "reason": "Today only the connector's own critical notices (an unsupported server build) are sent as log events; the in-process server log tail is Phase 2."
+    }
+  }
+}
