@@ -469,6 +469,12 @@ int32_t ReadService::ResolveItemCode(const std::string& code) {
     return catalogue_ && catalogue_->HaveItems() ? catalogue_->ResolveCode(code) : 0;
 }
 
+std::string ReadService::EntityNameForClass(const std::string& npcClass) {
+    std::lock_guard<std::mutex> l(catMu_);
+    if (!catalogue_ || !catalogue_->HaveEntities() || npcClass.empty()) return "";
+    return catalogue_->EntityNameForClass(npcClass);
+}
+
 // ---------------------------------------------------------------- players
 bool ReadService::Snapshot(std::vector<PlayerRecord>& out, std::string& error) {
     if (!EnsureIndex(error) || !EnsureGameStates(error)) return false;

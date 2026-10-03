@@ -188,6 +188,28 @@ bool IsInternalName(const std::string& name) {
     return false;
 }
 
+std::string EntityNameFromClass(const std::string& npcClass) {
+    std::string n = TrimWs(npcClass);
+    if (n.size() > 2 && n.compare(n.size() - 2, 2, "_C") == 0) n.resize(n.size() - 2);
+    for (bool again = true; again;) {
+        again = false;
+        for (auto* p : {"BP_", "NPC_", "Wildlife_", "Humanoid_", "Character_", "Char_"})
+            if (n.compare(0, strlen(p), p) == 0) {
+                n.erase(0, strlen(p));
+                again = true;
+            }
+    }
+    std::string out;
+    for (char ch : n) {
+        char c = ch == '_' ? ' ' : ch;
+        if (c == ' ' && (out.empty() || out.back() == ' ')) continue;
+        out += c;
+    }
+    while (!out.empty() && out.back() == ' ') out.pop_back();
+    if (IsInternalName(out)) return "";
+    return out;
+}
+
 std::string WeaponName(const std::string& itemName, int32_t templateId) {
     const std::string n = TrimWs(itemName);
     if (templateId == 51204 || templateId == 51205 || Contains(n, "unarmed")) return "Unarmed";

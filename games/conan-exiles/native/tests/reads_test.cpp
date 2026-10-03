@@ -675,6 +675,8 @@ static void TestReads() {
        "[{\"code\":\"Exile_Tanner_1_Cimmerian\",\"name\":\"Cimmerian Tanner I\",\"metadata\":{\"npcClass\":"
        "\"HumanoidNPCCharacter_C\"}},{\"code\":\"Wildlife_Imp\",\"name\":\"Imp\",\"metadata\":{\"npcClass\":"
        "\"BP_NPC_Wildlife_Imp_C\"}}]");
+    CHECK(rs->EntityNameForClass("bp_npc_wildlife_imp_c") == "Imp" && rs->EntityNameForClass("BP_Nope_C").empty(),
+          "entity name by NPC class (entity-killed fallback)");
     r = rs->Execute("listLocations", J("{}"));
     EQ(Dump(r),
        "[{\"code\":\"marker:0\",\"name\":\"Slithering Beach\",\"position\":{\"x\":215176.56,\"y\":117179.09,\"z\":-19697.14},"

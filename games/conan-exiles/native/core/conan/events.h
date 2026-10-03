@@ -41,6 +41,9 @@ struct EventsOptions {
     std::string healthFile;                       // events-health.json (written every 10 s)
     std::vector<std::string> secrets;             // scrubbed from forwarded log lines
     bool hooks = true;                            // false on an unverified build: log tail only
+    // Entity name for an NPC class from the listEntities catalogue (worker thread); used when the
+    // killed character itself carries no name (e.g. a summoned creature without a spawn row).
+    std::function<std::string(const std::string&)> entityNameForClass;
 };
 
 void StartEvents(const EventsOptions& o);

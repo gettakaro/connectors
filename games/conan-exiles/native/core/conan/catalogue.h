@@ -111,6 +111,8 @@ public:
     // Inventory display name: the listed name, else the raw table name, else "Conan item <id>".
     std::string DisplayName(int32_t templateId) const;
     std::string CodeFor(int32_t templateId) const;
+    // Display name of the first entity row spawning `npcClass` (case-insensitive); "" when none.
+    std::string EntityNameForClass(const std::string& npcClass) const;
 
     const std::vector<ItemEntry>& Items() const { return items_; }
     const std::vector<EntityEntry>& Entities() const { return entities_; }
