@@ -4,6 +4,7 @@
 #include "conan/coverage.h"
 #include "conan/reads.h"
 #include "conan/text.h"
+#include "gtstats.h"
 #include "takaro/json_util.h"
 #include "takaro/protocol.h"
 
@@ -184,6 +185,7 @@ std::string Adapter::HealthJson() {
         .N("lastChatGameThreadMs", lastChatMs_)
         .Raw("reads", o_.readsHealth ? o_.readsHealth() : std::string("null"))
         .Raw("mutations", mutations_ ? mutations_->HealthJson() : "null")
+        .Raw("gameThread", GtStats::HealthJson())
         .Done();
 }
 

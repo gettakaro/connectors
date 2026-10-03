@@ -1,6 +1,7 @@
 #include "gamethread.h"
 
 #include "common.h"
+#include "gtstats.h"
 
 
 #include <condition_variable>
@@ -60,6 +61,14 @@ bool Run(std::function<void()> fn, int timeoutMs) {
 void Drain() {
     const uint64_t start = NowNs();
     Queue& q = Q();
+    uint32_t ran = 0;
+    struct Account {  // records the drain's game-thread time on every exit path
+        const uint64_t& start;
+        uint32_t& ran;
+        ~Account() {
+            if (ran) GtStats::AddDrain(NowNs() - start, ran);
+        }
+    } account{start, ran};
     for (int n = 0; n < kMaxJobsPerDrain; n++) {
         std::shared_ptr<Job> job;
         {
@@ -74,6 +83,7 @@ void Drain() {
             job->state = State::Running;
         }
         job->fn();
+        ran++;
         {
             std::lock_guard<std::mutex> lk(q.lock);
             job->state = State::Done;

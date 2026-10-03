@@ -4,6 +4,7 @@
 // adapter (argument shapes, refusal, pending actions), the coverage registry, text and the
 // ChatRpcData layout, and the ELF / /proc/self/maps helpers.
 #include "common.h"
+#include "gtstats.h"
 #include "conan/adapter.h"
 #include "conan/coverage.h"
 #include "conan/text.h"
@@ -493,6 +494,94 @@ static void TestBuildId() {
     CHECK(linuxplat::ReadElfBuildId("/proc/self/status").empty(), "not ELF");
 }
 
+static void TestGtStats() {
+    using namespace GtStats;
+    ResetForTests();
+    // No sample yet: both windows null, the sampler not started.
+    JsonValue v;
+    CHECK(JsonParse(HealthJson(), v), "gt health json");
+    CHECK(v.get("window") && v.get("window")->type == JsonValue::Null, "no window before samples");
+    CHECK(v.get("sinceStart") && v.get("sinceStart")->type == JsonValue::Null, "no totals before samples");
+
+    // Pure window math.
+    Snap a, b;
+    a.monoNs = 1000000000ULL;
+    a.frames = 1000;
+    a.detourCalls = 1024 * 10;
+    a.detourSamples = 10;
+    a.detourSampleNs = 10 * 50;  // 50 ns per call
+    a.drainNs = 100000;
+    b = a;
+    b.monoNs = a.monoNs + 10000000000ULL;  // 10 s
+    b.frames = a.frames + 300;             // 30 ticks/s
+    b.detourCalls = a.detourCalls + 1024 * 100;
+    b.detourSamples = a.detourSamples + 100;
+    b.detourSampleNs = a.detourSampleNs + 100 * 100;  // 100 ns per call in this window
+    b.drainNs = a.drainNs + 600000;                   // 600 us
+    b.drainJobs = 12;
+    b.hookNs = 300000;  // 300 us
+    b.hookCalls = 7;
+    b.maxDrainNs = 250000;
+    Window w = Compute(a, b);
+    CHECK(w.frames == 300, "frames %lld", (long long)w.frames);
+    CHECK(w.seconds > 9.99 && w.seconds < 10.01, "seconds %f", w.seconds);
+    CHECK(w.detourCalls == 102400, "calls");
+    CHECK(w.hotPathUs > 10239 && w.hotPathUs < 10241, "hot path %f", w.hotPathUs);  // 102400 x 100 ns
+    CHECK(w.drainUs > 599.9 && w.drainUs < 600.1, "drain %f", w.drainUs);
+    CHECK(w.hookUs > 299.9 && w.hookUs < 300.1, "hook %f", w.hookUs);
+    CHECK(w.totalUs > 11139 && w.totalUs < 11141, "total %f", w.totalUs);
+    CHECK(w.usPerTick > 37.13 && w.usPerTick < 37.14, "us per tick %f", w.usPerTick);
+    CHECK(w.ticksPerSecond > 29.99 && w.ticksPerSecond < 30.01, "tps %f", w.ticksPerSecond);
+    CHECK(w.maxDrainUs > 249.9 && w.maxDrainUs < 250.1, "max drain %f", w.maxDrainUs);
+    // Unknown frame count: usPerTick unknown, written as null.
+    Snap c = b;
+    c.frames = -1;
+    Window wu = Compute(a, c);
+    CHECK(wu.frames == -1 && wu.usPerTick < 0, "unknown frames");
+    CHECK(JsonParse(WindowJson(wu), v) && v.get("usPerTick")->type == JsonValue::Null &&
+              v.get("frames")->type == JsonValue::Null,
+          "null usPerTick json");
+    // Since start (zero baseline): frames = the engine's own count.
+    Window ws = Compute(Snap(), b);
+    CHECK(ws.frames == 1300 && ws.usPerTick > 0, "since start frames %lld", (long long)ws.frames);
+
+    // The counters through RecordSample: two samples make a window with exactly the added cost.
+    AddDetourCalls(2048);
+    AddDetourSample(80);
+    AddDetourSample(120);  // 100 ns per call
+    AddDrain(40000, 2);
+    AddDrain(10000, 1);
+    AddHook(5000);
+    RecordSample(500, 1000000000ULL);
+    AddDetourCalls(1024);
+    AddDetourSample(100);
+    AddDrain(20000, 1);
+    AddHook(1000);
+    AddHook(2000);
+    RecordSample(530, 11000000000ULL);
+    CHECK(JsonParse(HealthJson(), v), "gt health json 2");
+    const JsonValue* win = v.get("window");
+    CHECK(win && win->type == JsonValue::Object, "window object");
+    if (win && win->type == JsonValue::Object) {
+        CHECK(win->get("frames")->num == 30, "window frames");
+        CHECK(win->get("drainUs")->num == 20, "window drain %f", win->get("drainUs")->num);
+        CHECK(win->get("drainJobs")->num == 1, "window jobs");
+        CHECK(win->get("hookUs")->num == 3, "window hook");
+        CHECK(win->get("hookCalls")->num == 2, "window hook calls");
+        CHECK(win->get("maxDrainUs")->num == 20, "window max drain (reset per window)");
+        CHECK(win->get("detourCalls")->num == 1024, "window calls");
+        // 1024 calls x 100 ns = 102.4 us, + 20 + 3 = 125.4 us over 30 ticks
+        CHECK(win->get("usPerTick")->num > 4.17 && win->get("usPerTick")->num < 4.19, "window us/tick %f",
+              win->get("usPerTick")->num);
+    }
+    const JsonValue* tot = v.get("sinceStart");
+    CHECK(tot && tot->type == JsonValue::Object && tot->get("frames")->num == 530 &&
+              tot->get("drainJobs")->num == 4 && tot->get("maxDrainUs")->num == 40,
+          "since start totals");
+    CHECK(v.get("maxDrainUs")->num == 40 && v.get("samples")->num == 2, "overall max and samples");
+    ResetForTests();
+}
+
 int main() {
     TestProtocol();
     TestConfig();
@@ -506,6 +595,7 @@ int main() {
     TestText();
     TestChatRpc();
     TestBuildId();
+    TestGtStats();
     printf("unit tests: %d/%d checks passed\n", g_ran - g_failed, g_ran);
     return g_failed ? 1 : 0;
 }
