@@ -15,6 +15,7 @@
 #include "conan/adapter.h"
 #include "conan/events.h"
 #include "conan/hook_dispatch.h"
+#include "conan/perf_sampler.h"
 #include "elfscan.h"
 #include "gamethread.h"
 #include "hook.h"
@@ -173,6 +174,7 @@ __attribute__((constructor)) void Init() {
     eo.hooks = ao.ready;
     conan::StartEvents(eo);
     if (ao.ready) HookDispatch::Start();
+    if (ao.ready) conan::StartPerfSampler();
     g_rt = rt;
     NativeLog("Takaro bridge started (%s)", ao.ready ? "ready" : "refusing actions");
 }
@@ -183,6 +185,7 @@ __attribute__((destructor)) void Fini() {
     Runtime* rt = g_rt;
     if (!rt) return;
     GameThread::Stop();
+    conan::StopPerfSampler();
     HookDispatch::Stop();
     conan::StopEvents();
     rt->bridge->Stop();

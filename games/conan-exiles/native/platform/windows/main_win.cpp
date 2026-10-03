@@ -15,6 +15,7 @@
 #include "conan/adapter.h"
 #include "conan/events.h"
 #include "conan/hook_dispatch.h"
+#include "conan/perf_sampler.h"
 #include "dllmain.h"
 #include "gamethread.h"
 #include "hook_win.h"
@@ -259,6 +260,7 @@ void StartConnector() {
     eo.hooks = ao.ready;
     conan::StartEvents(eo);
     if (ao.ready) HookDispatch::Start();
+    if (ao.ready) conan::StartPerfSampler();
     NativeLog("Takaro bridge started (%s)", ao.ready ? "ready" : "refusing actions");
 }
 

@@ -962,7 +962,7 @@
       "owner": "KismetSystemLibrary",
       "name": "GetFrameCount",
       "layout": "runtime",
-      "usedBy": "executeConsoleCommand rawResult bracket",
+      "usedBy": "executeConsoleCommand rawResult bracket; perf sampler frame count (health game.gameThread)",
       "baseline": {
         "parmsSize": 8,
         "params": [
