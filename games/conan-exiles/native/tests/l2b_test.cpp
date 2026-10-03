@@ -252,6 +252,8 @@ static void TestMutationsFake() {
     mo.startThreads = false;
     mo.consoleSettleMs = 1;
     mo.shutdownSeconds = 10;
+    int exitsAtBeforeExit = -1;
+    mo.beforeExit = [&] { exitsAtBeforeExit = g->exits; };
     Mutations m(mo, g);
 
     // giveItem: chunks of one stack, read back
@@ -376,6 +378,7 @@ static void TestMutationsFake() {
     CHECK(r.ok, "second shutdown ok");
     m.JoinShutdown();
     CHECK(g->exits == 1, "one exit (%d)", g->exits);
+    CHECK(exitsAtBeforeExit == 0, "beforeExit (shutdown logouts) runs before the exit (%d)", exitsAtBeforeExit);
     CHECK(g->broadcasts.size() == 7 && g->broadcasts[0] == "The server shuts down in 10 seconds." &&
               g->broadcasts[5] == "The server shuts down in 1 second." &&
               g->broadcasts[6] == "The server is shutting down now.",

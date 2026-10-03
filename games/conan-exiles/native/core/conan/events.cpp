@@ -804,6 +804,36 @@ void SubscribeAll() {
 }
 }  // namespace
 
+int EmitShutdownLogouts(int waitMs) {
+    std::vector<PlayerId> ids;
+    GameThread::Run(
+        [&] {
+            GT& g = G();
+            for (auto& kv : g.byController) ids.push_back(kv.second);
+            g.byController.clear();
+        },
+        2000);
+    for (auto& id : ids) {
+        if (id.steam64.empty()) continue;
+        Captured c;
+        c.kind = Kind::Disconnected;
+        c.a = id;
+        Push(std::move(c));
+    }
+    Sh().cv.notify_all();
+    NativeLog("events: shutdown: player-disconnected queued for %zu player(s)", ids.size());
+    for (int waited = 0; waited < waitMs; waited += 100) {
+        {
+            std::lock_guard<std::mutex> g(Sh().mu);
+            if (Sh().queue.empty()) break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    // The worker has handed them to the outbox; one more second for the transport to send them.
+    if (!ids.empty()) std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    return (int)ids.size();
+}
+
 void StartEvents(const EventsOptions& o) {
     Shared& s = Sh();
     {

@@ -478,6 +478,7 @@ void Mutations::RunShutdown(int seconds) {
     game_->SleepMs(left * 1000);
     game_->Broadcast("The server is shutting down now.", err);
     game_->SleepMs(500);
+    if (o_.beforeExit) o_.beforeExit();
     if (game_->Exit(err)) NativeLog("shutdown: engine exit requested");
     else NativeLog("shutdown: engine exit FAILED: %s", err.c_str());
 }
