@@ -32,7 +32,13 @@ struct PlayerLayout {
     int32_t templateId = -1;         // GameItem.TemplateId
     int32_t ownerInventory = -1;     // GameItem.m_OwnerInventory
     // pinned to build 25639945, not reflected
-    static constexpr int32_t kExactPing = 824;           // PlayerState float (GetPingInMilliseconds)
+    // PlayerState float (GetPingInMilliseconds), 8 bytes before SavedNetworkAddress on both servers:
+    // 824 under clang (Linux), 840 under MSVC (Windows, SavedNetworkAddress at 848; live 2026-10-03).
+#ifdef _WIN32
+    static constexpr int32_t kExactPing = 840;
+#else
+    static constexpr int32_t kExactPing = 824;
+#endif
     static constexpr int32_t kComponentToWorldT = 0x210;  // SceneComponent FTransform.Translation
     static constexpr int32_t kIntStats = 0x128, kFloatStats = 0x138;  // GameItem TArray, stride 48
     static constexpr int32_t kStatStride = 48, kStatId = 0xC, kStatValue = 0x14;
