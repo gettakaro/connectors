@@ -1,0 +1,203 @@
+"443030"
+{
+	"common"
+	{
+		"name"		"Conan Exiles Dedicated Server"
+		"type"		"Tool"
+		"oslist"		"windows,linux"
+		"osarch"		"64"
+		"ReleaseState"		"released"
+		"freetodownload"		"1"
+		"associations"
+		{
+		}
+		"gameid"		"443030"
+	}
+	"extended"
+	{
+		"gamedir"		""
+	}
+	"config"
+	{
+		"contenttype"		"3"
+		"installdir"		"Conan Exiles Dedicated Server"
+		"launch"
+		{
+			"0"
+			{
+				"executable"		"ConanSandboxServer.exe"
+				"arguments"		"-Messaging"
+				"description"		"Launch Game server"
+				"type"		"none"
+				"config"
+				{
+					"oslist"		"windows"
+					"osarch"		"64"
+				}
+			}
+			"1"
+			{
+				"executable"		"ConanSandbox\\Binaries\\Linux\\ConanSandboxServer"
+				"type"		"server"
+				"config"
+				{
+					"oslist"		"linux"
+					"osarch"		"64"
+				}
+			}
+		}
+	}
+	"depots"
+	{
+		"1004"
+		{
+			"config"
+			{
+				"oslist"		"windows"
+			}
+			"manifests"
+			{
+				"public"
+				{
+					"gid"		"7604377918839582995"
+					"size"		"67863136"
+					"download"		"24251776"
+				}
+			}
+			"depotfromapp"		"1007"
+		}
+		"1005"
+		{
+			"config"
+			{
+				"oslist"		"macos"
+			}
+			"manifests"
+			{
+				"public"
+				{
+					"gid"		"2135359612286175146"
+					"size"		"0"
+					"download"		"0"
+				}
+			}
+			"depotfromapp"		"1007"
+		}
+		"1006"
+		{
+			"config"
+			{
+				"oslist"		"linux"
+			}
+			"manifests"
+			{
+				"public"
+				{
+					"gid"		"4559160656493359681"
+					"size"		"111284048"
+					"download"		"36733840"
+				}
+			}
+			"depotfromapp"		"1007"
+		}
+		"228985"
+		{
+			"config"
+			{
+				"oslist"		"windows"
+			}
+			"depotfromapp"		"228980"
+			"sharedinstall"		"1"
+		}
+		"228986"
+		{
+			"config"
+			{
+				"oslist"		"windows"
+			}
+			"depotfromapp"		"228980"
+			"sharedinstall"		"1"
+		}
+		"228989"
+		{
+			"config"
+			{
+				"oslist"		"windows"
+			}
+			"depotfromapp"		"228980"
+			"sharedinstall"		"1"
+		}
+		"228990"
+		{
+			"config"
+			{
+				"oslist"		"windows"
+			}
+			"depotfromapp"		"228980"
+			"sharedinstall"		"1"
+		}
+		"443031"
+		{
+			"config"
+			{
+				"oslist"		"windows"
+				"osarch"		"64"
+			}
+			"manifests"
+			{
+				"public"
+				{
+					"gid"		"6353629323845191319"
+					"size"		"4381984355"
+					"download"		"3513688288"
+				}
+				"conan-exiles-legacy"
+				{
+					"gid"		"150091534874992432"
+					"size"		"4460672682"
+					"download"		"2086174112"
+				}
+			}
+		}
+		"443032"
+		{
+			"config"
+			{
+				"oslist"		"linux"
+				"osarch"		"64"
+			}
+			"manifests"
+			{
+				"public"
+				{
+					"gid"		"8611640520811009059"
+					"size"		"4180709896"
+					"download"		"3515329856"
+				}
+				"conan-exiles-legacy"
+				{
+					"gid"		"3199714172864163068"
+					"size"		"0"
+					"download"		"0"
+				}
+			}
+		}
+		"branches"
+		{
+			"public"
+			{
+				"buildid"		"25639945"
+				"timeupdated"		"1790862369"
+				"timebuildupdated"		"1790809501"
+			}
+			"conan-exiles-legacy"
+			{
+				"buildid"		"24269196"
+				"description"		"UE4 version of Conan Exiles Dedicated Server."
+				"timeupdated"		"1785246307"
+				"timebuildupdated"		"1784338909"
+			}
+		}
+		"privatebranches"		"1"
+	}
+}

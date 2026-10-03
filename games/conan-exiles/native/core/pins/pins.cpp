@@ -203,8 +203,11 @@ Result Resolve(const std::string& platform, const std::string& buildId, const st
     if (sigs.empty()) {
         res.reason = "no signatures for platform " + platform;
     } else if (!pin && !allowUnpinned) {
+        std::string builds;
+        for (auto& p : kPinned)
+            if (platform == p.platform) builds += std::string(builds.empty() ? "" : ", ") + p.build;
         res.reason = "unsupported server build (" + (buildId.empty() ? std::string("no build id") : buildId) +
-                     "); this connector is pinned to build 25639945";
+                     "); this connector is pinned to build " + (builds.empty() ? std::string("(none)") : builds);
         if (!allUnique) res.reason += " (signature scan: " + firstFailure + ")";
     } else if (!allUnique) {
         res.reason = "signature scan failed (" + firstFailure + ")";

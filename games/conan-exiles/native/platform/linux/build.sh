@@ -4,7 +4,8 @@
 #   --native  build with the toolchain of the current machine (the container calls this)
 #   --tests   also build and run the host tests (tests/run.sh)
 # Env: DEBUG_WRONG_BUILD_ID=1 builds a library pinned to a fake build-id (degrade proof only);
-#      CONAN_SERVER_BINARY=<path> is mounted for the pins oracle test.
+#      CONAN_SERVER_BINARY=<path> is mounted for the pins oracle test; catalog/conan-exiles is
+#      mounted read-only for the pins.json <-> catalog check.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 cd "$here/../.."   # games/conan-exiles/native
@@ -27,6 +28,11 @@ if [ "$NATIVE" = 0 ]; then
   env=()
   [ -n "${DEBUG_WRONG_BUILD_ID:-}" ] && env+=(-e "DEBUG_WRONG_BUILD_ID=$DEBUG_WRONG_BUILD_ID")
   mounts=()
+  # tests/run.sh checks pins.json against the catalog targets, which live outside this tree.
+  if [ -f ../../../catalog/conan-exiles/game.json ]; then
+    mounts+=(-v "$(cd ../../../catalog/conan-exiles && pwd):/catalog:ro")
+    env+=(-e CONAN_CATALOG_DIR=/catalog)
+  fi
   if [ -n "${CONAN_SERVER_BINARY:-}" ]; then
     mounts+=(-v "$CONAN_SERVER_BINARY:/conan-server-binary:ro")
     env+=(-e CONAN_SERVER_BINARY=/conan-server-binary)
