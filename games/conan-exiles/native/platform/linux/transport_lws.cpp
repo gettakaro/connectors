@@ -5,6 +5,7 @@
 
 #include <libwebsockets.h>
 #include <openssl/x509_vfy.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <chrono>
@@ -243,7 +244,23 @@ int LwsTransport::Impl::Callback(lws* w, lws_callback_reasons reason, void* in, 
 }
 
 void LwsTransport::Impl::Run() {
-    const std::string caPath = cfg.caFile.empty() ? "/etc/ssl/certs/ca-certificates.crt" : cfg.caFile;
+    // No caFile configured: the first system bundle that exists (Debian/Ubuntu, RHEL/Fedora, Alpine/macOS
+    // style, openSUSE). Minimal container images may have none; then caFile must be set.
+    std::string caPath = cfg.caFile;
+    if (caPath.empty()) {
+        for (const char* candidate : {"/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt",
+                                      "/etc/ssl/cert.pem", "/etc/ssl/ca-bundle.pem"}) {
+            if (access(candidate, R_OK) == 0) {
+                caPath = candidate;
+                break;
+            }
+        }
+        if (caPath.empty()) {
+            Error(0, "no system CA bundle found (looked in /etc/ssl and /etc/pki); set caFile in takaro.json "
+                     "or TAKARO_CA_FILE to a PEM bundle");
+            return;
+        }
+    }
     X509_STORE* trust = X509_STORE_new();
     if (!trust || X509_STORE_load_file(trust, caPath.c_str()) != 1) {
         if (trust) X509_STORE_free(trust);
