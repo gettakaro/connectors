@@ -316,4 +316,13 @@ std::vector<Controller> OnlineControllers() {
     return out;
 }
 
+uintptr_t ObjObjectsAddress() { return kGObjObjects; }
+uintptr_t NameBlocksAddress() { return kNameBlocks; }
+
+uintptr_t LiveGameState() {
+    for (uintptr_t gs : St().ready.gameStates)
+        if (Alive(gs)) return gs;
+    return 0;
+}
+
 }  // namespace UE
