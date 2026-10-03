@@ -392,12 +392,16 @@ std::string HealthJson() {
                                      .Done();
     }
     subs += "]";
+    std::string objs = "{";
+    for (auto& r : S().requested) objs += (objs.size() > 1 ? "," : "") + JsonStr(r) + ":" + (S().found.count(r) ? "true" : "false");
+    objs += "}";
     return takaro::ObjBuilder()
         .N("scans", (double)S().scans)
         .N("scanGameThreadMs", S().scanGameNs / 1e6)
         .N("vetoes", (double)g_vetoes.load())
         .S("lastError", S().lastError)
         .Raw("subscriptions", subs)
+        .Raw("objectsFound", objs)
         .Done();
 }
 

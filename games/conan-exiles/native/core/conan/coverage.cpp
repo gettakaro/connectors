@@ -28,12 +28,12 @@ const Coverage kActions[] = {
     {"getMapTile", "unsupported", "native", "structured error", "MCP gameserverGetMapTile returns the structured error", "Hosted Takaro shows no map tiles for Generic servers; no tile renderer exists for Conan."},
 };
 const Coverage kEvents[] = {
-    {"player-connected", "pending", "pending", "{ player }", "eventSearch on a real join", "Not ported to the native connector yet (stage 2 Phase 2); nothing is emitted for it. Planned: K2_PostLogin or a PlayerArray diff."},
-    {"player-disconnected", "pending", "pending", "{ player }", "eventSearch on a real leave", "Not ported to the native connector yet (stage 2 Phase 2); nothing is emitted for it. Planned: K2_OnLogout or a PlayerArray diff."},
-    {"chat-message", "pending", "pending", "{ player, msg, channel }", "eventSearch plus the Discord post", "Not ported to the native connector yet (stage 2 Phase 2); nothing is emitted for it. Planned: ServerSendChatMessage in the detour (proven hook point)."},
-    {"player-death", "pending", "pending", "{ player, attacker?, position? }", "real death in the client", "Not ported to the native connector yet (stage 2 Phase 2); nothing is emitted for it."},
-    {"entity-killed", "pending", "pending", "{ player, entity, weapon }", "real kill in the client", "Not ported to the native connector yet (stage 2 Phase 2); nothing is emitted for it."},
-    {"log", "pending", "native", "{ msg }", "eventSearch for the critical notice", "Today only the connector's own critical notices (an unsupported server build) are sent as log events; the in-process server log tail is Phase 2."},
+    {"player-connected", "pending", "native", "{ player }", "eventSearch on a real join", "K2_PostLogin (BaseGameMode_C override) through the ProcessEvent hook dispatch: Steam64 from ConanPlayerController.UserIDFromURLOptions, name and IP from the PlayerState, cached per controller. Live proof pending."},
+    {"player-disconnected", "pending", "native", "{ player }", "eventSearch on a real leave", "K2_OnLogout through the hook dispatch, identity from the PostLogin cache (PlayerState is already null at logout). Live proof pending."},
+    {"chat-message", "pending", "native", "{ player, msg, channel }", "eventSearch plus the Discord post", "ConanPlayerController.ServerSendChatMessage through the hook dispatch: Steam64 from the called controller, text and channel from ChatRpcData (Global and Local -> global, Clan -> team). Live proof pending."},
+    {"player-death", "pending", "native", "{ player, attacker?, position?, msg }", "real death in the client", "EventOnDeath transition to Dead on a player-controlled character, killer from OnOwnerKilled, cause from the last damage; position from K2_GetActorLocation. Live proof pending."},
+    {"entity-killed", "pending", "native", "{ player, entity, weapon }", "real kill in the client", "EventOnDeath transition to Dead on a non-player character whose last damage came from a ConanPlayerController; entity display name and weapon item name read inside the hook. Live proof pending."},
+    {"log", "live-supported", "native", "{ msg }", "Live 2026-10-03 on rig 349 (bridge stopped): Takaro log hook l2c-log-serverstats executed on three consecutive real LogServerStats lines 0.7-0.9 s after they were written (MCP eventSearch hook-executed; El-Limon evidence native-stage2/L2c)", "Worker-thread tail of ConanSandbox.log (follows the rotation at server start), redacted and rate limited (30 lines/s, burst 300, a summary line for dropped lines), plus the connector's own critical notices."},
 };
 
 std::string Section(const Coverage* rows, size_t n, const char* shapeKey) {
