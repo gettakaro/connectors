@@ -228,7 +228,7 @@ until somebody checks it in game.
 | Log events | ⚠️ | Log tailing works against real Conan logs, but Takaro does not store server log lines as searchable events. |
 | Map info | ⚠️ | The bridge answers with an empty/disabled map; Conan exposes no map metadata. |
 | Map tiles | ❌ | The Takaro API does not support map tiles for Generic-connector servers. Nothing on the game server side changes that. |
-| Discord chat bridge | ⚠️ | Game → Discord ✅ 2026-10-02: the chatBridge module relayed in-game chat and join/leave posts to Discord. Discord → game uses the native chat path above; not yet checked with a real Discord post. |
+| Discord chat bridge | ✅ | Both ways, Linux server with the native library. 2026-10-02: the chatBridge module relayed in-game chat and join/leave posts to Discord. 2026-10-03: a real Discord post appeared in the client's chat as `[Takaro]: [D] <name>: <text>`. |
 | Shop & economy | ⚠️ | Never tested for Conan. Item delivery would go through the same online-player-only spawn route as "Give an item". |
 
 ### Known issues
