@@ -261,29 +261,13 @@ public:
     }
 
     bool Exit(std::string& error) override {
-        rx::Lookups l;
-        if (!rx::EnsureWorld(error) || !rx::EnsureLookups(l, error)) return false;
-        std::u16string cmd = u"exit";
-        bool ok = false;
-        bool ran = GameThread::Run(
-            [&] {
-                const Func* exec = Fn(rx::ClassOf(l.systemLibrary), "ExecuteConsoleCommand",
-                                      {{"WorldContextObject", "ObjectProperty", 8},
-                                       {"Command", "StrProperty", 16},
-                                       {"SpecificPlayer", "ObjectProperty", 8}},
-                                      error);
-                const uintptr_t world = UE::LiveGameState();
-                if (!exec || !world) {
-                    if (error.empty()) error = "no live world";
-                    return;
-                }
-                Frame f(*exec);
-                f.Obj("WorldContextObject", world).Str("Command", cmd).Obj("SpecificPlayer", 0);
-                ok = rx::Call(l.systemLibrary, *exec, f, &error);
-            },
-            kJobTimeoutMs);
-        if (!ran) error = "game thread did not respond";
-        return ran && ok;
+        // Same path as executeConsoleCommand: with a player online the command runs in that
+        // player's console, which only accepts engine commands while the admin flag is set
+        // (live 2026-10-03: "exit" without it was ignored); with nobody online it is the engine's.
+        ConsoleRun r = Console("exit");
+        if (!r.ok) error = r.error;
+        else NativeLog("shutdown: exit ran in the %s console (frame %lld)", r.context.c_str(), (long long)r.frame);
+        return r.ok;
     }
 
     bool ArmLoginHook(void (*onLogin)()) override {
