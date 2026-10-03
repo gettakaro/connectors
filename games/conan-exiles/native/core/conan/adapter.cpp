@@ -1,6 +1,7 @@
 #include "conan/adapter.h"
 
 #include "conan/coverage.h"
+#include "conan/reads.h"
 #include "conan/text.h"
 #include "takaro/json_util.h"
 #include "takaro/protocol.h"
@@ -54,6 +55,20 @@ bool ParseSendMessage(const JsonValue& args, ChatRequest& out, std::string& erro
 
 Adapter::Adapter(AdapterOptions o) : o_(std::move(o)) {
     if (!o_.chat) o_.chat = SendChat;
+    if (!o_.reads) {
+        o_.reads = [](const std::string& action, const JsonValue& args, ActionResult& out) {
+            if (!ReadService::Handles(action)) return false;
+            ReadService* rs = ProductionReads();
+            if (rs) out = rs->Execute(action, args);
+            else out.error = action + ": the engine globals are not set (no verified server build)";
+            return true;
+        };
+        o_.readsHealth = [] {
+            ReadService* rs = ProductionReads();
+            return rs ? rs->HealthJson() : std::string("null");
+        };
+        if (o_.ready) ProductionReads();  // starts the catalogue warm-up on its worker thread
+    }
     if (!o_.ready) {
         // The one critical notice of this process. It goes through the durable outbox like any event,
         // so it reaches Takaro after the first identify even when Takaro is down right now.
@@ -122,6 +137,7 @@ ActionResult Adapter::Execute(const std::string& action, const JsonValue& args) 
         r.ok = true;  // payload Null answers {}
         return r;
     }
+    if (o_.reads(action, args, r)) return r;
     return Fail(action + " has no native handler");
 }
 
@@ -159,6 +175,7 @@ std::string Adapter::HealthJson() {
         .N("chatSent", (double)chatSent_)
         .N("chatFailed", (double)chatFailed_)
         .N("lastChatGameThreadMs", lastChatMs_)
+        .Raw("reads", o_.readsHealth ? o_.readsHealth() : std::string("null"))
         .Done();
 }
 
