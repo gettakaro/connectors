@@ -82,7 +82,8 @@ struct Captured {
 struct Stats {
     std::atomic<uint64_t> connected{0}, disconnected{0}, chat{0}, deaths{0}, kills{0}, logs{0};
     std::atomic<uint64_t> deferredLogins{0}, unknownLogout{0}, unknownChat{0}, deathNoIdentity{0}, killsNotByPlayer{0},
-        dedupedDeaths{0}, pendingDeaths{0}, notReady{0}, dropped{0}, textConversions{0};
+        dedupedDeaths{0}, pendingDeaths{0}, notReady{0}, dropped{0}, textConversions{0}, connectWaitedForPawn{0},
+        connectTimedOut{0}, leftBeforeSpawn{0};
     std::atomic<uint64_t> deathHandlerMaxNs{0};
 };
 
@@ -131,6 +132,15 @@ struct Shared {
     std::vector<Captured> queue;
     std::vector<PendingDeath> pending;  // deaths waiting up to 60 ms for their damage record
     std::atomic<int> pendingCount{0};   // lets the damage hook skip the lock in the common case
+    // player-connected waits until the controller possesses its character: Takaro asks for the
+    // location right after the event and drops the event when that fails (client still loading).
+    struct PendingLogin {
+        uintptr_t pc = 0;
+        PlayerId id;
+        uint64_t tLogin = 0, emitAt = 0;  // emitAt 0: no character yet
+    };
+    std::vector<PendingLogin> pendingLogins;
+    std::atomic<int> pendingLoginCount{0};
     bool stopping = false;
     std::thread worker;
     std::unique_ptr<LogTail> logtail;
@@ -400,6 +410,25 @@ void FinishDeath(const PendingDeath& pd, const Killer& k) {
 
 // ------------------------------------------------------------------------------------- handlers
 
+constexpr uint64_t kConnectAfterPossessMs = 500, kConnectTimeoutMs = 120000;
+
+// Game thread. Queues player-connected; it is sent once the controller has a pawn.
+void QueueConnect(uintptr_t pc, const PlayerId& id) {
+    GT& g = G();
+    g.byController[pc] = id;
+    g.bySteam[id.steam64] = id;
+    int32_t po = g.offControllerPawn.Get(pc, N_Pawn);
+    uintptr_t pawn = po >= 0 ? rd<uintptr_t>(pc + (uintptr_t)po) : 0;
+    Shared::PendingLogin pl;
+    pl.pc = pc;
+    pl.id = id;
+    pl.tLogin = NowMs();
+    pl.emitAt = UER::Live(pawn) ? pl.tLogin + kConnectAfterPossessMs : 0;
+    std::lock_guard<std::mutex> lk(Sh().mu);
+    Sh().pendingLogins.push_back(pl);
+    Sh().pendingLoginCount = (int)Sh().pendingLogins.size();
+}
+
 bool OnPostLogin(const Call& c, void*) {
     if (!g_namesReady.load(std::memory_order_acquire)) {
         Sh().st.notReady++;
@@ -416,12 +445,7 @@ bool OnPostLogin(const Call& c, void*) {
         Push(std::move(d));
         return true;
     }
-    G().byController[pc] = id;
-    G().bySteam[id.steam64] = id;
-    Captured e;
-    e.kind = Kind::Connected;
-    e.a = id;
-    Push(std::move(e));
+    QueueConnect(pc, id);
     return true;
 }
 
@@ -446,6 +470,24 @@ bool OnLogout(const Call& c, void*) {
     }
     for (auto p = g.pawnToController.begin(); p != g.pawnToController.end();)
         p = p->second == pc ? g.pawnToController.erase(p) : std::next(p);
+    if (Sh().pendingLoginCount.load(std::memory_order_relaxed) > 0) {
+        bool wasPending = false;
+        {
+            std::lock_guard<std::mutex> lk(Sh().mu);
+            auto& pl = Sh().pendingLogins;
+            for (size_t i = 0; i < pl.size(); i++)
+                if (pl[i].pc == pc) {
+                    pl.erase(pl.begin() + (long)i);
+                    wasPending = true;
+                    break;
+                }
+            Sh().pendingLoginCount = (int)pl.size();
+        }
+        if (wasPending) {  // left while loading: neither event (Takaro could not have kept the connect)
+            Sh().st.leftBeforeSpawn++;
+            return true;
+        }
+    }
     if (!id.Valid()) {
         Sh().st.unknownLogout++;
         return true;
@@ -487,6 +529,14 @@ bool OnPossessed(const Call& c, void*) {
             p = UER::Alive(p->first) ? std::next(p) : g.pawnToController.erase(p);
     }
     if (pc) g.pawnToController[c.obj] = pc;
+    if (pc && Sh().pendingLoginCount.load(std::memory_order_relaxed) > 0) {
+        std::lock_guard<std::mutex> lk(Sh().mu);
+        for (auto& pl : Sh().pendingLogins)
+            if (pl.pc == pc && !pl.emitAt) {
+                pl.emitAt = NowMs() + kConnectAfterPossessMs;
+                Sh().st.connectWaitedForPawn++;
+            }
+    }
     return true;
 }
 
@@ -653,6 +703,29 @@ void WorkerLoop() {
                 }
             }
         }
+        std::vector<Shared::PendingLogin> dueLogins;
+        {
+            std::lock_guard<std::mutex> lk(Sh().mu);
+            const uint64_t now = NowMs();
+            auto& pl = Sh().pendingLogins;
+            for (size_t i = 0; i < pl.size();) {
+                bool timeout = !pl[i].emitAt && now - pl[i].tLogin > kConnectTimeoutMs;
+                if ((pl[i].emitAt && now >= pl[i].emitAt) || timeout) {
+                    if (timeout) Sh().st.connectTimedOut++;
+                    dueLogins.push_back(pl[i]);
+                    pl.erase(pl.begin() + (long)i);
+                } else {
+                    i++;
+                }
+            }
+            Sh().pendingLoginCount = (int)pl.size();
+        }
+        for (auto& l : dueLogins) {
+            Captured e;
+            e.kind = Kind::Connected;
+            e.a = l.id;
+            Deliver(e);
+        }
         if (!g_namesReady.load() && UE::HaveGlobals()) {
             std::vector<std::string> list(kNames, kNames + N_Count);
             std::vector<uint32_t> idx;
@@ -680,18 +753,9 @@ void WorkerLoop() {
                 [&] {
                     alive = IsPlayerController(d.pc);
                     ok = alive && ReadIdentity(d.pc, id);
-                    if (ok) {
-                        G().byController[d.pc] = id;
-                        G().bySteam[id.steam64] = id;
-                    }
+                    if (ok) QueueConnect(d.pc, id);
                 },
                 1000);
-            if (ok) {
-                Captured e;
-                e.kind = Kind::Connected;
-                e.a = id;
-                Deliver(e);
-            }
             if (ok || !alive || ++d.tries >= 10) {
                 if (!ok) NativeLog("events: gave up reading the identity of a new player controller");
                 deferred.erase(deferred.begin() + (long)i);
@@ -784,6 +848,9 @@ std::string EventsHealthJson() {
                             .N("log", n(st.logs))
                             .Done())
         .N("deferredLogins", n(st.deferredLogins))
+        .N("connectWaitedForPawn", n(st.connectWaitedForPawn))
+        .N("connectTimedOut", n(st.connectTimedOut))
+        .N("leftBeforeSpawn", n(st.leftBeforeSpawn))
         .N("unknownLogout", n(st.unknownLogout))
         .N("unknownChat", n(st.unknownChat))
         .N("deathNoIdentity", n(st.deathNoIdentity))

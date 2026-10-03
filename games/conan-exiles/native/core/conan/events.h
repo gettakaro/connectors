@@ -1,9 +1,12 @@
 // Takaro game events from inside the Conan server (stage 2 lane L2c; method: El-Limon
 // context/games/conan-exiles/evidence/spikes/S4-events.md).
 //
-//   player-connected     BaseGameMode_C.K2_PostLogin (After): Steam64 from the controller's
-//                        UserIDFromURLOptions, name + IP from its PlayerState; cached per controller.
-//                        An empty Steam64 is re-read from a worker-queued game-thread job.
+//   player-connected     BaseGameMode_C.K2_PostLogin (After): Steam64 from PlayerState.UniqueID
+//                        (conan/identity.h), name + IP from the PlayerState; cached per controller.
+//                        Sent once the controller possesses its character (+500 ms; 120 s cap):
+//                        Takaro asks getPlayerLocation right after the event and drops the event
+//                        when that fails, which it does while a client is still loading the world.
+//                        A player who leaves before spawning produces neither event.
 //   player-disconnected  K2_OnLogout (Before): the PostLogin cache (PlayerState is already null).
 //   chat-message         ConanPlayerController.ServerSendChatMessage (Before): Steam64 from the
 //                        called controller, channel + text from ChatRpcData. Stage 1 sendMessage
