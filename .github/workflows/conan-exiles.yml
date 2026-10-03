@@ -80,8 +80,8 @@ jobs:
       - name: Build
         run: npm run build
 
-  # The in-game chat library (LD_PRELOAD into the Linux server): unit tests and the real poller
-  # against a fake strict-mode bridge, built in the pinned toolchain image.
+  # The native connector library (LD_PRELOAD into the Linux server): unit, drift, fake-Takaro wire
+  # and real-library tests, built in the pinned buster toolchain image.
   native:
     runs-on: ubuntu-latest
     permissions:

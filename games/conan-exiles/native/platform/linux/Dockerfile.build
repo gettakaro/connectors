@@ -1,0 +1,41 @@
+# Pinned toolchain for libtakaro-conan-native.so: the base image by digest, the packages from a
+# dated Debian snapshot, and every static dependency built from a SHA-256-verified source archive.
+#
+# Buster's cmake is 3.13 (no `cmake --build -j` / `cmake --install`), hence plain make below.
+# Buster's glibc (2.28) is the newest one the Conan server binary itself requires, so the library
+# loads on every host the server does. OpenSSL and libwebsockets are therefore compiled HERE, on
+# buster: the same versions built on Bookworm (the VEIN builder) reference GLIBC_2.33+ symbols
+# and LD_PRELOAD would then fail the whole server process.
+FROM debian:buster@sha256:58ce6f1271ae1c8a2006ff7d3e54e9874d839f573d8009c20154ad0f2fb0a225
+RUN printf '%s\n' \
+      'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20240612T000000Z buster main' \
+      'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20240612T000000Z buster/updates main' \
+      'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20240612T000000Z buster-updates main' \
+      > /etc/apt/sources.list \
+ && apt-get -o Acquire::Retries=3 -o Acquire::Check-Valid-Until=false update \
+ && apt-get install -y --no-install-recommends g++ make binutils python3 cmake perl curl ca-certificates openssl \
+ && rm -rf /var/lib/apt/lists/*
+ARG PREFIX=/opt/takaro-native
+WORKDIR /tmp/sources
+# OPENSSLDIR stays under the prefix (absent at runtime), as in the VEIN builder: the library never
+# reads the host's openssl.cnf, whose provider settings differ per distribution.
+RUN curl -fsSL --retry 3 -o openssl.tar.gz https://github.com/openssl/openssl/releases/download/openssl-3.5.8/openssl-3.5.8.tar.gz \
+ && echo 'a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2  openssl.tar.gz' | sha256sum -c - \
+ && tar xf openssl.tar.gz \
+ && cd openssl-3.5.8 \
+ && CFLAGS='-O2 -fPIC -fvisibility=hidden' ./Configure linux-x86_64 no-shared no-tests no-module no-docs \
+      --prefix=$PREFIX --libdir=lib \
+ && make -j"$(nproc)" build_sw && make install_sw \
+ && cd .. && rm -rf openssl-3.5.8 openssl.tar.gz
+RUN curl -fsSL --retry 3 -o lws.tar.gz https://github.com/warmcat/libwebsockets/archive/refs/tags/v4.5.8.tar.gz \
+ && echo 'b6ade658f4af3a823d0dc806ae5ef0623f0f4f5e2aeb895a0f77c4783840c30e  lws.tar.gz' | sha256sum -c - \
+ && tar xf lws.tar.gz \
+ && mkdir lws-build && cd lws-build && cmake ../libwebsockets-4.5.8 -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PREFIX \
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_C_FLAGS='-fvisibility=hidden' \
+      -DOPENSSL_ROOT_DIR=$PREFIX -DOPENSSL_USE_STATIC_LIBS=TRUE \
+      -DLWS_WITH_SHARED=OFF -DLWS_WITH_STATIC=ON -DLWS_WITH_SERVER=OFF \
+      -DLWS_WITH_HTTP2=OFF -DLWS_WITH_ZLIB=OFF -DLWS_WITHOUT_EXTENSIONS=ON \
+      -DLWS_WITHOUT_TESTAPPS=ON -DLWS_WITH_MINIMAL_EXAMPLES=OFF \
+ && make -j"$(nproc)" && make install \
+ && cd .. && rm -rf libwebsockets-4.5.8 lws-build lws.tar.gz
+WORKDIR /src
