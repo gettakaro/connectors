@@ -131,6 +131,24 @@ void RepinThread(bool hooked, std::string savedDir) {
             }
         }
     }
+    // Player identity: once a player is online, log what PlayerState.UniqueID holds (the Steam64 source).
+    if (a.objObjects && a.nameBlocks) {
+        for (int tries = 0; tries < 180; tries++) {  // up to 30 minutes
+            std::string ids = ProbePlayerIds(a.objObjects, a.nameBlocks);
+            if (!ids.empty()) {
+                report += ids;
+                size_t s0 = 0;
+                while (s0 < ids.size()) {
+                    size_t nl = ids.find('\n', s0);
+                    if (nl == std::string::npos) nl = ids.size();
+                    NativeLog("repin: %s", ids.substr(s0, nl - s0).c_str());
+                    s0 = nl + 1;
+                }
+                break;
+            }
+            Sleep(10000);
+        }
+    }
     std::string err;
     std::string dir = takaro::JoinPath(savedDir, "Takaro");
     takaro::EnsureDirectory(dir, err);

@@ -39,6 +39,12 @@ std::string ClassName(uintptr_t nameBlocks, uintptr_t obj);
 // core/ue reads), to cross-check the Linux reflection layout on this build.
 std::string DumpClass(uintptr_t objObjects, uintptr_t nameBlocks, const char* className);
 
+// Re-pin diagnostic for player identity: for every live PlayerState, the strings reachable from
+// PlayerState.UniqueID (FUniqueNetIdRepl) within two pointer hops that look like a Steam64
+// ("7656119...", ANSI or UTF-16), with the path that reached them, plus UserIDFromURLOptions of
+// the owning controller and PlayerNamePrivate. "" when no PlayerState is live.
+std::string ProbePlayerIds(uintptr_t objObjects, uintptr_t nameBlocks);
+
 // Readable for `len` bytes (committed, not a guard page, not PAGE_NOACCESS).
 bool Readable(uintptr_t a, size_t len);
 

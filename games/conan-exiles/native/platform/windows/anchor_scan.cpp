@@ -299,6 +299,133 @@ std::string DumpClass(uintptr_t objObjects, uintptr_t nameBlocks, const char* cl
     return out;
 }
 
+namespace {
+
+uintptr_t ObjectAt(uintptr_t objObjects, int32_t i) {
+    uintptr_t objects = 0, chunk = 0, obj = 0;
+    if (!Rd(objObjects, objects) || !Rd(objects + 8 * (uintptr_t)(i / 65536), chunk) || !chunk) return 0;
+    return Rd(chunk + (uintptr_t)(i % 65536) * kItemStride + kItemObject, obj) ? obj : 0;
+}
+
+// Offset of property `prop` declared on `cls` or a superclass (-1 when missing).
+int32_t PropOffset(uintptr_t nameBlocks, uintptr_t cls, const char* prop) {
+    for (int depth = 0; cls && depth < 64; depth++) {
+        uintptr_t p = 0;
+        Rd(cls + 0x50, p);
+        for (int n = 0; p && n < 2000; n++) {
+            uint32_t id = 0;
+            Rd(p + 0x20, id);
+            if (NameText(nameBlocks, id) == prop) {
+                int32_t off = -1;
+                Rd(p + 0x44, off);
+                return off;
+            }
+            uintptr_t next = 0;
+            Rd(p + 0x18, next);
+            p = next;
+        }
+        uintptr_t super = 0;
+        Rd(cls + 0x40, super);
+        cls = super;
+    }
+    return -1;
+}
+
+bool ClassChainHas(uintptr_t nameBlocks, uintptr_t obj, const char* name) {
+    uintptr_t cls = 0;
+    Rd(obj + kObjClass, cls);
+    for (int depth = 0; cls && depth < 64; depth++) {
+        if (ObjectName(nameBlocks, cls) == name) return true;
+        uintptr_t super = 0;
+        Rd(cls + 0x40, super);
+        cls = super;
+    }
+    return false;
+}
+
+std::string ReadFStr(uintptr_t at) {
+    uintptr_t data = 0;
+    int32_t num = 0;
+    if (!Rd(at, data) || !Rd(at + 8, num) || !data || num <= 1 || num > 256 || !Readable(data, 2 * (size_t)num))
+        return "";
+    std::string s;
+    for (int32_t i = 0; i + 1 < num; i++) {
+        uint16_t c = ((const uint16_t*)data)[i];
+        s += c < 0x80 ? (char)c : '?';
+    }
+    return s;
+}
+
+// "7656119" + 10 digits as ANSI or UTF-16 inside [a, a+n).
+std::string FindSteam64(uintptr_t a, size_t n) {
+    if (!Readable(a, n)) return "";
+    const uint8_t* p = (const uint8_t*)a;
+    for (size_t i = 0; i + 17 <= n; i++) {
+        if (memcmp(p + i, "7656119", 7) == 0) {
+            bool digits = true;
+            for (size_t k = 7; k < 17 && digits; k++) digits = p[i + k] >= '0' && p[i + k] <= '9';
+            if (digits) return "ansi@+" + Hex(i) + " " + std::string((const char*)p + i, 17);
+        }
+        if (i + 34 <= n && p[i] == '7' && p[i + 1] == 0 && p[i + 2] == '6' && p[i + 3] == 0 && p[i + 4] == '5' &&
+            p[i + 6] == '6' && p[i + 8] == '1' && p[i + 10] == '1' && p[i + 12] == '9') {
+            std::string s;
+            for (size_t k = 0; k < 17; k++) s += (char)p[i + 2 * k];
+            return "utf16@+" + Hex(i) + " " + s;
+        }
+    }
+    return "";
+}
+
+}  // namespace
+
+std::string ProbePlayerIds(uintptr_t objObjects, uintptr_t nameBlocks) {
+    int32_t num = 0;
+    if (!Rd(objObjects + 8, num)) return "";
+    std::string out;
+    int found = 0;
+    for (int32_t i = 0; i < num && found < 8; i++) {
+        uintptr_t obj = ObjectAt(objObjects, i);
+        uint32_t flags = 0;
+        if (!obj || !Rd(obj + 0x08, flags) || (flags & (0x10 | 0x20))) continue;  // CDO, archetype
+        if (!ClassChainHas(nameBlocks, obj, "PlayerState")) continue;
+        uintptr_t cls = 0;
+        Rd(obj + kObjClass, cls);
+        int32_t uid = PropOffset(nameBlocks, cls, "UniqueID"), name = PropOffset(nameBlocks, cls, "PlayerNamePrivate"),
+                owner = PropOffset(nameBlocks, cls, "Owner");
+        if (uid < 0) continue;
+        found++;
+        out += "PlayerState " + ObjectName(nameBlocks, obj) + " (" + ClassName(nameBlocks, obj) + ") UniqueID@" +
+               std::to_string(uid) + " name='" + (name >= 0 ? ReadFStr(obj + (uintptr_t)name) : std::string("?")) +
+               "'";
+        uintptr_t pc = 0;
+        if (owner >= 0 && Rd(obj + (uintptr_t)owner, pc) && pc) {
+            uintptr_t pcCls = 0;
+            Rd(pc + kObjClass, pcCls);
+            int32_t urlId = PropOffset(nameBlocks, pcCls, "UserIDFromURLOptions");
+            out += " controller=" + ClassName(nameBlocks, pc) +
+                   " UserIDFromURLOptions='" + (urlId >= 0 ? ReadFStr(pc + (uintptr_t)urlId) : std::string("?")) + "'";
+        }
+        out += "\n  UniqueID bytes: " + Bytes(obj + (uintptr_t)uid, 48) + "\n";
+        std::string hit = FindSteam64(obj + (uintptr_t)uid, 48);
+        if (!hit.empty()) out += "  steam64 inline " + hit + "\n";
+        for (size_t o1 = 0; o1 < 48; o1 += 8) {
+            uintptr_t p1 = 0;
+            if (!Rd(obj + (uintptr_t)uid + o1, p1) || !p1 || InImage(p1) || !Readable(p1, 0x80)) continue;
+            hit = FindSteam64(p1, 0x80);
+            if (!hit.empty()) out += "  steam64 at [UniqueID+" + Hex(o1) + "] " + hit + "\n";
+            for (size_t o2 = 0; o2 < 0x80; o2 += 8) {
+                uintptr_t p2 = 0;
+                if (!Rd(p1 + o2, p2) || !p2 || InImage(p2) || !Readable(p2, 0x60)) continue;
+                hit = FindSteam64(p2, 0x60);
+                if (!hit.empty())
+                    out += "  steam64 at [[UniqueID+" + Hex(o1) + "]+" + Hex(o2) + "] " + hit + "\n";
+            }
+            out += "  [UniqueID+" + Hex(o1) + "] -> " + Bytes(p1, 0x40) + "\n";
+        }
+    }
+    return out;
+}
+
 bool AutoDetectAnchors(AutoAnchors& out, unsigned timeoutMs) {
     out = AutoAnchors();
     const uint64_t t0 = NowMs();
