@@ -15,7 +15,7 @@
 #include "conan/catalogue.h"
 #include "conan/player_snapshot.h"
 #include "takaro/game.h"
-#include "ue/reflect.h"
+#include "ue/safe_reflect.h"
 
 #include <atomic>
 #include <condition_variable>

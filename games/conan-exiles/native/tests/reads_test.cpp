@@ -11,7 +11,7 @@
 #include "conan/reads.h"
 #include "takaro/json_util.h"
 #include "ue/mem.h"
-#include "ue/reflect.h"
+#include "ue/safe_reflect.h"
 
 #include <cmath>
 #include <cstdio>

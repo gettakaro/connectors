@@ -10,7 +10,7 @@
 // Display names are the localised FText strings the client shows, never class or row names.
 #pragma once
 
-#include "ue/reflect.h"
+#include "ue/safe_reflect.h"
 
 #include <functional>
 #include <map>

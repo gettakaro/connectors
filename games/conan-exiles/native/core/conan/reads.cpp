@@ -743,8 +743,8 @@ ReadService* ProductionReads() {
     if (!UE::HaveGlobals()) return nullptr;
     ReadOptions o;
     o.mem = &UE::SelfMem();
-    o.objObjects = UE::ObjObjectsAddress();
-    o.nameBlocks = UE::NameBlocksAddress();
+    o.objObjects = UE::ObjObjectsAddr();
+    o.nameBlocks = UE::NameBlocksAddr();
     o.game.run = [](std::function<void()> fn, int timeoutMs) { return GameThread::Run(std::move(fn), timeoutMs); };
     o.game.call = [](uintptr_t obj, uintptr_t fn, void* parms) { UE::CallProcessEvent((void*)obj, (void*)fn, parms); };
     s = new ReadService(o);
