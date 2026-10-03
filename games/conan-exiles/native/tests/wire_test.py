@@ -142,9 +142,9 @@ def basics(binary, cert, key, root):
         check('getPlayers' in r.get('error', '') and 'payload' not in r,
               'read action without engine globals answers a structured error', r)
         for action in ('kickPlayer', 'executeConsoleCommand', 'shutdown'):
+            # the harness has no game behind the adapter: native actions answer a structured error
             r = fake.response(fake.request(action, {'gameId': '76561198000000001', 'command': 'help'}))
-            check('not implemented by the native Conan connector yet' in r.get('error', ''),
-                  f'pending action {action} answers a structured not-ported error (no RCON)', r)
+            check(action in r.get('error', ''), f'{action} without a game answers a structured error (no RCON)', r)
 
         # WIRE-3 / WIRE-4: every args shape Takaro and modules send
         shapes = [

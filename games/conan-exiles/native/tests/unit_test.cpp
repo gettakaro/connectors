@@ -380,9 +380,8 @@ static void TestAdapter() {
     CHECK(r.ok && takaro::JsonDump(r.payload) == "{\"connectable\":true,\"reason\":null}", "reachable");
     r = a.Execute("sendMessage", J("{\"message\":\"x\"}"));
     CHECK(r.ok && sent == 1 && r.payload.type == JsonValue::Null, "sendMessage ok answers {}");
-    r = a.Execute("giveItem", J("{}"));
-    CHECK(!r.ok && r.error.find("giveItem is not implemented by the native Conan connector yet") == 0, "%s",
-          r.error.c_str());
+    r = a.Execute("giveItem", J("{}"));  // no game backend in this adapter (savedDir unset): structured error
+    CHECK(!r.ok && r.error.find("giveItem") == 0, "%s", r.error.c_str());
     r = a.Execute("getMapInfo", J("{}"));
     CHECK(r.ok && takaro::JsonDump(r.payload).find("\"enabled\":false") != std::string::npos, "map info");
     r = a.Execute("bogus", J("{}"));
@@ -417,11 +416,10 @@ static void TestCoverage() {
     CHECK(std::string(ActionCoverage("sendMessage")->implementation) == "native", "chat native");
     CHECK(std::string(ActionCoverage("getMapInfo")->status) == "schema-fallback", "map fallback");
     CHECK(std::string(ActionCoverage("getMapTile")->status) == "unsupported", "tile unsupported");
-    for (auto* a : {"giveItem", "kickPlayer", "banPlayer", "shutdown", "executeConsoleCommand"})
-        CHECK(std::string(ActionCoverage(a)->implementation) == "pending", "%s still pending", a);
     for (auto* a : {"getPlayers", "getPlayer", "getPlayerLocation", "getPlayerInventory", "listItems", "listEntities",
-                    "listLocations"})
-        CHECK(std::string(ActionCoverage(a)->implementation) == "native", "%s native (lane L2a)", a);
+                    "listLocations", "giveItem", "teleportPlayer", "executeConsoleCommand", "kickPlayer", "banPlayer",
+                    "unbanPlayer", "listBans", "shutdown"})
+        CHECK(std::string(ActionCoverage(a)->implementation) == "native", "%s native", a);
     JsonValue v;
     CHECK(JsonParse(RegistryJson(), v), "registry json");
 }

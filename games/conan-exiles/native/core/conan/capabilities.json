@@ -36,11 +36,11 @@
       "reason": "Worker read of the backpack, hotbar and equipment ItemInventory lists (torn-read checked, game-thread copy as fallback); stack and durability from the GameItem stat arrays (checked against GetIntStat/GetFloatStat); fist templates 51204/51205 dropped; amounts summed per code and durability %."
     },
     "giveItem": {
-      "status": "pending",
-      "implementation": "pending",
+      "status": "live-supported",
+      "implementation": "native",
       "responseShape": "{}",
-      "verification": "MCP plus the item in the client",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: CheatSpawnItem or the in-process console executor."
+      "verification": "Live 2026-10-03 rig 349 (El-Limon evidence native-stage2/L2b): MCP gameserverGiveItem Stone x1500 -> 2 AddItemTemplate stacks, 1000 + 500 in the client inventory; template id 10001 x7 after a death/respawn; x3 after the Steam64 fix; unknown code refused in the connector (Takaro's giveItem endpoint answers {} even then)",
+      "reason": "ItemInventory.AddItemTemplate on ConanCharacter.GetBackpackInventory, one stack per call, looped until the amount is given and read back with GetNumberOfItemsByTemplate. The item code is a template id or an ItemNameToTemplateID row name (13 tables, 8,117 codes); unknown codes are refused. Quality is ignored (Conan items have no quality tier)."
     },
     "listItems": {
       "status": "live-supported",
@@ -64,11 +64,11 @@
       "reason": "/Game/Systems/Map/MapMarkers_ConanSandbox named places of the loaded map with world coordinates and discovery radius; retried until the table is loaded."
     },
     "executeConsoleCommand": {
-      "status": "pending",
-      "implementation": "pending",
+      "status": "live-supported",
+      "implementation": "native",
       "responseShape": "{ success: boolean, rawResult: string }",
-      "verification": "MCP rawResult",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: the engine's own console executor in-process (never RCON)."
+      "verification": "Live 2026-10-03 rig 349: MCP gameserverExecuteCommand 'log LogTemp Verbose' (engine console) and 'WhatsMyId' (player console) return the server's own output lines as rawResult; admin-only 'SpawnItem 12001 3' as a non-admin put 3 Plant Fiber in the client inventory; 'listplayers' refused",
+      "reason": "KismetSystemLibrary.ExecuteConsoleCommand in the first online player's console with the admin flag set and restored inside one game-thread job (the engine console when nobody is online). rawResult = the server log lines tagged with that frame (Conan commands answer through the log; unrelated lines of the same frame can appear). exit/quit and the RCON verbs (listplayers, kickplayer, banplayer, unbanplayer, listbans, broadcast, shutdown) are refused with the Takaro action to use."
     },
     "sendMessage": {
       "status": "live-supported",
@@ -78,11 +78,11 @@
       "reason": "ClientReceiveChatMessage on each online ConanPlayerController through ProcessEvent on the game thread; global, or directed by Steam64 / character name."
     },
     "teleportPlayer": {
-      "status": "pending",
-      "implementation": "pending",
+      "status": "live-supported",
+      "implementation": "native",
       "responseShape": "{}",
-      "verification": "MCP plus the client position",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback."
+      "verification": "Live 2026-10-03 rig 349: MCP gameserverTeleportPlayer to Riverwatch Camp and to two road positions; server log TeleportPlayerServer + HandleTeleportStreamingDone, read-back xy distance 0, client screenshots at each place",
+      "reason": "ConanPlayerController.TeleportPlayerServer (RunCheatCheck=false, SnapToGround=true), Conan's own teleport with area streaming and loading screen; read back with K2_GetActorLocation (x/y within 300 units; z snaps to the ground)."
     },
     "testReachability": {
       "status": "live-supported",
@@ -92,39 +92,39 @@
       "reason": "In-process: connectable when the server build is pinned and the ProcessEvent hook is installed; an unknown build answers connectable=false with the reason."
     },
     "kickPlayer": {
-      "status": "pending",
-      "implementation": "pending",
+      "status": "live-supported",
+      "implementation": "native",
       "responseShape": "{}",
-      "verification": "client disconnected",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback."
+      "verification": "Live 2026-10-03 rig 349: MCP gameserverKickPlayer -> client back at the main menu, server log Player disconnected within 0.3 s, connector confirmed the player left the online list (twice, before and after the Steam64 fix)",
+      "reason": "PlayerController.ClientReturnToMainMenuWithTextReason with the reason (FText from KismetTextLibrary.Conv_StringToText); succeeds only once the player has left the online list. The client returns to the menu without showing the reason text."
     },
     "banPlayer": {
-      "status": "pending",
-      "implementation": "pending",
+      "status": "live-supported",
+      "implementation": "native",
       "responseShape": "{}",
-      "verification": "rejoin refused, blacklist.txt",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback."
+      "verification": "Live 2026-10-03 rig 349: offline ban then rejoin -> kicked 2.6 s after Join succeeded (K2_PostLogin hook + sweep); online timed ban -> kicked at once, lifted by the connector at expiresAt, rejoin allowed",
+      "reason": "Connector ban list keyed by Steam64 in Saved/Config/Takaro/bans.json (atomic write), online and offline, permanent or timed (expiresAt); enforced by kicks after K2_PostLogin and a sweep over the online players. Conan's own blacklist cannot hold offline or timed bans and is not touched."
     },
     "unbanPlayer": {
-      "status": "pending",
-      "implementation": "pending",
+      "status": "live-supported",
+      "implementation": "native",
       "responseShape": "{}",
-      "verification": "rejoin allowed, blacklist.txt",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback."
+      "verification": "Live 2026-10-03 rig 349: MCP gameserverUnbanPlayer (player offline) -> bans.json empty, rejoin succeeded and stayed in game",
+      "reason": "Removes the Steam64 from the connector ban list (works offline). Timed bans are lifted by the connector itself at expiry (Takaro sends no unban)."
     },
     "listBans": {
-      "status": "pending",
-      "implementation": "pending",
+      "status": "live-supported",
+      "implementation": "native",
       "responseShape": "Takaro ban DTO array",
-      "verification": "MCP gameserverListBans",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback."
+      "verification": "Live 2026-10-03 rig 349: MCP gameserverListBans with a timed ban (expiresAt), a permanent ban (null) and empty",
+      "reason": "The active entries of the connector ban list with player, reason and expiresAt. Takaro sends no name with an offline ban, so the name falls back to the Steam64."
     },
     "shutdown": {
-      "status": "pending",
-      "implementation": "pending",
+      "status": "live-supported",
+      "implementation": "native",
       "responseShape": "{}",
-      "verification": "countdown in the client plus process exit",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: Conan's own admin shutdown with its countdown."
+      "verification": "Live 2026-10-03 rig 349: MCP gameserverShutdown -> '[Server]: The server shuts down in 1 minute / 30 / 10 / 5..2 seconds' in the client chat, then FUnixPlatformMisc::RequestExit(0, UGameEngine::HandleExitCommand), client 'Connection lost', LogExit: Exiting and the container exited with code 0 three minutes later",
+      "reason": "Answers first, then a chat countdown (TAKARO_CONAN_SHUTDOWN_SECONDS, default 60), then the engine's graceful exit: the console command 'exit' through KismetSystemLibrary.ExecuteConsoleCommand in the admin-context console job. No signature pin. The server needs about three minutes to unload after the exit."
     },
     "getMapInfo": {
       "status": "schema-fallback",
