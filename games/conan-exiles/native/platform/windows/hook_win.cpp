@@ -1,8 +1,8 @@
 #include "hook_win.h"
 
 #include "common.h"
+#include "conan/hook_dispatch.h"
 #include "gamethread.h"
-#include "hooks.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -46,10 +46,13 @@ void Detour(void* obj, void* func, void* parms) {
             t_draining = false;
         }
     }
-    // Registered UFunction hooks (core/hooks.h), game thread only.
-    if (Hooks::g_count.load(std::memory_order_acquire) > 0) {
+    // Subscribed UFunctions (core/conan/hook_dispatch.h): one bloom test per call when nothing matches.
+    if (const HookDispatch::Slot* slot = HookDispatch::Match(func)) {
         if (t_isGameThread < 0) t_isGameThread = GetCurrentThreadId() == g_gameThread;
-        if (t_isGameThread) Hooks::Dispatch(obj, func, parms);
+        if (t_isGameThread) {
+            HookDispatch::Invoke(slot, obj, func, parms, g_original);
+            return;
+        }
     }
     g_original(obj, func, parms);
 }

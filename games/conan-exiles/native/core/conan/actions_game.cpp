@@ -3,10 +3,11 @@
 #include "common.h"
 #include "conan/actions_ue.h"
 #include "conan/chat.h"
+#include "conan/hook_dispatch.h"
 #include "conan/text.h"
 #include "gamethread.h"
-#include "hooks.h"
 
+#include <atomic>
 #include <chrono>
 #include <map>
 #include <thread>
@@ -20,9 +21,11 @@ using rx::Func;
 
 constexpr int kJobTimeoutMs = 3000;
 
-void (*g_onLogin)() = nullptr;
-void LoginTrampoline(void*, void*, void*) {
-    if (auto f = g_onLogin) f();
+std::atomic<void (*)()> g_onLogin{nullptr};
+// K2_PostLogin, After: the ban sweep checks the new player (a counter bump, nothing else here).
+bool OnPostLogin(const HookDispatch::Call&, void*) {
+    if (auto f = g_onLogin.load(std::memory_order_acquire)) f();
+    return true;
 }
 
 class UeGame : public MutationGame {
@@ -271,21 +274,20 @@ public:
     }
 
     bool ArmLoginHook(void (*onLogin)()) override {
-        std::string error;
-        if (!rx::EnsureWorld(error)) return false;
-        uintptr_t fn = 0;
-        GameThread::Run(
-            [&] {
-                const uintptr_t gs = UE::LiveGameState();
-                rx::Param gm;
-                if (!gs || !rx::FindProperty(rx::ClassOf(gs), "AuthorityGameMode", "ObjectProperty", 8, gm)) return;
-                const uintptr_t mode = rx::Rd<uintptr_t>(gs + (uintptr_t)gm.offset);
-                if (rx::Alive(mode)) fn = rx::FindFunction(rx::ClassOf(mode), "K2_PostLogin");
-            },
-            kJobTimeoutMs);
-        if (!fn) return false;
-        g_onLogin = onLogin;
-        return Hooks::Add((void*)fn, &LoginTrampoline);
+        // One shared hook registry (conan/hook_dispatch.h): matched by name on GameModeBase and every
+        // subclass, so the BaseGameMode_C Blueprint override is hooked too.
+        static std::atomic<bool> subscribed{false};
+        g_onLogin.store(onLogin, std::memory_order_release);
+        if (subscribed.exchange(true)) return true;
+        HookDispatch::Subscription sub;
+        sub.owner = "bans";
+        sub.baseClass = "GameModeBase";
+        sub.function = "K2_PostLogin";
+        sub.phase = HookDispatch::Phase::After;
+        sub.fn = &OnPostLogin;
+        if (HookDispatch::Subscribe(sub) >= 0) return true;
+        subscribed = false;
+        return false;
     }
 
     int64_t NowMs() override {

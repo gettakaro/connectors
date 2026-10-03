@@ -16,10 +16,10 @@
 #include "conan/actions_ue.h"
 #include "conan/adapter.h"
 #include "conan/bans.h"
+#include "conan/hook_dispatch.h"
 #include "conan/shutdown.h"
 #include "conan/text.h"
 #include "gamethread.h"
-#include "hooks.h"
 #include "takaro/fileio.h"
 #include "takaro/json_util.h"
 #include "takaro/protocol.h"
@@ -853,14 +853,20 @@ static void TestReflectedGame() {
     SetOnline(true);
     CHECK(m.SweepOnce() == 1 && G.kicks.back().find("banned from this server: grief") != std::string::npos,
           "banned rejoin kicked");
-    CHECK(Hooks::g_count.load() == 1, "login hook registered");
+    CHECK(HookDispatch::HealthJson().find("\"owner\":\"bans\",\"function\":\"GameModeBase.K2_PostLogin\"") !=
+              std::string::npos,
+          "login hook subscribed in the shared registry: %s", HookDispatch::HealthJson().c_str());
+    HookDispatch::BindForTest("K2_PostLogin", G.postLogin);
     uint64_t before = g_loginCount.load();
     uint8_t parms[8];
     memcpy(parms, &G.pc, 8);
-    Hooks::Dispatch((void*)G.gm, (void*)G.postLogin, parms);
-    CHECK(g_loginCount.load() == before + 1, "K2_PostLogin hook fires");
-    Hooks::Dispatch((void*)G.gm, (void*)0x1234, parms);
-    CHECK(g_loginCount.load() == before + 1, "other functions do not");
+    static int originals = 0;
+    auto original = [](void*, void*, void*) { originals++; };
+    const HookDispatch::Slot* slot = HookDispatch::Match((void*)G.postLogin);
+    CHECK(slot != nullptr, "K2_PostLogin matched by the detour's hot path");
+    if (slot) HookDispatch::Invoke(slot, (void*)G.gm, (void*)G.postLogin, parms, original);
+    CHECK(g_loginCount.load() == before + 1 && originals == 1, "K2_PostLogin hook fires after the original");
+    CHECK(HookDispatch::Match((void*)0x1234) == nullptr, "other functions do not match");
     r = m.Execute("unbanPlayer", J("{\"gameId\":\"76561198000735875\"}"));
     CHECK(r.ok && m.bans().Size() == 0, "unban");
 

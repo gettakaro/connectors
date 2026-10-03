@@ -8,7 +8,7 @@
 //              m_IsAdmin set and restored inside the same job (never reaches a net tick), or the
 //              engine console when nobody is online; GetFrameCount tags the call's log lines
 //   exit       KismetSystemLibrary.ExecuteConsoleCommand("exit") -> UGameEngine::HandleExitCommand
-//   login hook BaseGameMode_C.K2_PostLogin through core/hooks.h
+//   login hook GameModeBase.K2_PostLogin (and its Blueprint overrides) through conan/hook_dispatch.h
 #pragma once
 
 #include "conan/actions.h"

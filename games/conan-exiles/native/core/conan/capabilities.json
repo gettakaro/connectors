@@ -53,7 +53,7 @@
       "status": "pending",
       "implementation": "native",
       "responseShape": "Takaro entity DTO array with display names",
-      "verification": "Live 2026-10-03: Takaro syncEntities -> 6003 rows, MCP entitySearch samples carry display names; no client-side entity name compare in lane L2a yet",
+      "verification": "Live 2026-10-03: Takaro syncEntities -> 6003 rows, MCP entitySearch samples carry display names and no class names (El-Limon evidence native-stage2/L2a); no client-side entity name compare yet (Phase 6)",
       "reason": "/Game/Systems/SpawnTable/SpawnDataTable rows: code = row name (also ConanCharacter.SourceSpawnTable on live NPCs), localised name, NPC class only in metadata. Built once per process."
     },
     "listLocations": {
@@ -143,46 +143,46 @@
   },
   "events": {
     "player-connected": {
-      "status": "pending",
-      "implementation": "pending",
+      "status": "live-supported",
+      "implementation": "native",
       "payloadShape": "{ player }",
-      "verification": "eventSearch on a real join",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); nothing is emitted for it. Planned: K2_PostLogin or a PlayerArray diff."
+      "verification": "Live 2026-10-03 on rig 349 (bridge stopped): real joins via Continue -> MCP eventSearch player-connected 67c41992 (first join after a server restart), 6d40bab7 (rejoin), ed854f83; client in game (El-Limon evidence native-stage2/L2c)",
+      "reason": "K2_PostLogin (BaseGameMode_C override) through the hook dispatch; Steam64 from PlayerState.UniqueID (FUniqueNetIdRepl), name and IP from the PlayerState, cached per controller. Sent once the controller possesses its character (Takaro drops a connect whose follow-up getPlayerLocation fails while the client is loading)."
     },
     "player-disconnected": {
-      "status": "pending",
-      "implementation": "pending",
+      "status": "live-supported",
+      "implementation": "native",
       "payloadShape": "{ player }",
-      "verification": "eventSearch on a real leave",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); nothing is emitted for it. Planned: K2_OnLogout or a PlayerArray diff."
+      "verification": "Live 2026-10-03: client Quit -> Exit To Main Menu -> MCP eventSearch player-disconnected 5363c0f4 0.9 s later; client on the main menu (El-Limon evidence native-stage2/L2c)",
+      "reason": "K2_OnLogout through the hook dispatch, identity from the PostLogin cache (PlayerState is already null at logout). A player who leaves before spawning produces neither event."
     },
     "chat-message": {
-      "status": "pending",
-      "implementation": "pending",
+      "status": "live-supported",
+      "implementation": "native",
       "payloadShape": "{ player, msg, channel }",
-      "verification": "eventSearch plus the Discord post",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); nothing is emitted for it. Planned: ServerSendChatMessage in the detour (proven hook point)."
+      "verification": "Live 2026-10-03: client Global and Local chat -> MCP eventSearch chat-message e1e3860d, c12f842b, e515a7db with the exact client text; chatBridgeNoEcho GameToDiscord posted to #discordtest (HTTP 200) (El-Limon evidence native-stage2/L2c)",
+      "reason": "ConanPlayerController.ServerSendChatMessage through the hook dispatch: Steam64 from the called controller's PlayerState.UniqueID, text and channel from ChatRpcData (Global and Local -> global, Clan -> team)."
     },
     "player-death": {
-      "status": "pending",
-      "implementation": "pending",
-      "payloadShape": "{ player, attacker?, position? }",
-      "verification": "real death in the client",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); nothing is emitted for it."
+      "status": "live-supported",
+      "implementation": "native",
+      "payloadShape": "{ player, attacker?, position?, msg }",
+      "verification": "Live 2026-10-03: real fall death (death screen in the client) -> MCP player-death b0a1b71b msg 'died (fall damage)' with position; two real starvation deaths 27c82ee9, 6d357ac0 matching the server log CauseOfDeath. PvP attacker not tested (one client) (El-Limon evidence native-stage2/L2c)",
+      "reason": "EventOnDeath transition to Dead on a player-controlled character, killer from OnOwnerKilled, cause from the last damage type; position from K2_GetActorLocation."
     },
     "entity-killed": {
-      "status": "pending",
-      "implementation": "pending",
+      "status": "live-supported",
+      "implementation": "native",
       "payloadShape": "{ player, entity, weapon }",
-      "verification": "real kill in the client",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); nothing is emitted for it."
+      "verification": "Live 2026-10-03: client punched a Rabbit to death (+85 XP) -> MCP entity-killed 42cc2729 entity 'Rabbit' weapon 'Unarmed', server log KillerNameInput werwerwer; an NPC-on-NPC kill produced no event. A named weapon (GetItemName path) is not proven live yet (El-Limon evidence native-stage2/L2c)",
+      "reason": "EventOnDeath transition to Dead on a non-player character whose last damage came from a ConanPlayerController; entity display name and weapon item name read inside the hook."
     },
     "log": {
-      "status": "pending",
+      "status": "live-supported",
       "implementation": "native",
       "payloadShape": "{ msg }",
-      "verification": "eventSearch for the critical notice",
-      "reason": "Today only the connector's own critical notices (an unsupported server build) are sent as log events; the in-process server log tail is Phase 2."
+      "verification": "Live 2026-10-03 on rig 349 (bridge stopped): Takaro log hook l2c-log-serverstats executed on three consecutive real LogServerStats lines 0.7-0.9 s after they were written (MCP eventSearch hook-executed; El-Limon evidence native-stage2/L2c)",
+      "reason": "Worker-thread tail of ConanSandbox.log (follows the rotation at server start), redacted and rate limited (30 lines/s, burst 300, a summary line for dropped lines), plus the connector's own critical notices."
     }
   }
 }
