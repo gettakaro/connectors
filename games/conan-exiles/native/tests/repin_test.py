@@ -344,11 +344,18 @@ def test_code_and_catalog(tmp):
     code, out = run("code", "--core", core)
     check(code == 0, "code: the real core is covered by the manifest")
     (core / "conan/newlane.cpp").write_text(
-        'const char* const kInventoryNames[2] = {"ItemInventory", "ItemList"};\n'
-        'void f() { FindFunctionByName("KismetSystemLibrary", "ExecuteConsoleCommand"); }\n')
+        'const char* const kInventoryNames[2] = {"ItemInventoryX", "ItemListX"};\n'
+        'void f() { FindFunctionByName("KismetSystemLibrary", "ExecuteConsoleCommandX"); }\n'
+        'void g() { FindProperty(ClassOf(pc), "NestedArgX", "IntProperty", 4, p); }\n'
+        'void h() { Fn(rx::ClassOf(pawn), "WrappedFnX", {{"ParamX", "IntProperty", 4}}, e); }\n'
+        'void i() { HookDispatch::Subscription s; s.baseClass = "HookBaseX"; s.function = "HookFnX"; '
+        's.params = {"HookParamX"}; sub("SubBaseX", "SubFnX", Phase::After, {"SubParamX"}, OnX); }\n')
     code, out = run("code", "--core", core)
-    check(code == 1 and "'ItemInventory'" in out and "'ExecuteConsoleCommand'" in out,
-          "code: a new lookup missing from the manifest fails")
+    want = ["ItemInventoryX", "ExecuteConsoleCommandX", "NestedArgX", "WrappedFnX", "ParamX", "HookBaseX", "HookFnX",
+            "HookParamX", "SubBaseX", "SubFnX", "SubParamX"]
+    check(code == 1 and all("'%s'" % w in out for w in want),
+          "code: a new lookup missing from the manifest fails (arrays, nested calls, wrappers, hook subscriptions): %s"
+          % [w for w in want if "'%s'" % w not in out])
     print("  %s code <-> manifest: real core covered; an unlisted new lookup fails" % ("PASS" if code == 1 else "FAIL"))
 
     cat = Path(tmp) / "catalog"

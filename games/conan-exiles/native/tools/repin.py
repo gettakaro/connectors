@@ -244,6 +244,16 @@ def rederive(new, sig, old=None, hint=None):
 
 
 # --------------------------------------------------------------------------- reflection
+def field_types_of(structs):
+    """Every property type seen: struct properties and UFunction parameters."""
+    out = set()
+    for s in structs:
+        out.update(p["type"] for p in s.get("properties", []))
+        for f in s.get("functions", []):
+            out.update(p["type"] for p in f.get("params", []))
+    return out
+
+
 class DumpSource:
     def __init__(self, path):
         d = load_json(path)
@@ -256,7 +266,7 @@ class DumpSource:
         return self.structs.get(name)
 
     def field_types(self):
-        return {p["type"] for s in self.structs.values() for p in s.get("properties", [])}
+        return field_types_of(self.structs.values())
 
 
 class ProbeSource:
@@ -281,7 +291,7 @@ class ProbeSource:
         return self.cache[name]
 
     def field_types(self):
-        return {p["type"] for s in self.cache.values() if s for p in s.get("properties", [])}
+        return field_types_of(s for s in self.cache.values() if s)
 
 
 def lookup(src, e):
@@ -659,23 +669,53 @@ def cmd_fixtures(a):
 
 
 # --------------------------------------------------------------------------- manifest <-> code
-NAME_ARRAY = re.compile(r"\bk\w*Names?\w*\s*\[[^\]]*\]\s*=\s*\{(.*?)\};", re.S)
-LOOKUP_CALL = re.compile(r"\b(?:Find|Lookup|Resolve)\w*(?:Class|Function|Func|Property|Prop|Struct|Enum|Name)s?\w*"
-                         r"\s*\(([^;{}]*?)\)\s*[;,)]", re.S)
+NAME_ARRAY = re.compile(r"\bk\w*Names?\w*\s*(?:\[[^\]]*\])?\s*=\s*\{(.*?)\};", re.S)
+# Calls whose string arguments are reflected names: the Find*/Lookup*/Resolve* helpers of every
+# lane, the safe reflection (Type/Offset/Function/Param/ByPath/Scan), name checks, the shared hook
+# registry (RequestObject/FoundObject) and the PlayerLayout lambdas (off/type) and wrappers (Fn).
+LOOKUP_NAME = re.compile(r"\b(?:(?:Find|Lookup|Resolve)\w*|IsA|InstanceOf|NameIs|Offset|Function|Param|Type|"
+                         r"ByPath|Scan|RequestObject|FoundObject|FindNameIndices|PropertyOffset|off|type|Fn)\s*\(")
+# Hook subscriptions: Subscription fields, or the events helper sub("Base", "Function", phase, {params}, fn).
+SUB_FIELD = re.compile(r"\.(?:baseClass|function)\s*=\s*(\"[^\"]*\")|\.params\s*=\s*\{([^}]*)\}")
+SUB_CALL = re.compile(r"\bsub\s*\(")
 LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
-IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$|^/Game/[A-Za-z0-9_./]*$")
+
+
+def _call_args(text, start):
+    """The argument text of the call whose '(' is at text[start - 1], with nested (), {} balanced."""
+    depth, i = 1, start
+    while i < len(text) and depth:
+        c = text[i]
+        if c == '"':
+            j = i + 1
+            while j < len(text) and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            i = j
+        elif c in "({":
+            depth += 1
+        elif c in ")}":
+            depth -= 1
+        i += 1
+    return text[start:i - 1]
 
 
 def names_in_code(root):
     found = {}
     for f in sorted(Path(root).rglob("*.cpp")) + sorted(Path(root).rglob("*.h")):
+        if f.relative_to(root).parts[0] in ("takaro", "pins"):  # the protocol half and the pins: no reflection
+            continue
         text = f.read_text(errors="replace")
-        text = re.sub(r"//[^\n]*", "", text)
-        for rx in (NAME_ARRAY, LOOKUP_CALL):
-            for m in rx.finditer(text):
-                for lit in LITERAL.findall(m.group(1)):
-                    if IDENT.match(lit):
-                        found.setdefault(lit, set()).add(str(f.relative_to(root)))
+        text = re.sub(r"#include\s+\"[^\"]*\"", "", re.sub(r"//[^\n]*", "", text))
+        text = re.sub(r"'(?:\\.|[^'\\])'", "''", text)
+        chunks = [m.group(1) for m in NAME_ARRAY.finditer(text)]
+        chunks += [_call_args(text, m.end()) for m in LOOKUP_NAME.finditer(text)]
+        chunks += [_call_args(text, m.end()) for m in SUB_CALL.finditer(text)]
+        chunks += [m.group(1) or m.group(2) for m in SUB_FIELD.finditer(text)]
+        for chunk in chunks:
+            for lit in LITERAL.findall(chunk):
+                if IDENT.match(lit):
+                    found.setdefault(lit, set()).add(str(f.relative_to(root)))
     return found
 
 
@@ -688,6 +728,8 @@ def manifest_names(manifest):
         for k in ("type",):
             if e.get("baseline", {}).get(k):
                 out.add(e["baseline"][k].lower())
+        for param in e.get("baseline", {}).get("params", []):  # function parameters are covered by it
+            out.add(param[0].lower())
     out.update(n.lower() for n in manifest.get("engineNames", []))
     return out
 
