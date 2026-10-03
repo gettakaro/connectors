@@ -28,8 +28,14 @@ constexpr size_t kPlainString = 0x20, kStRef = 0x18, kStEntry = 0x18, kStString 
 }  // namespace TextLayout
 
 enum class TextKind { Unreadable, Plain, StringTable, UnknownVtable };
+// ITextData vtable -> how its display string is stored. Seeded with the Linux 25639945 vtables;
+// other vtables (and every one on Windows, where the PE addresses differ) are learned at runtime
+// by comparing the first text of each vtable with Conv_TextToString (Catalogue::Text).
+using TextVtables = std::unordered_map<uintptr_t, TextKind>;
+TextVtables DefaultTextVtables();
 // Decodes the FText at `ftextAddr`. Returns the kind; `out` is set for Plain/StringTable.
-TextKind DecodeText(const UE::Mem& m, uintptr_t ftextAddr, std::string& out);
+TextKind DecodeText(const UE::Mem& m, uintptr_t ftextAddr, std::string& out, const TextVtables& vtables);
+TextKind DecodeText(const UE::Mem& m, uintptr_t ftextAddr, std::string& out);  // default vtables
 
 // The game-thread fallback for one FText (Conv_TextToString); returns false when it could not run.
 using SlowTextFn = std::function<bool(uintptr_t ftextAddr, std::string& out)>;
@@ -117,6 +123,8 @@ private:
     std::string Text(const UE::Reflection& r, const SlowTextFn& slow, uintptr_t addr);
 
     bool forceSlow_ = false;
+    TextVtables vtables_ = DefaultTextVtables();
+    std::unordered_map<uintptr_t, bool> slowOnly_;  // vtables no worker layout matched
     bool haveItems_ = false, haveEntities_ = false, haveLocations_ = false;
     std::vector<ItemEntry> items_;  // every ItemTable row, listed ones sorted first by name
     std::unordered_map<int32_t, size_t> byTemplate_;

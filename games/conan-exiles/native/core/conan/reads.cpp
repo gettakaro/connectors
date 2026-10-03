@@ -308,7 +308,6 @@ void ReadService::RunPlayerChecks(const PlayerRecord& p) {
 void ReadService::RunStatsCheck(const InvItem& item) {
     if (statsCheck_ != Check::Pending) return;
     PlayerReader reader(*r_, layout_);
-    InvItem engine;
     std::vector<std::pair<int, int32_t>> ints;
     std::vector<std::pair<int, float>> floats;
     bool decoded = false;
@@ -506,7 +505,7 @@ std::vector<std::string> ReadService::Candidates(const JsonValue& args) {
 const PlayerRecord* ReadService::Match(const std::vector<PlayerRecord>& players, const std::vector<std::string>& ids) {
     for (auto& id : ids)
         for (auto& p : players)
-            if (p.steam64 == id) return &p;
+            if (p.steam64 == id || (!p.urlId.empty() && p.urlId == id) || (!p.uniqueId.empty() && p.uniqueId == id)) return &p;
     for (auto& id : ids)
         for (auto& p : players)
             if (EqualsIgnoreCase(p.name, id) || EqualsIgnoreCase(p.characterName, id)) return &p;

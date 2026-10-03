@@ -71,6 +71,7 @@ int main(int argc, char** argv) {
     std::string player, record;
     bool full = false;
     std::vector<std::string> find;
+    bool uniqueId = false;
     for (int i = 2; i < argc; i++) {
         std::string a = argv[i];
         if (a == "--objobjects" && i + 1 < argc) objObjects = strtoull(argv[++i], nullptr, 0);
@@ -78,11 +79,48 @@ int main(int argc, char** argv) {
         else if (a == "--player" && i + 1 < argc) player = argv[++i];
         else if (a == "--record" && i + 1 < argc) record = argv[++i];
         else if (a == "--full") full = true;
+        else if (a == "--uniqueid") uniqueId = true;
         else if (a == "--find" && i + 1 < argc) find.push_back(argv[++i]);
     }
     FILE* rec = record.empty() ? nullptr : fopen(record.c_str(), "wb");
     RemoteMem mem(pid, rec);
     SetNativeLogPath("/dev/stderr");
+    if (uniqueId) {  // dumps PlayerState.UniqueID (FUniqueNetIdRepl) of every online player
+        UE::Reflection r(mem, objObjects, nameBlocks);
+        r.Scan({"GameStateBase", "PlayerState", "Actor", "Controller", "SceneComponent", "ConanPlayerController",
+                "BasePlayerChar_C", "BaseBPChar_C", "ItemInventory", "GameItem"});
+        conan::PlayerLayout l;
+        std::string err;
+        if (!l.Resolve(r, err)) { printf("layout: %s\n", err.c_str()); return 1; }
+        conan::PlayerReader pr(r, l);
+        std::vector<conan::PlayerRecord> ps;
+        pr.Players(r.Instances(l.gameStateBase, 8), ps, err);
+        int32_t off = r.Prop(r.Type("PlayerState"), "UniqueID").offset;
+        auto hex = [&](uintptr_t a, size_t n) {
+            std::vector<uint8_t> b(n);
+            if (!mem.Read(a, b.data(), n)) { printf("  %#lx unreadable\n", (unsigned long)a); return; }
+            for (size_t i = 0; i < n; i += 16) {
+                printf("  %#lx +%03zx:", (unsigned long)(a + i), i);
+                for (size_t j = i; j < i + 16 && j < n; j++) printf(" %02x", b[j]);
+                printf("  ");
+                for (size_t j = i; j < i + 16 && j < n; j++) printf("%c", b[j] >= 32 && b[j] < 127 ? b[j] : '.');
+                printf("\n");
+            }
+        };
+        for (auto& p : ps) {
+            printf("player %s ps=%#lx UniqueID@%d\n", p.steam64.c_str(), (unsigned long)p.ps, off);
+            hex(p.ps + off, 48);
+            uintptr_t obj = mem.Rd<uintptr_t>(p.ps + off + 8);
+            printf(" object %#lx:\n", (unsigned long)obj);
+            hex(obj, 0x60);
+            printf(" FName @+0x20 = %s, vtable %#lx\n", r.FName(obj + 0x20).c_str(), (unsigned long)mem.Rd<uintptr_t>(obj));
+            for (int o = 8; o <= 0x50; o += 8) {
+                std::string s2;
+                if (mem.ReadFString(obj + o, s2, 256) && !s2.empty()) printf(" FString @+%#x = %s\n", o, s2.c_str());
+            }
+        }
+        return 0;
+    }
     if (!find.empty()) {
         UE::Reflection r(mem, objObjects, nameBlocks);
         printf("scan: %lld objects\n", (long long)r.Scan(find));
