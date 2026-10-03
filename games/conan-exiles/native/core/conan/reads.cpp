@@ -469,6 +469,16 @@ int32_t ReadService::ResolveItemCode(const std::string& code) {
     return catalogue_ && catalogue_->HaveItems() ? catalogue_->ResolveCode(code) : 0;
 }
 
+std::string ReadService::KnownName(const std::string& steam64) {
+    std::lock_guard<std::mutex> l(mu_);
+    auto it = known_.find(steam64);
+    if (it == known_.end()) return "";
+    JsonValue v;
+    if (!takaro::ParseJson(it->second.json, v) || v.type != JsonValue::Object) return "";
+    const JsonValue* n = v.get("name");
+    return n && n->type == JsonValue::String ? n->str : "";
+}
+
 std::string ReadService::EntityNameForClass(const std::string& npcClass) {
     std::lock_guard<std::mutex> l(catMu_);
     if (!catalogue_ || !catalogue_->HaveEntities() || npcClass.empty()) return "";
