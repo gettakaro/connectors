@@ -138,6 +138,11 @@ static void TestNaming() {
     EQ(WeaponName("xxx_Stygian Raider Mask_Surge", 1), "");
     CHECK(IsInternalName("dev_thing") && IsInternalName("Deprecated sword") && !IsInternalName("Xenophobe"), "filter");
     CHECK(!IsInternalName("Rabbit") && IsInternalName(""), "filter 2");
+    EQ(EntityNameFromClass("BP_NPC_Wildlife_Rabbit_C"), "Rabbit");
+    EQ(EntityNameFromClass("BP_NPC_Wildlife_Rabbit_White_C"), "Rabbit White");
+    EQ(EntityNameFromClass("HumanoidNPCCharacter_C"), "HumanoidNPCCharacter");
+    EQ(EntityNameFromClass("BP_NPC_XX_Debug_C"), "");
+    EQ(EntityNameFromClass(""), "");
 }
 
 static void TestLogHelpers() {

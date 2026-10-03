@@ -435,4 +435,15 @@ std::string Catalogue::CodeFor(int32_t id) const {
     return e ? e->code : std::to_string(id);
 }
 
+std::string Catalogue::EntityNameForClass(const std::string& npcClass) const {
+    auto lower = [](std::string v) {
+        for (auto& ch : v) ch = (char)tolower((unsigned char)ch);
+        return v;
+    };
+    const std::string want = lower(npcClass);
+    for (const auto& e : entities_)
+        if (lower(e.npcClass) == want && !e.name.empty()) return e.name;
+    return "";
+}
+
 }  // namespace conan

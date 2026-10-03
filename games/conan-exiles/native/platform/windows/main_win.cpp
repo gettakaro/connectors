@@ -15,6 +15,7 @@
 #include "conan/adapter.h"
 #include "conan/events.h"
 #include "conan/hook_dispatch.h"
+#include "conan/reads.h"
 #include "conan/perf_sampler.h"
 #include "dllmain.h"
 #include "gamethread.h"
@@ -258,6 +259,10 @@ void StartConnector() {
     eo.healthFile = takaro::JoinPath(cfg.stateDir, "events-health.json");
     eo.secrets = {cfg.identityToken, cfg.registrationToken};
     eo.hooks = ao.ready;
+    eo.entityNameForClass = [](const std::string& cls) {
+        conan::ReadService* r = conan::ProductionReads();
+        return r ? r->EntityNameForClass(cls) : std::string();
+    };
     conan::StartEvents(eo);
     if (ao.ready) HookDispatch::Start();
     if (ao.ready) conan::StartPerfSampler();

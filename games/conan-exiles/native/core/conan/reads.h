@@ -65,6 +65,9 @@ public:
 
     // giveItem (lane L2b) can resolve item codes once the item catalogue is built.
     int32_t ResolveItemCode(const std::string& code);
+    // listEntities display name of an NPC class ("BP_NPC_Wildlife_Rabbit_C" -> "Rabbit"); "" when
+    // the entity catalogue is not built or has no row with that class. Any thread.
+    std::string EntityNameForClass(const std::string& npcClass);
 
 private:
     takaro::ActionResult ExecuteImpl(const std::string& action, const JsonValue& args);

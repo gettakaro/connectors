@@ -57,6 +57,9 @@ std::string DeathMessage(const std::string& victim, const std::string& killer, c
 std::string WeaponName(const std::string& itemName, int32_t templateId);
 // True for S3's internal-row filter.
 bool IsInternalName(const std::string& name);
+// Last-resort entity name from an NPC class when neither the character nor the entity catalogue
+// names it: "BP_NPC_Wildlife_Rabbit_White_C" -> "Rabbit White". "" when nothing is left.
+std::string EntityNameFromClass(const std::string& npcClass);
 
 // ---- log tail helpers ----
 // Splits appended bytes into complete lines; keeps a partial last line for the next call.

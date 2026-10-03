@@ -75,6 +75,7 @@ struct Captured {
     PlayerId a, b;  // a: the event's player; b: attacker (Death)
     bool hasB = false;
     std::string s1, s2;  // Chat: channel, msg. Death: msg. Killed: entity, weapon.
+    std::string s3;      // Killed: the victim's class when s1 is empty
     Position pos;
     uintptr_t controller = 0;  // DeferredLogin only (re-read on the game thread)
 };
@@ -99,6 +100,7 @@ struct PendingDeath {
     bool isPlayer = false;
     PlayerId victimId;
     std::string victimName;  // entity display name (non-player)
+    std::string victimClass;  // class name when victimName is empty (resolved on the worker)
     Position pos;
     uint64_t tMs = 0;
 };
@@ -401,7 +403,8 @@ void FinishDeath(const PendingDeath& pd, const Killer& k) {
     }
     c.kind = Kind::Killed;
     c.a = k.player;
-    c.s1 = pd.victimName.empty() ? "Unknown creature" : pd.victimName;
+    c.s1 = pd.victimName;
+    c.s3 = pd.victimClass;
     c.s2 = k.weapon;
     Push(std::move(c));
 }
@@ -607,6 +610,7 @@ bool OnStateChange(const Call& c, void*) {
         pd.pos = LocationOf(ch);
     } else {
         pd.victimName = EntityName(ch);
+        if (pd.victimName.empty()) pd.victimClass = UER::ObjectName(UER::ClassOf(ch));
     }
     Damage* d = DamageFor(ch, false);
     const bool fresh = d && ((d->tMs && now - d->tMs <= kDamageFreshMs) || (d->killerMs && now - d->killerMs <= kDamageFreshMs));
@@ -657,9 +661,15 @@ void Deliver(const Captured& c) {
                       c.hasB ? c.b.steam64.c_str() : "-", c.s1.c_str());
             break;
         case Kind::Killed:
-            Emit("entity-killed", events::KilledPayload(c.a, c.s1, c.s2), st.kills);
-            NativeLog("events: entity-killed by %s entity=\"%s\" weapon=\"%s\"", c.a.steam64.c_str(), c.s1.c_str(),
-                      c.s2.c_str());
+        {
+            std::string entity = c.s1;
+            if (entity.empty() && !c.s3.empty() && Sh().o.entityNameForClass) entity = Sh().o.entityNameForClass(c.s3);
+            if (entity.empty()) entity = events::EntityNameFromClass(c.s3);
+            if (entity.empty()) entity = "Unknown creature";
+            Emit("entity-killed", events::KilledPayload(c.a, entity, c.s2), st.kills);
+            NativeLog("events: entity-killed by %s entity=\"%s\"%s%s weapon=\"%s\"", c.a.steam64.c_str(), entity.c_str(),
+                      c.s1.empty() ? " from class " : "", c.s1.empty() ? c.s3.c_str() : "", c.s2.c_str());
+        }
             break;
         case Kind::DeferredLogin:
             break;
