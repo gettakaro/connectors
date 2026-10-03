@@ -9,6 +9,7 @@ on:
       - 'maintenance/**'
       - 'scripts/**'
       - '.github/workflows/conan-exiles.yml'
+      - '.github/workflows/conan-exiles-repin-watch.yml'
       - '.github/workflows/connector-release.yml'
   pull_request:
     paths:
@@ -17,6 +18,7 @@ on:
       - 'maintenance/**'
       - 'scripts/**'
       - '.github/workflows/conan-exiles.yml'
+      - '.github/workflows/conan-exiles-repin-watch.yml'
       - '.github/workflows/connector-release.yml'
   workflow_call:
     inputs:
@@ -81,7 +83,11 @@ jobs:
         run: npm run build
 
   # The native connector library (LD_PRELOAD into the Linux server): unit, drift, fake-Takaro wire
-  # and real-library tests, built in the pinned buster toolchain image.
+  # and real-library tests, built in the pinned buster toolchain image. The same run holds the
+  # re-pin checks: a wrong build degrades cleanly, pins.json agrees with catalog/conan-exiles
+  # targets, the reflection manifest covers every name core/ looks up, and tools/repin.py + the
+  # Steam build watch pass on synthetic binaries. The real-binary anchor fixtures are server
+  # machine code and are not in this repo; the maintainers' runner runs those checks.
   native:
     runs-on: ubuntu-latest
     permissions:
@@ -91,7 +97,7 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-tags: true
-      - name: Build and test the native library
+      - name: Build and test the native library (incl. re-pin checks)
         run: games/conan-exiles/native/build.sh --tests
 
   # The Windows native connector (winmm.dll proxy), cross-compiled with the zig the Enshrouded

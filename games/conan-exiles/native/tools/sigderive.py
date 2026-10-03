@@ -28,26 +28,50 @@ import struct
 import sys
 
 
+def _gnu_build_id(notes):
+    o = 0
+    while o + 12 <= len(notes):
+        namesz, descsz, ntype = struct.unpack_from("<III", notes, o)
+        name_end = o + 12 + ((namesz + 3) & ~3)
+        desc = notes[name_end:name_end + descsz]
+        if ntype == 3 and notes[o + 12:o + 12 + namesz].rstrip(b"\0") == b"GNU":
+            return desc.hex()
+        o = name_end + ((descsz + 3) & ~3)
+    return ""
+
+
 class Image:
     def __init__(self, path):
         d = open(path, "rb").read()
+        self.path = path
         self.text = None
         self.ranges = []  # (lo, hi) address ranges of mapped data and code, for the address heuristic
+        self.sections = []  # (name, lo, hi, writable) of every mapped section
+        self.identity = ""  # GNU build-id (ELF) or the PE code id (TimeDateStamp + SizeOfImage)
         if d[:2] == b"MZ":
+            self.kind = "pe"
             pe_off, = struct.unpack_from("<I", d, 0x3C)
             nsec, = struct.unpack_from("<H", d, pe_off + 6)
+            stamp, = struct.unpack_from("<I", d, pe_off + 8)
             opt_size, = struct.unpack_from("<H", d, pe_off + 20)
             sec_off = pe_off + 24 + opt_size
             self.base, = struct.unpack_from("<Q", d, pe_off + 24 + 24)
+            size_of_image, = struct.unpack_from("<I", d, pe_off + 24 + 56)
+            # The key Microsoft symbol servers use for an image: stable per build, readable at runtime
+            # from the loaded module's own headers.
+            self.identity = "%08X%X" % (stamp, size_of_image)
             for i in range(nsec):
                 o = sec_off + i * 40
                 name = d[o:o + 8].rstrip(b"\0").decode()
                 vsize, vaddr, rawsize, rawoff = struct.unpack_from("<IIII", d, o + 8)
+                chars, = struct.unpack_from("<I", d, o + 36)
                 self.ranges.append((self.base + vaddr, self.base + vaddr + vsize))
+                self.sections.append((name, self.base + vaddr, self.base + vaddr + vsize, bool(chars & 0x80000000)))
                 if name == ".text":
                     self.text = d[rawoff:rawoff + rawsize]
                     self.text_addr = self.base + vaddr
         elif d[:4] == b"\x7fELF":
+            self.kind = "elf"
             self.base = 0
             e_shoff, = struct.unpack_from("<Q", d, 0x28)
             e_shentsize, e_shnum, e_shstrndx = struct.unpack_from("<HHH", d, 0x3A)
@@ -61,6 +85,10 @@ class Image:
                 name = d[shstr_off + sh_name:end]
                 if sh_flags & 2 and sh_addr:  # SHF_ALLOC
                     self.ranges.append((sh_addr, sh_addr + sh_size))
+                    self.sections.append((name.decode(), sh_addr, sh_addr + sh_size, bool(sh_flags & 1)))
+                sh_type, = struct.unpack_from("<I", d, o + 4)
+                if sh_type == 7 and not self.identity:  # SHT_NOTE: look for NT_GNU_BUILD_ID
+                    self.identity = _gnu_build_id(d[sh_off:sh_off + sh_size])
                 if name == b".text":
                     self.text = d[sh_off:sh_off + sh_size]
                     self.text_addr = sh_addr
@@ -68,6 +96,15 @@ class Image:
             raise SystemExit("%s is neither ELF nor PE" % path)
         if self.text is None:
             raise SystemExit("no .text section")
+
+    def writable(self, a):
+        return any(w and lo <= a < hi for _, lo, hi, w in self.sections)
+
+    def section_of(self, a):
+        for name, lo, hi, _ in self.sections:
+            if lo <= a < hi:
+                return name
+        return ""
 
     def mapped(self, a):
         return any(lo <= a < hi for lo, hi in self.ranges)

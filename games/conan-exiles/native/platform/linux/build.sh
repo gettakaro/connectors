@@ -5,7 +5,9 @@
 #   --tests   also build and run the host tests (tests/run.sh)
 # Env: DEBUG_WRONG_BUILD_ID=1 builds a library pinned to a fake build-id (degrade proof only);
 #      CONAN_SERVER_BINARY=<path> (Linux) and CONAN_SERVER_BINARY_WIN=<path> (Windows exe) are
-#      mounted for the pins oracle tests.
+#      mounted for the pins oracle tests; CONAN_ANCHOR_FIXTURES=<dir> (private anchor fixtures,
+#      not in this repo) for the fixture tests; catalog/conan-exiles is mounted read-only for the
+#      pins.json <-> catalog check.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 cd "$here/../.."   # games/conan-exiles/native
@@ -28,9 +30,18 @@ if [ "$NATIVE" = 0 ]; then
   env=()
   [ -n "${DEBUG_WRONG_BUILD_ID:-}" ] && env+=(-e "DEBUG_WRONG_BUILD_ID=$DEBUG_WRONG_BUILD_ID")
   mounts=()
+  # tests/run.sh checks pins.json against the catalog targets, which live outside this tree.
+  if [ -f ../../../catalog/conan-exiles/game.json ]; then
+    mounts+=(-v "$(cd ../../../catalog/conan-exiles && pwd):/catalog:ro")
+    env+=(-e CONAN_CATALOG_DIR=/catalog)
+  fi
   if [ -n "${CONAN_SERVER_BINARY:-}" ]; then
     mounts+=(-v "$CONAN_SERVER_BINARY:/conan-server-binary:ro")
     env+=(-e CONAN_SERVER_BINARY=/conan-server-binary)
+  fi
+  if [ -n "${CONAN_ANCHOR_FIXTURES:-}" ]; then
+    mounts+=(-v "$(cd "$CONAN_ANCHOR_FIXTURES" && pwd):/anchor-fixtures:ro")
+    env+=(-e CONAN_ANCHOR_FIXTURES=/anchor-fixtures)
   fi
   if [ -n "${CONAN_SERVER_BINARY_WIN:-}" ]; then
     mounts+=(-v "$CONAN_SERVER_BINARY_WIN:/conan-server-binary-win.exe:ro")

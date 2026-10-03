@@ -7,6 +7,11 @@
 #   pins_oracle   the signature scan over the real 25639945 binary (CONAN_SERVER_BINARY; skipped
 #                 when not given); pins_oracle_pe the same over the Windows exe (CONAN_SERVER_BINARY_WIN)
 #   drift_test    capabilities.json / pins.json equal the compiled tables
+#   pins_fixture  the production scan over real-binary anchor fixtures: match once, wrong build /
+#                 duplicate / moved anchors refused. The fixtures are server machine code and stay
+#                 out of this repo: CONAN_ANCHOR_FIXTURES=<dir> (our runner's private copy) enables it
+#   repin         tools/repin.py on synthetic shifted binaries, the reflection diff, the
+#                 manifest <-> core check, pins.json <-> catalog targets, the Steam build watch
 #   wire_test     the production Takaro half against a fake Takaro (TLS WebSocket), incl. a 20 s outage
 #   so_test       the real dist/libtakaro-conan-native.so preloaded into a stand-in server
 set -euo pipefail
@@ -54,6 +59,26 @@ echo "== harness + drift_test"
 "$CXX" "${FLAGS[@]}" tests/harness.cpp "${CORE[@]}" platform/linux/transport_lws.cpp "${LWS[@]}" \
     -o tests/build/harness
 python3 tests/drift_test.py tests/build/harness
+
+echo "== pins_fixture_test"
+"$CXX" "${FLAGS[@]}" -O2 tests/pins_fixture_test.cpp core/pins/pins.cpp core/common.cpp -o tests/build/pins_fixture_test
+if [ -n "${CONAN_ANCHOR_FIXTURES:-}" ] && compgen -G "$CONAN_ANCHOR_FIXTURES/*.anchors" > /dev/null; then
+  ./tests/build/pins_fixture_test "$CONAN_ANCHOR_FIXTURES"/*.anchors
+  python3 tools/repin.py fixtures --dir "$CONAN_ANCHOR_FIXTURES"
+else
+  echo "SKIP pins_fixture_test: set CONAN_ANCHOR_FIXTURES to the private anchor-fixture directory"
+fi
+
+echo "== repin tooling"
+python3 tests/repin_test.py
+python3 tools/repin.py code
+catalog="${CONAN_CATALOG_DIR:-../../../catalog/conan-exiles}"
+[ -f "$catalog/game.json" ] || { echo "FAIL no catalog at $catalog (set CONAN_CATALOG_DIR)" >&2; exit 1; }
+python3 tools/repin.py catalog --catalog "$catalog"
+python3 tests/buildwatch_test.py
+if [ -n "${CONAN_SERVER_BINARY:-}" ]; then
+  python3 tools/repin.py pin --binary "$CONAN_SERVER_BINARY"
+fi
 
 echo "== wire_test"
 python3 tests/wire_test.py tests/build/harness
