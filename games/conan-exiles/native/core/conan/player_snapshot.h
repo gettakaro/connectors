@@ -4,7 +4,7 @@
 // must still be alive, and inventory items must point back at their inventory.
 #pragma once
 
-#include "ue/reflect.h"
+#include "ue/safe_reflect.h"
 
 #include <string>
 #include <vector>
