@@ -9,31 +9,31 @@
   "functions": {
     "getPlayer": {
       "status": "pending",
-      "implementation": "pending",
+      "implementation": "native",
       "responseShape": "public Takaro player DTO or null",
-      "verification": "MCP gameserverGetPlayers then the player, with the client online",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: PlayerArray -> PlayerState -> controller (read path proven in stage 1)."
+      "verification": "MCP getPlayer through gameserverGetPlayers / playerongameserverSearch (not yet run live)",
+      "reason": "Same snapshot as getPlayers; an offline player answers the last record seen in this process, else a minimal record from the requested id (Takaro rejects every no-player answer)."
     },
     "getPlayers": {
       "status": "pending",
-      "implementation": "pending",
+      "implementation": "native",
       "responseShape": "public Takaro player DTO array",
-      "verification": "MCP gameserverGetPlayers with the client online",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: PlayerArray -> PlayerState -> controller, plus ping and IP."
+      "verification": "MCP gameserverGetPlayers with the client online (not yet run live)",
+      "reason": "Worker-thread safe self-reads (process_vm_readv): GameStateBase.PlayerArray -> PlayerState -> Owner controller; Steam64 from UserIDFromURLOptions, name PlayerNamePrivate, ip SavedNetworkAddress, ping ExactPing (PlayerState+824, checked once against GetPingInMilliseconds). No RCON."
     },
     "getPlayerLocation": {
       "status": "pending",
-      "implementation": "pending",
+      "implementation": "native",
       "responseShape": "{ x: number, y: number, z: number }",
-      "verification": "MCP location vs client coordinates",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: K2_GetActorLocation through ProcessEvent."
+      "verification": "MCP location vs client coordinates (not yet run live)",
+      "reason": "Worker read: Controller.Pawn -> RootComponent -> RelativeLocation, or ComponentToWorld (+0x210, checked against K2_GetActorLocation) when attached to a mount; the last known position while dead/offline."
     },
     "getPlayerInventory": {
       "status": "pending",
-      "implementation": "pending",
+      "implementation": "native",
       "responseShape": "Takaro item DTO array",
-      "verification": "MCP inventory vs the client inventory screen",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: UItemInventory by reflection (no sqlite)."
+      "verification": "MCP inventory vs the client inventory screen (not yet run live)",
+      "reason": "Worker read of the backpack, hotbar and equipment ItemInventory lists (torn-read checked, game-thread copy as fallback); stack and durability from the GameItem stat arrays (checked against GetIntStat/GetFloatStat); fist templates 51204/51205 dropped; amounts summed per code and durability %."
     },
     "giveItem": {
       "status": "pending",
@@ -44,24 +44,24 @@
     },
     "listItems": {
       "status": "pending",
-      "implementation": "pending",
+      "implementation": "native",
       "responseShape": "Takaro item DTO array with display names",
-      "verification": "MCP sample has display names and zero class names",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: ItemTable rows with localized names."
+      "verification": "MCP itemSearch sample has display names and zero class names (not yet run live)",
+      "reason": "/Game/Items/ItemTable rows with their localised names (worker FText decode checked against Conv_TextToString), codes from ItemNameToTemplateID; XX_/dev/test rows dropped, duplicate names get ' (#templateId)'. Built once per process."
     },
     "listEntities": {
       "status": "pending",
-      "implementation": "pending",
+      "implementation": "native",
       "responseShape": "Takaro entity DTO array with display names",
-      "verification": "MCP sample has display names and zero class names",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: class walk with a humaniser."
+      "verification": "MCP entitySearch sample has display names and zero class names (not yet run live)",
+      "reason": "/Game/Systems/SpawnTable/SpawnDataTable rows: code = row name (also ConanCharacter.SourceSpawnTable on live NPCs), localised name, NPC class only in metadata. Built once per process."
     },
     "listLocations": {
       "status": "pending",
-      "implementation": "pending",
+      "implementation": "native",
       "responseShape": "Takaro location DTO array",
-      "verification": "MCP sample",
-      "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback."
+      "verification": "MCP listLocations sample (not yet run live)",
+      "reason": "/Game/Systems/Map/MapMarkers_ConanSandbox named places of the loaded map with world coordinates and discovery radius; retried until the table is loaded."
     },
     "executeConsoleCommand": {
       "status": "pending",
