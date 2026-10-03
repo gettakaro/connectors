@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Every host test. Default runs inside the buster build container (via platform/linux/build.sh
 # --tests); --native uses the toolchain of the current machine (the container calls it that way).
+#   events_test   lane L2c: event payloads + whitelist, log tail, hook dispatch table
 #   unit_test     core logic (protocol, config, outbox, heartbeat, pins, adapter, registry, text)
 #   l2b_test      the mutation actions against a fake game and against fake UE objects built from
 #                 the reflection-dump fixture (tests/fixtures/l2b-reflection-25639945.json)
@@ -30,6 +31,10 @@ mkdir -p tests/build
 echo "== unit_test"
 "$CXX" "${FLAGS[@]}" tests/unit_test.cpp "${CORE[@]}" -o tests/build/unit_test
 ./tests/build/unit_test
+
+echo "== events_test"
+"$CXX" "${FLAGS[@]}" tests/events_test.cpp "${CORE[@]}" -o tests/build/events_test
+./tests/build/events_test
 
 echo "== reads_test"
 "$CXX" "${FLAGS[@]}" tests/reads_test.cpp "${CORE[@]}" -o tests/build/reads_test

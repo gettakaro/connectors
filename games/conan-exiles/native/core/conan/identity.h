@@ -28,10 +28,12 @@ bool IsSteam64Number(uint64_t v);
 struct UniqueIdProbe {
     std::string steam64;  // "" when not found
     std::string raw;      // the first printable id string found (may be the Steam64 with a prefix)
-    std::string how;      // "fstring@+0x10", "uint64@+0x18", ... or why it failed
+    std::string how;      // "+0x8 -> fstring@+0x10", "+0x8 -> uint64@+0x18", ... or why it failed
 };
-// FUniqueNetIdRepl layout: the TSharedPtr object pointer at +8; the id FString slots tried first
-// (Linux clang +0x10, then the MSVC candidates), then a generic scan of the object.
+// FUniqueNetIdRepl layout (build 25639945, live): +0 vtable, +8 the TSharedPtr object, +0x10 its
+// reference controller. The object at +8 is read first: its id FString slots (Linux clang +0x10,
+// then the MSVC candidates), then a scan of the object for a uint64 Steam64 or a "STEAM:..."
+// FString. The other two words are scanned last, so a layout shift degrades to a miss, not a crash.
 constexpr int32_t kNetIdObject = 8;
 constexpr int32_t kNetIdStringSlots[4] = {0x10, 0x18, 0x08, 0x20};
 

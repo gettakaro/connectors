@@ -39,7 +39,7 @@ def main():
         for name, row in published[section].items():
             if row['status'] not in STATUSES:
                 failures.append(f'{name}: status {row["status"]!r}')
-            if row['implementation'] not in ('native', 'pending'):
+            if row['implementation'] != 'native':
                 failures.append(f'{name}: implementation {row["implementation"]!r}')
             if row['status'] == 'live-supported' and row['implementation'] != 'native':
                 failures.append(f'{name}: live-supported without a native implementation')

@@ -13,6 +13,8 @@
 #include "anchor_scan.h"
 #include "common.h"
 #include "conan/adapter.h"
+#include "conan/events.h"
+#include "conan/hook_dispatch.h"
 #include "dllmain.h"
 #include "gamethread.h"
 #include "hook_win.h"
@@ -247,6 +249,16 @@ void StartConnector() {
     bo.healthFile = takaro::JoinPath(cfg.stateDir, "health.json");
     auto* bridge = new takaro::Bridge(bo);
     bridge->Start();
+    // Game events: hook subscriptions (verified builds only) and the server log tail, as on Linux.
+    // The process exits without unloading the DLL, so nothing is stopped here.
+    conan::EventsOptions eo;
+    eo.emit = [adapter](takaro::GameEvent ev) { adapter->Emit(std::move(ev)); };
+    eo.savedDir = saved;
+    eo.healthFile = takaro::JoinPath(cfg.stateDir, "events-health.json");
+    eo.secrets = {cfg.identityToken, cfg.registrationToken};
+    eo.hooks = ao.ready;
+    conan::StartEvents(eo);
+    if (ao.ready) HookDispatch::Start();
     NativeLog("Takaro bridge started (%s)", ao.ready ? "ready" : "refusing actions");
 }
 
