@@ -18,6 +18,9 @@ using ProcessEventFn = void (*)(void* obj, void* func, void* parms);
 // platform's way to call the original ProcessEvent (the detour's trampoline).
 void SetGlobals(uintptr_t objObjects, uintptr_t nameBlocks, ProcessEventFn callProcessEvent);
 bool HaveGlobals();
+// The pinned raw globals, for the generic reflection helpers in ue/reflect.h.
+uintptr_t ObjObjectsAddr();
+uintptr_t NameBlocksAddr();
 // Game thread only: calls the original (un-detoured) ProcessEvent.
 void CallProcessEvent(void* obj, void* func, void* parms);
 
