@@ -346,7 +346,8 @@ ActionResult Mutations::BanPlayer(const JsonValue& args) {
     if (game_->OnlinePlayers(online, err) &&
         std::any_of(online.begin(), online.end(), [&](const OnlinePlayer& p) { return p.steam64 == steam64; })) {
         std::string kickErr;
-        if (game_->Kick(steam64, "You are banned from this server: " + b.reason, kickErr) && WaitOffline(steam64)) {
+        bool skipped = false;  // the sweep (woken above) may have kicked first: then just wait
+        if (KickBanned(steam64, b, kickErr, skipped) && WaitOffline(steam64)) {
             banKicks_++;
         } else {
             // The ban is stored and enforced by the sweep; report it but do not fail the ban.
@@ -376,6 +377,23 @@ ActionResult Mutations::ListBans() {
 
 constexpr int64_t kSweepKickGapMs = 5000;
 
+bool Mutations::KickBanned(const std::string& steam64, const Ban& b, std::string& err, bool& skipped) {
+    skipped = false;
+    {
+        std::lock_guard<std::mutex> g(kickMu_);
+        const int64_t now = game_->NowMs();
+        auto last = sweepKickedAt_.find(steam64);
+        if (last != sweepKickedAt_.end() && now - last->second < kSweepKickGapMs) {
+            skipped = true;
+            return true;
+        }
+        sweepKickedAt_[steam64] = now;
+    }
+    const std::string reason = "You are banned from this server: " + b.reason +
+                               (b.expiresAtMs ? " (until " + takaro::FormatIsoMs(b.expiresAtMs) + ")" : "");
+    return game_->Kick(steam64, reason, err);
+}
+
 int Mutations::SweepOnce() {
     std::string err;
     for (auto& b : bans_.Expire(game_->NowMs(), err))
@@ -392,12 +410,10 @@ int Mutations::SweepOnce() {
     for (auto& p : online) {
         for (auto& b : active) {
             if (b.gameId != p.steam64) continue;
-            auto last = sweepKickedAt_.find(p.steam64);
-            if (last != sweepKickedAt_.end() && game_->NowMs() - last->second < kSweepKickGapMs) continue;
-            std::string reason = "You are banned from this server: " + b.reason +
-                                 (b.expiresAtMs ? " (until " + takaro::FormatIsoMs(b.expiresAtMs) + ")" : "");
-            if (game_->Kick(p.steam64, reason, err)) {
-                sweepKickedAt_[p.steam64] = game_->NowMs();
+            bool skipped = false;
+            const bool ok = KickBanned(p.steam64, b, err, skipped);
+            if (skipped) continue;
+            if (ok) {
                 kicked++;
                 banKicks_++;
                 NativeLog("bans: kicked banned player %s (%s)", p.steam64.c_str(), p.name.c_str());

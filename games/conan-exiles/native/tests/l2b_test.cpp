@@ -317,6 +317,13 @@ static void TestMutationsFake() {
     r = m.Execute("banPlayer", J("{\"player\":{\"gameId\":\"76561198000735875\"},\"reason\":\"grief\",\"expiresAt\":null}"));
     CHECK(r.ok && g->online.empty() && g->kicks.back().second.find("banned from this server: grief") != std::string::npos,
           "ban online kicks: %s", r.error.c_str());
+    {
+        // the woken sweep right after the ban action does not kick the same player a second time
+        const size_t before = g->kicks.size();
+        g->online = {{kSteam, "werwerwer"}};
+        CHECK(m.SweepOnce() == 0 && g->kicks.size() == before, "one kick per banned login (action + sweep)");
+        g->online.clear();
+    }
     // offline, timed
     r = m.Execute("banPlayer", J("{\"gameId\":\"76561198000000002\",\"reason\":\"alt\",\"expiresAt\":\"2026-09-21T14:14:00.000Z\"}"));
     CHECK(r.ok, "offline timed ban: %s", r.error.c_str());
@@ -334,6 +341,7 @@ static void TestMutationsFake() {
           "%s", Dump(r.payload).c_str());
     // enforcement: a banned player who rejoins is kicked by the sweep, which also arms the login hook
     g->online = {{kSteam, "werwerwer"}, {"76561198000000009", "friend"}};
+    g->slept += 6000;  // the rejoin comes after the 5 s kick gap
     int kicked = m.SweepOnce();
     CHECK(kicked == 1 && g->online.size() == 1 && g->online[0].steam64 == "76561198000000009" && g->hookArmed,
           "sweep kicks only the banned one");
