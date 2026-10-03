@@ -374,6 +374,8 @@ ActionResult Mutations::ListBans() {
     return Ok(list);
 }
 
+constexpr int64_t kSweepKickGapMs = 5000;
+
 int Mutations::SweepOnce() {
     std::string err;
     for (auto& b : bans_.Expire(game_->NowMs(), err))
@@ -390,9 +392,12 @@ int Mutations::SweepOnce() {
     for (auto& p : online) {
         for (auto& b : active) {
             if (b.gameId != p.steam64) continue;
+            auto last = sweepKickedAt_.find(p.steam64);
+            if (last != sweepKickedAt_.end() && game_->NowMs() - last->second < kSweepKickGapMs) continue;
             std::string reason = "You are banned from this server: " + b.reason +
                                  (b.expiresAtMs ? " (until " + takaro::FormatIsoMs(b.expiresAtMs) + ")" : "");
             if (game_->Kick(p.steam64, reason, err)) {
+                sweepKickedAt_[p.steam64] = game_->NowMs();
                 kicked++;
                 banKicks_++;
                 NativeLog("bans: kicked banned player %s (%s)", p.steam64.c_str(), p.name.c_str());

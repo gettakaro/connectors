@@ -337,6 +337,14 @@ static void TestMutationsFake() {
     int kicked = m.SweepOnce();
     CHECK(kicked == 1 && g->online.size() == 1 && g->online[0].steam64 == "76561198000000009" && g->hookArmed,
           "sweep kicks only the banned one");
+    // a client that is slow to leave is not kicked again for 5 s (each kick stacks a client dialog)
+    g->online = {{kSteam, "werwerwer"}};
+    g->kickDisconnects = false;
+    CHECK(m.SweepOnce() == 0, "no second kick within the gap");
+    g->slept += 5000;
+    CHECK(m.SweepOnce() == 1, "kicked again after the gap");
+    g->kickDisconnects = true;
+    g->online = {{"76561198000000009", "friend"}};
     // timed expiry lifts the ban (Takaro sends no unban)
     g->now = 1790000000000 + 10LL * 24 * 3600 * 1000;
     m.SweepOnce();
