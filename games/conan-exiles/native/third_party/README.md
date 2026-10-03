@@ -10,3 +10,16 @@ into `libtakaro-conan-native.so`.
 | OpenSSL | 3.5.8 | `a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2` | Apache-2.0 |
 
 The full license texts are in `licenses/` and must accompany the release archive.
+
+## Windows DLL (`winmm.dll`, `platform/windows/build.sh`)
+
+Cross-compiled for x86_64 Windows with zig 0.13.0 (`x86_64-windows-gnu`, the same toolchain as
+the Enshrouded native connector). Linked in statically:
+
+| Component | Where it comes from | License |
+| --- | --- | --- |
+| MinHook | `third_party/minhook`, TsudaKageyu/minhook @ `8af6b4acae5a9388fd742b56fa79ece89d96f823` (file hashes in `minhook.sha256`, checked by the build) | BSD-2-Clause (`licenses/MinHook-LICENSE.txt`) |
+| zig compiler-rt, libc++, libc++abi, libunwind, mingw-w64 runtime | zig 0.13.0 | MIT / Apache-2.0 WITH LLVM-exception / mingw-w64 notices |
+
+WinHTTP, Crypt32 and the system `winmm.dll` are Windows system libraries loaded at run time and are
+not shipped.

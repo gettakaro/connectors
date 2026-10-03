@@ -72,6 +72,7 @@ ChatOutcome SendChat(const ChatRequest& cmd) {
     const uint64_t ticks = FileTimeTicks(sec, nsec);
 
     int online = 0, delivered = 0;
+    std::string seen;  // who was online when a targeted send matched nobody (Steam64 and name only)
     bool stale = false;
     uint64_t jobNs = 0;
     bool ran = GameThread::Run(
@@ -85,7 +86,10 @@ ChatOutcome SendChat(const ChatRequest& cmd) {
             void* func = UE::ChatFunction();
             for (const auto& c : UE::OnlineControllers()) {
                 online++;
-                if (!cmd.recipient.empty() && !Matches(c, cmd.recipient)) continue;
+                if (!cmd.recipient.empty() && !Matches(c, cmd.recipient)) {
+                    if (seen.size() < 512) seen += (seen.empty() ? "" : ", ") + c.userId + "/" + c.playerName;
+                    continue;
+                }
                 alignas(16) uint8_t parms[ChatRpc::kSize];
                 PackChatRpc(parms, ticks, user, channel, message);
                 UE::CallProcessEvent((void*)c.object, func, parms);
@@ -97,8 +101,9 @@ ChatOutcome SendChat(const ChatRequest& cmd) {
     if (!ran) return Fail("game thread did not respond");
     if (stale) return Fail("Conan server is not ready for chat: the world changed, try again");
 
-    NativeLog("sendMessage %s: online=%d delivered=%d game-thread=%.3f ms",
-              cmd.recipient.empty() ? "global" : "targeted", online, delivered, jobNs / 1e6);
+    NativeLog("sendMessage %s: online=%d delivered=%d game-thread=%.3f ms%s%s",
+              cmd.recipient.empty() ? "global" : "targeted", online, delivered, jobNs / 1e6,
+              delivered == 0 && !seen.empty() ? "; online userId/name: " : "", delivered == 0 ? seen.c_str() : "");
     ChatOutcome o;
     o.online = online;
     o.delivered = delivered;

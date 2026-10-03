@@ -28,16 +28,34 @@ const std::vector<Signature> kLinux = {
     // FName -> entry: mov eax,ebx; shr eax,16; mov rax,[rax*8+Blocks]; movzx ecx,bx; movzx r9d,word [rax+rcx*2]
     {"nameBlocks", "89 D8 C1 E8 10 48 8B 04 C5 ?? ?? ?? ?? 0F B7 CB 44 0F B7 0C 48", Capture::Abs32, 9},
 };
+// Derived with tools/sigderive.py --pe from the Windows build 25639945 (ConanSandboxServer-Win64-Shipping.exe,
+// MSVC, ASLR): the anchors were first found at run time by platform/windows/anchor_scan (TAKARO_CONAN_REPIN=1;
+// ProcessEvent is vtable slot 77 there, 78 on Linux) and then frozen here. Captures resolve to absolute
+// addresses in the relocated image; the pinned values below are RVAs.
+const std::vector<Signature> kWindows = {
+    {"processEvent",
+     "40 55 56 57 41 54 41 55 41 56 41 57 ?? ?? ?? ?? 01 00 00 48 8D 6C 24 30 48 ?? ?? ?? ?? 00 ?? ?? ?? ?? ?? ?? "
+     "?? ?? 48 33 C5 48 ?? ?? ?? ?? 00 00 8B",
+     Capture::Start, 0},
+    // mov r10,[rip+ObjObjects]; movzx ecx,bx (object index -> chunk table)
+    {"objObjects", "4C 8B 15 ?? ?? ?? ?? 0F B7 CB", Capture::Rip32, 3},
+    // lea r8,[rip+Blocks]; cmp r14,rdi (FNamePool block table)
+    {"nameBlocks", "4C 8D 05 ?? ?? ?? ?? 4C 3B F7", Capture::Rip32, 3},
+};
 const std::vector<Signature> kNone;
 
 #ifdef TAKARO_DEBUG_WRONG_BUILD_ID
 #define TAKARO_LINUX_25639945_ID "0000000000000000000000000000000000000000"  // degrade proof only
+#define TAKARO_WINDOWS_25639945_ID "00000000-0000000"
 #else
+#define TAKARO_WINDOWS_25639945_ID "a0e8d0c4-b619000"
 #define TAKARO_LINUX_25639945_ID "3a05a6ef0c873f2bbf754ec495bdf2a686d3768d"
 #endif
 
 const std::vector<BuildPin> kPinned = {
     {"linux", TAKARO_LINUX_25639945_ID, "25639945", {0x3f12340, 0xc35a580, 0xc2a5d40}},
+    // PE "<TimeDateStamp>-<SizeOfImage>"; anchors are RVAs (sha256 of the exe in pins.json).
+    {"windows", TAKARO_WINDOWS_25639945_ID, "25639945", {0x16408d0, 0xa92cdc0, 0xa85e010}},
 };
 
 uintptr_t& Slot(Anchors& a, const std::string& name) {
@@ -80,7 +98,7 @@ bool ReadField(const std::vector<Region>& regions, uintptr_t at, int32_t& out) {
 }  // namespace
 
 const std::vector<Signature>& SignaturesFor(const std::string& platform) {
-    return platform == "linux" ? kLinux : kNone;
+    return platform == "linux" ? kLinux : platform == "windows" ? kWindows : kNone;
 }
 
 const std::vector<BuildPin>& PinnedBuilds() { return kPinned; }
@@ -154,7 +172,7 @@ std::vector<uintptr_t> FindMatches(const std::vector<Region>& regions, const std
 }
 
 Result Resolve(const std::string& platform, const std::string& buildId, const std::vector<Region>& regions,
-               bool allowUnpinned) {
+               bool allowUnpinned, uintptr_t imageBase) {
     auto t0 = std::chrono::steady_clock::now();
     Result res;
     res.platform = platform;
@@ -210,8 +228,8 @@ Result Resolve(const std::string& platform, const std::string& buildId, const st
         res.reason = "signature scan failed (" + firstFailure + ")";
     } else if (pin) {
         const Anchors& e = pin->expected;
-        if (res.anchors.processEvent != e.processEvent || res.anchors.objObjects != e.objObjects ||
-            res.anchors.nameBlocks != e.nameBlocks)
+        if (res.anchors.processEvent - imageBase != e.processEvent ||
+            res.anchors.objObjects - imageBase != e.objObjects || res.anchors.nameBlocks - imageBase != e.nameBlocks)
             res.reason = "signature scan disagrees with the pinned addresses of build " + std::string(pin->build);
         else
             res.ok = true;
