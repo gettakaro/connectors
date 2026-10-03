@@ -866,7 +866,11 @@ static void TestReflectedGame() {
 
     // the engine exit for shutdown
     CHECK(game->Exit(err) && G.commands.back() == "exit" && G.execSpecific.back() == 0 && G.execWorld.back() == G.gs,
-          "exit through ExecuteConsoleCommand: %s", err.c_str());
+          "exit through ExecuteConsoleCommand, engine console with nobody online: %s", err.c_str());
+    SetOnline(true);
+    CHECK(game->Exit(err) && G.commands.back() == "exit" && G.execSpecific.back() == G.pc &&
+              G.adminDuringCall.back() == 1 && (fake::R<uint8_t>(G.pc + 4360) & 1) == 0,
+          "exit with a player online runs in that console with the admin flag: %s", err.c_str());
 
     stop = true;
     gameThread.join();
