@@ -44,6 +44,13 @@
      "offset": 816,
      "size": 8,
      "flags": "0x14c001100000220"
+    },
+    {
+     "name": "PlayerState",
+     "type": "ObjectProperty",
+     "offset": 760,
+     "size": 8,
+     "flags": "0x11c001100000234"
     }
    ],
    "functions": []
@@ -186,6 +193,13 @@
      "offset": 896,
      "size": 16,
      "flags": "0x48000100000220"
+    },
+    {
+     "name": "UniqueID",
+     "type": "StructProperty",
+     "offset": 768,
+     "size": 48,
+     "flags": "0x48000100000020"
     }
    ],
    "functions": []
