@@ -24,12 +24,14 @@ from takaro_maint.exit_codes import ConflictError
 from takaro_maint.games import adapter_for
 
 GAME = "dragonwilds"
-TARGET = "linux-25501739"
-PREVIOUS = "linux-25465077"
+TARGET = "linux-25630937"
+PREVIOUS = "linux-25501739"
+OLDEST = "linux-25465077"
 APP = 4019830
 DEPOT = "3501791"
-MANIFEST = "6714393990492196440"
-PREVIOUS_MANIFEST = "2601451637939157694"
+MANIFEST = "5180331908424149228"
+PREVIOUS_MANIFEST = "6714393990492196440"
+OLDEST_MANIFEST = "2601451637939157694"
 VERSION = "0.3.0-dev.abc1234"
 PLUGIN_ARTIFACT = f"takaro-dragonwilds-plugin-{TARGET}-{VERSION}.tar.gz"
 PLUGIN_FOLDER = "TakaroDragonwilds"
@@ -38,6 +40,7 @@ NATIVE_DEPS = {"openssl", "libwebsockets", "pcre2", "nlohmann-json"}
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TARGET_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{TARGET}.json"
 PREVIOUS_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{PREVIOUS}.json"
+OLDEST_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{OLDEST}.json"
 GAME_PATH = REPO_ROOT / "catalog" / GAME / "game.json"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "dragonwilds.yml"
 
@@ -59,7 +62,7 @@ def test_catalog_validate_accepts_the_dragonwilds_target(run: Any) -> None:
     code, payload, _ = run("catalog", "validate")
 
     assert code == 0, payload
-    for target in (TARGET, PREVIOUS):
+    for target in (TARGET, PREVIOUS, OLDEST):
         rows = [check for check in payload["checks"] if check["file"].endswith(f"{target}.json")]
         assert rows, f"the dragonwilds target {target} produced no checks"
         assert {check["id"] for check in rows} >= {
@@ -74,7 +77,11 @@ def test_catalog_validate_accepts_the_dragonwilds_target(run: Any) -> None:
 
 @pytest.mark.parametrize(
     ("path", "buildid", "manifest"),
-    [(TARGET_PATH, 25501739, MANIFEST), (PREVIOUS_PATH, 25465077, PREVIOUS_MANIFEST)],
+    [
+        (TARGET_PATH, 25630937, MANIFEST),
+        (PREVIOUS_PATH, 25501739, PREVIOUS_MANIFEST),
+        (OLDEST_PATH, 25465077, OLDEST_MANIFEST),
+    ],
 )
 def test_the_steam_pin_is_exact_and_anonymous(path: Path, buildid: int, manifest: str) -> None:
     server = record(path)["inputs"]["server"]
@@ -90,9 +97,10 @@ def test_the_steam_pin_is_exact_and_anonymous(path: Path, buildid: int, manifest
 def test_the_newest_build_is_the_one_default() -> None:
     assert record()["default"] is True
     assert record(PREVIOUS_PATH)["default"] is False
+    assert record(OLDEST_PATH)["default"] is False
 
 
-@pytest.mark.parametrize("path", [TARGET_PATH, PREVIOUS_PATH])
+@pytest.mark.parametrize("path", [TARGET_PATH, PREVIOUS_PATH, OLDEST_PATH])
 def test_every_target_ships_the_plugin_alone(path: Path) -> None:
     document = record(path)
 
@@ -103,7 +111,7 @@ def test_every_target_ships_the_plugin_alone(path: Path) -> None:
     assert not [entry for entry in document["preserve"] if "Sidecar" in entry]
 
 
-@pytest.mark.parametrize("path", [TARGET_PATH, PREVIOUS_PATH])
+@pytest.mark.parametrize("path", [TARGET_PATH, PREVIOUS_PATH, OLDEST_PATH])
 def test_the_target_claims_contract_verification_and_a_steam_install(path: Path) -> None:
     document = record(path)
 
@@ -144,7 +152,7 @@ def test_targets_resolve_env_for_dragonwilds(run: Any) -> None:
     env = resolved["env"]
 
     assert env["DRAGONWILDS_TARGET"] == TARGET
-    assert env["DRAGONWILDS_REVISION"] == "25501739"
+    assert env["DRAGONWILDS_REVISION"] == "25630937"
     assert env["DRAGONWILDS_STEAM_APP"] == str(APP)
     assert env["DRAGONWILDS_STEAM_DEPOTS"] == f"{DEPOT}:{MANIFEST}"
     assert env["DRAGONWILDS_ARTIFACT_PLUGIN"] == f"takaro-dragonwilds-plugin-{TARGET}-{{version}}.tar.gz"
@@ -168,7 +176,8 @@ def test_the_default_target_resolves_to_the_newest_build(run: Any) -> None:
 
     assert code == 0, err
     assert payload["env"]["DRAGONWILDS_TARGET"] == TARGET
-    assert resolve(run, PREVIOUS)["env"]["DRAGONWILDS_REVISION"] == "25465077"
+    assert resolve(run, PREVIOUS)["env"]["DRAGONWILDS_REVISION"] == "25501739"
+    assert resolve(run, OLDEST)["env"]["DRAGONWILDS_REVISION"] == "25465077"
 
 
 def test_the_adapter_names_one_file_per_role_and_never_a_glob(run: Any) -> None:
@@ -186,6 +195,44 @@ def test_the_adapter_defines_a_real_install_step() -> None:
     # Unlike Dune's image bundle, this depot is a plain install: the adapter overrides
     # `install` itself rather than falling back to BaseAdapter's "generic path" default.
     assert "install" in type(adapter).__dict__
+
+
+def test_post_install_gives_every_program_its_executable_bit_back(tmp_path: Path) -> None:
+    # DepotDownloader writes every file 0644; the image entrypoint runs the binary directly and the
+    # binary spawns Sentry's crash handler, which aborts the server when it cannot be executed.
+    launcher = tmp_path / "RSDragonwildsServer.sh"
+    binary = tmp_path / "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping"
+    crashpad = tmp_path / "RSDragonwilds/Plugins/Developer/Sentry/Binaries/Linux/crashpad_handler"
+    data = tmp_path / "RSDragonwilds/Content/Paks/RSDragonwilds-LinuxServer.pak"
+    for path, body in ((launcher, b"#!/bin/sh\n"), (binary, b"\x7fELF..."), (crashpad, b"\x7fELF..."), (data, b"PAK")):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(body)
+        path.chmod(0o644)
+
+    adapter_for(GAME)._post_install(tmp_path)  # type: ignore[attr-defined]
+
+    for program in (launcher, binary, crashpad):
+        assert program.stat().st_mode & 0o111 == 0o111, program
+    assert data.stat().st_mode & 0o111 == 0
+    assert (tmp_path / "RSDragonwilds" / "Saved").is_dir()
+
+
+def test_an_already_installed_tree_gets_its_executable_bits_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    binary = tmp_path / "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping"
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(b"\x7fELF...")
+    binary.chmod(0o644)
+    monkeypatch.setattr(
+        "takaro_maint.steam.install.install_exact", lambda *a, **k: {"status": "already-installed"}
+    )
+    args = type("Args", (), {"dest": str(tmp_path), "rollback": False, "dry_run": False})()
+
+    adapter_for(GAME).install(None, type("T", (), {"game": GAME, "id": TARGET})(), {"preserve": []}, args)
+
+    assert binary.stat().st_mode & 0o111 == 0o111
+    assert json.loads(capsys.readouterr().out)["executablesRestored"] == 1
 
 
 def test_the_server_banners_are_parsed() -> None:

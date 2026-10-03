@@ -79,41 +79,6 @@ def _env_key(name: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_")
 
 
-# Steam records which depot files are executable, but DepotDownloader writes every file
-# 0644, so a tree taken straight from the manifests cannot start: the image's entrypoint
-# runs `start-server.sh`, which runs `ProjectZomboid64`, which runs `jre64/bin/java`.
-# The bit is restored from what the files are — an ELF image or a shebang script — rather
-# than from a list of names a future build could grow out of.
-_ELF_MAGIC = b"\x7fELF"
-_SHEBANG = b"#!"
-
-
-def _is_program(path: Path) -> bool:
-    try:
-        with path.open("rb") as handle:
-            head = handle.read(4)
-    except OSError:
-        return False
-    return head.startswith(_ELF_MAGIC) or head.startswith(_SHEBANG)
-
-
-def _restore_executables(root: Path) -> int:
-    """Give every program in a freshly downloaded tree its executable bit back."""
-    marked = 0
-    for path in root.rglob("*"):
-        if not path.is_file() or path.is_symlink():
-            continue
-        mode = path.stat().st_mode
-        if mode & 0o111:
-            continue
-        if _is_program(path):
-            path.chmod((mode | 0o755) & 0o7777)
-            marked += 1
-    if marked:
-        output.info(f"restored the executable bit on {marked} file(s) the depots deliver as 0644")
-    return marked
-
-
 class ZomboidAdapter(BaseAdapter):
     id = GAME_ID
 
@@ -295,7 +260,7 @@ class ZomboidAdapter(BaseAdapter):
 
     def _post_install(self, staging: Path, target_id: str) -> None:
         """What a fresh Steam tree still needs before the image will run it unchanged."""
-        _restore_executables(staging)
+        steam_install.restore_executables(staging)
         (staging / AGENT_DIR).mkdir(exist_ok=True)
         stub_dir = staging / STUB_RELATIVE
         stub_dir.mkdir(parents=True, exist_ok=True)

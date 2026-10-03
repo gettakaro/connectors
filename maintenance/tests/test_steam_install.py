@@ -244,6 +244,25 @@ def test_preserve_survives_an_upgrade_and_previous_is_kept(run: Any, repo: Path,
     )
 
 
+def test_an_upgrade_survives_a_file_name_that_is_not_utf8(run: Any, repo: Path, dd_log: Path, tmp_path: Path) -> None:
+    # A crashing process can leave a file named after raw heap bytes in the game tree; hashing the
+    # tree for the swap guard must not fall over on it.
+    dest = tmp_path / "ServerFiles"
+    assert install(run, repo, dest)[0] == 0
+    stray = os.fsencode(dest) + b"/\xf0\xaf\xd3\xa9r\x7f"
+    with open(stray, "wb") as handle:
+        handle.write(b"hooks: restored 13 vtable slots\n")
+    record = fake.read_target(repo)
+    record["inputs"]["server"]["buildid"] = record["inputs"]["server"]["buildid"] + 1
+    fake.write_target(repo, record)
+
+    code, payload, err = install(run, repo, dest)
+
+    assert code == 0, (payload, err)
+    assert payload["status"] == "installed"
+    assert os.path.exists(os.fsencode(payload["previous"]) + b"/\xf0\xaf\xd3\xa9r\x7f")
+
+
 def test_rollback_restores_previous(run: Any, repo: Path, dd_log: Path, tmp_path: Path) -> None:
     dest = tmp_path / "ServerFiles"
     assert install(run, repo, dest)[0] == 0

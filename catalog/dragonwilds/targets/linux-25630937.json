@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "id": "linux-25501739",
+  "id": "linux-25630937",
   "game": "dragonwilds",
   "platform": "linux",
-  "revision": "25501739",
-  "default": false,
+  "revision": "25630937",
+  "default": true,
   "support": {
     "status": "candidate",
-    "since": "2026-10-01",
+    "since": "2026-10-03",
     "evidence": [
       "games/dragonwilds/README.md (What works, what doesn't)",
       "games/dragonwilds/mod/tests/ (plugin unit and native connector tests, every build)"
     ],
-    "notes": "Steam pin of the public branch head observed 2026-10-01: tool app 4019830, Linux depot 3501791, build 25501739, the first target for the native connector (no sidecar). Superseded as the default by linux-25630937; kept so a server still on this build gets a matching plugin. An anonymous SteamCMD delta update from the previous build fails with Access Denied on the old manifest; a fresh SteamCMD install with validation reaches this build. `verification.required` is `contract` until this pin is proven at runtime: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
+    "notes": "Steam pin of the public branch head observed 2026-10-03 (manifest dated 2026-09-30): tool app 4019830, Linux depot 3501791, build 25630937. The plugin resolves every engine address from this build's own `.sym` at load time, so the target needs no source change. `verification.required` is `contract` until this pin is proven at runtime: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
   },
   "inputs": {
     "server": {
@@ -21,24 +21,24 @@
       "hashOrigin": "self-recorded",
       "app": 4019830,
       "branch": "public",
-      "buildid": 25501739,
+      "buildid": 25630937,
       "os": "linux",
       "arch": "64",
       "depots": {
         "3501791": {
-          "manifest": "6714393990492196440",
-          "size": 5483987592,
+          "manifest": "5180331908424149228",
+          "size": 5484001507,
           "files": 56
         }
       },
       "files": {
         "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping": {
-          "sha256": "d12145525d88f3828ebeac0aec3865f5b16ba4771861efe65108754a89bbb090",
-          "size": 229648384
+          "sha256": "445f8b65047d208adb04a3cb03bc7706f069306d814172ae29caec16c15bec7e",
+          "size": 229652480
         },
         "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping.sym": {
-          "sha256": "0a3ee81c23bd2e7b801d4983525e82579428eeed65f008b09ddd8d105485d41d",
-          "size": 301107092
+          "sha256": "48935d4792a0436d8c20765f069d0935c0936247694e6ac0f9d95d6a012664b2",
+          "size": 301111807
         },
         "RSDragonwildsServer.sh": {
           "sha256": "1cb3257de649da88c5b67c69a7aeb130c84878480e8862dbf4b9749c0b4f7d41",
@@ -95,7 +95,7 @@
   "components": [
     {
       "role": "plugin",
-      "artifact": "takaro-dragonwilds-plugin-linux-25501739-{version}.tar.gz",
+      "artifact": "takaro-dragonwilds-plugin-linux-25630937-{version}.tar.gz",
       "installDir": "TakaroDragonwilds"
     }
   ],
