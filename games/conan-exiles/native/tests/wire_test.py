@@ -138,7 +138,10 @@ def basics(binary, cert, key, root):
         check('error' in r and 'not supported' in r['error'], 'getMapTile structured error', r)
         r = fake.response(fake.request('doSomethingElse', {}))
         check('unknown action' in r.get('error', ''), "WIRE-6 unknown action answers an error", r)
-        for action in ('getPlayers', 'kickPlayer', 'executeConsoleCommand', 'shutdown'):
+        r = fake.response(fake.request('getPlayers', {}))
+        check('getPlayers' in r.get('error', '') and 'payload' not in r,
+              'read action without engine globals answers a structured error', r)
+        for action in ('kickPlayer', 'executeConsoleCommand', 'shutdown'):
             r = fake.response(fake.request(action, {'gameId': '76561198000000001', 'command': 'help'}))
             check('not implemented by the native Conan connector yet' in r.get('error', ''),
                   f'pending action {action} answers a structured not-ported error (no RCON)', r)

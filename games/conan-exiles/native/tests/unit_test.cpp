@@ -417,8 +417,11 @@ static void TestCoverage() {
     CHECK(std::string(ActionCoverage("sendMessage")->implementation) == "native", "chat native");
     CHECK(std::string(ActionCoverage("getMapInfo")->status) == "schema-fallback", "map fallback");
     CHECK(std::string(ActionCoverage("getMapTile")->status) == "unsupported", "tile unsupported");
-    for (auto* a : {"getPlayers", "giveItem", "kickPlayer", "banPlayer", "shutdown", "executeConsoleCommand"})
+    for (auto* a : {"giveItem", "kickPlayer", "banPlayer", "shutdown", "executeConsoleCommand"})
         CHECK(std::string(ActionCoverage(a)->implementation) == "pending", "%s still pending", a);
+    for (auto* a : {"getPlayers", "getPlayer", "getPlayerLocation", "getPlayerInventory", "listItems", "listEntities",
+                    "listLocations"})
+        CHECK(std::string(ActionCoverage(a)->implementation) == "native", "%s native (lane L2a)", a);
     JsonValue v;
     CHECK(JsonParse(RegistryJson(), v), "registry json");
 }
