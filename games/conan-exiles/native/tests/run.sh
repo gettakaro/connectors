@@ -2,6 +2,8 @@
 # Every host test. Default runs inside the buster build container (via platform/linux/build.sh
 # --tests); --native uses the toolchain of the current machine (the container calls it that way).
 #   unit_test     core logic (protocol, config, outbox, heartbeat, pins, adapter, registry, text)
+#   l2b_test      the mutation actions against a fake game and against fake UE objects built from
+#                 the reflection-dump fixture (tests/fixtures/l2b-reflection-25639945.json)
 #   pins_oracle   the signature scan over the real 25639945 binary (CONAN_SERVER_BINARY; skipped
 #                 when not given); pins_oracle_pe the same over the Windows exe (CONAN_SERVER_BINARY_WIN)
 #   drift_test    capabilities.json / pins.json equal the compiled tables
@@ -27,6 +29,9 @@ echo "== unit_test"
 echo "== reads_test"
 "$CXX" "${FLAGS[@]}" tests/reads_test.cpp "${CORE[@]}" -o tests/build/reads_test
 ./tests/build/reads_test
+echo "== l2b_test (mutations: fake game + fake UE objects from the 25639945 dump fixture)"
+"$CXX" "${FLAGS[@]}" tests/l2b_test.cpp "${CORE[@]}" -o tests/build/l2b_test
+./tests/build/l2b_test
 
 echo "== pins_oracle"
 "$CXX" "${FLAGS[@]}" -O2 tests/pins_oracle.cpp core/pins/pins.cpp core/common.cpp platform/linux/elfscan.cpp \

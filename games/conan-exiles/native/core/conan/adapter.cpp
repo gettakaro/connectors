@@ -1,5 +1,6 @@
 #include "conan/adapter.h"
 
+#include "conan/actions_game.h"
 #include "conan/coverage.h"
 #include "conan/reads.h"
 #include "conan/text.h"
@@ -69,6 +70,11 @@ Adapter::Adapter(AdapterOptions o) : o_(std::move(o)) {
         };
         if (o_.ready) ProductionReads();  // starts the catalogue warm-up on its worker thread
     }
+    if (o_.ready && (!o_.savedDir.empty() || o_.mutationGame)) {
+        MutationOptions mo = o_.mutationOptions;
+        mo.savedDir = o_.savedDir;
+        mutations_.reset(new Mutations(mo, o_.mutationGame ? o_.mutationGame : MakeUeMutationGame()));
+    }
     if (!o_.ready) {
         // The one critical notice of this process. It goes through the durable outbox like any event,
         // so it reaches Takaro after the first identify even when Takaro is down right now.
@@ -122,6 +128,7 @@ ActionResult Adapter::Execute(const std::string& action, const JsonValue& args) 
             takaro::Put(r.payload, k, takaro::JNum(0));
         return r;
     }
+    if (mutations_ && Mutations::Handles(action)) return mutations_->Execute(action, args);
     if (action == "getMapTile") return Fail("getMapTile is not supported: " + std::string(cov->reason));
     if (action == "sendMessage") {
         ChatRequest req;
@@ -176,6 +183,7 @@ std::string Adapter::HealthJson() {
         .N("chatFailed", (double)chatFailed_)
         .N("lastChatGameThreadMs", lastChatMs_)
         .Raw("reads", o_.readsHealth ? o_.readsHealth() : std::string("null"))
+        .Raw("mutations", mutations_ ? mutations_->HealthJson() : "null")
         .Done();
 }
 

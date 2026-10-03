@@ -115,6 +115,8 @@ __attribute__((constructor)) void Init() {
     // 2. pins
     conan::AdapterOptions ao;
     ao.version = TAKARO_CONAN_NATIVE_VERSION;
+    ao.savedDir = saved;
+    ao.mutationOptions.shutdownSeconds = atoi(EnvOr("TAKARO_CONAN_SHUTDOWN_SECONDS", "60").c_str());
     const std::string buildId = linuxplat::ReadElfBuildId("/proc/self/exe");
     pins::Result pr = pins::Resolve("linux", buildId, linuxplat::ExecutableRegions(exe),
                                     Env("TAKARO_CONAN_ALLOW_UNPINNED_BUILD") == "1");
