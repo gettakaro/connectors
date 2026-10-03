@@ -197,6 +197,44 @@ def test_the_adapter_defines_a_real_install_step() -> None:
     assert "install" in type(adapter).__dict__
 
 
+def test_post_install_gives_every_program_its_executable_bit_back(tmp_path: Path) -> None:
+    # DepotDownloader writes every file 0644; the image entrypoint runs the binary directly and the
+    # binary spawns Sentry's crash handler, which aborts the server when it cannot be executed.
+    launcher = tmp_path / "RSDragonwildsServer.sh"
+    binary = tmp_path / "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping"
+    crashpad = tmp_path / "RSDragonwilds/Plugins/Developer/Sentry/Binaries/Linux/crashpad_handler"
+    data = tmp_path / "RSDragonwilds/Content/Paks/RSDragonwilds-LinuxServer.pak"
+    for path, body in ((launcher, b"#!/bin/sh\n"), (binary, b"\x7fELF..."), (crashpad, b"\x7fELF..."), (data, b"PAK")):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(body)
+        path.chmod(0o644)
+
+    adapter_for(GAME)._post_install(tmp_path)  # type: ignore[attr-defined]
+
+    for program in (launcher, binary, crashpad):
+        assert program.stat().st_mode & 0o111 == 0o111, program
+    assert data.stat().st_mode & 0o111 == 0
+    assert (tmp_path / "RSDragonwilds" / "Saved").is_dir()
+
+
+def test_an_already_installed_tree_gets_its_executable_bits_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    binary = tmp_path / "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping"
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(b"\x7fELF...")
+    binary.chmod(0o644)
+    monkeypatch.setattr(
+        "takaro_maint.steam.install.install_exact", lambda *a, **k: {"status": "already-installed"}
+    )
+    args = type("Args", (), {"dest": str(tmp_path), "rollback": False, "dry_run": False})()
+
+    adapter_for(GAME).install(None, type("T", (), {"game": GAME, "id": TARGET})(), {"preserve": []}, args)
+
+    assert binary.stat().st_mode & 0o111 == 0o111
+    assert json.loads(capsys.readouterr().out)["executablesRestored"] == 1
+
+
 def test_the_server_banners_are_parsed() -> None:
     adapter = adapter_for(GAME)
 
