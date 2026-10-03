@@ -33,7 +33,8 @@ void Check(bool ok, const std::string& what) {
 
 struct Fixture {
     std::string file, platform, buildId, build;
-    std::map<std::string, uintptr_t> expect;
+    uintptr_t imageBase = 0;                  // PE fixtures: addresses are VAs, pinned anchors RVAs
+    std::map<std::string, uintptr_t> expect;  // absolute (VA) after Load
     std::vector<std::pair<uintptr_t, std::vector<uint8_t>>> bytes;  // merged contiguous regions
     std::vector<pins::Region> regions;
 };
@@ -51,6 +52,11 @@ bool Load(const char* path, Fixture& f) {
         if (key == "platform") ss >> f.platform;
         else if (key == "buildid") ss >> f.buildId;
         else if (key == "build") ss >> f.build;
+        else if (key == "imagebase") {
+            std::string v;
+            ss >> v;
+            f.imageBase = (uintptr_t)strtoull(v.c_str(), nullptr, 16);
+        }
         else if (key == "expect") {
             std::string name, v;
             ss >> name >> v;
@@ -68,6 +74,7 @@ bool Load(const char* path, Fixture& f) {
         }
     }
     for (auto& b : f.bytes) f.regions.push_back({b.second.data(), b.second.size(), b.first});
+    for (auto& kv : f.expect) kv.second += f.imageBase;  // the fixture's expect lines are RVAs on a PE
     return !f.platform.empty() && !f.regions.empty();
 }
 
@@ -101,7 +108,7 @@ void TestFixture(const Fixture& f, const std::vector<Fixture>& all) {
     const size_t nsig = pins::SignaturesFor(f.platform).size();
 
     // 1. As shipped: the real build-id.
-    pins::Result r = pins::Resolve(f.platform, f.buildId, f.regions, false);
+    pins::Result r = pins::Resolve(f.platform, f.buildId, f.regions, false, f.imageBase);
     if (Pinned(f.platform, f.buildId)) {
         Check(r.ok, tag + "pinned build accepted (" + r.reason + ")");
         Check(Found(r) == f.expect, tag + "scan reproduces the pinned anchors");
@@ -113,7 +120,7 @@ void TestFixture(const Fixture& f, const std::vector<Fixture>& all) {
     }
 
     // 2. Scan only (TAKARO_CONAN_ALLOW_UNPINNED_BUILD=1): the signatures follow the build or fail cleanly.
-    r = pins::Resolve(f.platform, "fixture-unpinned", f.regions, true);
+    r = pins::Resolve(f.platform, "fixture-unpinned", f.regions, true, f.imageBase);
     if (resolvable) {
         Check(r.ok && Found(r) == f.expect, tag + "scan of an unpinned build finds the fixture's anchors");
         std::string got;
@@ -127,7 +134,7 @@ void TestFixture(const Fixture& f, const std::vector<Fixture>& all) {
     }
 
     // 3. Wrong build: same bytes, an identity nobody pinned. No hook, structured reason.
-    r = pins::Resolve(f.platform, "0000000000000000000000000000000000000000", f.regions, false);
+    r = pins::Resolve(f.platform, "0000000000000000000000000000000000000000", f.regions, false, f.imageBase);
     Check(!r.ok && Has(r.reason, "unsupported server build") && Has(r.reason, "0000000000"), tag + "wrong build-id refused");
 
     if (!resolvable) return;
@@ -142,7 +149,7 @@ void TestFixture(const Fixture& f, const std::vector<Fixture>& all) {
             break;
         }
     }
-    r = pins::Resolve(f.platform, f.buildId, dup, true);
+    r = pins::Resolve(f.platform, f.buildId, dup, true, f.imageBase);
     Check(!r.ok && Has(r.reason, "more than one match"), tag + "duplicated match refused: " + r.reason);
     printf("  %s build %s with a duplicated match refused: %s\n", !r.ok ? "PASS" : "FAIL", f.build.c_str(), r.reason.c_str());
 
@@ -153,7 +160,7 @@ void TestFixture(const Fixture& f, const std::vector<Fixture>& all) {
         wiped.emplace_back(reg.size, 0xCC);
         blank.push_back({wiped.back().data(), reg.size, reg.address});
     }
-    r = pins::Resolve(f.platform, f.buildId, blank, true);
+    r = pins::Resolve(f.platform, f.buildId, blank, true, f.imageBase);
     Check(!r.ok && Has(r.reason, "no match"), tag + "wiped code refused: " + r.reason);
 
     // 6. A pinned identity with another build's bytes: the oracle catches moved anchors.
@@ -162,7 +169,7 @@ void TestFixture(const Fixture& f, const std::vector<Fixture>& all) {
         const Fixture* pf = nullptr;
         for (auto& g : all) pf = (g.buildId == p.buildId) ? &g : pf;
         if (!pf || pf->expect == f.expect) continue;
-        r = pins::Resolve(f.platform, p.buildId, f.regions, false);
+        r = pins::Resolve(f.platform, p.buildId, f.regions, false, f.imageBase);
         Check(!r.ok && Has(r.reason, "disagrees with the pinned addresses"),
               tag + "bytes of build " + f.build + " under the identity of " + p.build + " refused: " + r.reason);
         printf("  %s bytes of build %s under the pinned identity of build %s refused: %s\n", !r.ok ? "PASS" : "FAIL",
@@ -192,9 +199,8 @@ int main(int argc, char** argv) {
     }
     for (auto& f : all) TestFixture(f, all);
     // A platform without signatures refuses whatever it is given.
-    pins::Result w = pins::Resolve("windows", "anything", all[0].regions, true);
-    Check(!w.ok && Has(w.reason, "no signatures") == pins::SignaturesFor("windows").empty(),
-          "windows without signatures refused: " + w.reason);
+    pins::Result w = pins::Resolve("macos", "anything", all[0].regions, true);
+    Check(!w.ok && Has(w.reason, "no signatures"), "a platform without signatures refused: " + w.reason);
     printf("%s anchor fixtures: %d/%d checks over %zu fixture(s)\n", g_fail ? "FAIL" : "PASS", g_pass, g_pass + g_fail,
            all.size());
     return g_fail ? 1 : 0;

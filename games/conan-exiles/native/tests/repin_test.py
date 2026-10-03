@@ -276,7 +276,7 @@ def test_binaries(tmp):
     code, out = run("--pins", pins_w, "pin", "--binary", pe, "--build", "25639945",
                     "--anchor", "processEvent=%#x" % PE_SITE, "--anchor", "objObjects=%#x" % OBJ)
     e = entry_of(out)
-    ok = (code == 3 and e["platform"] == "windows" and e["buildId"] == "5F3E2A10%X" % ((BSS_LO + BSS_SIZE + 0xFFF) & ~0xFFF)
+    ok = (code == 3 and e["platform"] == "windows" and e["buildId"] == "5f3e2a10-%x" % ((BSS_LO + BSS_SIZE + 0xFFF) & ~0xFFF)
           and e["anchors"] == {"processEvent": hex(PE_SITE), "objObjects": hex(OBJ)})
     check(ok, "PE: RVAs derived from hints, PE code id as identity (exit %d, %s)" % (code, e))
     print("  %s PE: exit %d, identity %s, anchors %s (RVAs)" % ("PASS" if ok else "FAIL", code, e["buildId"],

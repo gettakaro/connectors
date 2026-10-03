@@ -44,11 +44,7 @@ struct PlayerLayout {
     static constexpr int32_t kComponentToWorldT = 0x210;  // SceneComponent FTransform.Translation
     static constexpr int32_t kIntStats = 0x128, kFloatStats = 0x138;  // GameItem TArray, stride 48
     static constexpr int32_t kStatStride = 48, kStatId = 0xC, kStatValue = 0x14;
-    // FUniqueNetIdRepl: vtable, then TSharedPtr<FUniqueNetId> (object at +8). The object is an
-    // FUniqueNetIdString (Type FName "STEAM") whose id FString sits at +0x10 on Linux (live
-    // 2026-10-03: "76561198000735875"); the reader tries the nearby slots for the MSVC layout.
-    static constexpr int32_t kNetIdPtr = 8;
-    static constexpr int32_t kNetIdStringSlots[4] = {0x10, 0x18, 0x08, 0x20};
+    // PlayerState.UniqueID (FUniqueNetIdRepl) is decoded by conan/identity.h, shared by every path.
 
     // Resolves every reflected offset; false with the missing names in `error`.
     bool Resolve(const UE::Reflection& r, std::string& error);

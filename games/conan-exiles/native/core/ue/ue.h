@@ -40,7 +40,8 @@ std::string DiscoveryError();
 
 struct Controller {
     uintptr_t object;
-    std::string userId;      // ConanPlayerController.UserIDFromURLOptions (Steam64)
+    std::string userId;      // ConanPlayerController.UserIDFromURLOptions: the Steam64 on old accounts, the
+                             // Funcom id "A-..." on newer ones; the gameId is rx::Steam64Of (conan/identity.h)
     std::string playerName;  // PlayerState.PlayerNamePrivate
 };
 // Game thread only, after Ready(): the player controllers of every player in the GameState.
