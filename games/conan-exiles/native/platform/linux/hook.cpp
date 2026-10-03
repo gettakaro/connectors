@@ -1,6 +1,7 @@
 #include "hook.h"
 
 #include "common.h"
+#include "conan/hook_dispatch.h"
 #include "gamethread.h"
 #include "pins/pins.h"
 
@@ -38,6 +39,14 @@ void Detour(void* obj, void* func, void* parms) {
             t_draining = true;
             GameThread::Drain();
             t_draining = false;
+        }
+    }
+    // Subscribed UFunctions (core/conan/hook_dispatch.h): one bloom test per call when nothing matches.
+    if (const HookDispatch::Slot* slot = HookDispatch::Match(func)) {
+        if (t_isGameThread < 0) t_isGameThread = (pid_t)syscall(SYS_gettid) == g_gameThread;
+        if (t_isGameThread) {
+            HookDispatch::Invoke(slot, obj, func, parms, g_original);
+            return;
         }
     }
     g_original(obj, func, parms);

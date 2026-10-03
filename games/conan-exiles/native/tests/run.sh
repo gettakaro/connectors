@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Every host test. Default runs inside the buster build container (via platform/linux/build.sh
 # --tests); --native uses the toolchain of the current machine (the container calls it that way).
+#   events_test   lane L2c: event payloads + whitelist, log tail, hook dispatch table
 #   unit_test     core logic (protocol, config, outbox, heartbeat, pins, adapter, registry, text)
 #   pins_oracle   the signature scan over the real 25639945 binary (CONAN_SERVER_BINARY; skipped
 #                 when not given)
@@ -23,6 +24,10 @@ mkdir -p tests/build
 echo "== unit_test"
 "$CXX" "${FLAGS[@]}" tests/unit_test.cpp "${CORE[@]}" -o tests/build/unit_test
 ./tests/build/unit_test
+
+echo "== events_test"
+"$CXX" "${FLAGS[@]}" tests/events_test.cpp "${CORE[@]}" -o tests/build/events_test
+./tests/build/events_test
 
 echo "== pins_oracle"
 "$CXX" "${FLAGS[@]}" -O2 tests/pins_oracle.cpp core/pins/pins.cpp core/common.cpp platform/linux/elfscan.cpp \

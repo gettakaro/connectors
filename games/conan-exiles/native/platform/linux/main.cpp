@@ -13,6 +13,8 @@
 // Nothing runs on the game thread except the detour's queue drain.
 #include "common.h"
 #include "conan/adapter.h"
+#include "conan/events.h"
+#include "conan/hook_dispatch.h"
 #include "elfscan.h"
 #include "gamethread.h"
 #include "hook.h"
@@ -160,6 +162,15 @@ __attribute__((constructor)) void Init() {
     rt->bridge = new takaro::Bridge(bo);
     StartLogThread(rt);
     rt->bridge->Start();
+    // Game events: hook subscriptions (verified builds only) and the server log tail.
+    conan::EventsOptions eo;
+    eo.emit = [adapter = rt->adapter](takaro::GameEvent ev) { adapter->Emit(std::move(ev)); };
+    eo.savedDir = saved;
+    eo.healthFile = takaro::JoinPath(cfg.stateDir, "events-health.json");
+    eo.secrets = {cfg.identityToken, cfg.registrationToken};
+    eo.hooks = ao.ready;
+    conan::StartEvents(eo);
+    if (ao.ready) HookDispatch::Start();
     g_rt = rt;
     NativeLog("Takaro bridge started (%s)", ao.ready ? "ready" : "refusing actions");
 }
@@ -170,6 +181,8 @@ __attribute__((destructor)) void Fini() {
     Runtime* rt = g_rt;
     if (!rt) return;
     GameThread::Stop();
+    HookDispatch::Stop();
+    conan::StopEvents();
     rt->bridge->Stop();
     {
         std::lock_guard<std::mutex> g(rt->mu);
