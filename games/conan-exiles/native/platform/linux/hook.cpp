@@ -3,6 +3,7 @@
 #include "common.h"
 #include "conan/hook_dispatch.h"
 #include "gamethread.h"
+#include "gtstats.h"
 #include "pins/pins.h"
 
 #include <sys/mman.h>
@@ -21,6 +22,8 @@ pid_t g_gameThread = 0;
 // -1 unknown, 0 other thread, 1 game thread. initial-exec: the library is always preloaded.
 __thread int t_isGameThread __attribute__((tls_model("initial-exec"))) = -1;
 __thread bool t_draining __attribute__((tls_model("initial-exec"))) = false;
+// Game-thread ProcessEvent calls since the last 1024-chunk was published to GtStats.
+__thread uint32_t t_calls __attribute__((tls_model("initial-exec"))) = 0;
 
 constexpr size_t kPatchLen = pins::kProcessEventPrologueLen;  // 20 whole instructions, no RIP-relative
 
@@ -33,22 +36,29 @@ void WriteAbsJump(uint8_t* at, uintptr_t target) {
 }
 
 void Detour(void* obj, void* func, void* parms) {
-    if (GameThread::g_pending.load(std::memory_order_acquire) && !t_draining) {
-        if (t_isGameThread < 0) t_isGameThread = (pid_t)syscall(SYS_gettid) == g_gameThread;
-        if (t_isGameThread) {
-            t_draining = true;
-            GameThread::Drain();
-            t_draining = false;
-        }
+    // One gettid per thread, once: every later call reads the thread-local.
+    if (t_isGameThread < 0) t_isGameThread = (pid_t)syscall(SYS_gettid) == g_gameThread;
+    // Cost accounting (core/gtstats.h): count game-thread calls, time one in 1024 (the detour's
+    // own overhead; a call that drains or dispatches is not used as a sample).
+    uint64_t t0 = 0;
+    if (t_isGameThread && ((++t_calls & GtStats::kDetourSampleMask) == 0)) {
+        GtStats::AddDetourCalls(GtStats::kDetourSampleMask + 1);
+        t0 = NowNs();
+    }
+    if (GameThread::g_pending.load(std::memory_order_acquire) && !t_draining && t_isGameThread) {
+        t0 = 0;
+        t_draining = true;
+        GameThread::Drain();
+        t_draining = false;
     }
     // Subscribed UFunctions (core/conan/hook_dispatch.h): one bloom test per call when nothing matches.
     if (const HookDispatch::Slot* slot = HookDispatch::Match(func)) {
-        if (t_isGameThread < 0) t_isGameThread = (pid_t)syscall(SYS_gettid) == g_gameThread;
         if (t_isGameThread) {
             HookDispatch::Invoke(slot, obj, func, parms, g_original);
             return;
         }
     }
+    if (t0) GtStats::AddDetourSample(NowNs() - t0);
     g_original(obj, func, parms);
 }
 }  // namespace

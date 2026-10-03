@@ -3,6 +3,7 @@
 #include "common.h"
 #include "conan/hook_dispatch.h"
 #include "gamethread.h"
+#include "gtstats.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -19,6 +20,7 @@ ProcessEventFn g_original = nullptr;
 DWORD g_gameThread = 0;
 thread_local int t_isGameThread = -1;  // -1 unknown, 0 other thread, 1 game thread
 thread_local bool t_draining = false;
+thread_local uint32_t t_gtCalls = 0;  // game-thread calls since the last 1024-chunk (core/gtstats.h)
 
 std::atomic<uint64_t> g_calls{0};
 constexpr size_t kSamples = 64;
@@ -38,22 +40,27 @@ void Detour(void* obj, void* func, void* parms) {
         g_calls.fetch_add(1, std::memory_order_relaxed);
         Sample(func);
     }
-    if (GameThread::g_pending.load(std::memory_order_acquire) && !t_draining) {
-        if (t_isGameThread < 0) t_isGameThread = GetCurrentThreadId() == g_gameThread;
-        if (t_isGameThread) {
-            t_draining = true;
-            GameThread::Drain();
-            t_draining = false;
-        }
+    if (t_isGameThread < 0) t_isGameThread = GetCurrentThreadId() == g_gameThread;
+    // Cost accounting (core/gtstats.h): count game-thread calls, time one in 1024.
+    uint64_t t0 = 0;
+    if (t_isGameThread && ((++t_gtCalls & GtStats::kDetourSampleMask) == 0)) {
+        GtStats::AddDetourCalls(GtStats::kDetourSampleMask + 1);
+        t0 = NowNs();
+    }
+    if (GameThread::g_pending.load(std::memory_order_acquire) && !t_draining && t_isGameThread) {
+        t0 = 0;
+        t_draining = true;
+        GameThread::Drain();
+        t_draining = false;
     }
     // Subscribed UFunctions (core/conan/hook_dispatch.h): one bloom test per call when nothing matches.
     if (const HookDispatch::Slot* slot = HookDispatch::Match(func)) {
-        if (t_isGameThread < 0) t_isGameThread = GetCurrentThreadId() == g_gameThread;
         if (t_isGameThread) {
             HookDispatch::Invoke(slot, obj, func, parms, g_original);
             return;
         }
     }
+    if (t0) GtStats::AddDetourSample(NowNs() - t0);
     g_original(obj, func, parms);
 }
 }  // namespace
