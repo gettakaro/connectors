@@ -54,7 +54,8 @@ ReadService::ReadService(ReadOptions o) : o_(std::move(o)) {
             for (;;) {
                 std::string status;
                 bool done = WarmupStep(status);
-                NativeLog("reads: warm-up %s: %s", done ? "done" : "waiting", status.c_str());
+                if (status != lastStatus_ || done) NativeLog("reads: warm-up %s: %s", done ? "done" : "waiting", status.c_str());
+                lastStatus_ = status;
                 if (done) return;
                 std::unique_lock<std::mutex> l(stopMu_);
                 if (stopCv_.wait_for(l, std::chrono::milliseconds(o_.warmupRetryMs), [this] { return stop_.load(); }))
@@ -133,7 +134,7 @@ bool ReadService::EnsureGameStates(std::string& error) {
     for (uintptr_t gs : gameStates_)
         if (r_->Alive(gs)) return true;
     uint64_t now = NowMs();
-    if (lastStateScanMs_ && now - lastStateScanMs_ < 2000) {
+    if (lastStateScanMs_ && now - lastStateScanMs_ < 5000) {
         error = "no live GameState (world not loaded yet)";
         return false;
     }
@@ -401,7 +402,15 @@ bool ReadService::WarmupStep(std::string& status) {
     std::string itemsErr, entErr, locErr;
     if (!cat->HaveItems()) changed |= cat->BuildItems(*r_, slow, itemsErr);
     if (!cat->HaveEntities()) changed |= cat->BuildEntities(*r_, slow, entErr);
-    if (!cat->HaveLocations()) changed |= cat->BuildLocations(*r_, slow, Region(), locErr);
+    if (!cat->HaveLocations()) {
+        changed |= cat->BuildLocations(*r_, slow, Region(), locErr);
+        // MapMarkers_ConanSandbox is loaded only once a player has joined: look for it again
+        // with a fresh index scan, at most every 30 s.
+        if (!cat->HaveLocations() && NowMs() - lastScanMs_ >= 30000) {
+            lastScanMs_ = NowMs();
+            if (r_->Scan(kScanNames) > 0) changed |= cat->BuildLocations(*r_, slow, Region(), locErr);
+        }
+    }
     if (changed) {
         const CatalogueStats& s = cat->Stats();
         NativeLog("reads: catalogue items %zu listed of %zu rows (%zu codes, %.1f ms), entities %zu of %zu (%.1f ms), "

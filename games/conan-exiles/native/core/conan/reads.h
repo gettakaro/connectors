@@ -105,6 +105,7 @@ private:
     bool catalogueDone_ = false;
     std::string catalogueStatus_ = "not started";
     std::string lastHealth_;
+    std::string lastStatus_;  // warm-up thread only
 
     Check pingCheck_ = Check::Pending, locationCheck_ = Check::Pending, statsCheck_ = Check::Pending,
           textCheck_ = Check::Pending;
