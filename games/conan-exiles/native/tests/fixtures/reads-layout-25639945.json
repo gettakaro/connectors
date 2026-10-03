@@ -327,6 +327,26 @@
    ]
   },
   {
+   "name": "ShortcutRefItem",
+   "kind": "Class",
+   "super": "GameItem",
+   "superChain": [
+    "GameItem",
+    "Object"
+   ],
+   "size": 552,
+   "path": "/Script/ConanSandbox.ShortcutRefItem",
+   "properties": [
+    {
+     "name": "m_TargetItem",
+     "type": "ObjectProperty",
+     "offset": 544,
+     "size": 8
+    }
+   ],
+   "functions": []
+  },
+  {
    "name": "DataTable",
    "kind": "Class",
    "super": "Object",

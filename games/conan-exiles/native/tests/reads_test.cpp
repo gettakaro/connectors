@@ -301,8 +301,9 @@ struct Server {
     int gameJobs = 0;
     int textCalls = 0;
 
-    uintptr_t Item(uintptr_t inv, int32_t templateId, int32_t stack, float dur, float maxDur) {
-        uintptr_t it = w.Obj(w.classes["GameItem"], "GameItem", 0, 600);
+    uintptr_t Item(uintptr_t inv, int32_t templateId, int32_t stack, float dur, float maxDur,
+                   const char* cls = "GameItem") {
+        uintptr_t it = w.Obj(w.classes[cls], cls, 0, 600);
         w.W<int32_t>(it + Off(w, "GameItem", "TemplateId"), templateId);
         w.W<uintptr_t>(it + Off(w, "GameItem", "m_OwnerInventory"), inv);
         uintptr_t ints = w.Alloc(48 * 3), floats = w.Alloc(48 * 3);
@@ -415,7 +416,8 @@ struct Server {
         w.W<int32_t>(backpack1 + il + 8, (int32_t)bp.size());
         w.W<int32_t>(backpack1 + il + 12, (int32_t)bp.size());
         SetSlots(backpack1, bp);
-        std::vector<uintptr_t> hb = {Item(hotbar1, 51001, 1, 200, 200)};
+        // slot 1: the shortcut a wielded weapon leaves behind (live 2026-10-03: counted as a 3rd sword)
+        std::vector<uintptr_t> hb = {Item(hotbar1, 51001, 1, 200, 200), Item(hotbar1, 51001, 1, 0, 0, "ShortcutRefItem")};
         data = w.Alloc(8 * 8);
         w.W<uintptr_t>(hotbar1 + il, data);
         w.W<int32_t>(hotbar1 + il + 8, 8);
