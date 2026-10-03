@@ -198,6 +198,8 @@ void SetGlobals(uintptr_t objObjects, uintptr_t nameBlocks, ProcessEventFn callP
 }
 
 bool HaveGlobals() { return kGObjObjects && kNameBlocks && g_callProcessEvent; }
+uintptr_t ObjObjectsAddress() { return kGObjObjects; }
+uintptr_t NameBlocksAddress() { return kNameBlocks; }
 
 void CallProcessEvent(void* obj, void* func, void* parms) { g_callProcessEvent(obj, func, parms); }
 

@@ -15,7 +15,7 @@ fi
 CXX=${CXX:-g++}
 PREFIX=${TAKARO_NATIVE_PREFIX:-/opt/takaro-native}
 FLAGS=(-std=c++17 -O1 -g -Wall -Wextra -Werror -Icore -Iplatform/linux "-I$PREFIX/include" -pthread)
-CORE=(core/*.cpp core/*/*.cpp platform/linux/fileio_posix.cpp platform/linux/elfscan.cpp)
+CORE=(core/*.cpp core/*/*.cpp platform/linux/fileio_posix.cpp platform/linux/elfscan.cpp platform/linux/selfmem_posix.cpp)
 LWS=("$PREFIX/lib/libwebsockets.a" "$PREFIX/lib/libssl.a" "$PREFIX/lib/libcrypto.a" -ldl)
 mkdir -p tests/build
 [ -f dist/libtakaro-conan-native.so ] || { echo "build the library first (platform/linux/build.sh)" >&2; exit 1; }
@@ -23,6 +23,10 @@ mkdir -p tests/build
 echo "== unit_test"
 "$CXX" "${FLAGS[@]}" tests/unit_test.cpp "${CORE[@]}" -o tests/build/unit_test
 ./tests/build/unit_test
+
+echo "== reads_test"
+"$CXX" "${FLAGS[@]}" tests/reads_test.cpp "${CORE[@]}" -o tests/build/reads_test
+./tests/build/reads_test
 
 echo "== pins_oracle"
 "$CXX" "${FLAGS[@]}" -O2 tests/pins_oracle.cpp core/pins/pins.cpp core/common.cpp platform/linux/elfscan.cpp \
