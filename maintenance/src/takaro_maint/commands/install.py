@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -39,7 +40,7 @@ def tree_hash(root: Path) -> str:
     if not root.is_dir():
         return digest.hexdigest()
     for path in sorted(p for p in root.rglob("*") if p.is_file()):
-        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(os.fsencode(path.relative_to(root).as_posix()))
         digest.update(b"\0")
         digest.update(net.sha256_file(path).encode("ascii"))
     return digest.hexdigest()
