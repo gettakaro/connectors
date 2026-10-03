@@ -6,7 +6,9 @@
 
 #include <algorithm>
 #include <cstring>
+#include <chrono>
 #include <mutex>
+#include <thread>
 
 namespace conan {
 namespace rx {
@@ -424,6 +426,9 @@ bool EnsureLookups(Lookups& out, std::string& error) {
             error = "game thread did not respond during the object walk";
             return false;
         }
+        // The detour drains jobs on every ProcessEvent, so without a pause consecutive slices
+        // would land in one frame; 10 ms spreads the ~45 ms walk over many frames.
+        if (next < num) std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     l.walkMs = ns / 1e6;
     for (uintptr_t t : tables)
