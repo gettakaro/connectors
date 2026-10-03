@@ -409,6 +409,15 @@ bool ReadService::WarmupStep(std::string& status) {
             lastScanMs_ = NowMs();
             if (r_->Scan(kScanNames) > 0) changed |= cat->BuildLocations(*r_, slow, Region(), locErr);
         }
+        if (cat->HaveLocations() && cat->HaveItems() && cat->HaveEntities()) {
+            // A player has joined and the world is fully up: build items and entities once more,
+            // so texts that were not loaded during the early build (start-up) are picked up.
+            auto fresh = std::make_shared<Catalogue>();
+            std::string e1, e2, e3;
+            if (fresh->BuildItems(*r_, slow, e1) && fresh->BuildEntities(*r_, slow, e2) &&
+                fresh->BuildLocations(*r_, slow, Region(), e3))
+                cat = fresh;
+        }
     }
     if (changed) {
         const CatalogueStats& s = cat->Stats();
