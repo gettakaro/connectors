@@ -308,7 +308,6 @@ void ReadService::RunPlayerChecks(const PlayerRecord& p) {
 void ReadService::RunStatsCheck(const InvItem& item) {
     if (statsCheck_ != Check::Pending) return;
     PlayerReader reader(*r_, layout_);
-    InvItem engine;
     std::vector<std::pair<int, int32_t>> ints;
     std::vector<std::pair<int, float>> floats;
     bool decoded = false;
