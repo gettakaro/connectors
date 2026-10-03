@@ -333,14 +333,14 @@ static void TestIdentity() {
 
     // Layout 1: FUniqueNetIdRepl -> object with the Steam64 as a uint64 at +0x18.
     FakeMem m;
-    uint64_t repl[6] = {0x500000, 0x500100, 0, 0, 0, 0};
+    uint64_t repl[6] = {0x1272598, 0x500000, 0x500100, 0, 0, 0};  // vtable, object, controller
     m.Put(0x400000, repl, sizeof repl);
     uint8_t obj[0x80] = {0};
     uint64_t sid = 76561198000735875ULL;
     memcpy(obj + 0x18, &sid, 8);
     m.Put(0x500000, obj, sizeof obj);
     UniqueIdProbe p = Steam64FromUniqueId(m, 0x400000);
-    CHECK(p.steam64 == "76561198000735875" && p.how == "uint64@+0x18", "uint64: '%s' %s", p.steam64.c_str(), p.how.c_str());
+    CHECK(p.steam64 == "76561198000735875" && p.how == "+0x8 -> uint64@+0x18", "uint64: '%s' %s", p.steam64.c_str(), p.how.c_str());
 
     // Layout 2: an FString "STEAM:7656..." at +0x20 (FLS wrapper).
     FakeMem m2;
@@ -357,7 +357,7 @@ static void TestIdentity() {
     m2.Put(0x500000, obj2, sizeof obj2);
     m2.Put(0x600000, w.data(), w.size() * 2);
     p = Steam64FromUniqueId(m2, 0x400000);
-    CHECK(p.steam64 == "76561198000735875" && p.how.rfind("fstring@+0x20", 0) == 0, "fstring: '%s' %s", p.steam64.c_str(),
+    CHECK(p.steam64 == "76561198000735875" && p.how.rfind("+0x8 -> fstring@+0x20", 0) == 0, "fstring: '%s' %s", p.steam64.c_str(),
           p.how.c_str());
 
     // An FLS-only id and an empty UniqueID give no Steam64, and never crash.
