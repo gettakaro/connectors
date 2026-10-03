@@ -15,6 +15,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -113,6 +114,9 @@ private:
     std::atomic<bool> shutdownScheduled_{false};
     // counters for health
     std::atomic<uint64_t> gives_{0}, teleports_{0}, consoles_{0}, kicks_{0}, banKicks_{0}, failures_{0};
+    // Last sweep kick per Steam64: a client needs a second or two to leave, and every extra kick
+    // stacks one more "Kicked from Server" dialog in its main menu.
+    std::map<std::string, int64_t> sweepKickedAt_;
     std::atomic<bool> loginHookArmed_{false};
 };
 
