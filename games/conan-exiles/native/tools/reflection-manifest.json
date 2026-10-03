@@ -1,0 +1,197 @@
+{
+  "_comment": "Every reflected name the native core relies on. tools/repin.py diffs a new build's reflection (probe dump or live probe) against this list; `repin.py code` (CI) fails when core/ looks up a name that is not listed here. layout=runtime: the core finds the offset by reflection, so a moved offset is only information. layout=fixed: the offset or size is a constant in the code, so any change needs a person. `baseline` is refreshed with `repin.py baseline --dump`.",
+  "engineNames": [],
+  "entries": [
+    {
+      "kind": "class",
+      "name": "Class",
+      "layout": "runtime",
+      "usedBy": "ue.cpp discovery (UClass objects)",
+      "baseline": {
+        "size": 624
+      }
+    },
+    {
+      "kind": "class",
+      "name": "Function",
+      "layout": "runtime",
+      "usedBy": "ue.cpp discovery (UFunction objects)",
+      "baseline": {
+        "size": 224
+      }
+    },
+    {
+      "kind": "class",
+      "name": "GameStateBase",
+      "layout": "runtime",
+      "usedBy": "ue.cpp discovery (live GameStates)",
+      "baseline": {
+        "size": 836
+      }
+    },
+    {
+      "kind": "class",
+      "name": "ConanPlayerController",
+      "layout": "runtime",
+      "usedBy": "ue.cpp discovery (controller class, chat RPC owner)",
+      "baseline": {
+        "size": 5668
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "GameStateBase",
+      "name": "PlayerArray",
+      "layout": "runtime",
+      "usedBy": "ue.cpp OnlineControllers (ArrayProperty, 16 bytes)",
+      "baseline": {
+        "type": "ArrayProperty",
+        "size": 16,
+        "offset": 776
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ConanPlayerController",
+      "name": "UserIDFromURLOptions",
+      "layout": "runtime",
+      "usedBy": "ue.cpp OnlineControllers: Steam64 (StrProperty, 16 bytes)",
+      "baseline": {
+        "type": "StrProperty",
+        "size": 16,
+        "offset": 2992
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "Actor",
+      "name": "Owner",
+      "layout": "runtime",
+      "usedBy": "ue.cpp PlayerState -> controller (ObjectProperty, 8 bytes)",
+      "baseline": {
+        "type": "ObjectProperty",
+        "size": 8,
+        "offset": 360
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "PlayerState",
+      "name": "PlayerNamePrivate",
+      "layout": "runtime",
+      "usedBy": "ue.cpp player name (StrProperty, 16 bytes)",
+      "baseline": {
+        "type": "StrProperty",
+        "size": 16,
+        "offset": 896
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "ConanPlayerController",
+      "name": "ClientReceiveChatMessage",
+      "layout": "fixed",
+      "usedBy": "chat.cpp sendMessage (parms packed by conan/text.h ChatRpc)",
+      "baseline": {
+        "parmsSize": 128,
+        "params": [
+          [
+            "chatData",
+            "StructProperty",
+            0,
+            128
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "struct",
+      "name": "ChatRpcData",
+      "layout": "fixed",
+      "usedBy": "conan/text.h ChatRpc::kSize",
+      "baseline": {
+        "size": 128
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ChatRpcData",
+      "name": "Timestamp",
+      "layout": "fixed",
+      "usedBy": "conan/text.h ChatRpc::kTimestamp",
+      "baseline": {
+        "type": "UInt64Property",
+        "size": 8,
+        "offset": 0
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ChatRpcData",
+      "name": "userName",
+      "layout": "fixed",
+      "usedBy": "conan/text.h ChatRpc::kUserName",
+      "baseline": {
+        "type": "StrProperty",
+        "size": 16,
+        "offset": 72
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ChatRpcData",
+      "name": "Channel",
+      "layout": "fixed",
+      "usedBy": "conan/text.h ChatRpc::kChannel",
+      "baseline": {
+        "type": "StrProperty",
+        "size": 16,
+        "offset": 88
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ChatRpcData",
+      "name": "Message",
+      "layout": "fixed",
+      "usedBy": "conan/text.h ChatRpc::kMessage",
+      "baseline": {
+        "type": "StrProperty",
+        "size": 16,
+        "offset": 104
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ChatRpcData",
+      "name": "generated",
+      "layout": "fixed",
+      "usedBy": "conan/text.h ChatRpc::kGenerated",
+      "baseline": {
+        "type": "BoolProperty",
+        "size": 1,
+        "offset": 120
+      }
+    },
+    {
+      "kind": "fieldclass",
+      "name": "ArrayProperty",
+      "usedBy": "ue.cpp PropertyOffset type check"
+    },
+    {
+      "kind": "fieldclass",
+      "name": "ObjectProperty",
+      "usedBy": "ue.cpp PropertyOffset type check"
+    },
+    {
+      "kind": "fieldclass",
+      "name": "StrProperty",
+      "usedBy": "ue.cpp PropertyOffset type check"
+    }
+  ],
+  "baselineFrom": {
+    "build": "25639945",
+    "buildId": "3a05a6ef0c873f2bbf754ec495bdf2a686d3768d",
+    "dump": "reflection-25639945-20261003T085324Z.json.gz"
+  }
+}
