@@ -21,7 +21,7 @@ constexpr uint64_t kRescanMs = 10000;  // at most one object-array scan per 10 s
 // Names the index scan collects (types, the text library CDO and the DataTables).
 const std::vector<std::string> kScanNames = {
     "GameStateBase", "PlayerState", "Actor", "Controller", "SceneComponent", "ConanPlayerController",
-    "BasePlayerChar_C", "BaseBPChar_C", "ItemInventory", "GameItem", "DataTable", "KismetTextLibrary",
+    "BasePlayerChar_C", "BaseBPChar_C", "ItemInventory", "GameItem", "ShortcutRefItem", "DataTable", "KismetTextLibrary",
     "Default__KismetTextLibrary", "ItemTable", "ItemNameToTemplateID", "SpawnDataTable", "MapMarkers_ConanSandbox",
 };
 

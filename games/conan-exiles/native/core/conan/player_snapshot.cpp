@@ -24,6 +24,7 @@ bool PlayerLayout::Resolve(const Reflection& r, std::string& error) {
     baseBPChar = type("BaseBPChar_C");
     itemInventory = type("ItemInventory");
     gameItem = type("GameItem");
+    shortcutRefItem = r.Type("ShortcutRefItem");  // optional: nothing to skip when absent
     if (!missing.empty()) {
         error = "classes not loaded: " + missing;
         return false;
@@ -207,6 +208,7 @@ bool PlayerReader::OneInventory(uintptr_t inv, int which, std::vector<InvItem>& 
         for (size_t s = 0; s < slots.size() && !torn; s++) {
             uintptr_t it = slots[s];
             if (!it) continue;  // empty slot (equipment is sparse)
+            if (l_.shortcutRefItem && r_.InstanceOf(it, l_.shortcutRefItem)) continue;  // a reference, counted where it lives
             InvItem e;
             e.item = it;
             e.inventory = which;

@@ -308,6 +308,15 @@
     },
     {
       "kind": "class",
+      "name": "ShortcutRefItem",
+      "layout": "runtime",
+      "usedBy": "reads: hotbar shortcut of a wielded weapon, skipped in getPlayerInventory",
+      "baseline": {
+        "size": 552
+      }
+    },
+    {
+      "kind": "class",
       "name": "InventoryItemBase",
       "layout": "runtime",
       "usedBy": "events: damage causer -> item",

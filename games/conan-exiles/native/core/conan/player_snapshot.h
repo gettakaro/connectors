@@ -16,6 +16,9 @@ namespace conan {
 struct PlayerLayout {
     // classes
     uintptr_t gameStateBase = 0, pcClass = 0, basePlayerChar = 0, baseBPChar = 0, itemInventory = 0, gameItem = 0;
+    // A hotbar slot whose weapon is wielded holds a ShortcutRefItem pointing at the item that moved
+    // to the equipment inventory; it is not an item of its own. 0 when the class is not loaded.
+    uintptr_t shortcutRefItem = 0;
     // reflected
     int32_t playerArray = -1;        // GameStateBase.PlayerArray (TArray<PlayerState*>)
     int32_t psOwner = -1;            // Actor.Owner (PlayerState -> its controller)
