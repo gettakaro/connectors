@@ -714,6 +714,19 @@ static void TestReads() {
     // self-check samples, not for every text.
     CHECK(s.textCalls <= 2 + 1 + 12, "game-thread text calls: %d", s.textCalls);
 
+    // ---- a new character's intro: no pawn and no position seen yet -> the controller's own root
+    {
+        uintptr_t pawn2 = s.w.R<uintptr_t>(s.pc2 + 816);
+        uintptr_t pcRoot = s.w.Obj(s.w.classes["SceneComponent"], "TransformComponent0", 0, 700);
+        double v[3] = {7.5, 8.5, -9.5};
+        memcpy(s.w.mem.At(pcRoot + Off(s.w, "SceneComponent", "RelativeLocation")), v, 24);
+        s.w.W<uintptr_t>(s.pc2 + Off(s.w, "Actor", "RootComponent"), pcRoot);
+        s.w.W<uintptr_t>(s.pc2 + 816, 0);
+        r = rs->Execute("getPlayerLocation", J("{\"gameId\":\"76561198000000002\"}"));
+        EQ(Dump(r), "{\"x\":7.5,\"y\":8.5,\"z\":-9.5}");
+        s.w.W<uintptr_t>(s.pc2 + 816, pawn2);
+    }
+
     // ---- location
     r = rs->Execute("getPlayerLocation", J("{\"gameId\":\"76561198000735875\"}"));
     EQ(Dump(r), "{\"x\":101746.72,\"y\":319894.28,\"z\":-21582.48}");
