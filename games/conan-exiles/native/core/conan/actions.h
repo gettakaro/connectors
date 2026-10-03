@@ -78,6 +78,8 @@ struct MutationOptions {
     // Runs right before the engine exit (production: player-disconnected for everyone still
     // logged in, since the exit drops the clients without a logout Takaro would see).
     std::function<void()> beforeExit;
+    // Last name the read side saw for a Steam64 ("" when never seen): an offline ban lists it.
+    std::function<std::string(const std::string&)> knownName;
 };
 
 class Mutations {

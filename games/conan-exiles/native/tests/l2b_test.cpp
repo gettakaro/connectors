@@ -131,6 +131,7 @@ struct FakeGame : MutationGame {
             fprintf(f, "[2026.10.03-10.00.00:000][344]LogNet: unrelated earlier line\n");
             fprintf(f, "[2026.10.03-10.00.00:010][345]ConanCheatManager: Your Player ID: 154\n");
             fprintf(f, "[2026.10.03-10.00.00:011][345]LogTemp: second line\n");
+            if (c == "nosuchcmd") fprintf(f, "[2026.10.03-10.00.00:012][345]Command not recognized: nosuchcmd\n");
             fprintf(f, "[2026.10.03-10.00.00:020][346]LogDataTable: Warning: later noise\n");
             fclose(f);
         }
@@ -252,6 +253,7 @@ static void TestMutationsFake() {
     mo.startThreads = false;
     mo.consoleSettleMs = 1;
     mo.shutdownSeconds = 10;
+    mo.knownName = [](const std::string& id) { return id == "76561198000000002" ? std::string("Alt Account") : std::string(); };
     int exitsAtBeforeExit = -1;
     mo.beforeExit = [&] { exitsAtBeforeExit = g->exits; };
     Mutations m(mo, g);
@@ -298,8 +300,12 @@ static void TestMutationsFake() {
                                       "second line\"}",
           "%s %s", r.error.c_str(), Dump(r.payload).c_str());
     CHECK(g->consoleCmds.back() == "WhatsMyId", "trimmed");
+    r = m.Execute("executeConsoleCommand", J("{\"command\":\"nosuchcmd\"}"));
+    CHECK(r.ok && Dump(r.payload).find("\"success\":false") != std::string::npos &&
+              Dump(r.payload).find("Command not recognized: nosuchcmd") != std::string::npos,
+          "unknown command answers success false: %s", Dump(r.payload).c_str());
     r = m.Execute("executeConsoleCommand", J("{\"command\":\"exit\"}"));
-    CHECK(!r.ok && g->consoleCmds.size() == 1, "exit refused before the game");
+    CHECK(!r.ok && g->consoleCmds.size() == 2, "exit refused before the game");
     g->logPath.clear();
     r = m.Execute("executeConsoleCommand", J("{\"command\":\"SomethingSilent\"}"));
     CHECK(r.ok && Dump(r.payload).find("logged no output") != std::string::npos, "%s", Dump(r.payload).c_str());
@@ -338,7 +344,7 @@ static void TestMutationsFake() {
     r = m.Execute("listBans", J("{}"));
     CHECK(r.ok && r.payload.type == JsonValue::Array && r.payload.arr.size() == 2, "list 2: %s", Dump(r.payload).c_str());
     CHECK(Dump(r.payload).find("\"name\":\"werwerwer\"") != std::string::npos &&
-              Dump(r.payload).find("\"name\":\"76561198000000002\"") != std::string::npos &&
+              Dump(r.payload).find("\"name\":\"Alt Account\"") != std::string::npos &&
               Dump(r.payload).find("\"expiresAt\":\"2026-09-21T14:14:00.000Z\"") != std::string::npos,
           "%s", Dump(r.payload).c_str());
     // enforcement: a banned player who rejoins is kicked by the sweep, which also arms the login hook

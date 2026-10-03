@@ -124,6 +124,10 @@ __attribute__((constructor)) void Init() {
     // Takaro and the clients' Discord notices see a logout for everyone the exit drops; 2 s for the
     // outbox to send them (the exit itself takes minutes on this server).
     ao.mutationOptions.beforeExit = [] { conan::EmitShutdownLogouts(2000); };
+    ao.mutationOptions.knownName = [](const std::string& steam64) {
+        conan::ReadService* r = conan::ProductionReads();
+        return r ? r->KnownName(steam64) : std::string();
+    };
     const std::string buildId = linuxplat::ReadElfBuildId("/proc/self/exe");
     pins::Result pr = pins::Resolve("linux", buildId, linuxplat::ExecutableRegions(exe),
                                     Env("TAKARO_CONAN_ALLOW_UNPINNED_BUILD") == "1");

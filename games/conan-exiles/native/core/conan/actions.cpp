@@ -289,8 +289,11 @@ ActionResult Mutations::ExecuteConsoleCommand(const JsonValue& args) {
     NativeLog("executeConsoleCommand '%s' as %s: frame %lld, %zu log line(s), game-thread %.3f ms", cmd.c_str(),
               run.context.c_str(), (long long)run.frame, lines.size(), run.gameThreadMs);
     consoles_++;
+    // The engine answers an unknown command with this line and nothing else.
+    bool unknown = false;
+    for (auto& l : lines) unknown = unknown || l.find("Command not recognized:") != std::string::npos;
     JsonValue p = takaro::JObj();
-    Put(p, "success", takaro::JBool(true));
+    Put(p, "success", takaro::JBool(!unknown));
     Put(p, "rawResult", JStr(raw.empty() ? "(the command ran in the " + run.context +
                                                " console; the server logged no output for it)"
                                          : raw));
@@ -337,6 +340,7 @@ ActionResult Mutations::BanPlayer(const JsonValue& args) {
     }
     Ban old;
     if (name.empty() && bans_.Find(steam64, 0, old)) name = old.name;
+    if (name.empty() && o_.knownName) name = o_.knownName(steam64);
     b.name = name.empty() ? steam64 : name;
     if (!bans_.Upsert(b, err)) return Fail("banPlayer: " + err);
     NativeLog("banPlayer %s (%s) until %s: %s", steam64.c_str(), b.name.c_str(),

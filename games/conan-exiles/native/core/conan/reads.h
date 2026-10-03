@@ -68,6 +68,8 @@ public:
     // listEntities display name of an NPC class ("BP_NPC_Wildlife_Rabbit_C" -> "Rabbit"); "" when
     // the entity catalogue is not built or has no row with that class. Any thread.
     std::string EntityNameForClass(const std::string& npcClass);
+    // The player name from the last getPlayers/getPlayer snapshot that saw this Steam64; "" if none.
+    std::string KnownName(const std::string& steam64);
 
 private:
     takaro::ActionResult ExecuteImpl(const std::string& action, const JsonValue& args);

@@ -203,6 +203,10 @@ void StartConnector() {
     // Takaro and the clients' Discord notices see a logout for everyone the exit drops; 2 s for the
     // outbox to send them (the exit itself takes minutes on this server).
     ao.mutationOptions.beforeExit = [] { conan::EmitShutdownLogouts(2000); };
+    ao.mutationOptions.knownName = [](const std::string& steam64) {
+        conan::ReadService* r = conan::ProductionReads();
+        return r ? r->KnownName(steam64) : std::string();
+    };
     const std::string buildId = PeIdentity();
     const uintptr_t base = ImageBase();
     pins::Result pr = pins::Resolve("windows", buildId, ExecutableRegions(),
