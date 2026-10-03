@@ -117,6 +117,10 @@ private:
     // Last sweep kick per Steam64: a client needs a second or two to leave, and every extra kick
     // stacks one more "Kicked from Server" dialog in its main menu.
     std::map<std::string, int64_t> sweepKickedAt_;
+    std::mutex kickMu_;  // guards sweepKickedAt_ (ban action worker + sweep thread)
+    // Kicks a banned player unless one of the two paths did within the last 5 s. skipped = true
+    // when it did not kick for that reason.
+    bool KickBanned(const std::string& steam64, const Ban& b, std::string& err, bool& skipped);
     std::atomic<bool> loginHookArmed_{false};
 };
 
