@@ -4,6 +4,7 @@
 #include "takaro/json_util.h"
 
 #include <libwebsockets.h>
+#include <sys/socket.h>
 #include <openssl/x509_vfy.h>
 #include <unistd.h>
 
@@ -346,6 +347,17 @@ void LwsTransport::Impl::Run() {
             if (dead && !timeoutSet) {
                 // Set on the service thread: it closes even when the socket never becomes writable again.
                 Error(epoch, "heartbeat timeout: no frame or pong from Takaro");
+                // Abortive close: the kernel drops what is still unsent instead of retransmitting
+                // it once the route is back. Those frames are replayed on the next connection
+                // from the outbox; delivering the old copies too stored every outage-time event
+                // twice (live 2026-10-03).
+                const int fd = (int)lws_get_socket_fd(wsi);
+                if (fd >= 0) {
+                    struct linger lg {};
+                    lg.l_onoff = 1;
+                    lg.l_linger = 0;
+                    setsockopt(fd, SOL_SOCKET, SO_LINGER, &lg, sizeof lg);
+                }
                 lws_set_timeout(wsi, PENDING_TIMEOUT_CLOSE_SEND, 1);
                 timeoutSet = true;
             }
