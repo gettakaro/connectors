@@ -22,7 +22,7 @@ namespace takaro {
 
 struct LwsConfig {
     std::string url;     // wss://host[:port]/path
-    std::string caFile;  // PEM bundle; empty = /etc/ssl/certs/ca-certificates.crt
+    std::string caFile;  // PEM bundle; empty = the first system bundle found (see Run())
     unsigned reconnectBaseMs = 2000, reconnectMaxMs = 60000;
     Heartbeat::Params heartbeat;
 };

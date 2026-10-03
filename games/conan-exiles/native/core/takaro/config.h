@@ -20,7 +20,7 @@ struct Config {
     std::string url = "wss://connect.takaro.io/";
     std::string identityToken, registrationToken;
     std::string serverName = "Conan Exiles";
-    std::string caFile;    // empty = /etc/ssl/certs/ca-certificates.crt (Linux)
+    std::string caFile;    // empty = the first system CA bundle found (Linux transport)
     std::string stateDir;  // durable outbox; default <Saved>/Takaro/state
     unsigned reconnectBaseMs = 2000, reconnectMaxMs = 60000;
     unsigned actionTimeoutMs = 15000;
