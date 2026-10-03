@@ -71,11 +71,11 @@
       "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback. Planned: the engine's own console executor in-process (never RCON)."
     },
     "sendMessage": {
-      "status": "pending",
+      "status": "live-supported",
       "implementation": "native",
       "responseShape": "{}",
-      "verification": "MCP gameserverSendMessage plus a client screenshot and the native log line",
-      "reason": "ClientReceiveChatMessage on each online ConanPlayerController through ProcessEvent on the game thread; global, or directed by Steam64 / character name. Promoted to live-supported only with live evidence on the native transport."
+      "verification": "Live 2026-10-03 on rig 349 (bridge stopped): MCP gameserverSendMessage global and directed (opts.recipient.gameId + senderNameOverride) -> native log delivered=1 each, both lines in the client chat (El-Limon evidence native-stage2/L1)",
+      "reason": "ClientReceiveChatMessage on each online ConanPlayerController through ProcessEvent on the game thread; global, or directed by Steam64 / character name."
     },
     "teleportPlayer": {
       "status": "pending",
@@ -85,10 +85,10 @@
       "reason": "Not ported to the native connector yet (stage 2 Phase 2); answers a structured error naming the action. No RCON fallback."
     },
     "testReachability": {
-      "status": "pending",
+      "status": "live-supported",
       "implementation": "native",
       "responseShape": "{ connectable: boolean, reason: string | null }",
-      "verification": "MCP gameserverTestReachability",
+      "verification": "Live 2026-10-03: MCP gameserverTestReachabilityForId -> {connectable:true, reason:null} from the native library with the bridge stopped; unknown-build path covered by tests/so_test.py",
       "reason": "In-process: connectable when the server build is pinned and the ProcessEvent hook is installed; an unknown build answers connectable=false with the reason."
     },
     "kickPlayer": {
