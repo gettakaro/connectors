@@ -305,7 +305,9 @@ static void TestMutationsFake() {
               Dump(r.payload).find("Command not recognized: nosuchcmd") != std::string::npos,
           "unknown command answers success false: %s", Dump(r.payload).c_str());
     r = m.Execute("executeConsoleCommand", J("{\"command\":\"exit\"}"));
-    CHECK(!r.ok && g->consoleCmds.size() == 2, "exit refused before the game");
+    CHECK(r.ok && g->consoleCmds.size() == 2 && Dump(r.payload).find("\"success\":false") != std::string::npos &&
+              Dump(r.payload).find("shutdown action") != std::string::npos,
+          "exit refused before the game, as a CommandOutput with success false: %s", Dump(r.payload).c_str());
     g->logPath.clear();
     r = m.Execute("executeConsoleCommand", J("{\"command\":\"SomethingSilent\"}"));
     CHECK(r.ok && Dump(r.payload).find("logged no output") != std::string::npos, "%s", Dump(r.payload).c_str());

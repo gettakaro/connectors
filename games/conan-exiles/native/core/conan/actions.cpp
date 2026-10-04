@@ -267,7 +267,15 @@ ActionResult Mutations::TeleportPlayer(const JsonValue& args) {
 ActionResult Mutations::ExecuteConsoleCommand(const JsonValue& args) {
     std::string cmd = Str(args.get("command")).value_or(Str(args.get("rawCommand")).value_or(""));
     std::string refusal = ConsoleRefusal(cmd);
-    if (!refusal.empty()) return Fail(refusal);
+    if (!refusal.empty()) {
+        // A refused command is a CommandOutput with success=false: an error frame shows up in Takaro
+        // as "the gameserver responded with bad data, please verify that the mod is up to date".
+        NativeLog("executeConsoleCommand refused: %s", refusal.c_str());
+        JsonValue p = takaro::JObj();
+        Put(p, "success", takaro::JBool(false));
+        Put(p, "rawResult", JStr(refusal));
+        return Ok(p);
+    }
     cmd = takaro::Trim(cmd);
     const takaro::FileStat before = takaro::StatFile(o_.serverLog);
     auto run = game_->Console(cmd);
