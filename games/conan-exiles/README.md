@@ -115,7 +115,7 @@ Verified on build 25639945 with a real client: Linux 2026-10-03/04, Windows 2026
 | Modules: server messages | ✅ | ⚠️ | |
 | Shop: buy in game | ✅ | ⚠️ | |
 | Shop: order in Takaro and claim | ✅ | ⚠️ | |
-| Shop: `@claim` in game | ⚠️ | ⚠️ | Not verified; needs Takaro account linking. |
+| Shop: `@claim` in game | ⚠️ | ⚠️ | Not verified (needs Takaro account linking). |
 | Shop: bundle of several items | ✅ | ⚠️ | |
 | Shop: order while offline, claim later | ✅ | ⚠️ | |
 | Shop: not enough currency | ✅ | ⚠️ | Refused, nothing deducted. |

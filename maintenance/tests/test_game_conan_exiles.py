@@ -994,12 +994,12 @@ def test_verify_hooks_know_the_conan_log_lines() -> None:
 
 
 def test_catalogue_exclusions_match_the_documented_fresh_save_limit() -> None:
-    readme = (REPO_ROOT / "games/conan-exiles/README.md").read_text(encoding="utf-8")
-    for check_id, readme_phrase in (("catalog-items", "item ids"), ("catalog-entities", "creature/actor classes")):
+    # The runtime verifier still drives the deprecated bridge, whose catalogues come from the save
+    # database; the operator README now documents the native connector only.
+    for check_id in ("catalog-items", "catalog-entities"):
         reason = hooks.UNSUPPORTED_CHECKS[check_id]
         assert re.search(r"save database", reason, re.I)
         assert "fresh save" in reason
-        assert f"only the {readme_phrase}" in readme
 
 
 def test_before_boot_writes_the_rcon_settings_the_server_reads(tmp_path: Path) -> None:
