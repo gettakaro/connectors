@@ -69,7 +69,7 @@ void AddHook(uint64_t ns) {
 Window Compute(const Snap& a, const Snap& b) {
     Window w;
     w.seconds = b.monoNs > a.monoNs ? (b.monoNs - a.monoNs) / 1e9 : 0;
-    if (b.frames >= 0 && a.frames >= 0) w.frames = b.frames - (a.frames > 0 ? a.frames : 0);
+    if (b.frames >= 0 && (a.frames >= 0 || a.monoNs == 0)) w.frames = b.frames - (a.frames > 0 ? a.frames : 0);
     w.detourCalls = b.detourCalls - a.detourCalls;
     const uint64_t samples = b.detourSamples - a.detourSamples;
     const uint64_t sampleNs = b.detourSampleNs - a.detourSampleNs;
