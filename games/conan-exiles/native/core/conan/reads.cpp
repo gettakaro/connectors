@@ -1,6 +1,7 @@
 #include "conan/reads.h"
 
 #include "common.h"
+#include "conan/layout_probe.h"
 #include "conan/text.h"
 #include "gamethread.h"
 #include "takaro/json_util.h"
@@ -283,8 +284,8 @@ void ReadService::RunPlayerChecks(const PlayerRecord& p) {
     char buf[256];
     if (pingRan) {
         pingCheck_ = Near(slow, fast, 0.01) ? Check::Passed : Check::Failed;
-        snprintf(buf, sizeof buf, "ping: ExactPing@824=%.3f GetPingInMilliseconds=%.3f -> %s; ", fast, slow,
-                 CheckName(pingCheck_));
+        snprintf(buf, sizeof buf, "ping: ExactPing@%d=%.3f GetPingInMilliseconds=%.3f -> %s; ",
+                 (int)PlayerLayout::kExactPing, fast, slow, CheckName(pingCheck_));
         checkDetail_ += buf;
         NativeLog("reads: self-check %s", buf);
     }
@@ -295,28 +296,36 @@ void ReadService::RunPlayerChecks(const PlayerRecord& p) {
                                                 Near(loc.rel[2], engine[2], 1)));
         locationCheck_ = worldOk && relOk ? Check::Passed : Check::Failed;
         snprintf(buf, sizeof buf,
-                 "location: K2_GetActorLocation=(%.2f, %.2f, %.2f) ComponentToWorld@0x210=(%.2f, %.2f, %.2f) "
+                 "location: K2_GetActorLocation=(%.2f, %.2f, %.2f) ComponentToWorld@0x%x=(%.2f, %.2f, %.2f) "
                  "relative=(%.2f, %.2f, %.2f) attached=%d -> %s; ",
-                 engine[0], engine[1], engine[2], loc.world[0], loc.world[1], loc.world[2], loc.rel[0], loc.rel[1],
-                 loc.rel[2], loc.attached ? 1 : 0, CheckName(locationCheck_));
+                 engine[0], engine[1], engine[2], (unsigned)PlayerLayout::kComponentToWorldT, loc.world[0],
+                 loc.world[1], loc.world[2], loc.rel[0], loc.rel[1], loc.rel[2], loc.attached ? 1 : 0,
+                 CheckName(locationCheck_));
         checkDetail_ += buf;
         NativeLog("reads: self-check %s", buf);
+        if (locationCheck_ == Check::Failed && locOk) {
+            uintptr_t root = m.Rd<uintptr_t>(p.pawn + (uintptr_t)layout_.rootComponent);
+            NativeLog("reads: layout probe: K2_GetActorLocation found at root %s (ComponentToWorld translation pinned "
+                      "at +0x%x)",
+                      ProbeVector(m, root, engine).c_str(), (unsigned)PlayerLayout::kComponentToWorldT);
+        }
     }
 }
 
-// The item stat arrays (GameItem+0x128 / +0x138) against GetIntStat / GetFloatStat.
+// The item stat arrays (GameItem+kIntStats / +kFloatStats) against GetIntStat / GetFloatStat.
 void ReadService::RunStatsCheck(const InvItem& item) {
     if (statsCheck_ != Check::Pending) return;
     PlayerReader reader(*r_, layout_);
     std::vector<std::pair<int, int32_t>> ints;
     std::vector<std::pair<int, float>> floats;
-    bool decoded = false;
+    bool decoded = false, alive = false;
     int32_t stack = 0;
     float dur = -1, maxDur = -1;
     bool ran = o_.game.run && o_.game.run(
                                   [&] {
                                       const uint64_t t0 = NowNs();
                                       if (!r_->Alive(item.item)) return;
+                                      alive = true;
                                       decoded = reader.Stats(item.item, ints, floats);
                                       alignas(16) uint8_t p[16];
                                       memset(p, 0, sizeof p);
@@ -334,8 +343,17 @@ void ReadService::RunStatsCheck(const InvItem& item) {
                                       gameThreadNs_ += NowNs() - t0;
                                   },
                                   kJobTimeoutMs);
-    if (!ran || !decoded) return;
+    if (!ran || !alive) return;
     gameThreadJobs_++;
+    if (!decoded) {
+        // The pinned stat arrays did not decode: say where they are, once, and use the getters.
+        statsCheck_ = Check::Failed;
+        NativeLog("reads: self-check stats: template %d: the pinned stat arrays (+0x%x/+0x%x) did not decode -> %s",
+                  item.templateId, (unsigned)PlayerLayout::kIntStats, (unsigned)PlayerLayout::kFloatStats,
+                  CheckName(statsCheck_));
+        NativeLog("reads: layout probe: stats %s", ProbeStats(*o_.mem, item.item, stack, dur, maxDur).c_str());
+        return;
+    }
     int32_t wStack = 1;
     float wDur = 0, wMax = 0;  // a missing float stat reads as 0 through GetFloatStat
     for (auto& kv : ints)
@@ -351,6 +369,8 @@ void ReadService::RunStatsCheck(const InvItem& item) {
              item.templateId, wStack, wDur, wMax, stack, dur, maxDur, CheckName(statsCheck_));
     checkDetail_ += buf;
     NativeLog("reads: self-check %s", buf);
+    if (statsCheck_ == Check::Failed)
+        NativeLog("reads: layout probe: stats %s", ProbeStats(*o_.mem, item.item, stack, dur, maxDur).c_str());
 }
 
 // The worker FText decode against Conv_TextToString for the sampled rows (both vtables).

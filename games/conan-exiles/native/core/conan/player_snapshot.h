@@ -44,7 +44,14 @@ struct PlayerLayout {
 #else
     static constexpr int32_t kExactPing = 824;
 #endif
-    static constexpr int32_t kComponentToWorldT = 0x210;  // SceneComponent FTransform.Translation
+    // SceneComponent.ComponentToWorld (FTransform of doubles: rotation quat, then translation) is not
+    // reflected. Translation at +0x210 under clang; MSVC lays the SceneComponent out 0x10 later and the
+    // translation sits at +0x220 (live 2026-10-03: +0x210 read quat z/w and then x).
+#ifdef _WIN32
+    static constexpr int32_t kComponentToWorldT = 0x220;
+#else
+    static constexpr int32_t kComponentToWorldT = 0x210;
+#endif
     static constexpr int32_t kIntStats = 0x128, kFloatStats = 0x138;  // GameItem TArray, stride 48
     static constexpr int32_t kStatStride = 48, kStatId = 0xC, kStatValue = 0x14;
     // PlayerState.UniqueID (FUniqueNetIdRepl) is decoded by conan/identity.h, shared by every path.

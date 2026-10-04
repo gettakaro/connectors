@@ -1,6 +1,7 @@
 #include "conan/catalogue.h"
 
 #include "common.h"
+#include "conan/layout_probe.h"
 #include "conan/text.h"
 #include "takaro/json_util.h"
 
@@ -180,7 +181,12 @@ std::string Catalogue::Text(const Reflection& r, const SlowTextFn& slow, uintptr
                     return s;
                 }
             }
-            if (!s.empty()) slowOnly_[vt] = true;
+            if (!s.empty()) {
+                if (slowOnly_.size() < 4)
+                    NativeLog("reads: layout probe: text vtable %#llx '%s': %s", (unsigned long long)vt, s.c_str(),
+                              ProbeText(r.mem(), addr, s).c_str());
+                slowOnly_[vt] = true;
+            }
             return s;
         }
     }
