@@ -95,6 +95,8 @@ public:
     // Blocks until a scheduled shutdown finished its countdown (tests).
     void JoinShutdown();
     BanList& bans() { return bans_; }
+    // True while `steam64` has an active ban (any thread).
+    bool IsBanned(const std::string& steam64) const;
 
 private:
     takaro::ActionResult GiveItem(const JsonValue& args);

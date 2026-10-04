@@ -266,6 +266,7 @@ void StartConnector() {
     eo.healthFile = takaro::JoinPath(cfg.stateDir, "events-health.json");
     eo.secrets = {cfg.identityToken, cfg.registrationToken};
     eo.hooks = ao.ready;
+    eo.isBanned = [adapter](const std::string& steam64) { return adapter->IsBanned(steam64); };
     eo.entityNameForClass = [](const std::string& cls) {
         conan::ReadService* r = conan::ProductionReads();
         return r ? r->EntityNameForClass(cls) : std::string();

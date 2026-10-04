@@ -44,6 +44,9 @@ struct EventsOptions {
     // Entity name for an NPC class from the listEntities catalogue (worker thread); used when the
     // killed character itself carries no name (e.g. a summoned creature without a spawn row).
     std::function<std::string(const std::string&)> entityNameForClass;
+    // Active ban for a Steam64 (game thread). A banned login is refused at once by the ban
+    // enforcement, so it is not a session: no player-connected and no player-disconnected.
+    std::function<bool(const std::string&)> isBanned;
 };
 
 void StartEvents(const EventsOptions& o);

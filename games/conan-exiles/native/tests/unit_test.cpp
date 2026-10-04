@@ -578,6 +578,9 @@ static void TestGtStats() {
     CHECK(tot && tot->type == JsonValue::Object && tot->get("frames")->num == 530 &&
               tot->get("drainJobs")->num == 4 && tot->get("maxDrainUs")->num == 40,
           "since start totals");
+    // Since start counts from the library load (here: the first sample's own clock), not from boot.
+    CHECK(tot && tot->get("seconds") && tot->get("seconds")->num > 9.99 && tot->get("seconds")->num < 10.01,
+          "since start seconds %f", tot && tot->get("seconds") ? tot->get("seconds")->num : -1.0);
     CHECK(v.get("maxDrainUs")->num == 40 && v.get("samples")->num == 2, "overall max and samples");
     ResetForTests();
 }

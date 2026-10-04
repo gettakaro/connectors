@@ -45,6 +45,8 @@ public:
     std::string HealthJson() override;
     // Any thread: queue an event for Takaro (bounded; the oldest `log` event is dropped first).
     void Emit(takaro::GameEvent ev);
+    // True while the player has an active ban (false without the mutation actions). Any thread.
+    bool IsBanned(const std::string& steam64) const;
 
     static constexpr size_t kMaxQueuedEvents = 4096;
 

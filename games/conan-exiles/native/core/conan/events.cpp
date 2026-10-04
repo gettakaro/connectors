@@ -23,6 +23,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace conan {
 namespace {
@@ -84,7 +85,7 @@ struct Stats {
     std::atomic<uint64_t> connected{0}, disconnected{0}, chat{0}, deaths{0}, kills{0}, logs{0};
     std::atomic<uint64_t> deferredLogins{0}, unknownLogout{0}, unknownChat{0}, deathNoIdentity{0}, killsNotByPlayer{0},
         dedupedDeaths{0}, pendingDeaths{0}, notReady{0}, dropped{0}, textConversions{0}, connectWaitedForPawn{0},
-        connectTimedOut{0}, leftBeforeSpawn{0};
+        connectTimedOut{0}, leftBeforeSpawn{0}, refusedLogins{0};
     std::atomic<uint64_t> deathHandlerMaxNs{0};
 };
 
@@ -109,6 +110,7 @@ struct GT {
     std::unordered_map<uintptr_t, PlayerId> byController;  // PostLogin cache
     std::unordered_map<std::string, PlayerId> bySteam;     // last known identity per Steam64
     std::unordered_map<uintptr_t, uintptr_t> pawnToController;
+    std::unordered_set<uintptr_t> refusedLogins;  // controllers of banned logins (no events)
     Damage damage[kDamageSlots];
     size_t damageNext = 0;
     std::pair<uintptr_t, uint64_t> dedupe[kDedupeSlots] = {};
@@ -416,6 +418,11 @@ constexpr uint64_t kConnectAfterPossessMs = 500, kConnectTimeoutMs = 120000;
 // Game thread. Queues player-connected; it is sent once the controller has a pawn.
 void QueueConnect(uintptr_t pc, const PlayerId& id) {
     GT& g = G();
+    if (Sh().o.isBanned && Sh().o.isBanned(id.steam64)) {
+        g.refusedLogins.insert(pc);
+        Sh().st.refusedLogins++;
+        return;
+    }
     g.byController[pc] = id;
     g.bySteam[id.steam64] = id;
     int32_t po = g.offControllerPawn.Get(pc, N_Pawn);
@@ -457,6 +464,7 @@ bool OnLogout(const Call& c, void*) {
     }
     const uintptr_t pc = c.Ptr(0);
     GT& g = G();
+    if (g.refusedLogins.erase(pc)) return true;  // the banned login that sent no player-connected
     PlayerId id;
     auto it = g.byController.find(pc);
     if (it != g.byController.end()) {
@@ -887,6 +895,7 @@ std::string EventsHealthJson() {
         .N("connectWaitedForPawn", n(st.connectWaitedForPawn))
         .N("connectTimedOut", n(st.connectTimedOut))
         .N("leftBeforeSpawn", n(st.leftBeforeSpawn))
+        .N("refusedLogins", n(st.refusedLogins))
         .N("unknownLogout", n(st.unknownLogout))
         .N("unknownChat", n(st.unknownChat))
         .N("deathNoIdentity", n(st.deathNoIdentity))

@@ -1,5 +1,6 @@
 #include "gtstats.h"
 
+#include "common.h"
 #include "takaro/json_util.h"
 
 #include <atomic>
@@ -8,6 +9,7 @@
 namespace GtStats {
 namespace {
 
+const uint64_t g_loadNs = NowNs();  // static initialisation = when the library loaded
 std::atomic<uint64_t> g_detourCalls{0}, g_detourSamples{0}, g_detourSampleNs{0};
 std::atomic<uint64_t> g_drainNs{0}, g_drainJobs{0}, g_hookNs{0}, g_hookCalls{0};
 std::atomic<uint64_t> g_maxDrainWindowNs{0}, g_maxDrainNs{0};
@@ -16,6 +18,7 @@ struct State {
     std::mutex mu;
     bool havePrev = false, haveLast = false;
     Snap prev, last;
+    uint64_t firstMonoNs = 0;  // the first sample's clock (callers may use their own clock)
     uint64_t samples = 0;
     std::string sampler = "not started";
 };
@@ -66,7 +69,7 @@ void AddHook(uint64_t ns) {
 Window Compute(const Snap& a, const Snap& b) {
     Window w;
     w.seconds = b.monoNs > a.monoNs ? (b.monoNs - a.monoNs) / 1e9 : 0;
-    if (b.frames >= 0 && (a.frames >= 0 || a.monoNs == 0)) w.frames = b.frames - (a.frames > 0 ? a.frames : 0);
+    if (b.frames >= 0 && a.frames >= 0) w.frames = b.frames - (a.frames > 0 ? a.frames : 0);
     w.detourCalls = b.detourCalls - a.detourCalls;
     const uint64_t samples = b.detourSamples - a.detourSamples;
     const uint64_t sampleNs = b.detourSampleNs - a.detourSampleNs;
@@ -113,6 +116,7 @@ void RecordSample(int64_t frames, uint64_t monoNs) {
         s.havePrev = true;
     }
     s.last = Take(frames, monoNs);
+    if (!s.haveLast) s.firstMonoNs = monoNs;
     s.haveLast = true;
     s.samples++;
 }
@@ -128,7 +132,10 @@ std::string HealthJson() {
     std::string window = "null", total = "null";
     if (s.haveLast) {
         if (s.havePrev) window = WindowJson(Compute(s.prev, s.last));
+        // Totals since the library loaded: the monotonic clock starts at boot, not at the load.
         Snap zero;
+        zero.monoNs = g_loadNs <= s.firstMonoNs ? g_loadNs : s.firstMonoNs;
+        zero.frames = 0;  // the engine counts frames from the process start, which is the load
         Snap last = s.last;
         last.maxDrainNs = g_maxDrainNs.load(std::memory_order_relaxed);
         total = WindowJson(Compute(zero, last));

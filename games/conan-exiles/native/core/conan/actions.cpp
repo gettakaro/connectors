@@ -380,6 +380,11 @@ ActionResult Mutations::UnbanPlayer(const JsonValue& args) {
     return Ok();
 }
 
+bool Mutations::IsBanned(const std::string& steam64) const {
+    Ban b;
+    return !steam64.empty() && bans_.Find(steam64, game_->NowMs(), b);
+}
+
 ActionResult Mutations::ListBans() {
     if (!bans_.Error().empty()) return Fail("listBans: " + bans_.Error());
     JsonValue list = takaro::JArr();

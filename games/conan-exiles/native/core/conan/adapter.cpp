@@ -149,6 +149,8 @@ ActionResult Adapter::Execute(const std::string& action, const JsonValue& args) 
     return Fail(action + " has no native handler");
 }
 
+bool Adapter::IsBanned(const std::string& steam64) const { return mutations_ && mutations_->IsBanned(steam64); }
+
 void Adapter::Emit(GameEvent ev) {
     std::lock_guard<std::mutex> g(mu_);
     while (events_.size() >= kMaxQueuedEvents) {
