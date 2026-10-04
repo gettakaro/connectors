@@ -59,7 +59,7 @@
       "extra-files": [
         {
           "type": "generic",
-          "path": "native/src/common.h"
+          "path": "native/core/common.h"
         }
       ]
     },

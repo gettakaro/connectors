@@ -113,7 +113,8 @@ def gh(args, *argv):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--app-info", help="saved app_info_print output instead of running steamcmd")
-    ap.add_argument("--steamcmd-image", default="steamcmd/steamcmd:latest")
+    ap.add_argument("--steamcmd-image",
+                    default="steamcmd/steamcmd@sha256:ae9ff57e3f07fe66dd04e8178c0a4077fd13944d90122045fe8eb6b8d1f123f0")
     ap.add_argument("--branch", default="public")
     ap.add_argument("--pins", default=str(NATIVE / "core/pins/pins.json"))
     ap.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""))

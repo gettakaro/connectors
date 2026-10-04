@@ -45,8 +45,8 @@ for f in $MH/src/hook.c $MH/src/buffer.c $MH/src/trampoline.c $MH/src/hde/hde64.
   echo "  CC  $f"
   "$ZIG" cc -target $TARGET -O2 "$PREFIX_MAP" -I$MH/include -c "$f" -o "$OUT/obj/mh_$(basename "$f" .c).o"
 done
-CXXFLAGS=(-target $TARGET -O2 -std=c++17 -Wall -Wextra -Werror -Wno-unused-parameter "$PREFIX_MAP"
-          -Icore -Iplatform/windows -I$MH/include -DNOMINMAX "${DEFS[@]}")
+CXXFLAGS=(-target "$TARGET" -O2 -std=c++17 -Wall -Wextra -Werror -Wno-unused-parameter "$PREFIX_MAP"
+          -Icore -Iplatform/windows "-I$MH/include" -DNOMINMAX "${DEFS[@]}")
 SOURCES=(core/*.cpp core/*/*.cpp platform/windows/*.cpp)
 objs=()
 for f in "${SOURCES[@]}"; do

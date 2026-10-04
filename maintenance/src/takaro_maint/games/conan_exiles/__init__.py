@@ -1,9 +1,10 @@
-"""The Conan Exiles adapter: a Steam-delivered UE5 server and a Node sidecar beside it.
+"""The Conan Exiles adapter: a Steam-delivered UE5 server with the native connector inside it.
 
-Two things make this game unlike the others here. The server is not the connector: the
-dedicated server arrives as Steam depots and stays untouched, while everything Takaro
-talks to lives in a Node process next to it, so the only shipped artifact is a zip the
-operator unpacks and runs with ``npm ci --omit=dev``. And the image that runs the server
+The dedicated server arrives as Steam depots and stays untouched. The connector is a native
+library loaded into the server process (``LD_PRELOAD`` on Linux, a ``winmm.dll`` proxy on
+Windows), shipped as one zip per platform target; the deprecated Node bridge (RCON + log
+files) still ships as a second, frozen zip on the Linux target. The dev rig and the runtime
+verifier below still drive the bridge. The image that runs the server
 is not a game image at all -- the Enhanced Linux build needs nothing but glibc, libstdc++
 and libgcc, so the same pinned Node image serves as the server runtime and the build
 toolchain, and the server is started by a command rather than by an entrypoint.
@@ -30,8 +31,9 @@ BUILD_SCRIPT = "games/conan-exiles/scripts/build-release.sh"
 
 #: The one folder an artifact zip may write to, and the folder the operator ends up running.
 BRIDGE_FOLDER = "TakaroConanExiles"
-#: Where an archive is unpacked before it replaces the live bridge folder.
-BRIDGE_STAGE = ".TakaroConanExiles.staging"
+#: The native connector's folder, and the binary one of which it must carry (Linux, Windows).
+NATIVE_FOLDER = "TakaroConanNative"
+NATIVE_BINARIES = ("libtakaro-conan-native.so", "winmm.dll")
 
 #: Operator state that lives inside that folder and never inside the zip. The bridge folder
 #: is emptied before a new artifact is unpacked so a removed file cannot survive an upgrade,
@@ -79,9 +81,16 @@ class ConanExilesAdapter(BaseAdapter):
             f"{prefix}_STEAM_BRANCH": str(server["branch"]),
             f"{prefix}_STEAM_BUILDID": str(server["buildid"]),
             f"{prefix}_STEAM_DEPOTS": depots,
-            f"{prefix}_ARTIFACT": str(resolved["artifactFileNames"]["bridge"]),
-            f"{prefix}_BRIDGE_DIR": f"{self._install_dir(resolved)}/{BRIDGE_FOLDER}",
+            f"{prefix}_PLATFORM": str(resolved["platform"]),
         }
+        names = resolved["artifactFileNames"]
+        # One key per shipped component (``_ARTIFACT_NATIVE``, ``_ARTIFACT_BRIDGE``); the bare
+        # ``_ARTIFACT`` and ``_BRIDGE_DIR`` are the deprecated bridge's, which the dev rig runs.
+        for role, name in sorted(names.items()):
+            env[f"{prefix}_ARTIFACT_{_env_key(role)}"] = str(name)
+        if "bridge" in names:
+            env[f"{prefix}_ARTIFACT"] = str(names["bridge"])
+            env[f"{prefix}_BRIDGE_DIR"] = f"{self._install_dir(resolved)}/{BRIDGE_FOLDER}"
         lockfile = resolved["build"].get("lockfile")
         if lockfile:
             env[f"{prefix}_LOCKFILE_PATH"] = str(paths.repo_root() / str(lockfile["path"]))
@@ -257,15 +266,59 @@ class ConanExilesAdapter(BaseAdapter):
 
     # -- deploy ---------------------------------------------------------------
     def after_deploy(self, dest: Path, component: dict[str, Any], artifact: Path) -> None:
-        """The operator runs ``TakaroBridge/TakaroConanExiles``, so the zip is unpacked there."""
+        """Each zip is one folder, unpacked into its component's ``installDir``.
+
+        The native connector lands as ``TakaroConanNative/`` (the library the server preloads,
+        or the ``winmm.dll`` an operator copies next to the server exe); the deprecated bridge
+        as ``TakaroBridge/TakaroConanExiles``, which the operator runs with ``npm start``.
+        """
+        if component["role"] == "native":
+            self._unpack(
+                dest,
+                component,
+                artifact,
+                folder=NATIVE_FOLDER,
+                required=(f"{NATIVE_FOLDER}/takaro-target.json",),
+                required_any=tuple(f"{NATIVE_FOLDER}/{name}" for name in NATIVE_BINARIES),
+                preserved=(),
+                stale_glob="takaro-conan-exiles-native-*.zip",
+            )
+            return
+        self._unpack(
+            dest,
+            component,
+            artifact,
+            folder=BRIDGE_FOLDER,
+            required=(
+                f"{BRIDGE_FOLDER}/dist/index.js",
+                f"{BRIDGE_FOLDER}/dist/mod/pollerCli.js",
+                f"{BRIDGE_FOLDER}/takaro-target.json",
+            ),
+            required_any=(),
+            preserved=DEPLOY_PRESERVED,
+            stale_glob="takaro-conan-exiles-bridge-*.zip",
+        )
+
+    def _unpack(
+        self,
+        dest: Path,
+        component: dict[str, Any],
+        artifact: Path,
+        *,
+        folder: str,
+        required: tuple[str, ...],
+        required_any: tuple[str, ...],
+        preserved: tuple[str, ...],
+        stale_glob: str,
+    ) -> None:
         install_dir = dest / paths.safe_relative(component["installDir"], field="components[].installDir")
-        folder = install_dir / BRIDGE_FOLDER
-        # Staged, not extracted over the live folder: deleting the bridge first would let
-        # an archive that fails halfway take the working bridge with it -- and
-        # `TakaroConfig.txt`, which is only restored after a successful extraction.
-        stage = install_dir / BRIDGE_STAGE
+        target_dir = install_dir / folder
+        # Staged, not extracted over the live folder: deleting the folder first would let
+        # an archive that fails halfway take the working install with it -- and the
+        # operator's preserved files, which are only restored after a successful extraction.
+        stage = install_dir / f".{folder}.staging"
         shutil.rmtree(stage, ignore_errors=True)
-        preserved: list[tuple[str, bytes, int]] = []
+        kept: list[tuple[str, bytes, int]] = []
         try:
             with open_zip(artifact) as archive:
                 names = archive.namelist()
@@ -275,42 +328,39 @@ class ConanExilesAdapter(BaseAdapter):
                         continue
                     # The folder's own entry is the one name that is the folder rather than
                     # a path inside it; a deterministic zip written by CPython carries it.
-                    if relative != BRIDGE_FOLDER and not relative.startswith(f"{BRIDGE_FOLDER}/"):
+                    if relative != folder and not relative.startswith(f"{folder}/"):
                         raise ConflictError(
-                            f"{artifact.name} holds '{name}', outside the single {BRIDGE_FOLDER}/ folder; "
+                            f"{artifact.name} holds '{name}', outside the single {folder}/ folder; "
                             "nothing was extracted"
                         )
                     paths.safe_relative(relative, field="artifact zip entry")
-                required = (
-                    f"{BRIDGE_FOLDER}/dist/index.js",
-                    f"{BRIDGE_FOLDER}/dist/mod/pollerCli.js",
-                    f"{BRIDGE_FOLDER}/takaro-target.json",
-                )
                 missing = [name for name in required if name not in names]
+                if required_any and not any(name in names for name in required_any):
+                    missing.append(" or ".join(required_any))
                 if missing:
                     raise ConflictError(
-                        f"{artifact.name} is missing {', '.join(missing)}; the installed bridge is untouched"
+                        f"{artifact.name} is missing {', '.join(missing)}; the installed {folder}/ is untouched"
                     )
-                for name in DEPLOY_PRESERVED:
-                    kept = folder / name
-                    if kept.is_file():
-                        preserved.append((name, kept.read_bytes(), kept.stat().st_mode & 0o777))
+                for name in preserved:
+                    old = target_dir / name
+                    if old.is_file():
+                        kept.append((name, old.read_bytes(), old.stat().st_mode & 0o777))
                 archive.extractall(stage)
-            replace_directory(stage / BRIDGE_FOLDER, folder, subject=f"{BRIDGE_FOLDER}/")
+            replace_directory(stage / folder, target_dir, subject=f"{folder}/")
         finally:
             shutil.rmtree(stage, ignore_errors=True)
-        for name, body, mode in preserved:
-            restored = folder / name
+        for name, body, mode in kept:
+            restored = target_dir / name
             if restored.exists():
                 continue
             restored.parent.mkdir(parents=True, exist_ok=True)
             restored.write_bytes(body)
             os.chmod(restored, mode)
-            output.info(f"kept the existing {BRIDGE_FOLDER}/{name}")
-        for stale in sorted(install_dir.glob("takaro-conan-exiles-bridge-*.zip")):
+            output.info(f"kept the existing {folder}/{name}")
+        for stale in sorted(install_dir.glob(stale_glob)):
             if stale.name != artifact.name:
                 stale.unlink()
-        stamp = folder / "takaro-target.json"
+        stamp = target_dir / "takaro-target.json"
         if stamp.is_file():
             try:
                 data = json.loads(stamp.read_text(encoding="utf-8"))
@@ -318,7 +368,7 @@ class ConanExilesAdapter(BaseAdapter):
                 data = {}
             version = data.get("connectorVersion")
             if version:
-                output.info(f"unpacked {BRIDGE_FOLDER} {version} into {component['installDir']}/")
+                output.info(f"unpacked {folder} {version} into {component['installDir']}/")
 
 
 GAME = ConanExilesAdapter()

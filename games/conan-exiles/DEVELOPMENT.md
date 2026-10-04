@@ -5,32 +5,35 @@ in [README.md](README.md).
 
 ## Architecture
 
-The connector is a TypeScript sidecar (`bridge/`) plus an optional Conan-side chat renderer.
+The shipped connector is native (`native/`): `libtakaro-conan-native.so` (`LD_PRELOAD`, Linux) and
+`winmm.dll` (proxy DLL, Windows) run inside the server process and hold the Takaro WebSocket
+themselves. No sidecar, no RCON, no mod. See [Native connector](#native-connector-native).
 
-- Takaro outbound WebSocket for the connector protocol (`wss://connect.takaro.io/`).
-- Conan Exiles RCON for commands, player lists and moderation.
-- Optional log tailing for `log` events and chat parsing.
-- Player polling (`listplayers` deltas) for `player-connected` / `player-disconnected`.
-- A local HTTP command bridge that an in-game mod or host-side helper polls to render real chat.
-- Optional read-only reads of the Conan save database (`game_0.db`) for location, inventory,
-  item/entity/location catalogues.
+The Node.js bridge (`bridge/`) is **deprecated and frozen**: it still ships as a legacy zip on the
+Linux target for one more release cycle and gets no fixes. The bridge sections below (RCON, log
+tailing, the save database, the chat renderer) describe that legacy path only; the native
+connector needs none of it and RCON stays off.
 
 Layout:
 
 ```
 games/conan-exiles/
-    bridge/                     # the Node.js sidecar (source of truth for behaviour)
+    native/                     # the native connector (core/, platform/linux, platform/windows, tests/, tools/)
+    bridge/                     # the deprecated Node.js sidecar (frozen)
     mod/TakaroConanBridge/      # spec + DevKit handoff for the Takaro-owned .pak (no binary shipped)
     scripts/lib-target.sh       # resolves the catalog target every script builds against
-    scripts/build-release.sh    # packages the target-qualified bridge zip
+    scripts/build-release.sh    # packages the native zip per target (+ the legacy bridge zip on Linux)
+    scripts/templates/          # takaro.json examples and the README.txt of the native zips
     scripts/check-exact-source.mjs  # lockfile and tarball hashes vs the catalog, before npm ci
-    TakaroConfig.example.txt
+    INSTALL.md                  # per-platform install, migration from the bridge, rollback (ships in the zips)
+    TakaroConfig.example.txt    # the bridge's config example
     version.txt
     CHANGELOG.md
 
 catalog/conan-exiles/
-    game.json                   # the Steam watch: app 443030, depot 443032, branch public
-    targets/linux-25639945.json # the pinned server build, image, deps and file hashes
+    game.json                     # the Steam watch: app 443030, depot 443032, branch public
+    targets/linux-25639945.json   # Linux: pinned server build, images, deps, file hashes
+    targets/windows-25639945.json # Windows: the same Steam build, depot 443031, zig toolchain
 ```
 
 ## The pinned server build
@@ -204,12 +207,11 @@ proof and does not satisfy the final `TakaroConan` source gates.
 
 ## Native connector (`native/`)
 
-`libtakaro-conan-native.so` runs inside the Linux server process (`LD_PRELOAD`) and holds the
-Takaro WebSocket itself: no sidecar and no RCON. It is being built up in stages; today it serves
-`testReachability`, `sendMessage` and the map fallbacks natively and answers every other action
-with a structured "not implemented by the native Conan connector yet" error
-(`core/conan/capabilities.json` is the honest per-action state). The Node bridge in `bridge/` is
-the released connector until the native one replaces it.
+`libtakaro-conan-native.so` runs inside the Linux server process (`LD_PRELOAD`) and `winmm.dll`
+inside the Windows one; both hold the Takaro WebSocket themselves: no sidecar and no RCON. Every
+action and event is native; `core/conan/capabilities.json` is the honest per-action state
+(`live-supported`, `schema-fallback`, `unsupported`, `not-requested`; the drift test refuses a
+`pending` row).
 
 ```
 native/
@@ -220,7 +222,8 @@ native/
     pins/          startup signature scan + pinned builds (+ pins.json)
   platform/linux/  LD_PRELOAD entry, ProcessEvent detour, /proc/self/maps + build-id, libwebsockets transport,
                    buster Dockerfile.build and build.sh
-  platform/windows/ stub interfaces for the Windows DLL (proxy DLL, WinHTTP transport, PE scan)
+  platform/windows/ winmm.dll proxy, MinHook ProcessEvent detour, WinHTTP transport (abortive close of a
+                   dead link: abortive_close.*), PE scan; build.sh (zig 0.13.0, reproducible), Dockerfile.builder
   tests/           unit tests, pins oracle, drift test, fake Takaro wire tests, real-library test
   tools/           sigderive.py (signatures for ELF and PE)
 ```
@@ -266,6 +269,11 @@ native/
   and the real library preloaded into a stand-in server executable. With
   `CONAN_SERVER_BINARY=<25639945 ConanSandboxServer-Linux-Shipping>` it also checks that the scan
   reproduces the stage 1 addresses.
+- **Windows tests.** `platform/windows/build.sh --tests` also cross-compiles
+  `build-windows/tests/abortive_close_test.exe` (the abortive close of a dead link: address match,
+  a raw socket pair, a real WinHTTP WebSocket against a loopback server). CI runs it under Wine, whose
+  WinHTTP closes an unmarked WebSocket gracefully (the duplicate-delivery case); it also passes on
+  Windows 11, where WinHTTP already resets one.
 
 ## Host-side chat renderer
 

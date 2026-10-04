@@ -100,9 +100,9 @@ jobs:
       - name: Build and test the native library (incl. re-pin checks)
         run: games/conan-exiles/native/build.sh --tests
 
-  # The Windows native connector (winmm.dll proxy), cross-compiled with the zig the Enshrouded
-  # release builder pins (same URL and SHA-256). The build checks the vendored MinHook hashes and
-  # the DLL's exports, and zeroes the link timestamps so the bytes are reproducible.
+  # The Windows native connector (winmm.dll proxy), cross-compiled with the zig the windows catalog
+  # target pins (same URL and SHA-256). The build checks the vendored MinHook hashes and the DLL's
+  # exports, and zeroes the link timestamps so the bytes are reproducible.
   native-windows:
     runs-on: ubuntu-latest
     permissions:
@@ -123,10 +123,23 @@ jobs:
       - name: Build the Windows DLL twice and compare
         shell: bash
         run: |
-          games/conan-exiles/native/platform/windows/build.sh
+          games/conan-exiles/native/platform/windows/build.sh --tests
           cp games/conan-exiles/native/dist-windows/winmm.dll "$RUNNER_TEMP/first.dll"
+          cp games/conan-exiles/native/build-windows/tests/abortive_close_test.exe "$RUNNER_TEMP/"
           games/conan-exiles/native/platform/windows/build.sh
           cmp "$RUNNER_TEMP/first.dll" games/conan-exiles/native/dist-windows/winmm.dll
+      # The abortive close of a dead Takaro link (WinHTTP transport) on a WinHTTP that closes
+      # gracefully by itself: Wine's. Windows 11 resets anyway; the test passes on both.
+      - name: Run the Windows transport test under Wine
+        shell: bash
+        env:
+          WINEDEBUG: -all
+          WINEDLLOVERRIDES: "mscoree,mshtml="
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends wine wine64
+          export WINEPREFIX="$RUNNER_TEMP/wineprefix"
+          wine "$RUNNER_TEMP/abortive_close_test.exe"
 
   params:
     runs-on: ubuntu-latest
@@ -155,7 +168,7 @@ jobs:
         run: scripts/release-params.sh conan-exiles >> "$GITHUB_OUTPUT"
 
   release:
-    needs: [test, native, params]
+    needs: [test, native, native-windows, params]
     uses: ./.github/workflows/connector-release.yml
     secrets: inherit
     with:

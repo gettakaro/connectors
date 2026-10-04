@@ -4,6 +4,7 @@
     "live-supported": "Native code exists and was proven live through Takaro with MCP and client evidence.",
     "schema-fallback": "Answers the schema-valid empty DTO Takaro requires because the data does not exist for this game.",
     "unsupported": "Answers a structured error because neither the game nor Takaro can back it.",
+    "not-requested": "Native code exists and answers, but Takaro never sends this request (no API endpoint or sync job), so it cannot be proven live through Takaro.",
     "pending": "Native code is missing or not yet proven live; transitional, must be gone before release."
   },
   "functions": {
@@ -50,17 +51,17 @@
       "reason": "/Game/Items/ItemTable rows with their localised names (worker FText decode checked against Conv_TextToString), codes from ItemNameToTemplateID; XX_/dev/test rows dropped, duplicate names get ' (#templateId)'. Built once per process."
     },
     "listEntities": {
-      "status": "pending",
+      "status": "live-supported",
       "implementation": "native",
       "responseShape": "Takaro entity DTO array with display names",
-      "verification": "Live 2026-10-03: Takaro syncEntities -> 6003 rows, MCP entitySearch samples carry display names and no class names (El-Limon evidence native-stage2/L2a); no client-side entity name compare yet (Phase 6)",
+      "verification": "Live 2026-10-03: Takaro syncEntities -> 6003 rows, MCP entitySearch samples carry display names and no class names (Rabbit, Imp, Hyena, Aardwolf Pup); entity-killed resolves 'Rabbit' through the same catalogue (El-Limon evidence native-stage2/L2a, hardtest-linux). Partial: the Conan client shows wildlife without a name, so there is no client-side name compare",
       "reason": "/Game/Systems/SpawnTable/SpawnDataTable rows: code = row name (also ConanCharacter.SourceSpawnTable on live NPCs), localised name, NPC class only in metadata. Built once per process."
     },
     "listLocations": {
-      "status": "pending",
+      "status": "not-requested",
       "implementation": "native",
       "responseShape": "Takaro location DTO array",
-      "verification": "Live 2026-10-03: 255 Exiled Lands markers built in-process; the player stood 82 m from marker 'The Broken Highway' on the paved road (client). Takaro never requested listLocations and the MCP has no locations tool, so no MCP proof yet",
+      "verification": "Live 2026-10-03: 255 Exiled Lands markers built in-process; the player stood 82 m from marker 'The Broken Highway' on the paved road (client). Takaro never requests listLocations: 0 requests in more than 24 h of native log, and the Takaro API has no locations endpoint or sync job (El-Limon evidence native-stage2/hardtest-linux)",
       "reason": "/Game/Systems/Map/MapMarkers_ConanSandbox named places of the loaded map with world coordinates and discovery radius; retried until the table is loaded."
     },
     "executeConsoleCommand": {

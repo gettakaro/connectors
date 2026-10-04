@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "id": "windows-25639945",
+  "game": "conan-exiles",
+  "platform": "windows",
+  "revision": "25639945",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-10-04",
+    "evidence": [
+      "games/conan-exiles/README.md (What works, what doesn't: on Windows only reachability and sendMessage are proven live so far; the rest is not yet verified on Windows)",
+      "games/conan-exiles/native/platform/windows/build.sh (cross-compiled with the pinned zig, exports and reproducible bytes checked in CI)"
+    ],
+    "notes": "Same Steam build as linux-25639945 (Windows content depot 443031 manifest 6353629323845191319, recorded 2026-10-03 from an anonymous steamcmd install). The shipped connector is winmm.dll, a proxy DLL placed next to ConanSandboxServer-Win64-Shipping.exe that forwards the three winmm functions the server imports and holds the Takaro connection itself (WinHTTP); no RCON, no mod. It hooks only this build (PE TimeDateStamp-SizeOfImage a0e8d0c4-b619000, games/conan-exiles/native/core/pins/pins.json). The live Windows hard test is still pending; see the README table."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 443030,
+      "branch": "public",
+      "buildid": 25639945,
+      "os": "windows",
+      "arch": "64",
+      "depots": {
+        "1004": {
+          "manifest": "7604377918839582995",
+          "size": 67863136,
+          "files": 8
+        },
+        "443031": {
+          "manifest": "6353629323845191319",
+          "size": 4381984355
+        }
+      },
+      "files": {
+        "ConanSandbox/Binaries/Win64/ConanSandboxServer-Win64-Shipping.exe": {
+          "sha256": "2f031ef8b5d084c794448897e434a9db893a9d2ebb22bcac27f7750e84c6ca77",
+          "size": 186736488
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm-slim",
+      "digest": "sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9",
+      "env": {
+        "HOME": "/conan/.takaro/home"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/conan-exiles/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm-slim",
+      "digest": "sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9"
+    },
+    "deps": {
+      "zig": {
+        "coordinate": "ziglang:zig-linux-x86_64:0.13.0",
+        "sha256": "d45312e61ebcc48032b77bc4cf7fd6915c11fa16e4aad116b66c9468211230ea",
+        "resolvedCoordinate": "https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "native",
+      "artifact": "takaro-conan-exiles-native-windows-25639945-{version}.zip",
+      "installDir": "TakaroConanNative"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": []
+  },
+  "preserve": [
+    "ConanSandbox/Saved/",
+    "TakaroConanNative/",
+    ".takaro/"
+  ],
+  "notes": "The Windows server is not run in a container anywhere in this repository: the runtime image is recorded only because the schema requires one, and runtime verification is off for this connector. The DLL is cross-compiled on Linux with zig 0.13.0 inside the pinned Node image (games/conan-exiles/native/platform/windows/Dockerfile.builder). The redistributable depot 1004 is pinned because the proven install carried it; it is not watched (Valve's depot)."
+}

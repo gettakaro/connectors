@@ -3,7 +3,11 @@
   "id": "conan-exiles",
   "name": "Conan Exiles",
   "connector": "conan-exiles",
-  "platforms": ["linux"],
+  "platforms": [
+    "linux",
+    "windows"
+  ],
+  "defaultPlatform": "linux",
   "sources": {
     "steam": {
       "provider": "steam",
@@ -13,22 +17,41 @@
         "component": "conan-exiles",
         "app": 443030,
         "os": "linux",
-        "depots": ["443032"],
+        "depots": [
+          "443032"
+        ],
         "channels": {
-          "public": {"branch": "public"},
-          "conan-exiles-legacy": {"branch": "legacy", "enabled": false}
+          "public": {
+            "branch": "public"
+          },
+          "conan-exiles-legacy": {
+            "branch": "legacy",
+            "enabled": false
+          }
         },
-        "knownBranches": []
+        "knownBranches": [],
+        "readinessNote": "One Steam build id covers both platforms (content depot 443032 Linux, 443031 Windows). The native connector hooks only server builds pinned in games/conan-exiles/native/core/pins/pins.json (GNU build-id on Linux, PE TimeDateStamp-SizeOfImage on Windows); on any other build it connects, reports the unknown build and refuses every action until the build is re-pinned (games/conan-exiles/native/tools/repin.py)."
       }
     }
   },
-  "build": {"system": "script", "projectDir": "games/conan-exiles"},
+  "build": {
+    "system": "script",
+    "projectDir": "games/conan-exiles"
+  },
   "componentRoles": {
+    "native": {
+      "description": "The native connector, loaded into the dedicated server process: libtakaro-conan-native.so through LD_PRELOAD on Linux, a winmm.dll proxy next to ConanSandboxServer-Win64-Shipping.exe on Windows. It holds the Takaro connection itself; no sidecar, no RCON",
+      "artifactPattern": "takaro-conan-exiles-native-{target}-{version}.zip"
+    },
     "bridge": {
-      "description": "The Node.js sidecar (bridge + the mod-helper chat process) that runs beside the dedicated server and speaks RCON; the only shipped artifact",
+      "description": "Deprecated legacy Node.js sidecar (RCON + log files), frozen and shipped for one more release cycle for servers that have not moved to the native connector yet",
       "artifactPattern": "takaro-conan-exiles-bridge-{target}-{version}.zip"
     }
   },
-  "legacyAssetAliases": {"takaro-conan-exiles-bridge.zip": "linux-25639945/bridge"},
-  "devServers": {"composeFile": "conan-exiles.yml"}
+  "legacyAssetAliases": {
+    "takaro-conan-exiles-bridge.zip": "linux-25639945/bridge"
+  },
+  "devServers": {
+    "composeFile": "conan-exiles.yml"
+  }
 }

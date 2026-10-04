@@ -9,12 +9,11 @@
     "status": "candidate",
     "since": "2026-09-21",
     "evidence": [
-      "games/conan-exiles/README.md (What works, what doesn't — live checks 2026-06-20/21 on an earlier Enhanced Linux build with Enhanced Pippi)",
-      "games/conan-exiles/bridge/src/__tests__/bridgeContract.test.ts (contract level, every build: fake RCON + fake Takaro)",
-      "games/conan-exiles/DEVELOPMENT.md#findings-from-the-25356024-rig-lane-2026-09-21 (startup level on build 25356024 in an isolated dev-servers rig against hosted Takaro; runtime re-verification on 25639945 is tracked separately)",
-      "games/conan-exiles/DEVELOPMENT.md#native-chat-library-native (sendMessage global/targeted and Discord chat through the native library, seen in a real client 2026-10-02)"
+      "games/conan-exiles/README.md (What works, what doesn't: the native connector on Linux build 25639945, live 2026-10-03/04 with a real client through hosted Takaro)",
+      "games/conan-exiles/native/tests (contract level, every build: unit, drift, fake-Takaro wire tests incl. a forced outage, and the real library preloaded into a stand-in server)",
+      "games/conan-exiles/bridge/src/__tests__/bridgeContract.test.ts (the deprecated bridge, contract level: fake RCON + fake Takaro)"
     ],
-    "notes": "Exact Steam pin of the public head observed 2026-10-02 (native Linux dedicated server; depot 443032 manifest 8611640520811009059; versus 25488622 only the server binary changed). The bridge is contract-level proven on every build by the fake-RCON/fake-Takaro suite; it was last re-proven at startup level in an isolated dev-servers rig on build 25356024: target stamp, identify with hosted Takaro, reachability over RCON, an empty player list, a console command, reconnect after a dropped socket, and a Takaro shutdown that exits the server process cleanly (slowly: about four and a half minutes). This bridge speaks RCON and does not compile against any server assembly, so nothing about the repin itself needed a code change. No mod loads on this build (it requires Dev Kit 1002), so in-game chat comes from games/conan-exiles/native (libtakaro-conan-native.so, LD_PRELOAD into the server), which guards on this build's GNU build-id and ProcessEvent prologue; it ships inside the bridge zip and is built in its own pinned toolchain (native/Dockerfile.build), so this record's build section is unchanged. `takaro-maint verify --game conan-exiles` waits for the shared runner seam that lets a game name its container command and options; the adapter already ships both hooks."
+    "notes": "Exact Steam pin of the public head observed 2026-10-02 (native Linux dedicated server; depot 443032 manifest 8611640520811009059). The shipped connector is the native library libtakaro-conan-native.so (LD_PRELOAD into the server): it holds the Takaro connection itself, needs no RCON and no mod, and hooks only this build (GNU build-id 3a05a6ef0c873f2bbf754ec495bdf2a686d3768d, games/conan-exiles/native/core/pins/pins.json); on any other build it connects, reports the unknown build and refuses every action. It is built in its own pinned buster toolchain (games/conan-exiles/native/platform/linux/Dockerfile.build), so this record's build toolchain is the one the deprecated bridge zip is built in. The bridge (RCON + log files) is frozen and ships for one more release cycle. A hosted runner cannot boot the 4.3 GB server, so release verification is contract level."
   },
   "inputs": {
     "server": {
@@ -112,6 +111,11 @@
   },
   "components": [
     {
+      "role": "native",
+      "artifact": "takaro-conan-exiles-native-linux-25639945-{version}.zip",
+      "installDir": "TakaroConanNative"
+    },
+    {
       "role": "bridge",
       "artifact": "takaro-conan-exiles-bridge-linux-25639945-{version}.zip",
       "installDir": "TakaroBridge"
@@ -132,6 +136,7 @@
   },
   "preserve": [
     "ConanSandbox/Saved/",
+    "TakaroConanNative/",
     "TakaroBridge/",
     ".takaro/"
   ],

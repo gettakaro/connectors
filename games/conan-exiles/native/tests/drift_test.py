@@ -18,7 +18,7 @@ ACTIONS = {'getPlayer', 'getPlayers', 'getPlayerLocation', 'getPlayerInventory',
            'testReachability', 'kickPlayer', 'banPlayer', 'unbanPlayer', 'listBans', 'shutdown', 'getMapInfo',
            'getMapTile'}
 EVENTS = {'log', 'player-connected', 'player-disconnected', 'chat-message', 'player-death', 'entity-killed'}
-STATUSES = {'live-supported', 'schema-fallback', 'unsupported', 'pending'}
+STATUSES = {'live-supported', 'schema-fallback', 'unsupported', 'not-requested', 'pending'}
 
 
 def main():
@@ -39,6 +39,8 @@ def main():
         for name, row in published[section].items():
             if row['status'] not in STATUSES:
                 failures.append(f'{name}: status {row["status"]!r}')
+            if row['status'] == 'pending':
+                failures.append(f'{name}: still pending; classify it before a release')
             if row['implementation'] != 'native':
                 failures.append(f'{name}: implementation {row["implementation"]!r}')
             if row['status'] == 'live-supported' and row['implementation'] != 'native':
