@@ -327,6 +327,7 @@ def restore_executables(root: Path) -> int:
         output.info(f"restored the executable bit on {marked} file(s) the depots deliver as 0644")
     return marked
 
+
 def tree_hash(root: Path) -> str:
     from ..commands.install import tree_hash as _tree_hash
 

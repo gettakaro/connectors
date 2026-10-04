@@ -224,9 +224,7 @@ def test_an_already_installed_tree_gets_its_executable_bits_back(
     binary.parent.mkdir(parents=True)
     binary.write_bytes(b"\x7fELF...")
     binary.chmod(0o644)
-    monkeypatch.setattr(
-        "takaro_maint.steam.install.install_exact", lambda *a, **k: {"status": "already-installed"}
-    )
+    monkeypatch.setattr("takaro_maint.steam.install.install_exact", lambda *a, **k: {"status": "already-installed"})
     args = type("Args", (), {"dest": str(tmp_path), "rollback": False, "dry_run": False})()
 
     adapter_for(GAME).install(None, type("T", (), {"game": GAME, "id": TARGET})(), {"preserve": []}, args)
