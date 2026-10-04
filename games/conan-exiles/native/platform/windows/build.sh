@@ -3,9 +3,18 @@
 # toolchain of the Enshrouded native connector. Reproducible: fixed source order, C collation,
 # -ffile-prefix-map, zig writes no link timestamp, stripped. C exports only, so the
 # DLL's C++ runtime never meets the MSVC-built server's.
-# Usage: platform/windows/build.sh            (run from anywhere)
+# Usage: platform/windows/build.sh [--tests]  (run from anywhere)
+#   --tests  also cross-compiles the Windows test programs into build-windows/tests/ (run them on
+#            Windows or under Wine); the DLL bytes are the same with or without it
 # Env:   ZIG=<path to zig 0.13.0>; DEBUG_WRONG_BUILD_ID=1 (degrade proof only)
 set -euo pipefail
+TESTS=0
+for a in "$@"; do
+  case "$a" in
+    --tests) TESTS=1 ;;
+    *) echo "unknown argument: $a" >&2; exit 2 ;;
+  esac
+done
 here="$(cd "$(dirname "$0")" && pwd)"
 cd "$here/../.."   # games/conan-exiles/native
 export LC_ALL=C
@@ -48,7 +57,7 @@ for f in "${SOURCES[@]}"; do
 done
 echo "  LD  $DIST/winmm.dll"
 "$ZIG" c++ -target $TARGET -shared -s -o "$DIST/winmm.dll" \
-  "${objs[@]}" "$OUT"/obj/mh_*.o -lwinhttp -lcrypt32
+  "${objs[@]}" "$OUT"/obj/mh_*.o -lwinhttp -lcrypt32 -lws2_32
 rm -f "$DIST"/*.lib "$DIST"/*.pdb
 
 # The proxy must export exactly the three winmm functions the server imports, and nothing else.
@@ -99,5 +108,12 @@ struct.pack_into("<I", b, opt + 64, 0)  # CheckSum (not verified for user-mode D
 open(sys.argv[1], "wb").write(bytes(b))
 PY
 ( cd "$DIST" && sha256sum winmm.dll > SHA256SUMS )
+if [ "$TESTS" = 1 ]; then
+  mkdir -p "$OUT/tests"
+  echo "  CXX tests/abortive_close_test.cpp"
+  "$ZIG" c++ "${CXXFLAGS[@]}" tests/abortive_close_test.cpp platform/windows/abortive_close.cpp \
+    -o "$OUT/tests/abortive_close_test.exe" -lwinhttp -lws2_32 -lcrypt32 -ladvapi32
+  rm -f "$OUT"/tests/*.pdb "$OUT"/tests/*.lib
+fi
 echo "built $DIST/winmm.dll ($(stat -c %s "$DIST/winmm.dll") bytes)"
 cat "$DIST/SHA256SUMS"

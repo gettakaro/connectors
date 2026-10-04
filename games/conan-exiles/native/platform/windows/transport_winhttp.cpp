@@ -4,6 +4,7 @@
 #include "takaro/json_util.h"
 
 #define WIN32_LEAN_AND_MEAN
+#include "abortive_close.h"  // winsock2.h, which must come before windows.h
 #include <windows.h>
 
 #include <winhttp.h>
@@ -191,6 +192,7 @@ struct WinHttpTransport::Epoch {
     bool dead = false;  // under owner->mu_
     bool serverClosed = false;
     std::string why;
+    TcpEndpoints tcp;  // the connection's addresses, to find its socket for an abortive close
     ~Epoch() {
         for (HANDLE h : {evReq, evSend, evRecv, evClose, evReqClosing, evWsClosing})
             if (h) CloseHandle(h);
@@ -508,6 +510,9 @@ void WinHttpTransport::RunEpoch() {
         SetLastError(status);
         return fail("upgrade-status (HTTP status instead of 101)");
     }
+    if (!EndpointsFromRequest(e->req, e->tcp))
+        NativeLog("native: WARNING no connection addresses from WinHTTP (%lu); a dead link will close gracefully",
+                  (unsigned long)GetLastError());
     HINTERNET ws = WinHttpWebSocketCompleteUpgrade(e->req, (DWORD_PTR)e);
     if (!ws) return fail("complete-upgrade");
     e->ws = ws;
@@ -567,6 +572,18 @@ void WinHttpTransport::RunEpoch() {
         const char reason[] = "connector closing";
         if (WinHttpWebSocketShutdown(ws, 1000, (PVOID)reason, sizeof reason - 1) == NO_ERROR)
             WaitForSingleObject(e->evClose, 2000);
+    } else if (!e->serverClosed) {
+        // Abortive close: the kernel drops what is still unsent instead of delivering it once the route
+        // is back. Those frames are replayed on the next connection from the outbox; delivering the old
+        // copies too stores every outage-time event twice (Linux transport, live 2026-10-03).
+        int64_t t0 = Now();
+        AbortResult ar = MakeCloseAbortive(e->tcp);
+        if (ar.matched)
+            NativeLog("native: dead connection %s -> %s closes abortively (%d handles scanned in %lldms)",
+                      EndpointText(e->tcp.local).c_str(), EndpointText(e->tcp.remote).c_str(), ar.handlesScanned,
+                      (long long)(Now() - t0));
+        else
+            NativeLog("native: WARNING dead connection closes gracefully: %s", ar.error.c_str());
     }
     WinHttpCloseHandle(ws);  // async: cancels the pending receive with 12017
     bool recvJoined = !hr || WaitForSingleObject(hr, 10000) == WAIT_OBJECT_0;
