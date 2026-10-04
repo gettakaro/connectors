@@ -316,21 +316,19 @@ std::string RedactLine(const std::string& line, const std::vector<std::string>& 
     return out;
 }
 
-bool RateLimiter::Allow(uint64_t now) {
-    if (last_ == 0) last_ = now;
-    if (now > last_) {
-        tokens_ = std::min(burst_, tokens_ + (double)(now - last_) * rate_ / 1000.0);
-        last_ = now;
-    }
-    if (tokens_ >= 1.0) {
-        tokens_ -= 1.0;
+bool WindowLimiter::Allow(uint64_t now, bool countDrop) {
+    while (!sent_.empty() && sent_.front() + longMs_ <= now) sent_.pop_front();
+    size_t inShort = 0;
+    for (auto it = sent_.rbegin(); it != sent_.rend() && *it + shortMs_ > now; ++it) inShort++;
+    if (inShort < shortMax_ && sent_.size() < longMax_) {
+        sent_.push_back(now);
         return true;
     }
-    dropped_++;
+    if (countDrop) dropped_++;
     return false;
 }
 
-uint64_t RateLimiter::TakeDroppedSinceLast() {
+uint64_t WindowLimiter::TakeDroppedSinceLast() {
     uint64_t d = dropped_ - reported_;
     reported_ = dropped_;
     return d;

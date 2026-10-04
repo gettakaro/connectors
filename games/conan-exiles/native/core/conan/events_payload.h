@@ -9,6 +9,7 @@
 #include "common.h"
 
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -80,18 +81,25 @@ std::string CleanUtf8(const std::string& s);
 // key=value / key: value pair whose key contains password, passwd, token or secret.
 std::string RedactLine(const std::string& line, const std::vector<std::string>& secrets);
 
-// Token bucket: `perSecond` sustained, `burst` at once. Allow() takes one token.
-class RateLimiter {
+// Sliding two-window limit, so that every fixed window Takaro counts stays under its log budget
+// (hosted Takaro drops `log` events above 50 per 5 s or 300 per 30 s per game server and stores an
+// event-rate-limited row instead). A sliding window of the same length bounds any fixed window.
+class WindowLimiter {
 public:
-    RateLimiter(double perSecond, double burst) : rate_(perSecond), burst_(burst), tokens_(burst) {}
-    bool Allow(uint64_t nowMs);
+    WindowLimiter(uint64_t shortMs, size_t shortMax, uint64_t longMs, size_t longMax)
+        : shortMs_(shortMs), longMs_(longMs), shortMax_(shortMax), longMax_(longMax) {}
+    // countDrop=false: a refusal is not counted (the tail's own summary line).
+    bool Allow(uint64_t nowMs, bool countDrop = true);
     uint64_t Dropped() const { return dropped_; }
-    // Drops since the last call (for the periodic summary line).
     uint64_t TakeDroppedSinceLast();
+    // Drops not yet reported (TakeDroppedSinceLast would return this).
+    uint64_t PendingDropped() const { return dropped_ - reported_; }
 
 private:
-    double rate_, burst_, tokens_;
-    uint64_t last_ = 0, dropped_ = 0, reported_ = 0;
+    uint64_t shortMs_, longMs_;
+    size_t shortMax_, longMax_;
+    std::deque<uint64_t> sent_;
+    uint64_t dropped_ = 0, reported_ = 0;
 };
 
 }  // namespace events

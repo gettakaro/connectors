@@ -183,7 +183,7 @@
       "implementation": "native",
       "payloadShape": "{ msg }",
       "verification": "Live 2026-10-03 on rig 349 (bridge stopped): Takaro log hook l2c-log-serverstats executed on three consecutive real LogServerStats lines 0.7-0.9 s after they were written (MCP eventSearch hook-executed; El-Limon evidence native-stage2/L2c)",
-      "reason": "Worker-thread tail of ConanSandbox.log (follows the rotation at server start), redacted and rate limited (30 lines/s, burst 300, a summary line for dropped lines), plus the connector's own critical notices."
+      "reason": "Worker-thread tail of ConanSandbox.log (follows the rotation at server start), redacted and rate limited below hosted Takaro's log budget (40 lines per 5 s, 250 per 30 s, a summary line for dropped lines), plus the connector's own critical notices."
     }
   }
 }

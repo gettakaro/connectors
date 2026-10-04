@@ -12,7 +12,7 @@ namespace {
 constexpr uint64_t kSummaryEveryMs = 10000;
 }
 
-LogTail::LogTail(LogTailOptions o) : o_(std::move(o)), split_(2000), rate_(o_.perSecond, o_.burst) {}
+LogTail::LogTail(LogTailOptions o) : o_(std::move(o)), split_(2000), rate_(o_.shortMs, o_.shortMax, o_.longMs, o_.longMax) {}
 
 LogTail::~LogTail() { Stop(); }
 
@@ -75,17 +75,17 @@ void LogTail::Step(uint64_t now) {
             o_.emit(events::RedactLine(line, o_.secrets));
         }
     }
-    if (now - lastSummaryMs_ >= kSummaryEveryMs) {
+    if (now - lastSummaryMs_ >= kSummaryEveryMs && rate_.PendingDropped() && rate_.Allow(now, false)) {
         lastSummaryMs_ = now;
         uint64_t dropped = rate_.TakeDroppedSinceLast();
-        if (dropped) {
-            char buf[200];
-            snprintf(buf, sizeof buf,
-                     "[Takaro Conan native] %llu server log line(s) were not forwarded (rate limit %.0f lines/s)",
-                     (unsigned long long)dropped, o_.perSecond);
-            o_.emit(buf);
-            NativeLog("logtail: %s", buf);
-        }
+        char buf[200];
+        snprintf(buf, sizeof buf,
+                 "[Takaro Conan native] %llu server log line(s) were not forwarded (rate limit %zu per %llu s, %zu per "
+                 "%llu s)",
+                 (unsigned long long)dropped, o_.shortMax, (unsigned long long)(o_.shortMs / 1000), o_.longMax,
+                 (unsigned long long)(o_.longMs / 1000));
+        o_.emit(buf);
+        NativeLog("logtail: %s", buf);
     }
 }
 

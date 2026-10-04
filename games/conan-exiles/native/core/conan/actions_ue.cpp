@@ -5,12 +5,19 @@
 #include "conan/text.h"
 #include "gamethread.h"
 #include "ue/mem.h"
+#include "ue/safe_reflect.h"
 
 #include <algorithm>
 #include <cstring>
 #include <chrono>
 #include <mutex>
 #include <thread>
+
+
+// The game-thread reflection here and the worker reflection must agree on the FProperty layout
+// (it differs between the clang and MSVC builds of the server).
+static_assert(conan::rx::kPropElementSize == UE::Layout::kPropElementSize, "FProperty::ElementSize offset");
+static_assert(conan::rx::kPropOffset == UE::Layout::kPropOffset, "FProperty::Offset_Internal offset");
 
 namespace conan {
 namespace rx {

@@ -30,7 +30,13 @@ constexpr size_t kStructSuper = 0x40, kStructChildren = 0x48, kStructChildProps 
 constexpr size_t kFuncFlags = 0xB0, kFuncParmsSize = 0xB6, kFuncRetOffset = 0xB8;
 constexpr size_t kFFieldClass = 0x08, kFFieldNext = 0x18, kFFieldName = 0x20;
 constexpr size_t kFFieldClassName = 0x08;
+// ArrayDim/ElementSize: +0x2C/+0x30 under clang (Linux server), +0x30/+0x34 under MSVC (Windows server),
+// which does not reuse FField's tail padding; see ue/ue.cpp. PropertyFlags and Offset_Internal match.
+#ifdef _WIN32
+constexpr size_t kPropArrayDim = 0x30, kPropElementSize = 0x34, kPropFlags = 0x38, kPropOffset = 0x44;
+#else
 constexpr size_t kPropArrayDim = 0x2C, kPropElementSize = 0x30, kPropFlags = 0x38, kPropOffset = 0x44;
+#endif
 constexpr size_t kBoolFieldSize = 0x70, kBoolByteOffset = 0x71, kBoolByteMask = 0x72, kBoolFieldMask = 0x73;
 constexpr size_t kItemStride = 0x18, kItemFlags = 0x04, kItemObject = 0x08;
 constexpr int kChunkItems = 65536;

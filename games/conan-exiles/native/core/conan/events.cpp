@@ -847,16 +847,14 @@ void StartEvents(const EventsOptions& o) {
     LogTailOptions lo;
     lo.path = ServerLogPath(o.savedDir);
     lo.secrets = o.secrets;
-    lo.perSecond = std::atof(EnvOr("TAKARO_CONAN_LOG_RATE", "30").c_str());
-    if (lo.perSecond <= 0) lo.perSecond = 30;
-    lo.burst = lo.perSecond * 10;
     lo.emit = [](const std::string& line) {
         Emit("log", events::LogPayload(line), Sh().st.logs);
     };
     if (EnvOr("TAKARO_CONAN_LOG_EVENTS", "1") != "0" && !lo.path.empty()) {
         s.logtail.reset(new LogTail(lo));
         s.logtail->Start();
-        NativeLog("events: tailing %s for log events (%.0f lines/s)", lo.path.c_str(), lo.perSecond);
+        NativeLog("events: tailing %s for log events (at most %zu lines per %llu s, %zu per %llu s)", lo.path.c_str(),
+                  lo.shortMax, (unsigned long long)(lo.shortMs / 1000), lo.longMax, (unsigned long long)(lo.longMs / 1000));
     }
 }
 

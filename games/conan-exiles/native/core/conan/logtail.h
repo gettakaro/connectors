@@ -7,8 +7,10 @@
 // changes or the size shrinks. The file that exists when the library loads is the previous run's,
 // so the first observation starts at its end; a file created later is read from the beginning.
 //
-// Every line is redacted (config tokens, password=/token= values) and rate limited (token bucket,
-// default 30 lines/s with a burst of 300); dropped lines are counted and summarised every 10 s.
+// Every line is redacted (config tokens, password=/token= values) and rate limited below hosted
+// Takaro's log budget (50 per 5 s and 300 per 30 s per game server; above it Takaro drops lines and
+// stores event-rate-limited rows): at most 40 lines in any 5 s and 250 in any 30 s. Dropped lines
+// are counted and summarised in one line every 10 s (the summary counts against the same budget).
 //
 // Other lanes (console output bracketing): record ServerLogSize() before an engine call and read
 // the bytes after it with takaro::ReadFileRange(ServerLogPath(), ...).
@@ -29,7 +31,8 @@ namespace conan {
 struct LogTailOptions {
     std::string path;                  // ConanSandbox.log
     std::vector<std::string> secrets;  // literal values to scrub (tokens)
-    double perSecond = 30, burst = 300;
+    uint64_t shortMs = 5000, longMs = 30000;
+    size_t shortMax = 40, longMax = 250;
     int pollMs = 200;
     size_t maxReadBytes = 256 * 1024;  // per poll
     std::function<void(const std::string& line)> emit;
@@ -48,7 +51,7 @@ public:
 private:
     LogTailOptions o_;
     events::LineSplitter split_;
-    events::RateLimiter rate_;
+    events::WindowLimiter rate_;
     std::mutex mu_;
     std::condition_variable cv_;
     std::thread thread_;

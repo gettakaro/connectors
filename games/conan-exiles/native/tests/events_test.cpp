@@ -166,12 +166,27 @@ static void TestLogHelpers() {
        "ChatWindow: Character werwerwer said: the token count is high");
     EQ(RedactLine("short stays", secrets), "short stays");
 
-    RateLimiter r(10, 5);
-    int ok = 0;
-    for (int i = 0; i < 20; i++) ok += r.Allow(1000) ? 1 : 0;
-    CHECK(ok == 5 && r.Dropped() == 15, "burst: ok=%d dropped=%llu", ok, (unsigned long long)r.Dropped());
-    CHECK(r.Allow(1100) && !r.Allow(1100), "refill 1 token per 100 ms");
-    CHECK(r.TakeDroppedSinceLast() == 16 && r.TakeDroppedSinceLast() == 0, "drop summary");
+    // The log budget: 20 lines/s offered for 2 minutes never puts more than Takaro's limits (50 per
+    // fixed 5 s window, 300 per fixed 30 s window) into any window, at any window phase.
+    WindowLimiter w(5000, 40, 30000, 250);
+    std::vector<uint64_t> sent;
+    for (uint64_t t = 0; t < 120000; t += 50)
+        if (w.Allow(t)) sent.push_back(t);
+    int worst5 = 0, worst30 = 0;
+    for (uint64_t phase = 0; phase < 30000; phase += 250)
+        for (uint64_t start = phase; start < 120000; start += 5000) {
+            int n5 = 0, n30 = 0;
+            for (uint64_t s : sent) {
+                if (s >= start && s < start + 5000) n5++;
+                if (s >= start && s < start + 30000) n30++;
+            }
+            if (n5 > worst5) worst5 = n5;
+            if (n30 > worst30) worst30 = n30;
+        }
+    CHECK(worst5 <= 40 && worst30 <= 250, "log budget: worst 5 s window %d, worst 30 s window %d", worst5, worst30);
+    CHECK(sent.size() >= 900 && w.Dropped() == 2400 - sent.size(), "window limiter sends %zu, drops %llu", sent.size(),
+          (unsigned long long)w.Dropped());
+    CHECK(!w.Allow(119950, false) && w.Dropped() == 2400 - sent.size(), "an uncounted refusal is not a drop");
 }
 
 static void Append(const std::string& path, const std::string& text) {
@@ -192,8 +207,8 @@ static void TestLogTail() {
     LogTailOptions o;
     o.path = path;
     o.secrets = {"supersecret-registration"};
-    o.perSecond = 1000;
-    o.burst = 3;
+    o.shortMs = o.longMs = 1000;
+    o.shortMax = o.longMax = 3;
     o.emit = [&](const std::string& l) { got.push_back(l); };
     LogTail t(o);
     t.Step(1000);
@@ -215,12 +230,12 @@ static void TestLogTail() {
     fclose(f);
     t.Step(9000);
     CHECK(got.size() == 6 && got[5] == "x", "truncate: %zu", got.size());
-    // Rate limit: burst 3, then a summary line after 10 s.
+    // Rate limit: 3 per window, then a summary line once the window has room.
     got.clear();
     std::string many;
     for (int i = 0; i < 10; i++) many += "spam " + std::to_string(i) + "\n";
     Append(path, many);
-    t.Step(9001);
+    t.Step(10500);
     CHECK(got.size() == 3, "rate limited to the burst: %zu", got.size());
     t.Step(30000);
     CHECK(!got.empty() && got.back().find("7 server log line(s) were not forwarded") != std::string::npos, "summary: %s",
@@ -231,7 +246,7 @@ static void TestLogTail() {
     std::vector<std::string> got2;
     LogTailOptions o2 = o;
     o2.path = p2;
-    o2.burst = 100;
+    o2.shortMax = o2.longMax = 100;
     o2.emit = [&](const std::string& l) { got2.push_back(l); };
     LogTail t2(o2);
     t2.Step(1);
