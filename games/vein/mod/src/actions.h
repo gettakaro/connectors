@@ -48,6 +48,10 @@ Result Shutdown();
 // (lane L2's join resolver already is); a no-op when the player is not online.
 bool KickBanned(const std::string& gameId);
 
+// Forgets when a player connected, so the next connection reports its own `connectedAt`.
+// Called by the leave path; safe from any thread.
+void ForgetConnection(const std::string& gameId);
+
 // Lane L2c: the display name of the UItem an `AEquippedItem` actor represents ("Baseball Bat"),
 // or "" when `actor` is not an equipped item / carries no resolvable item. Reads UObjects by
 // reflection, so it must be called ON THE GAME THREAD; entity-killed uses it to name the weapon

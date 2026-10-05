@@ -2835,6 +2835,11 @@ Actions::Result Actions::Give(const JsonValue& body) {
 // Called from lane L2's join resolver, ALREADY ON THE GAME THREAD - so it must not poll (that
 // would enqueue a job behind itself and deadlock). It fires every mechanism in turn and reports
 // only that a call was made; the PreLogin refusal is what actually enforces the ban.
+void Actions::ForgetConnection(const std::string& gameId) {
+    Guard g(g_seenLock);
+    g_firstSeen.erase(gameId);
+}
+
 bool Actions::KickBanned(const std::string& gameId) {
     PlayerInfo p;
     if (!FindPlayerById(gameId, p)) return false;
