@@ -296,6 +296,25 @@ void* PlayerStateOf(void* actor) {
     return nullptr;
 }
 
+// The SteamID64 of a PUID never changes, so once found PlatformData is not scanned again for that
+// player (game thread budget). An empty result is not cached: PlatformData may not be replicated yet.
+Mutex g_steamLock;
+std::map<std::string, std::string> g_steamByPuid;
+std::string CachedSteamId(void* state, const std::string& puid) {
+    if (puid.empty()) return "";
+    {
+        Guard g(g_steamLock);
+        auto it = g_steamByPuid.find(puid);
+        if (it != g_steamByPuid.end()) return it->second;
+    }
+    std::string steam = Actions::SteamIdOfPlayerState(state);
+    if (steam.empty()) return steam;
+    Guard g(g_steamLock);
+    if (g_steamByPuid.size() > 4096) g_steamByPuid.clear();
+    g_steamByPuid[puid] = steam;
+    return steam;
+}
+
 bool IdentFromPlayerState(void* state, Ident& out) {
     if (!ValidObject(state)) return false;
     out.gameId = PuidFromPlayerState(state);
@@ -303,6 +322,7 @@ bool IdentFromPlayerState(void* state, Ident& out) {
     out.name = ReadFStringAt(state, PropOffOf(state, "CharacterName"));
     if (out.name.empty()) out.name = ::state::CharacterName(out.gameId);
     out.characterGuid = GuidFromStruct(state, PropOffOf(state, "OwnerGuid"));
+    out.steamId = CachedSteamId(state, out.gameId);
     if (!out.gameId.empty() && !out.name.empty()) ::state::NoteCharacterName(out.gameId, out.name);
     if (out.name.empty()) out.name = out.platformName;
     return out.valid();

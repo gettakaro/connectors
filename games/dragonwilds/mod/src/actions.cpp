@@ -1105,6 +1105,8 @@ void* ShutdownThread(void*) {
 
 }  // namespace
 
+std::string Actions::SteamIdOfPlayerState(void* playerState) { return SteamIdOf(playerState); }
+
 // ================================================================================================
 // lifecycle
 

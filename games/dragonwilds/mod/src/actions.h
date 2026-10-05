@@ -49,6 +49,10 @@ Result Shutdown();
 // (lane L2's join resolver already is); a no-op when the player is not online.
 bool KickBanned(const std::string& gameId);
 
+// The SteamID64 held in a player state's PlatformData, or "" when none is there. Game thread only.
+// The event path and the players snapshot must agree, so both use this one reader.
+std::string SteamIdOfPlayerState(void* playerState);
+
 // Debug only (TAKARO_PLUGIN_DEBUG=1): kills the nearest AI character to a player through the game's
 // own damage pipeline, with that player as the instigator. It exists so that entity-killed can be
 // proven without a human swinging a sword.
