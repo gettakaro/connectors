@@ -336,6 +336,11 @@ Response Route(const Request& r) {
             if (!r.body.empty() && !JsonParse(r.body, body)) return Err(400, "body must be JSON");
             return FromAction(Actions::KillNearest(body));
         }
+        if (!GET && p.size() == 2 && p[1] == "admin" && r.method == "POST") {
+            JsonValue body;
+            if (!r.body.empty() && !JsonParse(r.body, body)) return Err(400, "body must be JSON");
+            return FromAction(Actions::DebugAdmin(body));
+        }
         // lane L3b: grant/revoke admin on the live game session (the proof lanes' handle).
         if (!GET && p.size() == 2 && p[1] == "set-admin" && r.method == "POST") {
             JsonValue body;

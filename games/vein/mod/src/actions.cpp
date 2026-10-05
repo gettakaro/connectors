@@ -3070,6 +3070,65 @@ Actions::Result Actions::Shutdown() {
 
 Actions::Result Actions::KillNearest(const JsonValue& body) { return Events::KillNearest(body); }
 
+Actions::Result Actions::DebugAdmin(const JsonValue& body) {
+    std::string op = BodyString(body, "op");
+    std::string id = BodyString(body, "gameId");
+    std::string clsName = BodyString(body, "class");
+    if (clsName.empty()) clsName = "BP_Zombie_C";
+    const JsonValue* onV = body.get("on");
+    bool on = !onV || onV->type != JsonValue::Bool || onV->b;
+    const char* fnName = op == "godmode" ? "Server_SetGodmode"
+                       : op == "notarget" ? "Server_SetNotarget"
+                       : op == "spawn-zombie" ? "Server_SZ" : nullptr;
+    if (!fnName) return Fail(400, "'op' must be godmode, notarget or spawn-zombie");
+    return OnGameThread("POST /debug/admin", [id, on, fnName, clsName]() -> JobOut {
+        auto pe = Fn<FnProcessEvent>("UObject::ProcessEvent");
+        if (!pe) return JobOut::Error(501, "UObject::ProcessEvent unresolved");
+        PlayerInfo p;
+        bool found = false;
+        for (const PlayerInfo& q : ReadPlayers())
+            if (id.empty() || q.gameId == NormalizeGameId(id)) { p = q; found = true; break; }
+        if (!found || !p.controller) return JobOut::Error(404, "player not online");
+        // The player's own component: the implementation checks IsAdmin on its owner.
+        void* cls = AdminComponentClass();
+        void* admin = nullptr;
+        std::vector<void*> objs;
+        if (cls && Reflect::GetObjectsWithOuter(p.controller, objs, true))
+            for (void* o : objs)
+                if (o && MemReadable(o, 0x40) && Reflect::IsA(o, cls)) { admin = o; break; }
+        if (!admin) return JobOut::Error(503, "the player's controller has no UAdminComponent");
+        void* func = Reflect::FindFunction(admin, fnName);
+        if (!func) return JobOut::Error(501, std::string(fnName) + " is not a UFunction on this build");
+        int32_t size = FuncParmsSize(func);
+        if (size < 1) return JobOut::Error(501, std::string(fnName) + " has an implausible parameter block");
+        std::vector<void*> props;
+        WalkFuncProps(func, props);
+        if (props.empty()) return JobOut::Error(501, std::string(fnName) + " has no parameter");
+        int32_t off = Reflect::PropertyOffset(props[0]);
+        std::vector<char> parms((size_t)size + 16, 0);
+        if (std::string(fnName) == "Server_SZ") {
+            void* base = VeinClass("AVeinZombieCharacter::StaticClass", "VeinZombieCharacter");
+            void* classCls = Reflect::StaticClass("UClass::StaticClass");
+            if (!classCls) classCls = Reflect::FindObjectByPath("/Script/CoreUObject", "Class");
+            void* zombie = nullptr;
+            std::vector<void*> classes;
+            if (base && classCls && Reflect::GetObjectsOfClass(classCls, classes, true))
+                for (void* c : classes)
+                    if (c && Reflect::ObjName(c) == clsName && DerivesFrom(c, base)) { zombie = c; break; }
+            if (!zombie) return JobOut::Error(404, clsName + " is not a loaded zombie class");
+            if (off < 0 || off + 8 > size) return JobOut::Error(501, "Server_SZ class parameter out of range");
+            memcpy(parms.data() + off, &zombie, sizeof(zombie));
+        } else {
+            if (off < 0 || off >= size) return JobOut::Error(501, "bool parameter out of range");
+            parms[(size_t)off] = on ? 1 : 0;
+        }
+        pe(admin, func, parms.data());
+        PluginLog("debug: %s via the admin component of %s", fnName, p.gameId.c_str());
+        return {200, std::string("{\"success\":true,\"via\":\"UAdminComponent::") + fnName + "\",\"player\":" +
+                         JsonStr(p.gameId) + "}"};
+    });
+}
+
 // ================================================================================================
 // POST /command
 
