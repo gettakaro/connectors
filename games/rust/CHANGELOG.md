@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/gettakaro/connectors/compare/rust-v0.1.1...rust-v0.1.2) (2026-10-05)
+
+
+### Bug Fixes
+
+* **rust:** target the 2026-10-02 Rust hotfix build 25681086 ([#355](https://github.com/gettakaro/connectors/issues/355)) ([79c8023](https://github.com/gettakaro/connectors/commit/79c80239506ccedf9759378b312897a70100abd9))
+
 ## [0.1.1](https://github.com/gettakaro/connectors/compare/rust-v0.1.0...rust-v0.1.1) (2026-10-01)
 
 
