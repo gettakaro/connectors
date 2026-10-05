@@ -54,7 +54,17 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
         }
 
         mainThreadActions = new QueuedMainThreadActionScheduler();
-        var playerResolver = new ValheimPlayerResolver(Logger);
+        var knownPlayerNames = new KnownPlayerNames(Path.Combine(Paths.ConfigPath, "com.takaro.valheim.known-players.json"));
+        try
+        {
+            knownPlayerNames.Load();
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning($"Takaro Valheim could not read known player names: {exception.Message}");
+        }
+
+        var playerResolver = new ValheimPlayerResolver(Logger, knownPlayerNames);
         companionInventory = new CompanionInventoryCache();
         var adapter = new ValheimServerAdapter(Logger, config, RequestShutdown, playerResolver, companionInventory);
         runner = new TakaroWebSocketRunner(

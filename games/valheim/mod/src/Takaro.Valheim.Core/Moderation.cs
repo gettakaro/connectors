@@ -18,11 +18,18 @@ public static class ModerationFactory
 
     // Takaro resolves every listBans player through PlayerService.resolveRef, which needs a
     // platform id when the banned player has never joined this server (no POG to fall back on).
+    // Name and IP bans get no platform id: resolveRef would create a phantom player for them.
     private static BannedPlayer ToBannedPlayer(ValheimBan ban)
     {
-        var identity = PlayerMapper.ToIdentity(ban.GameId, ban.SteamId);
+        var gameId = PlayerMapper.ToCanonicalPlatformUserId(ban.GameId);
+        var identity = PlayerMapper.ToIdentity(gameId, ban.SteamId);
+        if (!identity.IsPlatformAccount)
+        {
+            return new BannedPlayer(gameId, DisplayName(ban), null, null, null);
+        }
+
         return new BannedPlayer(
-            ban.GameId,
+            gameId,
             DisplayName(ban),
             identity.SteamId,
             identity.XboxLiveId,
@@ -61,5 +68,6 @@ public static class ModerationFactory
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SteamId,
         [property: JsonPropertyName("xboxLiveId")]
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? XboxLiveId,
-        [property: JsonPropertyName("platformId")] string PlatformId);
+        [property: JsonPropertyName("platformId")]
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? PlatformId);
 }

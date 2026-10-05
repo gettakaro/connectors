@@ -524,9 +524,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         var bans = network.Banned
             .Select(ban => new ValheimBan(
                 GameId: ban,
-                Name: banNames.TryGetValue(ban, out var name) ? name : ban,
-                SteamId: PlayerMapper.ToIdentity(ban).SteamId,
-                PlatformId: PlayerMapper.ToIdentity(ban).PlatformId))
+                Name: banNames.TryGetValue(ban, out var name) || playerResolver.TryGetKnownName(ban, out name) ? name : ban))
             .ToArray();
 
         logger.LogInfo($"Takaro Valheim listBans returned {bans.Length} official ban entry/entries.");
@@ -586,7 +584,8 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
     private bool BanMatchesIdentifier(string ban, string identifier)
     {
-        if (Matches(ban, identifier))
+        if (Matches(ban, identifier)
+            || Matches(PlayerMapper.ToCanonicalPlatformUserId(ban), PlayerMapper.ToCanonicalPlatformUserId(identifier)))
         {
             return true;
         }

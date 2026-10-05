@@ -55,6 +55,36 @@ public sealed class ModerationFactoryTests
     }
 
     [TestMethod]
+    public void BareSteamIdBanUsesThePlayersGameId()
+    {
+        // `ban <name>` on a connected Steam player stores the bare SteamID64 (the socket host name).
+        var entries = ModerationFactory.CreateBanEntries(new[] { new ValheimBan("76561198000735875", "Odin") });
+
+        var response = TakaroProtocol.CreateResponse("list-bans", TakaroActionResult.Ok(entries));
+        using var document = JsonDocument.Parse(response);
+        var player = document.RootElement.GetProperty("payload")[0].GetProperty("player");
+
+        Assert.AreEqual("Steam_76561198000735875", player.GetProperty("gameId").GetString());
+        Assert.AreEqual("76561198000735875", player.GetProperty("steamId").GetString());
+        Assert.AreEqual("steam:76561198000735875", player.GetProperty("platformId").GetString());
+    }
+
+    [TestMethod]
+    public void NameBanCarriesNoPlatformIdentifiers()
+    {
+        var entries = ModerationFactory.CreateBanEntries(new[] { new ValheimBan("Odin", "Odin") });
+
+        var response = TakaroProtocol.CreateResponse("list-bans", TakaroActionResult.Ok(entries));
+        using var document = JsonDocument.Parse(response);
+        var player = document.RootElement.GetProperty("payload")[0].GetProperty("player");
+
+        Assert.AreEqual("Odin", player.GetProperty("gameId").GetString());
+        Assert.IsFalse(player.TryGetProperty("steamId", out _));
+        Assert.IsFalse(player.TryGetProperty("xboxLiveId", out _));
+        Assert.IsFalse(player.TryGetProperty("platformId", out _));
+    }
+
+    [TestMethod]
     public void BanAliasesMatchTakaroIdentifiersCaseInsensitively()
     {
         var ban = new ValheimBan("Steam_76561198000735875", "Odin", "76561198000735875", "steam:76561198000735875");

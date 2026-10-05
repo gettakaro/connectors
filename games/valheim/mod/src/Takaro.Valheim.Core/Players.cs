@@ -25,11 +25,17 @@ public sealed record TakaroPlayer(
 /// Takaro matches players only on these explicit fields and never parses <c>platformId</c>,
 /// so Steam and Xbox players must carry <c>steamId</c> / <c>xboxLiveId</c> raw.
 /// </summary>
-public sealed record PlatformIdentity(string? SteamId, string? XboxLiveId, string PlatformId);
+public sealed record PlatformIdentity(string? SteamId, string? XboxLiveId, string PlatformId)
+{
+    /// <summary>True for a Steam, Xbox or PlayStation account; false for the crossplay/valheim fallbacks.</summary>
+    public bool IsPlatformAccount =>
+        SteamId is not null || XboxLiveId is not null || PlatformId.StartsWith("psn:", StringComparison.Ordinal);
+}
 
 public static class PlayerMapper
 {
     private static readonly Regex SteamIdPattern = new(@"(?<steamId>7656119\d{10})", RegexOptions.Compiled);
+    private static readonly Regex BareSteamIdPattern = new(@"^7656119\d{10}$", RegexOptions.Compiled);
     private static readonly Regex XuidPattern = new(@"^\d{1,20}$", RegexOptions.Compiled);
     private static readonly Regex PlatformIdSegmentPattern = new(@"^[A-Za-z0-9_-]+$", RegexOptions.Compiled);
     private static readonly Regex PlatformIdSegmentDisallowedCharacters = new(@"[^A-Za-z0-9_-]", RegexOptions.Compiled);
@@ -74,6 +80,16 @@ public static class PlayerMapper
         }
 
         return new PlatformIdentity(null, null, $"valheim:{NormalizePlatformIdSegment(raw)}");
+    }
+
+    /// <summary>
+    /// Valheim's ban list stores a bare SteamID64 for <c>ban &lt;name&gt;</c> on a connected Steam
+    /// player, while players are keyed by <c>Steam_&lt;SteamID64&gt;</c>; both name the same account.
+    /// </summary>
+    public static string ToCanonicalPlatformUserId(string value)
+    {
+        var raw = (value ?? string.Empty).Trim();
+        return BareSteamIdPattern.IsMatch(raw) ? $"Steam_{raw}" : raw;
     }
 
     public static TakaroPlayer? Find(IEnumerable<TakaroPlayer> players, string? identifier)

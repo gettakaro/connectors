@@ -8,11 +8,15 @@ namespace Takaro.Valheim.Plugin;
 public sealed class ValheimPlayerResolver
 {
     private readonly ManualLogSource logger;
+    private readonly KnownPlayerNames knownNames;
 
-    public ValheimPlayerResolver(ManualLogSource logger)
+    public ValheimPlayerResolver(ManualLogSource logger, KnownPlayerNames knownNames)
     {
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        this.knownNames = knownNames ?? throw new ArgumentNullException(nameof(knownNames));
     }
+
+    public bool TryGetKnownName(string gameId, out string name) => knownNames.TryGet(gameId, out name);
 
     public TakaroPlayer ToTakaroPlayer(ZNet.PlayerInfo player)
     {
@@ -25,6 +29,15 @@ public sealed class ValheimPlayerResolver
             null));
 
         logger.LogDebug($"Takaro Valheim player mapped: name={takaroPlayer.Name}, gameId={takaroPlayer.GameId}, platformId={takaroPlayer.PlatformId ?? "<none>"}.");
+        try
+        {
+            knownNames.Observe(takaroPlayer.GameId, takaroPlayer.Name);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning($"Takaro Valheim could not store the known name of {takaroPlayer.GameId}: {exception.Message}");
+        }
+
         return takaroPlayer;
     }
 
