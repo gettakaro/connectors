@@ -293,6 +293,41 @@ def _write_ledger(target: Any, dest: Path, spec: SteamInput, previous: dict[str,
     return ledger
 
 
+# Steam records which depot files are executable, but DepotDownloader writes every file
+# 0644, so a tree taken straight from the manifests cannot start its server binary (or the
+# helpers that binary spawns, such as a crash handler).
+# The bit is restored from what the files are — an ELF image or a shebang script — rather
+# than from a list of names a future build could grow out of.
+_ELF_MAGIC = b"\x7fELF"
+_SHEBANG = b"#!"
+
+
+def _is_program(path: Path) -> bool:
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(4)
+    except OSError:
+        return False
+    return head.startswith(_ELF_MAGIC) or head.startswith(_SHEBANG)
+
+
+def restore_executables(root: Path) -> int:
+    """Give every program in a freshly downloaded tree its executable bit back."""
+    marked = 0
+    for path in root.rglob("*"):
+        if not path.is_file() or path.is_symlink():
+            continue
+        mode = path.stat().st_mode
+        if mode & 0o111:
+            continue
+        if _is_program(path):
+            path.chmod((mode | 0o755) & 0o7777)
+            marked += 1
+    if marked:
+        output.info(f"restored the executable bit on {marked} file(s) the depots deliver as 0644")
+    return marked
+
+
 def tree_hash(root: Path) -> str:
     from ..commands.install import tree_hash as _tree_hash
 
