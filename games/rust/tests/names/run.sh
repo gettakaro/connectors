@@ -34,9 +34,18 @@ mkdir -p "${WORK}" "_data/nuget"
     echo '{'
     sed -n '/\/\/ takaro:names-begin/,/\/\/ takaro:names-end/p' mod/TakaroConnector.cs
     sed -n '/\/\/ takaro:frames-begin/,/\/\/ takaro:frames-end/p' mod/TakaroConnector.cs
+    sed -n '/\/\/ takaro:identity-begin/,/\/\/ takaro:identity-end/p' mod/TakaroConnector.cs
     echo '    public static string EntityDisplayName(string shortName)'
     echo '    {'
     echo '        return EntityNames.EntityDisplayName(shortName);'
+    echo '    }'
+    echo '    public static bool IsPlayerId(string id)'
+    echo '    {'
+    echo '        return IsSteamPlayerId(id);'
+    echo '    }'
+    echo '    public static string[][] Identity(string steamId)'
+    echo '    {'
+    echo '        return IdentityFields(steamId);'
     echo '    }'
     echo '    public static string SummarizeFrame(string message)'
     echo '    {'
@@ -46,6 +55,7 @@ mkdir -p "${WORK}" "_data/nuget"
 } > "${WORK}/Names.cs"
 grep -q 'takaro:names-begin' "${WORK}/Names.cs" || { echo "error: the name region markers are gone from mod/TakaroConnector.cs" >&2; exit 5; }
 grep -q 'takaro:frames-begin' "${WORK}/Names.cs" || { echo "error: the frame region markers are gone from mod/TakaroConnector.cs" >&2; exit 5; }
+grep -q 'takaro:identity-begin' "${WORK}/Names.cs" || { echo "error: the identity region markers are gone from mod/TakaroConnector.cs" >&2; exit 5; }
 
 cp tests/names/Program.cs "${WORK}/Program.cs"
 cp tests/names/NewtonsoftStub.cs "${WORK}/NewtonsoftStub.cs"

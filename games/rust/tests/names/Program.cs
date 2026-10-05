@@ -84,6 +84,22 @@ internal static class Program
         var broken = Names.SummarizeFrame("not json");
         if (broken != "unparseable frame (8 bytes)") Fail("unparseable frame summary: " + broken);
 
+        // Player identity: Takaro matches on raw steamId and never parses platformId, and an
+        // NPC's small numeric id must never pass as a player.
+        foreach (var id in new[] { "76561198000735875", "76561197960265729" })
+            if (!Names.IsPlayerId(id)) Fail("a SteamID64 was rejected as a player id: " + id);
+        foreach (var id in new[] { "67", "0", "", null, "7656119800073587", "765611980007358750", "7656119800073587x", "12345678901234567" })
+            if (Names.IsPlayerId(id)) Fail("a non-SteamID64 passed as a player id: " + (id ?? "null"));
+        var fields = new Dictionary<string, string>();
+        foreach (var pair in Names.Identity("76561198000735875")) fields[pair[0]] = pair[1];
+        string v;
+        if (!fields.TryGetValue("gameId", out v) || v != "76561198000735875") Fail("identity gameId: " + v);
+        if (!fields.TryGetValue("steamId", out v) || v != "76561198000735875") Fail("identity steamId: " + v);
+        if (!fields.TryGetValue("platformId", out v) || v != "steam:76561198000735875") Fail("identity platformId: " + v);
+        if (fields.ContainsKey("epicOnlineServicesId") || fields.ContainsKey("xboxLiveId"))
+            Fail("identity sends an EOS/Xbox key Rust has no value for");
+        Console.WriteLine("identity ok");
+
         if (_failures > 0)
         {
             Console.WriteLine(_failures + " failure(s)");
