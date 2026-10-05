@@ -38,10 +38,7 @@ std::optional<std::string> SteamFromGameId(const std::optional<std::string>& gam
 std::optional<std::string> SteamFromPlatform(const std::optional<std::string>& platformId) {
     if (!platformId || platformId->size() <= 6) return std::nullopt;
     if (Lower(platformId->substr(0, 6)) != "steam:") return std::nullopt;
-    std::string rest = platformId->substr(6);
-    for (char c : rest)
-        if (c < '0' || c > '9') return std::nullopt;
-    return rest;
+    return SteamFromGameId(platformId->substr(6));
 }
 
 template <typename T>
@@ -59,7 +56,9 @@ std::string MapChannel(const JsonValue* raw) {
 
 JsonValue MapPlayer(const JsonValue* raw) {
     const JsonValue& p = AsRecord(raw);
-    auto steamId = Or(Or(Str(p.get("steamId")), SteamFromPlatform(Str(p.get("platformId")))),
+    // Only a real SteamID64 is sent as steamId: Takaro matches players on it verbatim, and the
+    // plugin's ban list carries the account hash in steamId when the SteamID is not cached.
+    auto steamId = Or(Or(SteamFromGameId(Str(p.get("steamId"))), SteamFromPlatform(Str(p.get("platformId")))),
                       SteamFromGameId(Str(p.get("gameId"))));
     auto gameId = Or(Or(steamId, Str(p.get("gameId"))), Str(p.get("name")));
     if (!gameId) throw NativeError(ErrorKind::Plain, "Plugin player has no identifier: " + JsStringify(raw));

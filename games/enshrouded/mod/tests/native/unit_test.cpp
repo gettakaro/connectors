@@ -304,9 +304,44 @@ void TailerTests() {
     CHECK_EQ(all, std::string("player-connected player-connected player-disconnected "));
 }
 
+// Takaro matches players on the raw steamId and never parses platformId: only a real SteamID64
+// may go out as steamId, on every path that builds a player (events, getPlayers, listBans).
+void IdentityTests() {
+    t::Group("player-identity");
+    const std::string sid = "76561198000005875";
+    JsonValue p = t::J(R"({"gameId":"76561198000005875","name":"Limon","steamId":"76561198000005875"})");
+    JsonValue m = MapPlayer(&p);
+    CHECK_EQ(Str(m.get("gameId")).value_or("?"), sid);
+    CHECK_EQ(Str(m.get("steamId")).value_or("?"), sid);
+    CHECK_EQ(Str(m.get("platformId")).value_or("?"), "steam:" + sid);
+    CHECK(!m.get("epicOnlineServicesId"));
+    CHECK(!m.get("xboxLiveId"));
+    // steamId derived from a SteamID64 gameId or a steam: platformId when the plugin omits it
+    JsonValue g = t::J(R"({"gameId":"76561198000005875","name":"Limon"})");
+    CHECK_EQ(Str(MapPlayer(&g).get("steamId")).value_or("?"), sid);
+    JsonValue pl = t::J(R"({"platformId":"steam:76561198000005875","name":"Limon"})");
+    JsonValue mpl = MapPlayer(&pl);
+    CHECK_EQ(Str(mpl.get("steamId")).value_or("?"), sid);
+    CHECK_EQ(Str(mpl.get("gameId")).value_or("?"), sid);
+    // the plugin's ban list carries the account hash in steamId when the SteamID is not cached
+    JsonValue hash = t::J(R"({"gameId":"1234567890123456789","name":"Ghost","steamId":"1234567890123456789"})");
+    JsonValue mh = MapPlayer(&hash);
+    CHECK_EQ(Str(mh.get("gameId")).value_or("?"), std::string("1234567890123456789"));
+    CHECK(!mh.get("steamId"));
+    CHECK(!mh.get("platformId"));
+    JsonValue shortSteam = t::J(R"({"gameId":"x","platformId":"steam:67","steamId":"0"})");
+    JsonValue ms = MapPlayer(&shortSteam);
+    CHECK(!ms.get("steamId"));
+    CHECK(!ms.get("platformId"));
+    JsonValue ban = t::J(R"({"player":{"gameId":"76561198000005875","steamId":"76561198000005875","name":"Limon"},"reason":"x"})");
+    JsonValue mb = MapBan(&ban);
+    CHECK_EQ(Str(mb.get("player")->get("steamId")).value_or("?"), sid);
+}
+
 }  // namespace
 
 void RunUnitTests() {
+    IdentityTests();
     JsonUtilTests();
     IsoTests();
     HeartbeatTests();
