@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Threading;
-using System.Threading.Tasks;
 using Takaro.Interfaces;
 
 namespace Takaro.Services
@@ -57,31 +56,21 @@ namespace Takaro.Services
         }
 
         /// <summary>
-        /// Waits until every operation queued before this call has completed. Startup
-        /// uses this barrier before exposing the in-memory mirror to Takaro.
+        /// Runs <paramref name="onDrained"/> on the thread pool once every operation
+        /// queued before this call has completed, without blocking the caller. The
+        /// argument is false when one of those writes failed. Startup uses this
+        /// barrier before exposing the in-memory mirror to Takaro.
         /// </summary>
-        public void Flush(TimeSpan timeout)
+        public void WhenDrained(Action<bool> onDrained)
         {
             if (_queue == null || _queue.IsAddingCompleted)
                 throw new InvalidOperationException("DbWriter is not accepting operations");
 
-            var completed = new TaskCompletionSource<bool>(
-                TaskCreationOptions.RunContinuationsAsynchronously
-            );
-            try
+            _queue.Add(() =>
             {
-                _queue.Add(() => completed.SetResult(true));
-            }
-            catch (InvalidOperationException ex)
-            {
-                throw new InvalidOperationException("DbWriter stopped before it could flush", ex);
-            }
-
-            if (!completed.Task.Wait(timeout))
-                throw new TimeoutException("Timed out waiting for the state mirror to seed");
-
-            if (_hasFailedOperation)
-                throw new InvalidOperationException("A state mirror write failed before startup");
+                bool succeeded = !_hasFailedOperation;
+                ThreadPool.QueueUserWorkItem(_ => onDrained(succeeded));
+            });
         }
 
         private void Drain()
