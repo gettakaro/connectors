@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v2.0.0...conan-exiles-v3.0.0) (2026-10-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **conan-exiles:** remove the legacy Node.js bridge ([#365](https://github.com/gettakaro/connectors/issues/365))
+
+### Miscellaneous Chores
+
+* **conan-exiles:** remove the legacy Node.js bridge ([#365](https://github.com/gettakaro/connectors/issues/365)) ([2c2e121](https://github.com/gettakaro/connectors/commit/2c2e121d0b0fa1466ef874870b56b50381db054d))
+
 ## [2.0.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v1.1.0...conan-exiles-v2.0.0) (2026-10-05)
 
 
