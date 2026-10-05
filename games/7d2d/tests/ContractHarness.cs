@@ -23,6 +23,7 @@ public static class ContractHarness
             AssertConsoleCommandOutcomeClassification();
             AssertResponseSerialization(fixture);
             AssertStableEventPayloads();
+            AssertLegacyIdentityFieldsOnTheWire();
             AssertDisconnectedLocationReadWindow();
             AssertServerMessageEchoGuard();
             AssertWorldDtoSerialization(fixture);
@@ -48,6 +49,161 @@ public static class ContractHarness
             Console.Error.WriteLine(ex);
             return 1;
         }
+    }
+
+    // Takaro's PlayerService.resolveRef matches existing profiles on steamId,
+    // epicOnlineServicesId, xboxLiveId and platformId, and never derives steamId from
+    // platformId. Profiles from Takaro's built-in 7D2D integration have only the first
+    // three, so every player object on the wire must carry them or Takaro duplicates the
+    // player.
+    private static void AssertLegacyIdentityFieldsOnTheWire()
+    {
+        ClientInfo steamClient = new ClientInfo
+        {
+            CrossplatformId = new PlatformUserIdentifierAbs
+            {
+                CombinedString = "EOS_000213691caa4c17ab8134415efd0889",
+            },
+            PlatformId = new PlatformUserIdentifierAbs
+            {
+                CombinedString = "Steam_76561198000000001",
+            },
+            playerName = "Steam Player",
+            ip = "192.0.2.30",
+            ping = 12,
+        };
+        foreach (
+            KeyValuePair<string, Takaro.TakaroPlayer> shape in new Dictionary<
+                string,
+                Takaro.TakaroPlayer
+            >
+            {
+                {
+                    "connected player",
+                    Takaro.Shared.TransformClientInfoToTakaroPlayer(steamClient)
+                },
+                {
+                    "event identity",
+                    Takaro.Shared.TransformClientInfoToTakaroPlayerIdentity(steamClient)
+                },
+                {
+                    "mirror record",
+                    Takaro.Shared.TransformPlayerRecordToTakaroPlayer(
+                        new Takaro.Persistence.PlayerRecord
+                        {
+                            GameId = "000213691caa4c17ab8134415efd0889",
+                            Name = "Steam Player",
+                            SteamId = "76561198000000001",
+                            EpicOnlineServicesId = "000213691caa4c17ab8134415efd0889",
+                        }
+                    )
+                },
+                {
+                    "ban player",
+                    Takaro
+                        .Shared.TransformBanRecordToTakaroBan(
+                            new Takaro.Persistence.BanRecord
+                            {
+                                GameId = "000213691caa4c17ab8134415efd0889",
+                                Name = "Steam Player",
+                                SteamId = "76561198000000001",
+                                EpicOnlineServicesId = "000213691caa4c17ab8134415efd0889",
+                                Reason = "fixture",
+                            }
+                        )
+                        .Player
+                },
+            }
+        )
+        {
+            JObject json = JObject.Parse(JsonConvert.SerializeObject(shape.Value));
+            Equal(
+                "000213691caa4c17ab8134415efd0889",
+                (string)json["gameId"],
+                shape.Key + " gameId stays the EOS id"
+            );
+            Equal("76561198000000001", (string)json["steamId"], shape.Key + " carries steamId");
+            Equal(
+                "000213691caa4c17ab8134415efd0889",
+                (string)json["epicOnlineServicesId"],
+                shape.Key + " carries epicOnlineServicesId"
+            );
+            Equal(
+                "steam:76561198000000001",
+                (string)json["platformId"],
+                shape.Key + " keeps platformId"
+            );
+            True(json["xboxLiveId"] == null, shape.Key + " omits an unknown xboxLiveId");
+        }
+
+        JObject xbox = JObject.Parse(
+            JsonConvert.SerializeObject(
+                Takaro.Shared.TransformClientInfoToTakaroPlayer(
+                    new ClientInfo
+                    {
+                        CrossplatformId = new PlatformUserIdentifierAbs
+                        {
+                            CombinedString = "EOS_fixture-xbox-eos",
+                        },
+                        PlatformId = new PlatformUserIdentifierAbs
+                        {
+                            CombinedString = "XBL_2535400000000001",
+                        },
+                        playerName = "Xbox Player",
+                    }
+                )
+            )
+        );
+        Equal("2535400000000001", (string)xbox["xboxLiveId"], "Xbox player carries xboxLiveId");
+        Equal(
+            "fixture-xbox-eos",
+            (string)xbox["epicOnlineServicesId"],
+            "Xbox player carries epicOnlineServicesId"
+        );
+        Equal("xbox:2535400000000001", (string)xbox["platformId"], "Xbox player platformId");
+        True(xbox["steamId"] == null, "Xbox player omits steamId");
+
+        JObject eosOnly = JObject.Parse(
+            JsonConvert.SerializeObject(
+                Takaro.Shared.TransformClientInfoToTakaroPlayerIdentity(
+                    new ClientInfo
+                    {
+                        CrossplatformId = new PlatformUserIdentifierAbs
+                        {
+                            CombinedString = "EOS_fixture-eos-only",
+                        },
+                        PlatformId = new PlatformUserIdentifierAbs { CombinedString = "" },
+                        playerName = "EOS Player",
+                    }
+                )
+            )
+        );
+        Equal(
+            "fixture-eos-only",
+            (string)eosOnly["epicOnlineServicesId"],
+            "EOS-only player carries epicOnlineServicesId"
+        );
+        Equal("eos:fixture-eos-only", (string)eosOnly["platformId"], "EOS-only platformId");
+        True(
+            eosOnly["steamId"] == null && eosOnly["xboxLiveId"] == null,
+            "EOS-only player sends no empty steamId or xboxLiveId"
+        );
+
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        GameEventPublisher.SendPlayerDisconnected(
+            Takaro.Shared.TransformClientInfoToTakaroPlayerIdentity(steamClient)
+        );
+        AssertPublishedEvent("player-disconnected", out JObject disconnectedData);
+        Equal(
+            "76561198000000001",
+            (string)disconnectedData["player"]["steamId"],
+            "player-disconnected frame carries steamId"
+        );
+        Equal(
+            "000213691caa4c17ab8134415efd0889",
+            (string)disconnectedData["player"]["epicOnlineServicesId"],
+            "player-disconnected frame carries epicOnlineServicesId"
+        );
     }
 
     private static void AssertDisconnectedLocationReadWindow()
@@ -632,7 +788,7 @@ public static class ContractHarness
                 Name = "Fixture Player",
                 Ping = 42,
                 SteamId = "fixture-player",
-                EpicOnlineServicesId = "fixture-eos",
+                EpicOnlineServicesId = "fixture-player",
             }
         );
         JToken playerResponse = JToken.Parse(
@@ -673,7 +829,7 @@ public static class ContractHarness
                 GameId = "fixture-player",
                 Name = "Fixture Player",
                 SteamId = "fixture-player",
-                EpicOnlineServicesId = "fixture-eos",
+                EpicOnlineServicesId = "fixture-player",
                 Reason = "qualification fixture",
                 ExpiresAt = "2030-01-01T00:00:00Z",
             }
@@ -1562,6 +1718,7 @@ namespace Takaro.Services
                 Name = "Fixture Player",
                 Ping = 42,
                 SteamId = "fixture-player",
+                EpicOnlineServicesId = "fixture-player",
                 X = 10.5f,
                 Y = 20.25f,
                 Z = 30.75f,

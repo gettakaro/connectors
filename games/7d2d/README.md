@@ -134,7 +134,8 @@ this release's mod) with a real game client connected.
 |---|---|---|
 | Connection & heartbeat | ✅ | Reconnects by itself after outages and server restarts, within about a minute of the network coming back. Events from during the outage are delivered afterwards, none lost. A wrong registration token is logged as an error. |
 | Server restart / reconnect | ✅ | The mod comes back on its own after a server restart, including with a player online. |
-| Player list | ✅ | Name, platform id, IP and ping. This is how Takaro loads players for 7D2D. |
+| Player list | ✅ | Name, Steam id (or Xbox id), Epic (EOS) id, platform id, IP and ping. This is how Takaro loads players for 7D2D. |
+| Moving from Takaro's built-in 7 Days to Die integration | ⚠️ | Players already known to Takaro from the built-in integration are recognised by their Steam/Epic id and keep their profile. If an older version of this mod already created a second profile for a player (one with an empty Steam ID), delete that second profile in Takaro once; until then Takaro ignores that player's events. |
 | Single player lookup | ⚠️ | The data is correct, but Takaro never asks for one player at a time on this game — it uses the player list instead. |
 | Player location | ✅ | Polled about every 30 s; matches the server's own `lp` output. |
 | Player inventory | ✅ | Matches what the player is carrying in game. |
