@@ -4,12 +4,16 @@
 #include "perf.h"
 #include "state.h"
 
+#include <dirent.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -352,7 +356,46 @@ static void TestCharacterNameCache() {
     EQ(state::CharacterName("0123456789abcdef0123456789abcdef"), "takarotester");
 }
 
-int main() {
+
+// The plugin's shutdown handler is registered with atexit before the first log flush, so every
+// lazily built path is constructed after it and, if destructible, freed before it runs. The last
+// flush then wrote through a freed string (a stray file named after a heap pointer, seen on a live
+// server). Runs in a fresh process because the statics are already built in this one.
+static int ExitFlushChild(const char* dir) {
+    if (chdir(dir) != 0) return 2;
+    setenv("TAKARO_PLUGIN_DATA_DIR", (std::string(dir) + "/data").c_str(), 1);
+    std::atexit([] { PluginLog("late exit line"); FlushPluginLogs(); });
+    PluginLog("early line");
+    FlushPluginLogs();
+    return 0;
+}
+
+static void TestLogFlushAtExit() {
+    char dir[] = "/tmp/takaro-dragonwilds-exitflush-XXXXXX";
+    CHECK(mkdtemp(dir) != nullptr, "mkdtemp failed");
+    pid_t pid = fork();
+    if (pid == 0) {
+        execl("/proc/self/exe", "unit_test", "--exit-flush-child", dir, (char*)nullptr);
+        _exit(3);
+    }
+    int status = 0;
+    waitpid(pid, &status, 0);
+    CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0, "exit-flush child did not exit cleanly (status %d)", status);
+    std::ifstream in(std::string(dir) + "/data/plugin.log");
+    std::stringstream log;
+    log << in.rdbuf();
+    CHECK(log.str().find("late exit line") != std::string::npos, "the flush from an atexit handler was lost");
+    std::vector<std::string> stray;
+    if (DIR* d = opendir(dir)) {
+        while (dirent* e = readdir(d))
+            if (strcmp(e->d_name, ".") && strcmp(e->d_name, "..") && strcmp(e->d_name, "data")) stray.push_back(e->d_name);
+        closedir(d);
+    }
+    CHECK(stray.empty(), "the exit flush created a stray file in the working directory");
+}
+
+int main(int argc, char** argv) {
+    if (argc == 3 && strcmp(argv[1], "--exit-flush-child") == 0) return ExitFlushChild(argv[2]);
     TestSymParser();
     TestJson();
     TestRedaction();
@@ -363,6 +406,7 @@ int main() {
     TestDeferredEvents();
     TestPerfJson();
     TestCharacterNameCache();
+    TestLogFlushAtExit();
     printf("%s: %d checks, %d failed\n", g_failed ? "FAILED" : "PASSED", g_ran, g_failed);
     return g_failed ? 1 : 0;
 }

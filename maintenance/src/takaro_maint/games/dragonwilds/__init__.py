@@ -207,11 +207,16 @@ class DragonwildsAdapter(BaseAdapter):
                 dry_run=bool(getattr(args, "dry_run", False)),
                 post_install=self._post_install,
             )
+            if document.get("status") == "already-installed" and not getattr(args, "dry_run", False):
+                # The fast path compares hashes only, so a tree installed before the executable
+                # bits were restored would otherwise stay unable to start.
+                document["executablesRestored"] = steam_install.restore_executables(dest)
         output.emit("install", True, **document)
         return OK
 
     def _post_install(self, staging: Path) -> None:
         """What a fresh depot tree still needs before the launcher will run."""
+        steam_install.restore_executables(staging)
         launcher = staging / LAUNCHER
         if launcher.is_file():
             launcher.chmod(0o755)
