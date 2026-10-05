@@ -258,6 +258,8 @@ const TSHOCK_FAILURE_PATTERNS: RegExp[] = [
   /no player found matching/i,
   /multiple players found matching/i,
   /unable to find any player/i,
+  /could not find any player named/i,
+  /is not accepting whispers/i,
 
   // Action refused by the game: the command ran but could not do what was asked.
   /does not have free slots/i,
