@@ -1008,7 +1008,7 @@ namespace Oxide.Plugins
             if (!ulong.TryParse(gameId, out var steamId)) throw new Exception("Invalid gameId");
 
             var player = FindPlayerByGameId(gameId);
-            var name = player?.displayName ?? gameId;
+            var name = player?.displayName ?? KnownPlayerName(steamId) ?? gameId;
 
             DateTimeOffset expiry;
             if (TryParseExpiry(expiresAt, out expiry))
@@ -1055,8 +1055,27 @@ namespace Oxide.Plugins
         // already seen on this server.
         private static JObject BanPlayerJson(string id, string name)
         {
-            if (IsSteamPlayerId(id)) return IdentityJson(id, name);
-            return new JObject { ["gameId"] = id ?? "", ["name"] = name ?? "" };
+            if (!IsSteamPlayerId(id)) return new JObject { ["gameId"] = id ?? "", ["name"] = name ?? "" };
+
+            // Takaro copies a ban entry's name onto the matched player, so an offline ban that
+            // stored the SteamID as its name renamed that player to the number.
+            if (string.IsNullOrEmpty(name) || name == id)
+                name = KnownPlayerName(ulong.Parse(id)) ?? name;
+            return IdentityJson(id, name);
+        }
+
+        // Last name Rust saved for a player who is neither online nor sleeping.
+        private static string KnownPlayerName(ulong steamId)
+        {
+            try
+            {
+                var name = SingletonComponent<ServerMgr>.Instance?.persistance?.GetPlayerName(steamId);
+                return string.IsNullOrEmpty(name) ? null : name;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         private JToken HandleListBans()
