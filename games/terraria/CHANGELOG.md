@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/gettakaro/connectors/compare/terraria-v0.3.0...terraria-v0.4.0) (2026-10-05)
+
+
+### Features
+
+* **terraria:** add TShock v6.2.1 target ([#322](https://github.com/gettakaro/connectors/issues/322)) ([42304e8](https://github.com/gettakaro/connectors/commit/42304e8e89d3f8a07b1452f940df0845cc9b8055))
+
 ## [0.3.0](https://github.com/gettakaro/connectors/compare/terraria-v0.2.1...terraria-v0.3.0) (2026-09-22)
 
 
