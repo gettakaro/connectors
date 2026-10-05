@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Takaro.Interfaces;
 using Takaro.Persistence;
 
@@ -17,6 +18,7 @@ namespace Takaro.Services
         private static StateMirror _instance;
         private static readonly object _lock = new object();
         private volatile bool _isGameReady;
+        private volatile bool _inventoryCaptureUnsupported;
 
         public bool IsGameReady => _isGameReady;
 
@@ -360,6 +362,32 @@ namespace Takaro.Services
         }
 
         public void UpsertInventory(ClientInfo cInfo)
+        {
+            if (_inventoryCaptureUnsupported)
+                return;
+
+            // A game build that reshapes PlayerDataFile (V3.3.0 serialises the
+            // inventory into MemoryStreams) fails here when Mono binds the fields.
+            // Skip the inventory mirror then, so player events still go out.
+            try
+            {
+                CaptureInventory(cInfo);
+            }
+            catch (Exception ex)
+                when (ex is MissingFieldException
+                    || ex is MissingMethodException
+                    || ex is TypeLoadException
+                )
+            {
+                _inventoryCaptureUnsupported = true;
+                LogService.Instance.Warn(
+                    $"Inventory capture is not supported on this game build ({ex.Message}); getPlayerInventory will be empty"
+                );
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void CaptureInventory(ClientInfo cInfo)
         {
             if (cInfo?.CrossplatformId == null || cInfo.latestPlayerData == null)
                 return;
