@@ -133,6 +133,6 @@ function extractSteamId(value: string | undefined): string | undefined {
 
 function inferBanReason(line: string, id: string): { reason?: string } {
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const stripped = line.replace(new RegExp(`^\\s*\\d+[\\).:-]?\\s*${escaped}\\s*`), '').trim();
+  const stripped = line.replace(new RegExp(`^\\s*(?:\\d+[\\).:-]\\s*)?${escaped}\\s*`), '').trim();
   return stripped ? { reason: stripped } : {};
 }

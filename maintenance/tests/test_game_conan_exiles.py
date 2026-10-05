@@ -103,7 +103,7 @@ def test_every_conan_verification_body_has_pass_and_failure_paths(
     assert set(check for check, _ in failed_run.skips) == set(hooks.CHECK_IDS)
 
 
-TARGET = "linux-25488622"
+TARGET = "linux-25639945"
 APP = 443030
 CONTENT_DEPOT = "443032"
 REDIST_DEPOT = "1006"
@@ -111,10 +111,15 @@ PINNED = {CONTENT_DEPOT: "2572292872952587850", REDIST_DEPOT: "45591606564933596
 MOVED = {CONTENT_DEPOT: "2600000000000000001", REDIST_DEPOT: "4600000000000000001"}
 # What the shipped target (the real repository, not the fixture depot trees below) actually
 # pins today -- used only by the tests that run against the real repo (``repo=None``).
-SHIPPED = {CONTENT_DEPOT: "2389917983000609164", REDIST_DEPOT: PINNED[REDIST_DEPOT]}
+SHIPPED = {CONTENT_DEPOT: "8611640520811009059", REDIST_DEPOT: PINNED[REDIST_DEPOT]}
 VERSION = "1.0.2-dev.abc1234"
 ZIP_NAME = f"takaro-conan-exiles-bridge-{TARGET}-{VERSION}.zip"
+NATIVE_ZIP = f"takaro-conan-exiles-native-{TARGET}-{VERSION}.zip"
+WINDOWS_TARGET = "windows-25639945"
+WINDOWS_ZIP = f"takaro-conan-exiles-native-{WINDOWS_TARGET}-{VERSION}.zip"
 BRIDGE_FOLDER = "TakaroConanExiles"
+NATIVE_FOLDER = "TakaroConanNative"
+NATIVE_DIR = "TakaroConanNative"
 INSTALL_DIR = "TakaroBridge"
 BUILD_SCRIPT = "games/conan-exiles/scripts/build-release.sh"
 SHIPPING = "ConanSandbox/Binaries/Linux/ConanSandboxServer-Linux-Shipping"
@@ -185,7 +190,7 @@ def write_conan_build_stub(repo: Path, fingerprint: str, *, name: str = ZIP_NAME
         'printf \'{"name":"conan-exiles-takaro-bridge"}\\n\' > "$pkg/package.json"\n'
         f'cat > "$pkg/takaro-target.json" <<STAMP\n'
         f'{{"target": "{target}", "fingerprint": "{fingerprint}", "game": "conan-exiles", '
-        f'"platform": "linux", "revision": "25488622", "connectorVersion": "$version", '
+        f'"platform": "linux", "revision": "25639945", "connectorVersion": "$version", '
         f'"sourceRevision": "deadbeef"}}\n'
         "STAMP\n"
         '( cd "$stage" && python3 -c '
@@ -194,7 +199,21 @@ def write_conan_build_stub(repo: Path, fingerprint: str, *, name: str = ZIP_NAME
         f'cat > "$out/{name}.meta.json" <<JSON\n'
         f'{{"target": "{target}", "fingerprint": "{fingerprint}", "connectorVersion": "$version", '
         f'"sourceRevision": "deadbeef", "game": "conan-exiles", "platform": "linux", '
-        f'"revision": "25488622"}}\n'
+        f'"revision": "25639945"}}\n'
+        "JSON\n"
+        f'nstage="$out/nstage"; npkg="$nstage/{NATIVE_FOLDER}"\n'
+        'mkdir -p "$npkg"\n'
+        "printf 'so\\n' > \"$npkg/libtakaro-conan-native.so\"\n"
+        f'cat > "$npkg/takaro-target.json" <<STAMP\n'
+        f'{{"target": "{target}", "fingerprint": "{fingerprint}", "connectorVersion": "$version"}}\n'
+        "STAMP\n"
+        '( cd "$nstage" && python3 -c '
+        "\"import shutil,sys; shutil.make_archive(sys.argv[1], 'zip', '.', sys.argv[2])\" "
+        f'"$out/{NATIVE_ZIP[:-4]}" {NATIVE_FOLDER} )\n'
+        f'cat > "$out/{NATIVE_ZIP}.meta.json" <<JSON\n'
+        f'{{"target": "{target}", "fingerprint": "{fingerprint}", "connectorVersion": "$version", '
+        f'"sourceRevision": "deadbeef", "game": "conan-exiles", "platform": "linux", '
+        f'"revision": "25639945"}}\n'
         "JSON\n",
         encoding="utf-8",
     )
@@ -269,13 +288,16 @@ def test_targets_resolve_env_for_conan_exiles(run: Any) -> None:
     env = payload["env"]
     assert env["CONAN_EXILES_STEAM_APP"] == "443030"
     assert env["CONAN_EXILES_STEAM_BRANCH"] == "public"
-    assert env["CONAN_EXILES_STEAM_BUILDID"] == "25488622"
+    assert env["CONAN_EXILES_STEAM_BUILDID"] == "25639945"
     # Sorted by depot id, so the string is the same whatever order the record lists them in.
     assert env["CONAN_EXILES_STEAM_DEPOTS"] == (
         f"{REDIST_DEPOT}:{SHIPPED[REDIST_DEPOT]};{CONTENT_DEPOT}:{SHIPPED[CONTENT_DEPOT]}"
     )
     assert env["CONAN_EXILES_ARTIFACT"] == f"takaro-conan-exiles-bridge-{TARGET}-{{version}}.zip"
     assert env["CONAN_EXILES_BRIDGE_DIR"] == f"{INSTALL_DIR}/{BRIDGE_FOLDER}"
+    assert env["CONAN_EXILES_ARTIFACT_NATIVE"] == f"takaro-conan-exiles-native-{TARGET}-{{version}}.zip"
+    assert env["CONAN_EXILES_ARTIFACT_BRIDGE"] == env["CONAN_EXILES_ARTIFACT"]
+    assert env["CONAN_EXILES_PLATFORM"] == "linux"
     # One pinned image is both the server runtime and the build toolchain.
     assert env["CONAN_EXILES_IMAGE"] == env["CONAN_EXILES_TOOLCHAIN"]
     assert env["CONAN_EXILES_IMAGE"].startswith("node:22.23.2-bookworm-slim@sha256:")
@@ -289,9 +311,23 @@ def test_targets_resolve_env_for_conan_exiles(run: Any) -> None:
     assert not any(key.endswith("_JAVA") for key in env)
 
     url = payload["resolvedUrls"]["server"]
-    assert url.startswith("steam://app/443030/branch/public/build/25488622/depot/")
+    assert url.startswith("steam://app/443030/branch/public/build/25639945/depot/")
     assert f"{REDIST_DEPOT}/manifest/{SHIPPED[REDIST_DEPOT]}" in url
     assert f"{CONTENT_DEPOT}/manifest/{SHIPPED[CONTENT_DEPOT]}" in url
+
+
+def test_targets_resolve_env_for_the_windows_target(run: Any) -> None:
+    code, payload, _ = run("targets", "resolve", "--game", GAME, "--target", WINDOWS_TARGET, "--prefix", "CONAN_EXILES")
+
+    assert code == 0, payload
+    env = payload["env"]
+    assert env["CONAN_EXILES_PLATFORM"] == "windows"
+    assert env["CONAN_EXILES_STEAM_BUILDID"] == "25639945"
+    assert env["CONAN_EXILES_ARTIFACT_NATIVE"] == f"takaro-conan-exiles-native-{WINDOWS_TARGET}-{{version}}.zip"
+    assert "CONAN_EXILES_ARTIFACT" not in env, "the Windows target ships no bridge"
+    assert "CONAN_EXILES_BRIDGE_DIR" not in env
+    assert env["CONAN_EXILES_DEP_ZIG_URL"].endswith("zig-linux-x86_64-0.13.0.tar.xz")
+    assert len(env["CONAN_EXILES_DEP_ZIG_SHA256"]) == 64
 
 
 # -- discovery ---------------------------------------------------------------------------
@@ -621,12 +657,17 @@ def test_build_selects_the_exact_zip_name_and_meta(run: Any, repo: Path, tmp_pat
     )
 
     assert code == 0, f"{err}\n{payload}"
-    assert [row["role"] for row in payload["artifacts"]] == ["bridge"]
-    assert payload["artifacts"][0]["file"] == ZIP_NAME
-    assert (out / ZIP_NAME).is_file()
-    assert (out / f"{ZIP_NAME}.meta.json").is_file()
+    assert sorted((row["role"], row["file"]) for row in payload["artifacts"]) == [
+        ("bridge", ZIP_NAME),
+        ("native", NATIVE_ZIP),
+    ]
+    for name in (NATIVE_ZIP, ZIP_NAME):
+        assert (out / name).is_file()
+        assert (out / f"{name}.meta.json").is_file()
     manifest = json.loads((out / "build-manifest.json").read_text())
-    assert manifest["artifacts"][0]["fingerprint"] == resolved["fingerprint"]
+    assert {row["fingerprint"] for row in manifest["artifacts"]} == {resolved["fingerprint"]}
+    with zipfile.ZipFile(out / NATIVE_ZIP) as archive:
+        assert f"{NATIVE_FOLDER}/libtakaro-conan-native.so" in archive.namelist()
     with zipfile.ZipFile(out / ZIP_NAME) as archive:
         names = set(archive.namelist())
     assert f"{BRIDGE_FOLDER}/dist/index.js" in names
@@ -665,16 +706,31 @@ def bridge_zip(path: Path, *, version: str = VERSION, escape: bool = False, root
         archive.writestr(f"{root}/dist/mod/pollerCli.js", "helper\n")
         archive.writestr(
             f"{root}/takaro-target.json",
-            json.dumps({"target": TARGET, "connectorVersion": version, "revision": "25488622"}),
+            json.dumps({"target": TARGET, "connectorVersion": version, "revision": "25639945"}),
         )
         if escape:
             archive.writestr("../escaped.txt", "nope")
+
+
+def native_zip(path: Path, *, binary: str = "libtakaro-conan-native.so", target: str = TARGET) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(f"{NATIVE_FOLDER}/", "")
+        archive.writestr(f"{NATIVE_FOLDER}/{binary}", "native\n")
+        archive.writestr(
+            f"{NATIVE_FOLDER}/takaro-target.json",
+            json.dumps({"target": target, "connectorVersion": VERSION, "revision": "25639945"}),
+        )
 
 
 def manifest_for(run: Any, repo: Path, directory: Path, zip_path: Path, *, target: str = TARGET) -> Path:
     resolved = resolve(run, repo)
     row = artifact_row("bridge", target, resolved["fingerprint"], zip_path)
     write_meta(directory, row, connector=GAME, version=VERSION, revision="deadbeef")
+    if not (directory / NATIVE_ZIP).exists():
+        native_zip(directory / NATIVE_ZIP, target=target)
+    native = artifact_row("native", target, resolved["fingerprint"], directory / NATIVE_ZIP)
+    write_meta(directory, native, connector=GAME, version=VERSION, revision="deadbeef")
     return write_manifest(
         directory,
         connector=GAME,
@@ -683,7 +739,7 @@ def manifest_for(run: Any, repo: Path, directory: Path, zip_path: Path, *, targe
         dirty=False,
         toolchain=resolved["build"]["toolchain"],
         mode="container",
-        artifacts=[row],
+        artifacts=[native, row],
     )
 
 
@@ -711,8 +767,11 @@ def test_deploy_unpacks_the_bridge_folder_and_removes_older_zips(
     assert (unpacked / "dist" / "mod" / "pollerCli.js").is_file()
     assert json.loads((unpacked / "takaro-target.json").read_text())["target"] == TARGET
     assert not stale.exists()
+    native = dest / NATIVE_DIR / NATIVE_FOLDER
+    assert (native / "libtakaro-conan-native.so").is_file(), "the native connector is unpacked beside the bridge"
+    assert json.loads((native / "takaro-target.json").read_text())["target"] == TARGET
     ledger = json.loads((dest / ".takaro" / "installed-target.json").read_text())
-    assert ledger["artifacts"][0]["path"] == f"{INSTALL_DIR}/{ZIP_NAME}"
+    assert {row["path"] for row in ledger["artifacts"]} == {f"{INSTALL_DIR}/{ZIP_NAME}", f"{NATIVE_DIR}/{NATIVE_ZIP}"}
 
 
 @pytest.mark.parametrize("body", [b"not a zip at all", b"PK\x03\x04truncated"])
@@ -926,7 +985,7 @@ def test_verify_hooks_know_the_conan_log_lines() -> None:
     assert hooks.IDENTIFIED_LINE.search("info: Identified with Takaro as gameServerId=00000000-0000-0000-0000-0")
     assert hooks.CLOSED_LINE.search("info: Takaro WebSocket closed code=1001 reason=going away")
     stamp = hooks.STAMP_LINE.search(
-        "info: Takaro target: linux-25488622 (0123456789abcdef) revision 25488622 connector 1.0.2 source deadbeef"
+        "info: Takaro target: linux-25639945 (0123456789abcdef) revision 25639945 connector 1.0.2 source deadbeef"
     )
     assert stamp and stamp.group("target") == TARGET and stamp.group("fp16") == "0123456789abcdef"
     command = hooks.RCON_COMMAND_LINE.search("IP PeerAddr: 172.17.0.3:51000 used rcon command: listplayers")
@@ -935,12 +994,12 @@ def test_verify_hooks_know_the_conan_log_lines() -> None:
 
 
 def test_catalogue_exclusions_match_the_documented_fresh_save_limit() -> None:
-    readme = (REPO_ROOT / "games/conan-exiles/README.md").read_text(encoding="utf-8")
-    for check_id, readme_phrase in (("catalog-items", "item ids"), ("catalog-entities", "creature/actor classes")):
+    # The runtime verifier still drives the deprecated bridge, whose catalogues come from the save
+    # database; the operator README now documents the native connector only.
+    for check_id in ("catalog-items", "catalog-entities"):
         reason = hooks.UNSUPPORTED_CHECKS[check_id]
         assert re.search(r"save database", reason, re.I)
         assert "fresh save" in reason
-        assert f"only the {readme_phrase}" in readme
 
 
 def test_before_boot_writes_the_rcon_settings_the_server_reads(tmp_path: Path) -> None:
@@ -1099,8 +1158,13 @@ def test_compat_record_carries_the_steam_pin_and_the_legacy_alias(run: Any, repo
     resolved = resolve(run, repo)
     directory = tmp_path / "dist" / TARGET
     bridge_zip(directory / ZIP_NAME)
-    row = artifact_row("bridge", TARGET, resolved["fingerprint"], directory / ZIP_NAME)
-    write_meta(directory, row, connector=GAME, version=VERSION, revision=commit)
+    native_zip(directory / NATIVE_ZIP)
+    rows = [
+        artifact_row("native", TARGET, resolved["fingerprint"], directory / NATIVE_ZIP),
+        artifact_row("bridge", TARGET, resolved["fingerprint"], directory / ZIP_NAME),
+    ]
+    for row in rows:
+        write_meta(directory, row, connector=GAME, version=VERSION, revision=commit)
     write_manifest(
         directory,
         connector=GAME,
@@ -1109,7 +1173,23 @@ def test_compat_record_carries_the_steam_pin_and_the_legacy_alias(run: Any, repo
         dirty=False,
         toolchain=resolved["build"]["toolchain"],
         mode="container",
-        artifacts=[row],
+        artifacts=rows,
+    )
+    code, windows, err = run("targets", "resolve", "--game", GAME, "--target", WINDOWS_TARGET, repo=repo)
+    assert code == 0, err
+    win_dir = tmp_path / "dist" / WINDOWS_TARGET
+    native_zip(win_dir / WINDOWS_ZIP, binary="winmm.dll", target=WINDOWS_TARGET)
+    win_row = artifact_row("native", WINDOWS_TARGET, windows["fingerprint"], win_dir / WINDOWS_ZIP)
+    write_meta(win_dir, win_row, connector=GAME, version=VERSION, revision=commit)
+    write_manifest(
+        win_dir,
+        connector=GAME,
+        version=VERSION,
+        revision=commit,
+        dirty=False,
+        toolchain=windows["build"]["toolchain"],
+        mode="container",
+        artifacts=[win_row],
     )
     out = tmp_path / "assembled"
 
@@ -1147,6 +1227,9 @@ def test_compat_record_carries_the_steam_pin_and_the_legacy_alias(run: Any, repo
     assert url.startswith("steam://app/443030/")
     assert len(re.findall(r"manifest/[0-9]+", url)) == 2, "both depots are named in the pseudo-URL"
     assert (out / ZIP_NAME).is_file()
+    assert (out / NATIVE_ZIP).is_file()
+    assert (out / WINDOWS_ZIP).is_file()
+    assert record["targets"][WINDOWS_TARGET]["inputs"]["server"]["url"].startswith("steam://app/443030/")
     assert (out / "takaro-conan-exiles-bridge.zip").read_bytes() == (out / ZIP_NAME).read_bytes()
 
 
@@ -1191,8 +1274,18 @@ def test_the_rig_runs_the_resolved_target_and_never_steamcmd() -> None:
         "dev-servers/images/conan-exiles",
         ".github/workflows/conan-exiles.yml",
     ]
+    # The re-pin watch reads the public build id with steamcmd app_info (a query, never an
+    # install), from a digest-pinned image.
     found = subprocess.run(
-        ["git", "grep", "-nE", r"app_update|steamcmd|node:22-slim|:latest", "--", *owned],
+        [
+            "git",
+            "grep",
+            "-nE",
+            r"app_update|steamcmd|node:22-slim|:latest",
+            "--",
+            *owned,
+            ":(exclude)games/conan-exiles/native/tools/buildwatch.py",
+        ],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -1200,6 +1293,8 @@ def test_the_rig_runs_the_resolved_target_and_never_steamcmd() -> None:
     )
     # git grep exits 1 when nothing matched, which is exactly what this asserts.
     assert found.returncode == 1, f"a floating coordinate survived:\n{found.stdout}"
+    watch = (REPO_ROOT / "games/conan-exiles/native/tools/buildwatch.py").read_text(encoding="utf-8")
+    assert ":latest" not in watch and "app_update" not in watch
 
 
 def test_the_server_container_gets_the_memory_and_the_user_the_adapter_asks_for(tmp_path: Path) -> None:
@@ -1243,9 +1338,9 @@ def test_the_stamp_line_the_harness_reads_is_the_one_the_bridge_writes() -> None
     # Every `${...}` becomes a value, and the literal text between them is the contract.
     sample = "".join(templates)
     values = {
-        "stamp.target": "linux-25488622",
+        "stamp.target": "linux-25639945",
         "stamp.fingerprint.slice(0, 16)": "0123456789abcdef",
-        "stamp.revision": "25488622",
+        "stamp.revision": "25639945",
         "stamp.connectorVersion": "1.2.3",
         "stamp.sourceRevision": "deadbeef",
     }
@@ -1255,7 +1350,7 @@ def test_the_stamp_line_the_harness_reads_is_the_one_the_bridge_writes() -> None
 
     found = hooks.STAMP_LINE.search(sample)
     assert found, f"{hooks.STAMP_LINE.pattern!r} does not match {sample!r}"
-    assert found.group("target") == "linux-25488622"
+    assert found.group("target") == "linux-25639945"
     assert found.group("fp16") == "0123456789abcdef"
-    assert found.group("revision") == "25488622"
+    assert found.group("revision") == "25639945"
     assert found.group("version") == "1.2.3"

@@ -1,0 +1,8 @@
+{
+  "_comment": "Copy to ConanSandbox/Saved/Config/Takaro/takaro.json. identityToken: a name you pick for this server, unique in your Takaro domain; never change it later. registrationToken: from Takaro (game server of type Generic). Keep RCON off: the connector does not use it.",
+  "url": "wss://connect.takaro.io/",
+  "identityToken": "my-conan-server",
+  "registrationToken": "paste-your-registration-token-here",
+  "name": "My Conan Exiles Server",
+  "caFile": "Config/Takaro/ca-certificates.crt"
+}

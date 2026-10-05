@@ -1,0 +1,1423 @@
+{
+  "_comment": "Every reflected name the native core relies on. tools/repin.py diffs a new build's reflection (probe dump or live probe) against this list; `repin.py code` (CI) fails when core/ looks up a name that is not listed here. layout=runtime: the core finds the offset by reflection, so a moved offset is only information. layout=fixed: the offset or size is a constant in the code, so any change needs a person. `baseline` is refreshed with `repin.py baseline --dump`.",
+  "engineNames": [
+    "/Game/Items/ItemTable.ItemTable",
+    "/Game/Maps/ConanSandbox/ConanSandbox.",
+    "/Game/Systems/Map/MapMarkers_ConanSandbox.MapMarkers_ConanSandbox",
+    "/Game/Systems/SpawnTable/SpawnDataTable.SpawnDataTable",
+    "/Game/Systems/Survival/Gathering/Gathering_v2/ItemNameToTemplateID.ItemNameToTemplateID",
+    "BlueprintGeneratedClass",
+    "Default__KismetSystemLibrary",
+    "Default__KismetTextLibrary",
+    "DelegateFunction",
+    "ExiledLands",
+    "IsleOfSiptah",
+    "ItemNameToTemplateID",
+    "ItemTable",
+    "MapMarkers_ConanSandbox",
+    "ScriptStruct",
+    "Siptah",
+    "SpawnDataTable",
+    "UserDefinedStruct"
+  ],
+  "entries": [
+    {
+      "kind": "class",
+      "name": "Class",
+      "layout": "runtime",
+      "usedBy": "ue.cpp discovery (UClass objects)",
+      "baseline": {
+        "size": 624
+      }
+    },
+    {
+      "kind": "class",
+      "name": "Function",
+      "layout": "runtime",
+      "usedBy": "ue.cpp discovery (UFunction objects)",
+      "baseline": {
+        "size": 224
+      }
+    },
+    {
+      "kind": "class",
+      "name": "GameStateBase",
+      "layout": "runtime",
+      "usedBy": "ue.cpp discovery (live GameStates)",
+      "baseline": {
+        "size": 836
+      }
+    },
+    {
+      "kind": "class",
+      "name": "ConanPlayerController",
+      "layout": "runtime",
+      "usedBy": "ue.cpp discovery (controller class, chat RPC owner)",
+      "baseline": {
+        "size": 5668
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "GameStateBase",
+      "name": "PlayerArray",
+      "layout": "runtime",
+      "usedBy": "ue.cpp OnlineControllers (ArrayProperty, 16 bytes)",
+      "baseline": {
+        "type": "ArrayProperty",
+        "size": 16,
+        "offset": 776
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ConanPlayerController",
+      "name": "UserIDFromURLOptions",
+      "layout": "runtime",
+      "usedBy": "ue.cpp OnlineControllers: Steam64 (StrProperty, 16 bytes)",
+      "baseline": {
+        "type": "StrProperty",
+        "size": 16,
+        "offset": 2992
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "Actor",
+      "name": "Owner",
+      "layout": "runtime",
+      "usedBy": "ue.cpp PlayerState -> controller (ObjectProperty, 8 bytes)",
+      "baseline": {
+        "type": "ObjectProperty",
+        "size": 8,
+        "offset": 360
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "PlayerState",
+      "name": "PlayerNamePrivate",
+      "layout": "runtime",
+      "usedBy": "ue.cpp player name (StrProperty, 16 bytes)",
+      "baseline": {
+        "type": "StrProperty",
+        "size": 16,
+        "offset": 896
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "ConanPlayerController",
+      "name": "ClientReceiveChatMessage",
+      "layout": "fixed",
+      "usedBy": "chat.cpp sendMessage (parms packed by conan/text.h ChatRpc)",
+      "baseline": {
+        "parmsSize": 128,
+        "params": [
+          [
+            "chatData",
+            "StructProperty",
+            0,
+            128
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "struct",
+      "name": "ChatRpcData",
+      "layout": "fixed",
+      "usedBy": "conan/text.h ChatRpc::kSize",
+      "baseline": {
+        "size": 128
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ChatRpcData",
+      "name": "Timestamp",
+      "layout": "fixed",
+      "usedBy": "conan/text.h ChatRpc::kTimestamp",
+      "baseline": {
+        "type": "UInt64Property",
+        "size": 8,
+        "offset": 0
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ChatRpcData",
+      "name": "userName",
+      "layout": "fixed",
+      "usedBy": "conan/text.h ChatRpc::kUserName",
+      "baseline": {
+        "type": "StrProperty",
+        "size": 16,
+        "offset": 72
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ChatRpcData",
+      "name": "Channel",
+      "layout": "fixed",
+      "usedBy": "conan/text.h ChatRpc::kChannel",
+      "baseline": {
+        "type": "StrProperty",
+        "size": 16,
+        "offset": 88
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ChatRpcData",
+      "name": "Message",
+      "layout": "fixed",
+      "usedBy": "conan/text.h ChatRpc::kMessage",
+      "baseline": {
+        "type": "StrProperty",
+        "size": 16,
+        "offset": 104
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ChatRpcData",
+      "name": "generated",
+      "layout": "fixed",
+      "usedBy": "conan/text.h ChatRpc::kGenerated",
+      "baseline": {
+        "type": "BoolProperty",
+        "size": 1,
+        "offset": 120
+      }
+    },
+    {
+      "kind": "fieldclass",
+      "name": "ArrayProperty",
+      "usedBy": "ue.cpp PropertyOffset type check"
+    },
+    {
+      "kind": "fieldclass",
+      "name": "ObjectProperty",
+      "usedBy": "ue.cpp PropertyOffset type check"
+    },
+    {
+      "kind": "fieldclass",
+      "name": "StrProperty",
+      "usedBy": "ue.cpp PropertyOffset type check"
+    },
+    {
+      "kind": "class",
+      "name": "Actor",
+      "layout": "runtime",
+      "usedBy": "reads: location, K2_GetActorLocation owner",
+      "baseline": {
+        "size": 752
+      }
+    },
+    {
+      "kind": "class",
+      "name": "PlayerState",
+      "layout": "runtime",
+      "usedBy": "reads/events/mutations: identity (UniqueID), name, ip, ping",
+      "baseline": {
+        "size": 928
+      }
+    },
+    {
+      "kind": "class",
+      "name": "Controller",
+      "layout": "runtime",
+      "usedBy": "reads/events: Pawn, PlayerState",
+      "baseline": {
+        "size": 899
+      }
+    },
+    {
+      "kind": "class",
+      "name": "Pawn",
+      "layout": "runtime",
+      "usedBy": "events: Pawn.Controller",
+      "baseline": {
+        "size": 880
+      }
+    },
+    {
+      "kind": "class",
+      "name": "PlayerController",
+      "layout": "runtime",
+      "usedBy": "mutations: kick RPC owner",
+      "baseline": {
+        "size": 1936
+      }
+    },
+    {
+      "kind": "class",
+      "name": "SceneComponent",
+      "layout": "runtime",
+      "usedBy": "reads: location",
+      "baseline": {
+        "size": 592
+      }
+    },
+    {
+      "kind": "class",
+      "name": "BasePlayerChar_C",
+      "layout": "runtime",
+      "usedBy": "reads: backpack and hotbar inventories",
+      "baseline": {
+        "size": 15396
+      }
+    },
+    {
+      "kind": "class",
+      "name": "BaseBPChar_C",
+      "layout": "runtime",
+      "usedBy": "reads: equipment inventory, character name",
+      "baseline": {
+        "size": 7064
+      }
+    },
+    {
+      "kind": "class",
+      "name": "ConanCharacter",
+      "layout": "runtime",
+      "usedBy": "events: death, possession, damage; mutations: backpack",
+      "baseline": {
+        "size": 6608
+      }
+    },
+    {
+      "kind": "class",
+      "name": "ItemInventory",
+      "layout": "runtime",
+      "usedBy": "reads: inventory lists; mutations: give",
+      "baseline": {
+        "size": 904
+      }
+    },
+    {
+      "kind": "class",
+      "name": "GameItem",
+      "layout": "runtime",
+      "usedBy": "reads: stats; events: weapon name",
+      "baseline": {
+        "size": 521
+      }
+    },
+    {
+      "kind": "class",
+      "name": "ShortcutRefItem",
+      "layout": "runtime",
+      "usedBy": "reads: hotbar shortcut of a wielded weapon, skipped in getPlayerInventory",
+      "baseline": {
+        "size": 552
+      }
+    },
+    {
+      "kind": "class",
+      "name": "InventoryItemBase",
+      "layout": "runtime",
+      "usedBy": "events: damage causer -> item",
+      "baseline": {
+        "size": 881
+      }
+    },
+    {
+      "kind": "class",
+      "name": "GameModeBase",
+      "layout": "runtime",
+      "usedBy": "events + bans: K2_PostLogin, K2_OnLogout",
+      "baseline": {
+        "size": 952
+      }
+    },
+    {
+      "kind": "class",
+      "name": "BountyHuntFactionComponent",
+      "layout": "runtime",
+      "usedBy": "events: OnOwnerKilled (killer)",
+      "baseline": {
+        "size": 344
+      }
+    },
+    {
+      "kind": "class",
+      "name": "BaseBPCombat_C",
+      "layout": "runtime",
+      "usedBy": "events: EventOnDeath",
+      "baseline": {
+        "size": 9944
+      }
+    },
+    {
+      "kind": "class",
+      "name": "KismetTextLibrary",
+      "layout": "runtime",
+      "usedBy": "reads/events/mutations: FText conversion",
+      "baseline": {
+        "size": 40
+      }
+    },
+    {
+      "kind": "class",
+      "name": "KismetSystemLibrary",
+      "layout": "runtime",
+      "usedBy": "mutations: console, frame count",
+      "baseline": {
+        "size": 40
+      }
+    },
+    {
+      "kind": "class",
+      "name": "DataTable",
+      "layout": "runtime",
+      "usedBy": "reads: catalogue tables",
+      "baseline": {
+        "size": 232
+      }
+    },
+    {
+      "kind": "struct",
+      "name": "ItemTableRow",
+      "layout": "runtime",
+      "usedBy": "catalogue: listItems rows",
+      "baseline": {
+        "size": 1048
+      }
+    },
+    {
+      "kind": "struct",
+      "name": "SpawnTableRow",
+      "layout": "runtime",
+      "usedBy": "catalogue: listEntities rows",
+      "baseline": {
+        "size": 456
+      }
+    },
+    {
+      "kind": "struct",
+      "name": "MapMarkerTableRow",
+      "layout": "runtime",
+      "usedBy": "catalogue: listLocations rows",
+      "baseline": {
+        "size": 112
+      }
+    },
+    {
+      "kind": "struct",
+      "name": "ItemNameToTemplateIDStruct",
+      "layout": "runtime",
+      "usedBy": "catalogue + giveItem: item codes",
+      "baseline": {
+        "size": 4
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "SceneComponent",
+      "name": "AttachParent",
+      "layout": "runtime",
+      "usedBy": "player_snapshot location (mounted)",
+      "baseline": {
+        "type": "ObjectProperty",
+        "size": 8,
+        "offset": 216
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "SceneComponent",
+      "name": "RelativeLocation",
+      "layout": "runtime",
+      "usedBy": "player_snapshot location",
+      "baseline": {
+        "type": "StructProperty",
+        "size": 24,
+        "offset": 336
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "Actor",
+      "name": "RootComponent",
+      "layout": "runtime",
+      "usedBy": "player_snapshot location",
+      "baseline": {
+        "type": "ObjectProperty",
+        "size": 8,
+        "offset": 456
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "BasePlayerChar_C",
+      "name": "BackpackInventory",
+      "layout": "runtime",
+      "usedBy": "player_snapshot inventory",
+      "baseline": {
+        "type": "ObjectProperty",
+        "size": 8,
+        "offset": 10392
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "BasePlayerChar_C",
+      "name": "ShortcutBarInventory",
+      "layout": "runtime",
+      "usedBy": "player_snapshot inventory",
+      "baseline": {
+        "type": "ObjectProperty",
+        "size": 8,
+        "offset": 10128
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "BaseBPChar_C",
+      "name": "EquipmentInventory",
+      "layout": "runtime",
+      "usedBy": "player_snapshot inventory",
+      "baseline": {
+        "type": "ObjectProperty",
+        "size": 8,
+        "offset": 6648
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "BaseBPChar_C",
+      "name": "CharacterName",
+      "layout": "runtime",
+      "usedBy": "player_snapshot character name",
+      "baseline": {
+        "type": "StrProperty",
+        "size": 16,
+        "offset": 6688
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ItemInventory",
+      "name": "ItemList",
+      "layout": "runtime",
+      "usedBy": "player_snapshot inventory",
+      "baseline": {
+        "type": "ArrayProperty",
+        "size": 16,
+        "offset": 536
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "GameItem",
+      "name": "TemplateId",
+      "layout": "runtime",
+      "usedBy": "player_snapshot inventory, events weapon, giveItem read-back",
+      "baseline": {
+        "type": "IntProperty",
+        "size": 4,
+        "offset": 240
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "GameItem",
+      "name": "m_OwnerInventory",
+      "layout": "runtime",
+      "usedBy": "player_snapshot torn-read check",
+      "baseline": {
+        "type": "ObjectProperty",
+        "size": 8,
+        "offset": 472
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "Controller",
+      "name": "Pawn",
+      "layout": "runtime",
+      "usedBy": "player_snapshot + events: the character",
+      "baseline": {
+        "type": "ObjectProperty",
+        "size": 8,
+        "offset": 816
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "Controller",
+      "name": "PlayerState",
+      "layout": "runtime",
+      "usedBy": "events + rx::Steam64Of: identity",
+      "baseline": {
+        "type": "ObjectProperty",
+        "size": 8,
+        "offset": 760
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "Pawn",
+      "name": "Controller",
+      "layout": "runtime",
+      "usedBy": "events: character -> controller",
+      "baseline": {
+        "type": "ObjectProperty",
+        "size": 8,
+        "offset": 800
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "PlayerState",
+      "name": "UniqueID",
+      "layout": "runtime",
+      "usedBy": "conan/identity: the Steam64 gameId (every path)",
+      "baseline": {
+        "type": "StructProperty",
+        "size": 48,
+        "offset": 768
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "PlayerState",
+      "name": "SavedNetworkAddress",
+      "layout": "runtime",
+      "usedBy": "player_snapshot + events: ip",
+      "baseline": {
+        "type": "StrProperty",
+        "size": 16,
+        "offset": 832
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ConanPlayerController",
+      "name": "m_IsAdmin",
+      "layout": "runtime",
+      "usedBy": "actions_game console admin flag",
+      "baseline": {
+        "type": "BoolProperty",
+        "size": 1,
+        "offset": 4360
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ConanCharacter",
+      "name": "SourceSpawnTable",
+      "layout": "runtime",
+      "usedBy": "events: killed entity name",
+      "baseline": {
+        "type": "NameProperty",
+        "size": 8,
+        "offset": 2256
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ConanCharacter",
+      "name": "m_CharacterName",
+      "layout": "runtime",
+      "usedBy": "events: killed entity name",
+      "baseline": {
+        "type": "TextProperty",
+        "size": 16,
+        "offset": 5712
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "InventoryItemBase",
+      "name": "OwnerItem",
+      "layout": "runtime",
+      "usedBy": "events: weapon item",
+      "baseline": {
+        "type": "ObjectProperty",
+        "size": 8,
+        "offset": 872
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "DataTable",
+      "name": "RowStruct",
+      "layout": "runtime",
+      "usedBy": "catalogue: row struct of each table",
+      "baseline": {
+        "type": "ObjectProperty",
+        "size": 8,
+        "offset": 40
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ItemTableRow",
+      "name": "Name",
+      "layout": "runtime",
+      "usedBy": "catalogue: item display name",
+      "baseline": {
+        "type": "TextProperty",
+        "size": 16,
+        "offset": 16
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ItemTableRow",
+      "name": "ShortDesc",
+      "layout": "runtime",
+      "usedBy": "catalogue: item description",
+      "baseline": {
+        "type": "TextProperty",
+        "size": 16,
+        "offset": 32
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "SpawnTableRow",
+      "name": "Name",
+      "layout": "runtime",
+      "usedBy": "catalogue: entity display name",
+      "baseline": {
+        "type": "TextProperty",
+        "size": 16,
+        "offset": 8
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "SpawnTableRow",
+      "name": "NPCClass",
+      "layout": "runtime",
+      "usedBy": "catalogue: entity class metadata",
+      "baseline": {
+        "type": "SoftClassProperty",
+        "size": 40,
+        "offset": 160
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "MapMarkerTableRow",
+      "name": "Name",
+      "layout": "runtime",
+      "usedBy": "catalogue: location name",
+      "baseline": {
+        "type": "TextProperty",
+        "size": 16,
+        "offset": 8
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "MapMarkerTableRow",
+      "name": "Region",
+      "layout": "runtime",
+      "usedBy": "catalogue: map region filter",
+      "baseline": {
+        "type": "StructProperty",
+        "size": 8,
+        "offset": 64
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "MapMarkerTableRow",
+      "name": "Location",
+      "layout": "runtime",
+      "usedBy": "catalogue: location position",
+      "baseline": {
+        "type": "StructProperty",
+        "size": 24,
+        "offset": 72
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "MapMarkerTableRow",
+      "name": "DiscoveryRadius",
+      "layout": "runtime",
+      "usedBy": "catalogue: location radius",
+      "baseline": {
+        "type": "FloatProperty",
+        "size": 4,
+        "offset": 96
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "ItemInventory",
+      "name": "AddItemTemplate",
+      "layout": "runtime",
+      "usedBy": "giveItem",
+      "baseline": {
+        "parmsSize": 36,
+        "params": [
+          [
+            "TemplateId",
+            "IntProperty",
+            0,
+            4
+          ],
+          [
+            "Index",
+            "IntProperty",
+            4,
+            4
+          ],
+          [
+            "Context",
+            "NameProperty",
+            8,
+            8
+          ],
+          [
+            "quantity",
+            "IntProperty",
+            16,
+            4
+          ],
+          [
+            "loot",
+            "BoolProperty",
+            20,
+            1
+          ],
+          [
+            "durabilityPercentage",
+            "FloatProperty",
+            24,
+            4
+          ],
+          [
+            "durability",
+            "FloatProperty",
+            28,
+            4
+          ],
+          [
+            "ReturnValue",
+            "IntProperty",
+            32,
+            4
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "ItemInventory",
+      "name": "GetNumberOfItemsByTemplate",
+      "layout": "runtime",
+      "usedBy": "giveItem read-back",
+      "baseline": {
+        "parmsSize": 8,
+        "params": [
+          [
+            "TemplateId",
+            "IntProperty",
+            0,
+            4
+          ],
+          [
+            "ReturnValue",
+            "IntProperty",
+            4,
+            4
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "ConanCharacter",
+      "name": "GetBackpackInventory",
+      "layout": "runtime",
+      "usedBy": "giveItem",
+      "baseline": {
+        "parmsSize": 8,
+        "params": [
+          [
+            "ReturnValue",
+            "ObjectProperty",
+            0,
+            8
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "ConanCharacter",
+      "name": "ClientPossessedBy",
+      "layout": "runtime",
+      "usedBy": "events: connect once the character exists",
+      "baseline": {
+        "parmsSize": 8,
+        "params": [
+          [
+            "NewController",
+            "ObjectProperty",
+            0,
+            8
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "PlayerController",
+      "name": "ClientWasKicked",
+      "layout": "runtime",
+      "usedBy": "kickPlayer, ban kicks: the reason the client's main menu shows",
+      "baseline": {
+        "parmsSize": 16,
+        "params": [
+          [
+            "KickReason",
+            "TextProperty",
+            0,
+            16
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "PlayerController",
+      "name": "ClientReturnToMainMenuWithTextReason",
+      "layout": "runtime",
+      "usedBy": "kickPlayer, ban kicks",
+      "baseline": {
+        "parmsSize": 16,
+        "params": [
+          [
+            "ReturnReason",
+            "TextProperty",
+            0,
+            16
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "KismetTextLibrary",
+      "name": "Conv_StringToText",
+      "layout": "runtime",
+      "usedBy": "kick reason",
+      "baseline": {
+        "parmsSize": 32,
+        "params": [
+          [
+            "InString",
+            "StrProperty",
+            0,
+            16
+          ],
+          [
+            "ReturnValue",
+            "TextProperty",
+            16,
+            16
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "KismetTextLibrary",
+      "name": "Conv_TextToString",
+      "layout": "runtime",
+      "usedBy": "reads text self-check, events names",
+      "baseline": {
+        "parmsSize": 32,
+        "params": [
+          [
+            "InText",
+            "TextProperty",
+            0,
+            16
+          ],
+          [
+            "ReturnValue",
+            "StrProperty",
+            16,
+            16
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "KismetSystemLibrary",
+      "name": "ExecuteConsoleCommand",
+      "layout": "runtime",
+      "usedBy": "executeConsoleCommand, shutdown exit",
+      "baseline": {
+        "parmsSize": 32,
+        "params": [
+          [
+            "WorldContextObject",
+            "ObjectProperty",
+            0,
+            8
+          ],
+          [
+            "Command",
+            "StrProperty",
+            8,
+            16
+          ],
+          [
+            "SpecificPlayer",
+            "ObjectProperty",
+            24,
+            8
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "KismetSystemLibrary",
+      "name": "GetFrameCount",
+      "layout": "runtime",
+      "usedBy": "executeConsoleCommand rawResult bracket; perf sampler frame count (health game.gameThread)",
+      "baseline": {
+        "parmsSize": 8,
+        "params": [
+          [
+            "ReturnValue",
+            "Int64Property",
+            0,
+            8
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "GameItem",
+      "name": "GetIntStat",
+      "layout": "runtime",
+      "usedBy": "reads stats self-check",
+      "baseline": {
+        "parmsSize": 8,
+        "params": [
+          [
+            "statID",
+            "ByteProperty",
+            0,
+            1
+          ],
+          [
+            "ReturnValue",
+            "IntProperty",
+            4,
+            4
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "GameItem",
+      "name": "GetFloatStat",
+      "layout": "runtime",
+      "usedBy": "reads stats self-check",
+      "baseline": {
+        "parmsSize": 8,
+        "params": [
+          [
+            "statID",
+            "ByteProperty",
+            0,
+            1
+          ],
+          [
+            "ReturnValue",
+            "FloatProperty",
+            4,
+            4
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "GameItem",
+      "name": "GetItemName",
+      "layout": "runtime",
+      "usedBy": "events: weapon name",
+      "baseline": {
+        "parmsSize": 16,
+        "params": [
+          [
+            "ReturnValue",
+            "TextProperty",
+            0,
+            16
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "PlayerState",
+      "name": "GetPingInMilliseconds",
+      "layout": "runtime",
+      "usedBy": "reads ping self-check",
+      "baseline": {
+        "parmsSize": 4,
+        "params": [
+          [
+            "ReturnValue",
+            "FloatProperty",
+            0,
+            4
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "Actor",
+      "name": "K2_GetActorLocation",
+      "layout": "runtime",
+      "usedBy": "reads self-check, teleport read-back, events position",
+      "baseline": {
+        "parmsSize": 24,
+        "params": [
+          [
+            "ReturnValue",
+            "StructProperty",
+            0,
+            24
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "Actor",
+      "name": "ReceiveAnyDamage",
+      "layout": "runtime",
+      "usedBy": "events: last damage (hook)",
+      "baseline": {
+        "parmsSize": 36,
+        "params": [
+          [
+            "Damage",
+            "FloatProperty",
+            0,
+            4
+          ],
+          [
+            "DamageType",
+            "ObjectProperty",
+            8,
+            8
+          ],
+          [
+            "InstigatedBy",
+            "ObjectProperty",
+            16,
+            8
+          ],
+          [
+            "DamageCauser",
+            "ObjectProperty",
+            24,
+            8
+          ],
+          [
+            "DamageEventID",
+            "IntProperty",
+            32,
+            4
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "Actor",
+      "name": "ReceivePointDamage",
+      "layout": "runtime",
+      "usedBy": "events: last damage (hook)",
+      "baseline": {
+        "parmsSize": 376,
+        "params": [
+          [
+            "Damage",
+            "FloatProperty",
+            0,
+            4
+          ],
+          [
+            "DamageType",
+            "ObjectProperty",
+            8,
+            8
+          ],
+          [
+            "HitLocation",
+            "StructProperty",
+            16,
+            24
+          ],
+          [
+            "HitNormal",
+            "StructProperty",
+            40,
+            24
+          ],
+          [
+            "HitComponent",
+            "ObjectProperty",
+            64,
+            8
+          ],
+          [
+            "BoneName",
+            "NameProperty",
+            72,
+            8
+          ],
+          [
+            "ShotFromDirection",
+            "StructProperty",
+            80,
+            24
+          ],
+          [
+            "InstigatedBy",
+            "ObjectProperty",
+            104,
+            8
+          ],
+          [
+            "DamageCauser",
+            "ObjectProperty",
+            112,
+            8
+          ],
+          [
+            "HitInfo",
+            "StructProperty",
+            120,
+            256
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "GameModeBase",
+      "name": "K2_PostLogin",
+      "layout": "runtime",
+      "usedBy": "events player-connected + ban enforcement (hook)",
+      "baseline": {
+        "parmsSize": 8,
+        "params": [
+          [
+            "NewPlayer",
+            "ObjectProperty",
+            0,
+            8
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "GameModeBase",
+      "name": "K2_OnLogout",
+      "layout": "runtime",
+      "usedBy": "events player-disconnected (hook)",
+      "baseline": {
+        "parmsSize": 8,
+        "params": [
+          [
+            "ExitingController",
+            "ObjectProperty",
+            0,
+            8
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "BountyHuntFactionComponent",
+      "name": "OnOwnerKilled",
+      "layout": "runtime",
+      "usedBy": "events: killer (hook)",
+      "baseline": {
+        "parmsSize": 16,
+        "params": [
+          [
+            "InOwner",
+            "ObjectProperty",
+            0,
+            8
+          ],
+          [
+            "InKiller",
+            "ObjectProperty",
+            8,
+            8
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "BaseBPCombat_C",
+      "name": "EventOnDeath",
+      "layout": "runtime",
+      "usedBy": "events: death and kill (hook, subscribed on ConanCharacter)",
+      "baseline": {
+        "parmsSize": 10,
+        "params": [
+          [
+            "Character",
+            "ObjectProperty",
+            0,
+            8
+          ],
+          [
+            "OldState",
+            "EnumProperty",
+            8,
+            1
+          ],
+          [
+            "NewState",
+            "EnumProperty",
+            9,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "ConanPlayerController",
+      "name": "ServerSendChatMessage",
+      "layout": "runtime",
+      "usedBy": "events chat-message (hook)",
+      "baseline": {
+        "parmsSize": 128,
+        "params": [
+          [
+            "chatData",
+            "StructProperty",
+            0,
+            128
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "ConanPlayerController",
+      "name": "TeleportPlayerServer",
+      "layout": "runtime",
+      "usedBy": "teleportPlayer",
+      "baseline": {
+        "parmsSize": 52,
+        "params": [
+          [
+            "TargetLocation",
+            "StructProperty",
+            0,
+            24
+          ],
+          [
+            "TargetRotation",
+            "StructProperty",
+            24,
+            24
+          ],
+          [
+            "RunCheatCheck",
+            "BoolProperty",
+            48,
+            1
+          ],
+          [
+            "SnapToGround",
+            "BoolProperty",
+            49,
+            1
+          ],
+          [
+            "ForceTeleportClients",
+            "BoolProperty",
+            50,
+            1
+          ],
+          [
+            "UsePawnRotationInstead",
+            "BoolProperty",
+            51,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "fieldclass",
+      "name": "BoolProperty",
+      "usedBy": "core type checks (PropertyOffset / Offset / ResolveFunc)"
+    },
+    {
+      "kind": "fieldclass",
+      "name": "FloatProperty",
+      "usedBy": "core type checks (PropertyOffset / Offset / ResolveFunc)"
+    },
+    {
+      "kind": "fieldclass",
+      "name": "IntProperty",
+      "usedBy": "core type checks (PropertyOffset / Offset / ResolveFunc)"
+    },
+    {
+      "kind": "fieldclass",
+      "name": "Int64Property",
+      "usedBy": "core type checks (PropertyOffset / Offset / ResolveFunc)"
+    },
+    {
+      "kind": "fieldclass",
+      "name": "NameProperty",
+      "usedBy": "core type checks (PropertyOffset / Offset / ResolveFunc)"
+    },
+    {
+      "kind": "fieldclass",
+      "name": "StructProperty",
+      "usedBy": "core type checks (PropertyOffset / Offset / ResolveFunc)"
+    },
+    {
+      "kind": "fieldclass",
+      "name": "TextProperty",
+      "usedBy": "core type checks (PropertyOffset / Offset / ResolveFunc)"
+    },
+    {
+      "kind": "fieldclass",
+      "name": "SoftClassProperty",
+      "usedBy": "core type checks (PropertyOffset / Offset / ResolveFunc)"
+    }
+  ],
+  "baselineFrom": {
+    "build": "25639945",
+    "buildId": "3a05a6ef0c873f2bbf754ec495bdf2a686d3768d",
+    "dump": "reflection-25639945-20261003T085324Z.json.gz"
+  }
+}

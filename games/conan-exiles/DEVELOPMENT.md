@@ -5,39 +5,42 @@ in [README.md](README.md).
 
 ## Architecture
 
-The connector is a TypeScript sidecar (`bridge/`) plus an optional Conan-side chat renderer.
+The shipped connector is native (`native/`): `libtakaro-conan-native.so` (`LD_PRELOAD`, Linux) and
+`winmm.dll` (proxy DLL, Windows) run inside the server process and hold the Takaro WebSocket
+themselves. No sidecar, no RCON, no mod. See [Native connector](#native-connector-native).
 
-- Takaro outbound WebSocket for the connector protocol (`wss://connect.takaro.io/`).
-- Conan Exiles RCON for commands, player lists and moderation.
-- Optional log tailing for `log` events and chat parsing.
-- Player polling (`listplayers` deltas) for `player-connected` / `player-disconnected`.
-- A local HTTP command bridge that an in-game mod or host-side helper polls to render real chat.
-- Optional read-only reads of the Conan save database (`game_0.db`) for location, inventory,
-  item/entity/location catalogues.
+The Node.js bridge (`bridge/`) is **deprecated and frozen**: it still ships as a legacy zip on the
+Linux target for one more release cycle and gets no fixes. The bridge sections below (RCON, log
+tailing, the save database, the chat renderer) describe that legacy path only; the native
+connector needs none of it and RCON stays off.
 
 Layout:
 
 ```
 games/conan-exiles/
-    bridge/                     # the Node.js sidecar (source of truth for behaviour)
+    native/                     # the native connector (core/, platform/linux, platform/windows, tests/, tools/)
+    bridge/                     # the deprecated Node.js sidecar (frozen)
     mod/TakaroConanBridge/      # spec + DevKit handoff for the Takaro-owned .pak (no binary shipped)
     scripts/lib-target.sh       # resolves the catalog target every script builds against
-    scripts/build-release.sh    # packages the target-qualified bridge zip
+    scripts/build-release.sh    # packages the native zip per target (+ the legacy bridge zip on Linux)
+    scripts/templates/          # takaro.json examples and the README.txt of the native zips
     scripts/check-exact-source.mjs  # lockfile and tarball hashes vs the catalog, before npm ci
-    TakaroConfig.example.txt
+    INSTALL.md                  # per-platform install, migration from the bridge, rollback (ships in the zips)
+    TakaroConfig.example.txt    # the bridge's config example
     version.txt
     CHANGELOG.md
 
 catalog/conan-exiles/
-    game.json                   # the Steam watch: app 443030, depot 443032, branch public
-    targets/linux-25488622.json # the pinned server build, image, deps and file hashes
+    game.json                     # the Steam watch: app 443030, depot 443032, branch public
+    targets/linux-25639945.json   # Linux: pinned server build, images, deps, file hashes
+    targets/windows-25639945.json # Windows: the same Steam build, depot 443031, zig toolchain
 ```
 
 ## The pinned server build
 
 The connector is built and verified against one exact server build, declared in
-`catalog/conan-exiles/targets/linux-25488622.json`: Steam app `443030`, branch `public`, build
-`25488622`, depot `443032` manifest `2389917983000609164` plus the Steamworks redistributable depot
+`catalog/conan-exiles/targets/linux-25639945.json`: Steam app `443030`, branch `public`, build
+`25639945`, depot `443032` manifest `8611640520811009059` plus the Steamworks redistributable depot
 `1006` manifest `4559160656493359681`, with six declared file hashes. Nothing here runs the Steam
 updater any more — the depot manifests are the bytes:
 
@@ -122,7 +125,7 @@ npm start
 A release is built per catalog target, through the shared maintenance command:
 
 ```bash
-maintenance/bin/takaro-maint build --game conan-exiles [--target linux-25488622] \
+maintenance/bin/takaro-maint build --game conan-exiles [--target linux-25639945] \
   --version 1.0.2 --out dist
 ```
 
@@ -132,7 +135,7 @@ no Node at all. Before `npm ci`, `check-exact-source.mjs` asserts that the lockf
 every catalog-pinned dependency to the recorded URL and that the tarball there still hashes to the
 recorded sha256; neither failure falls back to installing something else.
 
-The result is `takaro-conan-exiles-bridge-linux-25488622-<version>.zip` containing `dist/`,
+The result is `takaro-conan-exiles-bridge-linux-25639945-<version>.zip` containing `dist/`,
 `scripts/`, `package.json`, `package-lock.json`, `takaro-target.json`, `README.md`,
 `TakaroConfig.example.txt` and a generated `README.release.txt`, plus a `.meta.json` beside it that
 `takaro-maint artifact validate` reads. The zip contains no `src/`, so every runtime `package.json`
@@ -201,6 +204,76 @@ queues one Takaro `sendMessage` through MCP, handles it through `/mod/poll` and 
 `TakaroConanProtocolProbe/1.0`, posts one `/mod/event`, verifies source attribution, then resumes
 the host poller. It proves the HTTP contract the future `.pak` must use; it is not installed-mod
 proof and does not satisfy the final `TakaroConan` source gates.
+
+## Native connector (`native/`)
+
+`libtakaro-conan-native.so` runs inside the Linux server process (`LD_PRELOAD`) and `winmm.dll`
+inside the Windows one; both hold the Takaro WebSocket themselves: no sidecar and no RCON. Every
+action and event is native; `core/conan/capabilities.json` is the honest per-action state
+(`live-supported`, `schema-fallback`, `unsupported`, `not-requested`; the drift test refuses a
+`pending` row).
+
+```
+native/
+  core/            portable, no OS headers
+    takaro/        Takaro protocol: ITransport + frame queues + heartbeat, bridge, durable outbox, config
+    conan/         the Conan adapter, sendMessage, the coverage registry (+ capabilities.json)
+    ue/            UE reflection (names, object walk, property offsets, controllers)
+    pins/          startup signature scan + pinned builds (+ pins.json)
+  platform/linux/  LD_PRELOAD entry, ProcessEvent detour, /proc/self/maps + build-id, libwebsockets transport,
+                   buster Dockerfile.build and build.sh
+  platform/windows/ winmm.dll proxy, MinHook ProcessEvent detour, WinHTTP transport (abortive close of a
+                   dead link: abortive_close.*), PE scan; build.sh (zig 0.13.0, reproducible), Dockerfile.builder
+  tests/           unit tests, pins oracle, drift test, fake Takaro wire tests, real-library test
+  tools/           sigderive.py (signatures for ELF and PE)
+```
+
+- **Config.** Environment first (`TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN`,
+  `TAKARO_WS_URL`, `TAKARO_SERVER_NAME`, `TAKARO_CA_FILE`, `TAKARO_STATE_DIR`), then
+  `ConanSandbox/Saved/Config/Takaro/takaro.json` (keys `identityToken`, `registrationToken`, `url`,
+  `name`, `caFile`, `stateDir`; `TAKARO_CONAN_CONFIG` moves the file). It fails closed: missing
+  tokens, a `ws://` URL or a file that does not parse leave the library inert, with the reason in
+  `ConanSandbox/Saved/Logs/TakaroConanNative.log`. Token values are never logged.
+- **Pins.** Only the three raw globals come from fixed knowledge: `ProcessEvent`,
+  `GUObjectArray.ObjObjects` and the `FNamePool` block table. At load the library scans the
+  server's executable mappings for their signatures (`core/pins/pins.cpp`, derived with
+  `tools/sigderive.py`, about 140 ms) and accepts the build only when every signature matches
+  exactly once and the GNU build-id is pinned with the same addresses (25639945:
+  `3a05a6ef…`). On any other build it installs no hook, still connects and identifies, sends one
+  critical notice (a `log` event) and refuses every action with a structured error.
+  `TAKARO_CONAN_ALLOW_UNPINNED_BUILD=1` accepts a clean scan of an unpinned build, for re-pin work.
+- **Everything else is reflection.** At first use the library walks the object array in
+  16384-object slices on the game thread. It finds the chat `UFunction`, `GameStateBase` and the
+  live GameState, then reads property offsets by name and type: `PlayerArray`, `Owner`,
+  `UserIDFromURLOptions` and `PlayerNamePrivate`. Live cost on 25639945: 1.48M objects scanned in
+  47 ms total, spread over about 90 ticks; a send costs about 0.02 ms of game-thread time.
+- **ChatRpcData** (0x80 bytes): Timestamp is FILETIME, not FDateTime. userName is at 0x48,
+  Channel (`Global`) at 0x58, Message at 0x68 and generated at 0x78, all FStrings.
+- **Threads.** The libwebsockets service thread owns the socket; the bridge thread owns protocol
+  state and the outbox; action workers run actions. The ProcessEvent detour only drains the
+  game-thread queue when a job is pending, at most 4 jobs or 500 µs per drain.
+- **Delivery.** Every event goes through a durable outbox (`<Saved>/Takaro/state/event-outbox.json`,
+  tmp + fsync + rename) and leaves it only when the pong of a later WebSocket ping confirms it, so a
+  Takaro outage or a server restart replays the unconfirmed tail. Reconnect backoff doubles from
+  2 s to 60 s and resets after a successful identify. A health snapshot is written to
+  `<Saved>/Takaro/state/health.json`.
+- **Toolchain.** `platform/linux/Dockerfile.build` is Debian buster pinned by digest, with
+  packages from its dated snapshot, and builds OpenSSL 3.5.8 and libwebsockets 4.5.8 statically
+  from SHA-256-checked archives. glibc 2.28 is the newest the server binary needs, and `build.sh`
+  refuses a library that needs anything newer, exports a symbol, or has an unresolved strong symbol.
+- **Tests.** `make -C native test` (or `native/build.sh --tests`) builds the library and runs, in
+  the buster container: unit tests; the drift test (`capabilities.json` and `pins.json` equal the
+  compiled tables); wire tests of the production Takaro half against a fake Takaro over TLS
+  (identify, ping/pong, request correlation, every args shape, events, a forced 20 s outage with
+  outbox replay, a killed process replaying from disk, identify rejection, unknown-build refusal);
+  and the real library preloaded into a stand-in server executable. With
+  `CONAN_SERVER_BINARY=<25639945 ConanSandboxServer-Linux-Shipping>` it also checks that the scan
+  reproduces the stage 1 addresses.
+- **Windows tests.** `platform/windows/build.sh --tests` also cross-compiles
+  `build-windows/tests/abortive_close_test.exe` (the abortive close of a dead link: address match,
+  a raw socket pair, a real WinHTTP WebSocket against a loopback server). CI runs it under Wine, whose
+  WinHTTP closes an unmarked WebSocket gracefully (the duplicate-delivery case); it also passes on
+  Windows 11, where WinHTTP already resets one.
 
 ## Host-side chat renderer
 
@@ -341,7 +414,7 @@ the release claims `contract` verification and nothing more.
 **Startup level — a real pinned server.** On a host that can boot it:
 
 ```bash
-maintenance/bin/takaro-maint verify --game conan-exiles --target linux-25488622 \
+maintenance/bin/takaro-maint verify --game conan-exiles --target linux-25639945 \
   --artifacts dist --out reports \
   --checks build,startup,bridge-identify,bridge-reachability,bridge-players,bridge-console,bridge-reconnect,shutdown,bridge-stop \
   --startup-timeout 600 --cleanup-orphans
@@ -413,6 +486,35 @@ shared verifier:
    here.
 
 Until both land, the rig lane above is this target's startup-level evidence.
+
+### Findings from the 25639945 real-client lane (2026-10-02)
+
+The exact target was installed with `takaro-maint install` into an isolated directory, run in the
+pinned Node image with no mods, and joined from a Conan Exiles Enhanced client (revision
+378,132) on the Windows gamer PC. Everything was driven through the Takaro MCP against hosted
+Takaro; evidence lives under the runner's `.runner-reports/349/e2e/linux-25639945/`.
+
+- **No chat mod loads.** The server logs `SetCompatibleDevkitVersions: [1002]` and refuses both
+  Enhanced Pippi (last Workshop update 2026-06-11) and the July `TakaroConan.pak` with `Mod is
+  too old and needs to be updated for this game version`, then exits. Takaro chat delivery
+  (`sendMessage`, Discord → game) is therefore unavailable on this build; the bridge refuses it
+  with `Conan chat bridge is not connected` and never falls back to `broadcast`.
+- **Inbound chat works without a mod.** Vanilla `ChatWindow: Character … said:` lines became
+  `chat-message` events, and an `@`-prefixed module command typed in game ran.
+- **Bans need an online player.** `banplayer platformid <id>` (and `userid <id>`) for an offline
+  player answers `No player with platform ID <id>.` and bans nothing. The bridge used to report
+  that as success; it now returns a failed action. Banning an online player kicks them, writes
+  `Saved/blacklist.txt` and refuses the rejoin with `PreLogin failure: UserBanned`.
+  `unbanplayer <steam64>` works offline.
+- **`listbans` prints bare Steam IDs**, one per line, with no reason.
+- **RCON karma and connection churn.** The bridge used to open one RCON connection per command.
+  At the default 10 s poll plus Takaro's reachability checks, Conan's karma denied every
+  connection after about 70 minutes (`Rcon connection … triggered karma system and has been
+  denied`), for ten minutes at a time, so a Takaro shutdown in that window failed with
+  `write EPIPE`. Conan serves several commands on one connection and answers them in order (its
+  reply ids lag one request behind), so the bridge now keeps one authenticated socket and
+  reconnects only after it drops.
+- `shutdown` → `LogExit: Exiting.` and exit 0 took about three minutes on this build.
 
 ## Live verification
 

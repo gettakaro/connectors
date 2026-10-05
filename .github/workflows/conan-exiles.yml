@@ -9,6 +9,7 @@ on:
       - 'maintenance/**'
       - 'scripts/**'
       - '.github/workflows/conan-exiles.yml'
+      - '.github/workflows/conan-exiles-repin-watch.yml'
       - '.github/workflows/connector-release.yml'
   pull_request:
     paths:
@@ -17,6 +18,7 @@ on:
       - 'maintenance/**'
       - 'scripts/**'
       - '.github/workflows/conan-exiles.yml'
+      - '.github/workflows/conan-exiles-repin-watch.yml'
       - '.github/workflows/connector-release.yml'
   workflow_call:
     inputs:
@@ -80,6 +82,65 @@ jobs:
       - name: Build
         run: npm run build
 
+  # The native connector library (LD_PRELOAD into the Linux server): unit, drift, fake-Takaro wire
+  # and real-library tests, built in the pinned buster toolchain image. The same run holds the
+  # re-pin checks: a wrong build degrades cleanly, pins.json agrees with catalog/conan-exiles
+  # targets, the reflection manifest covers every name core/ looks up, and tools/repin.py + the
+  # Steam build watch pass on synthetic binaries. The real-binary anchor fixtures are server
+  # machine code and are not in this repo; the maintainers' runner runs those checks.
+  native:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
+      - name: Build and test the native library (incl. re-pin checks)
+        run: games/conan-exiles/native/build.sh --tests
+
+  # The Windows native connector (winmm.dll proxy), cross-compiled with the zig the windows catalog
+  # target pins (same URL and SHA-256). The build checks the vendored MinHook hashes and the DLL's
+  # exports, and zeroes the link timestamps so the bytes are reproducible.
+  native-windows:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
+      - name: Install the pinned zig 0.13.0
+        shell: bash
+        run: |
+          curl -fsSL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz -o "$RUNNER_TEMP/zig.tar.xz"
+          echo "d45312e61ebcc48032b77bc4cf7fd6915c11fa16e4aad116b66c9468211230ea  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/zig"
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "ZIG=$RUNNER_TEMP/zig/zig" >> "$GITHUB_ENV"
+      - name: Build the Windows DLL twice and compare
+        shell: bash
+        run: |
+          games/conan-exiles/native/platform/windows/build.sh --tests
+          cp games/conan-exiles/native/dist-windows/winmm.dll "$RUNNER_TEMP/first.dll"
+          cp games/conan-exiles/native/build-windows/tests/abortive_close_test.exe "$RUNNER_TEMP/"
+          games/conan-exiles/native/platform/windows/build.sh
+          cmp "$RUNNER_TEMP/first.dll" games/conan-exiles/native/dist-windows/winmm.dll
+      # The abortive close of a dead Takaro link (WinHTTP transport) on a WinHTTP that closes
+      # gracefully by itself: Wine's. Windows 11 resets anyway; the test passes on both.
+      - name: Run the Windows transport test under Wine
+        shell: bash
+        env:
+          WINEDEBUG: -all
+          WINEDLLOVERRIDES: "mscoree,mshtml="
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends wine wine64
+          export WINEPREFIX="$RUNNER_TEMP/wineprefix"
+          wine "$RUNNER_TEMP/abortive_close_test.exe"
+
   params:
     runs-on: ubuntu-latest
     permissions:
@@ -107,7 +168,7 @@ jobs:
         run: scripts/release-params.sh conan-exiles >> "$GITHUB_OUTPUT"
 
   release:
-    needs: [test, params]
+    needs: [test, native, native-windows, params]
     uses: ./.github/workflows/connector-release.yml
     secrets: inherit
     with:

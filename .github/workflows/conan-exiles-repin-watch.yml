@@ -1,0 +1,42 @@
+name: Conan Exiles re-pin watch
+
+# The native Conan Exiles library only hooks server builds pinned in
+# games/conan-exiles/native/core/pins/pins.json and refuses every other build. This reads the
+# public Steam build of app 443030 and opens one "conan-exiles: re-pin needed (Steam build N)"
+# issue when that build is not pinned. The re-pin itself is games/conan-exiles/native/tools/repin.py.
+
+on:
+  schedule:
+    - cron: '41 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "print the issue instead of opening it"
+        type: boolean
+        default: true
+
+concurrency:
+  group: conan-exiles-repin-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      # Scheduled runs publish; a manual run is a dry run unless dry_run is switched off.
+      - name: Compare the public Steam build with the pins
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          args=(--repo "$GITHUB_REPOSITORY"
+                --steamcmd-image steamcmd/steamcmd@sha256:ae9ff57e3f07fe66dd04e8178c0a4077fd13944d90122045fe8eb6b8d1f123f0)
+          [ "$DRY_RUN" = true ] || args+=(--publish)
+          python3 games/conan-exiles/native/tools/buildwatch.py "${args[@]}"

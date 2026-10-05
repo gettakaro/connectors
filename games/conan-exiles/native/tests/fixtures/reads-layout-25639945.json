@@ -1,0 +1,506 @@
+{
+ "_comment": "Subset of the reflection dump of Conan Exiles Linux server build 25639945 (El-Limon evidence reflection-25639945, probe 0.1.0, 2026-10-03): the classes, properties and UFunctions the read actions use. tests/reads_test.cpp builds its fake server from it.",
+ "build": "25639945",
+ "structs": [
+  {
+   "name": "GameStateBase",
+   "kind": "Class",
+   "super": "Info",
+   "superChain": [
+    "Info",
+    "Actor",
+    "Object"
+   ],
+   "size": 836,
+   "path": "/Script/Engine.GameStateBase",
+   "properties": [
+    {
+     "name": "PlayerArray",
+     "type": "ArrayProperty",
+     "offset": 776,
+     "size": 16
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "PlayerState",
+   "kind": "Class",
+   "super": "Info",
+   "superChain": [
+    "Info",
+    "Actor",
+    "Object"
+   ],
+   "size": 928,
+   "path": "/Script/Engine.PlayerState",
+   "properties": [
+    {
+     "name": "SavedNetworkAddress",
+     "type": "StrProperty",
+     "offset": 832,
+     "size": 16
+    },
+    {
+     "name": "PlayerNamePrivate",
+     "type": "StrProperty",
+     "offset": 896,
+     "size": 16
+    },
+    {
+     "name": "UniqueID",
+     "type": "StructProperty",
+     "offset": 768,
+     "size": 48
+    }
+   ],
+   "functions": [
+    {
+     "name": "GetPingInMilliseconds",
+     "parmsSize": 4,
+     "params": [
+      {
+       "name": "ReturnValue",
+       "type": "FloatProperty",
+       "offset": 0,
+       "size": 4
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Actor",
+   "kind": "Class",
+   "super": "Object",
+   "superChain": [
+    "Object"
+   ],
+   "size": 752,
+   "path": "/Script/Engine.Actor",
+   "properties": [
+    {
+     "name": "Owner",
+     "type": "ObjectProperty",
+     "offset": 360,
+     "size": 8
+    },
+    {
+     "name": "RootComponent",
+     "type": "ObjectProperty",
+     "offset": 456,
+     "size": 8
+    }
+   ],
+   "functions": [
+    {
+     "name": "K2_GetActorLocation",
+     "parmsSize": 24,
+     "params": [
+      {
+       "name": "ReturnValue",
+       "type": "StructProperty",
+       "offset": 0,
+       "size": 24
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Controller",
+   "kind": "Class",
+   "super": "Actor",
+   "superChain": [
+    "Actor",
+    "Object"
+   ],
+   "size": 899,
+   "path": "/Script/Engine.Controller",
+   "properties": [
+    {
+     "name": "PlayerState",
+     "type": "ObjectProperty",
+     "offset": 760,
+     "size": 8
+    },
+    {
+     "name": "Pawn",
+     "type": "ObjectProperty",
+     "offset": 816,
+     "size": 8
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "ConanPlayerController",
+   "kind": "Class",
+   "super": "DWPlayerController",
+   "superChain": [
+    "DWPlayerController",
+    "PlayerController",
+    "Controller",
+    "Actor",
+    "Object"
+   ],
+   "size": 5668,
+   "path": "/Script/ConanSandbox.ConanPlayerController",
+   "properties": [
+    {
+     "name": "UserIDFromURLOptions",
+     "type": "StrProperty",
+     "offset": 2992,
+     "size": 16
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "SceneComponent",
+   "kind": "Class",
+   "super": "ActorComponent",
+   "superChain": [
+    "ActorComponent",
+    "Object"
+   ],
+   "size": 592,
+   "path": "/Script/Engine.SceneComponent",
+   "properties": [
+    {
+     "name": "AttachParent",
+     "type": "ObjectProperty",
+     "offset": 216,
+     "size": 8
+    },
+    {
+     "name": "RelativeLocation",
+     "type": "StructProperty",
+     "offset": 336,
+     "size": 24
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "BasePlayerChar_C",
+   "kind": "BlueprintGeneratedClass",
+   "super": "BaseSurvivalChar_C",
+   "superChain": [
+    "BaseSurvivalChar_C",
+    "BaseBPCombat_C",
+    "BaseBPChar_C",
+    "ConanCharacter",
+    "Character",
+    "Pawn",
+    "Actor",
+    "Object"
+   ],
+   "size": 15396,
+   "path": "/Game/Characters/BasePlayerChar.BasePlayerChar_C",
+   "properties": [
+    {
+     "name": "ShortcutBarInventory",
+     "type": "ObjectProperty",
+     "offset": 10128,
+     "size": 8
+    },
+    {
+     "name": "BackpackInventory",
+     "type": "ObjectProperty",
+     "offset": 10392,
+     "size": 8
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "BaseBPChar_C",
+   "kind": "BlueprintGeneratedClass",
+   "super": "ConanCharacter",
+   "superChain": [
+    "ConanCharacter",
+    "Character",
+    "Pawn",
+    "Actor",
+    "Object"
+   ],
+   "size": 7064,
+   "path": "/Game/Characters/BaseBPChar.BaseBPChar_C",
+   "properties": [
+    {
+     "name": "EquipmentInventory",
+     "type": "ObjectProperty",
+     "offset": 6648,
+     "size": 8
+    },
+    {
+     "name": "CharacterName",
+     "type": "StrProperty",
+     "offset": 6688,
+     "size": 16
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "ItemInventory",
+   "kind": "Class",
+   "super": "PersistenceComponent",
+   "superChain": [
+    "PersistenceComponent",
+    "ActorComponent",
+    "Object"
+   ],
+   "size": 904,
+   "path": "/Script/ConanSandbox.ItemInventory",
+   "properties": [
+    {
+     "name": "ItemList",
+     "type": "ArrayProperty",
+     "offset": 536,
+     "size": 16
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "GameItem",
+   "kind": "Class",
+   "super": "Object",
+   "superChain": [
+    "Object"
+   ],
+   "size": 521,
+   "path": "/Script/ConanSandbox.GameItem",
+   "properties": [
+    {
+     "name": "TemplateId",
+     "type": "IntProperty",
+     "offset": 240,
+     "size": 4
+    },
+    {
+     "name": "m_OwnerInventory",
+     "type": "ObjectProperty",
+     "offset": 472,
+     "size": 8
+    }
+   ],
+   "functions": [
+    {
+     "name": "GetIntStat",
+     "parmsSize": 8,
+     "params": [
+      {
+       "name": "statID",
+       "type": "ByteProperty",
+       "offset": 0,
+       "size": 1
+      },
+      {
+       "name": "ReturnValue",
+       "type": "IntProperty",
+       "offset": 4,
+       "size": 4
+      }
+     ]
+    },
+    {
+     "name": "GetFloatStat",
+     "parmsSize": 8,
+     "params": [
+      {
+       "name": "statID",
+       "type": "ByteProperty",
+       "offset": 0,
+       "size": 1
+      },
+      {
+       "name": "ReturnValue",
+       "type": "FloatProperty",
+       "offset": 4,
+       "size": 4
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "ShortcutRefItem",
+   "kind": "Class",
+   "super": "GameItem",
+   "superChain": [
+    "GameItem",
+    "Object"
+   ],
+   "size": 552,
+   "path": "/Script/ConanSandbox.ShortcutRefItem",
+   "properties": [
+    {
+     "name": "m_TargetItem",
+     "type": "ObjectProperty",
+     "offset": 544,
+     "size": 8
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "DataTable",
+   "kind": "Class",
+   "super": "Object",
+   "superChain": [
+    "Object"
+   ],
+   "size": 232,
+   "path": "/Script/Engine.DataTable",
+   "properties": [
+    {
+     "name": "RowStruct",
+     "type": "ObjectProperty",
+     "offset": 40,
+     "size": 8
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "ItemTableRow",
+   "kind": "ScriptStruct",
+   "super": "GameItemTableRowBase",
+   "superChain": [
+    "GameItemTableRowBase",
+    "TableRowBase"
+   ],
+   "size": 1048,
+   "path": "/Script/ConanSandbox.ItemTableRow",
+   "properties": [
+    {
+     "name": "Name",
+     "type": "TextProperty",
+     "offset": 16,
+     "size": 16
+    },
+    {
+     "name": "ShortDesc",
+     "type": "TextProperty",
+     "offset": 32,
+     "size": 16
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "SpawnTableRow",
+   "kind": "ScriptStruct",
+   "super": "TableRowBase",
+   "superChain": [
+    "TableRowBase"
+   ],
+   "size": 456,
+   "path": "/Script/ConanSandbox.SpawnTableRow",
+   "properties": [
+    {
+     "name": "Name",
+     "type": "TextProperty",
+     "offset": 8,
+     "size": 16
+    },
+    {
+     "name": "NPCClass",
+     "type": "SoftClassProperty",
+     "offset": 160,
+     "size": 40
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "MapMarkerTableRow",
+   "kind": "ScriptStruct",
+   "super": "TableRowBase",
+   "superChain": [
+    "TableRowBase"
+   ],
+   "size": 112,
+   "path": "/Script/ConanSandbox.MapMarkerTableRow",
+   "properties": [
+    {
+     "name": "Name",
+     "type": "TextProperty",
+     "offset": 8,
+     "size": 16
+    },
+    {
+     "name": "Region",
+     "type": "StructProperty",
+     "offset": 64,
+     "size": 8
+    },
+    {
+     "name": "Location",
+     "type": "StructProperty",
+     "offset": 72,
+     "size": 24
+    },
+    {
+     "name": "DiscoveryRadius",
+     "type": "FloatProperty",
+     "offset": 96,
+     "size": 4
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "ItemNameToTemplateIDStruct",
+   "kind": "UserDefinedStruct",
+   "super": null,
+   "superChain": [],
+   "size": 4,
+   "path": "/Game/Systems/Survival/Gathering/Gathering_v2/ItemNameToTemplateIDStruct.ItemNameToTemplateIDStruct",
+   "properties": [
+    {
+     "name": "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7",
+     "type": "IntProperty",
+     "offset": 0,
+     "size": 4
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "KismetTextLibrary",
+   "kind": "Class",
+   "super": "BlueprintFunctionLibrary",
+   "superChain": [
+    "BlueprintFunctionLibrary",
+    "Object"
+   ],
+   "size": 40,
+   "path": "/Script/Engine.KismetTextLibrary",
+   "properties": [],
+   "functions": [
+    {
+     "name": "Conv_TextToString",
+     "parmsSize": 32,
+     "params": [
+      {
+       "name": "InText",
+       "type": "TextProperty",
+       "offset": 0,
+       "size": 16
+      },
+      {
+       "name": "ReturnValue",
+       "type": "StrProperty",
+       "offset": 16,
+       "size": 16
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

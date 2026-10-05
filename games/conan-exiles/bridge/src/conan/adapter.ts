@@ -74,11 +74,11 @@ export class ConanAdapter {
       case 'teleportPlayer':
         return this.teleportPlayer(args);
       case 'kickPlayer':
-        return this.success(await this.execute(`kickplayer ${identifierArgs(args)}${reasonSuffix(args)}`));
+        return this.moderationResult(await this.execute(`kickplayer ${identifierArgs(args)}${reasonSuffix(args)}`));
       case 'banPlayer':
-        return this.success(await this.execute(`banplayer ${identifierArgs(args)}${reasonSuffix(args)}`));
+        return this.moderationResult(await this.execute(`banplayer ${identifierArgs(args)}${reasonSuffix(args)}`));
       case 'unbanPlayer':
-        return this.success(await this.execute(`unbanplayer ${unbanIdentifierArg(args)}`));
+        return this.moderationResult(await this.execute(`unbanplayer ${unbanIdentifierArg(args)}`));
       case 'listBans': {
         try {
           return parseListBans(await this.execute('listbans'));
@@ -198,6 +198,15 @@ export class ConanAdapter {
 
   private success(rawResult: string): { success: true; rawResult: string } {
     return { success: true, rawResult };
+  }
+
+  // Conan answers an unknown or offline target with "No player with platform ID <id>." and still
+  // reports the RCON command as executed; build 25639945 cannot ban an offline player at all.
+  private moderationResult(rawResult: string): { success: boolean; rawResult: string; error?: string } {
+    if (/^\s*No player with /i.test(rawResult)) {
+      return { success: false, rawResult, error: `Conan refused the command: ${rawResult.trim()}` };
+    }
+    return this.success(rawResult);
   }
 
   private async safeArray<T>(loader: () => Promise<T[]>): Promise<T[]> {

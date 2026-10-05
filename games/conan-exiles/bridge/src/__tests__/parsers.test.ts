@@ -93,3 +93,13 @@ platformid=Steam:76561198000000005 reason=spam
 test('parses live empty listbans output as no bans', () => {
   assert.deepEqual(parseListBans('Successfully executed: listbans'), []);
 });
+
+test('parses the bare Steam ID lines Conan build 25639945 prints for listbans', () => {
+  assert.deepEqual(parseListBans('76561198000735875\n'), [
+    {
+      gameId: '76561198000735875',
+      steamId: '76561198000735875',
+      platformId: 'steam:76561198000735875',
+    },
+  ]);
+});

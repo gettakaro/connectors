@@ -13,6 +13,10 @@ export interface FakeRconServer {
   port: number;
   /** Every command the server was asked to run, in the order it saw them. */
   commands: string[];
+  /** How many TCP connections the server accepted. */
+  connections(): number;
+  /** Drop every open connection, as Conan does when it restarts. */
+  dropConnections(): void;
   close(): Promise<void>;
 }
 
@@ -32,7 +36,12 @@ export async function startFakeRconServer(
   commandResponseId: 'command' | 'auth' = 'command',
 ): Promise<FakeRconServer> {
   const commands: string[] = [];
+  const sockets = new Set<net.Socket>();
+  let accepted = 0;
   const server = net.createServer((socket) => {
+    accepted += 1;
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
     let buffer = Buffer.alloc(0);
 
     socket.on('data', (chunk) => {
@@ -72,6 +81,10 @@ export async function startFakeRconServer(
     server,
     port: address.port,
     commands,
+    connections: () => accepted,
+    dropConnections: () => {
+      for (const socket of sockets) socket.destroy();
+    },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }

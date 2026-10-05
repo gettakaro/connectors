@@ -1,0 +1,6 @@
+build/
+dist/
+tests/build/
+build-windows/
+dist-windows/
+__pycache__/

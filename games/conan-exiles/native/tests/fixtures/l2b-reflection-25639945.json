@@ -1,0 +1,478 @@
+{
+ "_comment": "Subset of the live reflection dump of Conan Exiles Linux server build 25639945 (El-Limon evidence/reflection-25639945, sha256 7b1dd78e...d07a): the classes, properties and UFunction signatures lane L2b calls, with their real offsets. tests/l2b_test.cpp builds fake UE objects from it. Regenerate from the dump; never edit offsets by hand.",
+ "build": "25639945",
+ "classes": {
+  "Object": {
+   "super": null,
+   "properties": [],
+   "functions": []
+  },
+  "Actor": {
+   "super": "Object",
+   "properties": [
+    {
+     "name": "Owner",
+     "type": "ObjectProperty",
+     "offset": 360,
+     "size": 8,
+     "flags": "0x11c001100000220"
+    }
+   ],
+   "functions": [
+    {
+     "name": "K2_GetActorLocation",
+     "flags": "0x54820401",
+     "parmsSize": 24,
+     "params": [
+      {
+       "name": "ReturnValue",
+       "type": "StructProperty",
+       "offset": 0,
+       "size": 24,
+       "flags": "0x18001040000780"
+      }
+     ]
+    }
+   ]
+  },
+  "Controller": {
+   "super": "Actor",
+   "properties": [
+    {
+     "name": "Pawn",
+     "type": "ObjectProperty",
+     "offset": 816,
+     "size": 8,
+     "flags": "0x14c001100000220"
+    },
+    {
+     "name": "PlayerState",
+     "type": "ObjectProperty",
+     "offset": 760,
+     "size": 8,
+     "flags": "0x11c001100000234"
+    }
+   ],
+   "functions": []
+  },
+  "PlayerController": {
+   "super": "Controller",
+   "properties": [],
+   "functions": [
+    {
+     "name": "ClientWasKicked",
+     "flags": "0x1020cc2",
+     "parmsSize": 16,
+     "params": [
+      {
+       "name": "KickReason",
+       "type": "TextProperty",
+       "offset": 0,
+       "size": 16,
+       "flags": "0x10000008000082"
+      }
+     ]
+    },
+    {
+     "name": "ClientReturnToMainMenuWithTextReason",
+     "flags": "0x1020cc2",
+     "parmsSize": 16,
+     "params": [
+      {
+       "name": "ReturnReason",
+       "type": "TextProperty",
+       "offset": 0,
+       "size": 16,
+       "flags": "0x10000008000082"
+      }
+     ]
+    }
+   ]
+  },
+  "DWPlayerController": {
+   "super": "PlayerController",
+   "properties": [],
+   "functions": []
+  },
+  "ConanPlayerController": {
+   "super": "DWPlayerController",
+   "properties": [
+    {
+     "name": "UserIDFromURLOptions",
+     "type": "StrProperty",
+     "offset": 2992,
+     "size": 16,
+     "flags": "0x18000000000204"
+    },
+    {
+     "name": "m_IsAdmin",
+     "type": "BoolProperty",
+     "offset": 4360,
+     "size": 1,
+     "byteOffset": 0,
+     "byteMask": 1,
+     "fieldMask": 255,
+     "flags": "0x48001040000220"
+    }
+   ],
+   "functions": [
+    {
+     "name": "TeleportPlayerServer",
+     "flags": "0x4c20401",
+     "parmsSize": 52,
+     "params": [
+      {
+       "name": "TargetLocation",
+       "type": "StructProperty",
+       "offset": 0,
+       "size": 24,
+       "flags": "0x18001048000382"
+      },
+      {
+       "name": "TargetRotation",
+       "type": "StructProperty",
+       "offset": 24,
+       "size": 24,
+       "flags": "0x10001048000382"
+      },
+      {
+       "name": "RunCheatCheck",
+       "type": "BoolProperty",
+       "offset": 48,
+       "size": 1,
+       "byteOffset": 0,
+       "byteMask": 1,
+       "fieldMask": 255,
+       "flags": "0x18001040000280"
+      },
+      {
+       "name": "SnapToGround",
+       "type": "BoolProperty",
+       "offset": 49,
+       "size": 1,
+       "byteOffset": 0,
+       "byteMask": 1,
+       "fieldMask": 255,
+       "flags": "0x18001040000280"
+      },
+      {
+       "name": "ForceTeleportClients",
+       "type": "BoolProperty",
+       "offset": 50,
+       "size": 1,
+       "byteOffset": 0,
+       "byteMask": 1,
+       "fieldMask": 255,
+       "flags": "0x18001040000280"
+      },
+      {
+       "name": "UsePawnRotationInstead",
+       "type": "BoolProperty",
+       "offset": 51,
+       "size": 1,
+       "byteOffset": 0,
+       "byteMask": 1,
+       "fieldMask": 255,
+       "flags": "0x18001040000280"
+      }
+     ]
+    },
+    {
+     "name": "ClientReceiveChatMessage",
+     "flags": "0x1020cc0",
+     "parmsSize": 128,
+     "params": [
+      {
+       "name": "chatData",
+       "type": "StructProperty",
+       "offset": 0,
+       "size": 128,
+       "flags": "0x10000008000082"
+      }
+     ]
+    }
+   ]
+  },
+  "Info": {
+   "super": "Actor",
+   "properties": [],
+   "functions": []
+  },
+  "PlayerState": {
+   "super": "Info",
+   "properties": [
+    {
+     "name": "PlayerNamePrivate",
+     "type": "StrProperty",
+     "offset": 896,
+     "size": 16,
+     "flags": "0x48000100000220"
+    },
+    {
+     "name": "UniqueID",
+     "type": "StructProperty",
+     "offset": 768,
+     "size": 48,
+     "flags": "0x48000100000020"
+    }
+   ],
+   "functions": []
+  },
+  "GameStateBase": {
+   "super": "Info",
+   "properties": [
+    {
+     "name": "AuthorityGameMode",
+     "type": "ObjectProperty",
+     "offset": 760,
+     "size": 8,
+     "flags": "0x11c001000002214"
+    },
+    {
+     "name": "PlayerArray",
+     "type": "ArrayProperty",
+     "offset": 776,
+     "size": 16,
+     "flags": "0x114000000002214"
+    }
+   ],
+   "functions": []
+  },
+  "GameModeBase": {
+   "super": "Info",
+   "properties": [],
+   "functions": [
+    {
+     "name": "K2_PostLogin",
+     "flags": "0x8020802",
+     "parmsSize": 8,
+     "params": [
+      {
+       "name": "NewPlayer",
+       "type": "ObjectProperty",
+       "offset": 0,
+       "size": 8,
+       "flags": "0x18001000000280"
+      }
+     ]
+    }
+   ]
+  },
+  "Pawn": {
+   "super": "Actor",
+   "properties": [],
+   "functions": []
+  },
+  "Character": {
+   "super": "Pawn",
+   "properties": [],
+   "functions": []
+  },
+  "ConanCharacter": {
+   "super": "Character",
+   "properties": [],
+   "functions": [
+    {
+     "name": "GetBackpackInventory",
+     "flags": "0x54020401",
+     "parmsSize": 8,
+     "params": [
+      {
+       "name": "ReturnValue",
+       "type": "ObjectProperty",
+       "offset": 0,
+       "size": 8,
+       "flags": "0x18001000080788"
+      }
+     ]
+    }
+   ]
+  },
+  "ItemInventory": {
+   "super": "PersistenceComponent",
+   "properties": [],
+   "functions": [
+    {
+     "name": "GetNumberOfItemsByTemplate",
+     "flags": "0x54020401",
+     "parmsSize": 8,
+     "params": [
+      {
+       "name": "TemplateId",
+       "type": "IntProperty",
+       "offset": 0,
+       "size": 4,
+       "flags": "0x18001040000280"
+      },
+      {
+       "name": "ReturnValue",
+       "type": "IntProperty",
+       "offset": 4,
+       "size": 4,
+       "flags": "0x18001040000780"
+      }
+     ]
+    },
+    {
+     "name": "AddItemTemplate",
+     "flags": "0x4020404",
+     "parmsSize": 36,
+     "params": [
+      {
+       "name": "TemplateId",
+       "type": "IntProperty",
+       "offset": 0,
+       "size": 4,
+       "flags": "0x18001040000280"
+      },
+      {
+       "name": "Index",
+       "type": "IntProperty",
+       "offset": 4,
+       "size": 4,
+       "flags": "0x18001040000280"
+      },
+      {
+       "name": "Context",
+       "type": "NameProperty",
+       "offset": 8,
+       "size": 8,
+       "flags": "0x18001040000280"
+      },
+      {
+       "name": "quantity",
+       "type": "IntProperty",
+       "offset": 16,
+       "size": 4,
+       "flags": "0x18001040000280"
+      },
+      {
+       "name": "loot",
+       "type": "BoolProperty",
+       "offset": 20,
+       "size": 1,
+       "byteOffset": 0,
+       "byteMask": 1,
+       "fieldMask": 255,
+       "flags": "0x18001040000280"
+      },
+      {
+       "name": "durabilityPercentage",
+       "type": "FloatProperty",
+       "offset": 24,
+       "size": 4,
+       "flags": "0x18001040000280"
+      },
+      {
+       "name": "durability",
+       "type": "FloatProperty",
+       "offset": 28,
+       "size": 4,
+       "flags": "0x18001040000280"
+      },
+      {
+       "name": "ReturnValue",
+       "type": "IntProperty",
+       "offset": 32,
+       "size": 4,
+       "flags": "0x18001040000780"
+      }
+     ]
+    }
+   ]
+  },
+  "BlueprintFunctionLibrary": {
+   "super": "Object",
+   "properties": [],
+   "functions": []
+  },
+  "KismetSystemLibrary": {
+   "super": "BlueprintFunctionLibrary",
+   "properties": [],
+   "functions": [
+    {
+     "name": "GetFrameCount",
+     "flags": "0x14022403",
+     "parmsSize": 8,
+     "params": [
+      {
+       "name": "ReturnValue",
+       "type": "Int64Property",
+       "offset": 0,
+       "size": 8,
+       "flags": "0x18001040000780"
+      }
+     ]
+    },
+    {
+     "name": "ExecuteConsoleCommand",
+     "flags": "0x4022403",
+     "parmsSize": 32,
+     "params": [
+      {
+       "name": "WorldContextObject",
+       "type": "ObjectProperty",
+       "offset": 0,
+       "size": 8,
+       "flags": "0x18001000000282"
+      },
+      {
+       "name": "Command",
+       "type": "StrProperty",
+       "offset": 8,
+       "size": 16,
+       "flags": "0x18000000000280"
+      },
+      {
+       "name": "SpecificPlayer",
+       "type": "ObjectProperty",
+       "offset": 24,
+       "size": 8,
+       "flags": "0x18001000000280"
+      }
+     ]
+    }
+   ]
+  },
+  "KismetTextLibrary": {
+   "super": "BlueprintFunctionLibrary",
+   "properties": [],
+   "functions": [
+    {
+     "name": "Conv_StringToText",
+     "flags": "0x14022403",
+     "parmsSize": 32,
+     "params": [
+      {
+       "name": "InString",
+       "type": "StrProperty",
+       "offset": 0,
+       "size": 16,
+       "flags": "0x18000000000280"
+      },
+      {
+       "name": "ReturnValue",
+       "type": "TextProperty",
+       "offset": 16,
+       "size": 16,
+       "flags": "0x10000000000580"
+      }
+     ]
+    }
+   ]
+  },
+  "DataTable": {
+   "super": "Object",
+   "properties": [
+    {
+     "name": "RowStruct",
+     "type": "ObjectProperty",
+     "offset": 40,
+     "size": 8,
+     "flags": "0x11c001000020201"
+    }
+   ],
+   "functions": []
+  }
+ }
+}
