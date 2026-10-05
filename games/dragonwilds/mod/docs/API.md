@@ -110,8 +110,9 @@ player is `{gameId}`, `{epicOnlineServicesId}`, `{steamId}`, `{platformId:"epic:
 | `entity-killed` | `{player, entity, weapon}` (`weapon` is a string, `""` when unresolved) |
 | `log` | `{msg}` redacted: `*Password` values, `?p=<base64>`, `*Token`/`Ticket` values; a line mentioning a password in free text becomes `[redacted: line mentions a password]` |
 
-IGamePlayer: `{gameId:<puid>, name:<character name>, epicOnlineServicesId:<puid>, platformId, steamId?, xboxLiveId?, ip?, ping?}`;
-`platformId` is `steam:<steamId>` for a Steam player and `epic:<puid>` otherwise (see Identity).
+IGamePlayer: `{gameId:<puid>, name:<character name>, platformId, steamId?, epicOnlineServicesId?, xboxLiveId?, ip?, ping?}`;
+a Steam player has `steamId` and `platformId:"steam:<steamId>"`, everyone else `epicOnlineServicesId:<puid>` and
+`platformId:"epic:<puid>"` (see Identity).
 
 ## Diagnostic HTTP surface (optional)
 
@@ -135,11 +136,16 @@ Connect for the accounts linked to it: `EOS_Connect_QueryProductUserIdMappings` 
 `EOS_Platform_Tick` (the server imports it from `libEOSSDK-Linux-Shipping.so`) only to learn the
 platform handle. The answer takes a few hundred ms and is cached per PUID; `player-connected` waits
 for it up to 15 s after login.
-- Steam player: `steamId` = SteamID64, `platformId` = `steam:<steamId>` (the value every Steam
-  connector sends; `platformId` is unique per Takaro domain).
+- Steam player: `steamId` = SteamID64, `platformId` = `steam:<steamId>` (the values every Steam
+  connector sends), and **no** `epicOnlineServicesId`. Takaro keeps `steamId`,
+  `epicOnlineServicesId` and `platformId` unique per domain and stores one EOS id per player. The
+  PUID is specific to Dragonwilds, so it never matches a player across games, but it does collide:
+  a player with a Steam profile from another game and an older Dragonwilds-only profile (created
+  before the Steam ID was known) has the PUID on the second profile, and Takaro drops every event
+  (seen live 2026-10-05). The PUID still travels as `gameId`.
 - `xboxLiveId` = the linked XUID when EOS reports one; `platformId` stays `epic:<puid>`.
-- Anyone else, or EOS unreachable: `platformId` = `epic:<puid>`, no `steamId`. Never guessed.
-- `epicOnlineServicesId` is always the PUID. `name` is the in-game character name (from the server's `PlayerChar entered world` log line;
+- Anyone else, or EOS unreachable: `epicOnlineServicesId` = PUID, `platformId` = `epic:<puid>`, no
+  `steamId`. Never guessed. `name` is the in-game character name (from the server's `PlayerChar entered world` log line;
 `ADominionPlayerState::GetCharacterDisplayName` is never called - it crashes the server).
 
 ## GET /health
@@ -259,7 +265,7 @@ character name or the platform name for convenience.
 
 | endpoint | body (required in bold) | response |
 |---|---|---|
-| `GET /players` | — | `[{gameId,name,characterName,platformName,epicOnlineServicesId,platformId:"epic:<puid>",steamId?,xboxLiveId?,ping,spawned,online:true,connectedAt}]` (raw plugin rows; the bridge rewrites `platformId` as in Identity) |
+| `GET /players` | — | `[{gameId,name,characterName,platformName,epicOnlineServicesId,platformId:"epic:<puid>",steamId?,xboxLiveId?,ping,spawned,online:true,connectedAt}]` (raw plugin rows; the bridge maps them to IGamePlayer as in Identity) |
 | `GET /players/{id}` | — | one player object, else `404 {"error":"player not online"}` |
 | `GET /players/{id}/location` | — | `{x,y,z,yaw,pitch}` (UE cm, doubles); `503` when the player has no pawn yet |
 | `GET /players/{id}/inventory` | — | `[{code,name,amount,inventory,slot}]` — one entry per item across every `UInventoryComponent` under the pawn and the controller (`inventory` is the component name, e.g. `BP_Components_Inventory`, `BP_Components_Loadout`) |

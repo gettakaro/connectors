@@ -113,11 +113,15 @@ std::string Rest(const std::string& s, size_t skipWords) {
 
 // ---- Takaro DTOs (whitelisted keys only) --------------------------------------------------------
 
-// IGamePlayer for Dragonwilds: gameId = EOS ProductUserId (lower-case 32 hex). A Steam player gets
-// steamId and platformId `steam:<id64>`, the same platformId every other Steam connector sends:
-// platformId is unique per Takaro domain, so `epic:<puid>` would collide with the player's profile
-// from those games. Everyone else gets platformId `epic:<puid>`. xboxLiveId (XUID) passes through
-// when the plugin found one. Mirrors the 0.2.x sidecar's mapPlayer exactly.
+// IGamePlayer for Dragonwilds: gameId = EOS ProductUserId (lower-case 32 hex).
+// A Steam player is sent as steamId + platformId `steam:<id64>`, the values every other Steam
+// connector sends, and WITHOUT epicOnlineServicesId. Takaro keeps steamId, epicOnlineServicesId and
+// platformId unique per domain and stores one EOS id per player. The PUID is specific to this game,
+// so it never matches the player across games, but it does collide: a player known from another
+// game by Steam ID, who also has a Dragonwilds profile from before the Steam ID was known, owns the
+// PUID on that second profile, and Takaro then drops every event. The PUID stays in gameId.
+// Everyone else gets epicOnlineServicesId and platformId `epic:<puid>`. xboxLiveId (XUID) passes
+// through when the plugin found one.
 Json Player(const Json& raw) {
     Json p = Object(raw);
     std::string platform = Str(p, "platformId");
@@ -141,13 +145,12 @@ Json Player(const Json& raw) {
     if (name.empty()) name = Str(p, "name");
     if (name.empty()) name = id;
     Json out = {{"gameId", id}, {"name", name}};
-    if (!puid.empty()) {
-        out["epicOnlineServicesId"] = puid;
-        out["platformId"] = "epic:" + puid;
-    }
     if (!steam.empty()) {
         out["steamId"] = steam;
         out["platformId"] = "steam:" + steam;
+    } else if (!puid.empty()) {
+        out["epicOnlineServicesId"] = puid;
+        out["platformId"] = "epic:" + puid;
     }
     std::string xbox = Str(p, "xboxLiveId");
     if (!xbox.empty() && std::all_of(xbox.begin(), xbox.end(), [](char c) { return c >= '0' && c <= '9'; }))
