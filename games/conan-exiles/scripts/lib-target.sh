@@ -3,7 +3,7 @@
 #
 # Source it, do not run it. `conan_resolve_target [target-id]` exports the CONAN_EXILES_* keys
 # `takaro-maint targets resolve` produces, so no script here hard-codes a game build, a
-# Node toolchain, an image digest, a dependency URL or an artifact name.
+# toolchain, an image digest, a dependency URL or an artifact name.
 #
 # The resolution itself is `scripts/lib/target.sh`, shared by every game; these are the
 # Conan Exiles names for it, so nothing that sources this file has to change.

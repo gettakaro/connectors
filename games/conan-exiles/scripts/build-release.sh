@@ -5,17 +5,14 @@
 #   linux target    takaro-conan-exiles-native-linux-<build>-<version>.zip
 #                     TakaroConanNative/  libtakaro-conan-native.so (LD_PRELOAD), ca-certificates.crt,
 #                                         takaro.json.example, INSTALL.md, README.txt, licenses
-#                   takaro-conan-exiles-bridge-linux-<build>-<version>.zip
-#                     TakaroConanExiles/  the deprecated Node bridge (RCON + log files), frozen
 #   windows target  takaro-conan-exiles-native-windows-<build>-<version>.zip
 #                     TakaroConanNative/  winmm.dll (next to the server exe), takaro.json.example,
 #                                         INSTALL.md, README.txt, licenses
 #
 # Usage: build-release.sh <version> <out-dir> [--target <catalog target id>]
 #
-# The host needs neither Node nor a compiler: every build runs inside a pinned image (the
-# catalog toolchain for the bridge and the Windows DLL, native/platform/linux/Dockerfile.build
-# for the Linux library).
+# The host needs no compiler: every build runs inside a pinned image (the catalog toolchain for
+# the Windows DLL, native/platform/linux/Dockerfile.build for the Linux library).
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -172,75 +169,9 @@ build_native_windows() {
   write_meta "${artifact}"
 }
 
-build_bridge() {
-  local artifact="${CONAN_EXILES_ARTIFACT_BRIDGE/\{version\}/${VERSION}}"
-  # Every dependency the resolved target declares, discovered rather than listed here: a
-  # dependency added to the catalog must not be able to slip past the check below because
-  # somebody forgot to add a line to this script.
-  local dep_args=() key _
-  while IFS='=' read -r key _; do
-    case "$key" in
-      CONAN_EXILES_DEP_*) dep_args+=(-e "$key") ;;
-    esac
-  done < <(env)
-  [ ${#dep_args[@]} -gt 0 ] || { echo "the resolved target declares no build dependencies" >&2; exit 2; }
-
-  # Built in the pinned toolchain image, mounted at its own path so every path inside the
-  # container is the path outside it. The dependency check runs first: `npm ci` would
-  # otherwise install whatever the lockfile points at, recorded or not.
-  docker run --rm \
-      --user "$(id -u):$(id -g)" \
-      -e HOME=/tmp \
-      -e npm_config_cache=/tmp/npm-cache \
-      -e CONAN_EXILES_LOCKFILE_PATH \
-      -e CONAN_EXILES_LOCKFILE_SHA256 \
-      "${dep_args[@]}" \
-      -v "${REPO_ROOT}:${REPO_ROOT}" \
-      -w "${REPO_ROOT}/games/conan-exiles/bridge" \
-      "${CONAN_EXILES_TOOLCHAIN}" \
-      sh -c 'set -eu
-          node ../scripts/check-exact-source.mjs
-          rm -rf dist node_modules
-          npm ci --no-audit --no-fund
-          npm test
-          npm run build'
-
-  local stage="${STAGE_ROOT}/bridge" pkg="${STAGE_ROOT}/bridge/TakaroConanExiles"
-  mkdir -p "${pkg}"
-  cp -R "${PROJECT_ROOT}/bridge/dist" "${pkg}/dist"
-  cp -R "${PROJECT_ROOT}/bridge/scripts" "${pkg}/scripts"
-  cp "${PROJECT_ROOT}/bridge/package.json" "${PROJECT_ROOT}/bridge/package-lock.json" "${pkg}/"
-  cp "${PROJECT_ROOT}/TakaroConfig.example.txt" "${pkg}/"
-  rm -rf "${pkg}/dist/__tests__"
-
-  # The release must be runnable with `npm ci --omit=dev`, so every entrypoint a
-  # package.json script points at has to exist in the packaged dist/.
-  for required in dist/index.js dist/mod/pollerCli.js; do
-    if [ ! -f "${pkg}/${required}" ]; then
-      echo "build-release: missing ${required} in the bridge package" >&2
-      exit 1
-    fi
-  done
-  write_stamp "${pkg}"
-  cat > "${pkg}/README.release.txt" <<EOF
-Takaro Conan Exiles Bridge ${VERSION} (DEPRECATED, frozen)
-
-This is the old Node.js bridge, kept for one more release cycle for servers that have not moved
-to the native connector yet. It gets no fixes. Use the native connector instead:
-takaro-conan-exiles-native-<platform>-${CONAN_EXILES_REVISION}-${VERSION}.zip from the same
-release. INSTALL.md in that zip explains how to move over and how to come back.
-
-The bridge works only with RCON enabled on the game server; the native connector does not
-need RCON. Setup of this frozen bridge: https://github.com/gettakaro/connectors/tree/conan-exiles-v1.1.0/games/conan-exiles
-EOF
-  zip_folder "${stage}" TakaroConanExiles "${artifact}"
-  write_meta "${artifact}"
-}
-
 case "${PLATFORM}" in
   linux)
     build_native_linux
-    build_bridge
     ;;
   windows)
     build_native_windows

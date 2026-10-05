@@ -12,7 +12,7 @@ rust|rust.yml|-|rust|8|12|connector|Rust + Carbon + TakaroConnector.cs|rust
 7d2d|7d2d.yml|-|7d2d|8|32|connector|7 Days to Die + Takaro mod|7d2d
 zomboid|zomboid.yml|-|zomboid|8|16|connector|Project Zomboid B42 + Takaro javaagent|zomboid
 palworld|palworld.yml|-|palworld palworld-bridge|12|6|bridge|Palworld + third-party Takaro bridge (REST only)|palworld
-conan-exiles|conan-exiles.yml|-|conan-exiles conan-bridge|12|6|sidecar|Conan Exiles + Takaro TypeScript sidecar|conan-exiles
+conan-exiles|conan-exiles.yml|-|conan-exiles|12|6|plugin|Conan Exiles (Linux, app 443030); native Takaro LD_PRELOAD connector built, loaded by hand|conan-exiles
 dune|dune.yml|-|postgres admin-rmq game-rmq text-router director gateway survival dune-takaro|24|60|sidecar|Dune: Awakening self-hosted battlegroup (Steam tool 4754530) + Takaro TypeScript sidecar (RabbitMQ + Postgres); optional LD_PRELOAD plugin|dune-dev
 games/terraria/mod/src games/terraria/version.txt
 games/minecraft/mod/core games/minecraft/mod/paper games/minecraft/mod/gradle games/minecraft/mod/build.gradle.kts games/minecraft/mod/settings.gradle.kts
@@ -28,5 +28,5 @@ games/rust/mod games/rust/version.txt
 games/7d2d/mod/src games/7d2d/mod/Takaro.csproj games/7d2d/mod/ModInfo.xml games/7d2d/version.txt
 games/zomboid/mod/core games/zomboid/mod/agent games/zomboid/mod/gradle games/zomboid/mod/build.gradle.kts games/zomboid/mod/settings.gradle.kts games/zomboid/version.txt
 
-games/conan-exiles/bridge/src games/conan-exiles/bridge/package.json games/conan-exiles/bridge/tsconfig.json
+games/conan-exiles/native/core games/conan-exiles/native/platform games/conan-exiles/scripts games/conan-exiles/version.txt catalog/conan-exiles
 games/dune/mod games/dune/sidecar/src games/dune/version.txt catalog/dune

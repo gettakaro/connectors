@@ -71,9 +71,7 @@ Windows: start the server as usual.
 - `ConanSandbox/Saved/Logs/TakaroConanNative.log` shows `takaro: identified`.
 - Takaro shows the server online and **Test connection** reports it reachable.
 
-Upgrading, moving over from the old Node.js bridge, rollback and removal:
-[INSTALL.md](INSTALL.md). The bridge zip is still published for one more release cycle but is
-deprecated and gets no fixes.
+Upgrading, rollback and removal: [INSTALL.md](INSTALL.md).
 
 ## What works, what doesn't
 
@@ -136,7 +134,6 @@ Verified on build 25639945 with a real client: Linux 2026-10-03/04, Windows 2026
 - Works only on server build 25639945; a game update needs a new connector release.
 - Linux needs control of the start command for `LD_PRELOAD`; some rented hosts do not allow it.
 - A death by the `Suicide` command carries no cause in its message.
-- After moving from the bridge, its old catalogue rows (class names) stay in Takaro; Takaro never deletes them.
 
 ---
 

@@ -29,7 +29,7 @@ for connector, Takaro API and Takaro module testing with a handful of human play
 | 7 Days to Die | `7d2d` | Takaro mod (WebSocket) | 8 GB | 32 GB¹ |
 | Project Zomboid | `zomboid` | Takaro `-javaagent` inside the PZ server JVM (WebSocket) | 8 GB | 16 GB |
 | Palworld | `palworld` | Third-party bridge → Palworld REST API | 12 GB | 10 GB |
-| Conan Exiles | `conan-exiles` | Takaro TypeScript sidecar → Conan RCON | 12 GB | 35 GB |
+| Conan Exiles | `conan-exiles` | `libtakaro-conan-native.so` `LD_PRELOAD` native connector → Takaro WebSocket (built and unpacked by the rig, loaded by hand) | 12 GB | 35 GB |
 
 ³ `dragonwilds` runs as `takaro-dev-dragonwilds` with its data in `_data/dragonwilds-dev`, its plugin in
 `_data/dragonwilds-dev-plugin` and its connector state in `_data/dragonwilds-dev-state`.
@@ -163,7 +163,7 @@ The scripts work without `just` too: `dev-servers/scripts/start.sh minecraft-pap
 
 ## Build toolchains
 
-The connector builds need JDK 25 (Minecraft, Project Zomboid), Node (Conan sidecar) and the .NET SDK
+The connector builds need JDK 25 (Minecraft, Project Zomboid) and the .NET SDK
 (Valheim, Terraria). If the host has them, they are used directly. **If not, the builds
 run in containers automatically** — no `apt install` and no sudo required:
 
@@ -171,7 +171,7 @@ run in containers automatically** — no `apt install` and no sudo required:
 |---|---|---|
 | Minecraft | `java` 25 | `eclipse-temurin:25-jdk` (whole multi-project build needs JDK 25 for Fabric Loom; Paper/NeoForge/core still target Java 21) |
 | Project Zomboid | `java` 25 | `eclipse-temurin:25-jdk` (PZ B42 is class-file v69 / Java 25) |
-| Conan Exiles | `npm` | `node:22-slim` |
+| Conan Exiles | none | its pinned toolchain images (`games/conan-exiles/native/platform/linux/Dockerfile.build`) |
 | DayZ | `npm` | `node:22-slim` (sidecar is built by `docker compose build`) |
 | Valheim | `dotnet`, `jq`, `zip`, `unzip` | `takaro-dev-valheim-builder` (built on first use from `images/valheim-builder/`) |
 | Terraria | `dotnet` 9 | handled by `games/terraria/scripts/build-mod.sh` itself |
@@ -245,7 +245,7 @@ bind to `127.0.0.1` only** — reach them over an SSH tunnel or a private VPN, e
 | Terraria | 7777/tcp | 7878 TShock REST |
 | RuneScape: Dragonwilds | 7797/udp | optional authenticated 18890 native diagnostics — inside the game netns only, never published |
 | VEIN | 7807/udp + 7807/tcp game, 27017/udp Steam query | 8080 built-in HTTP API, optional authenticated 18890 native diagnostics — inside the game netns only, never published |
-| Conan Exiles | 7787/udp, 7788/udp, 27015/udp | 25580 RCON, 3010 sidecar HTTP |
+| Conan Exiles | 7787/udp, 7788/udp, 27015/udp | 25580 RCON |
 | Palworld | 8211/udp, 27016/udp | 8212 REST, 25581 RCON, 3001 bridge HTTP |
 
 Two deliberate shifts from stock defaults: 7D2D's web ports move from 8080-8082 to
@@ -372,10 +372,10 @@ The heaviest install (~35 GB) and the least certain: it runs the native Linux
 widely containerised. If SteamCMD does not produce that launcher, the entrypoint fails
 loudly with an explanatory message.
 
-`RconMaxKarma=1000` is set because Conan throttles repeated RCON and the sidecar polls.
-`databasePath` and `itemCatalogPath` are left blank in the generated config — the save DB
-only exists after a world has generated, and the item catalog needs a DevKit export. Fill
-them in `_data/conan-exiles/bridge/TakaroConfig.txt` to enable the richer read paths.
+The rig builds the native connector and unpacks it into
+`_data/conan-exiles/server/TakaroConanNative/`, but does not preload it: load
+`libtakaro-conan-native.so` by hand as `games/conan-exiles/DEVELOPMENT.md` describes. RCON
+(`RconMaxKarma=1000`) is for manual admin access only.
 
 ### 7 Days to Die
 The mod is XML-configured only; `install.sh` pre-renders

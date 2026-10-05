@@ -5,8 +5,9 @@ services:
   conan-exiles:
     # Resolved from the catalog into _data/.targets/conan-exiles.env by install.sh. The
     # pinned server is a self-contained UE5 Linux build that needs only the base image's
-    # glibc and libstdc++, so it runs in the same image as the bridge and is started by
-    # the launcher the depot ships. No Steam client, no updater: the bytes are the
+    # glibc and libstdc++, so it runs in the catalog's pinned runtime image and is started
+    # by the launcher the depot ships. The native connector is not preloaded here; see
+    # games/conan-exiles/DEVELOPMENT.md. No Steam client, no updater: the bytes are the
     # ledger's, written once by `takaro-maint install`.
     image: "${CONAN_EXILES_IMAGE:-target-not-resolved}"
     container_name: takaro-dev-conan-exiles
@@ -29,32 +30,4 @@ services:
       - ../_data/conan-exiles/server:/conan
       # Bind-mounted rather than baked: the image is the catalog's, not ours.
       - ../images/conan-exiles/entrypoint.sh:/takaro/entrypoint.sh:ro
-    restart: unless-stopped
-
-  conan-bridge:
-    image: "${CONAN_EXILES_TOOLCHAIN:-target-not-resolved}"
-    container_name: takaro-dev-conan-bridge
-    user: "${DEV_UID:-1000}:${DEV_GID:-1000}"
-    working_dir: /bridge/app
-    depends_on:
-      - conan-exiles
-    ports:
-      - "127.0.0.1:3010:3010"
-    environment:
-      BRIDGE_CONFIG: "/bridge/config/TakaroConfig.txt"
-      NODE_ENV: "production"
-      HOME: /tmp
-      npm_config_cache: /tmp/npm-cache
-    volumes:
-      # The deployed artifact, unpacked by `takaro-maint deploy` (never the source tree).
-      # Writable: the logger creates logs/ in its working directory.
-      - ../_data/conan-exiles/server/TakaroBridge/TakaroConanExiles:/bridge/app
-      # TakaroConfig.txt (contains the registration token) is rendered by install.sh
-      # and lives only under _data/.
-      - ../_data/conan-exiles/bridge:/bridge/config:ro
-      # Log tailing for chat/log events; matches logFiles in TakaroConfig.txt.
-      - ../_data/conan-exiles/server/ConanSandbox/Saved/Logs:/bridge/logs:ro
-    # The operator's own install steps, from the release README: production dependencies
-    # out of the lockfile, then what `npm start` runs.
-    command: ["sh", "-c", "npm ci --omit=dev --ignore-scripts --no-audit --no-fund && exec node dist/index.js"]
     restart: unless-stopped

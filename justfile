@@ -175,20 +175,6 @@ zomboid-down *args:
 zomboid-logs *args='--tail 100 -f':
     docker compose -f dev-servers/compose/zomboid.yml --env-file dev-servers/.env logs {{args}}
 
-# === Conan Exiles Connector ===
-
-# Install Conan Exiles connector dependencies
-conan-install:
-    cd games/conan-exiles/bridge && npm ci
-
-# Run Conan Exiles connector tests
-conan-test:
-    cd games/conan-exiles/bridge && npm test
-
-# Build the Conan Exiles connector
-conan-build:
-    cd games/conan-exiles/bridge && npm run build
-
 # === Dev Servers (dev-servers/) ===
 
 # Unified test environment: every game with its real Takaro connector installed.

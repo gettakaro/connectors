@@ -17,13 +17,13 @@ import shutil
 import subprocess
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 import fake_depotdownloader as fake
 import fake_steamcmd
-from fake_verify import CannedSocket, FakeContainer, FakeRun
 from takaro_maint.games import adapter_for
 from takaro_maint.games.conan_exiles import verify as hooks
 from takaro_maint.publish.manifest import artifact_row, write_manifest, write_meta
@@ -32,75 +32,30 @@ from takaro_maint.steam import steamcmd
 GAME = "conan-exiles"
 
 
-def test_every_conan_verification_body_has_pass_and_failure_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    target = type("Target", (), {"id": TARGET, "fp16": "0123456789abcdef", "record": {"revision": "1"}})()
-    run = FakeRun(tmp_path, target=target)
-    bridge_log = run.out / "bridge.log"
-    bridge = FakeContainer(bridge_log)
-    run.bridge = bridge
-    fake = CannedSocket(
-        {
-            "testReachability": {"connectable": True},
-            "getPlayers": [],
-            "executeConsoleCommand": {"success": True, "rawResult": "No players"},
-            "sendMessage": {"success": False, "error": "helper absent"},
-        },
-        identify_count=1,
-    )
-    stamp = f"Takaro target: {TARGET} (0123456789abcdef) revision 1 connector 1.0.0"
-    monkeypatch.setattr(hooks, "start_bridge", lambda *args, **kwargs: bridge)
-    monkeypatch.setattr(hooks, "_retain_server_logs", lambda run: None)
-    monkeypatch.setattr(hooks, "_wait_for_rcon_command", lambda *args, **kwargs: ["help", "listplayers"])
-    monkeypatch.setattr(hooks.checks, "wait_for_line", lambda *args, **kwargs: (1, "Identified with Takaro"))
-    monkeypatch.setattr(hooks.checks, "find_line", lambda path, pattern: (1, stamp))
-    monkeypatch.setattr(hooks.checks_lifecycle, "identify_within", lambda *args, **kwargs: asyncio.sleep(0, result=1))
-    monkeypatch.setattr(hooks.checks_lifecycle, "wait_for_count", lambda *args, **kwargs: 2)
-    monkeypatch.setattr(
-        hooks.subprocess,
-        "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "", ""),
-    )
+def _hook_run(root: Path) -> SimpleNamespace:
+    (root / "data").mkdir(parents=True)
+    (root / "out").mkdir(parents=True)
+    return SimpleNamespace(data_dir=root / "data", out=root / "out", extra_logs=[])
 
-    assert asyncio.run(hooks._check_identify(run, fake, bridge, bridge.alive)).status == "pass"
-    assert asyncio.run(hooks._check_reachability(run, fake, bridge.alive)).status == "pass"
-    assert asyncio.run(hooks._check_players(run, fake, bridge.alive)).status == "pass"
-    assert asyncio.run(hooks._check_console(run, fake)).status == "pass"
-    assert asyncio.run(hooks._check_reconnect(run, fake, bridge.alive)).status == "pass"
-    assert asyncio.run(hooks._check_stop(run, [])).status == "pass"
-    asyncio.run(hooks.after_protocol(run, fake, bridge.alive))
-    asyncio.run(hooks.after_shutdown(run, fake, run.ws_url, []))
 
-    failed_run = FakeRun(tmp_path / "failed", target=target, wanted=set())
-    failed = CannedSocket(
-        {
-            "testReachability": None,
-            "getPlayers": {"bad": True},
-            "executeConsoleCommand": None,
-            "sendMessage": {"success": True},
-        },
-        reconnects=False,
-    )
-    monkeypatch.setattr(hooks, "_wait_for_rcon_command", lambda *args, **kwargs: [])
-    monkeypatch.setattr(hooks.checks, "wait_for_line", lambda *args, **kwargs: None)
-    monkeypatch.setattr(hooks.checks, "find_line", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        hooks.checks_lifecycle, "identify_within", lambda *args, **kwargs: asyncio.sleep(0, result=None)
-    )
-    monkeypatch.setattr(hooks.checks_lifecycle, "wait_for_count", lambda *args, **kwargs: 0)
+def test_every_conan_verification_body_has_pass_and_failure_paths(tmp_path: Path) -> None:
+    """``after_shutdown`` keeps the server's own log when it exists and adds nothing when it does not."""
+    run = _hook_run(tmp_path / "present")
+    log = run.data_dir / hooks.SERVER_LOG
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("LogInit: Display: Engine is initialized.\n", encoding="utf-8")
 
-    assert asyncio.run(hooks._check_identify(failed_run, failed, bridge, bridge.alive)).status == "fail"
-    assert asyncio.run(hooks._check_reachability(failed_run, failed, bridge.alive)).status == "fail"
-    assert asyncio.run(hooks._check_players(failed_run, failed, bridge.alive)).status == "fail"
-    assert asyncio.run(hooks._check_console(failed_run, failed)).status == "fail"
-    failed_run.bridge = bridge
-    assert asyncio.run(hooks._check_reconnect(failed_run, failed, bridge.alive)).status == "fail"
-    failed_run.bridge = None
-    assert asyncio.run(hooks._check_stop(failed_run, [{"path": "missing"}])).status == "fail"
-    asyncio.run(hooks.after_protocol(failed_run, failed, bridge.alive))
-    asyncio.run(hooks.after_shutdown(failed_run, failed, failed_run.ws_url, []))
-    assert set(check for check, _ in failed_run.skips) == set(hooks.CHECK_IDS)
+    asyncio.run(hooks.after_shutdown(run, None, "ws://127.0.0.1:1/", []))
+    asyncio.run(hooks.after_shutdown(run, None, "ws://127.0.0.1:1/", []))
+
+    kept = run.out / "ConanSandbox.log"
+    assert kept.read_text(encoding="utf-8") == log.read_text(encoding="utf-8")
+    assert run.extra_logs == [kept], "a second call does not list the same log twice"
+
+    missing = _hook_run(tmp_path / "missing")
+    asyncio.run(hooks.after_shutdown(missing, None, "ws://127.0.0.1:1/", []))
+    assert missing.extra_logs == []
+    assert not (missing.out / "ConanSandbox.log").exists()
 
 
 TARGET = "linux-25639945"
@@ -113,14 +68,11 @@ MOVED = {CONTENT_DEPOT: "2600000000000000001", REDIST_DEPOT: "460000000000000000
 # pins today -- used only by the tests that run against the real repo (``repo=None``).
 SHIPPED = {CONTENT_DEPOT: "8611640520811009059", REDIST_DEPOT: PINNED[REDIST_DEPOT]}
 VERSION = "1.0.2-dev.abc1234"
-ZIP_NAME = f"takaro-conan-exiles-bridge-{TARGET}-{VERSION}.zip"
 NATIVE_ZIP = f"takaro-conan-exiles-native-{TARGET}-{VERSION}.zip"
 WINDOWS_TARGET = "windows-25639945"
 WINDOWS_ZIP = f"takaro-conan-exiles-native-{WINDOWS_TARGET}-{VERSION}.zip"
-BRIDGE_FOLDER = "TakaroConanExiles"
 NATIVE_FOLDER = "TakaroConanNative"
 NATIVE_DIR = "TakaroConanNative"
-INSTALL_DIR = "TakaroBridge"
 BUILD_SCRIPT = "games/conan-exiles/scripts/build-release.sh"
 SHIPPING = "ConanSandbox/Binaries/Linux/ConanSandboxServer-Linux-Shipping"
 
@@ -175,7 +127,7 @@ def repin_conan(root: Path, manifests: dict[str, str] | None = None) -> dict[str
     return record
 
 
-def write_conan_build_stub(repo: Path, fingerprint: str, *, name: str = ZIP_NAME, target: str = TARGET) -> None:
+def write_conan_build_stub(repo: Path, fingerprint: str, *, name: str = NATIVE_ZIP, target: str = TARGET) -> None:
     """A stand-in for the real release script: the same contract, none of the containers."""
     script = repo / BUILD_SCRIPT
     script.parent.mkdir(parents=True, exist_ok=True)
@@ -183,24 +135,6 @@ def write_conan_build_stub(repo: Path, fingerprint: str, *, name: str = ZIP_NAME
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
         'version="$1"; out="$2"\n'
-        f'stage="$out/stage"; pkg="$stage/{BRIDGE_FOLDER}"\n'
-        'mkdir -p "$out" "$pkg/dist/mod"\n'
-        "printf 'bridge\\n' > \"$pkg/dist/index.js\"\n"
-        "printf 'helper\\n' > \"$pkg/dist/mod/pollerCli.js\"\n"
-        'printf \'{"name":"conan-exiles-takaro-bridge"}\\n\' > "$pkg/package.json"\n'
-        f'cat > "$pkg/takaro-target.json" <<STAMP\n'
-        f'{{"target": "{target}", "fingerprint": "{fingerprint}", "game": "conan-exiles", '
-        f'"platform": "linux", "revision": "25639945", "connectorVersion": "$version", '
-        f'"sourceRevision": "deadbeef"}}\n'
-        "STAMP\n"
-        '( cd "$stage" && python3 -c '
-        "\"import shutil,sys; shutil.make_archive(sys.argv[1], 'zip', '.', sys.argv[2])\" "
-        f'"$out/{name[:-4]}" {BRIDGE_FOLDER} )\n'
-        f'cat > "$out/{name}.meta.json" <<JSON\n'
-        f'{{"target": "{target}", "fingerprint": "{fingerprint}", "connectorVersion": "$version", '
-        f'"sourceRevision": "deadbeef", "game": "conan-exiles", "platform": "linux", '
-        f'"revision": "25639945"}}\n'
-        "JSON\n"
         f'nstage="$out/nstage"; npkg="$nstage/{NATIVE_FOLDER}"\n'
         'mkdir -p "$npkg"\n'
         "printf 'so\\n' > \"$npkg/libtakaro-conan-native.so\"\n"
@@ -209,8 +143,8 @@ def write_conan_build_stub(repo: Path, fingerprint: str, *, name: str = ZIP_NAME
         "STAMP\n"
         '( cd "$nstage" && python3 -c '
         "\"import shutil,sys; shutil.make_archive(sys.argv[1], 'zip', '.', sys.argv[2])\" "
-        f'"$out/{NATIVE_ZIP[:-4]}" {NATIVE_FOLDER} )\n'
-        f'cat > "$out/{NATIVE_ZIP}.meta.json" <<JSON\n'
+        f'"$out/{name[:-4]}" {NATIVE_FOLDER} )\n'
+        f'cat > "$out/{name}.meta.json" <<JSON\n'
         f'{{"target": "{target}", "fingerprint": "{fingerprint}", "connectorVersion": "$version", '
         f'"sourceRevision": "deadbeef", "game": "conan-exiles", "platform": "linux", '
         f'"revision": "25639945"}}\n'
@@ -269,18 +203,6 @@ def test_catalog_validate_accepts_the_conan_target(run: Any) -> None:
     assert all(check["status"] == "pass" for check in rows), rows
 
 
-def test_catalog_validate_refuses_a_changed_conan_lockfile(run: Any, catalog_copy: Path) -> None:
-    lockfile = catalog_copy / "games/conan-exiles/bridge/package-lock.json"
-    lockfile.write_bytes(lockfile.read_bytes() + b"\n")
-
-    code, payload, _ = run("catalog", "validate", repo=catalog_copy)
-
-    assert code == 2
-    failure = next(check for check in payload["failures"] if check["id"] == "lockfile-pinned")
-    assert "expected ea07d7c7" in failure["detail"]
-    assert "actual " in failure["detail"]
-
-
 def test_targets_resolve_env_for_conan_exiles(run: Any) -> None:
     code, payload, _ = run("targets", "resolve", "--game", GAME, "--target", TARGET, "--prefix", "CONAN_EXILES")
 
@@ -293,18 +215,16 @@ def test_targets_resolve_env_for_conan_exiles(run: Any) -> None:
     assert env["CONAN_EXILES_STEAM_DEPOTS"] == (
         f"{REDIST_DEPOT}:{SHIPPED[REDIST_DEPOT]};{CONTENT_DEPOT}:{SHIPPED[CONTENT_DEPOT]}"
     )
-    assert env["CONAN_EXILES_ARTIFACT"] == f"takaro-conan-exiles-bridge-{TARGET}-{{version}}.zip"
-    assert env["CONAN_EXILES_BRIDGE_DIR"] == f"{INSTALL_DIR}/{BRIDGE_FOLDER}"
     assert env["CONAN_EXILES_ARTIFACT_NATIVE"] == f"takaro-conan-exiles-native-{TARGET}-{{version}}.zip"
-    assert env["CONAN_EXILES_ARTIFACT_BRIDGE"] == env["CONAN_EXILES_ARTIFACT"]
+    assert [key for key in env if key.startswith("CONAN_EXILES_ARTIFACT")] == ["CONAN_EXILES_ARTIFACT_NATIVE"]
+    assert not any(key.startswith("CONAN_EXILES_LOCKFILE") for key in env)
     assert env["CONAN_EXILES_PLATFORM"] == "linux"
-    # One pinned image is both the server runtime and the build toolchain.
-    assert env["CONAN_EXILES_IMAGE"] == env["CONAN_EXILES_TOOLCHAIN"]
     assert env["CONAN_EXILES_IMAGE"].startswith("node:22.23.2-bookworm-slim@sha256:")
-    assert env["CONAN_EXILES_DEP_WS_URL"].endswith("ws-8.21.0.tgz")
-    assert len(env["CONAN_EXILES_DEP_WS_SHA256"]) == 64
-    assert env["CONAN_EXILES_LOCKFILE_PATH"].endswith("games/conan-exiles/bridge/package-lock.json")
-    assert env["CONAN_EXILES_LOCKFILE_SHA256"] == "ea07d7c7d65d57765279815990fd77ad74a0bef8c1cea326f05bd103f727c1b8"
+    # The sources the Linux library's toolchain image compiles, as Dockerfile.build pins them.
+    dockerfile = (REPO_ROOT / "games/conan-exiles/native/platform/linux/Dockerfile.build").read_text(encoding="utf-8")
+    for dep in ("OPENSSL", "LIBWEBSOCKETS"):
+        assert env[f"CONAN_EXILES_DEP_{dep}_URL"] in dockerfile
+        assert env[f"CONAN_EXILES_DEP_{dep}_SHA256"] in dockerfile
     declared = payload["inputs"]["server"]["files"]
     assert env["CONAN_EXILES_LAUNCHER_SHA256"] == declared["ConanSandboxServer.sh"]["sha256"]
     assert env["CONAN_EXILES_SERVER_BINARY_SHA256"] == declared[SHIPPING]["sha256"]
@@ -324,8 +244,7 @@ def test_targets_resolve_env_for_the_windows_target(run: Any) -> None:
     assert env["CONAN_EXILES_PLATFORM"] == "windows"
     assert env["CONAN_EXILES_STEAM_BUILDID"] == "25639945"
     assert env["CONAN_EXILES_ARTIFACT_NATIVE"] == f"takaro-conan-exiles-native-{WINDOWS_TARGET}-{{version}}.zip"
-    assert "CONAN_EXILES_ARTIFACT" not in env, "the Windows target ships no bridge"
-    assert "CONAN_EXILES_BRIDGE_DIR" not in env
+    assert [key for key in env if key.startswith("CONAN_EXILES_ARTIFACT")] == ["CONAN_EXILES_ARTIFACT_NATIVE"]
     assert env["CONAN_EXILES_DEP_ZIG_URL"].endswith("zig-linux-x86_64-0.13.0.tar.xz")
     assert len(env["CONAN_EXILES_DEP_ZIG_SHA256"]) == 64
 
@@ -601,7 +520,7 @@ def test_a_wrong_hash_or_missing_manifest_leaves_the_install_untouched(
     assert not list(dest.parent.glob(f"{dest.name}.staging-*"))
 
 
-def test_preserve_keeps_saved_data_and_the_bridge_across_a_repin_and_rollback_restores(
+def test_preserve_keeps_saved_data_and_the_connector_across_a_repin_and_rollback_restores(
     run: Any, repo: Path, dd_log: Path, tmp_path: Path
 ) -> None:
     dest = tmp_path / "server"
@@ -611,10 +530,10 @@ def test_preserve_keeps_saved_data_and_the_bridge_across_a_repin_and_rollback_re
     world.write_bytes(b"a world somebody played in")
     ini = dest / "ConanSandbox" / "Saved" / "Config" / "LinuxServer" / "Game.ini"
     ini.parent.mkdir(parents=True, exist_ok=True)
-    ini.write_text("[RconPlugin]\nRconEnabled=1\n", encoding="utf-8")
-    bridge = dest / INSTALL_DIR / BRIDGE_FOLDER / "dist" / "index.js"
-    bridge.parent.mkdir(parents=True, exist_ok=True)
-    bridge.write_text("the deployed bridge\n", encoding="utf-8")
+    ini.write_text("[ServerSettings]\nMaxNudity=0\n", encoding="utf-8")
+    connector = dest / NATIVE_DIR / NATIVE_FOLDER / "libtakaro-conan-native.so"
+    connector.parent.mkdir(parents=True, exist_ok=True)
+    connector.write_text("the deployed connector\n", encoding="utf-8")
     old_fingerprint = json.loads((dest / ".takaro" / "installed-target.json").read_text())["fingerprint"]
 
     repin_conan(repo, MOVED)
@@ -622,8 +541,8 @@ def test_preserve_keeps_saved_data_and_the_bridge_across_a_repin_and_rollback_re
 
     assert code == 0, f"{err}\n{payload}"
     assert world.read_bytes() == b"a world somebody played in"
-    assert "[RconPlugin]" in ini.read_text()
-    assert bridge.read_text() == "the deployed bridge\n"
+    assert "[ServerSettings]" in ini.read_text()
+    assert connector.read_text() == "the deployed connector\n"
     assert (dest.with_name(dest.name + ".previous") / "ConanSandboxServer.sh").is_file()
     assert json.loads((dest / ".takaro" / "installed-target.json").read_text())["fingerprint"] != old_fingerprint
 
@@ -657,26 +576,18 @@ def test_build_selects_the_exact_zip_name_and_meta(run: Any, repo: Path, tmp_pat
     )
 
     assert code == 0, f"{err}\n{payload}"
-    assert sorted((row["role"], row["file"]) for row in payload["artifacts"]) == [
-        ("bridge", ZIP_NAME),
-        ("native", NATIVE_ZIP),
-    ]
-    for name in (NATIVE_ZIP, ZIP_NAME):
-        assert (out / name).is_file()
-        assert (out / f"{name}.meta.json").is_file()
+    assert [(row["role"], row["file"]) for row in payload["artifacts"]] == [("native", NATIVE_ZIP)]
+    assert (out / NATIVE_ZIP).is_file()
+    assert (out / f"{NATIVE_ZIP}.meta.json").is_file()
     manifest = json.loads((out / "build-manifest.json").read_text())
     assert {row["fingerprint"] for row in manifest["artifacts"]} == {resolved["fingerprint"]}
     with zipfile.ZipFile(out / NATIVE_ZIP) as archive:
         assert f"{NATIVE_FOLDER}/libtakaro-conan-native.so" in archive.namelist()
-    with zipfile.ZipFile(out / ZIP_NAME) as archive:
-        names = set(archive.namelist())
-    assert f"{BRIDGE_FOLDER}/dist/index.js" in names
-    assert f"{BRIDGE_FOLDER}/dist/mod/pollerCli.js" in names, "the chat helper travels inside the bridge zip"
 
 
 def test_a_build_that_writes_the_legacy_name_is_refused(run: Any, repo: Path, tmp_path: Path) -> None:
     resolved = resolve(run, repo)
-    write_conan_build_stub(repo, resolved["fingerprint"], name="takaro-conan-exiles-bridge.zip")
+    write_conan_build_stub(repo, resolved["fingerprint"], name="takaro-conan-exiles-native.zip")
 
     code, payload, _ = run(
         "build", "--game", GAME, "--target", TARGET, "--version", VERSION, "--out", str(tmp_path / "dist"), repo=repo
@@ -698,39 +609,30 @@ def test_a_build_stamped_for_another_target_is_refused(run: Any, repo: Path, tmp
     assert "does not carry this target's identity" in payload["error"]
 
 
-def bridge_zip(path: Path, *, version: str = VERSION, escape: bool = False, root: str = BRIDGE_FOLDER) -> None:
+def native_zip(
+    path: Path,
+    *,
+    binary: str = "libtakaro-conan-native.so",
+    target: str = TARGET,
+    escape: bool = False,
+    root: str = NATIVE_FOLDER,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr(f"{root}/", "")
-        archive.writestr(f"{root}/dist/index.js", "bridge\n")
-        archive.writestr(f"{root}/dist/mod/pollerCli.js", "helper\n")
+        archive.writestr(f"{root}/{binary}", "native\n")
         archive.writestr(
             f"{root}/takaro-target.json",
-            json.dumps({"target": TARGET, "connectorVersion": version, "revision": "25639945"}),
+            json.dumps({"target": target, "connectorVersion": VERSION, "revision": "25639945"}),
         )
         if escape:
             archive.writestr("../escaped.txt", "nope")
 
 
-def native_zip(path: Path, *, binary: str = "libtakaro-conan-native.so", target: str = TARGET) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr(f"{NATIVE_FOLDER}/", "")
-        archive.writestr(f"{NATIVE_FOLDER}/{binary}", "native\n")
-        archive.writestr(
-            f"{NATIVE_FOLDER}/takaro-target.json",
-            json.dumps({"target": target, "connectorVersion": VERSION, "revision": "25639945"}),
-        )
-
-
 def manifest_for(run: Any, repo: Path, directory: Path, zip_path: Path, *, target: str = TARGET) -> Path:
     resolved = resolve(run, repo)
-    row = artifact_row("bridge", target, resolved["fingerprint"], zip_path)
+    row = artifact_row("native", target, resolved["fingerprint"], zip_path)
     write_meta(directory, row, connector=GAME, version=VERSION, revision="deadbeef")
-    if not (directory / NATIVE_ZIP).exists():
-        native_zip(directory / NATIVE_ZIP, target=target)
-    native = artifact_row("native", target, resolved["fingerprint"], directory / NATIVE_ZIP)
-    write_meta(directory, native, connector=GAME, version=VERSION, revision="deadbeef")
     return write_manifest(
         directory,
         connector=GAME,
@@ -739,7 +641,7 @@ def manifest_for(run: Any, repo: Path, directory: Path, zip_path: Path, *, targe
         dirty=False,
         toolchain=resolved["build"]["toolchain"],
         mode="container",
-        artifacts=[native, row],
+        artifacts=[row],
     )
 
 
@@ -747,86 +649,86 @@ def deploy(run: Any, repo: Path, dest: Path, manifest: Path) -> tuple[int, Any, 
     return run("deploy", "--game", GAME, "--target", TARGET, "--dest", str(dest), "--from", str(manifest), repo=repo)
 
 
-def test_deploy_unpacks_the_bridge_folder_and_removes_older_zips(
+def test_deploy_unpacks_the_native_folder_and_removes_older_zips(
     run: Any, repo: Path, dd_log: Path, tmp_path: Path
 ) -> None:
     dest = tmp_path / "server"
     assert install(run, repo, dest)[0] == 0
-    stale = dest / INSTALL_DIR / f"takaro-conan-exiles-bridge-{TARGET}-1.0.1.zip"
+    stale = dest / NATIVE_DIR / f"takaro-conan-exiles-native-{TARGET}-1.0.1.zip"
     stale.parent.mkdir(parents=True, exist_ok=True)
     stale.write_bytes(b"an older deploy")
     directory = tmp_path / "dist"
-    bridge_zip(directory / ZIP_NAME)
-    manifest = manifest_for(run, repo, directory, directory / ZIP_NAME)
+    native_zip(directory / NATIVE_ZIP)
+    manifest = manifest_for(run, repo, directory, directory / NATIVE_ZIP)
 
     code, payload, err = deploy(run, repo, dest, manifest)
 
     assert code == 0, f"{err}\n{payload}"
-    unpacked = dest / INSTALL_DIR / BRIDGE_FOLDER
-    assert (unpacked / "dist" / "index.js").is_file()
-    assert (unpacked / "dist" / "mod" / "pollerCli.js").is_file()
-    assert json.loads((unpacked / "takaro-target.json").read_text())["target"] == TARGET
-    assert not stale.exists()
     native = dest / NATIVE_DIR / NATIVE_FOLDER
-    assert (native / "libtakaro-conan-native.so").is_file(), "the native connector is unpacked beside the bridge"
+    assert (native / "libtakaro-conan-native.so").is_file()
     assert json.loads((native / "takaro-target.json").read_text())["target"] == TARGET
+    assert not stale.exists()
     ledger = json.loads((dest / ".takaro" / "installed-target.json").read_text())
-    assert {row["path"] for row in ledger["artifacts"]} == {f"{INSTALL_DIR}/{ZIP_NAME}", f"{NATIVE_DIR}/{NATIVE_ZIP}"}
+    assert {row["path"] for row in ledger["artifacts"]} == {f"{NATIVE_DIR}/{NATIVE_ZIP}"}
+
+
+def test_deploy_accepts_the_windows_dll_and_refuses_a_zip_with_neither_binary(
+    run: Any, repo: Path, dd_log: Path, tmp_path: Path
+) -> None:
+    dest = tmp_path / "server"
+    assert install(run, repo, dest)[0] == 0
+    directory = tmp_path / "dist"
+    native_zip(directory / NATIVE_ZIP, binary="winmm.dll")
+    assert deploy(run, repo, dest, manifest_for(run, repo, directory, directory / NATIVE_ZIP))[0] == 0
+    assert (dest / NATIVE_DIR / NATIVE_FOLDER / "winmm.dll").is_file()
+
+    native_zip(directory / NATIVE_ZIP, binary="something-else.so")
+    code, payload, _ = deploy(run, repo, dest, manifest_for(run, repo, directory, directory / NATIVE_ZIP))
+
+    assert code == 7, payload
+    assert "libtakaro-conan-native.so or" in payload["error"]
+    assert (dest / NATIVE_DIR / NATIVE_FOLDER / "winmm.dll").is_file(), "the installed folder is untouched"
 
 
 @pytest.mark.parametrize("body", [b"not a zip at all", b"PK\x03\x04truncated"])
-def test_an_artifact_that_is_not_a_zip_leaves_the_deployed_bridge_and_its_config_alone(
+def test_an_artifact_that_is_not_a_zip_leaves_the_deployed_connector_alone(
     run: Any, repo: Path, dd_log: Path, tmp_path: Path, body: bytes
 ) -> None:
     """The manifest's sha256 says the bytes are the built ones, not that they are a zip."""
     dest = tmp_path / "server"
     assert install(run, repo, dest)[0] == 0
     directory = tmp_path / "dist"
-    bridge_zip(directory / ZIP_NAME)
-    assert deploy(run, repo, dest, manifest_for(run, repo, directory, directory / ZIP_NAME))[0] == 0
-    unpacked = dest / INSTALL_DIR / BRIDGE_FOLDER
-    config = unpacked / "TakaroConfig.txt"
-    config.write_text("registrationToken=the-operators-own\n")
+    native_zip(directory / NATIVE_ZIP)
+    assert deploy(run, repo, dest, manifest_for(run, repo, directory, directory / NATIVE_ZIP))[0] == 0
+    unpacked = dest / NATIVE_DIR / NATIVE_FOLDER
     before = sorted(path.relative_to(unpacked).as_posix() for path in unpacked.rglob("*"))
 
-    (directory / ZIP_NAME).write_bytes(body)
-    code, payload, _ = run(
-        "deploy",
-        "--game",
-        GAME,
-        "--target",
-        TARGET,
-        "--dest",
-        str(dest),
-        "--from",
-        str(manifest_for(run, repo, directory, directory / ZIP_NAME)),
-        repo=repo,
-    )
+    (directory / NATIVE_ZIP).write_bytes(body)
+    code, payload, _ = deploy(run, repo, dest, manifest_for(run, repo, directory, directory / NATIVE_ZIP))
 
     assert code == 7, payload
     assert "is not a zip archive" in json.dumps(payload)
-    assert config.read_text() == "registrationToken=the-operators-own\n"
     assert sorted(path.relative_to(unpacked).as_posix() for path in unpacked.rglob("*")) == before
-    assert not list((dest / INSTALL_DIR).glob(".TakaroConanExiles.staging*"))
+    assert not list((dest / NATIVE_DIR).glob(f".{NATIVE_FOLDER}.staging*"))
 
 
-def test_a_valid_zip_missing_the_bridge_tree_leaves_the_deployed_bridge_alone(
+def test_a_valid_zip_missing_the_native_tree_leaves_the_deployed_connector_alone(
     run: Any, repo: Path, dd_log: Path, tmp_path: Path
 ) -> None:
     """A valid zip is not necessarily a complete release; validate it before the swap."""
     dest = tmp_path / "server"
     assert install(run, repo, dest)[0] == 0
     directory = tmp_path / "dist"
-    bridge_zip(directory / ZIP_NAME)
-    assert deploy(run, repo, dest, manifest_for(run, repo, directory, directory / ZIP_NAME))[0] == 0
-    live = dest / INSTALL_DIR / BRIDGE_FOLDER / "dist" / "index.js"
+    native_zip(directory / NATIVE_ZIP)
+    assert deploy(run, repo, dest, manifest_for(run, repo, directory, directory / NATIVE_ZIP))[0] == 0
+    live = dest / NATIVE_DIR / NATIVE_FOLDER / "libtakaro-conan-native.so"
     before = live.read_bytes()
-    installed_archive = dest / INSTALL_DIR / ZIP_NAME
+    installed_archive = dest / NATIVE_DIR / NATIVE_ZIP
     archive_before = installed_archive.read_bytes()
 
-    with zipfile.ZipFile(directory / ZIP_NAME, "w"):
+    with zipfile.ZipFile(directory / NATIVE_ZIP, "w"):
         pass
-    code, payload, _ = deploy(run, repo, dest, manifest_for(run, repo, directory, directory / ZIP_NAME))
+    code, payload, _ = deploy(run, repo, dest, manifest_for(run, repo, directory, directory / NATIVE_ZIP))
 
     assert code == 7, payload
     assert "is missing" in payload["error"]
@@ -834,20 +736,20 @@ def test_a_valid_zip_missing_the_bridge_tree_leaves_the_deployed_bridge_alone(
     assert installed_archive.read_bytes() == archive_before
 
 
-def test_a_failed_final_directory_swap_restores_the_deployed_bridge(
+def test_a_failed_final_directory_swap_restores_the_deployed_connector(
     run: Any, repo: Path, dd_log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     dest = tmp_path / "server"
     assert install(run, repo, dest)[0] == 0
     directory = tmp_path / "dist"
-    bridge_zip(directory / ZIP_NAME)
-    manifest = manifest_for(run, repo, directory, directory / ZIP_NAME)
+    native_zip(directory / NATIVE_ZIP)
+    manifest = manifest_for(run, repo, directory, directory / NATIVE_ZIP)
     assert deploy(run, repo, dest, manifest)[0] == 0
-    unpacked = dest / INSTALL_DIR / BRIDGE_FOLDER
+    unpacked = dest / NATIVE_DIR / NATIVE_FOLDER
     before = sorted(
         (path.relative_to(unpacked).as_posix(), path.read_bytes()) for path in unpacked.rglob("*") if path.is_file()
     )
-    installed_archive = dest / INSTALL_DIR / ZIP_NAME
+    installed_archive = dest / NATIVE_DIR / NATIVE_ZIP
     archive_before = installed_archive.read_bytes()
 
     real_replace = os.replace
@@ -855,7 +757,7 @@ def test_a_failed_final_directory_swap_restores_the_deployed_bridge(
 
     def refuse_incoming_tree(src: Any, dst: Any, *args: Any, **kwargs: Any) -> None:
         nonlocal refused
-        if not refused and Path(dst) == unpacked and Path(src).parent.name == ".TakaroConanExiles.staging":
+        if not refused and Path(dst) == unpacked and Path(src).parent.name == f".{NATIVE_FOLDER}.staging":
             refused = True
             raise OSError(28, "No space left on device")
         real_replace(src, dst, *args, **kwargs)
@@ -873,47 +775,20 @@ def test_a_failed_final_directory_swap_restores_the_deployed_bridge(
         == before
     )
     assert installed_archive.read_bytes() == archive_before
-    assert not (unpacked.parent / f".{BRIDGE_FOLDER}.previous").exists()
+    assert not (unpacked.parent / f".{NATIVE_FOLDER}.previous").exists()
 
 
-def test_deploy_keeps_the_operators_config_and_drops_the_previous_release(
-    run: Any, repo: Path, dd_log: Path, tmp_path: Path
-) -> None:
-    """``TakaroConfig.txt`` is the operator's, is never in the zip, and README promises it survives."""
-    dest = tmp_path / "server"
-    assert install(run, repo, dest)[0] == 0
-    unpacked = dest / INSTALL_DIR / BRIDGE_FOLDER
-    unpacked.mkdir(parents=True, exist_ok=True)
-    config = unpacked / "TakaroConfig.txt"
-    config.write_text("registrationToken=the-operators-own\nrconPassword=theirs\n")
-    config.chmod(0o600)
-    (unpacked / "dist").mkdir(parents=True, exist_ok=True)
-    stale_code = unpacked / "dist" / "removed-in-the-new-release.js"
-    stale_code.write_text("// from the previous version")
-    directory = tmp_path / "dist"
-    bridge_zip(directory / ZIP_NAME)
-    manifest = manifest_for(run, repo, directory, directory / ZIP_NAME)
-
-    code, payload, err = deploy(run, repo, dest, manifest)
-
-    assert code == 0, f"{err}\n{payload}"
-    assert config.read_text() == "registrationToken=the-operators-own\nrconPassword=theirs\n"
-    assert oct(config.stat().st_mode)[-3:] == "600"
-    assert not stale_code.exists(), "everything the new artifact does not carry is still replaced"
-    assert (unpacked / "dist" / "index.js").is_file()
-
-
-def test_a_zip_that_escapes_the_bridge_folder_is_refused(run: Any, repo: Path, dd_log: Path, tmp_path: Path) -> None:
+def test_a_zip_that_escapes_the_native_folder_is_refused(run: Any, repo: Path, dd_log: Path, tmp_path: Path) -> None:
     dest = tmp_path / "server"
     assert install(run, repo, dest)[0] == 0
     directory = tmp_path / "dist"
-    bridge_zip(directory / ZIP_NAME, escape=True)
-    manifest = manifest_for(run, repo, directory, directory / ZIP_NAME)
+    native_zip(directory / NATIVE_ZIP, escape=True)
+    manifest = manifest_for(run, repo, directory, directory / NATIVE_ZIP)
 
     code, payload, _ = deploy(run, repo, dest, manifest)
 
     assert code == 7, payload
-    assert not (dest / INSTALL_DIR / BRIDGE_FOLDER).exists()
+    assert not (dest / NATIVE_DIR / NATIVE_FOLDER).exists()
     assert not (tmp_path / "escaped.txt").exists()
 
 
@@ -921,27 +796,27 @@ def test_a_zip_rooted_somewhere_else_is_refused(run: Any, repo: Path, dd_log: Pa
     dest = tmp_path / "server"
     assert install(run, repo, dest)[0] == 0
     directory = tmp_path / "dist"
-    bridge_zip(directory / ZIP_NAME, root="Other")
-    manifest = manifest_for(run, repo, directory, directory / ZIP_NAME)
+    native_zip(directory / NATIVE_ZIP, root="Other")
+    manifest = manifest_for(run, repo, directory, directory / NATIVE_ZIP)
 
     code, payload, _ = deploy(run, repo, dest, manifest)
 
     assert code == 7, payload
-    assert f"outside the single {BRIDGE_FOLDER}/ folder" in payload["error"]
-    assert not (dest / INSTALL_DIR / "Other").exists()
+    assert f"outside the single {NATIVE_FOLDER}/ folder" in payload["error"]
+    assert not (dest / NATIVE_DIR / "Other").exists()
 
 
 def test_a_manifest_built_for_another_target_is_refused(run: Any, repo: Path, dd_log: Path, tmp_path: Path) -> None:
     dest = tmp_path / "server"
     assert install(run, repo, dest)[0] == 0
     directory = tmp_path / "dist"
-    bridge_zip(directory / ZIP_NAME)
-    manifest = manifest_for(run, repo, directory, directory / ZIP_NAME, target="linux-99999999")
+    native_zip(directory / NATIVE_ZIP, target="linux-99999999")
+    manifest = manifest_for(run, repo, directory, directory / NATIVE_ZIP, target="linux-99999999")
 
     code, payload, _ = deploy(run, repo, dest, manifest)
 
     assert code == 7, payload
-    assert not (dest / INSTALL_DIR / BRIDGE_FOLDER).exists()
+    assert not (dest / NATIVE_DIR / NATIVE_FOLDER).exists()
 
 
 # -- verification hooks ------------------------------------------------------------------
@@ -974,108 +849,24 @@ def test_the_runtime_identity_comes_from_the_two_server_banners(tmp_path: Path) 
     }
 
 
-def test_verify_hooks_know_the_conan_log_lines() -> None:
+def test_verify_hooks_know_the_conan_ready_line() -> None:
     assert hooks.READY_LINE.search(
         "[2026.09.21-18.02.11:123][  0]LogInit: Display: Engine is initialized. Leaving FEngineLoop::Init()"
     )
-    rcon = hooks.RCON_READY_LINE.search(
-        "[2026.09.21-18.01.50:001][  0]LogRcon: Display: Rcon is ready for client connections on 0.0.0.0:25575!"
-    )
-    assert rcon and rcon.group("port") == "25575"
-    assert hooks.IDENTIFIED_LINE.search("info: Identified with Takaro as gameServerId=00000000-0000-0000-0000-0")
-    assert hooks.CLOSED_LINE.search("info: Takaro WebSocket closed code=1001 reason=going away")
-    stamp = hooks.STAMP_LINE.search(
-        "info: Takaro target: linux-25639945 (0123456789abcdef) revision 25639945 connector 1.0.2 source deadbeef"
-    )
-    assert stamp and stamp.group("target") == TARGET and stamp.group("fp16") == "0123456789abcdef"
-    command = hooks.RCON_COMMAND_LINE.search("IP PeerAddr: 172.17.0.3:51000 used rcon command: listplayers")
-    assert command and command.group("command") == "listplayers"
-    assert hooks.RECONNECT_BUDGET >= 60.0
 
 
-def test_catalogue_exclusions_match_the_documented_fresh_save_limit() -> None:
-    # The runtime verifier still drives the deprecated bridge, whose catalogues come from the save
-    # database; the operator README now documents the native connector only.
-    for check_id in ("catalog-items", "catalog-entities"):
-        reason = hooks.UNSUPPORTED_CHECKS[check_id]
-        assert re.search(r"save database", reason, re.I)
-        assert "fresh save" in reason
+def test_a_bare_run_proves_build_and_startup_and_excludes_the_rest() -> None:
+    """The verifier boots the server without the native library, so only the boot itself is claimed."""
+    from takaro_maint.verify.runner import CHECK_IDS, check_ids
+
+    assert check_ids(GAME) == CHECK_IDS, "the game adds no checks of its own"
+    assert set(CHECK_IDS) - set(hooks.UNSUPPORTED_CHECKS) == {"build", "startup"}
+    for reason in hooks.UNSUPPORTED_CHECKS.values():
+        assert "native/tests" in reason
+    assert hooks.HOOKS.before_boot is None and hooks.HOOKS.after_protocol is None
 
 
-def test_before_boot_writes_the_rcon_settings_the_server_reads(tmp_path: Path) -> None:
-    class Run:
-        data_dir = tmp_path
-        ws_url = ""
-
-    run = Run()
-    hooks.before_boot(run, {"TAKARO_WS_URL": "ws://host.docker.internal:34567/"})
-
-    assert run.ws_url == "ws://host.docker.internal:34567/"
-    ini = tmp_path / "ConanSandbox" / "Saved" / "Config" / "LinuxServer" / "Game.ini"
-    assert oct(ini.stat().st_mode)[-3:] == "600"
-    body = ini.read_text()
-    assert "[RconPlugin]" in body
-    assert "RconEnabled=1" in body
-    assert "RconMaxKarma=1000" in body
-    password = re.search(r"RconPassword=(\S+)", body)
-    assert password and len(password.group(1)) >= 16
-    secret = tmp_path / ".takaro" / "runtime" / "rcon-password"
-    assert oct(secret.stat().st_mode)[-3:] == "600"
-    assert hooks.rcon_password(tmp_path) == password.group(1)
-    assert (tmp_path / ".takaro" / "home").is_dir()
-
-    # Run twice on the same (preserved) data directory: the existing section is rewritten,
-    # so the password the sidecar is handed is the one the server actually reads.
-    hooks.before_boot(run, {"TAKARO_WS_URL": "ws://host.docker.internal:34567/"})
-    second = ini.read_text()
-    assert second.count("[RconPlugin]") == 1
-    rewritten = re.search(r"RconPassword=(\S+)", second)
-    assert rewritten and rewritten.group(1) != password.group(1)
-    assert hooks.rcon_password(tmp_path) == rewritten.group(1)
-    assert oct(ini.stat().st_mode)[-3:] == "600"
-
-
-def test_before_boot_leaves_the_servers_other_ini_sections_alone(tmp_path: Path) -> None:
-    class Run:
-        data_dir = tmp_path
-        ws_url = ""
-
-    ini = tmp_path / "ConanSandbox" / "Saved" / "Config" / "LinuxServer" / "Game.ini"
-    ini.parent.mkdir(parents=True, exist_ok=True)
-    ini.write_text("[ServerSettings]\nMaxNudity=0\n\n[RconPlugin]\nRconPassword=the-previous-run\n")
-
-    hooks.before_boot(Run(), {"TAKARO_WS_URL": "ws://host.docker.internal:34567/"})
-
-    body = ini.read_text()
-    assert "[ServerSettings]" in body and "MaxNudity=0" in body
-    assert "the-previous-run" not in body
-    assert body.count("[RconPlugin]") == 1
-    assert "RconMaxKarma=1000" in body
-
-
-def test_the_bridge_config_names_the_game_container_and_carries_both_tokens(tmp_path: Path) -> None:
-    written = hooks.render_bridge_config(
-        tmp_path,
-        registration="a-throwaway-registration-token",
-        identity="takaro-verify-tm148-162",
-        server_name="takaro-verify-tm148-162",
-        url="ws://host.docker.internal:34567/",
-        rcon_host="172.17.0.4",
-        rcon_pw="a-throwaway-rcon-password",
-    )
-
-    assert written == tmp_path / ".takaro" / "runtime" / "bridge" / "TakaroConfig.txt"
-    assert oct(written.stat().st_mode)[-3:] == "600"
-    body = written.read_text()
-    assert "rconHost=172.17.0.4" in body
-    assert "rconPort=25575" in body
-    assert "takaroWsUrl=ws://host.docker.internal:34567/" in body
-    assert "registrationToken=a-throwaway-registration-token" in body
-    assert "identityToken=takaro-verify-tm148-162" in body
-    assert "logFiles=/bridge/logs/ConanSandbox.log" in body
-
-
-def test_the_container_command_starts_the_launcher_without_the_password(run: Any, repo: Path, tmp_path: Path) -> None:
+def test_the_container_command_starts_the_launcher_without_rcon(run: Any, repo: Path, tmp_path: Path) -> None:
     adapter = adapter_for(GAME)
     resolved = resolve(run, repo)
 
@@ -1088,10 +879,7 @@ def test_the_container_command_starts_the_launcher_without_the_password(run: Any
         "-nosteamclient",
         "-Port=7777",
         "-QueryPort=27015",
-        "-RconEnabled=1",
-        "-RconPort=25575",
     ]
-    assert not any("Password" in part for part in command), "a container argv is logged and inspected"
 
     options = adapter.container_options(resolved, tmp_path)
     assert options[:2] == ["--memory", "14g"], "the runner's 3g default would kill a 10 GB server"
@@ -1101,37 +889,6 @@ def test_the_container_command_starts_the_launcher_without_the_password(run: Any
     assert mounts == [f"{tmp_path}:/conan"]
     assert (tmp_path / "ConanSandbox" / "Saved" / "Logs").is_dir()
     assert adapter.runtime_env(resolved, {}) == {"HOME": "/conan/.takaro/home"}
-
-
-def test_the_check_ids_add_the_conan_bridge_checks() -> None:
-    from takaro_maint.verify.runner import check_ids
-
-    ids = check_ids(GAME)
-
-    assert set(hooks.CHECK_IDS) <= set(ids)
-    assert {
-        "bridge-identify",
-        "bridge-reachability",
-        "bridge-players",
-        "bridge-console",
-        "bridge-reconnect",
-        "bridge-stop",
-    } <= set(ids)
-
-
-def test_the_rcon_command_log_is_read_in_order(tmp_path: Path) -> None:
-    log = tmp_path / "ConanSandbox" / "Saved" / "Logs" / "RconCommandLog.log"
-    log.parent.mkdir(parents=True, exist_ok=True)
-    log.write_text(
-        "IP PeerAddr: 172.17.0.3:51000 used rcon command: help\n"
-        "not an rcon line at all\n"
-        "IP PeerAddr: 172.17.0.3:51002 used rcon command: listplayers\n"
-        "IP PeerAddr: 172.17.0.3:51004 used rcon command: shutdown\n",
-        encoding="utf-8",
-    )
-
-    assert hooks.rcon_commands_seen(tmp_path) == ["help", "listplayers", "shutdown"]
-    assert hooks.rcon_commands_seen(tmp_path / "nowhere") == []
 
 
 # -- the release record ------------------------------------------------------------------
@@ -1150,19 +907,15 @@ def git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True, env=env).stdout.strip()
 
 
-def test_compat_record_carries_the_steam_pin_and_the_legacy_alias(run: Any, repo: Path, tmp_path: Path) -> None:
+def test_compat_record_carries_the_steam_pin_for_both_platforms(run: Any, repo: Path, tmp_path: Path) -> None:
     git(repo, "init", "-q", "-b", "main")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "fixture")
     commit = git(repo, "rev-parse", "HEAD")
     resolved = resolve(run, repo)
     directory = tmp_path / "dist" / TARGET
-    bridge_zip(directory / ZIP_NAME)
     native_zip(directory / NATIVE_ZIP)
-    rows = [
-        artifact_row("native", TARGET, resolved["fingerprint"], directory / NATIVE_ZIP),
-        artifact_row("bridge", TARGET, resolved["fingerprint"], directory / ZIP_NAME),
-    ]
+    rows = [artifact_row("native", TARGET, resolved["fingerprint"], directory / NATIVE_ZIP)]
     for row in rows:
         write_meta(directory, row, connector=GAME, version=VERSION, revision=commit)
     write_manifest(
@@ -1226,11 +979,9 @@ def test_compat_record_carries_the_steam_pin_and_the_legacy_alias(run: Any, repo
     url = entry["inputs"]["server"]["url"]
     assert url.startswith("steam://app/443030/")
     assert len(re.findall(r"manifest/[0-9]+", url)) == 2, "both depots are named in the pseudo-URL"
-    assert (out / ZIP_NAME).is_file()
     assert (out / NATIVE_ZIP).is_file()
     assert (out / WINDOWS_ZIP).is_file()
     assert record["targets"][WINDOWS_TARGET]["inputs"]["server"]["url"].startswith("steam://app/443030/")
-    assert (out / "takaro-conan-exiles-bridge.zip").read_bytes() == (out / ZIP_NAME).read_bytes()
 
 
 # -- the dev-servers rig -----------------------------------------------------------------
@@ -1263,7 +1014,6 @@ def test_the_rig_runs_the_resolved_target_and_never_steamcmd() -> None:
     compose = (DS_ROOT / "compose" / "conan-exiles.yml").read_text(encoding="utf-8")
 
     assert 'image: "${CONAN_EXILES_IMAGE:-target-not-resolved}"' in compose
-    assert 'image: "${CONAN_EXILES_TOOLCHAIN:-target-not-resolved}"' in compose
     assert "build:" not in compose, "the rig runs a pinned image, never one it builds here"
     assert not (DS_ROOT / "images" / "conan-exiles" / "Dockerfile").exists()
 
@@ -1320,37 +1070,3 @@ def test_the_server_container_gets_the_memory_and_the_user_the_adapter_asks_for(
     user = argv.index("--user")
     assert argv[user + 1] == f"{os.getuid()}:{os.getgid()}"
     assert user > memory[0], "the adapter's options come after the runner's own"
-
-
-def test_the_stamp_line_the_harness_reads_is_the_one_the_bridge_writes() -> None:
-    """The contract is across two languages, so it has to be bound rather than restated.
-
-    `hooks.STAMP_LINE` is a Python regex with named groups; the line it reads is built by
-    a TypeScript template. The test binds their literal text so a rename in either cannot
-    leave the other looking correct while `bridge-identify` reports an unstamped bridge.
-    """
-    source = (REPO_ROOT / "games/conan-exiles/bridge/src/targetStamp.ts").read_text(encoding="utf-8")
-
-    body = source[source.index("export function describeStamp") :]
-    body = body[: body.index("\n}")]
-    templates = re.findall(r"`([^`]*)`", body)
-    assert templates, "describeStamp builds its line from template literals"
-    # Every `${...}` becomes a value, and the literal text between them is the contract.
-    sample = "".join(templates)
-    values = {
-        "stamp.target": "linux-25639945",
-        "stamp.fingerprint.slice(0, 16)": "0123456789abcdef",
-        "stamp.revision": "25639945",
-        "stamp.connectorVersion": "1.2.3",
-        "stamp.sourceRevision": "deadbeef",
-    }
-    for expression, value in values.items():
-        sample = sample.replace("${" + expression + "}", value)
-    assert "${" not in sample, f"describeStamp interpolates something this test does not know: {sample}"
-
-    found = hooks.STAMP_LINE.search(sample)
-    assert found, f"{hooks.STAMP_LINE.pattern!r} does not match {sample!r}"
-    assert found.group("target") == "linux-25639945"
-    assert found.group("fp16") == "0123456789abcdef"
-    assert found.group("revision") == "25639945"
-    assert found.group("version") == "1.2.3"

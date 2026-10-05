@@ -505,7 +505,7 @@ REUSED: dict[str, tuple[str, ...]] = {
     ),
     "test_game_conan_exiles": (
         "test_a_wrong_hash_or_missing_manifest_leaves_the_install_untouched",
-        "test_preserve_keeps_saved_data_and_the_bridge_across_a_repin_and_rollback_restores",
+        "test_preserve_keeps_saved_data_and_the_connector_across_a_repin_and_rollback_restores",
         "test_a_manifest_built_for_another_target_is_refused",
     ),
     "test_game_terraria": (

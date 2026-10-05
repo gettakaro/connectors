@@ -10,10 +10,9 @@
     "since": "2026-09-21",
     "evidence": [
       "games/conan-exiles/README.md (What works, what doesn't: the native connector on Linux build 25639945, live 2026-10-03/04 with a real client through hosted Takaro)",
-      "games/conan-exiles/native/tests (contract level, every build: unit, drift, fake-Takaro wire tests incl. a forced outage, and the real library preloaded into a stand-in server)",
-      "games/conan-exiles/bridge/src/__tests__/bridgeContract.test.ts (the deprecated bridge, contract level: fake RCON + fake Takaro)"
+      "games/conan-exiles/native/tests (contract level, every build: unit, drift, fake-Takaro wire tests incl. a forced outage, and the real library preloaded into a stand-in server)"
     ],
-    "notes": "Exact Steam pin of the public head observed 2026-10-02 (native Linux dedicated server; depot 443032 manifest 8611640520811009059). The shipped connector is the native library libtakaro-conan-native.so (LD_PRELOAD into the server): it holds the Takaro connection itself, needs no RCON and no mod, and hooks only this build (GNU build-id 3a05a6ef0c873f2bbf754ec495bdf2a686d3768d, games/conan-exiles/native/core/pins/pins.json); on any other build it connects, reports the unknown build and refuses every action. It is built in its own pinned buster toolchain (games/conan-exiles/native/platform/linux/Dockerfile.build), so this record's build toolchain is the one the deprecated bridge zip is built in. The bridge (RCON + log files) is frozen and ships for one more release cycle. A hosted runner cannot boot the 4.3 GB server, so release verification is contract level."
+    "notes": "Exact Steam pin of the public head observed 2026-10-02 (native Linux dedicated server; depot 443032 manifest 8611640520811009059). The shipped connector is the native library libtakaro-conan-native.so (LD_PRELOAD into the server): it holds the Takaro connection itself, needs no RCON and no mod, and hooks only this build (GNU build-id 3a05a6ef0c873f2bbf754ec495bdf2a686d3768d, games/conan-exiles/native/core/pins/pins.json); on any other build it connects, reports the unknown build and refuses every action. It is built in its own pinned buster toolchain (games/conan-exiles/native/platform/linux/Dockerfile.build), which compiles the two build.deps below from the same SHA-256-checked archives; this record's build toolchain image is not used by the Linux build and is kept because the schema requires one. A hosted runner cannot boot the 4.3 GB server, so release verification is contract level."
   },
   "inputs": {
     "server": {
@@ -87,25 +86,16 @@
       "tag": "22.23.2-bookworm-slim",
       "digest": "sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9"
     },
-    "lockfile": {
-      "path": "games/conan-exiles/bridge/package-lock.json",
-      "sha256": "ea07d7c7d65d57765279815990fd77ad74a0bef8c1cea326f05bd103f727c1b8"
-    },
     "deps": {
-      "ws": {
-        "coordinate": "npm:ws:8.21.0",
-        "sha256": "d08b726b3aae3a0fed5218a0d9a4b2ac8d75d4ad453a9271db55fe38e94eb4cf",
-        "resolvedCoordinate": "https://registry.npmjs.org/ws/-/ws-8.21.0.tgz"
+      "openssl": {
+        "coordinate": "openssl:openssl:3.5.8",
+        "sha256": "a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2",
+        "resolvedCoordinate": "https://github.com/openssl/openssl/releases/download/openssl-3.5.8/openssl-3.5.8.tar.gz"
       },
-      "express": {
-        "coordinate": "npm:express:4.22.2",
-        "sha256": "03edbc16219b8298ab9c60d817f77f126ea2083efcd1e5c26e2cab43cb360913",
-        "resolvedCoordinate": "https://registry.npmjs.org/express/-/express-4.22.2.tgz"
-      },
-      "winston": {
-        "coordinate": "npm:winston:3.19.0",
-        "sha256": "4183f422c69153b58b8595d3ec06c523087ca1a978006e1a6db63e199c18748e",
-        "resolvedCoordinate": "https://registry.npmjs.org/winston/-/winston-3.19.0.tgz"
+      "libwebsockets": {
+        "coordinate": "warmcat:libwebsockets:4.5.8",
+        "sha256": "b6ade658f4af3a823d0dc806ae5ef0623f0f4f5e2aeb895a0f77c4783840c30e",
+        "resolvedCoordinate": "https://github.com/warmcat/libwebsockets/archive/refs/tags/v4.5.8.tar.gz"
       }
     }
   },
@@ -114,34 +104,21 @@
       "role": "native",
       "artifact": "takaro-conan-exiles-native-linux-25639945-{version}.zip",
       "installDir": "TakaroConanNative"
-    },
-    {
-      "role": "bridge",
-      "artifact": "takaro-conan-exiles-bridge-linux-25639945-{version}.zip",
-      "installDir": "TakaroBridge"
     }
   ],
   "verification": {
     "required": "contract",
     "separate": [
-      "startup",
-      "bridge-identify",
-      "bridge-reachability",
-      "bridge-players",
-      "bridge-console",
-      "bridge-reconnect",
-      "shutdown",
-      "bridge-stop"
+      "startup"
     ]
   },
   "preserve": [
     "ConanSandbox/Saved/",
     "TakaroConanNative/",
-    "TakaroBridge/",
     ".takaro/"
   ],
   "devServers": {
     "gameId": "conan-exiles"
   },
-  "notes": "One image serves both containers: the dedicated server is a self-contained UE5 Linux build that needs only glibc/libstdc++, so it runs in the same pinned Node image the bridge needs; the rig and the verifier start it by command (ConanSandboxServer.sh). The Steamworks redist depot 1006 is pinned because the proven install carried it; it is not watched (Valve's depot)."
+  "notes": "The dedicated server is a self-contained UE5 Linux build that needs only glibc/libstdc++, so it runs in the pinned Node image recorded as the runtime; the rig and the verifier start it by command (ConanSandboxServer.sh). The Steamworks redist depot 1006 is pinned because the proven install carried it; it is not watched (Valve's depot)."
 }
