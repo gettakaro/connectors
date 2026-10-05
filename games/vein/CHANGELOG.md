@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/gettakaro/connectors/compare/vein-v0.3.1...vein-v0.4.0) (2026-10-05)
+
+
+### Features
+
+* **vein:** support server build 25708939 (0.025h2) and fix live-test defects ([#364](https://github.com/gettakaro/connectors/issues/364)) ([201b49b](https://github.com/gettakaro/connectors/commit/201b49b454475854db6d001336ff1eb6b24bb57c))
+
 ## [0.3.1](https://github.com/gettakaro/connectors/compare/vein-v0.3.0...vein-v0.3.1) (2026-09-29)
 
 
