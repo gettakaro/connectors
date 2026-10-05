@@ -113,9 +113,11 @@ std::string Rest(const std::string& s, size_t skipWords) {
 
 // ---- Takaro DTOs (whitelisted keys only) --------------------------------------------------------
 
-// IGamePlayer for Dragonwilds: gameId = EOS ProductUserId (lower-case 32 hex), platformId
-// `epic:<puid>`. steamId only when a real SteamID64 is known, and then platformId is steam only
-// when no PUID exists. Mirrors the 0.2.x sidecar's mapPlayer exactly.
+// IGamePlayer for Dragonwilds: gameId = EOS ProductUserId (lower-case 32 hex). A Steam player gets
+// steamId and platformId `steam:<id64>`, the same platformId every other Steam connector sends:
+// platformId is unique per Takaro domain, so `epic:<puid>` would collide with the player's profile
+// from those games. Everyone else gets platformId `epic:<puid>`. xboxLiveId (XUID) passes through
+// when the plugin found one. Mirrors the 0.2.x sidecar's mapPlayer exactly.
 Json Player(const Json& raw) {
     Json p = Object(raw);
     std::string platform = Str(p, "platformId");
@@ -145,8 +147,11 @@ Json Player(const Json& raw) {
     }
     if (!steam.empty()) {
         out["steamId"] = steam;
-        if (puid.empty()) out["platformId"] = "steam:" + steam;
+        out["platformId"] = "steam:" + steam;
     }
+    std::string xbox = Str(p, "xboxLiveId");
+    if (!xbox.empty() && std::all_of(xbox.begin(), xbox.end(), [](char c) { return c >= '0' && c <= '9'; }))
+        out["xboxLiveId"] = xbox;
     if (!Str(p, "ip").empty()) out["ip"] = Str(p, "ip");
     if (p.contains("ping") && p["ping"].is_number() && std::isfinite(p["ping"].get<double>())) out["ping"] = p["ping"];
     return out;

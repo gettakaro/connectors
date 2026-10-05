@@ -110,7 +110,8 @@ player is `{gameId}`, `{epicOnlineServicesId}`, `{steamId}`, `{platformId:"epic:
 | `entity-killed` | `{player, entity, weapon}` (`weapon` is a string, `""` when unresolved) |
 | `log` | `{msg}` redacted: `*Password` values, `?p=<base64>`, `*Token`/`Ticket` values; a line mentioning a password in free text becomes `[redacted: line mentions a password]` |
 
-IGamePlayer: `{gameId:<puid>, name:<character name>, epicOnlineServicesId:<puid>, platformId:"epic:<puid>", steamId?, ip?, ping?}`.
+IGamePlayer: `{gameId:<puid>, name:<character name>, epicOnlineServicesId:<puid>, platformId, steamId?, xboxLiveId?, ip?, ping?}`;
+`platformId` is `steam:<steamId>` for a Steam player and `epic:<puid>` otherwise (see Identity).
 
 ## Diagnostic HTTP surface (optional)
 
@@ -128,8 +129,17 @@ Off unless `TAKARO_PLUGIN_TOKEN` (or `token` in `plugin.json`) is set. Loopback 
 
 ## Identity
 `gameId` is the player's **EOS ProductUserId** (32 hex chars, lower case, shown at the bottom of the
-in-game Settings screen). `platformId` is `epic:<puid>`; `steamId` only when a real SteamID64 is
-known. `name` is the in-game character name (from the server's `PlayerChar entered world` log line;
+in-game Settings screen). The game objects and the log carry only that id, so the plugin asks EOS
+Connect for the accounts linked to it: `EOS_Connect_QueryProductUserIdMappings` with no local user
+(the dedicated-server form), through the server's own EOS SDK. The plugin interposes
+`EOS_Platform_Tick` (the server imports it from `libEOSSDK-Linux-Shipping.so`) only to learn the
+platform handle. The answer takes a few hundred ms and is cached per PUID; `player-connected` waits
+for it up to 15 s after login.
+- Steam player: `steamId` = SteamID64, `platformId` = `steam:<steamId>` (the value every Steam
+  connector sends; `platformId` is unique per Takaro domain).
+- `xboxLiveId` = the linked XUID when EOS reports one; `platformId` stays `epic:<puid>`.
+- Anyone else, or EOS unreachable: `platformId` = `epic:<puid>`, no `steamId`. Never guessed.
+- `epicOnlineServicesId` is always the PUID. `name` is the in-game character name (from the server's `PlayerChar entered world` log line;
 `ADominionPlayerState::GetCharacterDisplayName` is never called - it crashes the server).
 
 ## GET /health
@@ -199,7 +209,7 @@ known. `name` is the in-game character name (from the server's `PlayerChar enter
   plugin-side, because Takaro's EventEntityKilled schema does not carry them.
 
 ### Event payloads (real output, build `++dominion+staging-CL-240163`)
-The `player` object is `{gameId, name, characterName?, platformName?, characterGuid?, steamId?, platformId}`;
+The `player` object is `{gameId, name, characterName?, platformName?, characterGuid?, steamId?, xboxLiveId?, platformId}`;
 `gameId` is the bare 32-hex EOS ProductUserId.
 ```json
 {"type":"player-connected","data":{"player":{"gameId":"0123456789ab…","name":"takarotester","characterName":"takarotester","characterGuid":"41C4B04F…","platformId":"epic:0123456789ab…"}}}
@@ -229,6 +239,7 @@ The `player` object is `{gameId, name, characterName?, platformName?, characterG
 | `GET /debug/object?path=/Script/Pkg.Name` or `?ptr=0x...` | the object's UPROPERTY tree up the class chain: `{name, type, offset, value}` per property, values decoded for primitives, `FString`, `FName` and object pointers. When the object is itself a `UClass`/`UScriptStruct` the properties it *declares* are listed under `declaredProperties`. `ptr` is refused unless it is inside a readable mapping. |
 | `GET /debug/perf[?reset=1]` | the game-thread counters (same as `/health.diagnostics.perf`); `reset=1` starts a new window after answering. |
 | `POST /debug/kill-nearest {gameId?, radius?}` | kills the AI nearest to a player through the game's own damage pipeline, with that player as instigator, so `entity-killed` can be proven without a human at the PC. |
+| `GET /debug/eos-linked?puid=<32 hex>` | the EOS Connect lookup for any PUID, online or not: `{puid, lookup:"Unavailable"\|"Pending"\|"Done", steamId, xboxLiveId, eos:{...}}`. The first call starts the query; poll until `Done`. |
 | `GET /debug/structs?name=X` | property table of a `UClass`/`UScriptStruct`. `X` is a full path (`/Script/JagexChatBackend.ChatMessageData`) or a plain name, which is resolved by scanning the live object array (so the owning module does not have to be known). |
 
 Example (real output, build `++dominion+staging-CL-240163`):
@@ -248,7 +259,7 @@ character name or the platform name for convenience.
 
 | endpoint | body (required in bold) | response |
 |---|---|---|
-| `GET /players` | — | `[{gameId,name,characterName,platformName,epicOnlineServicesId,platformId:"epic:<puid>",steamId?,ping,spawned,online:true,connectedAt}]` |
+| `GET /players` | — | `[{gameId,name,characterName,platformName,epicOnlineServicesId,platformId:"epic:<puid>",steamId?,xboxLiveId?,ping,spawned,online:true,connectedAt}]` (raw plugin rows; the bridge rewrites `platformId` as in Identity) |
 | `GET /players/{id}` | — | one player object, else `404 {"error":"player not online"}` |
 | `GET /players/{id}/location` | — | `{x,y,z,yaw,pitch}` (UE cm, doubles); `503` when the player has no pawn yet |
 | `GET /players/{id}/inventory` | — | `[{code,name,amount,inventory,slot}]` — one entry per item across every `UInventoryComponent` under the pawn and the controller (`inventory` is the component name, e.g. `BP_Components_Inventory`, `BP_Components_Loadout`) |
