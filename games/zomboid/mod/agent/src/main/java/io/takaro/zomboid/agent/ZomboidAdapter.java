@@ -219,7 +219,7 @@ public final class ZomboidAdapter implements GameAdapter {
         List<BanEntry> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (BanStore.Ban b : banStore.list()) {
-            out.add(new BanEntry(b.gameId, b.name, b.reason, b.expiresAt));
+            out.add(new BanEntry(b.gameId, b.name, b.reason, b.expiresAt, b.steamId));
             seen.add(b.gameId);
             if (b.steamId != null) {
                 seen.add(b.steamId);

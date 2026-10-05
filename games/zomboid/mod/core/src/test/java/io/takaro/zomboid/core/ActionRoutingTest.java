@@ -255,6 +255,23 @@ class ActionRoutingTest {
     }
 
     @Test
+    void listBansCarriesSteamIdentityWhenKnown() {
+        adapter.bans.add(new BanEntry("takarotester", "takarotester", "griefing", null, "76561198000000001"));
+        adapter.bans.add(new BanEntry("localonly", "localonly", null, null, null));
+        sendRequest("listBans", "req-11", "{}");
+        waitForResponse();
+
+        JsonArray bans = parseResponse(sentMessages.get(0)).getAsJsonArray("payload");
+        JsonObject steamPlayer = bans.get(0).getAsJsonObject().getAsJsonObject("player");
+        assertEquals("takarotester", steamPlayer.get("gameId").getAsString());
+        assertEquals("76561198000000001", steamPlayer.get("steamId").getAsString());
+        assertEquals("steam:76561198000000001", steamPlayer.get("platformId").getAsString());
+        JsonObject localPlayer = bans.get(1).getAsJsonObject().getAsJsonObject("player");
+        assertFalse(localPlayer.has("steamId"));
+        assertFalse(localPlayer.has("platformId"));
+    }
+
+    @Test
     void listItemsReturnsArray() {
         adapter.items.add(new GameItem("steam:stone", "stone", "A block"));
         sendRequest("listItems", "req-11", "{}");

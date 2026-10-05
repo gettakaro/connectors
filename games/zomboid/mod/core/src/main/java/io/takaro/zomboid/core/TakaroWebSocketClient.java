@@ -659,6 +659,11 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             JsonObject player = new JsonObject();
             player.addProperty("gameId", ban.gameId());
             player.addProperty("name", ban.name());
+            String steamId = ban.steamId();
+            if (steamId != null && steamId.matches("\\d{17}")) {
+                player.addProperty("steamId", steamId);
+                player.addProperty("platformId", PlayerInfo.buildPlatformId(steamId));
+            }
             obj.add("player", player);
             obj.addProperty("reason", ban.reason());
             obj.addProperty("expiresAt", ban.expiresAt());
