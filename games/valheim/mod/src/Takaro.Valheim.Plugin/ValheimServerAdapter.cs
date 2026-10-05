@@ -525,8 +525,8 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             .Select(ban => new ValheimBan(
                 GameId: ban,
                 Name: banNames.TryGetValue(ban, out var name) ? name : ban,
-                SteamId: ExtractSteamId(ban),
-                PlatformId: ToPlatformId(ban)))
+                SteamId: PlayerMapper.ToIdentity(ban).SteamId,
+                PlatformId: PlayerMapper.ToIdentity(ban).PlatformId))
             .ToArray();
 
         logger.LogInfo($"Takaro Valheim listBans returned {bans.Length} official ban entry/entries.");
@@ -713,22 +713,6 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         !string.IsNullOrWhiteSpace(value)
         && !string.IsNullOrWhiteSpace(needle)
         && value!.Equals(needle, StringComparison.OrdinalIgnoreCase);
-
-    private static string? ExtractSteamId(string value)
-    {
-        if (value.StartsWith("Steam_", StringComparison.OrdinalIgnoreCase))
-        {
-            return value.Substring("Steam_".Length);
-        }
-
-        return value.All(char.IsDigit) && value.Length == 17 ? value : null;
-    }
-
-    private static string? ToPlatformId(string value)
-    {
-        var steamId = ExtractSteamId(value);
-        return string.IsNullOrWhiteSpace(steamId) ? null : $"steam:{steamId}";
-    }
 
     private static string DisplayName(string? rawName, string fallback) =>
         ValheimLocalizer.Localize(rawName, fallback);

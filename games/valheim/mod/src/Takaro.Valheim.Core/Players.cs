@@ -16,23 +16,64 @@ public sealed record TakaroPlayer(
     [property: JsonPropertyName("steamId")] string? SteamId,
     [property: JsonPropertyName("platformId")] string? PlatformId,
     [property: JsonPropertyName("ip")] string? Ip,
-    [property: JsonPropertyName("ping")] int? Ping);
+    [property: JsonPropertyName("ping")] int? Ping,
+    [property: JsonPropertyName("xboxLiveId")] string? XboxLiveId = null);
+
+/// <summary>
+/// The Takaro identity fields derived from a Valheim <c>PlatformUserID</c> string
+/// (<c>Steam_&lt;SteamID64&gt;</c>, <c>Xbox_&lt;XUID&gt;</c>, <c>PlayStation_&lt;id&gt;</c>, ...).
+/// Takaro matches players only on these explicit fields and never parses <c>platformId</c>,
+/// so Steam and Xbox players must carry <c>steamId</c> / <c>xboxLiveId</c> raw.
+/// </summary>
+public sealed record PlatformIdentity(string? SteamId, string? XboxLiveId, string PlatformId);
 
 public static class PlayerMapper
 {
     private static readonly Regex SteamIdPattern = new(@"(?<steamId>7656119\d{10})", RegexOptions.Compiled);
+    private static readonly Regex XuidPattern = new(@"^\d{1,20}$", RegexOptions.Compiled);
+    private static readonly Regex PlatformIdSegmentPattern = new(@"^[A-Za-z0-9_-]+$", RegexOptions.Compiled);
     private static readonly Regex PlatformIdSegmentDisallowedCharacters = new(@"[^A-Za-z0-9_-]", RegexOptions.Compiled);
 
     public static TakaroPlayer ToTakaroPlayer(ValheimPlayer player)
     {
-        var steamId = FirstNonEmpty(player.SteamId, ExtractSteamId(player.PlatformUserId));
+        var identity = ToIdentity(player.PlatformUserId, player.SteamId);
         return new TakaroPlayer(
             GameId: player.PlatformUserId,
             Name: player.Name,
-            SteamId: steamId,
-            PlatformId: ToPlatformId(player.PlatformUserId, steamId),
+            SteamId: identity.SteamId,
+            PlatformId: identity.PlatformId,
             Ip: player.Ip,
-            Ping: player.Ping);
+            Ping: player.Ping,
+            XboxLiveId: identity.XboxLiveId);
+    }
+
+    public static PlatformIdentity ToIdentity(string platformUserId, string? knownSteamId = null)
+    {
+        var raw = (platformUserId ?? string.Empty).Trim();
+        var steamId = FirstNonEmpty(knownSteamId, ExtractSteamId(raw));
+        if (!string.IsNullOrWhiteSpace(steamId))
+        {
+            return new PlatformIdentity(steamId, null, $"steam:{steamId}");
+        }
+
+        var xuid = ExtractPrefixedId(raw, "Xbox_", XuidPattern);
+        if (xuid is not null)
+        {
+            return new PlatformIdentity(null, xuid, $"xbox:{xuid}");
+        }
+
+        var psnId = ExtractPrefixedId(raw, "PlayStation_", PlatformIdSegmentPattern);
+        if (psnId is not null)
+        {
+            return new PlatformIdentity(null, null, $"psn:{psnId}");
+        }
+
+        if (raw.StartsWith("Crossplay_", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PlatformIdentity(null, null, $"crossplay:{NormalizePlatformIdSegment(raw)}");
+        }
+
+        return new PlatformIdentity(null, null, $"valheim:{NormalizePlatformIdSegment(raw)}");
     }
 
     public static TakaroPlayer? Find(IEnumerable<TakaroPlayer> players, string? identifier)
@@ -47,6 +88,7 @@ public static class PlayerMapper
             Matches(player.GameId, needle)
             || Matches(player.PlatformId, needle)
             || Matches(player.SteamId, needle)
+            || Matches(player.XboxLiveId, needle)
             || Matches(player.Name, needle));
     }
 
@@ -81,7 +123,8 @@ public static class PlayerMapper
             .Where(player =>
                 Matches(player.GameId, needle)
                 || Matches(player.PlatformId, needle)
-                || Matches(player.SteamId, needle))
+                || Matches(player.SteamId, needle)
+                || Matches(player.XboxLiveId, needle))
             .Take(2)
             .ToArray();
         if (stableMatches.Length > 0)
@@ -100,25 +143,27 @@ public static class PlayerMapper
         return player is not null;
     }
 
-    private static string? ToPlatformId(string platformUserId, string? steamId)
-    {
-        if (!string.IsNullOrWhiteSpace(steamId))
-        {
-            return $"steam:{steamId}";
-        }
-
-        if (platformUserId.StartsWith("Crossplay_", StringComparison.OrdinalIgnoreCase))
-        {
-            return $"crossplay:{NormalizePlatformIdSegment(platformUserId)}";
-        }
-
-        return $"valheim:{NormalizePlatformIdSegment(platformUserId)}";
-    }
-
     private static string? ExtractSteamId(string value)
     {
+        if (value.StartsWith("Xbox_", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("PlayStation_", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
         var match = SteamIdPattern.Match(value);
         return match.Success ? match.Groups["steamId"].Value : null;
+    }
+
+    private static string? ExtractPrefixedId(string value, string prefix, Regex pattern)
+    {
+        if (!value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var id = value.Substring(prefix.Length);
+        return pattern.IsMatch(id) ? id : null;
     }
 
     private static string? FirstNonEmpty(params string?[] values) =>
