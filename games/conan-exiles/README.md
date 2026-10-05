@@ -78,65 +78,63 @@ deprecated and gets no fixes.
 ## What works, what doesn't
 
 ✅ = works, ⚠️ = works with a caveat or not yet verified, ❌ = unsupported, N/A = does not apply.
-Verified on build 25639945 with a real client: Linux 2026-10-03/04, Windows 2026-10-03.
+Verified on build 25639945 with a real client: Linux 2026-10-03/04, Windows 2026-10-04/05.
 
 | What | Linux | Windows | Notes |
 |---|---|---|---|
 | Connection & heartbeat | ✅ | ✅ | Connects to Takaro itself; no sidecar, no RCON. |
-| Player list | ✅ | ⚠️ | Steam64 id, name, IP, ping. Windows: not yet verified. |
-| Single player lookup | ✅ | ⚠️ | Offline players answer their last known record. |
-| Player location | ✅ | ⚠️ | |
-| Player inventory | ✅ | ⚠️ | Backpack, hotbar and equipment with durability. |
-| Give an item | ✅ | ⚠️ | Weapons and tools arrive at full durability. |
-| Item catalogue | ✅ | ⚠️ | 7521 items with in-game names. |
+| Player list | ✅ | ✅ | Steam64 id (also for Funcom-account logins), name, IP, ping. |
+| Single player lookup | ✅ | ✅ | Offline players answer their last known record. |
+| Player location | ✅ | ✅ | |
+| Player inventory | ✅ | ✅ | Backpack, hotbar and equipment with durability. |
+| Give an item | ✅ | ✅ | Weapons and tools arrive at full durability. |
+| Item catalogue | ✅ | ✅ | 7521 items with in-game names. |
 | Entity catalogue | ⚠️ | ⚠️ | In-game names; the client shows none to compare with. |
 | Locations / points of interest | N/A | N/A | Takaro never asks for this list. |
-| Run a console command | ✅ | ⚠️ | Unknown commands fail; `exit`/`quit` are refused. |
+| Run a console command | ✅ | ✅ | Unknown commands fail; `exit`/`quit` are refused. |
 | Broadcast a message | ✅ | ✅ | |
 | Whisper a player | ✅ | ✅ | |
-| Teleport a player | ✅ | ⚠️ | Module teleports included. |
-| Kick a player | ✅ | ⚠️ | The player sees the reason. |
-| Ban a player (timed and permanent) | ✅ | ⚠️ | Also offline; banned players cannot rejoin. |
-| Unban a player | ✅ | ⚠️ | |
-| Ban list | ✅ | ⚠️ | Includes the reason and expiry. |
-| Shut the server down | ✅ | ⚠️ | Countdown in chat, then a clean exit. |
-| Player joined event | ✅ | ⚠️ | Also for a brand-new character. |
-| Player left event | ✅ | ⚠️ | Also for kicks and shutdown. |
-| Player chat event | ✅ | ⚠️ | |
+| Teleport a player | ✅ | ✅ | Module teleports included. |
+| Kick a player | ✅ | ✅ | The player sees the reason. |
+| Ban a player (timed and permanent) | ✅ | ✅ | Also offline; banned players cannot rejoin. |
+| Unban a player | ✅ | ✅ | |
+| Ban list | ✅ | ✅ | Includes the reason and expiry. |
+| Shut the server down | ✅ | ✅ | Countdown in chat, then a clean exit. |
+| Player joined event | ✅ | ✅ | Also for a brand-new character. |
+| Player left event | ✅ | ✅ | Also for kicks and shutdown. |
+| Player chat event | ✅ | ✅ | |
 | Player death event | ⚠️ | ⚠️ | With position; a PvP killer is not yet verified. |
-| Entity kill event | ✅ | ⚠️ | Creature name and weapon. |
-| Log events | ✅ | ⚠️ | |
+| Entity kill event | ✅ | ✅ | Creature name and weapon. |
+| Log events | ✅ | ✅ | |
 | Map info | N/A | N/A | Takaro has no map info for Generic game servers. |
 | Map tiles | N/A | N/A | Takaro has no map tiles for Generic game servers. |
-| Modules: chat commands | ✅ | ⚠️ | |
-| Modules: hooks | ✅ | ⚠️ | |
-| Modules: cronjobs | ✅ | ⚠️ | |
-| Modules: teleports (`@settp`, `@tp`, …) | ✅ | ⚠️ | |
-| Modules: server messages | ✅ | ⚠️ | |
-| Shop: buy in game | ✅ | ⚠️ | |
-| Shop: order in Takaro and claim | ✅ | ⚠️ | |
+| Modules: chat commands | ✅ | ✅ | |
+| Modules: hooks | ✅ | ✅ | |
+| Modules: cronjobs | ✅ | ✅ | |
+| Modules: teleports (`@settp`, `@tp`, …) | ✅ | ✅ | |
+| Modules: server messages | ✅ | ⚠️ | Windows: the module itself not run; module cron messages to game work. |
+| Shop: buy in game | ✅ | ✅ | |
+| Shop: order in Takaro and claim | ✅ | ✅ | |
 | Shop: `@claim` in game | ⚠️ | ⚠️ | Not verified (needs Takaro account linking). |
-| Shop: bundle of several items | ✅ | ⚠️ | |
-| Shop: order while offline, claim later | ✅ | ⚠️ | |
-| Shop: not enough currency | ✅ | ⚠️ | Refused, nothing deducted. |
-| Economy: balance in game | ✅ | ⚠️ | |
-| Discord: game chat → Discord | ✅ | ⚠️ | Use the `chatBridgeNoEcho` module. |
-| Discord: Discord → game chat | ✅ | ⚠️ | |
-| Discord: module hook / cronjob posts | ✅ | ⚠️ | |
-| Discord: join/leave notices | ✅ | ⚠️ | |
-| Discord: no echo of server messages | ✅ | ⚠️ | Use the `chatBridgeNoEcho` module. |
-| Events while the Takaro connection is down | ✅ | ⚠️ | Queued on disk, delivered once after reconnect. |
-| Reconnects after a server restart | ✅ | ⚠️ | |
-| Survives a network drop to Takaro | ✅ | ⚠️ | |
-| Unknown server build | ✅ | ⚠️ | Stays connected, refuses actions, says why. |
+| Shop: bundle of several items | ✅ | ✅ | |
+| Shop: order while offline, claim later | ✅ | ✅ | |
+| Shop: not enough currency | ✅ | ✅ | Refused, nothing deducted. |
+| Economy: balance in game | ✅ | ✅ | |
+| Discord: game chat → Discord | ✅ | ✅ | Use the `chatBridgeNoEcho` module. |
+| Discord: Discord → game chat | ✅ | ✅ | |
+| Discord: module hook / cronjob posts | ✅ | ✅ | |
+| Discord: join/leave notices | ✅ | ✅ | |
+| Discord: no echo of server messages | ✅ | ✅ | Use the `chatBridgeNoEcho` module. |
+| Events while the Takaro connection is down | ✅ | ✅ | Queued on disk, delivered once after reconnect. |
+| Reconnects after a server restart | ✅ | ✅ | |
+| Survives a network drop to Takaro | ✅ | ✅ | |
+| Unknown server build | ✅ | ✅ | Stays connected, refuses actions, says why. |
 
-On Windows, ⚠️ means not yet verified on Windows.
 
 ### Known issues
 
 - Works only on server build 25639945; a game update needs a new connector release.
 - Linux needs control of the start command for `LD_PRELOAD`; some rented hosts do not allow it.
-- The Windows build is not fully tested yet: only the connection and messages are proven.
 - A death by the `Suicide` command carries no cause in its message.
 - After moving from the bridge, its old catalogue rows (class names) stay in Takaro; Takaro never deletes them.
 
