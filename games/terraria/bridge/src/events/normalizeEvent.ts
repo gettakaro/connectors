@@ -1,3 +1,4 @@
+import { terrariaIdentity } from '../terraria/identity.js';
 import type { GameEvent, GameEventType } from '../takaro/protocol.js';
 
 export function normalizeGameEvent(type: GameEventType, rawData: unknown): GameEvent {
@@ -45,15 +46,25 @@ export function normalizeGameEvent(type: GameEventType, rawData: unknown): GameE
   }
 }
 
-function playerDto(value: unknown): { gameId: string; name?: string; ip?: string } | undefined {
+function playerDto(value: unknown): { gameId: string; name?: string; platformId?: string; ip?: string } | undefined {
   const source = record(value);
-  const gameId = stringValue(source.gameId) || stringValue(source.name) || stringValue(source.platformId);
-  if (!gameId) return undefined;
+  const raw = stringValue(source.gameId) || stringValue(source.name) || stringValue(source.platformId);
+  if (!raw) return undefined;
+  // Every event carries the same gameId/platformId pair as getPlayers. Without a platformId a
+  // player-connected for someone Takaro has not seen yet cannot create the player at all, and the
+  // events plugin's own platformId (the client UUID) would disagree with the REST player list.
+  const key = raw.startsWith('terraria:') ? raw.slice('terraria:'.length) : raw;
+  // An NPC killer is reported as `npc:<slot>`: it is no account, so it gets no platformId.
+  if (key.startsWith('npc:')) {
+    return compact({ gameId: key, name: stringValue(source.name) }) as { gameId: string; name?: string };
+  }
+  const { gameId, platformId } = terrariaIdentity(key);
   return compact({
-    gameId: gameId.startsWith('terraria:') ? gameId.slice('terraria:'.length) : gameId,
+    gameId,
     name: stringValue(source.name),
+    platformId,
     ip: stringValue(source.ip),
-  }) as { gameId: string; name?: string; ip?: string };
+  }) as { gameId: string; name?: string; platformId?: string; ip?: string };
 }
 
 function positionDto(value: unknown): { x: number; y: number; z: number; dimension?: string } | undefined {

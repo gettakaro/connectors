@@ -1,4 +1,5 @@
 import { ALL_GAME_EVENT_TYPES, type GameEvent, type GameEventType } from '../takaro/protocol.js';
+import { terrariaIdentity } from '../terraria/identity.js';
 
 /** TShock writes `<timestamp> - <source>: <LEVEL>: <message>`; the prefix is optional on relayed lines. */
 const TSHOCK_PREFIX = /^(?:(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - )?[^\s:][^:]*: (?:INFO|WARN|ERROR|DEBUG|FATAL): (.+)$/i;
@@ -93,5 +94,5 @@ function isGameEventType(value: unknown): value is GameEventType {
 
 function logPlayer(name: string): { gameId: string; name: string; platformId: string } {
   const clean = name.trim();
-  return { gameId: clean, name: clean, platformId: `terraria:${clean}` };
+  return { ...terrariaIdentity(clean), name: clean };
 }
