@@ -70,10 +70,24 @@ export function mapPlayer(source: PlayerLike): TakaroPlayer {
     player.steamId = steamId;
     player.platformId = `steam:${steamId}`;
   } else if (platformIdRaw) {
-    // Unknown platform: keep the raw id visible but do not claim it is a Steam id.
-    player.platformId = platformName ? `${platformName}:${platformIdRaw}` : platformIdRaw;
+    // Unknown platform: keep the raw id visible but do not claim it is a Steam id. Takaro rejects the whole
+    // IGamePlayer (and so the event or response carrying it) unless platformId is `<platform>:<id>` with both
+    // halves in [A-Za-z0-9_-], so anything that cannot be expressed that way is left out rather than sent.
+    const platformId = platformIdOf(platformName, platformIdRaw);
+    if (platformId) player.platformId = platformId;
   }
   return player;
+}
+
+/** Takaro's IGamePlayer.platformId pattern. */
+export const TAKARO_PLATFORM_ID_RE = /^[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+$/;
+
+/** `<platform>:<id>` for a non-Steam account, or null when the pair cannot form a valid Takaro platformId. */
+export function platformIdOf(platformName: string, rawId: string): string | null {
+  const prefix = platformName.toLowerCase().replace(/[^a-z0-9_-]+/g, '');
+  if (!prefix) return null;
+  const candidate = `${prefix}:${rawId}`;
+  return TAKARO_PLATFORM_ID_RE.test(candidate) ? candidate : null;
 }
 
 /** Every identifier a Takaro caller might name this player by; used to index the known-player cache. */
