@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-25708939",
+  "game": "vein",
+  "platform": "linux",
+  "revision": "25708939",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-10-05",
+    "evidence": [
+      "VEIN dedicated server appmanifest_2131400.acf on the dev rig records public build 25708939 and depot 2131402 manifest 2011996607109187715",
+      "Server Vein.log reports game version 0.025h2, Build 13209, hash 83ca4151510; the native plugin resolves 111/118 names (10/10 required) and every capability reports ok on this build",
+      "A real Windows client on VEIN 0.025h2 (Steam app 1857950) joined this server; joins, chat, deaths, kicks, bans and the Takaro MCP actions were proven in that client on 2026-10-05"
+    ],
+    "notes": "The Steam server and client build IDs differ. Compare the reported VEIN game version and build before joining. This is a candidate until the separate player-required server smoke and Takaro MCP plus real-client gates pass."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 2131400,
+      "branch": "public",
+      "buildid": 25708939,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "2131402": {
+          "manifest": "2011996607109187715",
+          "size": 9669982385
+        }
+      },
+      "files": {
+        "Vein/Binaries/Linux/VeinServer-Linux-Test": {
+          "sha256": "1289ac89eab03246c1cc1d5aca92d685636cfe9e098540293902f8d0c959f700",
+          "size": 200283240
+        },
+        "Vein/Binaries/Linux/VeinServer-Linux-Test.sym": {
+          "sha256": "8eb1963d96a4064c84db0e6ba40daf883ed274fa66e9d968055a1de31e287f2b",
+          "size": 255096028
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "takaro-dev-vein",
+      "tag": "25708939",
+      "digest": "sha256:68d4203680f268cc346942578998de673bf6678c400e736d6a684b2afc2ca278",
+      "env": {
+        "VEIN_AUTO_UPDATE": "false"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/vein/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "takaro-vein-build",
+      "tag": "0.3.1",
+      "digest": "sha256:bc80243d31ab6a197a95252bdb1beb788032dac99dd5c68b3a54b709d4d5edf2"
+    },
+    "deps": {
+      "openssl": {
+        "coordinate": "openssl:openssl:3.5.8",
+        "sha256": "a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2"
+      },
+      "libwebsockets": {
+        "coordinate": "warmcat:libwebsockets:4.5.8",
+        "sha256": "b6ade658f4af3a823d0dc806ae5ef0623f0f4f5e2aeb895a0f77c4783840c30e"
+      },
+      "pcre2": {
+        "coordinate": "PCRE2Project:pcre2:10.47",
+        "sha256": "47fe8c99461250d42f89e6e8fdaeba9da057855d06eb7fc08d9ca03fd08d7bc7"
+      },
+      "nlohmann-json": {
+        "coordinate": "nlohmann:json:3.12.0",
+        "sha256": "42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "plugin",
+      "artifact": "takaro-vein-plugin-linux-25708939-{version}.tar.gz",
+      "installDir": "takaro"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup",
+      "connector-load",
+      "identify",
+      "heartbeat",
+      "players",
+      "console",
+      "shutdown"
+    ]
+  },
+  "preserve": [
+    "Vein/Saved/",
+    "steamapps/",
+    "takaro/",
+    "takaro/TakaroVein/"
+  ],
+  "devServers": {
+    "gameId": "vein"
+  },
+  "notes": "Native LD_PRELOAD connector. The game server must preload the plugin only on VeinServer-Linux-Test, not SteamCMD. The dev rig image and pinned Bookworm build image are local images identified by digest; build those Dockerfiles before using this target on another host."
+}

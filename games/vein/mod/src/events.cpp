@@ -76,23 +76,27 @@ struct SourceStat {
 SourceStat g_join, g_leave, g_chat, g_death, g_kill, g_log;
 Mutex g_noteLock;
 
-void Note(SourceStat& s, const std::string& n) {
+// True when the note changed. Capabilities are refreshed every 2 s, so the plugin log only gets a
+// line when a source's state actually moves - otherwise it grows by ~0.5 GB a week.
+bool Note(SourceStat& s, const std::string& n) {
     Guard g(g_noteLock);
+    if (s.note == n) return false;
     s.note = n;
+    return true;
 }
 std::string NoteOf(SourceStat& s) {
     Guard g(g_noteLock);
     return s.note;
 }
 void Degrade(const char* cap, SourceStat& s, const std::string& why) {
-    Note(s, why);
+    bool changed = Note(s, why);
     PluginState::Get().SetCapability(cap, "degraded", why);
-    PluginLog("events: %s degraded: %s", cap, why.c_str());
+    if (changed) PluginLog("events: %s degraded: %s", cap, why.c_str());
 }
 void Ok(const char* cap, SourceStat& s, const std::string& how) {
-    Note(s, how);
+    bool changed = Note(s, how);
     PluginState::Get().SetCapability(cap, "ok", "");
-    PluginLog("events: %s ok (%s)", cap, how.c_str());
+    if (changed) PluginLog("events: %s ok (%s)", cap, how.c_str());
 }
 
 // =================================================================================================
@@ -472,6 +476,7 @@ void EmitLeave(const Ident& id) {
         Guard g(g_connLock);
         g_announced.erase(id.gameId);
     }
+    Actions::ForgetConnection(id.gameId);
     PluginState::Get().EmitEventDeferred("player-disconnected", [id] { return "{\"player\":" + PlayerJson(id) + "}"; });
     g_leave.emitted++;
     PluginLog("events: player-disconnected %s (%s)", id.gameId.c_str(), id.name.c_str());
@@ -1211,11 +1216,26 @@ void AttributeFrom(const DeathParams& dp, void* victimActor, const Ident& victim
             return;
         }
     }
+    // A creature killer is named the way the catalogue names it ("Zombie", "Wolf"), not by its
+    // Blueprint class - the same rule entity-killed now follows, so the two events agree. The
+    // instigator comes first and is the creature's AI controller, so a controller is followed to
+    // the pawn it possesses before any candidate falls back to a raw class name.
     for (void* c : candidates) {
         if (!ValidObject(c) || isVictim(c)) continue;
-        // A creature killer is named the way the catalogue names it ("Zombie", "Wolf"), not by its
-        // Blueprint class - the same rule entity-killed now follows, so the two events agree.
-        killerEntity = IsAnyAi(c) ? EntityDisplayName(c) : SafeClassName(c);
+        void* body = c;
+        if (!IsAnyAi(body)) {
+            int32_t off = PropOffOf(c, "Pawn");
+            void* pawn = nullptr;
+            if (off >= 0 && ReadAt(c, off, pawn) && ValidObject(pawn)) body = pawn;
+        }
+        if (IsAnyAi(body)) {
+            killerEntity = EntityDisplayName(body);
+            if (!killerEntity.empty()) return;
+        }
+    }
+    for (void* c : candidates) {
+        if (!ValidObject(c) || isVictim(c)) continue;
+        killerEntity = SafeClassName(c);
         if (!killerEntity.empty()) return;
     }
 }

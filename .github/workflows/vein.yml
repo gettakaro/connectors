@@ -3,9 +3,21 @@ name: VEIN Connector
 on:
   push:
     branches: [main]
-    paths: ['games/vein/**', 'scripts/**', '.github/workflows/vein.yml']
+    paths:
+      - 'games/vein/**'
+      - 'catalog/vein/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/vein.yml'
+      - '.github/workflows/connector-release.yml'
   pull_request:
-    paths: ['games/vein/**', 'scripts/**', '.github/workflows/vein.yml']
+    paths:
+      - 'games/vein/**'
+      - 'catalog/vein/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/vein.yml'
+      - '.github/workflows/connector-release.yml'
   workflow_call:
     inputs:
       version:
@@ -34,48 +46,38 @@ concurrency:
 
 jobs:
   test:
-    if: ${{ !inputs.tag }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The same commit the release job builds. Not gated on `!inputs.tag`: `release`
+          # needs it, and a skipped dependency would skip the release with it.
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
       - name: Build the plugin and run its unit tests (debian:bookworm toolchain)
         run: |
-          chmod +x games/vein/mod/build.sh games/vein/mod/tests/run.sh
+          chmod +x games/vein/mod/build.sh games/vein/mod/tests/*.sh
           games/vein/mod/build.sh --tests
-
       - name: Test operator smoke and drain tools
         run: python3 -m unittest discover -s games/vein/scripts -p 'test_*.py' -v
 
-  package:
+  params:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+    outputs:
+      version: ${{ steps.params.outputs.version }}
+      tag: ${{ steps.params.outputs.tag }}
+      publish: ${{ steps.params.outputs.publish }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           # A release or recovery run builds the tag, never whatever main has become.
           ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
           fetch-tags: true
-
-      # The tag, the version, the manifest and the checked-out commit must all agree
-      # before anything is built.
-      - name: Release guard
-        env:
-          IN_VERSION: ${{ inputs.version }}
-          IN_TAG: ${{ inputs.tag }}
-        run: scripts/release-guard.sh vein "$IN_VERSION" "$IN_TAG"
-
-      - name: Generate token
-        id: app-token
-        if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) }}
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
-        with:
-          app-id: ${{ secrets.TAKARO_CI_APP_ID }}
-          private-key: ${{ secrets.TAKARO_CI_APP_PRIV_KEY }}
-
-      - name: Make scripts executable
-        run: chmod +x games/vein/scripts/*.sh games/vein/mod/*.sh games/vein/mod/tests/*.sh scripts/*.sh
 
       - name: Resolve release params
         id: params
@@ -87,49 +89,18 @@ jobs:
           DEV_SHA: ${{ github.event.pull_request.head.sha }}
         run: scripts/release-params.sh vein >> "$GITHUB_OUTPUT"
 
-      - name: Build release artifacts
-        run: games/vein/scripts/build-release.sh "${{ steps.params.outputs.version }}" "$RUNNER_TEMP/dist"
-
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
-        with:
-          version: "0.12.15"
-
-      - run: uv python install
-      - run: uv sync --frozen --project maintenance
-
-      # One publisher for every connector: the set is assembled, published and read
-      # back from GitHub. `--mode legacy` means the files are named here rather than
-      # derived from a catalog, so this connector's asset names are unchanged.
-      # Fork PRs get a read-only token, so they build for validation only.
-      - name: Publish
-        if: >-
-          ${{ steps.params.outputs.publish != 'none'
-              && (github.event_name != 'pull_request'
-                  || (github.event.pull_request.head.repo.full_name == github.repository
-                      && !github.event.pull_request.draft)) }}
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        shell: bash
-        run: |
-          scripts/publish-release.sh publish \
-            --connector vein \
-            --channel "${{ steps.params.outputs.publish }}" \
-            --version "${{ steps.params.outputs.version }}" \
-            --tag "${{ steps.params.outputs.tag }}" \
-            --pr-number "${{ github.event.pull_request.number }}" \
-            --mode legacy \
-            --dist "$RUNNER_TEMP/dist" \
-            --out "$RUNNER_TEMP/assembled" \
-            -- \
-            "$RUNNER_TEMP/dist/takaro-vein-plugin.tar.gz"
-
-      - name: Comment PR build
-        if: ${{ steps.params.outputs.publish == 'pr' && github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft }}
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          scripts/comment-pr-build.sh vein \
-            "${{ github.event.pull_request.number }}" \
-            "${{ steps.params.outputs.tag }}" \
-            "${{ steps.params.outputs.version }}" \
-            "$RUNNER_TEMP/assembled"
+  release:
+    needs: [test, params]
+    uses: ./.github/workflows/connector-release.yml
+    secrets: inherit
+    with:
+      connector: vein
+      version: ${{ needs.params.outputs.version }}
+      tag: ${{ needs.params.outputs.tag }}
+      publish: ${{ needs.params.outputs.publish }}
+      pr_number: ${{ github.event.pull_request.number }}
+      # The VEIN dedicated server is a ~9.7 GB Steam depot and the plugin loads with
+      # LD_PRELOAD onto a game binary that has no hosted-runner image, so the release
+      # claims contract verification (the tests above and the release build) and runtime
+      # proof stays on the dev rig with a real client.
+      runtime: false

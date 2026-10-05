@@ -48,6 +48,10 @@ Result Shutdown();
 // (lane L2's join resolver already is); a no-op when the player is not online.
 bool KickBanned(const std::string& gameId);
 
+// Forgets when a player connected, so the next connection reports its own `connectedAt`.
+// Called by the leave path; safe from any thread.
+void ForgetConnection(const std::string& gameId);
+
 // Lane L2c: the display name of the UItem an `AEquippedItem` actor represents ("Baseball Bat"),
 // or "" when `actor` is not an equipped item / carries no resolvable item. Reads UObjects by
 // reflection, so it must be called ON THE GAME THREAD; entity-killed uses it to name the weapon
@@ -58,6 +62,11 @@ std::string EquippedItemName(void* actor);
 // own damage pipeline, with that player as the instigator. It exists so that entity-killed can be
 // proven without a human swinging a sword.
 Result KillNearest(const JsonValue& body);
+
+// Debug only (TAKARO_PLUGIN_DEBUG=1): stages a live melee test through the player's OWN admin
+// component, so the game's admin check applies. `op` is "godmode" / "notarget" (with `on`) or
+// "spawn-zombie" (optional `class`, default BP_Zombie_C; the game places it at the admin).
+Result DebugAdmin(const JsonValue& body);
 
 // Debug only (TAKARO_PLUGIN_DEBUG=1), lane L3f / finding F19: shows, for one player, the
 // controller's current pawn, the player state's PawnPrivate, the character id, the single

@@ -781,6 +781,8 @@ void BridgeLoop() {
                                             Json({{"type", "identify"}, {"payload", p}}).dump(), 0, n.epoch))
                     NativeTransport::RequestClose(n.epoch, 1013, "identify queue full");
             } else if (n.type == NativeTransport::NoticeType::Closed && n.epoch == currentEpoch) {
+                PluginLog("native: Takaro connection closed (epoch %llu%s%s)", (unsigned long long)n.epoch,
+                          lastError.empty() ? "" : ", last error: ", lastError.c_str());
                 identified = false; liveEpoch = false;
                 if (gateMode) for (auto& e : outbox) e.sentEpoch = 0;
                 else sentEpochByOutboxId.clear();
@@ -806,7 +808,11 @@ void BridgeLoop() {
                     flushConfirm();
                     CommitShutdown();
                 }
-            } else if (n.type == NativeTransport::NoticeType::Error) lastError = n.text;
+            } else if (n.type == NativeTransport::NoticeType::Error) {
+                lastError = n.text;
+                PluginLog("native: Takaro transport error (epoch %llu): %s", (unsigned long long)n.epoch,
+                          lastError.c_str());
+            }
         }
         flushConfirm();
         Completion completed;

@@ -37,6 +37,13 @@ printf '%s\n' "$VERSION" > "$PKG/VERSION"
 # A previous release run may have populated this output directory. Never leave
 # a stale sidecar archive beside the native-only release asset.
 rm -f "$OUT_DIR/takaro-vein-sidecar.tar.gz"
-tar -czf "$OUT_DIR/takaro-vein-plugin.tar.gz" -C "$STAGE" TakaroVein
+# Reproducible archive: the release workflow builds twice and compares the bytes. File modes
+# come from `install -m` above; ordering, timestamps, owners and the gzip header are fixed here.
+EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" log -1 --format=%ct 2>/dev/null || echo 315532800)}"
+find "$STAGE/TakaroVein" -type d -exec chmod 755 {} +
+find "$STAGE/TakaroVein" -type f ! -perm -u+x -exec chmod 644 {} +
+find "$STAGE/TakaroVein" -exec touch -h -d "@$EPOCH" {} +
+tar --sort=name --mtime="@$EPOCH" --owner=0 --group=0 --numeric-owner --format=gnu \
+    -cf - -C "$STAGE" TakaroVein | gzip -n -9 > "$OUT_DIR/takaro-vein-plugin.tar.gz"
 ( cd "$OUT_DIR" && sha256sum takaro-vein-plugin.tar.gz > SHA256SUMS )
 cat "$OUT_DIR/SHA256SUMS"
