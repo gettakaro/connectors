@@ -4,7 +4,7 @@
 # Usage: logs.sh <game> [docker compose logs args...]
 #   logs.sh valheim              # last 100 lines
 #   logs.sh valheim -f           # follow
-#   logs.sh conan-exiles --tail 500 conan-bridge
+#   logs.sh conan-exiles --tail 500 conan-exiles
 set -euo pipefail
 # shellcheck source=../lib/common.sh
 . "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../lib" && pwd)/common.sh"

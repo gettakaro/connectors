@@ -31,12 +31,7 @@ ds_render_config() {
             ds_ok "${data}/config/bepinex/com.takaro.valheim.cfg (chatSenderName=${CHAT_SENDER_NAME})"
             ;;
         conan-exiles)
-            export IDENTITY_TOKEN="${TAKARO_IDENTITY_CONAN:-takaro-dev-conan}"
-            export SERVER_NAME="${CONAN_SERVER_NAME:-Takaro Dev Conan}"
-            mkdir -p "${data}/bridge"
-            ds_render "${DS_TEMPLATES}/conan-exiles/TakaroConfig.txt" \
-                "${data}/bridge/TakaroConfig.txt"
-            ds_ok "${data}/bridge/TakaroConfig.txt"
+            ds_info "conan-exiles has no rendered config: the native connector reads takaro.json (games/conan-exiles/INSTALL.md)"
             ;;
         palworld)
             export SERVER_NAME="${PALWORLD_SERVER_NAME:-Takaro Dev Palworld}"

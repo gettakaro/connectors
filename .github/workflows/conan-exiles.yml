@@ -47,41 +47,6 @@ concurrency:
   cancel-in-progress: ${{ inputs.tag == '' }}
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    defaults:
-      run:
-        working-directory: games/conan-exiles/bridge
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          # The same commit the release job builds: a recovery run for an older tag is
-          # gated on that tag's sources, never on whatever main has become. The job is
-          # not gated on `!inputs.tag` -- `release` needs it, and a skipped dependency
-          # would skip the release with it.
-          ref: ${{ inputs.tag || github.ref }}
-          fetch-tags: true
-      - name: Set up Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
-        with:
-          node-version: 22.x
-          cache: npm
-          cache-dependency-path: games/conan-exiles/bridge/package-lock.json
-      - name: Install dependencies
-        run: npm ci
-      # The contract check lives here: a real bridge between a fake RCON server and a
-      # fake Takaro, so a hosted runner proves the protocol without a 4.3 GB game.
-      - name: Test
-        run: npm test
-      # `check-exact-source.mjs` is the gate between `npm ci` and whatever the lockfile
-      # points at; it is not under the bridge's own test glob, so it needs its own step.
-      - name: Test the build scripts
-        run: npm run test:scripts
-      - name: Build
-        run: npm run build
-
   # The native connector library (LD_PRELOAD into the Linux server): unit, drift, fake-Takaro wire
   # and real-library tests, built in the pinned buster toolchain image. The same run holds the
   # re-pin checks: a wrong build degrades cleanly, pins.json agrees with catalog/conan-exiles
@@ -168,7 +133,7 @@ jobs:
         run: scripts/release-params.sh conan-exiles >> "$GITHUB_OUTPUT"
 
   release:
-    needs: [test, native, native-windows, params]
+    needs: [native, native-windows, params]
     uses: ./.github/workflows/connector-release.yml
     secrets: inherit
     with:
@@ -178,6 +143,6 @@ jobs:
       publish: ${{ needs.params.outputs.publish }}
       pr_number: ${{ github.event.pull_request.number }}
       # The Conan Exiles server is a 4.3 GB Steam depot needing ~10 GB RAM: a hosted
-      # runner cannot boot it, so the release claims contract verification (the bridge's
-      # own end-to-end tests) and runtime onboarding is tracked separately.
+      # runner cannot boot it, so the release claims contract verification (the native
+      # library's own tests above) and runtime onboarding is tracked separately.
       runtime: false

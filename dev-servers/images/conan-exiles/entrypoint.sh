@@ -20,13 +20,14 @@ fi
 
 mkdir -p "${CONFIG_DIR}" "${INSTALL_DIR}/ConanSandbox/Saved/Logs"
 
-# RCON is what the Takaro sidecar drives. RconMaxKarma is raised because Conan throttles
-# repeated RCON and the sidecar polls; see games/conan-exiles/README.md. The password
-# lives here and never on the command line, which is logged and inspectable.
+# RCON is for manual admin access to the dev server (the native connector does not use
+# it), published on 127.0.0.1:25580. RconMaxKarma is raised because Conan throttles
+# repeated RCON. The password lives here and never on the command line, which is logged
+# and inspectable.
 #
 # The section is rewritten on every start rather than written once: RCON_PASSWORD comes
 # from dev-servers/.env, and a Game.ini left alone would keep the server on the old secret
-# while the sidecar is configured with the new one, failing RCON auth with nothing saying why.
+# after the .env changed, failing RCON auth with nothing saying why.
 GAME_INI="${CONFIG_DIR}/Game.ini"
 echo "[conan] Writing [RconPlugin] settings to ${GAME_INI}"
 GAME_INI_NEW="${GAME_INI}.takaro-new"

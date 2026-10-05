@@ -97,32 +97,10 @@ The connector keeps its state (event queue, bans, health) in `ConanSandbox/Saved
 Stop the server, replace `libtakaro-conan-native.so` (Linux) or `winmm.dll` (Windows) with the new
 one, start the server. `takaro.json` and the state folders stay as they are.
 
-## Moving over from the old bridge
-
-The Node.js bridge (`takaro-conan-exiles-bridge-*.zip`) is deprecated. It is still published for
-one more release cycle and gets no fixes.
-
-1. Stop the bridge (`npm start` process or its container) and the server. Never run the bridge
-   and the native connector against the same Takaro game server at the same time.
-2. Install the native connector as above, with the values from the bridge's `TakaroConfig.txt`:
-   the same `registrationToken`, and as `identityToken` the bridge's `identityToken`, or its
-   `serverName` if `identityToken` is empty (the bridge then identifies with the server name).
-   That keeps the same Takaro game server. Players keep their Takaro records: both use the
-   Steam64 id as the player id.
-3. Turn RCON off (see above) and remove the bridge's log and RCON settings you no longer need.
-4. Start the server and check the log line above.
-
-Takaro keeps the item and entity rows the bridge synced (class names such as `PlantFiber`). Takaro
-never deletes catalogue rows, so they stay next to the new rows with in-game names. Shop listings
-that point at an old row keep working only if you re-create them from the new rows.
-
 ## Rollback
 
 - **To the previous native version:** stop the server, put the previous
   `libtakaro-conan-native.so` or `winmm.dll` back, start the server.
-- **To the bridge:** stop the server, remove `LD_PRELOAD` (Linux) or delete
-  `ConanSandbox\Binaries\Win64\winmm.dll` (Windows), turn RCON back on for the bridge, and start
-  the bridge again with its old `TakaroConfig.txt`.
 - **Turn it off temporarily:** set `TAKARO_CONAN_NATIVE_DISABLE=1` in the server's environment.
 
 ## Removing it

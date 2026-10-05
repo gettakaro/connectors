@@ -42,15 +42,9 @@
     "native": {
       "description": "The native connector, loaded into the dedicated server process: libtakaro-conan-native.so through LD_PRELOAD on Linux, a winmm.dll proxy next to ConanSandboxServer-Win64-Shipping.exe on Windows. It holds the Takaro connection itself; no sidecar, no RCON",
       "artifactPattern": "takaro-conan-exiles-native-{target}-{version}.zip"
-    },
-    "bridge": {
-      "description": "Deprecated legacy Node.js sidecar (RCON + log files), frozen and shipped for one more release cycle for servers that have not moved to the native connector yet",
-      "artifactPattern": "takaro-conan-exiles-bridge-{target}-{version}.zip"
     }
   },
-  "legacyAssetAliases": {
-    "takaro-conan-exiles-bridge.zip": "linux-25639945/bridge"
-  },
+  "legacyAssetAliases": {},
   "devServers": {
     "composeFile": "conan-exiles.yml"
   }

@@ -2,12 +2,10 @@
 
 The dedicated server arrives as Steam depots and stays untouched. The connector is a native
 library loaded into the server process (``LD_PRELOAD`` on Linux, a ``winmm.dll`` proxy on
-Windows), shipped as one zip per platform target; the deprecated Node bridge (RCON + log
-files) still ships as a second, frozen zip on the Linux target. The dev rig and the runtime
-verifier below still drive the bridge. The image that runs the server
-is not a game image at all -- the Enhanced Linux build needs nothing but glibc, libstdc++
-and libgcc, so the same pinned Node image serves as the server runtime and the build
-toolchain, and the server is started by a command rather than by an entrypoint.
+Windows), shipped as one zip per platform target. The image that runs the server is not a
+game image at all -- the Enhanced Linux build needs nothing but glibc, libstdc++ and libgcc,
+so the pinned Node image the target records serves as the server runtime, and the server is
+started by a command rather than by an entrypoint.
 """
 
 from __future__ import annotations
@@ -29,22 +27,15 @@ GAME_ID = "conan-exiles"
 DIST_ROOT = "games/conan-exiles/_data/dist"
 BUILD_SCRIPT = "games/conan-exiles/scripts/build-release.sh"
 
-#: The one folder an artifact zip may write to, and the folder the operator ends up running.
-BRIDGE_FOLDER = "TakaroConanExiles"
-#: The native connector's folder, and the binary one of which it must carry (Linux, Windows).
+#: The one folder an artifact zip may write to, and the binary one of which it must carry
+#: (Linux, Windows).
 NATIVE_FOLDER = "TakaroConanNative"
 NATIVE_BINARIES = ("libtakaro-conan-native.so", "winmm.dll")
 
-#: Operator state that lives inside that folder and never inside the zip. The bridge folder
-#: is emptied before a new artifact is unpacked so a removed file cannot survive an upgrade,
-#: which would take the operator's own configuration -- registration token, RCON password --
-#: with it; README.md's upgrade section promises it survives, so it is carried across.
-DEPLOY_PRESERVED = ("TakaroConfig.txt",)
 LAUNCHER = "ConanSandboxServer.sh"
 SERVER_BINARY = "ConanSandbox/Binaries/Linux/ConanSandboxServer-Linux-Shipping"
 
 CONTAINER_ROOT = "/conan"
-RCON_PORT = 25575
 GAME_PORT = 7777
 QUERY_PORT = 27015
 
@@ -83,18 +74,9 @@ class ConanExilesAdapter(BaseAdapter):
             f"{prefix}_STEAM_DEPOTS": depots,
             f"{prefix}_PLATFORM": str(resolved["platform"]),
         }
-        names = resolved["artifactFileNames"]
-        # One key per shipped component (``_ARTIFACT_NATIVE``, ``_ARTIFACT_BRIDGE``); the bare
-        # ``_ARTIFACT`` and ``_BRIDGE_DIR`` are the deprecated bridge's, which the dev rig runs.
-        for role, name in sorted(names.items()):
+        # One key per shipped component (``_ARTIFACT_NATIVE``).
+        for role, name in sorted(resolved["artifactFileNames"].items()):
             env[f"{prefix}_ARTIFACT_{_env_key(role)}"] = str(name)
-        if "bridge" in names:
-            env[f"{prefix}_ARTIFACT"] = str(names["bridge"])
-            env[f"{prefix}_BRIDGE_DIR"] = f"{self._install_dir(resolved)}/{BRIDGE_FOLDER}"
-        lockfile = resolved["build"].get("lockfile")
-        if lockfile:
-            env[f"{prefix}_LOCKFILE_PATH"] = str(paths.repo_root() / str(lockfile["path"]))
-            env[f"{prefix}_LOCKFILE_SHA256"] = str(lockfile["sha256"])
         declared_hashes = (
             (f"{prefix}_LAUNCHER_SHA256", LAUNCHER),
             (f"{prefix}_SERVER_BINARY_SHA256", SERVER_BINARY),
@@ -103,18 +85,12 @@ class ConanExilesAdapter(BaseAdapter):
             digest = server["files"].get(declared, {}).get("sha256")
             if digest:
                 env[key] = str(digest)
-        # The dependency URLs and hashes the build checks the lockfile against.
+        # The pinned dependency URLs and hashes (the Windows build downloads zig from these).
         for name, dep in sorted(resolved["build"]["deps"].items()):
             key = _env_key(name)
             env[f"{prefix}_DEP_{key}_URL"] = str(dep.get("resolvedCoordinate", dep["coordinate"]))
             env[f"{prefix}_DEP_{key}_SHA256"] = str(dep["sha256"])
         return env
-
-    def _install_dir(self, resolved: dict[str, Any]) -> str:
-        for component in resolved["components"]:
-            if component["role"] == "bridge":
-                return str(component["installDir"])
-        return "TakaroBridge"
 
     def preserve_globs(self, resolved: dict[str, Any]) -> list[str]:
         return list(resolved.get("preserve", []))
@@ -147,11 +123,11 @@ class ConanExilesAdapter(BaseAdapter):
         gradle_args: list[str] | None = None,
         source_revision: str | None = None,
     ) -> BuildResult:
-        """Run the tracked release script; it always builds inside the pinned Node image.
+        """Run the tracked release script; it always builds inside pinned images.
 
         ``toolchain`` is accepted for parity with the Gradle games and changes nothing:
-        the host is not assumed to have Node, so ``host`` would be a promise this adapter
-        cannot keep. ``gradle_args`` mean nothing to a script build; determinism comes from
+        the host is not assumed to have a compiler, so ``host`` would be a promise this
+        adapter cannot keep. ``gradle_args`` mean nothing to a script build; determinism comes from
         ``SOURCE_DATE_EPOCH`` and a clean stage.
         """
         del toolchain, gradle_args
@@ -171,7 +147,7 @@ class ConanExilesAdapter(BaseAdapter):
             if stamp.returncode == 0 and stamp.stdout.strip().isdigit():
                 environment["SOURCE_DATE_EPOCH"] = stamp.stdout.strip()
         command = ["bash", str(repo_root / BUILD_SCRIPT), version, str(dist), "--target", str(resolved["id"])]
-        output.info(f"building {resolved['id']} {version} (node container toolchain)")
+        output.info(f"building {resolved['id']} {version} (container toolchain)")
         completed = subprocess.run(
             command, cwd=str(repo_root), capture_output=True, text=True, env=environment, check=False
         )
@@ -184,7 +160,7 @@ class ConanExilesAdapter(BaseAdapter):
 
     # -- runtime --------------------------------------------------------------
     def runtime_env(self, resolved: dict[str, Any], takaro: dict[str, str]) -> dict[str, str]:
-        """The image's own environment. The server reads Game.ini, the bridge a config file."""
+        """The image's own environment; the server reads its settings from its own Saved/ tree."""
         del takaro
         return {str(k): str(v) for k, v in resolved["runtime"]["container"].get("env", {}).items()}
 
@@ -206,12 +182,7 @@ class ConanExilesAdapter(BaseAdapter):
         return ["--memory", MEMORY, "--user", f"{os.getuid()}:{os.getgid()}"]
 
     def container_command(self, resolved: dict[str, Any], data_dir: Path) -> list[str]:
-        """The launcher, with the flags the rig uses. The RCON password is never on argv.
-
-        A container argv is logged, inspected and kept in the report's docker log, so the
-        password stays in ``ConanSandbox/Saved/Config/LinuxServer/Game.ini`` (mode 0600),
-        which is where the server reads it from anyway.
-        """
+        """The launcher, with the rig's game and query ports. No RCON: the verifier does not use it."""
         del resolved, data_dir
         return [
             f"{CONTAINER_ROOT}/{LAUNCHER}",
@@ -220,8 +191,6 @@ class ConanExilesAdapter(BaseAdapter):
             "-nosteamclient",
             f"-Port={GAME_PORT}",
             f"-QueryPort={QUERY_PORT}",
-            "-RconEnabled=1",
-            f"-RconPort={RCON_PORT}",
         ]
 
     # -- install --------------------------------------------------------------
@@ -266,37 +235,19 @@ class ConanExilesAdapter(BaseAdapter):
 
     # -- deploy ---------------------------------------------------------------
     def after_deploy(self, dest: Path, component: dict[str, Any], artifact: Path) -> None:
-        """Each zip is one folder, unpacked into its component's ``installDir``.
+        """The zip is one folder, unpacked into the component's ``installDir``.
 
-        The native connector lands as ``TakaroConanNative/`` (the library the server preloads,
-        or the ``winmm.dll`` an operator copies next to the server exe); the deprecated bridge
-        as ``TakaroBridge/TakaroConanExiles``, which the operator runs with ``npm start``.
+        The native connector lands as ``TakaroConanNative/``: the library the server preloads,
+        or the ``winmm.dll`` an operator copies next to the server exe.
         """
-        if component["role"] == "native":
-            self._unpack(
-                dest,
-                component,
-                artifact,
-                folder=NATIVE_FOLDER,
-                required=(f"{NATIVE_FOLDER}/takaro-target.json",),
-                required_any=tuple(f"{NATIVE_FOLDER}/{name}" for name in NATIVE_BINARIES),
-                preserved=(),
-                stale_glob="takaro-conan-exiles-native-*.zip",
-            )
-            return
         self._unpack(
             dest,
             component,
             artifact,
-            folder=BRIDGE_FOLDER,
-            required=(
-                f"{BRIDGE_FOLDER}/dist/index.js",
-                f"{BRIDGE_FOLDER}/dist/mod/pollerCli.js",
-                f"{BRIDGE_FOLDER}/takaro-target.json",
-            ),
-            required_any=(),
-            preserved=DEPLOY_PRESERVED,
-            stale_glob="takaro-conan-exiles-bridge-*.zip",
+            folder=NATIVE_FOLDER,
+            required=(f"{NATIVE_FOLDER}/takaro-target.json",),
+            required_any=tuple(f"{NATIVE_FOLDER}/{name}" for name in NATIVE_BINARIES),
+            stale_glob="takaro-conan-exiles-native-*.zip",
         )
 
     def _unpack(
@@ -308,17 +259,14 @@ class ConanExilesAdapter(BaseAdapter):
         folder: str,
         required: tuple[str, ...],
         required_any: tuple[str, ...],
-        preserved: tuple[str, ...],
         stale_glob: str,
     ) -> None:
         install_dir = dest / paths.safe_relative(component["installDir"], field="components[].installDir")
         target_dir = install_dir / folder
         # Staged, not extracted over the live folder: deleting the folder first would let
-        # an archive that fails halfway take the working install with it -- and the
-        # operator's preserved files, which are only restored after a successful extraction.
+        # an archive that fails halfway take the working install with it.
         stage = install_dir / f".{folder}.staging"
         shutil.rmtree(stage, ignore_errors=True)
-        kept: list[tuple[str, bytes, int]] = []
         try:
             with open_zip(artifact) as archive:
                 names = archive.namelist()
@@ -341,22 +289,10 @@ class ConanExilesAdapter(BaseAdapter):
                     raise ConflictError(
                         f"{artifact.name} is missing {', '.join(missing)}; the installed {folder}/ is untouched"
                     )
-                for name in preserved:
-                    old = target_dir / name
-                    if old.is_file():
-                        kept.append((name, old.read_bytes(), old.stat().st_mode & 0o777))
                 archive.extractall(stage)
             replace_directory(stage / folder, target_dir, subject=f"{folder}/")
         finally:
             shutil.rmtree(stage, ignore_errors=True)
-        for name, body, mode in kept:
-            restored = target_dir / name
-            if restored.exists():
-                continue
-            restored.parent.mkdir(parents=True, exist_ok=True)
-            restored.write_bytes(body)
-            os.chmod(restored, mode)
-            output.info(f"kept the existing {folder}/{name}")
         for stale in sorted(install_dir.glob(stale_glob)):
             if stale.name != artifact.name:
                 stale.unlink()

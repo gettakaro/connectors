@@ -21,13 +21,6 @@
       "requires": "Conan Exiles Windows dedicated server build 25639945",
       "hint": "Copy winmm.dll next to ConanSandboxServer-Win64-Shipping.exe and takaro.json to ConanSandbox\\Saved\\Config\\Takaro\\; INSTALL.md in the zip has every step.",
       "required": true
-    },
-    {
-      "pattern": "takaro-conan-exiles-bridge-*.zip",
-      "label": "Legacy bridge (deprecated)",
-      "requires": "Node.js 22",
-      "hint": "Deprecated Node.js bridge, frozen for one more release; use the native connector instead.",
-      "required": false
     }
   ]
 }

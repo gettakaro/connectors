@@ -7,7 +7,7 @@ Built for Conan Exiles Dedicated Server build @REVISION@ (see takaro-target.json
 other build it stays connected but refuses every action and says why in
 ConanSandbox/Saved/Logs/TakaroConanNative.log.
 
-Install, upgrade, moving over from the old bridge and rollback: INSTALL.md.
+Install, upgrade and rollback: INSTALL.md.
 Configuration: takaro.json.example (copy it to ConanSandbox/Saved/Config/Takaro/takaro.json).
 What is linked in, and the licenses: THIRD-PARTY.md and licenses/.
 Checksums of every file in this folder: SHA256SUMS.
