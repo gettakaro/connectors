@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/gettakaro/connectors/compare/enshrouded-v0.5.0...enshrouded-v0.6.0) (2026-10-05)
+
+
+### Features
+
+* **enshrouded:** connect the plugin directly to Takaro and drop the sidecar ([#340](https://github.com/gettakaro/connectors/issues/340)) ([90c249f](https://github.com/gettakaro/connectors/commit/90c249f1cc03ee6c2f9181d0705cc82cf5b35eb5))
+
 ## [0.5.0](https://github.com/gettakaro/connectors/compare/enshrouded-v0.4.2...enshrouded-v0.5.0) (2026-09-22)
 
 
