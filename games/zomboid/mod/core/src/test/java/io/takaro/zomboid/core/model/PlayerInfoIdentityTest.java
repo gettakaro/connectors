@@ -33,6 +33,14 @@ class PlayerInfoIdentityTest {
     }
 
     @Test
+    void steamServerPlayerWithoutSteamIdGetsNoLocalId() {
+        PlayerInfo p = PlayerInfo.identify("bob", "Bob", 0L, null, null, 0);
+        assertEquals("bob", p.gameId());
+        assertNull(p.steamId());
+        assertNull(p.platformId());
+    }
+
+    @Test
     void localAccountIdIsStablePerServerAndDistinctAcrossServers() {
         String a1 = PlayerInfo.localAccountPlatformId("server-a", "admin");
         String a2 = PlayerInfo.localAccountPlatformId("server-a", "admin");

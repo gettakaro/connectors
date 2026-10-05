@@ -32,6 +32,9 @@ public record PlayerInfo(
      * one Takaro rejects the player outright ("At least one platform identifier ... must be
      * provided"), and an unscoped {@code zomboid:<username>} would merge every "admin" of every
      * non-Steam server in the domain into one Takaro player, roles included.
+     *
+     * <p>{@code localScope} is null on a Steam server: a player without a Steam id there gets no
+     * platformId rather than a local one that would split a Steam account into two profiles.
      */
     public static PlayerInfo identify(String username, String name, long steamId64, String localScope,
                                       String ip, int ping) {
@@ -39,8 +42,8 @@ public record PlayerInfo(
             String steamId = Long.toUnsignedString(steamId64);
             return new PlayerInfo(username, name, steamId, null, null, buildPlatformId(steamId), ip, ping);
         }
-        return new PlayerInfo(username, name, null, null, null,
-                localAccountPlatformId(localScope, username), ip, ping);
+        String platformId = localScope != null ? localAccountPlatformId(localScope, username) : null;
+        return new PlayerInfo(username, name, null, null, null, platformId, ip, ping);
     }
 
     /**

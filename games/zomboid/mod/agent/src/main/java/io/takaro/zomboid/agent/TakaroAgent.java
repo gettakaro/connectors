@@ -51,7 +51,7 @@ public final class TakaroAgent {
                     + " logEvents=" + loader.isLogEvents()
                     + " debugCatalog=" + loader.isDebugCatalog());
 
-            Pz.setLocalAccountScope(config.getIdentityToken());
+            LocalAccounts.setScope(config.getIdentityToken());
 
             // --- build the runtime graph ---
             MainThreadQueue queue = new MainThreadQueue();
