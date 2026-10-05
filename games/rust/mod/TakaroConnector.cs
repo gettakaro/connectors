@@ -1293,7 +1293,9 @@ namespace Oxide.Plugins
 
         private void OnEntityDeath(BaseCombatEntity entity, object info)
         {
-            if (entity == null || entity is BasePlayer) return;
+            // Real players die through OnPlayerDeath. NPCs (scientists etc.) are BasePlayers too
+            // and are listed by listEntities, so a player killing one is an entity kill.
+            if (entity == null || (entity is BasePlayer victim && !victim.IsNpc)) return;
 
             var attacker = GetHitInfoInitiatorPlayer(info);
             if (!IsRealPlayer(attacker)) return;
