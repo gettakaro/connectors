@@ -251,21 +251,24 @@ class SourceRegressionTests(unittest.TestCase):
         )[1].split("private static void GameUpdate", 1)[0]
         writer = self.source("src/Services/DbWriter.cs")
 
-        self.assertIn("DbWriter.Instance.Flush", startup)
+        # The barrier runs on the writer queue, so the game thread never waits
+        # and a slow seed can't time out startup (V3.3.0 took over 30 s).
+        self.assertIn("DbWriter.Instance.WhenDrained", startup)
         self.assertLess(
             startup.index("StateMirror.Instance.SeedOnGameStart()"),
-            startup.index("DbWriter.Instance.Flush"),
+            startup.index("DbWriter.Instance.WhenDrained"),
         )
         self.assertLess(
-            startup.index("DbWriter.Instance.Flush"),
+            startup.index("DbWriter.Instance.WhenDrained"),
             startup.index("StateMirror.Instance.MarkGameReady()"),
         )
         self.assertLess(
             startup.index("StateMirror.Instance.MarkGameReady()"),
             startup.index("WebSocketTransport.Instance.Initialize()"),
         )
-        self.assertIn("public void Flush(TimeSpan timeout)", writer)
-        self.assertIn("TimeoutException", writer)
+        self.assertNotIn("Flush(", startup)
+        self.assertIn("public void WhenDrained(Action<bool> onDrained)", writer)
+        self.assertNotIn("TimeoutException", writer)
         self.assertIn("_hasFailedOperation", writer)
 
 
