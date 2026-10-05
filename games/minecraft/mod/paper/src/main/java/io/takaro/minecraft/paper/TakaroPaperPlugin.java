@@ -287,11 +287,9 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
     // --- Helpers ---
 
     PlayerInfo toPlayerInfo(Player player) {
-        return new PlayerInfo(
+        return PlayerInfo.of(
                 player.getUniqueId().toString(),
                 player.getName(),
-                null, null, null,
-                PlayerInfo.buildPlatformId(player.getUniqueId().toString()),
                 player.getAddress() != null ? player.getAddress().getAddress().getHostAddress() : "",
                 player.getPing()
         );
