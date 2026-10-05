@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v1.1.0...conan-exiles-v2.0.0) (2026-10-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **conan-exiles:** fully native connector (Linux + Windows), no sidecar, no RCON ([#362](https://github.com/gettakaro/connectors/issues/362))
+
+### Features
+
+* **conan-exiles:** add target for Steam build 25488622 ([#324](https://github.com/gettakaro/connectors/issues/324)) ([e6162d2](https://github.com/gettakaro/connectors/commit/e6162d204fe605d27bff4c02a16f06c351a33b9a))
+* **conan-exiles:** fully native connector (Linux + Windows), no sidecar, no RCON ([#362](https://github.com/gettakaro/connectors/issues/362)) ([8ea5e44](https://github.com/gettakaro/connectors/commit/8ea5e44eb66dae5cd6ca8164fc8baeed8d1d6d6d))
+
 ## [1.1.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v1.0.2...conan-exiles-v1.1.0) (2026-09-22)
 
 
