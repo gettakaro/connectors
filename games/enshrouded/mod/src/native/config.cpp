@@ -76,6 +76,7 @@ NativeConfig LoadNativeConfig(const std::string& baseDir, const EnvFn& env, cons
     std::string lf = Trim(env("ENSHROUDED_LOG_FILE"));
     c.logFile = lf.empty() ? JoinPath(JoinPath(baseDir, "logs"), "enshrouded_server.log") : ResolvePath(baseDir, lf);
     c.legacyHttp = Trim(env("TAKARO_LEGACY_HTTP")) == "1";
+    c.logFrames = Trim(env("TAKARO_LOG_FRAMES")) == "1";
 
     if (Trim(env("TAKARO_NATIVE_DISABLE")) == "1") {
         c.disabledReason = "disabled by TAKARO_NATIVE_DISABLE=1";
@@ -118,6 +119,7 @@ std::string ConfigSummaryJson(const NativeConfig& c) {
         .S("logTail", lt)
         .S("logFile", c.logFile)
         .B("legacyHttp", c.legacyHttp)
+        .B("logFrames", c.logFrames)
         .Raw("sources", sources)
         .Raw("warnings", warnings)
         .Done();

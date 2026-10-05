@@ -26,6 +26,7 @@ struct NativeConfig {
     unsigned actionTimeoutMs = 30000;
     unsigned actionWorkers = 4;
     bool legacyHttp = false;
+    bool logFrames = false;  // TAKARO_LOG_FRAMES=1: log outbound event/response frames (truncated; never identify)
 
     // Where each setting came from ("env", "plugin.json", "default"); values are never recorded.
     std::vector<std::pair<std::string, std::string>> sources;
