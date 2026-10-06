@@ -12,6 +12,13 @@ assemblies the mod compiles against, the Mono image the build runs in, the pinne
 dependencies and the server image the rig boots. No script here hard-codes any of it —
 `scripts/lib-target.sh` resolves the target and exports `SEVEND2D_*` for the rest.
 
+Each catalog target builds its own artifact from the same sources. Where the game's API changed
+between builds, `sevend2d_api_defines` in `scripts/lib-target.sh` turns the target's revision into
+a compile-time symbol (`SEVEND2D_V3_3` for V 3.3.0 and later), which `build-mod.sh` and
+`test-contract.sh` pass to the compiler. V 3.3.0 keeps player inventories in serialised blobs and
+replaced `ItemValue.Modifications` with accessors, so `StateMirror` and `GiveItemHandler` have one
+branch per API generation.
+
 There is no SteamCMD anywhere in this directory. `takaro-maint steam references` downloads only
 the assemblies the build needs, straight from the pinned depot manifests. See
 [maintenance/docs/steam-install.md](../../maintenance/docs/steam-install.md).

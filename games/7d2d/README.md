@@ -3,9 +3,16 @@
 A server-side-only mod (version **0.1.4**) that connects a 7 Days to Die dedicated server to
 Takaro. Players do not install anything.
 
-It is built against one exact server build: **V 3.2.0 b10** (Steam app 294420, branch `public`,
-build 24994542). That is the build every result in the table below was proven on. The mod may
-load on another build, but nothing here says it works there.
+It is built once per exact server build, and each zip names the build it is for:
+
+| Server build | Steam build (app 294420, branch `public`) | Zip | Status |
+|---|---|---|---|
+| **V 3.3.0 b18** | 25661908 | `takaro-7d2d-mod-linux-3.3.0.b18-<version>.zip` | candidate, proven live on 2026-10-06 (see below) |
+| **V 3.2.0 b10** | 24994542 | `takaro-7d2d-mod-linux-3.2.0.b10-<version>.zip` | candidate; the table below was proven on it |
+
+Use the zip that matches your server: V 3.3.0 changed the game's player-data and item APIs, so
+the V 3.2.0 build cannot read inventories or set weapon mod quality on V 3.3.0. The mod may load on
+another build, but nothing here says it works there.
 
 ## Install
 
@@ -22,16 +29,17 @@ You need:
 
 ### 2. Download the mod
 
-Download **`takaro-7d2d-mod-linux-3.2.0.b10-<version>.zip`** from the latest `7d2d-vX.Y.Z` release
+Download **`takaro-7d2d-mod-linux-<build>-<version>.zip`** for your server build (`3.3.0.b18` or
+`3.2.0.b10`, see the table above) from the latest `7d2d-vX.Y.Z` release
 on the releases page:
 
 > https://github.com/gettakaro/connectors/releases
 
 Direct link pattern:
-`https://github.com/gettakaro/connectors/releases/download/7d2d-v<version>/takaro-7d2d-mod-linux-3.2.0.b10-<version>.zip`
+`https://github.com/gettakaro/connectors/releases/download/7d2d-v<version>/takaro-7d2d-mod-linux-<build>-<version>.zip`
 
-`takaro-7d2d-mod.zip` is still published next to it and is the same bytes, so an old bookmark
-keeps working. The name in the middle is the server build the mod was built against.
+`takaro-7d2d-mod.zip` is still published next to them and is the same bytes as the V 3.2.0 b10
+zip, so an old bookmark keeps working. The name in the middle is the server build the mod was built against.
 
 Use `7d2d-v0.1.4` or newer. The results in the table below were proven on the code that shipped in
 0.1.4 (the dev build was labelled 0.1.6 during testing). Do not use the
@@ -123,6 +131,16 @@ Fix the token in `Config.xml` and restart the server.
 **Stop the server first.** Delete `<server>/Mods/Takaro/` and unzip the new version in its place,
 then start the server again. Leave `<server>/Takaro/Config.xml` alone — your token and identity
 survive the upgrade. Never swap `Takaro.dll` under a running server; it can crash the server.
+
+## V 3.3.0 b18
+
+Proven on **2026-10-06** against a real dedicated server on Steam build 25661908 with a real
+V 3.3.0 (b18) game client: the server connects to Takaro on startup, and player join, chat, death,
+zombie kill and disconnect all reach Takaro. Player list, inventory (items given through Takaro
+show up with the right quality and amount), give item, teleport, kick, timed ban and unban (the
+client is refused, then joins again), server messages, console commands, `@ping`, shutdown and
+the Discord chat bridge from game to Discord all work. Discord to game has not been re-checked
+on this build. The table below is the earlier, fuller V 3.2.0 b10 run.
 
 ## What works, what doesn't
 
