@@ -8,6 +8,7 @@
 // with a reason; it never throws out of a handler and never takes the server down.
 #include "actions.h"
 
+#include "eos.h"
 #include "events.h"
 #include "gamethread.h"
 #include "perf.h"
@@ -243,6 +244,7 @@ struct PlayerInfo {
     std::string name;          // platform / account name
     std::string characterName; // in-game display name
     std::string steamId;
+    std::string xboxLiveId;
     int ping = 0;
     bool spawned = false;
 };
@@ -300,46 +302,6 @@ std::string CharacterNameOf(void* ps) {
     return "";
 }
 
-// A SteamID64 is 0x0110000100000000 | accountId, i.e. the "individual account / public universe"
-// pattern. FUniqueNetIdSteam stores that value as a raw uint64 right after its vtable pointer, so a
-// steam id can be recovered from ADominionPlayerState::PlatformData (FDomPlatformData, which holds
-// the platform net id) by looking for that pattern - no virtual call, no stringification, and the
-// range check is specific enough that a stray word cannot pass for one.
-bool LooksLikeSteamId64(uint64_t v) {
-    return (v >> 32) == 0x01100001ull && (uint32_t)v != 0;
-}
-
-std::string SteamIdOf(void* ps) {
-    int32_t off = Off(ps, "PlatformData");
-    if (off < 0) return "";
-    void* st = Reflect::FindObjectByPath("/Script/Dominion", "DomPlatformData");
-    uint32_t size = 0;
-    if (st && MemReadable((const char*)st + Reflect::Lay().structPropertiesSize, 4))
-        size = *(const uint32_t*)((const char*)st + Reflect::Lay().structPropertiesSize);
-    if (!size || size > 512) size = 128;
-    const char* base = (const char*)ps + off;
-    if (!MemReadable(base, size)) return "";
-    for (uint32_t i = 0; i + 8 <= size; i += 8) {
-        uint64_t word = 0;
-        memcpy(&word, base + i, 8);
-        if (LooksLikeSteamId64(word)) return std::to_string(word);
-        // ... or a pointer to an FUniqueNetIdSteam {vtable, uint64 id}.
-        void* p = (void*)(uintptr_t)word;
-        if (!p || !MemReadable(p, 16)) continue;
-        uint64_t inner = 0;
-        memcpy(&inner, (const char*)p + 8, 8);
-        if (LooksLikeSteamId64(inner)) return std::to_string(inner);
-    }
-    // The platform name/id may also be carried as a decimal string field.
-    for (const char* n : {"PlatformId", "PlatformUserId", "UserId", "PlatformIdString"}) {
-        int32_t f = OffOf(Reflect::FindObjectByPath("/Script/Dominion", "DomPlatformData"), n);
-        if (f < 0) continue;
-        std::string v = ReadFStringAt((void*)base, f);
-        if (v.size() == 17 && v.compare(0, 4, "7656") == 0) return v;
-    }
-    return "";
-}
-
 // Fills in one player from an APlayerState.
 bool ReadPlayer(void* ps, PlayerInfo& out) {
     if (!ps || !MemReadable(ps, 0x40)) return false;
@@ -349,7 +311,10 @@ bool ReadPlayer(void* ps, PlayerInfo& out) {
     out.characterName = CharacterNameOf(ps);
     if (out.characterName.empty()) out.characterName = state::CharacterName(out.gameId);
     else if (!out.gameId.empty()) state::NoteCharacterName(out.gameId, out.characterName);
-    out.steamId = SteamIdOf(ps);
+    Eos::Linked linked;
+    Eos::LinkedAccounts(out.gameId, linked);
+    out.steamId = linked.steamId;
+    out.xboxLiveId = linked.xboxLiveId;
     out.pawn = ReadPtrAt(ps, Off(ps, "PawnPrivate"));
     out.spawned = out.pawn != nullptr;
     out.controller = ReadPtrAt(ps, Off(ps, "Owner"));
@@ -393,6 +358,7 @@ std::string PlayerJson(const PlayerInfo& p) {
                     ",\"characterName\":" + JsonStr(p.characterName) + ",\"platformName\":" + JsonStr(p.name) +
                     ",\"epicOnlineServicesId\":" + JsonStr(p.gameId) + ",\"platformId\":" + JsonStr("epic:" + p.gameId);
     if (!p.steamId.empty()) o += ",\"steamId\":" + JsonStr(p.steamId);
+    if (!p.xboxLiveId.empty()) o += ",\"xboxLiveId\":" + JsonStr(p.xboxLiveId);
     o += ",\"ping\":" + std::to_string(p.ping) + ",\"spawned\":" + (p.spawned ? "true" : "false") +
          ",\"online\":true,\"connectedAt\":" + JsonStr(FirstSeen(p.gameId)) + "}";
     return o;

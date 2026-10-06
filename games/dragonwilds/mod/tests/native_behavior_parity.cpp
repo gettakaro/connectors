@@ -184,8 +184,8 @@ struct Harness {
         return Parse(*m.frame)["payload"]["data"];
     }
 };
-const Json LIMON = {{"gameId", A}, {"name", "Limon"}, {"epicOnlineServicesId", A}, {"steamId", STEAM},
-                    {"platformId", "epic:" + A}, {"ping", 24}};
+const Json LIMON = {{"gameId", A}, {"name", "Limon"}, {"steamId", STEAM}, {"platformId", "steam:" + STEAM},
+                    {"ping", 24}};
 const Json GUEST = {{"gameId", B}, {"name", "Guest"}, {"epicOnlineServicesId", B}, {"platformId", "epic:" + B}};
 void Write(const fs::path& p, const std::string& s) { std::ofstream(p) << s; }
 }  // namespace
@@ -259,8 +259,14 @@ int main() {
         Check(connected({{"gameId", A}, {"name", "Hendrik"}})["name"] == "Hendrik", "name falls back to platform name");
         Check(connected({{"gameId", A}})["name"] == A, "then to the id");
         Check(connected({{"gameId", A}, {"steamId", STEAM}})["steamId"] == STEAM &&
-                  connected({{"gameId", A}, {"steamId", STEAM}})["platformId"] == "epic:" + A,
-              "SteamID64 kept alongside the PUID");
+                  connected({{"gameId", A}, {"steamId", STEAM}})["platformId"] == "steam:" + STEAM &&
+                  connected({{"gameId", A}, {"steamId", STEAM}})["gameId"] == A &&
+                  !connected({{"gameId", A}, {"steamId", STEAM}}).contains("epicOnlineServicesId"),
+              "Steam player: steamId + platformId steam:<id64>, PUID only as gameId");
+        Check(connected({{"gameId", A}, {"xboxLiveId", "2535412345678901"}})["xboxLiveId"] == "2535412345678901" &&
+                  connected({{"gameId", A}, {"xboxLiveId", "2535412345678901"}})["platformId"] == "epic:" + A &&
+                  !connected({{"gameId", A}, {"xboxLiveId", "xuid-x"}}).contains("xboxLiveId"),
+              "numeric XUID passed through as xboxLiveId");
         Check(connected({{"epicOnlineServicesId", A}})["gameId"] == A && connected({{"platformId", "epic:" + A}})["gameId"] == A &&
                   connected({{"productUserId", A}})["gameId"] == A,
               "PUID from epicOnlineServicesId / platformId / productUserId");
