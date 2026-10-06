@@ -83,29 +83,38 @@ jobs:
       - run: uv python install
       - run: uv sync --frozen --project maintenance
 
-      - name: Resolve the target
-        id: target
+      # Every target the release builds: V3.3.0 and later compile a different code path
+      # (scripts/lib-target.sh sevend2d_api_defines), so each one is checked on its own
+      # reference assemblies.
+      - name: Resolve the targets
+        id: targets
         run: |
-          maintenance/bin/takaro-maint targets resolve \
+          maintenance/bin/takaro-maint targets list \
             --game 7d2d \
+            --status candidate,maintained \
             --format gha >> "$GITHUB_OUTPUT"
 
-      # Keyed on the fingerprint: a re-pinned target fetches its own assemblies rather
-      # than compiling against the previous build's.
+      # Keyed on the target records: a re-pinned or added target fetches its own assemblies
+      # rather than compiling against another build's.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             games/7d2d/_data/7dtd-binaries
             ~/.cache/takaro-maint
-          key: 7d2d-refs-${{ steps.target.outputs.fp16 }}
+          key: 7d2d-refs-${{ hashFiles('catalog/7d2d/targets/*.json') }}
 
       # The reference assemblies only — a filelist against the pinned depot manifests,
       # not the 17 GB depot a hosted runner has no room for.
-      - name: Fetch the pinned reference assemblies and dependencies
-        run: games/7d2d/scripts/setup-environment.sh --target "${{ steps.target.outputs.target }}"
-
-      - name: Run the Generic Connector contract harness
-        run: games/7d2d/scripts/test-contract.sh --target "${{ steps.target.outputs.target }}"
+      - name: Fetch the references and run the contract harness per target
+        env:
+          TARGETS: ${{ steps.targets.outputs.targets }}
+        run: |
+          for target in $(jq -r '.[].id' <<<"$TARGETS"); do
+            echo "::group::${target}"
+            games/7d2d/scripts/setup-environment.sh --target "${target}"
+            games/7d2d/scripts/test-contract.sh --target "${target}"
+            echo "::endgroup::"
+          done
 
       - name: Run source regressions
         run: python3 -m unittest tests/test_7d2d_connector_regressions.py
