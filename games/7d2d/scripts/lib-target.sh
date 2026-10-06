@@ -23,3 +23,14 @@ sevend2d_resolve_target() {
 sevend2d_parse_target_flag() {
     takaro_parse_target_flag "$@"
 }
+
+# The compile-time symbols for the game API the resolved target exposes. V3.3.0 moved the
+# player-data inventory into serialised blobs and replaced ItemValue.Modifications with
+# accessors, so the mod has one code path per API generation. Needs SEVEND2D_REVISION.
+sevend2d_api_defines() {
+    local major minor
+    IFS=. read -r major minor _ <<<"${SEVEND2D_REVISION:?resolve the target first}"
+    if [ "${major}" -gt 3 ] || { [ "${major}" -eq 3 ] && [ "${minor}" -ge 3 ]; }; then
+        echo "SEVEND2D_V3_3"
+    fi
+}

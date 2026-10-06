@@ -1713,6 +1713,13 @@ public sealed class ItemValue
         Quality = 0;
         Modifications = new ItemValue[0];
     }
+
+    // The V3.3.0 accessors that replaced the public Modifications array.
+    public int ModificationCount => Modifications.Length;
+
+    public ItemValue GetModification(int index) => Modifications[index];
+
+    public void SetModification(int index, ItemValue mod) => Modifications[index] = mod;
 }
 
 public sealed class ItemStack

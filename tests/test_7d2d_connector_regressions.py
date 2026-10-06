@@ -271,6 +271,25 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertNotIn("TimeoutException", writer)
         self.assertIn("_hasFailedOperation", writer)
 
+    def test_v3_3_targets_compile_against_the_v3_3_player_data_api(self):
+        lib_target = self.game_file("scripts/lib-target.sh")
+        self.assertIn('echo "SEVEND2D_V3_3"', lib_target)
+        self.assertIn("/p:SevenD2DApiDefines=", self.game_file("scripts/build-mod.sh"))
+        self.assertIn("-define:", self.game_file("scripts/test-contract.sh"))
+        self.assertIn("$(SevenD2DApiDefines)", self.source("Takaro.csproj"))
+
+        mirror = self.source("src/Services/StateMirror.cs")
+        v3_3 = mirror.split("#if SEVEND2D_V3_3", 1)[1].split("#else", 1)[0]
+        for blob in ("inventoryData", "bagData", "equipmentData"):
+            self.assertIn(f"ReadItemGrid(data.{blob})", v3_3)
+        self.assertIn("ItemStackGrid.Read(reader", mirror)
+
+        give_item = self.source("src/WebSocket/GiveItemHandler.cs")
+        v3_3 = give_item.split("#if SEVEND2D_V3_3", 1)[1].split("#else", 1)[0]
+        self.assertIn("iv.GetModification(i)", v3_3)
+        self.assertIn("iv.SetModification(i, tmp)", v3_3)
+        self.assertNotIn("Modifications", v3_3)
+
 
 if __name__ == "__main__":
     unittest.main()
