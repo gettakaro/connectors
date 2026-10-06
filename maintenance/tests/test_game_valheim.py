@@ -28,8 +28,8 @@ from takaro_maint.providers import provider_for
 from takaro_maint.publish.manifest import artifact_row, write_manifest, write_meta
 
 GAME = "valheim"
-TARGET = "linux-1.0.16"
-REVISION = "1.0.16"
+TARGET = "linux-1.0.17"
+REVISION = "1.0.17"
 VERSION = "3.0.3-dev.abc1234"
 DEPOT = "896661"
 PINNED_MANIFEST = "6686760496212527200"
@@ -417,7 +417,7 @@ def test_targets_resolve_env_for_valheim(run: Any) -> None:
 
     assert code == 0, payload
     env = payload["env"]
-    assert env["VALHEIM_STEAM_DEPOTS"] == f"{DEPOT}:1285123405092214913"
+    assert env["VALHEIM_STEAM_DEPOTS"] == f"{DEPOT}:3707659388211752971"
     assert env["VALHEIM_STEAM_APP"] == "896660"
     assert env["VALHEIM_STEAM_BRANCH"] == "public"
     assert env["VALHEIM_ARTIFACT_SERVER_PLUGIN"] == f"takaro-valheim-plugin-{TARGET}-{{version}}.zip"

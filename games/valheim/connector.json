@@ -10,14 +10,14 @@
     {
       "pattern": "takaro-valheim-plugin.zip",
       "label": "Plugin",
-      "requires": "Valheim 1.0.16 · BepInEx 5 · .NET Framework 4.7.2",
+      "requires": "Valheim 1.0.17 · BepInEx 5 · .NET Framework 4.7.2",
       "hint": "Unzip so the TakaroValheim folder lands directly inside BepInEx/plugins/.",
       "required": true
     },
     {
       "pattern": "takaro-valheim-inventory-companion.zip",
       "label": "Inventory companion (optional, players)",
-      "requires": "Valheim 1.0.16 · BepInEx 5 · .NET Framework 4.7.2",
+      "requires": "Valheim 1.0.17 · BepInEx 5 · .NET Framework 4.7.2",
       "hint": "Optional: players who install it in BepInEx/plugins/ on their own game let Takaro read their inventory. Nothing else needs it.",
       "required": false
     }

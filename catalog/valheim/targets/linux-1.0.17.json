@@ -1,19 +1,17 @@
 {
   "schemaVersion": 1,
-  "id": "linux-1.0.16",
+  "id": "linux-1.0.17",
   "game": "valheim",
   "platform": "linux",
-  "revision": "1.0.16",
+  "revision": "1.0.17",
   "default": true,
   "support": {
-    "status": "maintained",
-    "since": "2026-09-27",
+    "status": "candidate",
+    "since": "2026-10-06",
     "evidence": [
-      "games/valheim/README.md (What works, what doesn't — last live run 2026-09-02 on Valheim 1.0.7, server plugin only)",
-      "isolated takaro-maint verify on this exact pin (startup, identify, catalogue, console action, reconnect, stop)",
-      "connector-runner e2e 2026-09-27: real vanilla Valheim PC client (Steam, v1.0.16 n-40) through hosted Takaro MCP on this target - player-connected 541950ef-c272-4f45-bf51-d96067d51567, player-disconnected ebb1502f-561c-49ed-96b7-6130c2454c71; testReachability, getPlayers and executeConsoleCommand passed; unsupported: chat-message (vanilla Valheim chat is client-to-client, games/valheim/README.md 'Chat messages from players'), command-executed (Takaro commands arrive as player chat, which the server never sees), sendMessage (games/valheim/README.md 'Broadcast a message') (gettakaro/connectors#326)"
+      "connector-runner e2e 2026-10-06 (gettakaro/connectors#382): real vanilla Valheim PC client (Steam, Version 1.0.17 n-40) on this exact pin (server files sha256-checked against inputs.server.files), connector 4.0.1-dev.382 through hosted Takaro MCP - player-connected 25d4fb2b-72f6-4a34-825f-6a4c8ed8957b, chat-message 5b5779ed-8e48-47f1-8fa0-03b333f4bda3, player-death c458495c-340f-4c27-9f0e-0798a07efefb, player-disconnected 4ce67bf2-7ba2-40a1-a827-2d94bb3ac1a3, command-executed @ping b2285ade-b91a-40c0-8bd7-db845bc90322; testReachability, getPlayers, sendMessage (global and whisper with senderNameOverride), executeConsoleCommand (allowlisted help and kick), teleportPlayer, giveItem, kickPlayer, banPlayer/listBans/unbanPlayer (banned rejoin refused, rejoin after unban) and shutdown seen in the client; Discord chat bridge game-to-Discord posts 200 OK; not re-proven on this pin: entity-killed, Discord-to-game"
     ],
-    "notes": "Exact Steam pin of the public head at declaration time (buildid 25527701, Valheim 1.0.16, released 2026-09-25). Repins the previous 1.0.15/25390671 target after Valve moved the public branch (#301); depot 896661 manifest 1285123405092214913. The connector is a dedicated-server plugin. An optional graphical-client inventory mod (role client-companion) exists; deploy only parks its zip in takaro-companion/. Player-driven events (chat, deaths, kills), server chat and the optional inventory mod need a connected game client and are NOT covered by takaro-maint verify, which boots a dedicated server with no client. Runtime CI onboarding is a separate issue."
+    "notes": "Exact Steam pin of the public head at declaration time (buildid 25730807, Valheim 1.0.17 network version 40, updated 2026-10-06). Repins the previous 1.0.16/25527701 target after Valve moved the public branch (#382); depot 896661 manifest 3707659388211752971. The connector is a dedicated-server plugin. An optional graphical-client inventory mod (role client-companion) exists; deploy only parks its zip in takaro-companion/. Player-driven events (chat, deaths, kills), server chat and the optional inventory mod need a connected game client and are NOT covered by takaro-maint verify, which boots a dedicated server with no client. Runtime CI onboarding is a separate issue."
   },
   "inputs": {
     "server": {
@@ -22,13 +20,13 @@
       "hashOrigin": "self-recorded",
       "app": 896660,
       "branch": "public",
-      "buildid": 25527701,
+      "buildid": 25730807,
       "os": "linux",
       "arch": "64",
       "depots": {
         "896661": {
-          "manifest": "1285123405092214913",
-          "size": 2075365216,
+          "manifest": "3707659388211752971",
+          "size": 2075366582,
           "files": 1008
         }
       },
@@ -54,11 +52,11 @@
           "size": 239104
         },
         "valheim_server_Data/Managed/assembly_valheim.dll": {
-          "sha256": "50035055f9b158a025cacd25e038b603943f7c2a465da3021707b5f1e44e39fd",
-          "size": 2564096
+          "sha256": "e7220dc5d9cf9d38270e751352d94918308e59cca86e56c4bda0210016c847fa",
+          "size": 2565120
         },
         "valheim_server_Data/globalgamemanagers": {
-          "sha256": "154d7bcbc30304d3113e5687956cfa24ecdc79c991eb91dc6b0cb31493a164a7",
+          "sha256": "9148eef68049ef6bf4079d54d43ee752b900a95988ae1c76ab9dae7349a22670",
           "size": 205556
         }
       },
@@ -122,12 +120,12 @@
   "components": [
     {
       "role": "client-companion",
-      "artifact": "takaro-valheim-inventory-companion-linux-1.0.16-{version}.zip",
+      "artifact": "takaro-valheim-inventory-companion-linux-1.0.17-{version}.zip",
       "installDir": "takaro-companion"
     },
     {
       "role": "server-plugin",
-      "artifact": "takaro-valheim-plugin-linux-1.0.16-{version}.zip",
+      "artifact": "takaro-valheim-plugin-linux-1.0.17-{version}.zip",
       "installDir": "BepInEx/plugins"
     }
   ],
