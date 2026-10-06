@@ -1375,8 +1375,10 @@ namespace Oxide.Plugins
 
         // --- Logging Helpers ---
 
-        private void LogInfo(string message) => Puts($"[Takaro] {message}");
-        private void LogWarning(string message) => PrintWarning($"[Takaro] {message}");
-        private void LogDebug(string message) { if (_debug) Puts($"[Takaro DEBUG] {message}"); }
+        // Carbon's file logger throws when the disk is full; a throw from a log call inside the
+        // reconnect path ends the reconnect loop and leaves the server offline for good.
+        private void LogInfo(string message) { try { Puts($"[Takaro] {message}"); } catch { } }
+        private void LogWarning(string message) { try { PrintWarning($"[Takaro] {message}"); } catch { } }
+        private void LogDebug(string message) { if (_debug) try { Puts($"[Takaro DEBUG] {message}"); } catch { } }
     }
 }
