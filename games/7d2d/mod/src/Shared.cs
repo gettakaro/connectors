@@ -15,6 +15,18 @@ namespace Takaro
         [JsonProperty("platformId", NullValueHandling = NullValueHandling.Ignore)]
         public string PlatformId { get; set; }
 
+        // Takaro matches players on these columns, never on platformId alone. Profiles
+        // created by Takaro's built-in 7 Days to Die integration carry only these, so
+        // omitting them made Takaro create a second profile for the same person.
+        [JsonProperty("steamId", NullValueHandling = NullValueHandling.Ignore)]
+        public string SteamId { get; set; }
+
+        [JsonProperty("epicOnlineServicesId", NullValueHandling = NullValueHandling.Ignore)]
+        public string EpicOnlineServicesId { get; set; }
+
+        [JsonProperty("xboxLiveId", NullValueHandling = NullValueHandling.Ignore)]
+        public string XboxLiveId { get; set; }
+
         [JsonProperty("ip", NullValueHandling = NullValueHandling.Ignore)]
         public string Ip { get; set; }
 
@@ -122,34 +134,30 @@ namespace Takaro
 
         public static TakaroPlayer TransformPlayerRecordToTakaroPlayer(PlayerRecord record)
         {
-            return new TakaroPlayer
-            {
-                GameId = record.GameId,
-                Name = record.Name,
-                Ip = record.Ip,
-                Ping = record.Ping,
-                PlatformId = PlatformIdFromIdentifiers(
-                    record.SteamId,
-                    record.XboxLiveId,
-                    record.EpicOnlineServicesId
-                ),
-            };
+            return WithIdentifiers(
+                new TakaroPlayer
+                {
+                    GameId = record.GameId,
+                    Name = record.Name,
+                    Ip = record.Ip,
+                    Ping = record.Ping,
+                },
+                record.SteamId,
+                record.XboxLiveId,
+                record.EpicOnlineServicesId
+            );
         }
 
         public static TakaroBan TransformBanRecordToTakaroBan(BanRecord record)
         {
             return new TakaroBan
             {
-                Player = new TakaroPlayer
-                {
-                    GameId = record.GameId,
-                    Name = record.Name,
-                    PlatformId = PlatformIdFromIdentifiers(
-                        record.SteamId,
-                        record.XboxLiveId,
-                        record.EpicOnlineServicesId
-                    ),
-                },
+                Player = WithIdentifiers(
+                    new TakaroPlayer { GameId = record.GameId, Name = record.Name },
+                    record.SteamId,
+                    record.XboxLiveId,
+                    record.EpicOnlineServicesId
+                ),
                 Reason = record.Reason,
                 ExpiresAt = record.ExpiresAt,
             };
@@ -196,13 +204,7 @@ namespace Takaro
                 }
             }
 
-            player.PlatformId = PlatformIdFromIdentifiers(
-                steamId,
-                xboxLiveId,
-                epicOnlineServicesId
-            );
-
-            return player;
+            return WithIdentifiers(player, steamId, xboxLiveId, epicOnlineServicesId);
         }
 
         public static TakaroPlayer TransformClientInfoToTakaroPlayerIdentity(ClientInfo clientInfo)
@@ -226,12 +228,40 @@ namespace Takaro
             }
 
             string epicOnlineServicesId = crossplatformId.Replace("EOS_", "");
-            return new TakaroPlayer
-            {
-                GameId = epicOnlineServicesId,
-                Name = clientInfo.playerName,
-                PlatformId = PlatformIdFromIdentifiers(steamId, xboxLiveId, epicOnlineServicesId),
-            };
+            return WithIdentifiers(
+                new TakaroPlayer { GameId = epicOnlineServicesId, Name = clientInfo.playerName },
+                steamId,
+                xboxLiveId,
+                epicOnlineServicesId
+            );
+        }
+
+        /// <summary>
+        /// Sends every identifier the game knows: the dedicated steamId /
+        /// epicOnlineServicesId / xboxLiveId fields (what Takaro's built-in 7D2D
+        /// integration stored) plus platformId. Empty values stay off the wire.
+        /// </summary>
+        public static TakaroPlayer WithIdentifiers(
+            TakaroPlayer player,
+            string steamId,
+            string xboxLiveId,
+            string epicOnlineServicesId
+        )
+        {
+            player.SteamId = NullIfEmpty(steamId);
+            player.XboxLiveId = NullIfEmpty(xboxLiveId);
+            player.EpicOnlineServicesId = NullIfEmpty(epicOnlineServicesId);
+            player.PlatformId = PlatformIdFromIdentifiers(
+                steamId,
+                xboxLiveId,
+                epicOnlineServicesId
+            );
+            return player;
+        }
+
+        private static string NullIfEmpty(string value)
+        {
+            return string.IsNullOrEmpty(value) ? null : value;
         }
 
         public static string PlatformIdFromIdentifiers(

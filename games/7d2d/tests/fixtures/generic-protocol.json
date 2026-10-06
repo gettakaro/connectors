@@ -38,14 +38,14 @@
       "args": {},
       "argumentCases": [{"name": "object", "value": {}}, {"name": "json-string", "value": "{}"}, {"name": "empty", "value": ""}, {"name": "invalid", "value": "{"}],
       "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayers", "args": "{}"}},
-      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "ping": 42}]}
+      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player", "epicOnlineServicesId": "fixture-player", "ping": 42}]}
     },
     {
       "name": "getPlayer",
       "args": {"gameId": "fixture-player"},
       "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": 7}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responseType": "error"}],
       "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayer", "args": "{\"gameId\":\"fixture-player\"}"}},
-      "response": {"type": "response", "requestId": "fixture-request", "payload": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "ping": 42}}
+      "response": {"type": "response", "requestId": "fixture-request", "payload": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player", "epicOnlineServicesId": "fixture-player", "ping": 42}}
     },
     {
       "name": "getPlayerLocation",
@@ -136,7 +136,7 @@
       "args": {},
       "argumentCases": [{"name": "object", "value": {}}, {"name": "json-string", "value": "{}"}, {"name": "empty", "value": ""}, {"name": "invalid", "value": "{"}],
       "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "listBans", "args": "{}"}},
-      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player"}, "reason": "qualification fixture", "expiresAt": "2030-01-01T00:00:00Z"}]}
+      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player", "epicOnlineServicesId": "fixture-player"}, "reason": "qualification fixture", "expiresAt": "2030-01-01T00:00:00Z"}]}
     },
     {
       "name": "shutdown",
@@ -148,10 +148,10 @@
   ],
   "events": [
     {"name": "log", "message": {"type": "gameEvent", "payload": {"type": "log", "data": {"msg": "fixture log line"}}}},
-    {"name": "player-connected", "message": {"type": "gameEvent", "payload": {"type": "player-connected", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "ping": 42}}}}},
-    {"name": "player-disconnected", "message": {"type": "gameEvent", "payload": {"type": "player-disconnected", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player"}}}}},
-    {"name": "chat-message", "message": {"type": "gameEvent", "payload": {"type": "chat-message", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player"}, "channel": "global", "msg": "qualification fixture"}}}},
-    {"name": "player-death", "message": {"type": "gameEvent", "payload": {"type": "player-death", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player"}, "position": {"x": 10, "y": 20, "z": 30, "dimension": "main"}, "msg": "Fixture Player died"}}}},
-    {"name": "entity-killed", "message": {"type": "gameEvent", "payload": {"type": "entity-killed", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player"}, "entity": "zombieArlene", "weapon": "clubWood", "msg": "Fixture Player killed zombieArlene"}}}}
+    {"name": "player-connected", "message": {"type": "gameEvent", "payload": {"type": "player-connected", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player", "epicOnlineServicesId": "fixture-player", "ping": 42}}}}},
+    {"name": "player-disconnected", "message": {"type": "gameEvent", "payload": {"type": "player-disconnected", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player", "epicOnlineServicesId": "fixture-player"}}}}},
+    {"name": "chat-message", "message": {"type": "gameEvent", "payload": {"type": "chat-message", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player", "epicOnlineServicesId": "fixture-player"}, "channel": "global", "msg": "qualification fixture"}}}},
+    {"name": "player-death", "message": {"type": "gameEvent", "payload": {"type": "player-death", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player", "epicOnlineServicesId": "fixture-player"}, "position": {"x": 10, "y": 20, "z": 30, "dimension": "main"}, "msg": "Fixture Player died"}}}},
+    {"name": "entity-killed", "message": {"type": "gameEvent", "payload": {"type": "entity-killed", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player", "epicOnlineServicesId": "fixture-player"}, "entity": "zombieArlene", "weapon": "clubWood", "msg": "Fixture Player killed zombieArlene"}}}}
   ]
 }
