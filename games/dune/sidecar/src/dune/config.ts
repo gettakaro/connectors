@@ -34,10 +34,11 @@ export interface ChatWireVariant {
    */
   senderNameField: string;
   /**
-   * `m_ChannelType` of a private line on `chat.whispers`. **`Map` by default, measured on Steam build 25635074 /
-   * client 25611704 (2026-10-02)**: that client renders every `Whispers`-typed frame we publish as an empty `[]:` line
-   * (the timestamp spelling, the recipient form, the spoof flag, the localized block and the sender id were each A/B
-   * tested and none of them mattered), while the same frame typed `Map` or `Proximity` renders its text. The line
+   * `m_ChannelType` of a private line on `chat.whispers`. **`Map` by default, measured on Steam builds 25635074 and
+   * 25689360 (clients 25611704 and 25690505)**: those clients render every `Whispers`-typed frame we publish as an
+   * empty `[]:` line (the timestamp spelling, the recipient form, the spoof flag, the localized block and the sender
+   * id were each A/B tested and none of them mattered), while the same frame typed `Map` or `Proximity` renders its
+   * text. The line
    * stays private either way, because the routing key is the recipient's own `chat.whispers` binding; only the tag
    * the client files it under changes. Set `Whispers` for a build that renders it again.
    */
