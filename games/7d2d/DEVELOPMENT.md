@@ -5,9 +5,10 @@ Notes for working on the mod itself. Server operators only need
 
 ## The target
 
-Everything here is built against one catalog target,
-[`catalog/7d2d/targets/linux-3.2.0.b10.json`](../../catalog/7d2d/targets/linux-3.2.0.b10.json):
-the Steam app, branch, build id and depot manifest that identify V 3.2.0 b10, the sha256 of the
+Everything here is built against one catalog target at a time. The default is
+[`catalog/7d2d/targets/linux-3.3.0.b18.json`](../../catalog/7d2d/targets/linux-3.3.0.b18.json)
+(V 3.3.0 b18); [`linux-3.2.0.b10.json`](../../catalog/7d2d/targets/linux-3.2.0.b10.json) is still
+built. A target records the Steam app, branch, build id and depot manifest of its build, the sha256 of the
 assemblies the mod compiles against, the Mono image the build runs in, the pinned third-party
 dependencies and the server image the rig boots. No script here hard-codes any of it —
 `scripts/lib-target.sh` resolves the target and exports `SEVEND2D_*` for the rest.
@@ -37,9 +38,9 @@ just sevend2d-test-contract  # the Generic Connector contract harness
 Or from inside `games/7d2d/`:
 
 ```sh
-./scripts/setup-environment.sh --target linux-3.2.0.b10
-./scripts/build-mod.sh --target linux-3.2.0.b10
-./scripts/build-release.sh <version> <out-dir> --target linux-3.2.0.b10
+./scripts/setup-environment.sh --target linux-3.3.0.b18
+./scripts/build-mod.sh --target linux-3.3.0.b18
+./scripts/build-release.sh <version> <out-dir> --target linux-3.3.0.b18
 ```
 
 `--target` may be left out everywhere except `build-release.sh`, which insists on it: a release

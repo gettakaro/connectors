@@ -4,7 +4,7 @@
   "game": "7d2d",
   "platform": "linux",
   "revision": "3.2.0.b10",
-  "default": true,
+  "default": false,
   "support": {
     "status": "candidate",
     "since": "2026-09-15",

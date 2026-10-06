@@ -34,7 +34,7 @@ build-release-minecraft version out-dir='dist':
     ./games/minecraft/scripts/build-release.sh {{version}} {{out-dir}}
 
 # Build the 7D2D connector release artifact locally into <out-dir>
-build-release-7d2d version out-dir='dist' target='linux-3.2.0.b10':
+build-release-7d2d version out-dir='dist' target='linux-3.3.0.b18':
     ./games/7d2d/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
 
 # Build the Project Zomboid connector release artifact locally into <out-dir>
@@ -114,11 +114,11 @@ minecraft-bot-up *args:
 # === 7D2D Connector ===
 
 # Prepare 7D2D build dependencies and game binaries
-sevend2d-setup target='linux-3.2.0.b10':
+sevend2d-setup target='linux-3.3.0.b18':
     cd games/7d2d && ./scripts/setup-environment.sh --target {{target}}
 
 # Build the 7D2D mod
-sevend2d-build target='linux-3.2.0.b10':
+sevend2d-build target='linux-3.3.0.b18':
     cd games/7d2d && ./scripts/build-mod.sh --target {{target}}
 
 # Build the 7D2D mod and deploy it into the dev-servers rig
@@ -126,7 +126,7 @@ sevend2d-build-deploy:
     ./dev-servers/scripts/deploy-connector.sh 7d2d
 
 # Run the Generic Connector protocol contract harness
-sevend2d-test-contract target='linux-3.2.0.b10':
+sevend2d-test-contract target='linux-3.3.0.b18':
     cd games/7d2d && ./scripts/test-contract.sh --target {{target}}
 
 # Run the 7D2D source-level regression suite

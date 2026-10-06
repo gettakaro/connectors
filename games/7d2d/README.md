@@ -7,7 +7,7 @@ It is built once per exact server build, and each zip names the build it is for:
 
 | Server build | Steam build (app 294420, branch `public`) | Zip | Status |
 |---|---|---|---|
-| **V 3.3.0 b18** | 25661908 | `takaro-7d2d-mod-linux-3.3.0.b18-<version>.zip` | candidate, proven live on 2026-10-06 (see below) |
+| **V 3.3.0 b18** | 25661908 | `takaro-7d2d-mod-linux-3.3.0.b18-<version>.zip` | candidate (default), proven live on 2026-10-06 (see below) |
 | **V 3.2.0 b10** | 24994542 | `takaro-7d2d-mod-linux-3.2.0.b10-<version>.zip` | candidate; the table below was proven on it |
 
 Use the zip that matches your server: V 3.3.0 changed the game's player-data and item APIs, so
