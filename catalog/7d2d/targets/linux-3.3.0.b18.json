@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "id": "linux-3.2.0.b10",
+  "id": "linux-3.3.0.b18",
   "game": "7d2d",
   "platform": "linux",
-  "revision": "3.2.0.b10",
-  "default": false,
+  "revision": "3.3.0.b18",
+  "default": true,
   "support": {
     "status": "candidate",
-    "since": "2026-09-15",
-    "evidence": ["games/7d2d/README.md (What works, what doesn't — verified 2026-09-15 on V 3.2.0 b10 / mod 0.1.4)"],
-    "notes": "Exact Steam pin of the build the 2026-09-14/15 hard test proved; startup, a representative action and reconnect were re-proven on this pin in an isolated run. Runtime CI onboarding and gameplay evidence are tracked separately."
+    "since": "2026-10-06",
+    "evidence": [],
+    "notes": "Exact Steam pin of V 3.3.0 (b18), public buildid 25661908 (maintenance issue #377). Candidate until the real-client Takaro MCP gate on this pin is recorded."
   },
   "inputs": {
     "server": {
@@ -18,17 +18,33 @@
       "hashOrigin": "self-recorded",
       "app": 294420,
       "branch": "public",
-      "buildid": 24994542,
+      "buildid": 25661908,
       "os": "linux",
       "arch": "64",
       "depots": {
-        "294422": {"manifest": "1633674551820196085", "size": 17607545324, "files": 17624}
+        "294422": {
+          "manifest": "3031329678505041777",
+          "size": 17701153808,
+          "files": 17639
+        }
       },
       "files": {
-        "7DaysToDieServer.x86_64": {"sha256": "2f4534b3534d61c843a7f20cbd5df7c2deef9fb0211d60ea362cda7bdecdeabc", "size": 14800},
-        "7DaysToDieServer_Data/Managed/Assembly-CSharp.dll": {"sha256": "3737eedc9f143d428a69030317428c45d342be4f11006a46d72bcd7b1d0fc64d", "size": 11610624},
-        "7DaysToDieServer_Data/Managed/Assembly-CSharp-firstpass.dll": {"sha256": "fe2ce77049042ae288521c8b5cae7720238d52dc12fb6fea5561aba1872935ae", "size": 249344},
-        "Mods/0_TFP_Harmony/0Harmony.dll": {"sha256": "c349e1a3fd13fa5a9facc9805a5e160161b14489f46f6bdd38202b8e124f78df", "size": 290304}
+        "7DaysToDieServer.x86_64": {
+          "sha256": "2f4534b3534d61c843a7f20cbd5df7c2deef9fb0211d60ea362cda7bdecdeabc",
+          "size": 14800
+        },
+        "7DaysToDieServer_Data/Managed/Assembly-CSharp-firstpass.dll": {
+          "sha256": "334f3a4cf5ec46f5e38bd3f5b1d80cd3ad1aacb2a7832541e57d3d3c8223bc05",
+          "size": 256512
+        },
+        "7DaysToDieServer_Data/Managed/Assembly-CSharp.dll": {
+          "sha256": "e16ff9d539b8fbf64904c0bc090d502286a62464742a9396f0455936ad0beb87",
+          "size": 11697152
+        },
+        "Mods/0_TFP_Harmony/0Harmony.dll": {
+          "sha256": "c349e1a3fd13fa5a9facc9805a5e160161b14489f46f6bdd38202b8e124f78df",
+          "size": 290304
+        }
       },
       "credentials": null
     }
@@ -40,7 +56,10 @@
       "image": "vinanrra/7dtd-server",
       "tag": "v0.9.3",
       "digest": "sha256:75d1193fb2470687ee8748f27482524c170f6cbca110e15f48db8d8ff48f15ca",
-      "env": {"START_MODE": "1", "TimeZone": "Etc/UTC"}
+      "env": {
+        "START_MODE": "1",
+        "TimeZone": "Etc/UTC"
+      }
     }
   },
   "build": {
@@ -52,7 +71,10 @@
       "tag": "6.12.0.182-slim",
       "digest": "sha256:eb9a8d42dc58090cdb0d39b36422d9560f33e9d2cce22f4c888da263cee46c45"
     },
-    "references": ["regex:^7DaysToDieServer_Data/Managed/.*\\.dll$", "regex:^Mods/0_TFP_Harmony/.*\\.dll$"],
+    "references": [
+      "regex:^7DaysToDieServer_Data/Managed/.*\\.dll$",
+      "regex:^Mods/0_TFP_Harmony/.*\\.dll$"
+    ],
     "deps": {
       "websocket-sharp": {
         "coordinate": "github:sta/websocket-sharp:f7904e6afb934cfff9eda1f29ee6c1291b14c4bc",
@@ -72,9 +94,28 @@
     }
   },
   "components": [
-    {"role": "server-mod", "artifact": "takaro-7d2d-mod-linux-3.2.0.b10-{version}.zip", "installDir": "Mods"}
+    {
+      "role": "server-mod",
+      "artifact": "takaro-7d2d-mod-linux-3.3.0.b18-{version}.zip",
+      "installDir": "Mods"
+    }
   ],
-  "verification": {"required": "contract", "separate": ["startup", "action", "reconnect"]},
-  "preserve": ["sdtdserver.xml", "Takaro/", "Mods/Takaro/", "DONT_REMOVE.txt", ".takaro/"],
-  "devServers": {"gameId": "7d2d"}
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup",
+      "action",
+      "reconnect"
+    ]
+  },
+  "preserve": [
+    "sdtdserver.xml",
+    "Takaro/",
+    "Mods/Takaro/",
+    "DONT_REMOVE.txt",
+    ".takaro/"
+  ],
+  "devServers": {
+    "gameId": "7d2d"
+  }
 }

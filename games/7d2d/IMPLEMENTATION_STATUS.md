@@ -58,7 +58,7 @@ hammer the connector with read requests without touching the game simulation.
 from game truth on every boot. Nothing in the mirror has value across
 restarts: ordinary player reads serve only online players, while items,
 entities, locations, and bans are reseeded at `GameStartDone`. The location
-read alone retains the last sample for a bounded 30 seconds after disconnect
+read alone retains the last sample for a bounded 10 minutes after disconnect
 so Takaro can enrich the lifecycle event. (The memory backend also sidesteps
 LiteDB 5 disk-engine
 failures under Mono — "ReadFull must read PAGE_SIZE bytes" during
@@ -71,7 +71,7 @@ never observe a cold mirror.
 |---|---|---|---|
 | `testReachability` | cached game-ready lifecycle state | game start/shutdown | lifecycle-bound; Live-supported |
 | `getPlayers`, `getPlayer` | `players` collection (Online=true) | spawn/disconnect events; sampler refreshes ping | identity exact; ping ≤3s; Live-supported |
-| `getPlayerLocation` | `players.X/Y/Z` | PositionSampler (~3s); bounded disconnect snapshot | ≤3s online; ≤30s after disconnect for Takaro enrichment; Live-supported |
+| `getPlayerLocation` | `players.X/Y/Z` | PositionSampler (~3s); bounded disconnect snapshot | ≤3s online; ≤10 min after disconnect for Takaro enrichment (outlasts an outage replay); Live-supported |
 | `getPlayerInventory` | `inventories` collection | join + `ModEvents.SavePlayerData` | client playerdata sync interval (~30s); Live-supported through Takaro inventory sync |
 | `listItems` | `items` collection | seeded once at GameStartDone (static) | 0; Live-supported |
 | `listEntities` | `entities` collection | seeded from `EntityClass.list.Dict` at GameStartDone | 0; Live-supported |

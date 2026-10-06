@@ -3,13 +3,16 @@ using System;
 namespace Takaro.Services
 {
     /// <summary>
-    /// Keeps the last sampled position readable briefly after disconnect so
+    /// Keeps the last sampled position readable for a while after disconnect so
     /// Takaro can enrich the lifecycle event without exposing stale offline
-    /// player locations indefinitely.
+    /// player locations indefinitely. Takaro reads it when the event arrives,
+    /// which after an outage is when the buffered event is replayed: the dead
+    /// link watchdog, a slow close and the reconnect backoff alone can take
+    /// several minutes, so the window has to outlast them.
     /// </summary>
     public static class PlayerLocationReadWindow
     {
-        public static readonly TimeSpan DisconnectedGracePeriod = TimeSpan.FromSeconds(30);
+        public static readonly TimeSpan DisconnectedGracePeriod = TimeSpan.FromMinutes(10);
 
         public static bool IsReadable(bool online, DateTime lastSeenUtc, DateTime utcNow)
         {

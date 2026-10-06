@@ -395,7 +395,7 @@ namespace Takaro.WebSocket
                     );
                 }
 
-                if (!_isConnected || !_isConfirmed || IsInboundStale())
+                if (!_isConnected || !_isConfirmed || IsInboundStale() || !IsSendable(socket))
                     return;
 
                 OutboundLedger.Entry head = _ledger.PeekHead();
@@ -415,11 +415,12 @@ namespace Takaro.WebSocket
                         $"Error sending WebSocket message (attempt {_headFailureCount}): "
                             + $"{ex.GetType().FullName}: {ex.Message}"
                     );
-                    if (IsInboundStale())
+                    if (IsInboundStale() || !IsSendable(socket))
                     {
-                        // The link is suspect (F17a). Send failures here say
-                        // nothing about the payload, so keep the backlog intact
-                        // and let the watchdog force the reconnect.
+                        // The link is suspect (F17a) or the socket is already
+                        // closing. Send failures here say nothing about the
+                        // payload, so keep the backlog intact for the next
+                        // connection instead of counting them toward a drop.
                         return;
                     }
 
@@ -442,6 +443,17 @@ namespace Takaro.WebSocket
                 _headFailureCount = 0;
                 _pendingOverflowLogged = false;
             }
+        }
+
+        /// <summary>
+        /// A socket the watchdog is closing, or one ws-sharp no longer holds
+        /// Open, cannot take a write. A late inbound frame can make the link
+        /// look live again during that window, so readiness is checked on the
+        /// socket itself rather than inferred from inbound traffic.
+        /// </summary>
+        private bool IsSendable(WebSocketSharp.WebSocket socket)
+        {
+            return !_deadSocketClosing && socket.ReadyState == WebSocketState.Open;
         }
 
         private bool AckPingDue()

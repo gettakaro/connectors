@@ -365,9 +365,16 @@ namespace Takaro.Services
                 return;
 
             var slots = new List<ItemSlot>();
+#if SEVEND2D_V3_3
+            PlayerDataFile data = cInfo.latestPlayerData;
+            CaptureItemStacks(ReadItemGrid(data.inventoryData), slots);
+            CaptureItemStacks(ReadItemGrid(data.bagData), slots);
+            CaptureItemStacks(ReadItemGrid(data.equipmentData), slots);
+#else
             CaptureItemStacks(cInfo.latestPlayerData.inventory, slots);
             CaptureItemStacks(cInfo.latestPlayerData.bag?.GetSlots(), slots);
             CaptureEquippedItems(cInfo.latestPlayerData.equipment?.GetItems(), slots);
+#endif
 
             string gameId = Shared.GameIdFromClientInfo(cInfo);
             DbWriter.Instance.Enqueue(
@@ -698,6 +705,28 @@ namespace Takaro.Services
 
             return record;
         }
+
+#if SEVEND2D_V3_3
+        /// <summary>
+        /// V3.3.0 keeps the toolbelt, backpack and equipment in PlayerDataFile as
+        /// serialised blobs. Each starts with a container version byte followed by
+        /// an ItemStackGrid (Inventory/Bag/Equipment.Write), so the grid is read on
+        /// its own, without binding it to a live entity.
+        /// </summary>
+        private static ItemStack[] ReadItemGrid(System.IO.MemoryStream blob)
+        {
+            ItemStack[] items = null;
+            StreamUtils.FromBlob(
+                blob,
+                reader =>
+                {
+                    reader.ReadByte();
+                    items = ItemStackGrid.Read(reader, StreamModeRead.Persistency).items;
+                }
+            );
+            return items;
+        }
+#endif
 
         private static void CaptureItemStacks(ItemStack[] itemStacks, List<ItemSlot> slots)
         {

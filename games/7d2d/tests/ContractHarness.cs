@@ -63,11 +63,11 @@ public static class ContractHarness
             "recent disconnect location remains readable for Takaro enrichment"
         );
         True(
-            PlayerLocationReadWindow.IsReadable(false, now.AddSeconds(-30), now),
+            PlayerLocationReadWindow.IsReadable(false, now.AddMinutes(-10), now),
             "disconnect location remains readable at the grace boundary"
         );
         True(
-            !PlayerLocationReadWindow.IsReadable(false, now.AddSeconds(-31), now),
+            !PlayerLocationReadWindow.IsReadable(false, now.AddMinutes(-10).AddSeconds(-1), now),
             "stale offline player location is not exposed"
         );
 
@@ -1713,6 +1713,13 @@ public sealed class ItemValue
         Quality = 0;
         Modifications = new ItemValue[0];
     }
+
+    // The V3.3.0 accessors that replaced the public Modifications array.
+    public int ModificationCount => Modifications.Length;
+
+    public ItemValue GetModification(int index) => Modifications[index];
+
+    public void SetModification(int index, ItemValue mod) => Modifications[index] = mod;
 }
 
 public sealed class ItemStack

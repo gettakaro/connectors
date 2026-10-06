@@ -251,22 +251,59 @@ class SourceRegressionTests(unittest.TestCase):
         )[1].split("private static void GameUpdate", 1)[0]
         writer = self.source("src/Services/DbWriter.cs")
 
-        self.assertIn("DbWriter.Instance.Flush", startup)
+        # The barrier runs on the writer queue, so the game thread never waits
+        # and a slow seed can't time out startup (V3.3.0 took over 30 s).
+        self.assertIn("DbWriter.Instance.WhenDrained", startup)
         self.assertLess(
             startup.index("StateMirror.Instance.SeedOnGameStart()"),
-            startup.index("DbWriter.Instance.Flush"),
+            startup.index("DbWriter.Instance.WhenDrained"),
         )
         self.assertLess(
-            startup.index("DbWriter.Instance.Flush"),
+            startup.index("DbWriter.Instance.WhenDrained"),
             startup.index("StateMirror.Instance.MarkGameReady()"),
         )
         self.assertLess(
             startup.index("StateMirror.Instance.MarkGameReady()"),
             startup.index("WebSocketTransport.Instance.Initialize()"),
         )
-        self.assertIn("public void Flush(TimeSpan timeout)", writer)
-        self.assertIn("TimeoutException", writer)
+        self.assertNotIn("Flush(", startup)
+        self.assertIn("public void WhenDrained(Action<bool> onDrained)", writer)
+        self.assertNotIn("TimeoutException", writer)
         self.assertIn("_hasFailedOperation", writer)
+
+    def test_sends_to_a_closing_socket_keep_the_backlog(self):
+        transport = self.source("src/WebSocket/WebSocketTransport.cs")
+        flush = transport.split("private void FlushPending()", 1)[1].split(
+            "private bool AckPingDue()", 1
+        )[0]
+        sendable = transport.split("private bool IsSendable(", 1)[1].split("}", 1)[0]
+        self.assertIn("!_deadSocketClosing", sendable)
+        self.assertIn("socket.ReadyState == WebSocketState.Open", sendable)
+        # Checked before the write, and again before a failure counts toward a drop.
+        self.assertLess(flush.index("!IsSendable(socket)"), flush.index("socket.Send(head.Json)"))
+        catch = flush.split("catch (Exception ex)", 1)[1]
+        self.assertLess(
+            catch.index("!IsSendable(socket)"), catch.index("_ledger.DropHead()")
+        )
+
+    def test_v3_3_targets_compile_against_the_v3_3_player_data_api(self):
+        lib_target = self.game_file("scripts/lib-target.sh")
+        self.assertIn('echo "SEVEND2D_V3_3"', lib_target)
+        self.assertIn("/p:SevenD2DApiDefines=", self.game_file("scripts/build-mod.sh"))
+        self.assertIn("-define:", self.game_file("scripts/test-contract.sh"))
+        self.assertIn("$(SevenD2DApiDefines)", self.source("Takaro.csproj"))
+
+        mirror = self.source("src/Services/StateMirror.cs")
+        v3_3 = mirror.split("#if SEVEND2D_V3_3", 1)[1].split("#else", 1)[0]
+        for blob in ("inventoryData", "bagData", "equipmentData"):
+            self.assertIn(f"ReadItemGrid(data.{blob})", v3_3)
+        self.assertIn("ItemStackGrid.Read(reader", mirror)
+
+        give_item = self.source("src/WebSocket/GiveItemHandler.cs")
+        v3_3 = give_item.split("#if SEVEND2D_V3_3", 1)[1].split("#else", 1)[0]
+        self.assertIn("iv.GetModification(i)", v3_3)
+        self.assertIn("iv.SetModification(i, tmp)", v3_3)
+        self.assertNotIn("Modifications", v3_3)
 
 
 if __name__ == "__main__":

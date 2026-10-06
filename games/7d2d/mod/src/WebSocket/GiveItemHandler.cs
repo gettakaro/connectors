@@ -89,12 +89,23 @@ namespace Takaro.WebSocket
 
                 if (ItemClass.list[iv.type].HasSubItems)
                 {
+#if SEVEND2D_V3_3
+                    for (int i = 0; i < iv.ModificationCount; i++)
+                    {
+                        ItemValue tmp = iv.GetModification(i);
+                        if (tmp == null)
+                            continue;
+                        tmp.Quality = quality;
+                        iv.SetModification(i, tmp);
+                    }
+#else
                     for (int i = 0; i < iv.Modifications.Length; i++)
                     {
                         ItemValue tmp = iv.Modifications[i];
                         tmp.Quality = quality;
                         iv.Modifications[i] = tmp;
                     }
+#endif
                 }
                 else if (ItemClass.list[iv.type].HasQuality)
                 {

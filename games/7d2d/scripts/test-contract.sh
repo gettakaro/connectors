@@ -13,14 +13,16 @@ FIXTURE="${PROJECT_ROOT}/tests/fixtures/generic-protocol.json"
 # The builder mounts the target's reference directory, so the target is resolved first.
 sevend2d_parse_target_flag "$@"
 sevend2d_resolve_target "${TARGET}"
+API_DEFINES=$(sevend2d_api_defines)
 
 docker compose --project-directory "${PROJECT_ROOT}" run --rm --no-deps \
   --volume "${FIXTURE}:/tmp/generic-protocol.json:ro" \
+  -e API_DEFINES="${API_DEFINES}" \
   builder bash -lc '
     set -euo pipefail
     test_dir=$(mktemp -d)
     trap '\''rm -rf -- "$test_dir"'\'' EXIT
-    mcs -langversion:latest \
+    mcs -langversion:latest ${API_DEFINES:+-define:${API_DEFINES}} \
       -out:"$test_dir/contract-harness.exe" \
       -r:/usr/lib/mono/msbuild/Current/bin/Newtonsoft.Json.dll \
       /app/mod/src/WebSocket/WebSocketMessage.cs \

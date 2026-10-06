@@ -13,6 +13,8 @@ namespace Takaro
         public const string ModPrefix = "Takaro";
         public static readonly string BasePath = Directory.GetCurrentDirectory() + "/Takaro";
 
+        private static volatile bool _gameShuttingDown;
+
         public void InitMod(Mod mod)
         {
             if (!Directory.Exists(BasePath))
@@ -47,11 +49,21 @@ namespace Takaro
             harmony.PatchAll();
 
             // Seed the mirror from game truth before the WebSocket connects, so
-            // requests can never observe a cold mirror.
+            // requests can never observe a cold mirror. The game thread does not
+            // wait for the writes: on V3.3.0 they took longer than 30 s at
+            // startup, and a timeout here left the server offline for good.
             StateMirror.Instance.SeedOnGameStart();
-            DbWriter.Instance.Flush(TimeSpan.FromSeconds(30));
-            StateMirror.Instance.MarkGameReady();
-            WebSocketTransport.Instance.Initialize();
+            DbWriter.Instance.WhenDrained(succeeded =>
+            {
+                if (_gameShuttingDown)
+                    return;
+                if (!succeeded)
+                    LogService.Instance.Error(
+                        "A state mirror write failed during startup; connecting anyway"
+                    );
+                StateMirror.Instance.MarkGameReady();
+                WebSocketTransport.Instance.Initialize();
+            });
         }
 
         private static void GameUpdate(ref ModEvents.SGameUpdateData data)
@@ -63,6 +75,7 @@ namespace Takaro
         private static void GameShutdown(ref ModEvents.SGameShutdownData data)
         {
             LogService.Instance.Info("Game shutting down");
+            _gameShuttingDown = true;
             StateMirror.Instance.MarkGameStopping();
 
             ModEvents.GameMessage.UnregisterHandler(GameMessage);

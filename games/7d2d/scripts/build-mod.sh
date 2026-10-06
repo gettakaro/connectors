@@ -24,11 +24,12 @@ sevend2d_parse_target_flag "$@"
 sevend2d_resolve_target "${TARGET}"
 
 cd "${PROJECT_ROOT}"
-echo "Building the Takaro mod for ${SEVEND2D_TARGET} (${SEVEND2D_FP16})..."
+API_DEFINES=$(sevend2d_api_defines)
+echo "Building the Takaro mod for ${SEVEND2D_TARGET} (${SEVEND2D_FP16}, API defines: ${API_DEFINES:-none})..."
 # As the calling user, so the build output in _data/ stays manageable without sudo.
 docker compose run --rm --build \
     --user "$(id -u):$(id -g)" \
     -e HOME=/tmp \
     builder bash -c \
-    "msbuild mod/Takaro.sln /p:Configuration=Release /p:Deterministic=true /p:DebugType=none"
+    "msbuild mod/Takaro.sln /p:Configuration=Release /p:Deterministic=true /p:DebugType=none /p:SevenD2DApiDefines=${API_DEFINES}"
 echo "Build completed successfully."

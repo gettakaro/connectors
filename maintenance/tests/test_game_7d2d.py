@@ -746,21 +746,26 @@ def test_compat_record_carries_the_steam_pin(run: Any, repo: Path, tmp_path: Pat
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "fixture")
     commit = git(repo, "rev-parse", "HEAD")
-    resolved = resolve(run, repo)
-    directory = tmp_path / "dist" / TARGET
-    _mod_zip(directory / ZIP_NAME)
-    row = artifact_row("server-mod", TARGET, resolved["fingerprint"], directory / ZIP_NAME)
-    write_meta(directory, row, connector=GAME, version=VERSION, revision=commit)
-    write_manifest(
-        directory,
-        connector=GAME,
-        version=VERSION,
-        revision=commit,
-        dirty=False,
-        toolchain=resolved["build"]["toolchain"],
-        mode="container",
-        artifacts=[row],
-    )
+    # A release carries every candidate target of the game, so each one gets a build.
+    for path in sorted((repo / "catalog" / GAME / "targets").glob("*.json")):
+        target = json.loads(path.read_text(encoding="utf-8"))["id"]
+        code, resolved, err = run("targets", "resolve", "--game", GAME, "--target", target, repo=repo)
+        assert code == 0, err
+        zip_name = f"takaro-7d2d-mod-{target}-{VERSION}.zip"
+        directory = tmp_path / "dist" / target
+        _mod_zip(directory / zip_name)
+        row = artifact_row("server-mod", target, resolved["fingerprint"], directory / zip_name)
+        write_meta(directory, row, connector=GAME, version=VERSION, revision=commit)
+        write_manifest(
+            directory,
+            connector=GAME,
+            version=VERSION,
+            revision=commit,
+            dirty=False,
+            toolchain=resolved["build"]["toolchain"],
+            mode="container",
+            artifacts=[row],
+        )
     out = tmp_path / "assembled"
 
     code, payload, err = run(

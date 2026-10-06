@@ -14,6 +14,8 @@
     <NuGetPackageImportStamp>
     </NuGetPackageImportStamp>
     <TargetFrameworkProfile />
+    <!-- Set by scripts/build-mod.sh from the catalog target (see sevend2d_api_defines). -->
+    <DefineConstants>$(DefineConstants);$(SevenD2DApiDefines)</DefineConstants>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <Optimize>true</Optimize>
