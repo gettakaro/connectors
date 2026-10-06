@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.2.1...7d2d-v0.3.0) (2026-10-06)
+
+
+### Features
+
+* **7d2d:** support V 3.3.0 b18 (Steam build 25661908) ([#378](https://github.com/gettakaro/connectors/issues/378)) ([ab07ee5](https://github.com/gettakaro/connectors/commit/ab07ee5dd95e69aea489a08815000a6ca6173cb3))
+
+
+### Bug Fixes
+
+* **7d2d:** send steamId and epicOnlineServicesId so Takaro does not duplicate players ([#368](https://github.com/gettakaro/connectors/issues/368)) ([54de81a](https://github.com/gettakaro/connectors/commit/54de81a62dfc6046b8e9f585f3b4bdf64d1e9d28))
+
 ## [0.2.1](https://github.com/gettakaro/connectors/compare/7d2d-v0.2.0...7d2d-v0.2.1) (2026-10-01)
 
 
