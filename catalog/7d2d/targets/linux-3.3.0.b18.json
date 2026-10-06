@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-3.3.0.b18",
+  "game": "7d2d",
+  "platform": "linux",
+  "revision": "3.3.0.b18",
+  "default": false,
+  "support": {
+    "status": "candidate",
+    "since": "2026-10-06",
+    "evidence": [],
+    "notes": "Exact Steam pin of V 3.3.0 (b18), public buildid 25661908 (maintenance issue #377). Candidate until the real-client Takaro MCP gate on this pin is recorded."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 294420,
+      "branch": "public",
+      "buildid": 25661908,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "294422": {
+          "manifest": "3031329678505041777",
+          "size": 17701153808,
+          "files": 17639
+        }
+      },
+      "files": {
+        "7DaysToDieServer.x86_64": {
+          "sha256": "2f4534b3534d61c843a7f20cbd5df7c2deef9fb0211d60ea362cda7bdecdeabc",
+          "size": 14800
+        },
+        "7DaysToDieServer_Data/Managed/Assembly-CSharp-firstpass.dll": {
+          "sha256": "334f3a4cf5ec46f5e38bd3f5b1d80cd3ad1aacb2a7832541e57d3d3c8223bc05",
+          "size": 256512
+        },
+        "7DaysToDieServer_Data/Managed/Assembly-CSharp.dll": {
+          "sha256": "e16ff9d539b8fbf64904c0bc090d502286a62464742a9396f0455936ad0beb87",
+          "size": 11697152
+        },
+        "Mods/0_TFP_Harmony/0Harmony.dll": {
+          "sha256": "c349e1a3fd13fa5a9facc9805a5e160161b14489f46f6bdd38202b8e124f78df",
+          "size": 290304
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "vinanrra/7dtd-server",
+      "tag": "v0.9.3",
+      "digest": "sha256:75d1193fb2470687ee8748f27482524c170f6cbca110e15f48db8d8ff48f15ca",
+      "env": {
+        "START_MODE": "1",
+        "TimeZone": "Etc/UTC"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/7d2d/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "mono",
+      "tag": "6.12.0.182-slim",
+      "digest": "sha256:eb9a8d42dc58090cdb0d39b36422d9560f33e9d2cce22f4c888da263cee46c45"
+    },
+    "references": [
+      "regex:^7DaysToDieServer_Data/Managed/.*\\.dll$",
+      "regex:^Mods/0_TFP_Harmony/.*\\.dll$"
+    ],
+    "deps": {
+      "websocket-sharp": {
+        "coordinate": "github:sta/websocket-sharp:f7904e6afb934cfff9eda1f29ee6c1291b14c4bc",
+        "sha256": "2ee957294a8f3517bb0995e4d395d94b16a908441ad74e74643cb660d9b27ae4",
+        "resolvedCoordinate": "https://github.com/sta/websocket-sharp/archive/f7904e6afb934cfff9eda1f29ee6c1291b14c4bc.tar.gz"
+      },
+      "LiteDB": {
+        "coordinate": "nuget:LiteDB:5.0.21",
+        "sha256": "938a4f5f9d6a28383de8ccfcbdb8897e78432399215232cf38dbf147e03ec167",
+        "resolvedCoordinate": "https://globalcdn.nuget.org/packages/litedb.5.0.21.nupkg"
+      },
+      "System.Buffers": {
+        "coordinate": "nuget:System.Buffers:4.5.1",
+        "sha256": "c30b3dd2c7e2f4cee4b823d692fd42118309b42ab1f5007f923d329a5b0d6b12",
+        "resolvedCoordinate": "https://globalcdn.nuget.org/packages/system.buffers.4.5.1.nupkg"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "server-mod",
+      "artifact": "takaro-7d2d-mod-linux-3.3.0.b18-{version}.zip",
+      "installDir": "Mods"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup",
+      "action",
+      "reconnect"
+    ]
+  },
+  "preserve": [
+    "sdtdserver.xml",
+    "Takaro/",
+    "Mods/Takaro/",
+    "DONT_REMOVE.txt",
+    ".takaro/"
+  ],
+  "devServers": {
+    "gameId": "7d2d"
+  }
+}
