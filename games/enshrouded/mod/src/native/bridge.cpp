@@ -389,6 +389,7 @@ void Bridge::SendResponse(uint64_t epoch, FrameKind kind, const std::string& fra
     QueueStatus st = o_.transport->Queue({kind, Text(frame), epoch, 0});
     if (st == QueueStatus::Accepted) {
         responses_++;
+        if (o_.config.logFrames) PluginLog("native: frame out %s", frame.c_str());
         return;
     }
     droppedResponses_++;
@@ -732,6 +733,7 @@ void Bridge::DeliverEvents(int64_t now) {
         }
         lastQueuedId_ = it->id;
         queued++;
+        if (o_.config.logFrames) PluginLog("native: frame out %s", it->frame.c_str());
         eventsQueued_++;
         if (IsConnectionType(it->type)) {
             JsonValue frame;

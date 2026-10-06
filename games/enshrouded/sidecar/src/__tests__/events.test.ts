@@ -26,10 +26,15 @@ describe('event mapping', () => {
     expect(mapPluginEvent({ type: 'chat-message', data: { msg: 'sys', channel: 'team' } })).toEqual({ type: 'chat-message', data: { msg: 'sys', channel: 'team' } });
   });
   it('player-death with position and attacker', () => {
-    expect(mapPluginEvent({ type: 'player-death', data: { player, position: { x: 1, y: 2, z: 3 }, attacker: { gameId: 'x', name: 'Bob', steamId: '42' } } })).toEqual({
+    expect(mapPluginEvent({ type: 'player-death', data: { player, position: { x: 1, y: 2, z: 3 }, attacker: { gameId: 'x', name: 'Bob', steamId: '76561198000000042' } } })).toEqual({
       type: 'player-death',
-      data: { player: takaroPlayer, position: { x: 1, y: 2, z: 3 }, attacker: { gameId: '42', name: 'Bob', steamId: '42', platformId: 'steam:42' } },
+      data: { player: takaroPlayer, position: { x: 1, y: 2, z: 3 }, attacker: { gameId: '76561198000000042', name: 'Bob', steamId: '76561198000000042', platformId: 'steam:76561198000000042' } },
     });
+  });
+  it('never sends a non-SteamID64 as steamId (Takaro matches players on it verbatim)', () => {
+    expect(mapPluginEvent({ type: 'player-death', data: { player, attacker: { gameId: 'x', name: 'Bob', steamId: '42', platformId: 'steam:42' } } })?.data.attacker).toEqual({ gameId: 'x', name: 'Bob' });
+    const hashBan = mapPluginEvent({ type: 'player-connected', data: { player: { gameId: '1234567890123456789', name: 'Ghost', steamId: '1234567890123456789' } } });
+    expect(hashBan?.data).toEqual({ player: { gameId: '1234567890123456789', name: 'Ghost' } });
   });
   it('entity-killed', () => {
     expect(mapPluginEvent({ type: 'entity-killed', data: { player, entity: 'Scavenger', weapon: 'Sword_Iron' } })).toEqual({
