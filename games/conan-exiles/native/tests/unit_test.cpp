@@ -290,7 +290,7 @@ static void TestPins() {
     CHECK(wsigs.size() == 3, "3 windows signatures");
     const pins::BuildPin* wpin = nullptr;
     for (auto& b : pins::PinnedBuilds())
-        if (std::string(b.platform) == "windows") wpin = &b;
+        if (std::string(b.platform) == "windows" && std::string(b.build) == "25639945") wpin = &b;
     CHECK(wpin && std::string(wpin->buildId) == "a0e8d0c4-b619000", "windows build pinned by PE identity");
     for (uintptr_t wbase : {(uintptr_t)0x140000000ull, (uintptr_t)0x7ff7b2f10000ull}) {
         std::vector<std::vector<uint8_t>> bufs(3, std::vector<uint8_t>(0x100, 0xCC));

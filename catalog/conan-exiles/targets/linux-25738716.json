@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "id": "linux-25639945",
+  "id": "linux-25738716",
   "game": "conan-exiles",
   "platform": "linux",
-  "revision": "25639945",
-  "default": false,
+  "revision": "25738716",
+  "default": true,
   "support": {
     "status": "candidate",
-    "since": "2026-09-21",
+    "since": "2026-10-06",
     "evidence": [
-      "games/conan-exiles/README.md (What works, what doesn't: the native connector on Linux build 25639945, live 2026-10-03/04 with a real client through hosted Takaro)",
+      "games/conan-exiles/README.md (What works, what doesn't: the native connector on Linux build 25738716, live 2026-10-06 with a real client through hosted Takaro)",
       "games/conan-exiles/native/tests (contract level, every build: unit, drift, fake-Takaro wire tests incl. a forced outage, and the real library preloaded into a stand-in server)"
     ],
-    "notes": "Exact Steam pin of the public head observed 2026-10-02 (native Linux dedicated server; depot 443032 manifest 8611640520811009059). The shipped connector is the native library libtakaro-conan-native.so (LD_PRELOAD into the server): it holds the Takaro connection itself, needs no RCON and no mod, and hooks only this build (GNU build-id 3a05a6ef0c873f2bbf754ec495bdf2a686d3768d, games/conan-exiles/native/core/pins/pins.json); on any other build it connects, reports the unknown build and refuses every action. It is built in its own pinned buster toolchain (games/conan-exiles/native/platform/linux/Dockerfile.build), which compiles the two build.deps below from the same SHA-256-checked archives; this record's build toolchain image is not used by the Linux build and is kept because the schema requires one. A hosted runner cannot boot the 4.3 GB server, so release verification is contract level."
+    "notes": "Exact Steam pin of the public head observed 2026-10-06 (native Linux dedicated server, engine CL 378787; depot 443032 manifest 3253120066949448972). The shipped connector is the native library libtakaro-conan-native.so (LD_PRELOAD into the server): it holds the Takaro connection itself, needs no RCON and no mod, and hooks this build (GNU build-id 8d5382c18fa73ab61bee077e65d3acc427825502, games/conan-exiles/native/core/pins/pins.json) and the previous 25639945; on any other build it connects, reports the unknown build and refuses every action. The three anchors kept their signatures and moved (+0x13000 code, +0x35100 data); the reflection diff of a live probe dump is clean (only runtime-resolved offsets moved). It is built in its own pinned buster toolchain (games/conan-exiles/native/platform/linux/Dockerfile.build), which compiles the two build.deps below from the same SHA-256-checked archives; this record's build toolchain image is not used by the Linux build and is kept because the schema requires one. A hosted runner cannot boot the 4.3 GB server, so release verification is contract level."
   },
   "inputs": {
     "server": {
@@ -21,7 +21,7 @@
       "hashOrigin": "self-recorded",
       "app": 443030,
       "branch": "public",
-      "buildid": 25639945,
+      "buildid": 25738716,
       "os": "linux",
       "arch": "64",
       "depots": {
@@ -31,27 +31,27 @@
           "files": 4
         },
         "443032": {
-          "manifest": "8611640520811009059",
-          "size": 4180709896,
+          "manifest": "3253120066949448972",
+          "size": 4342351034,
           "files": 251
         }
       },
       "files": {
         "ConanSandbox/Binaries/Linux/ConanSandboxServer-Linux-Shipping": {
-          "sha256": "97fb973e6f4cf25daf0c2690a07790fefddbff7062fd93179f3010e6b66698b2",
-          "size": 201481352
+          "sha256": "cddce758ec4b653ef97480210c988ee1d0dccfcfe21b783c06009f5915e83ace",
+          "size": 201698760
         },
         "ConanSandbox/Binaries/Linux/libDreamworld.so": {
           "sha256": "e501d3eb060a60dac10fb5292d6299471c5efc6e95fa3606e57554d86426a9e1",
           "size": 11218520
         },
         "ConanSandbox/Content/Paks/global.utoc": {
-          "sha256": "8308b4b9eeaa3490bce688566eabc22a8880db073d3c0d3370890a1722a4cc22",
+          "sha256": "c0dbb6841d455b5138d48dfbd6524d82abae7d7609736b8ea355993142d68f7f",
           "size": 962
         },
         "ConanSandbox/Content/Paks/pakchunk0-LinuxServer.utoc": {
-          "sha256": "3c08fef33d0c1eb257a366f34c4b2bb3df30aab1b50f842adf55a3a872858c95",
-          "size": 660517
+          "sha256": "8d54813f313fef7083ccf99e0e35ad0a140daa84dd0fb077a4dd55ac16216766",
+          "size": 676940
         },
         "ConanSandboxServer.sh": {
           "sha256": "0eff1e0969d72ac8e323f52cf85cf265b7c1bdae409a884a7e2251f761a13999",
@@ -102,7 +102,7 @@
   "components": [
     {
       "role": "native",
-      "artifact": "takaro-conan-exiles-native-linux-25639945-{version}.zip",
+      "artifact": "takaro-conan-exiles-native-linux-25738716-{version}.zip",
       "installDir": "TakaroConanNative"
     }
   ],

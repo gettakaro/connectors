@@ -47,15 +47,21 @@ const std::vector<Signature> kNone;
 #ifdef TAKARO_DEBUG_WRONG_BUILD_ID
 #define TAKARO_LINUX_25639945_ID "0000000000000000000000000000000000000000"  // degrade proof only
 #define TAKARO_WINDOWS_25639945_ID "00000000-0000000"
+#define TAKARO_LINUX_25738716_ID "0000000000000000000000000000000000000001"
+#define TAKARO_WINDOWS_25738716_ID "00000000-0000001"
 #else
 #define TAKARO_WINDOWS_25639945_ID "a0e8d0c4-b619000"
 #define TAKARO_LINUX_25639945_ID "3a05a6ef0c873f2bbf754ec495bdf2a686d3768d"
+#define TAKARO_WINDOWS_25738716_ID "6118eb61-b64b000"
+#define TAKARO_LINUX_25738716_ID "8d5382c18fa73ab61bee077e65d3acc427825502"
 #endif
 
 const std::vector<BuildPin> kPinned = {
     {"linux", TAKARO_LINUX_25639945_ID, "25639945", {0x3f12340, 0xc35a580, 0xc2a5d40}},
     // PE "<TimeDateStamp>-<SizeOfImage>"; anchors are RVAs (sha256 of the exe in pins.json).
     {"windows", TAKARO_WINDOWS_25639945_ID, "25639945", {0x16408d0, 0xa92cdc0, 0xa85e010}},
+    {"linux", TAKARO_LINUX_25738716_ID, "25738716", {0x3f25340, 0xc38f680, 0xc2dae40}},
+    {"windows", TAKARO_WINDOWS_25738716_ID, "25738716", {0x1642150, 0xa95a040, 0xa88b290}},
 };
 
 uintptr_t& Slot(Anchors& a, const std::string& name) {

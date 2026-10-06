@@ -4,15 +4,16 @@ A native connector that runs inside the Conan Exiles dedicated server and connec
 itself: a library the Linux server preloads, or a `winmm.dll` next to the Windows server exe. No
 sidecar, no RCON, no mod. Players do not install anything.
 
-It is built for one exact server build: **Conan Exiles Dedicated Server build 25639945** (Steam app
-`443030`, branch `public`), Linux and Windows. On any other build it stays connected but refuses
-every action and logs why.
+It is built for exact server builds: **Conan Exiles Dedicated Server build 25738716** (Steam app
+`443030`, branch `public`, the current release) and the previous build 25639945, Linux and
+Windows. On any other build it stays connected but refuses every action and logs why.
 
 ## Install
 
 ### 1. Before you start
 
-- A Conan Exiles dedicated server on build 25639945 that you can stop, start and copy files to.
+- A Conan Exiles dedicated server on build 25738716 (or 25639945) that you can stop, start and
+  copy files to.
 - Linux: control of the server's start command (to set `LD_PRELOAD`).
 - A Takaro game server of type **Generic** and its **registration token**.
 
@@ -22,8 +23,8 @@ From the latest `conan-exiles-v*` release on https://github.com/gettakaro/connec
 
 | Server | Download |
 |---|---|
-| Linux | `takaro-conan-exiles-native-linux-25639945-<version>.zip` |
-| Windows | `takaro-conan-exiles-native-windows-25639945-<version>.zip` |
+| Linux | `takaro-conan-exiles-native-linux-25738716-<version>.zip` |
+| Windows | `takaro-conan-exiles-native-windows-25738716-<version>.zip` |
 
 Each zip holds one folder, `TakaroConanNative/`. The `Source code` links on the release page are
 GitHub's own; you do not need them.
@@ -76,7 +77,8 @@ Upgrading, rollback and removal: [INSTALL.md](INSTALL.md).
 ## What works, what doesn't
 
 ✅ = works, ⚠️ = works with a caveat or not yet verified, ❌ = unsupported, N/A = does not apply.
-Verified on build 25639945 with a real client: Linux 2026-10-03/04, Windows 2026-10-04/05.
+Verified with a real client on build 25639945 (Linux 2026-10-03/04, Windows 2026-10-04/05) and
+re-verified on build 25738716 (Linux 2026-10-06).
 
 | What | Linux | Windows | Notes |
 |---|---|---|---|
@@ -131,7 +133,7 @@ Verified on build 25639945 with a real client: Linux 2026-10-03/04, Windows 2026
 
 ### Known issues
 
-- Works only on server build 25639945; a game update needs a new connector release.
+- Works only on server builds 25738716 and 25639945; a game update needs a new connector release.
 - Linux needs control of the start command for `LD_PRELOAD`; some rented hosts do not allow it.
 - A death by the `Suicide` command carries no cause in its message.
 

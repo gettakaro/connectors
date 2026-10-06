@@ -367,7 +367,8 @@ def test_code_and_catalog(tmp):
             {"id": "linux-%s" % build, "platform": "linux", "revision": str(build), "default": default,
              "support": {"status": "candidate"}}))
 
-    pins = pins_for(tmp, json.loads((ROOT / "core/pins/pins.json").read_text())["builds"])
+    builds = json.loads((ROOT / "core/pins/pins.json").read_text())["builds"]
+    pins = pins_for(tmp, [b for b in builds if b["build"] == "25639945"])
     target(25639945, True)
     code, _ = run("--pins", pins, "catalog", "--catalog", cat)
     check(code == 0, "catalog: pinned default target passes")

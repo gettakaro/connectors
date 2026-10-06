@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "id": "windows-25639945",
+  "id": "windows-25738716",
   "game": "conan-exiles",
   "platform": "windows",
-  "revision": "25639945",
-  "default": false,
+  "revision": "25738716",
+  "default": true,
   "support": {
     "status": "candidate",
-    "since": "2026-10-04",
+    "since": "2026-10-06",
     "evidence": [
-      "games/conan-exiles/README.md (What works, what doesn't: on Windows only reachability and sendMessage are proven live so far; the rest is not yet verified on Windows)",
+      "games/conan-exiles/README.md (What works, what doesn't: Windows build 25738716)",
       "games/conan-exiles/native/platform/windows/build.sh (cross-compiled with the pinned zig, exports and reproducible bytes checked in CI)"
     ],
-    "notes": "Same Steam build as linux-25639945 (Windows content depot 443031 manifest 6353629323845191319, recorded 2026-10-03 from an anonymous steamcmd install). The shipped connector is winmm.dll, a proxy DLL placed next to ConanSandboxServer-Win64-Shipping.exe that forwards the three winmm functions the server imports and holds the Takaro connection itself (WinHTTP); no RCON, no mod. It hooks only this build (PE TimeDateStamp-SizeOfImage a0e8d0c4-b619000, games/conan-exiles/native/core/pins/pins.json). The live Windows hard test is still pending; see the README table."
+    "notes": "Same Steam build as linux-25738716 (Windows content depot 443031 manifest 406026666845616995, recorded 2026-10-06). The shipped connector is winmm.dll, a proxy DLL placed next to ConanSandboxServer-Win64-Shipping.exe that forwards the three winmm functions the server imports and holds the Takaro connection itself (WinHTTP); no RCON, no mod. It hooks this build (PE TimeDateStamp-SizeOfImage 6118eb61-b64b000, games/conan-exiles/native/core/pins/pins.json) and the previous 25639945; the three anchors kept their signatures and moved (+0x1880 code, +0x2d280 data)."
   },
   "inputs": {
     "server": {
@@ -21,7 +21,7 @@
       "hashOrigin": "self-recorded",
       "app": 443030,
       "branch": "public",
-      "buildid": 25639945,
+      "buildid": 25738716,
       "os": "windows",
       "arch": "64",
       "depots": {
@@ -31,14 +31,15 @@
           "files": 8
         },
         "443031": {
-          "manifest": "6353629323845191319",
-          "size": 4381984355
+          "manifest": "406026666845616995",
+          "size": 4549423272,
+          "files": 273
         }
       },
       "files": {
         "ConanSandbox/Binaries/Win64/ConanSandboxServer-Win64-Shipping.exe": {
-          "sha256": "2f031ef8b5d084c794448897e434a9db893a9d2ebb22bcac27f7750e84c6ca77",
-          "size": 186736488
+          "sha256": "89f481eb784fffca5319032cda0ebc18240a5fdaa116461ce2309e99fa55c529",
+          "size": 186935144
         }
       },
       "credentials": null
@@ -76,7 +77,7 @@
   "components": [
     {
       "role": "native",
-      "artifact": "takaro-conan-exiles-native-windows-25639945-{version}.zip",
+      "artifact": "takaro-conan-exiles-native-windows-25738716-{version}.zip",
       "installDir": "TakaroConanNative"
     }
   ],

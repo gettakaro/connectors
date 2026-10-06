@@ -623,7 +623,7 @@ def native_zip(
         archive.writestr(f"{root}/{binary}", "native\n")
         archive.writestr(
             f"{root}/takaro-target.json",
-            json.dumps({"target": target, "connectorVersion": VERSION, "revision": "25639945"}),
+            json.dumps({"target": target, "connectorVersion": VERSION, "revision": target.split("-", 1)[1]}),
         )
         if escape:
             archive.writestr("../escaped.txt", "nope")
@@ -912,38 +912,29 @@ def test_compat_record_carries_the_steam_pin_for_both_platforms(run: Any, repo: 
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "fixture")
     commit = git(repo, "rev-parse", "HEAD")
-    resolved = resolve(run, repo)
-    directory = tmp_path / "dist" / TARGET
-    native_zip(directory / NATIVE_ZIP)
-    rows = [artifact_row("native", TARGET, resolved["fingerprint"], directory / NATIVE_ZIP)]
-    for row in rows:
+    # A release carries every candidate target of the game, so each one gets a build.
+    for path in sorted((repo / "catalog" / GAME / "targets").glob("*.json")):
+        target = json.loads(path.read_text(encoding="utf-8"))["id"]
+        code, resolved, err = run("targets", "resolve", "--game", GAME, "--target", target, repo=repo)
+        assert code == 0, err
+        zip_name = f"takaro-conan-exiles-native-{target}-{VERSION}.zip"
+        directory = tmp_path / "dist" / target
+        if target.startswith("windows-"):
+            native_zip(directory / zip_name, binary="winmm.dll", target=target)
+        else:
+            native_zip(directory / zip_name, target=target)
+        row = artifact_row("native", target, resolved["fingerprint"], directory / zip_name)
         write_meta(directory, row, connector=GAME, version=VERSION, revision=commit)
-    write_manifest(
-        directory,
-        connector=GAME,
-        version=VERSION,
-        revision=commit,
-        dirty=False,
-        toolchain=resolved["build"]["toolchain"],
-        mode="container",
-        artifacts=rows,
-    )
-    code, windows, err = run("targets", "resolve", "--game", GAME, "--target", WINDOWS_TARGET, repo=repo)
-    assert code == 0, err
-    win_dir = tmp_path / "dist" / WINDOWS_TARGET
-    native_zip(win_dir / WINDOWS_ZIP, binary="winmm.dll", target=WINDOWS_TARGET)
-    win_row = artifact_row("native", WINDOWS_TARGET, windows["fingerprint"], win_dir / WINDOWS_ZIP)
-    write_meta(win_dir, win_row, connector=GAME, version=VERSION, revision=commit)
-    write_manifest(
-        win_dir,
-        connector=GAME,
-        version=VERSION,
-        revision=commit,
-        dirty=False,
-        toolchain=windows["build"]["toolchain"],
-        mode="container",
-        artifacts=[win_row],
-    )
+        write_manifest(
+            directory,
+            connector=GAME,
+            version=VERSION,
+            revision=commit,
+            dirty=False,
+            toolchain=resolved["build"]["toolchain"],
+            mode="container",
+            artifacts=[row],
+        )
     out = tmp_path / "assembled"
 
     code, payload, err = run(

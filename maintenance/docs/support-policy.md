@@ -34,6 +34,7 @@ answer, and the record is the authority.
 | 7 Days to Die | `linux-3.2.0.b10` | linux | 3.2.0.b10 | candidate | contract |
 | 7 Days to Die | `linux-3.3.0.b18` | linux | 3.3.0.b18 | candidate | contract |
 | Conan Exiles | `linux-25639945` | linux | 25639945 | candidate | contract |
+| Conan Exiles | `linux-25738716` | linux | 25738716 | candidate | contract |
 | RuneScape: Dragonwilds | `linux-25465077` | linux | 25465077 | candidate | contract |
 | Enshrouded | `proton-1024233` | proton | 1024233 | candidate | contract |
 | Minecraft | `fabric-26.1.2` | fabric | 26.1.2 | maintained | protocol |
