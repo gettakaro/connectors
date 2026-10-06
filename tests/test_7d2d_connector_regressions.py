@@ -271,6 +271,21 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertNotIn("TimeoutException", writer)
         self.assertIn("_hasFailedOperation", writer)
 
+    def test_sends_to_a_closing_socket_keep_the_backlog(self):
+        transport = self.source("src/WebSocket/WebSocketTransport.cs")
+        flush = transport.split("private void FlushPending()", 1)[1].split(
+            "private bool AckPingDue()", 1
+        )[0]
+        sendable = transport.split("private bool IsSendable(", 1)[1].split("}", 1)[0]
+        self.assertIn("!_deadSocketClosing", sendable)
+        self.assertIn("socket.ReadyState == WebSocketState.Open", sendable)
+        # Checked before the write, and again before a failure counts toward a drop.
+        self.assertLess(flush.index("!IsSendable(socket)"), flush.index("socket.Send(head.Json)"))
+        catch = flush.split("catch (Exception ex)", 1)[1]
+        self.assertLess(
+            catch.index("!IsSendable(socket)"), catch.index("_ledger.DropHead()")
+        )
+
     def test_v3_3_targets_compile_against_the_v3_3_player_data_api(self):
         lib_target = self.game_file("scripts/lib-target.sh")
         self.assertIn('echo "SEVEND2D_V3_3"', lib_target)
