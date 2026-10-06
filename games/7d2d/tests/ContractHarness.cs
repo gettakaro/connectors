@@ -63,11 +63,11 @@ public static class ContractHarness
             "recent disconnect location remains readable for Takaro enrichment"
         );
         True(
-            PlayerLocationReadWindow.IsReadable(false, now.AddSeconds(-30), now),
+            PlayerLocationReadWindow.IsReadable(false, now.AddMinutes(-10), now),
             "disconnect location remains readable at the grace boundary"
         );
         True(
-            !PlayerLocationReadWindow.IsReadable(false, now.AddSeconds(-31), now),
+            !PlayerLocationReadWindow.IsReadable(false, now.AddMinutes(-10).AddSeconds(-1), now),
             "stale offline player location is not exposed"
         );
 
