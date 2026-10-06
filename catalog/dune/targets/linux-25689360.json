@@ -1,20 +1,20 @@
 {
   "schemaVersion": 1,
-  "id": "linux-25635074",
+  "id": "linux-25689360",
   "game": "dune",
   "platform": "linux",
-  "revision": "25635074",
+  "revision": "25689360",
   "default": true,
   "support": {
     "status": "candidate",
-    "since": "2026-10-02",
+    "since": "2026-10-06",
     "evidence": [
       "games/dune/README.md (What works, what doesn't — 51 of 52 matrix cells proven on the earlier pin 25418155 against hosted Takaro, 2026-09-21/22; the real-client re-proof on this pin is in the pull request that added it)",
       "games/dune/sidecar/src/__tests__/ (contract level, every build: 255 tests over a mock battlegroup — RabbitMQ, Postgres, the GM command bus and the plugin's HTTP API)",
       "games/dune/mod/tests/unit_test.cpp (plugin unit level, every build: 331 checks; the resolver's own self-degradation logic included)",
       "games/dune/DEVELOPMENT.md (how the pin is re-verified, and what the rig needs that CI cannot have)"
     ],
-    "notes": "Exact Steam pin of the self-hosted server package head observed 2026-10-02 (public branch moved to build 25635074 on 2026-09-30): tool app 4754530, Linux depot 4754532, image bundle 2134304-0-shipping, UE 5.2.1. The bundle's database tooling applies four new upgrade patches over the 2118731 schema (updatedb), and the map binary's vtable layout and the plugin's three byte signatures were re-checked against it: every hooked slot and every signature still resolves exactly once. The depot is not a game install — it is seven container image tarballs plus Funcom's k3s setup scripts, so install means DepotDownloader followed by `docker load`. Two things CI cannot do for this target, both by the game's design rather than ours: a world only becomes joinable with an operator's own Funcom self-hosting token (there is no anonymous boot and no direct connect — clients find worlds through FLS), and the package is 4.9 GB on top of a 10.8 GB server image. So `verification.required` is `contract` and every runtime level is listed as separate, proven on the rig on this exact pin rather than on a hosted runner. `takaro-maint install --game dune` waits for the shared seam that lets a steam-depots input declare a post-download step (`docker load` of an image bundle), which is also why this record declares no `devServers` block: the rig resolves its pins from here but still performs the download and the image load itself, and a ledger for this target would claim an install path that does not exist yet. The optional plugin is keyed to the map binary's ELF build id, which is why the pin matters: on any other server build it reports the affected capability as degraded instead of guessing."
+    "notes": "Exact Steam pin of the self-hosted server package head observed 2026-10-06 (public branch moved to build 25689360, built 2026-10-03): tool app 4754530, Linux depot 4754532, image bundle 2141883-0-shipping, UE 5.2.1. The bundle needs no database patches over 2134304 (updatedb found the schema current), and the map binary's vtable layout and the plugin's three byte signatures were re-checked against it: every hooked slot and every signature still resolves exactly once. The depot is not a game install — it is seven container image tarballs plus Funcom's k3s setup scripts, so install means DepotDownloader followed by `docker load`. Two things CI cannot do for this target, both by the game's design rather than ours: a world only becomes joinable with an operator's own Funcom self-hosting token (there is no anonymous boot and no direct connect — clients find worlds through FLS), and the package is 4.9 GB on top of a 10.8 GB server image. So `verification.required` is `contract` and every runtime level is listed as separate, proven on the rig on this exact pin rather than on a hosted runner. `takaro-maint install --game dune` waits for the shared seam that lets a steam-depots input declare a post-download step (`docker load` of an image bundle), which is also why this record declares no `devServers` block: the rig resolves its pins from here but still performs the download and the image load itself, and a ledger for this target would claim an install path that does not exist yet. The optional plugin is keyed to the map binary's ELF build id, which is why the pin matters: on any other server build it reports the affected capability as degraded instead of guessing."
   },
   "inputs": {
     "server": {
@@ -23,43 +23,43 @@
       "hashOrigin": "self-recorded",
       "app": 4754530,
       "branch": "public",
-      "buildid": 25635074,
+      "buildid": 25689360,
       "os": "linux",
       "arch": "64",
       "depots": {
         "4754532": {
-          "manifest": "5212661890512609510",
-          "size": 5209358233,
+          "manifest": "2278882978785603016",
+          "size": 5209757081,
           "files": 75
         }
       },
       "files": {
         "images/battlegroup/server-bg-director.tar": {
-          "sha256": "8fae297794903aa693043c89e5738c259e61e34f5d5e5415c244e91fb27753c2",
+          "sha256": "ee0bd78f7751e2897320acfa108b486c070ca419b5b9889e68ee4d32b77cae42",
           "size": 91948032
         },
         "images/battlegroup/server-db-utils.tar": {
-          "sha256": "f42a8bdcb34bbb6fb75b2cd232a2271ffd42f4b7c29ac6d4a9496d9b7cf1196f",
+          "sha256": "f7513ec4e26843bb7961fe6aae8e5d71fb6a480c7927db6414407e4f37259434",
           "size": 40289280
         },
         "images/battlegroup/server-gateway.tar": {
-          "sha256": "444151ca1ca7d6672edafc0b277a331a4a3775196bf4aafea9e8d38e3d86f8cb",
-          "size": 27399168
+          "sha256": "92da75bf54fc961ffc7425b12efb98ffcb1c394c800835970f8020b69cf2961c",
+          "size": 29987840
         },
         "images/battlegroup/server-rabbitmq.tar": {
-          "sha256": "ea357e88ae96459f2228198a087376cffa1cc7fc57f83fc053831b049a8eadb2",
+          "sha256": "d6316345b747db92f31cadd0907559160a43706ab0f6b5c5ce6901574b7523d5",
           "size": 86023168
         },
         "images/battlegroup/server-text-router.tar": {
-          "sha256": "fcef8ebe703b8cbfafaac993526299b929192a706607b74177724fa16359b8cd",
+          "sha256": "27a4b3d1e8e24ba891b84e228540fdb6c03e4f843888ee8b6ac728f93f1c3f92",
           "size": 91212288
         },
         "images/battlegroup/server.tar": {
-          "sha256": "9304080f7691522e6eea77ba619f0ec55939bd9ab3103a09de952462ff8f9fba",
-          "size": 4458905088
+          "sha256": "5da27b17bbab1677739d69271566c140b04d936c0dd6ce479240c8f735f10d1b",
+          "size": 4456715264
         },
         "images/battlegroup/version.txt": {
-          "sha256": "247b3043b5e016357cc75ceda91effc71dea9847d11251b936714a2ed657d1d7",
+          "sha256": "70c59b8bae2b13cf671407a7cbc3ad807d1abed9042160cca4a76d845abc3ef5",
           "size": 18
         },
         "images/operators/version.txt": {
@@ -127,12 +127,12 @@
   "components": [
     {
       "role": "sidecar",
-      "artifact": "takaro-dune-sidecar-linux-25635074-{version}.tar.gz",
+      "artifact": "takaro-dune-sidecar-linux-25689360-{version}.tar.gz",
       "installDir": "TakaroDuneSidecar"
     },
     {
       "role": "plugin",
-      "artifact": "takaro-dune-plugin-linux-25635074-{version}.tar.gz",
+      "artifact": "takaro-dune-plugin-linux-25689360-{version}.tar.gz",
       "installDir": "TakaroDunePlugin"
     }
   ],
@@ -159,5 +159,5 @@
     "TakaroDuneSidecar/",
     "TakaroDunePlugin/"
   ],
-  "notes": "One pinned Node image serves both halves of the build: the sidecar is TypeScript, and node:*-bookworm (not slim) carries the g++ the LD_PRELOAD plugin needs, on the same glibc 2.36 as the Funcom server image — a plugin built on anything newer would fail to preload. The server itself is not run from this image: it is Funcom's own seabass-server image, loaded out of the depot above and tagged 2134304-0-shipping. The matching game client build id is 25611704; it is a different Steam app (1172710) and is not pinned here."
+  "notes": "One pinned Node image serves both halves of the build: the sidecar is TypeScript, and node:*-bookworm (not slim) carries the g++ the LD_PRELOAD plugin needs, on the same glibc 2.36 as the Funcom server image — a plugin built on anything newer would fail to preload. The server itself is not run from this image: it is Funcom's own seabass-server image, loaded out of the depot above and tagged 2141883-0-shipping. The matching game client build id is 25690505; it is a different Steam app (1172710) and is not pinned here."
 }
