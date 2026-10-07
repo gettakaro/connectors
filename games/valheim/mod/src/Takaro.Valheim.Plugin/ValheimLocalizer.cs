@@ -28,7 +28,9 @@ internal static class ValheimLocalizer
         var key = token!.Trim();
         if (!key.StartsWith("$", StringComparison.Ordinal))
         {
-            return key;
+            // Some prefabs carry their bare code as the name (TrainingDummy); that is no
+            // translation either.
+            return string.Equals(key, fallback, StringComparison.Ordinal) ? ValheimDisplayName.FromCode(key) : key;
         }
 
         lock (SyncRoot)
