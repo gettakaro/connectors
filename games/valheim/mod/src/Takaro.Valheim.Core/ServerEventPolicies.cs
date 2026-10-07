@@ -216,4 +216,52 @@ public static class ValheimDisplayName
         var value = token!.Trim();
         return value.StartsWith("$", StringComparison.Ordinal) ? fallback : value;
     }
+
+    /// <summary>
+    /// Readable text for a prefab code the game never translates (internal or unreleased
+    /// prefabs such as <c>IceSkates</c> or <c>Bjorn_spiritcaller</c>): words split on
+    /// underscores and camel-case boundaries, each capitalised.
+    /// </summary>
+    public static string FromCode(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            return code ?? string.Empty;
+        }
+
+        var words = new List<string>();
+        var current = new System.Text.StringBuilder();
+        var trimmed = code!.Trim();
+        for (var i = 0; i < trimmed.Length; i++)
+        {
+            var c = trimmed[i];
+            if (c == '_' || char.IsWhiteSpace(c))
+            {
+                Flush();
+                continue;
+            }
+
+            if (char.IsUpper(c) && current.Length > 0 && char.IsLetterOrDigit(trimmed[i - 1]) && !char.IsUpper(trimmed[i - 1]))
+            {
+                Flush();
+            }
+
+            current.Append(c);
+        }
+
+        Flush();
+        return words.Count == 0 ? trimmed : string.Join(" ", words);
+
+        void Flush()
+        {
+            if (current.Length == 0)
+            {
+                return;
+            }
+
+            var word = current.ToString();
+            words.Add(char.ToUpperInvariant(word[0]) + word.Substring(1));
+            current.Clear();
+        }
+    }
 }
