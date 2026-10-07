@@ -6,10 +6,15 @@
   "revision": "3.3.0.b18",
   "default": true,
   "support": {
-    "status": "candidate",
-    "since": "2026-10-06",
-    "evidence": [],
-    "notes": "Exact Steam pin of V 3.3.0 (b18), public buildid 25661908 (maintenance issue #377). Candidate until the real-client Takaro MCP gate on this pin is recorded."
+    "status": "maintained",
+    "since": "2026-10-07",
+    "evidence": [
+      "Dev rig takaro-dev-7d2d runs the exact pinned server (Assembly-CSharp.dll sha256 e16ff9d5... matches this record); console reports V 3.3.0 (b18), and the V 3.3.0 (b18) Windows client joins it",
+      "Both targets build with 0 errors and pass the 435-assertion contract harness; CI release builds for this target are green on gettakaro/connectors#378, shipped in 7d2d 0.3.0",
+      "Real Windows client through Takaro MCP on 2026-10-06 (gettakaro/connectors#378): events player-connected, player-disconnected, chat-message, command-executed, player-death (a real fall) and entity-killed (steel club vs zombieBoe); actions testReachability, getPlayers, sendMessage, executeConsoleCommand, giveItem, getPlayerInventory (matches the backpack), teleportPlayer, kickPlayer, banPlayer with refused rejoin, listBans, unbanPlayer with rejoin and shutdown, each with client evidence",
+      "Discord on 2026-10-06 through chatBridgeNoEcho: in-game chat posted to #discordtest, connect and disconnect module posts (POST 200), onboarding welcome hook shown in game"
+    ],
+    "notes": "In-process Generic connector proven end to end on this build with a real client; this is the default linux target."
   },
   "inputs": {
     "server": {
