@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-#define TAKARO_CONAN_NATIVE_VERSION "3.0.0" // x-release-please-version
+#define TAKARO_CONAN_NATIVE_VERSION "3.1.0" // x-release-please-version
 
 // Enqueues a bounded record. Hooks never open files or wait for disk I/O.
 void NativeLog(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
