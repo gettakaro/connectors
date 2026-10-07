@@ -78,7 +78,7 @@ Upgrading, rollback and removal: [INSTALL.md](INSTALL.md).
 
 ✅ = works, ⚠️ = works with a caveat or not yet verified, ❌ = unsupported, N/A = does not apply.
 Verified with a real client on build 25639945 (Linux 2026-10-03/04, Windows 2026-10-04/05) and
-re-verified on build 25738716 (Linux 2026-10-06).
+re-verified on build 25738716 (Linux 2026-10-06, Windows 2026-10-07).
 
 | What | Linux | Windows | Notes |
 |---|---|---|---|

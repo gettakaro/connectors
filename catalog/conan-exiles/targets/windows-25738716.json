@@ -9,7 +9,7 @@
     "status": "candidate",
     "since": "2026-10-06",
     "evidence": [
-      "games/conan-exiles/README.md (What works, what doesn't: Windows build 25738716)",
+      "games/conan-exiles/README.md (What works, what doesn't: the native connector on Windows build 25738716, live 2026-10-07 with a real client through hosted Takaro)",
       "games/conan-exiles/native/platform/windows/build.sh (cross-compiled with the pinned zig, exports and reproducible bytes checked in CI)"
     ],
     "notes": "Same Steam build as linux-25738716 (Windows content depot 443031 manifest 406026666845616995, recorded 2026-10-06). The shipped connector is winmm.dll, a proxy DLL placed next to ConanSandboxServer-Win64-Shipping.exe that forwards the three winmm functions the server imports and holds the Takaro connection itself (WinHTTP); no RCON, no mod. It hooks this build (PE TimeDateStamp-SizeOfImage 6118eb61-b64b000, games/conan-exiles/native/core/pins/pins.json) and the previous 25639945; the three anchors kept their signatures and moved (+0x1880 code, +0x2d280 data)."
