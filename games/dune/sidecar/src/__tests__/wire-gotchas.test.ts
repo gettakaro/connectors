@@ -35,6 +35,22 @@ describe('identity mapping', () => {
     expect(player.platformId).toBe('epic:abc-123');
   });
 
+  it('only ever emits a platformId Takaro accepts (`<platform>:<id>`, [A-Za-z0-9_-] on both sides)', () => {
+    // No platform name: a bare id has no colon and would make Takaro drop the whole event.
+    expect(mapPlayer({ flsId: FLS, platformId: 'abc-123', characterName: 'X' }).platformId).toBeUndefined();
+    // Platform name with spaces/dots is normalised into a valid prefix.
+    expect(mapPlayer({ flsId: FLS, platformId: 'abc_123', platformName: 'Xbox Live', characterName: 'X' }).platformId).toBe(
+      'xboxlive:abc_123',
+    );
+    // An id Takaro's pattern cannot hold is left out, never sent malformed.
+    expect(mapPlayer({ flsId: FLS, platformId: 'a|b', platformName: 'psn', characterName: 'X' }).platformId).toBeUndefined();
+    expect(mapPlayer({ flsId: FLS, platformId: 'abc', platformName: '???', characterName: 'X' }).platformId).toBeUndefined();
+    // The Steam path is unchanged: raw SteamID64 in steamId, canonical `steam:<id64>` in platformId.
+    const steam = mapPlayer({ flsId: FLS, platformId: '76561190000000001', platformName: 'steam', characterName: 'X' });
+    expect(steam).toMatchObject({ gameId: FLS, steamId: '76561190000000001', platformId: 'steam:76561190000000001' });
+    for (const p of [steam]) expect(p.platformId).toMatch(/^[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+$/);
+  });
+
   it('recognises each id shape and strips the platform prefix', () => {
     expect(isFlsId(FLS)).toBe(true);
     expect(isFlsId('too-short')).toBe(false);
