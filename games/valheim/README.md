@@ -23,7 +23,7 @@ The exact server builds this connector is maintained for:
 <!-- takaro-maint:targets:begin -->
 | Target | Game version | Platform | Loader / API | Java | Support | Verified level |
 | --- | --- | --- | --- | --- | --- | --- |
-| `linux-1.0.17` | 1.0.17 | linux | — | None | candidate | contract |
+| `linux-1.0.17` | 1.0.17 | linux | — | None | maintained | contract |
 <!-- takaro-maint:targets:end -->
 
 ### 2. Download
