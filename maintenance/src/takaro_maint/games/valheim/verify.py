@@ -39,8 +39,9 @@ from ...verify.runner import docker_command
 CHECK_IDS = ("handshake", "items", "entities", "action", "reconnect", "stop")
 
 #: The server registers with Steam once the world is up, so this line is what "the server
-#: is serving" looks like in the log.
-READY_LINE = re.compile(r"Game server connected")
+#: is serving" looks like in the log. Valheim 1.0.17 also logs "Game server connected failed"
+#: while the world is still generating, which must not count.
+READY_LINE = re.compile(r"Game server connected(?! failed)")
 
 #: Base checks this connector cannot satisfy, and the check that stands in for each.
 #: A run that names no ``--checks`` excludes these rather than failing them.
