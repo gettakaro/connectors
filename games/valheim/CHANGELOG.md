@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.1.0](https://github.com/gettakaro/connectors/compare/valheim-v4.0.0...valheim-v4.1.0) (2026-10-07)
+
+
+### Features
+
+* **valheim:** add target for Steam build 25730807 (Valheim 1.0.17) ([#387](https://github.com/gettakaro/connectors/issues/387)) ([c666e63](https://github.com/gettakaro/connectors/commit/c666e63ceb0ffea5b4c05df7b561c01e3660f5a2))
+
+
+### Bug Fixes
+
+* **valheim:** xboxLiveId for Xbox players, platform ids and real names on ban entries ([#372](https://github.com/gettakaro/connectors/issues/372)) ([5a969b7](https://github.com/gettakaro/connectors/commit/5a969b7dc2365df1bcfbf2097318ba5d95a27fdd))
+
 ## [4.0.0](https://github.com/gettakaro/connectors/compare/valheim-v3.1.0...valheim-v4.0.0) (2026-10-05)
 
 
