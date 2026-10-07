@@ -62,6 +62,26 @@
         "objObjects": "0xa92cdc0",
         "nameBlocks": "0xa85e010"
       }
+    },
+    {
+      "platform": "linux",
+      "buildId": "8d5382c18fa73ab61bee077e65d3acc427825502",
+      "build": "25738716",
+      "anchors": {
+        "processEvent": "0x3f25340",
+        "objObjects": "0xc38f680",
+        "nameBlocks": "0xc2dae40"
+      }
+    },
+    {
+      "platform": "windows",
+      "buildId": "6118eb61-b64b000",
+      "build": "25738716",
+      "anchors": {
+        "processEvent": "0x1642150",
+        "objObjects": "0xa95a040",
+        "nameBlocks": "0xa88b290"
+      }
     }
   ]
 }

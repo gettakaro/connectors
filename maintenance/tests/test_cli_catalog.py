@@ -305,6 +305,7 @@ def test_the_wired_fixture_serves_exactly_the_targets_it_says(wired: Any) -> Non
         "linux-25630937": "no repinner for platform 'linux'",
         "linux-25639945": "no repinner for platform 'linux'",
         "linux-25708939": "no repinner for platform 'linux'",
+        "linux-25738716": "no repinner for platform 'linux'",
         "linux-3.2.0.b10": "no repinner for platform 'linux'",
         "linux-3.3.0.b18": "no repinner for platform 'linux'",
         "linux-42.20.4": "no repinner for platform 'linux'",
@@ -314,6 +315,7 @@ def test_the_wired_fixture_serves_exactly_the_targets_it_says(wired: Any) -> Non
         "proton-1024233": "no repinner for platform 'proton'",
         "tshock-v6.2.1": "no repinner for platform 'tshock'",
         "windows-25639945": "no repinner for platform 'windows'",
+        "windows-25738716": "no repinner for platform 'windows'",
     }
     remaining = sorted(
         json.loads(path.read_text(encoding="utf-8"))["id"] for path in (wired.root / "catalog").glob("*/targets/*.json")

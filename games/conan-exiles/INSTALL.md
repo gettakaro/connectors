@@ -4,8 +4,8 @@ The connector is one file that runs inside the Conan Exiles dedicated server: a 
 Linux server preloads, or a `winmm.dll` next to the Windows server exe. It connects to Takaro by
 itself. There is no sidecar, no RCON and no mod, and players install nothing.
 
-It works only on **Conan Exiles Dedicated Server build 25639945** (Steam app 443030, branch
-`public`). On any other build it stays connected but refuses every action, and the log says why.
+It works only on **Conan Exiles Dedicated Server build 25738716** (Steam app 443030, branch
+`public`) and the previous build 25639945. On any other build it stays connected but refuses every action, and the log says why.
 
 Download from the latest `conan-exiles-v*` release on
 https://github.com/gettakaro/connectors/releases (the `Source code` links there are GitHub's own;
@@ -13,8 +13,8 @@ you do not need them):
 
 | Server | Download |
 |---|---|
-| Linux | `takaro-conan-exiles-native-linux-25639945-<version>.zip` |
-| Windows | `takaro-conan-exiles-native-windows-25639945-<version>.zip` |
+| Linux | `takaro-conan-exiles-native-linux-25738716-<version>.zip` |
+| Windows | `takaro-conan-exiles-native-windows-25738716-<version>.zip` |
 
 Each zip holds one folder, `TakaroConanNative/`.
 
