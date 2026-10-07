@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/gettakaro/connectors/compare/terraria-v0.4.0...terraria-v0.4.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **terraria:** send one Takaro-valid player identity on every path ([#374](https://github.com/gettakaro/connectors/issues/374)) ([34c3de9](https://github.com/gettakaro/connectors/commit/34c3de955e18d707b708d3c4eae8b64cfc762798))
+
 ## [0.4.0](https://github.com/gettakaro/connectors/compare/terraria-v0.3.0...terraria-v0.4.0) (2026-10-05)
 
 
