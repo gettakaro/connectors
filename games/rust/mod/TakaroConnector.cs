@@ -208,6 +208,47 @@ namespace Oxide.Plugins
         }
         // takaro:frames-end
 
+        // takaro:identity-begin
+        // A real Rust player's UserIDString is a SteamID64. NPCs (scientists, murderers, tunnel
+        // dwellers) are BasePlayers too, with small numeric ids; sending one of those as a
+        // Takaro player creates a bogus profile ("Scientist", steamId "67").
+        private static bool IsSteamPlayerId(string id)
+        {
+            if (string.IsNullOrEmpty(id) || id.Length != 17 || !id.StartsWith("7656119", StringComparison.Ordinal))
+                return false;
+            foreach (var c in id)
+                if (c < '0' || c > '9') return false;
+            return true;
+        }
+
+        // Takaro matches players only on steamId / epicOnlineServicesId / xboxLiveId /
+        // platformId and never derives steamId from platformId, so steamId is always sent
+        // raw. Rust is Steam-only: no EOS or Xbox id exists, and those keys are omitted.
+        private static string[][] IdentityFields(string steamId)
+        {
+            return new[]
+            {
+                new[] { "gameId", steamId },
+                new[] { "steamId", steamId },
+                new[] { "platformId", "steam:" + steamId },
+            };
+        }
+        // takaro:identity-end
+
+        private static bool IsRealPlayer(BasePlayer player)
+        {
+            return player != null && !player.IsNpc && IsSteamPlayerId(player.UserIDString);
+        }
+
+        private static JObject IdentityJson(string steamId, string name)
+        {
+            var json = new JObject();
+            foreach (var field in IdentityFields(steamId))
+                json[field[0]] = field[1];
+            json["name"] = name ?? "";
+            return json;
+        }
+
         private void OnWsMessage(string message)
         {
             var json = JObject.Parse(message);
@@ -515,18 +556,10 @@ namespace Oxide.Plugins
 
         private JObject PlayerToJson(BasePlayer player)
         {
-            var steamId = player.UserIDString;
-            return new JObject
-            {
-                ["gameId"] = steamId,
-                ["name"] = player.displayName,
-                ["steamId"] = steamId,
-                ["epicOnlineServicesId"] = "",
-                ["xboxLiveId"] = "",
-                ["platformId"] = $"steam:{steamId}",
-                ["ip"] = player.net?.connection?.ipaddress?.Split(':')[0] ?? "",
-                ["ping"] = player.IsConnected ? Network.Net.sv.GetAveragePing(player.net.connection) : 0
-            };
+            var json = IdentityJson(player.UserIDString, player.displayName);
+            json["ip"] = player.net?.connection?.ipaddress?.Split(':')[0] ?? "";
+            json["ping"] = player.IsConnected ? Network.Net.sv.GetAveragePing(player.net.connection) : 0;
+            return json;
         }
 
         private JToken HandleGetPlayer(JObject args)
@@ -540,7 +573,7 @@ namespace Oxide.Plugins
         {
             var arr = new JArray();
             foreach (var player in BasePlayer.activePlayerList)
-                arr.Add(PlayerToJson(player));
+                if (IsRealPlayer(player)) arr.Add(PlayerToJson(player));
             return arr;
         }
 
@@ -975,7 +1008,7 @@ namespace Oxide.Plugins
             if (!ulong.TryParse(gameId, out var steamId)) throw new Exception("Invalid gameId");
 
             var player = FindPlayerByGameId(gameId);
-            var name = player?.displayName ?? gameId;
+            var name = player?.displayName ?? KnownPlayerName(steamId) ?? gameId;
 
             DateTimeOffset expiry;
             if (TryParseExpiry(expiresAt, out expiry))
@@ -1017,6 +1050,34 @@ namespace Oxide.Plugins
             ServerUsers.Save();
         }
 
+        // Takaro resolves every listed ban to a player through the same platform-id match as
+        // events; a ban entry with only a gameId cannot be matched to a player Takaro has not
+        // already seen on this server.
+        private static JObject BanPlayerJson(string id, string name)
+        {
+            if (!IsSteamPlayerId(id)) return new JObject { ["gameId"] = id ?? "", ["name"] = name ?? "" };
+
+            // Takaro copies a ban entry's name onto the matched player, so an offline ban that
+            // stored the SteamID as its name renamed that player to the number.
+            if (string.IsNullOrEmpty(name) || name == id)
+                name = KnownPlayerName(ulong.Parse(id)) ?? name;
+            return IdentityJson(id, name);
+        }
+
+        // Last name Rust saved for a player who is neither online nor sleeping.
+        private static string KnownPlayerName(ulong steamId)
+        {
+            try
+            {
+                var name = SingletonComponent<ServerMgr>.Instance?.persistance?.GetPlayerName(steamId);
+                return string.IsNullOrEmpty(name) ? null : name;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
         private JToken HandleListBans()
         {
             PruneExpiredBans();
@@ -1027,11 +1088,7 @@ namespace Oxide.Plugins
             {
                 arr.Add(new JObject
                 {
-                    ["player"] = new JObject
-                    {
-                        ["gameId"] = ban.steamid.ToString(),
-                        ["name"] = ban.username ?? ""
-                    },
+                    ["player"] = BanPlayerJson(ban.steamid.ToString(), ban.username),
                     ["reason"] = ban.notes ?? "",
                     ["expiresAt"] = null
                 });
@@ -1041,11 +1098,7 @@ namespace Oxide.Plugins
             {
                 arr.Add(new JObject
                 {
-                    ["player"] = new JObject
-                    {
-                        ["gameId"] = ban.SteamId ?? "",
-                        ["name"] = ban.Name ?? ""
-                    },
+                    ["player"] = BanPlayerJson(ban.SteamId, ban.Name),
                     ["reason"] = ban.Reason ?? "",
                     ["expiresAt"] = ban.ExpiresAt
                 });
@@ -1174,7 +1227,7 @@ namespace Oxide.Plugins
 
         private void OnPlayerConnected(BasePlayer player)
         {
-            if (player == null) return;
+            if (!IsRealPlayer(player)) return;
 
             _lastPosition[player.UserIDString] = player.transform.position;
 
@@ -1187,7 +1240,7 @@ namespace Oxide.Plugins
 
         private void OnPlayerDisconnected(BasePlayer player, string reason)
         {
-            if (player == null) return;
+            if (!IsRealPlayer(player)) return;
 
             _lastPosition[player.UserIDString] = player.transform.position;
 
@@ -1200,7 +1253,7 @@ namespace Oxide.Plugins
 
         private object OnPlayerChat(BasePlayer player, string message, ConVar.Chat.ChatChannel channel)
         {
-            if (player == null) return null;
+            if (!IsRealPlayer(player)) return null;
 
             var data = new JObject
             {
@@ -1214,7 +1267,7 @@ namespace Oxide.Plugins
 
         private void OnPlayerDeath(BasePlayer player, object info)
         {
-            if (player == null) return;
+            if (!IsRealPlayer(player)) return;
 
             var data = new JObject
             {
@@ -1222,7 +1275,7 @@ namespace Oxide.Plugins
             };
 
             var attacker = GetHitInfoInitiatorPlayer(info);
-            if (attacker != null && attacker != player)
+            if (IsRealPlayer(attacker) && attacker != player)
             {
                 data["attacker"] = PlayerToJson(attacker);
             }
@@ -1240,10 +1293,12 @@ namespace Oxide.Plugins
 
         private void OnEntityDeath(BaseCombatEntity entity, object info)
         {
-            if (entity == null || entity is BasePlayer) return;
+            // Real players die through OnPlayerDeath. NPCs (scientists etc.) are BasePlayers too
+            // and are listed by listEntities, so a player killing one is an entity kill.
+            if (entity == null || (entity is BasePlayer victim && !victim.IsNpc)) return;
 
             var attacker = GetHitInfoInitiatorPlayer(info);
-            if (attacker == null) return;
+            if (!IsRealPlayer(attacker)) return;
 
             var weapon = GetHitInfoWeaponShortName(info);
             var data = new JObject
@@ -1320,8 +1375,10 @@ namespace Oxide.Plugins
 
         // --- Logging Helpers ---
 
-        private void LogInfo(string message) => Puts($"[Takaro] {message}");
-        private void LogWarning(string message) => PrintWarning($"[Takaro] {message}");
-        private void LogDebug(string message) { if (_debug) Puts($"[Takaro DEBUG] {message}"); }
+        // Carbon's file logger throws when the disk is full; a throw from a log call inside the
+        // reconnect path ends the reconnect loop and leaves the server offline for good.
+        private void LogInfo(string message) { try { Puts($"[Takaro] {message}"); } catch { } }
+        private void LogWarning(string message) { try { PrintWarning($"[Takaro] {message}"); } catch { } }
+        private void LogDebug(string message) { if (_debug) try { Puts($"[Takaro DEBUG] {message}"); } catch { } }
     }
 }
