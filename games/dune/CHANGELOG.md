@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/gettakaro/connectors/compare/dune-v0.2.0...dune-v0.2.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **dune:** never send a platformId Takaro's IGamePlayer pattern rejects ([#369](https://github.com/gettakaro/connectors/issues/369)) ([4a48e10](https://github.com/gettakaro/connectors/commit/4a48e10fc47500ed622d4143e233f34c2010013f))
+
 ## [0.2.0](https://github.com/gettakaro/connectors/compare/dune-v0.1.0...dune-v0.2.0) (2026-09-23)
 
 
