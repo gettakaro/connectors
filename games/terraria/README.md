@@ -182,7 +182,7 @@ client-adjacent proof below is still the one recorded on 6.1.0 and has not been 
 | Locations / points of interest | ❌ | Terraria has no named-location concept for Takaro to list; Takaro gets an empty list. |
 | Chat messages from players | ⚠️ | Parsed out of the TShock log, which is best-effort text matching. Not verified in a live test. |
 | Broadcast a message | ✅ | Runs TShock's `/broadcast`, so it reaches the players and the server console. Proven 2026-09-21 against a live server. |
-| Whisper a player | ⚠️ | Sent per recipient through the same path. Not verified in a live test. |
+| Whisper a player | ✅ | Runs TShock's `/w`, so only that player sees it (shown as `<From takaro>`). Proven 2026-10-05 against a live server: a module's private reply reached only the player who ran the command. |
 | Give an item | ⚠️ | Goes through the plugin so a full inventory is refused rather than dropping items on the floor. Not verified in a live test. |
 | Teleport a player | ⚠️ | Uses the plugin's `/takarotp` with world X/Y coordinates. Not verified in a live test. |
 | Run a console command | ✅ | Only commands you allowlist run — by default `help` and anything starting with `say` or `time`. Proven 2026-09-21 against a live server. |

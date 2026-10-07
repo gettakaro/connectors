@@ -296,6 +296,12 @@ export class TerrariaAdapter {
 
   private async sendMessage(args: Record<string, unknown>): Promise<CommandResult> {
     const message = requireString(args, ['message', 'text']);
+    const recipient = recipientName(args);
+    if (recipient) {
+      // A recipient makes this a private reply (a module answering one player). A broadcast
+      // would show it to everyone; TShock's /w from the REST console reaches only that player.
+      return this.tshock.rawCommand(`/w ${quote(recipient)} ${quote(message)}`);
+    }
     const senderName = optionalNestedString(args, ['senderNameOverride', 'senderName', 'from']) || this.options.serverChatName;
     return this.tshock.broadcast(senderName ? `${senderName}: ${message}` : message);
   }
@@ -368,6 +374,13 @@ function optionalNestedString(args: Record<string, unknown>, keys: string[]): st
     if (value) return value;
   }
   return null;
+}
+
+function recipientName(args: Record<string, unknown>): string | null {
+  const recipient = recordValue(args.recipient) || recordValue(recordValue(args.opts)?.recipient);
+  const value = recipient && optionalString(recipient, ['gameId', 'name']);
+  if (!value) return null;
+  return value.startsWith('terraria:') ? value.slice('terraria:'.length) : value;
 }
 
 function nestedRecords(args: Record<string, unknown>): Record<string, unknown>[] {

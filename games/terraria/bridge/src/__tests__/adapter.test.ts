@@ -520,3 +520,22 @@ test('unbanPlayer succeeds when the player has no active ban', async () => {
   assert.equal(result.success, true);
   assert.match(result.rawResult, /No active ban/);
 });
+
+test('a message with a recipient is whispered to that player, not broadcast', async () => {
+  const tshock = new FakeTShock();
+  const adapter = new TerrariaAdapter(tshock, {
+    commandAllowlistExact: [],
+    commandAllowlistPrefixes: [],
+    enableShutdown: false,
+    serverChatName: 'Takaro',
+  });
+
+  const result = await adapter.handleAction('sendMessage', {
+    message: 'Teleport "home" set.',
+    opts: { recipient: { gameId: 'Bob the Builder' } },
+  }) as { success: boolean };
+
+  assert.equal(result.success, true);
+  assert.deepEqual(tshock.broadcasts, []);
+  assert.deepEqual(tshock.rawCommands, ['/w "Bob the Builder" "Teleport \\"home\\" set."']);
+});
