@@ -21,6 +21,7 @@ struct LogRecord { timespec time; long tid; std::string text; };
 static std::deque<LogRecord> g_logQueue;
 static size_t g_logBytes = 0;
 static uint64_t g_logDropped = 0;
+static const off_t kPluginLogMaxBytes = 64L * 1024 * 1024;
 
 static long TidNow() { return (long)syscall(SYS_gettid); }
 
@@ -91,6 +92,10 @@ void FlushPluginLogs() {
     }
     if (batch.empty()) return;
     static const std::string path = PluginDataDir() + "/plugin.log";
+    // Keep one previous generation; a long-lived server must not fill its disk with this log.
+    struct stat st {};
+    if (stat(path.c_str(), &st) == 0 && st.st_size > kPluginLogMaxBytes)
+        rename(path.c_str(), (path + ".1").c_str());
     FILE* f = fopen(path.c_str(), "a");
     if (!f) { Guard g(g_logLock); g_logDropped += batch.size(); return; }
     for (const auto& record : batch) {
