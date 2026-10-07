@@ -13,7 +13,8 @@
       "Native plugin (0.3.1 + #364 fixes) resolves 111/118 symbols (10/10 required) with every capability ok on this build; games/vein/scripts/smoke-server.py --require-player --expected-build 25708939 passed on 2026-10-05",
       "Real Windows client on 0.025h2 through Takaro MCP on 2026-10-05 (gettakaro/connectors#364): events player-connected, player-disconnected, chat-message, command-executed, player-death and entity-killed (a real Machete melee kill); all 16 callable actions (reachability, players, player, location, inventory, giveItem, items, entities, console command, sendMessage, teleport, kick, ban with refused rejoin, unban, listBans, shutdown) proven with client evidence",
       "Discord chat bridge proven both ways on 2026-10-05: game chat posted to #discordtest, a human Discord post shown in game chat, no echo of connector messages, cron module posts",
-      "Release workflow builds this target reproducibly (CI release/build vein linux-25708939 green on #364)"
+      "Release workflow builds this target reproducibly (CI release/build vein linux-25708939 green on #364)",
+      "Released vein-v0.4.0 plugin (libtakaro-vein.so sha256 738e59df) re-proven live with a real 0.025h2 client on 2026-10-07: smoke-server.py --require-player --expected-build 25708939 passed; player-connected, chat-message, command-executed, player-disconnected; getPlayers, sendMessage, executeConsoleCommand, giveItem, teleportPlayer, kickPlayer and game-to-Discord confirmed in the client. A duplicate player-connected on a slow first join after boot was found and fixed in gettakaro/connectors#402"
     ],
     "notes": "Native connector proven end to end on this build with a real client. The Steam server and client build IDs differ; compare the reported VEIN game version (0.025h2) before joining. listLocations has no Takaro route and log is wire-only."
   },
