@@ -6,14 +6,16 @@
   "revision": "25708939",
   "default": true,
   "support": {
-    "status": "candidate",
-    "since": "2026-10-05",
+    "status": "maintained",
+    "since": "2026-10-07",
     "evidence": [
-      "VEIN dedicated server appmanifest_2131400.acf on the dev rig records public build 25708939 and depot 2131402 manifest 2011996607109187715",
-      "Server Vein.log reports game version 0.025h2, Build 13209, hash 83ca4151510; the native plugin resolves 111/118 names (10/10 required) and every capability reports ok on this build",
-      "A real Windows client on VEIN 0.025h2 (Steam app 1857950) joined this server; joins, chat, deaths, kicks, bans and the Takaro MCP actions were proven in that client on 2026-10-05"
+      "VEIN dedicated server appmanifest_2131400.acf on the dev rig records public build 25708939, depot 2131402 manifest 2011996607109187715; Vein.log reports 0.025h2 Build 13209 hash 83ca4151510",
+      "Native plugin (0.3.1 + #364 fixes) resolves 111/118 symbols (10/10 required) with every capability ok on this build; games/vein/scripts/smoke-server.py --require-player --expected-build 25708939 passed on 2026-10-05",
+      "Real Windows client on 0.025h2 through Takaro MCP on 2026-10-05 (gettakaro/connectors#364): events player-connected, player-disconnected, chat-message, command-executed, player-death and entity-killed (a real Machete melee kill); all 16 callable actions (reachability, players, player, location, inventory, giveItem, items, entities, console command, sendMessage, teleport, kick, ban with refused rejoin, unban, listBans, shutdown) proven with client evidence",
+      "Discord chat bridge proven both ways on 2026-10-05: game chat posted to #discordtest, a human Discord post shown in game chat, no echo of connector messages, cron module posts",
+      "Release workflow builds this target reproducibly (CI release/build vein linux-25708939 green on #364)"
     ],
-    "notes": "The Steam server and client build IDs differ. Compare the reported VEIN game version and build before joining. This is a candidate until the separate player-required server smoke and Takaro MCP plus real-client gates pass."
+    "notes": "Native connector proven end to end on this build with a real client. The Steam server and client build IDs differ; compare the reported VEIN game version (0.025h2) before joining. listLocations has no Takaro route and log is wire-only."
   },
   "inputs": {
     "server": {
