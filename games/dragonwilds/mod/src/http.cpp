@@ -1,6 +1,7 @@
 #include "http.h"
 
 #include "actions.h"
+#include "eos.h"
 #include "events.h"
 #include "gamethread.h"
 #include "hooks.h"
@@ -304,6 +305,23 @@ Response DebugStructs(const Request& r) {
     return {200, (*snapshot)()};
 }
 
+// The EOS Connect lookup for any PUID, online or not: ?puid=<32 hex>. Poll until "Done".
+Response DebugEosLinked(const Request& r) {
+    std::string puid = QueryParam(r.query, "puid");
+    for (auto& c : puid) c = (char)tolower((unsigned char)c);
+    if (puid.size() != 32) return Err(400, "pass ?puid=<32 hex EOS ProductUserId>");
+    auto out = std::make_shared<std::string>();
+    if (!GameThread::Run([puid, out] {
+            Eos::Linked l;
+            Eos::Lookup st = Eos::LinkedAccounts(puid, l);
+            const char* name = st == Eos::Lookup::Done ? "Done" : st == Eos::Lookup::Pending ? "Pending" : "Unavailable";
+            *out = std::string("{\"puid\":") + JsonStr(puid) + ",\"lookup\":" + JsonStr(name) + ",\"steamId\":" +
+                   JsonStr(l.steamId) + ",\"xboxLiveId\":" + JsonStr(l.xboxLiveId) + ",\"eos\":" + Eos::DiagnosticsJson() + "}";
+        }, 5000))
+        return Err(503, "game thread unavailable");
+    return {200, *out};
+}
+
 Response Events(const Request& r) {
     uint64_t since = (uint64_t)strtoull(QueryParam(r.query, "since").c_str(), nullptr, 10);
     std::string lim = QueryParam(r.query, "limit");
@@ -340,6 +358,7 @@ Response Route(const Request& r) {
         if (p.size() == 2 && p[1] == "symbols") return DebugSymbols();
         if (p.size() == 2 && p[1] == "object") return DebugObject(r);
         if (p.size() == 2 && p[1] == "structs") return DebugStructs(r);
+        if (p.size() == 2 && p[1] == "eos-linked") return DebugEosLinked(r);
         if (p.size() == 2 && p[1] == "perf") {
             // ?reset=1 zeroes the counters *after* answering, so a caller gets the window it asked
             // for and the next window starts clean.

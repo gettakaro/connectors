@@ -22,6 +22,7 @@
 
 #include "actions.h"
 
+#include "eos.h"
 #include "gamethread.h"
 #include "hooks.h"
 #include "perf.h"
@@ -56,6 +57,8 @@ struct Ident {
     std::string platformName;  // APlayerState::PlayerNamePrivate ("Limon")
     std::string characterGuid;
     std::string steamId;
+    std::string xboxLiveId;
+    bool linkedPending = false;  // the EOS linked-account lookup has not answered yet
     bool valid() const { return !gameId.empty(); }
 };
 
@@ -65,6 +68,7 @@ std::string PlayerJson(const Ident& id) {
     if (!id.platformName.empty()) o += ",\"platformName\":" + JsonStr(id.platformName);
     if (!id.characterGuid.empty()) o += ",\"characterGuid\":" + JsonStr(id.characterGuid);
     if (!id.steamId.empty()) o += ",\"steamId\":" + JsonStr(id.steamId);
+    if (!id.xboxLiveId.empty()) o += ",\"xboxLiveId\":" + JsonStr(id.xboxLiveId);
     if (!id.gameId.empty()) o += ",\"platformId\":" + JsonStr("epic:" + id.gameId);
     return o + "}";
 }
@@ -303,6 +307,10 @@ bool IdentFromPlayerState(void* state, Ident& out) {
     out.name = ReadFStringAt(state, PropOffOf(state, "CharacterName"));
     if (out.name.empty()) out.name = ::state::CharacterName(out.gameId);
     out.characterGuid = GuidFromStruct(state, PropOffOf(state, "OwnerGuid"));
+    Eos::Linked linked;
+    out.linkedPending = Eos::LinkedAccounts(out.gameId, linked) == Eos::Lookup::Pending;
+    out.steamId = linked.steamId;
+    out.xboxLiveId = linked.xboxLiveId;
     if (!out.gameId.empty() && !out.name.empty()) ::state::NoteCharacterName(out.gameId, out.name);
     if (out.name.empty()) out.name = out.platformName;
     return out.valid();
@@ -658,6 +666,9 @@ void HookLivePreLogin() {
 // Resolves pending joins: the PUID is only valid once the client finished login, and the character
 // name arrives a few seconds later still (see research/log-grammar.md).
 const uint64_t kNameGraceMs = 12000;
+// The Steam/Xbox ids come from an EOS backend query; a join announced without them would let Takaro
+// match the player on the EOS id alone.
+const uint64_t kLinkedGraceMs = 15000;
 const uint64_t kJoinGiveUpMs = 120000;
 
 void ResolvePendingJoins() {
@@ -677,6 +688,7 @@ void ResolvePendingJoins() {
             // Wait a little for the character name, but never block the event on it.
             if (id.name.empty() && age < kNameGraceMs) continue;
             if (id.name == id.platformName && !id.platformName.empty() && age < kNameGraceMs) continue;
+            if (id.linkedPending && age < kLinkedGraceMs) continue;
             c.id = id;
             c.playerState = PlayerStateOf(c.controller);
             c.announced = true;
@@ -1897,6 +1909,7 @@ std::string Events::DiagnosticsJson() {
          ",\"pluginBans\":" + std::to_string(::state::BanList().size()) + "}";
     o += ",\"processEventVTables\":" + std::to_string(g_peCount.load());
     o += ",\"trackedConnections\":" + std::to_string(conns);
+    o += ",\"eosLinkedAccounts\":" + Eos::DiagnosticsJson();
     o += ",\"logPath\":" + JsonStr(g_logPath) + ",\"logDropped\":" + std::to_string(g_logDropped.load());
     o += ",\"classesHooked\":[";
     for (size_t i = 0; i < sizeof(g_targets) / sizeof(g_targets[0]); i++)

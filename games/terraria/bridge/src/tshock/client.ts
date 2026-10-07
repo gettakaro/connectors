@@ -1,4 +1,5 @@
 import type { TShockConfig } from '../config.js';
+import { terrariaIdentity } from '../terraria/identity.js';
 
 export interface TShockStatus {
   name?: string;
@@ -180,9 +181,8 @@ function normalizePlayers(players: unknown): TShockPlayer[] {
       .map((name) => name.trim())
       .filter(Boolean)
       .map((name) => ({
-        gameId: name,
+        ...terrariaIdentity(name),
         name,
-        platformId: `terraria:${name}`,
       }));
   }
   return [];
@@ -193,11 +193,12 @@ function normalizePlayer(raw: unknown): TShockPlayer | null {
   const record = raw as Record<string, unknown>;
   const name = stringValue(record.nickname) || stringValue(record.name) || stringValue(record.username);
   if (!name) return null;
-  const gameId = stringValue(record.username) || stringValue(record.account) || name;
+  // gameId is the character name, not the TShock account name: the join/chat log lines and the
+  // events plugin only know the character name, and Takaro keys a player's server profile on
+  // gameId, so every path has to report the same value.
   return {
-    gameId,
+    ...terrariaIdentity(name),
     name,
-    platformId: `terraria:${gameId}`,
     ip: stringValue(record.ip) || undefined,
     group: stringValue(record.group) || undefined,
     active: booleanValue(record.active),
@@ -257,6 +258,8 @@ const TSHOCK_FAILURE_PATTERNS: RegExp[] = [
   /no player found matching/i,
   /multiple players found matching/i,
   /unable to find any player/i,
+  /could not find any player named/i,
+  /is not accepting whispers/i,
 
   // Action refused by the game: the command ran but could not do what was asked.
   /does not have free slots/i,

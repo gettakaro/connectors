@@ -117,7 +117,12 @@ test('creates and tests tokens, reads status, players, and bans', async () => {
   assert.equal(await client.getToken(), 'created-token');
   assert.equal((await client.testToken()).success, true);
   assert.equal((await client.status()).playercount, 1);
-  assert.equal((await client.players())[0]?.name, 'Guide');
+  const [guide] = await client.players();
+  assert.equal(guide?.name, 'Guide');
+  // gameId/platformId follow the character name (what the log lines and events plugin report),
+  // not the TShock account name, so every wire path keys the same Takaro profile.
+  assert.equal(guide?.gameId, 'Guide');
+  assert.equal(guide?.platformId, 'terraria:Guide');
   assert.equal((await client.listBans())[0]?.identifier, 'BadPlayer');
 });
 

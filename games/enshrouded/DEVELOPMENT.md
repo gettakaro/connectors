@@ -296,6 +296,7 @@ instead of creating an empty tree and a directory named `dbghelp.dll`.
 | `TAKARO_ACTION_TIMEOUT_MS`, `TAKARO_ACTION_WORKERS`, `TAKARO_POLL_INTERVAL_MS` | game container (plugin) | default 30000 / 4 / 250 |
 | `TAKARO_STATE_DIR`, `TAKARO_ONLINE_FILE`, `TAKARO_CURSOR_FILE` | game container (plugin) | connector state (default `takaro\connector-state`), online-player file, sidecar cursor to import once |
 | `TAKARO_NATIVE_DISABLE=1`, `TAKARO_LEGACY_HTTP=1` | game container (plugin) | turn the native connection off; serve the action routes over HTTP for the legacy sidecar |
+| `TAKARO_LOG_FRAMES=1` | game container (plugin) | debug: write every outbound gameEvent and response frame to `plugin.log` (cut at ~2 KB; the identify frame is never logged). Use it to check player identity fields on the wire |
 | `ENSHROUDED_LOG_TAIL`, `ENSHROUDED_LOG_FILE`, `ENSHROUDED_LOG_EVENTS` | game container (plugin) | log-tail fallback (`auto`), log path (default `logs\enshrouded_server.log`), `log` events (`filtered`) |
 | `TAKARO_PLUGIN_TOKEN` (`TAKARO_ENSHROUDED_PLUGIN_TOKEN` in .env) | game container (plugin) | optional bearer secret for the diagnostics endpoint; or `token` in `plugin.json`. Without one the diagnostics answer 401 |
 | `ENSHROUDED_ADMIN_PASSWORD` / `_PLAYER_` / `_GUEST_` | .env | Server role passwords |

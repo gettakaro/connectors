@@ -73,7 +73,7 @@
      "player": {
       "gameId": "x",
       "name": "P",
-      "platformId": "steam:42",
+      "platformId": "steam:76561198000000042",
       "ip": "1.2.3.4",
       "ping": 30
      }
@@ -83,10 +83,10 @@
     "type": "player-connected",
     "data": {
      "player": {
-      "gameId": "42",
+      "gameId": "76561198000000042",
       "name": "P",
-      "steamId": "42",
-      "platformId": "steam:42",
+      "steamId": "76561198000000042",
+      "platformId": "steam:76561198000000042",
       "ip": "1.2.3.4",
       "ping": 30
      }
@@ -244,7 +244,7 @@
      "attacker": {
       "gameId": "x",
       "name": "Bob",
-      "steamId": "42"
+      "steamId": "76561198000000042"
      }
     }
    },
@@ -258,10 +258,10 @@
       "platformId": "steam:76561198000005875"
      },
      "attacker": {
-      "gameId": "42",
+      "gameId": "76561198000000042",
       "name": "Bob",
-      "steamId": "42",
-      "platformId": "steam:42"
+      "steamId": "76561198000000042",
+      "platformId": "steam:76561198000000042"
      },
      "position": {
       "x": 1,

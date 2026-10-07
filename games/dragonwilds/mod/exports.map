@@ -1,3 +1,5 @@
 {
+    global:
+        EOS_Platform_Tick;  /* interposed to learn the game's EOS platform handle (src/eos.cpp) */
     local: *;
 };

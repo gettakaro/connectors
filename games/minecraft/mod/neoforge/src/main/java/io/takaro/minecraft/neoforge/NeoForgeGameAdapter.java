@@ -256,11 +256,9 @@ public class NeoForgeGameAdapter implements GameAdapter {
 
     PlayerInfo toPlayerInfo(ServerPlayer player) {
         String ip = player.getIpAddress();
-        return new PlayerInfo(
+        return PlayerInfo.of(
                 player.getUUID().toString(),
                 player.getGameProfile().name(),
-                null, null, null,
-                PlayerInfo.buildPlatformId(player.getUUID().toString()),
                 ip != null ? ip : "",
                 player.connection.latency()
         );

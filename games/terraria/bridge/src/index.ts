@@ -1,6 +1,7 @@
 import { loadConfig } from './config.js';
 import { normalizeGameEvent } from './events/normalizeEvent.js';
 import { PlayerPoller } from './events/playerPoller.js';
+import { PresenceGate } from './events/presenceGate.js';
 import { HealthServer } from './health/server.js';
 import { logger } from './logger.js';
 import { LogTailer } from './logs/logTailer.js';
@@ -28,8 +29,10 @@ async function main(): Promise<void> {
   // Reachability from the startup probe only. It seeds /health for the window before the
   // first poll completes; once the poller has an outcome, the poller is authoritative.
   let startupReachable = false;
+  const presence = new PresenceGate();
   const emit = (type: GameEventType, data: unknown): void => {
     const event = normalizeGameEvent(type, data);
+    if (!presence.accept(event)) return;
     const sent = takaro.sendGameEvent(event.type, event.data);
     if (!sent) logger.warn(`Takaro event dropped: ${type}`);
   };
@@ -75,6 +78,7 @@ async function main(): Promise<void> {
   // those two lines out of this bridge's log to prove the handshake and the reconnect.
   logConnectionState(takaro);
   takaro.on('identified', () => {
+    presence.reset();
     poller.reset();
     poller.start();
     for (const tailer of tailers) tailer.start();

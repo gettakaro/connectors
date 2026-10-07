@@ -15,7 +15,8 @@ import type {
 export function mapPlayer(raw: unknown): TakaroPlayer {
   const p = asRecord(raw);
   // plugin gameId is the SteamID64 (docs/API.md); treat a 17-digit 7656... id as a SteamID when steamId is absent
-  const steamId = str(p.steamId) ?? steamFromPlatform(str(p.platformId)) ?? steamFromGameId(str(p.gameId));
+  // only a real SteamID64 is sent as steamId: Takaro matches players on it verbatim
+  const steamId = steamFromGameId(str(p.steamId)) ?? steamFromPlatform(str(p.platformId)) ?? steamFromGameId(str(p.gameId));
   const gameId = steamId ?? str(p.gameId) ?? str(p.name);
   if (!gameId) throw new Error(`Plugin player has no identifier: ${JSON.stringify(raw)}`);
   const player: TakaroPlayer = { gameId, name: str(p.name) ?? gameId };
@@ -166,7 +167,7 @@ function steamFromGameId(gameId: string | null): string | null {
 function steamFromPlatform(platformId: string | null): string | null {
   if (!platformId) return null;
   const m = /^steam:(\d+)$/i.exec(platformId);
-  return m ? m[1] : null;
+  return m ? steamFromGameId(m[1]) : null;
 }
 
 export function str(value: unknown): string | null {
