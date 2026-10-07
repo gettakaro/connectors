@@ -6,7 +6,7 @@ need [README.md](README.md).
 ## The catalog target
 
 Everything here is built against one catalog target,
-[`catalog/valheim/targets/linux-1.0.16.json`](../../catalog/valheim/targets/linux-1.0.16.json).
+[`catalog/valheim/targets/linux-1.0.17.json`](../../catalog/valheim/targets/linux-1.0.17.json).
 Unlike the other games in this catalog, a Valheim target pins **two** inputs:
 
 - `inputs.server` — the Steam app, branch, build id and depot manifest that identify the
@@ -67,8 +67,8 @@ dotnet test mod/Takaro.Valheim.sln
 Fetch the target's inputs and build the release archive, in the pinned .NET SDK image:
 
 ```bash
-./scripts/setup-environment.sh --target linux-1.0.16
-./scripts/build-release.sh <version> dist --target linux-1.0.16
+./scripts/setup-environment.sh --target linux-1.0.17
+./scripts/build-release.sh <version> dist --target linux-1.0.17
 ```
 
 `--target` may be left out; the game's default target is resolved instead.
@@ -427,8 +427,8 @@ alias and a compatibility record naming the exact inputs.
 Locally, from `games/valheim/`:
 
 ```bash
-./scripts/setup-environment.sh --target linux-1.0.16
-./scripts/build-release.sh 0.1.0 dist --target linux-1.0.16
+./scripts/setup-environment.sh --target linux-1.0.17
+./scripts/build-release.sh 0.1.0 dist --target linux-1.0.17
 ```
 
 `setup-environment.sh` writes game compile references only to
@@ -444,8 +444,8 @@ installation. BepInEx comes from the pinned Thunderstore
 failed download or a hash mismatch leaves the previous pack exactly as it was.
 
 The release produces two zips per target, named after the target
-(`takaro-valheim-plugin-linux-1.0.16-<version>.zip` and
-`takaro-valheim-inventory-companion-linux-1.0.16-<version>.zip`), each with a `.meta.json`
+(`takaro-valheim-plugin-linux-1.0.17-<version>.zip` and
+`takaro-valheim-inventory-companion-linux-1.0.17-<version>.zip`), each with a `.meta.json`
 sidecar recording the target, the fingerprint and the role (`server-plugin` or
 `client-companion`). The unsuffixed names `takaro-valheim-plugin.zip` and
 `takaro-valheim-inventory-companion.zip` are published alongside as byte-identical aliases of
