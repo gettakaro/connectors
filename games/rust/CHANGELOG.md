@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.3](https://github.com/gettakaro/connectors/compare/rust-v0.1.2...rust-v0.1.3) (2026-10-07)
+
+
+### Bug Fixes
+
+* **rust:** never send NPCs as Takaro players; full identity on ban entries ([#370](https://github.com/gettakaro/connectors/issues/370)) ([faeb6fc](https://github.com/gettakaro/connectors/commit/faeb6fc95c5056b2ac041f457a0f61efee6c5058))
+* **rust:** target the 2026-10-07 Rust hotfix build 25773132 ([#394](https://github.com/gettakaro/connectors/issues/394)) ([8fd4db4](https://github.com/gettakaro/connectors/commit/8fd4db4d8d119454e31b0e284212972e7e4e1e5b))
+
 ## [0.1.2](https://github.com/gettakaro/connectors/compare/rust-v0.1.1...rust-v0.1.2) (2026-10-05)
 
 
