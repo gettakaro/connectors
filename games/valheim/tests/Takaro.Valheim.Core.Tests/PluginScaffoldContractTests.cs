@@ -251,10 +251,10 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(entrypoint, "ConnectorConfig.DefaultChatSenderName");
         Assert.IsFalse(entrypoint.Contains("companionMode", StringComparison.OrdinalIgnoreCase));
         StringAssert.Contains(entrypoint, "new InventoryCompanionBridge(playerResolver, companionInventory, Logger.LogInfo)");
-        StringAssert.Contains(entrypoint, "new ValheimPlayerResolver(Logger)");
+        StringAssert.Contains(entrypoint, "new ValheimPlayerResolver(Logger, knownPlayerNames)");
         StringAssert.Contains(entrypoint, "TakaroChatParticipant.Initialize(config.ChatSenderName");
 
-        var resolverAt = entrypoint.IndexOf("new ValheimPlayerResolver(Logger)", StringComparison.Ordinal);
+        var resolverAt = entrypoint.IndexOf("new ValheimPlayerResolver(Logger, knownPlayerNames)", StringComparison.Ordinal);
         var adapterAt = entrypoint.IndexOf("new ValheimServerAdapter(", StringComparison.Ordinal);
         var runnerAt = entrypoint.IndexOf("new TakaroWebSocketRunner(", StringComparison.Ordinal);
         var participantAt = entrypoint.IndexOf("TakaroChatParticipant.Initialize(", StringComparison.Ordinal);

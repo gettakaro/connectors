@@ -13,8 +13,28 @@ public static class ModerationFactory
     public static object[] CreateBanEntries(IEnumerable<ValheimBan> bans) =>
         bans
             .Where(ban => !string.IsNullOrWhiteSpace(ban.GameId))
-            .Select(ban => new BanEntry(new BannedPlayer(ban.GameId, DisplayName(ban)), string.Empty, null))
+            .Select(ban => new BanEntry(ToBannedPlayer(ban), string.Empty, null))
             .ToArray();
+
+    // Takaro resolves every listBans player through PlayerService.resolveRef, which needs a
+    // platform id when the banned player has never joined this server (no POG to fall back on).
+    // Name and IP bans get no platform id: resolveRef would create a phantom player for them.
+    private static BannedPlayer ToBannedPlayer(ValheimBan ban)
+    {
+        var gameId = PlayerMapper.ToCanonicalPlatformUserId(ban.GameId);
+        var identity = PlayerMapper.ToIdentity(gameId, ban.SteamId);
+        if (!identity.IsPlatformAccount)
+        {
+            return new BannedPlayer(gameId, DisplayName(ban), null, null, null);
+        }
+
+        return new BannedPlayer(
+            gameId,
+            DisplayName(ban),
+            identity.SteamId,
+            identity.XboxLiveId,
+            identity.PlatformId);
+    }
 
     public static bool BanMatches(ValheimBan ban, string? identifier)
     {
@@ -43,5 +63,11 @@ public static class ModerationFactory
 
     private sealed record BannedPlayer(
         [property: JsonPropertyName("gameId")] string GameId,
-        [property: JsonPropertyName("name")] string Name);
+        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("steamId")]
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SteamId,
+        [property: JsonPropertyName("xboxLiveId")]
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? XboxLiveId,
+        [property: JsonPropertyName("platformId")]
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? PlatformId);
 }

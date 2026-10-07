@@ -44,6 +44,58 @@ public sealed class PlayerMapperTests
     }
 
     [TestMethod]
+    public void ToTakaroPlayerSendsXboxLiveIdForXboxPlayers()
+    {
+        var player = new ValheimPlayer(
+            Name: "Thor",
+            PlatformUserId: "Xbox_2535405290924481",
+            SteamId: null,
+            Ip: null,
+            Ping: null);
+
+        var takaro = PlayerMapper.ToTakaroPlayer(player);
+
+        Assert.AreEqual("Xbox_2535405290924481", takaro.GameId);
+        Assert.IsNull(takaro.SteamId);
+        Assert.AreEqual("2535405290924481", takaro.XboxLiveId);
+        Assert.AreEqual("xbox:2535405290924481", takaro.PlatformId);
+    }
+
+    [TestMethod]
+    public void ToTakaroPlayerNeverReadsASteamIdOutOfAnXboxOrPlayStationId()
+    {
+        var xbox = PlayerMapper.ToIdentity("Xbox_76561198000735875");
+        Assert.IsNull(xbox.SteamId);
+        Assert.AreEqual("76561198000735875", xbox.XboxLiveId);
+
+        var psn = PlayerMapper.ToIdentity("PlayStation_76561198000735875");
+        Assert.IsNull(psn.SteamId);
+        Assert.AreEqual("psn:76561198000735875", psn.PlatformId);
+    }
+
+    [TestMethod]
+    public void ToTakaroPlayerSendsPsnPlatformIdForPlayStationPlayers()
+    {
+        var takaro = PlayerMapper.ToTakaroPlayer(new ValheimPlayer("Loki", "PlayStation_6151790232542195830", null, null, null));
+
+        Assert.AreEqual("PlayStation_6151790232542195830", takaro.GameId);
+        Assert.IsNull(takaro.SteamId);
+        Assert.IsNull(takaro.XboxLiveId);
+        Assert.AreEqual("psn:6151790232542195830", takaro.PlatformId);
+    }
+
+    [TestMethod]
+    public void TakaroPlayerSerializesIdentityFieldsWithTakaroNames()
+    {
+        var takaro = PlayerMapper.ToTakaroPlayer(new ValheimPlayer("Thor", "Xbox_2535405290924481", null, null, null));
+        var json = System.Text.Json.JsonSerializer.Serialize(takaro);
+
+        StringAssert.Contains(json, "\"xboxLiveId\":\"2535405290924481\"");
+        StringAssert.Contains(json, "\"platformId\":\"xbox:2535405290924481\"");
+        StringAssert.Contains(json, "\"gameId\":\"Xbox_2535405290924481\"");
+    }
+
+    [TestMethod]
     public void ToTakaroPlayerNormalizesValheimFallbackPlatformId()
     {
         var player = new ValheimPlayer(
