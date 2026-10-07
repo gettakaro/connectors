@@ -11,7 +11,7 @@
 #ifdef TAKARO_DEBUG_CORRUPT_SIG
 #define TAKARO_PLUGIN_VERSION "0.4.2-debug-corrupt-" TAKARO_DEBUG_CORRUPT_SIG
 #else
-#define TAKARO_PLUGIN_VERSION "0.6.0" // x-release-please-version
+#define TAKARO_PLUGIN_VERSION "0.6.1" // x-release-please-version
 #endif
 
 // Random per-process id (hex), so clients can tell a server restart from a cursor that merely lags.
