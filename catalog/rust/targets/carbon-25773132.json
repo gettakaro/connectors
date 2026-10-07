@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "id": "carbon-25681086",
+  "id": "carbon-25773132",
   "game": "rust",
   "platform": "carbon",
-  "revision": "25681086",
-  "default": false,
+  "revision": "25773132",
+  "default": true,
   "support": {
-    "status": "retired",
-    "since": "2026-10-02",
+    "status": "candidate",
+    "since": "2026-10-07",
     "evidence": [],
-    "notes": "Rust Dedicated Server public build 25681086 (2026-10-02 15:53 UTC, the second hotfix after the 2026-10-01 wipe update) with Carbon production build v2.0.262 (commit 8a81d70, GitHub release asset id 605229080, uploaded 2026-10-02 09:09 UTC). Carbon's production_build tag is re-uploaded in place, so what pins these bytes is the recorded sha256/size, not the tag. Retired 2026-10-07: the hotfix replaced public build 25681086 with 25773132 and Steam no longer serves these depot manifests anonymously (DepotDownloader 401, no manifest request code)."
+    "notes": "Rust Dedicated Server public build 25773132 (2026-10-07 09:46 UTC hotfix) with Carbon production build v2.0.262 (commit 8a81d70, GitHub release asset id 605229080, uploaded 2026-10-02 09:09 UTC; Carbon published no newer build for this hotfix). Carbon's production_build tag is re-uploaded in place, so what pins these bytes is the recorded sha256/size, not the tag."
   },
   "inputs": {
     "server": {
@@ -18,24 +18,24 @@
       "hashOrigin": "self-recorded",
       "app": 258550,
       "branch": "public",
-      "buildid": 25681086,
+      "buildid": 25773132,
       "os": "linux",
       "arch": "64",
       "depots": {
         "258552": {
-          "manifest": "8588463972864888654",
-          "size": 826586238,
+          "manifest": "6503036013305025067",
+          "size": 826591254,
           "files": 740
         },
         "258554": {
-          "manifest": "6405741909129183320",
-          "size": 5285148573,
+          "manifest": "749484921242922264",
+          "size": 5285160013,
           "files": 1326
         }
       },
       "files": {
         "Bundles/shared/items.preload.bundle": {
-          "sha256": "e89758dc8093e5429ed705fdabe9dc003e5cd2067211c6682b15f53df27e2331",
+          "sha256": "c830377855dbe68e21a5649d7f2cf9d0c5c85ad7ba9a0aafa0244ec77f7418c6",
           "size": 8712832
         },
         "RustDedicated": {
@@ -43,19 +43,19 @@
           "size": 4952
         },
         "RustDedicated_Data/Managed/Assembly-CSharp.dll": {
-          "sha256": "3399807bdc8e3f10428e9b81d612513731273e8e2558ad4053e57c02d7ee93a2",
-          "size": 10507088
+          "sha256": "2509cbba610ae6696f3fda9402d1db45181fc4de3838fd71d53faba5e8d74959",
+          "size": 10507600
         },
         "RustDedicated_Data/Managed/Facepunch.Network.dll": {
-          "sha256": "8fe82930c2ed9faf878b5a539e3f5d92cbdf3a76e02e8ace19d49f90339e837e",
+          "sha256": "1e567c8e6cb1e5809013d083e64806d32d8ea5ccbf776fee20f9db298ea8220b",
           "size": 122704
         },
         "RustDedicated_Data/Managed/Rust.Data.dll": {
-          "sha256": "e367e72be6fad719e9a96a69be230420782f2c847a3779455b6e492070cf4d6f",
-          "size": 2049872
+          "sha256": "ec62950435c57009c315c4e26b69a02c436af3549fb7c74cc65f76dd288caf26",
+          "size": 2050384
         },
         "RustDedicated_Data/Managed/Rust.Global.dll": {
-          "sha256": "bf94548cc8e63e7f94c0eb69793ea9f991f199548fba2352de5ac3af286bd416",
+          "sha256": "1bc2d7e547751ca6f1e3ca0ec32900fb8a14a0c1e3380733b9b6a59ed7729194",
           "size": 129872
         },
         "steam_appid.txt": {
@@ -118,7 +118,7 @@
   "components": [
     {
       "role": "plugin",
-      "artifact": "takaro-rust-plugin-carbon-25681086-{version}.cs",
+      "artifact": "takaro-rust-plugin-carbon-25773132-{version}.cs",
       "installDir": "takaro"
     }
   ],
