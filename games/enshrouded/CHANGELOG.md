@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/gettakaro/connectors/compare/enshrouded-v0.6.0...enshrouded-v0.6.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **enshrouded:** only send a real SteamID64 as steamId ([#371](https://github.com/gettakaro/connectors/issues/371)) ([577c407](https://github.com/gettakaro/connectors/commit/577c407b412b2c7008a77a4acb64be597b42a9b5))
+
 ## [0.6.0](https://github.com/gettakaro/connectors/compare/enshrouded-v0.5.0...enshrouded-v0.6.0) (2026-10-05)
 
 
