@@ -33,6 +33,16 @@ export interface ChatWireVariant {
    * rebuild. See `buildChatPayload`.
    */
   senderNameField: string;
+  /**
+   * `m_ChannelType` of a private line on `chat.whispers`. **`Map` by default, measured on Steam builds 25635074 and
+   * 25689360 (clients 25611704 and 25690505)**: those clients render every `Whispers`-typed frame we publish as an
+   * empty `[]:` line (the timestamp spelling, the recipient form, the spoof flag, the localized block and the sender
+   * id were each A/B tested and none of them mattered), while the same frame typed `Map` or `Proximity` renders its
+   * text. The line
+   * stays private either way, because the routing key is the recipient's own `chat.whispers` binding; only the tag
+   * the client files it under changes. Set `Whispers` for a build that renders it again.
+   */
+  whisperChannelType: string;
 }
 
 export interface SidecarConfig {
@@ -247,6 +257,7 @@ export function loadConfig(env: Env = process.env): SidecarConfig {
       deliveryMode: deliveryMode as 1 | 2,
       bodyType: env.DUNE_CHAT_BODY_TYPE || 'TextChat',
       senderNameField: env.DUNE_CHAT_SENDER_NAME_FIELD ?? '',
+      whisperChannelType: env.DUNE_CHAT_WHISPER_CHANNEL_TYPE?.trim() || 'Map',
     },
     announcerFuncomId: env.DUNE_ANNOUNCER_FUNCOM_ID || 'ADMIN#00001',
     globalMessageMode: globalMode,

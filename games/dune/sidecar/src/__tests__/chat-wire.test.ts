@@ -161,6 +161,25 @@ describe('DuneRmq', () => {
     expect(battlegroup.publishes[0].options).toMatchObject({ contentType: 'Content', type: 'text_chat', deliveryMode: 1 });
   });
 
+  it('a whisper is typed Map by default, because client 25611704 renders a Whispers-typed line empty', async () => {
+    const battlegroup = new MockBattlegroup();
+    const rmq = makeRmq(battlegroup);
+    await rmq.start();
+    await rmq.whisper('Tester#41350', 'private hello', 'Tester');
+    const inner = JSON.parse((JSON.parse(battlegroup.publishes[0].body) as Record<string, string>).Content) as Record<string, unknown>;
+    expect(inner.m_ChannelType).toBe('Map');
+    expect(inner.m_UserNameTo).toBe('Tester');
+    expect((inner.m_Message as Record<string, unknown>).m_UnlocalizedMessage).toBe('private hello');
+    // Still private: the routing key is the recipient's own chat.whispers binding.
+    expect(battlegroup.publishes[0]).toMatchObject({ exchange: 'chat.whispers', routingKey: 'Tester#41350' });
+  });
+
+  it('DUNE_CHAT_WHISPER_CHANNEL_TYPE switches the whisper channel back for a build that renders Whispers', () => {
+    expect(loadConfig({}).chatWire.whisperChannelType).toBe('Map');
+    expect(loadConfig({ DUNE_CHAT_WHISPER_CHANNEL_TYPE: 'Whispers' }).chatWire.whisperChannelType).toBe('Whispers');
+    expect(loadConfig({ DUNE_CHAT_WHISPER_CHANNEL_TYPE: '  ' }).chatWire.whisperChannelType).toBe('Map');
+  });
+
   it('a global message is one fan-out publish on chat.map', async () => {
     const battlegroup = new MockBattlegroup();
     const rmq = makeRmq(battlegroup);
