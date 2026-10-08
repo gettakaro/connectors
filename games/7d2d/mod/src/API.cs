@@ -94,7 +94,9 @@ namespace Takaro
             TakaroPlayer player = Shared.TransformClientInfoToTakaroPlayerIdentity(data.ClientInfo);
             StateMirror.Instance.MarkOffline(data.ClientInfo);
 
-            if (!data.GameShuttingDown && player != null)
+            // A client that never spawned (entityId -1) never got a player-connected
+            // event, and Takaro rejects a disconnect it cannot place on the map.
+            if (!data.GameShuttingDown && player != null && data.ClientInfo.entityId != -1)
             {
                 LogService.Instance.Debug(
                     $"Player disconnected: {data.ClientInfo.playerName} ({data.ClientInfo.PlatformId})"

@@ -105,6 +105,17 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertNotIn("GameEventPublisher.SendPlayerDeath", entity_killed)
         self.assertIn("GameEventPublisher.SendEntityKilled", entity_killed)
 
+    def test_unspawned_clients_send_no_player_disconnected(self):
+        api = self.source("src/API.cs")
+        handler = api.split("private static void PlayerDisconnected", 1)[1].split(
+            "public void EntityKilled", 1
+        )[0]
+        self.assertIn("data.ClientInfo.entityId != -1", handler)
+        self.assertLess(
+            handler.index("data.ClientInfo.entityId != -1"),
+            handler.index("GameEventPublisher.SendPlayerDisconnected"),
+        )
+
     def test_default_endpoint_is_production(self):
         config = self.source("src/Config/ConfigManager.cs")
         readme = self.game_file("README.md")
