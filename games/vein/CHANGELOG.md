@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/gettakaro/connectors/compare/vein-v0.4.0...vein-v0.4.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **vein:** report one player-connected per join and cap plugin.log ([#402](https://github.com/gettakaro/connectors/issues/402)) ([f1cd903](https://github.com/gettakaro/connectors/commit/f1cd903a2338c78f45d20ae5d45e2a57f3a71971))
+
 ## [0.4.0](https://github.com/gettakaro/connectors/compare/vein-v0.3.1...vein-v0.4.0) (2026-10-05)
 
 
