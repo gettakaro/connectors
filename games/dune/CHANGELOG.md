@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/gettakaro/connectors/compare/dune-v0.2.1...dune-v0.2.2) (2026-10-08)
+
+
+### Bug Fixes
+
+* **dune:** support Steam build 25689360, render whispers on clients 25611704/25690505 ([#386](https://github.com/gettakaro/connectors/issues/386)) ([27d3e57](https://github.com/gettakaro/connectors/commit/27d3e57097a53354753a2300649469c19d3b0293))
+
 ## [0.2.1](https://github.com/gettakaro/connectors/compare/dune-v0.2.0...dune-v0.2.1) (2026-10-07)
 
 
