@@ -5,8 +5,8 @@ import io.takaro.zomboid.core.model.PlayerInfo;
 public interface EventEmitter {
     void emitPlayerConnected(PlayerInfo player);
     void emitPlayerDisconnected(PlayerInfo player);
-    void emitChatMessage(String gameId, String playerName, String channel, String message);
-    void emitPlayerDeath(String gameId, String playerName, String attackerGameId, String attackerName, double x, double y, double z, String dimension);
-    void emitEntityKilled(String gameId, String playerName, String entityCode, String weaponCode);
+    void emitChatMessage(PlayerInfo player, String channel, String message);
+    void emitPlayerDeath(PlayerInfo player, PlayerInfo attacker, double x, double y, double z, String dimension);
+    void emitEntityKilled(PlayerInfo player, String entityCode, String weaponCode);
     void emitLog(String message);
 }
