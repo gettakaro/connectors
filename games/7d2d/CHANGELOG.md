@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/gettakaro/connectors/compare/7d2d-v0.3.0...7d2d-v0.3.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **7d2d:** send no player-disconnected for a client that never spawned ([#397](https://github.com/gettakaro/connectors/issues/397)) ([b9fbec3](https://github.com/gettakaro/connectors/commit/b9fbec376bf08c871c853d65ec091128c8ce0783))
+
 ## [0.3.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.2.1...7d2d-v0.3.0) (2026-10-06)
 
 
