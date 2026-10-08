@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.1.1](https://github.com/gettakaro/connectors/compare/valheim-v4.1.0...valheim-v4.1.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **valheim:** readable catalogue names for prefabs the game never translates ([#399](https://github.com/gettakaro/connectors/issues/399)) ([aa8bab1](https://github.com/gettakaro/connectors/commit/aa8bab109f9d674a9639430e72941d56a5c858e1))
+
+
+### Miscellaneous Chores
+
+* **valheim:** promote linux-1.0.17 to maintained ([#400](https://github.com/gettakaro/connectors/issues/400)) ([977f1b5](https://github.com/gettakaro/connectors/commit/977f1b5feec66ae32c04e383f09e4984ad7a5866))
+
 ## [4.1.0](https://github.com/gettakaro/connectors/compare/valheim-v4.0.0...valheim-v4.1.0) (2026-10-07)
 
 
