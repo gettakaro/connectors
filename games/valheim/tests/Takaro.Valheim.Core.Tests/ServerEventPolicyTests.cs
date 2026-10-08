@@ -143,6 +143,21 @@ public sealed class ServerEventPolicyTests
         Assert.AreEqual(expected, ValheimDisplayName.FromToken(token, fallback));
     }
 
+    [DataTestMethod]
+    [DataRow("IceSkates", "Ice Skates")]
+    [DataRow("Bjorn_spiritcaller", "Bjorn Spiritcaller")]
+    [DataRow("LastBossGate_RuneTile", "Last Boss Gate Rune Tile")]
+    [DataRow("TrophyDeerWhite", "Trophy Deer White")]
+    [DataRow("Boar", "Boar")]
+    [DataRow("TheHive", "The Hive")]
+    [DataRow("enemy_wolf", "Enemy Wolf")]
+    [DataRow("Pot_Shard_Red", "Pot Shard Red")]
+    [DataRow("", "")]
+    public void MakesUntranslatedPrefabCodesReadable(string code, string expected)
+    {
+        Assert.AreEqual(expected, ValheimDisplayName.FromCode(code));
+    }
+
     [TestMethod]
     public void WrittenEventsStayQueuedUntilAPongConfirmsThem()
     {

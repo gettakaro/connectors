@@ -7,7 +7,8 @@ namespace Takaro.Valheim.Plugin;
 /// <summary>
 /// Resolves Valheim "$token" names to English display names through the game's own
 /// Localization singleton (assembly_guiutils), found by reflection so the plugin does not need
-/// a compile-time reference. Results are cached; a missing translation falls back to the code.
+/// a compile-time reference. Results are cached; a missing translation falls back to a readable
+/// form of the code.
 /// </summary>
 internal static class ValheimLocalizer
 {
@@ -21,13 +22,15 @@ internal static class ValheimLocalizer
     {
         if (string.IsNullOrWhiteSpace(token))
         {
-            return fallback;
+            return ValheimDisplayName.FromCode(fallback);
         }
 
         var key = token!.Trim();
         if (!key.StartsWith("$", StringComparison.Ordinal))
         {
-            return key;
+            // Some prefabs carry their bare code as the name (TrainingDummy); that is no
+            // translation either.
+            return string.Equals(key, fallback, StringComparison.Ordinal) ? ValheimDisplayName.FromCode(key) : key;
         }
 
         lock (SyncRoot)
@@ -40,7 +43,7 @@ internal static class ValheimLocalizer
 
         var value = TryLocalize(key);
         var result = value is null || string.IsNullOrWhiteSpace(value) || value.Contains('$') || value.Contains("MISSING") || value.StartsWith("[", StringComparison.Ordinal)
-            ? ValheimDisplayName.FromToken(key, fallback)
+            ? ValheimDisplayName.FromToken(key, ValheimDisplayName.FromCode(fallback))
             : value!.Trim();
 
         lock (SyncRoot)
