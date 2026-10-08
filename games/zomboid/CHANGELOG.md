@@ -4,6 +4,13 @@ All notable changes to the Takaro Project Zomboid connector are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.1](https://github.com/gettakaro/connectors/compare/zomboid-v1.2.0...zomboid-v1.2.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **zomboid:** give non-Steam players a Takaro identity and send steamId with bans ([#373](https://github.com/gettakaro/connectors/issues/373)) ([a91c324](https://github.com/gettakaro/connectors/commit/a91c324edb0b85616d54fe866fb83982afe678a1))
+
 ## [1.2.0](https://github.com/gettakaro/connectors/compare/zomboid-v1.1.0...zomboid-v1.2.0) (2026-10-01)
 
 
