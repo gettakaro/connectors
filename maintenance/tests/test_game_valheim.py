@@ -909,7 +909,15 @@ def test_verify_hooks_render_config_and_use_the_valheim_lines(tmp_path: Path) ->
 
 def test_the_hook_patterns_match_the_lines_the_server_really_writes() -> None:
     # Captured from an isolated run on this exact pin.
-    assert hooks.READY_LINE.search("09/21/2026 17:52:48: Game server connected")
+    assert hooks.READY_LINE.search(
+        "10/07/2026 20:13:03: Loading: Done. Total seconds sinze ZNet start: 123.931405, Genloc duration: "
+        "98223.915 ms, (Total genloc time: 00:01:38.8141400, locations: 183, iterations: 0)"
+    )
+    # Valheim 1.0.17 logs these before the world has loaded, and the scene loader's own "Done"
+    # comes earlier still; none of them means the server is serving.
+    assert not hooks.READY_LINE.search("10/07/2026 19:56:16: Game server connected failed")
+    assert not hooks.READY_LINE.search("10/07/2026 20:07:44: Game server connected")
+    assert not hooks.READY_LINE.search("10/07/2026 19:31:42: Loading: Done, Total time: -13.857877")
     assert hooks.HANDSHAKE_LINE.search("[Info   :Takaro Valheim] Takaro Valheim identified as gameServerId=3f0c..")
     loaded = hooks.LOADED_LINE.search("[Info   :   BepInEx] Loading [Takaro Valheim 3.0.3]")
     assert loaded is not None and loaded.group("version") == "3.0.3"
