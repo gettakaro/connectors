@@ -119,7 +119,9 @@ def test_the_target_claims_contract_verification_and_a_steam_install(path: Path)
     # as required -- the same posture Dune: Awakening and Conan Exiles took at this stage.
     assert document["verification"]["required"] == "contract"
     assert "startup" in document["verification"]["separate"]
-    assert document["support"]["status"] == "candidate"
+    # The current target is promoted on its live proof; the older pins stay candidates.
+    expected_status = "maintained" if path == TARGET_PATH else "candidate"
+    assert document["support"]["status"] == expected_status
     # Unlike Dune, the server is a plain depot: a rig ledger is meaningful here.
     assert document["devServers"] == {"gameId": "dragonwilds"}
 

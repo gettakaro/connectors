@@ -6,13 +6,16 @@
   "revision": "25630937",
   "default": true,
   "support": {
-    "status": "candidate",
-    "since": "2026-10-03",
+    "status": "maintained",
+    "since": "2026-10-07",
     "evidence": [
       "games/dragonwilds/README.md (What works, what doesn't)",
-      "games/dragonwilds/mod/tests/ (plugin unit and native connector tests, every build)"
+      "games/dragonwilds/mod/tests/ (plugin unit and native connector tests, every build)",
+      "takaro-maint install of this target on the dev rig 2026-10-04: all declared sha256 verified, ledger check passed, server boots with the plugin (108/108 symbols from a cold .sym scan, 6/6 reflection validations)",
+      "connector-runner e2e 2026-10-04 (native plugin, gettakaro/connectors#360): real PC client through hosted Takaro MCP on this target - player-connected ec8784f6-2831-4b69-8e38-a144477cdd9b, chat-message 8d1c790d-f81f-4dba-b484-7d6145418e45, command-executed 75a5a5df-e60d-4b20-9a77-9f33c942c674, player-disconnected 522d66b3-5b9b-4b66-82a0-f5626571b914, player-death 3dd984d3-0009-4ee8-9abc-0b948a8bbf86, entity-killed 98670c15-0814-4148-915f-f5bf0dd150f2, Discord-to-game chat-message 22e65a92-c172-419c-a714-d685158878a6; testReachability, getPlayers, sendMessage, executeConsoleCommand, giveItem, teleportPlayer, kickPlayer, banPlayer (rejoin refused), unbanPlayer, shutdown and a shop order passed",
+      "release smoke 2026-10-07 of the published dragonwilds-v0.3.0 asset takaro-dragonwilds-plugin-linux-25630937-0.3.0.tar.gz (SHA256SUMS verified) on the dev rig: plugin loads (108/108 symbols, 6/6 reflection validations), identifies with Takaro, testReachability connectable; real PC client - player-connected 1a3231c1-ffac-4aa0-b24b-09d972e8f410 carrying steamId and platformId steam:<id>, chat-message 4c34385c-348c-4704-bffa-eb86b70c80d9, command-executed 832667e8-2006-48bb-9fda-a3b4fe902994 (@ping, Pong rendered in game), sendMessage rendered in game, game-to-Discord posts 200 OK"
     ],
-    "notes": "Steam pin of the public branch head observed 2026-10-03 (manifest dated 2026-09-30): tool app 4019830, Linux depot 3501791, build 25630937. The plugin resolves every engine address from this build's own `.sym` at load time, so the target needs no source change. `verification.required` is `contract` until this pin is proven at runtime: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
+    "notes": "Steam pin of the public branch head observed 2026-10-03 (manifest dated 2026-09-30): tool app 4019830, Linux depot 3501791, build 25630937, server ++dominion+hotfix-CL-247068. The plugin resolves every engine address from this build's own `.sym` at load time, so the target needed no source change. `verification.required` stays `contract`: a hosted runner does not install the ~5.4 GB Steam depot, so the plugin's unit and native connector suites are what CI runs on every build; the runtime and gameplay proof above was recorded on the dev rig with a real client."
   },
   "inputs": {
     "server": {
