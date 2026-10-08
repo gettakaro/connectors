@@ -6,13 +6,16 @@
   "revision": "25738716",
   "default": true,
   "support": {
-    "status": "candidate",
-    "since": "2026-10-06",
+    "status": "maintained",
+    "since": "2026-10-07",
     "evidence": [
-      "games/conan-exiles/README.md (What works, what doesn't: the native connector on Windows build 25738716, live 2026-10-07 with a real client through hosted Takaro)",
-      "games/conan-exiles/native/platform/windows/build.sh (cross-compiled with the pinned zig, exports and reproducible bytes checked in CI)"
+      "Steam public build 25738716 (depot 443031 manifest 406026666845616995); winmm.dll hooks it by PE TimeDateStamp-SizeOfImage 6118eb61-b64b000 (games/conan-exiles/native/core/pins/pins.json), every runtime self-check including the MSVC offsets passes",
+      "Real Windows client (Conan Exiles 25738607) on a Windows 25738716 server through hosted Takaro MCP on 2026-10-07 (gettakaro/connectors#385): events player-connected 4c523a17, chat-message d4efe5ea, command-executed 08128a90 (@balance), entity-killed 1fbcd7c7 (Rabbit, Stone Sword), player-death 2adb7af6, player-disconnected e9a3967f, with steamId and platformId on the wire",
+      "Actions proven with client evidence: testReachability, getPlayers, sendMessage (global and whisper), executeConsoleCommand, giveItem with inventory read-back, getPlayerLocation, teleportPlayer, kickPlayer (reason shown), timed banPlayer with the rejoin refused, listBans, unbanPlayer with rejoin, shutdown (countdown, clean exit) then restart and reconnect",
+      "Discord chat bridge both ways: game chat posted to #discordtest (GameToDiscord hook POST 200), module join posts, no echo of connector messages back to Discord; Discord to game via a synthetic discord-message hookTrigger (DiscordToGame execution 347d36e9 POST 200, shown in the client's chat)",
+      "games/conan-exiles/native/platform/windows/build.sh (cross-compiled with the pinned zig, exports and reproducible bytes checked in CI); released in conan-exiles-v3.1.0"
     ],
-    "notes": "Same Steam build as linux-25738716 (Windows content depot 443031 manifest 406026666845616995, recorded 2026-10-06). The shipped connector is winmm.dll, a proxy DLL placed next to ConanSandboxServer-Win64-Shipping.exe that forwards the three winmm functions the server imports and holds the Takaro connection itself (WinHTTP); no RCON, no mod. It hooks this build (PE TimeDateStamp-SizeOfImage 6118eb61-b64b000, games/conan-exiles/native/core/pins/pins.json) and the previous 25639945; the three anchors kept their signatures and moved (+0x1880 code, +0x2d280 data)."
+    "notes": "Same Steam build as linux-25738716 (Windows content depot 443031 manifest 406026666845616995, recorded 2026-10-06). The shipped connector is winmm.dll, a proxy DLL placed next to ConanSandboxServer-Win64-Shipping.exe that forwards the three winmm functions the server imports and holds the Takaro connection itself (WinHTTP); no RCON, no mod. It hooks this build (PE TimeDateStamp-SizeOfImage 6118eb61-b64b000, games/conan-exiles/native/core/pins/pins.json) and the previous 25639945; the three anchors kept their signatures and moved (+0x1880 code, +0x2d280 data). Not counted: getMapInfo/getMapTile (no map for Generic servers), PvP kills (need a second client)."
   },
   "inputs": {
     "server": {
