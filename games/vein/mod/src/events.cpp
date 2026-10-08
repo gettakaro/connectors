@@ -765,6 +765,11 @@ void ResolvePendingJoins() {
             if (::state::IsBanned(id.gameId)) {
                 c.refused = true;
                 banned.push_back(id.gameId);
+            } else if (g_announced.count(id.gameId)) {
+                // The log fallback got there first: a cold client can take longer than its grace
+                // window between `Login request` and PostLogin. A real rejoin is unaffected, since
+                // EmitLeave clears the mark.
+                PluginLog("events: join for %s already reported from the server log", id.gameId.c_str());
             } else {
                 toAnnounce.push_back(id);
             }
