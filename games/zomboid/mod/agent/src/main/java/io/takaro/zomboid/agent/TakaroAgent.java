@@ -51,6 +51,8 @@ public final class TakaroAgent {
                     + " logEvents=" + loader.isLogEvents()
                     + " debugCatalog=" + loader.isDebugCatalog());
 
+            LocalAccounts.setScope(config.getIdentityToken());
+
             // --- build the runtime graph ---
             MainThreadQueue queue = new MainThreadQueue();
             PlayerRegistry registry = new PlayerRegistry();

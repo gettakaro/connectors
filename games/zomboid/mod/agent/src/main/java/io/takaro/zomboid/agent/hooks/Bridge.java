@@ -204,6 +204,20 @@ public final class Bridge {
         }
     }
 
+    /**
+     * The event player with the identity the Reconciler last sent on getPlayers (steamId +
+     * platformId), so Takaro attributes the event to the same profile. Falls back to gameId + name
+     * when the player is not in the snapshot yet.
+     */
+    private static PlayerInfo eventPlayer(String gameId, String name) {
+        PlayerRegistry reg = registry;
+        PlayerInfo known = reg != null ? reg.get(gameId) : null;
+        if (known != null) {
+            return known;
+        }
+        return new PlayerInfo(gameId, name, null, null, null, null, null, 0);
+    }
+
     /** {@code zombie.network.chat.ChatServer.sendMessage(ChatMessage)} — chat-message event. */
     public static void chat(Object chatMessage) {
         try {
@@ -223,15 +237,7 @@ public final class Bridge {
             }
             String text = Pz.chatText(chatMessage);
             String channel = Pz.chatChannel(chatMessage);
-            String name = author;
-            PlayerRegistry reg = registry;
-            if (reg != null) {
-                PlayerInfo known = reg.get(author);
-                if (known != null) {
-                    name = known.name();
-                }
-            }
-            e.emitChatMessage(author, name, channel, text);
+            e.emitChatMessage(eventPlayer(author, author), channel, text);
         } catch (Throwable t) {
             // never propagate into the chat path
         }
@@ -282,15 +288,13 @@ public final class Bridge {
             String name = Pz.playerDisplayName(victim);
             double[] pos = Pz.playerPos(victim);
 
-            String attackerId = null;
-            String attackerName = null;
+            PlayerInfo attacker = null;
             if (killer != null && Pz.isIsoPlayer(killer)) {
-                attackerId = Pz.playerUsername(killer);
-                attackerName = Pz.playerDisplayName(killer);
+                attacker = eventPlayer(Pz.playerUsername(killer), Pz.playerDisplayName(killer));
             }
             AgentLog.log("event: player-death " + gameId
-                    + (attackerId != null ? " (killed by " + attackerId + ")" : ""));
-            e.emitPlayerDeath(gameId, name, attackerId, attackerName, pos[0], pos[1], pos[2], null);
+                    + (attacker != null ? " (killed by " + attacker.gameId() + ")" : ""));
+            e.emitPlayerDeath(eventPlayer(gameId, name), attacker, pos[0], pos[1], pos[2], null);
         } catch (Throwable t) {
             // never propagate into the death path
         }
@@ -321,7 +325,7 @@ public final class Bridge {
             String gameId = Pz.playerUsername(killer);
             String name = Pz.playerDisplayName(killer);
             String weaponCode = Pz.weaponFromKill(weapon, killer);
-            e.emitEntityKilled(gameId, name, "Zombie", weaponCode);
+            e.emitEntityKilled(eventPlayer(gameId, name), "Zombie", weaponCode);
         } catch (Throwable t) {
             // never propagate into the death path
         }

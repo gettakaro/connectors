@@ -133,30 +133,21 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     @Override
-    public void emitChatMessage(String gameId, String playerName, String channel, String message) {
+    public void emitChatMessage(PlayerInfo player, String channel, String message) {
         JsonObject data = new JsonObject();
-        JsonObject player = new JsonObject();
-        player.addProperty("gameId", gameId);
-        player.addProperty("name", playerName);
-        data.add("player", player);
+        data.add("player", playerIdentityToJson(player));
         data.addProperty("channel", channel);
         data.addProperty("msg", message);
         sendGameEvent("chat-message", data);
     }
 
     @Override
-    public void emitPlayerDeath(String gameId, String playerName, String attackerGameId, String attackerName, double x, double y, double z, String dimension) {
+    public void emitPlayerDeath(PlayerInfo player, PlayerInfo attacker, double x, double y, double z, String dimension) {
         JsonObject data = new JsonObject();
-        JsonObject player = new JsonObject();
-        player.addProperty("gameId", gameId);
-        player.addProperty("name", playerName);
-        data.add("player", player);
+        data.add("player", playerIdentityToJson(player));
 
-        if (attackerGameId != null) {
-            JsonObject attacker = new JsonObject();
-            attacker.addProperty("gameId", attackerGameId);
-            attacker.addProperty("name", attackerName);
-            data.add("attacker", attacker);
+        if (attacker != null) {
+            data.add("attacker", playerIdentityToJson(attacker));
         }
 
         JsonObject position = new JsonObject();
@@ -171,12 +162,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     @Override
-    public void emitEntityKilled(String gameId, String playerName, String entityCode, String weaponCode) {
+    public void emitEntityKilled(PlayerInfo player, String entityCode, String weaponCode) {
         JsonObject data = new JsonObject();
-        JsonObject player = new JsonObject();
-        player.addProperty("gameId", gameId);
-        player.addProperty("name", playerName);
-        data.add("player", player);
+        data.add("player", playerIdentityToJson(player));
         data.addProperty("entity", entityCode);
         data.addProperty("weapon", weaponCode != null ? weaponCode : "");
         sendGameEvent("entity-killed", data);
@@ -659,6 +647,11 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             JsonObject player = new JsonObject();
             player.addProperty("gameId", ban.gameId());
             player.addProperty("name", ban.name());
+            String steamId = ban.steamId();
+            if (steamId != null && steamId.matches("\\d{17}")) {
+                player.addProperty("steamId", steamId);
+                player.addProperty("platformId", PlayerInfo.buildPlatformId(steamId));
+            }
             obj.add("player", player);
             obj.addProperty("reason", ban.reason());
             obj.addProperty("expiresAt", ban.expiresAt());
@@ -668,6 +661,21 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     // --- JSON helpers ---
+
+    /**
+     * The player on an in-game event (chat, death, kill): the same identity fields as getPlayers, so
+     * Takaro attributes the event to the same profile, without ip/ping.
+     */
+    private JsonObject playerIdentityToJson(PlayerInfo p) {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("gameId", p.gameId());
+        obj.addProperty("name", p.name());
+        obj.addProperty("steamId", p.steamId());
+        obj.addProperty("epicOnlineServicesId", p.epicOnlineServicesId());
+        obj.addProperty("xboxLiveId", p.xboxLiveId());
+        obj.addProperty("platformId", p.platformId());
+        return obj;
+    }
 
     private JsonObject playerInfoToJson(PlayerInfo p) {
         JsonObject obj = new JsonObject();

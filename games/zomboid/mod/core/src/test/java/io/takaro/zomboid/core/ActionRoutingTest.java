@@ -255,6 +255,23 @@ class ActionRoutingTest {
     }
 
     @Test
+    void listBansCarriesSteamIdentityWhenKnown() {
+        adapter.bans.add(new BanEntry("takarotester", "takarotester", "griefing", null, "76561198000000001"));
+        adapter.bans.add(new BanEntry("localonly", "localonly", null, null, null));
+        sendRequest("listBans", "req-11", "{}");
+        waitForResponse();
+
+        JsonArray bans = parseResponse(sentMessages.get(0)).getAsJsonArray("payload");
+        JsonObject steamPlayer = bans.get(0).getAsJsonObject().getAsJsonObject("player");
+        assertEquals("takarotester", steamPlayer.get("gameId").getAsString());
+        assertEquals("76561198000000001", steamPlayer.get("steamId").getAsString());
+        assertEquals("steam:76561198000000001", steamPlayer.get("platformId").getAsString());
+        JsonObject localPlayer = bans.get(1).getAsJsonObject().getAsJsonObject("player");
+        assertFalse(localPlayer.has("steamId"));
+        assertFalse(localPlayer.has("platformId"));
+    }
+
+    @Test
     void listItemsReturnsArray() {
         adapter.items.add(new GameItem("steam:stone", "stone", "A block"));
         sendRequest("listItems", "req-11", "{}");
@@ -398,7 +415,7 @@ class ActionRoutingTest {
 
     @Test
     void eventEmitterChatMessage() {
-        client.emitChatMessage("uuid-1", "Steve", "global", "hello everyone");
+        client.emitChatMessage(steamPlayer("uuid-1", "Steve", "76561198000000001"), "global", "hello everyone");
 
         assertEquals(1, sentMessages.size());
         JsonObject msg = parseResponse(sentMessages.get(0));
@@ -406,29 +423,51 @@ class ActionRoutingTest {
         JsonObject data = msg.getAsJsonObject("payload").getAsJsonObject("data");
         assertEquals("global", data.get("channel").getAsString());
         assertEquals("hello everyone", data.get("msg").getAsString());
+        JsonObject player = data.getAsJsonObject("player");
+        assertEquals("uuid-1", player.get("gameId").getAsString());
+        assertEquals("76561198000000001", player.get("steamId").getAsString());
+        assertEquals("steam:76561198000000001", player.get("platformId").getAsString());
+        assertFalse(player.has("ip"));
+    }
+
+    @Test
+    void eventEmitterEntityKilledCarriesIdentity() {
+        client.emitEntityKilled(steamPlayer("uuid-1", "Steve", "76561198000000001"), "Zombie", "Base.Axe");
+
+        JsonObject player = parseResponse(sentMessages.get(0)).getAsJsonObject("payload")
+                .getAsJsonObject("data").getAsJsonObject("player");
+        assertEquals("76561198000000001", player.get("steamId").getAsString());
+        assertEquals("steam:76561198000000001", player.get("platformId").getAsString());
     }
 
     @Test
     void eventEmitterPlayerDeath() {
-        client.emitPlayerDeath("victim-id", "Victim", "killer-id", "Killer", 10.0, 64.0, 20.0, "overworld");
+        client.emitPlayerDeath(steamPlayer("victim-id", "Victim", "76561198000000002"),
+                steamPlayer("killer-id", "Killer", "76561198000000003"), 10.0, 64.0, 20.0, "overworld");
 
         assertEquals(1, sentMessages.size());
         JsonObject msg = parseResponse(sentMessages.get(0));
         JsonObject data = msg.getAsJsonObject("payload").getAsJsonObject("data");
         assertEquals("victim-id", data.getAsJsonObject("player").get("gameId").getAsString());
+        assertEquals("steam:76561198000000002", data.getAsJsonObject("player").get("platformId").getAsString());
         assertEquals("killer-id", data.getAsJsonObject("attacker").get("gameId").getAsString());
+        assertEquals("76561198000000003", data.getAsJsonObject("attacker").get("steamId").getAsString());
         assertEquals(64.0, data.getAsJsonObject("position").get("y").getAsDouble());
     }
 
     @Test
     void eventEmitterPlayerDeathNoAttacker() {
-        client.emitPlayerDeath("victim-id", "Victim", null, null, 0, 0, 0, "nether");
+        client.emitPlayerDeath(steamPlayer("victim-id", "Victim", "76561198000000002"), null, 0, 0, 0, "nether");
 
         JsonObject data = parseResponse(sentMessages.get(0)).getAsJsonObject("payload").getAsJsonObject("data");
         assertFalse(data.has("attacker"));
     }
 
     // --- Helpers ---
+
+    private static PlayerInfo steamPlayer(String gameId, String name, String steamId) {
+        return PlayerInfo.identify(gameId, name, Long.parseUnsignedLong(steamId), null, null, 0);
+    }
 
     private void sendRequest(String action, String requestId, String argsJson) {
         JsonObject request = new JsonObject();

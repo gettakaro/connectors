@@ -24,6 +24,7 @@ import zombie.core.logger.LoggerManager;
 import zombie.core.logger.ZLogger;
 import zombie.core.raknet.UdpConnection;
 import zombie.core.raknet.UdpEngine;
+import zombie.core.znet.SteamUtils;
 import zombie.inventory.InventoryItem;
 import zombie.inventory.ItemContainer;
 import zombie.inventory.types.HandWeapon;
@@ -100,6 +101,15 @@ public final class Pz {
         return out;
     }
 
+    /**
+     * The scope for {@link PlayerInfo#localAccountPlatformId}, or null on a Steam server. A Steam
+     * server never hands out local ids, so a Steam player whose id reads 0 is not split off into a
+     * second Takaro profile.
+     */
+    private static String localAccountScope() {
+        return SteamUtils.isSteamModeEnabled() ? null : LocalAccounts.scope();
+    }
+
     /** Build a player DTO from a connection; enriches name from the live character when present. */
     public static PlayerInfo toPlayerInfoFromConnection(UdpConnection c) {
         String username = c.getUserName();
@@ -114,10 +124,7 @@ public final class Pz {
                 name = dn;
             }
         }
-        long steam = c.getSteamId();
-        String steamId = steam != 0L ? Long.toString(steam) : null;
-        String platformId = steamId != null ? PlayerInfo.buildPlatformId(steamId) : null;
-        return new PlayerInfo(username, name, steamId, null, null, platformId, c.getIP(), c.getAveragePing());
+        return PlayerInfo.identify(username, name, c.getSteamId(), localAccountScope(), c.getIP(), c.getAveragePing());
     }
 
     public static PlayerInfo getPlayer(String username) {
@@ -139,9 +146,6 @@ public final class Pz {
         if (name == null || name.isEmpty()) {
             name = username;
         }
-        long steam = p.getSteamID();
-        String steamId = steam != 0L ? Long.toString(steam) : null;
-        String platformId = steamId != null ? PlayerInfo.buildPlatformId(steamId) : null;
 
         String ip = null;
         int ping = p.getPing();
@@ -150,8 +154,8 @@ public final class Pz {
             ip = conn.getIP();
             ping = conn.getAveragePing();
         }
-        // gameId is the username in PZ; platform is steam.
-        return new PlayerInfo(username, name, steamId, null, null, platformId, ip, ping);
+        // gameId is the username in PZ; see PlayerInfo.identify for steamId/platformId.
+        return PlayerInfo.identify(username, name, p.getSteamID(), localAccountScope(), ip, ping);
     }
 
     /** Resolve by username, falling back to a steamId scan for callers that pass a steam id. */
@@ -327,7 +331,7 @@ public final class Pz {
             if (rows != null) {
                 for (DBBannedSteamID row : rows) {
                     if (row != null) {
-                        out.add(new BanEntry(row.getSteamID(), row.getSteamID(), row.getReason(), null));
+                        out.add(new BanEntry(row.getSteamID(), row.getSteamID(), row.getReason(), null, row.getSteamID()));
                     }
                 }
             }
