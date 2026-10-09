@@ -1,21 +1,18 @@
 {
   "schemaVersion": 1,
-  "id": "linux-25738716",
+  "id": "linux-25792439",
   "game": "conan-exiles",
   "platform": "linux",
-  "revision": "25738716",
-  "default": false,
+  "revision": "25792439",
+  "default": true,
   "support": {
-    "status": "maintained",
-    "since": "2026-10-07",
+    "status": "candidate",
+    "since": "2026-10-09",
     "evidence": [
-      "Steam public build 25738716 (depot 443032 manifest 3253120066949448972); the native library hooks it by GNU build-id 8d5382c1 (games/conan-exiles/native/core/pins/pins.json), live reflection diff clean, every runtime self-check passes",
-      "Real Windows client (Conan Exiles 25738607, engine CL 378787) on the Linux dev rig through hosted Takaro MCP on 2026-10-06 (gettakaro/connectors#385): events player-connected 6dde2701, chat-message 2d6703ea, command-executed dccaa444 (@balance), entity-killed 1c2c0ec9 (Rabbit, Stone Sword), player-death 2d897a1b, player-disconnected 14d432aa, with steamId and platformId on the wire",
-      "Actions proven with client evidence: testReachability, getPlayers, sendMessage (global and whisper), executeConsoleCommand, giveItem with inventory read-back, getPlayerLocation, teleportPlayer, kickPlayer (reason shown), timed banPlayer with the rejoin refused, listBans, unbanPlayer with rejoin, shutdown (countdown, clean exit) then restart and reconnect",
-      "Discord chat bridge both ways: game chat posted to #discordtest (GameToDiscord hook POST 200), module join posts, no echo of connector messages back to Discord; a human Discord post shown in game chat (chat-message bf75a0e8)",
-      "games/conan-exiles/native/tests (contract level, every build: unit, drift, fake-Takaro wire tests incl. a forced outage, and the real library preloaded into a stand-in server); released in conan-exiles-v3.1.0"
+      "games/conan-exiles/README.md (What works, what doesn't: the native connector on Linux build 25792439, live with a real client through hosted Takaro)",
+      "games/conan-exiles/native/tests (contract level, every build: unit, drift, fake-Takaro wire tests incl. a forced outage, and the real library preloaded into a stand-in server)"
     ],
-    "notes": "Exact Steam pin of the public head observed 2026-10-06 (native Linux dedicated server, engine CL 378787; depot 443032 manifest 3253120066949448972). The shipped connector is the native library libtakaro-conan-native.so (LD_PRELOAD into the server): it holds the Takaro connection itself, needs no RCON and no mod, and hooks this build (GNU build-id 8d5382c18fa73ab61bee077e65d3acc427825502, games/conan-exiles/native/core/pins/pins.json) and the previous 25639945; on any other build it connects, reports the unknown build and refuses every action. The three anchors kept their signatures and moved (+0x13000 code, +0x35100 data); the reflection diff of a live probe dump is clean (only runtime-resolved offsets moved). It is built in its own pinned buster toolchain (games/conan-exiles/native/platform/linux/Dockerfile.build), which compiles the two build.deps below from the same SHA-256-checked archives; this record's build toolchain image is not used by the Linux build and is kept because the schema requires one. A hosted runner cannot boot the 4.3 GB server, so release verification is contract level. Not counted: getMapInfo/getMapTile (no map for Generic servers), PvP kills (need a second client)."
+    "notes": "Exact Steam pin of the public head observed 2026-10-09 (native Linux dedicated server; depot 443032 manifest 7357061300451132906). The shipped connector is the native library libtakaro-conan-native.so (LD_PRELOAD into the server): it holds the Takaro connection itself, needs no RCON and no mod, and hooks this build (GNU build-id ad0c0103e496b7c19bfda90800c59ae494295d35, games/conan-exiles/native/core/pins/pins.json) and the previous 25738716 and 25639945; on any other build it connects, reports the unknown build and refuses every action. The three anchors kept their signatures and their addresses (unchanged vs 25738716). It is built in its own pinned buster toolchain (games/conan-exiles/native/platform/linux/Dockerfile.build), which compiles the two build.deps below from the same SHA-256-checked archives; this record's build toolchain image is not used by the Linux build and is kept because the schema requires one. A hosted runner cannot boot the 4.3 GB server, so release verification is contract level."
   },
   "inputs": {
     "server": {
@@ -24,7 +21,7 @@
       "hashOrigin": "self-recorded",
       "app": 443030,
       "branch": "public",
-      "buildid": 25738716,
+      "buildid": 25792439,
       "os": "linux",
       "arch": "64",
       "depots": {
@@ -34,14 +31,14 @@
           "files": 4
         },
         "443032": {
-          "manifest": "3253120066949448972",
-          "size": 4342351034,
+          "manifest": "7357061300451132906",
+          "size": 4342220118,
           "files": 251
         }
       },
       "files": {
         "ConanSandbox/Binaries/Linux/ConanSandboxServer-Linux-Shipping": {
-          "sha256": "cddce758ec4b653ef97480210c988ee1d0dccfcfe21b783c06009f5915e83ace",
+          "sha256": "e313b466f79733b7fe71e5bf02c598a686c1e45cf6c50e34a51b31333a2f88d5",
           "size": 201698760
         },
         "ConanSandbox/Binaries/Linux/libDreamworld.so": {
@@ -53,7 +50,7 @@
           "size": 962
         },
         "ConanSandbox/Content/Paks/pakchunk0-LinuxServer.utoc": {
-          "sha256": "8d54813f313fef7083ccf99e0e35ad0a140daa84dd0fb077a4dd55ac16216766",
+          "sha256": "341c54d712bc80387a0de43c4c09bf6a19fe4805b4e5321f9a53192979e17d2a",
           "size": 676940
         },
         "ConanSandboxServer.sh": {
@@ -105,7 +102,7 @@
   "components": [
     {
       "role": "native",
-      "artifact": "takaro-conan-exiles-native-linux-25738716-{version}.zip",
+      "artifact": "takaro-conan-exiles-native-linux-25792439-{version}.zip",
       "installDir": "TakaroConanNative"
     }
   ],
