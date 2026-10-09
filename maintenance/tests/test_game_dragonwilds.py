@@ -117,6 +117,14 @@ def test_every_target_ships_the_plugin_alone(path: Path) -> None:
 
 
 @pytest.mark.parametrize("path", [TARGET_PATH, MAINTAINED_PATH, PREVIOUS_PATH, OLDEST_PATH])
+def test_an_install_keeps_the_plugin_data_directory(path: Path) -> None:
+    # The plugin keeps bans.json (and, without TAKARO_STATE_DIR, its event cursor, outbox and
+    # timed bans) next to the server binary. A game update installs a fresh depot tree, so this
+    # directory has to be carried over or the plugin's ban list is lost.
+    assert "RSDragonwilds/Binaries/Linux/takaro/" in record(path)["preserve"]
+
+
+@pytest.mark.parametrize("path", [TARGET_PATH, MAINTAINED_PATH, PREVIOUS_PATH, OLDEST_PATH])
 def test_the_target_claims_contract_verification_and_a_steam_install(path: Path) -> None:
     document = record(path)
 

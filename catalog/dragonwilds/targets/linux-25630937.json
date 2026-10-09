@@ -116,6 +116,7 @@
   },
   "preserve": [
     "RSDragonwilds/Saved/",
+    "RSDragonwilds/Binaries/Linux/takaro/",
     "TakaroDragonwilds/"
   ],
   "devServers": {
