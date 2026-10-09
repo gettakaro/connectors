@@ -88,6 +88,8 @@ export interface BridgeOptions {
    */
   exitAfterDependencyLossMs?: number;
   healthCheckIntervalMs?: number;
+  /** How often a congested socket is retried while events are queued (default 1000 ms). */
+  drainRetryMs?: number;
   /** Called on every presence tick with the current online set (ban enforcement). */
   onOnlineTick?: (players: TakaroPlayer[]) => void | Promise<void>;
 }
@@ -95,6 +97,7 @@ export interface BridgeOptions {
 export class Bridge {
   readonly adapter: DuneAdapter;
   private healthTimer: NodeJS.Timeout | null = null;
+  private drainTimer: NodeJS.Timeout | null = null;
   private sourcesActive = false;
   private watchAlways = false;
   private unreachableSince: number | null = null;
@@ -207,14 +210,20 @@ export class Bridge {
       logger.debug(`Stripped ${removed.length} non-DTO field(s) from ${type} before sending: ${removed.join(', ')}`);
       this.strippedFields += removed.length;
     }
-    const sent = this.options.takaro.sendGameEvent(type, data);
+    // Events queued while the socket was congested go out first: sending past them would reorder delivery, and a
+    // queue that only drained on a reconnect stayed stuck behind an open socket (a shutdown log burst once parked a
+    // player-disconnected there indefinitely).
+    if (this.pendingEvents.length && this.takaroDownSince === null) this.drainPending();
+    const sent = !this.pendingEvents.length && this.options.takaro.sendGameEvent(type, data);
     if (!sent) {
       // `'queued'` — NOT `false` — is the honest answer once the event is safely in the outage queue: it tells the
       // plugin poller to advance its SCAN position (so the same seq is not read and queued again on every tick, which
       // used to fill the queue with duplicates of one event during an outage) while leaving the PERSISTED cursor
       // behind the hole, so a sidecar restart replays it rather than losing it. `false` is reserved for "this event
       // was not accepted at all", i.e. the queue was full and this very event is the one that got dropped.
-      return this.queueEvent({ type, data, seq, at: this.now() }) ? 'queued' : false;
+      const accepted = this.queueEvent({ type, data, seq, at: this.now() });
+      if (this.takaroDownSince === null) this.scheduleDrain();
+      return accepted ? 'queued' : false;
     }
     this.noteConnectionEvent(type, data);
     if (type !== 'log') logger.debug(`Forwarded ${type}: ${JSON.stringify(data)}`);
@@ -369,16 +378,23 @@ export class Bridge {
     return !this.trimPending().includes(event);
   }
 
-  /** Drops the oldest events over the cap and returns the ones that were dropped. */
+  /**
+   * Drops events over the cap and returns the ones that were dropped: the oldest `log` line first, because Takaro
+   * keeps no logs and rate-limits them anyway, and only then the oldest event of any other type.
+   */
   private trimPending(): PendingEvent[] {
     const lostAll: PendingEvent[] = [];
     while (this.pendingEvents.length > MAX_PENDING_EVENTS) {
-      const lost = this.pendingEvents.shift();
+      const logIndex = this.pendingEvents.findIndex((e) => e.type === 'log');
+      const index = logIndex >= 0 ? logIndex : 0;
+      const lost = this.pendingEvents.splice(index, 1)[0];
       if (!lost) break;
       lostAll.push(lost);
       this.droppedEvents += 1;
       logger.error(`Pending event queue full (${MAX_PENDING_EVENTS}); dropping ${lost.type} seq=${lost.seq ?? '-'}`);
-      this.releaseCursor(lost);
+      // The plugin cursor is a high-water mark: releasing an event dropped from behind older queued ones would skip
+      // those on a restart. A mid-queue drop costs at most one replayed log line instead.
+      if (index === 0) this.releaseCursor(lost);
     }
     return lostAll;
   }
@@ -402,19 +418,40 @@ export class Bridge {
   flushPending(): number {
     if (!this.pendingEvents.length) return 0;
     logger.info(`Flushing ${this.pendingEvents.length} game event(s) buffered while Takaro was unreachable`);
+    const flushed = this.drainPending();
+    if (this.pendingEvents.length) {
+      logger.warn(`Takaro went away again after ${flushed} buffered event(s); keeping ${this.pendingEvents.length} queued`);
+    }
+    if (flushed) logger.info(`Flushed ${flushed} buffered game event(s)`);
+    return flushed;
+  }
+
+  /**
+   * Retries a congested-but-open socket until the queue is empty. A heartbeat cannot be the trigger: the client only
+   * reports a confirmation when the confirmed sendId advances, which an idle socket never does.
+   */
+  private scheduleDrain(): void {
+    if (this.drainTimer) return;
+    this.drainTimer = setTimeout(() => {
+      this.drainTimer = null;
+      if (!this.pendingEvents.length || this.takaroDownSince !== null) return;
+      this.drainPending();
+      if (this.pendingEvents.length) this.scheduleDrain();
+    }, this.options.drainRetryMs ?? 1000);
+    this.drainTimer.unref?.();
+  }
+
+  /** Sends queued events, in order, until the first one the socket refuses. Returns how many were written. */
+  private drainPending(): number {
     let flushed = 0;
     while (this.pendingEvents.length) {
       const event = this.pendingEvents[0];
-      if (!this.options.takaro.sendGameEvent(event.type, event.data)) {
-        logger.warn(`Takaro went away again after ${flushed} buffered event(s); keeping ${this.pendingEvents.length} queued`);
-        break;
-      }
+      if (!this.options.takaro.sendGameEvent(event.type, event.data)) break;
       this.pendingEvents.shift();
       flushed += 1;
       this.noteConnectionEvent(event.type, event.data);
       this.trackUnconfirmed({ type: event.type, data: event.data, seq: event.seq, at: event.at });
     }
-    if (flushed) logger.info(`Flushed ${flushed} buffered game event(s)`);
     return flushed;
   }
 
