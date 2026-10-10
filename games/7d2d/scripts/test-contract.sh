@@ -39,6 +39,7 @@ docker compose --project-directory "${PROJECT_ROOT}" run --rm --no-deps \
       /app/mod/src/Services/MapCatalog.cs \
       /app/mod/src/Services/PlayerProximateItemDelivery.cs \
       /app/mod/src/Shared.cs \
+      /app/mod/src/Config/ConfigFiles.cs \
       /app/tests/ContractHarness.cs
     MONO_PATH=/usr/lib/mono/msbuild/Current/bin \
       mono "$test_dir/contract-harness.exe" /tmp/generic-protocol.json

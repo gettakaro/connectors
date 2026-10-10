@@ -4,6 +4,7 @@ using System.IO;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Takaro.Config;
 using Takaro.Services;
 using Takaro.WebSocket;
 
@@ -41,6 +42,7 @@ public static class ContractHarness
             AssertRawRequestsAreNotLogged();
             AssertMapCatalog();
             AssertMapRouting();
+            AssertConfigFiles();
             Console.WriteLine("Contract harness passed: " + _assertions + " assertions");
             return 0;
         }
@@ -1504,6 +1506,175 @@ public static class ContractHarness
             ["payload"] = payload,
         };
         RequestRouter.Route(request.ToString(Formatting.None));
+    }
+
+    private static void AssertConfigFiles()
+    {
+        string shippedPath = "/app/mod/Config.xml";
+        var defaults = new ConfigValues
+        {
+            Url = ConfigFiles.DefaultUrl,
+            RegistrationToken = "",
+            IdentityToken = "",
+            Enabled = true,
+            ReconnectIntervalSeconds = ConfigFiles.DefaultReconnectIntervalSeconds,
+        };
+        Equal(
+            ConfigFiles.Render(defaults, ConfigFiles.ModConfigHeader),
+            File.ReadAllText(shippedPath),
+            "shipped Config.xml is what the mod writes for a fresh install"
+        );
+        ConfigValues shipped = ConfigFiles.Read(shippedPath);
+        Equal("", shipped.RegistrationToken, "shipped config has no registration token");
+        Equal("", shipped.IdentityToken, "shipped config has no identity token");
+
+        int generated = 0;
+        Func<string> newIdentity = () => "generated-" + ++generated;
+
+        ConfigValues fresh = ConfigFiles.Resolve(shipped, null, newIdentity, out bool made);
+        True(made && fresh.IdentityToken == "generated-1", "fresh install generates an identity");
+        Equal("", fresh.RegistrationToken, "fresh install waits for a registration token");
+        Equal(ConfigFiles.DefaultUrl, fresh.Url, "fresh install uses the production endpoint");
+
+        var saved = new ConfigValues
+        {
+            Url = "wss://connect.takaro.io/",
+            RegistrationToken = "saved-reg",
+            IdentityToken = "saved-id",
+            Enabled = true,
+            ReconnectIntervalSeconds = 30,
+        };
+        ConfigValues upgraded = ConfigFiles.Resolve(shipped, saved, newIdentity, out made);
+        True(!made, "an upgrade keeps the saved identity");
+        Equal("saved-reg", upgraded.RegistrationToken, "an upgrade keeps the saved token");
+        Equal("saved-id", upgraded.IdentityToken, "an upgrade keeps the saved identity");
+
+        var edited = new ConfigValues { RegistrationToken = "new-reg", IdentityToken = "" };
+        ConfigValues fixedToken = ConfigFiles.Resolve(edited, saved, newIdentity, out made);
+        Equal("new-reg", fixedToken.RegistrationToken, "a token in the mod config wins");
+        Equal("saved-id", fixedToken.IdentityToken, "a new token keeps the saved identity");
+        True(!fixedToken.SameConnection(upgraded), "a changed token is a connection change");
+        True(
+            upgraded.SameConnection(ConfigFiles.Resolve(shipped, saved, newIdentity, out _)),
+            "re-reading unchanged files is not a connection change"
+        );
+
+        var customised = new ConfigValues
+        {
+            Url = "wss://takaro.example.org/",
+            RegistrationToken = "saved-reg",
+            IdentityToken = "saved-id",
+            Enabled = false,
+            ReconnectIntervalSeconds = 60,
+        };
+        ConfigValues keptCustom = ConfigFiles.Resolve(shipped, customised, newIdentity, out _);
+        True(
+            keptCustom.SameAs(customised),
+            "the shipped defaults do not override saved settings on an upgrade"
+        );
+        var modCustom = new ConfigValues
+        {
+            Url = "wss://other.example.org/",
+            Enabled = false,
+            ReconnectIntervalSeconds = 90,
+        };
+        ConfigValues modWins = ConfigFiles.Resolve(modCustom, saved, newIdentity, out _);
+        True(
+            modWins.Url == "wss://other.example.org/"
+                && modWins.Enabled == false
+                && modWins.ReconnectIntervalSeconds == 90,
+            "a setting changed in the mod config wins"
+        );
+
+        ConfigValues copy = ConfigFiles.SavedCopy(modWins, customised);
+        True(
+            copy.Url == customised.Url
+                && copy.Enabled == customised.Enabled
+                && copy.ReconnectIntervalSeconds == customised.ReconnectIntervalSeconds
+                && copy.RegistrationToken == modWins.RegistrationToken
+                && copy.IdentityToken == modWins.IdentityToken,
+            "the saved copy takes the tokens in use and keeps its own other settings"
+        );
+        ConfigValues firstCopy = ConfigFiles.SavedCopy(modWins, null);
+        True(
+            firstCopy.Url == ConfigFiles.DefaultUrl
+                && firstCopy.Enabled == true
+                && firstCopy.ReconnectIntervalSeconds
+                    == ConfigFiles.DefaultReconnectIntervalSeconds,
+            "a new saved copy does not freeze mod-config settings"
+        );
+        True(
+            ConfigFiles.SavedCopy(upgraded, saved).SameAs(saved),
+            "an unchanged install does not rewrite its saved config"
+        );
+
+        ConfigValues legacyOnly = ConfigFiles.Resolve(null, saved, newIdentity, out made);
+        True(!made && legacyOnly.SameAs(saved), "a legacy-only install uses its old config");
+
+        var placeholder = new ConfigValues
+        {
+            RegistrationToken = "reg",
+            IdentityToken = ConfigFiles.PlaceholderIdentityToken,
+        };
+        ConfigFiles.Resolve(placeholder, null, newIdentity, out made);
+        True(made, "the old placeholder identity is replaced");
+
+        string dir = Path.Combine(Path.GetTempPath(), "takaro-config-" + Guid.NewGuid());
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string path = Path.Combine(dir, "Config.xml");
+            File.WriteAllText(
+                path,
+                File.ReadAllText(shippedPath)
+                    .Replace(
+                        "<RegistrationToken></RegistrationToken>",
+                        "<RegistrationToken>\n   pasted-token  \n</RegistrationToken>"
+                    )
+            );
+            Equal(
+                "pasted-token",
+                ConfigFiles.Read(path).RegistrationToken,
+                "a pasted token is trimmed"
+            );
+
+            ConfigFiles.WriteIdentity(path, "written-id");
+            string text = File.ReadAllText(path);
+            True(
+                text.Contains("Paste the registration token"),
+                "writing the identity keeps the comments"
+            );
+            ConfigValues reread = ConfigFiles.Read(path);
+            Equal("written-id", reread.IdentityToken, "identity is written");
+            Equal("pasted-token", reread.RegistrationToken, "writing the identity keeps the token");
+            True(!File.Exists(path + ".tmp"), "no temporary file is left behind");
+
+            string savedPath = Path.Combine(dir, "Saved.xml");
+            ConfigFiles.WriteAll(savedPath, saved, ConfigFiles.SavedConfigHeader);
+            True(ConfigFiles.Read(savedPath).SameAs(saved), "the saved copy round-trips");
+            ConfigFiles.WriteAll(savedPath, upgraded, ConfigFiles.SavedConfigHeader);
+            True(ConfigFiles.Read(savedPath).SameAs(upgraded), "the saved copy can be replaced");
+
+            File.WriteAllText(path, "<Takaro><WebSocket><RegistrationToken>half");
+            bool threw = false;
+            try
+            {
+                ConfigFiles.Read(path);
+            }
+            catch (System.Xml.XmlException)
+            {
+                threw = true;
+            }
+            True(threw, "a half-saved file is reported, not read as empty");
+            True(
+                ConfigFiles.Read(Path.Combine(dir, "missing.xml")) == null,
+                "a missing file reads as null"
+            );
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
     }
 
     private static void True(bool condition, string description)

@@ -117,11 +117,32 @@ class SourceRegressionTests(unittest.TestCase):
         )
 
     def test_default_endpoint_is_production(self):
-        config = self.source("src/Config/ConfigManager.cs")
+        config = self.source("src/Config/ConfigFiles.cs")
+        shipped = self.source("Config.xml")
         readme = self.game_file("README.md")
-        self.assertIn("wss://connect.takaro.io/", config)
+        self.assertIn('DefaultUrl = "wss://connect.takaro.io/"', config)
         self.assertNotIn("wss://your-takaro-websocket-server.com", config)
+        self.assertIn("<Url>wss://connect.takaro.io/</Url>", shipped)
         self.assertIn("wss://connect.takaro.io/", readme)
+
+    def test_release_ships_an_empty_config_in_the_mod_folder(self):
+        project = self.source("Takaro.csproj")
+        shipped = self.source("Config.xml")
+        self.assertIn('<None Include="Config.xml">', project)
+        self.assertIn("<RegistrationToken></RegistrationToken>", shipped)
+        self.assertIn("<IdentityToken></IdentityToken>", shipped)
+
+    def test_token_changes_apply_without_a_restart(self):
+        api = self.source("src/API.cs")
+        transport = self.source("src/WebSocket/WebSocketTransport.cs")
+        self.assertIn("ConfigManager.UseModFolder(", api)
+        self.assertIn("ConfigManager.Instance.StopWatching()", api)
+        self.assertIn("config.ConnectionSettingsChanged += OnConnectionSettingsChanged", transport)
+        self.assertIn("config.StartWatching()", transport)
+        connect = transport.split("private void ConnectToServer()", 1)[1].split(
+            "new WebSocketSharp.WebSocket(", 1
+        )[0]
+        self.assertIn("string.IsNullOrEmpty(config.RegistrationToken)", connect)
 
     def test_sensitive_payloads_are_not_logged(self):
         router = self.source("src/WebSocket/RequestRouter.cs")

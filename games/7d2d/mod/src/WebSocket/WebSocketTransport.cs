@@ -125,6 +125,10 @@ namespace Takaro.WebSocket
         // thread and the sender thread's grace-period check).
         private readonly object _confirmLock = new object();
 
+        // Serialises connection attempts: the reconnect timer and a config
+        // change can both start one.
+        private readonly object _connectLock = new object();
+
         private BlockingCollection<OutboundLedger.Entry> _outbound;
         private Thread _senderThread;
 
@@ -162,14 +166,6 @@ namespace Takaro.WebSocket
         public void Initialize()
         {
             var config = ConfigManager.Instance;
-            if (!config.WebSocketEnabled)
-            {
-                LogService.Instance.Info(
-                    "WebSocket client is disabled in config. Skipping initialization."
-                );
-                return;
-            }
-
             LogService.Instance.Info($"Initializing WebSocket client to {config.WebSocketUrl}");
 
             _outbound = new BlockingCollection<OutboundLedger.Entry>();
@@ -180,14 +176,41 @@ namespace Takaro.WebSocket
             };
             _senderThread.Start();
 
-            ConnectToServer();
+            config.ConnectionSettingsChanged += OnConnectionSettingsChanged;
+            config.StartWatching();
+            lock (_connectLock)
+            {
+                ConnectToServer();
+            }
+        }
+
+        /// <summary>
+        /// A token pasted into Config.xml, or a corrected one, takes effect
+        /// without a server restart: drop the current socket and connect afresh,
+        /// skipping whatever backoff a rejected token had built up.
+        /// </summary>
+        private void OnConnectionSettingsChanged()
+        {
+            lock (_connectLock)
+            {
+                if (_shuttingDown)
+                    return;
+                LogService.Instance.Info("Config.xml changed; reconnecting with the new settings");
+                StopTimers();
+                _reconnectAttempts = 0;
+                DiscardSocket();
+                ConnectToServer();
+            }
         }
 
         public void Shutdown()
         {
-            _shuttingDown = true;
-            StopTimers();
-            CloseConnection();
+            lock (_connectLock)
+            {
+                _shuttingDown = true;
+                StopTimers();
+                CloseConnection();
+            }
             _outbound?.CompleteAdding();
             _senderThread?.Join(TimeSpan.FromSeconds(5));
             _senderThread = null;
@@ -472,10 +495,28 @@ namespace Takaro.WebSocket
         {
             try
             {
+                if (_shuttingDown)
+                    return;
+
                 var config = ConfigManager.Instance;
-                if (string.IsNullOrEmpty(config.WebSocketUrl))
+                if (!config.WebSocketEnabled)
                 {
-                    LogService.Instance.Error("WebSocket URL is not set in config.");
+                    LogService.Instance.Info(
+                        $"The Takaro connection is disabled (Enabled is false in {ConfigManager.ModConfigPath})."
+                    );
+                    return;
+                }
+
+                // Connecting without a token only yields a socket Takaro never
+                // identifies; wait for the config watcher instead.
+                if (string.IsNullOrEmpty(config.RegistrationToken))
+                {
+                    LogBanner(
+                        LogService.Instance.Warn,
+                        "RegistrationToken not set, the server is not connected to Takaro.",
+                        $"Paste the registration token from Takaro into {ConfigManager.ModConfigPath}",
+                        "and save it. The mod connects within a few seconds, no restart needed."
+                    );
                     return;
                 }
 
@@ -507,17 +548,6 @@ namespace Takaro.WebSocket
                     LogService.Instance.Info(
                         $"WebSocket connection established ({_ledger.PendingCount} message(s) buffered)"
                     );
-
-                    if (
-                        string.IsNullOrEmpty(config.RegistrationToken)
-                        || string.IsNullOrEmpty(config.IdentityToken)
-                    )
-                    {
-                        LogService.Instance.Error(
-                            "Registration token or identity token is not set in config."
-                        );
-                        return;
-                    }
 
                     // Identify must be the first and, until it is accepted, the
                     // only frame on the wire.
@@ -576,7 +606,29 @@ namespace Takaro.WebSocket
                     }
                 };
 
+                // Handled off the receive thread, under the connect lock: a
+                // config change may be replacing this socket right now, and
+                // a close that is already stale must not stop the new
+                // connection's timers. Taking the lock on the receive thread
+                // itself could deadlock against Close(), which waits for it.
                 socket.OnClose += (sender, e) =>
+                    ThreadPool.QueueUserWorkItem(_ => HandleClose(socket, e));
+
+                socket.Connect();
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Error($"Error connecting to WebSocket server: {ex.Message}");
+                Log.Exception(ex);
+                ScheduleReconnect();
+            }
+        }
+
+        private void HandleClose(WebSocketSharp.WebSocket socket, CloseEventArgs e)
+        {
+            try
+            {
+                lock (_connectLock)
                 {
                     if (!ReferenceEquals(socket, _webSocket))
                         return;
@@ -606,15 +658,13 @@ namespace Takaro.WebSocket
                     {
                         ScheduleReconnect();
                     }
-                };
-
-                socket.Connect();
+                }
             }
             catch (Exception ex)
             {
-                LogService.Instance.Error($"Error connecting to WebSocket server: {ex.Message}");
-                Log.Exception(ex);
-                ScheduleReconnect();
+                LogService.Instance.Error(
+                    $"Error handling a closed connection: {ex.GetType().FullName}: {ex.Message}"
+                );
             }
         }
 
@@ -690,12 +740,26 @@ namespace Takaro.WebSocket
             RequestRouter.Route(e.Data);
         }
 
+        // Config problems stop the connection outright, so they must stand out
+        // in a busy server log.
+        private static void LogBanner(Action<string, string> log, params string[] lines)
+        {
+            const string rule =
+                "*************************************************************************";
+            log(rule, "");
+            foreach (string line in lines)
+                log("  " + line, "");
+            log(rule, "");
+        }
+
         private void RejectIdentify(WebSocketSharp.WebSocket socket, string reason)
         {
             _identifyRejected = true;
-            LogService.Instance.Error(
-                $"Takaro rejected identify: {reason}. Check RegistrationToken and "
-                    + "IdentityToken in Takaro/Config.xml; retrying with backoff"
+            LogBanner(
+                LogService.Instance.Error,
+                $"Takaro rejected identify: {reason}.",
+                $"Check RegistrationToken in {ConfigManager.ModConfigPath}. Saving a corrected",
+                "token reconnects within a few seconds; until then the mod retries with backoff."
             );
 
             try
@@ -889,15 +953,25 @@ namespace Takaro.WebSocket
                 _reconnectTimer = null;
             }
 
-            _reconnectTimer = new Timer(
+            // A config change may replace this timer while its callback waits
+            // for the lock; a replaced timer must not connect a second time.
+            Timer timer = null;
+            timer = new Timer(
                 state =>
                 {
-                    ConnectToServer();
+                    lock (_connectLock)
+                    {
+                        if (!ReferenceEquals(_reconnectTimer, timer))
+                            return;
+                        ConnectToServer();
+                    }
                 },
                 null,
-                interval,
-                Timeout.InfiniteTimeSpan
+                Timeout.Infinite,
+                Timeout.Infinite
             );
+            _reconnectTimer = timer;
+            timer.Change(interval, Timeout.InfiniteTimeSpan);
         }
 
         private void StopTimers()

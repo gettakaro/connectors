@@ -53,6 +53,7 @@ Stop the server, then unzip so that the `Takaro` folder ends up directly inside 
 
 ```
 <server>/Mods/Takaro/
+    Config.xml
     ModInfo.xml
     Takaro.dll
     0Harmony.dll
@@ -83,24 +84,18 @@ Examples:
 
 ### 4. Configure
 
-Start the server once and let it finish loading, then stop it again. The mod creates its config at:
-
-```
-<server>/Takaro/Config.xml
-```
-
-Note this is **next to `Mods/`, not inside it** — it lands in the folder the server runs from
-(for example `/home/steam/7dtd/Takaro/Config.xml`).
-
-Open that file and paste your Takaro registration token:
+Open `<server>/Mods/Takaro/Config.xml` and paste your Takaro registration token between the
+`RegistrationToken` tags:
 
 ```xml
 <RegistrationToken>your-registration-token-here</RegistrationToken>
-<Url>wss://connect.takaro.io/</Url>
 ```
 
-Leave `<Url>` as it is, and leave `IdentityToken` alone — the mod fills it in by itself.
+Leave `<Url>wss://connect.takaro.io/</Url>` as it is, and leave `IdentityToken` empty — the mod fills it in by itself.
 Save the file and start the server.
+
+You can also do this while the server is running: the mod checks the file every few seconds
+and connects as soon as you save a token. No restart needed.
 
 ### 5. Check that it worked
 
@@ -118,19 +113,37 @@ Mod initialized successfully
 WebSocket connection confirmed
 ```
 
-And in Takaro, the game server shows as **online**. If the token is wrong, the log says so instead:
+And in Takaro, the game server shows as **online**.
+
+If no token is set yet, the server log shows a banner instead:
 
 ```
-Takaro rejected identify: Invalid registrationToken provided. Check RegistrationToken and IdentityToken in Takaro/Config.xml; retrying with backoff
+*************************************************************************
+  RegistrationToken not set, the server is not connected to Takaro.
+  Paste the registration token from Takaro into /home/steam/7dtd/Mods/Takaro/Config.xml
+  and save it. The mod connects within a few seconds, no restart needed.
+*************************************************************************
 ```
 
-Fix the token in `Config.xml` and restart the server.
+If the token is wrong, the banner says `Takaro rejected identify: Invalid registrationToken
+provided.` Fix the token in `Mods/Takaro/Config.xml` and save; the mod reconnects within a few
+seconds.
 
 ### 6. Upgrading
 
 **Stop the server first.** Delete `<server>/Mods/Takaro/` and unzip the new version in its place,
-then start the server again. Leave `<server>/Takaro/Config.xml` alone — your token and identity
-survive the upgrade. Never swap `Takaro.dll` under a running server; it can crash the server.
+then start the server again. You do not need to enter the token again: the mod keeps a copy of
+its settings in `<server>/Takaro/Config.xml` (next to `Mods/`) and uses it while the new
+`Mods/Takaro/Config.xml` is still empty. Your server keeps its identity in Takaro. Never swap
+`Takaro.dll` under a running server; it can crash the server.
+
+Coming from a version that kept its config only in `<server>/Takaro/Config.xml`? Nothing to do;
+the mod reads your token from there.
+
+To use a different token, put it in `Mods/Takaro/Config.xml`: a token there always wins.
+Other settings you changed in `Mods/Takaro/Config.xml` (`Url`, `Enabled`,
+`ReconnectIntervalSeconds`) are reset by an upgrade, because the new zip brings a fresh copy of
+that file; set them again after upgrading.
 
 ## V 3.3.0 b18
 
