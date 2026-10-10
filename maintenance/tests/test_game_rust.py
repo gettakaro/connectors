@@ -732,7 +732,9 @@ def test_the_plugin_source_keeps_its_release_markers() -> None:
     assert "Identified and connected" not in source
     # Identify is the first frame out, like every other connector here: a peer that expects
     # the client to speak first must not be left waiting for a greeting that never comes.
-    assert re.search(r'LogInfo\("WebSocket connected"\);\s*(?://[^\n]*\n\s*)*SendIdentify\(\);', source)
+    assert re.search(
+        r'LogInfo\("WebSocket connected"\);\s*(?://[^\n]*\n\s*)*SendIdentify\(ws, generation, settings\);', source
+    )
     # Rust's console echoes neither a command it was handed nor a broadcast, so the
     # connector is what records them -- the console one by verb and argument count only,
     # because the arguments are whatever Takaro was asked to run.
