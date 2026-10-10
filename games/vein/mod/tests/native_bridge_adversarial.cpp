@@ -53,8 +53,16 @@ int main(int argc, char** argv) {
     setenv("TAKARO_NATIVE_GATE", "1", 1);
     setenv("TAKARO_WS_URL", argv[1], 1);
     setenv("TAKARO_CA_FILE", argv[2], 1);
-    setenv("TAKARO_IDENTITY_TOKEN", "test-identity", 1);
-    if (!getenv("TAKARO_REGISTRATION_TOKEN")) setenv("TAKARO_REGISTRATION_TOKEN", "", 1);
+    // The config-reload cases bring their own takaro.cfg, data directory and identity.
+    const bool ownConfig = getenv("TAKARO_CONFIG_FILE") != nullptr;
+    if (!ownConfig) {
+        char dir[] = "/tmp/takaro-adversarial-XXXXXX";
+        if (!mkdtemp(dir)) return 4;
+        setenv("TAKARO_PLUGIN_DATA_DIR", dir, 1);
+        setenv("TAKARO_CONFIG_FILE", (std::string(dir) + "/takaro.cfg").c_str(), 1);
+        setenv("TAKARO_IDENTITY_TOKEN", "test-identity", 1);
+        if (!getenv("TAKARO_REGISTRATION_TOKEN")) setenv("TAKARO_REGISTRATION_TOKEN", "test-registration", 1);
+    }
     if (!getenv("TAKARO_SERVER_NAME")) setenv("TAKARO_SERVER_NAME", "NativeBridge test", 1);
     if (argc == 3) NativeBridge::SetActionHandler([](const std::string& action, const std::string& args) {
         if (action == "echo") return args;

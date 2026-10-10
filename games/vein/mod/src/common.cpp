@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include <atomic>
 #include <cctype>
 #include <cstdarg>
 #include <cstdio>
@@ -46,14 +47,25 @@ const std::string& ExeDir() {
     return d;
 }
 
+namespace {
+std::atomic<bool> g_dataDirExisted{false};
+}
+
 const std::string& PluginDataDir() {
     static const std::string& d = *new std::string([] {
         const char* env = ConfigFile::Get("TAKARO_PLUGIN_DATA_DIR");
         std::string dir = (env && *env) ? std::string(env) : ExeDir() + "/takaro";
+        struct stat st{};
+        g_dataDirExisted = ::stat(dir.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
         ::mkdir(dir.c_str(), 0775);
         return dir;
     }());
     return d;
+}
+
+bool PluginDataDirExisted() {
+    (void)PluginDataDir();
+    return g_dataDirExisted;
 }
 
 bool DebugEnabled() {
@@ -100,6 +112,23 @@ void ConsoleLine(const char* fmt, ...) {
     const int fd = STDOUT_FILENO;
 #endif
     ssize_t ignored = write(fd, line.data(), line.size());
+    (void)ignored;
+}
+
+void ConsoleBanner(const std::vector<std::string>& lines) {
+    static const char rule[] = "*************************************************************************";
+    std::string out = std::string("[Takaro] ") + rule + "\n";
+    for (const auto& l : lines) {
+        PluginLog("console: %s", l.c_str());
+        out += "[Takaro]   " + Redact(l) + "\n";
+    }
+    out += std::string("[Takaro] ") + rule + "\n";
+#ifdef TAKARO_BRIDGE_TEST
+    const int fd = STDERR_FILENO;
+#else
+    const int fd = STDOUT_FILENO;
+#endif
+    ssize_t ignored = write(fd, out.data(), out.size());  // one write: never split by engine output
     (void)ignored;
 }
 

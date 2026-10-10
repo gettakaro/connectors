@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 if [ "${1:-}" != "--native" ]; then
   docker build -q -t takaro-vein-build -f Dockerfile.build . >/dev/null
-  exec docker run --rm -v "$PWD":/src -w /src -u "$(id -u):$(id -g)" takaro-vein-build ./tests/run.sh --native
+  exec docker run --rm -v "$PWD/..":/vein -w /vein/mod -u "$(id -u):$(id -g)" takaro-vein-build ./tests/run.sh --native
 fi
 CXX=${CXX:-g++}
 mkdir -p tests/build

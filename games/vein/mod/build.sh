@@ -25,7 +25,8 @@ if [ "$NATIVE" = 0 ]; then
   # is silently identical to the release one (it was, in the plugin this tree started from).
   env=()
   [ -n "${DEBUG_CORRUPT_SIG:-}" ] && env+=(-e "DEBUG_CORRUPT_SIG=$DEBUG_CORRUPT_SIG")
-  exec docker run --rm -v "$PWD":/src -w /src -u "$(id -u):$(id -g)" "${env[@]}" "$IMAGE" \
+  # The whole game folder: the tests read the shipped ../takaro.cfg.
+  exec docker run --rm -v "$PWD/..":/vein -w /vein/mod -u "$(id -u):$(id -g)" "${env[@]}" "$IMAGE" \
       ./build.sh "${args[@]}"
 fi
 

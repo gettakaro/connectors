@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include <cstdio>
+#include <map>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -1160,6 +1161,126 @@ static void TestConfigFileLookup() {
     rmdir(dir);
 }
 
+// takaro.cfg at runtime: which value wins, what an upgrade keeps, and which identity an install uses.
+static void TestConfigResolve() {
+    using ConfigFile::Source;
+    std::map<std::string, std::string> envVars;
+    auto env = [&](const char* k) -> const char* {
+        auto it = envVars.find(k);
+        return it == envVars.end() ? nullptr : it->second.c_str();
+    };
+    unsigned generated = 0;
+    auto gen = [&] { ++generated; return std::string("11111111-2222-4333-8444-555555555555"); };
+    auto load = [](const char* text) { return ConfigFile::FromText("/x/takaro.cfg", text); };
+    const std::string shipped = [] {
+        std::string t;
+        FILE* f = fopen("../takaro.cfg", "rb");
+        if (!f) f = fopen("takaro.cfg", "rb");
+        if (f) { char b[4096]; size_t n; while ((n = fread(b, 1, sizeof b, f)) > 0) t.append(b, n); fclose(f); }
+        return t;
+    }();
+    CHECK(!shipped.empty(), "shipped takaro.cfg readable");
+    const ConfigFile::Loaded none;
+
+    // Fresh install, shipped file: no token, a generated identity, the default URL.
+    auto r = ConfigFile::Resolve(load(shipped.c_str()), none, false, "", gen, env);
+    EQ(r.settings.registration, "");
+    EQ(r.settings.identity, "11111111-2222-4333-8444-555555555555");
+    CHECK(r.identity == Source::Generated && generated == 1, "generated once");
+    EQ(r.settings.url, ConfigFile::kDefaultUrl);
+    EQ(r.settings.serverName, "My VEIN server");
+
+    // The identity this run already uses is never replaced by a new one.
+    r = ConfigFile::Resolve(load(shipped.c_str()), none, false, "in-use", gen, env);
+    EQ(r.settings.identity, "in-use");
+    CHECK(r.identity == Source::Current && generated == 1, "current identity kept");
+
+    // An install that ran an older connector without an identity keeps "vein".
+    r = ConfigFile::Resolve(load("TAKARO_REGISTRATION_TOKEN=t\n"), none, true, "", gen, env);
+    EQ(r.settings.identity, "vein");
+    CHECK(r.identity == Source::Legacy && generated == 1, "legacy default");
+    // ... but an identity in its takaro.cfg (0.5.0 shipped "vein") wins over everything else.
+    r = ConfigFile::Resolve(load("TAKARO_IDENTITY_TOKEN=mine\n"), load("TAKARO_IDENTITY_TOKEN=saved\n"), true, "x", gen, env);
+    EQ(r.settings.identity, "mine");
+
+    // Upgrade replaced takaro.cfg with the shipped one: token, identity and custom URL come back
+    // from the saved copy.
+    auto saved = load("TAKARO_WS_URL=wss://self.hosted/\nTAKARO_REGISTRATION_TOKEN=savedtok\nTAKARO_IDENTITY_TOKEN=savedid\n");
+    r = ConfigFile::Resolve(load(shipped.c_str()), saved, true, "", gen, env);
+    EQ(r.settings.registration, "savedtok");
+    EQ(r.settings.identity, "savedid");
+    EQ(r.settings.url, "wss://self.hosted/");
+    CHECK(r.registration == Source::Saved && r.identity == Source::Saved && r.url == Source::Saved, "from saved");
+    // A token set in takaro.cfg wins over the saved one.
+    r = ConfigFile::Resolve(load("TAKARO_REGISTRATION_TOKEN= newtok \nTAKARO_WS_URL=wss://connect.takaro.io/\n"), saved, true, "", gen, env);
+    EQ(r.settings.registration, "newtok");
+    EQ(r.settings.url, "wss://self.hosted/");  // the shipped default URL does not undo a saved one
+    r = ConfigFile::Resolve(load("TAKARO_WS_URL=wss://other/\n"), saved, true, "", gen, env);
+    EQ(r.settings.url, "wss://other/");
+
+    // A non-empty environment variable wins; an empty one does not.
+    envVars["TAKARO_REGISTRATION_TOKEN"] = "envtok";
+    envVars["TAKARO_IDENTITY_TOKEN"] = "";
+    r = ConfigFile::Resolve(load("TAKARO_REGISTRATION_TOKEN=filetok\nTAKARO_IDENTITY_TOKEN=fileid\n"), saved, true, "", gen, env);
+    EQ(r.settings.registration, "envtok");
+    CHECK(r.registration == Source::Env, "env source");
+    EQ(r.settings.identity, "fileid");
+    // The saved copy never stores a value from the environment.
+    std::string text = ConfigFile::RenderSaved(r, saved, true);
+    CHECK(text.find("envtok") == std::string::npos, "env token not saved");
+    CHECK(text.find("TAKARO_REGISTRATION_TOKEN=savedtok\n") != std::string::npos, "old saved token kept");
+    CHECK(text.find("TAKARO_IDENTITY_TOKEN=fileid\n") != std::string::npos, "identity saved");
+    envVars.clear();
+    // Before Takaro accepted a token, the saved copy keeps the old one.
+    r = ConfigFile::Resolve(load("TAKARO_REGISTRATION_TOKEN=unproven\n"), saved, true, "", gen, env);
+    text = ConfigFile::RenderSaved(r, saved, false);
+    CHECK(text.find("unproven") == std::string::npos, "unproven token not saved");
+    text = ConfigFile::RenderSaved(r, saved, true);
+    CHECK(text.find("TAKARO_REGISTRATION_TOKEN=unproven\n") != std::string::npos, "accepted token saved");
+    auto reread = load(text.c_str());
+    EQ(reread.values["TAKARO_IDENTITY_TOKEN"], "savedid");
+    EQ(reread.values["TAKARO_WS_URL"], "wss://self.hosted/");
+
+    // Half-saved file: a line without '='.
+    CHECK(ConfigFile::Unparseable(ConfigFile::Parse("TAKARO_REGISTRATION_TOK")), "half line");
+    CHECK(!ConfigFile::Unparseable(ConfigFile::Parse(shipped)), "shipped file parses");
+    CHECK(!ConfigFile::Unparseable(ConfigFile::Parse("LD_PRELOAD=x\n")), "ignored key is not half-saved");
+
+    // SetKey fills in the identity line and keeps everything else.
+    std::string set = ConfigFile::SetKey(shipped, "TAKARO_IDENTITY_TOKEN", "abc");
+    CHECK(set.find("\nTAKARO_IDENTITY_TOKEN=abc\n") != std::string::npos, "identity line set");
+    CHECK(set.size() == shipped.size() + 3, "size %zu vs %zu", set.size(), shipped.size());
+    EQ(ConfigFile::SetKey("A=1\r\nTAKARO_IDENTITY_TOKEN = \r\nB=2\r\n", "TAKARO_IDENTITY_TOKEN", "x"),
+       "A=1\r\nTAKARO_IDENTITY_TOKEN=x\r\nB=2\r\n");
+    EQ(ConfigFile::SetKey("A=1", "TAKARO_IDENTITY_TOKEN", "x"), "A=1\nTAKARO_IDENTITY_TOKEN=x\n");
+    EQ(ConfigFile::SetKey("", "TAKARO_IDENTITY_TOKEN", "x"), "TAKARO_IDENTITY_TOKEN=x\n");
+    EQ(ConfigFile::SetKey("export TAKARO_IDENTITY_TOKEN=old\n", "TAKARO_IDENTITY_TOKEN", "x"), "TAKARO_IDENTITY_TOKEN=x\n");
+    EQ(ConfigFile::SetKey("#TAKARO_IDENTITY_TOKEN=c\n", "TAKARO_IDENTITY_TOKEN", "x"),
+       "#TAKARO_IDENTITY_TOKEN=c\nTAKARO_IDENTITY_TOKEN=x\n");
+
+    // UUIDs: version 4, distinct.
+    std::string a = ConfigFile::NewIdentity(), b = ConfigFile::NewIdentity();
+    CHECK(a.size() == 36 && a[14] == '4' && a[8] == '-' && a != b, "uuid %s %s", a.c_str(), b.c_str());
+
+    // WriteAtomic keeps the mode of the file it replaces and leaves no temp file.
+    char dir[] = "/tmp/takaro-cfgw-XXXXXX";
+    CHECK(mkdtemp(dir) != nullptr, "mkdtemp");
+    std::string path = std::string(dir) + "/takaro.cfg";
+    CHECK(ConfigFile::WriteAtomic(path, "A=1\n", 0640), "write new");
+    struct stat st{};
+    stat(path.c_str(), &st);
+    CHECK((st.st_mode & 0777) == 0640, "mode %o", st.st_mode & 0777);
+    chmod(path.c_str(), 0604);
+    CHECK(ConfigFile::WriteAtomic(path, "A=2\n", 0600), "replace");
+    stat(path.c_str(), &st);
+    CHECK((st.st_mode & 0777) == 0604, "kept mode %o", st.st_mode & 0777);
+    EQ(*ConfigFile::ReadText(path), "A=2\n");
+    CHECK(access((path + ".tmp").c_str(), F_OK) != 0, "no temp file left");
+    CHECK(!ConfigFile::ReadText(std::string(dir) + "/absent"), "absent is nullopt");
+    unlink(path.c_str());
+    rmdir(dir);
+}
+
 static void TestInstanceGuard() {
     const std::string self = "/AMP/vein/linux64/libtakaro-vein.so";
     std::string maps =
@@ -1234,6 +1355,7 @@ int main() {
     TestKillWeaponName();
     TestConfigFileParse();
     TestConfigFileLookup();
+    TestConfigResolve();
     TestInstanceGuard();
     TestCaBundleChoice();
     printf("%s: %d checks, %d failed\n", g_failed ? "FAILED" : "PASSED", g_ran, g_failed);

@@ -35,6 +35,8 @@ struct CloseRequest { uint64_t epoch; uint16_t code; std::string reason; };
 std::unique_ptr<CloseRequest> closeRequest;
 bool connected = false;
 std::string lastError;
+struct Target { std::string url; bool connect = true; uint64_t generation = 0; };
+Target target; // protected by mu; written by Retarget, applied by the service thread
 struct HttpRequest {
     std::mutex mutex;
     std::condition_variable cv;
@@ -352,16 +354,30 @@ void Run() {
     if (!local) { Notify(NoticeType::Error, 0, 0, "libwebsockets context creation failed"); return; }
     { std::lock_guard<std::mutex> g(mu); context = local; }
     lws_sul_schedule(local, 0, &serviceTimer, ServiceTimer, LWS_US_PER_SEC);
-    std::string url = cfg.url;
-    const char *protocol = nullptr, *address = nullptr, *path = nullptr;
+    std::string host, uriPath;
     int port = 0;
-    if (lws_parse_uri(url.data(), &protocol, &address, &port, &path) || !protocol ||
-        strcmp(protocol, "wss") != 0 || !address || !path) {
-        Notify(NoticeType::Error, 0, 0, "TAKARO_WS_URL must be a valid wss:// URL");
-        stopping = true;
+    bool connectEnabled = false;
+    auto applyUrl = [&](std::string url, bool connect) {
+        const char *protocol = nullptr, *address = nullptr, *path = nullptr;
+        int parsedPort = 0;
+        const bool valid = !lws_parse_uri(url.data(), &protocol, &address, &parsedPort, &path) && protocol &&
+                           strcmp(protocol, "wss") == 0 && address && *address && path;
+        if (!valid) {
+            // Held until a corrected URL arrives through Retarget; the loop keeps serving.
+            Notify(NoticeType::Error, 0, 0, "TAKARO_WS_URL must be a valid wss:// URL");
+            connectEnabled = false;
+            return;
+        }
+        host = address; uriPath = path; port = parsedPort;
+        if (uriPath.empty() || uriPath[0] != '/') uriPath.insert(uriPath.begin(), '/');
+        connectEnabled = connect;
+    };
+    uint64_t appliedGeneration = 0;
+    {
+        std::lock_guard<std::mutex> g(mu);
+        if (target.generation) { cfg.url = target.url; cfg.connect = target.connect; appliedGeneration = target.generation; }
     }
-    std::string host = address ? address : "", uriPath = path ? path : "";
-    if (uriPath.empty() || uriPath[0] != '/') uriPath.insert(uriPath.begin(), '/');
+    applyUrl(cfg.url, cfg.connect);
     httpEnabled = false;
     if (!cfg.gameHttpUrl.empty() && cfg.gameHttpUrl.find('@') == std::string::npos &&
         cfg.gameHttpUrl.find('?') == std::string::npos && cfg.gameHttpUrl.find('#') == std::string::npos) {
@@ -384,10 +400,23 @@ void Run() {
     }
     unsigned delay = cfg.reconnectBaseMs;
     auto nextConnect = Clock::now();
-    bool awaiting = false;
+    bool awaiting = false, redialNow = false;
     while (!stopping) {
+        std::optional<Target> retarget;
+        {
+            std::lock_guard<std::mutex> g(mu);
+            if (target.generation != appliedGeneration) { retarget = target; appliedGeneration = target.generation; }
+        }
+        if (retarget) {
+            applyUrl(retarget->url, retarget->connect);
+            delay = cfg.reconnectBaseMs;
+            nextConnect = Clock::now();
+            // The old socket's own CLOSED callback resets `session`; only then does the loop
+            // dial again, so a late callback can never touch the new connection.
+            if (session.wsi) { lws_set_timeout(session.wsi, PENDING_TIMEOUT_CLOSE_SEND, LWS_TO_KILL_ASYNC); redialNow = true; }
+        }
         ServiceGameHttp(local);
-        if (!session.wsi && Clock::now() >= nextConnect) {
+        if (connectEnabled && !session.wsi && Clock::now() >= nextConnect) {
             lws_client_connect_info ci{};
             ci.context = local;
             ci.address = host.c_str(); ci.port = port;
@@ -401,7 +430,11 @@ void Run() {
             awaiting = true;
         }
         lws_service(local, 100);
-        if (awaiting && !session.wsi) {
+        if (redialNow && !session.wsi) {
+            nextConnect = Clock::now();
+            delay = cfg.reconnectBaseMs;
+            awaiting = redialNow = false;
+        } else if (awaiting && !session.wsi) {
             nextConnect = Clock::now() + std::chrono::milliseconds(delay);
             delay = std::min(cfg.reconnectMaxMs, delay * 2);
             awaiting = false;
@@ -447,6 +480,7 @@ bool Start(Config config, NoticeSink noticeSink) {
     if (worker.joinable()) return false;
     static bool exitStopRegistered = false;
     if (!exitStopRegistered) { std::atexit([] { Stop(); }); exitStopRegistered = true; }
+    { std::lock_guard<std::mutex> g(mu); target = Target{}; }
     cfg = std::move(config); sink = std::move(noticeSink); stopping = false;
     worker = std::thread(Run);
     return true;
@@ -539,6 +573,15 @@ bool RequestClose(uint64_t expectedEpoch, uint16_t code, std::string reason) {
     if (stopping || !connected || expectedEpoch != epoch) return false;
     if (reason.size() > 123) reason.resize(123);
     closeRequest = std::make_unique<CloseRequest>(CloseRequest{expectedEpoch, code, std::move(reason)});
+    if (context) lws_cancel_service(context);
+    return true;
+}
+bool Retarget(std::string url, bool connect) {
+    std::lock_guard<std::mutex> g(mu);
+    if (stopping) return false;
+    target.url = std::move(url);
+    target.connect = connect;
+    ++target.generation;
     if (context) lws_cancel_service(context);
     return true;
 }

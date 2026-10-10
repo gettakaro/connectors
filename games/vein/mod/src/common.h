@@ -45,6 +45,8 @@ private:
 const std::string& ExePath();      // /proc/self/exe
 const std::string& ExeDir();       // directory holding VeinServer-Linux-Test
 const std::string& PluginDataDir();  // <ExeDir>/takaro, created on first use (TAKARO_PLUGIN_DATA_DIR overrides)
+// Whether PluginDataDir() was already there before this process created it: an older connector ran.
+bool PluginDataDirExisted();
 
 // Enqueues an owned bounded record. Hooks never open files or wait for disk I/O.
 void PluginLog(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
@@ -54,6 +56,8 @@ bool DebugEnabled();  // TAKARO_PLUGIN_DEBUG=1
 // One "[Takaro] ..." line on the server's stdout (the panel console) and in plugin.log. For the
 // few status changes an admin must see; never pass secrets.
 void ConsoleLine(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+// The same for a problem the admin must fix: the lines framed by rules of asterisks, in one write.
+void ConsoleBanner(const std::vector<std::string>& lines);
 
 // Config: env first, then <PluginDataDir>/plugin.json. Returns `def` when neither has it.
 std::string ConfigValue(const char* envName, const char* jsonKey, const std::string& def = "");
