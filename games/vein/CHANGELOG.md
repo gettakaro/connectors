@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/gettakaro/connectors/compare/vein-v0.4.1...vein-v0.5.0) (2026-10-10)
+
+
+### Features
+
+* **vein:** install on any Linux panel with three files (libsteam.so loader, takaro.cfg, console status) ([#428](https://github.com/gettakaro/connectors/issues/428)) ([5e0877c](https://github.com/gettakaro/connectors/commit/5e0877c61ccd9b3393826346ad0916037388bd67))
+
 ## [0.4.1](https://github.com/gettakaro/connectors/compare/vein-v0.4.0...vein-v0.4.1) (2026-10-08)
 
 
