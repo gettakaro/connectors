@@ -155,7 +155,7 @@ contents go next to `enshrouded_server.exe`:
 ```
 TakaroEnshrouded/
     dbghelp.dll
-    takaro/plugin.json.example     scripts/templates/plugin.json.example
+    takaro/plugin.json             scripts/templates/plugin.json (empty tokens: paste and start)
     README.txt                     scripts/templates/plugin-README.txt, version stamped
     INSTALL.md                     install, upgrade from 0.5.0, rollback
     THIRD-PARTY.md                 mod/third_party/README.md
@@ -195,7 +195,8 @@ the game loads that file). A zip that holds anything outside its one top-level f
 refused and nothing is extracted, and a component role other than `server-plugin` is refused.
 A `takaro/sidecar/` folder an earlier 0.5.0 deploy left behind is not touched. Stop the game
 container first: a running server holds the DLL open. The configuration
-(`takaro/plugin.json` or the environment) is the operator's, never written by `deploy`.
+(`takaro/plugin.json` or the environment) is the operator's, never written by `deploy`; the
+plugin itself only adds a missing `identityToken`/`name` to it.
 
 ## Verify
 
@@ -290,20 +291,53 @@ instead of creating an empty tree and a directory named `dbghelp.dll`.
 
 | Variable | Where | Purpose |
 |---|---|---|
-| `TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN` | game container (plugin) | native connector; or `identityToken` / `registrationToken` in `takaro\plugin.json`. Without both the connection stays off and `/health` says why |
-| `TAKARO_SERVER_NAME`, `TAKARO_WS_URL`, `TAKARO_CA_FILE` | game container (plugin) | or `name`, `url`, `caFile` in `plugin.json`; defaults `Takaro Dev Enshrouded`, `wss://connect.takaro.io/`, system trust. Relative `caFile` resolves against the server dir |
+| `TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN` | game container (plugin) | native connector; or `identityToken` / `registrationToken` in `takaro\plugin.json`. Without a registration token the connection stays off, the console shows a banner and `/health` says why; a missing identity is generated (see Configuration) |
+| `TAKARO_SERVER_NAME`, `TAKARO_WS_URL`, `TAKARO_CA_FILE` | game container (plugin) | or `name`, `url`, `caFile` in `plugin.json`; defaults: see Configuration, `wss://connect.takaro.io/`, system trust. Relative `caFile` resolves against the server dir |
 | `TAKARO_RECONNECT_BASE_MS`, `TAKARO_RECONNECT_MAX_MS` | game container (plugin) | reconnect backoff, default 2000 / 60000 |
 | `TAKARO_ACTION_TIMEOUT_MS`, `TAKARO_ACTION_WORKERS`, `TAKARO_POLL_INTERVAL_MS` | game container (plugin) | default 30000 / 4 / 250 |
 | `TAKARO_STATE_DIR`, `TAKARO_ONLINE_FILE`, `TAKARO_CURSOR_FILE` | game container (plugin) | connector state (default `takaro\connector-state`), online-player file, sidecar cursor to import once |
 | `TAKARO_NATIVE_DISABLE=1`, `TAKARO_LEGACY_HTTP=1` | game container (plugin) | turn the native connection off; serve the action routes over HTTP for the legacy sidecar |
+| `TAKARO_CONFIG_POLL_MS` | game container (plugin) | how often `plugin.json` is re-read (default 5000, min 200; tests) |
 | `TAKARO_LOG_FRAMES=1` | game container (plugin) | debug: write every outbound gameEvent and response frame to `plugin.log` (cut at ~2 KB; the identify frame is never logged). Use it to check player identity fields on the wire |
 | `ENSHROUDED_LOG_TAIL`, `ENSHROUDED_LOG_FILE`, `ENSHROUDED_LOG_EVENTS` | game container (plugin) | log-tail fallback (`auto`), log path (default `logs\enshrouded_server.log`), `log` events (`filtered`) |
 | `TAKARO_PLUGIN_TOKEN` (`TAKARO_ENSHROUDED_PLUGIN_TOKEN` in .env) | game container (plugin) | optional bearer secret for the diagnostics endpoint; or `token` in `plugin.json`. Without one the diagnostics answer 401 |
 | `ENSHROUDED_ADMIN_PASSWORD` / `_PLAYER_` / `_GUEST_` | .env | Server role passwords |
 
+## Configuration
+
 `takaro\plugin.json` next to `enshrouded_server.exe` holds the same keys as JSON (`registrationToken`,
 `identityToken`, `name`, `url`, `caFile`, `token`); an environment variable, when set and not blank, wins. The
-plugin logs where each value came from, never the value.
+plugin logs where each value came from, never the value. The release ships the real `plugin.json` with empty
+tokens.
+
+- **Live settings** (`url`, `registrationToken`, `identityToken`, `name`; `src/native/config_file.*`):
+  `ConfigWatcher` runs on its own thread (never the game thread) and re-reads the file every 5 s, comparing
+  the text. A changed text applies only when the next read 1 s later is the same and it parses (a BOM is
+  fine); otherwise the running settings stay and the console says the file is broken. A change calls
+  `Bridge::Reconfigure`, which on the bridge thread swaps the settings and calls `ITransport::Retarget`:
+  the WinHTTP supervisor closes the current epoch and connects at once (no backoff), or idles while there
+  is no registration token. An epoch that was being opened during a Retarget is dropped before its Open
+  notice. Without a registration token at startup no bridge, transport or state is created; the watcher
+  starts them when a token appears. `caFile`, `token` and every other setting are read at startup.
+- **Precedence per field:** environment, then `plugin.json`, then the saved copy
+  `<state dir>\saved-settings.json` (an upgrade that copies the whole zip replaces `plugin.json` but never
+  the state folder). `url` from `plugin.json` counts only when it is not the default. The saved copy holds
+  the url, identity and name in use (not values from the environment) and the registration token only after
+  Takaro accepted it; an environment-only install writes none.
+- **Identity:** environment, `plugin.json`, saved copy, then `my-enshrouded-server` when the state folder
+  existed before this start without a saved copy (an install from an older release whose file lost its
+  identity), else a new UUID. A resolved identity that `plugin.json` lacks is written into it (and the file
+  is created when only the DLL was copied and nothing comes from the environment); the identity an install
+  already uses never changes.
+- **Name:** environment, `plugin.json`, saved copy, then `Takaro Dev Enshrouded` (the old default) when the
+  identity came from the operator or a legacy install, else `<"name" from enshrouded_server.json, or
+  Enshrouded> (<first 8 identity characters>)`, written back like the identity. Takaro keeps game-server
+  names unique per domain and answers a taken name with 409, which gets its own banner.
+- **Console:** banners and the `connecting` / `connected` lines go to the process's stdout (one `WriteFile`
+  per message), which supervisord passes to `docker logs` and a panel console, and to `plugin.log`. A
+  problem is printed once until the settings change. An identify error is reduced to its name, message and
+  HTTP status (Takaro's error can carry its internal request, `x-takaro-token` included); long base64url
+  runs are redacted.
 
 ## Capabilities
 

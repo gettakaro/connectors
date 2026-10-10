@@ -1,6 +1,9 @@
 // Native connector configuration: environment first, then takaro\plugin.json next to the server exe
 // (the rented-server path). Token values never leave this struct: health and logs name the source only.
+// The connection settings (url, tokens, name) are resolved by ConfigWatcher (config_file.h) and can
+// change while the server runs; everything else is read once at startup.
 #pragma once
+#include "native/config_file.h"
 #include "native/mapping.h"
 #include "native/persistence.h"
 
@@ -13,9 +16,9 @@ struct NativeConfig {
     bool enabled = false;
     std::string disabledReason;  // set when !enabled
 
-    std::string url = "wss://connect.takaro.io/";
+    std::string url = kDefaultUrl;
     std::string identityToken, registrationToken;
-    std::string serverName = "Takaro Dev Enshrouded";
+    std::string serverName = kLegacyServerName;
     std::string caFile;  // resolved against the exe dir; empty = system trust
     unsigned reconnectBaseMs = 2000, reconnectMaxMs = 60000;
 
@@ -33,8 +36,10 @@ struct NativeConfig {
     std::vector<std::string> warnings;
 };
 
-// pluginJson: contents of <baseDir>\takaro\plugin.json (empty when absent).
+// pluginJson: contents of <baseDir>\takaro\plugin.json (empty when absent). Leaves the connection
+// settings at their defaults; ApplyLive fills them in.
 NativeConfig LoadNativeConfig(const std::string& baseDir, const EnvFn& env, const std::string& pluginJson);
+void ApplyLive(NativeConfig& c, const LiveResolution& r);
 std::string ConfigSummaryJson(const NativeConfig& c);  // for /health: no secrets
 
 }  // namespace native

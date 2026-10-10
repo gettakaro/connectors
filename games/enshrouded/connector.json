@@ -11,7 +11,7 @@
       "pattern": "takaro-enshrouded-plugin.zip",
       "label": "Plugin",
       "requires": "Enshrouded dedicated server (game build 1024233)",
-      "hint": "Copy dbghelp.dll and the takaro folder next to enshrouded_server.exe, then fill in takaro\\plugin.json; the zip includes install, upgrade and rollback instructions.",
+      "hint": "Copy dbghelp.dll and the takaro folder next to enshrouded_server.exe, then paste the registration token into takaro\\plugin.json (no restart needed if the server already runs); the zip includes install, upgrade and rollback instructions.",
       "required": true
     }
   ]

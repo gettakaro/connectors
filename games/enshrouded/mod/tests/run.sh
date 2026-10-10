@@ -14,7 +14,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 EXE_MOUNT=()
 if [ -n "${ENSHROUDED_EXE:-}" ]; then EXE_MOUNT=(-v "$(realpath "$ENSHROUDED_EXE")":/exe/enshrouded_server.exe:ro -e ENSHROUDED_EXE=/exe/enshrouded_server.exe); fi
-NATIVE_SRC="src/native/json_util.cpp src/native/mapping.cpp src/native/adapter.cpp src/native/fileio.cpp src/native/persistence.cpp src/native/logtail.cpp src/native/transport.cpp src/native/config.cpp src/native/bridge.cpp src/common.cpp"
+NATIVE_SRC="src/native/json_util.cpp src/native/mapping.cpp src/native/adapter.cpp src/native/fileio.cpp src/native/persistence.cpp src/native/logtail.cpp src/native/transport.cpp src/native/config.cpp src/native/config_file.cpp src/native/bridge.cpp src/common.cpp"
 NATIVE="g++ -std=c++17 -O1 -pthread -Wall -Wno-unused-function -Itests/shim -Isrc -include cstdarg tests/native/*.cpp $NATIVE_SRC -o /tmp/native && /tmp/native tests/fixtures"
 LEGACY="g++ -std=c++17 -Itests/shim -Isrc -include cstdarg tests/state_test.cpp src/state.cpp src/common.cpp -o /tmp/t && /tmp/t && g++ -std=c++17 -Isrc tests/moderation_test.cpp -o /tmp/m && /tmp/m && g++ -std=c++17 -Isrc tests/names_test.cpp src/names.cpp src/gamedata.cpp -o /tmp/n && /tmp/n && g++ -std=c++17 -Isrc tests/weapon_test.cpp src/weapon.cpp src/itemlabels.cpp src/names.cpp src/gamedata.cpp -o /tmp/w && /tmp/w && g++ -std=c++17 -Isrc tests/entity_names_test.cpp src/entity.cpp src/entitylabels.cpp src/weapon.cpp src/itemlabels.cpp src/names.cpp src/gamedata.cpp -o /tmp/e && /tmp/e"
 if [ -n "${NATIVE_ONLY:-}" ]; then CMD="$NATIVE"; else CMD="$LEGACY && $NATIVE"; fi

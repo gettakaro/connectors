@@ -133,33 +133,26 @@ void QueueTests() {
 void ConfigTests() {
     t::Group("config");
     NativeConfig c = LoadNativeConfig("Z:\\srv", Env({}), "");
-    CHECK(!c.enabled);
-    CHECK(c.disabledReason.find("identityToken and registrationToken") != std::string::npos);
-    c = LoadNativeConfig("Z:\\srv", Env({}),
-                         R"({"token":"x","identityToken":"file-id","registrationToken":"file-reg","name":"My Server","caFile":"takaro\\ca.pem"})");
-    CHECK(c.enabled);
-    CHECK_EQ(c.identityToken, std::string("file-id"));
-    CHECK_EQ(c.serverName, std::string("My Server"));
-    CHECK_EQ(c.url, std::string("wss://connect.takaro.io/"));
+    CHECK(c.enabled);  // the connection settings come from ConfigWatcher; only the kill switch disables
+    c = LoadNativeConfig("Z:\\srv", Env({}), R"({"token":"x","caFile":"takaro\\ca.pem"})");
     CHECK_EQ(c.caFile, std::string("Z:\\srv\\takaro\\ca.pem"));  // relative CA path resolves against the exe dir
-    c = LoadNativeConfig("Z:\\srv",
-                         Env({{"TAKARO_IDENTITY_TOKEN", "env-id"}, {"TAKARO_REGISTRATION_TOKEN", " env-reg "},
-                              {"TAKARO_WS_URL", "wss://fake:8443/"}, {"TAKARO_CA_FILE", "Z:\\certs\\ca.pem"}}),
-                         R"({"identityToken":"file-id","registrationToken":"file-reg"})");
-    CHECK_EQ(c.identityToken, std::string("env-id"));  // env wins
-    CHECK_EQ(c.registrationToken, std::string("env-reg"));
-    CHECK_EQ(c.url, std::string("wss://fake:8443/"));
-    CHECK_EQ(c.caFile, std::string("Z:\\certs\\ca.pem"));
-    CHECK_EQ(c.serverName, std::string("Takaro Dev Enshrouded"));
+    c = LoadNativeConfig("Z:\\srv", Env({{"TAKARO_CA_FILE", "Z:\\certs\\ca.pem"}}), "\xEF\xBB\xBF{\"caFile\":\"x.pem\"}");
+    CHECK_EQ(c.caFile, std::string("Z:\\certs\\ca.pem"));  // env wins; a BOM is no parse error
+    CHECK(c.warnings.empty());
+    LiveResolution live;
+    live.s = {"wss://fake:8443/", "env-reg", "env-id", "My Server"};
+    live.url = live.registration = live.identity = live.name = Source::Env;
+    ApplyLive(c, live);
+    CHECK_EQ(c.identityToken, std::string("env-id"));
+    CHECK_EQ(c.serverName, std::string("My Server"));
     std::string summary = ConfigSummaryJson(c);
     CHECK(summary.find("env-id") == std::string::npos && summary.find("env-reg") == std::string::npos);  // no secrets
-    c = LoadNativeConfig("Z:\\srv", Env({{"TAKARO_IDENTITY_TOKEN", "a"}, {"TAKARO_REGISTRATION_TOKEN", "b"}, {"TAKARO_NATIVE_DISABLE", "1"}}), "");
+    CHECK(summary.find("\"registrationToken\":\"environment\"") != std::string::npos);
+    c = LoadNativeConfig("Z:\\srv", Env({{"TAKARO_NATIVE_DISABLE", "1"}}), "");
     CHECK(!c.enabled && c.disabledReason.find("TAKARO_NATIVE_DISABLE") != std::string::npos);
-    c = LoadNativeConfig("Z:\\srv", Env({{"TAKARO_IDENTITY_TOKEN", "a"}, {"TAKARO_REGISTRATION_TOKEN", "b"}, {"TAKARO_WS_URL", "ws://plain/"}}), "");
-    CHECK(!c.enabled && c.disabledReason.find("wss://") != std::string::npos);
     c = LoadNativeConfig("Z:\\srv",
-                         Env({{"TAKARO_IDENTITY_TOKEN", "a"}, {"TAKARO_REGISTRATION_TOKEN", "b"}, {"ENSHROUDED_LOG_EVENTS", "bogus"},
-                              {"TAKARO_RECONNECT_BASE_MS", "5"}, {"ENSHROUDED_LOG_TAIL", "never"}, {"TAKARO_LEGACY_HTTP", "1"}}),
+                         Env({{"ENSHROUDED_LOG_EVENTS", "bogus"}, {"TAKARO_RECONNECT_BASE_MS", "5"},
+                              {"ENSHROUDED_LOG_TAIL", "never"}, {"TAKARO_LEGACY_HTTP", "1"}}),
                          "not json");
     CHECK(c.enabled);
     CHECK(c.logEvents == LogEventsMode::Filtered && c.logTail == LogTailMode::Never && c.legacyHttp);

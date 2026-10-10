@@ -1,7 +1,7 @@
 {
   "registrationToken": "",
-  "identityToken": "my-enshrouded-server",
-  "name": "My Enshrouded Server",
+  "identityToken": "",
+  "name": "",
   "url": "wss://connect.takaro.io/",
   "token": ""
 }

@@ -173,7 +173,48 @@ HOST=$!
 sleep 6
 health /health wine-plugin-token >"$RESULTS/health-unconfigured.txt"
 wait $HOST || true
-check "unconfigured-health-says-why" grep -q '"native":{"enabled":false,"reason":"not configured' "$RESULTS/health-unconfigured.txt"
+check "unconfigured-health-says-why" grep -q '"native":{"enabled":false,"reason":"not connected: no registration token' "$RESULTS/health-unconfigured.txt"
+
+# ---- 4. plugin.json while running: fresh install, wrong then right token, upgrade that replaced the file -----
+log "live config: shipped plugin.json, token pasted while running, upgrade keeps the identity"
+reset_state
+docker exec -u enshrouded -i "$RT" sh -c 'cat > /opt/enshrouded/server/native-test/takaro/plugin.json' <"$MOD/../scripts/templates/plugin.json"
+printf '{"name": "Wine World"}\n' | docker exec -u enshrouded -i "$RT" sh -c 'cat > /opt/enshrouded/server/native-test/enshrouded_server.json'
+start_fake accept
+LIVE_ENV=(-e TAKARO_IDENTITY_TOKEN= -e TAKARO_REGISTRATION_TOKEN= -e TAKARO_SERVER_NAME= -e TAKARO_CONFIG_POLL_MS=1000)
+PJ=/opt/enshrouded/server/native-test/takaro/plugin.json
+set_token() { docker exec -u enshrouded "$RT" sed -i "s/\"registrationToken\": \"[^\"]*\"/\"registrationToken\": \"$1\"/" "$PJ"; }
+wait_for() {  # wait_for <seconds> <grep args...>
+  local s=$1; shift
+  for _ in $(seq 1 "$s"); do grep -q "$@" && return 0; sleep 1; done; return 1
+}
+run_host 45 "$RESULTS/host-live.txt" "${LIVE_ENV[@]}" &
+HOST=$!
+check "live-no-token-banner" wait_for 20 'registrationToken not set, the server is not connected to Takaro' "$RESULTS/host-live.txt"
+check "live-banner-names-file" grep -q 'into /opt/enshrouded/server/native-test/takaro/plugin.json' "$RESULTS/host-live.txt"
+GEN_ID=$(docker exec "$RT" sed -n 's/.*"identityToken": "\([^"]*\)".*/\1/p' "$PJ")
+check "live-identity-generated" bash -c "echo '$GEN_ID' | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'"
+check "live-no-identify-without-token" bash -c "! docker logs '$FAKE' 2>&1 | grep -q '\"ev\": \"identify\"'"
+set_token wine-wrong-token
+check "live-wrong-token-refused" wait_for 20 'Takaro refused this server' "$RESULTS/host-live.txt"
+set_token wine-registration
+check "live-fixed-token-connects" wait_for 20 "connected to Takaro as \"Wine World (${GEN_ID:0:8})\"" "$RESULTS/host-live.txt"
+check "live-identify-carried-generated-identity" bash -c "docker logs '$FAKE' 2>&1 | grep '\"ok\": true' | grep -q '$GEN_ID'"
+sleep 3
+check "live-saved-copy-has-token" docker exec "$RT" grep -q '"registrationToken": "wine-registration"' /opt/enshrouded/server/native-test/takaro/connector-state/saved-settings.json
+check "live-plugin-json-no-copied-token" bash -c "docker exec '$RT' grep -c wine-registration '$PJ' | grep -q '^1$'"
+docker exec "$RT" pkill -f host.exe >/dev/null 2>&1 || true
+wait $HOST || true
+cp "$SRV/takaro/plugin.log" "$RESULTS/plugin-live.log" 2>/dev/null || true
+check "live-log-no-tokens" bash -c "! grep -q -e wine-registration -e wine-wrong-token '$RESULTS/plugin-live.log' '$RESULTS/host-live.txt'"
+# The upgrade copied the whole zip, shipped plugin.json included: same identity, token from the saved copy.
+docker exec -u enshrouded -i "$RT" sh -c "cat > $PJ" <"$MOD/../scripts/templates/plugin.json"
+docker logs "$FAKE" >"$RESULTS/fake-live-1.txt" 2>&1
+run_host 15 "$RESULTS/host-live-upgrade.txt" "${LIVE_ENV[@]}"
+docker logs "$FAKE" >"$RESULTS/fake-live.txt" 2>&1
+check "live-upgrade-reconnects" grep -q 'connected to Takaro as' "$RESULTS/host-live-upgrade.txt"
+check "live-upgrade-same-identity" bash -c "[ \$(grep '\"ok\": true' '$RESULTS/fake-live.txt' | grep -c '$GEN_ID') -gt \$(grep '\"ok\": true' '$RESULTS/fake-live-1.txt' | grep -c '$GEN_ID') ]"
+check "live-upgrade-identity-written-back" docker exec "$RT" grep -q "\"identityToken\": \"$GEN_ID\"" "$PJ"
 
 log "results in $RESULTS"
 if [ ${#FAILED[@]} -eq 0 ]; then log "ALL PASSED"; exit 0; fi

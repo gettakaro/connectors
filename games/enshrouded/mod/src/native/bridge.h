@@ -43,7 +43,15 @@ struct BridgeOptions {
     int64_t reconcileIntervalMs = 30000;
     int64_t healthIntervalMs = 15000;
     int64_t banCheckIntervalMs = 5000;
+    // Called on the bridge thread; they must not block.
+    std::function<void(const LiveSettings& accepted)> onIdentified;
+    // summary: "<name>: <message> (HTTP <status>)" built from the error's name, message and status only
+    // (Takaro's error can carry its internal request, tokens included). httpStatus 0 when unknown.
+    std::function<void(const std::string& summary, int httpStatus)> onIdentifyRejected;
 };
+
+// The safe summary of a Takaro identify error, and its HTTP status (0 when it names none).
+std::string IdentifyErrorSummary(const JsonValue* error, int& httpStatus);
 
 class Bridge {
 public:
@@ -60,6 +68,9 @@ public:
     bool Start();
     void Stop();
     bool OnNotice(Notice&& n);
+    // New connection settings from any thread: the bridge thread applies them, then drops the connection
+    // and reconnects at once (or stays idle when !connect).
+    void Reconfigure(const LiveSettings& s, bool connect);
     std::string HealthJson() const;  // cached snapshot; safe from any thread, never waits on bridge work
 
     // test helpers (bridge-thread state; call only while the bridge is stopped or from its callbacks)
@@ -106,6 +117,7 @@ private:
     std::shared_ptr<const ActionView> View();
     void RememberPosition(const JsonValue& args, const JsonValue& payload);
     std::string Redact(std::string text) const;
+    void ApplyPendingSettings();
 
     BridgeOptions o_;
     std::thread thread_;
@@ -120,6 +132,8 @@ private:
     size_t noticeBytes_ = 0;
     std::deque<std::shared_ptr<Job>> jobQueue_;
     std::deque<std::shared_ptr<Job>> completions_;
+    bool settingsPending_ = false, pendingConnect_ = false;
+    LiveSettings pendingSettings_;
 
     // bridge-thread state
     uint64_t epoch_ = 0;
@@ -154,6 +168,7 @@ private:
              tailEvents_ = 0, expiredBans_ = 0, noticeOverflows_ = 0;
     int64_t maxRequestLatencyMs_ = 0;
     std::string lastError_, lastIdentifyError_, lastRequestAction_;
+    std::vector<std::string> oldSecrets_;  // tokens used before a Reconfigure, still redacted
 
     mutable std::mutex healthMu_;
     std::string health_ = "{}";

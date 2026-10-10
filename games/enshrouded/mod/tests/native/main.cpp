@@ -10,6 +10,7 @@ HMODULE g_selfModule = nullptr;  // common.cpp (PluginBaseDir) expects the DLL's
 void RunUnitTests();
 void RunParityTests(const std::string& fixtureDir);
 void RunBridgeTests();
+void RunConfigFileTests();
 
 namespace t {
 
@@ -33,6 +34,7 @@ int main(int argc, char** argv) {
     RunUnitTests();
     RunParityTests(fixtures);
     RunBridgeTests();
+    RunConfigFileTests();
     printf("native tests: %d checks, %d failures\n", t::S().checks, t::S().failures);
     return t::S().failures ? 1 : 0;
 }
