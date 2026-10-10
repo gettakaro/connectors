@@ -14,7 +14,7 @@ In the Takaro dashboard, add a game server of type **Generic** and copy the **re
 
 Download `takaro-vein-plugin.tar.gz` from the newest `vein-v…` [release](https://github.com/gettakaro/connectors/releases?q=vein-v&expanded=true) and extract it (on Windows, 7-Zip opens `.tar.gz`). From the `TakaroVein` folder:
 
-1. Rename `takaro.cfg.example` to `takaro.cfg`, open it and put your token after `TAKARO_REGISTRATION_TOKEN=`. Optionally set `TAKARO_SERVER_NAME`.
+1. Open `takaro.cfg` and paste your token after `TAKARO_REGISTRATION_TOKEN=`. Optionally set `TAKARO_SERVER_NAME`. Leave `TAKARO_IDENTITY_TOKEN` empty; the connector fills it in.
 2. Stop the server.
 3. With your panel's file manager or SFTP, upload `libtakaro-vein.so`, `libsteam.so` and `takaro.cfg` into the game's `Vein/Binaries/Linux` folder, the one that holds `VeinServer-Linux-Test`:
    - Pterodactyl / Pelican: `/home/container/Vein/Binaries/Linux`
@@ -22,17 +22,23 @@ Download `takaro-vein-plugin.tar.gz` from the newest `vein-v…` [release](https
    - Plain Linux: `<server folder>/Vein/Binaries/Linux`
 4. Start the server.
 
-This works with every panel and needs no startup-line or setting change: while Steam starts, the game looks for an optional `libsteam.so` in that folder, and the small loader with that name starts the connector next to it. Steam itself is unaffected. A SteamCMD update or validate leaves the three files in place. To update the connector, stop the server and upload the new `libtakaro-vein.so` and `libsteam.so`; `takaro.cfg` stays. To remove it, delete `libsteam.so`.
+You can also do step 1 later: edit `takaro.cfg` in that folder while the server runs and save it. The connector reads it again within a few seconds and connects, no restart needed. The same goes for a corrected token.
+
+This works with every panel and needs no startup-line or setting change: while Steam starts, the game looks for an optional `libsteam.so` in that folder, and the small loader with that name starts the connector next to it. Steam itself is unaffected. A SteamCMD update or validate leaves the three files in place. To remove the connector, delete `libsteam.so`.
 
 If your host does not let you upload `.so` files into the game folder, ask their support to place the three files for you.
 
 ### 3. Check it works
 
-The server console shows `[Takaro]` lines; `connected to Takaro as "…"` means it works, and Takaro lists the server as reachable. Install the **utils** module on the server in Takaro and type `@ping` in game chat: Takaro answers `Pong!`. `Takaro refused this server` means the token is wrong; `no registration token set` means it is missing; `no trusted CA bundle found` means the server has no CA certificates (install the `ca-certificates` package or set `TAKARO_CA_FILE`); no `[Takaro]` line at all means the connector was not loaded (check file names and folder). The connector's own log is `Vein/Binaries/Linux/takaro/plugin.log`.
+The server console shows `[Takaro]` lines; `connected to Takaro as "…"` means it works, and Takaro lists the server as reachable. Install the **utils** module on the server in Takaro and type `@ping` in game chat: Takaro answers `Pong!`. A block of `*` lines tells you what to fix: `TAKARO_REGISTRATION_TOKEN not set` means the token is missing, `Takaro refused this server` means it is wrong; both name the file to edit. `no trusted CA bundle found` means the server has no CA certificates (install the `ca-certificates` package or set `TAKARO_CA_FILE`); no `[Takaro]` line at all means the connector was not loaded (check file names and folder). The connector's own log is `Vein/Binaries/Linux/takaro/plugin.log`.
+
+### Update the connector
+
+Stop the server, upload the new `libtakaro-vein.so` and `libsteam.so` over the old ones, and start it. Do not upload the new `takaro.cfg`: keep yours. If you overwrite it by mistake, the connector (0.6.0 and newer) takes the token and server identity from its saved copy in `Vein/Binaries/Linux/takaro` and writes the identity back into `takaro.cfg`.
 
 ### Advanced: LD_PRELOAD
 
-Admins who control the start command can preload the connector instead, from any folder: `LD_PRELOAD=/full/path/to/libtakaro-vein.so ./VeinServer.sh -Port=7777 -QueryPort=27015`, with `takaro.cfg` next to the library (or the same settings as environment variables, which win over the file). Do not also install `libsteam.so`; if both are present the connector still starts only once. Docker users: see `docker-compose.example.yml` and `.env.example` in the archive; [INSTALL.md](INSTALL.md) covers state directories, upgrades from v0.2.x and rollback.
+Admins who control the start command can preload the connector instead, from any folder: `LD_PRELOAD=/full/path/to/libtakaro-vein.so ./VeinServer.sh -Port=7777 -QueryPort=27015`, with `takaro.cfg` next to the library (or the same settings as environment variables, which win over the file; a changed environment variable needs a restart). Do not also install `libsteam.so`; if both are present the connector still starts only once. Docker users: see `docker-compose.example.yml` and `.env.example` in the archive; [INSTALL.md](INSTALL.md) covers state directories, upgrades from v0.2.x and rollback.
 
 ## What works, what doesn't
 

@@ -3,8 +3,11 @@
 // non-empty environment variable always wins over the file.
 #pragma once
 
+#include <functional>
 #include <map>
+#include <optional>
 #include <string>
+#include <cstdlib>
 #include <utility>
 #include <vector>
 
@@ -41,5 +44,63 @@ const Loaded& Current();
 // it is safe when the library is loaded after the game has started threads.
 const char* Lookup(const Loaded& file, const char* name);
 inline const char* Get(const char* name) { return Lookup(Current(), name); }
+
+// ---- settings that apply without a restart ----
+// URL, registration token, identity and server name are re-read from the file while the server
+// runs (the bridge thread polls it); every other key keeps the value read at startup.
+
+constexpr const char* kDefaultUrl = "wss://connect.takaro.io/";
+// What releases up to 0.5 used when no identity was set. Installs that ran one of them keep it.
+constexpr const char* kLegacyIdentity = "vein";
+constexpr const char* kDefaultServerName = "Takaro Dev Vein";
+// The connector's own copy of the settings it connected with, in the data directory, which no
+// upgrade replaces. A value set in takaro.cfg (or the environment) wins over it.
+constexpr const char* kSavedFileName = "saved-settings.cfg";
+
+// The whole file, or nullopt when it cannot be read (missing, permissions).
+std::optional<std::string> ReadText(const std::string& path);
+Loaded FromText(const std::string& path, const std::string& text);
+// True when a line has no '=': the file is half-saved or mistyped, and must not be applied.
+bool Unparseable(const Parsed& parsed);
+
+enum class Source { Env, File, Saved, Current, Legacy, Generated, Default };
+const char* SourceName(Source s);
+
+struct Settings {
+    std::string url, registration, identity, serverName;
+    bool operator==(const Settings& o) const {
+        return url == o.url && registration == o.registration && identity == o.identity &&
+               serverName == o.serverName;
+    }
+    bool operator!=(const Settings& o) const { return !(*this == o); }
+};
+struct Resolution {
+    Settings settings;
+    Source url = Source::Default, registration = Source::Default, identity = Source::Default,
+           serverName = Source::Default;
+};
+
+// Per field: a non-empty environment variable, else takaro.cfg, else the saved copy. The URL is
+// taken from takaro.cfg only when it differs from the default, so a freshly shipped file cannot
+// undo a saved custom URL. The identity falls back to `current` (the one this run already uses),
+// then to "vein" for an install that ran an older connector (`legacyInstall`), and only then to
+// `newIdentity()`. `getenv` is injectable for tests.
+Resolution Resolve(const Loaded& user, const Loaded& saved, bool legacyInstall, const std::string& current,
+                   const std::function<std::string()>& newIdentity,
+                   const std::function<const char*(const char*)>& env = ::getenv);
+
+// The saved copy to write: the URL, identity and (only when `withRegistration`) the registration
+// token in use. Values that came from the environment are not written; the old saved value stays.
+std::string RenderSaved(const Resolution& r, const Loaded& oldSaved, bool withRegistration);
+
+// `text` with KEY's line set to KEY=value (the first matching line, else appended), keeping every
+// other line and the line-ending style.
+std::string SetKey(const std::string& text, const std::string& key, const std::string& value);
+
+// Writes via <path>.tmp + rename so a reader never sees half a file; keeps the old file's mode.
+bool WriteAtomic(const std::string& path, const std::string& text, unsigned mode = 0600);
+
+// A random UUID (version 4).
+std::string NewIdentity();
 
 }  // namespace ConfigFile

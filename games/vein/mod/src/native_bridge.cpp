@@ -21,6 +21,8 @@
 #include <cstdlib>
 #include <deque>
 #include <mutex>
+#include <optional>
+#include <unistd.h>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -114,6 +116,128 @@ std::string RedactTokens(std::string detail) {
     }
     if (detail.size() > 300) detail.resize(300);
     return detail;
+}
+void ConsoleProblemBanner(const std::string& key, const std::vector<std::string>& lines) {
+    if (key == consoleProblem) return;
+    consoleProblem = key;
+    ConsoleBanner(lines);
+}
+
+// ---- takaro.cfg while the server runs (bridge thread only once Start has returned) ----
+// The connection settings are re-read every 5 s; a change reconnects at once. A text that
+// differs is applied only when the next read, 1 s later, returns the same text, so a save in
+// progress is never applied half-written.
+std::string configPath, savedPath;
+bool legacyInstall = false;
+ConfigFile::Resolution active;
+std::optional<std::string> appliedText, candidateText;
+Clock::time_point nextConfigPoll;
+std::chrono::milliseconds configPoll{5000}, configSettle{1000};
+std::string configHealth = "{}"; // protected by mu
+
+void PublishConfigHealth() {
+    Json j = {{"file", configPath}, {"fileFound", appliedText.has_value()},
+              {"savedCopy", savedPath},
+              {"identitySource", ConfigFile::SourceName(active.identity)},
+              {"registrationSource", ConfigFile::SourceName(active.registration)},
+              {"urlSource", ConfigFile::SourceName(active.url)},
+              {"registrationTokenSet", !active.settings.registration.empty()}};
+    std::lock_guard<std::mutex> g(mu);
+    configHealth = j.dump();
+}
+
+void BannerNoToken() {
+    ConsoleProblemBanner("no-token", {
+        "TAKARO_REGISTRATION_TOKEN not set, the server is not connected to Takaro.",
+        "Paste the registration token from Takaro into " + configPath,
+        "and save it. The connector connects within a few seconds, no restart needed."});
+}
+
+void BannerRefused(const std::string& why) {
+    if (active.registration == ConfigFile::Source::Env)
+        ConsoleProblemBanner("refused", {
+            "Takaro refused this server: " + RedactTokens(why) + ".",
+            "Check the TAKARO_REGISTRATION_TOKEN environment variable; it wins over " + configPath,
+            "and a changed environment variable needs a server restart."});
+    else
+        ConsoleProblemBanner("refused", {
+            "Takaro refused this server: " + RedactTokens(why) + ".",
+            "Check TAKARO_REGISTRATION_TOKEN in " + configPath,
+            "and save it. The connector reconnects within a few seconds, no restart needed."});
+}
+
+// Pins the identity this install uses: written into takaro.cfg when that file leaves it empty,
+// and into the saved copy with the URL (and, once Takaro accepted it, the registration token).
+void PersistSettings(const std::optional<std::string>& userText, bool withRegistration) {
+    const ConfigFile::Loaded saved = ConfigFile::Load(savedPath);
+    using S = ConfigFile::Source;
+    const S idSrc = active.identity;
+    bool fileHasIdentity = false;
+    if (userText) {
+        const auto values = ConfigFile::FromText(configPath, *userText).values;
+        auto it = values.find("TAKARO_IDENTITY_TOKEN");
+        fileHasIdentity = it != values.end() && it->second.find_first_not_of(" \t") != std::string::npos;
+    }
+    if (userText && !fileHasIdentity &&
+        (idSrc == S::Saved || idSrc == S::Current || idSrc == S::Legacy || idSrc == S::Generated)) {
+        const std::string next = ConfigFile::SetKey(*userText, "TAKARO_IDENTITY_TOKEN", active.settings.identity);
+        if (ConfigFile::WriteAtomic(configPath, next, 0644)) {
+            appliedText = next;
+            PluginLog("config: wrote the server identity (%s) into %s", ConfigFile::SourceName(idSrc), configPath.c_str());
+        } else {
+            PluginLog("config: could not write the server identity into %s; the saved copy keeps it", configPath.c_str());
+        }
+    }
+    auto fromFile = [](S src) { return src != S::Env && src != S::Default; };
+    if (!saved.found && !fromFile(active.url) && !fromFile(active.identity) &&
+        !(withRegistration && fromFile(active.registration))) return;  // environment-only install
+    const std::string text = ConfigFile::RenderSaved(active, saved, withRegistration);
+    auto old = ConfigFile::ReadText(savedPath);
+    if (old && *old == text) return;
+    if (!ConfigFile::WriteAtomic(savedPath, text, 0600))
+        PluginLog("config: could not write %s", savedPath.c_str());
+}
+
+void ApplyUserConfig(const std::optional<std::string>& userText) {
+    ConfigFile::Loaded user;
+    user.path = configPath;
+    if (userText) user = ConfigFile::FromText(configPath, *userText);
+    const ConfigFile::Settings before = active.settings;
+    active = ConfigFile::Resolve(user, ConfigFile::Load(savedPath), legacyInstall, before.identity,
+                                 ConfigFile::NewIdentity);
+    PersistSettings(userText, false);
+    PublishConfigHealth();
+    if (active.settings == before) return;
+    identity = active.settings.identity;
+    registration = active.settings.registration;
+    serverName = active.settings.serverName;
+    PluginLog("config: %s changed; reconnecting with the new settings (identity from %s, token from %s)",
+              configPath.c_str(), ConfigFile::SourceName(active.identity), ConfigFile::SourceName(active.registration));
+    consoleLive = false; consoleProblem.clear();
+    if (registration.empty()) BannerNoToken();
+    else ConsoleLine("%s changed; connecting to %s as \"%s\"", configPath.c_str(), active.settings.url.c_str(),
+                     serverName.c_str());
+    NativeTransport::Retarget(active.settings.url, !registration.empty());
+}
+
+void PollConfig() {
+    const auto now = Clock::now();
+    if (now < nextConfigPoll) return;
+    nextConfigPoll = now + configPoll;
+    auto text = ConfigFile::ReadText(configPath);
+    if (text == appliedText) { candidateText.reset(); return; }
+    if (!text) { appliedText.reset(); candidateText.reset(); return; }  // removed: keep what runs
+    if (candidateText != text) { candidateText = text; nextConfigPoll = now + configSettle; return; }
+    candidateText.reset();
+    appliedText = text;
+    const auto parsed = ConfigFile::Parse(*text);
+    if (ConfigFile::Unparseable(parsed)) {
+        for (const auto& w : parsed.warnings)
+            ConsoleLine("WARNING: %s %s; keeping the current settings until the file is fixed and saved",
+                        configPath.c_str(), w.c_str());
+        return;
+    }
+    ApplyUserConfig(text);
 }
 // Takaro can request a location while ingesting a join or leave. VEIN may not
 // have a possessed pawn yet (or anymore), so match the sidecar's 60 s fallback.
@@ -320,13 +444,13 @@ void HandleFrame(const NativeTransport::Notice& n) {
             const Json& e = p["error"];
             std::string why = e.is_string() ? e.get<std::string>()
                             : e.is_object() ? Str(e, "message", Str(e, "name", e.dump())) : e.dump();
-            ConsoleProblem("ERROR: Takaro refused this server (" + RedactTokens(why) +
-                           "). Check the registration token, then restart the server.");
+            BannerRefused(why);
             NativeTransport::RequestClose(n.epoch, 1013, "identity rejected");
             return;
         }
         identified = true;
         PluginLog("native: identified with Takaro (epoch %llu)", (unsigned long long)n.epoch);
+        PersistSettings(appliedText, true);
         if (!consoleLive) {
             consoleLive = true; consoleProblem.clear();
             ConsoleLine("connected to Takaro as \"%s\"; the server now shows as reachable in the dashboard",
@@ -345,8 +469,7 @@ void HandleFrame(const NativeTransport::Notice& n) {
         }
         if (detail.size() > 512) detail.resize(512);
         lastError = "Takaro protocol error: " + detail;
-        if (!identified) ConsoleProblem("ERROR: Takaro: " + RedactTokens(detail) +
-                                        ". Check the registration token, then restart the server.");
+        if (!identified) BannerRefused(detail);
     } else if (type == "ping") {
         if (!NativeTransport::Queue(NativeTransport::Kind::Control, R"({"type":"pong"})", 0, n.epoch))
             NativeTransport::RequestClose(n.epoch, 1013, "control queue full");
@@ -779,6 +902,7 @@ void BridgeLoop() {
                 batch.push_back(std::move(notices.front())); notices.pop_front();
             }
         }
+        PollConfig();
         // Confirmations only move forward, so one ConfirmThrough(highest) per batch is equivalent
         // to one per notice and saves an outbox rewrite plus two fsyncs for each.
         uint64_t confirmThrough = 0, confirmEpoch = 0;
@@ -1229,19 +1353,42 @@ bool Start() {
             rawLogBytes += line.size(); rawLogLines.push_back(std::move(line)); cv.notify_one();
         }, behavior->CustomLogJoin(), behavior->CustomLogChat());
     }
-    const char* id = ConfigFile::Get("TAKARO_IDENTITY_TOKEN"); identity = id && *id ? id : "vein";
-    const char* reg = ConfigFile::Get("TAKARO_REGISTRATION_TOKEN"); registration = reg ? reg : "";
-    while (!registration.empty() && std::isspace(static_cast<unsigned char>(registration.front())))
-        registration.erase(registration.begin());
-    while (!registration.empty() && std::isspace(static_cast<unsigned char>(registration.back())))
-        registration.pop_back();
-    const char* name = ConfigFile::Get("TAKARO_SERVER_NAME"); serverName = name && *name ? name : "Takaro Dev Vein";
+    configPath = ConfigFile::DefaultPath();
+    if (!configPath.empty() && configPath[0] != '/') {
+        char cwd[4096];
+        if (getcwd(cwd, sizeof cwd)) configPath = std::string(cwd) + "/" + configPath;
+    }
+    savedPath = PluginDataDir() + "/" + ConfigFile::kSavedFileName;
+    legacyInstall = PluginDataDirExisted();
+    active = {};
+    appliedText = ConfigFile::ReadText(configPath);
+    candidateText.reset();
+#ifdef TAKARO_BRIDGE_TEST
+    if (const char* ms = getenv("TAKARO_TEST_CONFIG_POLL_MS")) {
+        configPoll = std::chrono::milliseconds(atoi(ms));
+        configSettle = std::chrono::milliseconds(atoi(ms) / 2);
+    }
+#endif
+    nextConfigPoll = Clock::now() + configPoll;
+    {
+        ConfigFile::Loaded user;
+        user.path = configPath;
+        if (appliedText) user = ConfigFile::FromText(configPath, *appliedText);
+        active = ConfigFile::Resolve(user, ConfigFile::Load(savedPath), legacyInstall, "", ConfigFile::NewIdentity);
+    }
+    identity = active.settings.identity;
+    registration = active.settings.registration;
+    serverName = active.settings.serverName;
+    PluginLog("config: %s (%s); identity from %s, registration token from %s, URL from %s", configPath.c_str(),
+              appliedText ? "found" : "missing", ConfigFile::SourceName(active.identity),
+              ConfigFile::SourceName(active.registration), ConfigFile::SourceName(active.url));
+    PersistSettings(appliedText, false);
+    PublishConfigHealth();
     consoleLive = false; consoleProblem.clear();
-    if (registration.empty())
-        ConsoleLine("WARNING: no registration token set (TAKARO_REGISTRATION_TOKEN). Copy it from the Takaro "
-                    "dashboard; a new server cannot register without it.");
+    if (registration.empty()) BannerNoToken();
     NativeTransport::Config c;
-    const char* url = ConfigFile::Get("TAKARO_WS_URL"); c.url = url && *url ? url : "wss://connect.takaro.io/";
+    c.url = active.settings.url;
+    c.connect = !registration.empty();
     const char* ca = ConfigFile::Get("TAKARO_CA_FILE"); c.caFile = ca ? ca : "";
     // An explicitly empty VEIN_HTTP_API retains the legacy disable switch.
     const char* gameApi = ConfigFile::Get("VEIN_HTTP_API");
@@ -1262,7 +1409,7 @@ bool Start() {
     c.reconnectBaseMs = backoff("TAKARO_RECONNECT_BASE_MS", 2000);
     c.reconnectMaxMs = backoff("TAKARO_RECONNECT_MAX_MS", 60000);
     if (c.reconnectMaxMs < c.reconnectBaseMs) c.reconnectMaxMs = c.reconnectBaseMs;
-    ConsoleLine("connecting to %s as \"%s\"", c.url.c_str(), serverName.c_str());
+    if (c.connect) ConsoleLine("connecting to %s as \"%s\"", c.url.c_str(), serverName.c_str());
     auto sink = [](NativeTransport::Notice n) -> bool {
         std::lock_guard<std::mutex> g(mu);
         if (n.type == NativeTransport::NoticeType::Written && !n.pingAfterWrite) {
@@ -1347,7 +1494,8 @@ std::string HealthJson() {
                {"stateVersion", published.stateVersion},
                {"persistenceLastError", published.persistenceError},
                {"behavior", Json::parse(published.behaviorHealth, nullptr, false)},
-               {"gate", {{"experimental", gateMode.load()}, {"durableOutbox", !gateMode.load()}}} };
+               {"gate", {{"experimental", gateMode.load()}, {"durableOutbox", !gateMode.load()}}},
+               {"config", Json::parse(configHealth, nullptr, false)} };
     return j.dump();
 }
 #ifdef TAKARO_BRIDGE_TEST
