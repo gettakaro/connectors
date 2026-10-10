@@ -34,22 +34,18 @@ public sealed record ConnectorConfig(
         }
     }
 
+    /// <summary>
+    /// Builds the settings from resolved key/value pairs. An empty registrationToken is valid: the
+    /// connector then waits for one instead of connecting.
+    /// </summary>
     public static ConnectorConfig FromDictionary(IReadOnlyDictionary<string, string> values)
     {
-        var missing = new List<string>();
-        var registrationToken = Required(values, "registrationToken", missing);
-        var serverName = Required(values, "serverName", missing);
-
-        if (missing.Count > 0)
-        {
-            throw new ArgumentException($"Missing required Valheim Takaro config values: {string.Join(", ", missing)}");
-        }
-
+        var serverName = Optional(values, "serverName") ?? ConnectorConfigFiles.DefaultServerName;
         return new ConnectorConfig(
-            RegistrationToken: registrationToken!,
-            ServerName: serverName!,
-            IdentityToken: Optional(values, "identityToken") ?? serverName!,
-            TakaroWsUrl: Optional(values, "takaroWsUrl") ?? "wss://connect.takaro.io/",
+            RegistrationToken: Optional(values, "registrationToken") ?? string.Empty,
+            ServerName: serverName,
+            IdentityToken: Optional(values, "identityToken") ?? serverName,
+            TakaroWsUrl: Optional(values, "takaroWsUrl") ?? ConnectorConfigFiles.DefaultTakaroWsUrl,
             LogLevel: Optional(values, "logLevel") ?? "Information",
             EnableLogEvents: ParseBool(Optional(values, "enableLogEvents"), defaultValue: true),
             CommandAllowlistExact: ParseList(Optional(values, "commandAllowlistExact"), defaultValues: new[] { "help" }),
@@ -59,16 +55,7 @@ public sealed record ConnectorConfig(
         };
     }
 
-    private static string? Required(IReadOnlyDictionary<string, string> values, string key, List<string> missing)
-    {
-        var value = Optional(values, key);
-        if (value is null)
-        {
-            missing.Add(key);
-        }
-
-        return value;
-    }
+    public bool HasRegistrationToken => !string.IsNullOrWhiteSpace(RegistrationToken);
 
     private static string? Optional(IReadOnlyDictionary<string, string> values, string key)
     {

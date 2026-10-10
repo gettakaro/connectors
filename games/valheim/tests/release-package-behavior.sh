@@ -129,6 +129,7 @@ for required in \
   "$server_dir/Takaro.Valheim.Companion.Protocol.dll" \
   "$server_dir/README.txt" \
   "$server_dir/manifest.json" \
+  "$server_dir/takaro.cfg" \
   "$client_dir/Takaro.Valheim.Companion.dll" \
   "$client_dir/Takaro.Valheim.Companion.Protocol.dll" \
   "$client_dir/README.txt" \
@@ -149,8 +150,11 @@ for forbidden in \
   }
 done
 
+# The server ships exactly one config, takaro.cfg, the file people edit, and it must not
+# carry a registration token or an identity: every install gets its own.
 while IFS= read -r packaged_file; do
   packaged_name="$(basename "$packaged_file")"
+  [ "$packaged_file" = "$server_dir/takaro.cfg" ] && continue
   case "$packaged_name" in
     *.pdb|*.deps.json|*.runtimeconfig.json|*.exe|*.cfg|*.config|0Harmony.dll|BepInEx.dll|assembly_valheim.dll|assembly_utils.dll|Splatform.dll|UnityEngine.dll|UnityEngine.*.dll|Jotunn.dll|ServerSync.dll)
       printf 'release archive contains forbidden debug, config, or host file: %s\n' "$packaged_file" >&2
@@ -158,6 +162,13 @@ while IFS= read -r packaged_file; do
       ;;
   esac
 done < <(find "$server_extract" "$client_extract" -type f -print)
+
+for key in registrationToken identityToken; do
+  if ! rg -q "^${key} =\s*$" "$server_dir/takaro.cfg"; then
+    printf 'shipped takaro.cfg must have an empty %s line\n' "$key" >&2
+    exit 1
+  fi
+done
 
 if find "$server_extract" "$client_extract" -type l -print -quit | rg -q .; then
   printf 'release archive contains a symbolic link\n' >&2

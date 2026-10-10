@@ -34,6 +34,10 @@ public sealed class ReleasePackageContractTests
     [DataRow("client-dll-in-server")]
     [DataRow("core-dll-in-client")]
     [DataRow("config-in-client")]
+    [DataRow("missing-server-config")]
+    [DataRow("token-in-server-config")]
+    [DataRow("identity-in-server-config")]
+    [DataRow("second-config-in-server")]
     [DataRow("pdb-in-client")]
     [DataRow("deps-in-client")]
     [DataRow("host-dll-in-client")]
@@ -139,6 +143,7 @@ public sealed class ReleasePackageContractTests
         Write(Path.Combine(server, "Takaro.Valheim.Companion.Protocol.dll"), "protocol fixture");
         Write(Path.Combine(server, "README.txt"), "server install fixture");
         WriteManifest(Path.Combine(server, "manifest.json"), "dedicated-server");
+        Write(Path.Combine(server, "takaro.cfg"), "[Takaro]\nregistrationToken =\nidentityToken =\n");
 
         Write(Path.Combine(client, "Takaro.Valheim.Companion.dll"), "client fixture");
         Write(Path.Combine(client, "Takaro.Valheim.Companion.Protocol.dll"), "protocol fixture");
@@ -163,6 +168,18 @@ public sealed class ReleasePackageContractTests
                 break;
             case "core-dll-in-client":
                 Write(Path.Combine(client, "Takaro.Valheim.Core.dll"), "wrong role");
+                break;
+            case "missing-server-config":
+                File.Delete(Path.Combine(server, "takaro.cfg"));
+                break;
+            case "token-in-server-config":
+                Write(Path.Combine(server, "takaro.cfg"), "[Takaro]\nregistrationToken = secret\nidentityToken =\n");
+                break;
+            case "identity-in-server-config":
+                Write(Path.Combine(server, "takaro.cfg"), "[Takaro]\nregistrationToken =\nidentityToken = shared\n");
+                break;
+            case "second-config-in-server":
+                Write(Path.Combine(server, "com.takaro.valheim.cfg"), "registrationToken=secret");
                 break;
             case "config-in-client":
                 Write(Path.Combine(client, "com.takaro.valheim.cfg"), "registrationToken=secret");

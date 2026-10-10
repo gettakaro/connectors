@@ -2,7 +2,6 @@ using Takaro.Valheim.Core;
 
 #if TAKARO_VALHEIM_PLUGIN
 using BepInEx;
-using BepInEx.Configuration;
 using HarmonyLib;
 using System.Diagnostics;
 using UnityEngine;
@@ -17,7 +16,13 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
     public const string PluginVersion = TakaroBuildVersion.BepInExVersion;
     public const string ReleaseVersion = TakaroBuildVersion.ReleaseVersion;
 
+    // Often enough that a pasted token feels immediate; the files are tiny.
+    private static readonly TimeSpan ConfigCheckInterval = TimeSpan.FromSeconds(5);
+
     private TakaroWebSocketRunner? runner;
+    private ConnectorConfigStore? configStore;
+    private System.Threading.Timer? configWatch;
+    private readonly object configCheckGate = new();
     private InventoryCompanionBridge? inventoryCompanion;
     private CompanionInventoryCache? companionInventory;
     private QueuedMainThreadActionScheduler? mainThreadActions;
@@ -34,22 +39,18 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             return;
         }
 
-        var values = new Dictionary<string, string>
+        // The user file ships in the plugin folder; the saved copy lives where releases up to 4.1
+        // kept the whole config, outside the folder an upgrade replaces. Settings are read by
+        // ConnectorConfigStore rather than bound through BepInEx, so BepInEx never rewrites either file.
+        configStore = new ConnectorConfigStore(
+            Path.Combine(Path.GetDirectoryName(Info.Location) ?? Paths.PluginPath, ConnectorConfigFiles.UserFileName),
+            Path.Combine(Paths.ConfigPath, ConnectorConfigFiles.SavedFileName),
+            message => Logger.LogInfo(message),
+            message => Logger.LogWarning(message),
+            hostServerName: ValheimRuntimePolicy.ServerNameArgument(Environment.GetCommandLineArgs()));
+        if (!configStore.Load(out var config, out var error) || config is null)
         {
-            ["registrationToken"] = Bind("Takaro", "registrationToken", "", "Takaro registration token.").Value,
-            ["serverName"] = Bind("Takaro", "serverName", "Valheim Server", "Human-readable server name.").Value,
-            ["identityToken"] = Bind("Takaro", "identityToken", "", "Takaro identity token after first registration.").Value,
-            ["takaroWsUrl"] = Bind("Takaro", "takaroWsUrl", "wss://connect.takaro.io/", "Takaro connector WebSocket URL.").Value,
-            ["logLevel"] = Bind("Takaro", "logLevel", "Information", "Connector log level.").Value,
-            ["enableLogEvents"] = Bind("Takaro", "enableLogEvents", "true", "Forward connector log events to Takaro.").Value,
-            ["commandAllowlistExact"] = Bind("Takaro", "commandAllowlistExact", "help", "Semicolon-separated exact console commands allowed for executeConsoleCommand.").Value,
-            ["commandAllowlistPrefixes"] = Bind("Takaro", "commandAllowlistPrefixes", "", "Semicolon-separated console command prefixes allowed for executeConsoleCommand.").Value,
-            ["chatSenderName"] = Bind("Takaro", "chatSenderName", ConnectorConfig.DefaultChatSenderName, "Name shown in game chat for Takaro messages (unless Takaro sends its own sender name).").Value
-        };
-
-        if (!ConnectorConfig.TryFromDictionary(values, out var config, out var error) || config is null)
-        {
-            Logger.LogWarning($"Takaro Valheim connector disabled: {error}");
+            Logger.LogWarning($"Takaro Valheim connector disabled: {error}. Fix it in {configStore.UserPath} and restart the server.");
             return;
         }
 
@@ -71,7 +72,9 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             config,
             adapter,
             message => Logger.LogInfo(message),
-            mainThreadActions);
+            mainThreadActions,
+            message => Logger.LogWarning(message),
+            configStore.UserPath);
         TakaroChatParticipant.Initialize(config.ChatSenderName, Logger.LogInfo);
         ValheimServerEventBridge.Initialize(runner, playerResolver, Logger.LogInfo);
         // Optional: only players who install the inventory companion ever answer it.
@@ -79,6 +82,7 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
         harmony = new Harmony(PluginGuid);
         harmony.PatchAll(typeof(ValheimServerEventBridge).Assembly);
         _ = runner.StartAsync();
+        configWatch = new System.Threading.Timer(_ => CheckConfig(), null, ConfigCheckInterval, ConfigCheckInterval);
 
         Logger.LogInfo("Takaro Valheim connector started.");
     }
@@ -100,6 +104,8 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
 
     private void OnDestroy()
     {
+        configWatch?.Dispose();
+        configWatch = null;
         harmony?.UnpatchSelf();
         ValheimServerEventBridge.Shutdown();
         inventoryCompanion?.Dispose();
@@ -116,8 +122,32 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
         Logger.LogInfo("Takaro Valheim shutdown requested; scheduling Application.Quit after response flush.");
     }
 
-    private ConfigEntry<string> Bind(string section, string key, string defaultValue, string description) =>
-        Config.Bind(section, key, defaultValue, description);
+    // Runs on a timer thread: file reads only, never Unity. Checks never overlap, so an older
+    // read can never be applied after a newer one.
+    private void CheckConfig()
+    {
+        if (!Monitor.TryEnter(configCheckGate))
+        {
+            return;
+        }
+
+        try
+        {
+            var change = configStore?.CheckForChanges();
+            if (change is { ConnectionChanged: true })
+            {
+                runner?.UpdateSettings(change.Config);
+            }
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning($"Takaro Valheim could not check its config for changes: {exception.Message}");
+        }
+        finally
+        {
+            Monitor.Exit(configCheckGate);
+        }
+    }
 
     private static bool IsDedicatedServerProcess()
     {

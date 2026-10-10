@@ -291,21 +291,57 @@ through a bounded `Update()`-drained action scheduler (`QueuedMainThreadActionSc
 
 ## Configuration
 
-The plugin reads these BepInEx settings from the `[Takaro]` section of
-`BepInEx/config/com.takaro.valheim.cfg`:
+Two files, both BepInEx-style INI with a `[Takaro]` section. `ConnectorConfigStore` reads them;
+the plugin no longer binds settings through `Config.Bind`, so BepInEx never rewrites either file.
 
-- `registrationToken`
-- `serverName` (default `Valheim Server`)
-- `identityToken` (written by the plugin after registration)
-- `takaroWsUrl` (default `wss://connect.takaro.io/`)
-- `logLevel` (default `Information`)
-- `enableLogEvents` (default `true`)
-- `commandAllowlistExact` (default `help`, semicolon-separated)
-- `commandAllowlistPrefixes` (default empty, semicolon-separated)
-- `chatSenderName` (default `Takaro`, at most 128 characters) — the name shown in game chat
-  for Takaro messages unless Takaro sends its own sender name
+| File | Who writes it | Role |
+|---|---|---|
+| `BepInEx/plugins/TakaroValheim/takaro.cfg` | ships in the zip (`mod/takaro.cfg`, also embedded in Core and recreated when missing) | the file people edit; replaced by an upgrade |
+| `BepInEx/config/com.takaro.valheim.cfg` | releases up to 4.1 (BepInEx); now the connector | saved copy of the token and identity in use; survives an upgrade |
 
-The `companionMode` key from 3.x is ignored.
+Resolution (`ConnectorConfigFiles.Resolve`):
+
+- `registrationToken`: `takaro.cfg` when set, else the saved file. It is copied into the saved file,
+  never into `takaro.cfg`.
+- `identityToken`: `takaro.cfg`, else the saved file, else, for an install a release up to 4.1 ran
+  with a token (saved file starts with BepInEx's `## Settings file was created by plugin Takaro
+  Valheim` and has a token), its `serverName` (default `Valheim Server`), the identity those
+  releases sent when `identityToken` was empty. Otherwise a new UUID. The identity in use is
+  written into both files, so it never changes again.
+- Every other key: `takaro.cfg` when it sets it, else the saved file, else the default. The
+  shipped `takaro.cfg` has every key but the two tokens commented out, so the fresh copy an
+  upgrade brings never overrides the saved file, while a value written into `takaro.cfg` always
+  applies (also one equal to the default, e.g. narrowing `commandAllowlistExact` back to `help`).
+- Emptying a `registrationToken` that `takaro.cfg` had set, while the server runs, clears the
+  saved token too and disconnects; at startup an empty one (the fresh file an upgrade brings)
+  falls back to the saved token.
+
+`serverName` left at the default `Valheim Server` is announced as `<-name launch argument, else
+Valheim Server> (<first 8 identity characters>)`: Takaro answers 409 to a second game server with a
+name the domain already has, so fresh installs must not share one. Not when the identity itself is
+`Valheim Server` (a 4.1-or-older install on the default). The name is not written to the files.
+A 409 rejection gets its own banner pointing at `serverName`.
+
+Keys and defaults: `registrationToken`, `serverName` (`Valheim Server`), `identityToken`,
+`takaroWsUrl` (`wss://connect.takaro.io/`), `logLevel` (`Information`), `enableLogEvents`
+(`true`), `commandAllowlistExact` (`help`), `commandAllowlistPrefixes` (empty), `chatSenderName`
+(`Takaro`, at most 128 characters). Lists split on `;` or `,`. The `companionMode` key from 3.x is
+ignored. There are no environment variables.
+
+Runtime: a 5 s timer compares the whole text of both files (not mtime); a changed text is
+applied only when a re-read 1 s later is identical, so an in-place save caught half-way is not
+taken (and never written to the saved file). A change to
+`takaroWsUrl`, `registrationToken`, `identityToken` or `serverName` calls
+`TakaroWebSocketRunner.UpdateSettings`, which cancels the current attempt (connect, receive or
+backoff wait), aborts the socket and connects at once with a fresh backoff. Other keys log that a
+restart applies them. A file without a `[Takaro]` section (empty, half-saved) or one that cannot
+be read keeps the current settings and is retried on the next tick; it is never overwritten. The
+connector's own writes go through a temp file and are not counted as changes. With no token the
+runner does not connect and logs a banner naming `takaro.cfg`; a rejected identify logs a banner
+and retries with backoff (2 s doubling to 60 s) until the token changes.
+
+BepInEx 5 has no config file watcher of its own (`ConfigFile.ConfigReloaded` only fires after an
+explicit `Reload()`), hence the polling.
 
 Never commit registration or identity tokens.
 
