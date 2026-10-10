@@ -19,6 +19,7 @@
 //   * a failure degrades the capability and is reported in /health, it never throws out of a hook.
 
 #include "events.h"
+#include "config_file.h"
 
 #include "actions.h"
 
@@ -1555,7 +1556,7 @@ bool IsNoise(const std::string& line) {
 std::string DefaultLogPath() {
     // DRAGONWILDS_LOG_FILE is the 0.2.x sidecar's key. It pointed at the log as mounted into the
     // sidecar container, so it is only honoured when that path exists in this (the game's) process.
-    const char* legacy = getenv("DRAGONWILDS_LOG_FILE");
+    const char* legacy = ConfigFile::Get("DRAGONWILDS_LOG_FILE");
     struct stat st{};
     if (legacy && *legacy && stat(legacy, &st) == 0) return legacy;
     std::string cfg = ConfigValue("TAKARO_LOG_PATH", "logPath", "");

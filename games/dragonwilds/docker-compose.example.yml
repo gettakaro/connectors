@@ -23,11 +23,12 @@ services:
       ENABLE_AUTO_UPDATE: "false"          # client and server are version-locked
       # REQUIRED: the plugin, preloaded by the entrypoint onto the game binary only
       TAKARO_PLUGIN_SO: /opt/takaro/libtakaro-dragonwilds.so
-      # REQUIRED: the Takaro connection
-      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN:?}"
-      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_TOKEN:-dragonwilds}"
-      TAKARO_WS_URL: "${TAKARO_WS_URL:-wss://connect.takaro.io/}"
-      TAKARO_SERVER_NAME: "${TAKARO_SERVER_NAME:-Dragonwilds}"
+      # The Takaro connection: normally set in data/dragonwilds-plugin/takaro.cfg, which is
+      # re-read while the server runs. A non-empty value here wins over that file.
+      TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN:-}"
+      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_TOKEN:-}"
+      TAKARO_WS_URL: "${TAKARO_WS_URL:-}"
+      TAKARO_SERVER_NAME: "${TAKARO_SERVER_NAME:-}"
       TAKARO_SENDER_NAME: "${TAKARO_SENDER_NAME:-}"
       TAKARO_CA_FILE: "${TAKARO_CA_FILE:-}"
       # Optional authenticated loopback diagnostics; the Takaro connection does not use them
@@ -46,6 +47,7 @@ services:
       DRAGONWILDS_LOG_EVENTS: "${DRAGONWILDS_LOG_EVENTS:-filtered}"
     volumes:
       - ./data/dragonwilds:/game
-      # REQUIRED: read-only, and OUTSIDE the Steam tree - SteamCMD `validate` deletes unknown files
+      # REQUIRED: OUTSIDE the Steam tree - SteamCMD `validate` deletes unknown files. Holds the
+      # plugin and takaro.cfg; edits on the host reach the running server.
       - ./data/dragonwilds-plugin:/opt/takaro:ro
       - ./data/dragonwilds-state:/opt/takaro-state

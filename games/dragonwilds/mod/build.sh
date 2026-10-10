@@ -25,7 +25,7 @@ if [ "$NATIVE" = 0 ]; then
   # is silently identical to the release one (El-Limon #75).
   env=()
   [ -n "${DEBUG_CORRUPT_SIG:-}" ] && env+=(-e "DEBUG_CORRUPT_SIG=$DEBUG_CORRUPT_SIG")
-  exec docker run --rm -v "$PWD":/src -w /src -u "$(id -u):$(id -g)" "${env[@]}" "$IMAGE" \
+  exec docker run --rm -v "$PWD/..":/dragonwilds -w /dragonwilds/mod -u "$(id -u):$(id -g)" "${env[@]}" "$IMAGE" \
       ./build.sh "${args[@]}"
 fi
 
