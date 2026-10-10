@@ -1,8 +1,12 @@
+# Takaro connector settings. Saving this file is enough: the connector picks up
+# changes within a few seconds, no restart needed.
 takaro:
   websocket:
-    url: ""
+    url: "wss://connect.takaro.io/"
   authentication:
+    # Filled in by the connector on first start. Keep it; it is how Takaro knows this server.
     identity_token: ""
+    # Paste the registration token from Takaro here.
     registration_token: ""
   reconnect:
     enabled: true

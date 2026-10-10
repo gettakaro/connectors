@@ -74,8 +74,7 @@ That is the whole install — one file, no extra libraries. On Fabric, keep the 
 
 ### 4. Configure
 
-Start the server once and let it finish loading, then stop it again. The connector writes an empty
-config file on that first start:
+Start the server. On its first start the connector writes its config file:
 
 | Your server | Config file |
 |---|---|
@@ -83,42 +82,31 @@ config file on that first start:
 | NeoForge | `<server>/config/takaro.properties` |
 | Paper | `<server>/plugins/TakaroMinecraft/config.yml` |
 
-Open it and fill in the WebSocket URL, your Takaro **registration token**, and an **identity
-token** — any string you choose that is unique to this server (for example `my-smp-survival`).
-The connector does not invent one for you, and the server will not connect while the URL is empty.
+Open it and paste your Takaro **registration token**, then save. You can do this while the server
+runs: the connector checks the file every few seconds and connects as soon as the token is saved.
+No restart needed.
 
 **Fabric** (`config/takaro.json`):
 
 ```json
-{
-  "websocket": { "url": "wss://connect.takaro.io/" },
-  "authentication": {
-    "identity_token": "my-smp-survival",
-    "registration_token": "your-registration-token-here"
-  }
-}
+"registration_token": "your-registration-token-here"
 ```
 
 **NeoForge** (`config/takaro.properties`):
 
 ```properties
-takaro.websocket.url=wss://connect.takaro.io/
-takaro.authentication.identity_token=my-smp-survival
 takaro.authentication.registration_token=your-registration-token-here
 ```
 
 **Paper** (`plugins/TakaroMinecraft/config.yml`):
 
 ```yaml
-takaro:
-  websocket:
-    url: "wss://connect.takaro.io/"
-  authentication:
-    identity_token: "my-smp-survival"
     registration_token: "your-registration-token-here"
 ```
 
-Leave the `reconnect` values alone. Save the file and start the server.
+Leave the URL (`wss://connect.takaro.io/`), the `reconnect` values and `identity_token` as they
+are. The connector fills in `identity_token` by itself on the first start; it is how Takaro knows
+this server, so keep it when you move or copy the server.
 
 ### 5. Check that it worked
 
@@ -129,9 +117,20 @@ Connecting to Takaro at wss://connect.takaro.io/
 Identified successfully, server ID: <your server id>
 ```
 
-And in Takaro, the game server shows as **online**. If it stays offline, look for
-`Identify failed:` or `No WebSocket URL configured` in the log — the registration token and the
-`url` line in the config file are the first things to re-check.
+And in Takaro, the game server shows as **online**.
+
+If no token is set yet, the log shows a banner instead, naming the exact file to edit:
+
+```
+*************************************************************************
+  registration_token not set, the server is not connected to Takaro.
+  Paste the registration token from Takaro into /srv/mc/config/takaro.json
+  and save it. The connector connects within a few seconds, no restart needed.
+*************************************************************************
+```
+
+If the token is wrong, the banner starts with `Identify failed:` instead. Fix the token in the
+config file and save; the connector reconnects within a few seconds.
 
 **Version check.** Just before connecting, the connector logs one `Takaro target-check:` line
 saying which server build it was made for and which one it found. If they do not match it refuses
@@ -148,9 +147,13 @@ and `off` skips the check entirely, but neither makes an untested combination wo
 
 ### 6. Upgrading
 
-**Stop the server first.** Delete the old `takaro-<platform>-<version>.jar` from `mods/`
-(or `plugins/`) and drop the new jar in its place, then start the server again. Leave the config
-file alone — your tokens survive the upgrade. Never swap the jar under a running server.
+**Stop the server first.** Delete the old Takaro jar from `mods/` (or `plugins/`) and drop the new
+jar in its place, then start the server again. Leave the config file alone: it is not part of the
+jar, so your token and identity survive the upgrade and the server keeps its place in Takaro.
+Never swap the jar under a running server.
+
+Coming from a version whose config file has an empty `url`? Nothing to do; an empty `url` means
+`wss://connect.takaro.io/`.
 
 ## What works, what doesn't
 

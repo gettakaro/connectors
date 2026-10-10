@@ -24,7 +24,7 @@ public class FabricGameAdapter implements GameAdapter {
 
     private final Logger logger;
     private final MinecraftServer server;
-    private EventEmitter eventEmitter;
+    private volatile EventEmitter eventEmitter;
     private final ConcurrentHashMap<String, PlayerLocation> lastKnownLocations = new ConcurrentHashMap<>();
 
     public FabricGameAdapter(Logger logger, MinecraftServer server) {

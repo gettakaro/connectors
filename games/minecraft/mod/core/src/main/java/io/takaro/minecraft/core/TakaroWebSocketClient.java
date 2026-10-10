@@ -26,24 +26,46 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     });
     private volatile long currentReconnectDelay;
     private volatile boolean shouldReconnect = true;
+    private volatile boolean closed;
+    private final String configPath;
 
     public TakaroWebSocketClient(URI serverUri, GameAdapter adapter, TakaroConfig config) {
+        this(serverUri, adapter, config, "the Takaro config file");
+    }
+
+    public TakaroWebSocketClient(URI serverUri, GameAdapter adapter, TakaroConfig config, String configPath) {
         super(serverUri);
         this.adapter = adapter;
         this.config = config;
+        this.configPath = configPath;
         this.currentReconnectDelay = config.getReconnectDelay();
+    }
+
+    /** The settings this connection uses; the connector updates the ones that need no reconnect. */
+    TakaroConfig settings() {
+        return config;
     }
 
     @Override
     public void onOpen(ServerHandshake handshake) {
+        if (closed) {
+            // A reconnect that was already under way when a config change replaced this client.
+            close();
+            return;
+        }
         adapter.logInfo("WebSocket connected, sending identify...");
         sendIdentify();
     }
 
     @Override
     public void onMessage(String message) {
+        if (closed) {
+            return; // a replaced connection: its answers no longer describe the current settings
+        }
         if (config.isDebugEnabled()) {
-            adapter.logDebug("WS RECV: " + message);
+            // identify errors can embed Takaro's internal request, auth token included
+            adapter.logDebug(message.contains("\"identifyResponse\"")
+                    ? "WS RECV: identifyResponse (body not logged)" : "WS RECV: " + message);
         }
         try {
             JsonObject json = JsonParser.parseString(message).getAsJsonObject();
@@ -87,9 +109,12 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     public void onClose(int code, String reason, boolean remote) {
         adapter.logInfo("WebSocket closed (code=" + code + ", reason=" + reason + ", remote=" + remote + ")");
 
-        if (code == 1008 || code == 4001 || code == 4003) {
-            adapter.logWarning("Authentication error, disabling reconnect");
+        if (!closed && (code == 1008 || code == 4001 || code == 4003)) {
             shouldReconnect = false;
+            TakaroConnector.logBanner(adapter,
+                    "Takaro refused the connection (" + (reason == null || reason.isEmpty() ? "code " + code : reason) + ").",
+                    "Check registration_token and identity_token in " + configPath + ".",
+                    "Saving a corrected token reconnects within a few seconds, no restart needed.");
         }
 
         if (shouldReconnect && config.isReconnectEnabled()) {
@@ -103,6 +128,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     public void shutdown() {
+        closed = true;
         shouldReconnect = false;
         scheduler.shutdownNow();
         try {
@@ -113,7 +139,14 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             while (isOpen() && hasBufferedData() && System.currentTimeMillis() < deadline) {
                 Thread.sleep(20);
             }
-            closeBlocking();
+            // Not closeBlocking(): it waits forever on a client that is between reconnect
+            // attempts, which would hang the server stop or a config change.
+            close();
+            deadline = System.currentTimeMillis() + 2000L;
+            while (!isClosed() && getReadyState() != org.java_websocket.enums.ReadyState.NOT_YET_CONNECTED
+                    && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20);
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -238,12 +271,32 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             JsonElement errorElement = payload.get("error");
             String errorMessage;
             if (errorElement.isJsonObject()) {
+                // Only name, message and status: the full error can carry Takaro's request headers.
                 JsonObject errorObj = errorElement.getAsJsonObject();
-                errorMessage = hasValue(errorObj, "message") ? optString(errorObj, "message", "") : errorObj.toString();
+                String name = optString(errorObj, "name", "");
+                errorMessage = optString(errorObj, "message", name.isEmpty() ? "unknown error" : name);
+                JsonElement http = errorObj.get("http");
+                if (http != null && http.isJsonPrimitive()) {
+                    errorMessage += " (HTTP " + http.getAsString() + ")";
+                }
             } else {
                 errorMessage = errorElement.getAsString();
             }
-            adapter.logWarning("Identify failed: " + errorMessage);
+            if (errorMessage.endsWith("(HTTP 409)")) {
+                // Takaro names a new server after its identity, and names are unique per domain.
+                TakaroConnector.logBanner(adapter,
+                        "Identify failed: " + errorMessage,
+                        "Takaro already has a game server with this name. Set a different",
+                        "identity_token in " + configPath + " and save it, or remove the old server in Takaro.");
+                close();
+                return;
+            }
+            TakaroConnector.logBanner(adapter,
+                    "Identify failed: " + errorMessage,
+                    "Check registration_token in " + configPath + ". Saving a corrected",
+                    "token reconnects within a few seconds; until then the connector retries with backoff.");
+            // Close so the reconnect timer retries: a rejection can also be a passing Takaro outage.
+            close();
             return;
         }
 

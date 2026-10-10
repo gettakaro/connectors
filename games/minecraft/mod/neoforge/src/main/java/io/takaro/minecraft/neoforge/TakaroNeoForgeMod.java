@@ -1,7 +1,8 @@
 package io.takaro.minecraft.neoforge;
 
 import io.takaro.minecraft.core.EventEmitter;
-import io.takaro.minecraft.core.TakaroConfig;
+import io.takaro.minecraft.core.config.ConfigFile;
+import io.takaro.minecraft.core.config.PropertiesConfigFormat;
 import io.takaro.minecraft.core.TakaroConnector;
 import io.takaro.minecraft.core.model.PlayerInfo;
 import net.minecraft.server.MinecraftServer;
@@ -19,18 +20,14 @@ import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Properties;
 
 @Mod("takaro")
 public class TakaroNeoForgeMod {
 
     private static final Logger LOGGER = LogManager.getLogger("Takaro");
-    private TakaroConnector connector;
-    private NeoForgeGameAdapter adapter;
+    private volatile TakaroConnector connector;
+    private volatile NeoForgeGameAdapter adapter;
 
     public TakaroNeoForgeMod() {
         NeoForge.EVENT_BUS.register(this);
@@ -39,22 +36,11 @@ public class TakaroNeoForgeMod {
     @SubscribeEvent
     public void onServerStarted(ServerStartedEvent event) {
         MinecraftServer server = event.getServer();
+        // Relative to the server directory, where NeoForge keeps config/.
         Path configPath = Path.of("config", "takaro.properties");
-
-        TakaroConfig config = loadConfig(configPath);
-        if (config == null) {
-            config = new TakaroConfig();
-        }
-        config.applyEnvOverrides();
-
-        if (config.getWsUrl() == null || config.getWsUrl().isEmpty()) {
-            LOGGER.warn("No WebSocket URL configured, skipping Takaro connection");
-            return;
-        }
-
         adapter = new NeoForgeGameAdapter(LOGGER, server);
-        connector = new TakaroConnector(adapter, config);
-        connector.connect();
+        connector = new TakaroConnector(adapter, new ConfigFile(configPath, new PropertiesConfigFormat(), adapter));
+        connector.start();
     }
 
     @SubscribeEvent
@@ -138,58 +124,6 @@ public class TakaroNeoForgeMod {
                     entityKey != null ? entityKey.toString() : "unknown",
                     weaponCode
             );
-        }
-    }
-
-    // --- Config ---
-
-    private TakaroConfig loadConfig(Path path) {
-        if (!Files.exists(path)) {
-            LOGGER.warn("Config file not found at {}, creating default...", path);
-            createDefaultConfig(path);
-            return null;
-        }
-
-        Properties props = new Properties();
-        try (InputStream in = Files.newInputStream(path)) {
-            props.load(in);
-        } catch (IOException e) {
-            LOGGER.error("Failed to load config: {}", e.getMessage());
-            return null;
-        }
-
-        try {
-            TakaroConfig config = new TakaroConfig();
-            config.setWsUrl(props.getProperty("takaro.websocket.url", ""));
-            config.setIdentityToken(props.getProperty("takaro.authentication.identity_token", ""));
-            config.setRegistrationToken(props.getProperty("takaro.authentication.registration_token", ""));
-            config.setReconnectEnabled(Boolean.parseBoolean(props.getProperty("takaro.reconnect.enabled", "true")));
-            config.setReconnectDelay(Long.parseLong(props.getProperty("takaro.reconnect.delay", "5000")));
-            config.setMaxReconnectDelay(Long.parseLong(props.getProperty("takaro.reconnect.max_delay", "300000")));
-            config.setBackoffMultiplier(Double.parseDouble(props.getProperty("takaro.reconnect.backoff_multiplier", "1.5")));
-            config.setDebugEnabled(Boolean.parseBoolean(props.getProperty("takaro.debug", "false")));
-            return config;
-        } catch (NumberFormatException e) {
-            LOGGER.error("Invalid number in config: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    private void createDefaultConfig(Path path) {
-        try {
-            Files.createDirectories(path.getParent());
-            Files.writeString(path,
-                    "takaro.websocket.url=\n" +
-                    "takaro.authentication.identity_token=\n" +
-                    "takaro.authentication.registration_token=\n" +
-                    "takaro.reconnect.enabled=true\n" +
-                    "takaro.reconnect.delay=5000\n" +
-                    "takaro.reconnect.max_delay=300000\n" +
-                    "takaro.reconnect.backoff_multiplier=1.5\n" +
-                    "takaro.debug=false\n");
-            LOGGER.info("Default config created at {}", path);
-        } catch (IOException e) {
-            LOGGER.error("Failed to create default config: {}", e.getMessage());
         }
     }
 }
