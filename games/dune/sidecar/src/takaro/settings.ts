@@ -164,7 +164,7 @@ export class TakaroSettingsSource {
 
   private value(key: ReloadableKey): string {
     if (this.overridden.has(key)) return this.file[key] ?? '';
-    const fromEnv = this.env[key]?.trim();
+    const fromEnv = blankComment(this.env[key]?.trim() ?? '');
     return fromEnv ? fromEnv : (this.file[key] ?? '');
   }
 
@@ -213,6 +213,14 @@ export class TakaroSettingsSource {
     if (identity !== this.settings?.identityToken) this.log.info(`Takaro identity: ${identity} (${why})`);
     return identity;
   }
+}
+
+/**
+ * compose reads `KEY=    # text` as the value `# text`, and the `.env.example` of 0.2.x had exactly that on its empty
+ * token lines. No token or identity starts with `#`, so such a value means "empty".
+ */
+function blankComment(value: string): string {
+  return value.startsWith('#') ? '' : value;
 }
 
 function readSavedIdentity(file: string): string {

@@ -292,3 +292,12 @@ describe('TakaroWsClient connection control', () => {
     expect(state.connections).toBe(2);
   });
 });
+
+describe('compose inline-comment values', () => {
+  it("treats compose's `# text` value of an empty `KEY=   # text` line as empty", () => {
+    const i = install({ env: { TAKARO_REGISTRATION_TOKEN: '# registration token for a GENERIC game server', TAKARO_IDENTITY_TOKEN: '# identity' } });
+    const s = i.make().current();
+    expect(s.registrationToken).toBe('');
+    expect(s.identityToken).toMatch(UUID);
+  });
+});
