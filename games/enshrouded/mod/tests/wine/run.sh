@@ -184,7 +184,7 @@ start_fake accept
 LIVE_ENV=(-e TAKARO_IDENTITY_TOKEN= -e TAKARO_REGISTRATION_TOKEN= -e TAKARO_SERVER_NAME= -e TAKARO_CONFIG_POLL_MS=1000)
 PJ=/opt/enshrouded/server/native-test/takaro/plugin.json
 set_token() { docker exec -u enshrouded "$RT" sed -i "s/\"registrationToken\": \"[^\"]*\"/\"registrationToken\": \"$1\"/" "$PJ"; }
-# shellcheck disable=SC2329  # invoked through check
+# shellcheck disable=SC2317,SC2329  # invoked through check
 wait_for() {  # wait_for <seconds> <grep args...>
   local s=$1; shift
   for _ in $(seq 1 "$s"); do grep -q "$@" && return 0; sleep 1; done; return 1
