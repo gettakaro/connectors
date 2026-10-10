@@ -132,6 +132,7 @@ jobs:
           bash maintenance/tests/test_package_determinism.sh
           bash maintenance/tests/test_publish_release.sh
           bash maintenance/tests/test_cleanup_pr_builds.sh
+          bash maintenance/tests/test_pr_build_scope.sh
           bash maintenance/tests/test_target_lib.sh
           bash maintenance/tests/test_dev_servers_target.sh
           bash maintenance/tests/test_dev_servers_deploy.sh
