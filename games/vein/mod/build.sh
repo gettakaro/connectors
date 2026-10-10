@@ -53,7 +53,12 @@ for f in src/*.cpp; do
   "$CXX" "${CXXFLAGS[@]}" -c "$f" -o "build/$(basename "${f%.cpp}").o"
 done
 echo "  LD  dist/libtakaro-vein.so"
-"$CXX" build/*.o "${LDFLAGS[@]}" -o dist/libtakaro-vein.so
+# main.o last: its constructor starts the init thread, and .init_array runs in link order, so every
+# other file's static objects (Resolve's symbol index, for example) must already be constructed.
+# With main.o in the middle the thread could use an unconstructed map (SIGFPE in Resolve::Init).
+objs=()
+for o in build/*.o; do [ "$o" = build/main.o ] || objs+=("$o"); done
+"$CXX" "${objs[@]}" build/main.o "${LDFLAGS[@]}" -o dist/libtakaro-vein.so
 strip --strip-unneeded dist/libtakaro-vein.so 2>/dev/null || true
 
 # LANE L3e: refuse to produce a .so that LD_PRELOAD cannot load.
@@ -75,7 +80,12 @@ echo "  CXX dist/native-log-probe"
 "$CXX" -std=c++17 -O2 -Wall -Wextra "-I$NATIVE_PREFIX/include" \
   tests/native_log_probe.cpp "$NATIVE_PREFIX/lib/libpcre2-8.a" \
   -static-libstdc++ -static-libgcc -o dist/native-log-probe
-( cd dist && sha256sum libtakaro-vein.so native-log-probe > SHA256SUMS )
+# Panel loader: lets hosts without LD_PRELOAD control (stock AMP) load the connector; see shim/.
+echo "  CC  dist/libsteam.so (panel loader)"
+"${CC:-gcc}" -std=c11 -O2 -fPIC -shared -Wall -Wextra -Wl,-soname,libsteam.so \
+  shim/panel_loader.c -o dist/libsteam.so -ldl
+strip --strip-unneeded dist/libsteam.so 2>/dev/null || true
+( cd dist && sha256sum libtakaro-vein.so libsteam.so native-log-probe > SHA256SUMS )
 echo "built dist/libtakaro-vein.so ($(stat -c %s dist/libtakaro-vein.so) bytes)"
 echo "built dist/native-log-probe ($(stat -c %s dist/native-log-probe) bytes)"
 cat dist/SHA256SUMS
@@ -87,4 +97,5 @@ if [ "$TESTS" = 1 ]; then
   ./tests/run-native-bridge.sh --native
   ./tests/run-native-behavior.sh --native
   ./tests/run-native-full-bridge.sh --native
+  ./tests/run-panel-loader.sh --native
 fi

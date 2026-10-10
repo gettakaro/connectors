@@ -1,0 +1,20 @@
+# Takaro VEIN connector settings.
+# Rename this file to "takaro.cfg", fill in the token, and put it in the same folder as
+# libtakaro-vein.so (normally Vein/Binaries/Linux, next to libsteam.so).
+# One KEY=VALUE per line. Environment variables with the same name take precedence.
+
+# Required: the registration token from the Takaro dashboard.
+TAKARO_REGISTRATION_TOKEN=
+
+# A unique name per game server. Keep it unchanged once the server is registered.
+TAKARO_IDENTITY_TOKEN=vein
+
+# The name of this server in Takaro and in front of Takaro's chat messages.
+TAKARO_SERVER_NAME=My VEIN server
+
+# Optional: SteamID64s that get VEIN's in-game admin rights, comma separated.
+# TAKARO_ADMIN_STEAMIDS=
+
+# Optional: where the connector keeps its state (bans, event queue). Must be writable and
+# kept across restarts and updates. Default: Vein/Binaries/Linux/takaro next to the server.
+# TAKARO_PLUGIN_DATA_DIR=

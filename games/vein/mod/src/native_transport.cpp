@@ -1,4 +1,5 @@
 #include "native_transport.h"
+#include "ca_bundle.h"
 
 #include <libwebsockets.h>
 #include <openssl/x509_vfy.h>
@@ -326,7 +327,14 @@ void ServiceGameHttp(lws_context* local) {
 }
 
 void Run() {
-    const std::string caPath = cfg.caFile.empty() ? "/etc/ssl/certs/ca-certificates.crt" : cfg.caFile;
+    const std::string caPath = CaBundle::Choose(cfg.caFile);
+    if (caPath.empty()) {
+        std::string tried;
+        for (const auto& p : CaBundle::Candidates()) tried += (tried.empty() ? "" : ", ") + p;
+        Notify(NoticeType::Error, 0, 0, "no trusted CA bundle found (tried " + tried +
+                                        "); install the ca-certificates package or set TAKARO_CA_FILE");
+        return;
+    }
     X509_STORE* trust = X509_STORE_new();
     if (!trust || X509_STORE_load_file(trust, caPath.c_str()) != 1) {
         if (trust) X509_STORE_free(trust);

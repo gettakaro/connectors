@@ -11,7 +11,10 @@
 #include "state.h"
 #include "resolve.h"
 #include "native_bridge.h"
+#include "config_file.h"
+#include "instance_guard.h"
 
+#include <dlfcn.h>
 #include <unistd.h>
 
 #include <atomic>
@@ -26,6 +29,7 @@ std::atomic<bool> g_shutdownStarted{false};
 std::mutex g_lifecycle;
 pthread_t g_initThread{};
 bool g_initStarted = false;
+bool g_secondCopy = false;  // another connector copy owns this process; this one stays idle
 
 void ShutdownPlugin() {
     if (g_shutdownStarted.exchange(true)) return;
@@ -49,6 +53,20 @@ void* InitThread(void*) {
     PluginLog("takaro vein plugin %s starting (pid %d, bootId %s)", TAKARO_PLUGIN_VERSION, getpid(),
               BootId().c_str());
     PluginLog("maps: %s", MemMapsSelfSoLine().c_str());
+    const ConfigFile::Loaded& cfg = ConfigFile::Current();
+    if (cfg.found) {
+        ConsoleLine("VEIN connector %s loaded; read %zu setting(s) from %s", TAKARO_PLUGIN_VERSION,
+                    cfg.values.size(), cfg.path.c_str());
+        for (const auto& kv : cfg.values) {
+            const char* env = getenv(kv.first.c_str());
+            if (env && *env) PluginLog("config: %s from the environment overrides %s", kv.first.c_str(), cfg.path.c_str());
+        }
+        for (const auto& w : cfg.warnings)
+            ConsoleLine("WARNING: %s %s", cfg.path.c_str(), w.c_str());
+    } else {
+        ConsoleLine("VEIN connector %s loaded (settings from the environment; no %s)", TAKARO_PLUGIN_VERSION,
+                    cfg.path.c_str());
+    }
 
     try {
         Resolve::Init();
@@ -126,10 +144,40 @@ void* InitThread(void*) {
 
 }  // namespace
 
+// Marks this file as a connector copy that takes the process lock (see InstanceGuard::IsGuardedCopy).
+extern "C" __attribute__((visibility("default"), used)) const char takaro_vein_instance[] =
+    "libtakaro-vein " TAKARO_PLUGIN_VERSION;
+
 __attribute__((constructor)) static void TakaroPluginInit() {
     // Only attach to the dedicated server binary; steamcmd and helper processes must be untouched.
     const std::string& exe = ExePath();
     if (exe.find("VeinServer") == std::string::npos) return;
+    Dl_info self{};
+    std::string selfPath = dladdr(reinterpret_cast<void*>(&TakaroPluginInit), &self) && self.dli_fname
+                               ? self.dli_fname : "";
+    std::string maps, why;
+    ReadFile("/proc/self/maps", maps);
+    if (!InstanceGuard::ClaimProcess(&why)) {
+        if (why.empty()) why = "another copy of the connector already runs in this process";
+    } else {
+        why.clear();  // claimed, or no lock available (fails open)
+        // Copies preloaded together are all mapped before any constructor runs, so a mapped copy only
+        // blocks this one when it is an older release that never takes the lock.
+        for (const auto& other : InstanceGuard::OtherCopies(maps, selfPath))
+            if (!InstanceGuard::IsGuardedCopy(other)) why = "an older connector (" + other + ") is already loaded";
+    }
+    if (!why.empty()) {
+        g_secondCopy = true;
+        // Plain write(): this runs before other files' static initialisers, so no PluginLog here.
+        std::string line = "[Takaro] connector not started twice: " + why + " (" + selfPath +
+                           " stays idle). Use either LD_PRELOAD or the libSDL3.so.0 panel loader, not both.\n";
+        ssize_t ignored = write(STDOUT_FILENO, line.data(), line.size());
+        (void)ignored;
+        return;
+    }
+    // Panel installs load this library with dlopen after the game has started threads, so settings
+    // are read through ConfigFile::Get, never copied into the environment.
+    (void)ConfigFile::Current();
     // Fallback for a process that exits before InitThread reaches its late
     // registration. ShutdownPlugin is idempotent across both registrations.
     std::atexit(ShutdownPlugin);
@@ -137,5 +185,6 @@ __attribute__((constructor)) static void TakaroPluginInit() {
 }
 
 __attribute__((destructor)) static void TakaroPluginShutdown() {
+    if (g_secondCopy) return;
     ShutdownPlugin();
 }

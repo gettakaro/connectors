@@ -133,8 +133,9 @@ class Peer:
 
 
 class Run:
-    def __init__(self, cert, key, gate=False, env_overrides=None):
+    def __init__(self, cert, key, gate=False, env_overrides=None, reject_first=None):
         self.peer = Peer(cert, key)
+        self.reject_first = reject_first
         argv = [str(BINARY), f'wss://localhost:{self.peer.port}/', str(cert)]
         if gate:
             argv.append('gate')
@@ -161,6 +162,12 @@ class Run:
             if i == index and opcode == 1 and json.loads(data)['type'] == 'identify':
                 self.identify_payload = json.loads(data)['payload']
                 assert self.identify_payload['identityToken'] == 'test-identity'
+                if getattr(self, 'reject_first', None):
+                    self.peer.send(index, {'type': 'identifyResponse',
+                                           'payload': {'error': {'message': self.reject_first}}})
+                    self.reject_first = None
+                    index = self.peer.connections.get(timeout=10)
+                    continue
                 self.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
                 return index
 
@@ -214,6 +221,7 @@ class Run:
                 self.proc.kill()
                 self.proc.wait(timeout=3)
         stderr = self.proc.stderr.read()
+        self.stderr = stderr
         self.peer.close()
         assert self.proc.returncode == 0, stderr
         assert not self.peer.errors, self.peer.errors
@@ -297,6 +305,26 @@ def config_semantics(cert, key):
         http.shutdown()
         http.server_close()
         server.join(timeout=2)
+
+
+def console_status(cert, key):
+    # The panel console (stdout in the game, stderr here) names a refused token and the recovery,
+    # once per state change, and never prints the token.
+    secret = 'sekret-registration-value'
+    run = Run(cert, key, env_overrides={'TAKARO_REGISTRATION_TOKEN': secret},
+              reject_first=f'Invalid registration token {secret}')
+    run.close()
+    lines = [l for l in run.stderr.splitlines() if l.startswith('[Takaro] ')]
+    assert secret not in run.stderr, run.stderr
+    assert any(l.startswith('[Takaro] connecting to wss://localhost:') for l in lines), lines
+    refused = [l for l in lines if 'Takaro refused this server' in l]
+    assert len(refused) == 1 and 'Check the registration token' in refused[0], lines
+    assert sum('connected to Takaro as' in l for l in lines) == 1, lines
+    assert not any('no registration token' in l for l in lines), lines
+    run = Run(cert, key, env_overrides={'TAKARO_REGISTRATION_TOKEN': ''})
+    run.close()
+    assert '[Takaro] WARNING: no registration token set' in run.stderr, run.stderr
+    print('bridge console status lines: pass', flush=True)
 
 
 def overload(cert, key, bytes_mode):
@@ -418,6 +446,7 @@ def main():
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         basic(cert, key)
         config_semantics(cert, key)
+        console_status(cert, key)
         overload(cert, key, False)
         overload(cert, key, True)
         completion_limit(cert, key)

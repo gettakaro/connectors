@@ -8,6 +8,9 @@
 #include "resolve.h"
 #include "state.h"
 #include "actions_util.h"
+#include "config_file.h"
+#include "instance_guard.h"
+#include "ca_bundle.h"
 
 #include <sys/stat.h>
 #include <unistd.h>
@@ -1091,6 +1094,104 @@ static void TestItemSearchMatchesDisplayName() {
     CHECK(!MatchesSearch(e, "hammer"), "an unrelated needle does not match");
 }
 
+// takaro.cfg: the panel-friendly fallback for environment variables.
+static void TestConfigFileParse() {
+    auto p = ConfigFile::Parse(
+        "\xEF\xBB\xBF# comment\r\n"
+        "; also a comment\r\n"
+        "\r\n"
+        "TAKARO_REGISTRATION_TOKEN = abc123 \r\n"
+        "export TAKARO_IDENTITY_TOKEN=\"my vein\"\n"
+        "TAKARO_SERVER_NAME='Hendrik''s server'\n"
+        "VEIN_HTTP_API=\n"
+        "LD_PRELOAD=/evil.so\n"
+        "takaro_lowercase=x\n"
+        "no equals sign here\n"
+        "TAKARO_WS_URL=wss://a/?x=1");
+    CHECK(p.entries.size() == 5, "entries %zu", p.entries.size());
+    if (p.entries.size() == 5) {
+        EQ(p.entries[0].first, "TAKARO_REGISTRATION_TOKEN");
+        EQ(p.entries[0].second, "abc123");
+        EQ(p.entries[1].first, "TAKARO_IDENTITY_TOKEN");
+        EQ(p.entries[1].second, "my vein");
+        EQ(p.entries[2].second, "Hendrik''s server");
+        EQ(p.entries[3].first, "VEIN_HTTP_API");
+        EQ(p.entries[3].second, "");
+        EQ(p.entries[4].second, "wss://a/?x=1");  // only the first '=' splits
+    }
+    CHECK(p.warnings.size() == 3, "warnings %zu", p.warnings.size());
+    for (const auto& w : p.warnings) CHECK(w.find("/evil.so") == std::string::npos, "value leaked: %s", w.c_str());
+    CHECK(ConfigFile::Parse("").entries.empty(), "empty file");
+    CHECK(ConfigFile::Parse("TAKARO_X=1").entries.size() == 1, "no trailing newline");
+}
+
+static void TestConfigFileLookup() {
+    char dir[] = "/tmp/takaro-cfg-XXXXXX";
+    CHECK(mkdtemp(dir) != nullptr, "mkdtemp");
+    std::string path = std::string(dir) + "/takaro.cfg";
+    FILE* f = fopen(path.c_str(), "w");
+    fputs("TAKARO_CFGTEST_A=fromfile\nTAKARO_CFGTEST_B=fromfile\nTAKARO_CFGTEST_C=first\n"
+          "TAKARO_CFGTEST_C=second\nTAKARO_CFGTEST_D=fromfile\nTAKARO_CFGTEST_E=\n", f);
+    fclose(f);
+    auto file = ConfigFile::Load(path);
+    CHECK(file.found && file.values.size() == 5, "loaded %zu", file.values.size());
+    setenv("TAKARO_CFGTEST_B", "fromenv", 1);
+    setenv("TAKARO_CFGTEST_D", "", 1);  // an empty variable (AMP renders unset fields so) counts as unset
+    unsetenv("TAKARO_CFGTEST_A");
+    unsetenv("TAKARO_CFGTEST_C");
+    setenv("TAKARO_CFGTEST_F", "", 1);
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_A")), "fromfile");
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_B")), "fromenv");
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_C")), "second");
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_D")), "fromfile");
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_E")), "");
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_F")), "");  // explicit empty env is kept
+    CHECK(ConfigFile::Lookup(file, "TAKARO_CFGTEST_UNSET") == nullptr, "unset stays nullptr");
+    CHECK(getenv("TAKARO_CFGTEST_A") == nullptr, "lookup never writes the environment");
+    auto missing = ConfigFile::Load(std::string(dir) + "/absent.cfg");
+    CHECK(!missing.found && missing.values.empty(), "absent file is not an error");
+    CHECK(ConfigFile::Lookup(missing, "TAKARO_CFGTEST_UNSET") == nullptr, "absent file lookup");
+    setenv("TAKARO_CONFIG_FILE", path.c_str(), 1);
+    EQ(ConfigFile::DefaultPath(), path);
+    unsetenv("TAKARO_CONFIG_FILE");
+    std::string def = ConfigFile::DefaultPath();
+    CHECK(def.size() >= 10 && def.compare(def.size() - 10, 10, "takaro.cfg") == 0, "default %s", def.c_str());
+    unlink(path.c_str());
+    rmdir(dir);
+}
+
+static void TestInstanceGuard() {
+    const std::string self = "/AMP/vein/linux64/libtakaro-vein.so";
+    std::string maps =
+        "7f00-7f01 r-xp 00000000 08:01 12 /usr/lib/x86_64-linux-gnu/libc.so.6\n"
+        "7f02-7f03 r-xp 00000000 08:01 13 /AMP/vein/linux64/libtakaro-vein.so\n";
+    CHECK(!InstanceGuard::OtherCopyMapped(maps, self), "own mapping is not another copy");
+    CHECK(InstanceGuard::OtherCopyMapped(maps + "7f04-7f05 r-xp 0 08:01 14 /opt/takaro/libtakaro-vein.so\n", self),
+          "a preloaded copy elsewhere is another copy");
+    CHECK(!InstanceGuard::OtherCopyMapped(maps + "7f04-7f05 r-xp 0 08:01 15 /opt/x/libtakaro-vein.so.bak\n", self),
+          "only exact file names count");
+    CHECK(!InstanceGuard::OtherCopyMapped("", self), "empty maps");
+    std::string why;
+    CHECK(InstanceGuard::ClaimProcess(&why), "first claim succeeds: %s", why.c_str());
+    why.clear();
+    CHECK(!InstanceGuard::ClaimProcess(&why), "second claim in the same process is refused");
+    CHECK(why.find("already runs") != std::string::npos, "reason: %s", why.c_str());
+}
+
+static void TestCaBundleChoice() {
+    EQ(CaBundle::Choose("/custom/ca.pem", [](const std::string&) { return false; }), "/custom/ca.pem");
+    EQ(CaBundle::Choose("", [](const std::string& p) { return p == "/etc/ssl/certs/ca-certificates.crt"; }),
+       "/etc/ssl/certs/ca-certificates.crt");
+    EQ(CaBundle::Choose("", [](const std::string& p) { return p == "/etc/pki/tls/certs/ca-bundle.crt"; }),
+       "/etc/pki/tls/certs/ca-bundle.crt");
+    EQ(CaBundle::Choose("", [](const std::string& p) { return p == "/etc/ssl/cert.pem"; }), "/etc/ssl/cert.pem");
+    EQ(CaBundle::Choose("", [](const std::string& p) {
+           return p == "/etc/ssl/cert.pem" || p == "/etc/ssl/ca-bundle.pem";
+       }), "/etc/ssl/ca-bundle.pem");  // list order wins
+    EQ(CaBundle::Choose("", [](const std::string&) { return false; }), "");
+    CHECK(CaBundle::Candidates().size() == 5, "candidates %zu", CaBundle::Candidates().size());
+}
+
 int main() {
     TestElfParser();
     TestSignatureMatcher();
@@ -1131,6 +1232,10 @@ int main() {
     TestPlayerInventoryClassGuard();
     TestCharacterIdFormatting();
     TestKillWeaponName();
+    TestConfigFileParse();
+    TestConfigFileLookup();
+    TestInstanceGuard();
+    TestCaBundleChoice();
     printf("%s: %d checks, %d failed\n", g_failed ? "FAILED" : "PASSED", g_ran, g_failed);
     return g_failed ? 1 : 0;
 }

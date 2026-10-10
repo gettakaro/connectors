@@ -1,4 +1,5 @@
 #include "native_bridge.h"
+#include "config_file.h"
 #include "native_transport.h"
 #include "native_behavior.h"
 #include "native_persistence.h"
@@ -96,6 +97,24 @@ std::atomic<bool> pauseCompletions{false};
 #endif
 ActionHandler handler;
 std::string identity, registration, serverName;
+// Panel-console status: one line per state change, never a line per retry.
+bool consoleLive = false;
+std::string consoleProblem;
+void ConsoleProblem(const std::string& text) {
+    if (text == consoleProblem) return;
+    consoleProblem = text;
+    ConsoleLine("%s", text.c_str());
+}
+std::string RedactTokens(std::string detail) {
+    for (const std::string* secret : {&identity, &registration}) {
+        if (secret->empty()) continue;
+        for (size_t at = 0; (at = detail.find(*secret, at)) != std::string::npos;) {
+            detail.replace(at, secret->size(), "[redacted]"); at += sizeof("[redacted]") - 1;
+        }
+    }
+    if (detail.size() > 300) detail.resize(300);
+    return detail;
+}
 // Takaro can request a location while ingesting a join or leave. VEIN may not
 // have a possessed pawn yet (or anymore), so match the sidecar's 60 s fallback.
 std::mutex eventLocationMu;
@@ -298,11 +317,21 @@ void HandleFrame(const NativeTransport::Notice& n) {
         Json p = Record(f.value("payload", Json::object()));
         if (p.contains("error") && !p["error"].is_null()) {
             lastError = "Takaro rejected identity";
+            const Json& e = p["error"];
+            std::string why = e.is_string() ? e.get<std::string>()
+                            : e.is_object() ? Str(e, "message", Str(e, "name", e.dump())) : e.dump();
+            ConsoleProblem("ERROR: Takaro refused this server (" + RedactTokens(why) +
+                           "). Check the registration token, then restart the server.");
             NativeTransport::RequestClose(n.epoch, 1013, "identity rejected");
             return;
         }
         identified = true;
         PluginLog("native: identified with Takaro (epoch %llu)", (unsigned long long)n.epoch);
+        if (!consoleLive) {
+            consoleLive = true; consoleProblem.clear();
+            ConsoleLine("connected to Takaro as \"%s\"; the server now shows as reachable in the dashboard",
+                        serverName.c_str());
+        }
     } else if (type == "error") {
         ++protocolErrorCount;
         const Json p = Record(f.value("payload", Json::object()));
@@ -316,6 +345,8 @@ void HandleFrame(const NativeTransport::Notice& n) {
         }
         if (detail.size() > 512) detail.resize(512);
         lastError = "Takaro protocol error: " + detail;
+        if (!identified) ConsoleProblem("ERROR: Takaro: " + RedactTokens(detail) +
+                                        ". Check the registration token, then restart the server.");
     } else if (type == "ping") {
         if (!NativeTransport::Queue(NativeTransport::Kind::Control, R"({"type":"pong"})", 0, n.epoch))
             NativeTransport::RequestClose(n.epoch, 1013, "control queue full");
@@ -784,6 +815,7 @@ void BridgeLoop() {
                 PluginLog("native: Takaro connection closed (epoch %llu%s%s)", (unsigned long long)n.epoch,
                           lastError.empty() ? "" : ", last error: ", lastError.c_str());
                 identified = false; liveEpoch = false;
+                if (consoleLive && !stopping) { consoleLive = false; ConsoleLine("lost the connection to Takaro; reconnecting"); }
                 if (gateMode) for (auto& e : outbox) e.sentEpoch = 0;
                 else sentEpochByOutboxId.clear();
             } else if (n.type == NativeTransport::NoticeType::Frame && n.epoch == currentEpoch && liveEpoch) {
@@ -812,6 +844,7 @@ void BridgeLoop() {
                 lastError = n.text;
                 PluginLog("native: Takaro transport error (epoch %llu): %s", (unsigned long long)n.epoch,
                           lastError.c_str());
+                if (!consoleLive) ConsoleProblem("cannot reach Takaro (" + RedactTokens(n.text) + "); retrying");
             }
         }
         flushConfirm();
@@ -1142,9 +1175,9 @@ void ActionLoop() {
 
 void SetActionHandler(ActionHandler h) { if (!running) handler = std::move(h); }
 bool Start() {
-    const char* disable = getenv("TAKARO_NATIVE_DISABLE");
+    const char* disable = ConfigFile::Get("TAKARO_NATIVE_DISABLE");
     if (disable && strcmp(disable, "1") == 0) return false;
-    const char* gate = getenv("TAKARO_NATIVE_GATE");
+    const char* gate = ConfigFile::Get("TAKARO_NATIVE_GATE");
     const bool experimentalGate = gate && strcmp(gate, "1") == 0;
     if (running.exchange(true)) return false;
     gateMode = experimentalGate;
@@ -1196,18 +1229,22 @@ bool Start() {
             rawLogBytes += line.size(); rawLogLines.push_back(std::move(line)); cv.notify_one();
         }, behavior->CustomLogJoin(), behavior->CustomLogChat());
     }
-    const char* id = getenv("TAKARO_IDENTITY_TOKEN"); identity = id && *id ? id : "vein";
-    const char* reg = getenv("TAKARO_REGISTRATION_TOKEN"); registration = reg ? reg : "";
+    const char* id = ConfigFile::Get("TAKARO_IDENTITY_TOKEN"); identity = id && *id ? id : "vein";
+    const char* reg = ConfigFile::Get("TAKARO_REGISTRATION_TOKEN"); registration = reg ? reg : "";
     while (!registration.empty() && std::isspace(static_cast<unsigned char>(registration.front())))
         registration.erase(registration.begin());
     while (!registration.empty() && std::isspace(static_cast<unsigned char>(registration.back())))
         registration.pop_back();
-    const char* name = getenv("TAKARO_SERVER_NAME"); serverName = name && *name ? name : "Takaro Dev Vein";
+    const char* name = ConfigFile::Get("TAKARO_SERVER_NAME"); serverName = name && *name ? name : "Takaro Dev Vein";
+    consoleLive = false; consoleProblem.clear();
+    if (registration.empty())
+        ConsoleLine("WARNING: no registration token set (TAKARO_REGISTRATION_TOKEN). Copy it from the Takaro "
+                    "dashboard; a new server cannot register without it.");
     NativeTransport::Config c;
-    const char* url = getenv("TAKARO_WS_URL"); c.url = url && *url ? url : "wss://connect.takaro.io/";
-    const char* ca = getenv("TAKARO_CA_FILE"); c.caFile = ca ? ca : "";
+    const char* url = ConfigFile::Get("TAKARO_WS_URL"); c.url = url && *url ? url : "wss://connect.takaro.io/";
+    const char* ca = ConfigFile::Get("TAKARO_CA_FILE"); c.caFile = ca ? ca : "";
     // An explicitly empty VEIN_HTTP_API retains the legacy disable switch.
-    const char* gameApi = getenv("VEIN_HTTP_API");
+    const char* gameApi = ConfigFile::Get("VEIN_HTTP_API");
     c.gameHttpUrl = gameApi ? gameApi : "http://127.0.0.1:8080";
     while (!c.gameHttpUrl.empty() && std::isspace(static_cast<unsigned char>(c.gameHttpUrl.front())))
         c.gameHttpUrl.erase(c.gameHttpUrl.begin());
@@ -1215,7 +1252,7 @@ bool Start() {
         c.gameHttpUrl.pop_back();
     while (!c.gameHttpUrl.empty() && c.gameHttpUrl.back() == '/') c.gameHttpUrl.pop_back();
     auto backoff = [](const char* key, unsigned fallback) {
-        const char* value = getenv(key);
+        const char* value = ConfigFile::Get(key);
         if (!value || !*value) return fallback;
         char* end = nullptr;
         unsigned long parsed = std::strtoul(value, &end, 10);
@@ -1225,6 +1262,7 @@ bool Start() {
     c.reconnectBaseMs = backoff("TAKARO_RECONNECT_BASE_MS", 2000);
     c.reconnectMaxMs = backoff("TAKARO_RECONNECT_MAX_MS", 60000);
     if (c.reconnectMaxMs < c.reconnectBaseMs) c.reconnectMaxMs = c.reconnectBaseMs;
+    ConsoleLine("connecting to %s as \"%s\"", c.url.c_str(), serverName.c_str());
     auto sink = [](NativeTransport::Notice n) -> bool {
         std::lock_guard<std::mutex> g(mu);
         if (n.type == NativeTransport::NoticeType::Written && !n.pingAfterWrite) {
