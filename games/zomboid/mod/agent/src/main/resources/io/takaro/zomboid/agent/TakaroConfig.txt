@@ -1,0 +1,17 @@
+# Takaro connection settings for the Project Zomboid connector.
+#
+# Paste the registration token Takaro shows when you add a Generic game server
+# after registrationToken= and save. This works before or after the server
+# starts: the connector picks the change up within a few seconds, no restart.
+#
+# Leave identityToken empty; the connector fills it in. It identifies this
+# server in Takaro, so keep it if you move or reinstall the server.
+#
+# Environment variables (TAKARO_REGISTRATION_TOKEN, TAKARO_IDENTITY_TOKEN,
+# TAKARO_WS_URL, TAKARO_DEBUG, TAKARO_LOG_EVENTS) win over this file.
+
+wsUrl=wss://connect.takaro.io/
+registrationToken=
+identityToken=
+debug=false
+logEvents=false

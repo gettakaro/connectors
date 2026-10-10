@@ -113,6 +113,7 @@ class TakaroConnectorTest {
         TestAdapter adapter = new TestAdapter();
         TakaroConfig config = new TakaroConfig();
         config.setWsUrl("not a valid url %%");
+        config.setRegistrationToken("reg");
 
         TakaroConnector connector = new TakaroConnector(adapter, config);
         connector.connect();
@@ -121,6 +122,57 @@ class TakaroConnectorTest {
         assertTrue(adapter.infos.get(0).contains("Connecting to Takaro"));
         assertEquals(1, adapter.warnings.size());
         assertTrue(adapter.warnings.get(0).contains("Failed to create WebSocket connection"));
+    }
+
+    @Test
+    void missingRegistrationTokenLogsTheBannerAndDoesNotConnect() {
+        TestAdapter adapter = new TestAdapter();
+        TakaroConfig config = new TakaroConfig();
+        config.setWsUrl("ws://127.0.0.1:1/");
+        config.setConfigFileHint("/srv/Zomboid/Takaro/TakaroConfig.txt");
+
+        new TakaroConnector(adapter, config).connect();
+
+        assertTrue(adapter.infos.stream().noneMatch(i -> i.contains("Connecting to Takaro")));
+        String banner = String.join("\n", adapter.warnings);
+        assertTrue(banner.contains("registrationToken not set, the server is not connected to Takaro."));
+        assertTrue(banner.contains("/srv/Zomboid/Takaro/TakaroConfig.txt"));
+        assertTrue(banner.contains("no restart needed"));
+        assertTrue(adapter.warnings.get(0).startsWith("*****"));
+    }
+
+    @Test
+    void configChangeBeforeTheFirstTickOnlyUpdatesTheSettings() {
+        TestAdapter adapter = new TestAdapter();
+        TakaroConfig config = new TakaroConfig();
+        TakaroConnector connector = new TakaroConnector(adapter, config);
+        TakaroConfig updated = new TakaroConfig();
+        updated.setWsUrl("ws://127.0.0.1:1/");
+        updated.setRegistrationToken("reg");
+
+        connector.applyConfig(updated);
+
+        assertEquals("reg", config.getRegistrationToken());
+        assertTrue(adapter.infos.isEmpty(), "nothing connects before connect()");
+    }
+
+    @Test
+    void configChangeAfterShutdownDoesNothing() {
+        TestAdapter adapter = new TestAdapter();
+        TakaroConfig config = new TakaroConfig();
+        config.setWsUrl("ws://127.0.0.1:1/");
+        TakaroConnector connector = new TakaroConnector(adapter, config);
+        connector.connect();
+        connector.shutdown();
+        adapter.infos.clear();
+        TakaroConfig updated = new TakaroConfig();
+        updated.setWsUrl("ws://127.0.0.1:1/");
+        updated.setRegistrationToken("reg");
+
+        connector.applyConfig(updated);
+        connector.connect();
+
+        assertTrue(adapter.infos.isEmpty());
     }
 
     @Test

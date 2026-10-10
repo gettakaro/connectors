@@ -47,6 +47,10 @@ STUB_RELATIVE = ".takaro/steamcmd-stub"
 
 AGENT_PATH_IN_CONTAINER = f"{INSTALL_DIR_IN_CONTAINER}/{AGENT_DIR}/{STABLE_JAR}"
 
+# The server owners' download: the same jar as TakaroConnector.jar plus the config file,
+# both under Takaro/. A deploy parks it; the server loads the agent role's jar.
+BUNDLE_ROLE = "bundle"
+
 # The one line the runtime guard writes. AgentLog stamps every line "<ts> [Takaro] <message>",
 # so this is the prefix as it appears in the server log rather than the bare message.
 TARGET_CHECK_PREFIX = "[Takaro] target-check:"
@@ -99,6 +103,9 @@ class ZomboidAdapter(BaseAdapter):
             f"{prefix}_REFERENCES_DIR": f"{REFERENCES_ROOT}/{resolved['fp16']}",
             f"{prefix}_AGENT_PATH": AGENT_PATH_IN_CONTAINER,
         }
+        bundle = resolved["artifactFileNames"].get(BUNDLE_ROLE)
+        if bundle:
+            env[f"{prefix}_ARTIFACT_BUNDLE"] = str(bundle)
         game_jar = server["files"].get(GAME_JAR, {}).get("sha256")
         if game_jar:
             env[f"{prefix}_GAME_JAR_SHA256"] = str(game_jar)
@@ -273,8 +280,19 @@ class ZomboidAdapter(BaseAdapter):
 
     # -- deploy ---------------------------------------------------------------
     def after_deploy(self, dest: Path, component: dict[str, Any], artifact: Path) -> None:
-        """One stable name beside the versioned jar, and no older jar left behind."""
+        """One stable name beside the versioned jar, and no older jar left behind.
+
+        The bundle stays packed where it landed: it holds the same jar the agent role
+        deploys, and unpacking its config file would put a second TakaroConfig.txt beside
+        the server's real one.
+        """
         install_dir = dest / paths.safe_relative(component["installDir"], field="components[].installDir")
+        if component["role"] == BUNDLE_ROLE:
+            for stale in sorted(install_dir.glob("takaro-zomboid-*.zip")):
+                if stale.name != artifact.name:
+                    stale.unlink()
+            output.info(f"parked {artifact.name} in {component['installDir']}/ (the server loads the agent jar)")
+            return
         stable = install_dir / STABLE_JAR
         staged = install_dir / (STABLE_JAR + ".tmp")
         staged.write_bytes(artifact.read_bytes())

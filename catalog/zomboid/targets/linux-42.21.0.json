@@ -119,6 +119,11 @@
       "role": "agent",
       "artifact": "takaro-zomboid-agent-linux-42.21.0-{version}.jar",
       "installDir": "Takaro"
+    },
+    {
+      "role": "bundle",
+      "artifact": "takaro-zomboid-linux-42.21.0-{version}.zip",
+      "installDir": "takaro-bundle"
     }
   ],
   "verification": {
@@ -134,7 +139,8 @@
   },
   "preserve": [
     "Takaro/",
-    ".takaro/"
+    ".takaro/",
+    "takaro-bundle/"
   ],
   "devServers": {
     "gameId": "zomboid"

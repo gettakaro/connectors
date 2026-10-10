@@ -41,15 +41,17 @@ public final class TakaroAgent {
             AgentLog.log("premain: instrumentation retransform=" + inst.isRetransformClassesSupported()
                     + " redefine=" + inst.isRedefineClassesSupported());
 
-            // --- load config (file + env overrides; env wins) ---
+            // --- load config (file + env overrides; env wins). Read-only here: premain
+            // also runs in the launcher JVMs, so writing waits for the first tick. ---
             ConfigLoader loader = new ConfigLoader();
             TakaroConfig config = loader.load();
             AgentLog.log("premain: wsUrl=" + config.getWsUrl()
-                    + " identity=" + (config.getIdentityToken() != null ? "set" : "MISSING")
-                    + " registration=" + (config.getRegistrationToken() != null ? "set" : "MISSING")
+                    + " identity=" + (TakaroConfig.isSet(config.getIdentityToken()) ? "set" : "not set yet")
+                    + " registration=" + (TakaroConfig.isSet(config.getRegistrationToken()) ? "set" : "MISSING")
                     + " debug=" + config.isDebugEnabled()
                     + " logEvents=" + loader.isLogEvents()
-                    + " debugCatalog=" + loader.isDebugCatalog());
+                    + " debugCatalog=" + loader.isDebugCatalog()
+                    + " config=" + loader.configFile());
 
             LocalAccounts.setScope(config.getIdentityToken());
 
@@ -62,8 +64,19 @@ public final class TakaroAgent {
                     config.isDebugEnabled());
             TakaroConnector connector = new TakaroConnector(adapter, config);
 
-            // Connector is started from the first tick (right JVM + main thread).
-            Runnable starter = connector::connect;
+            // Connector is started from the first tick (right JVM + main thread). Only
+            // then does the loader write the template, an identity and the saved copy,
+            // and start watching the config file for a new token.
+            Runnable starter = () -> {
+                ConfigFiles.Resolved ready = loader.prepareForStart();
+                config.copyFrom(ready.config);
+                LocalAccounts.setScope(config.getIdentityToken());
+                connector.connect();
+                loader.startWatching(changed -> {
+                    LocalAccounts.setScope(changed.config.getIdentityToken());
+                    connector.applyConfig(changed.config);
+                });
+            };
             Bridge.configure(queue, reconciler, registry, starter,
                     loader.isLogEvents(), loader.isDebugCatalog());
 
@@ -78,6 +91,7 @@ public final class TakaroAgent {
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 try {
+                    loader.stopWatching();
                     connector.shutdown();
                 } catch (Throwable ignored) {
                     // best effort on JVM shutdown

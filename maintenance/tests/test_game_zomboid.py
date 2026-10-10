@@ -36,6 +36,7 @@ GAME_JAR = "java/projectzomboid.jar"
 # The release builds only non-retired targets; the legacy TakaroConnector alias points here.
 RELEASE_TARGET = "linux-42.21.0"
 RELEASE_JAR = f"takaro-zomboid-agent-{RELEASE_TARGET}-{VERSION}.jar"
+RELEASE_BUNDLE = f"takaro-zomboid-{RELEASE_TARGET}-{VERSION}.zip"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).parent / "fixtures" / "games" / GAME
@@ -783,6 +784,12 @@ def test_compat_record_carries_the_steam_pin_and_the_legacy_alias(run: Any, repo
     jar = make_jar(directory / RELEASE_JAR, target=RELEASE_TARGET, fingerprint=resolved["fingerprint"])
     row = artifact_row("agent", RELEASE_TARGET, resolved["fingerprint"], jar)
     write_meta(directory, row, connector=GAME, version=VERSION, revision=commit)
+    bundle = directory / RELEASE_BUNDLE
+    with zipfile.ZipFile(bundle, "w") as archive:
+        archive.writestr("Takaro/TakaroConnector.jar", jar.read_bytes())
+        archive.writestr("Takaro/TakaroConfig.txt", "registrationToken=\nidentityToken=\n")
+    bundle_row = artifact_row("bundle", RELEASE_TARGET, resolved["fingerprint"], bundle)
+    write_meta(directory, bundle_row, connector=GAME, version=VERSION, revision=commit)
     write_manifest(
         directory,
         connector=GAME,
@@ -791,7 +798,7 @@ def test_compat_record_carries_the_steam_pin_and_the_legacy_alias(run: Any, repo
         dirty=False,
         toolchain=resolved["build"]["toolchain"],
         mode="container",
-        artifacts=[row],
+        artifacts=[row, bundle_row],
     )
     out = tmp_path / "assembled"
 
@@ -823,6 +830,7 @@ def test_compat_record_carries_the_steam_pin_and_the_legacy_alias(run: Any, repo
     assert url.startswith("steam://app/380870/branch/public/")
     assert re.search(r"manifest/[0-9]+", url)
     assert (out / RELEASE_JAR).is_file()
+    assert (out / RELEASE_BUNDLE).is_file()
     assert (out / f"TakaroConnector-{VERSION}.jar").read_bytes() == (out / RELEASE_JAR).read_bytes()
     assert (out / "SHA256SUMS").is_file()
 

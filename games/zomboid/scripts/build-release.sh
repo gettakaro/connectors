@@ -56,6 +56,48 @@ BUILT="./mod/agent/build/libs/${ARTIFACT}"
 cp "${BUILT}" "${OUT_DIR}/${ARTIFACT}"
 
 # A jar carries its identity in its own manifest and META-INF/takaro-target.json, so no
-# .meta.json is written here; `takaro-maint build` writes one from the manifest row.
+# .meta.json is written for it; `takaro-maint build` writes one from the manifest row.
 echo "  -> ${OUT_DIR}/${ARTIFACT}"
 sha256sum "${OUT_DIR}/${ARTIFACT}"
+
+# The download for server owners: Takaro/TakaroConnector.jar and Takaro/TakaroConfig.txt,
+# unpacked into the Zomboid data folder, so there is nothing to rename and no config file
+# to write by hand. The config is the template the agent writes when the file is missing.
+if [ -n "${ZOMBOID_ARTIFACT_BUNDLE:-}" ]; then
+    BUNDLE="${ZOMBOID_ARTIFACT_BUNDLE/\{version\}/${VERSION}}"
+    TEMPLATE="${PROJECT_ROOT}/mod/agent/src/main/resources/io/takaro/zomboid/agent/TakaroConfig.txt"
+    # Python's zipfile rather than zip(1), which neither the host nor the JDK image has;
+    # one timestamp, one mode and a fixed order keep two builds of a commit byte-identical.
+    python3 -I - "${OUT_DIR}/${ARTIFACT}" "${TEMPLATE}" "${OUT_DIR}/${BUNDLE}" "${SOURCE_DATE_EPOCH}" <<'PY'
+import os
+import sys
+import time
+import zipfile
+
+jar, template, out, epoch = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
+stamp = time.gmtime(max(epoch, 315532800))[:6]
+with zipfile.ZipFile(out + ".tmp", "w") as archive:
+    for name, source in (("Takaro/TakaroConfig.txt", template), ("Takaro/TakaroConnector.jar", jar)):
+        info = zipfile.ZipInfo(name, date_time=stamp)
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.create_system = 3
+        info.external_attr = 0o100644 << 16
+        with open(source, "rb") as handle:
+            archive.writestr(info, handle.read())
+os.replace(out + ".tmp", out)
+PY
+    # A zip has no manifest to stamp; `takaro-maint artifact validate` reads this file.
+    cat > "${OUT_DIR}/${BUNDLE}.meta.json" <<JSON
+{
+  "target": "${ZOMBOID_TARGET}",
+  "fingerprint": "${ZOMBOID_FINGERPRINT}",
+  "connectorVersion": "${VERSION}",
+  "sourceRevision": "${SOURCE_REVISION}",
+  "game": "zomboid",
+  "platform": "linux",
+  "revision": "${ZOMBOID_REVISION}"
+}
+JSON
+    echo "  -> ${OUT_DIR}/${BUNDLE}"
+    sha256sum "${OUT_DIR}/${BUNDLE}"
+fi
