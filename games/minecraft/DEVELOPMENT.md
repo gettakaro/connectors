@@ -182,6 +182,7 @@ Environment variables override file-based config when set:
 | `TAKARO_IDENTITY_TOKEN` | Unique identity token for this server |
 | `TAKARO_REGISTRATION_TOKEN` | Registration token from the Takaro dashboard |
 | `TAKARO_DEBUG` | Enable debug logging (`true` or `1`) — shows raw WebSocket messages |
+| `TAKARO_TARGET_POLICY` | `enforce` (default), `warn` or `off` — the build-target check |
 
 In Docker Compose, these are passed to containers automatically from your `.env` file. Each
 container gets a hardcoded `TAKARO_IDENTITY_TOKEN` (e.g. `takaro-paper-dev`).
@@ -189,9 +190,42 @@ container gets a hardcoded `TAKARO_IDENTITY_TOKEN` (e.g. `takaro-paper-dev`).
 ### Config files
 
 Each platform has its own config format and location. In the Docker Compose rig these live under
-`_data/<platform>/`; on a real server they are relative to the server directory (see the README).
+`_data/minecraft/<platform>/`; on a real server they are relative to the server directory (see the README).
 
-**Paper** (`dev-servers/_data/minecraft-paper/plugins/TakaroMinecraft/config.yml`):
+How the file is handled (`core/.../config/ConfigFile.java`, one `ConfigFormat` per platform:
+`JsonConfigFormat` for Fabric, `PropertiesConfigFormat` for NeoForge, `PaperYamlConfigFormat` in
+the Paper module):
+
+- The release is the jar only. The connector writes a complete default file on the first start
+  (Paper copies the commented `config.yml` from the jar). Shipping the file in a zip would put it
+  where an upgrade unzips over it; the file lives outside the jar, so replacing the jar keeps it.
+- The file is re-read every 5 s and its **text** is compared; a changed text is read again 300 ms
+  later and only used when both reads agree (a token still being written is skipped). A change to
+  the URL, a token, `reconnect.enabled` or the target policy drops the socket and connects at once
+  (no backoff); other changes are taken over without reconnecting. A file that does not parse, or
+  lacks the `registration_token` key (a half-saved file), keeps the current settings and is
+  retried on the next change.
+- Each connection is its own `TakaroWebSocketClient` with its own reconnect timer and its own copy
+  of the settings, so new tokens never reach a socket that is still identifying with the old ones.
+  A config change shuts the old client down (its timer, close callback and late answers are
+  ignored) before the new one starts, under the connector's lock that `shutdown()` also takes.
+  Closing waits at most 2 s; `closeBlocking()` hangs on a client between reconnect attempts.
+- No `registration_token` (or no identity): no connection, a banner names the file. Identify
+  rejected, or a close with 1008/4001/4003: a banner names the file; saving a corrected token
+  reconnects. HTTP 409 (Takaro names a new server after its identity, and names are unique per
+  domain) gets its own banner. Only the error's name, message and HTTP status are logged, never
+  the error object (it can carry Takaro's internal request headers), and debug logging leaves out
+  identify answers for the same reason.
+- An empty `url` means `wss://connect.takaro.io/` (files from 0.3 and earlier have `url` empty).
+- Identity: when neither the file nor `TAKARO_IDENTITY_TOKEN` has one, a UUID is generated and
+  written into the file (by a text edit, so comments survive; the file is replaced in one move,
+  and not at all when it changed since it was read). An identity removed from the file during the
+  run is put back rather than replaced. An existing identity is never replaced; Takaro rejects an empty identity (`No identityToken provided`), so no install that
+  ever connected runs without one.
+- Environment variables still win over the file, as before; with `TAKARO_IDENTITY_TOKEN` set the
+  file's identity is left untouched.
+
+**Paper** (`dev-servers/_data/minecraft/paper/plugins/TakaroMinecraft/config.yml`):
 
 ```yaml
 takaro:
@@ -208,7 +242,7 @@ takaro:
   debug: false
 ```
 
-**NeoForge** (`dev-servers/_data/minecraft-neoforge/config/takaro.properties`):
+**NeoForge** (`dev-servers/_data/minecraft/neoforge/config/takaro.properties`):
 
 ```properties
 takaro.websocket.url=wss://connect.takaro.io/
@@ -217,7 +251,7 @@ takaro.authentication.registration_token=your-registration-token
 takaro.debug=false
 ```
 
-**Fabric** (`dev-servers/_data/minecraft-fabric/config/takaro.json`):
+**Fabric** (`dev-servers/_data/minecraft/fabric/config/takaro.json`):
 
 ```json
 {

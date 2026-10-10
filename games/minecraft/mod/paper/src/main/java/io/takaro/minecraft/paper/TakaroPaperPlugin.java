@@ -2,7 +2,7 @@ package io.takaro.minecraft.paper;
 
 import io.takaro.minecraft.core.EventEmitter;
 import io.takaro.minecraft.core.GameAdapter;
-import io.takaro.minecraft.core.TakaroConfig;
+import io.takaro.minecraft.core.config.ConfigFile;
 import io.takaro.minecraft.core.TakaroConnector;
 import io.takaro.minecraft.core.model.*;
 import io.takaro.minecraft.core.target.RuntimeIdentity;
@@ -23,34 +23,22 @@ import java.util.stream.Collectors;
 public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
 
     private TakaroConnector connector;
-    private EventEmitter eventEmitter;
+    private volatile EventEmitter eventEmitter;
     private final ConcurrentHashMap<String, PlayerLocation> lastKnownLocations = new ConcurrentHashMap<>();
 
     @Override
     public void onEnable() {
+        // Writes the commented config.yml from the jar when there is none yet.
         saveDefaultConfig();
 
-        TakaroConfig config = new TakaroConfig();
-        config.setWsUrl(getConfig().getString("takaro.websocket.url", ""));
-        config.setIdentityToken(getConfig().getString("takaro.authentication.identity_token", ""));
-        config.setRegistrationToken(getConfig().getString("takaro.authentication.registration_token", ""));
-        config.setReconnectEnabled(getConfig().getBoolean("takaro.reconnect.enabled", true));
-        config.setReconnectDelay(getConfig().getLong("takaro.reconnect.delay", 5000));
-        config.setMaxReconnectDelay(getConfig().getLong("takaro.reconnect.max_delay", 300000));
-        config.setBackoffMultiplier(getConfig().getDouble("takaro.reconnect.backoff_multiplier", 1.5));
-        config.setDebugEnabled(getConfig().getBoolean("takaro.debug", false));
-        config.applyEnvOverrides();
-
-        if (config.getWsUrl() == null || config.getWsUrl().isEmpty()) {
-            getLogger().warning("No WebSocket URL configured, skipping Takaro connection");
-            return;
-        }
-
-        connector = new TakaroConnector(this, config);
-        connector.connect();
-
-        // Register event listeners
+        // Listeners first: a token pasted later connects without a restart, and the
+        // listeners skip events while there is no connection.
         getServer().getPluginManager().registerEvents(new TakaroPaperEventListener(this), this);
+
+        ConfigFile configFile = new ConfigFile(
+                getDataFolder().toPath().resolve("config.yml"), new PaperYamlConfigFormat(), this);
+        connector = new TakaroConnector(this, configFile);
+        connector.start();
     }
 
     @Override
