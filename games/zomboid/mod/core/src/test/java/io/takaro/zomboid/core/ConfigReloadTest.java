@@ -61,7 +61,7 @@ class ConfigReloadTest {
         connector = new TakaroConnector(new LogAdapter(logs), shared);
         connector.connect();
 
-        waitFor(() -> logs.stream().anyMatch(l -> l.contains("Takaro rejected identify: Invalid registrationToken provided.")));
+        waitFor(() -> logs.stream().anyMatch(l -> l.contains("Takaro rejected identify: Invalid registrationToken provided (BadRequestError, http 400).")));
         assertTrue(logs.stream().anyMatch(l -> l.contains("Check registrationToken in /x/TakaroConfig.txt")));
         waitFor(() -> logs.stream().anyMatch(l -> l.contains("Reconnecting in 60s")));
 
@@ -70,6 +70,18 @@ class ConfigReloadTest {
         waitFor(() -> logs.stream().anyMatch(l -> l.contains("Identified successfully")));
         assertTrue(logs.stream().anyMatch(l -> l.contains("Config changed; reconnecting")));
         assertEquals(List.of("bad-token", "good-token"), takaro.tokensSeen);
+    }
+
+    @Test
+    void conflictGetsItsOwnBannerAndTheRawErrorIsNeverLogged() throws Exception {
+        TakaroConfig c = config("conflict-token");
+        c.setDebugEnabled(true);
+        connector = new TakaroConnector(new LogAdapter(logs), c);
+        connector.connect();
+
+        waitFor(() -> logs.stream().anyMatch(l -> l.contains("Conflict (ConflictError, http 409)")));
+        assertTrue(logs.stream().anyMatch(l -> l.contains("Put a new value after identityToken=")));
+        assertTrue(logs.stream().noneMatch(l -> l.contains("SECRET-JWT")), "the raw error must not be logged");
     }
 
     @Test
@@ -145,7 +157,10 @@ class ConfigReloadTest {
             }
             String token = json.getAsJsonObject("payload").get("registrationToken").getAsString();
             tokensSeen.add(token);
-            if (goodToken.equals(token)) {
+            if ("conflict-token".equals(token)) {
+                conn.send("{\"type\":\"identifyResponse\",\"payload\":{\"error\":{\"name\":\"ConflictError\","
+                        + "\"message\":\"Conflict\",\"http\":409,\"request\":{\"headers\":{\"x-takaro-token\":\"SECRET-JWT\"}}}}}");
+            } else if (goodToken.equals(token)) {
                 conn.send("{\"type\":\"identifyResponse\",\"payload\":{\"server\":{\"id\":\"gs-1\"}}}");
             } else {
                 // What connect.takaro.io answers, and it keeps the socket open afterwards.
@@ -160,6 +175,7 @@ class ConfigReloadTest {
         LogAdapter(List<String> logs) { this.logs = logs; }
         @Override public void logInfo(String msg) { logs.add(msg); }
         @Override public void logWarning(String msg) { logs.add(msg); }
+        @Override public void logDebug(String msg) { logs.add(msg); }
         @Override public void runOnMainThread(Runnable task) { task.run(); }
         @Override public PlayerInfo getPlayer(String gameId) { return null; }
         @Override public List<PlayerInfo> getPlayers() { return Collections.emptyList(); }

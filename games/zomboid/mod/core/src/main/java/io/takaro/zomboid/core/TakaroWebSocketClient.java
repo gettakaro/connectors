@@ -59,7 +59,10 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             return;
         }
         if (config.isDebugEnabled()) {
-            adapter.logDebug("WS RECV: " + message);
+            // An identify error can carry Takaro's internal request, auth token included.
+            adapter.logDebug(message.contains("\"identifyResponse\"")
+                    ? "WS RECV identifyResponse (not logged raw)"
+                    : "WS RECV: " + message);
         }
         try {
             JsonObject json = JsonParser.parseString(message).getAsJsonObject();
@@ -245,17 +248,35 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
         if (payload.has("error") && !payload.get("error").isJsonNull()) {
             JsonElement errorElement = payload.get("error");
-            String errorMessage;
+            // Only name, message and status: the raw error object can embed Takaro's
+            // internal request with its auth token.
+            String errorMessage = "unknown error";
+            String errorName = null;
+            int status = 0;
             if (errorElement.isJsonObject()) {
                 JsonObject errorObj = errorElement.getAsJsonObject();
-                errorMessage = optString(errorObj, "message", errorObj.toString());
-            } else {
+                errorMessage = optString(errorObj, "message", errorMessage);
+                errorName = optString(errorObj, "name", null);
+                status = optInt(errorObj, "http", 0);
+            } else if (errorElement.isJsonPrimitive()) {
                 errorMessage = errorElement.getAsString();
             }
-            TakaroConnector.logBanner(adapter,
-                    "Takaro rejected identify: " + errorMessage + ".",
-                    "Check registrationToken in " + config.getConfigFileHint() + ". Saving a corrected",
-                    "token reconnects within a few seconds; until then the connector retries with backoff.");
+            String summary = errorMessage + (errorName != null || status != 0
+                    ? " (" + (errorName != null ? errorName : "") + (errorName != null && status != 0 ? ", " : "")
+                    + (status != 0 ? "http " + status : "") + ")"
+                    : "");
+            if (status == 409) {
+                TakaroConnector.logBanner(adapter,
+                        "Takaro rejected identify: " + summary + ".",
+                        "Another game server already uses this identity or name, or one with it was",
+                        "removed recently. Put a new value after identityToken= in",
+                        config.getConfigFileHint() + " and save it; the connector reconnects within a few seconds.");
+            } else {
+                TakaroConnector.logBanner(adapter,
+                        "Takaro rejected identify: " + summary + ".",
+                        "Check registrationToken in " + config.getConfigFileHint() + ". Saving a corrected",
+                        "token reconnects within a few seconds; until then the connector retries with backoff.");
+            }
             // Takaro keeps an unidentified socket open; close it so the backoff retries.
             close();
             return;
