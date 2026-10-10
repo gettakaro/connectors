@@ -163,6 +163,39 @@ namespace Oxide.Plugins
                 : file.Debug ?? false;
             return settings;
         }
+        // Takaro's identify errors can carry its own internal request, x-takaro-token JWT and
+        // all: only name, message and HTTP status are logged, and anything shaped like a JWT
+        // is cut out of them.
+        internal static string IdentifyErrorText(JToken error)
+        {
+            if (error == null || error.Type == JTokenType.Null) return "unknown error";
+            if (error.Type != JTokenType.Object) return RedactJwt(error.ToString());
+
+            var obj = (JObject)error;
+            var parts = new List<string>();
+            foreach (var key in new[] { "name", "message" })
+            {
+                var value = obj[key];
+                if (value != null && value.Type == JTokenType.String && !string.IsNullOrEmpty(value.Value<string>()))
+                    parts.Add(value.Value<string>());
+            }
+            foreach (var key in new[] { "status", "statusCode", "httpCode" })
+            {
+                var value = obj[key];
+                if (value != null && (value.Type == JTokenType.Integer || value.Type == JTokenType.String))
+                {
+                    parts.Add("HTTP " + value);
+                    break;
+                }
+            }
+            return parts.Count == 0 ? "unknown error" : RedactJwt(string.Join(": ", parts));
+        }
+
+        internal static string RedactJwt(string text)
+        {
+            return System.Text.RegularExpressions.Regex.Replace(text ?? "",
+                @"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", "<redacted token>");
+        }
         // takaro:config-end
 
         private const string ConfigFileName = "TakaroConnector.json";
@@ -639,7 +672,7 @@ namespace Oxide.Plugins
                                    ?? json.Value<string>("message")
                                    ?? "unknown";
                     var reqId = json.Value<string>("requestId");
-                    LogWarning($"Server error: {errorMsg}" + (reqId != null ? $" (requestId={reqId})" : ""));
+                    LogWarning($"Server error: {RedactJwt(errorMsg)}" + (reqId != null ? $" (requestId={reqId})" : ""));
                     break;
 
                 default:
@@ -734,9 +767,7 @@ namespace Oxide.Plugins
             var error = payload["error"];
             if (error != null && error.Type != JTokenType.Null)
             {
-                var errorMessage = error.Type == JTokenType.Object
-                    ? error.Value<string>("message") ?? error.ToString()
-                    : error.ToString();
+                var errorMessage = IdentifyErrorText(error);
                 LogWarning($"Identify failed: {errorMessage}");
                 LogRejected(errorMessage);
                 return;

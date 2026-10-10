@@ -115,6 +115,19 @@ internal static class Program
         var envPinned = Config.ResolveSettings(Config.ParseConfigText(File("reg-2", "id-1")), Env(Config.EnvRegistrationToken, "reg-1"), current);
         Check(envPinned.RegistrationToken == "reg-1", "running: a file edit never overrides an env token");
 
+        // Identify errors: never the raw object, never a JWT.
+        const string jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl";
+        var leaky = Newtonsoft.Json.Linq.JObject.Parse("{\"name\":\"Conflict\",\"message\":\"server exists\",\"status\":409," +
+            "\"config\":{\"headers\":{\"x-takaro-token\":\"" + jwt + "\"}}}");
+        var errorText = Config.IdentifyErrorText(leaky);
+        Check(errorText == "Conflict: server exists: HTTP 409", "identify error: name, message and status only (got '" + errorText + "')");
+        Check(!Config.IdentifyErrorText(Newtonsoft.Json.Linq.JObject.Parse("{\"config\":{\"t\":\"" + jwt + "\"}}")).Contains("eyJ"),
+            "identify error: an object without name/message never dumps itself");
+        Check(!Config.IdentifyErrorText(new Newtonsoft.Json.Linq.JValue("bad token, header x-takaro-token: " + jwt)).Contains(jwt),
+            "identify error: a JWT inside a string is redacted");
+        Check(Config.IdentifyErrorText(new Newtonsoft.Json.Linq.JValue("Invalid registrationToken provided")) == "Invalid registrationToken provided",
+            "identify error: a plain message is kept");
+
         Console.WriteLine("checks: " + _checks + ", failures: " + _failures);
         return _failures == 0 ? 0 : 1;
     }

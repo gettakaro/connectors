@@ -29,6 +29,7 @@ mkdir -p "${WORK}"
 
 {
     echo 'using System;'
+    echo 'using System.Collections.Generic;'
     echo 'using Newtonsoft.Json;'
     echo 'using Newtonsoft.Json.Linq;'
     echo
