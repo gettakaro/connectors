@@ -178,8 +178,9 @@ class Run:
             i, opcode, data = self.peer.frames.get(timeout=5)
             if i == index and opcode == 1 and json.loads(data)['type'] == 'identify':
                 self.identify_payload = json.loads(data)['payload']
-                if self.expected_identity is not None:
-                    assert self.identify_payload['identityToken'] == self.expected_identity, self.identify_payload
+                expected = getattr(self, 'expected_identity', 'test-identity')
+                if expected is not None:
+                    assert self.identify_payload['identityToken'] == expected, self.identify_payload
                 if getattr(self, 'reject_first', None):
                     self.peer.send(index, {'type': 'identifyResponse',
                                            'payload': {'error': {'message': self.reject_first}}})
