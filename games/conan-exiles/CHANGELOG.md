@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.1.0...conan-exiles-v3.2.0) (2026-10-10)
+
+
+### Features
+
+* **conan-exiles:** support Steam build 25792439 ([#414](https://github.com/gettakaro/connectors/issues/414)) ([b7d0493](https://github.com/gettakaro/connectors/commit/b7d0493588711963a2df7089eec055a68dcf353b))
+
 ## [3.1.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.0.0...conan-exiles-v3.1.0) (2026-10-07)
 
 
