@@ -111,7 +111,7 @@ Action requests (main-thread dispatched, `mod/src/WebSocket/ActionHandlers.cs`):
   and return a bounded failure
 - **`kickPlayer`** — Live-supported; the optional reason is visible in the vanilla client and the player leaves game state
 - **`banPlayer`** — Live-supported for timed and permanent paths; UTC input is converted to the game-local deadline and persistence is verified before kick
-- **`unbanPlayer`** — Live-supported for timed and permanent paths; game-owned removal, empty Takaro list, and successful vanilla reconnect proven
+- **`unbanPlayer`** — Live-supported for timed and permanent paths; game-owned removal, empty Takaro list, and successful vanilla reconnect proven. It lifts every Blacklist entry that `listBans` reports under the given gameId, including `Steam_`/`XBL_` entries of that player
 - **`teleportPlayer`** — Live-supported; spawned-state rejection, bounded movement, and exact restoration are client-log proven
 - **`shutdown`** — Live-supported; Takaro success, native save/cleanup, normal WebSocket close, and actual process exit proven
 

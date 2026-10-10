@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Takaro.Persistence;
 
 namespace Takaro.Services
@@ -51,6 +52,33 @@ namespace Takaro.Services
                 record.XboxLiveId = platformId.Substring(XboxPrefix.Length);
 
             return record;
+        }
+
+        /// <summary>
+        /// True when the ban mirror reports an entry stored under <paramref name="banId"/>
+        /// as <paramref name="gameId"/>. Unban uses this so it lifts exactly the
+        /// entries listBans reported, whichever platform id the game stored them under.
+        /// </summary>
+        public static bool IsReportedAs(string gameId, string banId, string crossplatformId)
+        {
+            BanRecord record = ToRecord(banId, crossplatformId, null, null, null, null);
+            return record != null && record.GameId == gameId;
+        }
+
+        /// <summary>
+        /// One record per gameId, first entry wins: a player banned under both an EOS
+        /// and a native id is listed once. Entries without an EOS id (null) are dropped.
+        /// </summary>
+        public static List<BanRecord> DistinctByGameId(IEnumerable<BanRecord> records)
+        {
+            var distinct = new List<BanRecord>();
+            var seenGameIds = new HashSet<string>();
+            foreach (BanRecord record in records)
+            {
+                if (record != null && seenGameIds.Add(record.GameId))
+                    distinct.Add(record);
+            }
+            return distinct;
         }
 
         private static string FirstEos(params string[] candidates)
