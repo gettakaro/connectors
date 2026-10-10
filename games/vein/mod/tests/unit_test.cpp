@@ -9,6 +9,7 @@
 #include "state.h"
 #include "actions_util.h"
 #include "config_file.h"
+#include "instance_guard.h"
 
 #include <sys/stat.h>
 #include <unistd.h>
@@ -1158,6 +1159,24 @@ static void TestConfigFileLookup() {
     rmdir(dir);
 }
 
+static void TestInstanceGuard() {
+    const std::string self = "/AMP/vein/linux64/libtakaro-vein.so";
+    std::string maps =
+        "7f00-7f01 r-xp 00000000 08:01 12 /usr/lib/x86_64-linux-gnu/libc.so.6\n"
+        "7f02-7f03 r-xp 00000000 08:01 13 /AMP/vein/linux64/libtakaro-vein.so\n";
+    CHECK(!InstanceGuard::OtherCopyMapped(maps, self), "own mapping is not another copy");
+    CHECK(InstanceGuard::OtherCopyMapped(maps + "7f04-7f05 r-xp 0 08:01 14 /opt/takaro/libtakaro-vein.so\n", self),
+          "a preloaded copy elsewhere is another copy");
+    CHECK(!InstanceGuard::OtherCopyMapped(maps + "7f04-7f05 r-xp 0 08:01 15 /opt/x/libtakaro-vein.so.bak\n", self),
+          "only exact file names count");
+    CHECK(!InstanceGuard::OtherCopyMapped("", self), "empty maps");
+    std::string why;
+    CHECK(InstanceGuard::ClaimProcess(&why), "first claim succeeds: %s", why.c_str());
+    why.clear();
+    CHECK(!InstanceGuard::ClaimProcess(&why), "second claim in the same process is refused");
+    CHECK(why.find("already runs") != std::string::npos, "reason: %s", why.c_str());
+}
+
 int main() {
     TestElfParser();
     TestSignatureMatcher();
@@ -1200,6 +1219,7 @@ int main() {
     TestKillWeaponName();
     TestConfigFileParse();
     TestConfigFileLookup();
+    TestInstanceGuard();
     printf("%s: %d checks, %d failed\n", g_failed ? "FAILED" : "PASSED", g_ran, g_failed);
     return g_failed ? 1 : 0;
 }

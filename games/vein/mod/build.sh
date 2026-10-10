@@ -92,4 +92,5 @@ if [ "$TESTS" = 1 ]; then
   ./tests/run-native-bridge.sh --native
   ./tests/run-native-behavior.sh --native
   ./tests/run-native-full-bridge.sh --native
+  ./tests/run-panel-loader.sh --native
 fi
