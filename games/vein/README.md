@@ -92,3 +92,4 @@ Verified on the native connector (v0.3.0) with a real game client and Takaro on 
 ---
 
 Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).
+
