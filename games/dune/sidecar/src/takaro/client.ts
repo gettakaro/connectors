@@ -328,8 +328,19 @@ export class TakaroWsClient extends EventEmitter {
       case 'identifyResponse': {
         const payload = (message.payload ?? {}) as { error?: unknown; gameServerId?: string; server?: { id?: string } };
         if (payload.error) {
+          const reason = describeTakaroError(payload.error);
+          if (isNameConflict(payload.error, reason)) {
+            logBanner(logger.error, [
+              `Takaro rejected identify: ${reason}.`,
+              `Takaro already has a game server named '${this.identifyConfig.serverName ?? this.identifyConfig.identityToken}'.`,
+              ...this.whereToFix('Set a unique TAKARO_SERVER_NAME in'),
+              'Until then the sidecar retries with backoff.',
+            ]);
+            this.ws?.close();
+            break;
+          }
           logBanner(logger.error, [
-            `Takaro rejected identify: ${describeTakaroError(payload.error)}.`,
+            `Takaro rejected identify: ${reason}.`,
             ...this.whereToFix('Check TAKARO_REGISTRATION_TOKEN (and TAKARO_IDENTITY_TOKEN) in'),
             'Until then the sidecar retries with backoff.',
           ]);
@@ -404,6 +415,13 @@ export function describeTakaroError(error: unknown): string {
     .map((v) => String(v));
   if (typeof status === 'number' || typeof status === 'string') parts.push(`HTTP ${status}`);
   return clip(parts.length ? parts.join(': ') : 'no reason given');
+}
+
+/** A 409: the server NAME is taken in this domain (names are unique, and stay reserved a while after a delete). */
+export function isNameConflict(error: unknown, described: string): boolean {
+  const e = (error && typeof error === 'object' ? error : {}) as Record<string, unknown>;
+  const status = e.status ?? e.statusCode ?? e.httpStatus;
+  return String(status) === '409' || /conflict|already exists|unique/i.test(described);
 }
 
 function clip(text: string): string {

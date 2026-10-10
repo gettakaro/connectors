@@ -49,6 +49,8 @@ settings (`TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`, `TAKARO_WS_URL`,
 - Identity: configured value > `TAKARO_DATA_DIR/takaro-identity.json` > `dune` when the data dir already holds state
   from before identities were generated > a new UUID. The result is always saved there. The identity is never
   written into the operator's `.env` (the compose mount is read-only).
+- Server name: Takaro uses it only when it creates the record, and names are unique per domain (a deleted record keeps
+  its name reserved for a while). The default is `Dune (<first 8 identity characters>)`; a 409 gets its own banner.
 
 **Ownership rule: game truth lives in the plugin, Takaro protocol shape lives in the sidecar.** Never parse Takaro
 DTOs in C++; never guess game state in TypeScript. Change `mod/docs/API.md` first, then both sides.

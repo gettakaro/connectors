@@ -22,7 +22,6 @@ type ReloadableKey = (typeof RELOADABLE_KEYS)[number];
 export const LEGACY_IDENTITY = 'dune';
 export const IDENTITY_FILE_NAME = 'takaro-identity.json';
 const DEFAULT_WS_URL = 'wss://connect.takaro.io/';
-const DEFAULT_SERVER_NAME = 'Takaro Dev Dune';
 
 type Env = Record<string, string | undefined>;
 
@@ -169,11 +168,12 @@ export class TakaroSettingsSource {
   }
 
   private compute(): TakaroSettings {
+    const identityToken = this.resolveIdentity(this.value('TAKARO_IDENTITY_TOKEN'));
     return {
       wsUrl: this.value('TAKARO_WS_URL') || DEFAULT_WS_URL,
       registrationToken: this.value('TAKARO_REGISTRATION_TOKEN'),
-      identityToken: this.resolveIdentity(this.value('TAKARO_IDENTITY_TOKEN')),
-      serverName: this.value('TAKARO_SERVER_NAME') || DEFAULT_SERVER_NAME,
+      identityToken,
+      serverName: this.value('TAKARO_SERVER_NAME') || defaultServerName(identityToken),
     };
   }
 
@@ -221,6 +221,15 @@ export class TakaroSettingsSource {
  */
 function blankComment(value: string): string {
   return value.startsWith('#') ? '' : value;
+}
+
+/**
+ * Takaro uses the name only when it creates the server record, and names are unique per domain (a removed record keeps
+ * its name reserved for a while). So the default carries the identity: a second install never collides with the first,
+ * and an existing record keeps whatever name it has.
+ */
+export function defaultServerName(identityToken: string): string {
+  return `Dune (${identityToken.slice(0, 8)})`;
 }
 
 function readSavedIdentity(file: string): string {

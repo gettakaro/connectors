@@ -60,6 +60,7 @@ Set these values in `.env`:
 |---|---|
 | `TAKARO_REGISTRATION_TOKEN` | Registration token from the Takaro game server. Can be pasted later, see below. |
 | `TAKARO_IDENTITY_TOKEN` | Leave empty. The sidecar generates one and keeps it in `/data`. |
+| `TAKARO_SERVER_NAME` | Optional. Takaro server names must be unique; empty uses `Dune (<identity>)`. |
 | `TAKARO_SENDER_NAME` | The same value as Takaro's `serverChatName`. |
 | `DUNE_PG_URL` | Read-only Postgres URL, including the build-specific database name. |
 | `DUNE_RMQ_URL` | AMQPS URL for the game RabbitMQ, not the admin RabbitMQ. |

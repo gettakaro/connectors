@@ -55,7 +55,7 @@ services:
       # Empty token: the sidecar stays offline and says so. Empty identity: it generates one and keeps it in /data.
       TAKARO_REGISTRATION_TOKEN: ${TAKARO_REGISTRATION_TOKEN:-}
       TAKARO_IDENTITY_TOKEN: ${TAKARO_IDENTITY_TOKEN:-}
-      TAKARO_SERVER_NAME: ${TAKARO_SERVER_NAME:-Dune}
+      TAKARO_SERVER_NAME: ${TAKARO_SERVER_NAME:-}
       # Must match your Takaro game server's `serverChatName` setting, or Takaro's chat bridge
       # echoes the connector's own messages back into the game.
       TAKARO_SENDER_NAME: ${TAKARO_SENDER_NAME:-Server}

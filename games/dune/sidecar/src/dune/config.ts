@@ -223,7 +223,8 @@ export function loadConfig(env: Env = process.env): SidecarConfig {
   if (deliveryMode !== 1 && deliveryMode !== 2) throw new Error(`DUNE_CHAT_DELIVERY_MODE must be 1 or 2`);
 
   return {
-    serverName: env.TAKARO_SERVER_NAME || 'Takaro Dev Dune',
+    // Replaced at start by the effective name from `takaro/settings.ts`.
+    serverName: env.TAKARO_SERVER_NAME || '',
     configPollMs: Math.max(1000, int(env.TAKARO_CONFIG_POLL_MS, 5000)),
     // `Takaro` rather than `Server`: this is what a player sees in front of every connector message, and "Server" is
     // indistinguishable from the game's own notices. Overridable with `TAKARO_SENDER_NAME`.

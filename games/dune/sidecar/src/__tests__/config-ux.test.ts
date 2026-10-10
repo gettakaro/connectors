@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { describeTakaroError, TakaroWsClient } from '../takaro/client.js';
+import { describeTakaroError, isNameConflict, TakaroWsClient } from '../takaro/client.js';
 import { IDENTITY_FILE_NAME, LEGACY_IDENTITY, parseDotenv, resolveConfigFile, TakaroSettingsSource } from '../takaro/settings.js';
 import { redactSecrets } from '../logger.js';
 
@@ -127,7 +127,7 @@ describe('settings precedence and reload', () => {
     const i = install({ env: { TAKARO_REGISTRATION_TOKEN: 'reg' } });
     const s = i.make();
     expect(s.hasConfigFile()).toBe(false);
-    expect(s.current()).toMatchObject({ registrationToken: 'reg', wsUrl: 'wss://connect.takaro.io/', serverName: 'Takaro Dev Dune' });
+    expect(s.current()).toMatchObject({ registrationToken: 'reg', wsUrl: 'wss://connect.takaro.io/' });
     expect(s.poll()).toBeNull();
   });
 
@@ -299,5 +299,20 @@ describe('compose inline-comment values', () => {
     const s = i.make().current();
     expect(s.registrationToken).toBe('');
     expect(s.identityToken).toMatch(UUID);
+  });
+});
+
+describe('server name', () => {
+  it('defaults to a name that carries the identity, so two fresh installs never collide; a configured name wins', () => {
+    const a = install({}).make().current();
+    const b = install({}).make().current();
+    expect(a.serverName).toBe(`Dune (${a.identityToken.slice(0, 8)})`);
+    expect(a.serverName).not.toBe(b.serverName);
+    expect(install({ env: { TAKARO_SERVER_NAME: 'My Dune' } }).make().current().serverName).toBe('My Dune');
+  });
+
+  it('recognises a 409 name conflict', () => {
+    expect(isNameConflict({ name: 'ConflictError', message: 'x', status: 409 }, describeTakaroError({ name: 'ConflictError', status: 409 }))).toBe(true);
+    expect(isNameConflict({ name: 'BadRequestError', message: 'Invalid registrationToken provided' }, 'BadRequestError: Invalid registrationToken provided')).toBe(false);
   });
 });
