@@ -43,8 +43,9 @@ Add the commands below to
 
 ### Install the sidecar
 
-Unpack the sidecar archive and rename its folder to `sidecar`. Copy
-`docker-compose.example.yml` and `.env.example` beside it, then rename `.env.example` to `.env`:
+Unpack the sidecar archive and rename its folder to `sidecar`. Move `docker-compose.example.yml`
+and `.env.example` out of it to beside it, and rename `.env.example` to `.env`. Keep `.env`
+outside `sidecar/`: an upgrade replaces that folder.
 
 ```text
 dune-connector/
@@ -57,8 +58,9 @@ Set these values in `.env`:
 
 | Setting | Value |
 |---|---|
-| `TAKARO_REGISTRATION_TOKEN` | Registration token from the Takaro game server. |
-| `TAKARO_IDENTITY_TOKEN` | A unique name such as `my-dune-server`. |
+| `TAKARO_REGISTRATION_TOKEN` | Registration token from the Takaro game server. Can be pasted later, see below. |
+| `TAKARO_IDENTITY_TOKEN` | Leave empty. The sidecar generates one and keeps it in `/data`. |
+| `TAKARO_SERVER_NAME` | Optional. Takaro server names must be unique; empty uses `Dune (<identity>)`. |
 | `TAKARO_SENDER_NAME` | The same value as Takaro's `serverChatName`. |
 | `DUNE_PG_URL` | Read-only Postgres URL, including the build-specific database name. |
 | `DUNE_RMQ_URL` | AMQPS URL for the game RabbitMQ, not the admin RabbitMQ. |
@@ -78,6 +80,11 @@ Start the sidecar:
 docker compose -f docker-compose.example.yml --env-file .env up -d --build
 ```
 
+Without a registration token the log shows a `TAKARO_REGISTRATION_TOKEN not set` banner and the
+sidecar stays offline. Paste the token into `.env` and save it: the sidecar connects within a
+few seconds, no restart needed. The same applies to `TAKARO_IDENTITY_TOKEN`, `TAKARO_WS_URL` and
+`TAKARO_SERVER_NAME`; other `.env` changes need `docker compose ... up -d` again.
+
 For a plain Node.js installation, run this inside the unpacked sidecar instead:
 
 ```bash
@@ -85,6 +92,9 @@ npm ci --omit=dev
 npm run catalogue
 node dist/index.js
 ```
+
+Set the `DUNE_*` values in the environment. The Takaro values are also read from `../.env`
+(beside `sidecar/`), and saving that file applies them without a restart.
 
 The installation is ready when the log contains `Identified with Takaro`, the game server is
 online in Takaro, and `http://127.0.0.1:18891/health` reports `ok`.
@@ -113,9 +123,11 @@ the hook, the connector reports shutdown as unavailable.
 
 ### Upgrade
 
-Replace the unpacked sidecar and restart it. To upgrade the plugin, stop the map server, replace
-the `.so` with one for the same server build, and start it again. Keep the sidecar `/data` volume;
-it contains connector-managed bans.
+Unpack the new sidecar archive somewhere else, replace only the `sidecar` folder with it, then
+run the start command again. Keep `.env` and the sidecar `/data` volume; `/data` holds the
+identity and connector-managed bans. Also take the new `docker-compose.example.yml` (it adds the
+`.env` mount that applies token changes without a restart); the server keeps its identity. To upgrade the plugin, stop the map server, replace
+the `.so` with one for the same server build, and start it again.
 
 ## What works, what doesn't
 
