@@ -7,13 +7,13 @@ namespace Takaro.Valheim.Core.Tests;
 public sealed class ConfigTests
 {
     [TestMethod]
-    public void FromDictionaryRequiresRegistrationTokenAndServerName()
+    public void FromDictionaryAcceptsAMissingTokenAndDefaultsTheServerName()
     {
-        var error = Assert.ThrowsException<ArgumentException>(() =>
-            ConnectorConfig.FromDictionary(new Dictionary<string, string>()));
+        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>());
 
-        StringAssert.Contains(error.Message, "registrationToken");
-        StringAssert.Contains(error.Message, "serverName");
+        Assert.AreEqual("", config.RegistrationToken);
+        Assert.IsFalse(config.HasRegistrationToken);
+        Assert.AreEqual("Valheim Server", config.ServerName);
     }
 
     [TestMethod]
@@ -38,16 +38,15 @@ public sealed class ConfigTests
     }
 
     [TestMethod]
-    public void TryFromDictionaryReturnsErrorInsteadOfThrowingForMissingCredentials()
+    public void TryFromDictionarySucceedsWithoutCredentials()
     {
         var ok = ConnectorConfig.TryFromDictionary(new Dictionary<string, string>
         {
             ["serverName"] = "Meadows"
         }, out var config, out var error);
 
-        Assert.IsFalse(ok);
-        Assert.IsNull(config);
-        StringAssert.Contains(error, "registrationToken");
+        Assert.IsTrue(ok, error);
+        Assert.IsFalse(config!.HasRegistrationToken);
     }
 
     [TestMethod]

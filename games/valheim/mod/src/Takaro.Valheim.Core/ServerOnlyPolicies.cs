@@ -17,6 +17,26 @@ public static class ValheimRuntimePolicy
         isBatchMode
         && (IsDedicatedServerExecutable(processName) || IsDedicatedServerExecutable(executablePath));
 
+    /// <summary>The value of the dedicated server's <c>-name</c> launch argument, if any.</summary>
+    public static string? ServerNameArgument(IReadOnlyList<string>? args)
+    {
+        if (args is null)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < args.Count - 1; i++)
+        {
+            if (string.Equals(args[i], "-name", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(args[i + 1]))
+            {
+                return args[i + 1].Trim();
+            }
+        }
+
+        return null;
+    }
+
     private static bool IsDedicatedServerExecutable(string? identity)
     {
         if (string.IsNullOrWhiteSpace(identity))

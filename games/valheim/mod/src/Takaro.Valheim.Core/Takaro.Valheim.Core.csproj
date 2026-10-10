@@ -7,6 +7,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The takaro.cfg the release zip ships; the connector recreates it from this copy when it is missing. -->
+    <EmbeddedResource Include="..\..\takaro.cfg" LogicalName="Takaro.Valheim.Core.takaro.cfg" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
     <ProjectReference Include="..\Takaro.Valheim.Companion.Protocol\Takaro.Valheim.Companion.Protocol.csproj" />
   </ItemGroup>

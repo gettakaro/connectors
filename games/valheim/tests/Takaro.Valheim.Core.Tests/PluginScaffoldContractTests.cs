@@ -247,8 +247,10 @@ public sealed class PluginScaffoldContractTests
     {
         var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
 
-        StringAssert.Contains(entrypoint, "[\"chatSenderName\"]");
-        StringAssert.Contains(entrypoint, "ConnectorConfig.DefaultChatSenderName");
+        StringAssert.Contains(entrypoint, "new ConnectorConfigStore(");
+        StringAssert.Contains(entrypoint, "runner?.UpdateSettings(change.Config)");
+        StringAssert.Contains(entrypoint, "Monitor.TryEnter(configCheckGate)");
+        Assert.IsFalse(entrypoint.Contains("Config.Bind", StringComparison.Ordinal), "BepInEx must not rewrite the config files.");
         Assert.IsFalse(entrypoint.Contains("companionMode", StringComparison.OrdinalIgnoreCase));
         StringAssert.Contains(entrypoint, "new InventoryCompanionBridge(playerResolver, companionInventory, Logger.LogInfo)");
         StringAssert.Contains(entrypoint, "new ValheimPlayerResolver(Logger, knownPlayerNames)");
@@ -511,7 +513,7 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(source, "pendingEvents.ConfirmOldestCheckpoint();");
         StringAssert.Contains(source, "pendingEvents.ResetForNewConnection();");
         StringAssert.Contains(source, "activeSocket.Abort();");
-        var identifiedAt = source.IndexOf("if (LogIdentifyResponse(message))", StringComparison.Ordinal);
+        var identifiedAt = source.IndexOf("if (LogIdentifyResponse(message, out var rejection))", StringComparison.Ordinal);
         Assert.IsTrue(identifiedAt >= 0);
         Assert.IsTrue(source.IndexOf("identified = true;", identifiedAt, StringComparison.Ordinal) > identifiedAt);
         StringAssert.Contains(source, "TakaroProtocol.TryCreateActionResponse");
@@ -552,13 +554,20 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void SourceAndPackagedInstallFlowsRequireRestartAfterConfiguration()
+    public void SourceAndPackagedInstallFlowsNeedNoRestartForTheToken()
     {
         var readme = ReadValheimFile("README.md");
         var release = ReadValheimFile("scripts/build-release.sh");
 
-        StringAssert.Contains(readme, "Restart the dedicated server");
-        StringAssert.Contains(release, "Restart the dedicated server");
+        foreach (var text in new[] { readme, release })
+        {
+            StringAssert.Contains(text, "BepInEx/plugins/TakaroValheim/takaro.cfg");
+            StringAssert.Contains(text, "no restart needed");
+            Assert.IsFalse(text.Contains("Start once", StringComparison.OrdinalIgnoreCase));
+            Assert.IsFalse(text.Contains("Start the server once so the plugin creates", StringComparison.Ordinal));
+        }
+
+        Assert.IsFalse(readme.Contains("Filled in by the plugin after the first registration", StringComparison.Ordinal));
     }
 
     [TestMethod]

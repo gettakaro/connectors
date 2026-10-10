@@ -224,6 +224,9 @@ strip_host_assemblies "$CLIENT_DIR"
 rm -f "$SERVER_DIR/Takaro.Valheim.Companion.dll"
 rm -f "$CLIENT_DIR/TakaroValheim.dll" "$CLIENT_DIR/Takaro.Valheim.Core.dll"
 
+# The config people edit ships in the plugin folder, with an empty token and identity.
+cp mod/takaro.cfg "$SERVER_DIR/takaro.cfg"
+
 cat > "$SERVER_DIR/README.txt" << EOF
 Takaro Valheim Connector ${VALHEIM_RELEASE_VERSION}
 
@@ -232,13 +235,14 @@ Built against: ${VALHEIM_TARGET} (Valheim ${VALHEIM_REVISION}, BepInExPack ${BEP
 Dedicated server install:
 1. Install BepInExPack Valheim ${BEPINEX_PACK_VERSION} on the dedicated server.
 2. Copy TakaroValheim into BepInEx/plugins/TakaroValheim.
-3. Start once, then configure BepInEx/config/com.takaro.valheim.cfg.
-4. Set registrationToken (and optionally chatSenderName, the name Takaro messages show in chat).
-5. Restart the dedicated server so the saved configuration is loaded.
+3. Open BepInEx/plugins/TakaroValheim/takaro.cfg, paste your Takaro registration token after
+   "registrationToken =" and save. Leave identityToken empty; the connector fills it in.
+4. Start the server. You can also paste the token while it runs: the connector checks the file
+   every few seconds and connects as soon as you save, no restart needed.
 
 The optional inventory companion (takaro-valheim-inventory-companion.zip) is a separate download for players, not for this server.
 
-Upgrade note: after replacing this folder, delete BepInEx/cache/chainloader_typeloader.dat before restarting. Deterministic archive timestamps can otherwise leave cached metadata from a previous same-size DLL.
+Upgrade note: after replacing this folder, delete BepInEx/cache/chainloader_typeloader.dat before restarting. Deterministic archive timestamps can otherwise leave cached metadata from a previous same-size DLL. Your token and identity are kept in BepInEx/config/com.takaro.valheim.cfg; you do not need to paste the token again.
 
 This is the dedicated-server plugin; players need no mod to join. Never commit live registration tokens.
 EOF
