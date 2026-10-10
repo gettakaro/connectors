@@ -4,21 +4,21 @@
   "assetMode": "pick-one",
   "requirements": [
     "Takaro registration token",
-    "Conan Exiles dedicated server build 25738716 (or 25639945)",
+    "Conan Exiles dedicated server build 25792439 (or 25738716, 25639945)",
     "Linux: control of the server start command (LD_PRELOAD)"
   ],
   "assets": [
     {
       "pattern": "takaro-conan-exiles-native-linux-*.zip",
       "label": "Linux server",
-      "requires": "Conan Exiles Linux dedicated server build 25738716 (or 25639945)",
+      "requires": "Conan Exiles Linux dedicated server build 25792439 (or 25738716, 25639945)",
       "hint": "Load libtakaro-conan-native.so with LD_PRELOAD and copy takaro.json and ca-certificates.crt to ConanSandbox/Saved/Config/Takaro/; INSTALL.md in the zip has every step.",
       "required": true
     },
     {
       "pattern": "takaro-conan-exiles-native-windows-*.zip",
       "label": "Windows server",
-      "requires": "Conan Exiles Windows dedicated server build 25738716 (or 25639945)",
+      "requires": "Conan Exiles Windows dedicated server build 25792439 (or 25738716, 25639945)",
       "hint": "Copy winmm.dll next to ConanSandboxServer-Win64-Shipping.exe and takaro.json to ConanSandbox\\Saved\\Config\\Takaro\\; INSTALL.md in the zip has every step.",
       "required": true
     }
