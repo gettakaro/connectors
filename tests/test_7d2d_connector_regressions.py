@@ -27,7 +27,7 @@ class SourceRegressionTests(unittest.TestCase):
         )[1].split("private static PlayerRecord BuildPlayerRecord", 1)[0]
         self.assertIn("BanIdentity.ToRecord", capture)
         self.assertNotIn('Replace("EOS_", "")', capture)
-        self.assertIn("seenGameIds", capture)
+        self.assertIn("BanIdentity.DistinctByGameId", capture)
 
     def test_entity_kill_reports_internal_class_name(self):
         api = self.source("src/API.cs")
@@ -314,7 +314,7 @@ class SourceRegressionTests(unittest.TestCase):
             "private bool AckPingDue()", 1
         )[0]
         sendable = transport.split("private bool IsSendable(", 1)[1].split("}", 1)[0]
-        self.assertIn("!_deadSocketClosing", sendable)
+        self.assertIn("!_session.DeadSocketClosing", sendable)
         self.assertIn("socket.ReadyState == WebSocketState.Open", sendable)
         # Checked before the write, and again before a failure counts toward a drop.
         self.assertLess(flush.index("!IsSendable(socket)"), flush.index("socket.Send("))
@@ -360,7 +360,7 @@ class SourceRegressionTests(unittest.TestCase):
         )[0]
         self.assertNotIn("Seq", send)
         self.assertIn("Seq = replayable ? _nextSeq++ : 0", ledger)
-        self.assertIn("ProtocolHandshake.WithStreamPosition", transport)
+        self.assertIn("_session.WireFrame", transport)
 
     def test_readme_version_is_release_managed(self):
         header = next(

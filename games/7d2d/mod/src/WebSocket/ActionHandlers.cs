@@ -298,7 +298,7 @@ namespace Takaro.WebSocket
                     $"EOS_{args.GameId}"
                 );
                 bool unbanSuccess = false;
-                string playerName = "";
+                string playerName = null;
                 string unbanMethod = "";
 
                 if (Platform.BlockedPlayerList.Instance != null)
@@ -322,25 +322,43 @@ namespace Takaro.WebSocket
 
                 if (!unbanSuccess)
                 {
-                    if (
-                        GameManager.Instance.adminTools.Blacklist.IsBanned(
-                            userId,
-                            out DateTime _,
-                            out string _
-                        )
-                    )
+                    // listBans reports a Steam_/XBL_ entry under the player's EOS id, so
+                    // lift every entry that resolves to args.GameId, not only EOS_<gameId>.
+                    var blacklist = GameManager.Instance.adminTools.Blacklist;
+                    PersistentPlayerList playerList =
+                        GameManager.Instance.GetPersistentPlayerList();
+                    var matching = new List<PlatformUserIdentifierAbs>();
+                    foreach (var ban in blacklist.GetBanned())
                     {
-                        GameManager.Instance.adminTools.Blacklist.RemoveBan(userId);
+                        if (ban.UserIdentifier == null)
+                            continue;
+
+                        PersistentPlayerData banned = StateMirror.FindPersistentPlayer(
+                            playerList,
+                            ban.UserIdentifier
+                        );
+                        if (
+                            BanIdentity.IsReportedAs(
+                                args.GameId,
+                                ban.UserIdentifier.CombinedString,
+                                banned?.PrimaryId?.CombinedString
+                            )
+                        )
+                        {
+                            matching.Add(ban.UserIdentifier);
+                            if (playerName == null && banned != null)
+                                playerName = banned.PlayerName.playerName.Text;
+                        }
+                    }
+
+                    foreach (PlatformUserIdentifierAbs bannedId in matching)
+                        blacklist.RemoveBan(bannedId);
+
+                    if (matching.Count > 0)
+                    {
                         unbanSuccess = true;
                         unbanMethod = "AdminTools.Blacklist";
-
-                        PersistentPlayerList playerList =
-                            GameManager.Instance.GetPersistentPlayerList();
-                        PersistentPlayerData playerData = playerList.GetPlayerData(userId);
-                        playerName =
-                            playerData != null
-                                ? playerData.PlayerName.playerName.Text
-                                : $"Player_{args.GameId}";
+                        playerName = playerName ?? $"Player_{args.GameId}";
                     }
                 }
 

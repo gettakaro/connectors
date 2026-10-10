@@ -29,9 +29,9 @@ namespace Takaro.WebSocket
     /// unidentified `gameEvent` with a bare TCP terminate (the 1006 bounce), so
     /// no other inbound frame counts as an acknowledgement.
     ///
-    /// A blackholed link used to stay "open" for minutes and swallow every
-    /// event written into it, so the last inbound frame is tracked and a
-    /// socket silent for INBOUND_TIMEOUT_SECONDS is closed.
+    /// A blackholed link stays "open" and swallows every event written into
+    /// it, so the last inbound frame is tracked and a socket silent for
+    /// INBOUND_TIMEOUT_SECONDS is closed.
     ///
     /// An identifyResponse that carries an error is a rejection, not an
     /// acknowledgement: the code and reason are logged, the socket is closed and
@@ -41,6 +41,9 @@ namespace Takaro.WebSocket
     /// resent on the next socket otherwise. Protocol v0 proves it with a pong
     /// that follows them; protocol v1 numbers the events into a stream and
     /// proves it with an explicit eventAck (OutboundLedger).
+    ///
+    /// The connection state machine itself lives in TransportSession; this class
+    /// owns the socket, the timers and the logging.
     /// </summary>
     public class WebSocketTransport
     {
@@ -51,32 +54,10 @@ namespace Takaro.WebSocket
         private Timer _heartbeatTimer;
         private Timer _reconnectTimer;
 
-        // True once identify has been written on the current socket.
-        private volatile bool _isConnected;
-
-        // True once Takaro has accepted identify on the current socket. Only then
-        // may queued traffic be written.
-        private volatile bool _isConfirmed;
-
-        // Protocol version Takaro selected for the current socket; -1 until
-        // identify is accepted. The frame formats depend on it.
-        private volatile int _protocolVersion = -1;
+        private readonly TransportSession _session;
 
         private volatile bool _shuttingDown;
 
-        // Set when Takaro answers identify with an error on the current socket.
-        // Such a socket must never be treated as confirmed (see HandleIdentifyResponse).
-        private volatile bool _identifyRejected;
-
-        // Set once the watchdog has started closing the current socket.
-        private volatile bool _deadSocketClosing;
-
-        // Incremented for every new socket. Pongs and in-flight events are only
-        // meaningful for the socket generation they belong to.
-        private long _generation;
-
-        private long _openedAtTicks;
-        private long _lastInboundTicks;
         private int _reconnectAttempts;
 
         // Kept short: a retry is one cheap TLS handshake, and with the 45 s
@@ -101,24 +82,15 @@ namespace Takaro.WebSocket
         // the TLS layer still reports it open (F17a): three missed pongs.
         private const int INBOUND_TIMEOUT_SECONDS = HEARTBEAT_INTERVAL_SECONDS * 3;
 
-        private const string PONG_MESSAGE_TYPE = "pong";
-
         // At most one acknowledgement ping per second, however busy the events.
         private const int ACK_PING_MIN_INTERVAL_MILLISECONDS = 1000;
         private long _lastAckPingTicks;
-
-        // Takaro's connector sends this the moment the socket is accepted,
-        // before identify has been processed. It is not an acknowledgement.
-        private const string WELCOME_MESSAGE_TYPE = "connected";
 
         // Serialises every write on the socket. websocket-sharp as shipped with
         // 7D2D does not lock its send path (the `_forSend` field is assigned in
         // the constructor and never used), so two threads writing at once would
         // interleave frames on the SslStream.
         private readonly object _sendLock = new object();
-
-        // Guards the unconfirmed -> confirmed transition.
-        private readonly object _confirmLock = new object();
 
         private BlockingCollection<OutboundLedger.Entry> _outbound;
         private Thread _senderThread;
@@ -131,17 +103,15 @@ namespace Takaro.WebSocket
             MAX_PENDING_MESSAGES
         );
 
-        // Pongs seen by the receive thread, tagged with their socket generation,
-        // for the sender thread to apply to the ledger.
-        private readonly ConcurrentQueue<long> _pongs = new ConcurrentQueue<long>();
-
-        // Protocol v1 eventAck frames (stream id, cumulative position), likewise.
-        private readonly ConcurrentQueue<KeyValuePair<string, long>> _eventAcks =
-            new ConcurrentQueue<KeyValuePair<string, long>>();
         private const int SENDER_POLL_MILLISECONDS = 1000;
         private const int MAX_SEND_FAILURES_PER_MESSAGE = 3;
         private bool _pendingOverflowLogged;
         private int _headFailureCount;
+
+        private WebSocketTransport()
+        {
+            _session = new TransportSession(_ledger, () => DateTime.UtcNow.Ticks);
+        }
 
         public static WebSocketTransport Instance
         {
@@ -224,7 +194,7 @@ namespace Takaro.WebSocket
                     requestId,
                     errorMessage,
                     code,
-                    Math.Max(0, _protocolVersion)
+                    Math.Max(0, _session.ProtocolVersion)
                 )
             );
         }
@@ -253,8 +223,7 @@ namespace Takaro.WebSocket
                 // Checked every poll, not only on the heartbeat tick, so a dead
                 // link is noticed within a second of the timeout.
                 CheckInboundLiveness();
-                ApplyPongs();
-                ApplyEventAcks();
+                _session.ApplyAcknowledgements();
                 CloseIfIdentifyOverdue();
                 ResetBackoffIfStable();
                 FlushPending();
@@ -288,19 +257,15 @@ namespace Takaro.WebSocket
         /// </summary>
         private void ResetBackoffIfStable()
         {
-            if (!_isConnected || _reconnectAttempts == 0)
+            if (!_session.IsConnected || _reconnectAttempts == 0)
                 return;
 
-            long openedAt = Interlocked.Read(ref _openedAtTicks);
-            if (openedAt == 0)
-                return;
-
-            TimeSpan uptime = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - openedAt);
-            if (uptime.TotalSeconds < CONNECTION_STABLE_SECONDS)
+            int uptimeSeconds = _session.SecondsSinceOpened();
+            if (uptimeSeconds < CONNECTION_STABLE_SECONDS)
                 return;
 
             LogService.Instance.Info(
-                $"WebSocket connection stable for {(int)uptime.TotalSeconds}s - "
+                $"WebSocket connection stable for {uptimeSeconds}s - "
                     + "resetting reconnect backoff"
             );
             _reconnectAttempts = 0;
@@ -313,24 +278,10 @@ namespace Takaro.WebSocket
         /// </summary>
         private void CloseIfIdentifyOverdue()
         {
-            if (
-                _isConfirmed
-                || !_isConnected
-                || _identifyRejected
-                || _deadSocketClosing
-                || _webSocket == null
-            )
+            if (_webSocket == null || !_session.IdentifyOverdue(IDENTIFY_DEADLINE_SECONDS))
                 return;
 
-            long openedAt = Interlocked.Read(ref _openedAtTicks);
-            if (openedAt == 0)
-                return;
-
-            TimeSpan uptime = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - openedAt);
-            if (uptime.TotalSeconds < IDENTIFY_DEADLINE_SECONDS)
-                return;
-
-            _deadSocketClosing = true;
+            _session.DeadSocketClosing = true;
             LogService.Instance.Warn(
                 $"Takaro did not answer identify within {IDENTIFY_DEADLINE_SECONDS}s; "
                     + "closing the connection and retrying with backoff"
@@ -353,66 +304,37 @@ namespace Takaro.WebSocket
         /// </summary>
         private void ConfirmConnection(string reason)
         {
-            lock (_confirmLock)
-            {
-                if (_isConfirmed || !_isConnected)
-                    return;
+            if (!_session.TryConfirm())
+                return;
 
-                _isConfirmed = true;
-                LogService.Instance.Info(
-                    $"WebSocket connection confirmed ({reason}); releasing {_ledger.PendingCount} "
-                        + "buffered outbound message(s)"
-                );
-                StartHeartbeat();
-            }
-        }
-
-        /// <summary>
-        /// Applies pongs from the receive thread: on protocol v0 each confirms the
-        /// game events written before its ping. Pongs from an older socket are
-        /// ignored.
-        /// </summary>
-        private void ApplyPongs()
-        {
-            long generation;
-            while (_pongs.TryDequeue(out generation))
-            {
-                if (generation == _ledger.Generation)
-                    _ledger.AcknowledgePong();
-            }
-        }
-
-        /// <summary>
-        /// Applies eventAck frames from the receive thread. An acknowledgement is
-        /// proof of receipt whichever socket it arrives on, so it is not tied to
-        /// the current generation.
-        /// </summary>
-        private void ApplyEventAcks()
-        {
-            while (_eventAcks.TryDequeue(out KeyValuePair<string, long> ack))
-                _ledger.AcknowledgeUpTo(ack.Key, ack.Value);
+            LogService.Instance.Info(
+                $"WebSocket connection confirmed ({reason}); releasing {_ledger.PendingCount} "
+                    + "buffered outbound message(s)"
+            );
+            StartHeartbeat();
         }
 
         private void FlushPending()
         {
             WebSocketSharp.WebSocket socket = _webSocket;
-            if (socket == null || !_isConnected || !_isConfirmed || IsInboundStale())
+            if (
+                socket == null
+                || !_session.IsConnected
+                || !_session.IsConfirmed
+                || IsInboundStale()
+            )
                 return; // Keep the backlog; retry on the next poll.
 
             // Events written on a previous socket were never confirmed;
             // Takaro may not have them. Send them again before anything
             // newer so the order is preserved.
-            long generation = Interlocked.Read(ref _generation);
-            if (generation != _ledger.Generation)
+            int requeued = _session.ReplayUnconfirmedOnNewSocket();
+            if (requeued > 0)
             {
-                int requeued = _ledger.RequeueInFlight(generation, _protocolVersion == 0);
-                if (requeued > 0)
-                {
-                    LogService.Instance.Info(
-                        $"Resending {requeued} game event(s) that were not confirmed "
-                            + "on the previous connection"
-                    );
-                }
+                LogService.Instance.Info(
+                    $"Resending {requeued} game event(s) that were not confirmed "
+                        + "on the previous connection"
+                );
             }
 
             while (true)
@@ -433,7 +355,12 @@ namespace Takaro.WebSocket
                     );
                 }
 
-                if (!_isConnected || !_isConfirmed || IsInboundStale() || !IsSendable(socket))
+                if (
+                    !_session.IsConnected
+                    || !_session.IsConfirmed
+                    || IsInboundStale()
+                    || !IsSendable(socket)
+                )
                     return;
 
                 OutboundLedger.Entry head = _ledger.PeekHead();
@@ -441,17 +368,9 @@ namespace Takaro.WebSocket
                 {
                     lock (_sendLock)
                     {
-                        if (!ReferenceEquals(socket, _webSocket) || !_isConnected)
+                        if (!ReferenceEquals(socket, _webSocket) || !_session.IsConnected)
                             return;
-                        socket.Send(
-                            _protocolVersion == 1 && head.Replayable
-                                ? ProtocolHandshake.WithStreamPosition(
-                                    head.Json,
-                                    _ledger.StreamId,
-                                    head.Seq
-                                )
-                                : head.Json
-                        );
+                        socket.Send(_session.WireFrame(head));
                     }
                 }
                 catch (Exception ex)
@@ -499,7 +418,7 @@ namespace Takaro.WebSocket
         /// </summary>
         private bool IsSendable(WebSocketSharp.WebSocket socket)
         {
-            return !_deadSocketClosing && socket.ReadyState == WebSocketState.Open;
+            return !_session.DeadSocketClosing && socket.ReadyState == WebSocketState.Open;
         }
 
         private bool AckPingDue()
@@ -531,10 +450,7 @@ namespace Takaro.WebSocket
                 DiscardSocket();
 
                 WebSocketSharp.WebSocket socket = new WebSocketSharp.WebSocket(config.WebSocketUrl);
-                long generation = Interlocked.Increment(ref _generation);
-                _identifyRejected = false;
-                _deadSocketClosing = false;
-                _protocolVersion = -1;
+                long generation = _session.BeginSocket();
                 _webSocket = socket;
 
                 // websocket-sharp swallows the real cause of a 1006: the receive
@@ -549,8 +465,7 @@ namespace Takaro.WebSocket
                     if (!ReferenceEquals(socket, _webSocket))
                         return;
 
-                    Interlocked.Exchange(ref _openedAtTicks, DateTime.UtcNow.Ticks);
-                    Interlocked.Exchange(ref _lastInboundTicks, DateTime.UtcNow.Ticks);
+                    _session.MarkOpened();
                     LogService.Instance.Info(
                         $"WebSocket connection established ({_ledger.PendingCount} message(s) buffered)"
                     );
@@ -590,7 +505,7 @@ namespace Takaro.WebSocket
                         return;
                     }
 
-                    _isConnected = true;
+                    _session.MarkIdentifySent();
                 };
 
                 socket.OnMessage += (sender, e) =>
@@ -628,17 +543,7 @@ namespace Takaro.WebSocket
                     if (!ReferenceEquals(socket, _webSocket))
                         return;
 
-                    long openedAt = Interlocked.Exchange(ref _openedAtTicks, 0);
-                    Interlocked.Exchange(ref _lastInboundTicks, 0);
-                    int uptimeSeconds =
-                        openedAt == 0
-                            ? -1
-                            : (int)
-                                TimeSpan.FromTicks(DateTime.UtcNow.Ticks - openedAt).TotalSeconds;
-
-                    bool wasConfirmed = _isConfirmed;
-                    _isConnected = false;
-                    _isConfirmed = false;
+                    int uptimeSeconds = _session.MarkClosed(out bool wasConfirmed);
 
                     LogService.Instance.Info(
                         $"WebSocket connection closed: {e.Code} - {e.Reason} "
@@ -650,11 +555,11 @@ namespace Takaro.WebSocket
                     // Takaro closes a refused v1 identify with 1008 right behind the
                     // reply, and websocket-sharp can drop the reply once the close
                     // is in; the close reason is the machine-readable code.
-                    if (!wasConfirmed && !_identifyRejected && e.Code == 1008)
+                    if (!wasConfirmed && !_session.IdentifyRejected && e.Code == 1008)
                     {
                         LogService.Instance.Error(
                             $"Takaro closed the connection while identifying ({e.Reason}). "
-                                + $"{RejectionAdvice(e.Reason)}; retrying with backoff"
+                                + $"{TransportSession.RejectionAdvice(e.Reason)}; retrying with backoff"
                         );
                     }
 
@@ -691,85 +596,36 @@ namespace Takaro.WebSocket
 
             // Any frame at all - text, binary, or a pong - proves the link is
             // still carrying traffic. This is what the heartbeat watchdog
-            // checks (F17a).
-            Interlocked.Exchange(ref _lastInboundTicks, DateTime.UtcNow.Ticks);
-
-            // Ping/pong and binary control traffic must never reach the JSON
-            // request router.
-            if (!e.IsText)
-                return;
-
-            // Takaro sends {"type":"connected"} the instant it accepts the
-            // socket, *before* it has processed identify; it is not an answer.
-            string messageType = PeekMessageType(e.Data);
-            if (messageType == WELCOME_MESSAGE_TYPE)
+            // checks (F17a). Ping/pong and binary control traffic must never
+            // reach the JSON request router.
+            InboundResult result = _session.HandleInbound(generation, e.IsText, e.Data);
+            switch (result.Kind)
             {
-                LogService.Instance.Debug(
-                    "Received Takaro welcome frame; waiting for the identify "
-                        + "acknowledgement before releasing the backlog"
-                );
-                return;
-            }
-
-            if (messageType == WebSocketMessage.MessageTypes.IdentifyResponse)
-            {
-                HandleIdentifyResponse(socket, e.Data);
-                return;
-            }
-
-            // Which frame formats apply depends on the version identify
-            // negotiates, so nothing else is acted on before it succeeds.
-            if (!_isConfirmed)
-                return;
-
-            if (messageType == PONG_MESSAGE_TYPE)
-            {
-                _pongs.Enqueue(generation);
-                return;
-            }
-
-            if (_protocolVersion == 1)
-            {
-                if (messageType == WebSocketMessage.MessageTypes.EventAck)
-                {
-                    HandleEventAck(e.Data);
-                    return;
-                }
-
-                if (messageType == WebSocketMessage.MessageTypes.EventError)
-                {
+                case InboundKind.Welcome:
+                    // Takaro sends {"type":"connected"} the instant it accepts the
+                    // socket, *before* it has processed identify; it is not an answer.
+                    LogService.Instance.Debug(
+                        "Received Takaro welcome frame; waiting for the identify "
+                            + "acknowledgement before releasing the backlog"
+                    );
+                    break;
+                case InboundKind.IdentifyAccepted:
+                    LogService.Instance.Info(
+                        $"Takaro accepted identify: game server {result.Reply.GameServerId}, "
+                            + $"protocol version {result.Reply.ProtocolVersion}"
+                    );
+                    ConfirmConnection("identify accepted");
+                    break;
+                case InboundKind.IdentifyRejected:
+                    RejectIdentify(socket, result.Reply.ErrorCode, result.Reply.Reason);
+                    break;
+                case InboundKind.EventError:
                     LogEventError(e.Data);
-                    return;
-                }
+                    break;
+                case InboundKind.Request:
+                    RequestRouter.Route(e.Data);
+                    break;
             }
-
-            RequestRouter.Route(e.Data);
-        }
-
-        private void HandleIdentifyResponse(WebSocketSharp.WebSocket socket, string json)
-        {
-            if (_isConfirmed || _identifyRejected)
-                return;
-
-            IdentifyReply reply = ProtocolHandshake.ParseIdentifyResponse(json);
-            if (!reply.Accepted)
-            {
-                RejectIdentify(socket, reply.ErrorCode, reply.Reason);
-                return;
-            }
-
-            _protocolVersion = reply.ProtocolVersion;
-            LogService.Instance.Info(
-                $"Takaro accepted identify: game server {reply.GameServerId}, "
-                    + $"protocol version {reply.ProtocolVersion}"
-            );
-            ConfirmConnection("identify accepted");
-        }
-
-        private void HandleEventAck(string json)
-        {
-            if (ProtocolHandshake.TryParseEventAck(json, out string streamId, out long upTo))
-                _eventAcks.Enqueue(new KeyValuePair<string, long>(streamId, upTo));
         }
 
         // A rejected event is final for Takaro (the next ack covers it), except
@@ -795,9 +651,8 @@ namespace Takaro.WebSocket
 
         private void RejectIdentify(WebSocketSharp.WebSocket socket, string code, string reason)
         {
-            _identifyRejected = true;
             LogService.Instance.Error(
-                $"Takaro rejected identify ({code ?? "error"}): {reason?.TrimEnd('.')}. {RejectionAdvice(code)}; "
+                $"Takaro rejected identify ({code ?? "error"}): {reason?.TrimEnd('.')}. {TransportSession.RejectionAdvice(code)}; "
                     + "retrying with backoff"
             );
 
@@ -811,50 +666,6 @@ namespace Takaro.WebSocket
                     $"Error closing a rejected socket: {ex.GetType().FullName}: {ex.Message}"
                 );
             }
-        }
-
-        private static string RejectionAdvice(string code)
-        {
-            switch (code)
-            {
-                case ProtocolErrorCodes.Unsupported:
-                    return "Takaro refused this connector for a pending Connector Migration; "
-                        + "update the mod or cancel the migration in Takaro";
-                case ProtocolErrorCodes.NoSharedProtocolVersion:
-                    return "this mod and Takaro share no protocol version; update the mod";
-                default:
-                    return "Check RegistrationToken and IdentityToken in Takaro/Config.xml";
-            }
-        }
-
-        /// <summary>
-        /// Reads just the "type" field of an inbound frame, by scanning rather
-        /// than deserialising: this runs on websocket-sharp's receive thread on
-        /// the Mono runtime shipped with 7D2D, and the cheapest possible path is
-        /// the safest one. Returns null when there is no readable type.
-        /// </summary>
-        private static string PeekMessageType(string json)
-        {
-            if (string.IsNullOrEmpty(json))
-                return null;
-
-            int key = json.IndexOf("\"type\"", StringComparison.Ordinal);
-            if (key < 0)
-                return null;
-
-            int colon = json.IndexOf(':', key + 6);
-            if (colon < 0)
-                return null;
-
-            int open = json.IndexOf('"', colon + 1);
-            if (open < 0)
-                return null;
-
-            int close = json.IndexOf('"', open + 1);
-            if (close < 0)
-                return null;
-
-            return json.Substring(open + 1, close - open - 1);
         }
 
         private static string Describe(Exception ex)
@@ -899,12 +710,12 @@ namespace Takaro.WebSocket
         {
             StopHeartbeatTimer();
 
-            Interlocked.Exchange(ref _lastInboundTicks, DateTime.UtcNow.Ticks);
+            _session.MarkInbound();
 
             _heartbeatTimer = new Timer(
                 state =>
                 {
-                    if (!_isConnected || !_isConfirmed)
+                    if (!_session.IsConnected || !_session.IsConfirmed)
                         return;
 
                     Send(WebSocketMessage.CreateHeartbeat());
@@ -916,21 +727,9 @@ namespace Takaro.WebSocket
             );
         }
 
-        /// <summary>
-        /// Seconds since the last inbound frame, or -1 while no socket is up.
-        /// </summary>
-        private int SecondsSinceInbound()
-        {
-            long last = Interlocked.Read(ref _lastInboundTicks);
-            if (last == 0)
-                return -1;
-            return (int)TimeSpan.FromTicks(DateTime.UtcNow.Ticks - last).TotalSeconds;
-        }
-
         private bool IsInboundStale()
         {
-            int seconds = SecondsSinceInbound();
-            return seconds >= 0 && seconds > INBOUND_TIMEOUT_SECONDS;
+            return _session.IsInboundStale(INBOUND_TIMEOUT_SECONDS);
         }
 
         /// <summary>
@@ -943,7 +742,12 @@ namespace Takaro.WebSocket
         /// </summary>
         private void CheckInboundLiveness()
         {
-            if (_shuttingDown || !_isConnected || _deadSocketClosing || !IsInboundStale())
+            if (
+                _shuttingDown
+                || !_session.IsConnected
+                || _session.DeadSocketClosing
+                || !IsInboundStale()
+            )
                 return;
 
             WebSocketSharp.WebSocket socket = _webSocket;
@@ -951,10 +755,10 @@ namespace Takaro.WebSocket
                 return;
 
             // Runs every sender poll; close a given socket only once.
-            _deadSocketClosing = true;
+            _session.DeadSocketClosing = true;
 
             LogService.Instance.Info(
-                $"No inbound traffic for {SecondsSinceInbound()}s - treating socket as dead; "
+                $"No inbound traffic for {_session.SecondsSinceInbound()}s - treating socket as dead; "
                     + $"closing it ({_ledger.PendingCount} message(s) buffered)"
             );
 
@@ -1039,10 +843,7 @@ namespace Takaro.WebSocket
                 return;
 
             _webSocket = null;
-            _isConnected = false;
-            _isConfirmed = false;
-            Interlocked.Exchange(ref _openedAtTicks, 0);
-            Interlocked.Exchange(ref _lastInboundTicks, 0);
+            _session.MarkDetached();
 
             try
             {
@@ -1059,7 +860,7 @@ namespace Takaro.WebSocket
 
         private void CloseConnection()
         {
-            if (_webSocket != null && _isConnected)
+            if (_webSocket != null && _session.IsConnected)
             {
                 try
                 {
@@ -1072,8 +873,7 @@ namespace Takaro.WebSocket
                 finally
                 {
                     _webSocket = null;
-                    _isConnected = false;
-                    _isConfirmed = false;
+                    _session.MarkDetached();
                 }
             }
         }

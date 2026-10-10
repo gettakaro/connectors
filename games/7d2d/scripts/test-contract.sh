@@ -33,6 +33,7 @@ docker compose --project-directory "${PROJECT_ROOT}" run --rm --no-deps \
       /app/mod/src/WebSocket/RequestRouter.cs \
       /app/mod/src/WebSocket/ReadHandlers.cs \
       /app/mod/src/WebSocket/GiveItemHandler.cs \
+      /app/mod/src/WebSocket/TransportSession.cs \
       /app/mod/src/Services/BanExpiry.cs \
       /app/mod/src/Services/BanIdentity.cs \
       /app/mod/src/Services/ConsoleCommandOutcome.cs \
