@@ -1,4 +1,5 @@
 #include "common.h"
+#include "config_file.h"
 
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -8,6 +9,7 @@
 #include <fcntl.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstdarg>
 #include <cstdio>
@@ -46,14 +48,23 @@ const std::string& ExeDir() {
     return d;
 }
 
+static std::atomic<bool> g_dataDirHadLog{false};
+
 const std::string& PluginDataDir() {
     static const std::string& d = *new std::string([] {
-        const char* env = getenv("TAKARO_PLUGIN_DATA_DIR");
+        const char* env = ConfigFile::Get("TAKARO_PLUGIN_DATA_DIR");
         std::string dir = (env && *env) ? std::string(env) : ExeDir() + "/takaro";
+        struct stat st{};
+        g_dataDirHadLog = ::stat((dir + "/plugin.log").c_str(), &st) == 0;
         ::mkdir(dir.c_str(), 0775);
         return dir;
     }());
     return d;
+}
+
+bool PluginDataDirHadLog() {
+    (void)PluginDataDir();
+    return g_dataDirHadLog;
 }
 
 bool DebugEnabled() {
@@ -461,7 +472,7 @@ bool WriteFileAtomic(const std::string& path, const std::string& content) {
 
 std::string ConfigValue(const char* envName, const char* jsonKey, const std::string& def) {
     if (envName) {
-        const char* v = getenv(envName);
+        const char* v = ConfigFile::Get(envName);
         if (v && *v) return v;
     }
     static const JsonValue cfg = [] {
@@ -478,4 +489,38 @@ std::string ConfigValue(const char* envName, const char* jsonKey, const std::str
         if (v && v->isNum()) return v->str;
     }
     return def;
+}
+
+void ConsoleLine(const char* fmt, ...) {
+    char msg[1024];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(msg, sizeof msg, fmt, ap);
+    va_end(ap);
+    PluginLog("console: %s", msg);
+    std::string out = "[Takaro] " + Redact(msg) + "\n";
+#ifdef TAKARO_BRIDGE_TEST
+    const int fd = STDERR_FILENO;
+#else
+    const int fd = STDOUT_FILENO;
+#endif
+    ssize_t ignored = write(fd, out.data(), out.size());
+    (void)ignored;
+}
+
+void ConsoleBanner(const std::vector<std::string>& lines) {
+    static const char rule[] = "*************************************************************************";
+    std::string out = std::string("[Takaro] ") + rule + "\n";
+    for (const auto& l : lines) {
+        PluginLog("console: %s", l.c_str());
+        out += "[Takaro]   " + Redact(l) + "\n";
+    }
+    out += std::string("[Takaro] ") + rule + "\n";
+#ifdef TAKARO_BRIDGE_TEST
+    const int fd = STDERR_FILENO;
+#else
+    const int fd = STDOUT_FILENO;
+#endif
+    ssize_t ignored = write(fd, out.data(), out.size());  // one write: never split by engine output
+    (void)ignored;
 }

@@ -161,7 +161,8 @@ int main(int argc, char** argv) {
     setenv("TAKARO_PLUGIN_DATA_DIR", argv[3], 1);
     setenv("TAKARO_STATE_DIR", argv[3], 1);
     setenv("TAKARO_IDENTITY_TOKEN", "test-identity", 1);
-    setenv("TAKARO_REGISTRATION_TOKEN", "", 1);
+    setenv("TAKARO_REGISTRATION_TOKEN", "test-registration", 1);
+    setenv("TAKARO_CONFIG_FILE", (std::string(argv[3]) + "/takaro.cfg").c_str(), 1);
     const std::string marker = std::string(argv[3]) + "/before-rename";
     NativePersistence::TestBeforeRename([marker](const std::string& path) {
         if (path.find("event-outbox.json") == std::string::npos || !pauseRename.exchange(false)) return;
