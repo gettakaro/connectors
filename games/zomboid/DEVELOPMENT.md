@@ -214,24 +214,47 @@ server JVM. In order of preference:
 
 ## Configuration
 
-Config is read from `<cachedir>/Takaro/TakaroConfig.txt` (`key=value`), each key overridable by a
-`TAKARO_*` environment variable (env wins):
+The connector folder is the folder that holds the agent jar (`<Zomboid>/Takaro/`), resolved by
+`TakaroPaths`. An install whose files (`TakaroConfig.txt`, `TakaroConfig.saved.txt` or
+`bans.json`) already sit in `~/Zomboid/Takaro` or `/home/steam/Zomboid/Takaro` keeps that folder
+wherever its jar is. `-Dtakaro.configFile`, `-Dtakaro.logFile` and `-Dtakaro.bansFile` override
+each file.
 
-```
-wsUrl=wss://connect.takaro.io/
-identityToken=
-registrationToken=
-debug=false
-logEvents=false
-serverChatName=
-```
+Two files, merged per field by `ConfigFiles.resolve`:
+
+| File | Written by | Holds |
+|---|---|---|
+| `TakaroConfig.txt` | the release zip (template in `agent/src/main/resources/io/takaro/zomboid/agent/`), the owner | every key; the file people edit |
+| `TakaroConfig.saved.txt` | the connector only (mode 0600) | `registrationToken` and `identityToken` in use, from the files, never from the env |
+
+- Tokens: `TAKARO_*` env, else `TakaroConfig.txt`, else the saved copy. Every other key: env,
+  else `TakaroConfig.txt`. The registration token is never written into `TakaroConfig.txt`.
+- Identity: when no source holds one, a random UUID is generated on the first tick and written
+  into both files. An identity the saved copy holds is written back into a `TakaroConfig.txt`
+  that an upgrade replaced. Takaro refuses an empty identity ("No identityToken provided"), so an
+  install without one never had a server record and a new UUID orphans nothing.
+- Phases, because `premain` runs in all three JVMs of the launch chain: `load()` in premain only
+  reads; `prepareForStart()` on the first tick (real server JVM) writes the template when there
+  is no file and no token anywhere, the identity and the saved copy; then a daemon thread polls
+  `TakaroConfig.txt` every 5 s (`poll()`), compares the text, and applies a change only when a
+  second read 300 ms later sees the same text. A missing or truncated file falls back to the
+  saved tokens, so it keeps the current connection.
+- Rewrites are atomic (tmp + move) and keep the file's owner and mode (a new file takes its
+  folder's owner), so a server running as root does not lock the owner out of the file.
+- `TakaroConnector` serialises connect, `applyConfig` and shutdown on one lock. A changed URL or
+  token retires the current socket (`TakaroWebSocketClient.retire()`: no reconnect, no identify,
+  no events) and connects at once, skipping backoff. No registration token: a `*` banner naming
+  the file, no socket. A rejected identify: a banner, the socket is closed and retried with
+  backoff (Takaro keeps an unidentified socket open). Close codes 1008/4001/4003 stop retrying
+  until the file changes.
 
 Env overrides: `TAKARO_WS_URL`, `TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN`,
 `TAKARO_DEBUG`, `TAKARO_LOG_EVENTS`, `TAKARO_SERVER_CHAT_NAME`, `TAKARO_DEBUG_CATALOG`.
 
-The config file path itself can be redirected with the `takaro.configFile` system property, and
-the log file with `takaro.logFile` (defaults: `/home/steam/Zomboid/Takaro/TakaroConfig.txt` and
-`/home/steam/Zomboid/Takaro/takaro-agent.log`).
+The release has two artifacts: the agent jar (what `takaro-maint deploy` installs as
+`Takaro/TakaroConnector.jar`) and the bundle zip (`Takaro/TakaroConnector.jar` +
+`Takaro/TakaroConfig.txt`, written by `build-release.sh` with fixed timestamps so two builds are
+byte-identical; a deploy parks it in `takaro-bundle/`).
 
 `debugCatalog` logs the `listItems`/`listEntities`/`listLocations` sizes once at start — a
 server-side way to prove the catalogue when no Takaro REST driver is available.

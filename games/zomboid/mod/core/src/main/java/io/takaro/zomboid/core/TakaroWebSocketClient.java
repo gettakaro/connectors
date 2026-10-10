@@ -12,6 +12,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -26,6 +27,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     });
     private volatile long currentReconnectDelay;
     private volatile boolean shouldReconnect = true;
+    // Set once a config change or shutdown replaced this client: it must not reconnect,
+    // identify or hand events to the game any more, whatever its socket thread still does.
+    private volatile boolean retired = false;
 
     public TakaroWebSocketClient(URI serverUri, GameAdapter adapter, TakaroConfig config) {
         super(serverUri);
@@ -36,6 +40,10 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     @Override
     public void onOpen(ServerHandshake handshake) {
+        if (retired) {
+            close();
+            return;
+        }
         adapter.logInfo("WebSocket connected, sending identify...");
         sendIdentify();
         try {
@@ -47,6 +55,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     @Override
     public void onMessage(String message) {
+        if (retired) {
+            return;
+        }
         if (config.isDebugEnabled()) {
             adapter.logDebug("WS RECV: " + message);
         }
@@ -89,10 +100,17 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     @Override
     public void onClose(int code, String reason, boolean remote) {
+        if (retired) {
+            return;
+        }
         adapter.logInfo("WebSocket closed (code=" + code + ", reason=" + reason + ", remote=" + remote + ")");
 
         if (code == 1008 || code == 4001 || code == 4003) {
-            adapter.logWarning("Authentication error, disabling reconnect");
+            // A new token in the config file replaces this client, which reconnects.
+            TakaroConnector.logBanner(adapter,
+                    "Takaro refused the connection (code " + code + (reason != null && !reason.isEmpty() ? ", " + reason : "") + ").",
+                    "Check registrationToken in " + config.getConfigFileHint() + ". Saving a corrected",
+                    "token reconnects within a few seconds, no restart needed.");
             shouldReconnect = false;
         }
 
@@ -106,7 +124,16 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         adapter.logWarning("WebSocket error: " + ex.getMessage());
     }
 
+    /** Stops this client without waiting for its socket; used when a config change replaces it. */
+    public void retire() {
+        retired = true;
+        shouldReconnect = false;
+        scheduler.shutdownNow();
+        close();
+    }
+
     public void shutdown() {
+        retired = true;
         shouldReconnect = false;
         scheduler.shutdownNow();
         try {
@@ -225,7 +252,12 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             } else {
                 errorMessage = errorElement.getAsString();
             }
-            adapter.logWarning("Identify failed: " + errorMessage);
+            TakaroConnector.logBanner(adapter,
+                    "Takaro rejected identify: " + errorMessage + ".",
+                    "Check registrationToken in " + config.getConfigFileHint() + ". Saving a corrected",
+                    "token reconnects within a few seconds; until then the connector retries with backoff.");
+            // Takaro keeps an unidentified socket open; close it so the backoff retries.
+            close();
             return;
         }
 
@@ -711,14 +743,18 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     private void scheduleReconnect() {
         adapter.logInfo("Reconnecting in " + (currentReconnectDelay / 1000) + "s...");
-        scheduler.schedule(() -> {
-            if (!shouldReconnect) return;
-            try {
-                reconnectBlocking();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }, currentReconnectDelay, TimeUnit.MILLISECONDS);
+        try {
+            scheduler.schedule(() -> {
+                if (!shouldReconnect || retired) return;
+                try {
+                    reconnectBlocking();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }, currentReconnectDelay, TimeUnit.MILLISECONDS);
+        } catch (RejectedExecutionException e) {
+            return; // retired or shut down between the close and this call
+        }
 
         currentReconnectDelay = Math.min(
                 (long) (currentReconnectDelay * config.getBackoffMultiplier()),

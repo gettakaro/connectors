@@ -8,7 +8,6 @@ import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -19,7 +18,7 @@ import java.util.Map;
  * Persistent record of Takaro-issued bans, including timed-ban expiry times that
  * Project Zomboid's own ban tables cannot express.
  *
- * <p>Stored as JSON at {@code /home/steam/Zomboid/Takaro/bans.json}. Accessed on
+ * <p>Stored as JSON in {@code bans.json} in the connector folder ({@link TakaroPaths}). Accessed on
  * the main thread (ban/unban actions and the reconciler's expiry sweep), but
  * guarded with {@code synchronized} so nothing can corrupt it.
  */
@@ -52,8 +51,7 @@ public final class BanStore {
     private final Map<String, Ban> bans = new LinkedHashMap<>();
 
     public BanStore() {
-        this(Paths.get(System.getProperty("takaro.bansFile",
-                "/home/steam/Zomboid/Takaro/bans.json")));
+        this(TakaroPaths.bansFile());
     }
 
     public BanStore(Path file) {

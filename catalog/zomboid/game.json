@@ -26,6 +26,10 @@
     "agent": {
       "description": "Server-side -javaagent jar loaded into the dedicated server JVM (JAVA_TOOL_OPTIONS)",
       "artifactPattern": "takaro-zomboid-agent-{target}-{version}.jar"
+    },
+    "bundle": {
+      "description": "The download for server owners: Takaro/TakaroConnector.jar (the agent jar) and Takaro/TakaroConfig.txt (empty token), unpacked into the Zomboid data folder; never loaded as it is",
+      "artifactPattern": "takaro-zomboid-{target}-{version}.zip"
     }
   },
   "legacyAssetAliases": {"TakaroConnector-{version}.jar": "linux-42.21.0/agent"},
