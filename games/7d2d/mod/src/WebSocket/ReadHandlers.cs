@@ -42,7 +42,7 @@ namespace Takaro.WebSocket
             PlayerRecord record = StateMirror.Instance.GetOnlinePlayer(gameId);
             if (record == null)
             {
-                SendError(requestId, "Player not found");
+                SendError(requestId, "Player not found", ProtocolErrorCodes.NotFound);
                 return;
             }
 
@@ -55,7 +55,7 @@ namespace Takaro.WebSocket
             PlayerRecord record = StateMirror.Instance.GetPlayerLocationRecord(gameId);
             if (record == null)
             {
-                SendError(requestId, "Player not found");
+                SendError(requestId, "Player not found", ProtocolErrorCodes.NotFound);
                 return;
             }
 
@@ -188,9 +188,13 @@ namespace Takaro.WebSocket
             WebSocketTransport.Instance.Send(message);
         }
 
-        private static void SendError(string requestId, string errorMessage)
+        private static void SendError(
+            string requestId,
+            string errorMessage,
+            string code = ProtocolErrorCodes.GameError
+        )
         {
-            WebSocketTransport.Instance.SendErrorResponse(requestId, errorMessage);
+            WebSocketTransport.Instance.SendErrorResponse(requestId, errorMessage, code);
         }
     }
 }

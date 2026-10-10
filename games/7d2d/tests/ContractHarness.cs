@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -43,6 +45,13 @@ public static class ContractHarness
             AssertControlFramesDoNotEnterRequestDispatch();
             AssertProtocolErrorsAreBoundedAndSafe();
             AssertIdentifyRejectionIsDetected();
+            AssertIdentifyPayload(fixture);
+            AssertManifestMatchesAnsweredActions(fixture);
+            AssertIdentifyResponsesAreParsed(fixture);
+            AssertV1EventFraming(fixture);
+            AssertLedgerAcknowledgesByStream();
+            AssertV1ErrorResponses(fixture);
+            AssertListLocationsMatchesLocationDto();
             AssertMissingLocalisationIsNotShown();
             AssertOutboundLedgerReplaysUnconfirmedEvents();
             AssertCorrelatedMalformedRequestsTerminate();
@@ -437,6 +446,452 @@ public static class ContractHarness
                 && plain == "plain text reason",
             "string error is a rejection with its text"
         );
+    }
+
+    private static JObject ProtocolV1(JObject fixture)
+    {
+        return (JObject)fixture["protocolV1"];
+    }
+
+    private static JObject SerializeFrame(object message)
+    {
+        return JObject.Parse(JsonConvert.SerializeObject(message));
+    }
+
+    private static JObject WithSortedCapabilities(JObject identify)
+    {
+        JObject copy = (JObject)identify.DeepClone();
+        var sorted = new JArray(
+            ((JArray)copy["payload"]["capabilities"]).OrderBy(c => (string)c["name"])
+        );
+        copy["payload"]["capabilities"] = sorted;
+        return copy;
+    }
+
+    private static void AssertIdentifyPayload(JObject fixture)
+    {
+        JObject v1 = ProtocolV1(fixture);
+        JObject patterns = (JObject)v1["patterns"];
+        JObject frame = SerializeFrame(
+            WebSocketMessage.CreateIdentify("fixture-registration-token", "fixture-identity-token")
+        );
+
+        TokenEqual(
+            WithSortedCapabilities((JObject)v1["identify"]),
+            WithSortedCapabilities(frame),
+            "identify frame matches the fixture"
+        );
+        Equal("identify", (string)frame["type"], "identify frame type");
+
+        JObject payload = (JObject)frame["payload"];
+        var keys = payload.Properties().Select(p => p.Name).OrderBy(n => n).ToArray();
+        Equal(
+            "capabilities,game,identityToken,protocolVersions,registrationToken",
+            string.Join(",", keys),
+            "identify payload carries exactly the contract keys"
+        );
+        TokenEqual(
+            new JArray(0, 1),
+            payload["protocolVersions"],
+            "identify offers protocol 0 and 1"
+        );
+        string game = (string)payload["game"];
+        Equal("7d2d", game, "identify sends the game identifier");
+        True(
+            Regex.IsMatch(game, (string)patterns["game"])
+                && game.Length <= (int)patterns["gameMaxLength"],
+            "game identifier satisfies Takaro's pattern"
+        );
+
+        var capabilities = (JArray)payload["capabilities"];
+        True(
+            capabilities.Count <= (int)patterns["capabilityManifestMaxEntries"],
+            "manifest is within Takaro's entry limit"
+        );
+        var names = new HashSet<string>();
+        foreach (JObject capability in capabilities)
+        {
+            string name = (string)capability["name"];
+            True(
+                Regex.IsMatch(name, (string)patterns["capabilityName"])
+                    && name.Length <= (int)patterns["capabilityNameMaxLength"],
+                "capability name " + name + " satisfies Takaro's pattern"
+            );
+            True(names.Add(name), "capability " + name + " is declared once");
+            if (name != "migration.native")
+                True(capability["parameters"] == null, name + " declares no parameters");
+        }
+
+        JObject migration = (JObject)
+            capabilities.Single(c => (string)c["name"] == "migration.native");
+        TokenEqual(
+            JObject.Parse("{\"from\":\"7d2d\"}"),
+            migration["parameters"],
+            "migration.native names the 7d2d source and nothing else"
+        );
+        True(!names.Contains("map"), "map is not declared");
+        True(names.Contains("locations.list"), "locations.list is declared");
+
+        var declaredEvents = names
+            .Where(n => n.StartsWith("events."))
+            .Select(n => n.Substring("events.".Length))
+            .OrderBy(n => n);
+        Equal(
+            string.Join(",", ((JArray)v1["eventTypes"]).Select(t => (string)t).OrderBy(n => n)),
+            string.Join(",", declaredEvents),
+            "manifest declares exactly the events the mod emits"
+        );
+    }
+
+    private static void AssertManifestMatchesAnsweredActions(JObject fixture)
+    {
+        JObject table = (JObject)ProtocolV1(fixture)["actionCapabilities"];
+        var expectedCapabilities = new HashSet<string>();
+        foreach (string action in RequestRouter.SupportedActions)
+        {
+            True(table[action] != null, action + " has a capability decision in the fixture");
+            string capability = (string)table[action]["capability"];
+            if (capability != null)
+                expectedCapabilities.Add(capability);
+        }
+
+        var declared = new HashSet<string>(
+            ProtocolHandshake
+                .BuildCapabilityManifest(RequestRouter.SupportedActions)
+                .Select(c => (string)c["name"])
+                .Where(n => !n.StartsWith("events.") && n != "migration.native")
+        );
+        True(
+            declared.SetEquals(expectedCapabilities),
+            "manifest declares exactly the capabilities of the actions the mod answers"
+        );
+
+        foreach (KeyValuePair<string, string> entry in ProtocolHandshake.ActionCapabilities)
+        {
+            Equal(
+                (string)table[entry.Key]["capability"],
+                entry.Value,
+                entry.Key + " capability agrees with Takaro"
+            );
+            True(
+                RequestRouter.SupportedActions.Contains(entry.Key),
+                entry.Key + " is declared only because the mod answers it"
+            );
+        }
+
+        foreach (string action in RequestRouter.SupportedActions)
+        {
+            JToken args = new JObject();
+            foreach (JObject function in (JArray)fixture["functions"])
+            {
+                if ((string)function["name"] == action)
+                    args = function["args"];
+            }
+            HandlerProbe.Configure(JValue.CreateNull());
+            WebSocketTransport.Instance.ErrorCodes.Clear();
+            RequestRouter.Route(
+                new JObject
+                {
+                    ["type"] = "request",
+                    ["requestId"] = "fixture-request",
+                    ["payload"] = new JObject { ["action"] = action, ["args"] = args.DeepClone() },
+                }.ToString(Formatting.None)
+            );
+            True(
+                !WebSocketTransport.Instance.ErrorCodes.Contains(ProtocolErrorCodes.Unsupported),
+                action + " is routed, not refused as unsupported"
+            );
+        }
+
+        foreach (string action in new[] { "getMapImage", "noSuchAction" })
+        {
+            HandlerProbe.Configure(JValue.CreateNull());
+            WebSocketTransport.Instance.ErrorCodes.Clear();
+            RequestRouter.Route(
+                new JObject
+                {
+                    ["type"] = "request",
+                    ["requestId"] = "fixture-request",
+                    ["payload"] = new JObject { ["action"] = action, ["args"] = new JObject() },
+                }.ToString(Formatting.None)
+            );
+            Equal(
+                ProtocolErrorCodes.Unsupported,
+                WebSocketTransport.Instance.ErrorCodes.SingleOrDefault(),
+                action + " is refused as unsupported"
+            );
+        }
+    }
+
+    private static void AssertIdentifyResponsesAreParsed(JObject fixture)
+    {
+        foreach (JObject example in (JArray)ProtocolV1(fixture)["identifyResponses"])
+        {
+            string name = (string)example["name"];
+            JObject expected = (JObject)example["expected"];
+            IdentifyReply reply = ProtocolHandshake.ParseIdentifyResponse(
+                example["frame"].ToString(Formatting.None)
+            );
+            Equal((bool)expected["accepted"], reply.Accepted, name + ": accepted");
+            if (reply.Accepted)
+            {
+                Equal((int)expected["protocolVersion"], reply.ProtocolVersion, name + ": version");
+                Equal("gs-1", reply.GameServerId, name + ": game server id");
+            }
+            else
+            {
+                Equal((string)expected["errorCode"], reply.ErrorCode, name + ": code");
+                Equal((string)expected["reason"], reply.Reason, name + ": reason");
+            }
+        }
+
+        True(
+            ProtocolDiagnostics.TryGetIdentifyRejection(
+                "{\"type\":\"identifyResponse\",\"payload\":null,\"error\":{\"code\":\"invalid_args\",\"message\":\"bad\"}}",
+                out string code,
+                out string reason
+            )
+                && code == "invalid_args"
+                && reason == "bad",
+            "a v1 top-level identify error is a rejection with its code"
+        );
+        True(
+            !ProtocolDiagnostics.TryGetIdentifyRejection(
+                "{\"type\":\"identifyResponse\",\"payload\":{\"gameServerId\":\"gs-1\",\"protocolVersion\":1}}",
+                out _
+            ),
+            "a v1 acceptance is not a rejection"
+        );
+    }
+
+    private static void AssertV1EventFraming(JObject fixture)
+    {
+        JObject v1 = ProtocolV1(fixture);
+        string streamPattern = (string)v1["patterns"]["streamId"];
+        var ledger = new OutboundLedger(10, 10);
+        True(Regex.IsMatch(ledger.StreamId, streamPattern), "stream id satisfies Takaro's pattern");
+        True(
+            ledger.StreamId != new OutboundLedger(10, 10).StreamId,
+            "every ledger starts a new stream"
+        );
+
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        GameEventPublisher.SendLogEvent("fixture");
+        string eventJson = JsonConvert.SerializeObject(
+            WebSocketTransport.Instance.TerminalMessages[0]
+        );
+        ledger.Enqueue(eventJson, true, false);
+        ledger.Enqueue("{\"type\":\"ping\"}", false, true);
+        ledger.Enqueue(eventJson, true, false);
+
+        OutboundLedger.Entry first = ledger.PeekHead();
+        Equal(1L, first.Seq, "first event is numbered 1");
+        TokenEqual(
+            v1["eventFrame"],
+            JObject.Parse(
+                ProtocolHandshake.WithStreamPosition(first.Json, "fixture-stream", first.Seq)
+            ),
+            "v1 event frame matches the fixture"
+        );
+
+        ledger.MarkHeadWritten();
+        Equal(0L, ledger.PeekHead().Seq, "a ping is not part of the stream");
+        ledger.MarkHeadWritten();
+        Equal(2L, ledger.PeekHead().Seq, "numbering follows enqueue order, skipping non-events");
+
+        string withDate = ProtocolHandshake.WithStreamPosition(
+            "{\"type\":\"gameEvent\",\"payload\":{\"type\":\"log\",\"data\":{\"at\":\"2030-01-01T00:00:00Z\",\"n\":1.50}}}",
+            "s",
+            7
+        );
+        JObject positioned = JsonConvert.DeserializeObject<JObject>(
+            withDate,
+            new JsonSerializerSettings { DateParseHandling = DateParseHandling.None }
+        );
+        Equal(
+            "2030-01-01T00:00:00Z",
+            (string)positioned["payload"]["data"]["at"],
+            "event data is not rewritten by numbering"
+        );
+        Equal(7L, (long)positioned["payload"]["seq"], "seq is a number");
+    }
+
+    private static void AssertLedgerAcknowledgesByStream()
+    {
+        var ledger = new OutboundLedger(10, 10, "stream-a");
+        ledger.RequeueInFlight(1, false);
+        for (int i = 0; i < 3; i++)
+            ledger.Enqueue("e" + i, true, false);
+        for (int i = 0; i < 3; i++)
+            ledger.MarkHeadWritten();
+        Equal(3, ledger.InFlightCount, "written events wait for an acknowledgement");
+        True(!ledger.NeedsAckPing, "v1 needs no acknowledgement ping");
+
+        ledger.Enqueue("ping", false, true);
+        ledger.MarkHeadWritten();
+        ledger.Enqueue("e3", true, false);
+        ledger.Enqueue("e4", true, false);
+        Equal(0, ledger.AcknowledgePong(), "a pong confirms nothing on v1");
+        Equal(3, ledger.InFlightCount, "events stay in flight after a pong");
+
+        Equal(0, ledger.AcknowledgeUpTo("stream-b", 99), "another stream's ack confirms nothing");
+        Equal(3, ledger.InFlightCount, "events of this stream are untouched");
+        Equal(2, ledger.AcknowledgeUpTo("stream-a", 2), "ack up to 2 confirms events 1 and 2");
+        Equal(1, ledger.InFlightCount, "event 3 is still unconfirmed");
+
+        // The socket dies; event 3 returns to the backlog with its number.
+        Equal(1, ledger.RequeueInFlight(2, false), "unconfirmed event is requeued");
+        Equal(3L, ledger.PeekHead().Seq, "a requeued event keeps its number");
+        Equal(
+            2,
+            ledger.AcknowledgeUpTo("stream-a", 4),
+            "an ack covers requeued and written events"
+        );
+        Equal(1, ledger.PendingCount, "events beyond the ack are still to be sent");
+        Equal(5L, ledger.PeekHead().Seq, "the next event to send is number 5");
+
+        var v0 = new OutboundLedger(10, 10, "stream-v0");
+        v0.RequeueInFlight(1, true);
+        v0.Enqueue("e", true, false);
+        v0.MarkHeadWritten();
+        True(v0.NeedsAckPing, "v0 still confirms by pong");
+    }
+
+    private static void AssertV1ErrorResponses(JObject fixture)
+    {
+        JObject v1 = ProtocolV1(fixture);
+        TokenEqual(
+            v1["errorResponse"],
+            SerializeFrame(
+                WebSocketMessage.CreateErrorResponse(
+                    "fixture-request",
+                    "Player not found",
+                    ProtocolErrorCodes.NotFound,
+                    1
+                )
+            ),
+            "v1 error response matches the fixture"
+        );
+        string v1Json = JsonConvert.SerializeObject(
+            WebSocketMessage.CreateErrorResponse("r", "m", ProtocolErrorCodes.Internal, 1)
+        );
+        True(v1Json.Contains("\"payload\":null"), "v1 error response serialises a null payload");
+
+        JObject v0 = SerializeFrame(
+            WebSocketMessage.CreateErrorResponse("r", "m", ProtocolErrorCodes.Internal, 0)
+        );
+        TokenEqual(
+            JObject.Parse("{\"type\":\"error\",\"payload\":{\"error\":\"m\"},\"requestId\":\"r\"}"),
+            v0,
+            "v0 error response is unchanged"
+        );
+
+        WebSocketTransport.Instance.ProtocolVersion = 1;
+        try
+        {
+            AssertRoutedErrorCode(
+                "{\"type\":\"request\",\"requestId\":\"r\",\"payload\":{\"action\":\"nope\"}}",
+                ProtocolErrorCodes.Unsupported
+            );
+            AssertRoutedErrorCode(
+                "{\"type\":\"request\",\"requestId\":\"r\",\"payload\":{\"action\":\"getPlayer\",\"args\":{}}}",
+                ProtocolErrorCodes.InvalidArgs
+            );
+            AssertRoutedErrorCode(
+                "{\"type\":\"request\",\"requestId\":\"r\",\"payload\":{}}",
+                ProtocolErrorCodes.InvalidArgs
+            );
+            AssertRoutedErrorCode(
+                "{\"type\":\"request\",\"requestId\":\"r\",\"payload\":{\"action\":\"getPlayer\",\"args\":{\"gameId\":\"missing-player\"}}}",
+                ProtocolErrorCodes.NotFound
+            );
+        }
+        finally
+        {
+            WebSocketTransport.Instance.ProtocolVersion = 0;
+        }
+    }
+
+    private static void AssertRoutedErrorCode(string request, string expectedCode)
+    {
+        HandlerProbe.Configure(JValue.CreateNull());
+        WebSocketTransport.Instance.ErrorCodes.Clear();
+        RequestRouter.Route(request);
+        Equal(1, WebSocketTransport.Instance.TerminalMessages.Count, expectedCode + ": one reply");
+        JObject frame = SerializeFrame(WebSocketTransport.Instance.TerminalMessages[0]);
+        Equal("response", (string)frame["type"], expectedCode + ": v1 failures are responses");
+        Equal(expectedCode, (string)frame["error"]["code"], expectedCode + ": code on the wire");
+        Equal(JTokenType.Null, frame["payload"].Type, expectedCode + ": null payload");
+    }
+
+    private static void AssertListLocationsMatchesLocationDto()
+    {
+        var rectangular = new Takaro.TakaroLocation
+        {
+            Name = "Fort Camo",
+            Code = "army_camp_01@100,50,200:r1",
+            Position = new Takaro.TakaroPosition
+            {
+                X = 100,
+                Y = 50,
+                Z = 200,
+            },
+            SizeX = 61,
+            SizeY = 28,
+            SizeZ = 53,
+            Metadata = new Dictionary<string, object> { { "prefab", "army_camp_01" } },
+        };
+        var circular = new Takaro.TakaroLocation
+        {
+            Name = "Spawn",
+            Position = new Takaro.TakaroPosition(),
+            Radius = 30,
+        };
+
+        // ILocationDTO: position {x,y,z}, name string, optional numeric radius and
+        // sizes, optional string code, optional metadata object, nothing else.
+        var allowed = new HashSet<string>
+        {
+            "position",
+            "radius",
+            "sizeX",
+            "sizeY",
+            "sizeZ",
+            "name",
+            "code",
+            "metadata",
+        };
+        foreach (Takaro.TakaroLocation location in new[] { rectangular, circular })
+        {
+            JObject wire = SerializeFrame(location);
+            foreach (JProperty property in wire.Properties())
+                True(
+                    allowed.Contains(property.Name),
+                    "location property " + property.Name + " is in ILocationDTO"
+                );
+            Equal(JTokenType.String, wire["name"].Type, "location name is a string");
+            foreach (string axis in new[] { "x", "y", "z" })
+            {
+                JTokenType type = wire["position"][axis].Type;
+                True(
+                    type == JTokenType.Integer || type == JTokenType.Float,
+                    "location position " + axis + " is a number"
+                );
+            }
+            foreach (string optional in new[] { "radius", "sizeX", "sizeY", "sizeZ" })
+            {
+                if (wire[optional] != null)
+                    True(
+                        wire[optional].Type == JTokenType.Integer
+                            || wire[optional].Type == JTokenType.Float,
+                        "location " + optional + " is a number"
+                    );
+            }
+            if (wire["code"] != null)
+                Equal(JTokenType.String, wire["code"].Type, "location code is a string");
+            if (wire["metadata"] != null)
+                Equal(JTokenType.Object, wire["metadata"].Type, "location metadata is an object");
+        }
     }
 
     private static void AssertMissingLocalisationIsNotShown()
@@ -1890,15 +2345,22 @@ namespace Takaro.WebSocket
     {
         public static readonly WebSocketTransport Instance = new WebSocketTransport();
         public readonly List<WebSocketMessage> TerminalMessages = new List<WebSocketMessage>();
+        public readonly List<string> ErrorCodes = new List<string>();
+        public int ProtocolVersion;
 
         public void Send(WebSocketMessage message)
         {
             TerminalMessages.Add(message);
         }
 
-        public void SendErrorResponse(string requestId, string message)
+        public void SendErrorResponse(
+            string requestId,
+            string message,
+            string code = ProtocolErrorCodes.GameError
+        )
         {
-            Send(WebSocketMessage.CreateErrorResponse(requestId, message));
+            ErrorCodes.Add(code);
+            Send(WebSocketMessage.CreateErrorResponse(requestId, message, code, ProtocolVersion));
         }
     }
 }

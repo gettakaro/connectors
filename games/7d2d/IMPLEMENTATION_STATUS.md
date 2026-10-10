@@ -168,6 +168,7 @@ mod/src/
 │   └── PositionSampler.cs      # ~3s position/ping sampling + 60s ban resync
 └── WebSocket/
     ├── WebSocketTransport.cs   # Connection, identify, heartbeat, reconnect, send queue
+    ├── ProtocolHandshake.cs    # Identify payload, Capability Manifest, event stream framing
     ├── RequestRouter.cs        # Message parsing, dispatch, error boundary
     ├── ReadHandlers.cs         # Mirror-backed read requests
     ├── ActionHandlers.cs       # Main-thread-dispatched action requests
@@ -194,6 +195,26 @@ mod/src/
 - Reconnect with exponential backoff (cap 300s); 30s heartbeat
 - Outbound messages drained by a dedicated sender thread — event publishing
   from the game thread never blocks on socket I/O
+
+### Protocol (Generic Game Protocol v1)
+- Identify offers `protocolVersions: [0, 1]` and the version in Takaro's `identifyResponse` is
+  used from then on (absent means 0, which is what Takaro releases without negotiation answer).
+  A socket is confirmed only by a successful `identifyResponse`; one that is not answered within
+  30 s is closed and retried.
+- Identify carries the Capability Manifest, derived from `RequestRouter.SupportedActions` (the
+  cases of `Dispatch`) plus `events.<type>` for every event the mod emits. The harness fails when
+  the manifest and the answered actions disagree. `map` is not declared (the mod cannot yet answer
+  v1's tiled map requests); `getMapInfo`/`getMapTile` remain for v0 connections.
+- `game` is `7d2d`. `migration.native { from: "7d2d" }` is the promise that the mod meets the
+  parity contract of Takaro's built-in integration (gettakaro/connectors#419,
+  gettakaro/takaro#4349); do not declare it for a change that weakens that parity.
+- On v1, game events are sent as `{type, data, streamId, seq}`. `streamId` is new for every mod
+  process; `seq` is assigned when the event enters `OutboundLedger`, so numbering equals write
+  order. Events stay in flight until Takaro's cumulative `eventAck`; a pong no longer confirms
+  them. On v0 the pong-based confirmation is unchanged.
+- On v1 a failed request is answered `{type: "response", payload: null, error: {code, message}}`
+  with `unsupported`, `invalid_args`, `not_found`, `game_error` or `internal`; v0 keeps the bare
+  `error` frame.
 
 ### Dependencies
 - `websocket-sharp` (built from source) and `LiteDB 5.0.21` (NuGet, net45

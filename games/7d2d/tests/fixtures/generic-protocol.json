@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "source": "https://github.com/gettakaro/takaro/blob/103fc1dc6df6a575dcd518d8112fc80315664a8d/packages/lib-gameserver/src/gameservers/generic/index.ts",
   "wireOracle": {
     "repository": "https://github.com/gettakaro/takaro.git",
@@ -153,5 +153,356 @@
     {"name": "chat-message", "message": {"type": "gameEvent", "payload": {"type": "chat-message", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player", "epicOnlineServicesId": "fixture-player"}, "channel": "global", "msg": "qualification fixture"}}}},
     {"name": "player-death", "message": {"type": "gameEvent", "payload": {"type": "player-death", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player", "epicOnlineServicesId": "fixture-player"}, "position": {"x": 10, "y": 20, "z": 30, "dimension": "main"}, "msg": "Fixture Player died"}}}},
     {"name": "entity-killed", "message": {"type": "gameEvent", "payload": {"type": "entity-killed", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player", "epicOnlineServicesId": "fixture-player"}, "entity": "zombieArlene", "weapon": "clubWood", "msg": "Fixture Player killed zombieArlene"}}}}
-  ]
+  ],
+  "protocolV1": {
+    "oracle": {
+      "repository": "https://github.com/gettakaro/takaro.git",
+      "commit": "bd22cf14e881f78d7b21780baabc939cc5cb46c4",
+      "branch": "epic/4349-connector-migration",
+      "paths": [
+        "packages/lib-gameserver/src/gameservers/generic/capabilities.ts",
+        "packages/lib-gameserver/src/gameservers/generic/migration.ts",
+        "packages/lib-gameserver/src/gameservers/generic/gameIdentifier.ts",
+        "packages/lib-gameserver/src/gameservers/generic/protocol.ts",
+        "packages/app-connector/src/lib/websocket.ts",
+        "packages/app-connector/src/lib/eventStream.ts"
+      ]
+    },
+    "offeredProtocolVersions": [
+      0,
+      1
+    ],
+    "game": "7d2d",
+    "migrationSource": "7d2d",
+    "patterns": {
+      "capabilityName": "^[a-z][a-zA-Z0-9]*(\\.[a-z][a-zA-Z0-9-]*)*$",
+      "capabilityNameMaxLength": 128,
+      "capabilityManifestMaxEntries": 256,
+      "game": "^[a-z0-9][a-z0-9-]*$",
+      "gameMaxLength": 64,
+      "streamId": "^[A-Za-z0-9_-]{1,128}$"
+    },
+    "actionCapabilities": {
+      "getPlayers": {
+        "capability": "players.list"
+      },
+      "getPlayer": {
+        "capability": "players.get"
+      },
+      "getPlayerLocation": {
+        "capability": "players.location"
+      },
+      "getPlayerInventory": {
+        "capability": "players.inventory"
+      },
+      "teleportPlayer": {
+        "capability": "players.teleport"
+      },
+      "listItems": {
+        "capability": "items.list"
+      },
+      "giveItem": {
+        "capability": "items.give"
+      },
+      "listEntities": {
+        "capability": "entities.list"
+      },
+      "listLocations": {
+        "capability": "locations.list"
+      },
+      "sendMessage": {
+        "capability": "chat.send"
+      },
+      "executeConsoleCommand": {
+        "capability": "console.execute"
+      },
+      "kickPlayer": {
+        "capability": "moderation.kick"
+      },
+      "banPlayer": {
+        "capability": "moderation.ban"
+      },
+      "unbanPlayer": {
+        "capability": "moderation.unban"
+      },
+      "listBans": {
+        "capability": "moderation.listBans"
+      },
+      "shutdown": {
+        "capability": "server.shutdown"
+      },
+      "testReachability": {
+        "always": true
+      },
+      "getMapInfo": {
+        "v0Only": true
+      },
+      "getMapTile": {
+        "mapCapability": "map"
+      }
+    },
+    "eventTypes": [
+      "player-connected",
+      "player-disconnected",
+      "chat-message",
+      "player-death",
+      "entity-killed",
+      "log"
+    ],
+    "identify": {
+      "type": "identify",
+      "payload": {
+        "registrationToken": "fixture-registration-token",
+        "identityToken": "fixture-identity-token",
+        "protocolVersions": [
+          0,
+          1
+        ],
+        "capabilities": [
+          {
+            "name": "players.list"
+          },
+          {
+            "name": "players.get"
+          },
+          {
+            "name": "players.location"
+          },
+          {
+            "name": "players.inventory"
+          },
+          {
+            "name": "items.list"
+          },
+          {
+            "name": "entities.list"
+          },
+          {
+            "name": "locations.list"
+          },
+          {
+            "name": "items.give"
+          },
+          {
+            "name": "console.execute"
+          },
+          {
+            "name": "chat.send"
+          },
+          {
+            "name": "moderation.kick"
+          },
+          {
+            "name": "moderation.ban"
+          },
+          {
+            "name": "moderation.unban"
+          },
+          {
+            "name": "players.teleport"
+          },
+          {
+            "name": "moderation.listBans"
+          },
+          {
+            "name": "server.shutdown"
+          },
+          {
+            "name": "events.player-connected"
+          },
+          {
+            "name": "events.player-disconnected"
+          },
+          {
+            "name": "events.chat-message"
+          },
+          {
+            "name": "events.player-death"
+          },
+          {
+            "name": "events.entity-killed"
+          },
+          {
+            "name": "events.log"
+          },
+          {
+            "name": "migration.native",
+            "parameters": {
+              "from": "7d2d"
+            }
+          }
+        ],
+        "game": "7d2d"
+      },
+      "requestId": null
+    },
+    "identifyResponses": [
+      {
+        "name": "v0 accepted (production Takaro)",
+        "frame": {
+          "type": "identifyResponse",
+          "payload": {
+            "gameServerId": "gs-1"
+          },
+          "requestId": "r"
+        },
+        "expected": {
+          "accepted": true,
+          "protocolVersion": 0
+        }
+      },
+      {
+        "name": "v1 accepted",
+        "frame": {
+          "type": "identifyResponse",
+          "payload": {
+            "gameServerId": "gs-1",
+            "protocolVersion": 1
+          },
+          "requestId": "r"
+        },
+        "expected": {
+          "accepted": true,
+          "protocolVersion": 1
+        }
+      },
+      {
+        "name": "v0 rejected",
+        "frame": {
+          "type": "identifyResponse",
+          "payload": {
+            "error": {
+              "name": "BadRequestError",
+              "message": "Invalid registrationToken provided",
+              "http": 400
+            }
+          },
+          "requestId": "r"
+        },
+        "expected": {
+          "accepted": false,
+          "errorCode": null,
+          "reason": "Invalid registrationToken provided"
+        }
+      },
+      {
+        "name": "v1 invalid_args",
+        "frame": {
+          "type": "identifyResponse",
+          "payload": null,
+          "error": {
+            "code": "invalid_args",
+            "message": "Invalid registrationToken provided"
+          },
+          "requestId": "r"
+        },
+        "expected": {
+          "accepted": false,
+          "errorCode": "invalid_args",
+          "reason": "Invalid registrationToken provided"
+        }
+      },
+      {
+        "name": "v1 migration refused",
+        "frame": {
+          "type": "identifyResponse",
+          "payload": null,
+          "error": {
+            "code": "unsupported",
+            "message": "Connector does not support migration of this GameServer: it must declare the capability migration.native with {\"from\":\"7d2d\"}. Update the mod."
+          },
+          "requestId": "r"
+        },
+        "expected": {
+          "accepted": false,
+          "errorCode": "unsupported",
+          "reason": "Connector does not support migration of this GameServer: it must declare the capability migration.native with {\"from\":\"7d2d\"}. Update the mod."
+        }
+      },
+      {
+        "name": "v1 no shared protocol version",
+        "frame": {
+          "type": "identifyResponse",
+          "payload": null,
+          "error": {
+            "code": "no_shared_protocol_version",
+            "message": "No shared protocol version",
+            "details": {
+              "takaroProtocolVersions": [
+                0,
+                1
+              ],
+              "connectorProtocolVersions": [
+                2,
+                3
+              ]
+            }
+          },
+          "requestId": "r"
+        },
+        "expected": {
+          "accepted": false,
+          "errorCode": "no_shared_protocol_version",
+          "reason": "No shared protocol version"
+        }
+      },
+      {
+        "name": "unknown negotiated version",
+        "frame": {
+          "type": "identifyResponse",
+          "payload": {
+            "gameServerId": "gs-1",
+            "protocolVersion": 2
+          },
+          "requestId": "r"
+        },
+        "expected": {
+          "accepted": false,
+          "errorCode": "no_shared_protocol_version",
+          "reason": "Takaro selected protocol version 2, which this mod does not speak"
+        }
+      }
+    ],
+    "eventFrame": {
+      "type": "gameEvent",
+      "payload": {
+        "type": "log",
+        "data": {
+          "msg": "fixture"
+        },
+        "streamId": "fixture-stream",
+        "seq": 1
+      },
+      "requestId": null
+    },
+    "eventAck": {
+      "type": "eventAck",
+      "payload": {
+        "streamId": "fixture-stream",
+        "upTo": 5
+      },
+      "requestId": "r"
+    },
+    "eventError": {
+      "type": "eventError",
+      "payload": {
+        "streamId": "fixture-stream",
+        "seq": 3
+      },
+      "error": {
+        "code": "invalid_args",
+        "message": "bad event"
+      },
+      "requestId": "r"
+    },
+    "errorResponse": {
+      "type": "response",
+      "requestId": "fixture-request",
+      "payload": null,
+      "error": {
+        "code": "not_found",
+        "message": "Player not found"
+      }
+    }
+  }
 }
