@@ -815,7 +815,7 @@ void BridgeLoop() {
                 PluginLog("native: Takaro connection closed (epoch %llu%s%s)", (unsigned long long)n.epoch,
                           lastError.empty() ? "" : ", last error: ", lastError.c_str());
                 identified = false; liveEpoch = false;
-                if (consoleLive) { consoleLive = false; ConsoleLine("lost the connection to Takaro; reconnecting"); }
+                if (consoleLive && !stopping) { consoleLive = false; ConsoleLine("lost the connection to Takaro; reconnecting"); }
                 if (gateMode) for (auto& e : outbox) e.sentEpoch = 0;
                 else sentEpochByOutboxId.clear();
             } else if (n.type == NativeTransport::NoticeType::Frame && n.epoch == currentEpoch && liveEpoch) {
