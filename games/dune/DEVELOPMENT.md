@@ -87,7 +87,7 @@ holds a copy of the Steam app, the depot manifest, the image tag, a dependency U
 
 ```
 maintenance/bin/takaro-maint targets list --game dune --format table
-maintenance/bin/takaro-maint build --game dune --target linux-25689360 --version 0.1.0 --out dist
+maintenance/bin/takaro-maint build --game dune --target linux-25789279 --version 0.1.0 --out dist
 scripts/build-release.sh <version> <out-dir> [--target <id>]     # the same build, directly
 ```
 

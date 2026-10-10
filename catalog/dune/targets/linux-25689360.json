@@ -4,7 +4,7 @@
   "game": "dune",
   "platform": "linux",
   "revision": "25689360",
-  "default": true,
+  "default": false,
   "support": {
     "status": "maintained",
     "since": "2026-10-08",
