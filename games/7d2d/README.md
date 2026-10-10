@@ -81,6 +81,9 @@ Examples:
 
 - Linux: `/home/steam/7dtd/Mods/Takaro/`
 - Windows: `C:\7DaysToDieServer\Mods\Takaro\`
+- Game panel (Pterodactyl and similar): `/home/container/Mods/Takaro/`. Upload the zip into
+  `Mods/` with the panel's file manager and use its "Unarchive" action; you can delete the zip
+  afterwards.
 
 ### 4. Configure
 
@@ -94,16 +97,19 @@ Open `<server>/Mods/Takaro/Config.xml` and paste your Takaro registration token 
 Leave `<Url>wss://connect.takaro.io/</Url>` as it is, and leave `IdentityToken` empty — the mod fills it in by itself.
 Save the file and start the server.
 
-You can also do this while the server is running: the mod checks the file every few seconds
-and connects as soon as you save a token. No restart needed.
+You can also do this while the server is running (for example in your panel's file editor): the
+mod checks the file every few seconds and connects as soon as you save a token. No restart needed.
 
 ### 5. Check that it worked
 
-In the server console / server log:
+In the server log (on some panels this line is only in the log file, not the live console):
 
 ```
 [MODS] Loaded Mod: Takaro (0.1.4)
 ```
+
+The mod's own lines, including the banners below, only start once the world has loaded, which can
+take a few minutes after the server starts.
 
 In the mod's own log at `<server>/Takaro/logs/<M-D-YYYY>.log` (for example
 `Takaro/logs/9-15-2026.log`):
@@ -136,6 +142,10 @@ then start the server again. You do not need to enter the token again: the mod k
 its settings in `<server>/Takaro/Config.xml` (next to `Mods/`) and uses it while the new
 `Mods/Takaro/Config.xml` is still empty. Your server keeps its identity in Takaro. Never swap
 `Takaro.dll` under a running server; it can crash the server.
+
+After an upgrade, `Mods/Takaro/Config.xml` is empty again (no token, no identity). That is
+expected: the mod uses the copy in `<server>/Takaro/Config.xml` and the log says
+`registration token: set (kept in …/Takaro/Config.xml)`.
 
 Coming from a version that kept its config only in `<server>/Takaro/Config.xml`? Nothing to do;
 the mod reads your token from there.
