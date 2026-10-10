@@ -61,14 +61,14 @@ services:
       TAKARO_SENDER_NAME: ${TAKARO_SENDER_NAME:-Server}
 
       # Read-only. The database NAME is build-specific: check it with `\l`.
-      DUNE_PG_URL: postgres://dune:${POSTGRES_DUNE_PASSWORD}@postgres:5432/${DUNE_DB_NAME:-dune}
+      DUNE_PG_URL: ${DUNE_PG_URL:-postgres://dune:${POSTGRES_DUNE_PASSWORD:-}@postgres:5432/${DUNE_DB_NAME:-dune}}
 
       # The GAME broker (not the admin one), AMQP over TLS with the shipped self-signed cert.
-      DUNE_RMQ_URL: amqps://${DUNE_GM_AMQP_USER:-fls}:${DUNE_GM_AMQP_PASS}@game-rmq:5672/
+      DUNE_RMQ_URL: ${DUNE_RMQ_URL:-amqps://${DUNE_GM_AMQP_USER:-fls}:${DUNE_GM_AMQP_PASS:-}@game-rmq:5672/}
       DUNE_RMQ_TLS_INSECURE: "true"
 
       # The write path. Must equal the map process's ServerCommandsAuthToken exactly.
-      DUNE_GM_AUTH_TOKEN: ${DUNE_SERVER_COMMANDS_AUTH_TOKEN}
+      DUNE_GM_AUTH_TOKEN: ${DUNE_GM_AUTH_TOKEN:-${DUNE_SERVER_COMMANDS_AUTH_TOKEN:-}}
       DUNE_GM_PUBLISHER: ${DUNE_GM_PUBLISHER:-amqp}
       DUNE_GM_AMQP_USER: ${DUNE_GM_AMQP_USER:-fls}
       DUNE_GM_AMQP_PASS: ${DUNE_GM_AMQP_PASS}
