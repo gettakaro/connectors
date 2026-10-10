@@ -24,7 +24,7 @@ namespace Takaro
 
             LogService.Instance.Info("Initializing mod");
 
-            // Initialize config
+            ConfigManager.UseModFolder(ResolveModFolder(mod));
             ConfigManager.Instance.LoadConfig();
 
             // Register event handlers
@@ -41,6 +41,32 @@ namespace Takaro
             Log.LogCallbacksExtended += HandleNativeLogMessage;
 
             LogService.Instance.Info("Mod initialized successfully");
+        }
+
+        // Mod.Path is the folder the game loaded us from; read by reflection so
+        // a game build that renames it falls back instead of failing to load.
+        private static string ResolveModFolder(Mod mod)
+        {
+            try
+            {
+                Type type = mod?.GetType();
+                object value =
+                    type?.GetField("Path")?.GetValue(mod)
+                    ?? type?.GetProperty("Path")?.GetValue(mod, null);
+                if (value is string folder && Directory.Exists(folder))
+                    return folder;
+            }
+            catch (Exception) { }
+
+            try
+            {
+                string location = typeof(API).Assembly.Location;
+                if (!string.IsNullOrEmpty(location))
+                    return Path.GetDirectoryName(location);
+            }
+            catch (Exception) { }
+
+            return Path.Combine(Directory.GetCurrentDirectory(), "Mods/Takaro");
         }
 
         private static void GameStartDone(ref ModEvents.SGameStartDoneData data)
@@ -82,6 +108,7 @@ namespace Takaro
             Log.LogCallbacksExtended -= HandleNativeLogMessage;
 
             MainThreadDispatcher.Instance.Shutdown();
+            ConfigManager.Instance.StopWatching();
             WebSocketTransport.Instance.Shutdown();
             ServiceRegistry.DestroyServices();
         }

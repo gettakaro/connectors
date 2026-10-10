@@ -116,6 +116,7 @@
     <Compile Include="src\WebSocket\RequestRouter.cs" />
     <Compile Include="src\WebSocket\WebSocketMessage.cs" />
     <Compile Include="src\WebSocket\WebSocketTransport.cs" />
+    <Compile Include="src\Config\ConfigFiles.cs" />
     <Compile Include="src\Config\ConfigManager.cs" />
     <Compile Include="src\Shared.cs" />
     <Compile Include="src\CommandResult.cs" />
@@ -124,6 +125,9 @@
     <None Include="ModInfo.xml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <SubType>Designer</SubType>
+    </None>
+    <None Include="Config.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
   <ItemGroup />
