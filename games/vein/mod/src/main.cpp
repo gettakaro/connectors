@@ -11,6 +11,7 @@
 #include "state.h"
 #include "resolve.h"
 #include "native_bridge.h"
+#include "config_file.h"
 
 #include <unistd.h>
 
@@ -26,6 +27,8 @@ std::atomic<bool> g_shutdownStarted{false};
 std::mutex g_lifecycle;
 pthread_t g_initThread{};
 bool g_initStarted = false;
+// Function-local: the library constructor below may run before this file's static initialisers.
+ConfigFile::Applied& LoadedConfig() { static ConfigFile::Applied a; return a; }
 
 void ShutdownPlugin() {
     if (g_shutdownStarted.exchange(true)) return;
@@ -49,6 +52,18 @@ void* InitThread(void*) {
     PluginLog("takaro vein plugin %s starting (pid %d, bootId %s)", TAKARO_PLUGIN_VERSION, getpid(),
               BootId().c_str());
     PluginLog("maps: %s", MemMapsSelfSoLine().c_str());
+    const ConfigFile::Applied& cfg = LoadedConfig();
+    if (cfg.found) {
+        ConsoleLine("VEIN connector %s loaded; read %zu setting(s) from %s", TAKARO_PLUGIN_VERSION,
+                    cfg.applied, cfg.path.c_str());
+        for (const auto& k : cfg.keptEnv)
+            PluginLog("config: %s from the environment overrides %s", k.c_str(), cfg.path.c_str());
+        for (const auto& w : cfg.warnings)
+            ConsoleLine("WARNING: %s %s", cfg.path.c_str(), w.c_str());
+    } else {
+        ConsoleLine("VEIN connector %s loaded (settings from the environment; no %s)", TAKARO_PLUGIN_VERSION,
+                    cfg.path.c_str());
+    }
 
     try {
         Resolve::Init();
@@ -130,6 +145,8 @@ __attribute__((constructor)) static void TakaroPluginInit() {
     // Only attach to the dedicated server binary; steamcmd and helper processes must be untouched.
     const std::string& exe = ExePath();
     if (exe.find("VeinServer") == std::string::npos) return;
+    // Still single-threaded here, so setenv() is safe; every later getenv() sees the file values.
+    LoadedConfig() = ConfigFile::Apply(ConfigFile::DefaultPath());
     // Fallback for a process that exits before InitThread reaches its late
     // registration. ShutdownPlugin is idempotent across both registrations.
     std::atexit(ShutdownPlugin);

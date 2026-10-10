@@ -51,6 +51,9 @@ void PluginLog(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 void FlushPluginLogs(); // background threads only; redacts before writing
 uint64_t PluginLogDropped();
 bool DebugEnabled();  // TAKARO_PLUGIN_DEBUG=1
+// One "[Takaro] ..." line on the server's stdout (the panel console) and in plugin.log. For the
+// few status changes an admin must see; never pass secrets.
+void ConsoleLine(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 
 // Config: env first, then <PluginDataDir>/plugin.json. Returns `def` when neither has it.
 std::string ConfigValue(const char* envName, const char* jsonKey, const std::string& def = "");

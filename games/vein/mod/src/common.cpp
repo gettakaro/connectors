@@ -82,6 +82,24 @@ void PluginLog(const char* fmt, ...) {
 
 uint64_t PluginLogDropped() { Guard g(g_logLock); return g_logDropped; }
 
+void ConsoleLine(const char* fmt, ...) {
+    char msg[1024];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(msg, sizeof msg, fmt, ap);
+    va_end(ap);
+    PluginLog("console: %s", msg);
+    std::string line = "[Takaro] " + Redact(msg) + "\n";
+    // One write() per line so it never interleaves mid-line with the engine's own stdout.
+#ifdef TAKARO_BRIDGE_TEST
+    const int fd = STDERR_FILENO;  // the test harnesses speak a line protocol on stdout
+#else
+    const int fd = STDOUT_FILENO;
+#endif
+    ssize_t ignored = write(fd, line.data(), line.size());
+    (void)ignored;
+}
+
 void FlushPluginLogs() {
     Guard writer(g_logWriteLock);
     std::deque<LogRecord> batch;

@@ -4,23 +4,27 @@ The Linux dedicated server loads one native `libtakaro-vein.so` connector. It co
 
 ## Install
 
-### 1. Prepare the server
+Runs on a VEIN **Linux** dedicated server (Steam app 2131400) only; Windows servers are not supported. Players install nothing and keep the normal VEIN client. Game client and server must run the same VEIN version.
 
-Use a VEIN **Linux dedicated server** (Steam app 2131400) whose launch command you can change, and create a Takaro **Generic** game server with a registration token. The game client and server must run the same VEIN version. Players do not install anything.
+### 1. Get your registration token from Takaro
 
-### 2. Download and copy
+In the Takaro dashboard, copy the **registration token** for Generic game servers. You do not create the server in Takaro by hand: the connector registers it the first time it connects.
 
-Download `takaro-vein-plugin.tar.gz` and `SHA256SUMS` from the VEIN release at <https://takaro.io/connectors/vein>. Verify the archive with `sha256sum -c SHA256SUMS`, then extract it. Put `TakaroVein/libtakaro-vein.so` outside Steam's installation tree, for example `data/vein-plugin/libtakaro-vein.so`; SteamCMD validation removes unknown files from its tree. The archive also contains the example environment and Compose files, licenses, and [upgrade and rollback instructions](INSTALL.md).
+### 2. Install the connector
 
-### 3. Configure and start
+**AMP (CubeCoders).** Open the VEIN instance, go to **Configuration → VEIN → Takaro**, tick **Enable Takaro** and paste the token into **Takaro Registration Token**. Click **Update** on the Status page (this downloads the connector), then **Start** or **Restart**. If the Takaro section is missing, your VEIN template predates it: update the instance from its tile in the main AMP panel. The section is part of an AMP template update that CubeCoders still has to publish; AMP itself offers no other way to preload a library.
 
-Set `TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN` and `TAKARO_WS_URL` in the **game process**. Keep `TAKARO_PLUGIN_DATA_DIR` at the existing writable game-data path so the current enforcement `bans.json` is retained; use persistent `TAKARO_STATE_DIR` for the connector files. Its default is `connector-state` under `TAKARO_PLUGIN_DATA_DIR`. Apply `LD_PRELOAD=/opt/takaro/libtakaro-vein.so` only to `VeinServer-Linux-Test`, never to SteamCMD. The included Compose example mounts the library read-only at `/opt/takaro` and connector state at `/opt/takaro-state`. Start only the game service. `TAKARO_CA_FILE` can point to a custom trusted CA file; certificate and hostname verification always remain on.
+**Other panels and plain Linux.** Download `takaro-vein-plugin.tar.gz` from the newest `vein-v…` [release](https://github.com/gettakaro/connectors/releases?q=vein-v&expanded=true) and extract it outside the Steam installation folder (SteamCMD updates may remove unknown files there), for example to `vein-plugin/`. Copy `TakaroVein/takaro.cfg.example` to `TakaroVein/takaro.cfg` and put the token after `TAKARO_REGISTRATION_TOKEN=`. Then start the game with the library preloaded, using the full path:
 
-### 4. Verify
+```bash
+LD_PRELOAD=/full/path/to/TakaroVein/libtakaro-vein.so ./Vein/Binaries/Linux/VeinServer-Linux-Test -Port=7777 -QueryPort=27015
+```
 
-Confirm the game answers `127.0.0.1:8080/status`, Takaro shows the same identity reachable, and the game PID maps `libtakaro-vein.so`. Authenticated loopback diagnostics at `127.0.0.1:18890/health` use `TAKARO_PLUGIN_TOKEN`, falling back to the `token` in `TAKARO_PLUGIN_DATA_DIR/plugin.json`. The listener is disabled only when neither supplies a token; direct Takaro communication needs neither.
+Put `LD_PRELOAD=…` only on the game's start line (SteamCMD must not get it). Settings can also be given as environment variables with the same names; an environment variable wins over `takaro.cfg`. Docker users: see `docker-compose.example.yml` and `.env.example` in the archive; [INSTALL.md](INSTALL.md) covers state directories, upgrades from v0.2.x and rollback.
 
-For the bundled Compose layout, run `./scripts/smoke-server.py --expected-build <server Steam build ID>` from the directory containing the Compose file on the Docker host. For another layout, also pass `--game <container name> --manifest <host path to appmanifest_2131400.acf>`. The smoke tool requires `TAKARO_PLUGIN_TOKEN` in the container environment, and checks the native connection, durable outbox and queue health. Pair a real client action and event with Takaro responses before treating the installation as verified.
+### 3. Check it works
+
+The server console shows `[Takaro]` lines: `connected to Takaro as "…"` means it works, and Takaro now lists the server as reachable. Type `@ping` in game chat to get a reply. `Takaro refused this server` means the token is wrong; `no registration token set` means it is missing. The connector's own log is `plugin.log` in its data folder (`takaro-data/` next to the AMP instance's `2131400/` folder, otherwise `Vein/Binaries/Linux/takaro/`).
 
 ## What works, what doesn't
 
