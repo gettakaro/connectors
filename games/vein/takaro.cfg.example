@@ -1,5 +1,6 @@
 # Takaro VEIN connector settings.
-# Copy this file to "takaro.cfg" in the same folder as libtakaro-vein.so and fill in the token.
+# Rename this file to "takaro.cfg", fill in the token, and put it in the same folder as
+# libtakaro-vein.so (normally Vein/Binaries/Linux, next to libsteam.so).
 # One KEY=VALUE per line. Environment variables with the same name take precedence.
 
 # Required: the registration token from the Takaro dashboard.

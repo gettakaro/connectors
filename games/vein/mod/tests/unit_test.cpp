@@ -10,6 +10,7 @@
 #include "actions_util.h"
 #include "config_file.h"
 #include "instance_guard.h"
+#include "ca_bundle.h"
 
 #include <sys/stat.h>
 #include <unistd.h>
@@ -1177,6 +1178,20 @@ static void TestInstanceGuard() {
     CHECK(why.find("already runs") != std::string::npos, "reason: %s", why.c_str());
 }
 
+static void TestCaBundleChoice() {
+    EQ(CaBundle::Choose("/custom/ca.pem", [](const std::string&) { return false; }), "/custom/ca.pem");
+    EQ(CaBundle::Choose("", [](const std::string& p) { return p == "/etc/ssl/certs/ca-certificates.crt"; }),
+       "/etc/ssl/certs/ca-certificates.crt");
+    EQ(CaBundle::Choose("", [](const std::string& p) { return p == "/etc/pki/tls/certs/ca-bundle.crt"; }),
+       "/etc/pki/tls/certs/ca-bundle.crt");
+    EQ(CaBundle::Choose("", [](const std::string& p) { return p == "/etc/ssl/cert.pem"; }), "/etc/ssl/cert.pem");
+    EQ(CaBundle::Choose("", [](const std::string& p) {
+           return p == "/etc/ssl/cert.pem" || p == "/etc/ssl/ca-bundle.pem";
+       }), "/etc/ssl/ca-bundle.pem");  // list order wins
+    EQ(CaBundle::Choose("", [](const std::string&) { return false; }), "");
+    CHECK(CaBundle::Candidates().size() == 5, "candidates %zu", CaBundle::Candidates().size());
+}
+
 int main() {
     TestElfParser();
     TestSignatureMatcher();
@@ -1220,6 +1235,7 @@ int main() {
     TestConfigFileParse();
     TestConfigFileLookup();
     TestInstanceGuard();
+    TestCaBundleChoice();
     printf("%s: %d checks, %d failed\n", g_failed ? "FAILED" : "PASSED", g_ran, g_failed);
     return g_failed ? 1 : 0;
 }

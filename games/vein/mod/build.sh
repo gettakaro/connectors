@@ -81,11 +81,11 @@ echo "  CXX dist/native-log-probe"
   tests/native_log_probe.cpp "$NATIVE_PREFIX/lib/libpcre2-8.a" \
   -static-libstdc++ -static-libgcc -o dist/native-log-probe
 # Panel loader: lets hosts without LD_PRELOAD control (stock AMP) load the connector; see shim/.
-echo "  CC  dist/libSDL3.so.0 (panel loader)"
-"${CC:-gcc}" -std=c11 -O2 -fPIC -shared -Wall -Wextra -Wl,-soname,libSDL3.so.0 \
-  shim/panel_loader.c -o dist/libSDL3.so.0 -ldl
-strip --strip-unneeded dist/libSDL3.so.0 2>/dev/null || true
-( cd dist && sha256sum libtakaro-vein.so libSDL3.so.0 native-log-probe > SHA256SUMS )
+echo "  CC  dist/libsteam.so (panel loader)"
+"${CC:-gcc}" -std=c11 -O2 -fPIC -shared -Wall -Wextra -Wl,-soname,libsteam.so \
+  shim/panel_loader.c -o dist/libsteam.so -ldl
+strip --strip-unneeded dist/libsteam.so 2>/dev/null || true
+( cd dist && sha256sum libtakaro-vein.so libsteam.so native-log-probe > SHA256SUMS )
 echo "built dist/libtakaro-vein.so ($(stat -c %s dist/libtakaro-vein.so) bytes)"
 echo "built dist/native-log-probe ($(stat -c %s dist/native-log-probe) bytes)"
 cat dist/SHA256SUMS

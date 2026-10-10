@@ -4,39 +4,35 @@ The Linux dedicated server loads one native `libtakaro-vein.so` connector. It co
 
 ## Install
 
-Runs on a VEIN **Linux** dedicated server (Steam app 2131400) only; Windows servers are not supported. Players install nothing and keep the normal VEIN client. Game client and server must run the same VEIN version.
+Runs on a VEIN **Linux** dedicated server (Steam app 2131400) only; Windows servers cannot run it. Players install nothing and keep the normal VEIN client. Game client and server must run the same VEIN version.
 
 ### 1. Get your registration token from Takaro
 
 In the Takaro dashboard, add a game server of type **Generic** and copy the **registration token** it shows. You do not fill in anything else: the connector registers the server the first time it connects.
 
-### 2. Download
+### 2. Put three files next to the game
 
-Download `takaro-vein-plugin.tar.gz` from the newest `vein-v…` [release](https://github.com/gettakaro/connectors/releases?q=vein-v&expanded=true) and extract it (on Windows, 7-Zip opens `.tar.gz`). From the `TakaroVein` folder you need `libtakaro-vein.so`, `panel-loader/libSDL3.so.0` and `takaro.cfg.example`.
+Download `takaro-vein-plugin.tar.gz` from the newest `vein-v…` [release](https://github.com/gettakaro/connectors/releases?q=vein-v&expanded=true) and extract it (on Windows, 7-Zip opens `.tar.gz`). From the `TakaroVein` folder:
 
-### 3a. AMP (CubeCoders): upload three files
+1. Rename `takaro.cfg.example` to `takaro.cfg`, open it and put your token after `TAKARO_REGISTRATION_TOKEN=`. Optionally set `TAKARO_SERVER_NAME`.
+2. Stop the server.
+3. With your panel's file manager or SFTP, upload `libtakaro-vein.so`, `libsteam.so` and `takaro.cfg` into the game's `Vein/Binaries/Linux` folder, the one that holds `VeinServer-Linux-Test`:
+   - Pterodactyl / Pelican: `/home/container/Vein/Binaries/Linux`
+   - AMP: `vein/2131400/Vein/Binaries/Linux` in the instance
+   - Plain Linux: `<server folder>/Vein/Binaries/Linux`
+4. Start the server.
 
-1. Stop the VEIN instance.
-2. In AMP's **File Manager**, open the `linux64` folder next to the `2131400` folder (the instance's `vein/linux64`, where AMP keeps SteamCMD).
-3. Upload `libtakaro-vein.so` and `libSDL3.so.0` into `linux64`.
-4. Rename `takaro.cfg.example` to `takaro.cfg`, put your token after `TAKARO_REGISTRATION_TOKEN=`, optionally set `TAKARO_SERVER_NAME`, and upload it into `linux64` as well.
-5. Start the instance.
+This works with every panel and needs no startup-line or setting change: while Steam starts, the game looks for an optional `libsteam.so` in that folder, and the small loader with that name starts the connector next to it. Steam itself is unaffected. A SteamCMD update or validate leaves the three files in place. To update the connector, stop the server and upload the new `libtakaro-vein.so` and `libsteam.so`; `takaro.cfg` stays. To remove it, delete `libsteam.so`.
 
-Nothing in AMP's settings changes. AMP's VEIN template already puts `linux64` on the game's library path, and while the server starts, Steam's `steamclient.so` looks there for an optional `libSDL3.so.0`; the small loader with that name loads the connector next to it. AMP **Update** (SteamCMD update and validate) leaves the three files in place. To update the connector, stop the server and upload the two new `.so` files. To remove it, delete `libSDL3.so.0`.
+If your host does not let you upload `.so` files into the game folder, ask their support to place the three files for you.
 
-### 3b. Other panels and plain Linux
+### 3. Check it works
 
-Extract the archive outside the Steam installation folder (SteamCMD updates may remove unknown files there), for example to `vein-plugin/`. Copy `TakaroVein/takaro.cfg.example` to `TakaroVein/takaro.cfg` and put the token after `TAKARO_REGISTRATION_TOKEN=`. Then start the game with the library preloaded, using the full path:
+The server console shows `[Takaro]` lines; `connected to Takaro as "…"` means it works, and Takaro lists the server as reachable. Install the **utils** module on the server in Takaro and type `@ping` in game chat: Takaro answers `Pong!`. `Takaro refused this server` means the token is wrong; `no registration token set` means it is missing; `no trusted CA bundle found` means the server has no CA certificates (install the `ca-certificates` package or set `TAKARO_CA_FILE`); no `[Takaro]` line at all means the connector was not loaded (check file names and folder). The connector's own log is `Vein/Binaries/Linux/takaro/plugin.log`.
 
-```bash
-LD_PRELOAD=/full/path/to/TakaroVein/libtakaro-vein.so ./Vein/Binaries/Linux/VeinServer-Linux-Test -Port=7777 -QueryPort=27015
-```
+### Advanced: LD_PRELOAD
 
-Put `LD_PRELOAD=…` only on the game's start line (SteamCMD must not get it). A panel that cannot change the start line but puts a folder of your choice first on `LD_LIBRARY_PATH` can use the AMP method with that folder. Settings can also be environment variables with the same names; an environment variable wins over `takaro.cfg`. Docker users: see `docker-compose.example.yml` and `.env.example` in the archive; [INSTALL.md](INSTALL.md) covers state directories, upgrades from v0.2.x and rollback.
-
-### 4. Check it works
-
-The server console shows `[Takaro]` lines; `connected to Takaro as "…"` means it works, and Takaro lists the server as reachable. Install the **utils** module on the server in Takaro and type `@ping` in game chat: Takaro answers `Pong!`. `Takaro refused this server` means the token is wrong; `no registration token set` means it is missing; no `[Takaro]` line at all means the connector was not loaded (check file names and folder). The connector's own log is `Vein/Binaries/Linux/takaro/plugin.log` in the game folder.
+Admins who control the start command can preload the connector instead, from any folder: `LD_PRELOAD=/full/path/to/libtakaro-vein.so ./VeinServer.sh -Port=7777 -QueryPort=27015`, with `takaro.cfg` next to the library (or the same settings as environment variables, which win over the file). Do not also install `libsteam.so`; if both are present the connector still starts only once. Docker users: see `docker-compose.example.yml` and `.env.example` in the archive; [INSTALL.md](INSTALL.md) covers state directories, upgrades from v0.2.x and rollback.
 
 ## What works, what doesn't
 
@@ -96,7 +92,7 @@ Verified on the native connector (v0.3.0) with a real game client and Takaro on 
 
 ### Known issues
 
-- The AMP method relies on Steam's `steamclient.so` looking for an optional `libSDL3.so.0` while the server starts. If a Steam update stops doing that, no `[Takaro]` line appears; please report it.
+- The three-file install relies on the game's `libsteam_api.so` looking for an optional `libsteam.so` while Steam starts. If a game or Steam update stops doing that, no `[Takaro]` line appears; please report it, and use `LD_PRELOAD` meanwhile.
 - Upgrading from the old sidecar release (v0.2.x) needs a short maintenance window; follow the [upgrade instructions](INSTALL.md).
 - A broadcast shows as a chat line prefixed with the server name; a whisper as an on-screen notification.
 - Local and global chat cannot be told apart — proximity chat also reports as global.

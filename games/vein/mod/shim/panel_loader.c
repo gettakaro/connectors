@@ -1,7 +1,9 @@
-// Panel loader for hosts that cannot set LD_PRELOAD (stock AMP). Installed as libSDL3.so.0 in a
-// directory on the server's LD_LIBRARY_PATH: steamclient.so probes for that optional library while
-// the dedicated server starts, and this constructor then loads libtakaro-vein.so from the same
-// directory. It exports no SDL symbols, so the caller's lookups fail and Steam carries on without SDL.
+// Panel loader for hosts that cannot set LD_PRELOAD (game panels such as Pterodactyl, Pelican, AMP).
+// Shipped as libsteam.so for Vein/Binaries/Linux: the game's libsteam_api.so dlopens an optional
+// "libsteam.so" while Steam starts, and the game binary's DT_RPATH (${ORIGIN} first) makes the loader
+// look in Vein/Binaries/Linux. This constructor then loads libtakaro-vein.so from the same folder.
+// It exports nothing: libsteam_api's optional symbol lookups fail and Steam starts normally.
+// The same file also works as libSDL3.so.0 in a folder on LD_LIBRARY_PATH (steamclient.so probes it).
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <fcntl.h>
@@ -41,7 +43,9 @@ __attribute__((constructor)) static void TakaroPanelLoader(void) {
     ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
     if (n <= 0 || !strstr(exe, "VeinServer")) return;
     Dl_info self;
-    if (ConnectorAlreadyMapped()) {
+    // Already running (LD_PRELOAD, or a second loader name): every current connector exports this
+    // marker globally; older releases are recognised by their mapped file name.
+    if (dlsym(RTLD_DEFAULT, "takaro_vein_instance") || ConnectorAlreadyMapped()) {
         Say("[Takaro] panel loader: the connector is already loaded (LD_PRELOAD?); not loading it a second time\n");
         return;
     }
