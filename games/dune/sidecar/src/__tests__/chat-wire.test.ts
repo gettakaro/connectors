@@ -109,6 +109,31 @@ describe('DuneRmq', () => {
     });
   }
 
+  it('keeps retrying when the broker refuses the first connect, then binds the chat consumer', async () => {
+    const battlegroup = new MockBattlegroup();
+    let refusals = 2;
+    const rmq = new DuneRmq({
+      url: 'amqps://test/',
+      tlsInsecure: true,
+      // The sidecar and the brokers start together; the first attempts hit a broker that is not listening yet.
+      connect: () => (refusals-- > 0 ? Promise.reject(new Error('connect ECONNREFUSED 172.30.0.4:5672')) : battlegroup.connect()),
+      reconnectMs: 5,
+      chatQueue: 'takaro_chat_intercept',
+      interceptExchange: 'chat.intercept',
+      interceptRoutingKey: '#',
+      whisperExchange: 'chat.whispers',
+      mapExchange: 'chat.map',
+      wire,
+      senderName: 'Takaro',
+      announcerFuncomId: 'ADMIN#00001',
+    });
+    await expect(rmq.start()).rejects.toThrow('ECONNREFUSED');
+    expect(rmq.connected()).toBe(false);
+    await vi.waitFor(() => expect(rmq.chatConsumerBound()).toBe(true), { timeout: 1000 });
+    expect(rmq.error()).toBeNull();
+    await rmq.close();
+  });
+
   it('binds a durable intercept queue with `#` and forwards messages', async () => {
     const battlegroup = new MockBattlegroup();
     const seen: DuneChatMessage[] = [];

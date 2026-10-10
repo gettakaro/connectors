@@ -143,7 +143,7 @@ it contains connector-managed bans.
 | Player chat events | ✅ | Connector messages are not echoed back. |
 | Player death events | ✅ | Includes environment, fall, and NPC causes. |
 | Entity kill events | ✅ | Plugin reports entity and weapon display name. |
-| Log events | ⚠️ | Secrets are redacted; Takaro does not retain logs. |
+| Log events | ⚠️ | Secrets are redacted; at most 50 lines per 30 s are forwarded; Takaro does not retain logs. |
 | Map information and tiles | ❌ | Generic Takaro servers do not support them. |
 | Module chat commands | ✅ | Commands run and answer in game chat. |
 | Module hooks and cronjobs | ✅ | Hooks and scheduled jobs run normally. |

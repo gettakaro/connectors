@@ -172,11 +172,13 @@ async function main(): Promise<void> {
     onError: (err) => logger.warn(`Presence poll failed: ${err.message}`),
   });
 
+  const forwardLog = makeLogForwarder(config.logEvents, (msg) => void bridge.emit('log', { msg }));
   const logTailer = config.logFile
     ? new LogTailer({
         file: config.logFile,
         intervalMs: config.pollIntervalMs,
-        onLine: makeLogForwarder(config.logEvents, (msg) => void bridge.emit('log', { msg })),
+        onLine: forwardLog,
+        onTick: forwardLog.flush,
         onError: (err) => logger.debug(`Log tail: ${err.message}`),
       })
     : null;
