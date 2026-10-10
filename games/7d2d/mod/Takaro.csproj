@@ -101,6 +101,7 @@
     <Compile Include="src\Services\OutboundLedger.cs" />
     <Compile Include="src\Services\MainThreadDispatcher.cs" />
     <Compile Include="src\Services\BanExpiry.cs" />
+<Compile Include="src\Services\BanIdentity.cs" />
     <Compile Include="src\Services\ConsoleCommandOutcome.cs" />
     <Compile Include="src\Services\PlayerProximateItemDelivery.cs" />
     <Compile Include="src\Services\ProtocolDiagnostics.cs" />

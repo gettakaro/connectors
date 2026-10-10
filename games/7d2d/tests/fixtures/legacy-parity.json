@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/gettakaro/takaro.git",
+    "commit": "4409141f5dfd2214a1924e649974fc69b835edef",
+    "url": "https://github.com/gettakaro/takaro/tree/4409141f5dfd2214a1924e649974fc69b835edef/packages/lib-gameserver/src/gameservers/7d2d",
+    "paths": [
+      "packages/lib-gameserver/src/gameservers/7d2d/index.ts",
+      "packages/lib-gameserver/src/gameservers/7d2d/emitter.ts",
+      "packages/lib-gameserver/src/gameservers/7d2d/__tests__/7d2dEventDetection.unit.test.ts",
+      "packages/lib-gameserver/src/gameservers/7d2d/__tests__/7d2dActions.unit.test.ts"
+    ],
+    "note": "Hand-transcribed from the legacy source and tests; the legacy integration has no machine-readable export."
+  },
+  "acceptedDifferences": [
+    "platformId is sent by the mod for every player (steam:, xbox:, eos:); the legacy integration sent none."
+  ],
+  "identities": [
+    {
+      "name": "steam",
+      "legacyLine": "PlayerSpawnedInWorld (reason: JoinMultiplayer, position: 1873, 66, 347): EntityID=171, PltfmId='Steam_76561198028175941', CrossId='EOS_0002b5d970954287afdcb5dc35af0424', OwnerID='Steam_76561198028175941', PlayerName='Catalysm'",
+      "input": {
+        "crossplatformId": "EOS_0002b5d970954287afdcb5dc35af0424",
+        "platformId": "Steam_76561198028175941",
+        "playerName": "Catalysm"
+      },
+      "legacy": {
+        "gameId": "0002b5d970954287afdcb5dc35af0424",
+        "steamId": "76561198028175941",
+        "epicOnlineServicesId": "0002b5d970954287afdcb5dc35af0424"
+      },
+      "modOnly": { "platformId": "steam:76561198028175941" }
+    },
+    {
+      "name": "xbox",
+      "legacyLine": "PltfmId='XBL_9D1784ABCDEF1234567890', CrossId='EOS_0002b5d970954287afdcb5dc35af0424'",
+      "input": {
+        "crossplatformId": "EOS_0002b5d970954287afdcb5dc35af0424",
+        "platformId": "XBL_9D1784ABCDEF1234567890",
+        "playerName": "XboxPlayer"
+      },
+      "legacy": {
+        "gameId": "0002b5d970954287afdcb5dc35af0424",
+        "xboxLiveId": "9D1784ABCDEF1234567890",
+        "epicOnlineServicesId": "0002b5d970954287afdcb5dc35af0424"
+      },
+      "modOnly": { "platformId": "xbox:9D1784ABCDEF1234567890" }
+    },
+    {
+      "name": "eos-only",
+      "legacyLine": "PltfmId='EOS_0002b5d970954287afdcb5dc35af0424', CrossId='EOS_0002b5d970954287afdcb5dc35af0424'",
+      "input": {
+        "crossplatformId": "EOS_0002b5d970954287afdcb5dc35af0424",
+        "platformId": "EOS_0002b5d970954287afdcb5dc35af0424",
+        "playerName": "EosPlayer"
+      },
+      "legacy": {
+        "gameId": "0002b5d970954287afdcb5dc35af0424",
+        "epicOnlineServicesId": "0002b5d970954287afdcb5dc35af0424"
+      },
+      "modOnly": { "platformId": "eos:0002b5d970954287afdcb5dc35af0424" }
+    }
+  ],
+  "bans": {
+    "legacyBanListOutput": "  2028-06-29 17:49:45 - EOS_0002e0daea3b493fa146ce6d06e79a57 (-unknown-) - test\n  2028-06-29 18:00:00 - Steam_76561198028175941 (-unknown-) - steam\n  2028-06-29 18:10:00 - XBL_9D1784ABCDEF1234567890 (-unknown-) - xbox",
+    "legacyResult": [
+      {
+        "gameId": "0002e0daea3b493fa146ce6d06e79a57",
+        "epicOnlineServicesId": "0002e0daea3b493fa146ce6d06e79a57"
+      }
+    ],
+    "cases": [
+      {
+        "name": "eos",
+        "banId": "EOS_0002e0daea3b493fa146ce6d06e79a57",
+        "crossplatformId": null,
+        "expected": {
+          "gameId": "0002e0daea3b493fa146ce6d06e79a57",
+          "epicOnlineServicesId": "0002e0daea3b493fa146ce6d06e79a57"
+        }
+      },
+      {
+        "name": "steam-unresolved",
+        "banId": "Steam_76561198028175941",
+        "crossplatformId": null,
+        "expected": null
+      },
+      {
+        "name": "steam-translated",
+        "banId": "Steam_76561198028175941",
+        "crossplatformId": "EOS_0002b5d970954287afdcb5dc35af0424",
+        "expected": {
+          "gameId": "0002b5d970954287afdcb5dc35af0424",
+          "steamId": "76561198028175941",
+          "epicOnlineServicesId": "0002b5d970954287afdcb5dc35af0424"
+        }
+      },
+      {
+        "name": "xbl-unresolved",
+        "banId": "XBL_9D1784ABCDEF1234567890",
+        "crossplatformId": null,
+        "expected": null
+      },
+      {
+        "name": "xbl-translated",
+        "banId": "XBL_9D1784ABCDEF1234567890",
+        "crossplatformId": "EOS_0002b5d970954287afdcb5dc35af0424",
+        "expected": {
+          "gameId": "0002b5d970954287afdcb5dc35af0424",
+          "xboxLiveId": "9D1784ABCDEF1234567890",
+          "epicOnlineServicesId": "0002b5d970954287afdcb5dc35af0424"
+        }
+      }
+    ]
+  },
+  "giveItem": {
+    "legacyCommand": "give EOS_${gameId} ${item} ${amount} ${quality ?? ''}",
+    "note": "Vanilla give without a quality argument runs 'ushort result2 = 6' (ConsoleCmdGive.Execute, linux-3.3.0.b18; giveself in linux-3.2.0.b10 also defaults to 6), so the legacy default is max quality. A bare new ItemValue(type, true) would instead roll a random 1-6.",
+    "cases": [
+      { "name": "empty-quality", "quality": "", "legacyCommand": "give EOS_fixture-player resourceWood 2 ", "expected": 6 },
+      { "name": "absent-quality", "quality": null, "legacyCommand": "give EOS_fixture-player resourceWood 2 ", "expected": 6 },
+      { "name": "explicit-quality", "quality": "4", "legacyCommand": "give EOS_fixture-player resourceWood 2 4", "expected": 4 }
+    ]
+  },
+  "entityKilled": [
+    { "legacyLine": "Entity zombieNurse 613814 killed by Catalysm 54854", "entityClassName": "zombieNurse", "expected": "zombieNurse" },
+    { "legacyLine": "[CSMM_Patrons]entityKilled: Catalysm (Steam_76561198028175941) killed zombie zombieNurse with S.H.I.E.L.D. Auto Shotgun", "entityClassName": "zombieNurse", "expected": "zombieNurse" },
+    { "entityClassName": "zombieBoe", "localizedName": "Boe", "expected": "zombieBoe" },
+    { "legacyLine": "Entity zombieFrançaise 613814 killed by Catalysm 54854", "entityClassName": "zombieFrançaise", "expected": "zombieFrançaise" }
+  ],
+  "chatChannels": {
+    "legacy": { "Global": "global", "Party": "team", "Friends": "friends", "Whisper": "global", "other": "global" },
+    "expected": { "Global": "global", "Party": "team", "Friends": "friends", "Whisper": "whisper", "other": "global" },
+    "allowed": ["global", "team", "friends", "whisper"]
+  }
+}

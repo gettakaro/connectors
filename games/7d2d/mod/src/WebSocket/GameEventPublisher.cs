@@ -48,6 +48,22 @@ namespace Takaro.WebSocket
             );
         }
 
+        // Takaro accepts only global/team/friends/whisper; anything else is global.
+        public static string ChatChannelFor(EChatType type)
+        {
+            switch (type)
+            {
+                case EChatType.Whisper:
+                    return "whisper";
+                case EChatType.Friends:
+                    return "friends";
+                case EChatType.Party:
+                    return "team";
+                default:
+                    return "global";
+            }
+        }
+
         public static void SendChatMessage(
             ClientInfo cInfo,
             EChatType type,
@@ -63,33 +79,13 @@ namespace Takaro.WebSocket
             if (cInfo == null || _senderId < 0)
                 return;
 
-            string channel;
-            switch (type)
-            {
-                case EChatType.Global:
-                    channel = "global";
-                    break;
-                case EChatType.Whisper:
-                    channel = "whisper";
-                    break;
-                case EChatType.Friends:
-                    channel = "friends";
-                    break;
-                case EChatType.Party:
-                    channel = "team";
-                    break;
-                default:
-                    channel = "unknown";
-                    break;
-            }
-
             SendGameEvent(
                 "chat-message",
                 new Dictionary<string, object>
                 {
                     { "player", Shared.TransformClientInfoToTakaroPlayer(cInfo) },
                     { "msg", msg },
-                    { "channel", channel },
+                    { "channel", ChatChannelFor(type) },
                 }
             );
         }

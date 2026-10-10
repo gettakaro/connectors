@@ -132,6 +132,13 @@ namespace Takaro
             return clientInfo.CrossplatformId.CombinedString.Replace("EOS_", "");
         }
 
+        public static string EntityKillName(string entityClassName, string entityType)
+        {
+            if (!string.IsNullOrEmpty(entityClassName))
+                return entityClassName;
+            return entityType.ToLower();
+        }
+
         public static TakaroPlayer TransformPlayerRecordToTakaroPlayer(PlayerRecord record)
         {
             return WithIdentifiers(

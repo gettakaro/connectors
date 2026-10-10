@@ -608,11 +608,42 @@ namespace Takaro.Services
             });
         }
 
+        // Persistent players are keyed by their EOS primary id, so a Steam_/XBL_ ban
+        // entry is translated by matching the player's native id. Unknown players
+        // stay untranslated and are skipped by BanIdentity.
+        private static PersistentPlayerData FindPersistentPlayer(
+            PersistentPlayerList playerList,
+            PlatformUserIdentifierAbs banned
+        )
+        {
+            PersistentPlayerData byPrimaryId = playerList?.GetPlayerData(banned);
+            if (byPrimaryId != null || playerList == null)
+                return byPrimaryId;
+
+            foreach (PersistentPlayerData candidate in playerList.Players.Values)
+            {
+                if (candidate.NativeId?.CombinedString == banned.CombinedString)
+                    return candidate;
+            }
+            return null;
+        }
+
         private static List<BanRecord> CaptureBans()
         {
             var records = new List<BanRecord>();
-            var seenBanIds = new HashSet<string>();
+            var seenGameIds = new HashSet<string>();
             PersistentPlayerList playerList = GameManager.Instance.GetPersistentPlayerList();
+
+            void Add(BanRecord record, string banId)
+            {
+                if (record == null)
+                {
+                    LogService.Instance.Debug($"Ban entry {banId} has no EOS id; not sent");
+                    return;
+                }
+                if (seenGameIds.Add(record.GameId))
+                    records.Add(record);
+            }
 
             // AdminTools.Blacklist stores timed bans and preserves reason/expiry metadata.
             if (GameManager.Instance?.adminTools?.Blacklist != null)
@@ -623,36 +654,26 @@ namespace Takaro.Services
                         continue;
 
                     string banId = ban.UserIdentifier.CombinedString;
-                    if (string.IsNullOrEmpty(banId) || seenBanIds.Contains(banId))
+                    if (string.IsNullOrEmpty(banId))
                         continue;
 
-                    PersistentPlayerData playerData = playerList?.GetPlayerData(ban.UserIdentifier);
-                    string playerName =
-                        playerData != null
-                            ? playerData.PlayerName.playerName.Text
-                            : $"Player_{banId.Replace("EOS_", "")}";
-
-                    var record = new BanRecord
-                    {
-                        Id = banId,
-                        GameId = banId.Replace("EOS_", ""),
-                        Name = playerName,
-                        Reason = ban.BanReason,
-                        ExpiresAt =
+                    PersistentPlayerData playerData = FindPersistentPlayer(
+                        playerList,
+                        ban.UserIdentifier
+                    );
+                    Add(
+                        BanIdentity.ToRecord(
+                            banId,
+                            playerData?.PrimaryId?.CombinedString,
+                            playerData?.NativeId?.CombinedString,
+                            playerData?.PlayerName.playerName.Text,
+                            ban.BanReason,
                             ban.BannedUntil == DateTime.MaxValue
                                 ? null
-                                : BanExpiry.ToTakaroUtc(ban.BannedUntil, TimeZoneInfo.Local),
-                    };
-
-                    if (banId.StartsWith("EOS_"))
-                        record.EpicOnlineServicesId = banId.Replace("EOS_", "");
-                    else if (banId.StartsWith("Steam_"))
-                        record.SteamId = banId.Replace("Steam_", "");
-                    else if (banId.StartsWith("XBL_"))
-                        record.XboxLiveId = banId.Replace("XBL_", "");
-
-                    records.Add(record);
-                    seenBanIds.Add(banId);
+                                : BanExpiry.ToTakaroUtc(ban.BannedUntil, TimeZoneInfo.Local)
+                        ),
+                        banId
+                    );
                 }
             }
 
@@ -672,38 +693,20 @@ namespace Takaro.Services
                         continue;
 
                     string primaryId = blockedEntry.PlayerData.PrimaryId.CombinedString;
-                    string nativeId = blockedEntry.PlayerData.NativeId?.CombinedString;
-                    if (
-                        string.IsNullOrEmpty(primaryId)
-                        || seenBanIds.Contains(primaryId)
-                        || (!string.IsNullOrEmpty(nativeId) && seenBanIds.Contains(nativeId))
-                    )
+                    if (string.IsNullOrEmpty(primaryId))
                         continue;
 
-                    var record = new BanRecord
-                    {
-                        Id = primaryId,
-                        GameId = primaryId.Replace("EOS_", ""),
-                        Name = blockedEntry.PlayerData.PlayerName.Text,
-                        Reason = "Blocked",
-                        ExpiresAt = null,
-                    };
-
-                    if (primaryId.StartsWith("EOS_"))
-                        record.EpicOnlineServicesId = primaryId.Replace("EOS_", "");
-
-                    if (!string.IsNullOrEmpty(nativeId) && nativeId != primaryId)
-                    {
-                        if (nativeId.StartsWith("Steam_"))
-                            record.SteamId = nativeId.Replace("Steam_", "");
-                        else if (nativeId.StartsWith("XBL_"))
-                            record.XboxLiveId = nativeId.Replace("XBL_", "");
-                    }
-
-                    records.Add(record);
-                    seenBanIds.Add(primaryId);
-                    if (!string.IsNullOrEmpty(nativeId))
-                        seenBanIds.Add(nativeId);
+                    Add(
+                        BanIdentity.ToRecord(
+                            primaryId,
+                            primaryId,
+                            blockedEntry.PlayerData.NativeId?.CombinedString,
+                            blockedEntry.PlayerData.PlayerName.Text,
+                            "Blocked",
+                            null
+                        ),
+                        primaryId
+                    );
                 }
             }
 

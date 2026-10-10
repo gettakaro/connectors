@@ -126,22 +126,14 @@ namespace Takaro
                 if (ea == null)
                     return;
 
-                // The player-facing name, as entitySearch lists it ("Boe"); the
-                // broad type ("zombie") is only a fallback for unnamed classes.
-                string entityName = StateMirror.EntityDisplayName(
+                // The internal class name (e.g. "zombieBoe"), as the legacy integration
+                // reported it; the broad type is only a fallback for unnamed classes.
+                string entityName = Shared.EntityKillName(
                     EntityClass.list.Dict.TryGetValue(ea.entityClass, out EntityClass entityClass)
                         ? entityClass.entityClassName
-                        : null
+                        : null,
+                    data.KilledEntitiy.entityType.ToString()
                 );
-                if (string.IsNullOrEmpty(entityName))
-                {
-                    if (data.KilledEntitiy.entityType == EntityType.Zombie)
-                        entityName = "zombie";
-                    else if (data.KilledEntitiy.entityType == EntityType.Animal)
-                        entityName = "animal";
-                    else
-                        entityName = data.KilledEntitiy.entityType.ToString().ToLower();
-                }
 
                 // Try to get weapon information from player's held item
                 string weapon = null;
