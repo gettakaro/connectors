@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 
@@ -195,7 +196,7 @@ class SourceRegressionTests(unittest.TestCase):
         actions = self.source("src/WebSocket/ActionHandlers.cs")
         give_item = self.source("src/WebSocket/GiveItemHandler.cs")
         self.assertEqual(0, reads.count("WebSocketMessage.CreateResponse(requestId, null)"))
-        self.assertEqual(2, reads.count('SendError(requestId, "Player not found")'))
+        self.assertEqual(2, reads.count('SendError(requestId, "Player not found", ProtocolErrorCodes.NotFound)'))
         self.assertIn("new TakaroItem[0]", reads)
         self.assertEqual(6, actions.count("WebSocketMessage.CreateResponse(requestId, null)"))
         self.assertEqual(1, give_item.count("WebSocketMessage.CreateResponse(requestId, null)"))
@@ -316,7 +317,7 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn("!_deadSocketClosing", sendable)
         self.assertIn("socket.ReadyState == WebSocketState.Open", sendable)
         # Checked before the write, and again before a failure counts toward a drop.
-        self.assertLess(flush.index("!IsSendable(socket)"), flush.index("socket.Send(head.Json)"))
+        self.assertLess(flush.index("!IsSendable(socket)"), flush.index("socket.Send("))
         catch = flush.split("catch (Exception ex)", 1)[1]
         self.assertLess(
             catch.index("!IsSendable(socket)"), catch.index("_ledger.DropHead()")
@@ -340,6 +341,46 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn("iv.GetModification(i)", v3_3)
         self.assertIn("iv.SetModification(i, tmp)", v3_3)
         self.assertNotIn("Modifications", v3_3)
+
+    def test_identify_declares_protocol_v1_game_and_migration(self):
+        handshake = self.source("src/WebSocket/ProtocolHandshake.cs")
+        transport = self.source("src/WebSocket/WebSocketTransport.cs")
+        self.assertIn('GameIdentifier = "7d2d"', handshake)
+        self.assertIn('MigrationSource = "7d2d"', handshake)
+        self.assertIn('"migration.native"', handshake)
+        self.assertIn("OfferedProtocolVersions = { 0, 1 }", handshake)
+        self.assertNotIn("PromoteIfGraceElapsed", transport)
+        self.assertIn("IDENTIFY_DEADLINE_SECONDS", transport)
+
+    def test_event_streams_are_numbered_on_the_sender_thread(self):
+        ledger = self.source("src/Services/OutboundLedger.cs")
+        transport = self.source("src/WebSocket/WebSocketTransport.cs")
+        send = transport.split("public void Send(WebSocketMessage message)", 1)[1].split(
+            "public void SendErrorResponse", 1
+        )[0]
+        self.assertNotIn("Seq", send)
+        self.assertIn("Seq = replayable ? _nextSeq++ : 0", ledger)
+        self.assertIn("ProtocolHandshake.WithStreamPosition", transport)
+
+    def test_readme_version_is_release_managed(self):
+        header = next(
+            line
+            for line in self.game_file("README.md").splitlines()
+            if "x-release-please-version" in line
+        )
+        version = self.game_file("version.txt").strip()
+        self.assertIn(f"**{version}**", header)
+        self.assertNotIn("0.1.4", self.game_file("README.md"))
+
+        config = json.loads((REPOSITORY_ROOT / "release-please-config.json").read_text())
+        extra_files = config["packages"]["games/7d2d"]["extra-files"]
+        self.assertIn({"type": "generic", "path": "README.md"}, extra_files)
+
+    def test_new_sources_are_compiled_everywhere(self):
+        project = self.source("Takaro.csproj")
+        harness = self.game_file("scripts/test-contract.sh")
+        self.assertIn(r"src\WebSocket\ProtocolHandshake.cs", project)
+        self.assertIn("/app/mod/src/WebSocket/ProtocolHandshake.cs", harness)
 
 
 if __name__ == "__main__":

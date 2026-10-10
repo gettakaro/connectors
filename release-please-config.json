@@ -39,7 +39,8 @@
       "component": "7d2d",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "mod/ModInfo.xml" }
+        { "type": "generic", "path": "mod/ModInfo.xml" },
+        { "type": "generic", "path": "README.md" }
       ]
     },
     "games/zomboid": {

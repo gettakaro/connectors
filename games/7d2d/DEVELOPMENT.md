@@ -98,7 +98,12 @@ read requests never touch the game simulation:
 It is server-side only and connects to Takaro through the Generic Connector
 Protocol over an outbound WebSocket. See
 [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) for the per-endpoint data
-flow, the state-mirror diagram and the staleness bounds.
+flow, the state-mirror diagram and the staleness bounds. Its "Protocol" section
+describes what the identify handshake declares (protocol versions, Capability
+Manifest, game identifier, Connector Migration support) and how events are
+numbered and acknowledged. A new action must be added to
+`RequestRouter.SupportedActions` and to `ProtocolHandshake.ActionCapabilities`
+(and the harness fixture) so the manifest keeps matching what the mod answers.
 
 ## Configuration
 

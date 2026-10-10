@@ -24,14 +24,20 @@ namespace Takaro.Services
             return NormalizeAndBound(text, MaxMessageLength);
         }
 
-        /// <summary>
-        /// Takaro answers a rejected identify (for example a stale registration
-        /// token) with an identifyResponse whose payload carries "error", and
-        /// leaves the socket open. Returns true and the bounded reason when the
-        /// frame is such a rejection.
-        /// </summary>
         public static bool TryGetIdentifyRejection(string json, out string reason)
         {
+            return TryGetIdentifyRejection(json, out _, out reason);
+        }
+
+        /// <summary>
+        /// Takaro rejects an identify in one of two shapes and returns true for
+        /// either. Protocol v0: payload.error (no code), socket left open.
+        /// Protocol v1: a top-level error {code, message}, socket closed by
+        /// Takaro. The reason is bounded; the code is null for v0.
+        /// </summary>
+        public static bool TryGetIdentifyRejection(string json, out string code, out string reason)
+        {
+            code = null;
             reason = null;
             if (string.IsNullOrEmpty(json))
                 return false;
@@ -49,13 +55,21 @@ namespace Takaro.Services
             if ((string)frame["type"] != "identifyResponse")
                 return false;
 
-            JToken error = (frame["payload"] as JObject)?["error"];
+            JToken error = frame["error"];
+            if (error == null || error.Type == JTokenType.Null)
+                error = (frame["payload"] as JObject)?["error"];
             if (error == null || error.Type == JTokenType.Null)
                 return false;
 
-            reason = error is JObject errorObject
-                ? ExtractErrorMessage(errorObject)
-                : NormalizeAndBound(error.ToString(), MaxMessageLength);
+            if (error is JObject errorObject)
+            {
+                code = (string)errorObject["code"];
+                reason = ExtractErrorMessage(errorObject);
+            }
+            else
+            {
+                reason = NormalizeAndBound(error.ToString(), MaxMessageLength);
+            }
             return true;
         }
 

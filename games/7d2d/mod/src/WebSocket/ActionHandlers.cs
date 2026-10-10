@@ -22,7 +22,11 @@ namespace Takaro.WebSocket
         {
             if (args == null || string.IsNullOrEmpty(args.Message))
             {
-                SendError(requestId, "Invalid or missing parameters");
+                SendError(
+                    requestId,
+                    "Invalid or missing parameters",
+                    ProtocolErrorCodes.InvalidArgs
+                );
                 return;
             }
 
@@ -41,7 +45,7 @@ namespace Takaro.WebSocket
                     ClientInfo cInfo = Shared.GetClientInfoFromGameId(recipient.GameId);
                     if (cInfo == null)
                     {
-                        SendError(requestId, "Player not found");
+                        SendError(requestId, "Player not found", ProtocolErrorCodes.NotFound);
                         return;
                     }
 
@@ -79,7 +83,7 @@ namespace Takaro.WebSocket
         {
             if (args == null || string.IsNullOrEmpty(args.Command))
             {
-                SendError(requestId, "Invalid or missing command");
+                SendError(requestId, "Invalid or missing command", ProtocolErrorCodes.InvalidArgs);
                 return;
             }
 
@@ -105,7 +109,11 @@ namespace Takaro.WebSocket
         {
             if (args == null || args.Player == null || string.IsNullOrEmpty(args.Player.GameId))
             {
-                SendError(requestId, "Invalid or missing gameId parameter");
+                SendError(
+                    requestId,
+                    "Invalid or missing gameId parameter",
+                    ProtocolErrorCodes.InvalidArgs
+                );
                 return;
             }
 
@@ -116,7 +124,7 @@ namespace Takaro.WebSocket
                 ClientInfo cInfo = Shared.GetClientInfoFromGameId(args.Player.GameId);
                 if (cInfo == null)
                 {
-                    SendError(requestId, "Player not found");
+                    SendError(requestId, "Player not found", ProtocolErrorCodes.NotFound);
                     return;
                 }
 
@@ -140,7 +148,11 @@ namespace Takaro.WebSocket
         {
             if (args == null || args.Player == null || string.IsNullOrEmpty(args.Player.GameId))
             {
-                SendError(requestId, "Invalid or missing gameId parameter");
+                SendError(
+                    requestId,
+                    "Invalid or missing gameId parameter",
+                    ProtocolErrorCodes.InvalidArgs
+                );
                 return;
             }
 
@@ -156,7 +168,11 @@ namespace Takaro.WebSocket
 
                 if (playerData == null)
                 {
-                    SendError(requestId, "Player not found in persistent data");
+                    SendError(
+                        requestId,
+                        "Player not found in persistent data",
+                        ProtocolErrorCodes.NotFound
+                    );
                     return;
                 }
 
@@ -179,7 +195,7 @@ namespace Takaro.WebSocket
                         )
                     )
                     {
-                        SendError(requestId, expiryError);
+                        SendError(requestId, expiryError, ProtocolErrorCodes.InvalidArgs);
                         return;
                     }
                 }
@@ -268,7 +284,11 @@ namespace Takaro.WebSocket
         {
             if (args == null || string.IsNullOrEmpty(args.GameId))
             {
-                SendError(requestId, "Invalid or missing gameId parameter");
+                SendError(
+                    requestId,
+                    "Invalid or missing gameId parameter",
+                    ProtocolErrorCodes.InvalidArgs
+                );
                 return;
             }
 
@@ -326,7 +346,11 @@ namespace Takaro.WebSocket
 
                 if (!unbanSuccess)
                 {
-                    SendError(requestId, "Player not found in ban list or failed to unban");
+                    SendError(
+                        requestId,
+                        "Player not found in ban list or failed to unban",
+                        ProtocolErrorCodes.NotFound
+                    );
                     return;
                 }
 
@@ -344,7 +368,11 @@ namespace Takaro.WebSocket
         {
             if (args == null || args.Player == null || string.IsNullOrEmpty(args.Player.GameId))
             {
-                SendError(requestId, "Invalid or missing gameId parameter");
+                SendError(
+                    requestId,
+                    "Invalid or missing gameId parameter",
+                    ProtocolErrorCodes.InvalidArgs
+                );
                 return;
             }
 
@@ -353,7 +381,7 @@ namespace Takaro.WebSocket
                 ClientInfo cInfo = Shared.GetClientInfoFromGameId(args.Player.GameId);
                 if (cInfo == null)
                 {
-                    SendError(requestId, "Player not found");
+                    SendError(requestId, "Player not found", ProtocolErrorCodes.NotFound);
                     return;
                 }
 
@@ -364,7 +392,7 @@ namespace Takaro.WebSocket
                     )
                 )
                 {
-                    SendError(requestId, "Player entity not found");
+                    SendError(requestId, "Player entity not found", ProtocolErrorCodes.NotFound);
                     return;
                 }
 
@@ -472,9 +500,13 @@ namespace Takaro.WebSocket
             WebSocketTransport.Instance.Send(message);
         }
 
-        private static void SendError(string requestId, string errorMessage)
+        private static void SendError(
+            string requestId,
+            string errorMessage,
+            string code = ProtocolErrorCodes.GameError
+        )
         {
-            WebSocketTransport.Instance.SendErrorResponse(requestId, errorMessage);
+            WebSocketTransport.Instance.SendErrorResponse(requestId, errorMessage, code);
         }
     }
 }

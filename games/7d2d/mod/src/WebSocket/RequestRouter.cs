@@ -133,6 +133,34 @@ namespace Takaro.WebSocket
     /// </summary>
     public static class RequestRouter
     {
+        /// <summary>
+        /// Every action Dispatch answers. The Capability Manifest is derived from
+        /// this list, so an action added to Dispatch must be added here too; the
+        /// contract harness fails when the two disagree.
+        /// </summary>
+        public static readonly string[] SupportedActions =
+        {
+            "testReachability",
+            "getPlayers",
+            "getPlayer",
+            "getPlayerLocation",
+            "getPlayerInventory",
+            "listItems",
+            "listEntities",
+            "listLocations",
+            "getMapInfo",
+            "getMapTile",
+            "listBans",
+            "giveItem",
+            "executeConsoleCommand",
+            "sendMessage",
+            "kickPlayer",
+            "banPlayer",
+            "unbanPlayer",
+            "teleportPlayer",
+            "shutdown",
+        };
+
         public static void Route(string message)
         {
             string requestId = null;
@@ -167,7 +195,11 @@ namespace Takaro.WebSocket
 
                 if (webSocketMessage.Payload == null)
                 {
-                    SendError(requestId, "Invalid or missing request payload");
+                    SendError(
+                        requestId,
+                        "Invalid or missing request payload",
+                        ProtocolErrorCodes.InvalidArgs
+                    );
                     return;
                 }
 
@@ -185,7 +217,11 @@ namespace Takaro.WebSocket
                         LogService.Instance.Warn(
                             "Received message with payload that is not a dictionary"
                         );
-                        SendError(requestId, "Invalid request payload");
+                        SendError(
+                            requestId,
+                            "Invalid request payload",
+                            ProtocolErrorCodes.InvalidArgs
+                        );
                         return;
                     }
                 }
@@ -196,7 +232,11 @@ namespace Takaro.WebSocket
                     || string.IsNullOrWhiteSpace(actionValue.ToString())
                 )
                 {
-                    SendError(requestId, "Invalid or missing action");
+                    SendError(
+                        requestId,
+                        "Invalid or missing action",
+                        ProtocolErrorCodes.InvalidArgs
+                    );
                     return;
                 }
 
@@ -212,7 +252,7 @@ namespace Takaro.WebSocket
                 LogService.Instance.Error($"Error handling WebSocket message: {ex.Message}");
                 Log.Exception(ex);
                 if (!string.IsNullOrEmpty(requestId))
-                    SendError(requestId, "Failed to handle request");
+                    SendError(requestId, "Failed to handle request", ProtocolErrorCodes.Internal);
             }
         }
 
@@ -266,7 +306,11 @@ namespace Takaro.WebSocket
                         TakaroMapTileArgs tileArgs = WebSocketArgs<TakaroMapTileArgs>.Parse(args);
                         if (tileArgs == null)
                         {
-                            SendError(requestId, "Invalid or missing map tile parameters");
+                            SendError(
+                                requestId,
+                                "Invalid or missing map tile parameters",
+                                ProtocolErrorCodes.InvalidArgs
+                            );
                             return;
                         }
                         ReadHandlers.GetMapTile(requestId, tileArgs.X, tileArgs.Y, tileArgs.Z);
@@ -322,7 +366,11 @@ namespace Takaro.WebSocket
                         break;
                     default:
                         LogService.Instance.Warn($"Unknown message type: {action}");
-                        SendError(requestId, $"Unknown message type: {action}");
+                        SendError(
+                            requestId,
+                            $"Unknown message type: {action}",
+                            ProtocolErrorCodes.Unsupported
+                        );
                         break;
                 }
             }
@@ -330,7 +378,7 @@ namespace Takaro.WebSocket
             {
                 LogService.Instance.Error($"Error processing '{action}': {ex.Message}");
                 Log.Exception(ex);
-                SendError(requestId, ex.Message);
+                SendError(requestId, ex.Message, ProtocolErrorCodes.Internal);
             }
         }
 
@@ -343,13 +391,17 @@ namespace Takaro.WebSocket
             if (!string.IsNullOrEmpty(gameId))
                 return true;
 
-            SendError(requestId, "Invalid or missing gameId parameter");
+            SendError(
+                requestId,
+                "Invalid or missing gameId parameter",
+                ProtocolErrorCodes.InvalidArgs
+            );
             return false;
         }
 
-        private static void SendError(string requestId, string errorMessage)
+        private static void SendError(string requestId, string errorMessage, string code)
         {
-            WebSocketTransport.Instance.SendErrorResponse(requestId, errorMessage);
+            WebSocketTransport.Instance.SendErrorResponse(requestId, errorMessage, code);
         }
     }
 }

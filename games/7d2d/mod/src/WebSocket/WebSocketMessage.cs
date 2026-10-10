@@ -16,6 +16,10 @@ namespace Takaro.WebSocket
         [JsonProperty("requestId")]
         public string RequestId { get; set; }
 
+        // Protocol v1 failure; omitted from every other frame.
+        [JsonProperty("error", NullValueHandling = NullValueHandling.Ignore)]
+        public object Error { get; set; }
+
         public WebSocketMessage() { }
 
         public WebSocketMessage(string type)
@@ -77,13 +81,37 @@ namespace Takaro.WebSocket
             };
         }
 
-        public static WebSocketMessage CreateErrorResponse(string requestId, string errorMessage)
+        /// <summary>
+        /// Protocol v0 reports a failed request as an "error" frame; v1 answers
+        /// with the "response" frame and a coded error and a null payload.
+        /// </summary>
+        public static WebSocketMessage CreateErrorResponse(
+            string requestId,
+            string errorMessage,
+            string code = ProtocolErrorCodes.GameError,
+            int protocolVersion = 0
+        )
         {
-            return new WebSocketMessage(
-                MessageTypes.Error,
-                new Dictionary<string, object> { { "error", errorMessage } },
-                requestId
-            );
+            if (protocolVersion == 0)
+            {
+                return new WebSocketMessage(
+                    MessageTypes.Error,
+                    new Dictionary<string, object> { { "error", errorMessage } },
+                    requestId
+                );
+            }
+
+            return new WebSocketMessage
+            {
+                Type = MessageTypes.Response,
+                Payload = null,
+                RequestId = requestId,
+                Error = new Dictionary<string, object>
+                {
+                    { "code", code },
+                    { "message", errorMessage },
+                },
+            };
         }
 
         // Common message type constants - for consistency and to avoid string typos
@@ -96,6 +124,9 @@ namespace Takaro.WebSocket
             public const string Response = "response";
             public const string Error = "error";
             public const string GameEvent = "gameEvent";
+            public const string IdentifyResponse = "identifyResponse";
+            public const string EventAck = "eventAck";
+            public const string EventError = "eventError";
         }
 
         // A few common message factory methods for convenience
@@ -114,11 +145,7 @@ namespace Takaro.WebSocket
         {
             return Create(
                 MessageTypes.Identify,
-                new Dictionary<string, object>
-                {
-                    { "registrationToken", registrationToken },
-                    { "identityToken", identityToken },
-                }
+                ProtocolHandshake.BuildIdentifyPayload(registrationToken, identityToken)
             );
         }
     }

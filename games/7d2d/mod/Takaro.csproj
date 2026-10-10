@@ -116,6 +116,7 @@
     <Compile Include="src\WebSocket\ReadHandlers.cs" />
     <Compile Include="src\WebSocket\RequestRouter.cs" />
     <Compile Include="src\WebSocket\WebSocketMessage.cs" />
+    <Compile Include="src\WebSocket\ProtocolHandshake.cs" />
     <Compile Include="src\WebSocket\WebSocketTransport.cs" />
     <Compile Include="src\Config\ConfigManager.cs" />
     <Compile Include="src\Shared.cs" />

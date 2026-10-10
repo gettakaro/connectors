@@ -19,7 +19,11 @@ namespace Takaro.WebSocket
                 || string.IsNullOrEmpty(args.Item)
             )
             {
-                SendError(requestId, "Invalid or missing parameters");
+                SendError(
+                    requestId,
+                    "Invalid or missing parameters",
+                    ProtocolErrorCodes.InvalidArgs
+                );
                 return;
             }
 
@@ -28,14 +32,14 @@ namespace Takaro.WebSocket
                 ClientInfo cInfo = Shared.GetClientInfoFromGameId(args.Player.GameId);
                 if (cInfo == null)
                 {
-                    SendError(requestId, "Player not found");
+                    SendError(requestId, "Player not found", ProtocolErrorCodes.NotFound);
                     return;
                 }
 
                 ItemValue itemValue = ItemClass.GetItem(args.Item);
                 if (itemValue == null || itemValue.type == ItemValue.None.type)
                 {
-                    SendError(requestId, "Item not found");
+                    SendError(requestId, "Item not found", ProtocolErrorCodes.NotFound);
                     return;
                 }
 
@@ -46,7 +50,7 @@ namespace Takaro.WebSocket
                     )
                 )
                 {
-                    SendError(requestId, "Player entity not found");
+                    SendError(requestId, "Player entity not found", ProtocolErrorCodes.NotFound);
                     return;
                 }
 
@@ -64,7 +68,7 @@ namespace Takaro.WebSocket
 
                 if (args.Amount <= 0)
                 {
-                    SendError(requestId, "Invalid item amount");
+                    SendError(requestId, "Invalid item amount", ProtocolErrorCodes.InvalidArgs);
                     return;
                 }
 
@@ -80,7 +84,11 @@ namespace Takaro.WebSocket
                     }
                     else
                     {
-                        SendError(requestId, "Invalid quality value");
+                        SendError(
+                            requestId,
+                            "Invalid quality value",
+                            ProtocolErrorCodes.InvalidArgs
+                        );
                         return;
                     }
                 }
@@ -123,9 +131,13 @@ namespace Takaro.WebSocket
             WebSocketTransport.Instance.Send(message);
         }
 
-        private static void SendError(string requestId, string errorMessage)
+        private static void SendError(
+            string requestId,
+            string errorMessage,
+            string code = ProtocolErrorCodes.GameError
+        )
         {
-            WebSocketTransport.Instance.SendErrorResponse(requestId, errorMessage);
+            WebSocketTransport.Instance.SendErrorResponse(requestId, errorMessage, code);
         }
     }
 }

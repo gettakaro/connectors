@@ -1,6 +1,6 @@
 # Takaro 7D2D Connector
 
-A server-side-only mod (version **0.1.4**) that connects a 7 Days to Die dedicated server to
+A server-side-only mod (version **0.3.1**) that connects a 7 Days to Die dedicated server to <!-- x-release-please-version -->
 Takaro. Players do not install anything.
 
 It is built once per exact server build, and each zip names the build it is for:
@@ -41,9 +41,10 @@ Direct link pattern:
 `takaro-7d2d-mod.zip` is still published next to them and is the same bytes as the V 3.2.0 b10
 zip, so an old bookmark keeps working. The name in the middle is the server build the mod was built against.
 
-Use `7d2d-v0.1.4` or newer. The results in the table below were proven on the code that shipped in
-0.1.4 (the dev build was labelled 0.1.6 during testing). Do not use the
-`7d2d-dev` pre-release; that is an untested rolling build.
+Use the latest `7d2d-vX.Y.Z` release. The results in the table below were proven on the code that
+shipped in an early release (labelled 0.1.6 during testing), before the later ones; the
+protocol and migration support described in this file is newer and is not part of that run. Do not
+use the `7d2d-dev` pre-release; that is an untested rolling build.
 
 The zip contains a single folder, `Takaro/`. That whole folder is the mod.
 
@@ -99,7 +100,8 @@ Open that file and paste your Takaro registration token:
 <Url>wss://connect.takaro.io/</Url>
 ```
 
-Leave `<Url>` as it is, and leave `IdentityToken` alone — the mod fills it in by itself.
+Leave `<Url>` as it is, and leave `IdentityToken` alone — the mod fills it in by itself (unless you are
+migrating an existing game server, see below).
 Save the file and start the server.
 
 ### 5. Check that it worked
@@ -107,7 +109,7 @@ Save the file and start the server.
 In the server console / server log:
 
 ```
-[MODS] Loaded Mod: Takaro (0.1.4)
+[MODS] Loaded Mod: Takaro (<version>)
 ```
 
 In the mod's own log at `<server>/Takaro/logs/<M-D-YYYY>.log` (for example
@@ -115,13 +117,16 @@ In the mod's own log at `<server>/Takaro/logs/<M-D-YYYY>.log` (for example
 
 ```
 Mod initialized successfully
-WebSocket connection confirmed
+Takaro accepted identify: game server <id>, protocol version 1
+WebSocket connection confirmed (identify accepted); releasing 0 buffered outbound message(s)
 ```
+
+Against an older Takaro the same line says `protocol version 0`; the mod works with both.
 
 And in Takaro, the game server shows as **online**. If the token is wrong, the log says so instead:
 
 ```
-Takaro rejected identify: Invalid registrationToken provided. Check RegistrationToken and IdentityToken in Takaro/Config.xml; retrying with backoff
+Takaro rejected identify (invalid_args): Invalid registrationToken provided. Check RegistrationToken and IdentityToken in Takaro/Config.xml; retrying with backoff
 ```
 
 Fix the token in `Config.xml` and restart the server.
@@ -131,6 +136,57 @@ Fix the token in `Config.xml` and restart the server.
 **Stop the server first.** Delete `<server>/Mods/Takaro/` and unzip the new version in its place,
 then start the server again. Leave `<server>/Takaro/Config.xml` alone — your token and identity
 survive the upgrade. Never swap `Takaro.dll` under a running server; it can crash the server.
+
+## Moving from Takaro's built-in 7 Days to Die integration (Connector Migration)
+
+A game server that Takaro already runs through its built-in 7 Days to Die integration can move to
+this mod **in place**: it stays the same game server in Takaro, with its players, currency, roles,
+bans, shop and modules. Nothing is exported or re-imported, and no second game server is created.
+
+This needs mod version `7d2d-v0.4.0` or newer, and a Takaro that offers Connector Migration (the
+**Migrate to connector** action on the game server). The mod tells Takaro that it can take over a
+7 Days to Die server (`migration.native` for game `7d2d`); Takaro refuses the migration for any
+connector that does not.
+
+1. In Takaro, open the existing 7 Days to Die game server and choose **Migrate to connector**.
+   Takaro shows a registration token and an identity token. The server keeps running on the
+   built-in connection while the migration is pending, and you can cancel it there at any time.
+2. Stop the game server and install the mod (Install, steps 2 and 3).
+3. Put both tokens in `<server>/Takaro/Config.xml`:
+
+   ```xml
+   <Takaro>
+     <WebSocket>
+       <Url>wss://connect.takaro.io/</Url>
+       <IdentityToken>identity-token-from-takaro</IdentityToken>
+       <RegistrationToken>registration-token-from-takaro</RegistrationToken>
+       <Enabled>true</Enabled>
+       <ReconnectIntervalSeconds>30</ReconnectIntervalSeconds>
+     </WebSocket>
+   </Takaro>
+   ```
+
+   If the file already exists because the mod ran before, **replace** the `IdentityToken` the mod
+   generated with the one Takaro issued. Keeping the generated one makes Takaro create a second,
+   separate game server.
+4. Start the server. The mod log shows
+   `Takaro accepted identify: game server <id>, protocol version 1`, and the same game server in
+   Takaro is now connector-based.
+5. Check the migration report on the game server in Takaro: it lists which players were matched to
+   existing profiles and which are new. A large number of new players means something is wrong; revert.
+6. To revert, use Takaro within 14 days of the migration. Afterwards stop the server and remove
+   `Mods/Takaro` (or set `<Enabled>false</Enabled>`); otherwise the mod connects again with the same
+   identity token and Takaro registers it as a new, separate game server.
+
+If Takaro refuses the connection the log says why:
+
+```
+Takaro rejected identify (unsupported): Connector does not support migration of this GameServer: ...
+```
+
+means the mod is too old for Connector Migration: update it. A second game server appearing in
+Takaro means the `IdentityToken` was not replaced in step 3: delete the new game server, paste
+Takaro's token and restart (two game servers cannot be merged).
 
 ## V 3.3.0 b18
 
@@ -153,7 +209,7 @@ this release's mod) with a real game client connected.
 | Connection & heartbeat | ✅ | Reconnects by itself after outages and server restarts, within about a minute of the network coming back. Events from during the outage are delivered afterwards, none lost. A wrong registration token is logged as an error. |
 | Server restart / reconnect | ✅ | The mod comes back on its own after a server restart, including with a player online. |
 | Player list | ✅ | Name, Steam id (or Xbox id), Epic (EOS) id, platform id, IP and ping. This is how Takaro loads players for 7D2D. |
-| Moving from Takaro's built-in 7 Days to Die integration | ⚠️ | Players already known to Takaro from the built-in integration are recognised by their Steam/Epic id and keep their profile. If an older version of this mod already created a second profile for a player (one with an empty Steam ID), delete that second profile in Takaro once; until then Takaro ignores that player's events. |
+| Moving from Takaro's built-in 7 Days to Die integration | ⚠️ | See "Moving from Takaro's built-in 7 Days to Die integration" above. Players already known to Takaro from the built-in integration are recognised by their Steam/Epic id and keep their profile. If an older version of this mod already created a second profile for a player (one with an empty Steam ID), delete that second profile in Takaro once; until then Takaro ignores that player's events. |
 | Single player lookup | ⚠️ | The data is correct, but Takaro never asks for one player at a time on this game — it uses the player list instead. |
 | Player location | ✅ | Polled about every 30 s; matches the server's own `lp` output. |
 | Player inventory | ✅ | Matches what the player is carrying in game. |
@@ -177,8 +233,8 @@ this release's mod) with a real game client connected.
 | Entity kill event | ✅ | Proven with real kills; reports the creature's in-game name (for example "Boe") and the weapon ("Steel Club", "Hunting Knife"). |
 | Log events | ⚠️ | The mod sends them, but Takaro does not store server log lines as events, so they cannot be searched or used in modules. |
 | Map info | ⚠️ | The mod answers, but Takaro has no map view for this connector type yet. |
-| Map tiles | ❌ | Not supported by Takaro for this connector type yet (the legacy native 7DTD integration has a map; this one does not). |
-| Locations / points of interest | ❌ | The mod collects them (368 found), but Takaro has no way to ask for them yet. |
+| Map tiles | ❌ | The mod does not declare the map capability yet, so Takaro does not ask for tiles on protocol version 1 (the legacy native 7DTD integration has a map; this one does not). |
+| Locations / points of interest | ⚠️ | The mod collects them (368 found) and declares `locations.list`, which Takaro can now request on protocol version 1. Not yet proven live. |
 | Discord chat bridge | ⚠️ | Both directions work: game chat reaches Discord, and a message posted in Discord shows up in game. Takaro also forwards the game's copy of a Discord message back to Discord once (Takaro-side echo). |
 | Shop & economy | ✅ | Buying in game (`/shop`), ordering through the Takaro API, currency grants and balance checks all work. Purchases go straight into the player's inventory. |
 
@@ -187,15 +243,16 @@ this release's mod) with a real game client connected.
 - **Chat bridge echoes.** Takaro stores its own outgoing messages as chat, so the Discord bridge
   forwards the server's own message and loops a few rounds before settling. This is on the Takaro
   side — the mod only reports chat from real players.
-- **Locations are not reachable from Takaro.** The mod builds the catalogue, but there is no API
-  route for it yet.
-- **No map.** Takaro's API does not support map tiles for Generic-connector servers yet; nothing on
-  the game server side changes that.
+- **Locations are not proven live.** The mod builds the catalogue and declares `locations.list`,
+  but the request over protocol version 1 has only been checked against Takaro's expected shape.
+- **No map.** The mod does not declare the map capability yet, so Takaro does not request the map
+  on protocol version 1.
 - **Events from an outage arrive late, stamped with the delivery time.** Takaro records the moment
   it received an event, so after an outage the events from it show the reconnect time, not when they
   happened.
-- **An event can arrive twice after an outage.** The mod resends anything Takaro had not yet
-  confirmed when the connection died; if Takaro had in fact received it, it shows up twice.
+- **An event can arrive twice after an outage on older Takaro.** The mod resends anything Takaro had
+  not yet confirmed when the connection died. On protocol version 1 Takaro numbers and drops the
+  duplicate; on an older Takaro (protocol version 0) it shows up twice.
 
 ---
 

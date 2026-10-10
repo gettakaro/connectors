@@ -29,7 +29,7 @@ namespace Takaro.WebSocket
                 return;
 
             SendGameEvent(
-                "player-connected",
+                GameEventTypes.PlayerConnected,
                 new Dictionary<string, object>
                 {
                     { "player", Shared.TransformClientInfoToTakaroPlayer(cInfo) },
@@ -43,7 +43,7 @@ namespace Takaro.WebSocket
                 return;
 
             SendGameEvent(
-                "player-disconnected",
+                GameEventTypes.PlayerDisconnected,
                 new Dictionary<string, object> { { "player", player } }
             );
         }
@@ -80,7 +80,7 @@ namespace Takaro.WebSocket
                 return;
 
             SendGameEvent(
-                "chat-message",
+                GameEventTypes.ChatMessage,
                 new Dictionary<string, object>
                 {
                     { "player", Shared.TransformClientInfoToTakaroPlayer(cInfo) },
@@ -106,7 +106,7 @@ namespace Takaro.WebSocket
                 { "weapon", string.IsNullOrEmpty(weapon) ? "unknown" : weapon },
             };
 
-            SendGameEvent("entity-killed", eventData);
+            SendGameEvent(GameEventTypes.EntityKilled, eventData);
         }
 
         public static void SendPlayerDeath(
@@ -137,7 +137,7 @@ namespace Takaro.WebSocket
                 eventData["attacker"] = attacker;
             }
 
-            SendGameEvent("player-death", eventData);
+            SendGameEvent(GameEventTypes.PlayerDeath, eventData);
         }
 
         public static void SendLogEvent(string logMessage)
@@ -145,7 +145,10 @@ namespace Takaro.WebSocket
             if (string.IsNullOrEmpty(logMessage))
                 return;
 
-            SendGameEvent("log", new Dictionary<string, object> { { "msg", logMessage } });
+            SendGameEvent(
+                GameEventTypes.Log,
+                new Dictionary<string, object> { { "msg", logMessage } }
+            );
         }
     }
 }
