@@ -1,4 +1,6 @@
-import { loadConfig } from './config.js';
+import { type BridgeConfig, hasTshockCredentials } from './config.js';
+import { locateConfig } from './configFiles.js';
+import { ConfigSource, type LoadedConfig } from './configSource.js';
 import { normalizeGameEvent } from './events/normalizeEvent.js';
 import { PlayerPoller } from './events/playerPoller.js';
 import { PresenceGate } from './events/presenceGate.js';
@@ -7,12 +9,34 @@ import { logger } from './logger.js';
 import { LogTailer } from './logs/logTailer.js';
 import { TakaroWsClient } from './takaro/client.js';
 import { logConnectionState } from './takaro/connectionLog.js';
+import { identifyErrorSummary, identifyErrorText } from './takaro/identifyError.js';
 import type { GameEventType, RequestPayload, WsMessage } from './takaro/protocol.js';
 import { TerrariaAdapter } from './terraria/adapter.js';
 import { TShockClient } from './tshock/client.js';
 
+const CONFIG_POLL_MS = 5000;
+
 async function main(): Promise<void> {
-  const config = loadConfig();
+  const source = new ConfigSource(locateConfig());
+  const configPath = source.location.userPath;
+  logger.info(`Terraria bridge config: ${configPath}`);
+  let stopping = false;
+  let stop: () => Promise<void> = async () => {
+    stopping = true;
+    process.exit(0);
+  };
+  process.on('SIGINT', () => void stop());
+  process.on('SIGTERM', () => void stop());
+
+  // A missing or empty file at startup is waited for, not fatal.
+  let loaded: LoadedConfig | null = await source.poll();
+  while (!loaded && !stopping) {
+    await new Promise((resolve) => setTimeout(resolve, CONFIG_POLL_MS));
+    loaded = await source.poll();
+  }
+  if (!loaded) return;
+  let config = loaded.config;
+  logIdentity(loaded);
   const tshock = new TShockClient(config.tshock);
   const adapter = new TerrariaAdapter(tshock, {
     commandAllowlistExact: config.commandAllowlistExact,
@@ -72,7 +96,17 @@ async function main(): Promise<void> {
     logger.error(`Takaro server error: ${JSON.stringify(payload)}`);
   });
   takaro.on('identifyError', (payload) => {
-    logger.error(`Takaro identify error: ${JSON.stringify(payload)}`);
+    // Only the summary: Takaro's error object can carry its own request, auth header included.
+    logger.error(`Takaro identify error: ${identifyErrorSummary(payload)}`);
+    banner([
+      `Takaro rejected identify: ${identifyErrorText(payload)}`,
+      ...(process.env.TAKARO_REGISTRATION_TOKEN
+        ? ['Check TAKARO_REGISTRATION_TOKEN in the environment; it overrides the config file.']
+        : [
+          `Check registrationToken in ${configPath}`,
+          'and save it. The bridge reconnects within a few seconds, no restart needed.',
+        ]),
+    ]);
   });
   // The connection state goes to the log through one place: `takaro-maint verify` reads
   // those two lines out of this bridge's log to prove the handshake and the reconnect.
@@ -93,19 +127,112 @@ async function main(): Promise<void> {
   const reachability = await adapter.handleAction('testReachability', {});
   startupReachable = Boolean((reachability as { connectable?: boolean }).connectable);
   logger.info(`Terraria bridge health: http://127.0.0.1:${health.port()}/health`);
+  announceMissing(config, configPath, undefined, Boolean(loaded.identityNotSaved));
   takaro.connect();
 
-  const stop = async (): Promise<void> => {
+  const apply = (next: LoadedConfig): void => {
+    const previous = config;
+    config = next.config;
+    logIdentity(next);
+    tshock.updateConfig(config.tshock);
+    if (JSON.stringify(previous.tshock) !== JSON.stringify(config.tshock)) {
+      // /health falls back to the startup probe until the poller runs, so probe again.
+      void adapter.handleAction('testReachability', {}).then((result) => {
+        startupReachable = Boolean((result as { connectable?: boolean }).connectable);
+      });
+    }
+    adapter.updateOptions({
+      commandAllowlistExact: config.commandAllowlistExact,
+      commandAllowlistPrefixes: config.commandAllowlistPrefixes,
+      enableShutdown: config.enableShutdown,
+      serverChatName: config.serverChatName,
+    });
+    const needsRestart = restartOnlyChanges(previous, config);
+    if (needsRestart.length) {
+      logger.warn(`${needsRestart.join(', ')} changed in ${configPath}; restart the bridge to apply ${needsRestart.length > 1 ? 'them' : 'it'}.`);
+    }
+    const reconnecting = takaro.reconfigure(config.takaroWsUrl, {
+      identityToken: config.identityToken,
+      registrationToken: config.registrationToken,
+      name: config.serverName,
+    });
+    if (reconnecting && config.registrationToken) {
+      logger.info(`Takaro connection settings changed in ${configPath}; connecting now`);
+    }
+    announceMissing(config, configPath, previous, Boolean(next.identityNotSaved));
+  };
+
+  let polling = false;
+  const watcher = setInterval(() => {
+    if (polling || stopping) return;
+    polling = true;
+    source.poll()
+      .then((next) => {
+        if (next && !stopping) apply(next);
+      })
+      .catch((err) => logger.error(`Config reload failed: ${err instanceof Error ? err.message : String(err)}`))
+      .finally(() => {
+        polling = false;
+      });
+  }, CONFIG_POLL_MS);
+
+  stop = async (): Promise<void> => {
+    if (stopping) return;
+    stopping = true;
     logger.info('Shutting down Terraria Takaro bridge');
+    clearInterval(watcher);
     poller.stop();
     for (const tailer of tailers) tailer.stop();
     takaro.shutdown();
     await health.stop();
     setTimeout(() => process.exit(0), 100);
   };
+}
 
-  process.on('SIGINT', () => void stop());
-  process.on('SIGTERM', () => void stop());
+function logIdentity(loaded: LoadedConfig): void {
+  if (loaded.identityNotSaved) {
+    banner([
+      'identityToken could not be saved, the server is not connected to Takaro.',
+      loaded.identityNotSaved,
+      'and save it. The bridge connects within a few seconds, no restart needed.',
+    ]);
+  }
+  if (loaded.identitySource === 'serverName') {
+    logger.info(`identityToken is not set; using serverName "${loaded.config.identityToken}" as before and saving it as identityToken`);
+  }
+}
+
+/** Settings read once at startup. */
+function restartOnlyChanges(previous: BridgeConfig, next: BridgeConfig): string[] {
+  const changed: string[] = [];
+  if (previous.httpPort !== next.httpPort) changed.push('httpPort');
+  if (previous.pollIntervalMs !== next.pollIntervalMs) changed.push('pollIntervalMs');
+  if (previous.logFiles.join(',') !== next.logFiles.join(',')) changed.push('logFiles');
+  if (previous.logExcludePatterns.join(',') !== next.logExcludePatterns.join(',')) changed.push('logExcludePatterns');
+  return changed;
+}
+
+/** The banners for what keeps the bridge from working, each once per time it goes missing. */
+function announceMissing(config: BridgeConfig, configPath: string, previous?: BridgeConfig, blocked = false): void {
+  if (!blocked && !config.registrationToken && (!previous || previous.registrationToken)) {
+    banner([
+      'RegistrationToken not set, the server is not connected to Takaro.',
+      `Paste the registration token from Takaro into registrationToken= in ${configPath}`,
+      'and save it. The bridge connects within a few seconds, no restart needed.',
+    ]);
+  }
+  if (!hasTshockCredentials(config) && (!previous || hasTshockCredentials(previous))) {
+    banner([
+      'tshockToken not set, the bridge cannot reach the TShock REST API.',
+      `Paste a TShock application REST token into tshockToken= in ${configPath}`,
+      'and save it. The bridge picks it up within a few seconds, no restart needed.',
+    ]);
+  }
+}
+
+function banner(lines: string[]): void {
+  const rule = '*'.repeat(73);
+  logger.warn([rule, ...lines.map((line) => `  ${line}`), rule].join('\n'));
 }
 
 async function handleTakaroRequest(

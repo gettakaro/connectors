@@ -73,10 +73,9 @@ folder around it:
 ```
 
 **Bridge.** The zip contains one folder, `TakaroTerrariaBridge/`, holding `dist/`,
-`node_modules/`, `package.json`, `package-lock.json`, `TakaroConfig.example.txt` and two readme
-files. Extract it anywhere on the same host. Its one runtime dependency is already in the
-archive, so there is nothing to install — run `npm ci --omit=dev` only if you delete
-`node_modules/`.
+`node_modules/`, `package.json`, `package-lock.json`, `TakaroConfig.txt` and two readme files.
+Extract it anywhere on the same host. Its one runtime dependency is already in the archive, so
+there is nothing to install — run `npm ci --omit=dev` only if you delete `node_modules/`.
 
 ### 4. Configure
 
@@ -94,16 +93,15 @@ all silently, without an error. Grant **`tshock.broadcast`** too if you are not 
 `superadmin`: with it, a message from Takaro is also written to the server console, which is
 where you would look for it. Without it the message still reaches the players.
 
-**Bridge.** Copy `TakaroConfig.example.txt` to `TakaroConfig.txt` next to the bridge and fill in:
+**Bridge.** Open `TakaroTerrariaBridge/TakaroConfig.txt` and fill in the two tokens:
 
 ```
 registrationToken=your-registration-token-here
-serverName=Terraria Server
-takaroWsUrl=wss://connect.takaro.io/
-tshockBaseUrl=http://127.0.0.1:7878
 tshockToken=your-tshock-rest-token
-logFiles=tshock/logs
 ```
+
+Leave `identityToken` empty — the bridge fills it in. The other lines already hold working
+defaults (`tshockBaseUrl=http://127.0.0.1:7878`, `logFiles=tshock/logs`, ...).
 
 - `registrationToken` — from Takaro. `TAKARO_REGISTRATION_TOKEN` in the environment overrides it.
 - `tshockToken` — the REST token from above (`TSHOCK_TOKEN` overrides). Instead of a token you may
@@ -117,11 +115,14 @@ logFiles=tshock/logs
 
 Keep real registration tokens and REST tokens out of version control.
 
-Start the server, then start the bridge:
+Start the server, then start the bridge from inside `TakaroTerrariaBridge/`:
 
 ```bash
 npm start
 ```
+
+You can also fill in the tokens while the bridge is running: it checks `TakaroConfig.txt` every
+few seconds and connects as soon as you save a token. No restart needed.
 
 ### 5. Check that it worked
 
@@ -147,15 +148,38 @@ curl http://127.0.0.1:3020/health
 `takaroIdentified` and `tshockReachable` must both be `true`, and `gameServerId` must not be
 `null`. `GET /coverage` on the same port lists what each action and event is expected to do.
 
-And in Takaro, the game server shows as **online**. If it stays offline, the `registrationToken`
-in `TakaroConfig.txt` is the first thing to re-check.
+And in Takaro, the game server shows as **online**.
+
+If no token is set yet, the bridge shows a banner instead:
+
+```
+*************************************************************************
+  RegistrationToken not set, the server is not connected to Takaro.
+  Paste the registration token from Takaro into registrationToken= in /path/to/TakaroTerrariaBridge/TakaroConfig.txt
+  and save it. The bridge connects within a few seconds, no restart needed.
+*************************************************************************
+```
+
+If the token is wrong, the banner says `Takaro rejected identify: Invalid registrationToken
+provided`. Fix `registrationToken` in `TakaroConfig.txt` and save; the bridge reconnects within a
+few seconds.
 
 ### 6. Upgrading
 
 **Stop the server and the bridge first.** Replace
-`<server>/ServerPlugins/TakaroTerrariaEvents.dll` with the new one and replace the whole
-`TakaroTerrariaBridge/` folder with the new one. Leave your `TakaroConfig.txt` alone — it is not part of either zip and survives the
-upgrade. Start the server, then the bridge.
+`<server>/ServerPlugins/TakaroTerrariaEvents.dll` with the new one, delete the
+`TakaroTerrariaBridge/` folder and extract the new one in its place. Start the server, then the
+bridge.
+
+You do not need to enter anything again: the bridge keeps a copy of its settings next to the
+folder, in `TakaroTerrariaBridge.saved-config.txt`, and puts them back into the new
+`TakaroConfig.txt` on its first start. Your server keeps its identity in Takaro. A
+`registrationToken` you put in the new `TakaroConfig.txt` always wins over the copy.
+
+Coming from 0.4.1 or earlier, whose README told you to replace the folder too: back up
+`TakaroTerrariaBridge/TakaroConfig.txt` before you delete the folder, and copy it over the new
+one. A `TakaroConfig.txt` you keep outside the folder (started with `BRIDGE_CONFIG`, or from that
+directory) is never touched by an upgrade.
 
 ## What works, what doesn't
 
