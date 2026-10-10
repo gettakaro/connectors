@@ -32,7 +32,7 @@ grep -q "FAKE CONNECTOR" <<<"$out" && fail "loader acted outside VeinServer"
 echo "panel loader ignores other processes: pass"
 
 # The real connector: the guard decides in the library constructor, so the host exits right after
-# loading (the start-up thread is not meant to run in this fake game; it has crashed it now and then).
+# loading.
 # Two copies preloaded from different folders: exactly one stays idle.
 if [ -f dist/libtakaro-vein.so ]; then
   cp dist/libtakaro-vein.so "$T/real1/"; cp dist/libtakaro-vein.so "$T/real2/"
@@ -53,3 +53,17 @@ if [ -f dist/libtakaro-vein.so ]; then
 else
   echo "dist/libtakaro-vein.so missing: build first"; exit 1
 fi
+
+# Exit handlers flush the connector log after static destructors have run; the log path must still
+# be intact then (a destroyed path once dropped files named after heap garbage into the game folder).
+rm -rf "$T/cwd" "$T/data2"; mkdir -p "$T/cwd"
+set +e
+out=$(cd "$T/cwd" && TAKARO_PLUGIN_DATA_DIR="$PWD/../data2" TAKARO_NATIVE_DISABLE=1 \
+      LD_PRELOAD="$PWD/../real1/libtakaro-vein.so" timeout 60 ../VeinServer-loader-test "" 1500 exit 2>&1)
+rc=$?
+set -e
+[ "$rc" = 0 ] || fail "host exit code $rc"
+stray=$(find "$T/cwd" -type f | wc -l)
+[ "$stray" = 0 ] || { find "$T/cwd" -type f | cat -v; fail "connector wrote $stray stray file(s) into the working directory at exit"; }
+grep -q "hooks: restored\|instance\|starting" "$T/data2/plugin.log" || fail "plugin.log missing its exit-time lines"
+echo "exit-time log flush stays in plugin.log: pass"

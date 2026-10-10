@@ -27,30 +27,32 @@ static const off_t kPluginLogMaxBytes = 64L * 1024 * 1024;
 static long TidNow() { return (long)syscall(SYS_gettid); }
 
 const std::string& ExePath() {
-    static const std::string p = [] {
+    // Never destroyed: exit handlers (ShutdownPlugin -> FlushPluginLogs) still use these after static
+    // destructors have run; a destroyed path string once named log files after heap garbage.
+    static const std::string& p = *new std::string([] {
         char buf[4096] = {0};
         ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
         return std::string(n > 0 ? buf : "");
-    }();
+    }());
     return p;
 }
 
 const std::string& ExeDir() {
-    static const std::string d = [] {
+    static const std::string& d = *new std::string([] {
         std::string p = ExePath();
         size_t s = p.rfind('/');
         return s == std::string::npos ? std::string(".") : p.substr(0, s);
-    }();
+    }());
     return d;
 }
 
 const std::string& PluginDataDir() {
-    static const std::string d = [] {
+    static const std::string& d = *new std::string([] {
         const char* env = ConfigFile::Get("TAKARO_PLUGIN_DATA_DIR");
         std::string dir = (env && *env) ? std::string(env) : ExeDir() + "/takaro";
         ::mkdir(dir.c_str(), 0775);
         return dir;
-    }();
+    }());
     return d;
 }
 
@@ -110,7 +112,7 @@ void FlushPluginLogs() {
         g_logBytes = 0;
     }
     if (batch.empty()) return;
-    static const std::string path = PluginDataDir() + "/plugin.log";
+    static const std::string& path = *new std::string(PluginDataDir() + "/plugin.log");
     // Keep one previous generation; a long-lived server must not fill its disk with this log.
     struct stat st {};
     if (stat(path.c_str(), &st) == 0 && st.st_size > kPluginLogMaxBytes)
@@ -205,7 +207,7 @@ uint64_t NowMs() {
 }
 
 const std::string& BootId() {
-    static const std::string id = [] {
+    static const std::string& id = *new std::string([] {
         struct timespec ts;
         clock_gettime(CLOCK_REALTIME, &ts);
         uint64_t v = (uint64_t)ts.tv_nsec ^ ((uint64_t)ts.tv_sec << 20) ^ ((uint64_t)getpid() << 17) ^
@@ -214,7 +216,7 @@ const std::string& BootId() {
         char b[24];
         snprintf(b, sizeof b, "%016llx", (unsigned long long)v);
         return std::string(b);
-    }();
+    }());
     return id;
 }
 

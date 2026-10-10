@@ -53,7 +53,12 @@ for f in src/*.cpp; do
   "$CXX" "${CXXFLAGS[@]}" -c "$f" -o "build/$(basename "${f%.cpp}").o"
 done
 echo "  LD  dist/libtakaro-vein.so"
-"$CXX" build/*.o "${LDFLAGS[@]}" -o dist/libtakaro-vein.so
+# main.o last: its constructor starts the init thread, and .init_array runs in link order, so every
+# other file's static objects (Resolve's symbol index, for example) must already be constructed.
+# With main.o in the middle the thread could use an unconstructed map (SIGFPE in Resolve::Init).
+objs=()
+for o in build/*.o; do [ "$o" = build/main.o ] || objs+=("$o"); done
+"$CXX" "${objs[@]}" build/main.o "${LDFLAGS[@]}" -o dist/libtakaro-vein.so
 strip --strip-unneeded dist/libtakaro-vein.so 2>/dev/null || true
 
 # LANE L3e: refuse to produce a .so that LD_PRELOAD cannot load.

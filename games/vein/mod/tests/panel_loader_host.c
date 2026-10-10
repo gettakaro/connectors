@@ -22,7 +22,8 @@ int main(int argc, char** argv) {
     }
     if (f) fclose(f);
     fflush(stdout);
-    // _exit: the real connector's start-up thread is not meant to run to completion in this fake
-    // game, so skip exit handlers rather than wait for it.
+    // Default _exit: the real connector's start-up thread is not meant to run to completion in this
+    // fake game, so skip exit handlers. A third argument "exit" runs them (static-destruction checks).
+    if (argc > 3 && strcmp(argv[3], "exit") == 0) return 0;
     _exit(0);
 }

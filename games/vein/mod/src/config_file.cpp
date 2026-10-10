@@ -89,7 +89,7 @@ Loaded Load(const std::string& path) {
 }
 
 const Loaded& Current() {
-    static const Loaded loaded = Load(DefaultPath());
+    static const Loaded& loaded = *new Loaded(Load(DefaultPath()));  // still read by exit handlers
     return loaded;
 }
 
