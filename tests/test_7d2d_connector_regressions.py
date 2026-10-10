@@ -20,6 +20,31 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn("Platform.BlockedPlayerList.Instance.GetEntriesOrdered", mirror)
         self.assertIn("Shared.TransformBanRecordToTakaroBan(record)", mirror)
 
+    def test_ban_capture_keys_entries_by_eos_id(self):
+        capture = self.source("src/Services/StateMirror.cs").split(
+            "private static List<BanRecord> CaptureBans()", 1
+        )[1].split("private static PlayerRecord BuildPlayerRecord", 1)[0]
+        self.assertIn("BanIdentity.ToRecord", capture)
+        self.assertNotIn('Replace("EOS_", "")', capture)
+        self.assertIn("seenGameIds", capture)
+
+    def test_entity_kill_reports_internal_class_name(self):
+        api = self.source("src/API.cs")
+        entity_killed = api.split("public void EntityKilled", 1)[1].split(
+            "private static ModEvents.EModEventResult GameMessage", 1
+        )[0]
+        self.assertIn("Shared.EntityKillName", entity_killed)
+        self.assertNotIn("EntityDisplayName", entity_killed)
+
+    def test_chat_channels_never_publish_unknown(self):
+        publisher = self.source("src/WebSocket/GameEventPublisher.cs")
+        self.assertNotIn('"unknown"', publisher.split("ChatChannelFor", 1)[1].split("public static void SendEntityKilled", 1)[0])
+        self.assertIn("ChatChannelFor(type)", publisher)
+
+    def test_give_item_keeps_the_vanilla_give_default_quality(self):
+        handler = self.source("src/WebSocket/GiveItemHandler.cs")
+        self.assertIn("ushort quality = Constants.cItemMaxQuality;", handler)
+
     def test_timed_bans_use_game_local_deadlines_and_persist_before_kick(self):
         actions = self.source("src/WebSocket/ActionHandlers.cs")
         ban_player = actions.split(

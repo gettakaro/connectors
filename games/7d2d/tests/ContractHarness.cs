@@ -15,10 +15,13 @@ public static class ContractHarness
     {
         try
         {
-            if (args.Length != 1)
-                throw new ArgumentException("Expected the Generic Connector fixture path");
+            if (args.Length != 2)
+                throw new ArgumentException(
+                    "Expected the Generic Connector fixture path and the legacy parity fixture path"
+                );
 
             JObject fixture = JObject.Parse(File.ReadAllText(args[0]));
+            JObject legacy = JObject.Parse(File.ReadAllText(args[1]));
             AssertBanExpiryConversion();
             AssertConsoleCommandOutcomeClassification();
             AssertResponseSerialization(fixture);
@@ -29,6 +32,11 @@ public static class ContractHarness
             AssertWorldDtoSerialization(fixture);
             AssertPlayerProximateItemDelivery();
             AssertGiveItemProductionValidationAndCardinality();
+            AssertLegacyParityIdentities(legacy);
+            AssertLegacyParityBans(legacy);
+            AssertLegacyParityGiveQuality(legacy);
+            AssertLegacyParityEntityKilled(legacy);
+            AssertLegacyParityChatChannels(legacy);
             AssertProductionNotFoundReadSemantics();
             AssertNestedArgumentParsing();
             AssertRouterParsingAndCardinality(fixture);
@@ -368,10 +376,14 @@ public static class ContractHarness
         Equal(30.75f, (float)deathData["position"]["z"], "death position z");
 
         WebSocketTransport.Instance.TerminalMessages.Clear();
-        GameEventPublisher.SendEntityKilled(identity, "Rabbit", null);
+        GameEventPublisher.SendEntityKilled(identity, "animalRabbit", null);
         AssertPublishedEvent("entity-killed", out JObject killedData);
         TokenEqual(identityJson, killedData["player"], "entity kill uses stable identity");
-        Equal("Rabbit", (string)killedData["entity"], "entity kill uses the display name");
+        Equal(
+            "animalRabbit",
+            (string)killedData["entity"],
+            "entity kill carries the internal class name"
+        );
         Equal("unknown", (string)killedData["weapon"], "entity kill weapon fallback");
 
         WebSocketTransport.Instance.TerminalMessages.Clear();
@@ -680,6 +692,263 @@ public static class ContractHarness
         Equal(1, GameManager.Instance.ItemDrops.Count, "fallback drops one stack at the player");
         Equal(2, GameManager.Instance.ItemDrops[0].Stack.count, "fallback keeps the amount");
         Equal(0, world.Spawned.Count, "fallback spawns no collect entity");
+    }
+
+    private static void AssertLegacyParityIdentities(JObject legacy)
+    {
+        foreach (JToken identityCase in (JArray)legacy["identities"])
+        {
+            string name = (string)identityCase["name"];
+            JToken input = identityCase["input"];
+            ClientInfo client = new ClientInfo
+            {
+                CrossplatformId = new PlatformUserIdentifierAbs
+                {
+                    CombinedString = (string)input["crossplatformId"],
+                },
+                PlatformId = new PlatformUserIdentifierAbs
+                {
+                    CombinedString = (string)input["platformId"],
+                },
+                playerName = (string)input["playerName"],
+            };
+            string eosId = ((string)input["crossplatformId"]).Replace("EOS_", "");
+            var shapes = new Dictionary<string, Takaro.TakaroPlayer>
+            {
+                { "connected", Takaro.Shared.TransformClientInfoToTakaroPlayer(client) },
+                {
+                    "event identity",
+                    Takaro.Shared.TransformClientInfoToTakaroPlayerIdentity(client)
+                },
+                {
+                    "mirror record",
+                    Takaro.Shared.TransformPlayerRecordToTakaroPlayer(
+                        new Takaro.Persistence.PlayerRecord
+                        {
+                            GameId = eosId,
+                            Name = (string)input["playerName"],
+                            SteamId = StripPrefix((string)input["platformId"], "Steam_"),
+                            XboxLiveId = StripPrefix((string)input["platformId"], "XBL_"),
+                            EpicOnlineServicesId = eosId,
+                        }
+                    )
+                },
+            };
+            foreach (KeyValuePair<string, Takaro.TakaroPlayer> shape in shapes)
+                AssertMatchesLegacyPlayer(
+                    JObject.Parse(JsonConvert.SerializeObject(shape.Value)),
+                    identityCase,
+                    name + " " + shape.Key
+                );
+        }
+    }
+
+    private static string StripPrefix(string value, string prefix)
+    {
+        return value.StartsWith(prefix) ? value.Substring(prefix.Length) : null;
+    }
+
+    private static void AssertMatchesLegacyPlayer(JObject wire, JToken fixtureCase, string label)
+    {
+        var legacyKeys = new HashSet<string>();
+        foreach (JProperty expected in ((JObject)fixtureCase["legacy"]).Properties())
+        {
+            legacyKeys.Add(expected.Name);
+            Equal((string)expected.Value, (string)wire[expected.Name], label + " " + expected.Name);
+        }
+        foreach (JProperty modOnly in ((JObject)fixtureCase["modOnly"]).Properties())
+        {
+            legacyKeys.Add(modOnly.Name);
+            // The mirror record carries no platformId; only live shapes assert it.
+            if (!label.EndsWith("mirror record"))
+                Equal(
+                    (string)modOnly.Value,
+                    (string)wire[modOnly.Name],
+                    label + " " + modOnly.Name
+                );
+        }
+        foreach (
+            string identityKey in new[]
+            {
+                "steamId",
+                "xboxLiveId",
+                "epicOnlineServicesId",
+                "platformId",
+            }
+        )
+        {
+            if (!legacyKeys.Contains(identityKey))
+                True(wire[identityKey] == null, label + " has no " + identityKey);
+        }
+    }
+
+    private static void AssertLegacyParityBans(JObject legacy)
+    {
+        foreach (JToken banCase in (JArray)legacy["bans"]["cases"])
+        {
+            string name = "ban " + (string)banCase["name"];
+            Takaro.Persistence.BanRecord record = Takaro.Services.BanIdentity.ToRecord(
+                (string)banCase["banId"],
+                (string)banCase["crossplatformId"],
+                null,
+                null,
+                "fixture",
+                null
+            );
+            if (banCase["expected"].Type == JTokenType.Null)
+            {
+                True(record == null, name + " is skipped, as the legacy integration did");
+                continue;
+            }
+
+            True(record != null, name + " is sent");
+            JObject wire = JObject.Parse(
+                JsonConvert.SerializeObject(
+                    Takaro.Shared.TransformBanRecordToTakaroBan(record).Player
+                )
+            );
+            foreach (JProperty expected in ((JObject)banCase["expected"]).Properties())
+                Equal(
+                    (string)expected.Value,
+                    (string)wire[expected.Name],
+                    name + " " + expected.Name
+                );
+            True(
+                !((string)wire["gameId"]).StartsWith("Steam_")
+                    && !((string)wire["gameId"]).StartsWith("XBL_")
+                    && !((string)wire["gameId"]).StartsWith("EOS_"),
+                name + " gameId is a bare EOS id"
+            );
+            True(
+                !((string)wire["name"]).Contains("Steam_")
+                    && !((string)wire["name"]).Contains("XBL_"),
+                name + " fallback name carries no platform prefix"
+            );
+        }
+
+        JToken legacyOnly = legacy["bans"]["legacyResult"][0];
+        Takaro.Persistence.BanRecord eosRecord = Takaro.Services.BanIdentity.ToRecord(
+            "EOS_" + (string)legacyOnly["gameId"],
+            null,
+            null,
+            null,
+            null,
+            null
+        );
+        Equal(
+            "Player_" + (string)legacyOnly["gameId"],
+            eosRecord.Name,
+            "unnamed EOS ban gets a bare-id name"
+        );
+    }
+
+    private static void AssertLegacyParityGiveQuality(JObject legacy)
+    {
+        foreach (JToken giveCase in (JArray)legacy["giveItem"]["cases"])
+        {
+            string name = "give " + (string)giveCase["name"];
+            GameManager.Instance.ResetGiveItemFixture();
+            AssertGiveItemTerminal(
+                GiveItemArgs("fixture-player", "resourceWood", 2, (string)giveCase["quality"]),
+                WebSocketMessage.MessageTypes.Response,
+                name
+            );
+            ushort delivered = GameManager
+                .Instance
+                .World
+                .Spawned[0]
+                .CreationData
+                .itemStack
+                .itemValue
+                .Quality;
+            Equal((ushort)(int)giveCase["expected"], delivered, name + " matches the legacy give");
+        }
+
+        foreach (string quality in new[] { null, "", "4" })
+        {
+            GameManager.Instance.ResetGiveItemFixture();
+            ItemClass.list[42] = new ItemClass { HasSubItems = true };
+            AssertGiveItemTerminal(
+                GiveItemArgs("fixture-player", "resourceWood", 1, quality),
+                WebSocketMessage.MessageTypes.Response,
+                "give sub-item quality " + (quality ?? "absent")
+            );
+            ItemValue delivered = GameManager
+                .Instance
+                .World
+                .Spawned[0]
+                .CreationData
+                .itemStack
+                .itemValue;
+            Equal(
+                quality == "4" ? (ushort)4 : Constants.cItemMaxQuality,
+                delivered.Modifications[0].Quality,
+                "sub-item modification quality for " + (quality ?? "absent")
+            );
+        }
+    }
+
+    private static void AssertLegacyParityEntityKilled(JObject legacy)
+    {
+        Takaro.TakaroPlayer killer = new Takaro.TakaroPlayer { GameId = "fixture-player" };
+        foreach (JToken killCase in (JArray)legacy["entityKilled"])
+        {
+            string className = (string)killCase["entityClassName"];
+            string name = Takaro.Shared.EntityKillName(className, "Zombie");
+            Equal((string)killCase["expected"], name, "entity kill name for " + className);
+            if (killCase["localizedName"] != null)
+                True(
+                    name != (string)killCase["localizedName"],
+                    "entity kill is not the localized name"
+                );
+
+            WebSocketTransport.Instance.TerminalMessages.Clear();
+            GameEventPublisher.SendEntityKilled(killer, name, null);
+            AssertPublishedEvent("entity-killed", out JObject published);
+            Equal(className, (string)published["entity"], "published entity for " + className);
+        }
+
+        Equal("zombie", Takaro.Shared.EntityKillName(null, "Zombie"), "unnamed zombie fallback");
+        Equal("animal", Takaro.Shared.EntityKillName("", "Animal"), "unnamed animal fallback");
+    }
+
+    private static void AssertLegacyParityChatChannels(JObject legacy)
+    {
+        JObject expected = (JObject)legacy["chatChannels"]["expected"];
+        var allowed = new HashSet<string>(legacy["chatChannels"]["allowed"].Values<string>());
+        foreach (EChatType type in Enum.GetValues(typeof(EChatType)))
+        {
+            string channel = GameEventPublisher.ChatChannelFor(type);
+            Equal((string)expected[type.ToString()], channel, "chat channel for " + type);
+            True(allowed.Contains(channel), "chat channel " + channel + " is one Takaro accepts");
+        }
+        Equal(
+            (string)expected["other"],
+            GameEventPublisher.ChatChannelFor((EChatType)99),
+            "unknown chat type maps to global"
+        );
+
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        GameEventPublisher.SendChatMessage(
+            new ClientInfo
+            {
+                CrossplatformId = new PlatformUserIdentifierAbs
+                {
+                    CombinedString = "EOS_fixture-player",
+                },
+                PlatformId = new PlatformUserIdentifierAbs
+                {
+                    CombinedString = "Steam_fixture-player",
+                },
+                playerName = "Fixture Player",
+            },
+            (EChatType)99,
+            1,
+            "hello",
+            null
+        );
+        AssertPublishedEvent("chat-message", out JObject chat);
+        Equal("global", (string)chat["channel"], "unknown chat type is published as global");
     }
 
     private static void AssertGiveItemProductionValidationAndCardinality()
@@ -1773,6 +2042,7 @@ namespace Takaro.Persistence
 
     public sealed class BanRecord
     {
+        public string Id { get; set; }
         public string GameId { get; set; }
         public string Name { get; set; }
         public string SteamId { get; set; }
@@ -1868,7 +2138,10 @@ public sealed class ItemValue
     {
         this.type = type;
         Quality = 0;
-        Modifications = new ItemValue[0];
+        Modifications =
+            ItemClass.list.TryGetValue(type, out ItemClass itemClass) && itemClass.HasSubItems
+                ? new[] { new ItemValue(-2, false) }
+                : new ItemValue[0];
     }
 
     // The V3.3.0 accessors that replaced the public Modifications array.
