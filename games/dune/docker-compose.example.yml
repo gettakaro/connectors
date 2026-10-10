@@ -52,8 +52,9 @@ services:
       game-rmq:
         condition: service_started
     environment:
-      TAKARO_REGISTRATION_TOKEN: ${TAKARO_REGISTRATION_TOKEN}
-      TAKARO_IDENTITY_TOKEN: ${TAKARO_IDENTITY_TOKEN:-dune}
+      # Empty token: the sidecar stays offline and says so. Empty identity: it generates one and keeps it in /data.
+      TAKARO_REGISTRATION_TOKEN: ${TAKARO_REGISTRATION_TOKEN:-}
+      TAKARO_IDENTITY_TOKEN: ${TAKARO_IDENTITY_TOKEN:-}
       TAKARO_SERVER_NAME: ${TAKARO_SERVER_NAME:-Dune}
       # Must match your Takaro game server's `serverChatName` setting, or Takaro's chat bridge
       # echoes the connector's own messages back into the game.
@@ -96,12 +97,20 @@ services:
       # DUNE_SHUTDOWN_CMD: /bin/sh /opt/takaro-shutdown/request-shutdown.sh
       # DUNE_SHUTDOWN_NOTICE_SECONDS: "60"
 
+      # The .env beside this file, re-read every 5 s: saving a new TAKARO_REGISTRATION_TOKEN, TAKARO_IDENTITY_TOKEN,
+      # TAKARO_WS_URL or TAKARO_SERVER_NAME reconnects without a restart. compose copies the other values into the
+      # container once, at create, so those still need `up -d`.
+      TAKARO_CONFIG_FILE: /takaro-config/.env
+      TAKARO_CONFIG_DISPLAY_PATH: .env beside docker-compose.example.yml
       SIDECAR_HEALTH_HOST: 0.0.0.0
       SIDECAR_HEALTH_PORT: "18891"
       TAKARO_DATA_DIR: /data
     volumes:
       # Bans, the online set, the known-player cache and the event cursor. Losing it loses the bans.
       - takaro-dune-data:/data
+      # This folder, read-only, for the .env above. A folder rather than the file itself: an editor that saves by
+      # replacing the file would leave a single-file mount showing the old copy.
+      - .:/takaro-config:ro
       # Only for DUNE_LOG_FILE — the map server's Saved/ directory, read-only.
       # - ./data/dune/DuneSandbox/Saved:/gamelogs:ro
       # Only for DUNE_GM_PUBLISHER=docker-exec. It grants full control of the Docker daemon, so

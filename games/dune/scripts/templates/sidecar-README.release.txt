@@ -14,14 +14,18 @@ and UserGame.ini needs the two commands the game does not allow by default:
   +Allowed_GM_Commands=ServiceBroadcast
 
 Option A - Docker (what docker-compose.example.yml does):
-1. Unpack this folder next to docker-compose.example.yml and rename it to "sidecar"
-   so the compose service's "build: ./sidecar" finds it.
-2. docker compose -f docker-compose.example.yml --env-file .env up -d --build
+1. Rename this folder to "sidecar". Move docker-compose.example.yml and .env.example out of it
+   to beside it, and rename .env.example to .env. Keep .env outside "sidecar": upgrades replace it.
+2. Fill in .env (leave TAKARO_IDENTITY_TOKEN empty: one is generated and kept in /data).
+3. docker compose -f docker-compose.example.yml --env-file .env up -d --build
+   No token yet? The log says so in a banner. Paste it into .env and save: the sidecar connects
+   within a few seconds, no restart needed.
 
 Option B - plain Node.js 22 on the host:
 1. npm ci --omit=dev
-2. Set at least TAKARO_REGISTRATION_TOKEN, TAKARO_IDENTITY_TOKEN, DUNE_PG_URL, DUNE_RMQ_URL,
-   DUNE_GM_AUTH_TOKEN and DUNE_GM_PUBLISHER (see .env.example).
+2. Set at least DUNE_PG_URL, DUNE_RMQ_URL, DUNE_GM_AUTH_TOKEN and DUNE_GM_PUBLISHER in the
+   environment (see .env.example). TAKARO_REGISTRATION_TOKEN can go in the environment or in
+   ../.env (beside this folder), which is re-read every 5 s.
 3. npm run catalogue      # builds the item catalogue; see data/ATTRIBUTION.md
 4. node dist/index.js
 

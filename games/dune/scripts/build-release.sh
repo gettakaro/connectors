@@ -124,7 +124,7 @@ cp -R "${PROJECT_ROOT}/sidecar/dist" \
       "${PROJECT_ROOT}/sidecar/data" "${SPKG}/"
 cp "${PROJECT_ROOT}/sidecar/package.json" "${PROJECT_ROOT}/sidecar/package-lock.json" \
    "${PROJECT_ROOT}/sidecar/Dockerfile" "${PROJECT_ROOT}/sidecar/docker-entrypoint.sh" \
-   "${PROJECT_ROOT}/sidecar/.env.example" "${SPKG}/"
+   "${PROJECT_ROOT}/sidecar/.env.example" "${PROJECT_ROOT}/docker-compose.example.yml" "${SPKG}/"
 # Not the source tree's .dockerignore: that one excludes dist/ for Dockerfile.dev, which builds it,
 # and the release Dockerfile COPYs the prebuilt dist/ instead.
 cp "${SCRIPT_DIR}/templates/sidecar.dockerignore.release" "${SPKG}/.dockerignore"

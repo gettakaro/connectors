@@ -58,9 +58,11 @@ export class TakaroWsClient extends EventEmitter {
   /** Pings written but not yet ponged, oldest first. `upTo` = the sendId a pong for this ping would confirm. */
   private outstandingPings: { id: number; upTo: number }[] = [];
 
+  private configHint: ConfigHint = { file: '', hasFile: false };
+
   constructor(
-    private readonly url: string,
-    private readonly identifyConfig: IdentifyConfig,
+    private url: string,
+    private identifyConfig: IdentifyConfig,
     options: TakaroClientOptions = {},
   ) {
     super();
@@ -72,14 +74,29 @@ export class TakaroWsClient extends EventEmitter {
     this.maxBufferedBytes = options.maxBufferedBytes ?? 1024 * 1024;
   }
 
+  /** Where the operator edits the settings; named in the banners. */
+  setConfigHint(hint: ConfigHint): void {
+    this.configHint = hint;
+  }
+
   connect(): void {
     if (this.shuttingDown) return;
     this.reconnectTimer = null;
+    // Without a registration token Takaro rejects every identify, so do not even open a socket; the settings watcher
+    // calls `reconfigure` the moment a token is saved.
+    if (!this.identifyConfig.registrationToken) {
+      logBanner(logger.warn, [
+        'TAKARO_REGISTRATION_TOKEN not set, the server is not connected to Takaro.',
+        ...this.whereToFix('Paste the registration token from Takaro into'),
+      ]);
+      return;
+    }
     logger.info(`Connecting to Takaro at ${this.url}`);
     const ws = new WebSocket(this.url);
     this.ws = ws;
 
     ws.on('open', () => {
+      if (this.ws !== ws) return;
       logger.info('Takaro WebSocket open, sending identify');
       this.lastActivity = Date.now();
       this.outstandingPings = [];
@@ -87,10 +104,12 @@ export class TakaroWsClient extends EventEmitter {
       this.sendFrame(ws, createIdentify(this.identifyConfig));
     });
     ws.on('message', (data) => {
+      if (this.ws !== ws) return;
       this.lastActivity = Date.now();
       this.handleMessage(data.toString());
     });
     ws.on('pong', (data) => {
+      if (this.ws !== ws) return;
       this.lastActivity = Date.now();
       this.notePong(data?.toString?.() ?? '');
     });
@@ -240,6 +259,48 @@ export class TakaroWsClient extends EventEmitter {
     return ok;
   }
 
+  /**
+   * Applies changed settings: drops the current socket (if any) and connects again at once, skipping whatever backoff
+   * a rejected token had built up. Safe against the old socket's late `close`/`message` callbacks (they check
+   * `this.ws !== ws`) and against a pending reconnect timer (cleared here) and shutdown (checked first).
+   */
+  reconfigure(url: string, identifyConfig: IdentifyConfig): void {
+    if (this.shuttingDown) return;
+    this.url = url;
+    this.identifyConfig = identifyConfig;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.reconnectAttempts = 0;
+    const old = this.ws;
+    if (old) {
+      this.ws = null;
+      this.stopWatchdog();
+      this.outstandingPings = [];
+      this.isIdentified = false;
+      this.gameServerId = null;
+      try {
+        old.close(1000, 'Takaro settings changed');
+      } catch {
+        old.terminate();
+      }
+      // The old socket's own `close` is ignored (it is no longer `this.ws`), so report the drop here.
+      this.emit('disconnected');
+    }
+    logger.info('Takaro settings changed, reconnecting now');
+    this.connect();
+  }
+
+  private whereToFix(lead: string): string[] {
+    if (this.configHint.hasFile) {
+      return [`${lead} ${this.configHint.file}`, 'and save it. The sidecar connects within a few seconds, no restart needed.'];
+    }
+    return [
+      `${lead} TAKARO_REGISTRATION_TOKEN in ${this.configHint.file || 'the .env file'}`,
+      '(that file does not exist yet, or set the variable and restart the sidecar).',
+      'Once the file exists, saving it is enough: no restart needed.',
+    ];
+  }
+
   shutdown(): void {
     this.shuttingDown = true;
     this.stopWatchdog();
@@ -267,8 +328,12 @@ export class TakaroWsClient extends EventEmitter {
       case 'identifyResponse': {
         const payload = (message.payload ?? {}) as { error?: unknown; gameServerId?: string; server?: { id?: string } };
         if (payload.error) {
-          logger.error(`Takaro identify failed: ${JSON.stringify(payload.error)}`);
-          // Let the socket close / retry naturally; force a reconnect cycle with backoff.
+          logBanner(logger.error, [
+            `Takaro rejected identify: ${describeTakaroError(payload.error)}.`,
+            ...this.whereToFix('Check TAKARO_REGISTRATION_TOKEN (and TAKARO_IDENTITY_TOKEN) in'),
+            'Until then the sidecar retries with backoff.',
+          ]);
+          // Takaro keeps a rejected socket open; close it and retry with backoff. A saved fix skips the backoff.
           this.ws?.close();
           break;
         }
@@ -290,7 +355,7 @@ export class TakaroWsClient extends EventEmitter {
         // failed DTO validation. It is not a response to a request, so nothing surfaces it unless we count it here;
         // a silently rejected event is exactly how the `entityCode` whitelist bug survived a live kill.
         const reason = JSON.stringify(message.payload ?? message.error ?? {});
-        logger.error(`Takaro error: ${reason}`);
+        logger.error(`Takaro error: ${describeTakaroError(message.payload ?? message.error ?? {})}`);
         if (!message.requestId) this.emit('rejected', reason);
         break;
       }
@@ -306,6 +371,44 @@ export class TakaroWsClient extends EventEmitter {
     logger.info(`Reconnecting to Takaro in ${delay}ms`);
     this.reconnectTimer = setTimeout(() => this.connect(), delay);
   }
+}
+
+export interface ConfigHint {
+  /** The file the operator edits, as they see it (the host path in Docker). */
+  file: string;
+  /** Whether that file exists, i.e. whether saving it takes effect without a restart. */
+  hasFile: boolean;
+}
+
+const BANNER_RULE = '*************************************************************************';
+
+/** A config problem that stops the connection, so it must stand out in `docker logs` / a panel console. */
+export function logBanner(log: (message: string) => void, lines: string[]): void {
+  log(BANNER_RULE);
+  for (const line of lines) log(`  ${line}`);
+  log(BANNER_RULE);
+}
+
+/**
+ * Only the name, message and HTTP status of a Takaro error. Takaro's identify errors can carry its internal request,
+ * including an `x-takaro-token` JWT; none of that is ever logged.
+ */
+export function describeTakaroError(error: unknown): string {
+  if (typeof error === 'string') return clip(error);
+  if (!error || typeof error !== 'object') return clip(String(error));
+  const e = error as Record<string, unknown>;
+  const nested = (e.response ?? {}) as Record<string, unknown>;
+  const status = e.status ?? e.statusCode ?? e.httpStatus ?? nested.status;
+  const parts = [e.name, e.message ?? e.error ?? e.code]
+    .filter((v) => typeof v === 'string' && v.trim() !== '')
+    .map((v) => String(v));
+  if (typeof status === 'number' || typeof status === 'string') parts.push(`HTTP ${status}`);
+  return clip(parts.length ? parts.join(': ') : 'no reason given');
+}
+
+function clip(text: string): string {
+  const cleaned = text.replace(/eyJ[\w-]+\.[\w-]+\.[\w-]+/g, '<redacted-jwt>');
+  return cleaned.length > 300 ? `${cleaned.slice(0, 300)}…` : cleaned;
 }
 
 /** Never let a registration/identity token or a world password reach the logs. */
