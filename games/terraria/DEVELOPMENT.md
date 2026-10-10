@@ -148,6 +148,42 @@ then re-installs with `npm ci --omit=dev`, because the release archive ships its
 Use `takaro-maint build` (above). `scripts/build-bridge-release.sh <version> <out-dir>` is kept as
 a thin wrapper that builds the whole set.
 
+### Config
+
+`bridge/TakaroConfig.example.txt` is shipped as `TakaroTerrariaBridge/TakaroConfig.txt`, with an
+empty `registrationToken` and `identityToken` (`src/config.ts` `SHIPPED_VALUES` must match it; a
+test checks). `src/configFiles.ts` and `src/configSource.ts` hold the model:
+
+- **Which file.** `BRIDGE_CONFIG`, else `TakaroConfig.txt` in the working directory (where 0.2
+  read it), else the one inside the bridge folder.
+- **Saved copy.** Only while that file is inside the bridge folder, which an upgrade replaces: the
+  bridge writes the settings it uses (file values, never environment ones) to
+  `<parent>/TakaroTerrariaBridge.saved-config.txt`, mode 0600, merged over what it held so a
+  trimmed user file loses nothing there. The registration token falls back to it when the user
+  file has none (unless the user file emptied it while the bridge ran) and is never written into
+  the user file. While the user file has no `identityToken` (just unpacked), every other setting
+  it still holds at the shipped value is restored from the saved copy, empty values included;
+  after that the user file is authoritative.
+- **Identity.** User file, else saved copy. Neither: a file without `configFormat` predates this
+  layout and identified as `serverName`, so it keeps that; a `configFormat=2` file gets a UUID.
+  The identity is written back into the user file (last line for the key, the one the parser
+  reads; group and other access dropped). A UUID that neither file could store blocks the
+  connection with a banner rather than registering a server that is orphaned on restart.
+- **Hot reload.** The file is polled every 5 s and compared by text; a text that does not read the
+  same twice 300 ms apart, an empty file or a missing one keeps the settings in use. A change to
+  `takaroWsUrl`, `registrationToken`, `identityToken` or `serverName` drops the socket and
+  reconnects at once (`TakaroWsClient.reconfigure`; every socket callback ignores a socket that
+  is no longer current). TShock credentials, allowlists, `enableShutdown` and `serverChatName`
+  apply live; `httpPort`, `pollIntervalMs`, `logFiles`, `logExcludePatterns` log that they need a
+  restart.
+- **No token** is not fatal: the bridge logs a banner naming the file and does not connect. A
+  rejected identify logs a banner too, and only `name: message (http N)` of Takaro's error,
+  which can carry Takaro's own request headers. Missing TShock credentials get their own banner.
+- Environment variables override the file as before (`TAKARO_REGISTRATION_TOKEN`,
+  `TSHOCK_TOKEN`, `TSHOCK_USERNAME`, `TSHOCK_PASSWORD`). The dev rig and `takaro-maint verify`
+  pass `BRIDGE_CONFIG` outside the folder with an explicit `identityToken`, so they get no saved
+  copy and no generated identity.
+
 ### Local endpoints
 
 ```text

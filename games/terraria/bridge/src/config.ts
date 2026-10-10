@@ -37,37 +37,48 @@ export function parseKeyValues(raw: string): Record<string, string> {
   return values;
 }
 
-export function loadConfig(
-  configPath = process.env.BRIDGE_CONFIG || 'TakaroConfig.txt',
-  env: NodeJS.ProcessEnv = process.env,
-): BridgeConfig {
-  if (!fs.existsSync(configPath)) {
-    throw new Error(`Config file not found at ${path.resolve(configPath)}`);
-  }
+/**
+ * The values the shipped TakaroConfig.txt carries. Upgrades compare against these: a key the
+ * freshly unpacked file still holds at its shipped value is one the operator never touched,
+ * so the saved copy's value for it wins (configFiles.ts). The template test keeps this map
+ * and bridge/TakaroConfig.txt in step.
+ */
+export const SHIPPED_VALUES: Readonly<Record<string, string>> = {
+  configFormat: '2',
+  registrationToken: '',
+  identityToken: '',
+  serverName: 'Terraria Server',
+  serverChatName: 'Takaro',
+  takaroWsUrl: 'wss://connect.takaro.io/',
+  tshockBaseUrl: 'http://127.0.0.1:7878',
+  tshockToken: '',
+  httpPort: '3020',
+  pollIntervalMs: '10000',
+  logFiles: 'tshock/logs',
+  logExcludePatterns: 'takaro-rest executed:,RestManager:',
+  commandAllowlistExact: 'help,/help',
+  commandAllowlistPrefixes: 'say,time',
+  enableShutdown: 'false',
+};
 
-  const values = parseKeyValues(fs.readFileSync(configPath, 'utf8'));
-  const serverName = requireValue(values, 'serverName');
-  const registrationToken = env.TAKARO_REGISTRATION_TOKEN || values.registrationToken;
-  if (!registrationToken) throw new Error('Missing required config: registrationToken');
-
-  const tshockToken = env.TSHOCK_TOKEN || values.tshockToken;
-  const tshockUsername = env.TSHOCK_USERNAME || values.tshockUsername;
-  const tshockPassword = env.TSHOCK_PASSWORD || values.tshockPassword;
-  if (!tshockToken && !(tshockUsername && tshockPassword)) {
-    throw new Error('Missing required config: tshockToken or tshockUsername/tshockPassword');
-  }
-
+/**
+ * Builds the settings from one set of file values plus the environment. An empty registration
+ * token or missing TShock credentials are not errors: the bridge stays up, says what is
+ * missing (missingSettings) and picks the values up when the file is saved.
+ */
+export function buildConfig(values: Record<string, string>, env: NodeJS.ProcessEnv = process.env): BridgeConfig {
+  const serverName = values.serverName || SHIPPED_VALUES.serverName;
   return {
-    registrationToken,
+    registrationToken: env.TAKARO_REGISTRATION_TOKEN || values.registrationToken || '',
     identityToken: values.identityToken || serverName,
     serverName,
     serverChatName: values.serverChatName || serverName,
-    takaroWsUrl: values.takaroWsUrl || 'wss://connect.takaro.io/',
+    takaroWsUrl: values.takaroWsUrl || SHIPPED_VALUES.takaroWsUrl,
     tshock: {
-      baseUrl: requireValue(values, 'tshockBaseUrl').replace(/\/+$/, ''),
-      token: tshockToken,
-      username: tshockUsername,
-      password: tshockPassword,
+      baseUrl: (values.tshockBaseUrl || SHIPPED_VALUES.tshockBaseUrl).replace(/\/+$/, ''),
+      token: env.TSHOCK_TOKEN || values.tshockToken || undefined,
+      username: env.TSHOCK_USERNAME || values.tshockUsername || undefined,
+      password: env.TSHOCK_PASSWORD || values.tshockPassword || undefined,
       timeoutMs: parseNumber(values.tshockTimeoutMs, 5000),
     },
     httpPort: parseNumber(values.httpPort, 3020),
@@ -78,6 +89,18 @@ export function loadConfig(
     commandAllowlistPrefixes: parseCsv(values.commandAllowlistPrefixes),
     enableShutdown: parseBoolean(values.enableShutdown, false),
   };
+}
+
+/** Reads one file as it stands, with no saved copy and no identity generation. */
+export function loadConfig(configPath: string, env: NodeJS.ProcessEnv = process.env): BridgeConfig {
+  if (!fs.existsSync(configPath)) {
+    throw new Error(`Config file not found at ${path.resolve(configPath)}`);
+  }
+  return buildConfig(parseKeyValues(fs.readFileSync(configPath, 'utf8')), env);
+}
+
+export function hasTshockCredentials(config: BridgeConfig): boolean {
+  return Boolean(config.tshock.token || (config.tshock.username && config.tshock.password));
 }
 
 function parseCsv(value: string | undefined): string[] {
@@ -127,10 +150,4 @@ function parseNumber(value: string | undefined, fallback: number): number {
   if (value == null || value === '') return fallback;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function requireValue(values: Record<string, string>, key: string): string {
-  const value = values[key];
-  if (!value) throw new Error(`Missing required config: ${key}`);
-  return value;
 }

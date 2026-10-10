@@ -10,40 +10,103 @@ export class TakaroWsClient extends EventEmitter {
   private shuttingDown = false;
 
   constructor(
-    private readonly url: string,
-    private readonly identifyPayload: IdentifyPayload,
+    private url: string,
+    private identifyPayload: IdentifyPayload,
     private readonly baseReconnectMs = 3000,
     private readonly maxReconnectMs = 60000,
   ) {
     super();
   }
 
+  /** Opens the socket, unless there is no registration token to identify with. */
   connect(): void {
-    if (this.shuttingDown) return;
-    this.ws = new WebSocket(this.url);
-    this.ws.on('open', () => {
+    if (this.shuttingDown || this.ws) return;
+    if (!this.identifyPayload.registrationToken) return;
+    const ws = new WebSocket(this.url);
+    this.ws = ws;
+    // Every callback checks that its socket is still the current one: a socket dropped by
+    // reconfigure() closes later, and its close must not tear down or reschedule the new one.
+    ws.on('open', () => {
+      if (this.ws !== ws) return;
       this.reconnectAttempts = 0;
       this.send({ type: 'identify', payload: this.identifyPayload });
     });
-    this.ws.on('message', (data) => {
+    ws.on('message', (data) => {
+      if (this.ws !== ws) return;
       try {
         this.handle(JSON.parse(data.toString()) as WsMessage);
       } catch (err) {
         this.emit('clientError', err);
       }
     });
-    this.ws.on('close', () => {
-      this.gameServerId = null;
-      this.emit('disconnected');
+    ws.on('close', () => {
+      if (this.ws !== ws) return;
+      this.ws = null;
+      this.markDisconnected();
       this.scheduleReconnect();
     });
-    this.ws.on('error', (err) => this.emit('clientError', err));
+    ws.on('error', (err) => {
+      if (this.ws !== ws) return;
+      this.emit('clientError', err);
+    });
+  }
+
+  /**
+   * New connection settings. When they differ, the current socket is dropped and a new one
+   * opened at once, skipping any backoff. An empty registration token leaves it closed.
+   */
+  reconfigure(url: string, identifyPayload: IdentifyPayload): boolean {
+    const same = url === this.url
+      && identifyPayload.registrationToken === this.identifyPayload.registrationToken
+      && identifyPayload.identityToken === this.identifyPayload.identityToken
+      && identifyPayload.name === this.identifyPayload.name;
+    if (same) return false;
+    this.url = url;
+    this.identifyPayload = identifyPayload;
+    if (this.shuttingDown) return true;
+    this.clearReconnectTimer();
+    this.reconnectAttempts = 0;
+    this.dropSocket();
+    this.connect();
+    return true;
   }
 
   shutdown(): void {
     this.shuttingDown = true;
+    this.clearReconnectTimer();
+    // Not reported as a disconnect: nothing reconnects, and the log must not say it does.
+    this.dropSocket(false);
+    this.gameServerId = null;
+  }
+
+  /** True when a socket is open or a reconnect is pending. */
+  active(): boolean {
+    return this.ws !== null || this.reconnectTimer !== null;
+  }
+
+  private dropSocket(notify = true): void {
+    const ws = this.ws;
+    if (!ws) return;
+    this.ws = null;
+    ws.removeAllListeners('message');
+    // A late 'error' on a socket closed before it opened would otherwise be unhandled.
+    ws.on('error', () => undefined);
+    try {
+      ws.close();
+    } catch {
+      ws.terminate();
+    }
+    if (notify) this.markDisconnected();
+  }
+
+  private markDisconnected(): void {
+    this.gameServerId = null;
+    this.emit('disconnected');
+  }
+
+  private clearReconnectTimer(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.ws?.close();
+    this.reconnectTimer = null;
   }
 
   identified(): boolean {
@@ -107,8 +170,12 @@ export class TakaroWsClient extends EventEmitter {
 
   private scheduleReconnect(): void {
     if (this.shuttingDown) return;
+    this.clearReconnectTimer();
     const delay = Math.min(this.maxReconnectMs, this.baseReconnectMs * 2 ** this.reconnectAttempts);
     this.reconnectAttempts += 1;
-    this.reconnectTimer = setTimeout(() => this.connect(), delay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, delay);
   }
 }

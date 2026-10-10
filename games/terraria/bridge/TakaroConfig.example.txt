@@ -1,9 +1,18 @@
-# Copy this file to TakaroConfig.txt next to the bridge and fill in secrets there.
-# Do not commit real Takaro registration tokens or TShock REST tokens.
+# Takaro Terraria bridge settings. The release zip ships this file as
+# TakaroTerrariaBridge/TakaroConfig.txt; edit it there.
+#
+# Paste the registration token Takaro shows when you add a Generic game server into
+# registrationToken= and save. This works before or after the bridge starts: the bridge
+# reads this file every few seconds and connects on its own, no restart needed.
+#
+# Leave identityToken empty; the bridge fills it in. It identifies this server in Takaro,
+# so keep it if you move or reinstall the server. Leave configFormat as it is.
+
+configFormat=2
 
 # Takaro connection
 registrationToken=
-identityToken=terraria-local
+identityToken=
 serverName=Terraria Server
 serverChatName=Takaro
 takaroWsUrl=wss://connect.takaro.io/

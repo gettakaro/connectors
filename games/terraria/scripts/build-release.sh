@@ -62,7 +62,9 @@ Takaro connector on its own: deploy takaro-terraria-bridge-${TERRARIA_TARGET}-${
 EOF
 
 cp -R ./bridge/dist ./bridge/node_modules ./bridge/package.json ./bridge/package-lock.json \
-      ./bridge/TakaroConfig.example.txt "${STAGE}/TakaroTerrariaBridge/"
+      "${STAGE}/TakaroTerrariaBridge/"
+# The real config, not an example to rename: people paste the token into it and are done.
+cp ./bridge/TakaroConfig.example.txt "${STAGE}/TakaroTerrariaBridge/TakaroConfig.txt"
 cp ./README.md "${STAGE}/TakaroTerrariaBridge/"
 rm -rf "${STAGE}/TakaroTerrariaBridge/dist/__tests__"
 # Every path segment a deployed archive may carry has to start with an alphanumeric, and npm
@@ -76,9 +78,14 @@ Built for ${TERRARIA_TARGET} (TShock ${TERRARIA_TSHOCK_TAG}) on ${TERRARIA_BRIDG
 
 Install:
 1. Extract this folder on the TShock server host.
-2. Copy TakaroConfig.example.txt to TakaroConfig.txt and fill it in.
-3. Enable RestApiEnabled in tshock/config.json and set an application REST token.
+2. Enable RestApiEnabled in tshock/config.json and set an application REST token.
+3. In TakaroConfig.txt, paste the Takaro registration token into registrationToken= and the
+   TShock REST token into tshockToken=. Leave identityToken empty; the bridge fills it in.
 4. Start with: node dist/index.js
+
+The bridge reads TakaroConfig.txt every few seconds, so a token saved while it runs is picked
+up without a restart. It keeps a copy of its settings next to this folder
+(TakaroTerrariaBridge.saved-config.txt), so replacing this folder on an upgrade keeps them.
 
 node_modules is already in this archive (npm ci --omit=dev, lock-pinned), so there is
 nothing to install. Run npm ci --omit=dev only if you delete it.
