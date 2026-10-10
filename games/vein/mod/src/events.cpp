@@ -29,6 +29,7 @@
 // Which symbols/UFunctions are bound and what is still UNVERIFIED: docs/events-design.md.
 
 #include "events.h"
+#include "config_file.h"
 
 #include "actions.h"
 #include "admin.h"
@@ -1775,7 +1776,7 @@ const size_t kMaxLogPerCycle = 120;
 const size_t kMaxReadPerCycle = 512 * 1024;
 
 std::string DefaultLogPath() {
-    const char* legacy = getenv("VEIN_LOG_FILE");
+    const char* legacy = ConfigFile::Get("VEIN_LOG_FILE");
     if (legacy && *legacy) return legacy;
     std::string cfg = ConfigValue("TAKARO_LOG_PATH", "logPath", "");
     if (!cfg.empty()) return cfg;

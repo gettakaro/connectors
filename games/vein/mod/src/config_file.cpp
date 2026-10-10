@@ -71,33 +71,34 @@ std::string DefaultPath() {
     return "takaro.cfg";
 }
 
-Applied Apply(const std::string& path) {
-    Applied a;
-    a.path = path;
+Loaded Load(const std::string& path) {
+    Loaded l;
+    l.path = path;
     FILE* f = fopen(path.c_str(), "rb");
-    if (!f) return a;
-    a.found = true;
+    if (!f) return l;
+    l.found = true;
     std::string text;
     char buf[4096];
     size_t n;
     while ((n = fread(buf, 1, sizeof buf, f)) > 0 && text.size() < 256 * 1024) text.append(buf, n);
     fclose(f);
     Parsed p = Parse(text);
-    a.warnings = p.warnings;
-    // Last occurrence wins, matching how shells read env files.
-    std::vector<std::pair<std::string, std::string>> last;
-    for (auto& e : p.entries) {
-        bool replaced = false;
-        for (auto& l : last)
-            if (l.first == e.first) { l.second = e.second; replaced = true; }
-        if (!replaced) last.push_back(e);
-    }
-    for (auto& e : last) {
-        const char* cur = getenv(e.first.c_str());
-        if (cur && *cur) { a.keptEnv.push_back(e.first); continue; }
-        if (setenv(e.first.c_str(), e.second.c_str(), 1) == 0) ++a.applied;
-    }
-    return a;
+    l.warnings = p.warnings;
+    for (auto& e : p.entries) l.values[e.first] = e.second;  // last occurrence wins
+    return l;
+}
+
+const Loaded& Current() {
+    static const Loaded loaded = Load(DefaultPath());
+    return loaded;
+}
+
+const char* Lookup(const Loaded& file, const char* name) {
+    const char* env = getenv(name);
+    if (env && *env) return env;
+    auto it = file.values.find(name);
+    if (it != file.values.end()) return it->second.c_str();
+    return env;
 }
 
 }  // namespace ConfigFile

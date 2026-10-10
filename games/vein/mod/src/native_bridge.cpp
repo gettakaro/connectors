@@ -1,4 +1,5 @@
 #include "native_bridge.h"
+#include "config_file.h"
 #include "native_transport.h"
 #include "native_behavior.h"
 #include "native_persistence.h"
@@ -1174,9 +1175,9 @@ void ActionLoop() {
 
 void SetActionHandler(ActionHandler h) { if (!running) handler = std::move(h); }
 bool Start() {
-    const char* disable = getenv("TAKARO_NATIVE_DISABLE");
+    const char* disable = ConfigFile::Get("TAKARO_NATIVE_DISABLE");
     if (disable && strcmp(disable, "1") == 0) return false;
-    const char* gate = getenv("TAKARO_NATIVE_GATE");
+    const char* gate = ConfigFile::Get("TAKARO_NATIVE_GATE");
     const bool experimentalGate = gate && strcmp(gate, "1") == 0;
     if (running.exchange(true)) return false;
     gateMode = experimentalGate;
@@ -1228,22 +1229,22 @@ bool Start() {
             rawLogBytes += line.size(); rawLogLines.push_back(std::move(line)); cv.notify_one();
         }, behavior->CustomLogJoin(), behavior->CustomLogChat());
     }
-    const char* id = getenv("TAKARO_IDENTITY_TOKEN"); identity = id && *id ? id : "vein";
-    const char* reg = getenv("TAKARO_REGISTRATION_TOKEN"); registration = reg ? reg : "";
+    const char* id = ConfigFile::Get("TAKARO_IDENTITY_TOKEN"); identity = id && *id ? id : "vein";
+    const char* reg = ConfigFile::Get("TAKARO_REGISTRATION_TOKEN"); registration = reg ? reg : "";
     while (!registration.empty() && std::isspace(static_cast<unsigned char>(registration.front())))
         registration.erase(registration.begin());
     while (!registration.empty() && std::isspace(static_cast<unsigned char>(registration.back())))
         registration.pop_back();
-    const char* name = getenv("TAKARO_SERVER_NAME"); serverName = name && *name ? name : "Takaro Dev Vein";
+    const char* name = ConfigFile::Get("TAKARO_SERVER_NAME"); serverName = name && *name ? name : "Takaro Dev Vein";
     consoleLive = false; consoleProblem.clear();
     if (registration.empty())
         ConsoleLine("WARNING: no registration token set (TAKARO_REGISTRATION_TOKEN). Copy it from the Takaro "
                     "dashboard; a new server cannot register without it.");
     NativeTransport::Config c;
-    const char* url = getenv("TAKARO_WS_URL"); c.url = url && *url ? url : "wss://connect.takaro.io/";
-    const char* ca = getenv("TAKARO_CA_FILE"); c.caFile = ca ? ca : "";
+    const char* url = ConfigFile::Get("TAKARO_WS_URL"); c.url = url && *url ? url : "wss://connect.takaro.io/";
+    const char* ca = ConfigFile::Get("TAKARO_CA_FILE"); c.caFile = ca ? ca : "";
     // An explicitly empty VEIN_HTTP_API retains the legacy disable switch.
-    const char* gameApi = getenv("VEIN_HTTP_API");
+    const char* gameApi = ConfigFile::Get("VEIN_HTTP_API");
     c.gameHttpUrl = gameApi ? gameApi : "http://127.0.0.1:8080";
     while (!c.gameHttpUrl.empty() && std::isspace(static_cast<unsigned char>(c.gameHttpUrl.front())))
         c.gameHttpUrl.erase(c.gameHttpUrl.begin());
@@ -1251,7 +1252,7 @@ bool Start() {
         c.gameHttpUrl.pop_back();
     while (!c.gameHttpUrl.empty() && c.gameHttpUrl.back() == '/') c.gameHttpUrl.pop_back();
     auto backoff = [](const char* key, unsigned fallback) {
-        const char* value = getenv(key);
+        const char* value = ConfigFile::Get(key);
         if (!value || !*value) return fallback;
         char* end = nullptr;
         unsigned long parsed = std::strtoul(value, &end, 10);

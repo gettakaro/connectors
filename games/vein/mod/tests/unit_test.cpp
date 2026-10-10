@@ -1123,28 +1123,32 @@ static void TestConfigFileParse() {
     CHECK(ConfigFile::Parse("TAKARO_X=1").entries.size() == 1, "no trailing newline");
 }
 
-static void TestConfigFileApply() {
+static void TestConfigFileLookup() {
     char dir[] = "/tmp/takaro-cfg-XXXXXX";
     CHECK(mkdtemp(dir) != nullptr, "mkdtemp");
     std::string path = std::string(dir) + "/takaro.cfg";
     FILE* f = fopen(path.c_str(), "w");
     fputs("TAKARO_CFGTEST_A=fromfile\nTAKARO_CFGTEST_B=fromfile\nTAKARO_CFGTEST_C=first\n"
-          "TAKARO_CFGTEST_C=second\nTAKARO_CFGTEST_D=fromfile\n", f);
+          "TAKARO_CFGTEST_C=second\nTAKARO_CFGTEST_D=fromfile\nTAKARO_CFGTEST_E=\n", f);
     fclose(f);
+    auto file = ConfigFile::Load(path);
+    CHECK(file.found && file.values.size() == 5, "loaded %zu", file.values.size());
     setenv("TAKARO_CFGTEST_B", "fromenv", 1);
     setenv("TAKARO_CFGTEST_D", "", 1);  // an empty variable (AMP renders unset fields so) counts as unset
     unsetenv("TAKARO_CFGTEST_A");
     unsetenv("TAKARO_CFGTEST_C");
-    auto a = ConfigFile::Apply(path);
-    CHECK(a.found, "found");
-    CHECK(a.applied == 3, "applied %zu", a.applied);
-    EQ(std::string(getenv("TAKARO_CFGTEST_A")), "fromfile");
-    EQ(std::string(getenv("TAKARO_CFGTEST_B")), "fromenv");
-    EQ(std::string(getenv("TAKARO_CFGTEST_C")), "second");
-    EQ(std::string(getenv("TAKARO_CFGTEST_D")), "fromfile");
-    CHECK(a.keptEnv.size() == 1 && a.keptEnv[0] == "TAKARO_CFGTEST_B", "keptEnv");
-    auto missing = ConfigFile::Apply(std::string(dir) + "/absent.cfg");
-    CHECK(!missing.found && missing.applied == 0, "absent file is not an error");
+    setenv("TAKARO_CFGTEST_F", "", 1);
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_A")), "fromfile");
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_B")), "fromenv");
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_C")), "second");
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_D")), "fromfile");
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_E")), "");
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_F")), "");  // explicit empty env is kept
+    CHECK(ConfigFile::Lookup(file, "TAKARO_CFGTEST_UNSET") == nullptr, "unset stays nullptr");
+    CHECK(getenv("TAKARO_CFGTEST_A") == nullptr, "lookup never writes the environment");
+    auto missing = ConfigFile::Load(std::string(dir) + "/absent.cfg");
+    CHECK(!missing.found && missing.values.empty(), "absent file is not an error");
+    CHECK(ConfigFile::Lookup(missing, "TAKARO_CFGTEST_UNSET") == nullptr, "absent file lookup");
     setenv("TAKARO_CONFIG_FILE", path.c_str(), 1);
     EQ(ConfigFile::DefaultPath(), path);
     unsetenv("TAKARO_CONFIG_FILE");
@@ -1195,7 +1199,7 @@ int main() {
     TestCharacterIdFormatting();
     TestKillWeaponName();
     TestConfigFileParse();
-    TestConfigFileApply();
+    TestConfigFileLookup();
     printf("%s: %d checks, %d failed\n", g_failed ? "FAILED" : "PASSED", g_ran, g_failed);
     return g_failed ? 1 : 0;
 }

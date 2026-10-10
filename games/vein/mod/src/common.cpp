@@ -1,4 +1,5 @@
 #include "common.h"
+#include "config_file.h"
 
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -45,7 +46,7 @@ const std::string& ExeDir() {
 
 const std::string& PluginDataDir() {
     static const std::string d = [] {
-        const char* env = getenv("TAKARO_PLUGIN_DATA_DIR");
+        const char* env = ConfigFile::Get("TAKARO_PLUGIN_DATA_DIR");
         std::string dir = (env && *env) ? std::string(env) : ExeDir() + "/takaro";
         ::mkdir(dir.c_str(), 0775);
         return dir;
@@ -429,7 +430,7 @@ bool WriteFileAtomic(const std::string& path, const std::string& content) {
 
 std::string ConfigValue(const char* envName, const char* jsonKey, const std::string& def) {
     if (envName) {
-        const char* v = getenv(envName);
+        const char* v = ConfigFile::Get(envName);
         if (v && *v) return v;
     }
     static const JsonValue cfg = [] {

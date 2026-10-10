@@ -3,6 +3,7 @@
 // non-empty environment variable always wins over the file.
 #pragma once
 
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -22,16 +23,23 @@ Parsed Parse(const std::string& text);
 // TAKARO_CONFIG_FILE when set, otherwise takaro.cfg next to libtakaro-vein.so.
 std::string DefaultPath();
 
-struct Applied {
+struct Loaded {
     std::string path;
     bool found = false;
-    size_t applied = 0;                  // keys copied into the environment
-    std::vector<std::string> keptEnv;    // keys skipped because the environment already set them
+    std::map<std::string, std::string> values;
     std::vector<std::string> warnings;
 };
 
-// Reads `path` and setenv()s every entry the environment does not already set (unset or empty).
-// Must run while the process is still single-threaded (the library constructor).
-Applied Apply(const std::string& path);
+// Reads and parses `path`; a missing file is not an error.
+Loaded Load(const std::string& path);
+
+// The file at DefaultPath(), read once on first use. Immutable afterwards, so any thread may read it.
+const Loaded& Current();
+
+// The setting `name`: a non-empty environment variable, else the file's value, else the
+// environment value as is (nullptr when unset, "" when explicitly empty). Never calls setenv, so
+// it is safe when the library is loaded after the game has started threads.
+const char* Lookup(const Loaded& file, const char* name);
+inline const char* Get(const char* name) { return Lookup(Current(), name); }
 
 }  // namespace ConfigFile
