@@ -101,6 +101,11 @@ jobs:
       - name: Check the entity display names
         run: games/rust/tests/names/run.sh --target "${{ steps.target.outputs.target }}"
 
+      # The config file resolution (fresh install, upgrade, env precedence, half-saved file,
+      # identity generation), run from the shipped region rather than a copy of it.
+      - name: Check the config resolution
+        run: games/rust/tests/config/run.sh --target "${{ steps.target.outputs.target }}"
+
   params:
     runs-on: ubuntu-latest
     permissions:

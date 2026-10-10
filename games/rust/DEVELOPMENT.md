@@ -204,6 +204,37 @@ mv dev-servers/_data/rust/server/takaro dev-servers/_data/rust/rust_dedicated/se
 Starting a target-driven game whose data directory does not hold that exact target is refused before
 anything boots (`ds_preflight_target`), with the install command to run.
 
+### Config model
+
+The plugin owns `<framework config dir>/TakaroConnector.json` (`Interface.Oxide.ConfigDirectory`:
+`carbon/configs/` on Carbon, `oxide/config/` on Oxide) and does its own reads and writes instead of
+the framework's `Config` object, because it needs the file's text to watch it:
+
+- **First load** (file absent, empty, or a JSON object with none of the four keys, e.g. `{}`; a file
+  that exists but cannot be read is never recreated): the plugin writes it with an empty
+  `RegistrationToken` and a new UUID `IdentityToken`. If `TAKARO_REGISTRATION_TOKEN` or
+  `TAKARO_IDENTITY_TOKEN` is set, the install already exists under the identity the environment
+  gives it (possibly the empty one, which versions before the file sent), so `IdentityToken` is
+  written empty and nothing is generated.
+- **Precedence**: a non-empty environment variable wins over the file field, per field. An empty one
+  counts as unset.
+- **While running**: a 1 s main-thread tick re-reads the file every 5 s and compares the whole text.
+  A change to the URL, the registration token or the identity drops the socket and connects at once
+  (backoff reset, auth-close `_shouldReconnect = false` cleared). `Debug` applies without a
+  reconnect. A missing, empty or unparseable file keeps the current settings; an absent token key
+  keeps the token in use, an absent `WebSocketUrl` / `Debug` falls back to the default.
+- **Threads**: connections are only started on the main thread. Each connection carries a generation;
+  a stale socket task, auth close or reconnect request (reconnects are queued for the tick, not started
+  from the socket task) changes nothing. Identify and responses go out on the socket the request came
+  in on, and a queued action from a replaced connection is dropped before it runs. `Unload` bumps the generation and destroys the tick.
+- **Banner**: an empty token, an identify rejection and an auth close print a `***` banner with the
+  exact config path (or the environment variable that overrides it) through `PrintWarning`, which is
+  the server console.
+
+The pure part lives between `takaro:config-begin` / `takaro:config-end`; `tests/config/run.sh`
+compiles that region on its own against the pinned `Newtonsoft.Json.dll` and runs the fresh, upgrade,
+env-precedence, half-saved-file and identity cases (CI runs it in the `test` job).
+
 ### Environment variables
 
 | Variable | Description | Default |

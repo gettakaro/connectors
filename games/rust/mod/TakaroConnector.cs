@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net.WebSockets;
 using System.Text;
@@ -19,24 +20,190 @@ namespace Oxide.Plugins
     {
         // --- Configuration ---
 
-        private string _wsUrl;
-        private string _registrationToken;
-        private string _identityToken;
-        private bool _debug;
+        // takaro:config-begin
+        // The plugin's config is <framework config dir>/TakaroConnector.json, created on first
+        // load. Environment variables, when set and non-empty, win over the file field by
+        // field, so a Docker or systemd install that sets them behaves exactly as before.
+        internal const string DefaultWsUrl = "wss://connect.takaro.io/";
+        internal const string EnvWsUrl = "TAKARO_WS_URL";
+        internal const string EnvRegistrationToken = "TAKARO_REGISTRATION_TOKEN";
+        internal const string EnvIdentityToken = "TAKARO_IDENTITY_TOKEN";
+        internal const string EnvDebug = "TAKARO_DEBUG";
+
+        internal sealed class ConnectorSettings
+        {
+            public string WsUrl = DefaultWsUrl;
+            public string RegistrationToken = "";
+            public string IdentityToken = "";
+            public bool Debug;
+            public bool RegistrationFromEnv;
+            public bool IdentityFromEnv;
+
+            public bool SameConnection(ConnectorSettings other)
+            {
+                return other != null
+                    && WsUrl == other.WsUrl
+                    && RegistrationToken == other.RegistrationToken
+                    && IdentityToken == other.IdentityToken;
+            }
+        }
+
+        // What the file says; null means the key is absent.
+        internal sealed class ConfigFileValues
+        {
+            public string RegistrationToken;
+            public string IdentityToken;
+            public string WsUrl;
+            public bool? Debug;
+
+            public bool HasAnyKey
+            {
+                get { return RegistrationToken != null || IdentityToken != null || WsUrl != null || Debug != null; }
+            }
+        }
+
+        // Throws on anything that is not a JSON object: the caller keeps its settings.
+        internal static ConfigFileValues ParseConfigText(string text)
+        {
+            var json = JObject.Parse(text);
+            var values = new ConfigFileValues
+            {
+                RegistrationToken = StringField(json, "RegistrationToken"),
+                IdentityToken = StringField(json, "IdentityToken"),
+                WsUrl = StringField(json, "WebSocketUrl"),
+            };
+            var debug = json["Debug"];
+            if (debug != null && debug.Type == JTokenType.Boolean)
+                values.Debug = debug.Value<bool>();
+            else if (debug != null && debug.Type == JTokenType.String)
+                values.Debug = string.Equals(debug.Value<string>()?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+            return values;
+        }
+
+        private static string StringField(JObject json, string key)
+        {
+            var token = json[key];
+            if (token == null) return null;
+            if (token.Type == JTokenType.Null) return "";
+            return (token.Type == JTokenType.String ? token.Value<string>() : token.ToString()).Trim();
+        }
+
+        internal static string RenderConfigText(ConfigFileValues values)
+        {
+            var json = new JObject
+            {
+                ["RegistrationToken"] = values.RegistrationToken ?? "",
+                ["IdentityToken"] = values.IdentityToken ?? "",
+                ["WebSocketUrl"] = string.IsNullOrEmpty(values.WsUrl) ? DefaultWsUrl : values.WsUrl,
+                ["Debug"] = values.Debug ?? false,
+            };
+            return json.ToString(Formatting.Indented) + "\n";
+        }
+
+        // While running: a missing, empty or unparseable file is one being saved or edited,
+        // so it yields nothing and the current settings stay.
+        internal static bool TryParseRunningConfig(string text, out ConfigFileValues values)
+        {
+            values = null;
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            try { values = ParseConfigText(text); }
+            catch { return false; }
+            return true;
+        }
+
+        // A file the plugin never wrote: absent, empty, or the "{}" a framework may leave.
+        internal static bool IsFreshConfig(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return true;
+            try { return !ParseConfigText(text).HasAnyKey; }
+            catch { return false; }
+        }
+
+        // The file a first load writes. A fresh install gets a new identity; an install that
+        // already connects through TAKARO_REGISTRATION_TOKEN or TAKARO_IDENTITY_TOKEN keeps the
+        // identity it has been sending (possibly the empty one), so its Takaro server record
+        // and players stay where they are.
+        internal static ConfigFileValues FirstConfig(Func<string, string> env, Func<string> newIdentity)
+        {
+            var existingEnvInstall = !string.IsNullOrEmpty(env(EnvRegistrationToken))
+                || !string.IsNullOrEmpty(env(EnvIdentityToken));
+            return new ConfigFileValues
+            {
+                RegistrationToken = "",
+                IdentityToken = existingEnvInstall ? "" : newIdentity(),
+                WsUrl = DefaultWsUrl,
+                Debug = false,
+            };
+        }
+
+        // `current` is what is in use (null on first load): an absent key while running is a
+        // file being edited, so it keeps the current token instead of dropping it.
+        internal static ConnectorSettings ResolveSettings(ConfigFileValues file, Func<string, string> env, ConnectorSettings current)
+        {
+            var settings = new ConnectorSettings();
+
+            var envUrl = env(EnvWsUrl);
+            settings.WsUrl = !string.IsNullOrEmpty(envUrl) ? envUrl
+                : !string.IsNullOrEmpty(file.WsUrl) ? file.WsUrl
+                : DefaultWsUrl;
+
+            var envRegistration = env(EnvRegistrationToken);
+            settings.RegistrationFromEnv = !string.IsNullOrEmpty(envRegistration);
+            settings.RegistrationToken = settings.RegistrationFromEnv ? envRegistration
+                : file.RegistrationToken ?? (current != null && !current.RegistrationFromEnv ? current.RegistrationToken : "");
+
+            var envIdentity = env(EnvIdentityToken);
+            settings.IdentityFromEnv = !string.IsNullOrEmpty(envIdentity);
+            settings.IdentityToken = settings.IdentityFromEnv ? envIdentity
+                : file.IdentityToken ?? (current != null && !current.IdentityFromEnv ? current.IdentityToken : "");
+
+            var envDebug = env(EnvDebug);
+            settings.Debug = !string.IsNullOrEmpty(envDebug)
+                ? envDebug.ToLower() == "true"
+                : file.Debug ?? false;
+            return settings;
+        }
+        // takaro:config-end
+
+        private const string ConfigFileName = "TakaroConnector.json";
+        private const int ConfigCheckEverySeconds = 5;
+
+        private volatile ConnectorSettings _settings = new ConnectorSettings();
+        private string _configPath;
+        private string _configText;
+        private string _configProblem;
+        private Timer _tickTimer;
+        private int _tickCount;
+
+        private bool _debug { get { return _settings.Debug; } }
 
         private const long InitialReconnectDelay = 5000;
         private const long MaxReconnectDelay = 300000;
         private const double BackoffMultiplier = 1.5;
 
         // --- WebSocket State ---
+        //
+        // Connections are started on the main thread only (Init, the 1 s tick). Every
+        // connection carries the generation it was started under; a socket task, close or
+        // reconnect request from an older generation is stale and changes nothing.
 
         private ClientWebSocket _ws;
         private CancellationTokenSource _cts;
         private volatile bool _shouldReconnect = true;
         private long _currentReconnectDelay = InitialReconnectDelay;
         private volatile bool _connected;
-        private volatile bool _identifySent;
+        private int _generation;
+        private int _identifySentGeneration = -1;
+        // An auth close stops retries for that connection only; a config change starts a new one.
+        private int _authClosedGeneration = -1;
+        private ReconnectRequest _pendingReconnect;
         private readonly object _sendLock = new object();
+
+        private sealed class ReconnectRequest
+        {
+            public int Generation;
+            public long DueTicks;
+        }
         private readonly Dictionary<string, Vector3> _lastPosition = new Dictionary<string, Vector3>();
 
         // --- Timed Bans ---
@@ -73,25 +240,22 @@ namespace Oxide.Plugins
             LoadTimedBans();
             _banSweepTimer = timer.Every(BanSweepInterval, () => PruneExpiredBans());
 
-            _wsUrl = Environment.GetEnvironmentVariable("TAKARO_WS_URL") ?? "wss://connect.takaro.io/";
-            _registrationToken = Environment.GetEnvironmentVariable("TAKARO_REGISTRATION_TOKEN") ?? "";
-            _identityToken = Environment.GetEnvironmentVariable("TAKARO_IDENTITY_TOKEN") ?? "";
-            _debug = Environment.GetEnvironmentVariable("TAKARO_DEBUG")?.ToLower() == "true";
+            _configPath = Path.GetFullPath(Path.Combine(Interface.Oxide.ConfigDirectory, ConfigFileName));
+            LoadSettings();
+            _tickTimer = timer.Every(1f, Tick);
 
-            if (string.IsNullOrEmpty(_registrationToken))
+            var settings = _settings;
+            LogInfo($"Config: {_configPath} (registration token {TokenSource(settings)})");
+            if (settings.RegistrationFromEnv)
+                LogInfo($"{EnvRegistrationToken} is set in the server's environment and overrides RegistrationToken in the config file");
+
+            if (string.IsNullOrEmpty(settings.RegistrationToken))
             {
-                PrintWarning("TAKARO_REGISTRATION_TOKEN not set. Plugin will not connect.");
+                LogMissingToken();
                 return;
             }
 
-            Subscribe("OnPlayerConnected");
-            Subscribe("OnPlayerDisconnected");
-            Subscribe("OnPlayerChat");
-            Subscribe("OnPlayerDeath");
-            Subscribe("OnEntityDeath");
-            Subscribe("OnServerMessage");
-
-            LogInfo($"Connecting to {_wsUrl}");
+            LogInfo($"Connecting to {settings.WsUrl}");
             StartConnection();
         }
 
@@ -99,6 +263,10 @@ namespace Oxide.Plugins
         {
             _shouldReconnect = false;
             _connected = false;
+            Interlocked.Increment(ref _generation);
+            Interlocked.Exchange(ref _pendingReconnect, null);
+            _tickTimer?.Destroy();
+            _tickTimer = null;
             _cts?.Cancel();
             try { _ws?.Dispose(); } catch { }
             _banSweepTimer?.Destroy();
@@ -106,60 +274,255 @@ namespace Oxide.Plugins
             _lastPosition.Clear();
         }
 
+        // --- Config file ---
+
+        private static string EnvValue(string name)
+        {
+            return Environment.GetEnvironmentVariable(name);
+        }
+
+        private static string TokenSource(ConnectorSettings settings)
+        {
+            if (settings.RegistrationFromEnv) return $"from {EnvRegistrationToken}";
+            return string.IsNullOrEmpty(settings.RegistrationToken) ? "not set" : "set";
+        }
+
+        private static string ReadConfigText(string path)
+        {
+            return File.Exists(path) ? File.ReadAllText(path) : null;
+        }
+
+        // First load: an absent (or never-written) file is created with an empty token, and a
+        // new identity unless the environment already gives this install one.
+        private void LoadSettings()
+        {
+            string text;
+            try { text = ReadConfigText(_configPath); }
+            catch (Exception ex)
+            {
+                // Never recreate a file that exists but could not be read: that would replace
+                // its token and identity. The 5 s check picks it up once it reads.
+                LogWarning($"Could not read {_configPath} ({ex.Message}); trying again in a few seconds");
+                _configText = null;
+                _configProblem = "";
+                _settings = ResolveSettings(new ConfigFileValues(), EnvValue, null);
+                return;
+            }
+
+            ConfigFileValues file = null;
+            if (text == null || IsFreshConfig(text))
+            {
+                file = FirstConfig(EnvValue, () => Guid.NewGuid().ToString());
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(_configPath));
+                    File.WriteAllText(_configPath, RenderConfigText(file));
+                    text = File.ReadAllText(_configPath);
+                    if (!string.IsNullOrEmpty(file.IdentityToken))
+                        LogInfo($"Created {_configPath} with a new identity token");
+                    else
+                        LogInfo($"Created {_configPath}");
+                }
+                catch (Exception ex)
+                {
+                    LogWarning($"Could not create {_configPath}: {ex.Message}");
+                }
+            }
+            else
+            {
+                try { file = ParseConfigText(text); }
+                catch (Exception ex)
+                {
+                    _configProblem = text;
+                    LogWarning($"Could not read {_configPath} ({ex.Message}); fix the file and save it, the plugin re-reads it every few seconds");
+                    file = new ConfigFileValues();
+                }
+            }
+
+            _configText = text;
+            _settings = ResolveSettings(file, EnvValue, null);
+        }
+
+        // Runs on the main thread every second: re-reads the config every few seconds and
+        // starts any reconnect a closed socket asked for.
+        private void Tick()
+        {
+            if (++_tickCount % ConfigCheckEverySeconds == 0)
+            {
+                try { CheckConfig(); }
+                catch (Exception ex) { LogWarning($"Error checking {_configPath}: {ex.Message}"); }
+            }
+
+            var request = Interlocked.Exchange(ref _pendingReconnect, null);
+            if (request == null || request.Generation != _generation) return;
+            if (DateTime.UtcNow.Ticks < request.DueTicks)
+            {
+                Interlocked.CompareExchange(ref _pendingReconnect, request, null);
+                return;
+            }
+            if (_shouldReconnect && !string.IsNullOrEmpty(_settings.RegistrationToken))
+                StartConnection();
+        }
+
+        // Compares the whole text: a timestamp can miss a same-length edit. A file that is
+        // missing, empty or unparseable mid-save keeps the current settings until next time.
+        private void CheckConfig()
+        {
+            string text;
+            try { text = ReadConfigText(_configPath); }
+            catch { return; }
+            if (text == _configText) { _configProblem = null; return; }
+
+            ConfigFileValues file;
+            if (!TryParseRunningConfig(text, out file))
+            {
+                if (_configProblem != (text ?? ""))
+                    LogWarning(string.IsNullOrWhiteSpace(text)
+                        ? $"{_configPath} is missing or empty; keeping the current settings. Reload the plugin to recreate it"
+                        : $"Could not read {_configPath}; keeping the current settings and trying again in a few seconds");
+                _configProblem = text ?? "";
+                return;
+            }
+
+            _configProblem = null;
+            _configText = text;
+            var previous = _settings;
+            var next = ResolveSettings(file, EnvValue, previous);
+            _settings = next;
+            if (next.SameConnection(previous)) return;
+
+            LogInfo($"{ConfigFileName} changed; reconnecting with the new settings (registration token {TokenSource(next)})");
+            Reconnect();
+        }
+
+        // Drops the current socket and connects afresh, skipping whatever backoff a rejected
+        // token had built up.
+        private void Reconnect()
+        {
+            Interlocked.Increment(ref _generation);
+            Interlocked.Exchange(ref _pendingReconnect, null);
+            _connected = false;
+            _cts?.Cancel();
+            try { _ws?.Dispose(); } catch { }
+            _ws = null;
+            _currentReconnectDelay = InitialReconnectDelay;
+            _shouldReconnect = true;
+
+            if (string.IsNullOrEmpty(_settings.RegistrationToken))
+            {
+                LogMissingToken();
+                return;
+            }
+            LogInfo($"Connecting to {_settings.WsUrl}");
+            StartConnection();
+        }
+
+        // Config problems stop the connection outright, so they must stand out in a busy
+        // server console.
+        private void LogBanner(params string[] lines)
+        {
+            const string rule = "*************************************************************************";
+            var text = new StringBuilder();
+            text.Append(rule);
+            foreach (var line in lines)
+                text.Append("\n  ").Append(line);
+            text.Append('\n').Append(rule);
+            try { PrintWarning("\n" + text); } catch { }
+        }
+
+        private void LogMissingToken()
+        {
+            LogBanner(
+                "RegistrationToken not set, the server is not connected to Takaro.",
+                $"Paste the registration token from Takaro into {_configPath}",
+                "and save it. The plugin connects within a few seconds, no restart needed.");
+        }
+
+        private void LogRejected(string reason)
+        {
+            if (_settings.RegistrationFromEnv)
+            {
+                LogBanner(
+                    $"Takaro rejected identify: {reason}.",
+                    $"Check {EnvRegistrationToken} in the server's environment; it overrides",
+                    $"{_configPath}. The environment is only read when the server starts.");
+                return;
+            }
+            LogBanner(
+                $"Takaro rejected identify: {reason}.",
+                $"Check RegistrationToken in {_configPath}. Saving a corrected",
+                "token reconnects within a few seconds, no restart needed.");
+        }
+
         // --- WebSocket Connection ---
 
+        // Main thread only.
         private void StartConnection()
         {
+            var generation = Interlocked.Increment(ref _generation);
+            var settings = _settings;
             _cts?.Cancel();
-            _cts = new CancellationTokenSource();
-            var token = _cts.Token;
+            var cts = new CancellationTokenSource();
+            _cts = cts;
+            var token = cts.Token;
+            var ws = new ClientWebSocket();
+            _ws = ws;
 
             Task.Run(async () =>
             {
                 try
                 {
-                    _ws = new ClientWebSocket();
-                    await _ws.ConnectAsync(new Uri(_wsUrl), token);
-                    _identifySent = false;
+                    await ws.ConnectAsync(new Uri(settings.WsUrl), token);
+                    if (!IsCurrent(generation)) return;
                     LogInfo("WebSocket connected");
                     // Identify is the first frame this connector sends, the way every other
                     // Takaro connector in this repository does it. Waiting to be greeted
                     // instead means a peer that expects the client to speak first never
                     // hears from this server at all: the socket sits open and silent.
-                    SendIdentify();
-                    await ReceiveLoop(token);
+                    SendIdentify(ws, generation, settings);
+                    await ReceiveLoop(ws, generation, settings, token);
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception ex)
                 {
-                    LogWarning($"WebSocket connection failed: {ex.Message}");
+                    if (IsCurrent(generation))
+                        LogWarning($"WebSocket connection failed: {ex.Message}");
                 }
                 finally
                 {
-                    _connected = false;
-                    try { _ws?.Dispose(); } catch { }
-                    _ws = null;
-
-                    if (_shouldReconnect)
-                        ScheduleReconnect();
+                    try { ws.Dispose(); } catch { }
+                    if (IsCurrent(generation))
+                    {
+                        _connected = false;
+                        Interlocked.CompareExchange(ref _ws, null, ws);
+                        if (_shouldReconnect && Volatile.Read(ref _authClosedGeneration) != generation)
+                            ScheduleReconnect(generation);
+                    }
                 }
             });
         }
 
-        private async Task ReceiveLoop(CancellationToken token)
+        private bool IsCurrent(int generation)
+        {
+            return Volatile.Read(ref _generation) == generation;
+        }
+
+        private async Task ReceiveLoop(ClientWebSocket ws, int generation, ConnectorSettings settings, CancellationToken token)
         {
             var buffer = new byte[8192];
 
-            while (_ws?.State == WebSocketState.Open && !token.IsCancellationRequested)
+            while (ws.State == WebSocketState.Open && !token.IsCancellationRequested)
             {
                 var sb = new StringBuilder();
                 WebSocketReceiveResult result;
 
                 do
                 {
-                    result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+                    result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
                     sb.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
                 } while (!result.EndOfMessage);
+
+                if (!IsCurrent(generation)) break;
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
@@ -169,8 +532,8 @@ namespace Oxide.Plugins
 
                     if (code == 1008 || code == 4001 || code == 4003)
                     {
-                        LogWarning("Authentication error, disabling reconnect");
-                        _shouldReconnect = false;
+                        Volatile.Write(ref _authClosedGeneration, generation);
+                        LogRejected(string.IsNullOrEmpty(reason) ? $"connection closed with code {code}" : reason);
                     }
                     break;
                 }
@@ -181,7 +544,7 @@ namespace Oxide.Plugins
 
                 try
                 {
-                    OnWsMessage(message);
+                    OnWsMessage(message, ws, generation, settings);
                 }
                 catch (Exception ex)
                 {
@@ -249,7 +612,7 @@ namespace Oxide.Plugins
             return json;
         }
 
-        private void OnWsMessage(string message)
+        private void OnWsMessage(string message, ClientWebSocket ws, int generation, ConnectorSettings settings)
         {
             var json = JObject.Parse(message);
             var type = json.Value<string>("type") ?? "";
@@ -260,7 +623,7 @@ namespace Oxide.Plugins
                     // Takaro greets a fresh connection. Identify has already gone out when
                     // the socket opened, so this only does anything if the greeting beat it.
                     LogInfo("Received server hello");
-                    SendIdentify();
+                    SendIdentify(ws, generation, settings);
                     break;
 
                 case "identifyResponse":
@@ -268,7 +631,7 @@ namespace Oxide.Plugins
                     break;
 
                 case "request":
-                    HandleRequest(json);
+                    HandleRequest(json, ws, generation);
                     break;
 
                 case "error":
@@ -287,17 +650,18 @@ namespace Oxide.Plugins
 
         // --- Reconnection ---
 
-        private void ScheduleReconnect()
+        // Called from a socket task; the main-thread tick starts the connection when it is due.
+        private void ScheduleReconnect(int generation)
         {
             if (!_shouldReconnect) return;
 
             var delaySec = _currentReconnectDelay / 1000.0f;
             LogInfo($"Reconnecting in {delaySec:F0}s...");
 
-            timer.In(delaySec, () =>
+            Interlocked.Exchange(ref _pendingReconnect, new ReconnectRequest
             {
-                if (_shouldReconnect)
-                    StartConnection();
+                Generation = generation,
+                DueTicks = DateTime.UtcNow.Ticks + _currentReconnectDelay * TimeSpan.TicksPerMillisecond,
             });
 
             _currentReconnectDelay = Math.Min(
@@ -310,7 +674,13 @@ namespace Oxide.Plugins
 
         private void WsSend(string message)
         {
-            var ws = _ws;
+            WsSendOn(_ws, message);
+        }
+
+        // Identify and responses go out on the socket they belong to, never on one a config
+        // reconnect has put in its place.
+        private void WsSendOn(ClientWebSocket ws, string message)
+        {
             if (ws?.State != WebSocketState.Open) return;
 
             if (_debug && !message.Contains("\"type\":\"identify\""))
@@ -338,24 +708,23 @@ namespace Oxide.Plugins
             });
         }
 
-        private void SendIdentify()
+        private void SendIdentify(ClientWebSocket ws, int generation, ConnectorSettings settings)
         {
             // At most once per connection: the socket opening and a server greeting both
             // lead here, and a second identify would look like a second session.
-            if (_identifySent) return;
-            _identifySent = true;
+            if (Interlocked.Exchange(ref _identifySentGeneration, generation) == generation) return;
 
             var msg = new JObject
             {
                 ["type"] = "identify",
                 ["payload"] = new JObject
                 {
-                    ["identityToken"] = _identityToken ?? "",
-                    ["registrationToken"] = _registrationToken ?? ""
+                    ["identityToken"] = settings.IdentityToken ?? "",
+                    ["registrationToken"] = settings.RegistrationToken ?? ""
                 }
             };
             LogDebug("WS SEND identify (tokens redacted)");
-            WsSend(msg.ToString(Formatting.None));
+            WsSendOn(ws, msg.ToString(Formatting.None));
         }
 
         private void HandleIdentifyResponse(JObject json)
@@ -369,6 +738,7 @@ namespace Oxide.Plugins
                     ? error.Value<string>("message") ?? error.ToString()
                     : error.ToString();
                 LogWarning($"Identify failed: {errorMessage}");
+                LogRejected(errorMessage);
                 return;
             }
 
@@ -383,7 +753,7 @@ namespace Oxide.Plugins
                 LogInfo("Identified successfully");
         }
 
-        private void SendResponse(string requestId, JToken payload, string error)
+        private void SendResponse(ClientWebSocket ws, string requestId, JToken payload, string error)
         {
             var msg = new JObject
             {
@@ -399,7 +769,7 @@ namespace Oxide.Plugins
             if (_debug)
                 LogDebug($"WS SEND response (requestId={requestId})");
 
-            WsSend(msg.ToString(Formatting.None));
+            WsSendOn(ws, msg.ToString(Formatting.None));
         }
 
         private void SendGameEvent(string eventType, JObject data)
@@ -424,7 +794,7 @@ namespace Oxide.Plugins
 
         // --- Request Handling ---
 
-        private void HandleRequest(JObject json)
+        private void HandleRequest(JObject json, ClientWebSocket ws, int generation)
         {
             var requestId = json.Value<string>("requestId");
             if (requestId == null)
@@ -458,14 +828,14 @@ namespace Oxide.Plugins
             }
             catch (Exception ex)
             {
-                SendResponse(requestId, null, $"Invalid args JSON: {ex.Message}");
+                SendResponse(ws, requestId, null, $"Invalid args JSON: {ex.Message}");
                 return;
             }
 
             switch (action)
             {
                 case "testReachability":
-                    SendResponse(requestId, new JObject { ["connectable"] = true, ["reason"] = null }, null);
+                    SendResponse(ws, requestId, new JObject { ["connectable"] = true, ["reason"] = null }, null);
                     break;
 
                 case "getPlayer":
@@ -484,28 +854,35 @@ namespace Oxide.Plugins
                 case "unbanPlayer":
                 case "listBans":
                 case "shutdown":
-                    RunOnMainThread(requestId, action, args);
+                    RunOnMainThread(ws, generation, requestId, action, args);
                     break;
 
                 default:
-                    SendResponse(requestId, null, $"Action not implemented: {action}");
+                    SendResponse(ws, requestId, null, $"Action not implemented: {action}");
                     break;
             }
         }
 
-        private void RunOnMainThread(string requestId, string action, JObject args)
+        private void RunOnMainThread(ClientWebSocket ws, int generation, string requestId, string action, JObject args)
         {
             NextTick(() =>
             {
+                // A request from a connection that has since been replaced is dropped: its
+                // socket is gone, and Takaro re-sends what it still wants on the new one.
+                if (!IsCurrent(generation))
+                {
+                    LogInfo($"Dropped {action} from a replaced connection (requestId={requestId})");
+                    return;
+                }
                 try
                 {
                     var result = ExecuteAction(action, args);
-                    SendResponse(requestId, result, null);
+                    SendResponse(ws, requestId, result, null);
                 }
                 catch (Exception ex)
                 {
                     LogWarning($"Action {action} failed: {ex.Message}");
-                    SendResponse(requestId, null, ex.Message);
+                    SendResponse(ws, requestId, null, ex.Message);
                 }
             });
         }

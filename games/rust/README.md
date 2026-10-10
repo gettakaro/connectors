@@ -18,8 +18,6 @@ You need:
   either **[Carbon](https://carbonmod.gg/)** or **[Oxide/uMod](https://umod.org/games/rust)**
   installed.
 - Access to the server's **plugin folder** (`carbon/plugins/` on Carbon, `oxide/plugins/` on Oxide).
-- The ability to set **environment variables** on the server process — this plugin is configured
-  through the environment, not through a config file (see step 4).
 - A **Takaro account** with a game server created of type **Generic**, and its **registration
   token** (Takaro shows it when you create the game server).
 
@@ -63,58 +61,78 @@ Examples:
 - Linux (Carbon): `/home/steam/rust/carbon/plugins/TakaroConnector.cs`
 - Windows (Oxide): `C:\RustServer\oxide\plugins\TakaroConnector.cs`
 
-The framework picks the file up and compiles it on the spot; a dropped-in plugin does not need a
-server restart, but the environment variables in step 4 do.
+The framework picks the file up and compiles it on the spot; no server restart is needed. On its
+first load the plugin creates its config file:
 
-### 4. Configure
+```
+# Carbon
+<server>/carbon/configs/TakaroConnector.json
 
-**The plugin writes no config file.** It reads four environment variables from the server process
-when it loads:
-
-| Variable | What it is | Default |
-|---|---|---|
-| `TAKARO_REGISTRATION_TOKEN` | Your Takaro registration token. **Required.** | (none) |
-| `TAKARO_WS_URL` | Takaro WebSocket endpoint. Leave as is. | `wss://connect.takaro.io/` |
-| `TAKARO_IDENTITY_TOKEN` | A unique name for this server. Use a different one per server. | (empty) |
-| `TAKARO_DEBUG` | `true` to log every message sent and received. | `false` |
-
-Set them where your server process gets its environment — for example in the systemd unit, in the
-start script before launching `RustDedicated`, or as `environment:` entries in Docker Compose:
-
-```bash
-export TAKARO_REGISTRATION_TOKEN="your-registration-token-here"
-export TAKARO_IDENTITY_TOKEN="my-rust-server-1"
+# Oxide / uMod
+<server>/oxide/config/TakaroConnector.json
 ```
 
-Then restart the server so the process picks up the new environment.
+### 4. Paste the registration token
+
+Open `TakaroConnector.json`, paste the registration token from Takaro between the quotes of
+`RegistrationToken`, and save the file. The plugin re-reads the file every 5 seconds and connects
+on its own; no restart and no plugin reload.
+
+```json
+{
+  "RegistrationToken": "your-registration-token-here",
+  "IdentityToken": "3f2b0c1e-...",
+  "WebSocketUrl": "wss://connect.takaro.io/",
+  "Debug": false
+}
+```
+
+| Field | What it is |
+|---|---|
+| `RegistrationToken` | Your Takaro registration token. **Required.** |
+| `IdentityToken` | This server's unique name in Takaro. Generated on first load; do not change it, or Takaro sees a new server. |
+| `WebSocketUrl` | Takaro WebSocket endpoint. Leave as is. |
+| `Debug` | `true` logs every message sent and received. |
+
+**Environment variables** (Docker, systemd) still work and win over the file, field by field:
+`TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`, `TAKARO_WS_URL`, `TAKARO_DEBUG`. A server's
+environment is fixed when it starts, so changing one of those needs a server restart.
 
 ### 5. Check that it worked
 
 In the server console / Carbon or Oxide log, the plugin prints lines prefixed with `[Takaro]`:
 
 ```
-Loaded plugin TakaroConnector v<version> by Takaro [1667ms]
+[Takaro] Config: <server>/carbon/configs/TakaroConnector.json (registration token set)
 [Takaro] Connecting to wss://connect.takaro.io/
+Loaded plugin TakaroConnector v<version> by Takaro [1667ms]
 [Takaro] WebSocket connected
 [Takaro] Identified successfully, server ID: <id>
 ```
 
 And in Takaro, the game server shows as **online**.
 
-If instead you see:
+If the token is missing or wrong, the console shows a banner naming the exact file to fix:
 
 ```
-TAKARO_REGISTRATION_TOKEN not set. Plugin will not connect.
+*************************************************************************
+  RegistrationToken not set, the server is not connected to Takaro.
+  Paste the registration token from Takaro into <server>/carbon/configs/TakaroConnector.json
+  and save it. The plugin connects within a few seconds, no restart needed.
+*************************************************************************
 ```
 
-then the server process did not get the environment variable — re-check step 4. If it connects but
-never identifies, the registration token is the first thing to re-check.
+or `Takaro rejected identify: Invalid registrationToken provided.` Save a corrected token and it
+reconnects within a few seconds.
 
 ### 6. Upgrading
 
 Replace `TakaroConnector.cs` in the plugin folder with the new file. Carbon and Oxide notice the
-changed file and reload the plugin by themselves; no server restart is needed. Your environment
-variables are untouched by the upgrade, so the server keeps its identity.
+changed file and reload the plugin by themselves; no server restart is needed. Leave
+`TakaroConnector.json` where it is: the new version reads it, so the server keeps its token and its
+identity. A server that was set up with environment variables before this config file existed keeps
+the identity it had; the file is created with an empty `IdentityToken` and the environment still
+wins.
 
 ## What works, what doesn't
 
@@ -130,6 +148,7 @@ implemented or not supported.
 | Connection & identify | ✅ | Connects outbound over WebSocket and identifies to Takaro. |
 | Heartbeat / reachability | ✅ | Answers Takaro's reachability check. |
 | Server restart / reconnect | ✅ | Reconnects on its own after the server comes back, and identifies again. |
+| Config file, token change without restart | ✅ | Proven 2026-10-10 on Carbon: created on first load, a pasted or corrected token connects within 5 s, an upgrade keeps token and identity. |
 | Player list | ✅ | The connected players, with Steam id, IP and ping. |
 | Single player lookup | ✅ | Finds connected and sleeping players by Steam id. |
 | Player location | ✅ | Live position; Takaro's map tracking follows the player. |
