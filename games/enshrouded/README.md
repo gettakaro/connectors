@@ -99,22 +99,26 @@ Stop the game server first: a running server holds `dbghelp.dll` open. The zip h
     enshrouded_server.exe
     dbghelp.dll                  <- from the zip
     takaro/
-        plugin.json              <- takaro/plugin.json.example from the zip, renamed
+        plugin.json              <- from the zip
 ```
 
-Rename `takaro/plugin.json.example` to `takaro/plugin.json` and fill in:
+Open `takaro/plugin.json` and paste the registration token of your Takaro Generic game server into
+`registrationToken`. That is all; the other keys are optional:
 
 | Key | What to put there |
 |---|---|
 | `registrationToken` | The registration token of your Takaro Generic game server. Required. |
-| `identityToken` | Any stable name for this server, e.g. `my-enshrouded-server`. Required; keep it the same across upgrades. |
-| `name` | The server name shown in Takaro. |
+| `identityToken` | Leave it empty: the connector fills in a unique identity at the first start. Keep it once set; it is what Takaro knows this server by. |
+| `name` | The server name shown in Takaro. Left empty, the connector fills in your server's name plus the start of the identity, because Takaro needs a different name for every game server. |
 | `url` | Leave `wss://connect.takaro.io/`. |
 | `token` | Optional: a long random secret (e.g. `openssl rand -hex 32`) to read the plugin's diagnostics at `http://127.0.0.1:18890/health`. |
 
+You can also paste the token later: save `takaro/plugin.json` while the server runs, and the connector
+connects within a few seconds, no restart needed. The same goes for a corrected token or name.
+
 Instead of the file you can set the environment variables `TAKARO_REGISTRATION_TOKEN`,
 `TAKARO_IDENTITY_TOKEN`, `TAKARO_SERVER_NAME`, `TAKARO_WS_URL` and `TAKARO_PLUGIN_TOKEN` on the game
-server; a variable that is set wins over the file.
+server; a variable that is set wins over the file (a changed variable needs a restart).
 
 Under **Wine/Proton** the server must prefer this DLL over its own: set
 `WINEDLLOVERRIDES=dbghelp=n,b` on the game server. A Windows server loads the local file already.
@@ -138,21 +142,25 @@ server some other way, turn automatic game updates off there too.
 
 ### 4. Check that it worked
 
-`<server folder>/takaro/plugin.log` shows, within about 20 seconds of the start:
+The server console (and `<server folder>/takaro/plugin.log`) shows, within about 20 seconds of the start:
 
 ```
-takaro enshrouded plugin <version> starting (pid ...)
-native: starting direct Takaro connection to wss://connect.takaro.io/ as '<name>' ...
-native: identified with Takaro gameServerId=...
+[Takaro] connecting to wss://connect.takaro.io/ as "<name>"
+[Takaro] connected to Takaro as "<name>"; the server shows as reachable in the Takaro dashboard
 ```
 
-and the game server turns **online** in Takaro. `native: direct Takaro connection OFF: ...` names what
-is missing (usually a token). `<version>` is the release you installed.
+and the game server turns **online** in Takaro. A block of `*` lines says what to fix and which file to
+edit: `registrationToken not set` means the token is missing, `Takaro refused this server` means it is
+wrong, `Takaro refused the server name` means another game server in your Takaro domain already has
+that name.
 
 ### 5. Upgrading
 
-Stop the server, replace `dbghelp.dll`, start it again; `takaro/plugin.json` and the connector's state
-in `takaro/connector-state/` stay as they are.
+Stop the server, copy only the new `dbghelp.dll` over the old one, start it again. Keep your
+`takaro/` folder: `takaro/plugin.json` and the connector's state in `takaro/connector-state/` stay as
+they are. If you copied the new `takaro/plugin.json` over yours by mistake, the connector takes the
+token and identity from the copy it saved in `takaro/connector-state/` when it last connected, and
+writes the identity back.
 
 **From 0.5.0 (plugin + sidecar):** 0.6.0 replaces the sidecar. Stop and remove the sidecar before the
 new DLL starts, because both must never connect with the same identity at once; move the tokens from

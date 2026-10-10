@@ -46,6 +46,14 @@ public:
         std::lock_guard<std::mutex> g(mu);
         if (e == epoch) identifiedEpoch = e;
     }
+    void Retarget(const std::string& url, bool connect) override {
+        std::lock_guard<std::mutex> g(mu);
+        retargets.push_back(url + (connect ? "|connect" : "|idle"));
+    }
+    std::vector<std::string> Retargets() {
+        std::lock_guard<std::mutex> g(mu);
+        return retargets;
+    }
     std::string StatsJson() override { return "{\"fake\":true}"; }
 
     // ---- the test's side of the socket ----
@@ -150,6 +158,7 @@ public:
     native::Heartbeat hb;
     std::vector<Written> wire;
     std::vector<std::string> closeRequests;
+    std::vector<std::string> retargets;
 };
 
 }  // namespace t

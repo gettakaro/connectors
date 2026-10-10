@@ -464,7 +464,7 @@ def _plugin_zip(path: Path, *, version: str = VERSION, escape: bool = False, no_
         if not no_dll:
             archive.writestr("TakaroEnshrouded/dbghelp.dll", "the dll")
         archive.writestr("TakaroEnshrouded/README.txt", f"Takaro Enshrouded Connector {version}\n")
-        archive.writestr("TakaroEnshrouded/takaro/plugin.json.example", '{"registrationToken": ""}\n')
+        archive.writestr("TakaroEnshrouded/takaro/plugin.json", '{"registrationToken": ""}\n')
         if escape:
             archive.writestr("../escaped.txt", "nope")
 

@@ -254,7 +254,7 @@ static void CALLBACK StatusCallback(HINTERNET h, DWORD_PTR ctx, DWORD status, LP
     }
 }
 
-WinHttpTransport::WinHttpTransport(Options o) : o_(std::move(o)), hb_(o_.heartbeat) {}
+WinHttpTransport::WinHttpTransport(Options o) : o_(std::move(o)), hb_(o_.heartbeat) { url_ = o_.url; }
 
 WinHttpTransport::~WinHttpTransport() { Stop(); }
 
@@ -307,6 +307,23 @@ void WinHttpTransport::MarkIdentified(uint64_t epoch) {
     if (cur_ && cur_->id == epoch) attempts_ = 0;
 }
 
+void WinHttpTransport::Retarget(const std::string& url, bool connect) {
+    {
+        std::lock_guard<std::mutex> g(mu_);
+        url_ = url;
+        connect_ = connect;
+        generation_++;
+        retargeted_ = true;
+        attempts_ = 0;
+        if (cur_ && !cur_->dead) {
+            cur_->dead = true;
+            cur_->why = "connection settings changed";
+        }
+    }
+    sendCv_.notify_all();
+    supCv_.notify_all();
+}
+
 void WinHttpTransport::MarkDead(Epoch* e, const std::string& why) {
     {
         std::lock_guard<std::mutex> g(mu_);
@@ -324,6 +341,7 @@ std::string WinHttpTransport::StatsJson() {
     int64_t now = Now();
     return ObjBuilder()
         .B("connected", open_)
+        .B("connectAllowed", connect_)
         .Raw("epoch", std::to_string(epoch_))
         .N("connects", (double)connects_)
         .N("connectFailures", (double)connectFailures_)
@@ -375,11 +393,19 @@ void WinHttpTransport::Fail(const std::string& stage, unsigned long err) {
 void WinHttpTransport::Supervisor() {
     PluginLog("native: Takaro transport starting (%s%s)", o_.url.c_str(), o_.caFile.empty() ? "" : ", pinned CA file");
     while (!stopping_) {
+        {
+            std::unique_lock<std::mutex> l(mu_);
+            if (!connect_) PluginLog("native: Takaro connection idle until the settings allow connecting");
+            supCv_.wait(l, [&] { return stopping_.load() || connect_; });
+            retargeted_ = false;
+        }
+        if (stopping_) break;
         RunEpoch();
         if (stopping_) break;
         unsigned delay;
         {
             std::lock_guard<std::mutex> g(mu_);
+            if (retargeted_) continue;  // new settings: connect again at once
             uint64_t d = (uint64_t)o_.reconnectBaseMs << std::min(attempts_, 20u);
             delay = (unsigned)std::min<uint64_t>(d, o_.reconnectMaxMs);
             attempts_++;
@@ -387,14 +413,22 @@ void WinHttpTransport::Supervisor() {
         }
         PluginLog("native: reconnecting to Takaro in %ums", delay);
         std::unique_lock<std::mutex> l(mu_);
-        supCv_.wait_for(l, std::chrono::milliseconds(delay), [&] { return stopping_.load(); });
+        supCv_.wait_for(l, std::chrono::milliseconds(delay), [&] { return stopping_.load() || retargeted_; });
+        nextAttemptAtMs_ = 0;
     }
     PluginLog("native: Takaro transport stopped");
 }
 
 void WinHttpTransport::RunEpoch() {
     Url url;
-    if (!ParseUrl(o_.url, url)) {
+    std::string urlText;
+    uint64_t generation;
+    {
+        std::lock_guard<std::mutex> g(mu_);
+        urlText = url_;
+        generation = generation_;
+    }
+    if (!ParseUrl(urlText, url)) {
         Fail("url (must be wss://host[:port]/path)", 0);
         return;
     }
@@ -512,10 +546,17 @@ void WinHttpTransport::RunEpoch() {
     bool reqClosed = WaitForSingleObject(e->evReqClosing, 5000) == WAIT_OBJECT_0;
     e->req = nullptr;
 
+    bool stale = false;
     {
         std::lock_guard<std::mutex> g(mu_);
         e->id = ++epoch_;
         cur_ = e;
+        if (generation != generation_) {
+            stale = true;
+            // Retarget ran while this connection was being opened: it carries the old settings.
+            e->dead = true;
+            e->why = "connection settings changed";
+        }
         open_ = true;
         queues_.Clear();
         hb_.Reset(Now());
@@ -529,7 +570,7 @@ void WinHttpTransport::RunEpoch() {
     }
     PluginLog("native: Takaro WebSocket upgraded (epoch %llu, tls %s, subject '%s', issuer '%s')",
               (unsigned long long)e->id, ca ? "pinned-ca" : "system-trust", subject.c_str(), issuer.c_str());
-    if (sink_) sink_({NoticeType::Open, e->id, "", 0});
+    if (sink_ && !stale) sink_({NoticeType::Open, e->id, "", 0});
 
     HANDLE hs = CreateThread(nullptr, 0, SendThunk, e, 0, nullptr);
     HANDLE hr = CreateThread(nullptr, 0, RecvThunk, e, 0, nullptr);

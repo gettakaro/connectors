@@ -159,6 +159,62 @@ void IdentifyError() {
     CHECK(r.bridge->HealthJson().find("identity-secret-1") == std::string::npos);  // redacted
 }
 
+void ReconfigureWhileRunning() {
+    t::Group("bridge-reconfigure");
+    Rig r("reconfigure");
+    std::mutex mu;
+    std::vector<std::string> accepted, rejected;
+    r.o.onIdentified = [&](const LiveSettings& s) {
+        std::lock_guard<std::mutex> g(mu);
+        accepted.push_back(s.registrationToken + "|" + s.serverName);
+    };
+    r.o.onIdentifyRejected = [&](const std::string& summary, int status) {
+        std::lock_guard<std::mutex> g(mu);
+        rejected.push_back(std::to_string(status) + "|" + summary);
+    };
+    r.Start();
+    r.tr.Open();
+    r.tr.Inject(R"({"type":"identifyResponse","payload":{"error":{"name":"AxiosError","message":"Request failed with status code 409","config":{"headers":{"x-takaro-token":"registration-secret-2"}},"status":409}}})");
+    CHECK(t::WaitFor([&] {
+        std::lock_guard<std::mutex> g(mu);
+        return !rejected.empty();
+    }));
+    {
+        std::lock_guard<std::mutex> g(mu);
+        CHECK(!rejected.empty() && rejected[0] == "409|AxiosError: Request failed with status code 409 (HTTP 409)");
+    }
+    // A corrected token: the bridge retargets the transport, and the next connection identifies with it.
+    r.bridge->Reconfigure({"wss://other:8443/", "registration-new-3", "identity-secret-1", "Rig 2"}, true);
+    CHECK(t::WaitFor([&] { return !r.tr.Retargets().empty(); }));
+    CHECK(!r.tr.Retargets().empty() && r.tr.Retargets()[0] == "wss://other:8443/|connect");
+    r.tr.Close("connection settings changed");
+    r.tr.Drain();
+    uint64_t e2 = r.tr.Open();
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return !r.tr.WireFrames("identify").empty();
+    }));
+    auto ids = r.tr.WireFrames("identify");
+    CHECK(!ids.empty() && Str(AsRecord(ids.back().get("payload")).get("registrationToken")).value_or("") == "registration-new-3");
+    CHECK(!ids.empty() && Str(AsRecord(ids.back().get("payload")).get("name")).value_or("") == "Rig 2");
+    r.tr.Inject(R"({"type":"identifyResponse","payload":{"gameServerId":"gs-2"}})");
+    CHECK(t::WaitFor([&] { return r.tr.identifiedEpoch == e2; }));
+    CHECK(t::WaitFor([&] {
+        std::lock_guard<std::mutex> g(mu);
+        return !accepted.empty();
+    }));
+    {
+        std::lock_guard<std::mutex> g(mu);
+        CHECK(!accepted.empty() && accepted[0] == "registration-new-3|Rig 2");
+    }
+    std::string h = r.bridge->HealthJson();
+    CHECK(h.find("registration-secret-2") == std::string::npos && h.find("registration-new-3") == std::string::npos);
+    // Token removed: the transport goes idle.
+    r.bridge->Reconfigure({"wss://other:8443/", "", "identity-secret-1", "Rig 2"}, false);
+    CHECK(t::WaitFor([&] { return r.tr.Retargets().size() == 2; }));
+    CHECK(r.tr.Retargets().size() == 2 && r.tr.Retargets()[1] == "wss://other:8443/|idle");
+}
+
 void EventsConfirmOnLaterPong() {
     t::Group("bridge-outbox-confirm");
     Rig r("confirm");
@@ -701,6 +757,7 @@ void CorruptOutbox() {
 void RunBridgeTests() {
     IdentifyAndHeartbeat();
     IdentifyError();
+    ReconfigureWhileRunning();
     EventsConfirmOnLaterPong();
     ReconnectResend();
     BacklogLatency();

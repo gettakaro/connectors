@@ -1,5 +1,6 @@
 #include "native/config.h"
 
+#include "native/config_file.h"
 #include "native/fileio.h"
 #include "native/json_util.h"
 
@@ -28,8 +29,8 @@ NativeConfig LoadNativeConfig(const std::string& baseDir, const EnvFn& env, cons
     NativeConfig c;
     JsonValue file = JObj();
     if (!pluginJson.empty()) {
-        JsonValue parsed;
-        if (ParseJson(pluginJson, parsed) && parsed.type == JsonValue::Object) file = parsed;
+        SettingsFile parsed = ParseSettingsFile(true, pluginJson);
+        if (parsed.ok) file = parsed.obj;
         else c.warnings.push_back("takaro\\plugin.json is not a JSON object; ignoring it");
     }
     // env first, then plugin.json; blank values count as unset
@@ -53,10 +54,6 @@ NativeConfig LoadNativeConfig(const std::string& baseDir, const EnvFn& env, cons
         return fallback;
     };
 
-    c.url = pick("url", {"TAKARO_WS_URL", "TAKARO_URL"}, "url", c.url);
-    c.identityToken = pick("identityToken", {"TAKARO_IDENTITY_TOKEN"}, "identityToken", "");
-    c.registrationToken = pick("registrationToken", {"TAKARO_REGISTRATION_TOKEN"}, "registrationToken", "");
-    c.serverName = pick("name", {"TAKARO_SERVER_NAME", "TAKARO_NAME"}, "name", c.serverName);
     std::string ca = pick("caFile", {"TAKARO_CA_FILE"}, "caFile", "");
     c.caFile = ResolvePath(baseDir, ca);
 
@@ -78,20 +75,26 @@ NativeConfig LoadNativeConfig(const std::string& baseDir, const EnvFn& env, cons
     c.legacyHttp = Trim(env("TAKARO_LEGACY_HTTP")) == "1";
     c.logFrames = Trim(env("TAKARO_LOG_FRAMES")) == "1";
 
-    if (Trim(env("TAKARO_NATIVE_DISABLE")) == "1") {
-        c.disabledReason = "disabled by TAKARO_NATIVE_DISABLE=1";
-    } else if (c.identityToken.empty() || c.registrationToken.empty()) {
-        std::string missing = c.identityToken.empty() ? "identityToken" : "";
-        if (c.registrationToken.empty()) missing += std::string(missing.empty() ? "" : " and ") + "registrationToken";
-        c.disabledReason = "not configured: set " + missing +
-                           " in takaro\\plugin.json next to enshrouded_server.exe (or TAKARO_IDENTITY_TOKEN / "
-                           "TAKARO_REGISTRATION_TOKEN)";
-    } else if (c.url.compare(0, 6, "wss://") != 0) {
-        c.disabledReason = "url must start with wss:// (no plaintext connection to Takaro)";
-    } else {
-        c.enabled = true;
-    }
+    if (Trim(env("TAKARO_NATIVE_DISABLE")) == "1") c.disabledReason = "disabled by TAKARO_NATIVE_DISABLE=1";
+    else c.enabled = true;
     return c;
+}
+
+void ApplyLive(NativeConfig& c, const LiveResolution& r) {
+    c.url = r.s.url;
+    c.identityToken = r.s.identityToken;
+    c.registrationToken = r.s.registrationToken;
+    c.serverName = r.s.serverName;
+    std::vector<std::pair<std::string, std::string>> live = {{"url", SourceName(r.url)},
+                                                             {"identityToken", SourceName(r.identity)},
+                                                             {"registrationToken", SourceName(r.registration)},
+                                                             {"name", SourceName(r.name)}};
+    for (auto& kv : live) {
+        bool replaced = false;
+        for (auto& s : c.sources)
+            if (s.first == kv.first) s.second = kv.second, replaced = true;
+        if (!replaced) c.sources.push_back(kv);
+    }
 }
 
 std::string ConfigSummaryJson(const NativeConfig& c) {
