@@ -5,6 +5,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <bcrypt.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -89,6 +90,42 @@ bool AtomicWriteFile(const std::string& path, const std::string& text, std::stri
         return false;
     }
     return true;
+}
+
+bool ReplaceUserFile(const std::string& path, const std::string& text, unsigned newMode, std::string& err) {
+    (void)newMode;  // a new file inherits the folder's ACL
+    if (GetFileAttributesW(W(path).c_str()) == INVALID_FILE_ATTRIBUTES) return AtomicWriteFile(path, text, err);
+    std::string tmp = path + ".tmp";
+    HANDLE h = CreateFileW(W(tmp).c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) {
+        err = ErrText("create", tmp);
+        return false;
+    }
+    DWORD put = 0;
+    bool ok = text.empty() || (WriteFile(h, text.data(), (DWORD)text.size(), &put, nullptr) && put == text.size());
+    ok = FlushFileBuffers(h) && ok;
+    CloseHandle(h);
+    // ReplaceFileW keeps the replaced file's ACL, owner and attributes (MoveFileEx would not).
+    if (!ok || !ReplaceFileW(W(path).c_str(), W(tmp).c_str(), nullptr, REPLACEFILE_IGNORE_MERGE_ERRORS, nullptr,
+                             nullptr)) {
+        err = ErrText(ok ? "replace" : "write", path);
+        DeleteFileW(W(tmp).c_str());
+        return false;
+    }
+    return true;
+}
+
+bool RandomBytes(unsigned char* out, size_t n) {
+    return BCryptGenRandom(nullptr, out, (ULONG)n, BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0;
+}
+
+void ConsoleWrite(const std::string& text) {
+    // The server's log console (-log) is allocated after the DLL loads; until then there may be
+    // no stdout, and the native log file still has every banner.
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (!out || out == INVALID_HANDLE_VALUE) return;
+    DWORD put = 0;
+    WriteFile(out, text.data(), (DWORD)text.size(), &put, nullptr);
 }
 
 bool EnsureDirectory(const std::string& dir, std::string& err) {

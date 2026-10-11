@@ -48,6 +48,10 @@ public:
     virtual void RequestClose(uint64_t epoch, const std::string& reason) = 0;
     // Identify succeeded on this epoch: reset the reconnect backoff.
     virtual void MarkIdentified(uint64_t epoch) = 0;
+    // New connection settings, applied at once: the current socket (if any) is dropped and, when
+    // `connect`, `url` is dialled without waiting for the backoff; `connect` false holds the
+    // transport idle (no token). Any thread; ignored once Stop() has begun.
+    virtual void Retarget(const std::string& url, bool connect) = 0;
     virtual std::string StatsJson() = 0;
 };
 

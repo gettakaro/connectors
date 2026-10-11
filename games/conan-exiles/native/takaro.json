@@ -1,0 +1,7 @@
+{
+  "_comment": "Paste the registration token from Takaro (a game server of type Generic) into registrationToken and save: the connector connects within a few seconds, no restart needed. Leave identityToken empty: the connector fills in a unique one. Never change it afterwards, Takaro keys this server on it.",
+  "url": "wss://connect.takaro.io/",
+  "registrationToken": "",
+  "identityToken": "",
+  "name": ""
+}

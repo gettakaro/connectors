@@ -31,29 +31,20 @@ GitHub's own; you do not need them.
 
 ### 3. Put the files in place
 
-Linux: unzip `TakaroConanNative/` anywhere the server user can read, then copy two files:
+Linux: unzip `TakaroConanNative/` anywhere the server user can read, then copy the config:
 
 ```bash
 mkdir -p <server>/ConanSandbox/Saved/Config/Takaro
-cp TakaroConanNative/takaro.json.example <server>/ConanSandbox/Saved/Config/Takaro/takaro.json
-cp TakaroConanNative/ca-certificates.crt <server>/ConanSandbox/Saved/Config/Takaro/
+cp TakaroConanNative/takaro.json <server>/ConanSandbox/Saved/Config/Takaro/takaro.json
 ```
 
 Windows: copy `winmm.dll` into `ConanSandbox\Binaries\Win64\` (next to
-`ConanSandboxServer-Win64-Shipping.exe`), and `takaro.json.example` to
-`ConanSandbox\Saved\Config\Takaro\takaro.json`.
+`ConanSandboxServer-Win64-Shipping.exe`), and `takaro.json` into `ConanSandbox\Saved\Config\Takaro\`.
 
-### 4. Configure
+### 4. Paste the token
 
-Edit `takaro.json`:
-
-| Key | Value |
-|---|---|
-| `url` | `wss://connect.takaro.io/` |
-| `identityToken` | A name you choose for this server, unique in your domain. Never change it. |
-| `registrationToken` | The registration token from Takaro. |
-| `name` | The server name Takaro shows. |
-| `caFile` | Linux only: `Config/Takaro/ca-certificates.crt` |
+In `ConanSandbox/Saved/Config/Takaro/takaro.json`, set `registrationToken` to the token from Takaro.
+Leave `identityToken` empty; the connector fills it in. Optional: `name` (the server name in Takaro).
 
 Keep RCON off; the connector does not use it (`Game.ini`: `[RconPlugin]` `RconEnabled=0`).
 
@@ -69,8 +60,11 @@ Windows: start the server as usual.
 
 ### 6. Check that it worked
 
-- `ConanSandbox/Saved/Logs/TakaroConanNative.log` shows `takaro: identified`.
+- The server console shows `Takaro: connected to Takaro as "<name>"`.
 - Takaro shows the server online and **Test connection** reports it reachable.
+- If it is not connected, the console shows a `****` block naming the problem and the file. Fix the
+  file and save it; the connector reconnects within a few seconds, no restart needed. The same
+  applies when you skipped step 3: the connector creates `takaro.json` on the first start.
 
 Upgrading, rollback and removal: [INSTALL.md](INSTALL.md).
 

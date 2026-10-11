@@ -57,7 +57,7 @@ for f in "${SOURCES[@]}"; do
 done
 echo "  LD  $DIST/winmm.dll"
 "$ZIG" c++ -target $TARGET -shared -s -o "$DIST/winmm.dll" \
-  "${objs[@]}" "$OUT"/obj/mh_*.o -lwinhttp -lcrypt32 -lws2_32
+  "${objs[@]}" "$OUT"/obj/mh_*.o -lwinhttp -lcrypt32 -lws2_32 -lbcrypt
 rm -f "$DIST"/*.lib "$DIST"/*.pdb
 
 # The proxy must export exactly the three winmm functions the server imports, and nothing else.

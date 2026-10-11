@@ -24,6 +24,7 @@
 #include "pins/pins.h"
 #include "takaro/bridge.h"
 #include "takaro/config.h"
+#include "takaro/config_watch.h"
 #include "takaro/fileio.h"
 #include "takaro/outbox.h"
 #include "transport_winhttp.h"
@@ -176,23 +177,22 @@ void StartConnector() {
     NativeLog("Takaro Conan native " TAKARO_CONAN_NATIVE_VERSION " (windows) loading (pid %lu)",
               (unsigned long)GetCurrentProcessId());
 
-    // 1. config, fail closed
+    // 1. config: without a usable token the connector loads but does not connect, and picks the
+    // token up once takaro.json is saved (no restart). TAKARO_CONAN_NATIVE_DISABLE=1 keeps it inert.
     takaro::EnvFn env = [](const char* n) { return Env(n); };
-    std::string cfgText, err;
-    bool cfgExists = false;
-    const std::string cfgPath = takaro::ConfigFilePath(saved, env);
-    if (!takaro::ReadWholeFile(cfgPath, cfgText, cfgExists, err)) {
-        NativeLog("config: %s; failing closed, the connector stays off", err.c_str());
-        return;
-    }
-    takaro::Config cfg = takaro::LoadConfig(saved, env, cfgText, cfgExists);
+    takaro::ConfigWatcher::Options wo;
+    wo.savedDir = saved;
+    wo.env = env;
+    auto* watcher = new takaro::ConfigWatcher(wo);  // leaked on purpose, like the bridge
+    takaro::Config cfg = watcher->Load();
     for (auto& w : cfg.warnings) NativeLog("config warning: %s", w.c_str());
     const bool repin = Env("TAKARO_CONAN_REPIN") == "1";
-    if (!cfg.enabled && !repin) {
+    if (cfg.inert && !repin) {
         NativeLog("connector off: %s", cfg.disabledReason.c_str());
         return;
     }
-    if (cfg.enabled) NativeLog("config: %s", takaro::ConfigSummaryJson(cfg).c_str());
+    NativeLog("config: %s", takaro::ConfigSummaryJson(cfg).c_str());
+    if (!cfg.enabled) NativeLog("not connecting to Takaro yet: %s", cfg.disabledReason.c_str());
 
     // 2. pins (RVAs against the ASLR base)
     conan::AdapterOptions ao;
@@ -236,7 +236,7 @@ void StartConnector() {
     }
     if (!ao.ready) NativeLog("NO HOOK INSTALLED: %s; every action will be refused", ao.refusal.c_str());
     if (repin) std::thread(RepinThread, ao.ready, saved).detach();
-    if (!cfg.enabled) {
+    if (cfg.inert) {
         NativeLog("connector off: %s (re-pin run only)", cfg.disabledReason.c_str());
         return;
     }
@@ -249,6 +249,7 @@ void StartConnector() {
     wc.caFile = cfg.caFile;
     wc.reconnectBaseMs = cfg.reconnectBaseMs;
     wc.reconnectMaxMs = cfg.reconnectMaxMs;
+    wc.connect = cfg.enabled;
     auto* transport = new takaro::WinHttpTransport(wc);
     takaro::BridgeOptions bo;
     bo.config = cfg;
@@ -256,6 +257,7 @@ void StartConnector() {
     bo.transport = transport;
     bo.store = store;
     bo.healthFile = takaro::JoinPath(cfg.stateDir, "health.json");
+    bo.watcher = watcher;
     auto* bridge = new takaro::Bridge(bo);
     bridge->Start();
     // Game events: hook subscriptions (verified builds only) and the server log tail, as on Linux.
