@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.2.0...conan-exiles-v3.3.0) (2026-10-11)
+
+
+### Features
+
+* **conan-exiles:** ship takaro.json and apply token changes without a restart ([#445](https://github.com/gettakaro/connectors/issues/445)) ([059f735](https://github.com/gettakaro/connectors/commit/059f735f4bbbe42b611678fe65f84d4d9558dd3e))
+
 ## [3.2.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.1.0...conan-exiles-v3.2.0) (2026-10-10)
 
 
