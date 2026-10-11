@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Takaro.Persistence;
 
@@ -79,6 +80,92 @@ namespace Takaro.Services
                     distinct.Add(record);
             }
             return distinct;
+        }
+
+        /// <summary>
+        /// Indexes of the entries that listBans reports under <paramref name="gameId"/>.
+        /// Each entry is the id the game stores the ban under and the EOS id it resolved
+        /// for it, or null.
+        /// </summary>
+        public static List<int> SelectEntriesToLift(
+            string gameId,
+            IList<KeyValuePair<string, string>> entries
+        )
+        {
+            var selected = new List<int>();
+            for (int index = 0; index < entries.Count; index++)
+            {
+                if (IsReportedAs(gameId, entries[index].Key, entries[index].Value))
+                    selected.Add(index);
+            }
+            return selected;
+        }
+
+        /// <summary>
+        /// Names the stores an unban lifted something from, or null when it lifted nothing.
+        /// A player can sit in both stores, so one store being empty never ends the unban.
+        /// </summary>
+        public static string UnbanMethod(bool blockedPlayerListLifted, int blacklistEntriesLifted)
+        {
+            if (blockedPlayerListLifted && blacklistEntriesLifted > 0)
+                return "BlockedPlayerList+AdminTools.Blacklist";
+            if (blockedPlayerListLifted)
+                return "BlockedPlayerList";
+            return blacklistEntriesLifted > 0 ? "AdminTools.Blacklist" : null;
+        }
+
+        /// <summary>
+        /// One ban as a game store holds it, before it is keyed by the EOS id.
+        /// </summary>
+        public sealed class BanSource
+        {
+            public string BanId;
+            public string CrossplatformId;
+            public string NativeId;
+            public string Name;
+            public string Reason;
+            public string ExpiresAt;
+        }
+
+        /// <summary>
+        /// The ban list Takaro sees: both stores merged, Blacklist first, one record per
+        /// player. <paramref name="onSkipped"/> receives the id of each entry that has no
+        /// EOS id.
+        /// </summary>
+        public static List<BanRecord> Capture(
+            IEnumerable<BanSource> blacklist,
+            IEnumerable<BanSource> blockedPlayerList,
+            Action<string> onSkipped
+        )
+        {
+            var candidates = new List<BanRecord>();
+            foreach (BanSource source in Concat(blacklist, blockedPlayerList))
+            {
+                BanRecord record = ToRecord(
+                    source.BanId,
+                    source.CrossplatformId,
+                    source.NativeId,
+                    source.Name,
+                    source.Reason,
+                    source.ExpiresAt
+                );
+                if (record == null)
+                    onSkipped?.Invoke(source.BanId);
+                else
+                    candidates.Add(record);
+            }
+            return DistinctByGameId(candidates);
+        }
+
+        private static IEnumerable<BanSource> Concat(
+            IEnumerable<BanSource> first,
+            IEnumerable<BanSource> second
+        )
+        {
+            foreach (BanSource source in first)
+                yield return source;
+            foreach (BanSource source in second)
+                yield return source;
         }
 
         private static string FirstEos(params string[] candidates)

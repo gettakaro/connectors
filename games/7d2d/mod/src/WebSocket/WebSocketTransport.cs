@@ -79,7 +79,7 @@ namespace Takaro.WebSocket
         private const int HEARTBEAT_INTERVAL_SECONDS = 15;
 
         // No inbound frame for this long means the socket is dead even though
-        // the TLS layer still reports it open (F17a): three missed pongs.
+        // the TLS layer still reports it open: three missed pongs.
         private const int INBOUND_TIMEOUT_SECONDS = HEARTBEAT_INTERVAL_SECONDS * 3;
 
         // At most one acknowledgement ping per second, however busy the events.
@@ -382,7 +382,7 @@ namespace Takaro.WebSocket
                     );
                     if (IsInboundStale() || !IsSendable(socket))
                     {
-                        // The link is suspect (F17a) or the socket is already
+                        // The link is suspect or the socket is already
                         // closing. Send failures here say nothing about the
                         // payload, so keep the backlog intact for the next
                         // connection instead of counting them toward a drop.
@@ -596,7 +596,7 @@ namespace Takaro.WebSocket
 
             // Any frame at all - text, binary, or a pong - proves the link is
             // still carrying traffic. This is what the heartbeat watchdog
-            // checks (F17a). Ping/pong and binary control traffic must never
+            // checks. Ping/pong and binary control traffic must never
             // reach the JSON request router.
             InboundResult result = _session.HandleInbound(generation, e.IsText, e.Data);
             switch (result.Kind)
@@ -735,7 +735,7 @@ namespace Takaro.WebSocket
         /// <summary>
         /// A blackholed link leaves the TLS socket "open" indefinitely: writes
         /// disappear into the send buffer and websocket-sharp reports no error,
-        /// so every event written into it is lost (F17a). Nothing inbound for
+        /// so every event written into it is lost. Nothing inbound for
         /// more than INBOUND_TIMEOUT_SECONDS means the socket is dead; close it
         /// so the normal reconnect path runs and events go to the backlog
         /// instead of the void.

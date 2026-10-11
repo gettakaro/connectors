@@ -630,16 +630,9 @@ namespace Takaro.Services
 
         private static List<BanRecord> CaptureBans()
         {
-            var candidates = new List<BanRecord>();
             PersistentPlayerList playerList = GameManager.Instance.GetPersistentPlayerList();
-
-            void Add(BanRecord record, string banId)
-            {
-                if (record == null)
-                    LogService.Instance.Debug($"Ban entry {banId} has no EOS id; not sent");
-                else
-                    candidates.Add(record);
-            }
+            var blacklist = new List<BanIdentity.BanSource>();
+            var blocked = new List<BanIdentity.BanSource>();
 
             // AdminTools.Blacklist stores timed bans and preserves reason/expiry metadata.
             if (GameManager.Instance?.adminTools?.Blacklist != null)
@@ -657,18 +650,19 @@ namespace Takaro.Services
                         playerList,
                         ban.UserIdentifier
                     );
-                    Add(
-                        BanIdentity.ToRecord(
-                            banId,
-                            playerData?.PrimaryId?.CombinedString,
-                            playerData?.NativeId?.CombinedString,
-                            playerData?.PlayerName.playerName.Text,
-                            ban.BanReason,
-                            ban.BannedUntil == DateTime.MaxValue
-                                ? null
-                                : BanExpiry.ToTakaroUtc(ban.BannedUntil, TimeZoneInfo.Local)
-                        ),
-                        banId
+                    blacklist.Add(
+                        new BanIdentity.BanSource
+                        {
+                            BanId = banId,
+                            CrossplatformId = playerData?.PrimaryId?.CombinedString,
+                            NativeId = playerData?.NativeId?.CombinedString,
+                            Name = playerData?.PlayerName.playerName.Text,
+                            Reason = ban.BanReason,
+                            ExpiresAt =
+                                ban.BannedUntil == DateTime.MaxValue
+                                    ? null
+                                    : BanExpiry.ToTakaroUtc(ban.BannedUntil, TimeZoneInfo.Local),
+                        }
                     );
                 }
             }
@@ -692,21 +686,25 @@ namespace Takaro.Services
                     if (string.IsNullOrEmpty(primaryId))
                         continue;
 
-                    Add(
-                        BanIdentity.ToRecord(
-                            primaryId,
-                            primaryId,
-                            blockedEntry.PlayerData.NativeId?.CombinedString,
-                            blockedEntry.PlayerData.PlayerName.Text,
-                            "Blocked",
-                            null
-                        ),
-                        primaryId
+                    blocked.Add(
+                        new BanIdentity.BanSource
+                        {
+                            BanId = primaryId,
+                            CrossplatformId = primaryId,
+                            NativeId = blockedEntry.PlayerData.NativeId?.CombinedString,
+                            Name = blockedEntry.PlayerData.PlayerName.Text,
+                            Reason = "Blocked",
+                        }
                     );
                 }
             }
 
-            return BanIdentity.DistinctByGameId(candidates);
+            return BanIdentity.Capture(
+                blacklist,
+                blocked,
+                skippedId =>
+                    LogService.Instance.Debug($"Ban entry {skippedId} has no EOS id; not sent")
+            );
         }
 
 #if SEVEND2D_V3_3

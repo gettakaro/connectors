@@ -22,12 +22,33 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn("Shared.TransformBanRecordToTakaroBan(record)", mirror)
 
     def test_ban_capture_keys_entries_by_eos_id(self):
-        capture = self.source("src/Services/StateMirror.cs").split(
-            "private static List<BanRecord> CaptureBans()", 1
-        )[1].split("private static PlayerRecord BuildPlayerRecord", 1)[0]
-        self.assertIn("BanIdentity.ToRecord", capture)
+        mirror = self.source("src/Services/StateMirror.cs")
+        capture = mirror.split("private static List<BanRecord> CaptureBans()", 1)[1].split(
+            "#if SEVEND2D_V3_3", 1
+        )[0]
+        self.assertIn("return BanIdentity.Capture(", capture)
+        self.assertIn("blacklist,", capture)
+        self.assertIn("blocked,", capture)
         self.assertNotIn('Replace("EOS_", "")', capture)
-        self.assertIn("BanIdentity.DistinctByGameId", capture)
+
+    def test_transport_drives_the_session_state_machine(self):
+        transport = self.source("src/WebSocket/WebSocketTransport.cs")
+        poll = transport.split("CheckInboundLiveness();", 1)[1].split("FlushPending();", 1)[0]
+        self.assertIn("_session.ApplyAcknowledgements();", poll)
+        self.assertIn("CloseIfIdentifyOverdue();", poll)
+
+        flush = transport.split("private void FlushPending()", 1)[1].split("while (true)", 1)[0]
+        self.assertIn("_session.ReplayUnconfirmedOnNewSocket()", flush)
+
+        inbound = transport.split("private void HandleInboundFrame(", 1)[1].split(
+            "private void LogEventError", 1
+        )[0]
+        routed = inbound.split("case InboundKind.Request:", 1)[1].split("break;", 1)[0]
+        self.assertIn("RequestRouter.Route(e.Data);", routed)
+        self.assertEqual(inbound.count("RequestRouter.Route"), 1)
+
+        closed = transport.split("socket.OnClose +=", 1)[1]
+        self.assertIn("e.Code == 1008", closed)
 
     def test_entity_kill_reports_internal_class_name(self):
         api = self.source("src/API.cs")
