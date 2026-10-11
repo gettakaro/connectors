@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.2.0](https://github.com/gettakaro/connectors/compare/valheim-v4.1.1...valheim-v4.2.0) (2026-10-11)
+
+
+### Features
+
+* **valheim:** ship takaro.cfg in the plugin folder and apply token changes without a restart ([#436](https://github.com/gettakaro/connectors/issues/436)) ([fdacdc2](https://github.com/gettakaro/connectors/commit/fdacdc26c56d6c3cefeacf759bbff1d5c3bc4fa7))
+
 ## [4.1.1](https://github.com/gettakaro/connectors/compare/valheim-v4.1.0...valheim-v4.1.1) (2026-10-08)
 
 
