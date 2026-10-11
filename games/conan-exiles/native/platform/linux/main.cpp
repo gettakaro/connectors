@@ -2,8 +2,10 @@
 //
 // Loaded with LD_PRELOAD into ConanSandboxServer-Linux-Shipping. The library holds the Takaro
 // WebSocket itself (no sidecar, no RCON). At load it:
-//   1. reads the config (env first, then ConanSandbox/Saved/Config/Takaro/takaro.json) and stays
-//      completely inert when it is missing or invalid (fail closed);
+//   1. reads the config (env first, then ConanSandbox/Saved/Config/Takaro/takaro.json, then the
+//      saved copy), creating takaro.json from the template when it is missing. Without a usable
+//      token it loads but does not connect, says so in a console banner and picks up the token
+//      once the file is saved (no restart). TAKARO_CONAN_NATIVE_DISABLE=1 keeps it inert;
 //   2. finds ProcessEvent, GUObjectArray and the FNamePool by a signature scan of the server's own
 //      code and checks them against the pinned build (core/pins);
 //   3. on a verified build installs the ProcessEvent detour (the game-thread entry point); on any
@@ -23,11 +25,13 @@
 #include "pins/pins.h"
 #include "takaro/bridge.h"
 #include "takaro/config.h"
+#include "takaro/config_watch.h"
 #include "takaro/fileio.h"
 #include "takaro/outbox.h"
 #include "transport_lws.h"
 #include "ue/ue.h"
 
+#include <dlfcn.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -67,6 +71,14 @@ std::string SavedDir(const std::string& exe) {
 
 long LinuxTid() { return (long)syscall(SYS_gettid); }
 
+// The ca-certificates.crt the release zip ships next to this library, if it is there.
+std::string BundledCaFile() {
+    Dl_info info{};
+    if (!dladdr(reinterpret_cast<void*>(&LinuxTid), &info) || !info.dli_fname) return "";
+    std::string ca = takaro::JoinPath(takaro::DirName(info.dli_fname), "ca-certificates.crt");
+    return access(ca.c_str(), R_OK) == 0 ? ca : "";
+}
+
 std::string Env(const char* name) {
     const char* v = getenv(name);
     return v ? std::string(v) : std::string();
@@ -97,24 +109,22 @@ __attribute__((constructor)) void Init() {
     SetNativeLogPath(logPath);
     NativeLog("Takaro Conan native " TAKARO_CONAN_NATIVE_VERSION " loading (pid %d)", (int)getpid());
 
-    // 1. config, fail closed
+    // 1. config
     takaro::EnvFn env = [](const char* n) { return Env(n); };
-    std::string cfgText, err;
-    bool cfgExists = false;
-    const std::string cfgPath = takaro::ConfigFilePath(saved, env);
-    if (!takaro::ReadWholeFile(cfgPath, cfgText, cfgExists, err)) {
-        NativeLog("config: %s; failing closed, the connector stays off", err.c_str());
-        FlushNativeLogs();
-        return;
-    }
-    takaro::Config cfg = takaro::LoadConfig(saved, env, cfgText, cfgExists);
+    takaro::ConfigWatcher::Options wo;
+    wo.savedDir = saved;
+    wo.env = env;
+    auto* watcher = new takaro::ConfigWatcher(wo);  // leaked with the runtime
+    takaro::Config cfg = watcher->Load();
     for (auto& w : cfg.warnings) NativeLog("config warning: %s", w.c_str());
-    if (!cfg.enabled) {
+    if (cfg.inert) {
         NativeLog("connector off: %s", cfg.disabledReason.c_str());
         FlushNativeLogs();
         return;
     }
+    if (cfg.caFile.empty()) cfg.caFile = BundledCaFile();
     NativeLog("config: %s", takaro::ConfigSummaryJson(cfg).c_str());
+    if (!cfg.enabled) NativeLog("not connecting to Takaro yet: %s", cfg.disabledReason.c_str());
 
     // 2. pins
     conan::AdapterOptions ao;
@@ -163,6 +173,7 @@ __attribute__((constructor)) void Init() {
     lc.caFile = cfg.caFile;
     lc.reconnectBaseMs = cfg.reconnectBaseMs;
     lc.reconnectMaxMs = cfg.reconnectMaxMs;
+    lc.connect = cfg.enabled;
     rt->transport = new takaro::LwsTransport(lc);
     takaro::BridgeOptions bo;
     bo.config = cfg;
@@ -170,6 +181,7 @@ __attribute__((constructor)) void Init() {
     bo.transport = rt->transport;
     bo.store = rt->store;
     bo.healthFile = takaro::JoinPath(cfg.stateDir, "health.json");
+    bo.watcher = watcher;
     rt->bridge = new takaro::Bridge(bo);
     StartLogThread(rt);
     rt->bridge->Start();

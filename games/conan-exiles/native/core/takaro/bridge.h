@@ -10,6 +10,7 @@
 #pragma once
 #include "common.h"
 #include "takaro/config.h"
+#include "takaro/config_watch.h"
 #include "takaro/game.h"
 #include "takaro/outbox.h"
 #include "takaro/transport.h"
@@ -36,6 +37,8 @@ struct BridgeOptions {
     std::function<int64_t()> steadyMs;  // monotonic; default steady_clock
     int64_t eventPollMs = 100;
     std::string healthFile;  // when set, the health snapshot is also written here every few seconds
+    // When set, takaro.json is re-read while running (bridge thread) and the console banners shown.
+    ConfigWatcher* watcher = nullptr;
 };
 
 class Bridge {
@@ -79,6 +82,8 @@ private:
     void FlushState(int64_t now, bool force);
     void Publish(int64_t now);
     void RememberId(const std::string& id);
+    void ApplyConfig(Config next, int64_t now);
+    void OnRefused(const std::string& why, bool nameTaken);
 
     BridgeOptions o_;
     std::thread thread_;
@@ -97,6 +102,7 @@ private:
     uint64_t epoch_ = 0;
     bool open_ = false, identified_ = false;
     std::string gameServerId_;
+    Config identifyConfig_;  // the settings the current epoch's identify was sent with
     uint64_t lastQueuedId_ = 0;
     std::map<uint64_t, std::shared_ptr<Job>> inflight_;
     std::set<std::string> pendingIds_;

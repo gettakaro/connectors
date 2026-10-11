@@ -307,6 +307,24 @@ void WinHttpTransport::RequestClose(uint64_t epoch, const std::string& reason) {
     if (e) MarkDead(e, "closed by connector: " + reason);
 }
 
+void WinHttpTransport::Retarget(const std::string& url, bool connect) {
+    {
+        std::lock_guard<std::mutex> g(mu_);
+        if (stopping_) return;
+        o_.url = url;
+        o_.connect = connect;
+        generation_++;
+        retargets_++;
+        nextAttemptAtMs_ = 0;
+        if (cur_ && !cur_->dead) {
+            cur_->dead = true;
+            cur_->why = "connection settings changed";
+        }
+    }
+    sendCv_.notify_all();
+    supCv_.notify_all();
+}
+
 void WinHttpTransport::MarkIdentified(uint64_t epoch) {
     std::lock_guard<std::mutex> g(mu_);
     if (cur_ && cur_->id == epoch) attempts_ = 0;
@@ -333,6 +351,7 @@ std::string WinHttpTransport::StatsJson() {
         .N("connects", (double)connects_)
         .N("connectFailures", (double)connectFailures_)
         .N("backoffAttempts", attempts_)
+        .N("retargets", (double)retargets_)
         .N("reconnectInMs", !open_ && nextAttemptAtMs_ > now ? (double)(nextAttemptAtMs_ - now) : 0)
         .N("connectedForMs", open_ ? (double)(now - openedAtMs_) : 0)
         .Raw("queued", ObjBuilder()
@@ -378,13 +397,25 @@ void WinHttpTransport::Fail(const std::string& stage, unsigned long err) {
 }
 
 void WinHttpTransport::Supervisor() {
-    NativeLog("native: Takaro transport starting (%s%s)", o_.url.c_str(), o_.caFile.empty() ? "" : ", pinned CA file");
+    NativeLog("native: Takaro transport starting (%s)", o_.caFile.empty() ? "system trust" : "pinned CA file");
     while (!stopping_) {
+        uint64_t generation;
+        {
+            // Held (no token): wait for Retarget to enable a connection.
+            std::unique_lock<std::mutex> l(mu_);
+            supCv_.wait(l, [&] { return stopping_.load() || o_.connect; });
+            generation = generation_;
+        }
+        if (stopping_) break;
         RunEpoch();
         if (stopping_) break;
         unsigned delay;
         {
             std::lock_guard<std::mutex> g(mu_);
+            if (generation_ != generation) {
+                attempts_ = 0;  // dropped for new settings: dial again at once
+                continue;
+            }
             uint64_t d = (uint64_t)o_.reconnectBaseMs << std::min(attempts_, 20u);
             delay = (unsigned)std::min<uint64_t>(d, o_.reconnectMaxMs);
             attempts_++;
@@ -392,14 +423,23 @@ void WinHttpTransport::Supervisor() {
         }
         NativeLog("native: reconnecting to Takaro in %ums", delay);
         std::unique_lock<std::mutex> l(mu_);
-        supCv_.wait_for(l, std::chrono::milliseconds(delay), [&] { return stopping_.load(); });
+        supCv_.wait_for(l, std::chrono::milliseconds(delay),
+                        [&] { return stopping_.load() || generation_ != generation; });
+        if (generation_ != generation) attempts_ = 0;
     }
     NativeLog("native: Takaro transport stopped");
 }
 
 void WinHttpTransport::RunEpoch() {
+    std::string target;
+    uint64_t generation;
+    {
+        std::lock_guard<std::mutex> g(mu_);
+        target = o_.url;
+        generation = generation_;
+    }
     Url url;
-    if (!ParseUrl(o_.url, url)) {
+    if (!ParseUrl(target, url)) {
         Fail("url (must be wss://host[:port]/path)", 0);
         return;
     }
@@ -534,6 +574,10 @@ void WinHttpTransport::RunEpoch() {
         tlsMode_ = ca ? "pinned-ca" : "system-trust";
         tlsSubject_ = subject;
         tlsIssuer_ = issuer;
+        if (generation != generation_) {  // settings changed while this connection was dialled
+            e->dead = true;
+            e->why = "connection settings changed";
+        }
     }
     NativeLog("native: Takaro WebSocket upgraded (epoch %llu, tls %s, subject '%s', issuer '%s')",
               (unsigned long long)e->id, ca ? "pinned-ca" : "system-trust", subject.c_str(), issuer.c_str());

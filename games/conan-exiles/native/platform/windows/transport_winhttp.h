@@ -23,6 +23,7 @@ struct WinHttpConfig {
     std::string url;     // wss://host[:port]/path
     std::string caFile;  // PEM bundle to pin; empty = the Windows system store
     unsigned reconnectBaseMs = 2000, reconnectMaxMs = 60000;
+    bool connect = true;  // false: stay idle until Retarget enables it
     Heartbeat::Params heartbeat;
 };
 
@@ -35,6 +36,7 @@ public:
     QueueStatus Queue(OutFrame frame) override;
     void RequestClose(uint64_t epoch, const std::string& reason) override;
     void MarkIdentified(uint64_t epoch) override;
+    void Retarget(const std::string& url, bool connect) override;
     std::string StatsJson() override;
 
     struct Epoch;  // per-connection context (transport_winhttp.cpp)
@@ -61,6 +63,8 @@ private:
     bool open_ = false;
     uint64_t epoch_ = 0;
     unsigned attempts_ = 0;
+    // o_.url and o_.connect change under mu_ (Retarget); RunEpoch copies the URL when it dials.
+    uint64_t generation_ = 0, retargets_ = 0;
     FrameQueues queues_;
     Heartbeat hb_;
 

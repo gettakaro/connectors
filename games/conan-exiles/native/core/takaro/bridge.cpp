@@ -30,6 +30,7 @@ bool Bridge::Start() {
     storeNotes_ = o_.store->Load();
     NativeLog("takaro: state dir %s: %s", o_.store->Dir().c_str(), storeNotes_.c_str());
     int64_t now = o_.steadyMs();
+    if (o_.watcher) o_.watcher->Announce(o_.config, now);
     Publish(now);
     thread_ = std::thread(&Bridge::Loop, this);
     for (unsigned i = 0; i < std::max(1u, o_.config.actionWorkers); i++) workers_.emplace_back(&Bridge::WorkerLoop, this);
@@ -103,6 +104,11 @@ void Bridge::Loop() {
         }
         DeliverEvents();
         FlushState(now, false);
+        if (o_.watcher) {
+            Config next;
+            if (o_.watcher->Poll(now, next)) ApplyConfig(std::move(next), now);
+            o_.watcher->Remind(o_.config, now);
+        }
         if (now >= nextPublish_) {
             Publish(now);
             nextPublish_ = now + 500;
@@ -144,6 +150,28 @@ void Bridge::WorkerLoop() {
     }
 }
 
+// ------------------------------------------------------------------------------------------------ config
+
+void Bridge::ApplyConfig(Config next, int64_t now) {
+    NativeLog("config: %s changed; %s (identity from %s, registration token from %s)",
+              o_.watcher->FilePath().c_str(),
+              next.enabled ? "reconnecting with the new settings" : next.disabledReason.c_str(),
+              SourceName(next.identitySource), SourceName(next.registrationSource));
+    o_.config = std::move(next);
+    lastIdentifyError_.clear();
+    o_.watcher->Announce(o_.config, now);
+    // The old connection's Closed notice and any late frame of it carry its epoch; the identify of
+    // the next connection uses the settings set here.
+    if (o_.transport) o_.transport->Retarget(o_.config.url, o_.config.enabled);
+}
+
+void Bridge::OnRefused(const std::string& why, bool nameTaken) {
+    identifyErrors_++;
+    lastIdentifyError_ = why;
+    NativeLog("takaro: identify failed: %s", why.c_str());
+    if (o_.watcher) o_.watcher->Refused(o_.config, why, nameTaken);
+}
+
 // ------------------------------------------------------------------------------------------------ notices
 
 void Bridge::HandleNotice(Notice& n) {
@@ -157,6 +185,11 @@ void Bridge::HandleNotice(Notice& n) {
             pendingIds_.clear();
             recentIds_.clear();
             recentIdSet_.clear();
+            if (!o_.config.enabled) {  // a dial that raced a hold: never identify without a token
+                o_.transport->RequestClose(n.epoch, "not configured");
+                break;
+            }
+            identifyConfig_ = o_.config;
             NativeLog("takaro: WebSocket open (epoch %llu), sending identify", (unsigned long long)n.epoch);
             auto st = o_.transport->Queue({FrameKind::Control,
                                            Text(CreateIdentify(o_.config.identityToken, o_.config.registrationToken,
@@ -215,10 +248,8 @@ void Bridge::HandleFrame(uint64_t epoch, const std::string& text) {
     } else if (type == "identifyResponse") {
         const JsonValue& payload = AsRecord(msg.get("payload"));
         if (Truthy(payload.get("error"))) {
-            identifyErrors_++;
-            lastIdentifyError_ = o_.config.Redact(JsonDump(*payload.get("error")));
-            if (lastIdentifyError_.size() > 512) lastIdentifyError_.resize(512);
-            NativeLog("takaro: identify failed: %s", lastIdentifyError_.c_str());
+            bool nameTaken = false;
+            OnRefused(DescribeTakaroError(payload.get("error"), o_.config, &nameTaken), nameTaken);
             o_.transport->RequestClose(epoch, "identify rejected");
             return;
         }
@@ -232,14 +263,21 @@ void Bridge::HandleFrame(uint64_t epoch, const std::string& text) {
         NativeLog("takaro: identified%s%s; %zu unconfirmed event(s) to deliver",
                   gameServerId_.empty() ? "" : " gameServerId=", gameServerId_.c_str(),
                   o_.store->Outbox().pending.size());
+        if (o_.watcher) {
+            o_.watcher->Identified(identifyConfig_);
+            o_.watcher->Connected(o_.config);
+        }
     } else if (type == "connected") {
         NativeLog("takaro: Takaro confirmed the WebSocket connection");
     } else if (type == "error") {
         const JsonValue* p = msg.get("payload");
         if (!p || p->type == JsonValue::Null) p = msg.get("error");
-        lastError_ = "Takaro error: " + o_.config.Redact(p ? JsonDump(*p) : "(none)");
-        if (lastError_.size() > 600) lastError_.resize(600);
+        if (p && p->type == JsonValue::Object && p->get("error")) p = p->get("error");
+        bool nameTaken = false;
+        std::string why = DescribeTakaroError(p, o_.config, &nameTaken);
+        lastError_ = "Takaro error: " + why;
         NativeLog("takaro: %s", lastError_.c_str());
+        if (!identified_) OnRefused(why, nameTaken);
     }
 }
 
@@ -467,6 +505,7 @@ void Bridge::Publish(int64_t now) {
                         .S("lastError", lastError_)
                         .S("lastIdentifyError", lastIdentifyError_)
                         .Raw("config", ConfigSummaryJson(o_.config))
+                        .Raw("configFile", o_.watcher ? o_.watcher->HealthJson() : "null")
                         .Raw("transport", o_.transport ? o_.transport->StatsJson() : "null")
                         .Raw("game", o_.game->HealthJson())
                         .Raw("connection", ObjBuilder()

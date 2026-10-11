@@ -4,10 +4,14 @@
 #
 #   linux target    takaro-conan-exiles-native-linux-<build>-<version>.zip
 #                     TakaroConanNative/  libtakaro-conan-native.so (LD_PRELOAD), ca-certificates.crt,
-#                                         takaro.json.example, INSTALL.md, README.txt, licenses
+#                                         takaro.json, INSTALL.md, README.txt, licenses
 #   windows target  takaro-conan-exiles-native-windows-<build>-<version>.zip
-#                     TakaroConanNative/  winmm.dll (next to the server exe), takaro.json.example,
+#                     TakaroConanNative/  winmm.dll (next to the server exe), takaro.json,
 #                                         INSTALL.md, README.txt, licenses
+#
+# takaro.json is the real config with an empty token and identity (native/takaro.json, the same
+# text the connector writes when the file is missing). It goes to ConanSandbox/Saved/Config/Takaro/,
+# which a connector upgrade never touches; the zip folder itself only holds the binary's files.
 #
 # Usage: build-release.sh <version> <out-dir> [--target <catalog target id>]
 #
@@ -99,7 +103,7 @@ JSON
 native_common() {
   local pkg="$1" binary="$2"
   mkdir -p "${pkg}/licenses"
-  cp "${SCRIPT_DIR}/templates/takaro.${PLATFORM}.json.example" "${pkg}/takaro.json.example"
+  cp "${PROJECT_ROOT}/native/takaro.json" "${pkg}/takaro.json"
   cp "${PROJECT_ROOT}/INSTALL.md" "${pkg}/INSTALL.md"
   cp "${PROJECT_ROOT}/native/third_party/README.md" "${pkg}/THIRD-PARTY.md"
   sed -e "s/@VERSION@/${VERSION}/g" -e "s/@REVISION@/${CONAN_EXILES_REVISION}/g" \

@@ -17,7 +17,7 @@ games/conan-exiles/
     mod/TakaroConanBridge/      # spec + DevKit handoff for the Takaro-owned .pak (no binary shipped)
     scripts/lib-target.sh       # resolves the catalog target every script builds against
     scripts/build-release.sh    # packages the native zip per target
-    scripts/templates/          # takaro.json examples and the README.txt of the native zips
+    scripts/templates/          # the README.txt of the native zips (the shipped takaro.json is native/takaro.json)
     INSTALL.md                  # per-platform install, upgrade, rollback (ships in the zips)
     version.txt
     CHANGELOG.md
@@ -97,7 +97,7 @@ maintenance/bin/takaro-maint build --game conan-exiles [--target linux-25792439]
 That runs `scripts/build-release.sh <version> <out-dir> [--target <id>]`, which resolves the target
 and builds inside pinned images only, so the host needs no compiler. The result is
 `takaro-conan-exiles-native-<platform>-<build>-<version>.zip` holding one `TakaroConanNative/`
-folder (the binary, `takaro.json.example`, `INSTALL.md`, `README.txt`, `THIRD-PARTY.md`, licenses,
+folder (the binary, `takaro.json` (= `native/takaro.json`), `INSTALL.md`, `README.txt`, `THIRD-PARTY.md`, licenses,
 `takaro-target.json`, `SHA256SUMS`, and on Linux `ca-certificates.crt`), plus a `.meta.json` beside
 it that `takaro-maint artifact validate` reads. Packaging is deterministic: entry modes and
 timestamps are normalised and the archive is written by CPython's `zipfile`.
@@ -129,12 +129,32 @@ native/
   tools/           sigderive.py (signatures for ELF and PE)
 ```
 
-- **Config.** Environment first (`TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN`,
-  `TAKARO_WS_URL`, `TAKARO_SERVER_NAME`, `TAKARO_CA_FILE`, `TAKARO_STATE_DIR`), then
-  `ConanSandbox/Saved/Config/Takaro/takaro.json` (keys `identityToken`, `registrationToken`, `url`,
-  `name`, `caFile`, `stateDir`; `TAKARO_CONAN_CONFIG` moves the file). It fails closed: missing
-  tokens, a `ws://` URL or a file that does not parse leave the library inert, with the reason in
-  `ConanSandbox/Saved/Logs/TakaroConanNative.log`. Token values are never logged.
+- **Config** (`core/takaro/config.*`, `core/takaro/config_watch.*`). Per field: environment
+  (`TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN`, `TAKARO_WS_URL`, `TAKARO_SERVER_NAME`,
+  `TAKARO_CA_FILE`, `TAKARO_STATE_DIR`), then `ConanSandbox/Saved/Config/Takaro/takaro.json`
+  (`TAKARO_CONAN_CONFIG` moves it; the URL only when not the default), then the connector's saved
+  copy `<stateDir>/saved-settings.json`. The release ships the real `takaro.json` (empty token and
+  identity; `native/takaro.json`, equal to `kConfigTemplate`, checked by `unit_test`); a missing
+  file is created from it at load unless the environment carries both tokens.
+  - Identity: env, file, saved copy, the one in use, else a new UUID v4 written into the file and
+    the saved copy, with the name `Conan Exiles (<first 8>)` (names are unique per Takaro domain).
+    A state dir without a saved copy means an older connector ran here: then no identity is
+    generated (that would orphan the Takaro record); a banner asks for the old one.
+  - The saved copy holds URL, identity and name, and the registration token only after Takaro
+    accepted it; never values from the environment. The token is never written into `takaro.json`.
+    Rewrites keep the file's mode and owner (`ReplaceUserFile`).
+  - Live reload: the bridge thread re-reads the file every 5 s, applies a changed text when a read
+    1 s later matches, and ignores an unparseable one. A change of URL, token, identity or name
+    calls `ITransport::Retarget`, which drops the socket (Linux: on the lws service thread, after the
+    old socket's own CLOSED callback; Windows: under the transport lock, with a generation check for
+    a dial in flight) and redials at once. `caFile`, `stateDir` and the env-only tunables are read
+    at startup only.
+  - No token, an unreadable or invalid file, a `ws://` URL or a missing identity on a prior install:
+    the library still loads (hooks and all) but never dials, and prints a `****` banner to the
+    server's stdout naming the file; it repeats after 60 s and then every 15 minutes. Identify
+    refusals print a banner too (name conflict / 409 separately); Takaro's error is reduced to
+    name, message and HTTP status (`DescribeTakaroError`). Only `TAKARO_CONAN_NATIVE_DISABLE=1` is
+    inert. Token values are never logged.
 - **Pins.** Only the three raw globals come from fixed knowledge: `ProcessEvent`,
   `GUObjectArray.ObjObjects` and the `FNamePool` block table. At load the library scans the
   server's executable mappings for their signatures (`core/pins/pins.cpp`, derived with
