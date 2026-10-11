@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/gettakaro/connectors/compare/vein-v0.5.0...vein-v0.6.0) (2026-10-11)
+
+
+### Features
+
+* **vein:** ship takaro.cfg and apply token changes without a restart ([#434](https://github.com/gettakaro/connectors/issues/434)) ([2a74b0f](https://github.com/gettakaro/connectors/commit/2a74b0f57a362e742a2e213ff9f1668176f3e800))
+
 ## [0.5.0](https://github.com/gettakaro/connectors/compare/vein-v0.4.1...vein-v0.5.0) (2026-10-10)
 
 
