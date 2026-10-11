@@ -306,7 +306,7 @@ namespace Takaro.Services
             if (cInfo?.CrossplatformId == null)
                 return;
 
-            PlayerRecord record = BuildPlayerRecord(cInfo);
+            PlayerRecord record = Shared.BuildPlayerRecord(cInfo);
             record.Online = true;
 
             if (
@@ -611,7 +611,7 @@ namespace Takaro.Services
         // Persistent players are keyed by their EOS primary id, so a Steam_/XBL_ ban
         // entry is translated by matching the player's native id. Unknown players
         // stay untranslated and are skipped by BanIdentity.
-        private static PersistentPlayerData FindPersistentPlayer(
+        public static PersistentPlayerData FindPersistentPlayer(
             PersistentPlayerList playerList,
             PlatformUserIdentifierAbs banned
         )
@@ -630,19 +630,15 @@ namespace Takaro.Services
 
         private static List<BanRecord> CaptureBans()
         {
-            var records = new List<BanRecord>();
-            var seenGameIds = new HashSet<string>();
+            var candidates = new List<BanRecord>();
             PersistentPlayerList playerList = GameManager.Instance.GetPersistentPlayerList();
 
             void Add(BanRecord record, string banId)
             {
                 if (record == null)
-                {
                     LogService.Instance.Debug($"Ban entry {banId} has no EOS id; not sent");
-                    return;
-                }
-                if (seenGameIds.Add(record.GameId))
-                    records.Add(record);
+                else
+                    candidates.Add(record);
             }
 
             // AdminTools.Blacklist stores timed bans and preserves reason/expiry metadata.
@@ -710,31 +706,7 @@ namespace Takaro.Services
                 }
             }
 
-            return records;
-        }
-
-        private static PlayerRecord BuildPlayerRecord(ClientInfo cInfo)
-        {
-            var record = new PlayerRecord
-            {
-                GameId = Shared.GameIdFromClientInfo(cInfo),
-                Name = cInfo.playerName,
-                Ip = cInfo.ip,
-                Ping = cInfo.ping,
-                EntityId = cInfo.entityId,
-                EpicOnlineServicesId = Shared.GameIdFromClientInfo(cInfo),
-                LastSeenUtc = DateTime.UtcNow,
-            };
-
-            if (cInfo.PlatformId != null && cInfo.PlatformId.CombinedString != null)
-            {
-                if (cInfo.PlatformId.CombinedString.StartsWith("Steam_"))
-                    record.SteamId = cInfo.PlatformId.CombinedString.Replace("Steam_", "");
-                else if (cInfo.PlatformId.CombinedString.StartsWith("XBL_"))
-                    record.XboxLiveId = cInfo.PlatformId.CombinedString.Replace("XBL_", "");
-            }
-
-            return record;
+            return BanIdentity.DistinctByGameId(candidates);
         }
 
 #if SEVEND2D_V3_3

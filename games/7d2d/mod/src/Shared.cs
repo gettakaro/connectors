@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 using Takaro.Persistence;
@@ -130,6 +131,30 @@ namespace Takaro
         public static string GameIdFromClientInfo(ClientInfo clientInfo)
         {
             return clientInfo.CrossplatformId.CombinedString.Replace("EOS_", "");
+        }
+
+        public static PlayerRecord BuildPlayerRecord(ClientInfo cInfo)
+        {
+            var record = new PlayerRecord
+            {
+                GameId = GameIdFromClientInfo(cInfo),
+                Name = cInfo.playerName,
+                Ip = cInfo.ip,
+                Ping = cInfo.ping,
+                EntityId = cInfo.entityId,
+                EpicOnlineServicesId = GameIdFromClientInfo(cInfo),
+                LastSeenUtc = DateTime.UtcNow,
+            };
+
+            if (cInfo.PlatformId != null && cInfo.PlatformId.CombinedString != null)
+            {
+                if (cInfo.PlatformId.CombinedString.StartsWith("Steam_"))
+                    record.SteamId = cInfo.PlatformId.CombinedString.Replace("Steam_", "");
+                else if (cInfo.PlatformId.CombinedString.StartsWith("XBL_"))
+                    record.XboxLiveId = cInfo.PlatformId.CombinedString.Replace("XBL_", "");
+            }
+
+            return record;
         }
 
         public static string EntityKillName(string entityClassName, string entityType)

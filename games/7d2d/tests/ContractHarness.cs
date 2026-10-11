@@ -54,6 +54,13 @@ public static class ContractHarness
             AssertListLocationsMatchesLocationDto();
             AssertMissingLocalisationIsNotShown();
             AssertOutboundLedgerReplaysUnconfirmedEvents();
+            AssertBanCaptureKeepsOneRecordPerPlayer();
+            AssertUnbanLiftsTheEntriesTheMirrorReports();
+            AssertIdentifyDeadline();
+            AssertIdentifyAnswerSetsTheNegotiatedVersion();
+            AssertRefusedIdentifyIsNeverConfirmed();
+            AssertAcknowledgementsAreRoutedByVersion();
+            AssertUnconfirmedEventsReplayOnTheNextSocket();
             AssertCorrelatedMalformedRequestsTerminate();
             AssertRawRequestsAreNotLogged();
             AssertMapCatalog();
@@ -106,13 +113,7 @@ public static class ContractHarness
                 {
                     "mirror record",
                     Takaro.Shared.TransformPlayerRecordToTakaroPlayer(
-                        new Takaro.Persistence.PlayerRecord
-                        {
-                            GameId = "000213691caa4c17ab8134415efd0889",
-                            Name = "Steam Player",
-                            SteamId = "76561198000000001",
-                            EpicOnlineServicesId = "000213691caa4c17ab8134415efd0889",
-                        }
+                        Takaro.Shared.BuildPlayerRecord(steamClient)
                     )
                 },
                 {
@@ -967,6 +968,402 @@ public static class ContractHarness
         Equal("x2", capped.PeekHead().Json, "requeue keeps the newest unconfirmed events in order");
     }
 
+    private static Takaro.Persistence.BanRecord BanRecordFor(
+        string banId,
+        string crossplatformId,
+        string name = null
+    )
+    {
+        return Takaro.Services.BanIdentity.ToRecord(
+            banId,
+            crossplatformId,
+            null,
+            name,
+            "fixture",
+            null
+        );
+    }
+
+    private static void AssertBanCaptureKeepsOneRecordPerPlayer()
+    {
+        var captured = new List<Takaro.Persistence.BanRecord>
+        {
+            BanRecordFor("Steam_1", "EOS_abc", "first"),
+            BanRecordFor("EOS_abc", "EOS_abc", "second"),
+            BanRecordFor("XBL_9", "EOS_def"),
+            BanRecordFor("Steam_7", null),
+            BanRecordFor("EOS_ghi", "EOS_ghi"),
+        };
+        True(captured[3] == null, "a native ban of an unknown player has no EOS id");
+
+        var distinct = Takaro.Services.BanIdentity.DistinctByGameId(captured);
+        Equal(3, distinct.Count, "one record per player, unresolvable entries dropped");
+        Equal("abc", distinct[0].GameId, "records keep the mirror order");
+        Equal("Steam_1", distinct[0].Id, "the first entry of a doubly banned player wins");
+        Equal("first", distinct[0].Name, "the winning entry carries its own metadata");
+        Equal("def", distinct[1].GameId, "a native ban is reported under the EOS id");
+        Equal("ghi", distinct[2].GameId, "a plain EOS ban is kept");
+    }
+
+    // listBans reports a Steam_/XBL_ entry under the player's EOS id, so unban by that
+    // id has to find the entry again or the 60 s resync brings the ban back.
+    private static void AssertUnbanLiftsTheEntriesTheMirrorReports()
+    {
+        var entries = new[]
+        {
+            new[] { "Steam_1", "EOS_abc" },
+            new[] { "EOS_abc", "EOS_abc" },
+            new[] { "XBL_9", "EOS_def" },
+            new[] { "EOS_ghi", null },
+            new[] { "Steam_7", null },
+        };
+
+        foreach (string[] entry in entries)
+        {
+            Takaro.Persistence.BanRecord reported = BanRecordFor(entry[0], entry[1]);
+            if (reported == null)
+                continue;
+            True(
+                Takaro.Services.BanIdentity.IsReportedAs(reported.GameId, entry[0], entry[1]),
+                entry[0] + " is lifted by the gameId listBans reported it under"
+            );
+        }
+
+        Func<string, List<string>> lifted = gameId =>
+        {
+            var matching = new List<string>();
+            foreach (string[] entry in entries)
+            {
+                if (Takaro.Services.BanIdentity.IsReportedAs(gameId, entry[0], entry[1]))
+                    matching.Add(entry[0]);
+            }
+            return matching;
+        };
+
+        Equal(
+            "Steam_1,EOS_abc",
+            string.Join(",", lifted("abc")),
+            "unban lifts the native and the EOS ban of the same player"
+        );
+        Equal("XBL_9", string.Join(",", lifted("def")), "unban lifts an XBL ban by EOS id");
+        Equal("EOS_ghi", string.Join(",", lifted("ghi")), "unban still lifts a plain EOS ban");
+        Equal(0, lifted("zzz").Count, "an unknown gameId lifts nothing");
+        Equal(0, lifted("7").Count, "a native id is not a gameId");
+    }
+
+    private const string AcceptedV1 =
+        "{\"type\":\"identifyResponse\",\"payload\":{\"gameServerId\":\"gs-1\",\"protocolVersion\":1}}";
+    private const string AcceptedV0 =
+        "{\"type\":\"identifyResponse\",\"payload\":{\"gameServerId\":\"gs-1\"}}";
+    private const string GameEventFrame =
+        "{\"type\":\"gameEvent\",\"payload\":{\"type\":\"chat\",\"data\":{}}}";
+
+    private sealed class SessionRig
+    {
+        public long Now = 1000L * TimeSpan.TicksPerSecond;
+        public readonly OutboundLedger Ledger;
+        public readonly TransportSession Session;
+        public long Socket;
+
+        public SessionRig(string streamId = "stream-a")
+        {
+            Ledger = new OutboundLedger(50, 50, streamId);
+            Session = new TransportSession(Ledger, () => Now);
+        }
+
+        public void Advance(int seconds)
+        {
+            Now += seconds * TimeSpan.TicksPerSecond;
+        }
+
+        // A socket that has been opened and has written identify.
+        public void OpenSocket()
+        {
+            Socket = Session.BeginSocket();
+            Session.MarkOpened();
+            Session.MarkIdentifySent();
+        }
+
+        public InboundResult Receive(string frame)
+        {
+            return Session.HandleInbound(Socket, true, frame);
+        }
+
+        // Identify accepted and confirmed, then what the sender does first on a
+        // confirmed socket: requeue the events the previous socket left unconfirmed.
+        public int Accept(string identifyResponse)
+        {
+            Equal(
+                InboundKind.IdentifyAccepted,
+                Receive(identifyResponse).Kind,
+                "identify is accepted"
+            );
+            True(Session.TryConfirm(), "an accepted identify confirms the connection");
+            return Session.ReplayUnconfirmedOnNewSocket();
+        }
+
+        public void Write(int events, bool ping)
+        {
+            for (int i = 0; i < events; i++)
+                Ledger.Enqueue(GameEventFrame, true, false);
+            if (ping)
+                Ledger.Enqueue("{\"type\":\"ping\"}", false, true);
+            while (Ledger.PeekHead() != null)
+                Ledger.MarkHeadWritten();
+        }
+    }
+
+    private static void AssertIdentifyDeadline()
+    {
+        var rig = new SessionRig();
+        rig.OpenSocket();
+        rig.Advance(29);
+        True(!rig.Session.IdentifyOverdue(30), "identify is not overdue before the deadline");
+        rig.Advance(1);
+        True(rig.Session.IdentifyOverdue(30), "identify is overdue at the deadline");
+
+        rig.Session.DeadSocketClosing = true;
+        True(!rig.Session.IdentifyOverdue(30), "a socket already being closed is not closed twice");
+
+        var answered = new SessionRig();
+        answered.OpenSocket();
+        answered.Accept(AcceptedV1);
+        answered.Advance(120);
+        True(!answered.Session.IdentifyOverdue(30), "a confirmed socket has no deadline");
+
+        var refused = new SessionRig();
+        refused.OpenSocket();
+        refused.Receive(
+            "{\"type\":\"identifyResponse\",\"payload\":null,\"error\":{\"code\":\"unsupported\",\"message\":\"no\"}}"
+        );
+        refused.Advance(120);
+        True(!refused.Session.IdentifyOverdue(30), "a rejected socket is closed by the rejection");
+
+        var next = new SessionRig();
+        next.OpenSocket();
+        next.Advance(40);
+        True(next.Session.IdentifyOverdue(30), "the old socket is overdue");
+        next.OpenSocket();
+        True(!next.Session.IdentifyOverdue(30), "a new socket gets a fresh deadline");
+        Equal(0, next.Session.SecondsSinceOpened(), "uptime counts from the new socket");
+
+        int uptime = next.Session.MarkClosed(out bool wasConfirmed);
+        Equal(0, uptime, "closing reports the uptime");
+        True(!wasConfirmed, "an unanswered socket closes unconfirmed");
+        Equal(-1, next.Session.SecondsSinceInbound(), "no socket means no inbound clock");
+        True(!next.Session.IdentifyOverdue(30), "a closed socket has no deadline");
+    }
+
+    private static void AssertIdentifyAnswerSetsTheNegotiatedVersion()
+    {
+        var rig = new SessionRig();
+        rig.OpenSocket();
+        Equal(-1, rig.Session.ProtocolVersion, "no version before identify is answered");
+
+        Equal(InboundKind.Welcome, rig.Receive("{\"type\":\"connected\"}").Kind, "welcome frame");
+        True(!rig.Session.IsConfirmed, "the welcome frame is not an acknowledgement");
+        Equal(InboundKind.Ignored, rig.Receive("{\"type\":\"pong\"}").Kind, "early pong");
+        Equal(InboundKind.Ignored, rig.Receive("{\"type\":\"request\"}").Kind, "early request");
+        Equal(
+            InboundKind.Ignored,
+            rig.Session.HandleInbound(rig.Socket, false, AcceptedV1).Kind,
+            "binary frames never carry the identify answer"
+        );
+        True(!rig.Session.IsConfirmed, "nothing but identifyResponse confirms");
+
+        Equal(InboundKind.IdentifyAccepted, rig.Receive(AcceptedV1).Kind, "v1 acceptance");
+        Equal(1, rig.Session.ProtocolVersion, "the negotiated version is kept");
+        True(!rig.Session.IsConfirmed, "the transport confirms after logging the acceptance");
+        True(rig.Session.TryConfirm(), "first confirmation");
+        True(!rig.Session.TryConfirm(), "a socket is confirmed once");
+        Equal(InboundKind.Ignored, rig.Receive(AcceptedV1).Kind, "a second answer is ignored");
+
+        var legacy = new SessionRig();
+        legacy.OpenSocket();
+        legacy.Accept(AcceptedV0);
+        Equal(0, legacy.Session.ProtocolVersion, "an answer without a version means protocol 0");
+
+        var unsent = new SessionRig();
+        unsent.Session.BeginSocket();
+        unsent.Session.MarkOpened();
+        unsent.Receive(AcceptedV1);
+        True(
+            !unsent.Session.TryConfirm(),
+            "a socket whose identify was not written is not confirmed"
+        );
+
+        rig.Session.BeginSocket();
+        Equal(-1, rig.Session.ProtocolVersion, "a new socket renegotiates the version");
+    }
+
+    private static void AssertRefusedIdentifyIsNeverConfirmed()
+    {
+        string[] codes = { "unsupported", "no_shared_protocol_version", "invalid_args" };
+        foreach (string code in codes)
+        {
+            var rig = new SessionRig();
+            rig.OpenSocket();
+            InboundResult result = rig.Receive(
+                "{\"type\":\"identifyResponse\",\"payload\":null,\"error\":{\"code\":\""
+                    + code
+                    + "\",\"message\":\"refused\"}}"
+            );
+            Equal(InboundKind.IdentifyRejected, result.Kind, code + " is a rejection");
+            Equal(code, result.Reply.ErrorCode, code + " keeps its code");
+            True(rig.Session.IdentifyRejected, code + " marks the socket rejected");
+            True(!rig.Session.IsConfirmed, code + " never confirms");
+            Equal(-1, rig.Session.ProtocolVersion, code + " negotiates no version");
+            Equal(
+                InboundKind.Ignored,
+                rig.Receive(AcceptedV1).Kind,
+                code + " later answers are ignored"
+            );
+            Equal(InboundKind.Ignored, rig.Receive("{\"type\":\"pong\"}").Kind, code + " pongs");
+            Equal(
+                InboundKind.Ignored,
+                rig.Receive("{\"type\":\"request\"}").Kind,
+                code + " requests"
+            );
+
+            rig.OpenSocket();
+            True(!rig.Session.IdentifyRejected, code + " does not poison the next socket");
+        }
+
+        True(
+            TransportSession.RejectionAdvice("unsupported").Contains("Connector Migration"),
+            "an unsupported refusal names the pending migration"
+        );
+        True(
+            TransportSession.RejectionAdvice("no_shared_protocol_version").Contains("protocol"),
+            "a version refusal says no protocol version is shared"
+        );
+        True(
+            TransportSession.RejectionAdvice("invalid_args").Contains("RegistrationToken"),
+            "other refusals point at the tokens"
+        );
+    }
+
+    private static void AssertAcknowledgementsAreRoutedByVersion()
+    {
+        Func<string, long, string> ack = (stream, upTo) =>
+            "{\"type\":\"eventAck\",\"payload\":{\"streamId\":\""
+            + stream
+            + "\",\"upTo\":"
+            + upTo
+            + "}}";
+        const string eventError =
+            "{\"type\":\"eventError\",\"payload\":{\"streamId\":\"stream-a\",\"seq\":1},\"error\":{\"code\":\"invalid_args\",\"message\":\"bad\"}}";
+
+        var v1 = new SessionRig();
+        v1.OpenSocket();
+        v1.Accept(AcceptedV1);
+        v1.Write(3, true);
+        Equal(3, v1.Ledger.InFlightCount, "three events wait for an acknowledgement");
+
+        Equal(InboundKind.EventAck, v1.Receive(ack("stream-a", 2)).Kind, "v1 eventAck");
+        Equal(InboundKind.EventAck, v1.Receive(ack("stream-b", 3)).Kind, "foreign eventAck");
+        Equal(
+            InboundKind.EventAck,
+            v1.Receive("{\"type\":\"eventAck\",\"payload\":{}}").Kind,
+            "bad eventAck"
+        );
+        Equal(InboundKind.Pong, v1.Receive("{\"type\":\"pong\"}").Kind, "v1 pong");
+        Equal(InboundKind.EventError, v1.Receive(eventError).Kind, "v1 eventError");
+        Equal(InboundKind.Request, v1.Receive("{\"type\":\"request\"}").Kind, "request is routed");
+        Equal(3, v1.Ledger.InFlightCount, "nothing is acknowledged until the sender applies it");
+        v1.Session.ApplyAcknowledgements();
+        Equal(1, v1.Ledger.InFlightCount, "ack up to 2 confirms two events, the pong none");
+
+        var v0 = new SessionRig();
+        v0.OpenSocket();
+        v0.Accept(AcceptedV0);
+        v0.Write(2, true);
+        Equal(
+            InboundKind.Request,
+            v0.Receive(ack("stream-a", 2)).Kind,
+            "v0 does not know eventAck"
+        );
+        Equal(InboundKind.Request, v0.Receive(eventError).Kind, "v0 does not know eventError");
+        Equal(InboundKind.Pong, v0.Receive("{\"type\":\"pong\"}").Kind, "v0 pong");
+        v0.Session.ApplyAcknowledgements();
+        Equal(0, v0.Ledger.InFlightCount, "a pong confirms the events written before its ping");
+
+        var stale = new SessionRig();
+        stale.OpenSocket();
+        stale.Accept(AcceptedV0);
+        stale.Write(1, true);
+        stale.Session.HandleInbound(stale.Socket - 1, true, "{\"type\":\"pong\"}");
+        stale.Session.ApplyAcknowledgements();
+        Equal(1, stale.Ledger.InFlightCount, "a pong from an older socket confirms nothing");
+    }
+
+    private static void AssertUnconfirmedEventsReplayOnTheNextSocket()
+    {
+        var v1 = new SessionRig();
+        v1.OpenSocket();
+        v1.Accept(AcceptedV1);
+        v1.Write(2, false);
+        Equal(2, v1.Ledger.InFlightCount, "two events are in flight");
+        True(!v1.Ledger.ConfirmsByPong, "v1 events are not confirmed by pong");
+
+        JObject first = JObject.Parse(
+            v1.Session.WireFrame(
+                new OutboundLedger.Entry
+                {
+                    Json = GameEventFrame,
+                    Replayable = true,
+                    Seq = 7,
+                }
+            )
+        );
+        Equal("stream-a", (string)first["payload"]["streamId"], "v1 events carry the stream");
+        Equal(7L, (long)first["payload"]["seq"], "v1 events carry their number");
+        Equal(
+            "{\"type\":\"pong\"}",
+            v1.Session.WireFrame(new OutboundLedger.Entry { Json = "{\"type\":\"pong\"}" }),
+            "v1 leaves non-events as they are"
+        );
+
+        v1.Session.MarkClosed(out _);
+        v1.OpenSocket();
+        Equal(2, v1.Accept(AcceptedV1), "v1 replays both unconfirmed events");
+        Equal(0, v1.Session.ReplayUnconfirmedOnNewSocket(), "replay happens once per socket");
+        Equal(2, v1.Ledger.PendingCount, "the events are back in the backlog");
+        Equal(1L, v1.Ledger.PeekHead().Seq, "the oldest event goes first, keeping its number");
+        v1.Write(0, true);
+        v1.Receive("{\"type\":\"pong\"}");
+        v1.Session.ApplyAcknowledgements();
+        Equal(2, v1.Ledger.InFlightCount, "a pong does not confirm v1 events");
+        v1.Receive("{\"type\":\"eventAck\",\"payload\":{\"streamId\":\"stream-a\",\"upTo\":2}}");
+        v1.Session.ApplyAcknowledgements();
+        Equal(0, v1.Ledger.InFlightCount, "the eventAck confirms the replayed events");
+
+        var v0 = new SessionRig();
+        v0.OpenSocket();
+        v0.Accept(AcceptedV0);
+        v0.Write(1, false);
+        Equal(
+            GameEventFrame,
+            v0.Session.WireFrame(
+                new OutboundLedger.Entry
+                {
+                    Json = GameEventFrame,
+                    Replayable = true,
+                    Seq = 1,
+                }
+            ),
+            "v0 events are written unnumbered"
+        );
+        v0.Session.MarkClosed(out _);
+        v0.OpenSocket();
+        Equal(1, v0.Accept(AcceptedV0), "v0 replays its unconfirmed event");
+        True(v0.Ledger.ConfirmsByPong, "v0 keeps confirming by pong after a replay");
+        v0.Write(0, true);
+        v0.Receive("{\"type\":\"pong\"}");
+        v0.Session.ApplyAcknowledgements();
+        Equal(0, v0.Ledger.InFlightCount, "the pong of the new socket confirms the replayed event");
+    }
+
     private static void AssertPublishedEvent(string expectedType, out JObject eventData)
     {
         Equal(
@@ -1167,7 +1564,6 @@ public static class ContractHarness
                 },
                 playerName = (string)input["playerName"],
             };
-            string eosId = ((string)input["crossplatformId"]).Replace("EOS_", "");
             var shapes = new Dictionary<string, Takaro.TakaroPlayer>
             {
                 { "connected", Takaro.Shared.TransformClientInfoToTakaroPlayer(client) },
@@ -1178,14 +1574,7 @@ public static class ContractHarness
                 {
                     "mirror record",
                     Takaro.Shared.TransformPlayerRecordToTakaroPlayer(
-                        new Takaro.Persistence.PlayerRecord
-                        {
-                            GameId = eosId,
-                            Name = (string)input["playerName"],
-                            SteamId = StripPrefix((string)input["platformId"], "Steam_"),
-                            XboxLiveId = StripPrefix((string)input["platformId"], "XBL_"),
-                            EpicOnlineServicesId = eosId,
-                        }
+                        Takaro.Shared.BuildPlayerRecord(client)
                     )
                 },
             };
@@ -1196,11 +1585,6 @@ public static class ContractHarness
                     name + " " + shape.Key
                 );
         }
-    }
-
-    private static string StripPrefix(string value, string prefix)
-    {
-        return value.StartsWith(prefix) ? value.Substring(prefix.Length) : null;
     }
 
     private static void AssertMatchesLegacyPlayer(JObject wire, JToken fixtureCase, string label)
@@ -2492,6 +2876,7 @@ namespace Takaro.Persistence
         public string Name { get; set; }
         public string Ip { get; set; }
         public int Ping { get; set; }
+        public int EntityId { get; set; }
         public string SteamId { get; set; }
         public string XboxLiveId { get; set; }
         public string EpicOnlineServicesId { get; set; }
