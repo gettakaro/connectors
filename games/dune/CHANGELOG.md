@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/gettakaro/connectors/compare/dune-v0.2.3...dune-v0.3.0) (2026-10-11)
+
+
+### Features
+
+* **dune:** apply Takaro token and identity changes from .env without a restart ([#438](https://github.com/gettakaro/connectors/issues/438)) ([01ea5a2](https://github.com/gettakaro/connectors/commit/01ea5a237c8a855c3d7d04830aea85e614a002a2))
+
 ## [0.2.3](https://github.com/gettakaro/connectors/compare/dune-v0.2.2...dune-v0.2.3) (2026-10-10)
 
 
