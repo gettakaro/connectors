@@ -56,6 +56,7 @@ public static class ContractHarness
             AssertOutboundLedgerReplaysUnconfirmedEvents();
             AssertBanCaptureKeepsOneRecordPerPlayer();
             AssertUnbanLiftsTheEntriesTheMirrorReports();
+            AssertBanCaptureMergesBothStores();
             AssertIdentifyDeadline();
             AssertIdentifyAnswerSetsTheNegotiatedVersion();
             AssertRefusedIdentifyIsNeverConfirmed();
@@ -1005,50 +1006,127 @@ public static class ContractHarness
         Equal("ghi", distinct[2].GameId, "a plain EOS ban is kept");
     }
 
+    private static KeyValuePair<string, string> StoredBan(string banId, string eosId)
+    {
+        return new KeyValuePair<string, string>(banId, eosId);
+    }
+
+    private static string LiftedBy(string gameId, params KeyValuePair<string, string>[] entries)
+    {
+        List<int> selected = Takaro.Services.BanIdentity.SelectEntriesToLift(gameId, entries);
+        var ids = new List<string>();
+        foreach (int index in selected)
+            ids.Add(entries[index].Key);
+        return string.Join(",", ids);
+    }
+
     // listBans reports a Steam_/XBL_ entry under the player's EOS id, so unban by that
     // id has to find the entry again or the 60 s resync brings the ban back.
     private static void AssertUnbanLiftsTheEntriesTheMirrorReports()
     {
         var entries = new[]
         {
-            new[] { "Steam_1", "EOS_abc" },
-            new[] { "EOS_abc", "EOS_abc" },
-            new[] { "XBL_9", "EOS_def" },
-            new[] { "EOS_ghi", null },
-            new[] { "Steam_7", null },
-        };
-
-        foreach (string[] entry in entries)
-        {
-            Takaro.Persistence.BanRecord reported = BanRecordFor(entry[0], entry[1]);
-            if (reported == null)
-                continue;
-            True(
-                Takaro.Services.BanIdentity.IsReportedAs(reported.GameId, entry[0], entry[1]),
-                entry[0] + " is lifted by the gameId listBans reported it under"
-            );
-        }
-
-        Func<string, List<string>> lifted = gameId =>
-        {
-            var matching = new List<string>();
-            foreach (string[] entry in entries)
-            {
-                if (Takaro.Services.BanIdentity.IsReportedAs(gameId, entry[0], entry[1]))
-                    matching.Add(entry[0]);
-            }
-            return matching;
+            StoredBan("Steam_1", "EOS_abc"),
+            StoredBan("EOS_abc", "EOS_abc"),
+            StoredBan("XBL_9", "EOS_def"),
+            StoredBan("EOS_ghi", null),
+            StoredBan("Steam_7", null),
         };
 
         Equal(
             "Steam_1,EOS_abc",
-            string.Join(",", lifted("abc")),
+            LiftedBy("abc", entries),
             "unban lifts the native and the EOS ban of the same player"
         );
-        Equal("XBL_9", string.Join(",", lifted("def")), "unban lifts an XBL ban by EOS id");
-        Equal("EOS_ghi", string.Join(",", lifted("ghi")), "unban still lifts a plain EOS ban");
-        Equal(0, lifted("zzz").Count, "an unknown gameId lifts nothing");
-        Equal(0, lifted("7").Count, "a native id is not a gameId");
+        Equal("XBL_9", LiftedBy("def", entries), "unban lifts an XBL ban by EOS id");
+        Equal("EOS_ghi", LiftedBy("ghi", entries), "unban still lifts a plain EOS ban");
+        Equal("", LiftedBy("zzz", entries), "an unknown gameId lifts nothing");
+        Equal("", LiftedBy("7", entries), "a native id is not a gameId");
+        Equal(
+            "Steam_1",
+            LiftedBy("abc", StoredBan("Steam_1", "EOS_abc")),
+            "a lone native ban is lifted by the EOS id listBans reported"
+        );
+        Equal(
+            "",
+            LiftedBy("abc", StoredBan("Steam_1", null)),
+            "a native ban of a player the game cannot resolve is not reported, so not lifted"
+        );
+
+        Equal(
+            "BlockedPlayerList+AdminTools.Blacklist",
+            Takaro.Services.BanIdentity.UnbanMethod(true, 1),
+            "a player in both stores is lifted from both"
+        );
+        Equal(
+            "BlockedPlayerList",
+            Takaro.Services.BanIdentity.UnbanMethod(true, 0),
+            "a block alone is lifted"
+        );
+        Equal(
+            "AdminTools.Blacklist",
+            Takaro.Services.BanIdentity.UnbanMethod(false, 2),
+            "Blacklist entries alone are lifted"
+        );
+        True(
+            Takaro.Services.BanIdentity.UnbanMethod(false, 0) == null,
+            "nothing lifted is not_found"
+        );
+    }
+
+    private static void AssertBanCaptureMergesBothStores()
+    {
+        var skipped = new List<string>();
+        var blacklist = new[]
+        {
+            new Takaro.Services.BanIdentity.BanSource
+            {
+                BanId = "Steam_1",
+                CrossplatformId = "EOS_abc",
+                NativeId = "Steam_1",
+                Name = "timed",
+                Reason = "griefing",
+                ExpiresAt = "2030-01-01T00:00:00.000Z",
+            },
+            new Takaro.Services.BanIdentity.BanSource { BanId = "Steam_7" },
+        };
+        var blocked = new[]
+        {
+            new Takaro.Services.BanIdentity.BanSource
+            {
+                BanId = "EOS_abc",
+                CrossplatformId = "EOS_abc",
+                Name = "blocked",
+                Reason = "Blocked",
+            },
+            new Takaro.Services.BanIdentity.BanSource
+            {
+                BanId = "EOS_def",
+                CrossplatformId = "EOS_def",
+                NativeId = "XBL_9",
+                Name = "xbox",
+                Reason = "Blocked",
+            },
+        };
+
+        List<Takaro.Persistence.BanRecord> captured = Takaro.Services.BanIdentity.Capture(
+            blacklist,
+            blocked,
+            skipped.Add
+        );
+
+        Equal(2, captured.Count, "both stores are merged into one record per player");
+        Equal("abc", captured[0].GameId, "the Blacklist entry comes first");
+        Equal("timed", captured[0].Name, "the Blacklist entry wins over the block");
+        Equal("griefing", captured[0].Reason, "the Blacklist reason survives the merge");
+        Equal("1", captured[0].SteamId, "the native id is reported");
+        Equal("def", captured[1].GameId, "a block that only the BlockedPlayerList holds is kept");
+        Equal("9", captured[1].XboxLiveId, "the block's native id is reported");
+        Equal(
+            "Steam_7",
+            string.Join(",", skipped),
+            "an entry without an EOS id is reported skipped"
+        );
     }
 
     private const string AcceptedV1 =
