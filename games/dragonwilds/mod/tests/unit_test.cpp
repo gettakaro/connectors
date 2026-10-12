@@ -498,6 +498,23 @@ static void TestConfigResolve() {
     CHECK((st.st_mode & 0777) == 0640 && st.st_uid == after.st_uid, "identity write kept mode %o", st.st_mode & 0777);
     e = ConfigFile::EnsureIdentity(path, std::string("TAKARO_REGISTRATION_TOK"), gen);
     CHECK(e.what == ConfigFile::Ensured::Unchanged, "half-saved file left alone");
+    // Duplicate lines: the last one counts, so that is the one filled in.
+    const std::string dup = "TAKARO_IDENTITY_TOKEN=old\nTAKARO_IDENTITY_TOKEN=\n";
+    CHECK(ConfigFile::WriteAtomic(path, dup), "dup file");
+    e = ConfigFile::EnsureIdentity(path, dup, gen);
+    EQ(ConfigFile::Resolve(ConfigFile::FromText(path, *ConfigFile::ReadText(path)), env).identity,
+       "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+    // Saved by someone else since it was read: left alone, the next read applies it.
+    CHECK(ConfigFile::WriteAtomic(path, noId), "reset");
+    e = ConfigFile::EnsureIdentity(path, std::string("TAKARO_IDENTITY_TOKEN=\n"), gen);
+    CHECK(e.what == ConfigFile::Ensured::Unchanged && *ConfigFile::ReadText(path) == noId, "concurrent save kept");
+    if (geteuid() != 0) {
+        // There but unreadable: never replaced by a new file.
+        chmod(path.c_str(), 0000);
+        e = ConfigFile::EnsureIdentity(path, ConfigFile::ReadText(path), gen);
+        chmod(path.c_str(), 0600);
+        CHECK(e.what == ConfigFile::Ensured::NotWritable && *ConfigFile::ReadText(path) == noId, "unreadable kept");
+    }
     unlink(path.c_str());
     if (geteuid() != 0) {
         chmod(dir, 0555);

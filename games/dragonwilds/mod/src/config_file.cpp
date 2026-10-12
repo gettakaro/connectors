@@ -172,6 +172,12 @@ EnsureResult EnsureIdentity(const std::string& path, const std::optional<std::st
     EnsureResult r;
     r.text = text;
     std::string next;
+    struct stat st{};
+    if (!text && stat(path.c_str(), &st) == 0) {  // there, but unreadable: never replace it
+        PluginLog("config: cannot read %s", path.c_str());
+        r.what = Ensured::NotWritable;
+        return r;
+    }
     if (!text) {
         next = Template(newIdentity());
         r.what = Ensured::Created;
@@ -184,6 +190,10 @@ EnsureResult EnsureIdentity(const std::string& path, const std::optional<std::st
         if (!identity.empty()) return r;
         next = SetKey(*text, "TAKARO_IDENTITY_TOKEN", newIdentity());
         r.what = Ensured::IdentityAdded;
+    }
+    if (ReadText(path) != text) {  // saved meanwhile: the next read applies that text
+        r.what = Ensured::Unchanged;
+        return r;
     }
     if (!WriteAtomic(path, next, 0600)) {
         PluginLog("config: cannot write %s", path.c_str());
@@ -198,7 +208,7 @@ EnsureResult EnsureIdentity(const std::string& path, const std::optional<std::st
 
 std::string SetKey(const std::string& text, const std::string& key, const std::string& value) {
     const bool crlf = text.find("\r\n") != std::string::npos;
-    size_t start = 0;
+    size_t start = 0, matchStart = std::string::npos, matchEnd = 0;
     while (start < text.size()) {
         size_t end = text.find('\n', start);
         if (end == std::string::npos) end = text.size();
@@ -206,14 +216,14 @@ std::string SetKey(const std::string& text, const std::string& key, const std::s
         if (line.rfind("\xEF\xBB\xBF", 0) == 0) line = Trim(line.substr(3));
         if (line.rfind("export ", 0) == 0) line = Trim(line.substr(7));
         size_t eq = line.find('=');
-        if (eq != std::string::npos && Trim(line.substr(0, eq)) == key) {
-            size_t contentEnd = (end > start && text[end - 1] == '\r') ? end - 1 : end;
-            size_t lineStart = start;
-            if (lineStart == 0 && text.rfind("\xEF\xBB\xBF", 0) == 0) lineStart = 3;
-            return text.substr(0, lineStart) + key + "=" + value + text.substr(contentEnd);
+        if (eq != std::string::npos && Trim(line.substr(0, eq)) == key) {  // the last one wins in Parse
+            matchStart = (start == 0 && text.rfind("\xEF\xBB\xBF", 0) == 0) ? 3 : start;
+            matchEnd = (end > start && text[end - 1] == '\r') ? end - 1 : end;
         }
         start = end + 1;
     }
+    if (matchStart != std::string::npos)
+        return text.substr(0, matchStart) + key + "=" + value + text.substr(matchEnd);
     std::string out = text;
     const char* nl = crlf ? "\r\n" : "\n";
     if (!out.empty() && out.back() != '\n') out += nl;

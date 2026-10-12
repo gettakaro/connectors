@@ -84,11 +84,12 @@ struct EnsureResult {
 };
 // Gives the file at `path` an identity: creates it from Template when it is missing, and writes a
 // new identity into it when its TAKARO_IDENTITY_TOKEN is empty. `text` is what was just read
-// (nullopt: missing). A half-saved file is left alone. Nothing else is ever written.
+// (nullopt: missing). A half-saved, unreadable or meanwhile changed file is left alone. Nothing
+// else is ever written.
 EnsureResult EnsureIdentity(const std::string& path, const std::optional<std::string>& text,
                             const std::function<std::string()>& newIdentity);
 
-// `text` with KEY's line set to KEY=value (the first matching line, else appended), keeping every
+// `text` with KEY's line set to KEY=value (the last matching line, which Parse uses, else appended), keeping every
 // other line and the line-ending style.
 std::string SetKey(const std::string& text, const std::string& key, const std::string& value);
 
