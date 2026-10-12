@@ -1,6 +1,5 @@
 import { type BridgeConfig, hasTshockCredentials } from './config.js';
-import { locateConfig } from './configFiles.js';
-import { ConfigSource, type LoadedConfig } from './configSource.js';
+import { ConfigSource, type LoadedConfig, locateConfig } from './configFile.js';
 import { normalizeGameEvent } from './events/normalizeEvent.js';
 import { PlayerPoller } from './events/playerPoller.js';
 import { PresenceGate } from './events/presenceGate.js';
@@ -9,7 +8,7 @@ import { logger } from './logger.js';
 import { LogTailer } from './logs/logTailer.js';
 import { TakaroWsClient } from './takaro/client.js';
 import { logConnectionState } from './takaro/connectionLog.js';
-import { identifyErrorSummary, identifyErrorText } from './takaro/identifyError.js';
+import { identifyErrorStatus, identifyErrorSummary, identifyErrorText } from './takaro/identifyError.js';
 import type { GameEventType, RequestPayload, WsMessage } from './takaro/protocol.js';
 import { TerrariaAdapter } from './terraria/adapter.js';
 import { TShockClient } from './tshock/client.js';
@@ -18,7 +17,7 @@ const CONFIG_POLL_MS = 5000;
 
 async function main(): Promise<void> {
   const source = new ConfigSource(locateConfig());
-  const configPath = source.location.userPath;
+  const configPath = source.path;
   logger.info(`Terraria bridge config: ${configPath}`);
   let stopping = false;
   let stop: () => Promise<void> = async () => {
@@ -28,7 +27,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void stop());
   process.on('SIGTERM', () => void stop());
 
-  // A missing or empty file at startup is waited for, not fatal.
+  // A file that could not be created, or is empty, is waited for, not fatal.
   let loaded: LoadedConfig | null = await source.poll();
   while (!loaded && !stopping) {
     await new Promise((resolve) => setTimeout(resolve, CONFIG_POLL_MS));
@@ -98,6 +97,14 @@ async function main(): Promise<void> {
   takaro.on('identifyError', (payload) => {
     // Only the summary: Takaro's error object can carry its own request, auth header included.
     logger.error(`Takaro identify error: ${identifyErrorSummary(payload)}`);
+    if (identifyErrorStatus(payload) === 409) {
+      banner([
+        `Takaro rejected identify: another game server already uses the name "${config.serverName}".`,
+        `Set a different serverName= in ${configPath}`,
+        'and save it. The bridge reconnects within a few seconds, no restart needed.',
+      ]);
+      return;
+    }
     banner([
       `Takaro rejected identify: ${identifyErrorText(payload)}`,
       ...(process.env.TAKARO_REGISTRATION_TOKEN
@@ -196,9 +203,6 @@ function logIdentity(loaded: LoadedConfig): void {
       loaded.identityNotSaved,
       'and save it. The bridge connects within a few seconds, no restart needed.',
     ]);
-  }
-  if (loaded.identitySource === 'serverName') {
-    logger.info(`identityToken is not set; using serverName "${loaded.config.identityToken}" as before and saving it as identityToken`);
   }
 }
 

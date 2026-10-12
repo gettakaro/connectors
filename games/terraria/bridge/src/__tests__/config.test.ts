@@ -3,7 +3,11 @@ import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { SHIPPED_VALUES, hasTshockCredentials, loadConfig, parseKeyValues } from '../config.js';
+import { buildConfig, hasTshockCredentials, parseKeyValues } from '../config.js';
+
+function loadConfig(file: string, env: NodeJS.ProcessEnv) {
+  return buildConfig(parseKeyValues(readFileSync(file, 'utf8')), env);
+}
 
 test('parses key value config with command guards and log files', () => {
   const values = parseKeyValues(`
@@ -100,9 +104,11 @@ tshockBaseUrl=http://127.0.0.1:7878
   assert.equal(hasTshockCredentials(loadConfig(file, { TSHOCK_TOKEN: 't' })), true);
 });
 
-test('the shipped TakaroConfig.txt holds exactly the values the upgrade merge compares against', () => {
-  const shipped = parseKeyValues(readFileSync(new URL('../../TakaroConfig.example.txt', import.meta.url), 'utf8'));
-  assert.deepEqual(shipped, { ...SHIPPED_VALUES });
+test('an empty serverName registers under a name unique to the identity', () => {
+  const config = buildConfig({ identityToken: '0123abcd-1111-4111-8111-111111111111' }, {});
+  assert.equal(config.serverName, 'Terraria Server (0123abcd)');
+  assert.equal(config.serverChatName, 'Terraria Server (0123abcd)');
+  assert.equal(buildConfig({ identityToken: 'id', serverName: 'Mine' }, {}).serverName, 'Mine');
 });
 
 /** Minimal valid config; each exclude-pattern case varies only the one line it tests. */

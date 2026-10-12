@@ -1,6 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
-
 export interface TShockConfig {
   baseUrl: string;
   token?: string;
@@ -37,45 +34,33 @@ export function parseKeyValues(raw: string): Record<string, string> {
   return values;
 }
 
-/**
- * The values the shipped TakaroConfig.txt carries. Upgrades compare against these: a key the
- * freshly unpacked file still holds at its shipped value is one the operator never touched,
- * so the saved copy's value for it wins (configFiles.ts). The template test keeps this map
- * and bridge/TakaroConfig.txt in step.
- */
-export const SHIPPED_VALUES: Readonly<Record<string, string>> = {
-  configFormat: '2',
-  registrationToken: '',
-  identityToken: '',
-  serverName: 'Terraria Server',
-  serverChatName: 'Takaro',
+/** What an empty or missing key means. */
+const DEFAULTS = {
   takaroWsUrl: 'wss://connect.takaro.io/',
   tshockBaseUrl: 'http://127.0.0.1:7878',
-  tshockToken: '',
-  httpPort: '3020',
-  pollIntervalMs: '10000',
-  logFiles: 'tshock/logs',
-  logExcludePatterns: 'takaro-rest executed:,RestManager:',
-  commandAllowlistExact: 'help,/help',
-  commandAllowlistPrefixes: 'say,time',
-  enableShutdown: 'false',
 };
 
+/** The name a server without `serverName` registers as: unique per identity, so two never clash. */
+export function defaultServerName(identityToken: string): string {
+  return `Terraria Server (${identityToken.slice(0, 8)})`;
+}
+
 /**
- * Builds the settings from one set of file values plus the environment. An empty registration
- * token or missing TShock credentials are not errors: the bridge stays up, says what is
- * missing (missingSettings) and picks the values up when the file is saved.
+ * Builds the settings from the file values plus the environment, which wins per field and is
+ * never written anywhere. An empty registration token or missing TShock credentials are not
+ * errors: the bridge stays up, shows a banner and picks the values up when the file is saved.
  */
 export function buildConfig(values: Record<string, string>, env: NodeJS.ProcessEnv = process.env): BridgeConfig {
-  const serverName = values.serverName || SHIPPED_VALUES.serverName;
+  const identityToken = values.identityToken || '';
+  const serverName = values.serverName || defaultServerName(identityToken);
   return {
     registrationToken: env.TAKARO_REGISTRATION_TOKEN || values.registrationToken || '',
-    identityToken: values.identityToken || serverName,
+    identityToken,
     serverName,
     serverChatName: values.serverChatName || serverName,
-    takaroWsUrl: values.takaroWsUrl || SHIPPED_VALUES.takaroWsUrl,
+    takaroWsUrl: values.takaroWsUrl || DEFAULTS.takaroWsUrl,
     tshock: {
-      baseUrl: (values.tshockBaseUrl || SHIPPED_VALUES.tshockBaseUrl).replace(/\/+$/, ''),
+      baseUrl: (values.tshockBaseUrl || DEFAULTS.tshockBaseUrl).replace(/\/+$/, ''),
       token: env.TSHOCK_TOKEN || values.tshockToken || undefined,
       username: env.TSHOCK_USERNAME || values.tshockUsername || undefined,
       password: env.TSHOCK_PASSWORD || values.tshockPassword || undefined,
@@ -89,14 +74,6 @@ export function buildConfig(values: Record<string, string>, env: NodeJS.ProcessE
     commandAllowlistPrefixes: parseCsv(values.commandAllowlistPrefixes),
     enableShutdown: parseBoolean(values.enableShutdown, false),
   };
-}
-
-/** Reads one file as it stands, with no saved copy and no identity generation. */
-export function loadConfig(configPath: string, env: NodeJS.ProcessEnv = process.env): BridgeConfig {
-  if (!fs.existsSync(configPath)) {
-    throw new Error(`Config file not found at ${path.resolve(configPath)}`);
-  }
-  return buildConfig(parseKeyValues(fs.readFileSync(configPath, 'utf8')), env);
 }
 
 export function hasTshockCredentials(config: BridgeConfig): boolean {

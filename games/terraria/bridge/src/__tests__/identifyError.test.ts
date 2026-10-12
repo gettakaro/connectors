@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { identifyErrorSummary, identifyErrorText } from '../takaro/identifyError.js';
+import { identifyErrorStatus, identifyErrorSummary, identifyErrorText } from '../takaro/identifyError.js';
 
 test('a rejected identify is logged by name, message and status, never with its request', () => {
   const payload = {
@@ -15,4 +15,10 @@ test('a rejected identify is logged by name, message and status, never with its 
   assert.equal(identifyErrorSummary({ name: 'BadRequestError', message: 'Invalid registrationToken provided', http: 400 }),
     'BadRequestError: Invalid registrationToken provided (http 400)');
   assert.doesNotMatch(identifyErrorText({ config: { token: 'secret-jwt' } }), /secret-jwt/);
+});
+
+test('the HTTP status picks the name-taken banner', () => {
+  assert.equal(identifyErrorStatus({ message: 'Request failed with status code 409', status: 409 }), 409);
+  assert.equal(identifyErrorStatus({ message: 'Invalid registrationToken provided', http: 400 }), 400);
+  assert.equal(identifyErrorStatus('text'), undefined);
 });
