@@ -139,7 +139,9 @@ void IdentityWrittenBack() {
     stat(in.path.c_str(), &after);
     CHECK_EQ((int)(after.st_mode & 07777), 0600);  // the operator's mode and owner survive
     CHECK(after.st_ino == before.st_ino && after.st_uid == before.st_uid);
-    CHECK_EQ(Read(in.path + ".new"), std::string("<missing>"));
+    std::string err, cur = Read(in.path);
+    CHECK(!RewriteKeepingAccess(in.path, cur + " ", "{}", err));  // the operator saved meanwhile: untouched
+    CHECK_EQ(Read(in.path), cur);
     CHECK(!in.Settle());  // its own write is not a change
 
     // An identity emptied while running gets a new one, written back too.

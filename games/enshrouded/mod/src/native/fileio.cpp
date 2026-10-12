@@ -228,7 +228,7 @@ bool ReadWholeFile(const std::string& path, std::string& text, bool& exists, std
 
 bool AtomicWriteFile(const std::string& path, const std::string& text, std::string& err) {
     std::string tmp = path + ".tmp";
-    int fd = open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int fd = open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
     if (fd < 0) {
         err = "create '" + tmp + "' failed: " + strerror(errno);
         return false;
@@ -327,12 +327,16 @@ bool ReadFileRange(const std::string& path, uint64_t offset, uint64_t length, st
 
 #endif
 
-bool RewriteKeepingAccess(const std::string& path, const std::string& text, std::string& err) {
-    std::string copy = path + ".new";
-    if (!AtomicWriteFile(copy, text, err)) return false;
-    if (!OverwriteExistingFile(path, text, err)) return false;
-    RemoveFileIfExists(copy);
-    return true;
+bool RewriteKeepingAccess(const std::string& path, const std::string& expected, const std::string& text,
+                          std::string& err) {
+    std::string now;
+    bool exists = false;
+    if (!ReadWholeFile(path, now, exists, err)) return false;
+    if (!exists || now != expected) {
+        err = "'" + path + "' changed meanwhile";
+        return false;
+    }
+    return OverwriteExistingFile(path, text, err);
 }
 
 }  // namespace native

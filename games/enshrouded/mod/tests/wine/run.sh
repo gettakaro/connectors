@@ -223,7 +223,6 @@ printf '{\n  "registrationToken": "wine-registration",\n  "identityToken": "",\n
 run_host 10 "$RESULTS/host-live-writeback.txt" "${LIVE_ENV[@]}"
 check "live-identity-written-back" bash -c "docker exec '$RT' grep -Eq '\"identityToken\": \"[0-9a-f-]{36}\"' '$PJ'"
 check "live-write-back-keeps-mode" bash -c "[ \"\$(docker exec '$RT' stat -c '%a %U' '$PJ')\" = '600 enshrouded' ]"
-check "live-write-back-no-leftover" bash -c "! docker exec '$RT' test -e '$PJ.new'"
 
 log "results in $RESULTS"
 if [ ${#FAILED[@]} -eq 0 ]; then log "ALL PASSED"; exit 0; fi

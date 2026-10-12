@@ -96,6 +96,7 @@ private:
     std::string candidateText_;
     int64_t nextPoll_ = 0;
     std::vector<std::string> consoleWarnings_;
+    std::string writeError_;  // the last identity write-back failure, reported once
 };
 
 }  // namespace native

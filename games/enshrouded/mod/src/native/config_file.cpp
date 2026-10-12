@@ -168,14 +168,19 @@ void ConfigWatcher::Apply(bool found, const std::string& text) {
     active_ = ResolveLive(file, o_.hostName, o_.env);
     if (!file.ok || active_.identity == Source::Env || file.HasValue("identityToken")) return;
     std::string next = SetJsonKey(file, "identityToken", o_.newIdentity()), err;
-    if (RewriteKeepingAccess(o_.path, next, err)) {
+    if (RewriteKeepingAccess(o_.path, text, next, err)) {
         Log("config: wrote a generated identityToken into " + o_.path);
         appliedText_ = next;
+        writeError_.clear();
         active_ = ResolveLive(ParseSettingsFile(true, next), o_.hostName, o_.env);
-    } else {
+        return;
+    }
+    appliedFound_ = false;  // not applied for good: the next poll reads the file and tries again
+    appliedText_.clear();
+    if (writeError_ != err)
         consoleWarnings_.push_back("could not write a generated identityToken into " + o_.path + " (" + err +
                                    "). Set \"identityToken\" there to any unique value, for example a UUID.");
-    }
+    writeError_ = err;
 }
 
 bool ConfigWatcher::Poll(int64_t nowMs) {

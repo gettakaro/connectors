@@ -314,8 +314,8 @@ never written to disk. The plugin logs where each value came from, never the val
   name `<"name" from enshrouded_server.json, or Enshrouded> (<first 8 identity characters>)` (Takaro keeps
   game-server names unique per domain and answers a taken name with 409, which gets its own banner).
   An existing file whose `identityToken` is empty, and that the environment does not override, gets a new
-  UUID written in place (`RewriteKeepingAccess`: owner, mode and ACL stay; `<file>.new` holds the text
-  until it is on disk). Nothing else is ever written. A file or identity that cannot be written leaves
+  UUID written in place (`RewriteKeepingAccess`: owner, mode and ACL stay; skipped when the file changed
+  since it was read, then retried at the next poll). Nothing else is ever written. A file or identity that cannot be written leaves
   the identity empty: no connection, and a banner says what to set.
 - **Live settings** (`url`, `registrationToken`, `identityToken`, `name`; `src/native/config_file.*`):
   `ConfigWatcher` runs on its own thread (never the game thread) and re-reads the file every 5 s, comparing
