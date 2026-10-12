@@ -18,7 +18,7 @@ struct NativeConfig {
 
     std::string url = kDefaultUrl;
     std::string identityToken, registrationToken;
-    std::string serverName = kLegacyServerName;
+    std::string serverName;
     std::string caFile;  // resolved against the exe dir; empty = system trust
     unsigned reconnectBaseMs = 2000, reconnectMaxMs = 60000;
 

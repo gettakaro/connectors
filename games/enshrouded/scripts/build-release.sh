@@ -4,7 +4,6 @@
 #
 #   TakaroEnshrouded/                 copy its contents next to enshrouded_server.exe
 #     dbghelp.dll                     the plugin, which also holds the Takaro connection
-#     takaro/plugin.json              the configuration: paste the registration token
 #     README.txt, INSTALL.md          install, upgrade and rollback
 #     THIRD-PARTY.md, licenses/       what is linked into the DLL, and its license texts
 #     SHA256SUMS                      every file above
@@ -67,10 +66,9 @@ docker run --rm \
       STAGE=_data/build/stage
       PKG="$STAGE/TakaroEnshrouded"
       rm -rf "$STAGE"
-      mkdir -p "$PKG/takaro" "$PKG/licenses"
+      mkdir -p "$PKG/licenses"
 
       cp mod/build/dbghelp.dll "$PKG/"
-      cp scripts/templates/plugin.json "$PKG/takaro/plugin.json"
       sed "s/@VERSION@/${VERSION}/g" scripts/templates/plugin-README.txt > "$PKG/README.txt"
       cp INSTALL.md "$PKG/INSTALL.md"
       cp mod/third_party/README.md "$PKG/THIRD-PARTY.md"

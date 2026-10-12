@@ -11,11 +11,19 @@ Takaro's reachability reason names what no longer works.
 
 Install (full steps, upgrade and rollback: INSTALL.md):
 1. Stop the Enshrouded dedicated server (a running server holds dbghelp.dll open).
-2. Copy dbghelp.dll and the takaro folder next to enshrouded_server.exe.
-3. Open takaro\plugin.json and paste the registration token of your Takaro Generic game
-   server into "registrationToken". Leave "identityToken" empty: the connector fills it
-   in. Environment variables TAKARO_REGISTRATION_TOKEN and TAKARO_IDENTITY_TOKEN, when
-   set, win over the file.
+2. Copy dbghelp.dll next to enshrouded_server.exe.
+3. The configuration is one file, takaro\plugin.json next to enshrouded_server.exe. The
+   connector creates it at the first start; you can also create it yourself before:
+     {
+       "registrationToken": "<your registration token>",
+       "identityToken": "",
+       "name": "",
+       "url": "wss://connect.takaro.io/",
+       "token": ""
+     }
+   Leave "identityToken" empty: the connector writes a unique one in. Environment
+   variables TAKARO_REGISTRATION_TOKEN and TAKARO_IDENTITY_TOKEN, when set, win over
+   the file.
 4. Under Wine/Proton (for example the mornedhels/enshrouded-server image) set
    WINEDLLOVERRIDES="dbghelp=n,b" so the server prefers this DLL; a Windows server
    loads the local file already.
@@ -23,11 +31,11 @@ Install (full steps, upgrade and rollback: INSTALL.md):
      [Takaro] connected to Takaro as "..."
    and the game server turns online in Takaro. A block of * lines says what to fix.
 
-You can also paste the token later: save takaro\plugin.json while the server runs and
+Pasting the token later is fine: save takaro\plugin.json while the server runs and
 the connector connects within a few seconds, no restart needed.
 
-Upgrade: stop the server, copy only the new dbghelp.dll over the old one, start it.
-Keep your takaro folder.
+Upgrade: stop the server, replace only dbghelp.dll, start it. Your config in
+takaro\plugin.json is never touched.
 
 "token" in plugin.json is optional: set it to a long random value to read the plugin's
 diagnostics at http://127.0.0.1:18890/health (Authorization: Bearer <token>). The port

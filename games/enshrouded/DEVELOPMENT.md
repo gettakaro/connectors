@@ -155,7 +155,6 @@ contents go next to `enshrouded_server.exe`:
 ```
 TakaroEnshrouded/
     dbghelp.dll
-    takaro/plugin.json             scripts/templates/plugin.json (empty tokens: paste and start)
     README.txt                     scripts/templates/plugin-README.txt, version stamped
     INSTALL.md                     install, upgrade from 0.5.0, rollback
     THIRD-PARTY.md                 mod/third_party/README.md
@@ -196,7 +195,7 @@ refused and nothing is extracted, and a component role other than `server-plugin
 A `takaro/sidecar/` folder an earlier 0.5.0 deploy left behind is not touched. Stop the game
 container first: a running server holds the DLL open. The configuration
 (`takaro/plugin.json` or the environment) is the operator's, never written by `deploy`; the
-plugin itself only adds a missing `identityToken`/`name` to it.
+plugin itself only creates a missing file and adds a missing `identityToken` to it.
 
 ## Verify
 
@@ -291,7 +290,7 @@ instead of creating an empty tree and a directory named `dbghelp.dll`.
 
 | Variable | Where | Purpose |
 |---|---|---|
-| `TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN` | game container (plugin) | native connector; or `identityToken` / `registrationToken` in `takaro\plugin.json`. Without a registration token the connection stays off, the console shows a banner and `/health` says why; a missing identity is generated (see Configuration) |
+| `TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN` | game container (plugin) | native connector; or `identityToken` / `registrationToken` in `takaro\plugin.json`. Without a registration token the connection stays off, the console shows a banner and `/health` says why; an empty file identity is generated (see Configuration) |
 | `TAKARO_SERVER_NAME`, `TAKARO_WS_URL`, `TAKARO_CA_FILE` | game container (plugin) | or `name`, `url`, `caFile` in `plugin.json`; defaults: see Configuration, `wss://connect.takaro.io/`, system trust. Relative `caFile` resolves against the server dir |
 | `TAKARO_RECONNECT_BASE_MS`, `TAKARO_RECONNECT_MAX_MS` | game container (plugin) | reconnect backoff, default 2000 / 60000 |
 | `TAKARO_ACTION_TIMEOUT_MS`, `TAKARO_ACTION_WORKERS`, `TAKARO_POLL_INTERVAL_MS` | game container (plugin) | default 30000 / 4 / 250 |
@@ -305,11 +304,19 @@ instead of creating an empty tree and a directory named `dbghelp.dll`.
 
 ## Configuration
 
-`takaro\plugin.json` next to `enshrouded_server.exe` holds the same keys as JSON (`registrationToken`,
-`identityToken`, `name`, `url`, `caFile`, `token`); an environment variable, when set and not blank, wins. The
-plugin logs where each value came from, never the value. The release ships the real `plugin.json` with empty
-tokens.
+`takaro\plugin.json` next to `enshrouded_server.exe` is the one config file (`registrationToken`,
+`identityToken`, `name`, `url`, `caFile`, `token`). The release does not ship it and an upgrade (only
+`dbghelp.dll`) never touches it. An environment variable, when set and not blank, wins per field and is
+never written to disk. The plugin logs where each value came from, never the value.
 
+- **Created at load:** `ConfigWatcher::Start` (on the plugin's init thread, before the bridge exists)
+  writes the file when it is missing: every key, empty tokens, a new UUID `identityToken` and the
+  name `<"name" from enshrouded_server.json, or Enshrouded> (<first 8 identity characters>)` (Takaro keeps
+  game-server names unique per domain and answers a taken name with 409, which gets its own banner).
+  An existing file whose `identityToken` is empty, and that the environment does not override, gets a new
+  UUID written in place (`RewriteKeepingAccess`: owner, mode and ACL stay; `<file>.new` holds the text
+  until it is on disk). Nothing else is ever written. A file or identity that cannot be written leaves
+  the identity empty: no connection, and a banner says what to set.
 - **Live settings** (`url`, `registrationToken`, `identityToken`, `name`; `src/native/config_file.*`):
   `ConfigWatcher` runs on its own thread (never the game thread) and re-reads the file every 5 s, comparing
   the text. A changed text applies only when the next read 1 s later is the same and it parses (a BOM is
@@ -319,20 +326,8 @@ tokens.
   is no registration token. An epoch that was being opened during a Retarget is dropped before its Open
   notice. Without a registration token at startup no bridge, transport or state is created; the watcher
   starts them when a token appears. `caFile`, `token` and every other setting are read at startup.
-- **Precedence per field:** environment, then `plugin.json`, then the saved copy
-  `<state dir>\saved-settings.json` (an upgrade that copies the whole zip replaces `plugin.json` but never
-  the state folder). `url` from `plugin.json` counts only when it is not the default. The saved copy holds
-  the url, identity and name in use (not values from the environment) and the registration token only after
-  Takaro accepted it; an environment-only install writes none.
-- **Identity:** environment, `plugin.json`, saved copy, then `my-enshrouded-server` when the state folder
-  existed before this start without a saved copy (an install from an older release whose file lost its
-  identity), else a new UUID. A resolved identity that `plugin.json` lacks is written into it (and the file
-  is created when only the DLL was copied and nothing comes from the environment); the identity an install
-  already uses never changes.
-- **Name:** environment, `plugin.json`, saved copy, then `Takaro Dev Enshrouded` (the old default) when the
-  identity came from the operator or a legacy install, else `<"name" from enshrouded_server.json, or
-  Enshrouded> (<first 8 identity characters>)`, written back like the identity. Takaro keeps game-server
-  names unique per domain and answers a taken name with 409, which gets its own banner.
+- **Defaults:** `url` `wss://connect.takaro.io/` (anything but `wss://` never connects), `name` as above.
+  An emptied `registrationToken` disconnects and shows the banner again.
 - **Console:** banners and the `connecting` / `connected` lines go to the process's stdout (one `WriteFile`
   per message), which supervisord passes to `docker logs` and a panel console, and to `plugin.log`. A
   problem is printed once until the settings change. An identify error is reduced to its name, message and

@@ -1,9 +1,10 @@
 // Wires the game-independent native connector (src/native/) to this plugin: GameApi calls the plugin's
 // contract router in-process, capabilities land in PluginState, and the transport is WinHTTP.
 //
-// takaro\plugin.json is re-read while the server runs (ConfigWatcher, on its own thread): a saved
-// registration token connects without a restart, and a changed token, URL, identity or name reconnects
-// at once. What the operator must fix is printed to the server console (stdout), where a panel shows it.
+// takaro\plugin.json is the one config file: created at load when missing, re-read while the server runs
+// (ConfigWatcher, on its own thread). A saved registration token connects without a restart; a changed
+// token, URL, identity or name reconnects at once; an emptied token disconnects. What the operator must
+// fix is printed to the server console (stdout), where a panel shows it.
 #include "common.h"
 #include "native/bridge.h"
 #include "native/config.h"
@@ -63,14 +64,6 @@ std::string NewIdentity() {
         }
     }
     return native::UuidFromBytes(b);
-}
-
-bool DirectoryExists(const std::string& path) {
-    int n = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
-    std::wstring w((size_t)(n > 0 ? n : 1), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, &w[0], n);
-    DWORD a = GetFileAttributesW(w.c_str());
-    return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
 // Wine maps Z: to the Linux root; a panel user knows the Linux path.
@@ -141,6 +134,10 @@ void BannerBlocked(const native::LiveResolution& live, const std::string& blocke
         ConsoleOnce("no-token", {"registrationToken not set, the server is not connected to Takaro.",
                                  "Paste the registration token from Takaro into " + path,
                                  "and save it. The connector connects within a few seconds, no restart needed."});
+    else if (live.s.identityToken.empty())
+        ConsoleOnce("no-identity", {"identityToken not set, the server is not connected to Takaro.",
+                                    "Set \"identityToken\" in " + path + " to any unique value (a UUID)",
+                                    "and save it. The connector connects within a few seconds, no restart needed."});
     else
         ConsoleOnce("blocked:" + blocker, {"Not connecting to Takaro: " + blocker + ".",
                                            "Fix \"url\" in " + path,
@@ -180,7 +177,6 @@ void OnIdentifyRejected(const std::string& summary, int status) {
 native::ConfigWatcher* g_watcher = nullptr;
 
 void OnIdentified(const native::LiveSettings& accepted) {
-    if (g_watcher) g_watcher->MarkAccepted(accepted);
     ConsoleOnce("connected", {"connected to Takaro as \"" + accepted.serverName +
                               "\"; the server shows as reachable in the Takaro dashboard"});
 }
@@ -277,14 +273,8 @@ void NativeStart() {
         return;
     }
 
-    native::StatePaths paths = native::ResolveStatePaths(base, env);
     native::ConfigWatcher::Options wo;
-    wo.userPath = g_userPath;
-    wo.savedPath = native::JoinPath(paths.dir, native::kSavedFileName);
-    std::string savedText;
-    bool savedExists = false;
-    native::ReadWholeFile(wo.savedPath, savedText, savedExists, err);
-    wo.legacyInstall = DirectoryExists(paths.dir) && !savedExists;
+    wo.path = g_userPath;
     wo.hostName = HostServerName(base);
     wo.env = env;
     wo.newIdentity = NewIdentity;
@@ -298,8 +288,7 @@ void NativeStart() {
     for (auto& w : g_watcher->TakeConsoleWarnings()) ConsoleLine("WARNING: " + w);
     native::ApplyLive(cfg, live);
     LogSources(cfg);
-    PluginLog("native: config file %s (%s), saved copy %s%s", g_userPath.c_str(), exists ? "found" : "missing",
-              wo.savedPath.c_str(), wo.legacyInstall ? " (install from before the saved copy)" : "");
+    PluginLog("native: config file %s (%s at load)", g_userPath.c_str(), exists ? "found" : "missing");
     {
         std::lock_guard<std::mutex> g(g_consoleMu);
         g_live = live;

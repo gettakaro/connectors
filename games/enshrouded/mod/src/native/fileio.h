@@ -12,6 +12,10 @@ bool ReadWholeFile(const std::string& path, std::string& text, bool& exists, std
 // tmp file -> flush to disk -> rename over the target (Win32: FlushFileBuffers + MoveFileExW
 // REPLACE_EXISTING|WRITE_THROUGH). The target is never left half-written.
 bool AtomicWriteFile(const std::string& path, const std::string& text, std::string& err);
+// Replaces an existing file's content in place, so it keeps its owner, mode and ACL (a rename would
+// give it the new file's, and Wine maps a copied ACL to a different unix mode). <path>.new holds the
+// full text, flushed, until the rewrite is on disk, so a crash midway never loses it.
+bool RewriteKeepingAccess(const std::string& path, const std::string& text, std::string& err);
 bool EnsureDirectory(const std::string& dir, std::string& err);
 bool RemoveFileIfExists(const std::string& path);
 

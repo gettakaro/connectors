@@ -14,14 +14,26 @@ work the same way but has not been tried.
 2. Check the release zip against the release's `SHA256SUMS`, unzip it, and check the files against
    `TakaroEnshrouded/SHA256SUMS` (`cd TakaroEnshrouded && sha256sum -c SHA256SUMS`). Keep
    `THIRD-PARTY.md` and `licenses/` with your installation record.
-3. Stop the game server. Copy `dbghelp.dll` and the `takaro/` folder next to
-   `enshrouded_server.exe`.
-4. Paste the registration token into `registrationToken` in `takaro/plugin.json`. Leave
-   `identityToken` empty: at the first start the connector writes a unique identity there (and into
-   its saved copy, `takaro/connector-state/saved-settings.json`), and fills in `name` when it is
-   empty (the server's own name plus the start of the identity: Takaro needs a different name for
-   every game server in a domain). Optionally set `token` (a long random secret) for the diagnostics
-   endpoint. Keep the file readable only by the account the server runs as: it holds a secret. The
+3. Stop the game server. Copy `dbghelp.dll` next to `enshrouded_server.exe`.
+4. The configuration is one file, `takaro/plugin.json` next to `enshrouded_server.exe`. The
+   connector creates it at the first start (all keys, an empty `registrationToken` and a unique
+   `identityToken`); you can also create it before:
+
+   ```json
+   {
+     "registrationToken": "<your registration token>",
+     "identityToken": "",
+     "name": "",
+     "url": "wss://connect.takaro.io/",
+     "token": ""
+   }
+   ```
+
+   Paste the registration token into `registrationToken` and save. An empty `identityToken` gets a
+   unique one written in (the file keeps its owner and permissions); an empty `name` means the
+   server's own name plus the start of the identity (Takaro needs a different name for every game
+   server in a domain). Optionally set `token` (a long random secret) for the diagnostics endpoint.
+   Keep the file readable only by the account the server runs as: it holds a secret. The
    environment variables `TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`,
    `TAKARO_SERVER_NAME`, `TAKARO_WS_URL`, `TAKARO_CA_FILE` and `TAKARO_PLUGIN_TOKEN` override the
    file when they are set (a changed variable needs a restart). `caFile`/`TAKARO_CA_FILE` is only
@@ -45,7 +57,8 @@ work the same way but has not been tried.
 
 `url`, `registrationToken`, `identityToken` and `name` in `takaro/plugin.json` apply without a
 restart: the connector reads the file every 5 seconds and, when one of them changed, reconnects at
-once. A half-saved or broken file is ignored (the console says so) until it parses again. The other
+once; an emptied token disconnects. A half-saved or broken file is ignored (the console says so)
+until it parses again. The other
 keys (`caFile`, `token`) are read at startup.
 
 With `token` set, `curl -H "Authorization: Bearer <token>" http://127.0.0.1:18890/health` from the
@@ -60,13 +73,9 @@ affected feature reports itself degraded until you fix or remove the file.
 
 ## Upgrading
 
-Stop the server, copy only the new `dbghelp.dll` over the old one, start the server. Do not copy the
-new `takaro/plugin.json`: keep yours. `takaro/plugin.json` and `takaro/connector-state/` stay. Events
-that had not been delivered are sent after the restart. If `takaro/plugin.json` was replaced anyway,
-the connector takes the registration token, identity and name from
-`takaro/connector-state/saved-settings.json` (written once it has connected) and writes the identity
-back into `takaro/plugin.json`. An install from before that copy existed whose `identityToken` was
-lost falls back to `my-enshrouded-server`, the value the old `plugin.json.example` carried.
+Stop the server, replace only `dbghelp.dll` with the new one, start the server. Your config in
+`takaro/plugin.json` and the state in `takaro/connector-state/` are never touched. Events that had not
+been delivered are sent after the restart.
 
 ## Upgrade from 0.5.0 (plugin + sidecar)
 

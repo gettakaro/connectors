@@ -92,29 +92,42 @@ build.
 ### 3. Copy it into place
 
 Stop the game server first: a running server holds `dbghelp.dll` open. The zip holds one folder,
-`TakaroEnshrouded/`, whose contents go **next to `enshrouded_server.exe`**:
+`TakaroEnshrouded/`; copy its **`dbghelp.dll` next to `enshrouded_server.exe`** and start the server.
+
+The connector keeps its whole configuration in one file, **`takaro/plugin.json` next to
+`enshrouded_server.exe`**. It creates the file at the first start, with a unique `identityToken`, and
+the console says so. Open it, paste the registration token of your Takaro Generic game server into
+`registrationToken` and save: the connector connects within a few seconds, no restart needed. To have
+it connect at the first start instead, create the file yourself before starting:
+
+```json
+{
+  "registrationToken": "<your registration token>",
+  "identityToken": "",
+  "name": "",
+  "url": "wss://connect.takaro.io/",
+  "token": ""
+}
+```
 
 ```
 <server folder>/
     enshrouded_server.exe
     dbghelp.dll                  <- from the zip
     takaro/
-        plugin.json              <- from the zip
+        plugin.json              <- created by the connector; your settings
 ```
-
-Open `takaro/plugin.json` and paste the registration token of your Takaro Generic game server into
-`registrationToken`. That is all; the other keys are optional:
 
 | Key | What to put there |
 |---|---|
 | `registrationToken` | The registration token of your Takaro Generic game server. Required. |
-| `identityToken` | Leave it empty: the connector fills in a unique identity at the first start. Keep it once set; it is what Takaro knows this server by. |
-| `name` | The server name shown in Takaro. Left empty, the connector fills in your server's name plus the start of the identity, because Takaro needs a different name for every game server. |
+| `identityToken` | Leave it empty: the connector writes a unique identity there. Keep it once set; it is what Takaro knows this server by. |
+| `name` | The server name shown in Takaro. Left empty, it is your server's name plus the start of the identity, because Takaro needs a different name for every game server. |
 | `url` | Leave `wss://connect.takaro.io/`. |
 | `token` | Optional: a long random secret (e.g. `openssl rand -hex 32`) to read the plugin's diagnostics at `http://127.0.0.1:18890/health`. |
 
-You can also paste the token later: save `takaro/plugin.json` while the server runs, and the connector
-connects within a few seconds, no restart needed. The same goes for a corrected token or name.
+Every change you save applies within a few seconds: a corrected token or name reconnects, an emptied
+token disconnects.
 
 Instead of the file you can set the environment variables `TAKARO_REGISTRATION_TOKEN`,
 `TAKARO_IDENTITY_TOKEN`, `TAKARO_SERVER_NAME`, `TAKARO_WS_URL` and `TAKARO_PLUGIN_TOKEN` on the game
@@ -132,7 +145,7 @@ the DLL read-only from `data/enshrouded/server/takaro/plugin/dbghelp.dll`:
 ```bash
 mkdir -p data/enshrouded/server/takaro/plugin
 cp TakaroEnshrouded/dbghelp.dll data/enshrouded/server/takaro/plugin/
-cp .env.example .env    # fill in TAKARO_REGISTRATION_TOKEN, TAKARO_IDENTITY_ENSHROUDED and the role passwords
+cp .env.example .env    # fill in TAKARO_REGISTRATION_TOKEN and the role passwords
 docker compose -f docker-compose.example.yml --env-file .env up -d
 ```
 
@@ -156,11 +169,8 @@ that name.
 
 ### 5. Upgrading
 
-Stop the server, copy only the new `dbghelp.dll` over the old one, start it again. Keep your
-`takaro/` folder: `takaro/plugin.json` and the connector's state in `takaro/connector-state/` stay as
-they are. If you copied the new `takaro/plugin.json` over yours by mistake, the connector takes the
-token and identity from the copy it saved in `takaro/connector-state/` when it last connected, and
-writes the identity back.
+Stop the server, replace only `dbghelp.dll` with the new one, start it again. Your config in
+`takaro/plugin.json` and the connector's state in `takaro/connector-state/` are never touched.
 
 **From 0.5.0 (plugin + sidecar):** 0.6.0 replaces the sidecar. Stop and remove the sidecar before the
 new DLL starts, because both must never connect with the same identity at once; move the tokens from
