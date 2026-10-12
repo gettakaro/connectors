@@ -1,5 +1,5 @@
 // Host unit tests for everything that does not need a game process or a socket: JSON and the
-// Takaro protocol shapes, config (env first, takaro.json, saved copy, identity, live reload, the
+// Takaro protocol shapes, config (env first, then takaro.json, identity write-back, live reload, the
 // JSON key edit, error redaction), the durable
 // outbox, the frame queues and heartbeat, the pins scanner and its refusal rules, the Conan
 // adapter (argument shapes, refusal, pending actions), the coverage registry, text and the
@@ -22,10 +22,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <dirent.h>
 #include <map>
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <vector>
 
 using namespace conan;
 
@@ -92,84 +94,45 @@ static void TestConfig() {
     EnvFn env = [&](const char* n) { return envs.count(n) ? envs[n] : std::string(); };
     const std::string saved = "/srv/conan/ConanSandbox/Saved";
     EQ(ConfigFilePath(saved, env), "/srv/conan/ConanSandbox/Saved/Config/Takaro/takaro.json");
-    int generated = 0;
-    auto gen = [&] {
-        generated++;
-        return std::string("0123abcd-0000-4000-8000-00000000000") + std::to_string(generated);
-    };
-    auto resolve = [&](const std::string& file, bool exists, const std::string& savedText = "", bool prior = false,
-                       const std::string& current = "") {
+    auto resolve = [&](const std::string& file, bool exists, const std::string& writeError = "") {
         ConfigInput in;
         in.savedDir = saved;
         in.env = env;
         in.fileText = file;
         in.fileExists = exists;
-        in.savedText = savedText;
-        in.savedExists = !savedText.empty();
-        in.priorInstall = prior;
-        in.currentIdentity = current;
-        in.newIdentity = gen;
+        in.writeError = writeError;
         return ResolveConfig(in);
     };
 
-    // Fresh install with the shipped file: holds for the token, generates an identity and a unique name.
-    Config c = resolve(kConfigTemplate, true);
+    // The created file (identity filled in by the watcher) holds for the token.
+    const std::string created = *SetJsonString(kConfigTemplate, "identityToken", "0123abcd-0000-4000-8000-000000000001");
+    Config c = resolve(created, true);
     CHECK(!c.enabled && !c.inert && c.hold == Hold::NoToken, "%s", c.disabledReason.c_str());
     CHECK(c.disabledReason.find("registrationToken") != std::string::npos, "%s", c.disabledReason.c_str());
-    CHECK(c.identitySource == Source::Generated && c.identityToken.size() == 36, "generated identity");
     EQ(c.serverName, "Conan Exiles (0123abcd)");
-    CHECK(c.nameSource == Source::Generated, "generated name");
+    CHECK(c.identitySource == Source::File && c.nameSource == Source::Default, "sources");
     EQ(c.url, kDefaultUrl);
-    // No file at all behaves the same.
-    c = resolve("", false);
-    CHECK(c.hold == Hold::NoToken && c.identitySource == Source::Generated, "no file");
+    // No identity anywhere: held (the watcher could not write one), with the reason.
+    c = resolve(kConfigTemplate, true, "read-only file system");
+    CHECK(c.hold == Hold::NoIdentity && c.disabledReason.find("read-only file system") != std::string::npos, "%s",
+          c.disabledReason.c_str());
     // Token pasted: connects.
-    c = resolve("{\"registrationToken\":\"reg-5678\",\"identityToken\":\"\"}", true);
+    c = resolve("{\"registrationToken\":\"reg-5678\",\"identityToken\":\"id-1\"}", true);
     CHECK(c.enabled && c.registrationSource == Source::File, "%s", c.disabledReason.c_str());
-    // The 3.2.0 example placeholder is no token.
-    c = resolve("{\"registrationToken\":\"paste-your-registration-token-here\",\"identityToken\":\"my-conan-server\"}",
-                true);
-    CHECK(c.hold == Hold::NoToken && !c.warnings.empty(), "placeholder token holds");
-    // ...and an install on the old example identity keeps it (never a new UUID), with its old name.
-    EQ(c.identityToken, "my-conan-server");
-    CHECK(c.identitySource == Source::File, "example identity kept");
-    EQ(c.serverName, "Conan Exiles");
-    // Existing install: everything from the file.
+    EQ(c.serverName, "Conan Exiles (id-1)");
+    // Everything from the file.
     c = resolve("{\"identityToken\":\"file-id-1234\",\"registrationToken\":\"file-reg-5678\",\"serverName\":\"F\","
                 "\"caFile\":\"ca.pem\",\"_comment\":\"x\"}",
-                true, "", true);
+                true);
     CHECK(c.enabled, "%s", c.disabledReason.c_str());
     EQ(c.identityToken, "file-id-1234");
     EQ(c.serverName, "F");
     EQ(c.caFile, saved + "/ca.pem");
     EQ(c.stateDir, saved + "/Takaro/state");
-    // Upgrade where the shipped file replaced takaro.json: the saved copy restores token, identity, url, name.
-    const std::string savedCopy =
-        "{\"url\":\"wss://eu.example.test/\",\"identityToken\":\"saved-id-1\",\"registrationToken\":\"saved-reg-1\","
-        "\"name\":\"Saved Name\"}";
-    c = resolve(kConfigTemplate, true, savedCopy, false);
-    CHECK(c.enabled && c.identitySource == Source::Saved && c.registrationSource == Source::Saved, "saved restores");
-    EQ(c.identityToken, "saved-id-1");
-    EQ(c.registrationToken, "saved-reg-1");
-    EQ(c.url, "wss://eu.example.test/");  // the shipped default URL does not undo a saved one
-    EQ(c.serverName, "Saved Name");
-    // A token typed into the file wins over the saved one.
-    c = resolve("{\"registrationToken\":\"new-reg-2\"}", true, savedCopy);
-    EQ(c.registrationToken, "new-reg-2");
-    EQ(c.identityToken, "saved-id-1");
-    // Prior install (state dir from an older connector) with no identity anywhere: hold, never generate.
-    generated = 0;
-    c = resolve("{\"registrationToken\":\"reg-1\"}", true, "", true);
-    CHECK(c.hold == Hold::NoIdentity && c.identityToken.empty() && generated == 0, "%s", c.disabledReason.c_str());
-    // While running, the identity in use is kept when the file loses it.
-    c = resolve("{\"registrationToken\":\"reg-1\"}", true, "", true, "running-id");
-    CHECK(c.enabled && c.identitySource == Source::Current, "current identity kept");
-    EQ(c.identityToken, "running-id");
-    // Half-saved / wrong types: hold with the reason, no identity invented.
-    generated = 0;
+    // Half-saved / wrong types: hold with the reason.
     c = resolve("{\"identityToken\": oops", true);
-    CHECK(c.hold == Hold::FileError && c.fileError.find("not valid JSON") != std::string::npos && generated == 0,
-          "%s", c.fileError.c_str());
+    CHECK(c.hold == Hold::FileError && c.fileError.find("not valid JSON") != std::string::npos, "%s",
+          c.fileError.c_str());
     c = resolve("[1]", true);
     CHECK(c.hold == Hold::FileError, "non-object file holds");
     c = resolve("{\"registrationToken\":5}", true);
@@ -177,10 +140,10 @@ static void TestConfig() {
           c.fileError.c_str());
     c = resolve("{\"registrationToken\":\"r-1234\",\"identityToken\":\"i-1\",\"bogus\":\"1\"}", true);
     CHECK(c.enabled && c.warnings.size() == 1, "unknown key warns");
-    // Environment wins over everything, and is never written to the saved copy.
+    // Environment wins per field.
     envs["TAKARO_IDENTITY_TOKEN"] = "env-id-9999";
     envs["TAKARO_WS_URL"] = "wss://example.test/ws";
-    c = resolve("{\"identityToken\":\"file-id-1234\",\"registrationToken\":\"file-reg-5678\"}", true, savedCopy);
+    c = resolve("{\"identityToken\":\"file-id-1234\",\"registrationToken\":\"file-reg-5678\"}", true);
     CHECK(c.enabled && c.identitySource == Source::Env, "env+file");
     EQ(c.identityToken, "env-id-9999");
     EQ(c.registrationToken, "file-reg-5678");
@@ -190,13 +153,6 @@ static void TestConfig() {
           "summary leaks a token: %s", summary.c_str());
     CHECK(summary.find("\"identityToken\":\"env TAKARO_IDENTITY_TOKEN\"") != std::string::npos, "%s", summary.c_str());
     EQ(c.Redact("error: token env-id-9999 and file-reg-5678 rejected"), "error: token [redacted] and [redacted] rejected");
-    std::string render = RenderSaved(c, savedCopy, true);
-    CHECK(render.find("env-id-9999") == std::string::npos && render.find("saved-id-1") != std::string::npos &&
-              render.find("file-reg-5678") != std::string::npos && render.find("example.test/ws") == std::string::npos,
-          "env values stay out of the saved copy: %s", render.c_str());
-    render = RenderSaved(c, savedCopy, false);
-    CHECK(render.find("saved-reg-1") != std::string::npos && render.find("file-reg-5678") == std::string::npos,
-          "an unproven token is not saved: %s", render.c_str());
     envs["TAKARO_WS_URL"] = "ws://plain/";
     c = resolve("{\"registrationToken\":\"r-1234\"}", true);
     CHECK(c.hold == Hold::BadUrl && c.disabledReason.find("wss://") != std::string::npos, "plaintext refused");
@@ -212,13 +168,6 @@ static void TestConfig() {
     CHECK(c.reconnectBaseMs == 2000 && !c.warnings.empty(), "bad number warns and defaults");
     envs.clear();
     EQ(StateDirFor(saved, env, "{\"stateDir\":\"/var/lib/takaro\"}"), "/var/lib/takaro");
-
-    // The shipped takaro.json is the compiled-in template.
-    std::string shipped;
-    bool exists = false;
-    std::string err;
-    CHECK(ReadWholeFile("takaro.json", shipped, exists, err) && exists, "native/takaro.json readable");
-    EQ(shipped, kConfigTemplate);
 
     std::string a = NewIdentity(), b = NewIdentity();
     CHECK(a.size() == 36 && a[14] == '4' && a != b, "uuid v4 %s", a.c_str());
@@ -266,7 +215,7 @@ static void TestConfigWatcher() {
     o.pollMs = 10;
     o.settleMs = 5;
 
-    // Fresh: no file -> created from the template with the generated identity and name; held.
+    // Fresh: no file -> created with the generated identity and name; held.
     ConfigWatcher w(o);
     Config c = w.Load();
     CHECK(c.hold == Hold::NoToken, "%s", c.disabledReason.c_str());
@@ -279,63 +228,68 @@ static void TestConfigWatcher() {
           "file created with identity: %s", f.c_str());
     struct stat st {};
     CHECK(stat(file.c_str(), &st) == 0 && (st.st_mode & 0777) == 0600, "created 0600: %o", st.st_mode & 0777);
-    std::string savedCopy = read(savedDir + "/Takaro/state/saved-settings.json");
-    CHECK(savedCopy.find("feedc0de-1111") != std::string::npos && savedCopy.find("\"registrationToken\":\"\"") !=
-                                                                         std::string::npos,
-          "saved copy has the identity, no token: %s", savedCopy.c_str());
+    std::vector<std::string> names;
+    for (auto* d = opendir((savedDir + "/Config/Takaro").c_str()); d;) {
+        dirent* e = readdir(d);
+        if (!e) {
+            closedir(d);
+            break;
+        }
+        if (e->d_name[0] != '.') names.push_back(e->d_name);
+    }
+    CHECK(names.size() == 1, "takaro.json is the only file written (%zu)", names.size());
 
-    // Token pasted while running: applied after the settle read, not before.
+    // Token pasted while running: applied after the settle read, not before; the file is not rewritten.
     chmod(file.c_str(), 0640);
     std::string withToken = *SetJsonString(f, "registrationToken", "reg-AAAA-1111");
     CHECK(ReplaceUserFile(file, withToken, 0600, err), "%s", err.c_str());
     Config next;
     CHECK(!w.Poll(100, next), "first sight of a change waits for the settle read");
     CHECK(w.Poll(105, next) && next.enabled && next.registrationToken == "reg-AAAA-1111", "token applied");
-    CHECK(stat(file.c_str(), &st) == 0 && (st.st_mode & 0777) == 0640, "mode kept on rewrite: %o", st.st_mode & 0777);
-    CHECK(read(savedDir + "/Takaro/state/saved-settings.json").find("reg-AAAA") == std::string::npos,
-          "token not saved before Takaro accepts it");
-    w.Identified(next);
-    CHECK(read(savedDir + "/Takaro/state/saved-settings.json").find("reg-AAAA-1111") != std::string::npos,
-          "token saved after identify");
+    EQ(read(file), withToken);
     // Unchanged text: no reload. Half-saved text: ignored, settings kept.
     CHECK(!w.Poll(200, next) && !w.Poll(300, next), "unchanged");
     CHECK(ReplaceUserFile(file, "{\"registrationToken\": \"reg-B", 0600, err), "half");
     CHECK(!w.Poll(400, next) && !w.Poll(405, next), "half-saved ignored");
-    // The template copied over takaro.json (a mistaken upgrade): token and identity come back from the
-    // saved copy, identity is written into the file, the token is not; no reconnect (same settings).
-    CHECK(ReplaceUserFile(file, kConfigTemplate, 0600, err), "replace");
-    CHECK(!w.Poll(500, next), "settle");
-    CHECK(!w.Poll(505, next), "same settings from the saved copy: no reconnect");
+    // A save that empties the identity: the running one is written back (mode kept), no reconnect.
+    CHECK(ReplaceUserFile(file, "{\"registrationToken\": \"reg-AAAA-1111\", \"identityToken\": \"\"}", 0600, err), "w");
+    CHECK(!w.Poll(500, next) && !w.Poll(505, next), "same identity: no reconnect");
     f = read(file);
-    CHECK(f.find("feedc0de-1111") != std::string::npos && f.find("reg-AAAA") == std::string::npos,
-          "identity written back, token not: %s", f.c_str());
+    CHECK(f.find("feedc0de-1111") != std::string::npos && f.find("reg-AAAA-1111") != std::string::npos,
+          "running identity written back: %s", f.c_str());
+    CHECK(stat(file.c_str(), &st) == 0 && (st.st_mode & 0777) == 0640, "mode kept on rewrite: %o", st.st_mode & 0777);
+    // Token emptied: disconnects (hold).
+    CHECK(ReplaceUserFile(file, *SetJsonString(f, "registrationToken", ""), 0600, err), "w");
+    CHECK(!w.Poll(600, next) && w.Poll(605, next) && next.hold == Hold::NoToken, "emptied token holds");
 
-    // A restart of that install: identity from the file, token from the saved copy.
+    // A restart: identity from the file.
+    CHECK(ReplaceUserFile(file, withToken, 0600, err), "w");
     ConfigWatcher w2(o);
     c = w2.Load();
-    CHECK(c.enabled && c.identitySource == Source::File && c.registrationSource == Source::Saved, "%s",
-          ConfigSummaryJson(c).c_str());
+    CHECK(c.enabled && c.identitySource == Source::File && c.identityToken == "feedc0de-1111-4111-8111-111111111111",
+          "%s", ConfigSummaryJson(c).c_str());
 
-    // Prior install (state dir present, no saved copy) whose file lost its identity: held, never generated.
-    unlink((savedDir + "/Takaro/state/saved-settings.json").c_str());
-    CHECK(ReplaceUserFile(file, "{\"registrationToken\": \"reg-C\"}", 0600, err), "w");
-    ConfigWatcher w3(o);
-    c = w3.Load();
-    CHECK(c.hold == Hold::NoIdentity, "%s", c.disabledReason.c_str());
-    CHECK(read(file).find("feedc0de") == std::string::npos, "no identity invented for a prior install");
+    // A file without an identity that cannot be rewritten: held, no identity in use.
+    if (geteuid() != 0) {
+        const std::string ro = root + "/ro/Saved";
+        o.savedDir = ro;
+        CHECK(EnsureDirectory(ro + "/Config/Takaro", err), "%s", err.c_str());
+        CHECK(ReplaceUserFile(ro + "/Config/Takaro/takaro.json", "{\"registrationToken\": \"reg-C\"}", 0600, err), "w");
+        chmod((ro + "/Config/Takaro").c_str(), 0500);
+        ConfigWatcher w3(o);
+        c = w3.Load();
+        chmod((ro + "/Config/Takaro").c_str(), 0700);
+        CHECK(c.hold == Hold::NoIdentity && c.identityToken.empty(), "%s", c.disabledReason.c_str());
+    }
 
-    // Environment-only install: no file created, no saved copy.
+    // Environment-only install: no file created.
     std::string root2 = root + "/envonly";
     o.savedDir = root2 + "/Saved";
     envs["TAKARO_IDENTITY_TOKEN"] = "env-id";
     envs["TAKARO_REGISTRATION_TOKEN"] = "env-reg";
     ConfigWatcher w4(o);
     c = w4.Load();
-    CHECK(c.enabled && read(o.savedDir + "/Config/Takaro/takaro.json") == "<missing>" &&
-              read(o.savedDir + "/Takaro/state/saved-settings.json") == "<missing>",
-          "env-only install writes nothing");
-    w4.Identified(c);
-    CHECK(read(o.savedDir + "/Takaro/state/saved-settings.json") == "<missing>", "still nothing after identify");
+    CHECK(c.enabled && read(o.savedDir + "/Config/Takaro/takaro.json") == "<missing>", "env-only install writes nothing");
 
     // Identify errors: name/message/status only; JWTs and our tokens scrubbed.
     JsonValue e;

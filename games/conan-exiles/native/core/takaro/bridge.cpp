@@ -189,7 +189,6 @@ void Bridge::HandleNotice(Notice& n) {
                 o_.transport->RequestClose(n.epoch, "not configured");
                 break;
             }
-            identifyConfig_ = o_.config;
             NativeLog("takaro: WebSocket open (epoch %llu), sending identify", (unsigned long long)n.epoch);
             auto st = o_.transport->Queue({FrameKind::Control,
                                            Text(CreateIdentify(o_.config.identityToken, o_.config.registrationToken,
@@ -263,10 +262,7 @@ void Bridge::HandleFrame(uint64_t epoch, const std::string& text) {
         NativeLog("takaro: identified%s%s; %zu unconfirmed event(s) to deliver",
                   gameServerId_.empty() ? "" : " gameServerId=", gameServerId_.c_str(),
                   o_.store->Outbox().pending.size());
-        if (o_.watcher) {
-            o_.watcher->Identified(identifyConfig_);
-            o_.watcher->Connected(o_.config);
-        }
+        if (o_.watcher) o_.watcher->Connected(o_.config);
     } else if (type == "connected") {
         NativeLog("takaro: Takaro confirmed the WebSocket connection");
     } else if (type == "error") {

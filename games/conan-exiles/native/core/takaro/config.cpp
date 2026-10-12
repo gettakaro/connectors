@@ -64,9 +64,6 @@ const char* SourceName(Source s) {
     switch (s) {
         case Source::Env: return "environment";
         case Source::File: return "takaro.json";
-        case Source::Saved: return "saved copy";
-        case Source::Current: return "current";
-        case Source::Generated: return "generated";
         case Source::Default: return "default";
     }
     return "default";
@@ -108,9 +105,6 @@ Config ResolveConfig(const ConfigInput& in) {
         // A file with a wrong type is not applied at all; fields of it would be guesses.
         if (!c.fileError.empty()) file = JObj();
     }
-    std::string savedError;
-    JsonValue saved = in.savedExists ? ParseObject(in.savedText, savedError) : JObj();
-    if (!savedError.empty()) c.warnings.push_back("the saved copy is not valid JSON; ignoring it");
 
     auto envValue = [&](std::initializer_list<const char*> names, std::string& label) {
         for (auto* e : names) {
@@ -122,10 +116,9 @@ Config ResolveConfig(const ConfigInput& in) {
         }
         return std::string();
     };
-    // env, then the file (unless it holds `ignore`), then the saved copy.
+    // env, then the file.
     auto pick = [&](const char* label, std::initializer_list<const char*> envNames,
-                    std::initializer_list<const char*> fileKeys, const char* savedKey, const std::string& ignore,
-                    std::string& out, Source& src) {
+                    std::initializer_list<const char*> fileKeys, const char* unset, std::string& out, Source& src) {
         std::string from;
         std::string v = envValue(envNames, from);
         if (!v.empty()) {
@@ -136,64 +129,28 @@ Config ResolveConfig(const ConfigInput& in) {
         }
         for (auto* k : fileKeys) {
             v = FileString(file, {k});
-            if (!v.empty() && v != ignore) {
+            if (!v.empty()) {
                 out = v;
                 src = Source::File;
                 c.sources.push_back({label, std::string("takaro.json ") + k});
                 return true;
             }
         }
-        if (savedKey && !(v = FileString(saved, {savedKey})).empty()) {
-            out = v;
-            src = Source::Saved;
-            c.sources.push_back({label, "saved copy"});
-            return true;
-        }
+        c.sources.push_back({label, unset});
         return false;
     };
 
-    if (!pick("url", {"TAKARO_WS_URL", "TAKARO_URL"}, {"url", "takaroWsUrl"}, "url", kDefaultUrl, c.url,
-              c.urlSource)) {
+    if (!pick("url", {"TAKARO_WS_URL", "TAKARO_URL"}, {"url", "takaroWsUrl"}, "default", c.url, c.urlSource))
         c.url = kDefaultUrl;
-        c.sources.push_back({"url", "default"});
-    }
-    if (FileString(file, {"registrationToken"}) == kPlaceholderToken)
-        c.warnings.push_back(std::string("takaro.json: registrationToken still holds the example text '") +
-                             kPlaceholderToken + "'; ignoring it");
-    if (!pick("registrationToken", {"TAKARO_REGISTRATION_TOKEN"}, {"registrationToken"}, "registrationToken",
-              kPlaceholderToken, c.registrationToken, c.registrationSource)) {
+    if (!pick("registrationToken", {"TAKARO_REGISTRATION_TOKEN"}, {"registrationToken"}, "not set", c.registrationToken,
+              c.registrationSource))
         c.registrationToken.clear();
-        c.sources.push_back({"registrationToken", "not set"});
-    }
-    if (!pick("identityToken", {"TAKARO_IDENTITY_TOKEN"}, {"identityToken"}, "identityToken", "", c.identityToken,
-              c.identitySource)) {
-        if (!in.currentIdentity.empty()) {
-            c.identityToken = in.currentIdentity;
-            c.identitySource = Source::Current;
-            c.sources.push_back({"identityToken", "current"});
-        } else if (in.priorInstall || !c.fileError.empty()) {
-            // Never invent an identity for a server that ran before, or from a file we could not read.
-            c.identityToken.clear();
-            c.sources.push_back({"identityToken", "not set"});
-        } else {
-            c.identityToken = in.newIdentity ? in.newIdentity() : NewIdentity();
-            c.identitySource = Source::Generated;
-            c.sources.push_back({"identityToken", "generated"});
-        }
-    }
-    if (!pick("name", {"TAKARO_SERVER_NAME", "TAKARO_NAME"}, {"name", "serverName"}, "name", "", c.serverName,
-              c.nameSource)) {
-        if (c.identitySource == Source::Current && !in.currentName.empty()) {
-            c.serverName = in.currentName;
-            c.nameSource = Source::Current;
-        } else if (c.identitySource == Source::Generated) {
-            c.serverName = std::string(kDefaultServerName) + " (" + c.identityToken.substr(0, 8) + ")";
-            c.nameSource = Source::Generated;
-        } else {
-            c.serverName = kDefaultServerName;
-        }
-        c.sources.push_back({"name", SourceName(c.nameSource)});
-    }
+    if (!pick("identityToken", {"TAKARO_IDENTITY_TOKEN"}, {"identityToken"}, "not set", c.identityToken,
+              c.identitySource))
+        c.identityToken.clear();
+    if (!pick("name", {"TAKARO_SERVER_NAME", "TAKARO_NAME"}, {"name", "serverName"}, "default", c.serverName,
+              c.nameSource))
+        c.serverName = DefaultServerName(c.identityToken);
 
     std::string from;
     std::string ca = envValue({"TAKARO_CA_FILE"}, from);
@@ -219,8 +176,8 @@ Config ResolveConfig(const ConfigInput& in) {
     } else if (c.identityToken.empty()) {
         c.hold = Hold::NoIdentity;
         c.disabledReason = "not configured: identityToken is empty in " + c.configFile +
-                           ", but this server ran the connector before (" + c.stateDir +
-                           " exists); put its old identityToken back (or TAKARO_IDENTITY_TOKEN)";
+                           (in.writeError.empty() ? "" : " and the connector could not write one (" + in.writeError + ")") +
+                           "; set it to any unique text (or TAKARO_IDENTITY_TOKEN)";
     } else if (c.registrationToken.empty()) {
         c.hold = Hold::NoToken;
         c.disabledReason = "not configured: set registrationToken in " + c.configFile +
@@ -243,25 +200,8 @@ Config LoadConfig(const std::string& savedDir, const EnvFn& env, const std::stri
     return ResolveConfig(in);
 }
 
-std::string RenderSaved(const Config& c, const std::string& oldSavedText, bool withRegistration) {
-    std::string ignored;
-    JsonValue old = ParseObject(oldSavedText, ignored);
-    auto keep = [](Source s) { return s != Source::Env && s != Source::Default; };
-    auto value = [&](const char* key, const std::string& inUse, Source src, bool write) {
-        return write && keep(src) ? inUse : FileString(old, {key});
-    };
-    return ObjBuilder()
-               .S("_comment",
-                  "Written by the Takaro connector: the settings it last connected with, kept outside takaro.json "
-                  "so a replaced takaro.json keeps this server's token and identity. Edit takaro.json instead; "
-                  "a value set there wins over this file.")
-               .S("url", value("url", c.url, c.urlSource, true))
-               .S("identityToken", value("identityToken", c.identityToken, c.identitySource, true))
-               .S("registrationToken",
-                  value("registrationToken", c.registrationToken, c.registrationSource, withRegistration))
-               .S("name", value("name", c.serverName, c.nameSource, true))
-               .Done() +
-           "\n";
+std::string DefaultServerName(const std::string& identity) {
+    return identity.empty() ? kDefaultServerName : std::string(kDefaultServerName) + " (" + identity.substr(0, 8) + ")";
 }
 
 // ------------------------------------------------------------------------------------------------ JSON edit

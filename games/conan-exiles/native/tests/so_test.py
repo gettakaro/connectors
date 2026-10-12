@@ -8,10 +8,9 @@ critical notice, structured errors for every action, and the durable outbox repl
 unconfirmed notice across a forced Takaro outage.
 
 config_reload: takaro.json while the server runs (the shipped flow). A missing file is created
-from the template with a generated identity, the console (stdout) banner names it, and nothing
-dials until a token is saved; a wrong token shows the refusal banner and a corrected one
-reconnects; a half-saved file is ignored; a replaced file recovers from the saved copy; the
-environment wins; a prior install without an identity never gets a new one.
+with a generated identity, the console (stdout) banner names it, and nothing dials until a token
+is saved; a wrong token shows the refusal banner and a corrected one reconnects; a half-saved file
+is ignored; an emptied token disconnects; a restart keeps the identity; the environment wins.
 
 Usage: so_test.py <library .so> <fake server executable>
 """
@@ -141,9 +140,8 @@ def config_reload(tmp, exe, lib, fake, url, cert):
                                'name': 'Conan Exiles (' + identity[:8] + ')'},
           'token saved while running: identifies with the generated identity, no restart', ident['payload'])
     eventually(lambda: 'connected to Takaro as' in s.console(), what='connected line')
-    saved = json.loads((s.state / 'saved-settings.json').read_text())
-    check(saved['identityToken'] == identity and saved['registrationToken'] == REGISTRATION,
-          'after identify the saved copy holds the identity and the accepted token')
+    check(sorted(p.name for p in s.config.parent.iterdir()) == ['takaro.json']
+          and not list(s.state.glob('saved*')), 'takaro.json is the only config file')
 
     # Wrong token saved while running: refusal banner; corrected token reconnects at once.
     fake.reject_identify = True
@@ -172,25 +170,28 @@ def config_reload(tmp, exe, lib, fake, url, cert):
     time.sleep(2)
     check(not identifies(fake, since), 'half-saved file: no reconnect')
 
-    # The shipped file copied over takaro.json (a mistaken upgrade): nothing changes, the identity
-    # is written back from the saved copy, the token is not.
-    template = (Path(__file__).resolve().parent.parent / 'takaro.json').read_text()
-    save(s.config, template)
-    eventually(lambda: identity in s.config.read_text(), timeout=15, what='identity written back')
-    time.sleep(1)
-    check(not identifies(fake, since) and REGISTRATION not in s.config.read_text(),
-          'replaced takaro.json: identity restored from the saved copy, no reconnect, token not copied in')
+    # Token emptied while running: the connection drops and the no-token banner comes back.
+    created['registrationToken'] = ''
+    conns = len(fake.conns)
+    banners = s.console().count('registrationToken not set')
+    save(s.config, json.dumps(created, indent=2))
+    eventually(lambda: s.console().count('registrationToken not set') > banners, timeout=15,
+               what='no-token banner after emptying the token')
+    time.sleep(6)
+    check(len(fake.conns) == conns and not any(c.alive for c in fake.conns), 'emptied token: disconnected, no redial')
     check(s.stop() == 0, 'clean stop')
     secrets = s.log_text() + s.console()
     check(REGISTRATION not in secrets and 'wrong-token-1234' not in secrets, 'no token in the log or console')
 
-    # Restart of that install: same identity, token from the saved copy.
+    # Restart of that install with the token back: same identity from the file.
+    created['registrationToken'] = REGISTRATION
+    save(s.config, json.dumps(created, indent=2))
     since = len(fake.log)
     s.start(env)
     eventually(lambda: identifies(fake, since), timeout=15, what='identify after restart')
     p = identifies(fake, since)[-1]['payload']
     check(p['identityToken'] == identity and p['registrationToken'] == REGISTRATION,
-          'restart after the replaced file: same identity, token from the saved copy')
+          'restart: same identity from the file')
     check(s.stop() == 0, 'clean stop')
 
     # Environment wins: file edits to the token do not reconnect.
@@ -204,22 +205,7 @@ def config_reload(tmp, exe, lib, fake, url, cert):
     save(s.config, json.dumps({'identityToken': 'file-identity-1', 'registrationToken': 'file-token-2'}))
     time.sleep(8)
     check(len(identifies(fake, since)) == 1, 'a file edit hidden by the environment does not reconnect')
-    check(s.stop() == 0 and not (s.state / 'saved-settings.json').exists(),
-          'an install configured by the environment writes no saved copy')
-
-    # A prior install (state dir from an older connector) whose takaro.json lost its identity.
-    s = Server(tmp / 'prior', exe, lib)
-    s.state.mkdir(parents=True)
-    (s.state / 'event-outbox.json').write_text('{}')
-    s.write_config(json.dumps({'registrationToken': REGISTRATION}))
-    conns = len(fake.conns)
-    s.start(env)
-    eventually(lambda: 'identityToken is empty' in s.console(), what='no-identity banner')
-    time.sleep(3)
-    check(len(fake.conns) == conns and 'identityToken' not in json.loads(s.config.read_text()),
-          'prior install without an identity: banner, no connection, no new identity')
     check(s.stop() == 0, 'clean stop')
-
 
 def main():
     lib, exe = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()

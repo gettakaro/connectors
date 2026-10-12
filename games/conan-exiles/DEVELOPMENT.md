@@ -17,7 +17,7 @@ games/conan-exiles/
     mod/TakaroConanBridge/      # spec + DevKit handoff for the Takaro-owned .pak (no binary shipped)
     scripts/lib-target.sh       # resolves the catalog target every script builds against
     scripts/build-release.sh    # packages the native zip per target
-    scripts/templates/          # the README.txt of the native zips (the shipped takaro.json is native/takaro.json)
+    scripts/templates/          # the README.txt of the native zips
     INSTALL.md                  # per-platform install, upgrade, rollback (ships in the zips)
     version.txt
     CHANGELOG.md
@@ -66,8 +66,8 @@ server: it is declared in the watch and disabled, so it is never observed and ne
 
 The rig (`dev-servers/scripts/install.sh conan-exiles`) installs the pinned build from the catalog,
 builds the native connector and unpacks it into `<server>/TakaroConanNative/TakaroConanNative/`. It
-does not preload the library: to run the connector on the rig, add `LD_PRELOAD` and `takaro.json`
-by hand exactly as an operator does ([INSTALL.md](INSTALL.md)). By hand, the native Linux launcher
+does not preload the library: to run the connector on the rig, add `LD_PRELOAD` by hand
+and paste the token into the `takaro.json` the connector creates, exactly as an operator does ([INSTALL.md](INSTALL.md)). By hand, the native Linux launcher
 is started like this:
 
 ```bash
@@ -97,7 +97,7 @@ maintenance/bin/takaro-maint build --game conan-exiles [--target linux-25792439]
 That runs `scripts/build-release.sh <version> <out-dir> [--target <id>]`, which resolves the target
 and builds inside pinned images only, so the host needs no compiler. The result is
 `takaro-conan-exiles-native-<platform>-<build>-<version>.zip` holding one `TakaroConanNative/`
-folder (the binary, `takaro.json` (= `native/takaro.json`), `INSTALL.md`, `README.txt`, `THIRD-PARTY.md`, licenses,
+folder (the binary, `INSTALL.md`, `README.txt`, `THIRD-PARTY.md`, licenses,
 `takaro-target.json`, `SHA256SUMS`, and on Linux `ca-certificates.crt`), plus a `.meta.json` beside
 it that `takaro-maint artifact validate` reads. Packaging is deterministic: entry modes and
 timestamps are normalised and the archive is written by CPython's `zipfile`.
@@ -129,27 +129,24 @@ native/
   tools/           sigderive.py (signatures for ELF and PE)
 ```
 
-- **Config** (`core/takaro/config.*`, `core/takaro/config_watch.*`). Per field: environment
-  (`TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN`, `TAKARO_WS_URL`, `TAKARO_SERVER_NAME`,
-  `TAKARO_CA_FILE`, `TAKARO_STATE_DIR`), then `ConanSandbox/Saved/Config/Takaro/takaro.json`
-  (`TAKARO_CONAN_CONFIG` moves it; the URL only when not the default), then the connector's saved
-  copy `<stateDir>/saved-settings.json`. The release ships the real `takaro.json` (empty token and
-  identity; `native/takaro.json`, equal to `kConfigTemplate`, checked by `unit_test`); a missing
-  file is created from it at load unless the environment carries both tokens.
-  - Identity: env, file, saved copy, the one in use, else a new UUID v4 written into the file and
-    the saved copy, with the name `Conan Exiles (<first 8>)` (names are unique per Takaro domain).
-    A state dir without a saved copy means an older connector ran here: then no identity is
-    generated (that would orphan the Takaro record); a banner asks for the old one.
-  - The saved copy holds URL, identity and name, and the registration token only after Takaro
-    accepted it; never values from the environment. The token is never written into `takaro.json`.
-    Rewrites keep the file's mode and owner (`ReplaceUserFile`).
+- **Config** (`core/takaro/config.*`, `core/takaro/config_watch.*`). One file:
+  `ConanSandbox/Saved/Config/Takaro/takaro.json` (`TAKARO_CONAN_CONFIG` moves it). It is not in
+  the zip and an upgrade never touches it. Per field: environment (`TAKARO_IDENTITY_TOKEN`,
+  `TAKARO_REGISTRATION_TOKEN`, `TAKARO_WS_URL`, `TAKARO_SERVER_NAME`, `TAKARO_CA_FILE`,
+  `TAKARO_STATE_DIR`; never written to disk), then the file, then the default.
+  - A missing file is created at load from `kConfigTemplate` (unless the environment carries both
+    tokens). When neither env nor file sets an identity, a new UUID v4 (and, with no name set,
+    `Conan Exiles (<first 8>)`) is written into the file; a save that empties it gets the running
+    one back. That is the only write: `SetJsonString` keeps the rest of the text, `ReplaceUserFile`
+    keeps mode and owner (Windows: `ReplaceFileW`). If it cannot be written, the connector holds.
   - Live reload: the bridge thread re-reads the file every 5 s, applies a changed text when a read
     1 s later matches, and ignores an unparseable one. A change of URL, token, identity or name
     calls `ITransport::Retarget`, which drops the socket (Linux: on the lws service thread, after the
     old socket's own CLOSED callback; Windows: under the transport lock, with a generation check for
     a dial in flight) and redials at once. `caFile`, `stateDir` and the env-only tunables are read
     at startup only.
-  - No token, an unreadable or invalid file, a `ws://` URL or a missing identity on a prior install:
+  - No token (also a token emptied while running), an unreadable or invalid file, a `ws://` URL or
+    an identity that could not be written:
     the library still loads (hooks and all) but never dials, and prints a `****` banner to the
     server's stdout naming the file; it repeats after 60 s and then every 15 minutes. Identify
     refusals print a banner too (name conflict / 409 separately); Takaro's error is reduced to

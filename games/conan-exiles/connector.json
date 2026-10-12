@@ -12,14 +12,14 @@
       "pattern": "takaro-conan-exiles-native-linux-*.zip",
       "label": "Linux server",
       "requires": "Conan Exiles Linux dedicated server build 25792439 (or 25738716, 25639945)",
-      "hint": "Load libtakaro-conan-native.so with LD_PRELOAD and copy takaro.json and ca-certificates.crt to ConanSandbox/Saved/Config/Takaro/; INSTALL.md in the zip has every step.",
+      "hint": "Load libtakaro-conan-native.so with LD_PRELOAD, start the server and paste the token into ConanSandbox/Saved/Config/Takaro/takaro.json; INSTALL.md in the zip has every step.",
       "required": true
     },
     {
       "pattern": "takaro-conan-exiles-native-windows-*.zip",
       "label": "Windows server",
       "requires": "Conan Exiles Windows dedicated server build 25792439 (or 25738716, 25639945)",
-      "hint": "Copy winmm.dll next to ConanSandboxServer-Win64-Shipping.exe and takaro.json to ConanSandbox\\Saved\\Config\\Takaro\\; INSTALL.md in the zip has every step.",
+      "hint": "Copy winmm.dll next to ConanSandboxServer-Win64-Shipping.exe, start the server and paste the token into ConanSandbox\\Saved\\Config\\Takaro\\takaro.json; INSTALL.md in the zip has every step.",
       "required": true
     }
   ]

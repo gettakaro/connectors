@@ -12,8 +12,6 @@ namespace {
 
 const char kRule[] = "*************************************************************************";
 
-bool Persisted(Source s) { return s == Source::Saved || s == Source::Current || s == Source::Generated; }
-
 // Long runs of token characters that start like a JWT ("eyJ").
 std::string ScrubJwt(std::string text) {
     for (size_t at = 0; (at = text.find("eyJ", at)) != std::string::npos;) {
@@ -85,99 +83,55 @@ ConfigWatcher::ConfigWatcher(Options o) : o_(std::move(o)) {
 
 Config ConfigWatcher::Load() {
     path_ = ConfigFilePath(o_.savedDir, o_.env);
-    std::string text, readError;
+    std::string text, readError, createError;
     bool exists = false;
     if (!ReadWholeFile(path_, text, exists, readError)) exists = false;
-    const std::string stateDir = StateDirFor(o_.savedDir, o_.env, exists ? text : "");
-    priorInstall_ = StatFile(stateDir).exists;
-    savedPath_ = JoinPath(stateDir, kSavedFileName);
-    std::string savedText, ignored;
-    bool savedExists = false;
-    ReadWholeFile(savedPath_, savedText, savedExists, ignored);
-
     const bool envTokens = !Trim(o_.env("TAKARO_REGISTRATION_TOKEN")).empty() &&
                            !Trim(o_.env("TAKARO_IDENTITY_TOKEN")).empty();
     if (!exists && readError.empty() && !envTokens && Trim(o_.env("TAKARO_CONAN_NATIVE_DISABLE")) != "1") {
-        std::string err;
-        if (EnsureDirectory(DirName(path_), err) && ReplaceUserFile(path_, kConfigTemplate, 0600, err)) {
+        if (EnsureDirectory(DirName(path_), createError) && ReplaceUserFile(path_, kConfigTemplate, 0600, createError)) {
             text = kConfigTemplate;
             exists = true;
             createdFile_ = true;
-            NativeLog("config: created %s from the shipped template", path_.c_str());
+            NativeLog("config: created %s", path_.c_str());
         } else {
-            NativeLog("config: could not create %s: %s", path_.c_str(), err.c_str());
+            NativeLog("config: could not create %s: %s", path_.c_str(), createError.c_str());
+            createError = "the file is missing and could not be created: " + createError;
         }
     }
-
-    ConfigInput in;
-    in.savedDir = o_.savedDir;
-    in.env = o_.env;
-    in.fileText = text;
-    in.fileExists = exists;
-    in.readError = readError;
-    in.savedText = savedText;
-    in.savedExists = savedExists;
-    in.priorInstall = priorInstall_ && !savedExists;
-    in.newIdentity = o_.newIdentity;
-    active_ = ResolveConfig(in);
+    active_ = Resolve(text, exists, readError, "", createError);
     if (exists) appliedText_ = text;
     if (!readError.empty()) lastReadError_ = readError;
     NativeLog("config: %s (%s); identity from %s, registration token from %s, url from %s, name from %s",
               path_.c_str(), !readError.empty() ? "unreadable" : exists ? "found" : "missing",
               SourceName(active_.identitySource), SourceName(active_.registrationSource),
               SourceName(active_.urlSource), SourceName(active_.nameSource));
-    if (!active_.inert) Persist(active_, false);
     return active_;
 }
 
-void ConfigWatcher::Persist(const Config& c, bool withRegistration) {
-    // 1. takaro.json: fill in an identity (and the name that goes with it) the file leaves empty.
-    if (appliedText_ && c.fileError.empty()) {
-        JsonValue file;
-        ParseJson(*appliedText_, file);
-        auto empty = [&](const char* a, const char* b) {
-            for (const char* k : {a, b}) {
-                const JsonValue* v = k ? file.get(k) : nullptr;
-                if (v && v->type == JsonValue::String && !Trim(v->str).empty()) return false;
-            }
-            return true;
-        };
-        std::optional<std::string> next = *appliedText_;
-        bool changed = false;
-        if (Persisted(c.identitySource) && empty("identityToken", nullptr)) {
-            next = SetJsonString(*next, "identityToken", c.identityToken);
-            changed = true;
-        }
-        if (next && Persisted(c.nameSource) && empty("name", "serverName")) {
-            next = SetJsonString(*next, "name", c.serverName);
-            changed = true;
-        }
-        if (changed) {
-            std::string err;
-            if (next && ReplaceUserFile(path_, *next, 0600, err)) {
-                appliedText_ = *next;
-                NativeLog("config: wrote the server identity (%s) into %s", SourceName(c.identitySource),
-                          path_.c_str());
-            } else {
-                NativeLog("config: could not write the server identity into %s (%s); the saved copy keeps it",
-                          path_.c_str(), next ? err.c_str() : "the file is not a plain JSON object");
-            }
-        }
+Config ConfigWatcher::Resolve(std::string& text, bool exists, const std::string& readError,
+                              const std::string& identity, std::string writeError) {
+    ConfigInput in;
+    in.savedDir = o_.savedDir;
+    in.env = o_.env;
+    in.fileText = text;
+    in.fileExists = exists;
+    in.readError = readError;
+    in.writeError = writeError;
+    Config c = ResolveConfig(in);
+    if (c.inert || !c.fileError.empty() || !c.identityToken.empty() || !exists) return c;
+    const std::string id = identity.empty() ? o_.newIdentity() : identity;
+    std::optional<std::string> next = SetJsonString(text, "identityToken", id);
+    if (next && c.nameSource == Source::Default) next = SetJsonString(*next, "name", DefaultServerName(id));
+    std::string err = "the file is not a plain JSON object";
+    if (next && ReplaceUserFile(path_, *next, 0600, err)) {
+        NativeLog("config: wrote %s identity into %s", identity.empty() ? "a new" : "the running", path_.c_str());
+        text = in.fileText = *next;
+    } else {
+        NativeLog("config: could not write the identity into %s: %s", path_.c_str(), err.c_str());
+        in.writeError = err;
     }
-    // 2. The saved copy. An install configured only through the environment gets none.
-    std::string old, ignored;
-    bool savedExists = false;
-    ReadWholeFile(savedPath_, old, savedExists, ignored);
-    auto ours = [](Source s) { return s != Source::Env && s != Source::Default; };
-    if (!savedExists && !ours(c.urlSource) && !ours(c.identitySource) && !ours(c.nameSource) &&
-        !(withRegistration && ours(c.registrationSource)))
-        return;
-    if (c.identityToken.empty() && !savedExists) return;
-    std::string text = RenderSaved(c, old, withRegistration);
-    if (savedExists && old == text) return;
-    std::string err;
-    if (!EnsureDirectory(DirName(savedPath_), err) || !ReplaceUserFile(savedPath_, text, 0600, err))
-        NativeLog("config: could not write %s: %s", savedPath_.c_str(), err.c_str());
+    return ResolveConfig(in);
 }
 
 bool ConfigWatcher::Poll(int64_t nowMs, Config& out) {
@@ -207,23 +161,8 @@ bool ConfigWatcher::Poll(int64_t nowMs, Config& out) {
         return false;
     }
     candidateText_.reset();
+    Config next = Resolve(text, true, "", active_.identityToken);
     appliedText_ = text;
-
-    std::string savedText, ignored;
-    bool savedExists = false;
-    ReadWholeFile(savedPath_, savedText, savedExists, ignored);
-    ConfigInput in;
-    in.savedDir = o_.savedDir;
-    in.env = o_.env;
-    in.fileText = text;
-    in.fileExists = true;
-    in.savedText = savedText;
-    in.savedExists = savedExists;
-    in.currentIdentity = active_.identityToken;
-    in.currentName = active_.serverName;
-    in.priorInstall = priorInstall_ && !savedExists;
-    in.newIdentity = o_.newIdentity;
-    Config next = ResolveConfig(in);
     if (!next.fileError.empty()) {
         ignoredSaves_++;
         ConsoleLine("WARNING: " + next.fileError + "; keeping the current settings until the file is fixed and saved");
@@ -238,7 +177,6 @@ bool ConfigWatcher::Poll(int64_t nowMs, Config& out) {
     next.actionWorkers = active_.actionWorkers;
     next.inert = active_.inert;
     for (auto& w : next.warnings) NativeLog("config warning: %s", w.c_str());
-    Persist(next, false);
     const bool changed =
         next.Connection() != active_.Connection() || next.enabled != active_.enabled || next.hold != active_.hold;
     active_ = next;
@@ -246,11 +184,6 @@ bool ConfigWatcher::Poll(int64_t nowMs, Config& out) {
     reloads_++;
     out = next;
     return true;
-}
-
-void ConfigWatcher::Identified(const Config& used) {
-    if (used.Connection() != active_.Connection()) return;  // an answer for settings that no longer run
-    Persist(active_, true);
 }
 
 void ConfigWatcher::Banner(const std::string& key, const std::vector<std::string>& lines) {
@@ -268,10 +201,9 @@ void ConfigWatcher::HoldBanner(const Config& c, bool force) {
                                 "and save it. The connector connects within a few seconds, no restart needed."});
             break;
         case Hold::NoIdentity:
-            Banner("no-identity", {"identityToken is empty, the server is not connected to Takaro.",
-                                   "This server ran the Takaro connector before: put its old identityToken back",
-                                   "into " + path_ + " and save it (a new value registers",
-                                   "a new Takaro game server). No restart needed."});
+            Banner("no-identity", {"identityToken is empty and the connector could not write one, the server is",
+                                   "not connected to Takaro. Set identityToken to any unique text in",
+                                   path_ + " and save it. No restart needed."});
             break;
         case Hold::FileError:
             Banner("file-error", {"The Takaro config cannot be used, the server is not connected to Takaro.",
@@ -340,8 +272,6 @@ std::string ConfigWatcher::HealthJson() const {
         .S("file", path_)
         .B("fileFound", appliedText_.has_value())
         .B("fileCreated", createdFile_)
-        .S("savedCopy", savedPath_)
-        .B("priorInstall", priorInstall_)
         .S("identitySource", SourceName(active_.identitySource))
         .S("registrationSource", SourceName(active_.registrationSource))
         .S("urlSource", SourceName(active_.urlSource))

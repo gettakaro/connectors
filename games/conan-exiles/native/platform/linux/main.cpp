@@ -2,10 +2,10 @@
 //
 // Loaded with LD_PRELOAD into ConanSandboxServer-Linux-Shipping. The library holds the Takaro
 // WebSocket itself (no sidecar, no RCON). At load it:
-//   1. reads the config (env first, then ConanSandbox/Saved/Config/Takaro/takaro.json, then the
-//      saved copy), creating takaro.json from the template when it is missing. Without a usable
-//      token it loads but does not connect, says so in a console banner and picks up the token
-//      once the file is saved (no restart). TAKARO_CONAN_NATIVE_DISABLE=1 keeps it inert;
+//   1. reads the config (env first, then ConanSandbox/Saved/Config/Takaro/takaro.json), creating
+//      takaro.json with a new identity when it is missing. Without a usable token it loads but does
+//      not connect, says so in a console banner and picks up the token once the file is saved (no
+//      restart). TAKARO_CONAN_NATIVE_DISABLE=1 keeps it inert;
 //   2. finds ProcessEvent, GUObjectArray and the FNamePool by a signature scan of the server's own
 //      code and checks them against the pinned build (core/pins);
 //   3. on a verified build installs the ProcessEvent detour (the game-thread entry point); on any

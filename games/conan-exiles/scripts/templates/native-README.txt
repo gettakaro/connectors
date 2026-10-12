@@ -8,8 +8,9 @@ other build it stays connected but refuses every action and says why in
 ConanSandbox/Saved/Logs/TakaroConanNative.log.
 
 Install, upgrade and rollback: INSTALL.md.
-Configuration: takaro.json (copy it to ConanSandbox/Saved/Config/Takaro/ and paste your
-registration token; saving it while the server runs is enough).
+Configuration: ConanSandbox/Saved/Config/Takaro/takaro.json, created on the first start. Paste
+your registration token into it; saving it while the server runs is enough. An upgrade never
+touches it.
 What is linked in, and the licenses: THIRD-PARTY.md and licenses/.
 Checksums of every file in this folder: SHA256SUMS.
 

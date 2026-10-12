@@ -1,8 +1,8 @@
 // Takaro Conan Exiles native connector: Windows entry (the twin of platform/linux/main.cpp).
 //
 // Runs on the worker thread DllMain starts, inside ConanSandboxServer-Win64-Shipping.exe. It:
-//   1. reads the config (env first, then ConanSandbox\Saved\Config\Takaro\takaro.json) and stays
-//      completely inert when it is missing or invalid (fail closed);
+//   1. reads the config (env first, then ConanSandbox\Saved\Config\Takaro\takaro.json, created with a
+//      new identity when it is missing); without a usable token it loads but does not connect;
 //   2. finds ProcessEvent, GUObjectArray and the FNamePool by a signature scan of the server's .text and
 //      checks them, as RVAs, against the pinned build (core/pins; ASLR moves the image every start);
 //   3. on a verified build detours ProcessEvent with MinHook; on any other build installs nothing, but

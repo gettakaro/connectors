@@ -25,16 +25,7 @@ You also need a Takaro game server of type **Generic** and its **registration to
 1. Stop the server.
 2. Unzip `TakaroConanNative/` anywhere the server user can read, for example
    `/home/steam/TakaroConanNative/`.
-3. Copy the config into the server and paste your registration token into it:
-
-   ```bash
-   mkdir -p <server>/ConanSandbox/Saved/Config/Takaro
-   cp TakaroConanNative/takaro.json <server>/ConanSandbox/Saved/Config/Takaro/takaro.json
-   chmod 600 <server>/ConanSandbox/Saved/Config/Takaro/takaro.json
-   ```
-
-   Set `registrationToken` in that file. Leave `identityToken` empty.
-4. Start the server with the library preloaded. Keep your usual flags:
+3. Start the server with the library preloaded. Keep your usual flags:
 
    ```bash
    LD_PRELOAD=/home/steam/TakaroConanNative/libtakaro-conan-native.so ./ConanSandboxServer.sh -log
@@ -43,22 +34,35 @@ You also need a Takaro game server of type **Generic** and its **registration to
    In Docker, set `LD_PRELOAD` in the server container's environment and mount the folder into
    the container. The library only activates in `ConanSandboxServer-Linux-Shipping`; the launcher
    script and other programs ignore it.
+4. Paste your registration token into `ConanSandbox/Saved/Config/Takaro/takaro.json` (the
+   connector created it) and save. See [Configuration](#configuration).
 
 ## Windows
 
 1. Stop the server.
 2. Copy `TakaroConanNative\winmm.dll` into `ConanSandbox\Binaries\Win64\`, next to
    `ConanSandboxServer-Win64-Shipping.exe`.
-3. Create `ConanSandbox\Saved\Config\Takaro\`, copy `TakaroConanNative\takaro.json` into it and set
-   `registrationToken` in it. Leave `identityToken` empty.
-4. Start the server as usual. The DLL only activates in the server exe; anything else that loads
+3. Start the server as usual. The DLL only activates in the server exe; anything else that loads
    it gets the normal Windows `winmm.dll` functions and nothing more.
+4. Paste your registration token into `ConanSandbox\Saved\Config\Takaro\takaro.json` (the
+   connector created it) and save. See [Configuration](#configuration).
 
 ## Configuration
 
-`ConanSandbox/Saved/Config/Takaro/takaro.json`. If it is missing, the connector creates it on the
-first start. Saving the file is enough: the connector applies a changed token, identity, name or
-URL within a few seconds, no restart needed.
+`ConanSandbox/Saved/Config/Takaro/takaro.json` is the only config file. If it is missing, the
+connector creates it on the first start with a new `identityToken` and an empty token. Saving the
+file is enough: the connector applies a changed token, identity, name or URL within a few seconds,
+no restart needed; an emptied token disconnects. You can also create it yourself before the first
+start:
+
+```json
+{
+  "url": "wss://connect.takaro.io/",
+  "registrationToken": "<your registration token>",
+  "identityToken": "",
+  "name": ""
+}
+```
 
 | Key | Value |
 |---|---|
@@ -96,9 +100,9 @@ The connector keeps its state (event queue, bans, health) in `ConanSandbox/Saved
 ## Upgrading the connector
 
 Stop the server, replace `libtakaro-conan-native.so` and `ca-certificates.crt` (Linux) or
-`winmm.dll` (Windows) with the new ones, start the server. Do not copy the new `takaro.json` over
-yours. If you did, the connector restores the token, identity and name from
-`ConanSandbox/Saved/Takaro/state/saved-settings.json` and keeps the same Takaro server.
+`winmm.dll` (Windows) with the new ones, start the server. Your config at
+`ConanSandbox/Saved/Config/Takaro/takaro.json` is never touched, so the server keeps its Takaro
+record.
 
 ## Rollback
 

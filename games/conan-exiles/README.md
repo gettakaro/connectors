@@ -31,24 +31,12 @@ GitHub's own; you do not need them.
 
 ### 3. Put the files in place
 
-Linux: unzip `TakaroConanNative/` anywhere the server user can read, then copy the config:
-
-```bash
-mkdir -p <server>/ConanSandbox/Saved/Config/Takaro
-cp TakaroConanNative/takaro.json <server>/ConanSandbox/Saved/Config/Takaro/takaro.json
-```
-
-Windows: copy `winmm.dll` into `ConanSandbox\Binaries\Win64\` (next to
-`ConanSandboxServer-Win64-Shipping.exe`), and `takaro.json` into `ConanSandbox\Saved\Config\Takaro\`.
-
-### 4. Paste the token
-
-In `ConanSandbox/Saved/Config/Takaro/takaro.json`, set `registrationToken` to the token from Takaro.
-Leave `identityToken` empty; the connector fills it in. Optional: `name` (the server name in Takaro).
+Linux: unzip `TakaroConanNative/` anywhere the server user can read. Windows: copy `winmm.dll` into
+`ConanSandbox\Binaries\Win64\` (next to `ConanSandboxServer-Win64-Shipping.exe`).
 
 Keep RCON off; the connector does not use it (`Game.ini`: `[RconPlugin]` `RconEnabled=0`).
 
-### 5. Start the server
+### 4. Start the server
 
 Linux, with your usual flags:
 
@@ -58,13 +46,32 @@ LD_PRELOAD=/path/to/TakaroConanNative/libtakaro-conan-native.so ./ConanSandboxSe
 
 Windows: start the server as usual.
 
+### 5. Paste the token
+
+The connector creates its config on the first start:
+`ConanSandbox/Saved/Config/Takaro/takaro.json`. Open it, set `registrationToken` to the token from
+Takaro and save. Saving is enough: it connects within a few seconds, no restart needed. Optional:
+`name` (the server name in Takaro).
+
+You can also create the file yourself before the first start, with this content:
+
+```json
+{
+  "url": "wss://connect.takaro.io/",
+  "registrationToken": "<your registration token>",
+  "identityToken": "",
+  "name": ""
+}
+```
+
+Leave `identityToken` empty; the connector fills in a unique one. Never change it afterwards.
+
 ### 6. Check that it worked
 
 - The server console shows `Takaro: connected to Takaro as "<name>"`.
 - Takaro shows the server online and **Test connection** reports it reachable.
 - If it is not connected, the console shows a `****` block naming the problem and the file. Fix the
-  file and save it; the connector reconnects within a few seconds, no restart needed. The same
-  applies when you skipped step 3: the connector creates `takaro.json` on the first start.
+  file and save it; the connector reconnects within a few seconds, no restart needed.
 
 Upgrading, rollback and removal: [INSTALL.md](INSTALL.md).
 

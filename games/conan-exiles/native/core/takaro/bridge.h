@@ -102,7 +102,6 @@ private:
     uint64_t epoch_ = 0;
     bool open_ = false, identified_ = false;
     std::string gameServerId_;
-    Config identifyConfig_;  // the settings the current epoch's identify was sent with
     uint64_t lastQueuedId_ = 0;
     std::map<uint64_t, std::shared_ptr<Job>> inflight_;
     std::set<std::string> pendingIds_;
