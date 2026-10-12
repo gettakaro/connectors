@@ -109,7 +109,7 @@ public final class ConfigLoader {
                 AgentLog.error("config: could not create " + configFile, e);
             }
         }
-        String written = withIdentityIfMissing(created != null ? created : text, newIdentity);
+        String written = withIdentityIfMissing(created != null ? created : text, text, newIdentity);
         if (written != null) {
             AgentLog.log(created != null
                     ? "config: created " + configFile + " with a new identityToken (paste the registration token into it)"
@@ -148,7 +148,7 @@ public final class ConfigLoader {
         // Emptying identityToken would otherwise make the next start create a second record.
         String inUse = ConfigFiles.parse(lastText).get("identityToken");
         if (TakaroConfig.isSet(inUse)) {
-            String written = withIdentityIfMissing(text, () -> inUse);
+            String written = withIdentityIfMissing(text, text, () -> inUse);
             if (written != null) {
                 AgentLog.log("config: identityToken was emptied; wrote the one in use back");
                 text = written;
@@ -198,16 +198,19 @@ public final class ConfigLoader {
     }
 
     /**
-     * Writes {@code text} with an identity from {@code identity} when it is a file without
-     * one, and returns what it wrote; null when the file is absent, already has an
-     * identity, or the write failed.
+     * Writes {@code text} with an identity from {@code identity} when it has none and the
+     * file still holds {@code onDisk} (null: still absent), so a save made meanwhile is
+     * never overwritten. Returns what it wrote, or null when it wrote nothing.
      */
-    private String withIdentityIfMissing(String text, Supplier<String> identity) {
+    private String withIdentityIfMissing(String text, String onDisk, Supplier<String> identity) {
         if (text == null || TakaroConfig.isSet(ConfigFiles.parse(text).get("identityToken"))) {
             return null;
         }
         String updated = ConfigFiles.withIdentity(text, identity.get());
         try {
+            if (!Objects.equals(onDisk, ConfigFiles.readOrNull(configFile))) {
+                return null; // saved again meanwhile: the next poll sees that text
+            }
             ConfigFiles.writeAtomically(configFile, updated);
             return updated;
         } catch (IOException | RuntimeException e) {
