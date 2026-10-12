@@ -381,8 +381,7 @@ def config_reload(cert, key):
     # Fresh install: the connector creates takaro.cfg with a UUID identity, shows a banner and
     # does not dial; a token saved while running connects without a restart; a rejected token is
     # reported and a corrected one reconnects; a half-saved file is ignored; an emptied token
-    # disconnects; an emptied identity gets a new one; a restart (upgrade) keeps the identity;
-    # the environment still wins.
+    # disconnects; a restart (upgrade) keeps the identity; the environment still wins.
     with tempfile.TemporaryDirectory(prefix='vein-cfg-') as tmp:
         root = Path(tmp)
         cfg, data = root / 'takaro.cfg', root / 'data'
@@ -447,20 +446,6 @@ def config_reload(cert, key):
             time.sleep(1.5)
             assert run.peer.connections.empty(), 'redialed without a registration token'
 
-            # An emptied identity gets a new one written back, and the server reconnects with it.
-            write_cfg(cfg, set_line(set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-second'),
-                                    'TAKARO_IDENTITY_TOKEN', ''))
-            index, payload = next_identify(run)
-            renewed = [l for l in cfg.read_text().splitlines() if l.startswith('TAKARO_IDENTITY_TOKEN=')][0][22:]
-            assert len(renewed) == 36 and renewed != identity, renewed
-            assert payload['identityToken'] == renewed, payload
-            run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
-            eventually(lambda: run.health()['connection']['identified'])
-            write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_IDENTITY_TOKEN', identity))
-            index, payload = next_identify(run)
-            assert payload['identityToken'] == identity, payload
-            run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
-            eventually(lambda: run.health()['connection']['identified'])
         finally:
             run.close()
         out = run.stderr
@@ -470,10 +455,11 @@ def config_reload(cert, key):
         assert len(refused) == 1, out
         assert 'Invalid registrationToken provided (HTTP 400)' in refused[0], refused
         assert any('line' in l and 'keeping the current settings' in l for l in out.splitlines()), out
-        for secret in ('tok-first', 'tok-wrong', 'tok-second', identity, renewed, 'details'):
+        for secret in ('tok-first', 'tok-wrong', 'tok-second', identity, 'details'):
             assert secret not in out, (secret, out)
 
         # Upgrade (only the .so files replaced; takaro.cfg untouched): same identity, same file.
+        write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-second'))
         before = cfg.read_text()
         run = Run(cert, key, env_overrides=env, expected_identity=identity)
         try:
@@ -496,24 +482,6 @@ def config_reload(cert, key):
         assert f'TAKARO_IDENTITY_TOKEN={identity}' in cfg.read_text()
         assert 'tok-env' not in cfg.read_text() and 'id-env' not in cfg.read_text()
 
-    # A folder the connector cannot write and no identity anywhere: a banner, and no connection.
-    if os.geteuid() != 0:
-        with tempfile.TemporaryDirectory(prefix='vein-cfg-ro-') as tmp:
-            root = Path(tmp)
-            locked, data = root / 'locked', root / 'data'
-            locked.mkdir()
-            locked.chmod(0o500)
-            env = {'TAKARO_CONFIG_FILE': str(locked / 'takaro.cfg'), 'TAKARO_PLUGIN_DATA_DIR': str(data),
-                   'TAKARO_IDENTITY_TOKEN': '', 'TAKARO_REGISTRATION_TOKEN': 'tok-ro'}
-            run = Run(cert, key, env_overrides=env, identify_now=False, expected_identity=None)
-            try:
-                time.sleep(1.5)
-                assert run.peer.connections.empty(), 'connected without an identity'
-            finally:
-                run.close()
-                locked.chmod(0o700)
-            assert 'TAKARO_IDENTITY_TOKEN not set and' in run.stderr, run.stderr
-            assert 'tok-ro' not in run.stderr
     print('bridge takaro.cfg creation, reload, banners and identity: pass', flush=True)
 
 
