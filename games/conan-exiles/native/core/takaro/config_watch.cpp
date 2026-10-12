@@ -111,6 +111,7 @@ Config ConfigWatcher::Load() {
 
 Config ConfigWatcher::Resolve(std::string& text, bool exists, const std::string& readError,
                               const std::string& identity, std::string writeError) {
+    raced_ = false;
     ConfigInput in;
     in.savedDir = o_.savedDir;
     in.env = o_.env;
@@ -123,7 +124,14 @@ Config ConfigWatcher::Resolve(std::string& text, bool exists, const std::string&
     const std::string id = identity.empty() ? o_.newIdentity() : identity;
     std::optional<std::string> next = SetJsonString(text, "identityToken", id);
     if (next && c.nameSource == Source::Default) next = SetJsonString(*next, "name", DefaultServerName(id));
-    std::string err = "the file is not a plain JSON object";
+    std::string err = "the file is not a plain JSON object", onDisk, readErr;
+    bool still = false;
+    // A save that landed since `text` was read wins; the next poll handles it.
+    if (next && (!ReadWholeFile(path_, onDisk, still, readErr) || !still || onDisk != text)) {
+        NativeLog("config: %s changed while the identity was being written; retrying on the next poll", path_.c_str());
+        raced_ = true;
+        return c;
+    }
     if (next && ReplaceUserFile(path_, *next, 0600, err)) {
         NativeLog("config: wrote %s identity into %s", identity.empty() ? "a new" : "the running", path_.c_str());
         text = in.fileText = *next;
@@ -162,6 +170,7 @@ bool ConfigWatcher::Poll(int64_t nowMs, Config& out) {
     }
     candidateText_.reset();
     Config next = Resolve(text, true, "", active_.identityToken);
+    if (raced_) return false;  // applied once the new save settles
     appliedText_ = text;
     if (!next.fileError.empty()) {
         ignoredSaves_++;

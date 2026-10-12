@@ -73,6 +73,7 @@ private:
     int64_t nextReminder_ = 0, reminderGap_ = 60000;
     uint64_t reloads_ = 0, ignoredSaves_ = 0;
     bool createdFile_ = false;
+    bool raced_ = false;  // the last Resolve skipped its write: the file changed under it
 };
 
 }  // namespace takaro
