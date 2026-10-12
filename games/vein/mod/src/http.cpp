@@ -449,12 +449,12 @@ void* ConnThread(void* arg) {
 }
 
 void LoadToken() {
-    g_token = ConfigValue("TAKARO_PLUGIN_TOKEN", "token", "");
+    g_token = ConfigValue("TAKARO_PLUGIN_TOKEN", "");
     if (g_token.empty())
         PluginLog("http: diagnostics disabled (TAKARO_PLUGIN_TOKEN is not configured)");
     else
         PluginLog("http: token configured (%zu chars)", g_token.size());
-    std::string port = ConfigValue("TAKARO_PLUGIN_PORT", "port", "");
+    std::string port = ConfigValue("TAKARO_PLUGIN_PORT", "");
     if (!port.empty()) {
         int v = atoi(port.c_str());
         if (v > 0 && v < 65536) g_port = v;

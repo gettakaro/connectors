@@ -4,6 +4,7 @@
 #include "state.h"
 #include "gamethread.h"
 #include "reflect.h"
+#include "config_file.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cassert>
@@ -33,7 +34,7 @@ bool HasString(const Json& body,const char* key){return body.contains(key)&&body
 Actions::Result BadBody(const char* field){return {400,Json{{"error",std::string("missing ")+field}}.dump()};}
 }
 
-std::string ConfigValue(const char* env,const char*,const std::string& def){const char* v=getenv(env);return v?v:def;}
+std::string ConfigValue(const char* env,const std::string& def){const char* v=ConfigFile::Get(env);return v&&*v?v:def;}
 std::string Redact(const std::string& s){return s;} // URL fields are masked by real EventsParse::RedactLogLine.
 std::string JsonEscape(const std::string& s){auto quoted=Json(s).dump();return quoted.substr(1,quoted.size()-2);}
 const std::string& PluginDataDir(){static std::string d="/tmp/vein-native-test";return d;}
@@ -79,6 +80,7 @@ size_t PendingBanJobs(){return 0;}
 int main(){
     char tmp[]="/tmp/vein-behavior-XXXXXX";char* path=mkdtemp(tmp);Check(path,"mkdtemp");
     setenv("TAKARO_STATE_DIR",path,1);setenv("TAKARO_SENDER_NAME","Bot",1);
+    setenv("TAKARO_CONFIG_FILE",(fs::path(path)/"takaro.cfg").c_str(),1);
     {std::ofstream initial(fs::path(path)/"known-players.json");initial<<R"([{"gameId":"76561198000000001","name":"A"}])";}
     NativePersistence::Store store;Check(store.Load(),"initial outbox load");
     NativeBehavior::Engine engine(store);Check(engine.Load(),"legacy load");
@@ -92,7 +94,8 @@ int main(){
     setenv("TAKARO_SENDER_NAME","   ",1);setenv("TAKARO_SERVER_CHAT_NAME","Unused Alias",1);
     setenv("TAKARO_SERVER_NAME","Named Server",1);checkConfiguredSender("Named Server");
     unsetenv("TAKARO_SENDER_NAME");setenv("TAKARO_SERVER_CHAT_NAME","  Alias Bot  ",1);checkConfiguredSender("Alias Bot");
-    unsetenv("TAKARO_SERVER_CHAT_NAME");unsetenv("TAKARO_SERVER_NAME");checkConfiguredSender("Takaro Dev Vein");
+    unsetenv("TAKARO_SERVER_CHAT_NAME");unsetenv("TAKARO_SERVER_NAME");
+    checkConfiguredSender(ConfigFile::DefaultServerName(ConfigFile::Get("TAKARO_IDENTITY_TOKEN")));
     setenv("TAKARO_SENDER_NAME","Bot",1);
     Check(Parse(engine.Snapshot()->knownPlayersJson).size()==1&&Parse(engine.Snapshot()->onlinePlayersJson).empty()&&Parse(engine.Snapshot()->timedBansJson).empty(),"missing legacy files do not inherit preceding contents");
     Check(!engine.SuppressRingConnection("player-connected")&&!engine.SuppressRingConnection("chat-message"),"healthy auto mode keeps ring ownership");

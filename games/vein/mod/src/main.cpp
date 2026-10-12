@@ -47,16 +47,15 @@ void Sleep(unsigned ms) {
 
 void* InitThread(void*) {
     // Populate immutable configuration before hooks can run on the game thread.
-    (void)ConfigValue(nullptr, nullptr);
     (void)DebugEnabled();
     PluginState::Get().SetCapability("gameThread", "degraded", "starting");
     PluginLog("takaro vein plugin %s starting (pid %d, bootId %s)", TAKARO_PLUGIN_VERSION, getpid(),
               BootId().c_str());
     PluginLog("maps: %s", MemMapsSelfSoLine().c_str());
     const ConfigFile::Loaded& cfg = ConfigFile::Current();
+    if (!cfg.note.empty()) ConsoleLine("%s", cfg.note.c_str());
     if (cfg.found) {
-        ConsoleLine("VEIN connector %s loaded; read %zu setting(s) from %s", TAKARO_PLUGIN_VERSION,
-                    cfg.values.size(), cfg.path.c_str());
+        ConsoleLine("VEIN connector %s loaded; settings from %s", TAKARO_PLUGIN_VERSION, cfg.path.c_str());
         for (const auto& kv : cfg.values) {
             const char* env = getenv(kv.first.c_str());
             if (env && *env) PluginLog("config: %s from the environment overrides %s", kv.first.c_str(), cfg.path.c_str());
@@ -64,8 +63,7 @@ void* InitThread(void*) {
         for (const auto& w : cfg.warnings)
             ConsoleLine("WARNING: %s %s", cfg.path.c_str(), w.c_str());
     } else {
-        ConsoleLine("VEIN connector %s loaded (settings from the environment; no %s)", TAKARO_PLUGIN_VERSION,
-                    cfg.path.c_str());
+        ConsoleLine("VEIN connector %s loaded (settings from the environment only)", TAKARO_PLUGIN_VERSION);
     }
 
     try {
@@ -176,7 +174,8 @@ __attribute__((constructor)) static void TakaroPluginInit() {
         return;
     }
     // Panel installs load this library with dlopen after the game has started threads, so settings
-    // are read through ConfigFile::Get, never copied into the environment.
+    // are read through ConfigFile::Get, never copied into the environment. This also creates
+    // takaro.cfg (with a new server identity) on the first start.
     (void)ConfigFile::Current();
     // Fallback for a process that exits before InitThread reaches its late
     // registration. ShutdownPlugin is idempotent across both registrations.

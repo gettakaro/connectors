@@ -367,8 +367,8 @@ void Pass(const std::string& forceId, bool forceAdmin, bool force, std::string* 
 // ================================================================================================
 
 void Admin::Init() {
-    std::string raw = ConfigValue("TAKARO_ADMIN_STEAMIDS", "adminSteamIds");
-    std::string superRaw = ConfigValue("TAKARO_SUPERADMIN_STEAMIDS", "superAdminSteamIds");
+    std::string raw = ConfigValue("TAKARO_ADMIN_STEAMIDS");
+    std::string superRaw = ConfigValue("TAKARO_SUPERADMIN_STEAMIDS");
     Guard g(g_lock);
     g_configured = ActionsUtil::ParseSteamIdList(raw, &g_configuredBad);
     g_superConfigured = ActionsUtil::ParseSteamIdList(superRaw, &g_superConfiguredBad);

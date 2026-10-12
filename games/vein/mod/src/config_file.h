@@ -1,6 +1,6 @@
-// Optional key=value config file for panels that cannot set environment variables per process
-// (AMP, Pterodactyl, LinuxGSM). Keys are the documented environment variable names; a real,
-// non-empty environment variable always wins over the file.
+// takaro.cfg: the connector's one settings file, next to libtakaro-vein.so (TAKARO_CONFIG_FILE
+// overrides the path). Keys are the documented environment variable names; a real, non-empty
+// environment variable always wins over the file and is never written to it.
 #pragma once
 
 #include <functional>
@@ -22,6 +22,8 @@ struct Parsed {
 // key and value, a UTF-8 BOM, CR line ends, an "export " prefix and one pair of matching quotes
 // around the value are stripped. Only TAKARO_* and VEIN_* keys are accepted.
 Parsed Parse(const std::string& text);
+// True when a line has no '=': the file is half-saved or mistyped, and must not be applied.
+bool Unparseable(const Parsed& parsed);
 
 // TAKARO_CONFIG_FILE when set, otherwise takaro.cfg next to libtakaro-vein.so.
 std::string DefaultPath();
@@ -31,12 +33,29 @@ struct Loaded {
     bool found = false;
     std::map<std::string, std::string> values;
     std::vector<std::string> warnings;
+    std::string note;  // what Ensure did or why it could not ("" when the file was fine)
 };
 
-// Reads and parses `path`; a missing file is not an error.
-Loaded Load(const std::string& path);
+// The whole file, or nullopt when it cannot be read (missing, permissions).
+std::optional<std::string> ReadText(const std::string& path);
+Loaded FromText(const std::string& path, const std::string& text);
 
-// The file at DefaultPath(), read once on first use. Immutable afterwards, so any thread may read it.
+// A random UUID (version 4).
+std::string NewIdentity();
+// The file the connector writes when there is none, with this identity and an unused token.
+std::string Template(const std::string& identity);
+// "My VEIN server (<first 8 characters of the identity>)", the name used when none is set.
+std::string DefaultServerName(const std::string& identity);
+
+// The text of `path` after making sure it names a server identity: a missing file is created
+// from Template() (only when `create`), and a file whose TAKARO_IDENTITY_TOKEN is empty gets a
+// new one written into it. Nothing else is ever written. nullopt when the file does not exist
+// and could not be created; `note` says what was written or what failed.
+std::optional<std::string> Ensure(const std::string& path, bool create, std::string& note,
+                                  const std::function<std::string()>& newIdentity = NewIdentity);
+
+// The file at DefaultPath(), ensured and read once on first use (as the library loads). Immutable
+// afterwards, so any thread may read it.
 const Loaded& Current();
 
 // The setting `name`: a non-empty environment variable, else the file's value, else the
@@ -50,20 +69,8 @@ inline const char* Get(const char* name) { return Lookup(Current(), name); }
 // runs (the bridge thread polls it); every other key keeps the value read at startup.
 
 constexpr const char* kDefaultUrl = "wss://connect.takaro.io/";
-// What releases up to 0.5 used when no identity was set. Installs that ran one of them keep it.
-constexpr const char* kLegacyIdentity = "vein";
-constexpr const char* kDefaultServerName = "Takaro Dev Vein";
-// The connector's own copy of the settings it connected with, in the data directory, which no
-// upgrade replaces. A value set in takaro.cfg (or the environment) wins over it.
-constexpr const char* kSavedFileName = "saved-settings.cfg";
 
-// The whole file, or nullopt when it cannot be read (missing, permissions).
-std::optional<std::string> ReadText(const std::string& path);
-Loaded FromText(const std::string& path, const std::string& text);
-// True when a line has no '=': the file is half-saved or mistyped, and must not be applied.
-bool Unparseable(const Parsed& parsed);
-
-enum class Source { Env, File, Saved, Current, Legacy, Generated, Default };
+enum class Source { Env, File, Default };
 const char* SourceName(Source s);
 
 struct Settings {
@@ -80,27 +87,16 @@ struct Resolution {
            serverName = Source::Default;
 };
 
-// Per field: a non-empty environment variable, else takaro.cfg, else the saved copy. The URL is
-// taken from takaro.cfg only when it differs from the default, so a freshly shipped file cannot
-// undo a saved custom URL. The identity falls back to `current` (the one this run already uses),
-// then to "vein" for an install that ran an older connector (`legacyInstall`), and only then to
-// `newIdentity()`. `getenv` is injectable for tests.
-Resolution Resolve(const Loaded& user, const Loaded& saved, bool legacyInstall, const std::string& current,
-                   const std::function<std::string()>& newIdentity,
-                   const std::function<const char*(const char*)>& env = ::getenv);
-
-// The saved copy to write: the URL, identity and (only when `withRegistration`) the registration
-// token in use. Values that came from the environment are not written; the old saved value stays.
-std::string RenderSaved(const Resolution& r, const Loaded& oldSaved, bool withRegistration);
+// Per field: a non-empty environment variable, else the file, else the default (the Takaro URL,
+// no token, no identity, DefaultServerName(identity)). `getenv` is injectable for tests.
+Resolution Resolve(const Loaded& file, const std::function<const char*(const char*)>& env = ::getenv);
 
 // `text` with KEY's line set to KEY=value (the first matching line, else appended), keeping every
 // other line and the line-ending style.
 std::string SetKey(const std::string& text, const std::string& key, const std::string& value);
 
-// Writes via <path>.tmp + rename so a reader never sees half a file; keeps the old file's mode.
+// Writes via <path>.tmp + rename so a reader never sees half a file; keeps the old file's mode
+// and, where the process may, its owner.
 bool WriteAtomic(const std::string& path, const std::string& text, unsigned mode = 0600);
-
-// A random UUID (version 4).
-std::string NewIdentity();
 
 }  // namespace ConfigFile

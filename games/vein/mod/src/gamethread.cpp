@@ -42,7 +42,7 @@ std::string g_how = "not installed";
 uint64_t TickBudgetNs() {
     static uint64_t cached = 0;
     if (!cached) {
-        std::string v = ConfigValue("TAKARO_TICK_BUDGET_US", "tickBudgetUs", "500");
+        std::string v = ConfigValue("TAKARO_TICK_BUDGET_US", "500");
         long us = strtol(v.c_str(), nullptr, 10);
         if (us < 50) us = 50;
         if (us > 33000) us = 33000;

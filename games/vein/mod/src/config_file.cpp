@@ -5,7 +5,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <cstdio>
+#include <cstring>
 #include <cstdlib>
 #include <ctime>
 
@@ -96,83 +98,89 @@ Loaded FromText(const std::string& path, const std::string& text) {
     return l;
 }
 
-Loaded Load(const std::string& path) {
-    auto text = ReadText(path);
-    if (!text) { Loaded l; l.path = path; return l; }
-    return FromText(path, *text);
-}
-
 bool Unparseable(const Parsed& parsed) {
     for (const auto& w : parsed.warnings)
         if (w.find("no '='") != std::string::npos) return true;
     return false;
 }
 
+std::string DefaultServerName(const std::string& identity) {
+    return "My VEIN server (" + identity.substr(0, 8) + ")";
+}
+
+std::string Template(const std::string& identity) {
+    return "# Takaro VEIN connector settings. Environment variables with the same name win over this file.\n"
+           "# Paste the registration token from the Takaro dashboard and save; it connects within seconds.\n"
+           "TAKARO_REGISTRATION_TOKEN=\n"
+           "# This server's identity in Takaro. Keep it when you move or reinstall the server.\n"
+           "TAKARO_IDENTITY_TOKEN=" + identity + "\n"
+           "# The name Takaro gives this server, also shown in front of Takaro's chat messages.\n"
+           "TAKARO_SERVER_NAME=" + DefaultServerName(identity) + "\n"
+           "# Optional: SteamID64s that get VEIN's in-game admin rights, comma separated.\n"
+           "TAKARO_ADMIN_STEAMIDS=\n";
+}
+
+std::optional<std::string> Ensure(const std::string& path, bool create, std::string& note,
+                                  const std::function<std::string()>& newIdentity) {
+    note.clear();
+    auto text = ReadText(path);
+    if (!text) {
+        struct stat st{};
+        if (::stat(path.c_str(), &st) == 0 || errno != ENOENT) {
+            note = "cannot read " + path;
+            return std::nullopt;  // there, but unreadable: never replace it
+        }
+        if (!create) return std::nullopt;
+        const std::string fresh = Template(newIdentity());
+        if (!WriteAtomic(path, fresh, 0600)) {
+            note = "could not create " + path + ": " + strerror(errno);
+            return std::nullopt;
+        }
+        note = "created " + path + " with a new server identity";
+        return fresh;
+    }
+    const Parsed parsed = Parse(*text);
+    if (Unparseable(parsed)) return text;  // half-saved: the next settled read decides
+    std::string identity;
+    for (const auto& e : parsed.entries)
+        if (e.first == "TAKARO_IDENTITY_TOKEN") identity = Trim(e.second);
+    if (!identity.empty()) return text;
+    const std::string next = SetKey(*text, "TAKARO_IDENTITY_TOKEN", newIdentity());
+    if (!WriteAtomic(path, next, 0600)) {
+        note = "could not write a server identity into " + path + ": " + strerror(errno);
+        return text;
+    }
+    note = "wrote a new server identity into " + path;
+    return next;
+}
+
 const char* SourceName(Source s) {
     switch (s) {
     case Source::Env: return "environment";
     case Source::File: return "takaro.cfg";
-    case Source::Saved: return "saved copy";
-    case Source::Current: return "current";
-    case Source::Legacy: return "legacy default";
-    case Source::Generated: return "generated";
     case Source::Default: return "default";
     }
     return "default";
 }
 
-Resolution Resolve(const Loaded& user, const Loaded& saved, bool legacyInstall, const std::string& current,
-                   const std::function<std::string()>& newIdentity,
-                   const std::function<const char*(const char*)>& env) {
-    auto envValue = [&](const char* key) -> std::string {
-        const char* v = env(key);
-        return v ? Trim(v) : "";
-    };
-    auto fileValue = [](const Loaded& l, const char* key) -> std::string {
-        auto it = l.values.find(key);
-        return it == l.values.end() ? "" : Trim(it->second);
-    };
+Resolution Resolve(const Loaded& file, const std::function<const char*(const char*)>& env) {
     Resolution r;
-    auto pick = [&](const char* key, std::string& out, Source& src, bool userOnlyWhenNotDefault,
-                    const char* def, bool useSaved) {
-        std::string v;
-        if (!(v = envValue(key)).empty()) { out = v; src = Source::Env; return true; }
-        v = fileValue(user, key);
-        if (!v.empty() && !(userOnlyWhenNotDefault && def && v == def)) { out = v; src = Source::File; return true; }
-        if (useSaved && !(v = fileValue(saved, key)).empty()) { out = v; src = Source::Saved; return true; }
-        return false;
+    auto pick = [&](const char* key, std::string& out, Source& src) {
+        const char* e = env(key);
+        std::string v = e ? Trim(e) : "";
+        if (!v.empty()) { out = v; src = Source::Env; return; }
+        auto it = file.values.find(key);
+        v = it == file.values.end() ? "" : Trim(it->second);
+        if (!v.empty()) { out = v; src = Source::File; return; }
+        out.clear(); src = Source::Default;
     };
-    if (!pick("TAKARO_WS_URL", r.settings.url, r.url, true, kDefaultUrl, true)) {
-        r.settings.url = kDefaultUrl; r.url = Source::Default;
-    }
-    if (!pick("TAKARO_REGISTRATION_TOKEN", r.settings.registration, r.registration, false, nullptr, true)) {
-        r.settings.registration.clear(); r.registration = Source::Default;
-    }
-    if (!pick("TAKARO_SERVER_NAME", r.settings.serverName, r.serverName, false, nullptr, false)) {
-        r.settings.serverName = kDefaultServerName; r.serverName = Source::Default;
-    }
-    if (!pick("TAKARO_IDENTITY_TOKEN", r.settings.identity, r.identity, false, nullptr, true)) {
-        if (!current.empty()) { r.settings.identity = current; r.identity = Source::Current; }
-        else if (legacyInstall) { r.settings.identity = kLegacyIdentity; r.identity = Source::Legacy; }
-        else { r.settings.identity = newIdentity(); r.identity = Source::Generated; }
-    }
+    pick("TAKARO_WS_URL", r.settings.url, r.url);
+    if (r.settings.url.empty()) r.settings.url = kDefaultUrl;
+    pick("TAKARO_REGISTRATION_TOKEN", r.settings.registration, r.registration);
+    pick("TAKARO_IDENTITY_TOKEN", r.settings.identity, r.identity);
+    pick("TAKARO_SERVER_NAME", r.settings.serverName, r.serverName);
+    if (r.settings.serverName.empty()) r.settings.serverName = DefaultServerName(r.settings.identity);
     return r;
-}
-
-std::string RenderSaved(const Resolution& r, const Loaded& oldSaved, bool withRegistration) {
-    auto old = [&](const char* key) {
-        auto it = oldSaved.values.find(key);
-        return it == oldSaved.values.end() ? std::string() : Trim(it->second);
-    };
-    auto value = [&](const char* key, const std::string& inUse, Source src, bool write) {
-        return std::string(key) + "=" + (write && src != Source::Env && src != Source::Default ? inUse : old(key)) + "\n";
-    };
-    return "# Written by the Takaro connector: the settings it last connected with. It sits outside\n"
-           "# what an upgrade replaces, so a replaced takaro.cfg keeps this server's token and identity.\n"
-           "# Edit takaro.cfg next to libtakaro-vein.so instead; a value set there wins over this file.\n" +
-           value("TAKARO_WS_URL", r.settings.url, r.url, true) +
-           value("TAKARO_REGISTRATION_TOKEN", r.settings.registration, r.registration, withRegistration) +
-           value("TAKARO_IDENTITY_TOKEN", r.settings.identity, r.identity, true);
 }
 
 std::string SetKey(const std::string& text, const std::string& key, const std::string& value) {
@@ -201,10 +209,12 @@ std::string SetKey(const std::string& text, const std::string& key, const std::s
 
 bool WriteAtomic(const std::string& path, const std::string& text, unsigned mode) {
     struct stat st{};
-    if (stat(path.c_str(), &st) == 0) mode = st.st_mode & 07777;
+    const bool existed = stat(path.c_str(), &st) == 0;
+    if (existed) mode = st.st_mode & 07777;
     const std::string tmp = path + ".tmp";
     int fd = open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, mode);
     if (fd < 0) return false;
+    if (existed) (void)!fchown(fd, st.st_uid, st.st_gid);  // only root may give a file away
     (void)fchmod(fd, mode);  // open() applied the umask
     bool ok = true;
     size_t off = 0;
@@ -214,7 +224,12 @@ bool WriteAtomic(const std::string& path, const std::string& text, unsigned mode
     }
     ok = ok && fsync(fd) == 0;
     ok = close(fd) == 0 && ok;
-    if (!ok || rename(tmp.c_str(), path.c_str()) != 0) { unlink(tmp.c_str()); return false; }
+    if (!ok || rename(tmp.c_str(), path.c_str()) != 0) {
+        const int err = errno;
+        unlink(tmp.c_str());
+        errno = err;  // the caller reports why
+        return false;
+    }
     return true;
 }
 
@@ -239,7 +254,16 @@ std::string NewIdentity() {
 }
 
 const Loaded& Current() {
-    static const Loaded& loaded = *new Loaded(Load(DefaultPath()));  // still read by exit handlers
+    static const Loaded& loaded = *new Loaded([] {  // still read by exit handlers
+        const std::string path = DefaultPath();
+        std::string note;
+        auto text = Ensure(path, true, note);
+        Loaded l;
+        if (text) l = FromText(path, *text);
+        l.path = path;
+        l.note = note;
+        return l;
+    }());
     return loaded;
 }
 

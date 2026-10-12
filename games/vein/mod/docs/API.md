@@ -18,7 +18,7 @@ Mechanism details are in `docs/actions-design.md` and `docs/events-design.md`. E
 - HTTP/1.1, one short-lived thread per connection, every response closes it (`Connection: close`).
   Bodies are JSON (`Content-Type: application/json`), UTF-8.
 - Every request needs `Authorization: Bearer <token>`.
-  - Token from env `TAKARO_PLUGIN_TOKEN`, else `<server binary dir>/takaro/plugin.json` `{"token":"..."}`.
+  - Token from `TAKARO_PLUGIN_TOKEN` (environment or `takaro.cfg`).
   - Wrong or missing request token: `401 {"error":"unauthorized"}`. When no token is
     configured, the HTTP listener is disabled. Direct native Takaro communication does
     not require this diagnostics token.
@@ -31,17 +31,17 @@ Mechanism details are in `docs/actions-design.md` and `docs/events-design.md`. E
 - The listener binds loopback only and retries every 5 s if the port is busy.
 
 ## Configuration
-| env | `plugin.json` key | default | meaning |
-|---|---|---|---|
-| `TAKARO_PLUGIN_TOKEN` | `token` | — | bearer token; without it HTTP diagnostics are disabled |
-| `TAKARO_PLUGIN_PORT` | `port` | `18890` | loopback port |
-| `TAKARO_PLUGIN_DEBUG` | `debug` | off | enables `/debug/*` and per-request logging |
-| `TAKARO_SYM_PATH` | `symPath` | `<exe>.sym` | depot symbol database for the `depotsym` strategy |
-| `TAKARO_PLUGIN_DATA_DIR` | — | `<exe dir>/takaro` | `plugin.log`, `symcache.json`, `plugin.json` |
-| `TAKARO_ADMIN_STEAMIDS` | `adminSteamIds` | — | comma/semicolon/whitespace-separated SteamID64s that the plugin grants in-game admin (see **Admin grants** below). `steam:<id>` is accepted; anything that is not a SteamID64 is dropped and listed in `/health.diagnostics.admins.rejected` |
-| `TAKARO_SUPERADMIN_STEAMIDS` | `superAdminSteamIds` | — | parsed and reported, but **never applied**: this build ships no super-admin setter. See **Admin grants** |
-| `TAKARO_TICK_BUDGET_US` | `tickBudgetUs` | `500` | *(lane L9)* how many microseconds of one engine tick the queued-job pump may use. Leftover jobs wait for the next tick; one job always runs, so a slow job cannot starve the queue. Clamped to 50…33000 |
-| `TAKARO_SNAPSHOT_TTL_MS` | `snapshotTtlMs` | `500` | *(lane L9)* how long the player snapshot (`/players`, `/players/{id}`, `/players/{id}/location`) may be served from cache before the game thread is entered again. The refresh is lazy: with no requests there are no entries. Clamped to 1…30000 |
+| key (environment or `takaro.cfg`) | default | meaning |
+|---|---|---|
+| `TAKARO_PLUGIN_TOKEN` | — | bearer token; without it HTTP diagnostics are disabled |
+| `TAKARO_PLUGIN_PORT` | `18890` | loopback port |
+| `TAKARO_PLUGIN_DEBUG` | off | enables `/debug/*` and per-request logging |
+| `TAKARO_SYM_PATH` | `<exe>.sym` | depot symbol database for the `depotsym` strategy |
+| `TAKARO_PLUGIN_DATA_DIR` | `<exe dir>/takaro` | `plugin.log`, `symcache.json` |
+| `TAKARO_ADMIN_STEAMIDS` | — | comma/semicolon/whitespace-separated SteamID64s that the plugin grants in-game admin (see **Admin grants** below). `steam:<id>` is accepted; anything that is not a SteamID64 is dropped and listed in `/health.diagnostics.admins.rejected` |
+| `TAKARO_SUPERADMIN_STEAMIDS` | — | parsed and reported, but **never applied**: this build ships no super-admin setter. See **Admin grants** |
+| `TAKARO_TICK_BUDGET_US` | `500` | *(lane L9)* how many microseconds of one engine tick the queued-job pump may use. Leftover jobs wait for the next tick; one job always runs, so a slow job cannot starve the queue. Clamped to 50…33000 |
+| `TAKARO_SNAPSHOT_TTL_MS` | `500` | *(lane L9)* how long the player snapshot (`/players`, `/players/{id}`, `/players/{id}/location`) may be served from cache before the game thread is entered again. The refresh is lazy: with no requests there are no entries. Clamped to 1…30000 |
 
 Logs go to `<data dir>/plugin.log`. Every line is passed through the redactor, which masks
 `WorldPassword`, `AdminPassword`, `ServerPassword`, `Password=` and `*Token` values in ini,
@@ -414,11 +414,11 @@ cheat <gameId> <dom command> # 501: the dedicated server creates no CheatManager
 ```
 
 ### Extra configuration (lane L3)
-| env | `plugin.json` key | default | meaning |
-|---|---|---|---|
-| `TAKARO_SENDER_NAME` | `senderName` | `Server` | the name a broadcast message is prefixed with |
-| `TAKARO_CHAT_SEGMENT` | `chatSegment` | `2` (Global) | the `EChatSegment` value a broadcast uses. From the depot's DWARF: `All = 0, Local = 1, Global = 2, Radio = 3` |
-| `TAKARO_ITEM_NAMES` | `itemNames` | off | `1` makes `GET /items` call `UItem::GetDefaultNameInvariant()` on each class default object for a readable name. Off by default because calling into a Blueprint CDO is the exact shape that crashed the Dragonwilds server |
+| key (environment or `takaro.cfg`) | default | meaning |
+|---|---|---|
+| `TAKARO_SENDER_NAME` | `Server` | the name a broadcast message is prefixed with |
+| `TAKARO_CHAT_SEGMENT` | `2` (Global) | the `EChatSegment` value a broadcast uses. From the depot's DWARF: `All = 0, Local = 1, Global = 2, Radio = 3` |
+| `TAKARO_ITEM_NAMES` | off | `1` makes `GET /items` call `UItem::GetDefaultNameInvariant()` on each class default object for a readable name. Off by default because calling into a Blueprint CDO is the exact shape that crashed the Dragonwilds server |
 
 ## Implementation notes (for capability owners)
 - **Symbols** (`src/sym.cpp`): every address comes from the depot's `<exe>.sym` at runtime; no RVA is

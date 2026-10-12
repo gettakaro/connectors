@@ -1778,7 +1778,7 @@ const size_t kMaxReadPerCycle = 512 * 1024;
 std::string DefaultLogPath() {
     const char* legacy = ConfigFile::Get("VEIN_LOG_FILE");
     if (legacy && *legacy) return legacy;
-    std::string cfg = ConfigValue("TAKARO_LOG_PATH", "logPath", "");
+    std::string cfg = ConfigValue("TAKARO_LOG_PATH", "");
     if (!cfg.empty()) return cfg;
     // <exe dir> = <root>/Vein/Binaries/Linux -> <root>/Vein/Saved/Logs/Vein.log
     std::string dir = ExeDir();

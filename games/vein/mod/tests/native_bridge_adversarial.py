@@ -28,13 +28,13 @@ def exact(sock, count):
     return out
 
 
-def eventually(check, timeout=8):
+def eventually(check, timeout=8, detail=lambda: ''):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if check():
             return
         time.sleep(0.1)
-    raise AssertionError('condition not reached')
+    raise AssertionError('condition not reached ' + detail())
 
 
 def send_frame(sock, opcode, data):
@@ -317,11 +317,11 @@ def config_semantics(cert, key):
         url = f'  http://127.0.0.1:{http.server_port}/api///  '
         run = Run(cert, key, env_overrides={'TAKARO_SERVER_NAME': '', 'VEIN_HTTP_API': url})
         try:
-            assert run.identify_payload['name'] == 'Takaro Dev Vein', run.identify_payload
+            assert run.identify_payload['name'].startswith('My VEIN server ('), run.identify_payload
             run.request('game-http-config', 'fetchGamePlayers', {})
             assert run.response('game-http-config')['payload'] == {'source': 'real-game-http-fallback'}
             assert paths.get(timeout=2) == '/api/players'
-            print('bridge legacy empty server name and trimmed game HTTP URL: pass', flush=True)
+            print('bridge default server name and trimmed game HTTP URL: pass', flush=True)
         finally:
             run.close()
     finally:
@@ -357,9 +357,6 @@ def console_status(cert, key):
     print('bridge console status lines: pass', flush=True)
 
 
-SHIPPED_CFG = Path(__file__).resolve().parents[2] / 'takaro.cfg'
-
-
 def write_cfg(path, text):
     # The way an editor or panel saves: a new file renamed over the old one.
     tmp = path.with_suffix('.editing')
@@ -381,15 +378,14 @@ def next_identify(run, timeout=10):
 
 
 def config_reload(cert, key):
-    # takaro.cfg as shipped, on a fresh install: banner, no connection, an identity is generated
-    # and written back; a token saved while running connects without a restart; a rejected token
-    # is reported and a corrected one reconnects; a half-saved file is ignored; a replaced file
-    # (upgrade) falls back to the saved copy; the environment still wins.
+    # Fresh install: the connector creates takaro.cfg with a UUID identity, shows a banner and
+    # does not dial; a token saved while running connects without a restart; a rejected token is
+    # reported and a corrected one reconnects; a half-saved file is ignored; an emptied token
+    # disconnects; an emptied identity gets a new one; a restart (upgrade) keeps the identity;
+    # the environment still wins.
     with tempfile.TemporaryDirectory(prefix='vein-cfg-') as tmp:
         root = Path(tmp)
         cfg, data = root / 'takaro.cfg', root / 'data'
-        saved = data / 'saved-settings.cfg'
-        cfg.write_text(SHIPPED_CFG.read_text())
         env = {'TAKARO_CONFIG_FILE': str(cfg), 'TAKARO_PLUGIN_DATA_DIR': str(data),
                'TAKARO_TEST_CONFIG_POLL_MS': '400', 'TAKARO_SERVER_NAME': '', 'TAKARO_IDENTITY_TOKEN': '',
                'TAKARO_REGISTRATION_TOKEN': ''}
@@ -397,27 +393,28 @@ def config_reload(cert, key):
         try:
             time.sleep(2)
             assert run.peer.connections.empty(), 'fresh install connected without a token'
+            assert cfg.stat().st_mode & 0o777 == 0o600, oct(cfg.stat().st_mode)
             ident = [l for l in cfg.read_text().splitlines() if l.startswith('TAKARO_IDENTITY_TOKEN=')]
             assert len(ident) == 1, cfg.read_text()
             identity = ident[0].split('=', 1)[1]
             assert len(identity) == 36 and identity.count('-') == 4, identity
-            assert f'TAKARO_IDENTITY_TOKEN={identity}' in saved.read_text()
-            assert 'TAKARO_REGISTRATION_TOKEN=\n' in saved.read_text()
-            assert run.health()['config']['identitySource'] == 'generated'
+            name = f'My VEIN server ({identity[:8]})'
+            assert f'TAKARO_SERVER_NAME={name}\n' in cfg.read_text(), cfg.read_text()
+            assert run.health()['config']['identitySource'] == 'takaro.cfg'
+            assert sorted(p.name for p in root.iterdir()) == ['data', 'takaro.cfg'], list(root.iterdir())
 
             write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-first'))
             index, payload = next_identify(run)
-            assert payload == {'identityToken': identity, 'registrationToken': 'tok-first',
-                               'name': 'My VEIN server'}, payload
+            assert payload == {'identityToken': identity, 'registrationToken': 'tok-first', 'name': name}, payload
             run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
-            eventually(lambda: 'TAKARO_REGISTRATION_TOKEN=tok-first' in saved.read_text())
-            assert 'tok-first' not in cfg.read_text().replace('TAKARO_REGISTRATION_TOKEN=tok-first', '')
+            eventually(lambda: run.health()['connection']['identified'])
 
             write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-wrong'))
             index, payload = next_identify(run)
             assert payload['registrationToken'] == 'tok-wrong', payload
-            run.peer.send(index, {'type': 'identifyResponse',
-                                  'payload': {'error': {'message': 'Invalid registrationToken provided'}}})
+            run.peer.send(index, {'type': 'identifyResponse', 'payload': {'error': {
+                'name': 'BadRequestError', 'message': 'Invalid registrationToken provided', 'status': 400,
+                'details': 'echo tok-wrong'}}})
             eventually(lambda: 'Takaro refused this server' in run.stderr_so_far())
             write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-second'))
             # The rejected connection is retried with backoff; the corrected token reconnects at once.
@@ -429,7 +426,6 @@ def config_reload(cert, key):
                                       'payload': {'error': {'message': 'Invalid registrationToken provided'}}})
             run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
             eventually(lambda: run.health()['connection']['identified'])
-            eventually(lambda: 'TAKARO_REGISTRATION_TOKEN=tok-second' in saved.read_text())
 
             # Half-saved: a line without '=' keeps the running settings.
             write_cfg(cfg, cfg.read_text().replace('TAKARO_REGISTRATION_TOKEN=tok-second', 'TAKARO_REGISTRATION_TOK'))
@@ -437,10 +433,34 @@ def config_reload(cert, key):
             assert run.peer.connections.empty(), 'a half-saved file reconnected'
             assert run.health()['connection']['identified']
             # Saving the same identity and token again changes nothing.
-            write_cfg(cfg, set_line(cfg.read_text().replace('TAKARO_REGISTRATION_TOK\n', ''),
-                                    'TAKARO_REGISTRATION_TOKEN', 'tok-second'))
+            write_cfg(cfg, cfg.read_text().replace('TAKARO_REGISTRATION_TOK\n', 'TAKARO_REGISTRATION_TOKEN=tok-second\n'))
             time.sleep(2)
             assert run.peer.connections.empty(), 'an unchanged connection setting reconnected'
+            assert run.health()['connection']['identified']
+
+            # Emptying the token disconnects and shows the banner again, without redialing.
+            banners = run.stderr_so_far().count('TAKARO_REGISTRATION_TOKEN not set')
+            write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', ''))
+            eventually(lambda: run.health()['connection']['state'] == 'disconnected')
+            eventually(lambda: run.stderr_so_far().count('TAKARO_REGISTRATION_TOKEN not set') == banners + 1,
+                       detail=run.stderr_so_far)
+            time.sleep(1.5)
+            assert run.peer.connections.empty(), 'redialed without a registration token'
+
+            # An emptied identity gets a new one written back, and the server reconnects with it.
+            write_cfg(cfg, set_line(set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-second'),
+                                    'TAKARO_IDENTITY_TOKEN', ''))
+            index, payload = next_identify(run)
+            renewed = [l for l in cfg.read_text().splitlines() if l.startswith('TAKARO_IDENTITY_TOKEN=')][0][22:]
+            assert len(renewed) == 36 and renewed != identity, renewed
+            assert payload['identityToken'] == renewed, payload
+            run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
+            eventually(lambda: run.health()['connection']['identified'])
+            write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_IDENTITY_TOKEN', identity))
+            index, payload = next_identify(run)
+            assert payload['identityToken'] == identity, payload
+            run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
+            eventually(lambda: run.health()['connection']['identified'])
         finally:
             run.close()
         out = run.stderr
@@ -448,21 +468,19 @@ def config_reload(cert, key):
         assert 'no restart needed' in out and 'restart the server' not in out, out
         refused = [l for l in out.splitlines() if 'Takaro refused this server' in l]
         assert len(refused) == 1, out
+        assert 'Invalid registrationToken provided (HTTP 400)' in refused[0], refused
         assert any('line' in l and 'keeping the current settings' in l for l in out.splitlines()), out
-        for secret in ('tok-first', 'tok-wrong', 'tok-second', identity):
+        for secret in ('tok-first', 'tok-wrong', 'tok-second', identity, renewed, 'details'):
             assert secret not in out, (secret, out)
 
-        # Upgrade that replaced takaro.cfg with the shipped one: token and identity come from the
-        # saved copy, and the identity is written back into takaro.cfg.
-        cfg.write_text(SHIPPED_CFG.read_text())
+        # Upgrade (only the .so files replaced; takaro.cfg untouched): same identity, same file.
+        before = cfg.read_text()
         run = Run(cert, key, env_overrides=env, expected_identity=identity)
         try:
             assert run.identify_payload['registrationToken'] == 'tok-second', run.identify_payload
-            assert f'TAKARO_IDENTITY_TOKEN={identity}' in cfg.read_text()
-            assert 'tok-second' not in cfg.read_text()
-            assert run.health()['config']['registrationSource'] == 'saved copy'
         finally:
             run.close()
+        assert cfg.read_text() == before
 
         # The environment wins over the file, and a file change it overrides does not reconnect.
         env_run = dict(env, TAKARO_REGISTRATION_TOKEN='tok-env', TAKARO_IDENTITY_TOKEN='id-env')
@@ -476,25 +494,27 @@ def config_reload(cert, key):
         finally:
             run.close()
         assert f'TAKARO_IDENTITY_TOKEN={identity}' in cfg.read_text()
+        assert 'tok-env' not in cfg.read_text() and 'id-env' not in cfg.read_text()
 
-    # An install that ran an older connector (its data directory exists) and never set an
-    # identity keeps the old default "vein".
-    with tempfile.TemporaryDirectory(prefix='vein-cfg-legacy-') as tmp:
-        root = Path(tmp)
-        cfg, data = root / 'takaro.cfg', root / 'data'
-        (data / 'connector-state').mkdir(parents=True)
-        (data / 'plugin.log').write_text('old run\n')
-        cfg.write_text('TAKARO_REGISTRATION_TOKEN=tok-legacy\n')
-        env = {'TAKARO_CONFIG_FILE': str(cfg), 'TAKARO_PLUGIN_DATA_DIR': str(data),
-               'TAKARO_IDENTITY_TOKEN': '', 'TAKARO_REGISTRATION_TOKEN': ''}
-        run = Run(cert, key, env_overrides=env, expected_identity='vein')
-        try:
-            assert run.health()['config']['identitySource'] == 'legacy default'
-        finally:
-            run.close()
-        assert 'TAKARO_IDENTITY_TOKEN=vein' in cfg.read_text()
-        assert 'TAKARO_IDENTITY_TOKEN=vein' in (data / 'saved-settings.cfg').read_text()
-    print('bridge takaro.cfg reload, banners, identity and saved copy: pass', flush=True)
+    # A folder the connector cannot write and no identity anywhere: a banner, and no connection.
+    if os.geteuid() != 0:
+        with tempfile.TemporaryDirectory(prefix='vein-cfg-ro-') as tmp:
+            root = Path(tmp)
+            locked, data = root / 'locked', root / 'data'
+            locked.mkdir()
+            locked.chmod(0o500)
+            env = {'TAKARO_CONFIG_FILE': str(locked / 'takaro.cfg'), 'TAKARO_PLUGIN_DATA_DIR': str(data),
+                   'TAKARO_IDENTITY_TOKEN': '', 'TAKARO_REGISTRATION_TOKEN': 'tok-ro'}
+            run = Run(cert, key, env_overrides=env, identify_now=False, expected_identity=None)
+            try:
+                time.sleep(1.5)
+                assert run.peer.connections.empty(), 'connected without an identity'
+            finally:
+                run.close()
+                locked.chmod(0o700)
+            assert 'TAKARO_IDENTITY_TOKEN not set and' in run.stderr, run.stderr
+            assert 'tok-ro' not in run.stderr
+    print('bridge takaro.cfg creation, reload, banners and identity: pass', flush=True)
 
 
 def overload(cert, key, bytes_mode):

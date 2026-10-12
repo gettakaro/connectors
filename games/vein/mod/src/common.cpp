@@ -8,7 +8,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include <atomic>
 #include <cctype>
 #include <cstdarg>
 #include <cstdio>
@@ -47,30 +46,19 @@ const std::string& ExeDir() {
     return d;
 }
 
-namespace {
-std::atomic<bool> g_dataDirExisted{false};
-}
-
 const std::string& PluginDataDir() {
     static const std::string& d = *new std::string([] {
         const char* env = ConfigFile::Get("TAKARO_PLUGIN_DATA_DIR");
         std::string dir = (env && *env) ? std::string(env) : ExeDir() + "/takaro";
-        struct stat st{};
-        g_dataDirExisted = ::stat(dir.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
         ::mkdir(dir.c_str(), 0775);
         return dir;
     }());
     return d;
 }
 
-bool PluginDataDirExisted() {
-    (void)PluginDataDir();
-    return g_dataDirExisted;
-}
-
 bool DebugEnabled() {
     static const bool on = [] {
-        std::string v = ConfigValue("TAKARO_PLUGIN_DEBUG", "debug", "");
+        std::string v = ConfigValue("TAKARO_PLUGIN_DEBUG", "");
         return v == "1" || v == "true";
     }();
     return on;
@@ -459,23 +447,7 @@ bool WriteFileAtomic(const std::string& path, const std::string& content) {
     return ok;
 }
 
-std::string ConfigValue(const char* envName, const char* jsonKey, const std::string& def) {
-    if (envName) {
-        const char* v = ConfigFile::Get(envName);
-        if (v && *v) return v;
-    }
-    static const JsonValue cfg = [] {
-        JsonValue parsed;
-        std::string text;
-        if (ReadFile(PluginDataDir() + "/plugin.json", text)) {
-            if (!JsonParse(text, parsed)) PluginLog("config: plugin.json parse failed");
-        }
-        return parsed;
-    }();
-    if (jsonKey) {
-        auto* v = cfg.get(jsonKey);
-        if (v && v->isStr() && !v->str.empty()) return v->str;
-        if (v && v->isNum()) return v->str;
-    }
-    return def;
+std::string ConfigValue(const char* envName, const std::string& def) {
+    const char* v = ConfigFile::Get(envName);
+    return v && *v ? v : def;
 }

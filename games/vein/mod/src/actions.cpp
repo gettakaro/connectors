@@ -522,7 +522,7 @@ std::atomic<uint64_t> g_snapRefreshes{0}, g_snapServedFromCache{0};
 uint64_t SnapshotTtlMs() {
     static uint64_t cached = 0;
     if (!cached) {
-        long v = strtol(ConfigValue("TAKARO_SNAPSHOT_TTL_MS", "snapshotTtlMs", "500").c_str(), nullptr, 10);
+        long v = strtol(ConfigValue("TAKARO_SNAPSHOT_TTL_MS", "500").c_str(), nullptr, 10);
         if (v < 0) v = 0;
         if (v > 30000) v = 30000;
         cached = (uint64_t)(v ? v : 1);
@@ -789,7 +789,7 @@ bool BuildItems() {
     // Only trust the abstract filter when the flag word really is where DWARF said it is.
     const bool abstractOk = ClassIsAbstract(itemCls);
 
-    bool wantNames = ConfigValue("TAKARO_ITEM_NAMES", "itemNames", "0") == "1";
+    bool wantNames = ConfigValue("TAKARO_ITEM_NAMES", "0") == "1";
     auto defaultName = wantNames ? Fn<FnGetFString>("UItem::GetDefaultNameInvariant") : nullptr;
 
     std::vector<ItemDef> built;
@@ -1354,7 +1354,7 @@ bool WriteGameBan(const std::string& gameId, const std::string& reason, bool add
 enum : int { kChatAll = 0, kChatLocal = 1, kChatGlobal = 2, kChatRadio = 3 };
 
 int ChatSegment() {
-    std::string v = ConfigValue("TAKARO_CHAT_SEGMENT", "chatSegment", "");
+    std::string v = ConfigValue("TAKARO_CHAT_SEGMENT", "");
     return v.empty() ? (int)kChatGlobal : atoi(v.c_str());
 }
 
@@ -1487,7 +1487,7 @@ bool Broadcast(const std::string& text, const std::string& senderName, std::stri
     caps.haveSender = chatSender != nullptr;
 
     std::string chooseErr;
-    BroadcastPath first = ChooseBroadcastPath(ConfigValue("TAKARO_BROADCAST_VIA", "broadcastVia", ""), caps, chooseErr);
+    BroadcastPath first = ChooseBroadcastPath(ConfigValue("TAKARO_BROADCAST_VIA", ""), caps, chooseErr);
     if (first == BroadcastPath::kNone) {
         err = chooseErr;
         return false;
@@ -2384,7 +2384,7 @@ Actions::Result Actions::Message(const JsonValue& body) {
     std::string text = textV->str;
     std::string recipient = BodyString(body, "recipientGameId");
     const JsonValue* snd = body.get("senderName");
-    std::string sender = snd && snd->isStr() ? snd->str : ConfigValue("TAKARO_SENDER_NAME", "senderName", "Server");
+    std::string sender = snd && snd->isStr() ? snd->str : ConfigValue("TAKARO_SENDER_NAME", "Server");
 
     return OnGameThread("POST /message", [text, recipient, sender]() -> JobOut {
         if (recipient.empty()) {

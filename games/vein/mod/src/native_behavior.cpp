@@ -3,6 +3,7 @@
 #include "actions.h"
 #include "actions_util.h"
 #include "common.h"
+#include "config_file.h"
 #include "gamethread.h"
 #include "reflect.h"
 #include "state.h"
@@ -226,8 +227,8 @@ NativePersistence::Result Engine::Load(){
         r=store_.ReadLegacy("knownPlayers",v->knownPlayersJson);if(!r)return r;
     }
     auto timed=store_.ReadLegacy("timedBans",x);if(!timed)return timed;v->timedBansJson=x;
-    v->senderName=Trim(ConfigValue("TAKARO_SENDER_NAME","senderName",ConfigValue("TAKARO_SERVER_CHAT_NAME","serverChatName","")));
-    v->serverName=ConfigValue("TAKARO_SERVER_NAME","serverName","Takaro Dev Vein");v->banRevision=state::BanRevision();
+    v->senderName=Trim(ConfigValue("TAKARO_SENDER_NAME",ConfigValue("TAKARO_SERVER_CHAT_NAME","")));
+    v->serverName=ConfigValue("TAKARO_SERVER_NAME",ConfigFile::DefaultServerName(ConfigValue("TAKARO_IDENTITY_TOKEN")));v->banRevision=state::BanRevision();
     std::string key,detail;if(!log_->parser.Configure(key,detail))return {false,key+": "+detail};
     std::string intent;auto r=store_.ReadBanIntent(intent);if(!r)return r;
     std::set<std::string> journalTargets;

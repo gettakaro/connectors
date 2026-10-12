@@ -602,7 +602,7 @@ struct SymRecord {
 static_assert(sizeof(SymRecord) == 20, "sym record must be 20 bytes");
 
 std::string SymPath() {
-    std::string p = ConfigValue("TAKARO_SYM_PATH", "symPath", "");
+    std::string p = ConfigValue("TAKARO_SYM_PATH", "");
     if (!p.empty()) return p;
     return ExePath() + ".sym";
 }
@@ -612,7 +612,7 @@ std::string CachePath() { return PluginDataDir() + "/symcache.json"; }
 // The unstripped companion the depot ships next to the binary (.gnu_debuglink points at it).
 // TAKARO_DEBUG_SYM_PATH overrides it, exactly like TAKARO_SYM_PATH does for the .sym database.
 std::string DebugPath() {
-    std::string p = ConfigValue("TAKARO_DEBUG_SYM_PATH", "debugSymPath", "");
+    std::string p = ConfigValue("TAKARO_DEBUG_SYM_PATH", "");
     if (!p.empty()) return p;
     return ExePath() + ".debug";
 }
