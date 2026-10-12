@@ -109,8 +109,13 @@ export class ConfigSource {
         this.warnOnce('read', `Could not read ${this.path}: ${message(err)}`);
         return null;
       }
-      return this.create();
+      // Only before the first load: a file that disappears while running (deleted, or mid
+      // replace) is waited for, so the identity in use is never replaced by a new one.
+      if (this.lastText === null) return this.create();
+      this.warnOnce('missing', `Config file ${this.path} is gone; keeping the settings in use until it is back.`);
+      return null;
     }
+    this.warned.delete('missing');
     this.warned.delete('read');
     return text.trim() ? text : null;
   }

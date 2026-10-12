@@ -153,7 +153,7 @@ a thin wrapper that builds the whole set.
 One file, `src/configFile.ts`: `BRIDGE_CONFIG`, else `TakaroConfig.txt` beside the bridge folder,
 which an upgrade replaces whole. Nothing ships it.
 
-- **Created when missing**, mode 0600, from `configTemplate` (the README shows the same text, a
+- **Created when missing at start** (a file that disappears later is waited for), mode 0600, from `configTemplate` (the README shows the same text, a
   test checks) with an empty `registrationToken`, a UUID `identityToken` and the name
   `Terraria Server (<first 8 of the identity>)`. An empty `serverName` means that name too.
 - **Identity written back** when the file has none (last line for the key, owner and mode kept,

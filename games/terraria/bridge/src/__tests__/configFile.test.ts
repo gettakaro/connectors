@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -65,6 +65,18 @@ test('emptying registrationToken while running disconnects', async () => {
   assert.equal((await source.poll())?.config.registrationToken, 'rt-1');
   edit(file, { registrationToken: '' });
   assert.equal((await source.poll())?.config.registrationToken, '');
+});
+
+test('a file deleted while running is waited for, never recreated with a new identity', async () => {
+  const { file } = install();
+  const source = sourceFor(file, {}, [ID, 'second-id']);
+  assert.ok(await source.poll());
+  const text = readFileSync(file, 'utf8');
+  rmSync(file);
+  assert.equal(await source.poll(), null);
+  assert.equal(existsSync(file), false);
+  writeFileSync(file, setKeys(text, { registrationToken: 'rt' }));
+  assert.equal((await source.poll())?.config.identityToken, ID);
 });
 
 test('an empty or half-written file keeps the settings in use', async () => {

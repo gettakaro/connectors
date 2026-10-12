@@ -99,7 +99,8 @@ async function main(): Promise<void> {
     logger.error(`Takaro identify error: ${identifyErrorSummary(payload)}`);
     if (identifyErrorStatus(payload) === 409) {
       banner([
-        `Takaro rejected identify: another game server already uses the name "${config.serverName}".`,
+        `Takaro rejected identify: ${identifyErrorText(payload)}`,
+        `This is usually another game server in Takaro already named "${config.serverName}".`,
         `Set a different serverName= in ${configPath}`,
         'and save it. The bridge reconnects within a few seconds, no restart needed.',
       ]);
