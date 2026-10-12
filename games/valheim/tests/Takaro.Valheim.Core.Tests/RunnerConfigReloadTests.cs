@@ -17,7 +17,7 @@ namespace Takaro.Valheim.Core.Tests;
 [TestClass]
 public sealed class RunnerConfigReloadTests
 {
-    private const string ConfigPath = "/srv/valheim/BepInEx/plugins/TakaroValheim/takaro.cfg";
+    private const string ConfigPath = "/srv/valheim/BepInEx/config/com.takaro.valheim.cfg";
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
 
     [TestMethod]

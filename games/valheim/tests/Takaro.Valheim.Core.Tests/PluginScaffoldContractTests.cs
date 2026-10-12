@@ -561,8 +561,10 @@ public sealed class PluginScaffoldContractTests
 
         foreach (var text in new[] { readme, release })
         {
-            StringAssert.Contains(text, "BepInEx/plugins/TakaroValheim/takaro.cfg");
+            StringAssert.Contains(text, "BepInEx/config/com.takaro.valheim.cfg");
+            Assert.IsFalse(text.Contains("takaro.cfg ", StringComparison.Ordinal) || text.Contains("/takaro.cfg", StringComparison.Ordinal));
             StringAssert.Contains(text, "no restart needed");
+            Assert.IsFalse(text.Contains("saved copy", StringComparison.OrdinalIgnoreCase));
             Assert.IsFalse(text.Contains("Start once", StringComparison.OrdinalIgnoreCase));
             Assert.IsFalse(text.Contains("Start the server once so the plugin creates", StringComparison.Ordinal));
         }

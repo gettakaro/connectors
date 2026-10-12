@@ -36,15 +36,16 @@ public sealed record ConnectorConfig(
 
     /// <summary>
     /// Builds the settings from resolved key/value pairs. An empty registrationToken is valid: the
-    /// connector then waits for one instead of connecting.
+    /// connector then waits for one instead of connecting. identityToken is required.
     /// </summary>
     public static ConnectorConfig FromDictionary(IReadOnlyDictionary<string, string> values)
     {
-        var serverName = Optional(values, "serverName") ?? ConnectorConfigFiles.DefaultServerName;
+        var identityToken = Optional(values, "identityToken")
+            ?? throw new ArgumentException("Missing required Valheim Takaro config value: identityToken");
         return new ConnectorConfig(
             RegistrationToken: Optional(values, "registrationToken") ?? string.Empty,
-            ServerName: serverName,
-            IdentityToken: Optional(values, "identityToken") ?? serverName,
+            ServerName: Optional(values, "serverName") ?? ConnectorConfigFiles.DefaultServerName,
+            IdentityToken: identityToken,
             TakaroWsUrl: Optional(values, "takaroWsUrl") ?? ConnectorConfigFiles.DefaultTakaroWsUrl,
             LogLevel: Optional(values, "logLevel") ?? "Information",
             EnableLogEvents: ParseBool(Optional(values, "enableLogEvents"), defaultValue: true),

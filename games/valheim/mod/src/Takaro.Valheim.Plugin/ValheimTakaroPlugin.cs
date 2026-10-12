@@ -39,18 +39,15 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             return;
         }
 
-        // The user file ships in the plugin folder; the saved copy lives where releases up to 4.1
-        // kept the whole config, outside the folder an upgrade replaces. Settings are read by
-        // ConnectorConfigStore rather than bound through BepInEx, so BepInEx never rewrites either file.
+        // Read by ConnectorConfigStore rather than bound through BepInEx, so BepInEx never rewrites it.
         configStore = new ConnectorConfigStore(
-            Path.Combine(Path.GetDirectoryName(Info.Location) ?? Paths.PluginPath, ConnectorConfigFiles.UserFileName),
-            Path.Combine(Paths.ConfigPath, ConnectorConfigFiles.SavedFileName),
+            Path.Combine(Paths.ConfigPath, ConnectorConfigFiles.FileName),
             message => Logger.LogInfo(message),
             message => Logger.LogWarning(message),
             hostServerName: ValheimRuntimePolicy.ServerNameArgument(Environment.GetCommandLineArgs()));
         if (!configStore.Load(out var config, out var error) || config is null)
         {
-            Logger.LogWarning($"Takaro Valheim connector disabled: {error}. Fix it in {configStore.UserPath} and restart the server.");
+            Logger.LogWarning($"Takaro Valheim connector disabled: {error}. Fix it in {configStore.FilePath} and restart the server.");
             return;
         }
 
@@ -74,7 +71,7 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             message => Logger.LogInfo(message),
             mainThreadActions,
             message => Logger.LogWarning(message),
-            configStore.UserPath);
+            configStore.FilePath);
         TakaroChatParticipant.Initialize(config.ChatSenderName, Logger.LogInfo);
         ValheimServerEventBridge.Initialize(runner, playerResolver, Logger.LogInfo);
         // Optional: only players who install the inventory companion ever answer it.

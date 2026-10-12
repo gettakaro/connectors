@@ -52,7 +52,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
         Action<string>? log = null,
         IMainThreadActionScheduler? mainThreadActions = null,
         Action<string>? warn = null,
-        string configPath = "BepInEx/plugins/TakaroValheim/takaro.cfg",
+        string configPath = "BepInEx/config/com.takaro.valheim.cfg",
         TimeSpan? backoffUnit = null)
     {
         this.config = config;
@@ -746,11 +746,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 && error.ValueKind != JsonValueKind.Null
                 && error.ValueKind != JsonValueKind.Undefined)
             {
-                rejection = error.ValueKind == JsonValueKind.Object
-                    && error.TryGetProperty("message", out var reason)
-                    && reason.ValueKind == JsonValueKind.String
-                        ? reason.GetString()
-                        : error.ToString();
+                rejection = TakaroProtocol.DescribeError(error);
                 log($"Takaro Valheim identification failed: {rejection}");
                 return false;
             }
@@ -783,7 +779,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 ? payloadElement
                 : root;
 
-            log($"Takaro Valheim WebSocket error message received: {payload}");
+            log($"Takaro Valheim WebSocket error message received: {TakaroProtocol.DescribeError(payload)}");
         }
         catch (Exception ex)
         {

@@ -1,53 +1,15 @@
-using System.Reflection;
 using System.Text;
 
 namespace Takaro.Valheim.Core;
 
-/// <summary>Where the identity in use came from.</summary>
-public enum IdentitySource
-{
-    /// <summary>identityToken in the plugin folder's takaro.cfg.</summary>
-    UserFile,
-
-    /// <summary>identityToken in BepInEx/config/com.takaro.valheim.cfg.</summary>
-    SavedFile,
-
-    /// <summary>
-    /// The serverName of an install that ran a release up to 4.1, which identified with its
-    /// serverName whenever identityToken was empty.
-    /// </summary>
-    LegacyServerName,
-
-    /// <summary>A new identity, for an install that never had one.</summary>
-    Generated
-}
-
-public sealed class ConfigResolution
-{
-    public ConfigResolution(IReadOnlyDictionary<string, string> values, IdentitySource identitySource)
-    {
-        Values = values;
-        IdentitySource = identitySource;
-    }
-
-    public IReadOnlyDictionary<string, string> Values { get; }
-
-    public IdentitySource IdentitySource { get; }
-}
-
 /// <summary>
-/// Reading, merging and writing the two config files, free of game types so tests can cover it.
-///
-/// The user file (BepInEx/plugins/TakaroValheim/takaro.cfg) ships in the release zip and is
-/// the file people edit. The saved file (BepInEx/config/com.takaro.valheim.cfg) is where
-/// releases up to 4.1 kept everything; the connector now writes the token and identity in use
-/// there, so replacing the plugin folder on an upgrade keeps both.
+/// Reading and writing the connector's one config file, BepInEx/config/com.takaro.valheim.cfg,
+/// free of game types so tests can cover it. A BepInEx-style INI with a [Takaro] section.
 /// </summary>
 public static class ConnectorConfigFiles
 {
     public const string Section = "Takaro";
-    public const string UserFileName = "takaro.cfg";
-    public const string SavedFileName = "com.takaro.valheim.cfg";
+    public const string FileName = "com.takaro.valheim.cfg";
     public const string DefaultServerName = "Valheim Server";
     public const string DefaultTakaroWsUrl = "wss://connect.takaro.io/";
 
@@ -56,16 +18,10 @@ public static class ConnectorConfigFiles
     public const string ServerNameKey = "serverName";
     public const string TakaroWsUrlKey = "takaroWsUrl";
 
-    /// <summary>
-    /// The first line BepInEx's own config writer puts in the file. Releases up to 4.1 bound their
-    /// settings through BepInEx, so a saved file that starts like this was written by one of them.
-    /// </summary>
-    public const string LegacyWriterMarker = "## Settings file was created by plugin Takaro Valheim";
-
     public static readonly IReadOnlyDictionary<string, string> Defaults = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         [RegistrationTokenKey] = "",
-        [ServerNameKey] = DefaultServerName,
+        [ServerNameKey] = "",
         [IdentityTokenKey] = "",
         [TakaroWsUrlKey] = DefaultTakaroWsUrl,
         ["logLevel"] = "Information",
@@ -81,20 +37,47 @@ public static class ConnectorConfigFiles
         TakaroWsUrlKey, RegistrationTokenKey, IdentityTokenKey, ServerNameKey
     };
 
-    private const string SavedFileHeader =
-        "## Written by the Takaro Valheim connector: the token and identity it uses, kept outside\n"
-        + "## BepInEx/plugins so that upgrading the connector keeps them. Edit\n"
-        + "## BepInEx/plugins/TakaroValheim/takaro.cfg instead; a registrationToken set there takes\n"
-        + "## precedence over this file.\n";
-
-    /// <summary>The takaro.cfg that ships in the release zip, embedded so a missing one can be recreated.</summary>
-    public static string ShippedUserFile()
+    private static readonly IReadOnlyDictionary<string, string> Comments = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        using var stream = typeof(ConnectorConfigFiles).GetTypeInfo().Assembly
-            .GetManifestResourceStream("Takaro.Valheim.Core.takaro.cfg")
-            ?? throw new InvalidOperationException("The shipped takaro.cfg is not embedded in Takaro.Valheim.Core.");
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-        return reader.ReadToEnd();
+        [RegistrationTokenKey] = "Takaro registration token: paste it here and save; the connector connects within a few seconds.",
+        [ServerNameKey] = "The server name shown in Takaro; must be unique in your Takaro domain. Empty: the server's own name plus the start of identityToken.",
+        [IdentityTokenKey] = "Identifies this server in Takaro. Filled in by the connector; keep it.",
+        [TakaroWsUrlKey] = "Takaro connector WebSocket URL; keep the default.",
+        ["logLevel"] = "Connector log level.",
+        ["enableLogEvents"] = "Forward connector log events to Takaro.",
+        ["commandAllowlistExact"] = "Semicolon-separated exact console commands allowed for executeConsoleCommand.",
+        ["commandAllowlistPrefixes"] = "Semicolon-separated console command prefixes allowed for executeConsoleCommand.",
+        ["chatSenderName"] = "Name shown in game chat for Takaro messages (unless Takaro sends its own sender name)."
+    };
+
+    /// <summary>
+    /// The name sent when serverName is empty: the dedicated server's own name (or the default)
+    /// plus the start of the identity, so two servers never announce the same name (Takaro
+    /// answers a duplicate name with a 409).
+    /// </summary>
+    public static string UniqueServerName(string identity, string? hostServerName) =>
+        (string.IsNullOrWhiteSpace(hostServerName) ? DefaultServerName : hostServerName!.Trim())
+        + " (" + new string(identity.Where(char.IsLetterOrDigit).Take(8).ToArray()) + ")";
+
+    /// <summary>A new config file: every key with a short comment, an empty token and the given identity and name.</summary>
+    public static string NewFile(string identity, string serverName)
+    {
+        var text = new StringBuilder()
+            .Append("## Takaro Valheim connector settings. Saving this file applies the token, identity,\n")
+            .Append("## serverName and takaroWsUrl within a few seconds; other settings need a server restart.\n\n")
+            .Append('[').Append(Section).Append("]\n");
+        foreach (var entry in Defaults)
+        {
+            var value = entry.Key switch
+            {
+                IdentityTokenKey => identity,
+                ServerNameKey => serverName,
+                _ => entry.Value
+            };
+            text.Append("\n## ").Append(Comments[entry.Key]).Append('\n').Append(Line(entry.Key, value)).Append('\n');
+        }
+
+        return text.ToString();
     }
 
     /// <summary>
@@ -136,102 +119,6 @@ public static class ConnectorConfigFiles
         }
 
         return values;
-    }
-
-    /// <summary>
-    /// The settings to use: a key the user file sets wins, else the saved file, else the default.
-    /// The shipped user file leaves every key but the two tokens commented out, so an upgrade
-    /// that brings a fresh copy never overrides what the saved file holds, while a value written
-    /// into the user file always applies, even when it equals the default. An identity neither file holds is the serverName for
-    /// an install a release up to 4.1 ran with a token (that is the identity Takaro knows it
-    /// by), else a new one from <paramref name="newIdentity"/>.
-    /// </summary>
-    public static ConfigResolution Resolve(
-        IReadOnlyDictionary<string, string>? user,
-        IReadOnlyDictionary<string, string>? saved,
-        bool savedWrittenByLegacyRelease,
-        Func<string> newIdentity,
-        string? hostServerName = null)
-    {
-        var values = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var entry in Defaults)
-        {
-            values[entry.Key] = Value(user, entry.Key) ?? Value(saved, entry.Key) ?? entry.Value;
-        }
-
-        values[RegistrationTokenKey] = Value(user, RegistrationTokenKey) ?? Value(saved, RegistrationTokenKey) ?? "";
-
-        IdentitySource source;
-        string identity;
-        if (Value(user, IdentityTokenKey) is { } userIdentity)
-        {
-            identity = userIdentity;
-            source = IdentitySource.UserFile;
-        }
-        else if (Value(saved, IdentityTokenKey) is { } savedIdentity)
-        {
-            identity = savedIdentity;
-            source = IdentitySource.SavedFile;
-        }
-        else if (savedWrittenByLegacyRelease && Value(saved, RegistrationTokenKey) is not null)
-        {
-            identity = Value(saved, ServerNameKey) ?? DefaultServerName;
-            source = IdentitySource.LegacyServerName;
-        }
-        else
-        {
-            identity = newIdentity();
-            source = IdentitySource.Generated;
-        }
-
-        values[IdentityTokenKey] = identity;
-
-        // Takaro refuses a second game server with a name the domain already has (409), so an
-        // unset serverName must not announce a shared name: it becomes the name the dedicated
-        // server runs with (-name, else the default) plus the start of the identity. An install
-        // whose identity is the default name (releases up to 4.1) keeps that name.
-        if (values[ServerNameKey] == DefaultServerName && identity != DefaultServerName)
-        {
-            var baseName = string.IsNullOrWhiteSpace(hostServerName) ? DefaultServerName : hostServerName!.Trim();
-            values[ServerNameKey] = baseName + " (" + new string(identity.Where(char.IsLetterOrDigit).Take(8).ToArray()) + ")";
-        }
-
-        return new ConfigResolution(values, source);
-    }
-
-    /// <summary>
-    /// The values the saved file must hold: the token and identity in use. Its other settings
-    /// are its own, so a setting made in the user file is not copied there, and setting it back to
-    /// the default in the user file takes effect instead of leaving the old value behind.
-    /// </summary>
-    public static Dictionary<string, string> SavedFileUpdates(
-        IReadOnlyDictionary<string, string> resolved,
-        IReadOnlyDictionary<string, string>? saved)
-    {
-        var updates = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var key in new[] { RegistrationTokenKey, IdentityTokenKey })
-        {
-            var inUse = resolved[key];
-            if ((Value(saved, key) ?? "") != inUse)
-            {
-                updates[key] = inUse;
-            }
-        }
-
-        return updates;
-    }
-
-    /// <summary>A new saved file: every default, with the token and identity in use.</summary>
-    public static string NewSavedFile(IReadOnlyDictionary<string, string> resolved)
-    {
-        var text = new StringBuilder(SavedFileHeader).Append('\n').Append('[').Append(Section).Append("]\n");
-        foreach (var entry in Defaults)
-        {
-            var value = entry.Key is RegistrationTokenKey or IdentityTokenKey ? resolved[entry.Key] : entry.Value;
-            text.Append('\n').Append(entry.Key).Append(" = ").Append(Clean(value)).Append('\n');
-        }
-
-        return text.ToString();
     }
 
     /// <summary>
@@ -307,7 +194,10 @@ public static class ConnectorConfigFiles
         return string.Join(newline, lines) + newline;
     }
 
-    /// <summary>Writes through a temporary file, so a reader polling the file never sees half of it.</summary>
+    /// <summary>
+    /// Writes through a temporary file, so a reader polling the file never sees half of it. The
+    /// temporary file starts as a copy of an existing file, so the file keeps its mode.
+    /// </summary>
     public static void WriteAtomically(string path, string text)
     {
         var directory = Path.GetDirectoryName(path);
@@ -317,8 +207,14 @@ public static class ConnectorConfigFiles
         }
 
         var temporary = path + ".tmp";
+        var exists = File.Exists(path);
+        if (exists)
+        {
+            File.Copy(path, temporary, overwrite: true);
+        }
+
         File.WriteAllText(temporary, text, new UTF8Encoding(false));
-        if (File.Exists(path))
+        if (exists)
         {
             File.Replace(temporary, path, null);
         }
@@ -335,9 +231,4 @@ public static class ConnectorConfigFiles
     private static string Clean(string value) => value.Replace("\r", "").Replace("\n", "").Trim();
 
     private static IEnumerable<string> SplitLines(string text) => text.Replace("\r\n", "\n").Split('\n');
-
-    private static string? Value(IReadOnlyDictionary<string, string>? values, string key) =>
-        values is not null && values.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
-            ? value.Trim()
-            : null;
 }

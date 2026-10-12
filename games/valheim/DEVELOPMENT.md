@@ -291,54 +291,38 @@ through a bounded `Update()`-drained action scheduler (`QueuedMainThreadActionSc
 
 ## Configuration
 
-Two files, both BepInEx-style INI with a `[Takaro]` section. `ConnectorConfigStore` reads them;
-the plugin no longer binds settings through `Config.Bind`, so BepInEx never rewrites either file.
+One file, `BepInEx/config/com.takaro.valheim.cfg`, a BepInEx-style INI with a `[Takaro]` section,
+outside the plugin folder an upgrade replaces. Nothing ships in the zip. `ConnectorConfigStore`
+reads it; the plugin does not bind settings through `Config.Bind`, so BepInEx never rewrites it.
 
-| File | Who writes it | Role |
-|---|---|---|
-| `BepInEx/plugins/TakaroValheim/takaro.cfg` | ships in the zip (`mod/takaro.cfg`, also embedded in Core and recreated when missing) | the file people edit; replaced by an upgrade |
-| `BepInEx/config/com.takaro.valheim.cfg` | releases up to 4.1 (BepInEx); now the connector | saved copy of the token and identity in use; survives an upgrade |
+- Missing at load (plugin `Awake`, before the world loads): the connector creates it
+  (`ConnectorConfigFiles.NewFile`) with every key, short comments, an empty token, a new UUID
+  `identityToken` and `serverName = <-name launch argument, else Valheim Server> (<first 8
+  identity characters>)`.
+- Present with an empty `identityToken`: a new UUID is written into that one line (other lines,
+  comments and unknown keys stay). Nothing else is ever written. Writes go through a temp file
+  that starts as a copy of the file, so the mode is kept.
+- An empty `serverName` is announced as the unique name above (not written): Takaro answers 409
+  to a second game server with a name the domain already has. A 409 rejection gets its own banner.
+- A file that cannot be written: the identity stays in memory for this run and the write is
+  retried on the next check.
 
-Resolution (`ConnectorConfigFiles.Resolve`):
-
-- `registrationToken`: `takaro.cfg` when set, else the saved file. It is copied into the saved file,
-  never into `takaro.cfg`.
-- `identityToken`: `takaro.cfg`, else the saved file, else, for an install a release up to 4.1 ran
-  with a token (saved file starts with BepInEx's `## Settings file was created by plugin Takaro
-  Valheim` and has a token), its `serverName` (default `Valheim Server`), the identity those
-  releases sent when `identityToken` was empty. Otherwise a new UUID. The identity in use is
-  written into both files, so it never changes again.
-- Every other key: `takaro.cfg` when it sets it, else the saved file, else the default. The
-  shipped `takaro.cfg` has every key but the two tokens commented out, so the fresh copy an
-  upgrade brings never overrides the saved file, while a value written into `takaro.cfg` always
-  applies (also one equal to the default, e.g. narrowing `commandAllowlistExact` back to `help`).
-- Emptying a `registrationToken` that `takaro.cfg` had set, while the server runs, clears the
-  saved token too and disconnects; at startup an empty one (the fresh file an upgrade brings)
-  falls back to the saved token.
-
-`serverName` left at the default `Valheim Server` is announced as `<-name launch argument, else
-Valheim Server> (<first 8 identity characters>)`: Takaro answers 409 to a second game server with a
-name the domain already has, so fresh installs must not share one. Not when the identity itself is
-`Valheim Server` (a 4.1-or-older install on the default). The name is not written to the files.
-A 409 rejection gets its own banner pointing at `serverName`.
-
-Keys and defaults: `registrationToken`, `serverName` (`Valheim Server`), `identityToken`,
+Keys and defaults: `registrationToken`, `serverName` (see above), `identityToken`,
 `takaroWsUrl` (`wss://connect.takaro.io/`), `logLevel` (`Information`), `enableLogEvents`
 (`true`), `commandAllowlistExact` (`help`), `commandAllowlistPrefixes` (empty), `chatSenderName`
-(`Takaro`, at most 128 characters). Lists split on `;` or `,`. The `companionMode` key from 3.x is
-ignored. There are no environment variables.
+(`Takaro`, at most 128 characters). Lists split on `;` or `,`. Unknown keys are ignored. There are
+no environment variables.
 
-Runtime: a 5 s timer compares the whole text of both files (not mtime); a changed text is
-applied only when a re-read 1 s later is identical, so an in-place save caught half-way is not
-taken (and never written to the saved file). A change to
-`takaroWsUrl`, `registrationToken`, `identityToken` or `serverName` calls
+Runtime: a 5 s timer compares the whole text of the file (not mtime); a changed text is applied
+only when a re-read 1 s later is identical, so an in-place save caught half-way is not taken. A
+change to `takaroWsUrl`, `registrationToken`, `identityToken` or `serverName` calls
 `TakaroWebSocketRunner.UpdateSettings`, which cancels the current attempt (connect, receive or
-backoff wait), aborts the socket and connects at once with a fresh backoff. Other keys log that a
-restart applies them. A file without a `[Takaro]` section (empty, half-saved) or one that cannot
-be read keeps the current settings and is retried on the next tick; it is never overwritten. The
-connector's own writes go through a temp file and are not counted as changes. With no token the
-runner does not connect and logs a banner naming `takaro.cfg`; a rejected identify logs a banner
-and retries with backoff (2 s doubling to 60 s) until the token changes.
+backoff wait), aborts the socket and connects at once with a fresh backoff; an emptied token
+disconnects and shows the banner. Other keys log that a restart applies them. A file without a
+`[Takaro]` section (empty, half-saved), a deleted one or one that cannot be read keeps the current
+settings and is retried on the next tick; it is never overwritten. With no token the runner does
+not connect and logs a banner naming the file; a rejected identify logs a banner (name, message
+and HTTP status only) and retries with backoff (2 s doubling to 60 s) until the settings change.
 
 BepInEx 5 has no config file watcher of its own (`ConfigFile.ConfigReloaded` only fires after an
 explicit `Reload()`), hence the polling.

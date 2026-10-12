@@ -3,24 +3,12 @@ using Takaro.Valheim.Core;
 
 namespace Takaro.Valheim.Core.Tests;
 
-/// <summary>
-/// The two config files: takaro.cfg in the plugin folder (shipped, edited, replaced by an
-/// upgrade) and BepInEx/config/com.takaro.valheim.cfg (where releases up to 4.1 kept everything,
-/// now the connector-kept copy of the token and identity).
-/// </summary>
+/// <summary>The one config file, BepInEx/config/com.takaro.valheim.cfg.</summary>
 [TestClass]
 public sealed class ConnectorConfigStoreTests
 {
-    private const string LegacyFile =
-        "## Settings file was created by plugin Takaro Valheim v4.1.1\n"
-        + "## Plugin GUID: com.takaro.valheim\n\n[Takaro]\n\n"
-        + "## Takaro registration token.\n# Setting type: String\n# Default value: \nregistrationToken = legacy-token\n\n"
-        + "serverName = My Meadows\n\nidentityToken = \n\ntakaroWsUrl = wss://connect.takaro.io/\n\n"
-        + "commandAllowlistExact = help;save\n\ncompanionMode = optional\n";
-
     private string dir = "";
-    private string userPath = "";
-    private string savedPath = "";
+    private string path = "";
     private readonly List<string> warnings = new();
     private int generated;
 
@@ -28,255 +16,104 @@ public sealed class ConnectorConfigStoreTests
     public void SetUp()
     {
         dir = Path.Combine(Path.GetTempPath(), "takaro-valheim-config-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(Path.Combine(dir, "plugins", "TakaroValheim"));
         Directory.CreateDirectory(Path.Combine(dir, "config"));
-        userPath = Path.Combine(dir, "plugins", "TakaroValheim", "takaro.cfg");
-        savedPath = Path.Combine(dir, "config", "com.takaro.valheim.cfg");
+        path = Path.Combine(dir, "config", "com.takaro.valheim.cfg");
     }
 
     [TestCleanup]
     public void TearDown() => Directory.Delete(dir, recursive: true);
 
     [TestMethod]
-    public void ShippedFileHasEmptyTokenAndIdentityAndEveryDefault()
+    public void MissingFileIsCreatedWithEveryKeyAnEmptyTokenAndANewIdentity()
     {
-        var text = ConnectorConfigFiles.ShippedUserFile();
-        var shipped = ConnectorConfigFiles.Parse(text);
-
-        Assert.AreEqual("", shipped["registrationToken"]);
-        Assert.AreEqual("", shipped["identityToken"]);
-        CollectionAssert.AreEquivalent(new[] { "registrationToken", "identityToken" }, shipped.Keys.ToArray(),
-            "Every other key ships commented out, so a fresh copy never overrides the saved file.");
-        foreach (var entry in ConnectorConfigFiles.Defaults.Where(e => !shipped.ContainsKey(e.Key)))
-        {
-            StringAssert.Contains(text, $"# {entry.Key} =", entry.Key);
-        }
-    }
-
-    [TestMethod]
-    public void ShippedFileOnDiskIsTheEmbeddedOne()
-    {
-        var onDisk = File.ReadAllText(Path.Combine(ValheimRoot(), "mod", "takaro.cfg"));
-        Assert.AreEqual(onDisk, ConnectorConfigFiles.ShippedUserFile());
-    }
-
-    [TestMethod]
-    public void FreshInstallWithoutTokenGeneratesAndKeepsAnIdentityButHasNoToken()
-    {
-        Ship();
-
         var config = Load();
 
         Assert.IsFalse(config.HasRegistrationToken);
         Assert.AreEqual("generated-1", config.IdentityToken);
-        Assert.AreEqual("generated-1", Read(userPath)["identityToken"]);
-        Assert.AreEqual("generated-1", Read(savedPath)["identityToken"]);
-        Assert.AreEqual("", Read(savedPath)["registrationToken"]);
-        Assert.AreEqual("", Read(userPath)["registrationToken"]);
+        Assert.AreEqual("Valheim Server (generate)", config.ServerName);
+        var text = File.ReadAllText(path);
+        var file = ConnectorConfigFiles.Parse(text);
+        CollectionAssert.AreEquivalent(ConnectorConfigFiles.Defaults.Keys.ToArray(), file.Keys.ToArray());
+        Assert.AreEqual("", file["registrationToken"]);
+        Assert.AreEqual("generated-1", file["identityToken"]);
+        Assert.AreEqual("Valheim Server (generate)", file["serverName"]);
+        StringAssert.Contains(text, "## Takaro registration token");
     }
 
     [TestMethod]
-    public void FreshInstallTokenPastedBeforeStartConnectsAsANewServer()
+    public void RealIdentityIsAUuid()
     {
-        Ship(token: "fresh-token");
+        Assert.IsTrue(new ConnectorConfigStore(path).Load(out var config, out _));
 
-        var config = Load();
-
-        Assert.AreEqual("fresh-token", config.RegistrationToken);
-        Assert.AreEqual("generated-1", config.IdentityToken);
-        Assert.AreEqual("Valheim Server (generate)", config.ServerName, "A fresh install never announces the shared default name.");
-        Assert.IsFalse(Read(userPath).ContainsKey("serverName"), "The name is not written into the file.");
-        Assert.AreEqual("fresh-token", Read(savedPath)["registrationToken"]);
-        Assert.AreEqual("generated-1", Read(savedPath)["identityToken"]);
+        Assert.IsTrue(Guid.TryParse(config!.IdentityToken, out _));
+        Assert.AreEqual(config.IdentityToken, Read()["identityToken"]);
     }
 
     [TestMethod]
-    public void MissingUserFileIsRecreatedFromTheShippedOne()
+    public void CreatedFileUsesTheDedicatedServerName()
     {
-        var config = Load();
-
-        Assert.AreEqual("generated-1", config.IdentityToken);
-        var recreated = File.ReadAllText(userPath);
-        StringAssert.Contains(recreated, "Paste the registration token");
-        Assert.AreEqual("generated-1", ConnectorConfigFiles.Parse(recreated)["identityToken"]);
-    }
-
-    [TestMethod]
-    public void UpgradeThatReplacesThePluginFolderKeepsTokenAndIdentity()
-    {
-        Ship(token: "fresh-token");
-        Load();
-
-        // README upgrade: delete BepInEx/plugins/TakaroValheim/, unzip the new one.
-        File.Delete(userPath);
-        Ship();
-        var config = Load();
-
-        Assert.AreEqual("fresh-token", config.RegistrationToken);
-        Assert.AreEqual("generated-1", config.IdentityToken);
-        Assert.AreEqual(1, generated);
-        Assert.AreEqual("generated-1", Read(userPath)["identityToken"]);
-        Assert.AreEqual("", Read(userPath)["registrationToken"], "The token is never copied into the user file.");
-    }
-
-    [TestMethod]
-    public void UpgradeFromALegacyInstallKeepsItsServerNameIdentity()
-    {
-        File.WriteAllText(savedPath, LegacyFile);
-        Ship();
-
-        var config = Load();
-
-        Assert.AreEqual("legacy-token", config.RegistrationToken);
-        Assert.AreEqual("My Meadows", config.IdentityToken);
-        Assert.AreEqual("My Meadows", config.ServerName);
-        Assert.AreEqual(0, generated);
-        CollectionAssert.AreEqual(new[] { "help", "save" }, config.CommandAllowlistExact.ToArray());
-        Assert.AreEqual("My Meadows", Read(userPath)["identityToken"]);
-        var saved = File.ReadAllText(savedPath);
-        Assert.AreEqual("My Meadows", ConnectorConfigFiles.Parse(saved)["identityToken"]);
-        StringAssert.Contains(saved, "companionMode = optional", "Unknown keys and comments stay.");
-        StringAssert.Contains(saved, "# Setting type: String");
-    }
-
-    [TestMethod]
-    public void UpgradeFromALegacyInstallOnTheDefaultServerNameKeepsThatName()
-    {
-        File.WriteAllText(savedPath, LegacyFile.Replace("serverName = My Meadows\n", ""));
-        Ship();
-
-        Assert.AreEqual("Valheim Server", Load().IdentityToken);
-    }
-
-    [TestMethod]
-    public void FreshInstallUsesTheDedicatedServerNameWhenServerNameIsUnset()
-    {
-        Ship(token: "t");
-
-        var store = new ConnectorConfigStore(userPath, savedPath, newIdentity: () => "generated-1", settleDelay: TimeSpan.Zero, hostServerName: "Odin's Hall");
+        var store = new ConnectorConfigStore(path, newIdentity: () => "abcd-1234-ef", hostServerName: "Odin's Hall");
         Assert.IsTrue(store.Load(out var config, out _));
 
-        Assert.AreEqual("Odin's Hall (generate)", config!.ServerName);
+        Assert.AreEqual("Odin's Hall (abcd1234)", config!.ServerName);
+        Assert.AreEqual("Odin's Hall (abcd1234)", Read()["serverName"]);
     }
 
     [TestMethod]
-    public void LegacyDefaultNameIdentityKeepsTheDefaultNameAfterItWasWrittenBack()
+    public void ReadmeShowsTheFileTheConnectorCreates()
     {
-        File.WriteAllText(savedPath, LegacyFile.Replace("serverName = My Meadows\n", ""));
-        Ship();
-        Load();
-
-        // Second start: the identity now comes from the files, not the legacy rule.
-        var store = new ConnectorConfigStore(userPath, savedPath, hostServerName: "Odin's Hall");
-        Assert.IsTrue(store.Load(out var config, out _));
-
-        Assert.AreEqual("Valheim Server", config!.IdentityToken);
-        Assert.AreEqual("Valheim Server", config.ServerName);
+        var readme = File.ReadAllText(Path.Combine(ValheimRoot(), "README.md")).Replace("\r\n", "\n");
+        foreach (var line in ConnectorConfigFiles.NewFile("", "").Split('\n').Where(l => l.Length > 0 && !l.StartsWith("registrationToken", StringComparison.Ordinal)))
+        {
+            StringAssert.Contains(readme, line + "\n", line);
+        }
     }
 
     [TestMethod]
-    public void ExplicitServerNameIsSentAsIs()
+    public void FileWrittenBeforeTheFirstStartGetsAnIdentityAndKeepsEverythingElse()
     {
-        Ship(token: "t", extra: "serverName = Ashlands\n");
-
-        var store = new ConnectorConfigStore(userPath, savedPath, newIdentity: () => "x", hostServerName: "Odin's Hall");
-        Assert.IsTrue(store.Load(out var config, out _));
-
-        Assert.AreEqual("Ashlands", config!.ServerName);
-    }
-
-    [TestMethod]
-    public void LegacyInstallStillWorksWithoutTheNewUserFile()
-    {
-        File.WriteAllText(savedPath, LegacyFile);
+        File.WriteAllText(path, "# mine\n[Takaro]\nregistrationToken = pasted\nidentityToken =\nfuture = kept\n");
 
         var config = Load();
 
-        Assert.AreEqual("My Meadows", config.IdentityToken);
-        Assert.AreEqual("My Meadows", Read(userPath)["identityToken"]);
-    }
-
-    [TestMethod]
-    public void LegacyFileThatNeverHadATokenNeverReachedTakaroAndGetsANewIdentity()
-    {
-        File.WriteAllText(savedPath, LegacyFile.Replace("legacy-token", ""));
-        Ship();
-
-        Assert.AreEqual("generated-1", Load().IdentityToken);
-    }
-
-    [TestMethod]
-    public void HandWrittenSavedFileIsNotMistakenForALegacyInstall()
-    {
-        File.WriteAllText(savedPath, "[Takaro]\nregistrationToken = hand-token\nserverName = Hand\n");
-        Ship();
-
-        var config = Load();
-
-        Assert.AreEqual("hand-token", config.RegistrationToken);
+        Assert.AreEqual("pasted", config.RegistrationToken);
         Assert.AreEqual("generated-1", config.IdentityToken);
+        Assert.AreEqual("Valheim Server (generate)", config.ServerName, "An empty serverName is announced unique.");
+        Assert.AreEqual("# mine\n[Takaro]\nregistrationToken = pasted\nidentityToken = generated-1\nfuture = kept\n", File.ReadAllText(path));
     }
 
     [TestMethod]
-    public void ExplicitIdentityInTheSavedFileIsKept()
+    public void IdentityInTheFileIsNeverReplaced()
     {
-        File.WriteAllText(savedPath, LegacyFile.Replace("identityToken = \n", "identityToken = takaro-dev-valheim\n"));
-        Ship();
+        File.WriteAllText(path, "[Takaro]\nregistrationToken = t\nidentityToken = takaro-dev-valheim\nserverName = Takaro Dev Valheim\n");
+        var before = File.ReadAllText(path);
 
         var config = Load();
 
         Assert.AreEqual("takaro-dev-valheim", config.IdentityToken);
-        Assert.AreEqual("takaro-dev-valheim", Read(userPath)["identityToken"]);
-    }
-
-    [TestMethod]
-    public void TokenInTheUserFileWinsAndIsSavedForTheNextUpgrade()
-    {
-        File.WriteAllText(savedPath, LegacyFile);
-        Ship(token: "new-token");
-
-        var config = Load();
-
-        Assert.AreEqual("new-token", config.RegistrationToken);
-        Assert.AreEqual("My Meadows", config.IdentityToken);
-        Assert.AreEqual("new-token", Read(savedPath)["registrationToken"]);
-    }
-
-    [TestMethod]
-    public void ShippedUserFileNeverUndoesSavedSettingsButAnExplicitOneAlwaysWins()
-    {
-        File.WriteAllText(savedPath, LegacyFile);
-        Ship();
-
-        CollectionAssert.AreEqual(new[] { "help", "save" }, Load().CommandAllowlistExact.ToArray(), "A fresh shipped copy keeps the saved setting.");
-
-        // Narrowing back to the default from the user file must work (it is a permission).
-        Ship(extra: "commandAllowlistExact = help\nchatSenderName = Odin\n");
-        var config = Load();
-
-        CollectionAssert.AreEqual(new[] { "help" }, config.CommandAllowlistExact.ToArray());
-        Assert.AreEqual("Odin", config.ChatSenderName);
-    }
-
-    [TestMethod]
-    public void IdentityInTheUserFileIsNeverReplaced()
-    {
-        Ship(token: "t", identity: "chosen-id");
-
-        Assert.AreEqual("chosen-id", Load().IdentityToken);
+        Assert.AreEqual("Takaro Dev Valheim", config.ServerName);
         Assert.AreEqual(0, generated);
-        Assert.AreEqual("chosen-id", Read(savedPath)["identityToken"]);
+        Assert.AreEqual(before, File.ReadAllText(path), "Nothing is written when the identity is set.");
+    }
+
+    [TestMethod]
+    public void RestartKeepsTheCreatedIdentity()
+    {
+        Load();
+        var config = Load();
+
+        Assert.AreEqual("generated-1", config.IdentityToken);
+        Assert.AreEqual(1, generated);
     }
 
     [TestMethod]
     public void TokenSavedWhileRunningIsAConnectionChange()
     {
-        Ship();
         var store = Store();
         Assert.IsTrue(store.Load(out var first, out _));
-        Assert.IsNull(store.CheckForChanges(), "The connector's own writes are not a change.");
+        Assert.IsNull(store.CheckForChanges(), "The connector's own write is not a change.");
 
-        SetUserValue("registrationToken", "pasted-token");
+        Set("registrationToken", "pasted-token");
         var change = store.CheckForChanges();
 
         Assert.IsNotNull(change);
@@ -284,91 +121,102 @@ public sealed class ConnectorConfigStoreTests
         Assert.AreEqual("pasted-token", change.Config.RegistrationToken);
         Assert.AreEqual(first!.IdentityToken, change.Config.IdentityToken);
         Assert.IsNull(store.CheckForChanges());
-        Assert.AreEqual("pasted-token", Read(savedPath)["registrationToken"]);
+    }
+
+    [TestMethod]
+    public void EmptiedTokenWhileRunningDisconnects()
+    {
+        var store = Store();
+        store.Load(out _, out _);
+        Set("registrationToken", "t");
+        store.CheckForChanges();
+
+        Set("registrationToken", "");
+        var change = store.CheckForChanges();
+
+        Assert.IsNotNull(change);
+        Assert.IsTrue(change.ConnectionChanged);
+        Assert.IsFalse(change.Config.HasRegistrationToken);
     }
 
     [TestMethod]
     public void SameLengthEditIsSeen()
     {
-        Ship(token: "aaaa");
         var store = Store();
         store.Load(out _, out _);
+        Set("registrationToken", "aaaa");
+        store.CheckForChanges();
 
-        SetUserValue("registrationToken", "bbbb");
+        Set("registrationToken", "bbbb");
 
         Assert.AreEqual("bbbb", store.CheckForChanges()?.Config.RegistrationToken);
     }
 
     [TestMethod]
-    public void HalfSavedFileKeepsTheCurrentSettingsAndIsRetried()
+    public void HalfSavedFileKeepsTheCurrentSettingsIsNeverOverwrittenAndIsRetried()
     {
-        Ship(token: "good");
         var store = Store();
         store.Load(out _, out _);
+        var good = File.ReadAllText(path);
 
-        File.WriteAllText(userPath, "");
+        File.WriteAllText(path, "");
         Assert.IsNull(store.CheckForChanges());
-        File.WriteAllText(userPath, "## Takaro Valheim connector settings.\nregistrationTok");
+        File.WriteAllText(path, "## Takaro Valheim connector settings.\nregistrationTok");
         Assert.IsNull(store.CheckForChanges());
+        Assert.AreEqual("## Takaro Valheim connector settings.\nregistrationTok", File.ReadAllText(path));
         Assert.IsTrue(warnings.Any(w => w.Contains("could not read", StringComparison.Ordinal)));
 
-        Ship(token: "better");
+        File.WriteAllText(path, ConnectorConfigFiles.SetValues(good, new Dictionary<string, string> { ["registrationToken"] = "better" }));
         var change = store.CheckForChanges();
         Assert.AreEqual("better", change?.Config.RegistrationToken);
         Assert.AreEqual("generated-1", change?.Config.IdentityToken);
     }
 
     [TestMethod]
-    public void HalfSavedFileIsNeverOverwritten()
+    public void UnreadableFileAtStartupIsLeftAlone()
     {
-        Ship(token: "good");
-        var store = Store();
-        store.Load(out _, out _);
-
-        File.WriteAllText(userPath, "registrationTok");
-        store.CheckForChanges();
-
-        Assert.AreEqual("registrationTok", File.ReadAllText(userPath));
-    }
-
-    [TestMethod]
-    public void UnreadableUserFileAtStartupIsLeftAlone()
-    {
-        File.WriteAllText(userPath, "garbage without a section");
+        File.WriteAllText(path, "garbage without a section");
 
         var config = Load();
 
-        Assert.AreEqual("garbage without a section", File.ReadAllText(userPath));
-        Assert.AreEqual("generated-1", config.IdentityToken);
-        Assert.AreEqual("generated-1", Read(savedPath)["identityToken"]);
+        Assert.AreEqual("garbage without a section", File.ReadAllText(path));
+        Assert.IsFalse(config.HasRegistrationToken);
+    }
+
+    [TestMethod]
+    public void DeletedFileWhileRunningKeepsTheCurrentSettings()
+    {
+        var store = Store();
+        store.Load(out _, out _);
+
+        File.Delete(path);
+
+        Assert.IsNull(store.CheckForChanges());
+        Assert.IsFalse(File.Exists(path));
     }
 
     [TestMethod]
     public void IdentityRemovedWhileRunningIsWrittenBackUnchanged()
     {
-        Ship(token: "t");
         var store = Store();
         store.Load(out var first, out _);
 
-        SetUserValue("identityToken", "");
-        File.WriteAllText(savedPath, ConnectorConfigFiles.SetValues(File.ReadAllText(savedPath), new Dictionary<string, string> { ["identityToken"] = "" }));
+        Set("identityToken", "");
         var change = store.CheckForChanges();
 
         Assert.IsNotNull(change);
         Assert.IsFalse(change.ConnectionChanged);
-        Assert.AreEqual(first!.IdentityToken, change.Config.IdentityToken);
-        Assert.AreEqual(first.IdentityToken, Read(userPath)["identityToken"]);
+        Assert.AreEqual(first!.IdentityToken, Read()["identityToken"]);
         Assert.AreEqual(1, generated);
     }
 
     [TestMethod]
     public void OtherSettingsNeedARestartAndSaySo()
     {
-        Ship(token: "t");
         var store = Store();
         store.Load(out _, out _);
 
-        SetUserValue("chatSenderName", "Odin");
+        Set("chatSenderName", "Odin");
         var change = store.CheckForChanges();
 
         Assert.IsNotNull(change);
@@ -380,27 +228,65 @@ public sealed class ConnectorConfigStoreTests
     [TestMethod]
     public void UrlAndServerNameChangesReconnect()
     {
-        Ship(token: "t");
         var store = Store();
         store.Load(out _, out _);
 
-        SetUserValue("serverName", "Ashlands");
+        Set("serverName", "Ashlands");
         Assert.IsTrue(store.CheckForChanges()!.ConnectionChanged);
-        SetUserValue("takaroWsUrl", "ws://127.0.0.1:1/");
+        Set("takaroWsUrl", "ws://127.0.0.1:1/");
         Assert.IsTrue(store.CheckForChanges()!.ConnectionChanged);
     }
 
     [TestMethod]
     public void InvalidSettingsWhileRunningKeepTheCurrentOnes()
     {
-        Ship(token: "t");
         var store = Store();
         store.Load(out _, out _);
 
-        SetUserValue("chatSenderName", new string('n', ConnectorConfig.MaximumChatSenderNameCharacters + 1));
+        Set("chatSenderName", new string('n', ConnectorConfig.MaximumChatSenderNameCharacters + 1));
 
         Assert.IsNull(store.CheckForChanges());
         Assert.IsTrue(warnings.Any(w => w.Contains("chatSenderName", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public void UnwritableFileKeepsTheIdentityInMemoryForTheRun()
+    {
+        File.WriteAllText(path, "[Takaro]\nregistrationToken = t\n");
+        File.SetAttributes(path, FileAttributes.ReadOnly);
+        Directory.CreateDirectory(path + ".tmp"); // the temp file cannot be created either
+        try
+        {
+            var store = Store();
+            Assert.IsTrue(store.Load(out var config, out _));
+
+            Assert.AreEqual("generated-1", config!.IdentityToken);
+            Assert.IsTrue(warnings.Any(w => w.Contains("could not write", StringComparison.Ordinal)));
+            store.CheckForChanges();
+            Assert.AreEqual(1, generated, "A retry keeps the identity this process announced.");
+        }
+        finally
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+            Directory.Delete(path + ".tmp");
+        }
+    }
+
+    [TestMethod]
+    public void WriteBackKeepsTheFileMode()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        File.WriteAllText(path, "[Takaro]\nregistrationToken = t\nidentityToken =\n");
+        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
+
+        Load();
+
+        Assert.AreEqual("generated-1", Read()["identityToken"]);
+        Assert.AreEqual(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead, File.GetUnixFileMode(path));
     }
 
     [TestMethod]
@@ -420,24 +306,6 @@ public sealed class ConnectorConfigStoreTests
     }
 
     [TestMethod]
-    public void ClearingTheTokenWhileRunningDisconnectsAndClearsTheSavedCopy()
-    {
-        Ship(token: "t");
-        var store = Store();
-        store.Load(out _, out _);
-
-        SetUserValue("registrationToken", "");
-        var change = store.CheckForChanges();
-
-        Assert.IsNotNull(change);
-        Assert.IsTrue(change.ConnectionChanged);
-        Assert.IsFalse(change.Config.HasRegistrationToken);
-        Assert.AreEqual("", Read(savedPath)["registrationToken"]);
-        Assert.IsNull(store.CheckForChanges());
-        Assert.IsFalse(Load().HasRegistrationToken, "A restart does not bring the cleared token back.");
-    }
-
-    [TestMethod]
     public void SetValuesReplacesEveryDuplicateOfAKey()
     {
         var text = "[Takaro]\nidentityToken = old\nidentityToken = stale\n";
@@ -449,7 +317,7 @@ public sealed class ConnectorConfigStoreTests
     }
 
     private ConnectorConfigStore Store() =>
-        new(userPath, savedPath, _ => { }, warnings.Add, () => $"generated-{++generated}", TimeSpan.FromMilliseconds(10));
+        new(path, _ => { }, warnings.Add, () => $"generated-{++generated}", TimeSpan.FromMilliseconds(10));
 
     private ConnectorConfig Load()
     {
@@ -457,20 +325,10 @@ public sealed class ConnectorConfigStoreTests
         return config!;
     }
 
-    private void Ship(string token = "", string identity = "", string extra = "")
-    {
-        var text = ConnectorConfigFiles.SetValues(ConnectorConfigFiles.ShippedUserFile(), new Dictionary<string, string>
-        {
-            ["registrationToken"] = token,
-            ["identityToken"] = identity
-        });
-        File.WriteAllText(userPath, text + extra);
-    }
+    private void Set(string key, string value) =>
+        File.WriteAllText(path, ConnectorConfigFiles.SetValues(File.ReadAllText(path), new Dictionary<string, string> { [key] = value }));
 
-    private void SetUserValue(string key, string value) =>
-        File.WriteAllText(userPath, ConnectorConfigFiles.SetValues(File.ReadAllText(userPath), new Dictionary<string, string> { [key] = value }));
-
-    private static Dictionary<string, string> Read(string path) => ConnectorConfigFiles.Parse(File.ReadAllText(path));
+    private Dictionary<string, string> Read() => ConnectorConfigFiles.Parse(File.ReadAllText(path));
 
     private static string ValheimRoot()
     {
