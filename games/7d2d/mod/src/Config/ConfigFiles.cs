@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security;
 using System.Xml;
 
@@ -171,8 +172,26 @@ namespace Takaro.Config
             else
             {
                 write(tmp);
+                OwnerOnly(tmp);
                 File.Move(tmp, path);
             }
+        }
+
+        [DllImport("libc.so.6", EntryPoint = "chmod", SetLastError = true)]
+        private static extern int Chmod(string path, uint mode);
+
+        // The registration token goes into this file: on Linux a new one is
+        // readable by its owner only (0600), not by every local user.
+        private static void OwnerOnly(string path)
+        {
+            if (Environment.OSVersion.Platform != PlatformID.Unix)
+                return;
+            try
+            {
+                Chmod(path, Convert.ToUInt32("600", 8));
+            }
+            catch (Exception ex)
+                when (ex is DllNotFoundException || ex is EntryPointNotFoundException) { }
         }
 
         private static string Element(string name, string value)

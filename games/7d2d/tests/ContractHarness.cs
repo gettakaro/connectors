@@ -1534,6 +1534,11 @@ public static class ContractHarness
                 "a new config spells out the defaults"
             );
             Equal("generated-1", ConfigFiles.Read(path).IdentityToken, "the identity is saved");
+            Equal(
+                "600",
+                Shell("stat", "-c %a " + path),
+                "a new config is readable by its owner only"
+            );
 
             ConfigValues reread = ConfigFiles.Load(path, newIdentity, out wrote, out error);
             True(

@@ -44,6 +44,7 @@ namespace Takaro.Config
         // writes the identity this process already announced.
         private bool _identityUnsaved;
         private string _lastWriteError;
+        private string _lastReadError;
 
         private ConfigManager() { }
 
@@ -141,15 +142,19 @@ namespace Takaro.Config
                         || ex is UnauthorizedAccessException
                     )
                 {
-                    LogService.Instance.Warn(
-                        $"Could not read {ConfigPath} ({ex.Message}); "
-                            + "keeping the current settings and trying again in a few seconds"
-                    );
-                    // Retry when the file changes, not every check.
-                    _stamp = Stamp(ConfigPath);
+                    // Retried every check; say so once per problem, not every 5 s.
+                    string error = $"Could not read {ConfigPath} ({ex.Message})";
+                    if (error != _lastReadError)
+                        LogService.Instance.Warn(
+                            error
+                                + "; keeping the current settings and trying again in a few seconds"
+                        );
+                    _lastReadError = error;
+                    _stamp = null;
                     return false;
                 }
 
+                _lastReadError = null;
                 if (wrote)
                     LogService.Instance.Info(
                         existed

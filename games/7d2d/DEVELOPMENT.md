@@ -105,8 +105,8 @@ flow, the state-mirror diagram and the staleness bounds.
 One file: `<server cwd>/Takaro/Config.xml` (`API.BasePath`, next to `Mods/`). The release
 zip does not contain it, so replacing `Mods/Takaro/` on an upgrade never touches it. The mod
 creates it in `InitMod` (before the world loads) when it is missing, with every key, an empty
-`RegistrationToken` and a new UUID `IdentityToken`; when the file has no identity, the mod
-generates one and writes it back (atomically, keeping the file's comments and permissions).
+`RegistrationToken` and a new UUID `IdentityToken` (mode 0600 on Linux); when the file has no
+identity, the mod generates one and writes it back (atomically, keeping the file's comments and permissions).
 Nothing else is ever written. A failed write keeps the generated identity in memory and is
 retried. There are no environment variables. The dev rig (`dev-servers/lib/render.sh`) and
 `takaro-maint verify` render this same file.
