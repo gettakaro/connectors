@@ -16,48 +16,28 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Supplier;
 
 /**
- * Reading, merging and writing the two config files, with no game types and no global
- * state so the tests can drive every case.
- *
- * <p>{@code TakaroConfig.txt} ships in the release zip and is the file people edit. An
- * upgrade that unpacks the zip again replaces it with the empty template, so the
- * connector keeps the tokens in use in {@code TakaroConfig.saved.txt} beside it (a file
- * the zip does not contain) and falls back to it per field.
+ * Reading and writing {@code TakaroConfig.txt}, with no game types and no global state so
+ * the tests can drive every case.
  */
 public final class ConfigFiles {
 
     public static final String TEMPLATE_RESOURCE = "/io/takaro/zomboid/agent/TakaroConfig.txt";
 
-    private static final String SAVED_HEADER = String.join("\n",
-            "# Written by the Takaro connector: the tokens it uses, kept so that an upgrade",
-            "# that replaces TakaroConfig.txt keeps them. Edit TakaroConfig.txt instead; a",
-            "# token set there takes precedence over this file.",
-            "");
-
     private ConfigFiles() {
     }
 
-    /** The settings a resolution produced, and whether it had to make up the identity. */
+    /** The settings the file and the environment produce. */
     public static final class Resolved {
         public final TakaroConfig config;
         public final boolean logEvents;
         public final boolean debugCatalog;
-        /** The tokens that came from the files (or were generated), never from the environment. */
-        public final String fileRegistrationToken;
-        public final String fileIdentityToken;
-        public final boolean identityGenerated;
 
-        Resolved(TakaroConfig config, boolean logEvents, boolean debugCatalog,
-                 String fileRegistrationToken, String fileIdentityToken, boolean identityGenerated) {
+        Resolved(TakaroConfig config, boolean logEvents, boolean debugCatalog) {
             this.config = config;
             this.logEvents = logEvents;
             this.debugCatalog = debugCatalog;
-            this.fileRegistrationToken = fileRegistrationToken;
-            this.fileIdentityToken = fileIdentityToken;
-            this.identityGenerated = identityGenerated;
         }
     }
 
@@ -78,29 +58,14 @@ public final class ConfigFiles {
         return values;
     }
 
-    /**
-     * The settings to use. Each token comes from the environment, else the user file, else
-     * the saved copy; when no source holds an identity, {@code newIdentity} supplies one
-     * (null leaves it unset). Every other setting comes from the environment or the user
-     * file only.
-     */
-    public static Resolved resolve(Map<String, String> user, Map<String, String> saved,
-                                   Map<String, String> env, Supplier<String> newIdentity) {
-        Map<String, String> u = user != null ? user : Map.of();
-        Map<String, String> s = saved != null ? saved : Map.of();
-
-        String fileRegistration = first(unlessPlaceholder(u.get("registrationToken")), s.get("registrationToken"));
-        String fileIdentity = first(u.get("identityToken"), s.get("identityToken"));
-        boolean generated = false;
-        if (fileIdentity == null && !TakaroConfig.isSet(env.get("TAKARO_IDENTITY_TOKEN")) && newIdentity != null) {
-            fileIdentity = newIdentity.get();
-            generated = fileIdentity != null;
-        }
+    /** The file's settings with the {@code TAKARO_*} environment winning per key. */
+    public static Resolved resolve(Map<String, String> file, Map<String, String> env) {
+        Map<String, String> u = file != null ? file : Map.of();
 
         TakaroConfig config = new TakaroConfig();
         config.setWsUrl(first(u.get("wsUrl"), TakaroConfig.DEFAULT_WS_URL));
-        config.setRegistrationToken(fileRegistration);
-        config.setIdentityToken(fileIdentity);
+        config.setRegistrationToken(first(u.get("registrationToken")));
+        config.setIdentityToken(first(u.get("identityToken")));
         config.setServerChatName(first(u.get("serverChatName")));
         config.setDebugEnabled(isTruthy(u.get("debug")));
         config.applyEnvOverrides(env);
@@ -115,21 +80,11 @@ public final class ConfigFiles {
         if (TakaroConfig.isSet(debugCatalogEnv)) {
             debugCatalog = isTruthy(debugCatalogEnv);
         }
-        return new Resolved(config, logEvents, debugCatalog, fileRegistration, fileIdentity, generated);
-    }
-
-    /** What the saved copy should hold, or null when there is nothing worth keeping. */
-    public static String renderSaved(Resolved resolved) {
-        if (resolved.fileRegistrationToken == null && resolved.fileIdentityToken == null) {
-            return null;
-        }
-        return SAVED_HEADER
-                + "registrationToken=" + nullToEmpty(resolved.fileRegistrationToken) + "\n"
-                + "identityToken=" + nullToEmpty(resolved.fileIdentityToken) + "\n";
+        return new Resolved(config, logEvents, debugCatalog);
     }
 
     /**
-     * The user file's text with {@code identityToken} set: the first such line is
+     * The file's text with {@code identityToken} set: the first such line is
      * rewritten in place (its comments and the rest of the file untouched), or a line is
      * appended when the file has none.
      */
@@ -162,7 +117,7 @@ public final class ConfigFiles {
         return out.toString();
     }
 
-    /** The template the release ships, as bundled in the jar. */
+    /** The file the connector writes when there is none, as bundled in the jar. */
     public static String template() throws IOException {
         try (InputStream in = ConfigFiles.class.getResourceAsStream(TEMPLATE_RESOURCE)) {
             if (in == null) {
@@ -180,15 +135,15 @@ public final class ConfigFiles {
         return Files.readString(file, StandardCharsets.UTF_8);
     }
 
-    /** A reader polling the file never sees it half-written; the saved copy is owner-only. */
-    public static void writeAtomically(Path file, String text, boolean ownerOnly) throws IOException {
+    /** A reader polling the file never sees it half-written. */
+    public static void writeAtomically(Path file, String text) throws IOException {
         Path parent = file.toAbsolutePath().getParent();
         if (parent != null) {
             Files.createDirectories(parent);
         }
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
         Files.writeString(tmp, text, StandardCharsets.UTF_8);
-        matchOwner(tmp, file, ownerOnly);
+        matchOwner(tmp, file);
         try {
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException e) {
@@ -201,7 +156,7 @@ public final class ConfigFiles {
      * a server running as root (a Docker image, say) must not leave the config behind as a
      * file the owner of the folder can no longer edit.
      */
-    private static void matchOwner(Path tmp, Path file, boolean ownerOnly) {
+    private static void matchOwner(Path tmp, Path file) {
         try {
             PosixFileAttributeView view = Files.getFileAttributeView(tmp, PosixFileAttributeView.class);
             if (view == null) {
@@ -213,9 +168,8 @@ public final class ConfigFiles {
                 return;
             }
             PosixFileAttributes wanted = Files.readAttributes(reference, PosixFileAttributes.class);
-            Set<PosixFilePermission> mode = ownerOnly
-                    ? PosixFilePermissions.fromString("rw-------")
-                    : exists ? wanted.permissions() : PosixFilePermissions.fromString("rw-r--r--");
+            Set<PosixFilePermission> mode = exists
+                    ? wanted.permissions() : PosixFilePermissions.fromString("rw-r--r--");
             view.setPermissions(mode);
             PosixFileAttributes have = view.readAttributes();
             if (!have.owner().equals(wanted.owner())) {
@@ -248,17 +202,6 @@ public final class ConfigFiles {
             }
         }
         return null;
-    }
-
-    /** The value the README's example config used to show; never a real token. */
-    static final String PLACEHOLDER_REGISTRATION_TOKEN = "your-registration-token-here";
-
-    private static String unlessPlaceholder(String v) {
-        return PLACEHOLDER_REGISTRATION_TOKEN.equals(v) ? null : v;
-    }
-
-    private static String nullToEmpty(String v) {
-        return v != null ? v : "";
     }
 
     private static String stripComment(String line) {

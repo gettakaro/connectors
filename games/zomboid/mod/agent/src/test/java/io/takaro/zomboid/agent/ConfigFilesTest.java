@@ -27,7 +27,7 @@ class ConfigFilesTest {
     }
 
     @Test
-    void shippedTemplateHasEmptyTokensAndTheDefaultUrl() throws Exception {
+    void bundledTemplateHasEmptyTokensAndTheDefaultUrl() throws Exception {
         Map<String, String> values = ConfigFiles.parse(ConfigFiles.template());
         assertEquals("", values.get("registrationToken"));
         assertEquals("", values.get("identityToken"));
@@ -36,35 +36,16 @@ class ConfigFilesTest {
     }
 
     @Test
-    void savedCopyHoldsOnlyTheTokens() {
-        ConfigFiles.Resolved r = ConfigFiles.resolve(Map.of("registrationToken", "reg", "identityToken", "id",
-                "debug", "true"), Map.of(), Map.of(), null);
-        Map<String, String> saved = ConfigFiles.parse(ConfigFiles.renderSaved(r));
-        assertEquals(Map.of("registrationToken", "reg", "identityToken", "id"), saved);
-    }
-
-    @Test
-    void nothingToSaveWhenNoTokenCameFromAFile() {
-        ConfigFiles.Resolved r = ConfigFiles.resolve(Map.of(), Map.of(),
-                Map.of("TAKARO_REGISTRATION_TOKEN", "env", "TAKARO_IDENTITY_TOKEN", "env"), null);
-        assertNull(ConfigFiles.renderSaved(r));
-    }
-
-    @Test
-    void rewritingAFileKeepsItsModeAndTheSavedCopyIsOwnerOnly(@TempDir Path dir) throws Exception {
+    void rewritingAFileKeepsItsModeAndANewOneTakesTheFolderOwner(@TempDir Path dir) throws Exception {
         Path user = dir.resolve("TakaroConfig.txt");
         Files.writeString(user, "identityToken=\n");
         Files.setPosixFilePermissions(user, PosixFilePermissions.fromString("rw-rw-r--"));
-        ConfigFiles.writeAtomically(user, "identityToken=x\n", false);
+        ConfigFiles.writeAtomically(user, "identityToken=x\n");
         assertEquals("rw-rw-r--", PosixFilePermissions.toString(Files.getPosixFilePermissions(user)));
 
         Path fresh = dir.resolve("new.txt");
-        ConfigFiles.writeAtomically(fresh, "a=b\n", false);
+        ConfigFiles.writeAtomically(fresh, "a=b\n");
         assertEquals("rw-r--r--", PosixFilePermissions.toString(Files.getPosixFilePermissions(fresh)));
         assertEquals(Files.getOwner(dir), Files.getOwner(fresh));
-
-        Path saved = dir.resolve("TakaroConfig.saved.txt");
-        ConfigFiles.writeAtomically(saved, "registrationToken=r\n", true);
-        assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(saved)));
     }
 }

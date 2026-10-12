@@ -6,7 +6,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -19,7 +21,7 @@ class ConfigLoaderTest {
     private final Supplier<String> ids = () -> "generated-" + generated.incrementAndGet();
 
     private ConfigLoader loader(Path dir, Map<String, String> env) {
-        return new ConfigLoader(env, ids, dir.resolve(TakaroPaths.CONFIG_NAME), dir.resolve(TakaroPaths.SAVED_NAME));
+        return new ConfigLoader(env, ids, dir.resolve(TakaroPaths.CONFIG_NAME));
     }
 
     private static Map<String, String> parsed(Path file) throws Exception {
@@ -56,25 +58,26 @@ class ConfigLoaderTest {
         assertNull(config.getRegistrationToken());
         assertFalse(loader.isLogEvents());
         assertFalse(Files.exists(dir.resolve("TakaroConfig.txt")));
-        assertFalse(Files.exists(dir.resolve("TakaroConfig.saved.txt")));
         assertEquals(0, generated.get());
     }
 
     @Test
-    void freshInstallWritesTemplateAndGeneratesOneIdentity(@TempDir Path dir) throws Exception {
+    void missingFileIsCreatedWithEveryKeyAndANewIdentity(@TempDir Path dir) throws Exception {
         ConfigLoader loader = loader(dir, Map.of());
         loader.load();
         ConfigFiles.Resolved r = loader.prepareForStart();
 
-        assertTrue(r.identityGenerated);
         assertEquals("generated-1", r.config.getIdentityToken());
         assertNull(r.config.getRegistrationToken());
-        Path user = dir.resolve("TakaroConfig.txt");
-        assertTrue(Files.readString(user).contains("Paste the registration token"), "template written");
-        assertEquals("generated-1", parsed(user).get("identityToken"));
-        assertEquals("", parsed(user).get("registrationToken"));
-        assertEquals("generated-1", parsed(dir.resolve("TakaroConfig.saved.txt")).get("identityToken"));
-        assertEquals(dir.resolve("TakaroConfig.txt").toAbsolutePath().toString(), r.config.getConfigFileHint());
+        Path file = dir.resolve("TakaroConfig.txt");
+        Map<String, String> values = parsed(file);
+        assertEquals("generated-1", values.get("identityToken"));
+        assertEquals("", values.get("registrationToken"));
+        assertEquals(TakaroConfig.DEFAULT_WS_URL, values.get("wsUrl"));
+        assertTrue(values.keySet().containsAll(List.of(
+                "serverChatName", "debug", "logEvents", "debugCatalog")));
+        assertEquals(Files.getOwner(dir), Files.getOwner(file));
+        assertEquals(file.toAbsolutePath().toString(), r.config.getConfigFileHint());
 
         // A restart reads the identity back instead of making up another one.
         ConfigLoader again = loader(dir, Map.of());
@@ -84,58 +87,32 @@ class ConfigLoaderTest {
     }
 
     @Test
-    void existingInstallKeepsItsIdentityAndGetsASavedCopy(@TempDir Path dir) throws Exception {
-        Path user = dir.resolve("TakaroConfig.txt");
+    void aFileWithoutIdentityGetsOneAndKeepsItsModeAndTheRest(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("TakaroConfig.txt");
+        Files.writeString(file, "# mine\nregistrationToken=reg-1\nidentityToken=\n");
+        Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-rw----"));
+        ConfigLoader loader = loader(dir, Map.of());
+        loader.load();
+        ConfigFiles.Resolved r = loader.prepareForStart();
+
+        assertEquals("generated-1", r.config.getIdentityToken());
+        assertEquals("reg-1", r.config.getRegistrationToken());
+        assertEquals("# mine\nregistrationToken=reg-1\nidentityToken=generated-1\n", Files.readString(file));
+        assertEquals("rw-rw----", PosixFilePermissions.toString(Files.getPosixFilePermissions(file)));
+    }
+
+    @Test
+    void aCompleteFileIsLeftAlone(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("TakaroConfig.txt");
         String original = "wsUrl=wss://connect.takaro.io/\nregistrationToken=reg-1\nidentityToken=my-server\n";
-        Files.writeString(user, original);
+        Files.writeString(file, original);
         ConfigLoader loader = loader(dir, Map.of());
         loader.load();
         ConfigFiles.Resolved r = loader.prepareForStart();
 
-        assertFalse(r.identityGenerated);
         assertEquals("my-server", r.config.getIdentityToken());
-        assertEquals("reg-1", r.config.getRegistrationToken());
-        assertEquals(original, Files.readString(user), "the user file is left alone");
-        Map<String, String> saved = parsed(dir.resolve("TakaroConfig.saved.txt"));
-        assertEquals("reg-1", saved.get("registrationToken"));
-        assertEquals("my-server", saved.get("identityToken"));
+        assertEquals(original, Files.readString(file));
         assertEquals(0, generated.get());
-    }
-
-    @Test
-    void upgradeThatReplacesTheConfigKeepsTokenAndIdentity(@TempDir Path dir) throws Exception {
-        Path user = dir.resolve("TakaroConfig.txt");
-        Files.writeString(user, "registrationToken=reg-1\nidentityToken=my-server\n");
-        ConfigLoader first = loader(dir, Map.of());
-        first.load();
-        first.prepareForStart();
-
-        // The README's upgrade: unpack the zip again, which puts the empty template back.
-        Files.writeString(user, ConfigFiles.template());
-        ConfigLoader after = loader(dir, Map.of());
-        after.load();
-        ConfigFiles.Resolved r = after.prepareForStart();
-
-        assertEquals("reg-1", r.config.getRegistrationToken());
-        assertEquals("my-server", r.config.getIdentityToken());
-        assertFalse(r.identityGenerated);
-        Map<String, String> userValues = parsed(user);
-        assertEquals("my-server", userValues.get("identityToken"), "identity written back");
-        assertEquals("", userValues.get("registrationToken"), "the token is never copied into the user file");
-        assertEquals(0, generated.get());
-    }
-
-    @Test
-    void tokenInTheUserFileWinsOverTheSavedCopy(@TempDir Path dir) throws Exception {
-        Files.writeString(dir.resolve("TakaroConfig.saved.txt"), "registrationToken=old\nidentityToken=my-server\n");
-        Files.writeString(dir.resolve("TakaroConfig.txt"), "registrationToken=new\nidentityToken=\n");
-        ConfigLoader loader = loader(dir, Map.of());
-        loader.load();
-        ConfigFiles.Resolved r = loader.prepareForStart();
-
-        assertEquals("new", r.config.getRegistrationToken());
-        assertEquals("my-server", r.config.getIdentityToken());
-        assertEquals("new", parsed(dir.resolve("TakaroConfig.saved.txt")).get("registrationToken"));
     }
 
     @Test
@@ -146,7 +123,8 @@ class ConfigLoaderTest {
         env.put("TAKARO_WS_URL", "wss://env.example/");
         env.put("TAKARO_DEBUG", "true");
         env.put("TAKARO_LOG_EVENTS", "true");
-        Files.writeString(dir.resolve("TakaroConfig.txt"),
+        Path file = dir.resolve("TakaroConfig.txt");
+        Files.writeString(file,
                 "wsUrl=wss://file.example/\nregistrationToken=file-reg\nidentityToken=file-id\ndebug=false\n");
         ConfigLoader loader = loader(dir, env);
         loader.load();
@@ -157,36 +135,13 @@ class ConfigLoaderTest {
         assertEquals("wss://env.example/", r.config.getWsUrl());
         assertTrue(r.config.isDebugEnabled());
         assertTrue(r.logEvents);
-        String saved = Files.readString(dir.resolve("TakaroConfig.saved.txt"));
-        assertFalse(saved.contains("env-"), "only file-sourced tokens are saved");
-    }
+        assertFalse(Files.readString(file).contains("env-"));
 
-    @Test
-    void dockerStyleEnvOnlyInstallGetsNoTemplate(@TempDir Path dir) throws Exception {
-        Map<String, String> env = Map.of("TAKARO_REGISTRATION_TOKEN", "env-reg", "TAKARO_IDENTITY_TOKEN", "env-id");
-        ConfigLoader loader = loader(dir, env);
-        loader.load();
-        ConfigFiles.Resolved r = loader.prepareForStart();
-
-        assertEquals("env-id", r.config.getIdentityToken());
-        assertFalse(Files.exists(dir.resolve("TakaroConfig.txt")));
-        assertFalse(Files.exists(dir.resolve("TakaroConfig.saved.txt")));
-        assertEquals(0, generated.get());
-    }
-
-    @Test
-    void envRegistrationWithoutIdentityPersistsAGeneratedOne(@TempDir Path dir) throws Exception {
-        ConfigLoader loader = loader(dir, Map.of("TAKARO_REGISTRATION_TOKEN", "env-reg"));
-        loader.load();
-        ConfigFiles.Resolved r = loader.prepareForStart();
-        assertEquals("generated-1", r.config.getIdentityToken());
-        Map<String, String> saved = parsed(dir.resolve("TakaroConfig.saved.txt"));
-        assertEquals("generated-1", saved.get("identityToken"));
-        assertEquals("", saved.get("registrationToken"));
-
-        ConfigLoader again = loader(dir, Map.of("TAKARO_REGISTRATION_TOKEN", "env-reg"));
-        again.load();
-        assertEquals("generated-1", again.prepareForStart().config.getIdentityToken());
+        Path freshDir = Files.createDirectory(dir.resolve("fresh"));
+        ConfigLoader fresh = loader(freshDir, env);
+        fresh.load();
+        assertEquals("env-id", fresh.prepareForStart().config.getIdentityToken());
+        assertFalse(Files.readString(freshDir.resolve("TakaroConfig.txt")).contains("env-"));
     }
 
     @Test
@@ -196,30 +151,29 @@ class ConfigLoaderTest {
         loader.prepareForStart();
         assertNull(loader.poll(), "nothing changed since start");
 
-        Path user = dir.resolve("TakaroConfig.txt");
-        Files.writeString(user, Files.readString(user).replace("registrationToken=", "registrationToken=pasted"));
+        Path file = dir.resolve("TakaroConfig.txt");
+        Files.writeString(file, Files.readString(file).replace("registrationToken=", "registrationToken=pasted"));
         ConfigFiles.Resolved r = loader.poll();
         assertNotNull(r);
         assertEquals("pasted", r.config.getRegistrationToken());
         assertEquals("generated-1", r.config.getIdentityToken(), "identity unchanged by a reload");
-        assertEquals("pasted", parsed(dir.resolve("TakaroConfig.saved.txt")).get("registrationToken"));
         assertNull(loader.poll(), "the same text is not applied twice");
         assertEquals(1, generated.get());
     }
 
     @Test
     void pollWaitsWhileTheFileIsStillBeingWritten(@TempDir Path dir) throws Exception {
-        Path user = dir.resolve("TakaroConfig.txt");
-        Files.writeString(user, "registrationToken=reg-1\nidentityToken=my-server\n");
+        Path file = dir.resolve("TakaroConfig.txt");
+        Files.writeString(file, "registrationToken=reg-1\nidentityToken=my-server\n");
         ConfigLoader loader = loader(dir, Map.of());
         loader.load();
         loader.prepareForStart();
 
         Thread writer = new Thread(() -> {
             try {
-                Files.writeString(user, "registrationToken=re");
+                Files.writeString(file, "registrationToken=re");
                 Thread.sleep(ConfigLoader.SETTLE_MILLIS / 3);
-                Files.writeString(user, "registrationToken=reg-2\nidentityToken=my-server\n");
+                Files.writeString(file, "registrationToken=reg-2\nidentityToken=my-server\n");
             } catch (Exception ignored) {
                 // the assertion below reports it
             }
@@ -234,28 +188,48 @@ class ConfigLoaderTest {
     }
 
     @Test
-    void deletedOrHalfWrittenFileFallsBackToTheSavedTokens(@TempDir Path dir) throws Exception {
-        Path user = dir.resolve("TakaroConfig.txt");
-        Files.writeString(user, "registrationToken=reg-1\nidentityToken=my-server\n");
+    void anEmptiedTokenIsApplied(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("TakaroConfig.txt");
+        Files.writeString(file, "registrationToken=reg-1\nidentityToken=my-server\n");
         ConfigLoader loader = loader(dir, Map.of());
         loader.load();
-        TakaroConfig before = loader.prepareForStart().config;
+        loader.prepareForStart();
 
-        Files.writeString(user, "registrationTo");
+        Files.writeString(file, "registrationToken=\nidentityToken=my-server\n");
         ConfigFiles.Resolved r = loader.poll();
         assertNotNull(r);
-        assertTrue(before.sameConnection(r.config), "a truncated file keeps the same connection");
-
-        Files.delete(user);
-        r = loader.poll();
-        assertNotNull(r);
-        assertTrue(before.sameConnection(r.config), "a deleted file keeps the same connection");
+        assertNull(r.config.getRegistrationToken());
+        assertEquals("my-server", r.config.getIdentityToken());
     }
 
     @Test
-    void placeholderTokenFromTheOldReadmeCountsAsUnset(@TempDir Path dir) throws Exception {
-        Files.writeString(dir.resolve("TakaroConfig.txt"), "registrationToken=your-registration-token-here\n");
+    void aDeletedFileKeepsTheCurrentSettings(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("TakaroConfig.txt");
+        Files.writeString(file, "registrationToken=reg-1\nidentityToken=my-server\n");
         ConfigLoader loader = loader(dir, Map.of());
-        assertNull(loader.load().getRegistrationToken());
+        loader.load();
+        loader.prepareForStart();
+
+        Files.delete(file);
+        assertNull(loader.poll());
+        assertFalse(Files.exists(file), "only a start creates the file");
+    }
+
+    @Test
+    void anEmptiedIdentityIsPutBackSoTheNextStartKeepsTheRecord(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("TakaroConfig.txt");
+        Files.writeString(file, "registrationToken=reg-1\nidentityToken=my-server\n");
+        ConfigLoader loader = loader(dir, Map.of());
+        loader.load();
+        loader.prepareForStart();
+
+        Files.writeString(file, "registrationToken=reg-2\nidentityToken=\n");
+        ConfigFiles.Resolved r = loader.poll();
+        assertNotNull(r);
+        assertEquals("reg-2", r.config.getRegistrationToken());
+        assertEquals("my-server", r.config.getIdentityToken());
+        assertEquals("my-server", parsed(file).get("identityToken"));
+        assertNull(loader.poll(), "its own write is not a change");
+        assertEquals(0, generated.get());
     }
 }

@@ -65,8 +65,8 @@ public final class TakaroAgent {
             TakaroConnector connector = new TakaroConnector(adapter, config);
 
             // Connector is started from the first tick (right JVM + main thread). Only
-            // then does the loader write the template, an identity and the saved copy,
-            // and start watching the config file for a new token.
+            // then does the loader create the config file or give it an identity, and
+            // start watching it for a new token.
             Runnable starter = () -> {
                 ConfigFiles.Resolved ready = loader.prepareForStart();
                 config.copyFrom(ready.config);

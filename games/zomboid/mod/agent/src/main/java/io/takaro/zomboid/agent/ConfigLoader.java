@@ -21,10 +21,11 @@ import java.util.function.Supplier;
  * {@code TAKARO_IDENTITY_TOKEN}, {@code TAKARO_SERVER_CHAT_NAME}, {@code TAKARO_DEBUG},
  * {@code TAKARO_LOG_EVENTS}, {@code TAKARO_DEBUG_CATALOG}.
  *
- * <p>Three phases, because {@code premain} runs in every JVM of the launch chain:
- * {@link #load()} only reads (any JVM); {@link #prepareForStart()} writes the template,
- * a new identity and the saved copy (the real server JVM, first tick); {@link #poll()}
- * re-reads on the watcher thread.
+ * <p>The only thing the connector ever writes into the file is a missing file (the
+ * bundled template) or a missing {@code identityToken} (a new UUID). Three phases,
+ * because {@code premain} runs in every JVM of the launch chain: {@link #load()} only
+ * reads (any JVM); {@link #prepareForStart()} does those writes (the real server JVM,
+ * first tick); {@link #poll()} re-reads on the watcher thread.
  */
 public final class ConfigLoader {
 
@@ -35,22 +36,19 @@ public final class ConfigLoader {
     private final Map<String, String> env;
     private final Supplier<String> newIdentity;
     private final Path configFile;
-    private final Path savedFile;
 
     private ConfigFiles.Resolved current;
-    private String lastUserText;
+    private String lastText;
     private volatile Thread watcher;
 
     public ConfigLoader() {
-        this(System.getenv(), () -> UUID.randomUUID().toString(),
-                TakaroPaths.configFile(), TakaroPaths.savedFile());
+        this(System.getenv(), () -> UUID.randomUUID().toString(), TakaroPaths.configFile());
     }
 
-    ConfigLoader(Map<String, String> env, Supplier<String> newIdentity, Path configFile, Path savedFile) {
+    ConfigLoader(Map<String, String> env, Supplier<String> newIdentity, Path configFile) {
         this.env = env;
         this.newIdentity = newIdentity;
         this.configFile = configFile;
-        this.savedFile = savedFile;
     }
 
     public Path configFile() {
@@ -74,93 +72,65 @@ public final class ConfigLoader {
         return current != null && current.debugCatalog;
     }
 
-    /** Reads both files without writing anything or making up an identity. */
+    /** Reads the file without writing anything. */
     public synchronized TakaroConfig load() {
-        String userText = null;
-        String savedText = null;
+        String text = null;
         try {
-            userText = ConfigFiles.readOrNull(configFile);
-            AgentLog.log(userText != null
+            text = ConfigFiles.readOrNull(configFile);
+            AgentLog.log(text != null
                     ? "config: loaded " + configFile
                     : "config: " + configFile + " not present yet");
         } catch (IOException | RuntimeException e) {
             AgentLog.error("config: failed to read " + configFile, e);
         }
-        try {
-            savedText = ConfigFiles.readOrNull(savedFile);
-        } catch (IOException | RuntimeException e) {
-            AgentLog.error("config: failed to read " + savedFile, e);
-        }
-        current = resolve(userText, savedText, null);
-        lastUserText = userText;
+        current = resolve(text);
+        lastText = text;
         return current.config;
     }
 
     /**
-     * The real server JVM, before the first connect: write the shipped template when there
-     * is no config file and no token anywhere, generate and persist an identity when no
-     * source holds one, put a saved identity back into a replaced config file, and bring
-     * the saved copy up to date.
+     * The real server JVM, before the first connect: create the file when it is missing
+     * and give it an identity when it has none.
      */
     public synchronized ConfigFiles.Resolved prepareForStart() {
-        String userText;
-        String savedText;
+        String text;
         try {
-            userText = ConfigFiles.readOrNull(configFile);
-            savedText = ConfigFiles.readOrNull(savedFile);
+            text = ConfigFiles.readOrNull(configFile);
         } catch (IOException | RuntimeException e) {
-            // Unreadable is not absent: writing a template now could replace a real file.
-            AgentLog.error("config: failed to read the config files; using what premain loaded", e);
-            return current != null ? current : resolve(null, null, null);
+            // Unreadable is not absent: writing now could replace a real file.
+            AgentLog.error("config: failed to read " + configFile + "; using what premain loaded", e);
+            return current != null ? current : resolve(null);
         }
-
-        ConfigFiles.Resolved probe = resolve(userText, savedText, null);
-        if (userText == null && !TakaroConfig.isSet(probe.config.getRegistrationToken())) {
+        String created = null;
+        if (text == null) {
             try {
-                String template = ConfigFiles.template();
-                ConfigFiles.writeAtomically(configFile, template, false);
-                userText = template;
-                AgentLog.log("config: created " + configFile + " (paste the registration token into it)");
-            } catch (IOException | RuntimeException e) {
+                created = ConfigFiles.template();
+            } catch (IOException e) {
                 AgentLog.error("config: could not create " + configFile, e);
             }
         }
-
-        ConfigFiles.Resolved resolved = resolve(userText, savedText, newIdentity);
-        if (resolved.identityGenerated) {
-            AgentLog.log("config: no identityToken yet; generated a new one for this server");
+        String written = withIdentityIfMissing(created != null ? created : text, newIdentity);
+        if (written != null) {
+            AgentLog.log(created != null
+                    ? "config: created " + configFile + " with a new identityToken (paste the registration token into it)"
+                    : "config: no identityToken yet; wrote a new one into " + configFile);
+            text = written;
         }
-
-        Map<String, String> user = ConfigFiles.parse(userText);
-        boolean envIdentity = TakaroConfig.isSet(env.get("TAKARO_IDENTITY_TOKEN"));
-        if (userText != null && !envIdentity && resolved.fileIdentityToken != null
-                && !TakaroConfig.isSet(user.get("identityToken"))) {
-            try {
-                String updated = ConfigFiles.withIdentity(userText, resolved.fileIdentityToken);
-                ConfigFiles.writeAtomically(configFile, updated, false);
-                userText = updated;
-                AgentLog.log("config: wrote identityToken into " + configFile);
-            } catch (IOException | RuntimeException e) {
-                AgentLog.error("config: could not write identityToken into " + configFile, e);
-            }
-        }
-
-        writeSavedCopy(resolved, savedText);
-        current = resolved;
-        lastUserText = userText;
-        return resolved;
+        current = resolve(text);
+        lastText = text;
+        return current;
     }
 
     /**
      * One watcher tick. Returns the new settings when the config file's text changed and
-     * a second read shortly after saw the same text; null otherwise (unchanged, mid-save
-     * or unreadable: the current settings stay and the next tick looks again).
+     * a second read shortly after saw the same text; null otherwise (unchanged, mid-save,
+     * missing or unreadable: the current settings stay and the next tick looks again).
      */
     public synchronized ConfigFiles.Resolved poll() {
         String text;
         try {
             text = ConfigFiles.readOrNull(configFile);
-            if (Objects.equals(text, lastUserText)) {
+            if (text == null || Objects.equals(text, lastText)) {
                 return null;
             }
             Thread.sleep(SETTLE_MILLIS);
@@ -174,19 +144,19 @@ public final class ConfigLoader {
             return null;
         }
 
-        String savedText;
-        try {
-            savedText = ConfigFiles.readOrNull(savedFile);
-        } catch (IOException | RuntimeException e) {
-            savedText = null;
-        }
-        String keepIdentity = current != null ? current.fileIdentityToken : null;
-        ConfigFiles.Resolved resolved = resolve(text, savedText, () -> keepIdentity);
         AgentLog.log("config: " + configFile + " changed");
-        writeSavedCopy(resolved, savedText);
-        current = resolved;
-        lastUserText = text;
-        return resolved;
+        // Emptying identityToken would otherwise make the next start create a second record.
+        String inUse = ConfigFiles.parse(lastText).get("identityToken");
+        if (TakaroConfig.isSet(inUse)) {
+            String written = withIdentityIfMissing(text, () -> inUse);
+            if (written != null) {
+                AgentLog.log("config: identityToken was emptied; wrote the one in use back");
+                text = written;
+            }
+        }
+        current = resolve(text);
+        lastText = text;
+        return current;
     }
 
     /** Polls every few seconds on a daemon thread and hands each change to {@code onChange}. */
@@ -221,28 +191,28 @@ public final class ConfigLoader {
         }
     }
 
-    private ConfigFiles.Resolved resolve(String userText, String savedText, Supplier<String> identity) {
-        ConfigFiles.Resolved resolved = ConfigFiles.resolve(
-                ConfigFiles.parse(userText), ConfigFiles.parse(savedText), env, identity);
+    private ConfigFiles.Resolved resolve(String text) {
+        ConfigFiles.Resolved resolved = ConfigFiles.resolve(ConfigFiles.parse(text), env);
         resolved.config.setConfigFileHint(configFile.toAbsolutePath().toString());
         return resolved;
     }
 
-    private void writeSavedCopy(ConfigFiles.Resolved resolved, String savedText) {
-        String desired = ConfigFiles.renderSaved(resolved);
-        if (desired == null) {
-            return;
+    /**
+     * Writes {@code text} with an identity from {@code identity} when it is a file without
+     * one, and returns what it wrote; null when the file is absent, already has an
+     * identity, or the write failed.
+     */
+    private String withIdentityIfMissing(String text, Supplier<String> identity) {
+        if (text == null || TakaroConfig.isSet(ConfigFiles.parse(text).get("identityToken"))) {
+            return null;
         }
-        Map<String, String> have = ConfigFiles.parse(savedText);
-        Map<String, String> want = ConfigFiles.parse(desired);
-        if (savedText != null && have.equals(want)) {
-            return;
-        }
+        String updated = ConfigFiles.withIdentity(text, identity.get());
         try {
-            ConfigFiles.writeAtomically(savedFile, desired, true);
-            AgentLog.log("config: saved the tokens in use to " + savedFile);
+            ConfigFiles.writeAtomically(configFile, updated);
+            return updated;
         } catch (IOException | RuntimeException e) {
-            AgentLog.error("config: could not write " + savedFile, e);
+            AgentLog.error("config: could not write identityToken into " + configFile, e);
+            return null;
         }
     }
 }

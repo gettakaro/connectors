@@ -116,6 +116,21 @@ class ConfigReloadTest {
         assertEquals(1, takaro.getConnections().size());
     }
 
+    @Test
+    void emptiedTokenDisconnectsAndShowsTheBanner() throws Exception {
+        connector = new TakaroConnector(new LogAdapter(logs), config("good-token"));
+        connector.connect();
+        waitFor(() -> logs.stream().anyMatch(l -> l.contains("Identified successfully")));
+        waitFor(() -> takaro.getConnections().size() == 1);
+
+        connector.applyConfig(config(null));
+
+        waitFor(() -> takaro.getConnections().isEmpty());
+        assertTrue(logs.stream().anyMatch(l -> l.contains("registrationToken not set")));
+        Thread.sleep(300);
+        assertEquals(1, takaro.tokensSeen.size(), "no new attempt without a token");
+    }
+
     private static void waitFor(BooleanSupplier condition) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (!condition.getAsBoolean()) {
