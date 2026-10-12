@@ -127,8 +127,8 @@ Fix the value in `com.takaro.valheim.cfg` and save; the connector reconnects wit
 Stop the server, delete `BepInEx/plugins/TakaroValheim/` and unzip the new version in its place.
 Delete `BepInEx/cache/chainloader_typeloader.dat` before starting again, or BepInEx may keep
 loading the old plugin. Replace only the plugin folder; your config at
-`BepInEx/config/com.takaro.valheim.cfg` is never touched, so the server keeps its token and
-identity.
+`BepInEx/config/com.takaro.valheim.cfg` is never touched, so the server keeps its token and the
+identity the connector wrote into that file on the first start.
 
 ### 7. Optional: inventory mod for players
 

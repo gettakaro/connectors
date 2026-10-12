@@ -211,6 +211,26 @@ public sealed class ConnectorConfigStoreTests
     }
 
     [TestMethod]
+    public void IdentityWriteBackNeverOverwritesAnEditSavedMeanwhile()
+    {
+        File.WriteAllText(path, "[Takaro]\nregistrationToken = old\n");
+        var store = new ConnectorConfigStore(path, warn: warnings.Add, newIdentity: () =>
+        {
+            // An operator saves while the connector is about to write the identity back.
+            File.WriteAllText(path, "[Takaro]\nregistrationToken = new\n");
+            return $"generated-{++generated}";
+        }, settleDelay: TimeSpan.FromMilliseconds(10));
+
+        Assert.IsTrue(store.Load(out _, out _));
+        Assert.AreEqual("[Takaro]\nregistrationToken = new\n", File.ReadAllText(path));
+
+        var change = store.CheckForChanges();
+        Assert.AreEqual("new", change?.Config.RegistrationToken);
+        Assert.AreEqual("generated-1", Read()["identityToken"]);
+        Assert.AreEqual("new", Read()["registrationToken"]);
+    }
+
+    [TestMethod]
     public void OtherSettingsNeedARestartAndSaySo()
     {
         var store = Store();

@@ -91,14 +91,20 @@ public sealed class ConnectorConfigStore
                 return null;
             }
 
-            return Reload(firstLoad: false, out _);
+            return Reload(firstLoad: false, readable: true, text, out _);
         }
     }
 
     private ConfigChange? Reload(bool firstLoad, out string error)
     {
-        error = "";
         var readable = ReadText(FilePath, out var text);
+        return Reload(firstLoad, readable, text, out error);
+    }
+
+    // text is the content already read (and, while running, confirmed by the settle re-read).
+    private ConfigChange? Reload(bool firstLoad, bool readable, string? text, out string error)
+    {
+        error = "";
         Dictionary<string, string>? file = null;
         if (text is null)
         {
@@ -171,9 +177,12 @@ public sealed class ConnectorConfigStore
         }
         else if (file is not null && generated)
         {
-            written = TryWrite(() => ConnectorConfigFiles.SetValues(
-                text!,
-                new Dictionary<string, string> { [ConnectorConfigFiles.IdentityTokenKey] = identity }));
+            // Only over the text this was built from: an edit saved meanwhile is kept and the
+            // identity is written on the next check instead.
+            written = ReadText(FilePath, out var unchanged) && unchanged == text
+                && TryWrite(() => ConnectorConfigFiles.SetValues(
+                    text!,
+                    new Dictionary<string, string> { [ConnectorConfigFiles.IdentityTokenKey] = identity }));
             if (written)
             {
                 info($"Takaro Valheim generated a new identity for this server and saved it in {FilePath}.");

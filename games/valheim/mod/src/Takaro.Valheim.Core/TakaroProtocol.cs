@@ -59,6 +59,11 @@ public static class TakaroProtocol
     private static string Clip(string text)
     {
         var cleaned = System.Text.RegularExpressions.Regex.Replace(text, @"eyJ[\w-]+\.[\w-]+\.[\w-]+", "<redacted-jwt>");
+        cleaned = System.Text.RegularExpressions.Regex.Replace(
+            cleaned,
+            @"((?:registration|identity)?token|password|secret|authorization)(""?\s*[:=]\s*""?)[^\s"",;&]+",
+            "$1$2<redacted>",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         return cleaned.Length > 300 ? cleaned.Substring(0, 300) + "..." : cleaned;
     }
 
