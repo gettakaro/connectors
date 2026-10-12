@@ -14,6 +14,8 @@
 
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <cerrno>
 
 #include <cstdio>
 #include <map>
@@ -1249,7 +1251,14 @@ static void TestConfigResolve() {
           "identity written back");
     stat(path.c_str(), &st);
     CHECK((st.st_mode & 0777) == 0640 && st.st_uid == getuid(), "kept mode %o", st.st_mode & 0777);
-    CHECK(access((path + ".tmp").c_str(), F_OK) != 0, "no temp file left");
+    // Never replaces a file that appeared or changed meanwhile, and leaves no temp file.
+    const std::string onDisk = *ConfigFile::ReadText(path), other = "TAKARO_X=1\n";
+    CHECK(!ConfigFile::WriteAtomic(path, other, 0600, nullptr, true) && errno == EEXIST, "create is exclusive");
+    CHECK(!ConfigFile::WriteAtomic(path, other, 0600, &other) && errno == EAGAIN, "changed file kept");
+    EQ(*ConfigFile::ReadText(path), onDisk);
+    unsigned entries = 0;
+    if (DIR* d = opendir(dir)) { while (dirent* e = readdir(d)) entries += e->d_name[0] != '.'; closedir(d); }
+    CHECK(entries == 1, "no temp file left (%u entries)", entries);
     // A half-saved file is not written to.
     CHECK(ConfigFile::WriteAtomic(path, "TAKARO_IDENTITY_TOKEN=\nTAKARO_REGISTRATION_TOK", 0600), "w");
     text = ConfigFile::Ensure(path, true, note, gen);

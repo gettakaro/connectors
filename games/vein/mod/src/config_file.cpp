@@ -83,8 +83,10 @@ std::optional<std::string> ReadText(const std::string& path) {
     std::string text;
     char buf[4096];
     size_t n;
-    while ((n = fread(buf, 1, sizeof buf, f)) > 0 && text.size() < 256 * 1024) text.append(buf, n);
+    while ((n = fread(buf, 1, sizeof buf, f)) > 0 && text.size() <= kMaxBytes) text.append(buf, n);
+    const bool failed = ferror(f) != 0;
     fclose(f);
+    if (failed) return std::nullopt;
     return text;
 }
 
@@ -132,7 +134,7 @@ std::optional<std::string> Ensure(const std::string& path, bool create, std::str
         }
         if (!create) return std::nullopt;
         const std::string fresh = Template(newIdentity());
-        if (!WriteAtomic(path, fresh, 0600)) {
+        if (!WriteAtomic(path, fresh, 0600, nullptr, true)) {
             note = "could not create " + path + ": " + strerror(errno);
             return std::nullopt;
         }
@@ -140,13 +142,14 @@ std::optional<std::string> Ensure(const std::string& path, bool create, std::str
         return fresh;
     }
     const Parsed parsed = Parse(*text);
-    if (Unparseable(parsed)) return text;  // half-saved: the next settled read decides
+    // Half-saved (the next settled read decides) or too large to rewrite safely.
+    if (Unparseable(parsed) || text->size() > kMaxBytes) return text;
     std::string identity;
     for (const auto& e : parsed.entries)
         if (e.first == "TAKARO_IDENTITY_TOKEN") identity = Trim(e.second);
     if (!identity.empty()) return text;
     const std::string next = SetKey(*text, "TAKARO_IDENTITY_TOKEN", newIdentity());
-    if (!WriteAtomic(path, next, 0600)) {
+    if (!WriteAtomic(path, next, 0600, &*text)) {
         note = "could not write a server identity into " + path + ": " + strerror(errno);
         return text;
     }
@@ -207,15 +210,16 @@ std::string SetKey(const std::string& text, const std::string& key, const std::s
     return out + key + "=" + value + nl;
 }
 
-bool WriteAtomic(const std::string& path, const std::string& text, unsigned mode) {
+bool WriteAtomic(const std::string& path, const std::string& text, unsigned mode, const std::string* expected,
+                 bool create) {
     struct stat st{};
     const bool existed = stat(path.c_str(), &st) == 0;
     if (existed) mode = st.st_mode & 07777;
-    const std::string tmp = path + ".tmp";
-    int fd = open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, mode);
+    std::string tmp = path + ".XXXXXX";
+    int fd = mkstemp(tmp.data());  // unique, O_EXCL: never follows a planted link
     if (fd < 0) return false;
     if (existed) (void)!fchown(fd, st.st_uid, st.st_gid);  // only root may give a file away
-    (void)fchmod(fd, mode);  // open() applied the umask
+    (void)fchmod(fd, mode);
     bool ok = true;
     size_t off = 0;
     while (ok && off < text.size()) {
@@ -224,13 +228,22 @@ bool WriteAtomic(const std::string& path, const std::string& text, unsigned mode
     }
     ok = ok && fsync(fd) == 0;
     ok = close(fd) == 0 && ok;
-    if (!ok || rename(tmp.c_str(), path.c_str()) != 0) {
-        const int err = errno;
-        unlink(tmp.c_str());
-        errno = err;  // the caller reports why
-        return false;
+    if (ok && expected) {  // someone saved meanwhile: keep their file, the next poll sees it
+        auto now = ReadText(path);
+        if (!now || *now != *expected) { errno = EAGAIN; ok = false; }
     }
-    return true;
+    // create: link() fails when the file appeared meanwhile, so a concurrent writer is never replaced.
+    if (ok) ok = create ? link(tmp.c_str(), path.c_str()) == 0 : rename(tmp.c_str(), path.c_str()) == 0;
+    const int err = errno;
+    if (create || !ok) unlink(tmp.c_str());
+    if (ok) {
+        const size_t slash = path.rfind('/');
+        const std::string dir = slash == std::string::npos ? "." : slash == 0 ? "/" : path.substr(0, slash);
+        int d = open(dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        if (d >= 0) { (void)fsync(d); close(d); }
+    }
+    errno = err;  // the caller reports why
+    return ok;
 }
 
 std::string NewIdentity() {

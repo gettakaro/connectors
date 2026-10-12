@@ -36,7 +36,8 @@ struct Loaded {
     std::string note;  // what Ensure did or why it could not ("" when the file was fine)
 };
 
-// The whole file, or nullopt when it cannot be read (missing, permissions).
+constexpr size_t kMaxBytes = 256 * 1024;  // a larger file is read in part and never rewritten
+// The whole file, or nullopt when it cannot be read (missing, permissions, I/O error).
 std::optional<std::string> ReadText(const std::string& path);
 Loaded FromText(const std::string& path, const std::string& text);
 
@@ -95,8 +96,10 @@ Resolution Resolve(const Loaded& file, const std::function<const char*(const cha
 // other line and the line-ending style.
 std::string SetKey(const std::string& text, const std::string& key, const std::string& value);
 
-// Writes via <path>.tmp + rename so a reader never sees half a file; keeps the old file's mode
-// and, where the process may, its owner.
-bool WriteAtomic(const std::string& path, const std::string& text, unsigned mode = 0600);
+// Writes a unique temp file and renames it over `path`, so a reader never sees half a file; keeps
+// the old file's mode and, where the process may, its owner. With `expected`, gives up (EAGAIN)
+// when the file no longer holds that text; with `create`, gives up (EEXIST) when it exists.
+bool WriteAtomic(const std::string& path, const std::string& text, unsigned mode = 0600,
+                 const std::string* expected = nullptr, bool create = false);
 
 }  // namespace ConfigFile
