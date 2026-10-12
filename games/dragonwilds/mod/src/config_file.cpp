@@ -1,5 +1,7 @@
 #include "config_file.h"
 
+#include "common.h"
+
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -65,15 +67,18 @@ Parsed Parse(const std::string& input) {
 }
 
 std::string DefaultPath() {
-    const char* forced = getenv("TAKARO_CONFIG_FILE");
-    if (forced && *forced) return forced;
+    std::string path = "takaro.cfg";
     Dl_info info{};
-    if (dladdr(reinterpret_cast<void*>(&DefaultPath), &info) && info.dli_fname) {
+    if (const char* forced = getenv("TAKARO_CONFIG_FILE"); forced && *forced) {
+        path = forced;
+    } else if (dladdr(reinterpret_cast<void*>(&DefaultPath), &info) && info.dli_fname) {
         std::string lib(info.dli_fname);
         size_t slash = lib.rfind('/');
-        if (slash != std::string::npos) return lib.substr(0, slash + 1) + "takaro.cfg";
+        if (slash != std::string::npos) path = lib.substr(0, slash + 1) + "takaro.cfg";
     }
-    return "takaro.cfg";
+    char cwd[4096];
+    if (path[0] != '/' && getcwd(cwd, sizeof cwd)) path = std::string(cwd) + "/" + path;
+    return path;
 }
 
 std::optional<std::string> ReadText(const std::string& path) {
@@ -122,76 +127,73 @@ bool Unparseable(const Parsed& parsed) {
     return false;
 }
 
-const char* SourceName(Source s) {
-    switch (s) {
-    case Source::Env: return "environment";
-    case Source::File: return "takaro.cfg";
-    case Source::Saved: return "saved copy";
-    case Source::Current: return "current";
-    case Source::Legacy: return "legacy default";
-    case Source::Generated: return "generated";
-    case Source::Default: return "default";
-    }
-    return "default";
-}
-
 std::string UniqueServerName(const std::string& identity) {
-    return std::string(kLegacyServerName) + " (" + identity.substr(0, 8) + ")";
+    return "Dragonwilds (" + identity.substr(0, 8) + ")";
 }
 
-Resolution Resolve(const Loaded& user, const Loaded& saved, bool legacyInstall, const std::string& current,
-                   const std::function<std::string()>& newIdentity,
-                   const std::function<const char*(const char*)>& env) {
-    auto envValue = [&](const char* key) -> std::string {
-        const char* v = env(key);
-        return v ? Trim(v) : "";
+Settings Resolve(const Loaded& file, const std::function<const char*(const char*)>& env) {
+    auto pick = [&](const char* key, std::string& out, bool& fromEnv) {
+        const char* e = env(key);
+        out = e ? Trim(e) : "";
+        fromEnv = !out.empty();
+        if (fromEnv) return;
+        auto it = file.values.find(key);
+        if (it != file.values.end()) out = Trim(it->second);
     };
-    auto fileValue = [](const Loaded& l, const char* key) -> std::string {
-        auto it = l.values.find(key);
-        return it == l.values.end() ? "" : Trim(it->second);
-    };
-    Resolution r;
-    auto pick = [&](const char* key, std::string& out, Source& src, const char* ignoredFileValue) {
-        std::string v;
-        if (!(v = envValue(key)).empty()) { out = v; src = Source::Env; return true; }
-        v = fileValue(user, key);
-        if (!v.empty() && !(ignoredFileValue && v == ignoredFileValue)) { out = v; src = Source::File; return true; }
-        if (!(v = fileValue(saved, key)).empty()) { out = v; src = Source::Saved; return true; }
-        return false;
-    };
-    if (!pick("TAKARO_WS_URL", r.settings.url, r.url, kDefaultUrl)) {
-        r.settings.url = kDefaultUrl; r.url = Source::Default;
+    Settings s;
+    pick("TAKARO_WS_URL", s.url, s.envUrl);
+    pick("TAKARO_REGISTRATION_TOKEN", s.registration, s.envRegistration);
+    pick("TAKARO_IDENTITY_TOKEN", s.identity, s.envIdentity);
+    pick("TAKARO_SERVER_NAME", s.serverName, s.envServerName);
+    if (s.url.empty()) s.url = kDefaultUrl;
+    if (s.serverName.empty() && !s.identity.empty()) s.serverName = UniqueServerName(s.identity);
+    return s;
+}
+
+std::string Template(const std::string& identity) {
+    return "# Takaro connector settings for this RuneScape: Dragonwilds server. One KEY=VALUE per line.\n"
+           "# Saving is enough: the connector re-reads this file within a few seconds, no restart.\n"
+           "# A non-empty environment variable with the same name wins over the line here.\n"
+           "\n"
+           "# The registration token of your Takaro Generic game server.\n"
+           "TAKARO_REGISTRATION_TOKEN=\n"
+           "\n"
+           "# This server's identity in Takaro, created by the connector. Keep it.\n"
+           "TAKARO_IDENTITY_TOKEN=" + identity + "\n"
+           "\n"
+           "# The name Takaro shows for this server; unique in your Takaro domain.\n"
+           "TAKARO_SERVER_NAME=" + UniqueServerName(identity) + "\n"
+           "\n"
+           "TAKARO_WS_URL=" + kDefaultUrl + "\n";
+}
+
+EnsureResult EnsureIdentity(const std::string& path, const std::optional<std::string>& text,
+                            const std::function<std::string()>& newIdentity) {
+    EnsureResult r;
+    r.text = text;
+    std::string next;
+    if (!text) {
+        next = Template(newIdentity());
+        r.what = Ensured::Created;
+    } else {
+        const Parsed parsed = Parse(*text);
+        if (Unparseable(parsed)) return r;
+        std::string identity;
+        for (const auto& e : parsed.entries)
+            if (e.first == "TAKARO_IDENTITY_TOKEN") identity = Trim(e.second);
+        if (!identity.empty()) return r;
+        next = SetKey(*text, "TAKARO_IDENTITY_TOKEN", newIdentity());
+        r.what = Ensured::IdentityAdded;
     }
-    if (!pick("TAKARO_REGISTRATION_TOKEN", r.settings.registration, r.registration, nullptr)) {
-        r.settings.registration.clear(); r.registration = Source::Default;
+    if (!WriteAtomic(path, next, 0600)) {
+        PluginLog("config: cannot write %s", path.c_str());
+        r.what = Ensured::NotWritable;
+        return r;
     }
-    if (!pick("TAKARO_IDENTITY_TOKEN", r.settings.identity, r.identity, nullptr)) {
-        if (!current.empty()) { r.settings.identity = current; r.identity = Source::Current; }
-        else if (legacyInstall) { r.settings.identity = kLegacyIdentity; r.identity = Source::Legacy; }
-        else { r.settings.identity = newIdentity(); r.identity = Source::Generated; }
-    }
-    if (!pick("TAKARO_SERVER_NAME", r.settings.serverName, r.serverName, nullptr)) {
-        if (legacyInstall) { r.settings.serverName = kLegacyServerName; r.serverName = Source::Legacy; }
-        else { r.settings.serverName = UniqueServerName(r.settings.identity); r.serverName = Source::Generated; }
-    }
+    PluginLog(r.what == Ensured::Created ? "config: created %s with a new identity"
+                                         : "config: wrote a new identity into %s", path.c_str());
+    r.text = next;
     return r;
-}
-
-std::string RenderSaved(const Resolution& r, const Loaded& oldSaved, bool withRegistration) {
-    auto old = [&](const char* key) {
-        auto it = oldSaved.values.find(key);
-        return it == oldSaved.values.end() ? std::string() : Trim(it->second);
-    };
-    auto value = [&](const char* key, const std::string& inUse, Source src, bool write) {
-        return std::string(key) + "=" + (write && src != Source::Env && src != Source::Default ? inUse : old(key)) + "\n";
-    };
-    return "# Written by the Takaro connector: the settings it last connected with. It sits in the state\n"
-           "# directory, which an upgrade keeps, so a replaced takaro.cfg keeps this server's token and\n"
-           "# identity. Edit takaro.cfg next to libtakaro-dragonwilds.so instead; a value set there wins.\n" +
-           value("TAKARO_WS_URL", r.settings.url, r.url, true) +
-           value("TAKARO_REGISTRATION_TOKEN", r.settings.registration, r.registration, withRegistration) +
-           value("TAKARO_IDENTITY_TOKEN", r.settings.identity, r.identity, true) +
-           value("TAKARO_SERVER_NAME", r.settings.serverName, r.serverName, true);
 }
 
 std::string SetKey(const std::string& text, const std::string& key, const std::string& value) {

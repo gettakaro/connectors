@@ -73,7 +73,7 @@ measured on the rig.
 
 | Setting | Effect |
 |---|---|
-| `TAKARO_PLUGIN_IDLE=1` (or `"idle":"1"` in `plugin.json`) | The library is mapped and writes one log line, nothing else: no symbol scan, no hook, no game-thread job, no thread besides the one that logged, no socket. Arm A of an overhead A/B (server with the `.so` preloaded but idle vs. fully active). |
+| `TAKARO_PLUGIN_IDLE=1` | The library is mapped and writes one log line, nothing else: no symbol scan, no hook, no game-thread job, no thread besides the one that logged, no socket. Arm A of an overhead A/B (server with the `.so` preloaded but idle vs. fully active). |
 | `TAKARO_NATIVE_DISABLE=1` | Hooks, events and the game-thread pump run, the Takaro connection does not (isolates the cost of the native bridge itself). |
 | `TAKARO_TICK_BUDGET_US` | Per-tick job budget. |
 

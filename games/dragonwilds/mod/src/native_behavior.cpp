@@ -474,9 +474,8 @@ NativePersistence::Result Engine::Load() {
     auto timed = store_.ReadLegacy("timedBans", x);
     if (!timed) return timed;
     v->timedBansJson = x;
-    v->senderName = Trim(ConfigValue("TAKARO_SENDER_NAME", "senderName",
-                                     ConfigValue("TAKARO_SERVER_CHAT_NAME", "serverChatName", "")));
-    v->serverName = ConfigValue("TAKARO_SERVER_NAME", "serverName", "Dragonwilds");
+    v->senderName = Trim(ConfigValue("TAKARO_SENDER_NAME", ConfigValue("TAKARO_SERVER_CHAT_NAME", "")));
+    v->serverName = ConfigValue("TAKARO_SERVER_NAME", "Dragonwilds");
     v->banRevision = state::BanRevision();
     std::string key, detail;
     if (!log_->parser.Configure(key, detail)) return {false, key + ": " + detail};

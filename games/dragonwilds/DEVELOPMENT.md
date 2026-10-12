@@ -16,7 +16,7 @@ mod/       C++17, builds libtakaro-dragonwilds.so (LD_PRELOAD into the dedicated
 scripts/   build-release.sh, drain-legacy.py (0.2.x sidecar drain + state import), lib-target.sh,
            check-exact-source.mjs
 Dockerfile.builder   release builder: catalog toolchain + catalog-pinned native sources
-takaro.cfg (shipped as is), docker-compose.example.yml, .env.example, INSTALL.md, version.txt, CHANGELOG.md
+docker-compose.example.yml, .env.example, INSTALL.md, version.txt, CHANGELOG.md
 ```
 
 ## Architecture
@@ -45,25 +45,21 @@ plus the 0.2.x sidecar's `event-cursor.json`, `online-players.json`, `known-play
 
 ## Configuration model
 
-`mod/src/config_file.cpp`. Every setting is looked up as: non-empty environment variable, then
-`takaro.cfg` next to the library (`TAKARO_CONFIG_FILE` overrides the path), then the legacy
-`plugin.json` in the data directory. Only the connection settings (URL, registration token,
-identity, server name) change at runtime: the bridge thread re-reads `takaro.cfg` every 5 s,
-compares the text, applies a changed text once the next read (1 s later) agrees, skips a file with a
-line without `=`, and calls `NativeTransport::Retarget`. The service thread kills the old socket
-(`LWS_TO_KILL_ASYNC`) and dials only after that socket's CLOSED callback, without backoff; frames of
-the old epoch are dropped, so only the answer to the latest identify counts. No token: no
-connection, and a console banner (stdout) naming the file.
+`mod/src/config_file.cpp`. One file: `takaro.cfg` next to the library (`TAKARO_CONFIG_FILE`
+overrides the path). Every setting is a non-empty environment variable, else that file; the
+environment is never written to disk. The release does not ship the file.
 
-- Identity: env > `takaro.cfg` > saved copy > the one this run uses > `dragonwilds` when the install
-  ran an older connector (state files in the state directory, or `plugin.log` in the data directory,
-  before this process wrote any) > a new UUID. Written into `takaro.cfg` when it is empty there and
-  the file is writable (a read-only plugin mount keeps it in the saved copy only).
-- Server name: env > `takaro.cfg` > saved copy > `Dragonwilds` for an older install, else
-  `Dragonwilds (<first 8 identity characters>)`; Takaro names are unique per domain (409 banner).
-- Saved copy: `<state dir>/saved-settings.cfg` (0600) holds URL, identity, name and, once Takaro
-  accepted it, the token; never values from the environment. It lets an upgrade that replaced
-  `takaro.cfg` keep the token and identity.
+- The init thread, before anything reads a setting, creates the file when it is missing (all
+  connection keys, empty token, a new UUID identity, name `Dragonwilds (<first 8>)`, mode 0600), or
+  writes a new identity into it when `TAKARO_IDENTITY_TOKEN` is empty (atomic, owner and mode kept).
+  Nothing else is written.
+- Only the connection settings (URL, token, identity, name) change at runtime: the bridge thread
+  re-reads the file every 5 s, applies a changed text once the next read (1 s later) agrees, skips a
+  file with a line without `=`, and calls `NativeTransport::Retarget`. The service thread kills the
+  old socket (`LWS_TO_KILL_ASYNC`) and dials only after its CLOSED callback, without backoff; frames
+  of the old epoch are dropped, so only the answer to the latest identify counts.
+- No token, or no identity because the folder is read-only: no connection and a console banner
+  (one stdout write) naming the file. An emptied token disconnects.
 - A rejected identify logs only the error's name, message and HTTP status; Takaro's error can carry
   its internal request with an `x-takaro-token` JWT, and long token-like runs are redacted.
 

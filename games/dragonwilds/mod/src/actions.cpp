@@ -1516,7 +1516,7 @@ Actions::Result Actions::Message(const JsonValue& body) {
     const JsonValue* rcpt = body.get("recipientGameId");
     std::string recipient = rcpt && rcpt->isStr() ? rcpt->str : "";
     const JsonValue* snd = body.get("senderName");
-    std::string sender = snd && snd->isStr() ? snd->str : ConfigValue("TAKARO_SENDER_NAME", "senderName", "Server");
+    std::string sender = snd && snd->isStr() ? snd->str : ConfigValue("TAKARO_SENDER_NAME", "Server");
 
     return OnGameThread("POST /message", [text, recipient, sender]() -> JobOut {
         auto players = ReadPlayers();

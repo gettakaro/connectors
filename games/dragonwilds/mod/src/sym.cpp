@@ -349,7 +349,7 @@ struct SymRecord {
 static_assert(sizeof(SymRecord) == 20, "sym record must be 20 bytes");
 
 std::string SymPath() {
-    std::string p = ConfigValue("TAKARO_SYM_PATH", "symPath", "");
+    std::string p = ConfigValue("TAKARO_SYM_PATH", "");
     if (!p.empty()) return p;
     return ExePath() + ".sym";
 }

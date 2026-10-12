@@ -48,6 +48,6 @@ services:
     volumes:
       - ./data/dragonwilds:/game
       # REQUIRED: OUTSIDE the Steam tree - SteamCMD `validate` deletes unknown files. Holds the
-      # plugin and takaro.cfg; edits on the host reach the running server.
-      - ./data/dragonwilds-plugin:/opt/takaro:ro
+      # plugin and takaro.cfg, which the connector creates; edits on the host reach the running server.
+      - ./data/dragonwilds-plugin:/opt/takaro
       - ./data/dragonwilds-state:/opt/takaro-state

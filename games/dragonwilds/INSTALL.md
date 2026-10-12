@@ -10,14 +10,13 @@ with `LD_PRELOAD`. The library connects directly to Takaro. Players use the unmo
 2. Verify the release archive against the top-level `SHA256SUMS`, extract it, and verify
    `TakaroDragonwilds/SHA256SUMS` inside it. Keep `licenses/` and `THIRD-PARTY.md` with the install.
 3. Put `libtakaro-dragonwilds.so` outside Steam's installation tree, for example
-   `data/dragonwilds-plugin/`, mounted read-only at `/opt/takaro`. SteamCMD `validate` removes unknown
+   `data/dragonwilds-plugin/`, mounted writable at `/opt/takaro`. SteamCMD `validate` removes unknown
    files from the game tree.
-4. Copy `takaro.cfg` next to the library and paste the registration token into it. Leave
-   `TAKARO_IDENTITY_TOKEN` empty; the connector creates it. Create a writable, persistent state
-   directory, for example `data/dragonwilds-state`, mounted at `/opt/takaro-state`, and set
-   `TAKARO_STATE_DIR` (in `takaro.cfg` or, with Docker, `.env` from `env.example`). A non-empty
-   environment variable wins over `takaro.cfg`. `takaro.cfg` is re-read while the server runs:
-   saving it is enough, no restart.
+4. Create a writable, persistent state directory, for example `data/dragonwilds-state`, mounted at
+   `/opt/takaro-state`, and set `TAKARO_STATE_DIR` (with Docker, in `.env` from `env.example`).
+   On first start the connector creates `takaro.cfg` next to the library with a new identity; paste
+   the registration token into it and save (README step 3 shows the whole file). It is re-read while
+   the server runs: saving it is enough, no restart. A non-empty environment variable wins over it.
 5. Apply `LD_PRELOAD` to the **game binary only**:
 
    ```bash

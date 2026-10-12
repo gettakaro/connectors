@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import socket
 import ssl
 import struct
@@ -287,15 +288,17 @@ def basic(cert, key):
 
 
 def config_semantics(cert, key):
-    # A fresh install without a name registers under a name no other install shares.
+    # No name in the environment: the unique one the connector wrote into the takaro.cfg it created.
     run = Run(cert, key, env_overrides={'TAKARO_SERVER_NAME': ''})
     try:
-        assert run.identify_payload['name'] == 'Dragonwilds (test-ide)', run.identify_payload
+        name = run.identify_payload['name']
+        assert re.fullmatch(r'Dragonwilds \([0-9a-f]{8}\)', name), run.identify_payload
         assert run.identify_payload['registrationToken'] == 'test-registration', run.identify_payload
+        eventually(lambda: f'[Takaro] connected to Takaro as "{name}"' in run.stderr_so_far())
     finally:
         run.close()
     assert '[Takaro] connecting to wss://localhost:' in run.stderr, run.stderr
-    assert '[Takaro] connected to Takaro as "Dragonwilds (test-ide)"' in run.stderr, run.stderr
+    assert f'[Takaro] connected to Takaro as "{name}"' in run.stderr, run.stderr
     # No token: a banner, and no connection attempt at all.
     run = Run(cert, key, env_overrides={'TAKARO_REGISTRATION_TOKEN': ''}, identify_now=False)
     time.sleep(1.5)
@@ -306,7 +309,6 @@ def config_semantics(cert, key):
     print('bridge default server name, no connection without a registration token: pass', flush=True)
 
 
-SHIPPED_CFG = Path(__file__).resolve().parents[2] / 'takaro.cfg'
 JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0YWthcm8tc2VydmljZSJ9.c2lnbmF0dXJlLXNpZ25hdHVyZQ'
 
 
@@ -320,6 +322,12 @@ def write_cfg(path, text):
 def set_line(text, key, value):
     out = [f'{key}={value}' if line.split('=', 1)[0].strip() == key else line for line in text.splitlines()]
     return '\n'.join(out) + '\n'
+
+
+def cfg_value(path, key):
+    lines = [l for l in path.read_text().splitlines() if l.startswith(key + '=')]
+    assert len(lines) == 1, path.read_text()
+    return lines[0].split('=', 1)[1]
 
 
 def next_identify(run, timeout=10):
@@ -338,18 +346,15 @@ def refuse(run, index, message, status=400):
 
 
 def config_reload(cert, key):
-    # takaro.cfg as shipped, on a fresh install: banner, no connection, an identity is generated
-    # and written back; a token saved while running connects without a restart; a rejected token
-    # and a taken name are reported and a corrected file reconnects; a half-saved file is ignored;
-    # a replaced file (upgrade) falls back to the saved copy; the environment still wins.
+    # No takaro.cfg: the connector creates it with a new identity, shows a banner and does not
+    # connect; a token saved while running connects without a restart; a rejected token and a
+    # taken name are reported and a corrected file reconnects; a half-saved file is ignored; an
+    # emptied token disconnects; a restart keeps the identity; the environment still wins.
     with tempfile.TemporaryDirectory(prefix='dragonwilds-cfg-') as tmp:
         root = Path(tmp)
         cfg, data, state = root / 'takaro.cfg', root / 'data', root / 'state'
         data.mkdir()
-        state.mkdir()  # an empty state directory, as the README creates it, is still a fresh install
-        saved = state / 'saved-settings.cfg'
-        cfg.write_text(SHIPPED_CFG.read_text())
-        cfg.chmod(0o640)
+        state.mkdir()
         env = {'TAKARO_CONFIG_FILE': str(cfg), 'TAKARO_PLUGIN_DATA_DIR': str(data), 'TAKARO_STATE_DIR': str(state),
                'TAKARO_TEST_CONFIG_POLL_MS': '400', 'TAKARO_SERVER_NAME': '', 'TAKARO_IDENTITY_TOKEN': '',
                'TAKARO_REGISTRATION_TOKEN': '', 'TAKARO_WIRE_DEBUG': '1'}
@@ -357,25 +362,20 @@ def config_reload(cert, key):
         try:
             time.sleep(2)
             assert run.peer.connections.empty(), 'fresh install connected without a token'
-            ident = [l for l in cfg.read_text().splitlines() if l.startswith('TAKARO_IDENTITY_TOKEN=')]
-            assert len(ident) == 1, cfg.read_text()
-            identity = ident[0].split('=', 1)[1]
+            identity = cfg_value(cfg, 'TAKARO_IDENTITY_TOKEN')
             assert len(identity) == 36 and identity.count('-') == 4, identity
-            assert (cfg.stat().st_mode & 0o777) == 0o640, oct(cfg.stat().st_mode)
             name = f'Dragonwilds ({identity[:8]})'
-            assert f'TAKARO_IDENTITY_TOKEN={identity}' in saved.read_text()
-            assert f'TAKARO_SERVER_NAME={name}' in saved.read_text()
-            assert 'TAKARO_REGISTRATION_TOKEN=\n' in saved.read_text()
-            assert (saved.stat().st_mode & 0o777) == 0o600, oct(saved.stat().st_mode)
+            assert cfg_value(cfg, 'TAKARO_SERVER_NAME') == name
+            assert cfg_value(cfg, 'TAKARO_REGISTRATION_TOKEN') == ''
+            assert (cfg.stat().st_mode & 0o777) == 0o600, oct(cfg.stat().st_mode)
+            assert sorted(p.name for p in state.iterdir() if 'saved' in p.name) == [], list(state.iterdir())
             health = run.health()['config']
-            assert health['identitySource'] == 'generated' and not health['legacyInstall'], health
+            assert health['identitySet'] and not health['registrationTokenSet'] and health['fromEnvironment'] == ['TAKARO_WS_URL'], health
 
             write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-first'))
             index, payload = next_identify(run)
             assert payload == {'identityToken': identity, 'registrationToken': 'tok-first', 'name': name}, payload
             run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
-            eventually(lambda: 'TAKARO_REGISTRATION_TOKEN=tok-first' in saved.read_text())
-            assert 'tok-first' not in cfg.read_text().replace('TAKARO_REGISTRATION_TOKEN=tok-first', '')
 
             write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-wrong'))
             index, payload = next_identify(run)
@@ -401,7 +401,6 @@ def config_reload(cert, key):
             assert payload['identityToken'] == identity and payload['registrationToken'] == 'tok-second', payload
             run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
             eventually(lambda: run.health()['connection']['identified'])
-            eventually(lambda: 'TAKARO_REGISTRATION_TOKEN=tok-second' in saved.read_text())
 
             # Half-saved: a line without '=' keeps the running settings.
             write_cfg(cfg, cfg.read_text().replace('TAKARO_REGISTRATION_TOKEN=tok-second', 'TAKARO_REGISTRATION_TOK'))
@@ -409,10 +408,20 @@ def config_reload(cert, key):
             assert run.peer.connections.empty(), 'a half-saved file reconnected'
             assert run.health()['connection']['identified']
             # Saving the same settings again changes nothing.
-            write_cfg(cfg, set_line(cfg.read_text().replace('TAKARO_REGISTRATION_TOK\n', ''),
-                                    'TAKARO_REGISTRATION_TOKEN', 'tok-second'))
+            write_cfg(cfg, cfg.read_text().replace('TAKARO_REGISTRATION_TOK\n', 'TAKARO_REGISTRATION_TOKEN=tok-second\n'))
             time.sleep(2)
             assert run.peer.connections.empty(), 'an unchanged connection setting reconnected'
+            assert run.health()['connection']['identified'] and run.health()['config']['registrationTokenSet']
+            # Emptying the token disconnects and shows the banner again.
+            write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', ''))
+            eventually(lambda: run.health()['connection']['state'] == 'disconnected')
+            eventually(lambda: run.stderr_so_far().count('TAKARO_REGISTRATION_TOKEN not set') == 2)
+            time.sleep(1.5)
+            assert run.peer.connections.empty(), 'connected with an emptied token'
+            write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-second'))
+            index, payload = next_identify(run)
+            run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
+            eventually(lambda: run.health()['connection']['identified'])
         finally:
             run.close()
         out = run.stderr
@@ -428,16 +437,21 @@ def config_reload(cert, key):
             assert secret not in out, (secret, out)
             assert secret not in log, (secret, 'plugin.log')
 
-        # Upgrade that replaced takaro.cfg with the shipped one: token, identity and name come
-        # back from the saved copy, and the identity is written back into takaro.cfg.
-        cfg.write_text(SHIPPED_CFG.read_text())
+        # A restart (an upgrade replaces only the library) keeps the file and its identity.
         run = Run(cert, key, env_overrides=env, expected_identity=identity)
         try:
             assert run.identify_payload['registrationToken'] == 'tok-second', run.identify_payload
             assert run.identify_payload['name'] == 'My Dragonwilds', run.identify_payload
-            assert f'TAKARO_IDENTITY_TOKEN={identity}' in cfg.read_text()
-            assert 'tok-second' not in cfg.read_text()
-            assert run.health()['config']['registrationSource'] == 'saved copy'
+            # An emptied identity gets a new one, written back with the file's mode kept.
+            cfg.chmod(0o640)
+            write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_IDENTITY_TOKEN', ''))
+            cfg.chmod(0o640)
+            index, payload = next_identify(run)
+            new_identity = cfg_value(cfg, 'TAKARO_IDENTITY_TOKEN')
+            assert len(new_identity) == 36 and new_identity != identity, new_identity
+            assert payload['identityToken'] == new_identity, payload
+            assert (cfg.stat().st_mode & 0o777) == 0o640, oct(cfg.stat().st_mode)
+            run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
         finally:
             run.close()
 
@@ -450,50 +464,40 @@ def config_reload(cert, key):
             write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-file-2'))
             time.sleep(2)
             assert run.peer.connections.empty(), 'a file change reconnected although the environment wins'
+            assert run.health()['config']['fromEnvironment'] == [
+                'TAKARO_WS_URL', 'TAKARO_REGISTRATION_TOKEN', 'TAKARO_IDENTITY_TOKEN']
         finally:
             run.close()
-        assert f'TAKARO_IDENTITY_TOKEN={identity}' in cfg.read_text()
+        assert cfg_value(cfg, 'TAKARO_IDENTITY_TOKEN') == new_identity
+        assert 'tok-env' not in cfg.read_text() and 'id-env' not in cfg.read_text()
 
-    # Installs that ran an older connector and never set an identity or name keep "dragonwilds"
-    # and "Dragonwilds": one recognised by its plugin.log, one by its state files. A read-only
-    # takaro.cfg keeps the identity in the saved copy only.
-    for marker in ('log', 'state'):
-        with tempfile.TemporaryDirectory(prefix='dragonwilds-cfg-legacy-') as tmp:
-            root = Path(tmp)
-            cfg, data, state = root / 'plugin' / 'takaro.cfg', root / 'data', root / 'state'
-            cfg.parent.mkdir()
-            data.mkdir()
-            state.mkdir()
-            if marker == 'log':
-                (data / 'plugin.log').write_text('old run\n')
-            else:
-                (state / 'event-cursor.json').write_text('{}')
-            cfg.write_text('TAKARO_REGISTRATION_TOKEN=tok-legacy\n')
-            if marker == 'state':
-                cfg.parent.chmod(0o555)
-            env = {'TAKARO_CONFIG_FILE': str(cfg), 'TAKARO_PLUGIN_DATA_DIR': str(data), 'TAKARO_STATE_DIR': str(state),
-                   'TAKARO_IDENTITY_TOKEN': '', 'TAKARO_REGISTRATION_TOKEN': '', 'TAKARO_SERVER_NAME': ''}
-            run = Run(cert, key, env_overrides=env, expected_identity='dragonwilds')
-            try:
-                assert run.identify_payload['name'] == 'Dragonwilds', run.identify_payload
-                health = run.health()['config']
-                assert health['identitySource'] == 'legacy default' and health['legacyInstall'], health
-            finally:
-                run.close()
-                cfg.parent.chmod(0o755)
-            assert 'TAKARO_IDENTITY_TOKEN=dragonwilds' in (state / 'saved-settings.cfg').read_text()
-            assert 'TAKARO_SERVER_NAME=Dragonwilds\n' in (state / 'saved-settings.cfg').read_text()
-            if marker == 'log':
-                assert 'TAKARO_IDENTITY_TOKEN=dragonwilds' in cfg.read_text()
-            else:
-                assert cfg.read_text() == 'TAKARO_REGISTRATION_TOKEN=tok-legacy\n'
-                # The next start still finds the old identity, from the saved copy.
-                run = Run(cert, key, env_overrides=env, expected_identity='dragonwilds')
-                try:
-                    assert run.health()['config']['identitySource'] == 'saved copy'
-                finally:
-                    run.close()
-    print('bridge takaro.cfg reload, banners, identity, name and saved copy: pass', flush=True)
+    # A read-only plugin folder and no identity: a banner, no connection, until one is set.
+    with tempfile.TemporaryDirectory(prefix='dragonwilds-cfg-ro-') as tmp:
+        root = Path(tmp)
+        cfg, data, state = root / 'plugin' / 'takaro.cfg', root / 'data', root / 'state'
+        cfg.parent.mkdir()
+        data.mkdir()
+        state.mkdir()
+        cfg.write_text('TAKARO_REGISTRATION_TOKEN=tok-ro\nTAKARO_IDENTITY_TOKEN=\n')
+        cfg.parent.chmod(0o555)
+        env = {'TAKARO_CONFIG_FILE': str(cfg), 'TAKARO_PLUGIN_DATA_DIR': str(data), 'TAKARO_STATE_DIR': str(state),
+               'TAKARO_TEST_CONFIG_POLL_MS': '400', 'TAKARO_IDENTITY_TOKEN': '', 'TAKARO_REGISTRATION_TOKEN': '',
+               'TAKARO_SERVER_NAME': ''}
+        run = Run(cert, key, env_overrides=env, identify_now=False, expected_identity=None)
+        try:
+            time.sleep(1.5)
+            assert run.peer.connections.empty(), 'connected without an identity'
+            eventually(lambda: 'TAKARO_IDENTITY_TOKEN is empty and the connector cannot write' in run.stderr_so_far())
+            cfg.write_text('TAKARO_REGISTRATION_TOKEN=tok-ro\nTAKARO_IDENTITY_TOKEN=my-own-id\n')  # in place
+            index, payload = next_identify(run)
+            assert payload == {'identityToken': 'my-own-id', 'registrationToken': 'tok-ro',
+                               'name': 'Dragonwilds (my-own-i)'}, payload
+            run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
+        finally:
+            run.close()
+            cfg.parent.chmod(0o755)
+    print('bridge takaro.cfg created, reload, banners, identity write-back, env wins, read-only folder: pass',
+          flush=True)
 
 
 

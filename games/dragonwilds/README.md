@@ -25,7 +25,7 @@ Download `takaro-dragonwilds-plugin.tar.gz` and `SHA256SUMS` from the latest rel
 sha256sum -c SHA256SUMS --ignore-missing
 tar -xzf takaro-dragonwilds-plugin.tar.gz
 mkdir -p data/dragonwilds-plugin data/dragonwilds-state
-cp TakaroDragonwilds/libtakaro-dragonwilds.so TakaroDragonwilds/takaro.cfg data/dragonwilds-plugin/
+cp TakaroDragonwilds/libtakaro-dragonwilds.so data/dragonwilds-plugin/
 cp TakaroDragonwilds/env.example .env   # Docker only: the game server settings
 ```
 
@@ -35,11 +35,20 @@ archive also holds `docker-compose.example.yml`, `INSTALL.md` (upgrade and rollb
 
 ### 3. Configure
 
-Open `takaro.cfg` next to the library (`data/dragonwilds-plugin/takaro.cfg`), paste the registration
-token after `TAKARO_REGISTRATION_TOKEN=` and save. That is all: leave `TAKARO_IDENTITY_TOKEN` empty
-(the connector creates it), and the server registers as `Dragonwilds (<8 characters>)` unless you set
-`TAKARO_SERVER_NAME`. Saving the file is enough, also while the server runs: the connector picks the
-change up within a few seconds, no restart.
+The connector's one config file is `takaro.cfg` next to the library
+(`data/dragonwilds-plugin/takaro.cfg`). The connector creates it on first start, with a new
+identity and the name `Dragonwilds (<8 characters>)`. Open it, paste the registration token after
+`TAKARO_REGISTRATION_TOKEN=` and save. Saving is enough, also while the server runs: the connector
+connects within a few seconds, no restart. You can also create the file before the first start:
+
+```ini
+TAKARO_REGISTRATION_TOKEN=<your registration token>
+# Leave empty: the connector fills in a new identity. Keep it once it is set.
+TAKARO_IDENTITY_TOKEN=
+# Optional; unique in your Takaro domain. Empty: "Dragonwilds (<first 8 identity characters>)".
+TAKARO_SERVER_NAME=
+TAKARO_WS_URL=wss://connect.takaro.io/
+```
 
 Every key can also be set in the **game process** environment (`.env` with the Compose example);
 a non-empty environment variable wins over `takaro.cfg` and needs a restart to change.
@@ -47,7 +56,7 @@ a non-empty environment variable wins over `takaro.cfg` and needs a restart to c
 | Key | Required | What to put there |
 |---|---|---|
 | `TAKARO_REGISTRATION_TOKEN` | yes | The Generic game server's registration token. |
-| `TAKARO_IDENTITY_TOKEN` | no | Leave empty. An install that already has one must keep it. |
+| `TAKARO_IDENTITY_TOKEN` | no | Filled in by the connector; keep it. |
 | `TAKARO_SERVER_NAME` | no | Server name shown in Takaro; unique in your Takaro domain. |
 | `TAKARO_WS_URL` | no | Default `wss://connect.takaro.io/`. |
 | `TAKARO_SENDER_NAME` | no | Sender name for broadcasts; default is the server name. |
@@ -70,8 +79,8 @@ so never set `LD_PRELOAD` for the whole container, user or service:
 LD_PRELOAD=/opt/takaro/libtakaro-dragonwilds.so ./RSDragonwildsServer.sh -log
 ```
 
-With Docker, mount `data/dragonwilds-plugin` (read-only is fine) at `/opt/takaro` and `data/dragonwilds-state`
-at `/opt/takaro-state`; the image's entrypoint must apply `LD_PRELOAD="${TAKARO_PLUGIN_SO}"` to the
+With Docker, mount `data/dragonwilds-plugin` (writable, so the connector can create `takaro.cfg`) at
+`/opt/takaro` and `data/dragonwilds-state` at `/opt/takaro-state`; the image's entrypoint must apply `LD_PRELOAD="${TAKARO_PLUGIN_SO}"` to the
 server launch line only (see `docker-compose.example.yml`). Start only the game service.
 
 ### 5. Verify
@@ -80,8 +89,8 @@ server launch line only (see `docker-compose.example.yml`). Start only the game 
 - The server console shows `[Takaro] connected to Takaro as "..."`, and Takaro shows the game server
   as **online** within a minute of the world loading.
 
-Without a token, or when Takaro refuses the token or the server name, the console shows a
-`[Takaro]` banner naming the file to fix (in Docker, `/opt/takaro/takaro.cfg` is
+Without a token, without an identity in a read-only plugin folder, or when Takaro refuses the token
+or the server name, the console shows a `[Takaro]` banner naming the file to fix (in Docker, `/opt/takaro/takaro.cfg` is
 `data/dragonwilds-plugin/takaro.cfg`). Details: `plugin.log` in the plugin data directory
 (`<server>/RSDragonwilds/Binaries/Linux/takaro/`).
 
@@ -104,9 +113,8 @@ sidecar service from your Compose file, replace the plugin, add the settings abo
 `INSTALL.md` explains the fence files, a manual import and rollback.
 
 **After a game update** you normally do nothing: the plugin re-reads the new `.sym` file on start. To
-upgrade the connector, stop the server, replace `libtakaro-dragonwilds.so`, keep your `takaro.cfg`,
-`.env` and the state directory, and start again. If `takaro.cfg` was overwritten by the new empty
-one, the connector takes the token, identity and name from its saved copy in the state directory.
+upgrade the connector, stop the server, replace only `libtakaro-dragonwilds.so`, and start again.
+Your `takaro.cfg` next to it, `.env` and the state directory are never touched.
 
 ## What works, what doesn't
 

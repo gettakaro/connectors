@@ -1559,7 +1559,7 @@ std::string DefaultLogPath() {
     const char* legacy = ConfigFile::Get("DRAGONWILDS_LOG_FILE");
     struct stat st{};
     if (legacy && *legacy && stat(legacy, &st) == 0) return legacy;
-    std::string cfg = ConfigValue("TAKARO_LOG_PATH", "logPath", "");
+    std::string cfg = ConfigValue("TAKARO_LOG_PATH", "");
     if (!cfg.empty()) return cfg;
     // <exe dir> = <game>/Binaries/Linux -> <game>/Saved/Logs/RSDragonwilds.log
     std::string dir = ExeDir();
