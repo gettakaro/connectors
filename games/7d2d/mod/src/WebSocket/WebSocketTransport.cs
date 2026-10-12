@@ -502,7 +502,7 @@ namespace Takaro.WebSocket
                 if (!config.WebSocketEnabled)
                 {
                     LogService.Instance.Info(
-                        $"The Takaro connection is disabled (Enabled is false in {ConfigManager.ModConfigPath})."
+                        $"The Takaro connection is disabled (Enabled is false in {ConfigManager.ConfigPath})."
                     );
                     return;
                 }
@@ -514,7 +514,7 @@ namespace Takaro.WebSocket
                     LogBanner(
                         LogService.Instance.Warn,
                         "RegistrationToken not set, the server is not connected to Takaro.",
-                        $"Paste the registration token from Takaro into {ConfigManager.ModConfigPath}",
+                        $"Paste the registration token from Takaro into {ConfigManager.ConfigPath}",
                         "and save it. The mod connects within a few seconds, no restart needed."
                     );
                     return;
@@ -758,7 +758,7 @@ namespace Takaro.WebSocket
             LogBanner(
                 LogService.Instance.Error,
                 $"Takaro rejected identify: {reason}.",
-                $"Check RegistrationToken in {ConfigManager.ModConfigPath}. Saving a corrected",
+                $"Check RegistrationToken in {ConfigManager.ConfigPath}. Saving a corrected",
                 "token reconnects within a few seconds; until then the mod retries with backoff."
             );
 

@@ -151,8 +151,8 @@ mod/src/
 ├── ServiceRegistry.cs          # Ordered service init/destroy
 ├── Interfaces/IService.cs
 ├── Commands/Debug.cs           # takaro-debug console command
-├── Config/ConfigFiles.cs       # Config.xml read/merge/write (no game types)
-├── Config/ConfigManager.cs     # loads both Config.xml files, watches them for changes
+├── Config/ConfigFiles.cs       # Config.xml read/create/write identity (no game types)
+├── Config/ConfigManager.cs     # loads Takaro/Config.xml, watches it for changes
 ├── Persistence/
 │   ├── Database.cs             # In-memory LiteDB instance, collections, access lock
 │   └── Records.cs              # Player, inventory, ban, item, entity, location records

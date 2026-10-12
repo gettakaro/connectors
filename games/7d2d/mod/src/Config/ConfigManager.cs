@@ -11,15 +11,16 @@ namespace Takaro.Config
         private static ConfigManager _instance;
         private static readonly object _lock = new object();
 
-        // Often enough that a pasted token feels immediate; the files are tiny.
+        // Often enough that a pasted token feels immediate; the file is tiny.
         private const int WATCH_INTERVAL_MILLISECONDS = 5000;
 
-        public static string ModConfigPath { get; private set; } =
-            Path.Combine(
-                Path.Combine(Directory.GetCurrentDirectory(), "Mods/Takaro"),
-                "Config.xml"
-            );
-        public static readonly string SavedConfigPath = Path.Combine(API.BasePath, "Config.xml");
+        // An editor may save in several writes; a change counts once the text
+        // has stayed the same for this long.
+        private const int SETTLE_MILLISECONDS = 1000;
+
+        public static readonly string ConfigPath = Path.GetFullPath(
+            Path.Combine(API.BasePath, "Config.xml")
+        );
 
         public string WebSocketUrl { get; private set; } = ConfigFiles.DefaultUrl;
         public string IdentityToken { get; private set; } = "";
@@ -29,16 +30,20 @@ namespace Takaro.Config
             ConfigFiles.DefaultReconnectIntervalSeconds;
 
         /// <summary>
-        /// Raised on the watcher thread when a config file change alters the URL,
-        /// a token or Enabled.
+        /// Raised on the watcher thread when a change to Config.xml alters the
+        /// URL, a token or Enabled.
         /// </summary>
         public event Action ConnectionSettingsChanged;
 
         private readonly object _loadLock = new object();
         private ConfigValues _current;
-        private string _modStamp;
-        private string _savedStamp;
+        private string _stamp;
         private Timer _watchTimer;
+
+        // Set while a generated identity is not yet in the file, so the retry
+        // writes the identity this process already announced.
+        private bool _identityUnsaved;
+        private string _lastWriteError;
 
         private ConfigManager() { }
 
@@ -58,14 +63,6 @@ namespace Takaro.Config
                 }
                 return _instance;
             }
-        }
-
-        /// <summary>The folder the mod was loaded from; call before LoadConfig.</summary>
-        public static void UseModFolder(string folder)
-        {
-            // Mod.Path reads like ".../7DaysToDieServer_Data/../Mods/Takaro";
-            // people copy this path from the log, so give them the plain one.
-            ModConfigPath = Path.GetFullPath(Path.Combine(folder, "Config.xml"));
         }
 
         public void LoadConfig()
@@ -101,7 +98,11 @@ namespace Takaro.Config
         {
             try
             {
-                if (Stamp(ModConfigPath) == _modStamp && Stamp(SavedConfigPath) == _savedStamp)
+                string text = Stamp(ConfigPath);
+                if (text == _stamp)
+                    return;
+                Thread.Sleep(SETTLE_MILLISECONDS);
+                if (Stamp(ConfigPath) != text)
                     return;
                 if (Reload())
                     ConnectionSettingsChanged?.Invoke();
@@ -113,143 +114,80 @@ namespace Takaro.Config
         }
 
         /// <summary>
-        /// Reads both files and applies the result. Returns true when the
-        /// connection settings changed. An unreadable file leaves the current
-        /// settings untouched and is retried on the next check.
+        /// Reads the file and applies it. Returns true when the connection
+        /// settings changed. An unreadable file leaves the current settings
+        /// untouched and is retried on the next check.
         /// </summary>
         private bool Reload()
         {
             lock (_loadLock)
             {
-                string modStamp = Stamp(ModConfigPath);
-                string savedStamp = Stamp(SavedConfigPath);
-                ConfigValues mod;
-                ConfigValues saved;
+                bool existed = File.Exists(ConfigPath);
+                ConfigValues values;
+                bool wrote;
+                Exception writeError;
                 try
                 {
-                    mod = ConfigFiles.Read(ModConfigPath);
-                    saved = ConfigFiles.Read(SavedConfigPath);
+                    values = ConfigFiles.Load(
+                        ConfigPath,
+                        () => _identityUnsaved ? _current.IdentityToken : Guid.NewGuid().ToString(),
+                        out wrote,
+                        out writeError
+                    );
                 }
-                catch (Exception ex) when (ex is XmlException || ex is IOException)
+                catch (Exception ex)
+                    when (ex is XmlException
+                        || ex is IOException
+                        || ex is UnauthorizedAccessException
+                    )
                 {
                     LogService.Instance.Warn(
-                        $"Could not read the Takaro config ({ex.Message}); "
+                        $"Could not read {ConfigPath} ({ex.Message}); "
                             + "keeping the current settings and trying again in a few seconds"
                     );
+                    // Retry when the file changes, not every check.
+                    _stamp = Stamp(ConfigPath);
                     return false;
                 }
 
-                // When an identity could not be saved, keep using the one this
-                // process already announced instead of minting another.
-                ConfigValues resolved = ConfigFiles.Resolve(
-                    mod,
-                    saved,
-                    () => _current?.IdentityToken ?? Guid.NewGuid().ToString(),
-                    out bool identityGenerated
-                );
-                bool written = true;
-
-                if (mod == null)
-                    written &= TryWrite(
-                        "create",
-                        ModConfigPath,
-                        () =>
-                            ConfigFiles.WriteAll(
-                                ModConfigPath,
-                                new ConfigValues
-                                {
-                                    Url = resolved.Url,
-                                    Enabled = resolved.Enabled,
-                                    ReconnectIntervalSeconds = resolved.ReconnectIntervalSeconds,
-                                    IdentityToken = identityGenerated ? resolved.IdentityToken : "",
-                                },
-                                ConfigFiles.ModConfigHeader
-                            )
+                if (wrote)
+                    LogService.Instance.Info(
+                        existed
+                            ? $"Wrote a new identity token into {ConfigPath}"
+                            : $"Created {ConfigPath} with a new identity token"
                     );
-                else if (identityGenerated)
-                    written &= TryWrite(
-                        "update",
-                        ModConfigPath,
-                        () => ConfigFiles.WriteIdentity(ModConfigPath, resolved.IdentityToken)
-                    );
-                if (identityGenerated && _current == null)
-                    LogService.Instance.Info("Generated a new identity token");
+                _identityUnsaved = writeError != null;
+                if (writeError != null)
+                {
+                    // Retried every check; say so once, not every 5 s.
+                    string error = $"Could not write {ConfigPath}: {writeError.Message}";
+                    if (error != _lastWriteError)
+                        LogService.Instance.Error(
+                            error + ". The mod uses the new identity in memory and retries."
+                        );
+                    _lastWriteError = error;
+                }
 
-                ConfigValues savedCopy = ConfigFiles.SavedCopy(resolved, saved);
-                bool savedChanged = !savedCopy.SameAs(saved);
-                if (savedChanged)
-                    written &= TryWrite(
-                        "update",
-                        SavedConfigPath,
-                        () =>
-                            ConfigFiles.WriteAll(
-                                SavedConfigPath,
-                                savedCopy,
-                                ConfigFiles.SavedConfigHeader
-                            )
-                    );
-
-                bool connectionChanged = _current != null && !resolved.SameConnection(_current);
                 bool firstLoad = _current == null;
-                _current = resolved;
-                WebSocketUrl = resolved.Url;
-                RegistrationToken = resolved.RegistrationToken;
-                IdentityToken = resolved.IdentityToken;
-                WebSocketEnabled = resolved.Enabled ?? true;
-                ReconnectIntervalSeconds =
-                    resolved.ReconnectIntervalSeconds
-                    ?? ConfigFiles.DefaultReconnectIntervalSeconds;
+                bool connectionChanged = !firstLoad && !values.SameConnection(_current);
+                _current = values;
+                WebSocketUrl = values.Url;
+                RegistrationToken = values.RegistrationToken;
+                IdentityToken = values.IdentityToken;
+                WebSocketEnabled = values.Enabled;
+                ReconnectIntervalSeconds = values.ReconnectIntervalSeconds;
 
-                // Our own writes must not count as a change. After a failed
-                // write, no stamp is kept, so the next check tries again.
-                _modStamp =
-                    !written ? null
-                    : mod == null || identityGenerated ? Stamp(ModConfigPath)
-                    : modStamp;
-                _savedStamp =
-                    !written ? null
-                    : savedChanged ? Stamp(SavedConfigPath)
-                    : savedStamp;
+                // Our own write must not count as a change; after a failed
+                // write no stamp is kept, so the next check tries again.
+                _stamp = writeError != null ? null : Stamp(ConfigPath);
 
                 if (firstLoad || connectionChanged)
                     LogService.Instance.Info(
-                        $"Config loaded from {ModConfigPath}. WebSocket URL: {WebSocketUrl}, "
+                        $"Config loaded from {ConfigPath}. WebSocket URL: {WebSocketUrl}, "
                             + $"Enabled: {WebSocketEnabled}, registration token: "
-                            + TokenSource(mod, saved)
+                            + (RegistrationToken == "" ? "not set" : "set")
                     );
                 return connectionChanged;
-            }
-        }
-
-        private static string TokenSource(ConfigValues mod, ConfigValues saved)
-        {
-            if (!string.IsNullOrEmpty(mod?.RegistrationToken))
-                return "set";
-            if (!string.IsNullOrEmpty(saved?.RegistrationToken))
-                return $"set (kept in {SavedConfigPath})";
-            return "not set";
-        }
-
-        // A failing write is retried every check; say so once, not every 5 s.
-        private string _lastWriteError;
-
-        private bool TryWrite(string verb, string path, Action write)
-        {
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(path));
-                write();
-                return true;
-            }
-            catch (Exception ex)
-            {
-                string error = $"Could not {verb} {path}: {ex.Message}";
-                if (error != _lastWriteError)
-                    LogService.Instance.Error(
-                        error + ". The mod keeps its settings in memory and retries."
-                    );
-                _lastWriteError = error;
-                return false;
             }
         }
 

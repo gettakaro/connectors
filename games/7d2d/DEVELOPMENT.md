@@ -102,29 +102,22 @@ flow, the state-mirror diagram and the staleness bounds.
 
 ## Configuration
 
-The mod reads two files (`src/Config/ConfigFiles.cs`):
+One file: `<server cwd>/Takaro/Config.xml` (`API.BasePath`, next to `Mods/`). The release
+zip does not contain it, so replacing `Mods/Takaro/` on an upgrade never touches it. The mod
+creates it in `InitMod` (before the world loads) when it is missing, with every key, an empty
+`RegistrationToken` and a new UUID `IdentityToken`; when the file has no identity, the mod
+generates one and writes it back (atomically, keeping the file's comments and permissions).
+Nothing else is ever written. A failed write keeps the generated identity in memory and is
+retried. There are no environment variables. The dev rig (`dev-servers/lib/render.sh`) and
+`takaro-maint verify` render this same file.
 
-- `Mods/Takaro/Config.xml` ships in the release zip (`mod/Config.xml`) with an empty
-  `RegistrationToken` and `IdentityToken`. This is the file people edit.
-- `<server>/Takaro/Config.xml` (the server's working directory, *not* inside `Mods/`) is
-  where releases up to 0.3 kept everything. The mod now writes the settings it uses there,
-  so deleting `Mods/Takaro/` on an upgrade keeps the token and the identity. The dev rig
-  (`dev-servers/lib/render.sh`) and `takaro-maint verify` still render this file, and it
-  works because an empty field in the mod config falls back to it.
-
-The tokens come from the mod config when set there, else from the saved one. `Url`,
-`Enabled` and `ReconnectIntervalSeconds` come from the mod config only when it changes them
-from the default (the shipped file spells the defaults out, and an upgrade must not let them
-override a saved custom value), else from the saved one, else the default. The saved file
-gets the tokens in use but keeps its own other settings, so setting something back to the
-default in the mod config takes effect. An identity neither file holds is generated and
-written to both; if those writes fail, the mod keeps using the identity it already announced
-and retries. The mod never copies the registration token into the mod config, so a token
-rendered into the saved file is not shadowed by a stale copy.
-
-Both files are read every 5 s (they are tiny, and comparing the text cannot miss an edit). A change to the URL, a token or `Enabled` drops the socket
-and reconnects at once, so a pasted or corrected token needs no restart. Without a
-registration token the mod does not connect; it logs a banner naming the file instead.
+The file is read every 5 s (it is tiny, and comparing the text cannot miss an edit); a change
+counts once the text has been stable for 1 s, and a half-saved file (invalid XML) is ignored
+until it changes again. A change to the URL, a token, the identity or `Enabled` drops the
+socket and reconnects at once, so a pasted or corrected token needs no restart. Without a
+registration token the mod does not connect (emptying it disconnects); it logs a banner naming
+the file instead. `src/Config/ConfigFiles.cs` has no game types and is covered by the
+contract harness.
 
 The mod writes its own log to `<server>/Takaro/logs/<M-D-YYYY>.log`. On the dev
 rig, DEBUG logging is toggled with the `takaro-debug` console command (it resets

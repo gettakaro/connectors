@@ -53,7 +53,6 @@ Stop the server, then unzip so that the `Takaro` folder ends up directly inside 
 
 ```
 <server>/Mods/Takaro/
-    Config.xml
     ModInfo.xml
     Takaro.dll
     0Harmony.dll
@@ -84,18 +83,31 @@ Examples:
 
 ### 4. Configure
 
-Open `<server>/Mods/Takaro/Config.xml` and paste your Takaro registration token between the
-`RegistrationToken` tags:
+The mod keeps its settings in **`<server>/Takaro/Config.xml`**: a `Takaro` folder next to
+`Mods/`, in the folder the server starts in (for example `/home/steam/7dtd/Takaro/Config.xml` or
+`C:\7DaysToDieServer\Takaro\Config.xml`). The zip does not contain this file.
+
+Either start the server once (the mod creates the file, with a new `IdentityToken`), or create it
+yourself before the first start with this content:
 
 ```xml
-<RegistrationToken>your-registration-token-here</RegistrationToken>
+<?xml version="1.0" encoding="utf-8"?>
+<Takaro>
+  <WebSocket>
+    <Url>wss://connect.takaro.io/</Url>
+    <RegistrationToken>your-registration-token-here</RegistrationToken>
+    <IdentityToken></IdentityToken>
+    <Enabled>true</Enabled>
+    <ReconnectIntervalSeconds>30</ReconnectIntervalSeconds>
+  </WebSocket>
+</Takaro>
 ```
 
-Leave `<Url>wss://connect.takaro.io/</Url>` as it is, and leave `IdentityToken` empty — the mod fills it in by itself.
-Save the file and start the server.
+Paste your Takaro registration token between the `RegistrationToken` tags and save. Leave
+`IdentityToken` empty; the mod fills it in and uses it to identify this server in Takaro.
 
-You can also do this while the server is running: the mod checks the file every few seconds
-and connects as soon as you save a token. No restart needed.
+Saving is enough: the mod checks the file every few seconds and connects as soon as it has a
+token. No restart needed. Emptying the token disconnects the server.
 
 ### 5. Check that it worked
 
@@ -120,30 +132,21 @@ If no token is set yet, the server log shows a banner instead:
 ```
 *************************************************************************
   RegistrationToken not set, the server is not connected to Takaro.
-  Paste the registration token from Takaro into /home/steam/7dtd/Mods/Takaro/Config.xml
+  Paste the registration token from Takaro into /home/steam/7dtd/Takaro/Config.xml
   and save it. The mod connects within a few seconds, no restart needed.
 *************************************************************************
 ```
 
 If the token is wrong, the banner says `Takaro rejected identify: Invalid registrationToken
-provided.` Fix the token in `Mods/Takaro/Config.xml` and save; the mod reconnects within a few
-seconds.
+provided.` Fix the token in `<server>/Takaro/Config.xml` and save; the mod reconnects within a
+few seconds.
 
 ### 6. Upgrading
 
 **Stop the server first.** Delete `<server>/Mods/Takaro/` and unzip the new version in its place,
-then start the server again. You do not need to enter the token again: the mod keeps a copy of
-its settings in `<server>/Takaro/Config.xml` (next to `Mods/`) and uses it while the new
-`Mods/Takaro/Config.xml` is still empty. Your server keeps its identity in Takaro. Never swap
+then start the server again. Replace only `Mods/Takaro/`; your config at `<server>/Takaro/Config.xml`
+is never touched, so the token and the server's identity in Takaro stay as they are. Never swap
 `Takaro.dll` under a running server; it can crash the server.
-
-Coming from a version that kept its config only in `<server>/Takaro/Config.xml`? Nothing to do;
-the mod reads your token from there.
-
-To use a different token, put it in `Mods/Takaro/Config.xml`: a token there always wins.
-Other settings you changed in `Mods/Takaro/Config.xml` (`Url`, `Enabled`,
-`ReconnectIntervalSeconds`) are reset by an upgrade, because the new zip brings a fresh copy of
-that file; set them again after upgrading.
 
 ## V 3.3.0 b18
 
