@@ -38,7 +38,7 @@
     }
   },
   "legacyAssetAliases": {
-    "takaro-dragonwilds-plugin.tar.gz": "linux-25630937/plugin"
+    "takaro-dragonwilds-plugin.tar.gz": "linux-25808123/plugin"
   },
   "devServers": {"composeFile": "dragonwilds.yml"}
 }

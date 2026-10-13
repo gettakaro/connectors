@@ -43,6 +43,26 @@ plus the 0.2.x sidecar's `event-cursor.json`, `online-players.json`, `known-play
 `timed-bans.json`, read in place with the same formats. The game-enforcement `bans.json`,
 `symcache.json` and `plugin.log` stay in the plugin data dir (`<exe dir>/takaro`).
 
+## Configuration model
+
+`mod/src/config_file.cpp`. One file: `takaro.cfg` next to the library (`TAKARO_CONFIG_FILE`
+overrides the path). Every setting is a non-empty environment variable, else that file; the
+environment is never written to disk. The release does not ship the file.
+
+- The init thread, before anything reads a setting, creates the file when it is missing (all
+  connection keys, empty token, a new UUID identity, name `Dragonwilds (<first 8>)`, mode 0600), or
+  writes a new identity into it when `TAKARO_IDENTITY_TOKEN` is empty (atomic, owner and mode kept).
+  Nothing else is written.
+- Only the connection settings (URL, token, identity, name) change at runtime: the bridge thread
+  re-reads the file every 5 s, applies a changed text once the next read (1 s later) agrees, skips a
+  file with a line without `=`, and calls `NativeTransport::Retarget`. The service thread kills the
+  old socket (`LWS_TO_KILL_ASYNC`) and dials only after its CLOSED callback, without backoff; frames
+  of the old epoch are dropped, so only the answer to the latest identify counts.
+- No token, or no identity because the folder is read-only: no connection and a console banner
+  (one stdout write) naming the file. An emptied token disconnects.
+- A rejected identify logs only the error's name, message and HTTP status; Takaro's error can carry
+  its internal request with an `x-takaro-token` JWT, and long token-like runs are redacted.
+
 ## Build and test
 
 ```bash
@@ -131,6 +151,27 @@ and swaps it into `_data/dragonwilds-dev-plugin` under the rig lock (stop, swap,
 state is `_data/dragonwilds-dev-state`. It refuses to deploy while the legacy sidecar container
 still exists. Never use `_data/dragonwilds-plugin`: a server outside this repository mounts it.
 Never test against a server anyone plays on: several cells (ban, shutdown, restart) are destructive.
+
+## Map image (operator upload)
+
+The server ships no map art: its cook strips texture pixels, so `T_WorldMap*` exist only as
+metadata. A map can still be derived from the server's own collision and given to Takaro as an
+operator upload (`PUT /gameserver/{id}/map/{dimension}/upload`, which cuts the tile pyramid):
+
+1. Stop the server and add to `RSDragonwilds/Saved/Config/LinuxServer/Engine.ini` (back it up first):
+   `[SystemSettings]` / `wp.Runtime.EnableServerStreaming=0`. The cvar is read-only at runtime;
+   without it the server only loads World Partition cells near players. Start it (about 6.5 GB RAM
+   instead of 1 GB once every cell is in).
+2. With `TAKARO_PLUGIN_DEBUG=1`, `POST /debug/map/survey {"step":150,"minX":-20000,"maxX":600000,
+   "minY":-160000,"maxY":480000,"zTop":200000,"zBottom":-100000,"perJob":2048}` traces the world
+   from above (no bounds: the union of loaded landscape proxies, which also covers far-away
+   interior sub-levels). Poll `GET /debug/map/survey`. Build 25808123: 4134x4267 samples, about
+   135 s of game-thread time spread over about 9 minutes; each job holds the game thread for one
+   chunk of a row, so expect hitches while a player is online.
+3. `scripts/render-map.py <serverdir>/takaro/map out.png --sea-level -3400` (numpy + Pillow)
+   writes the PNG and `out.settings.json` with the axes (x right, y down: north up, matching the
+   in-game map) and the bounds in raw Unreal units, which is what Takaro positions use.
+4. Upload both as `image` and `settings`, then restore `Engine.ini` and restart.
 
 ## Gotchas
 

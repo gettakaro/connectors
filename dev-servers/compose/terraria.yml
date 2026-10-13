@@ -81,6 +81,8 @@ services:
       - ../_data/terraria/bridge/TakaroTerrariaBridge:/bridge:ro
       - ../_data/terraria/bridge/TakaroConfig.txt:/config/TakaroConfig.txt:ro
       - ../_data/terraria/tshock/logs:/tshock/logs:ro
+      # The world map image the plugin renders (map.json + map-<revision>.png).
+      - ../_data/terraria/tshock/takaro:/tshock/takaro:ro
     labels:
       tm.run: "${TM_RUN:-}"
       tm.issue: "${TM_ISSUE:-}"

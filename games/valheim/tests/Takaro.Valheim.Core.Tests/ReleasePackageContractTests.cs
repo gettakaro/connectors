@@ -34,6 +34,7 @@ public sealed class ReleasePackageContractTests
     [DataRow("client-dll-in-server")]
     [DataRow("core-dll-in-client")]
     [DataRow("config-in-client")]
+    [DataRow("config-in-server")]
     [DataRow("pdb-in-client")]
     [DataRow("deps-in-client")]
     [DataRow("host-dll-in-client")]
@@ -163,6 +164,9 @@ public sealed class ReleasePackageContractTests
                 break;
             case "core-dll-in-client":
                 Write(Path.Combine(client, "Takaro.Valheim.Core.dll"), "wrong role");
+                break;
+            case "config-in-server":
+                Write(Path.Combine(server, "com.takaro.valheim.cfg"), "registrationToken=secret");
                 break;
             case "config-in-client":
                 Write(Path.Combine(client, "com.takaro.valheim.cfg"), "registrationToken=secret");

@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-25789279",
+  "game": "dune",
+  "platform": "linux",
+  "revision": "25789279",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-10-09",
+    "evidence": [
+      "games/dune/sidecar/src/__tests__/ (contract level, every build: 264 tests over a mock battlegroup, including congestion.test.ts and the broker-retry case in chat-wire.test.ts added for this target)",
+      "games/dune/mod/tests/unit_test.cpp (plugin unit level: 331 checks)",
+      "connector-runner e2e 2026-10-09 on this pin (gettakaro/connectors#416; rig artifacts byte-identical to `takaro-maint build --target linux-25789279 --version 0.2.2-rc.416.4`): real PC client through hosted Takaro MCP - chat-message 27467123-89aa-4d1a-8b20-0751c23ef8ed, command-executed 83872d43-997c-430b-8eaf-fe441bea8f11 (@ping, Pong rendered in game), kickPlayer -> player-disconnected 15aa05b0-4756-4bcd-b08d-b5cd847302a1, rejoin -> player-connected 21598cd5-3f8b-4ec5-8950-d94fcef79d32, testReachability, getPlayers, sendMessage and executeConsoleCommand rendered in game; earlier the same day on 0.2.2-rc.416 to rc.416.3: player-death 17cfa7b2-ef19-46b1-a786-51b1c0f75fb3 and 16a6f517-c3cd-4db0-809e-f98ed8810690, giveItem read-back verified, teleportPlayer, banPlayer refused a real rejoin, unbanPlayer rejoin stayed online, shutdown -> player-disconnected ec0f5dc0-951d-48fd-ac04-8217c19bf0e7, game-to-Discord posts 200 OK and a synthetic discord-message rendered in game"
+    ],
+    "notes": "Exact Steam pin of the self-hosted server package head observed 2026-10-09 (public branch moved to build 25789279, depot 4754532 manifest 3746898287470517914 dated 2026-10-07): image bundle 2147284-0-shipping, code branch Seabass_sb-1.5.3.0, db branch sb_1_5_3_0 (updatedb found the schema current). Fourteen of the server image's sixteen layers changed, so this is a full rebuild rather than a content patch; the plugin's resolver re-validated on the new map binary (ELF build id 50d73d6403583bbcad919119c08d5083181c4d51) with every symbol group ok. It is the default because the public client is version-gated to it: the same client is refused by a linux-25689360 battlegroup with 'Outdated Client (M52)', so an operator installing the old default could not be joined by anyone. Everything said about install and verification in the linux-25689360 record applies here unchanged: no anonymous boot (an operator Funcom self-hosting token is required), no `takaro-maint install` seam for the image bundle, and `verification.required` stays `contract` with runtime proof recorded on the dev rig."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 4754530,
+      "branch": "public",
+      "buildid": 25789279,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "4754532": {
+          "manifest": "3746898287470517914",
+          "size": 5209846169,
+          "files": 75
+        }
+      },
+      "files": {
+        "images/battlegroup/server-bg-director.tar": {
+          "sha256": "b0b63b85757bbf92af249c695c1fe91d67f36badfbce075ae3156f5bd9f79ca3",
+          "size": 91948032
+        },
+        "images/battlegroup/server-db-utils.tar": {
+          "sha256": "277ec73b944cb9cc392240f54ee5d4a7977a9c0e2ce49a8fdd6510c8941a95a1",
+          "size": 40289280
+        },
+        "images/battlegroup/server-gateway.tar": {
+          "sha256": "c0167b2c87777e3d0ff48210bc6a97d6c76a49ecba0e86c123645596d94ef6ed",
+          "size": 29987840
+        },
+        "images/battlegroup/server-rabbitmq.tar": {
+          "sha256": "f7b551ca058aafeff2c322ef315ec5b0d75af3eb87794dfed7719349e30517ae",
+          "size": 86023168
+        },
+        "images/battlegroup/server-text-router.tar": {
+          "sha256": "8e4824c999f27a890cb4cf94d8b008606475b25b7561de1b7d0a84a45d66b915",
+          "size": 91212288
+        },
+        "images/battlegroup/server.tar": {
+          "sha256": "6050999d26c777ed42d0628cffc89693229e073e21c7bb559417bbef0c2988d9",
+          "size": 4456804352
+        },
+        "images/battlegroup/version.txt": {
+          "sha256": "9ba0bbda447f7b18cfb19585e1eee2d002b0721ea3c4b760d175a207ff88cc88",
+          "size": 18
+        },
+        "images/operators/version.txt": {
+          "sha256": "754a821d671b2f29d4723900e691dcdc04936bb43446b7208d17cf76be46376f",
+          "size": 6
+        },
+        "images/prerequisites/igw-postgres.tar": {
+          "sha256": "740113dca15e96808abf02ee09e51e36c3422acd64a5b9692c2df686d5e0b48b",
+          "size": 147850240
+        },
+        "scripts/battlegroup.sh": {
+          "sha256": "4e4b94aec678e4ce7f25f5d53aaa0af20697f97b886ba1dacfbf64426d8c6171",
+          "size": 31689
+        },
+        "scripts/setup/world.sh": {
+          "sha256": "e3da2963a018a8654bd6b247ac1b3d2967e5ba8541b5d7072040f2548630eee4",
+          "size": 5670
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844",
+      "env": {
+        "HOME": "/tmp"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/dune/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844"
+    },
+    "references": [
+      "images/battlegroup/server.tar"
+    ],
+    "deps": {
+      "amqplib": {
+        "coordinate": "npm:amqplib:0.10.9",
+        "sha256": "f3102ba19abf66322e179f236756ecd8c7c835c2f7d56ab3236c7fc7572b7357",
+        "resolvedCoordinate": "https://registry.npmjs.org/amqplib/-/amqplib-0.10.9.tgz"
+      },
+      "pg": {
+        "coordinate": "npm:pg:8.23.0",
+        "sha256": "d9db7902694dbe59fd5ca21d6521b054cf030aa9360eba7a2f301ad1af10f4ac",
+        "resolvedCoordinate": "https://registry.npmjs.org/pg/-/pg-8.23.0.tgz"
+      },
+      "ws": {
+        "coordinate": "npm:ws:8.21.3",
+        "sha256": "df3454ef205791ce50b5b9241762dcf9bfe1aa9f7f01d3057229be7dac0c2dc3",
+        "resolvedCoordinate": "https://registry.npmjs.org/ws/-/ws-8.21.3.tgz"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "sidecar",
+      "artifact": "takaro-dune-sidecar-linux-25789279-{version}.tar.gz",
+      "installDir": "TakaroDuneSidecar"
+    },
+    {
+      "role": "plugin",
+      "artifact": "takaro-dune-plugin-linux-25789279-{version}.tar.gz",
+      "installDir": "TakaroDunePlugin"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup",
+      "connector-load",
+      "identify",
+      "heartbeat",
+      "players",
+      "catalog-items",
+      "catalog-entities",
+      "console",
+      "shutdown"
+    ]
+  },
+  "preserve": [
+    "saved/",
+    "postgres/",
+    "rmq-admin/",
+    "rmq-game/",
+    "tls/",
+    "TakaroDuneSidecar/",
+    "TakaroDunePlugin/"
+  ],
+  "notes": "One pinned Node image serves both halves of the build: the sidecar is TypeScript, and node:*-bookworm (not slim) carries the g++ the LD_PRELOAD plugin needs, on the same glibc 2.36 as the Funcom server image — a plugin built on anything newer would fail to preload. The server itself is not run from this image: it is Funcom's own seabass-server image, loaded out of the depot above and tagged 2147284-0-shipping. The game client is a different Steam app (1172710) and is not pinned here; the public client of 2026-10-09 joins this build and is refused by linux-25689360."
+}

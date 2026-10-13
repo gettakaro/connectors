@@ -1,11 +1,14 @@
 #include "native/bridge.h"
 
+#include "native/capabilities.h"
 #include "native/json_util.h"
 #include "native/mapping.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
+#include <random>
 
 namespace native {
 
@@ -14,6 +17,19 @@ namespace {
 std::shared_ptr<const std::string> Text(std::string s) { return std::make_shared<const std::string>(std::move(s)); }
 
 bool IsConnectionType(const std::string& t) { return t == "player-connected" || t == "player-disconnected"; }
+
+// Actions whose protocol 1 answer is payload null (the reference protocol's void actions).
+bool IsVoidAction(const std::string& a) {
+    return a == "giveItem" || a == "sendMessage" || a == "teleportPlayer" || a == "kickPlayer" || a == "banPlayer" ||
+           a == "unbanPlayer" || a == "shutdown";
+}
+
+std::string RandomStreamId() {
+    std::random_device rd;
+    unsigned char b[16];
+    for (auto& c : b) c = (unsigned char)(rd() & 0xff);
+    return UuidFromBytes(b);
+}
 
 std::string CursorJson(const SourceCursor& c) {
     return ObjBuilder().S("bootId", c.bootId).Raw("seq", std::to_string(c.seq)).Done();
@@ -24,7 +40,57 @@ const std::string* GameIdOf(const JsonValue& player) {
     return g && g->type == JsonValue::String && !g->str.empty() ? &g->str : nullptr;
 }
 
+// Long base64url runs (JWTs, keys) never reach a log line.
+std::string ScrubSecrets(std::string t) {
+    std::string out;
+    size_t i = 0;
+    while (i < t.size()) {
+        size_t j = i;
+        while (j < t.size() && (isalnum((unsigned char)t[j]) || t[j] == '-' || t[j] == '_' || t[j] == '.')) j++;
+        if (j - i >= 40) out += "<redacted>";
+        else out.append(t, i, j - i);
+        if (j < t.size()) out += t[j];
+        i = j + 1;
+    }
+    return out;
+}
+
 }  // namespace
+
+std::string IdentifyErrorSummary(const JsonValue* error, int& httpStatus) {
+    httpStatus = 0;
+    if (!error) return "unknown error";
+    std::string name, message;
+    if (error->type == JsonValue::String) {
+        message = error->str;
+    } else if (error->type == JsonValue::Object) {
+        name = Str(error->get("name")).value_or("");
+        message = Str(error->get("message")).value_or("");
+        for (const char* key : {"http", "status", "statusCode"}) {
+            auto n = Num(error->get(key));
+            if (n && *n >= 100 && *n < 600) {
+                httpStatus = (int)*n;
+                break;
+            }
+        }
+        if (!httpStatus) {
+            auto n = Num(AsRecord(error->get("response")).get("status"));
+            if (n && *n >= 100 && *n < 600) httpStatus = (int)*n;
+        }
+    } else {
+        message = "unexpected error value";
+    }
+    if (!httpStatus) {
+        size_t p = message.find("status code ");
+        if (p != std::string::npos) httpStatus = atoi(message.c_str() + p + 12);
+        if (httpStatus < 100 || httpStatus >= 600) httpStatus = 0;
+    }
+    if (message.size() > 200) message.resize(200);
+    std::string out = name.empty() ? message : message.empty() ? name : name + ": " + message;
+    if (out.empty()) out = "no message";
+    if (httpStatus) out += " (HTTP " + std::to_string(httpStatus) + ")";
+    return ScrubSecrets(out);
+}
 
 Bridge::Bridge(BridgeOptions o) : o_(std::move(o)), tailer_(o_.config.logFile) {
     if (!o_.steadyMs)
@@ -39,6 +105,7 @@ Bridge::Bridge(BridgeOptions o) : o_(std::move(o)), tailer_(o_.config.logFile) {
                        std::chrono::system_clock::now().time_since_epoch())
                 .count();
         };
+    if (!o_.newStreamId) o_.newStreamId = RandomStreamId;
 }
 
 Bridge::~Bridge() { Stop(); }
@@ -50,6 +117,10 @@ bool Bridge::Start() {
     for (auto& n : rep.notes) PluginLog("native: state: %s", n.c_str());
     for (auto& kv : o_.store->Errors()) PluginLog("native: state error [%s]: %s", kv.first.c_str(), kv.second.c_str());
     RecoverBanIntents();
+    if (o_.store->OutboxUsable() && o_.store->Outbox().streamId.empty()) {
+        o_.store->Outbox().streamId = o_.newStreamId();
+        outboxDirty_ = true;
+    }
     reconcilePending_ = true;
     int64_t now = o_.steadyMs();
     nextPoll_ = nextHealth_ = nextBanCheck_ = now;
@@ -94,6 +165,38 @@ bool Bridge::OnNotice(Notice&& n) {
     return true;
 }
 
+void Bridge::Reconfigure(const LiveSettings& s, bool connect) {
+    {
+        std::lock_guard<std::mutex> g(mu_);
+        settingsPending_ = true;
+        pendingSettings_ = s;
+        pendingConnect_ = connect;
+    }
+    cv_.notify_one();
+}
+
+void Bridge::ApplyPendingSettings() {
+    LiveSettings s;
+    bool connect;
+    {
+        std::lock_guard<std::mutex> g(mu_);
+        if (!settingsPending_) return;
+        settingsPending_ = false;
+        s = pendingSettings_;
+        connect = pendingConnect_;
+    }
+    for (const std::string* old : {&o_.config.identityToken, &o_.config.registrationToken})
+        if (!old->empty() && std::find(oldSecrets_.begin(), oldSecrets_.end(), *old) == oldSecrets_.end())
+            oldSecrets_.push_back(*old);
+    o_.config.url = s.url;
+    o_.config.identityToken = s.identityToken;
+    o_.config.registrationToken = s.registrationToken;
+    o_.config.serverName = s.serverName;
+    lastIdentifyError_.clear();
+    PluginLog("native: new connection settings; %s", connect ? "reconnecting now" : "disconnecting until they allow connecting");
+    if (o_.transport) o_.transport->Retarget(s.url, connect);
+}
+
 std::string Bridge::HealthJson() const {
     std::lock_guard<std::mutex> g(healthMu_);
     return health_;
@@ -107,8 +210,9 @@ void Bridge::Loop() {
         std::vector<std::shared_ptr<Job>> done;
         {
             std::unique_lock<std::mutex> l(mu_);
-            cv_.wait_for(l, std::chrono::milliseconds(50),
-                         [&] { return stopping_ || !notices_.empty() || !completions_.empty(); });
+            cv_.wait_for(l, std::chrono::milliseconds(50), [&] {
+                return stopping_ || settingsPending_ || !notices_.empty() || !completions_.empty();
+            });
             if (stopping_) break;
             while (!notices_.empty() && batch.size() < kNoticeBatch) {
                 noticeBytes_ -= notices_.front().text.size();
@@ -118,6 +222,7 @@ void Bridge::Loop() {
             done.assign(completions_.begin(), completions_.end());
             completions_.clear();
         }
+        ApplyPendingSettings();
         for (auto& n : batch) HandleNotice(n);
         for (auto& j : done) Complete(j);
         int64_t now = o_.steadyMs();
@@ -179,6 +284,7 @@ void Bridge::HandleNotice(Notice& n) {
             epoch_ = n.epoch;
             open_ = true;
             identified_ = false;
+            protocol_ = 0;
             lastQueuedId_ = 0;  // everything unconfirmed goes out again on this connection
             pendingIds_.clear();
             recentIds_.clear();
@@ -186,7 +292,8 @@ void Bridge::HandleNotice(Notice& n) {
             PluginLog("native: Takaro WebSocket open (epoch %llu), sending identify", (unsigned long long)n.epoch);
             auto st = o_.transport->Queue({FrameKind::Control,
                                            Text(CreateIdentify(o_.config.identityToken, o_.config.registrationToken,
-                                                               o_.config.serverName)),
+                                                               o_.config.serverName,
+                                                               o_.config.protocolV1 ? CapabilityManifestJson() : "")),
                                            n.epoch, 0});
             if (st != QueueStatus::Accepted) o_.transport->RequestClose(n.epoch, "identify not queued");
             break;
@@ -195,7 +302,8 @@ void Bridge::HandleNotice(Notice& n) {
             if (n.epoch == epoch_ && open_) HandleFrame(n.epoch, n.text);
             break;
         case NoticeType::Confirmed:
-            if (n.epoch == epoch_ && open_) {
+            // Protocol 1 confirms events with eventAck; the transport's ping watermark only counts on protocol 0.
+            if (n.epoch == epoch_ && open_ && protocol_ == 0) {
                 size_t k = o_.store->ConfirmThrough(n.outboxId);
                 if (k) outboxDirty_ = true;
             }
@@ -204,6 +312,7 @@ void Bridge::HandleNotice(Notice& n) {
             if (n.epoch != epoch_) break;
             open_ = false;
             identified_ = false;
+            protocol_ = 0;
             gameServerId_.clear();
             PluginLog("native: Takaro WebSocket closed (epoch %llu): %s", (unsigned long long)n.epoch,
                       Redact(n.text).c_str());
@@ -253,31 +362,59 @@ void Bridge::HandleFrame(uint64_t epoch, const std::string& text) {
         // heartbeat bookkeeping happens in the transport
     } else if (type == "identifyResponse") {
         const JsonValue& payload = AsRecord(msg.get("payload"));
-        if (Truthy(payload.get("error"))) {
+        // protocol 1 failures carry a top-level error {code, message}; protocol 0 ones payload.error
+        const JsonValue* error = Truthy(msg.get("error")) ? msg.get("error") : payload.get("error");
+        if (Truthy(error)) {
             identifyErrors_++;
-            lastIdentifyError_ = Redact(JsonDump(*payload.get("error")));
-            if (lastIdentifyError_.size() > 512) lastIdentifyError_.resize(512);
+            int status = 0;
+            lastIdentifyError_ = Redact(IdentifyErrorSummary(error, status));
+            if (auto code = Str(AsRecord(error).get("code"))) lastIdentifyError_ = *code + ": " + lastIdentifyError_;
             PluginLog("native: Takaro identify failed: %s", lastIdentifyError_.c_str());
             o_.transport->RequestClose(epoch, "identify rejected");
+            if (o_.onIdentifyRejected) o_.onIdentifyRejected(lastIdentifyError_, status);
             return;
         }
         identified_ = true;
         lastIdentifyError_.clear();
+        // Takaro without protocol 1 sends no protocolVersion: that is protocol 0.
+        auto pv = Num(payload.get("protocolVersion"));
+        protocol_ = o_.config.protocolV1 && pv && *pv >= 1 ? 1 : 0;
         auto gs = Str(payload.get("gameServerId"));
         if (!gs) gs = Str(AsRecord(payload.get("server")).get("id"));
         gameServerId_ = gs.value_or("");
         o_.transport->MarkIdentified(epoch);
-        PluginLog("native: identified with Takaro%s%s", gameServerId_.empty() ? "" : " gameServerId=",
-                  gameServerId_.c_str());
+        PluginLog("native: identified with Takaro%s%s, protocol %d", gameServerId_.empty() ? "" : " gameServerId=",
+                  gameServerId_.c_str(), protocol_);
+        if (o_.onIdentified)
+            o_.onIdentified({o_.config.url, o_.config.registrationToken, o_.config.identityToken, o_.config.serverName});
+    } else if (type == "eventAck") {
+        HandleEventAck(msg);
+    } else if (type == "eventError") {
+        eventErrors_++;
+        const JsonValue& error = AsRecord(msg.get("error"));
+        const JsonValue& p = AsRecord(msg.get("payload"));
+        lastEventError_ = Str(error.get("code")).value_or("?") + ": " + Str(error.get("message")).value_or("") +
+                          " (seq " + (p.get("seq") ? JsString(p.get("seq")) : std::string("?")) + ")";
+        PluginLog("native: Takaro rejected an event: %s", Redact(lastEventError_).c_str());
+    } else if (type == "capabilitiesResponse") {
+        if (Truthy(msg.get("error"))) {
+            int status = 0;
+            PluginLog("native: Takaro refused the capability manifest: %s",
+                      Redact(IdentifyErrorSummary(msg.get("error"), status)).c_str());
+        }
     } else if (type == "connected") {
         clientId_ = Str(AsRecord(msg.get("payload")).get("clientId")).value_or("");
         PluginLog("native: Takaro confirmed WebSocket connection");
     } else if (type == "error") {
         const JsonValue* p = msg.get("payload");
         if (!p || p->type == JsonValue::Null) p = msg.get("error");
-        lastError_ = "Takaro error: " + Redact(p ? JsonDump(*p) : "(none)");
-        if (lastError_.size() > 600) lastError_.resize(600);
+        int status = 0;
+        const JsonValue& rec = AsRecord(p);
+        std::string summary = Redact(IdentifyErrorSummary(rec.type == JsonValue::Object && rec.get("error") ? rec.get("error") : p, status));
+        lastError_ = "Takaro error: " + summary;
         PluginLog("native: %s", lastError_.c_str());
+        // Before identify succeeds, an error message is Takaro refusing this server.
+        if (!identified_ && o_.onIdentifyRejected) o_.onIdentifyRejected(summary, status);
     }
 }
 
@@ -298,10 +435,10 @@ void Bridge::HandleRequest(uint64_t epoch, const JsonValue& msg) {
     const JsonValue* a = payload.get("action");
     std::string action = a && a->type == JsonValue::String ? a->str : "";
     lastRequestAction_ = action.substr(0, 64);
-    auto fail = [&](const std::string& text) {
+    auto fail = [&](const std::string& text, const char* code = "invalid_args") {
         errorResponses_++;
         PluginLog("native: Takaro request %s failed: %s", id.c_str(), text.c_str());
-        SendResponse(epoch, FrameKind::CriticalResponse, CreateErrorResponse(id, text));
+        SendResponse(epoch, FrameKind::CriticalResponse, ErrorFrame(id, code, text));
     };
     if (pendingIds_.count(id) || recentIdSet_.count(id)) {
         duplicates_++;
@@ -326,7 +463,7 @@ void Bridge::HandleRequest(uint64_t epoch, const JsonValue& msg) {
     if (userJobs >= kMaxPendingActions) {
         overloads_++;
         remember();
-        fail("native action queue overloaded");
+        fail("native action queue overloaded", "internal");
         return;
     }
     const JsonValue* rawArgs = payload.get("args");
@@ -366,8 +503,9 @@ void Bridge::HandleRequest(uint64_t epoch, const JsonValue& msg) {
             o_.store->BanIntents().pop_back();
             remember();
             fail("banPlayer refused: the ban-intent journal cannot be written (" +
-                 (o_.store->Errors().count("banIntent") ? o_.store->Errors().at("banIntent") : std::string("unknown")) +
-                 "), so the expiry could be lost");
+                     (o_.store->Errors().count("banIntent") ? o_.store->Errors().at("banIntent") : std::string("unknown")) +
+                     "), so the expiry could be lost",
+                 "game_error");
             return;
         }
     }
@@ -379,6 +517,27 @@ void Bridge::HandleRequest(uint64_t epoch, const JsonValue& msg) {
         jobQueue_.push_back(job);
     }
     jobCv_.notify_one();
+}
+
+std::string Bridge::OkFrame(const std::string& requestId, const std::string& action, JsonValue payload) const {
+    if (protocol_ == 0) return CreateResponse(requestId, payload);
+    if (IsVoidAction(action)) payload = JNull();
+    if (action == "getPlayerLocation" && payload.type == JsonValue::Object) Put(payload, "dimension", JStr(kMapDimensionId));
+    return CreateResponseV1(requestId, payload);
+}
+
+std::string Bridge::ErrorFrame(const std::string& requestId, const std::string& code, const std::string& message) const {
+    return protocol_ == 0 ? CreateErrorResponse(requestId, message) : CreateErrorResponseV1(requestId, code, message);
+}
+
+void Bridge::HandleEventAck(const JsonValue& msg) {
+    const JsonValue& p = AsRecord(msg.get("payload"));
+    auto stream = Str(p.get("streamId"));
+    auto upTo = Num(p.get("upTo"));
+    if (protocol_ == 0 || !stream || !upTo || *upTo < 1 || !o_.store->OutboxUsable()) return;
+    if (*stream != o_.store->Outbox().streamId) return;  // an ack for a stream of an earlier outbox
+    eventAcks_++;
+    if (o_.store->ConfirmThrough((uint64_t)*upTo)) outboxDirty_ = true;
 }
 
 void Bridge::SendResponse(uint64_t epoch, FrameKind kind, const std::string& frame) {
@@ -415,6 +574,7 @@ std::shared_ptr<const ActionView> Bridge::View() {
         }
         v->timedBans = o_.store->TimedBans();
         v->banStoreError = o_.store->BanStoreError();
+        v->mapDir = o_.config.mapDir;
         view_ = v;
         viewDirty_ = false;
     }
@@ -511,6 +671,10 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
             }
         }
     }
+    if (!ok && protocol_ >= 1 && job->action == "getPlayerLocation" && out.errorCode == "not_found") {
+        payload = JNull();  // protocol 1: an unknown or offline player has no position
+        ok = true;
+    }
     if (!ok) {
         errorResponses_++;
         PluginLog("native: Takaro request %s failed: %s", job->requestId.c_str(), error.c_str());
@@ -518,7 +682,7 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
     if (ok && job->action == "shutdown") FlushState(now, true);  // the game quits about 500 ms from now
     maxRequestLatencyMs_ = std::max<int64_t>(maxRequestLatencyMs_, now - job->enqueuedMs);
     SendResponse(job->epoch, FrameKind::Response,
-                 ok ? CreateResponse(job->requestId, payload) : CreateErrorResponse(job->requestId, error));
+                 ok ? OkFrame(job->requestId, job->action, payload) : ErrorFrame(job->requestId, out.errorCode, error));
 }
 
 void Bridge::CheckDeadlines(int64_t now) {
@@ -540,7 +704,7 @@ void Bridge::CheckDeadlines(int64_t now) {
         errorResponses_ += !fallback;
         PluginLog("native: Takaro request %s: %s", job->requestId.c_str(), error.c_str());
         SendResponse(job->epoch, FrameKind::CriticalResponse,
-                     fallback ? CreateResponse(job->requestId, fb) : CreateErrorResponse(job->requestId, error));
+                     fallback ? OkFrame(job->requestId, job->action, fb) : ErrorFrame(job->requestId, "game_error", error));
         job->responded = true;
         pendingIds_.erase(job->requestId);
         if (neverStarted) {
@@ -720,12 +884,20 @@ void Bridge::DeliverEvents(int64_t now) {
     auto it = std::upper_bound(pending.begin(), pending.end(), lastQueuedId_,
                                [](uint64_t id, const PendingEvent& e) { return id < e.id; });
     size_t queued = 0;
+    const std::string& stream = o_.store->Outbox().streamId;
     for (; it != pending.end() && queued < kNoticeBatch; ++it) {
-        QueueStatus st = o_.transport->Queue({FrameKind::Event, Text(it->frame), epoch_, it->id});
+        // protocol 1: the same event with (streamId, seq = outbox id), so a resend after a reconnect dedups
+        std::string frame = protocol_ >= 1 ? GameEventFrameV1(it->frame, stream, it->id) : it->frame;
+        if (frame.empty()) {
+            PluginLog("native: dropping an unreadable outbox event (id %llu)", (unsigned long long)it->id);
+            lastQueuedId_ = it->id;
+            continue;
+        }
+        QueueStatus st = o_.transport->Queue({FrameKind::Event, Text(frame), epoch_, it->id});
         if (st != QueueStatus::Accepted) {
             if (st == QueueStatus::TooLarge) {
                 // cannot ever be sent: count it as lost rather than blocking the outbox forever
-                PluginLog("native: dropping an event frame too large to send (%zu bytes)", it->frame.size());
+                PluginLog("native: dropping an event frame too large to send (%zu bytes)", frame.size());
                 lastQueuedId_ = it->id;
                 continue;
             }
@@ -733,7 +905,7 @@ void Bridge::DeliverEvents(int64_t now) {
         }
         lastQueuedId_ = it->id;
         queued++;
-        if (o_.config.logFrames) PluginLog("native: frame out %s", it->frame.c_str());
+        if (o_.config.logFrames) PluginLog("native: frame out %s", frame.c_str());
         eventsQueued_++;
         if (IsConnectionType(it->type)) {
             JsonValue frame;
@@ -911,7 +1083,9 @@ void Bridge::FlushState(int64_t now, bool force) {
 }
 
 std::string Bridge::Redact(std::string text) const {
-    for (const std::string* secret : {&o_.config.identityToken, &o_.config.registrationToken}) {
+    std::vector<const std::string*> secrets = {&o_.config.identityToken, &o_.config.registrationToken};
+    for (auto& s : oldSecrets_) secrets.push_back(&s);
+    for (const std::string* secret : secrets) {
         if (secret->size() < 4) continue;
         for (size_t at = 0; (at = text.find(*secret, at)) != std::string::npos;) {
             text.replace(at, secret->size(), "[redacted]");
@@ -946,6 +1120,7 @@ void Bridge::Publish() {
                         .S("state", state)
                         .Raw("epoch", std::to_string(epoch_))
                         .B("identified", identified_)
+                        .N("protocol", protocol_)
                         .S("gameServerId", gameServerId_)
                         .S("lastError", lastError_)
                         .S("lastIdentifyError", lastIdentifyError_)
@@ -982,6 +1157,10 @@ void Bridge::Publish() {
                                            .N("queued", (double)eventsQueued_)
                                            .N("malformedDropped", (double)eventsMalformed_)
                                            .N("ringGaps", (double)ringGaps_)
+                                           .S("streamId", ob.streamId)
+                                           .N("eventAcks", (double)eventAcks_)
+                                           .N("eventErrors", (double)eventErrors_)
+                                           .S("lastEventError", lastEventError_)
                                            .Done())
                         .N("onlinePlayers", (double)o_.store->Online().size())
                         .N("knownPlayers", (double)o_.store->Known().size())

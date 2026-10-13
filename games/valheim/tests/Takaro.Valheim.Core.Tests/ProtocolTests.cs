@@ -158,4 +158,22 @@ public sealed class ProtocolTests
         Assert.AreEqual("Valheim Test", payload.GetProperty("name").GetString());
         Assert.IsFalse(payload.TryGetProperty("serverName", out _));
     }
+
+    [TestMethod]
+    public void DescribeErrorKeepsOnlyNameMessageAndStatus()
+    {
+        var error = JsonDocument.Parse("""
+            {"name":"ConflictError","message":"Request failed with status code 409","status":409,
+             "config":{"headers":{"x-takaro-token":"eyJhbGciOi.eyJzdWIiOi.c2lnbmF0dXJl"}},"stack":"at secret"}
+            """).RootElement;
+
+        var described = TakaroProtocol.DescribeError(error);
+
+        Assert.AreEqual("ConflictError: Request failed with status code 409: HTTP 409", described);
+        Assert.AreEqual("no reason given", TakaroProtocol.DescribeError(JsonDocument.Parse("{\"config\":{}}").RootElement));
+        Assert.AreEqual("token <redacted-jwt>", TakaroProtocol.DescribeError(JsonDocument.Parse("\"token eyJa.eyJb.sig\"").RootElement));
+        Assert.AreEqual(
+            "bad registrationToken=<redacted>, identityToken: <redacted>",
+            TakaroProtocol.DescribeError(JsonDocument.Parse("{\"message\":\"bad registrationToken=abc123, identityToken: xyz\"}").RootElement));
+    }
 }

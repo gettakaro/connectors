@@ -148,6 +148,32 @@ then re-installs with `npm ci --omit=dev`, because the release archive ships its
 Use `takaro-maint build` (above). `scripts/build-bridge-release.sh <version> <out-dir>` is kept as
 a thin wrapper that builds the whole set.
 
+### Config
+
+One file, `src/configFile.ts`: `BRIDGE_CONFIG`, else `TakaroConfig.txt` beside the bridge folder,
+which an upgrade replaces whole. Nothing ships it.
+
+- **Created when missing at start** (a file that disappears later is waited for), mode 0600, from `configTemplate` (the README shows the same text, a
+  test checks) with an empty `registrationToken`, a UUID `identityToken` and the name
+  `Terraria Server (<first 8 of the identity>)`. An empty `serverName` means that name too.
+- **Identity written back** when the file has none (last line for the key, owner and mode kept,
+  atomic rename; in place on a bind-mounted file). If that write fails the bridge does not
+  connect and shows a banner, rather than register a server that is orphaned on restart. The
+  bridge writes nothing else.
+- **Hot reload.** Polled every 5 s and compared by text; a text that does not read the same twice
+  300 ms apart, or an empty file, keeps the settings in use. A change to `takaroWsUrl`,
+  `registrationToken`, `identityToken` or `serverName` drops the socket and reconnects at once
+  (`TakaroWsClient.reconfigure`; every socket callback ignores a socket that is no longer
+  current). An emptied token disconnects. TShock credentials, allowlists, `enableShutdown` and
+  `serverChatName` apply live; `httpPort`, `pollIntervalMs`, `logFiles`, `logExcludePatterns` log
+  that they need a restart.
+- **Banners** name the file: no token, missing TShock credentials, a rejected identify (409: the
+  name is taken). Only `name: message (http N)` of Takaro's error is logged, which can carry
+  Takaro's own request headers and token.
+- Environment variables override the file per field and are never written
+  (`TAKARO_REGISTRATION_TOKEN`, `TSHOCK_TOKEN`, `TSHOCK_USERNAME`, `TSHOCK_PASSWORD`). The dev rig
+  and `takaro-maint verify` pass `BRIDGE_CONFIG` with an explicit `identityToken`.
+
 ### Local endpoints
 
 ```text

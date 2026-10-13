@@ -204,6 +204,49 @@ mv dev-servers/_data/rust/server/takaro dev-servers/_data/rust/rust_dedicated/se
 Starting a target-driven game whose data directory does not hold that exact target is refused before
 anything boots (`ds_preflight_target`), with the install command to run.
 
+### Config model
+
+The plugin owns `<framework config dir>/TakaroConnector.json` (`Interface.Oxide.ConfigDirectory`:
+`carbon/configs/` on Carbon, `oxide/config/` on Oxide) and does its own reads and writes instead of
+the framework's `Config` object, because it needs the file's text to watch it:
+
+- **First load** (file absent, empty, or a JSON object with none of the four keys, e.g. `{}`; a file
+  that exists but cannot be read is never recreated): the plugin writes it with an empty
+  `RegistrationToken` and a new UUID `IdentityToken`. A file whose `IdentityToken` is empty or
+  absent gets a UUID written into it (other keys untouched); an identity removed while running is
+  put back, not replaced.
+- **Precedence**: a non-empty environment variable wins over the file field, per field, and is never
+  written to the file. An empty one counts as unset.
+- **While running**: a 1 s main-thread tick re-reads the file every 5 s and compares the whole text.
+  A change to the URL, the registration token or the identity drops the socket and connects at once
+  (backoff reset, auth-close `_shouldReconnect = false` cleared). `Debug` applies without a
+  reconnect. A missing, empty or unparseable file keeps the current settings; an absent token key
+  keeps the token in use, an absent `WebSocketUrl` / `Debug` falls back to the default.
+- **Threads**: connections are only started on the main thread. Each connection carries a generation;
+  a stale socket task, auth close or reconnect request (reconnects are queued for the tick, not started
+  from the socket task) changes nothing. Identify and responses go out on the socket the request came
+  in on, and a queued action from a replaced connection is dropped before it runs. `Unload` bumps the generation and destroys the tick.
+- **Banner**: an empty token, an identify rejection and an auth close print a `***` banner with the
+  exact config path (or the environment variable that overrides it) through `PrintWarning`, which is
+  the server console.
+
+The pure part lives between `takaro:config-begin` / `takaro:config-end`; `tests/config/run.sh`
+compiles that region on its own against the pinned `Newtonsoft.Json.dll` and runs the fresh, upgrade,
+env-precedence, half-saved-file and identity cases (CI runs it in the `test` job).
+
+### World map (getMapInfo / getMapTile)
+
+The map is the game's own render (`MapImageRenderer.Render`, the code behind `world.rendermap`),
+drawn once per world on the main thread a moment after `OnServerInitialized` (about 3.6 s for a
+1000 m world) and kept as `carbon/data/TakaroConnector_map_<size>_<seed>_<hash>.png`. The hash covers
+`World.MapFileName` and `World.Checksum`, so a new seed, size, game protocol or custom map gets a new
+render and older renders are deleted; later starts and reloads only decode the PNG. Tiles use the
+7 Days to Die web-map layout the Takaro player map draws: 128 px tiles, signed indices centred on the
+world origin, x east, y north, one metre per pixel at `maxZoom` 4, served out to 512 m of ocean past
+the world edge. Errors start with `invalid_args`, `map_not_ready` or `tile_out_of_range`. The pure
+part lives between `takaro:map-begin` / `takaro:map-end`; `tests/map/run.sh` runs it the same way
+as the config harness.
+
 ### Environment variables
 
 | Variable | Description | Default |

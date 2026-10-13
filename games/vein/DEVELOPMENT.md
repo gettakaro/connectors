@@ -14,6 +14,12 @@ The transport requires verified certificate chain and hostname, SNI, system CAs 
 
 Persistent files are versioned and written with temporary file, fsync and rename on a background worker. Preserve `event-cursor.json`, `online-players.json`, `timed-bans.json` and `known-players.json`; game-enforcement `bans.json` is separate. Explicit file paths take precedence over `TAKARO_STATE_DIR`, which defaults to `connector-state` under `TAKARO_PLUGIN_DATA_DIR`. Corrupt timed-ban input is an error, not an empty list. Persistence failures degrade connector health without stopping VEIN. Default log grammar and named captures use PCRE2; test custom `VEIN_LOG_*_RE` values against legacy fixtures before cutover.
 
+## Configuration
+
+One file: `takaro.cfg` next to `libtakaro-vein.so` (`TAKARO_CONFIG_FILE` overrides the path; `config_file.cpp`). Every setting is a `TAKARO_*`/`VEIN_*` key; a non-empty environment variable wins and is never written to disk. The release does not ship the file: `ConfigFile::Current()`, called from the library constructor, creates it from `Template()` (mode 0600) with an empty registration token, a new UUID identity and the name `My VEIN server (<first 8 identity characters>)`. A file whose `TAKARO_IDENTITY_TOKEN` is empty gets a new UUID written into that line (atomic rename, owner and mode kept); the connector writes nothing else. Most keys are read once at load. The connection settings (`TAKARO_WS_URL`, `TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`, `TAKARO_SERVER_NAME` as sent in identify) are re-read by the bridge thread every 5 s; a changed text is applied when the next read 1 s later returns the same text, and a file with a line without `=` is not applied. A change calls `NativeTransport::Retarget`, which drops the socket on the service thread and redials without backoff once the old socket's own close callback has reset the session. `TAKARO_SERVER_NAME` in chat messages still changes only on restart. There is no runtime on/off key; removing `libsteam.so` (or `LD_PRELOAD`) is the off switch.
+
+Without a registration token or identity the connector does not dial at all (emptying the token while running disconnects) and prints a `*` banner naming the file; a refused identify prints one too (error name, message and HTTP status only), and the reconnect keeps its backoff until the file changes. `/health` shows the sources under `config`. Tests: `TestConfigResolve` (unit) and `config_reload` in `tests/native_bridge_adversarial.py`.
+
 ## Build, test and deploy
 
 ```bash

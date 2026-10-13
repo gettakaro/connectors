@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/gettakaro/connectors/compare/enshrouded-v0.6.1...enshrouded-v0.7.0) (2026-10-11)
+
+
+### Features
+
+* **enshrouded:** ship takaro/plugin.json and apply token changes without a restart ([#440](https://github.com/gettakaro/connectors/issues/440)) ([4a4f628](https://github.com/gettakaro/connectors/commit/4a4f6281b53ae1062df2d92294ed006507d0a4e3))
+
 ## [0.6.1](https://github.com/gettakaro/connectors/compare/enshrouded-v0.6.0...enshrouded-v0.6.1) (2026-10-07)
 
 

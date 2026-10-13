@@ -41,6 +41,10 @@ struct OutboxState {
     SourceCursor scan;       // next ring scan starts after this
     SourceCursor confirmed;  // newest event Takaro confirmed (a later ping's pong)
     uint64_t nextId = 1;
+    // Protocol 1 event stream: events go out as (streamId, seq = outbox id). Kept with the outbox so a
+    // restart resends unacknowledged events under the same stream and Takaro drops the ones it already
+    // handled; a new outbox gets a new stream. Empty until the bridge first assigns one.
+    std::string streamId;
     uint64_t losses = 0;          // events dropped because the outbox was full
     uint64_t confirmedTotal = 0;
     bool legacyImported = false;  // sidecar cursor/online state adopted (or checked) once
@@ -109,6 +113,7 @@ private:
 };
 
 std::string OutboxJson(const OutboxState& o);
+bool ValidStreamId(const std::string& id);  // ^[A-Za-z0-9_-]{1,128}$
 bool ParseOutbox(const std::string& text, OutboxState& o, std::string& err);
 
 }  // namespace native

@@ -21,11 +21,30 @@ bool IsEventType(const std::string& type);
 // The result is always an object (possibly empty).
 JsonValue NormalizeArgs(const JsonValue* value);
 
+// `capabilities` (a JSON array) set: protocol 1 is offered as protocolVersions [0, 1] with that
+// Capability Manifest; empty: the protocol 0 identify, unchanged.
 std::string CreateIdentify(const std::string& identityToken, const std::string& registrationToken,
-                           const std::string& serverName);
+                           const std::string& serverName, const std::string& capabilities = "");
 std::string CreateResponse(const std::string& requestId, const JsonValue& payload);  // Null payload -> {}
 std::string CreateErrorResponse(const std::string& requestId, const std::string& error);
 std::string CreateGameEvent(const std::string& type, const JsonValue& data);
+
+// Protocol 1 (Takaro docs, "Generic Game Protocol v1").
+// The response error codes; anything else is sent as game_error.
+constexpr const char* kUnsupported = "unsupported";
+constexpr const char* kInvalidArgs = "invalid_args";
+constexpr const char* kNotFound = "not_found";
+constexpr const char* kGameError = "game_error";
+constexpr const char* kInternal = "internal";
+bool IsErrorCode(const std::string& code);
+std::string CreateResponseV1(const std::string& requestId, const JsonValue& payload);  // Null payload -> null
+std::string CreateErrorResponseV1(const std::string& requestId, const std::string& code, const std::string& message);
+std::string CreateCapabilities(const std::string& requestId, const std::string& capabilities);
+// A protocol 0 gameEvent frame (CreateGameEvent) with streamId and seq added to its payload; the frame
+// unchanged when it is not one.
+std::string WithStream(const std::string& frame, const std::string& streamId, uint64_t seq);
+// ^[A-Za-z0-9_-]{1,128}$
+bool IsStreamId(const std::string& id);
 
 // The player id of a request: flat { gameId } / { steamId } / { platformId }, or nested under
 // player / playerRef. Modules send explicit JSON null for absent fields. Empty when there is none.

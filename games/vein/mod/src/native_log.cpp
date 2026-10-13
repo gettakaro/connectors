@@ -1,6 +1,7 @@
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h>
 #include "native_log.h"
+#include "config_file.h"
 #include "common.h"
 #include "events_parse.h"
 #include "state.h"
@@ -16,7 +17,7 @@
 namespace NativeLog {
 namespace {
 using Json=nlohmann::json;
-std::string Env(const char* k){const char* v=getenv(k);return v?v:"";}
+std::string Env(const char* k){const char* v=ConfigFile::Get(k);return v?v:"";}
 std::string Trim(const std::string& s){auto b=s.find_first_not_of(" \t\r\n");return b==std::string::npos?"":s.substr(b,s.find_last_not_of(" \t\r\n")-b+1);}
 std::string Lower(std::string s){std::transform(s.begin(),s.end(),s.begin(),[](unsigned char c){return std::tolower(c);});return s;}
 struct Re {

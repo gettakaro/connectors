@@ -24,6 +24,7 @@ struct LwsConfig {
     std::string url;     // wss://host[:port]/path
     std::string caFile;  // PEM bundle; empty = the first system bundle found (see Run())
     unsigned reconnectBaseMs = 2000, reconnectMaxMs = 60000;
+    bool connect = true;  // false: stay idle until Retarget enables it
     Heartbeat::Params heartbeat;
 };
 
@@ -36,6 +37,7 @@ public:
     QueueStatus Queue(OutFrame frame) override;
     void RequestClose(uint64_t epoch, const std::string& reason) override;
     void MarkIdentified(uint64_t epoch) override;
+    void Retarget(const std::string& url, bool connect) override;
     std::string StatsJson() override;
 
     struct Impl;  // public for the C callback

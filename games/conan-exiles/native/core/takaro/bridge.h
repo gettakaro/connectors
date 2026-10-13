@@ -7,9 +7,15 @@
 //  - N action workers run Game::Execute; they may wait on the game thread, never touch the socket;
 //  - the transport's thread only enqueues notices (OnNotice never blocks).
 // A request whose action outlives actionTimeoutMs is answered with an error; its late result is dropped.
+//
+// Protocol: identify offers protocolVersions [0, 1] with the game's Capability Manifest (unless the
+// game declares none or config.protocol is 0) and speaks what identifyResponse picks, per connection.
+// Protocol 1: { code, message } errors, payload null for void answers, events carry streamId/seq and
+// leave the outbox on eventAck (not on pongs), and a changed manifest is sent as `capabilities`.
 #pragma once
 #include "common.h"
 #include "takaro/config.h"
+#include "takaro/config_watch.h"
 #include "takaro/game.h"
 #include "takaro/outbox.h"
 #include "takaro/transport.h"
@@ -36,6 +42,8 @@ struct BridgeOptions {
     std::function<int64_t()> steadyMs;  // monotonic; default steady_clock
     int64_t eventPollMs = 100;
     std::string healthFile;  // when set, the health snapshot is also written here every few seconds
+    // When set, takaro.json is re-read while running (bridge thread) and the console banners shown.
+    ConfigWatcher* watcher = nullptr;
 };
 
 class Bridge {
@@ -59,6 +67,7 @@ private:
         std::string requestId, action;
         JsonValue args;
         uint64_t epoch = 0;
+        int protocol = 0;
         int64_t deadlineMs = 0, enqueuedMs = 0;
         std::atomic<int> state{0};  // 0 queued, 1 running, 2 done, 3 cancelled
         bool responded = false;     // bridge thread only
@@ -79,6 +88,12 @@ private:
     void FlushState(int64_t now, bool force);
     void Publish(int64_t now);
     void RememberId(const std::string& id);
+    void ApplyConfig(Config next, int64_t now);
+    void OnRefused(const std::string& why, bool nameTaken);
+    // A failed response in the shape of the current connection's protocol.
+    std::string ErrorFrame(const std::string& requestId, const std::string& code, const std::string& message) const;
+    void CheckManifest(int64_t now);
+    void HandleEventAck(const JsonValue& msg);
 
     BridgeOptions o_;
     std::thread thread_;
@@ -96,6 +111,10 @@ private:
     // bridge-thread state
     uint64_t epoch_ = 0;
     bool open_ = false, identified_ = false;
+    int protocol_ = 0;           // negotiated on this connection (0 until identified)
+    std::string offeredManifest_;  // the manifest of this connection's identify ("" = protocol 0 identify)
+    std::string sentManifest_;     // the manifest Takaro last received on this connection
+    int64_t nextManifestCheck_ = 0;
     std::string gameServerId_;
     uint64_t lastQueuedId_ = 0;
     std::map<uint64_t, std::shared_ptr<Job>> inflight_;
@@ -110,9 +129,10 @@ private:
     uint64_t requests_ = 0, responses_ = 0, errorResponses_ = 0, duplicates_ = 0, malformed_ = 0, overloads_ = 0,
              timeouts_ = 0, lateResults_ = 0, droppedResponses_ = 0, identifyErrors_ = 0, identifies_ = 0,
              opens_ = 0, closes_ = 0, eventsAdmitted_ = 0, eventsQueued_ = 0, eventsRejected_ = 0,
-             noticeOverflows_ = 0;
+             noticeOverflows_ = 0, acks_ = 0, ackedEvents_ = 0, eventErrors_ = 0, manifestsSent_ = 0,
+             manifestErrors_ = 0;
     int64_t maxRequestLatencyMs_ = 0;
-    std::string lastError_, lastIdentifyError_, lastAction_;
+    std::string lastError_, lastIdentifyError_, lastAction_, lastEventError_, lastManifestError_;
 
     mutable std::mutex healthMu_;
     std::string health_ = "{}";

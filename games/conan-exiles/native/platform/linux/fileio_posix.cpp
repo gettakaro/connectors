@@ -68,6 +68,62 @@ bool AtomicWriteFile(const std::string& path, const std::string& text, std::stri
     return true;
 }
 
+bool ReplaceUserFile(const std::string& path, const std::string& text, unsigned newMode, std::string& err) {
+    struct stat old {};
+    const bool existed = stat(path.c_str(), &old) == 0;
+    mode_t mode = existed ? (old.st_mode & 07777) : (mode_t)newMode;
+    uid_t uid = (uid_t)-1;
+    gid_t gid = (gid_t)-1;
+    if (existed) {
+        uid = old.st_uid;
+        gid = old.st_gid;
+    } else if (geteuid() == 0) {
+        struct stat dir {};
+        std::string parent = DirName(path);
+        if (stat(parent.empty() ? "." : parent.c_str(), &dir) == 0) {
+            uid = dir.st_uid;
+            gid = dir.st_gid;
+        }
+    }
+    std::string tmp = path + ".tmp";
+    int fd = open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    if (fd < 0) {
+        err = "create '" + tmp + "' failed: " + strerror(errno);
+        return false;
+    }
+    bool ok = fchmod(fd, mode) == 0;  // open() applied the umask
+    if (ok && (uid != (uid_t)-1) && (uid != geteuid() || gid != getegid()) && fchown(fd, uid, gid) != 0 &&
+        errno != EPERM)
+        ok = false;  // not root: the file stays ours, which is what it was
+    size_t off = 0;
+    while (ok && off < text.size()) {
+        ssize_t n = write(fd, text.data() + off, text.size() - off);
+        if (n <= 0) ok = false;
+        else off += (size_t)n;
+    }
+    ok = ok && fsync(fd) == 0;
+    ok = close(fd) == 0 && ok;
+    if (!ok || rename(tmp.c_str(), path.c_str()) != 0) {
+        err = "replace '" + path + "' failed: " + strerror(errno);
+        unlink(tmp.c_str());
+        return false;
+    }
+    return true;
+}
+
+bool RandomBytes(unsigned char* out, size_t n) {
+    FILE* f = fopen("/dev/urandom", "rb");
+    if (!f) return false;
+    bool ok = fread(out, 1, n, f) == n;
+    fclose(f);
+    return ok;
+}
+
+void ConsoleWrite(const std::string& text) {
+    ssize_t ignored = write(STDOUT_FILENO, text.data(), text.size());  // one write: never split by engine output
+    (void)ignored;
+}
+
 bool EnsureDirectory(const std::string& dir, std::string& err) {
     if (dir.empty()) return true;
     for (size_t i = 1; i <= dir.size(); i++) {

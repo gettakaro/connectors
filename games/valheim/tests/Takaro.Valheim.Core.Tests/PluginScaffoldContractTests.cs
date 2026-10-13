@@ -247,8 +247,10 @@ public sealed class PluginScaffoldContractTests
     {
         var entrypoint = ReadPluginSource("ValheimTakaroPlugin.cs");
 
-        StringAssert.Contains(entrypoint, "[\"chatSenderName\"]");
-        StringAssert.Contains(entrypoint, "ConnectorConfig.DefaultChatSenderName");
+        StringAssert.Contains(entrypoint, "new ConnectorConfigStore(");
+        StringAssert.Contains(entrypoint, "runner?.UpdateSettings(change.Config)");
+        StringAssert.Contains(entrypoint, "Monitor.TryEnter(configCheckGate)");
+        Assert.IsFalse(entrypoint.Contains("Config.Bind", StringComparison.Ordinal), "BepInEx must not rewrite the config files.");
         Assert.IsFalse(entrypoint.Contains("companionMode", StringComparison.OrdinalIgnoreCase));
         StringAssert.Contains(entrypoint, "new InventoryCompanionBridge(playerResolver, companionInventory, Logger.LogInfo)");
         StringAssert.Contains(entrypoint, "new ValheimPlayerResolver(Logger, knownPlayerNames)");
@@ -288,11 +290,29 @@ public sealed class PluginScaffoldContractTests
 
         StringAssert.Contains(realAdapter, "private readonly ValheimPlayerResolver playerResolver;");
         StringAssert.Contains(realAdapter, "ValheimPlayerResolver playerResolver,");
-        StringAssert.Contains(realAdapter, "CompanionInventoryCache companionInventory)");
+        StringAssert.Contains(realAdapter, "CompanionInventoryCache companionInventory,");
+        StringAssert.Contains(realAdapter, "WorldMapService worldMap)");
         StringAssert.Contains(realAdapter, "this.playerResolver = playerResolver");
         StringAssert.Contains(realAdapter, "chatSenderName = config.ChatSenderName;");
         Assert.IsFalse(realAdapter.Contains("CompanionServerBridge", StringComparison.Ordinal));
         Assert.IsFalse(realAdapter.Contains("TrySendItemGrant", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void WorldGeneratorIsOnlySampledByTheMainThreadWorldMapBuilder()
+    {
+        // WorldGenerator keeps unsynchronised caches. Map requests run off the main thread,
+        // so the adapter may only read the published raster, never the generator itself.
+        var adapter = ReadPluginSource("ValheimServerAdapter.cs");
+        var worldMap = ReadPluginSource("ValheimWorldMap.cs");
+        var plugin = ReadPluginSource("ValheimTakaroPlugin.cs");
+        var update = SliceMethod(plugin, "private void Update()", "private void OnDestroy()");
+
+        Assert.IsFalse(adapter.Contains("WorldGenerator", StringComparison.Ordinal));
+        StringAssert.Contains(adapter, "worldMap.GetMapTile(x, y, z)");
+        StringAssert.Contains(worldMap, "WorldGenerator.instance");
+        StringAssert.Contains(worldMap, "builder.Step(() => frame.Elapsed.TotalMilliseconds < FrameBudgetMilliseconds)");
+        StringAssert.Contains(update, "worldMap?.Update();");
     }
 
     [TestMethod]
@@ -511,7 +531,7 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(source, "pendingEvents.ConfirmOldestCheckpoint();");
         StringAssert.Contains(source, "pendingEvents.ResetForNewConnection();");
         StringAssert.Contains(source, "activeSocket.Abort();");
-        var identifiedAt = source.IndexOf("if (LogIdentifyResponse(message))", StringComparison.Ordinal);
+        var identifiedAt = source.IndexOf("if (LogIdentifyResponse(message, out var rejection))", StringComparison.Ordinal);
         Assert.IsTrue(identifiedAt >= 0);
         Assert.IsTrue(source.IndexOf("identified = true;", identifiedAt, StringComparison.Ordinal) > identifiedAt);
         StringAssert.Contains(source, "TakaroProtocol.TryCreateActionResponse");
@@ -552,13 +572,22 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
-    public void SourceAndPackagedInstallFlowsRequireRestartAfterConfiguration()
+    public void SourceAndPackagedInstallFlowsNeedNoRestartForTheToken()
     {
         var readme = ReadValheimFile("README.md");
         var release = ReadValheimFile("scripts/build-release.sh");
 
-        StringAssert.Contains(readme, "Restart the dedicated server");
-        StringAssert.Contains(release, "Restart the dedicated server");
+        foreach (var text in new[] { readme, release })
+        {
+            StringAssert.Contains(text, "BepInEx/config/com.takaro.valheim.cfg");
+            Assert.IsFalse(text.Contains("takaro.cfg ", StringComparison.Ordinal) || text.Contains("/takaro.cfg", StringComparison.Ordinal));
+            StringAssert.Contains(text, "no restart needed");
+            Assert.IsFalse(text.Contains("saved copy", StringComparison.OrdinalIgnoreCase));
+            Assert.IsFalse(text.Contains("Start once", StringComparison.OrdinalIgnoreCase));
+            Assert.IsFalse(text.Contains("Start the server once so the plugin creates", StringComparison.Ordinal));
+        }
+
+        Assert.IsFalse(readme.Contains("Filled in by the plugin after the first registration", StringComparison.Ordinal));
     }
 
     [TestMethod]

@@ -43,6 +43,24 @@ public interface GameAdapter {
     List<BanEntry> listBans();
     void shutdownServer();
 
+    // Map (protocol v1 only)
+
+    /**
+     * The map Dimensions to declare in the {@code map} capability. Empty (the default) declares
+     * no map. May change at runtime; the adapter then calls
+     * {@link EventEmitter#capabilitiesChanged()} so the manifest is sent again.
+     */
+    default List<MapDimension> getMapDimensions() { return List.of(); }
+
+    /**
+     * Bytes {@code offset..offset+length-1} (or up to the end) of a Dimension's map image. Throws
+     * {@link ProtocolException} with {@code not_found} for an unknown Dimension and
+     * {@code invalid_args} for an offset past the end. Called off the game thread.
+     */
+    default MapImageChunk readMapImage(String dimension, long offset, int length) {
+        throw new ProtocolException(ProtocolException.NOT_FOUND, "No map image for dimension " + dimension);
+    }
+
     // Event wiring
     void setEventEmitter(EventEmitter emitter);
 }

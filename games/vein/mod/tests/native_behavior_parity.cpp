@@ -1,9 +1,11 @@
 #include "native_behavior.h"
 #include "native_log.h"
+#include "native_map.h"
 #include "actions.h"
 #include "state.h"
 #include "gamethread.h"
 #include "reflect.h"
+#include "config_file.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cassert>
@@ -11,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <set>
 
 using Json=nlohmann::json;
 namespace fs=std::filesystem;
@@ -33,7 +36,7 @@ bool HasString(const Json& body,const char* key){return body.contains(key)&&body
 Actions::Result BadBody(const char* field){return {400,Json{{"error",std::string("missing ")+field}}.dump()};}
 }
 
-std::string ConfigValue(const char* env,const char*,const std::string& def){const char* v=getenv(env);return v?v:def;}
+std::string ConfigValue(const char* env,const std::string& def){const char* v=ConfigFile::Get(env);return v&&*v?v:def;}
 std::string Redact(const std::string& s){return s;} // URL fields are masked by real EventsParse::RedactLogLine.
 std::string JsonEscape(const std::string& s){auto quoted=Json(s).dump();return quoted.substr(1,quoted.size()-2);}
 const std::string& PluginDataDir(){static std::string d="/tmp/vein-native-test";return d;}
@@ -79,6 +82,7 @@ size_t PendingBanJobs(){return 0;}
 int main(){
     char tmp[]="/tmp/vein-behavior-XXXXXX";char* path=mkdtemp(tmp);Check(path,"mkdtemp");
     setenv("TAKARO_STATE_DIR",path,1);setenv("TAKARO_SENDER_NAME","Bot",1);
+    setenv("TAKARO_CONFIG_FILE",(fs::path(path)/"takaro.cfg").c_str(),1);
     {std::ofstream initial(fs::path(path)/"known-players.json");initial<<R"([{"gameId":"76561198000000001","name":"A"}])";}
     NativePersistence::Store store;Check(store.Load(),"initial outbox load");
     NativeBehavior::Engine engine(store);Check(engine.Load(),"legacy load");
@@ -92,7 +96,8 @@ int main(){
     setenv("TAKARO_SENDER_NAME","   ",1);setenv("TAKARO_SERVER_CHAT_NAME","Unused Alias",1);
     setenv("TAKARO_SERVER_NAME","Named Server",1);checkConfiguredSender("Named Server");
     unsetenv("TAKARO_SENDER_NAME");setenv("TAKARO_SERVER_CHAT_NAME","  Alias Bot  ",1);checkConfiguredSender("Alias Bot");
-    unsetenv("TAKARO_SERVER_CHAT_NAME");unsetenv("TAKARO_SERVER_NAME");checkConfiguredSender("Takaro Dev Vein");
+    unsetenv("TAKARO_SERVER_CHAT_NAME");unsetenv("TAKARO_SERVER_NAME");
+    checkConfiguredSender(ConfigFile::DefaultServerName(ConfigFile::Get("TAKARO_IDENTITY_TOKEN")));
     setenv("TAKARO_SENDER_NAME","Bot",1);
     Check(Parse(engine.Snapshot()->knownPlayersJson).size()==1&&Parse(engine.Snapshot()->onlinePlayersJson).empty()&&Parse(engine.Snapshot()->timedBansJson).empty(),"missing legacy files do not inherit preceding contents");
     Check(!engine.SuppressRingConnection("player-connected")&&!engine.SuppressRingConnection("chat-message"),"healthy auto mode keeps ring ownership");
@@ -129,7 +134,7 @@ int main(){
     Check(!NativeBehavior::Engine::ExecuteAction(unavailable).errorText.empty(),"failed plugin and game HTTP getter reports error");
     playersDown=false;
     Check(run("getPlayer",Json{{"player",{{"gameId","steam:76561198000000003"}}}})["online"]==false,"unknown offline player gets minimal valid record");
-    Check(run("getPlayerLocation",Json{{"gameId",id}})==Json{{"x",1},{"y",2},{"z",3}},"location xyz DTO");
+    Check(run("getPlayerLocation",Json{{"gameId",id}})==Json{{"x",1},{"y",2},{"z",3},{"dimension",NativeMap::kDimensionId}},"location xyz DTO in the map Dimension");
     noPawn=true;
     auto missingLocation=engine.PrepareAction("missing","getPlayerLocation",Json{{"gameId",id}}.dump(),1);
     Check(!NativeBehavior::Engine::ExecuteAction(missingLocation).errorText.empty(),"outside event window must fail");
@@ -137,7 +142,7 @@ int main(){
     Check(store.AdmitSynthetic(join.frame),"durable join before observe");
     {NativePersistence::Store afterCrash;Check(afterCrash.Load(),"reload before legacy online mirror");NativeBehavior::Engine derived(afterCrash);Check(derived.Load(),"rebuild derived online after crash");Check(Parse(derived.Snapshot()->onlinePlayersJson).size()==1,"admitted join survives crash before mirror");}
     Check(engine.ObserveAdmitted(join),"observe join opens enrichment window");
-    Check(run("getPlayerLocation",Json{{"gameId",id}})==Json{{"x",1},{"y",2},{"z",3}},"cached location during join window");
+    Check(run("getPlayerLocation",Json{{"gameId",id}})==Json{{"x",1},{"y",2},{"z",3},{"dimension",NativeMap::kDimensionId}},"cached location during join window");
     noPawn=false;
     auto inv=run("getPlayerInventory",Json{{"gameId",id}});Check(inv.size()==2&&inv[0]["amount"]==2&&inv[0]["name"]=="Meal","inventory aggregation");
     Check(run("giveItem",Json{{"gameId",id},{"item","MRE"},{"quality",nullptr}}).empty()&&lastGiveCode=="MRE"&&lastGiveAmount==1,
@@ -147,6 +152,33 @@ int main(){
     Check(run("listItems",Json::object())[0]["code"]=="MRE","items");
     Check(run("listEntities",Json::object())[0]["type"]=="hostile","entity mapping");
     Check(run("listLocations",Json::object())[0]["position"]["z"]==3,"locations");
+    {
+        // Protocol version 1 map: one `none` Dimension calibrated from the game's map widget.
+        const Json manifest=Parse(NativeBehavior::CapabilityManifestJson());
+        std::vector<std::string> names;for(const auto& c:manifest)names.push_back(c["name"].get<std::string>());
+        Check(std::set<std::string>(names.begin(),names.end()).size()==names.size(),"manifest has no duplicate names");
+        for(const char* name:{"players.list","players.location","moderation.listBans","server.shutdown","events.chat-message","events.log","map"})
+            Check(std::find(names.begin(),names.end(),name)!=names.end(),std::string("manifest declares ")+name);
+        Check(std::find(names.begin(),names.end(),"testReachability")==names.end(),"testReachability is not a capability");
+        const Json map=manifest.back();
+        Check(map["name"]=="map"&&map["parameters"]["dimensions"].size()==1,"one map Dimension");
+        const Json dim=map["parameters"]["dimensions"][0];
+        Check(dim["id"]==NativeMap::kDimensionId&&dim["source"]==Json{{"type","none"}},"Dimension id and none source");
+        Check(dim["axes"]==Json{{"horizontal",{{"field","y"},{"direction","right"}}},{"vertical",{{"field","x"},{"direction","up"}}}},
+              "east (+y) is right and north (+x) is up");
+        Check(dim["bounds"]==Json{{"horizontal",{{"min",-600000},{"max",600000}}},{"vertical",{{"min",-600000},{"max",600000}}}},
+              "bounds are MapMakerMarker OrthoWidth 1,200,000 cm around the origin");
+        const Json off=run("getMapInfo",Json::object());
+        Check(off==Json{{"enabled",false},{"mapBlockSize",128},{"maxZoom",0},{"mapSizeX",0},{"mapSizeY",0},{"mapSizeZ",0}},
+              "version 0 map info is a full DTO with enabled=false");
+        auto tile=engine.PrepareAction("m","getMapTile",Json{{"dimension",NativeMap::kDimensionId},{"zoom",0},{"x",0},{"y",0}}.dump(),1);
+        const std::string tileError=NativeBehavior::Engine::ExecuteAction(tile).errorText;
+        Check(NativeBehavior::ErrorCode(tileError)=="unsupported","no tiles: getMapTile is unsupported ("+tileError+")");
+        Check(NativeBehavior::ErrorCode("teleportPlayer requires numeric x, y, z")=="invalid_args"&&
+              NativeBehavior::ErrorCode("player not online")=="not_found"&&
+              NativeBehavior::ErrorCode("native action queue overloaded")=="internal"&&
+              NativeBehavior::ErrorCode("give failed: no inventory")=="game_error","version 1 error codes");
+    }
     Check(run("executeConsoleCommand",Json{{"command","bad"}})["success"]==false,"command error DTO");
     Check(run("executeConsoleCommand",Json{{"command","save"}})["rawResult"]=="saved","command output");
     Check(run("sendMessage",Json{{"message","hi"},{"opts",{{"senderNameOverride","Captain"},{"recipient",{{"gameId",id}}}}}}).empty()&&lastSender=="Captain"&&lastRecipient==id,"sender/recipient");

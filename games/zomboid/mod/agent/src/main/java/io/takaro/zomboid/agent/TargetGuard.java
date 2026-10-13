@@ -190,7 +190,7 @@ public final class TargetGuard {
      * {@code java/.:java/projectzomboid.jar}, so the entry is found by name rather than by
      * guessing at the install directory.
      */
-    private static Path findGameJar() {
+    static Path findGameJar() {
         String classPath = System.getProperty("java.class.path", "");
         for (String entry : classPath.split(File.pathSeparator)) {
             if (entry.isEmpty()) {

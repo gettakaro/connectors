@@ -40,11 +40,12 @@ JsonValue NormalizeArgs(const JsonValue* value) {
 }
 
 std::string CreateIdentify(const std::string& identityToken, const std::string& registrationToken,
-                           const std::string& serverName) {
+                           const std::string& serverName, const std::string& capabilities) {
     ObjBuilder p;
     p.S("identityToken", identityToken);
     if (!registrationToken.empty()) p.S("registrationToken", registrationToken);
     if (!serverName.empty()) p.S("name", serverName);
+    if (!capabilities.empty()) p.Raw("protocolVersions", "[0,1]").Raw("capabilities", capabilities);
     return ObjBuilder().S("type", "identify").Raw("payload", p.Done()).Done();
 }
 
@@ -62,6 +63,52 @@ std::string CreateErrorResponse(const std::string& requestId, const std::string&
 
 std::string CreateGameEvent(const std::string& type, const JsonValue& data) {
     return ObjBuilder().S("type", "gameEvent").Raw("payload", ObjBuilder().S("type", type).Raw("data", JsonDump(data)).Done()).Done();
+}
+
+bool IsErrorCode(const std::string& code) {
+    for (auto* c : {kUnsupported, kInvalidArgs, kNotFound, kGameError, kInternal})
+        if (code == c) return true;
+    return false;
+}
+
+std::string CreateResponseV1(const std::string& requestId, const JsonValue& payload) {
+    return ObjBuilder().S("type", "response").S("requestId", requestId).Raw("payload", JsonDump(payload)).Done();
+}
+
+std::string CreateErrorResponseV1(const std::string& requestId, const std::string& code, const std::string& message) {
+    std::string c = IsErrorCode(code) ? code : kGameError;
+    std::string m = message.empty() ? "Conan connector error" : message;
+    return ObjBuilder()
+        .S("type", "response")
+        .S("requestId", requestId)
+        .Raw("error", ObjBuilder().S("code", c).S("message", m).Done())
+        .Done();
+}
+
+std::string CreateCapabilities(const std::string& requestId, const std::string& capabilities) {
+    return ObjBuilder()
+        .S("type", "capabilities")
+        .S("requestId", requestId)
+        .Raw("payload", ObjBuilder().Raw("capabilities", capabilities).Done())
+        .Done();
+}
+
+std::string WithStream(const std::string& frame, const std::string& streamId, uint64_t seq) {
+    // CreateGameEvent ends with the payload object's and the frame's closing braces.
+    static const std::string kHead = "{\"type\":\"gameEvent\",\"payload\":{";
+    if (frame.size() < kHead.size() + 2 || frame.compare(0, kHead.size(), kHead) != 0 ||
+        frame.compare(frame.size() - 2, 2, "}}") != 0)
+        return frame;
+    return frame.substr(0, frame.size() - 2) + ",\"streamId\":" + JsonStr(streamId) + ",\"seq\":" + std::to_string(seq) +
+           "}}";
+}
+
+bool IsStreamId(const std::string& id) {
+    if (id.empty() || id.size() > 128) return false;
+    for (char c : id)
+        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-'))
+            return false;
+    return true;
 }
 
 std::string PlayerId(const JsonValue& args) {

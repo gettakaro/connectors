@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Takaro.Config;
 using Takaro.Services;
 using Takaro.WebSocket;
 
@@ -66,6 +67,7 @@ public static class ContractHarness
             AssertRawRequestsAreNotLogged();
             AssertMapCatalog();
             AssertMapRouting();
+            AssertConfigFiles();
             Console.WriteLine("Contract harness passed: " + _assertions + " assertions");
             return 0;
         }
@@ -2690,6 +2692,145 @@ public static class ContractHarness
             ["payload"] = payload,
         };
         RequestRouter.Route(request.ToString(Formatting.None));
+    }
+
+    private static void AssertConfigFiles()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "takaro-config-" + Guid.NewGuid());
+        string path = Path.Combine(dir, "Takaro", "Config.xml");
+        int generated = 0;
+        Func<string> newIdentity = () => "generated-" + ++generated;
+        try
+        {
+            ConfigValues fresh = ConfigFiles.Load(
+                path,
+                newIdentity,
+                out bool wrote,
+                out Exception error
+            );
+            True(wrote && error == null && File.Exists(path), "a missing config is created");
+            Equal(ConfigFiles.Render(fresh), File.ReadAllText(path), "the new file is rendered");
+            Equal("generated-1", fresh.IdentityToken, "a new config gets a new identity");
+            Equal("", fresh.RegistrationToken, "a new config waits for a registration token");
+            Equal(ConfigFiles.DefaultUrl, fresh.Url, "a new config uses the production endpoint");
+            True(
+                fresh.Enabled
+                    && fresh.ReconnectIntervalSeconds
+                        == ConfigFiles.DefaultReconnectIntervalSeconds,
+                "a new config spells out the defaults"
+            );
+            Equal("generated-1", ConfigFiles.Read(path).IdentityToken, "the identity is saved");
+            Equal(
+                "600",
+                Shell("stat", "-c %a " + path),
+                "a new config is readable by its owner only"
+            );
+
+            ConfigValues reread = ConfigFiles.Load(path, newIdentity, out wrote, out error);
+            True(
+                !wrote && reread.SameConnection(fresh),
+                "re-reading an unchanged file writes nothing and is not a connection change"
+            );
+
+            File.WriteAllText(
+                path,
+                File.ReadAllText(path)
+                    .Replace(
+                        "<RegistrationToken></RegistrationToken>",
+                        "<RegistrationToken>\n   pasted-token  \n</RegistrationToken>"
+                    )
+            );
+            ConfigValues pasted = ConfigFiles.Load(path, newIdentity, out wrote, out error);
+            Equal("pasted-token", pasted.RegistrationToken, "a pasted token is trimmed");
+            True(!wrote, "pasting a token does not make the mod write the file");
+            True(!pasted.SameConnection(fresh), "a pasted token is a connection change");
+            Equal("generated-1", pasted.IdentityToken, "a pasted token keeps the identity");
+
+            File.WriteAllText(path, File.ReadAllText(path).Replace("pasted-token", ""));
+            ConfigValues emptied = ConfigFiles.Load(path, newIdentity, out _, out _);
+            True(
+                emptied.RegistrationToken == "" && !emptied.SameConnection(pasted),
+                "emptying the token is a connection change (the mod disconnects)"
+            );
+
+            File.WriteAllText(path, File.ReadAllText(path).Replace("generated-1", ""));
+            Shell("chmod", "640 " + path);
+            ConfigValues reidentified = ConfigFiles.Load(path, newIdentity, out wrote, out _);
+            True(
+                wrote && reidentified.IdentityToken == "generated-2",
+                "an empty identity gets a new one"
+            );
+            string text = File.ReadAllText(path);
+            True(
+                text.Contains("Paste the registration token"),
+                "writing the identity keeps the comments"
+            );
+            Equal(
+                "generated-2",
+                ConfigFiles.Read(path).IdentityToken,
+                "the new identity is written back"
+            );
+            True(!File.Exists(path + ".tmp"), "no temporary file is left behind");
+            Equal("640", Shell("stat", "-c %a " + path), "writing the identity keeps the mode");
+
+            File.WriteAllText(
+                path,
+                "<Takaro><WebSocket><RegistrationToken>reg</RegistrationToken>"
+                    + "<Url>wss://takaro.example.org/</Url><Enabled>false</Enabled>"
+                    + "<ReconnectIntervalSeconds>60</ReconnectIntervalSeconds>"
+                    + "</WebSocket></Takaro>"
+            );
+            ConfigValues custom = ConfigFiles.Load(path, newIdentity, out wrote, out _);
+            True(
+                custom.Url == "wss://takaro.example.org/"
+                    && !custom.Enabled
+                    && custom.ReconnectIntervalSeconds == 60
+                    && custom.RegistrationToken == "reg"
+                    && custom.IdentityToken == "generated-3",
+                "the file's settings are used as written"
+            );
+            True(
+                File.ReadAllText(path).Contains("<IdentityToken>generated-3</IdentityToken>"),
+                "a missing IdentityToken element is added"
+            );
+
+            File.WriteAllText(path, "<Takaro><WebSocket><RegistrationToken>half");
+            bool threw = false;
+            try
+            {
+                ConfigFiles.Load(path, newIdentity, out _, out _);
+            }
+            catch (System.Xml.XmlException)
+            {
+                threw = true;
+            }
+            True(threw, "a half-saved file is reported, not read as empty");
+            Equal(
+                "<Takaro><WebSocket><RegistrationToken>half",
+                File.ReadAllText(path),
+                "a half-saved file is left alone"
+            );
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, true);
+        }
+    }
+
+    private static string Shell(string command, string arguments)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo(command, arguments)
+        {
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+        };
+        using (var process = System.Diagnostics.Process.Start(start))
+        {
+            string output = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit();
+            return output;
+        }
     }
 
     private static void True(bool condition, string description)

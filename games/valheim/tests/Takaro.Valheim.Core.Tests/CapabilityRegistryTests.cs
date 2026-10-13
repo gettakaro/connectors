@@ -105,8 +105,8 @@ public sealed class CapabilityRegistryTests
 
         Assert.AreEqual("dedicated-server-plugin-with-optional-inventory-companion", root.GetProperty("architecture").GetString());
         Assert.AreEqual("live-supported", root.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
-        Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getMapInfo").GetString());
-        Assert.AreEqual("unsupported", root.GetProperty("actions").GetProperty("getMapTile").GetString());
+        Assert.AreEqual("live-supported", root.GetProperty("actions").GetProperty("getMapInfo").GetString());
+        Assert.AreEqual("live-supported", root.GetProperty("actions").GetProperty("getMapTile").GetString());
         Assert.AreEqual("schema-fallback", root.GetProperty("actions").GetProperty("listLocations").GetString());
         foreach (var eventName in RequiredEvents)
         {
@@ -122,7 +122,7 @@ public sealed class CapabilityRegistryTests
             "upstream-blocked",
             ownership.GetProperty("actions").GetProperty("listLocations").GetString());
         Assert.AreEqual(
-            "unsupported",
+            "server-owned",
             ownership.GetProperty("actions").GetProperty("getMapInfo").GetString());
         foreach (var action in new[] { "giveItem", "sendMessage" })
         {

@@ -51,6 +51,8 @@ export interface DunePlayerRow {
   transferCount?: number | null;
   /** `world_partition.label` or `actors.map` — which map process the player is on. */
   map?: string | null;
+  /** `world_partition.map` of the pawn's partition (`Survival_1`, `DeepDesert_1`, …): the map Dimension. */
+  worldMap?: string | null;
   lastSeen?: string | null;
   level?: number | null;
 }

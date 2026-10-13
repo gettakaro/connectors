@@ -40,10 +40,19 @@ struct BridgeOptions {
     Store* store = nullptr;
     std::function<int64_t()> steadyMs;  // monotonic
     std::function<int64_t()> wallMs;    // Unix epoch
+    std::function<std::string()> newStreamId;  // protocol 1 event stream id for a new outbox (random UUID)
     int64_t reconcileIntervalMs = 30000;
     int64_t healthIntervalMs = 15000;
     int64_t banCheckIntervalMs = 5000;
+    // Called on the bridge thread; they must not block.
+    std::function<void(const LiveSettings& accepted)> onIdentified;
+    // summary: "<name>: <message> (HTTP <status>)" built from the error's name, message and status only
+    // (Takaro's error can carry its internal request, tokens included). httpStatus 0 when unknown.
+    std::function<void(const std::string& summary, int httpStatus)> onIdentifyRejected;
 };
+
+// The safe summary of a Takaro identify error, and its HTTP status (0 when it names none).
+std::string IdentifyErrorSummary(const JsonValue* error, int& httpStatus);
 
 class Bridge {
 public:
@@ -60,6 +69,9 @@ public:
     bool Start();
     void Stop();
     bool OnNotice(Notice&& n);
+    // New connection settings from any thread: the bridge thread applies them, then drops the connection
+    // and reconnects at once (or stays idle when !connect).
+    void Reconfigure(const LiveSettings& s, bool connect);
     std::string HealthJson() const;  // cached snapshot; safe from any thread, never waits on bridge work
 
     // test helpers (bridge-thread state; call only while the bridge is stopped or from its callbacks)
@@ -92,6 +104,10 @@ private:
     void Complete(const std::shared_ptr<Job>& job);
     void CheckDeadlines(int64_t now);
     void SendResponse(uint64_t epoch, FrameKind kind, const std::string& frame);
+    // Response frames in the shape of the current connection's protocol version.
+    std::string OkFrame(const std::string& requestId, const std::string& action, JsonValue payload) const;
+    std::string ErrorFrame(const std::string& requestId, const std::string& code, const std::string& message) const;
+    void HandleEventAck(const JsonValue& msg);
     void PollEvents(int64_t now);
     void DeliverEvents(int64_t now);
     void AdmitEvent(const std::string& type, const JsonValue& data, const SourceCursor& source, int64_t now);
@@ -106,6 +122,7 @@ private:
     std::shared_ptr<const ActionView> View();
     void RememberPosition(const JsonValue& args, const JsonValue& payload);
     std::string Redact(std::string text) const;
+    void ApplyPendingSettings();
 
     BridgeOptions o_;
     std::thread thread_;
@@ -120,10 +137,13 @@ private:
     size_t noticeBytes_ = 0;
     std::deque<std::shared_ptr<Job>> jobQueue_;
     std::deque<std::shared_ptr<Job>> completions_;
+    bool settingsPending_ = false, pendingConnect_ = false;
+    LiveSettings pendingSettings_;
 
     // bridge-thread state
     uint64_t epoch_ = 0;
     bool open_ = false, identified_ = false;
+    int protocol_ = 0;  // negotiated protocol version of the current connection (0 until identified)
     std::string gameServerId_, clientId_;
     uint64_t lastQueuedId_ = 0;
     std::map<uint64_t, std::shared_ptr<Job>> inflight_;
@@ -151,9 +171,10 @@ private:
     uint64_t requests_ = 0, responses_ = 0, errorResponses_ = 0, duplicates_ = 0, malformed_ = 0, overloads_ = 0,
              timeouts_ = 0, lateResults_ = 0, droppedResponses_ = 0, oversizeIds_ = 0, identifyErrors_ = 0,
              eventsAdmitted_ = 0, eventsQueued_ = 0, eventsMalformed_ = 0, ringGaps_ = 0, reconciled_ = 0,
-             tailEvents_ = 0, expiredBans_ = 0, noticeOverflows_ = 0;
+             tailEvents_ = 0, expiredBans_ = 0, noticeOverflows_ = 0, eventAcks_ = 0, eventErrors_ = 0;
     int64_t maxRequestLatencyMs_ = 0;
-    std::string lastError_, lastIdentifyError_, lastRequestAction_;
+    std::string lastError_, lastIdentifyError_, lastRequestAction_, lastEventError_;
+    std::vector<std::string> oldSecrets_;  // tokens used before a Reconfigure, still redacted
 
     mutable std::mutex healthMu_;
     std::string health_ = "{}";

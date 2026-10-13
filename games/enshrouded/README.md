@@ -25,7 +25,7 @@ client and Takaro. ✅ = works, ⚠️ = works with a caveat or not re-verified,
 | Give an item | ✅ | The item arrives in the backpack. The game ignores the count, so the connector splits it into stacks of at most 64. |
 | Item catalogue | ✅ | 3,317 items sync with their in-game English names, e.g. "Spectral Ward". Items the game never names and abilities are left out; giving an item by its code works for every item. |
 | Entity catalogue | ⚠️ | 397 creature and NPC templates sync. Bosses, NPCs and fish have their in-game names (e.g. "Fell Thunderbrute", "Oswald Anders"). The game shows no name for other creatures, so they get a readable name built from the internal code, e.g. "Rat". |
-| Locations / points of interest | ⚠️ | The connector serves 1,031 locations, but Takaro never asks for them. |
+| Locations / points of interest | ⚠️ | The connector serves 1,031 locations. Takaro may show them as markers on the map; this was not checked. |
 | Run a console command | ✅ | Enshrouded has no console; the connector provides its own set: `help`, `players`, `say`, `whisper`, `location`, `teleport`/`tp`, `inventory`, `give`, `item`, `kick`, `save-and-shutdown`. Unknown commands are refused with a hint. |
 | Broadcast a message | ✅ | Everyone sees it in chat, under the character name of an online player: Enshrouded has no "server" sender. |
 | Whisper a player | ⚠️ | Reaches the player; that nobody else sees it was not checked (one test account). |
@@ -40,8 +40,8 @@ client and Takaro. ✅ = works, ⚠️ = works with a caveat or not re-verified,
 | Player death event | ✅ | Falls and creature kills, with the position; the creature that killed the player is named in the message the same way as in the entity catalogue, e.g. "Limon was killed by Rat". |
 | Entity kill event | ⚠️ | Real kills reach Takaro, once each, with the weapon's in-game name (melee and bow tested). The creature is named the same way as in the entity catalogue, e.g. "Rat". Kills with magic are not tested yet. Destroyed props are not reported. |
 | Log events | ⚠️ | Sent, but Takaro does not store server log lines as events. |
-| Map info | ⚠️ | Not verified in a live test. |
-| Map tiles | ❌ | Takaro does not support map tiles for Generic game servers. |
+| Map | ✅ | The connector tells Takaro the size and orientation of the world ("Embervale", 10,240 m square, north up). The server has no map picture of its own, so you upload one image once on the game server's map page in Takaro (see INSTALL.md, "Map"); player dots then sit at the right spot on it. Without an upload Takaro shows a grid with the player dots. |
+| Map on an older Takaro | ⚠️ | A Takaro without protocol 1 shows a map only from a tile pack in `takaro/map/` that you render yourself (see INSTALL.md). |
 | Modules: chat commands | ✅ | In-game `@` commands reach the module and answer in chat. |
 | Modules: hooks | ✅ | Chat and join hooks fire and run their code. |
 | Modules: cronjobs | ✅ | Scheduled and triggered runs message the server. |
@@ -92,29 +92,46 @@ build.
 ### 3. Copy it into place
 
 Stop the game server first: a running server holds `dbghelp.dll` open. The zip holds one folder,
-`TakaroEnshrouded/`, whose contents go **next to `enshrouded_server.exe`**:
+`TakaroEnshrouded/`; copy its **`dbghelp.dll` next to `enshrouded_server.exe`** and start the server.
+
+The connector keeps its whole configuration in one file, **`takaro/plugin.json` next to
+`enshrouded_server.exe`**. It creates the file at the first start, with a unique `identityToken`, and
+the console says so. Open it, paste the registration token of your Takaro Generic game server into
+`registrationToken` and save: the connector connects within a few seconds, no restart needed. To have
+it connect at the first start instead, create the file yourself before starting:
+
+```json
+{
+  "registrationToken": "<your registration token>",
+  "identityToken": "",
+  "name": "",
+  "url": "wss://connect.takaro.io/",
+  "token": ""
+}
+```
 
 ```
 <server folder>/
     enshrouded_server.exe
     dbghelp.dll                  <- from the zip
     takaro/
-        plugin.json              <- takaro/plugin.json.example from the zip, renamed
+        plugin.json              <- created by the connector; your settings
 ```
-
-Rename `takaro/plugin.json.example` to `takaro/plugin.json` and fill in:
 
 | Key | What to put there |
 |---|---|
 | `registrationToken` | The registration token of your Takaro Generic game server. Required. |
-| `identityToken` | Any stable name for this server, e.g. `my-enshrouded-server`. Required; keep it the same across upgrades. |
-| `name` | The server name shown in Takaro. |
+| `identityToken` | Leave it empty: the connector writes a unique identity there. Keep it once set; it is what Takaro knows this server by. |
+| `name` | The server name shown in Takaro. Left empty, it is your server's name plus the start of the identity, because Takaro needs a different name for every game server. |
 | `url` | Leave `wss://connect.takaro.io/`. |
 | `token` | Optional: a long random secret (e.g. `openssl rand -hex 32`) to read the plugin's diagnostics at `http://127.0.0.1:18890/health`. |
 
+Every change you save applies within a few seconds: a corrected token or name reconnects, an emptied
+token disconnects.
+
 Instead of the file you can set the environment variables `TAKARO_REGISTRATION_TOKEN`,
 `TAKARO_IDENTITY_TOKEN`, `TAKARO_SERVER_NAME`, `TAKARO_WS_URL` and `TAKARO_PLUGIN_TOKEN` on the game
-server; a variable that is set wins over the file.
+server; a variable that is set wins over the file (a changed variable needs a restart).
 
 Under **Wine/Proton** the server must prefer this DLL over its own: set
 `WINEDLLOVERRIDES=dbghelp=n,b` on the game server. A Windows server loads the local file already.
@@ -128,7 +145,7 @@ the DLL read-only from `data/enshrouded/server/takaro/plugin/dbghelp.dll`:
 ```bash
 mkdir -p data/enshrouded/server/takaro/plugin
 cp TakaroEnshrouded/dbghelp.dll data/enshrouded/server/takaro/plugin/
-cp .env.example .env    # fill in TAKARO_REGISTRATION_TOKEN, TAKARO_IDENTITY_ENSHROUDED and the role passwords
+cp .env.example .env    # fill in TAKARO_REGISTRATION_TOKEN and the role passwords
 docker compose -f docker-compose.example.yml --env-file .env up -d
 ```
 
@@ -138,21 +155,22 @@ server some other way, turn automatic game updates off there too.
 
 ### 4. Check that it worked
 
-`<server folder>/takaro/plugin.log` shows, within about 20 seconds of the start:
+The server console (and `<server folder>/takaro/plugin.log`) shows, within about 20 seconds of the start:
 
 ```
-takaro enshrouded plugin <version> starting (pid ...)
-native: starting direct Takaro connection to wss://connect.takaro.io/ as '<name>' ...
-native: identified with Takaro gameServerId=...
+[Takaro] connecting to wss://connect.takaro.io/ as "<name>"
+[Takaro] connected to Takaro as "<name>"; the server shows as reachable in the Takaro dashboard
 ```
 
-and the game server turns **online** in Takaro. `native: direct Takaro connection OFF: ...` names what
-is missing (usually a token). `<version>` is the release you installed.
+and the game server turns **online** in Takaro. A block of `*` lines says what to fix and which file to
+edit: `registrationToken not set` means the token is missing, `Takaro refused this server` means it is
+wrong, `Takaro refused the server name` means another game server in your Takaro domain already has
+that name.
 
 ### 5. Upgrading
 
-Stop the server, replace `dbghelp.dll`, start it again; `takaro/plugin.json` and the connector's state
-in `takaro/connector-state/` stay as they are.
+Stop the server, replace only `dbghelp.dll` with the new one, start it again. Your config in
+`takaro/plugin.json` and the connector's state in `takaro/connector-state/` are never touched.
 
 **From 0.5.0 (plugin + sidecar):** 0.6.0 replaces the sidecar. Stop and remove the sidecar before the
 new DLL starts, because both must never connect with the same identity at once; move the tokens from

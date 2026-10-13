@@ -43,8 +43,9 @@ Add the commands below to
 
 ### Install the sidecar
 
-Unpack the sidecar archive and rename its folder to `sidecar`. Copy
-`docker-compose.example.yml` and `.env.example` beside it, then rename `.env.example` to `.env`:
+Unpack the sidecar archive and rename its folder to `sidecar`. Move `docker-compose.example.yml`
+and `.env.example` out of it to beside it, and rename `.env.example` to `.env`. Keep `.env`
+outside `sidecar/`: an upgrade replaces that folder.
 
 ```text
 dune-connector/
@@ -57,8 +58,9 @@ Set these values in `.env`:
 
 | Setting | Value |
 |---|---|
-| `TAKARO_REGISTRATION_TOKEN` | Registration token from the Takaro game server. |
-| `TAKARO_IDENTITY_TOKEN` | A unique name such as `my-dune-server`. |
+| `TAKARO_REGISTRATION_TOKEN` | Registration token from the Takaro game server. Can be pasted later, see below. |
+| `TAKARO_IDENTITY_TOKEN` | Leave empty. The sidecar generates one and keeps it in `/data`. |
+| `TAKARO_SERVER_NAME` | Optional. Takaro server names must be unique; empty uses `Dune (<identity>)`. |
 | `TAKARO_SENDER_NAME` | The same value as Takaro's `serverChatName`. |
 | `DUNE_PG_URL` | Read-only Postgres URL, including the build-specific database name. |
 | `DUNE_RMQ_URL` | AMQPS URL for the game RabbitMQ, not the admin RabbitMQ. |
@@ -78,6 +80,11 @@ Start the sidecar:
 docker compose -f docker-compose.example.yml --env-file .env up -d --build
 ```
 
+Without a registration token the log shows a `TAKARO_REGISTRATION_TOKEN not set` banner and the
+sidecar stays offline. Paste the token into `.env` and save it: the sidecar connects within a
+few seconds, no restart needed. The same applies to `TAKARO_IDENTITY_TOKEN`, `TAKARO_WS_URL` and
+`TAKARO_SERVER_NAME`; other `.env` changes need `docker compose ... up -d` again.
+
 For a plain Node.js installation, run this inside the unpacked sidecar instead:
 
 ```bash
@@ -85,6 +92,9 @@ npm ci --omit=dev
 npm run catalogue
 node dist/index.js
 ```
+
+Set the `DUNE_*` values in the environment. The Takaro values are also read from `../.env`
+(beside `sidecar/`), and saving that file applies them without a restart.
 
 The installation is ready when the log contains `Identified with Takaro`, the game server is
 online in Takaro, and `http://127.0.0.1:18891/health` reports `ok`.
@@ -111,11 +121,34 @@ Dune's shutdown command displays a countdown but does not stop the map process. 
 `DUNE_SHUTDOWN_CMD` to an operator-owned stop script if Takaro should complete shutdowns. Without
 the hook, the connector reports shutdown as unavailable.
 
+### Map in Takaro
+
+The sidecar declares the Hagga Basin map to Takaro: map id `survival_1`, `x` to the right, `y`
+down, and the playable square from -457200 to 355600 on both axes (Unreal centimetres). It reads
+these numbers from the server's own level data. The dedicated server contains no map image, so you
+upload one yourself: open the game server in the Takaro dashboard, go to the map, and upload the
+image for **Hagga Basin**. Takaro uses the calibration from the connector and does not ask for one.
+
+The image must be square and show exactly the playable square:
+
+- the top-left pixel is the north-west corner (`x = -457200`, `y = -457200`);
+- the bottom-right pixel is the south-east corner (`x = 355600`, `y = 355600`).
+
+The game's own minimap texture `T_Survival_WorldMap_MiniMap_D` (4096 x 4096) has exactly this
+frame. Export it as PNG from your own game client install (`DuneSandbox/Content/Paks`, for example
+with FModel) and upload it unchanged. A screenshot of the in-game map works too, if you crop it to
+the same square. Do not share the exported image: it is Funcom's artwork.
+
+Players on other maps (Deep Desert, social hubs) carry their own map id, for example
+`deepdesert_1`, so they never show up on the Hagga Basin image. Those maps are not declared yet.
+The map needs Takaro protocol version 1. Set `TAKARO_PROTOCOL=0` in `.env` to stay on version 0.
+
 ### Upgrade
 
-Replace the unpacked sidecar and restart it. To upgrade the plugin, stop the map server, replace
-the `.so` with one for the same server build, and start it again. Keep the sidecar `/data` volume;
-it contains connector-managed bans.
+Unpack the new sidecar archive somewhere else, replace only the `sidecar` folder with it, then
+run the start command again. Keep `.env` and the sidecar `/data` volume; `/data` holds the
+identity and connector-managed bans, so the server keeps its identity. To upgrade the plugin, stop the map server, replace
+the `.so` with one for the same server build, and start it again.
 
 ## What works, what doesn't
 
@@ -143,8 +176,8 @@ it contains connector-managed bans.
 | Player chat events | ✅ | Connector messages are not echoed back. |
 | Player death events | ✅ | Includes environment, fall, and NPC causes. |
 | Entity kill events | ✅ | Plugin reports entity and weapon display name. |
-| Log events | ⚠️ | Secrets are redacted; Takaro does not retain logs. |
-| Map information and tiles | ❌ | Generic Takaro servers do not support them. |
+| Log events | ⚠️ | Secrets are redacted; at most 50 lines per 30 s are forwarded; Takaro does not retain logs. |
+| Map | ⚠️ | Hagga Basin, calibrated by the connector; you upload the image (see Map in Takaro). |
 | Module chat commands | ✅ | Commands run and answer in game chat. |
 | Module hooks and cronjobs | ✅ | Hooks and scheduled jobs run normally. |
 | Module teleports | ✅ | Teleport commands move the player. |

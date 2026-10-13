@@ -28,6 +28,15 @@ def exact(sock, count):
     return out
 
 
+def eventually(check, timeout=8, detail=lambda: ''):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if check():
+            return
+        time.sleep(0.1)
+    raise AssertionError('condition not reached ' + detail())
+
+
 def send_frame(sock, opcode, data):
     length = len(data)
     header = bytes([0x80 | opcode])
@@ -133,8 +142,11 @@ class Peer:
 
 
 class Run:
-    def __init__(self, cert, key, gate=False, env_overrides=None):
+    def __init__(self, cert, key, gate=False, env_overrides=None, reject_first=None, identify_now=True,
+                 expected_identity='test-identity'):
         self.peer = Peer(cert, key)
+        self.reject_first = reject_first
+        self.expected_identity = expected_identity
         argv = [str(BINARY), f'wss://localhost:{self.peer.port}/', str(cert)]
         if gate:
             argv.append('gate')
@@ -146,9 +158,15 @@ class Run:
                                      text=True, bufsize=1, env=child_env)
         self.lines = queue.Queue()
         threading.Thread(target=self.read_lines, daemon=True).start()
+        self._err = []
+        self._err_thread = threading.Thread(target=lambda: self._err.extend(self.proc.stderr), daemon=True)
+        self._err_thread.start()
         assert self.lines.get(timeout=5) == 'READY'
-        self.index = self.identify()
         self.pending = []
+        self.index = self.identify() if identify_now else None
+
+    def stderr_so_far(self):
+        return ''.join(self._err)
 
     def read_lines(self):
         for line in self.proc.stdout:
@@ -160,8 +178,17 @@ class Run:
             i, opcode, data = self.peer.frames.get(timeout=5)
             if i == index and opcode == 1 and json.loads(data)['type'] == 'identify':
                 self.identify_payload = json.loads(data)['payload']
-                assert self.identify_payload['identityToken'] == 'test-identity'
-                self.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
+                expected = getattr(self, 'expected_identity', 'test-identity')
+                if expected is not None:
+                    assert self.identify_payload['identityToken'] == expected, self.identify_payload
+                if getattr(self, 'reject_first', None):
+                    self.peer.send(index, {'type': 'identifyResponse',
+                                           'payload': {'error': {'message': self.reject_first}}})
+                    self.reject_first = None
+                    index = self.peer.connections.get(timeout=10)
+                    continue
+                self.peer.send(index, {'type': 'identifyResponse',
+                                       'payload': getattr(self, 'identify_reply', {})})
                 return index
 
     def request(self, ident, action, args=None, index=None):
@@ -213,7 +240,12 @@ class Run:
             except (BrokenPipeError, subprocess.TimeoutExpired, AssertionError):
                 self.proc.kill()
                 self.proc.wait(timeout=3)
-        stderr = self.proc.stderr.read()
+        if hasattr(self, '_err_thread'):
+            self._err_thread.join(timeout=5)
+            stderr = ''.join(self._err)
+        else:
+            stderr = self.proc.stderr.read()
+        self.stderr = stderr
         self.peer.close()
         assert self.proc.returncode == 0, stderr
         assert not self.peer.errors, self.peer.errors
@@ -286,17 +318,172 @@ def config_semantics(cert, key):
         url = f'  http://127.0.0.1:{http.server_port}/api///  '
         run = Run(cert, key, env_overrides={'TAKARO_SERVER_NAME': '', 'VEIN_HTTP_API': url})
         try:
-            assert run.identify_payload['name'] == 'Takaro Dev Vein', run.identify_payload
+            assert run.identify_payload['name'].startswith('My VEIN server ('), run.identify_payload
             run.request('game-http-config', 'fetchGamePlayers', {})
             assert run.response('game-http-config')['payload'] == {'source': 'real-game-http-fallback'}
             assert paths.get(timeout=2) == '/api/players'
-            print('bridge legacy empty server name and trimmed game HTTP URL: pass', flush=True)
+            print('bridge default server name and trimmed game HTTP URL: pass', flush=True)
         finally:
             run.close()
     finally:
         http.shutdown()
         http.server_close()
         server.join(timeout=2)
+
+
+def console_status(cert, key):
+    # The panel console (stdout in the game, stderr here) names a refused token and the recovery,
+    # once per state change, and never prints the token.
+    secret = 'sekret-registration-value'
+    run = Run(cert, key, env_overrides={'TAKARO_REGISTRATION_TOKEN': secret},
+              reject_first=f'Invalid registration token {secret}')
+    run.close()
+    lines = [l for l in run.stderr.splitlines() if l.startswith('[Takaro] ')]
+    assert secret not in run.stderr, run.stderr
+    assert any(l.startswith('[Takaro] connecting to wss://localhost:') for l in lines), lines
+    refused = [i for i, l in enumerate(lines) if 'Takaro refused this server' in l]
+    assert len(refused) == 1, lines
+    assert 'TAKARO_REGISTRATION_TOKEN environment variable' in lines[refused[0] + 1], lines
+    assert lines[refused[0] - 1].startswith('[Takaro] ****'), lines
+    assert sum('connected to Takaro as' in l for l in lines) == 1, lines
+    assert not any('not set' in l for l in lines), lines
+    # No token: a banner, and no connection attempt at all.
+    run = Run(cert, key, env_overrides={'TAKARO_REGISTRATION_TOKEN': ''}, identify_now=False)
+    time.sleep(1.5)
+    assert run.peer.connections.empty(), 'connected without a registration token'
+    run.close()
+    assert '[Takaro]   TAKARO_REGISTRATION_TOKEN not set, the server is not connected to Takaro.' in run.stderr, run.stderr
+    assert 'no restart needed' in run.stderr, run.stderr
+    assert 'connecting to wss://' not in run.stderr, run.stderr
+    print('bridge console status lines: pass', flush=True)
+
+
+def write_cfg(path, text):
+    # The way an editor or panel saves: a new file renamed over the old one.
+    tmp = path.with_suffix('.editing')
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
+def set_line(text, key, value):
+    out = [f'{key}={value}' if line.split('=', 1)[0].strip() == key else line for line in text.splitlines()]
+    return '\n'.join(out) + '\n'
+
+
+def next_identify(run, timeout=10):
+    index = run.peer.connections.get(timeout=timeout)
+    while True:
+        i, opcode, data = run.peer.frames.get(timeout=timeout)
+        if i == index and opcode == 1 and json.loads(data)['type'] == 'identify':
+            return index, json.loads(data)['payload']
+
+
+def config_reload(cert, key):
+    # Fresh install: the connector creates takaro.cfg with a UUID identity, shows a banner and
+    # does not dial; a token saved while running connects without a restart; a rejected token is
+    # reported and a corrected one reconnects; a half-saved file is ignored; an emptied token
+    # disconnects; a restart (upgrade) keeps the identity; the environment still wins.
+    with tempfile.TemporaryDirectory(prefix='vein-cfg-') as tmp:
+        root = Path(tmp)
+        cfg, data = root / 'takaro.cfg', root / 'data'
+        env = {'TAKARO_CONFIG_FILE': str(cfg), 'TAKARO_PLUGIN_DATA_DIR': str(data),
+               'TAKARO_TEST_CONFIG_POLL_MS': '400', 'TAKARO_SERVER_NAME': '', 'TAKARO_IDENTITY_TOKEN': '',
+               'TAKARO_REGISTRATION_TOKEN': ''}
+        run = Run(cert, key, env_overrides=env, identify_now=False, expected_identity=None)
+        try:
+            time.sleep(2)
+            assert run.peer.connections.empty(), 'fresh install connected without a token'
+            assert cfg.stat().st_mode & 0o777 == 0o600, oct(cfg.stat().st_mode)
+            ident = [l for l in cfg.read_text().splitlines() if l.startswith('TAKARO_IDENTITY_TOKEN=')]
+            assert len(ident) == 1, cfg.read_text()
+            identity = ident[0].split('=', 1)[1]
+            assert len(identity) == 36 and identity.count('-') == 4, identity
+            name = f'My VEIN server ({identity[:8]})'
+            assert f'TAKARO_SERVER_NAME={name}\n' in cfg.read_text(), cfg.read_text()
+            assert run.health()['config']['identitySource'] == 'takaro.cfg'
+            assert sorted(p.name for p in root.iterdir()) == ['data', 'takaro.cfg'], list(root.iterdir())
+
+            write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-first'))
+            index, payload = next_identify(run)
+            assert payload == {'identityToken': identity, 'registrationToken': 'tok-first', 'name': name}, payload
+            run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
+            eventually(lambda: run.health()['connection']['identified'])
+
+            write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-wrong'))
+            index, payload = next_identify(run)
+            assert payload['registrationToken'] == 'tok-wrong', payload
+            run.peer.send(index, {'type': 'identifyResponse', 'payload': {'error': {
+                'name': 'BadRequestError', 'message': 'Invalid registrationToken provided', 'status': 400,
+                'details': 'echo tok-wrong'}}})
+            eventually(lambda: 'Takaro refused this server' in run.stderr_so_far())
+            write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-second'))
+            # The rejected connection is retried with backoff; the corrected token reconnects at once.
+            while True:
+                index, payload = next_identify(run)
+                if payload['registrationToken'] == 'tok-second':
+                    break
+                run.peer.send(index, {'type': 'identifyResponse',
+                                      'payload': {'error': {'message': 'Invalid registrationToken provided'}}})
+            run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
+            eventually(lambda: run.health()['connection']['identified'])
+
+            # Half-saved: a line without '=' keeps the running settings.
+            write_cfg(cfg, cfg.read_text().replace('TAKARO_REGISTRATION_TOKEN=tok-second', 'TAKARO_REGISTRATION_TOK'))
+            time.sleep(2)
+            assert run.peer.connections.empty(), 'a half-saved file reconnected'
+            assert run.health()['connection']['identified']
+            # Saving the same identity and token again changes nothing.
+            write_cfg(cfg, cfg.read_text().replace('TAKARO_REGISTRATION_TOK\n', 'TAKARO_REGISTRATION_TOKEN=tok-second\n'))
+            time.sleep(2)
+            assert run.peer.connections.empty(), 'an unchanged connection setting reconnected'
+            assert run.health()['connection']['identified']
+
+            # Emptying the token disconnects and shows the banner again, without redialing.
+            banners = run.stderr_so_far().count('TAKARO_REGISTRATION_TOKEN not set')
+            write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', ''))
+            eventually(lambda: run.health()['connection']['state'] == 'disconnected')
+            eventually(lambda: run.stderr_so_far().count('TAKARO_REGISTRATION_TOKEN not set') == banners + 1,
+                       detail=run.stderr_so_far)
+            time.sleep(1.5)
+            assert run.peer.connections.empty(), 'redialed without a registration token'
+
+        finally:
+            run.close()
+        out = run.stderr
+        assert 'TAKARO_REGISTRATION_TOKEN not set' in out and str(cfg) in out, out
+        assert 'no restart needed' in out and 'restart the server' not in out, out
+        refused = [l for l in out.splitlines() if 'Takaro refused this server' in l]
+        assert len(refused) == 1, out
+        assert 'Invalid registrationToken provided (HTTP 400)' in refused[0], refused
+        assert any('line' in l and 'keeping the current settings' in l for l in out.splitlines()), out
+        for secret in ('tok-first', 'tok-wrong', 'tok-second', identity, 'details'):
+            assert secret not in out, (secret, out)
+
+        # Upgrade (only the .so files replaced; takaro.cfg untouched): same identity, same file.
+        write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-second'))
+        before = cfg.read_text()
+        run = Run(cert, key, env_overrides=env, expected_identity=identity)
+        try:
+            assert run.identify_payload['registrationToken'] == 'tok-second', run.identify_payload
+        finally:
+            run.close()
+        assert cfg.read_text() == before
+
+        # The environment wins over the file, and a file change it overrides does not reconnect.
+        env_run = dict(env, TAKARO_REGISTRATION_TOKEN='tok-env', TAKARO_IDENTITY_TOKEN='id-env')
+        write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-file'))
+        run = Run(cert, key, env_overrides=env_run, expected_identity='id-env')
+        try:
+            assert run.identify_payload['registrationToken'] == 'tok-env', run.identify_payload
+            write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-file-2'))
+            time.sleep(2)
+            assert run.peer.connections.empty(), 'a file change reconnected although the environment wins'
+        finally:
+            run.close()
+        assert f'TAKARO_IDENTITY_TOKEN={identity}' in cfg.read_text()
+        assert 'tok-env' not in cfg.read_text() and 'id-env' not in cfg.read_text()
+
+    print('bridge takaro.cfg creation, reload, banners and identity: pass', flush=True)
 
 
 def overload(cert, key, bytes_mode):
@@ -418,6 +605,8 @@ def main():
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         basic(cert, key)
         config_semantics(cert, key)
+        console_status(cert, key)
+        config_reload(cert, key)
         overload(cert, key, False)
         overload(cert, key, True)
         completion_limit(cert, key)

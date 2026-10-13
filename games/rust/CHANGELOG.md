@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.0](https://github.com/gettakaro/connectors/compare/rust-v0.1.4...rust-v0.2.0) (2026-10-11)
+
+
+### Features
+
+* **rust:** read TakaroConnector.json and apply token changes without a restart ([#435](https://github.com/gettakaro/connectors/issues/435)) ([4da788b](https://github.com/gettakaro/connectors/commit/4da788bc064268703b43468287e93e35062134f9))
+
+## [0.1.4](https://github.com/gettakaro/connectors/compare/rust-v0.1.3...rust-v0.1.4) (2026-10-10)
+
+
+### Bug Fixes
+
+* **rust:** target the 2026-10-09 Rust update build 25823813 ([#423](https://github.com/gettakaro/connectors/issues/423)) ([ee43910](https://github.com/gettakaro/connectors/commit/ee43910227ce120ed93aba91764ba329d25479af))
+
 ## [0.1.3](https://github.com/gettakaro/connectors/compare/rust-v0.1.2...rust-v0.1.3) (2026-10-07)
 
 

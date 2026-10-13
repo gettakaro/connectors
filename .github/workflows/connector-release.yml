@@ -45,13 +45,37 @@ jobs:
       contents: read
     outputs:
       targets: ${{ steps.targets.outputs.targets }}
+      build: ${{ steps.scope.outputs.build }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           # Stable releases build the tag; everything else builds the exact commit that started the run,
           # never a branch tip that may have moved while earlier jobs ran.
           ref: ${{ inputs.publish == 'stable' && inputs.tag || github.sha }}
+          # A pull request's github.sha is its merge commit; its first parent is the base.
+          fetch-depth: 2
           fetch-tags: true
+
+      # A pull request builds this connector only when it changes something the build reads.
+      # Otherwise the build would repeat main's and could only fail for an unrelated reason,
+      # such as Steam no longer serving a pinned depot manifest after the game updated. Every
+      # other trigger always builds, so main still catches that stale pin.
+      - name: Does this pull request change this connector's build inputs
+        id: scope
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_CONNECTOR: ${{ inputs.connector }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          decision="$(git diff --name-only HEAD^1 HEAD | scripts/pr-build-scope.sh "$IN_CONNECTOR")"
+          echo "$decision" >> "$GITHUB_OUTPUT"
+          if [ "$decision" = "build=false" ]; then
+            echo "::notice::$IN_CONNECTOR release build skipped: this pull request changes none of its build inputs (see scripts/pr-build-scope.sh)"
+          fi
 
       # Before anything is built: the tag, the version, the manifest and the checked-out
       # commit all have to agree, or this run would attach one version's artifacts to another
@@ -82,6 +106,7 @@ jobs:
 
   build:
     needs: plan
+    if: needs.plan.outputs.build == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -22,6 +22,51 @@ public static class TakaroProtocol
         }, JsonOptions);
     }
 
+    /// <summary>
+    /// Only the name, message and HTTP status of a Takaro error: identify errors can carry
+    /// Takaro's internal request, including a JWT, and none of that may reach the log.
+    /// </summary>
+    public static string DescribeError(JsonElement error)
+    {
+        if (error.ValueKind == JsonValueKind.String)
+        {
+            return Clip(error.GetString() ?? "");
+        }
+
+        if (error.ValueKind != JsonValueKind.Object)
+        {
+            return "no reason given";
+        }
+
+        var parts = new[] { "name", "message", "code" }
+            .Select(key => error.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .ToList();
+        foreach (var key in new[] { "status", "statusCode", "httpStatus" })
+        {
+            if (error.TryGetProperty(key, out var status)
+                && status.ValueKind is JsonValueKind.Number or JsonValueKind.String)
+            {
+                parts.Add("HTTP " + (status.ValueKind == JsonValueKind.Number ? status.GetRawText() : status.GetString()));
+                break;
+            }
+        }
+
+        return parts.Count == 0 ? "no reason given" : Clip(string.Join(": ", parts));
+    }
+
+    private static string Clip(string text)
+    {
+        var cleaned = System.Text.RegularExpressions.Regex.Replace(text, @"eyJ[\w-]+\.[\w-]+\.[\w-]+", "<redacted-jwt>");
+        cleaned = System.Text.RegularExpressions.Regex.Replace(
+            cleaned,
+            @"((?:registration|identity)?token|password|secret|authorization)(""?\s*[:=]\s*""?)[^\s"",;&]+",
+            "$1$2<redacted>",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return cleaned.Length > 300 ? cleaned.Substring(0, 300) + "..." : cleaned;
+    }
+
     public static TakaroRequest ParseRequest(string json)
     {
         using var doc = JsonDocument.Parse(json);

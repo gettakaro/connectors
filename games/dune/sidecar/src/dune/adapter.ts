@@ -9,6 +9,7 @@ import { GmClient, GmCommandError, defaultExecRunner, type ExecRunner } from './
 import { gmPlayerId, mapPlayer, num, str, stripPlatform, type PlayerIdKind } from './identity.js';
 import type { KnownPlayerStore } from './knownStore.js';
 import { aggregateInventory, mapInventoryRow } from './mapping.js';
+import { dimensionForMap } from './mapDimensions.js';
 import { DunePg, isOnline } from './pg.js';
 import { DunePluginClient } from './pluginClient.js';
 import type { PluginJoin } from './pluginJoin.js';
@@ -16,6 +17,9 @@ import { DuneRmq } from './rmq.js';
 import type { DunePlayerRow, Position, TakaroBan, TakaroEntity, TakaroItem, TakaroPlayer } from './types.js';
 
 export class ActionError extends Error {}
+
+/** An action this connector does not implement (protocol v1 error code `unsupported`). */
+export class UnsupportedActionError extends ActionError {}
 
 /**
  * Upper bound on how long `shutdown` will sit on the announced countdown before running the stop hook. The action
@@ -159,7 +163,7 @@ export class DuneAdapter {
       case 'shutdown':
         return this.shutdown();
       default:
-        throw new ActionError(`Unknown Takaro action '${action}'`);
+        throw new UnsupportedActionError(`Unknown Takaro action '${action}'`);
     }
   }
 
@@ -212,6 +216,8 @@ export class DuneAdapter {
    */
   async getPlayerLocation(id: string): Promise<Position> {
     const row = await this.findRow(id).catch(() => undefined);
+    // Which map the player is on; protocol v1 draws a position only on the Dimension it names.
+    const dimension = dimensionForMap(row?.worldMap, row?.map);
     const plugin = this.options.plugin;
     if (plugin?.enabled()) {
       // The plugin has never seen an FLS id, so the ref has to be resolved through the Postgres join
@@ -234,7 +240,7 @@ export class DuneAdapter {
             // `source` comes from the plugin and is always present: `pawn` is the live transform this
             // plugin exists for, `playerState` is a weaker fallback.
             this.noteLocationSource(id, `plugin:${live.source ?? 'unknown'}`, live.ageMs);
-            return { x: live.x, y: live.y, z: live.z };
+            return { x: live.x, y: live.y, z: live.z, dimension };
           }
         } catch (err) {
           logger.debug(`Plugin location unavailable for ${id} (ref ${ref}): ${(err as Error).message}`);
@@ -247,14 +253,14 @@ export class DuneAdapter {
       const hint = key ? this.options.rmq?.originHint(key) : null;
       if (hint) {
         this.noteLocationSource(id, 'chat-origin');
-        return hint;
+        return { ...hint, dimension };
       }
     }
     if (row?.position) {
       // Labelled, not laundered: this is the last position the server PERSISTED, which the location
       // audit showed can be a long way from where the player actually is.
       this.noteLocationSource(id, 'postgres-last-saved');
-      return row.position;
+      return { ...row.position, dimension };
     }
     this.noteLocationSource(id, 'none');
     throw new ActionError(

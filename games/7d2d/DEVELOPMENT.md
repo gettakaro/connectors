@@ -107,18 +107,22 @@ numbered and acknowledged. A new action must be added to
 
 ## Configuration
 
-`Config.xml` is created by the mod on first start at `<server>/Takaro/Config.xml`
-(that is `Directory.GetCurrentDirectory() + "/Takaro"`, i.e. the server's working
-directory — *not* inside `Mods/`). It is seeded with the production Takaro
-WebSocket URL:
+One file: `<server cwd>/Takaro/Config.xml` (`API.BasePath`, next to `Mods/`). The release
+zip does not contain it, so replacing `Mods/Takaro/` on an upgrade never touches it. The mod
+creates it in `InitMod` (before the world loads) when it is missing, with every key, an empty
+`RegistrationToken` and a new UUID `IdentityToken` (mode 0600 on Linux); when the file has no
+identity, the mod generates one and writes it back (atomically, keeping the file's comments and permissions).
+Nothing else is ever written. A failed write keeps the generated identity in memory and is
+retried. There are no environment variables. The dev rig (`dev-servers/lib/render.sh`) and
+`takaro-maint verify` render this same file.
 
-```xml
-<Url>wss://connect.takaro.io/</Url>
-```
-
-`RegistrationToken` must be set to the token from the Takaro game server
-connector setup before the server can identify successfully. `IdentityToken` is
-generated automatically the first time the config is created.
+The file is read every 5 s (it is tiny, and comparing the text cannot miss an edit); a change
+counts once the text has been stable for 1 s, and a half-saved file (invalid XML) is ignored
+until it changes again. A change to the URL, a token, the identity or `Enabled` drops the
+socket and reconnects at once, so a pasted or corrected token needs no restart. Without a
+registration token the mod does not connect (emptying it disconnects); it logs a banner naming
+the file instead. `src/Config/ConfigFiles.cs` has no game types and is covered by the
+contract harness.
 
 The mod writes its own log to `<server>/Takaro/logs/<M-D-YYYY>.log`. On the dev
 rig, DEBUG logging is toggled with the `takaro-debug` console command (it resets

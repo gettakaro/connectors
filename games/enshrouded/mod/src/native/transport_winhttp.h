@@ -33,6 +33,7 @@ public:
     QueueStatus Queue(OutFrame frame) override;
     void RequestClose(uint64_t epoch, const std::string& reason) override;
     void MarkIdentified(uint64_t epoch) override;
+    void Retarget(const std::string& url, bool connect) override;
     std::string StatsJson() override;
 
     struct Epoch;  // per-connection context (transport_winhttp.cpp)
@@ -59,6 +60,10 @@ private:
     bool open_ = false;
     uint64_t epoch_ = 0;
     unsigned attempts_ = 0;
+    std::string url_;        // under mu_; o_.url is only the initial value
+    bool connect_ = true;    // under mu_
+    uint64_t generation_ = 0;  // under mu_: bumped by Retarget, so an epoch opened with old settings is dropped
+    bool retargeted_ = false;  // under mu_: the next connect skips the backoff
     FrameQueues queues_;
     Heartbeat hb_;
 

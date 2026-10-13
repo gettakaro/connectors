@@ -291,21 +291,41 @@ through a bounded `Update()`-drained action scheduler (`QueuedMainThreadActionSc
 
 ## Configuration
 
-The plugin reads these BepInEx settings from the `[Takaro]` section of
-`BepInEx/config/com.takaro.valheim.cfg`:
+One file, `BepInEx/config/com.takaro.valheim.cfg`, a BepInEx-style INI with a `[Takaro]` section,
+outside the plugin folder an upgrade replaces. Nothing ships in the zip. `ConnectorConfigStore`
+reads it; the plugin does not bind settings through `Config.Bind`, so BepInEx never rewrites it.
 
-- `registrationToken`
-- `serverName` (default `Valheim Server`)
-- `identityToken` (written by the plugin after registration)
-- `takaroWsUrl` (default `wss://connect.takaro.io/`)
-- `logLevel` (default `Information`)
-- `enableLogEvents` (default `true`)
-- `commandAllowlistExact` (default `help`, semicolon-separated)
-- `commandAllowlistPrefixes` (default empty, semicolon-separated)
-- `chatSenderName` (default `Takaro`, at most 128 characters) — the name shown in game chat
-  for Takaro messages unless Takaro sends its own sender name
+- Missing at load (plugin `Awake`, before the world loads): the connector creates it
+  (`ConnectorConfigFiles.NewFile`) with every key, short comments, an empty token, a new UUID
+  `identityToken` and `serverName = <-name launch argument, else Valheim Server> (<first 8
+  identity characters>)`.
+- Present with an empty `identityToken`: a new UUID is written into that one line (other lines,
+  comments and unknown keys stay). Nothing else is ever written. Writes go through a temp file
+  that starts as a copy of the file, so the mode is kept.
+- An empty `serverName` is announced as the unique name above (not written): Takaro answers 409
+  to a second game server with a name the domain already has. A 409 rejection gets its own banner.
+- A file that cannot be written: the identity stays in memory for this run and the write is
+  retried on the next check.
 
-The `companionMode` key from 3.x is ignored.
+Keys and defaults: `registrationToken`, `serverName` (see above), `identityToken`,
+`takaroWsUrl` (`wss://connect.takaro.io/`), `logLevel` (`Information`), `enableLogEvents`
+(`true`), `commandAllowlistExact` (`help`), `commandAllowlistPrefixes` (empty), `chatSenderName`
+(`Takaro`, at most 128 characters). Lists split on `;` or `,`. Unknown keys are ignored. There are
+no environment variables.
+
+Runtime: a 5 s timer compares the whole text of the file (not mtime); a changed text is applied
+only when a re-read 1 s later is identical, so an in-place save caught half-way is not taken. A
+change to `takaroWsUrl`, `registrationToken`, `identityToken` or `serverName` calls
+`TakaroWebSocketRunner.UpdateSettings`, which cancels the current attempt (connect, receive or
+backoff wait), aborts the socket and connects at once with a fresh backoff; an emptied token
+disconnects and shows the banner. Other keys log that a restart applies them. A file without a
+`[Takaro]` section (empty, half-saved), a deleted one or one that cannot be read keeps the current
+settings and is retried on the next tick; it is never overwritten. With no token the runner does
+not connect and logs a banner naming the file; a rejected identify logs a banner (name, message
+and HTTP status only) and retries with backoff (2 s doubling to 60 s) until the settings change.
+
+BepInEx 5 has no config file watcher of its own (`ConfigFile.ConfigReloaded` only fires after an
+explicit `Reload()`), hence the polling.
 
 Never commit registration or identity tokens.
 
@@ -335,8 +355,8 @@ Ownership values are `server-owned`, `upstream-blocked` or `unsupported`.
 | `listItems` | `live-supported` | Lists item prefabs visible to the server, with English display names. |
 | `listEntities` | `live-supported` | Lists non-player character prefabs visible to the server, with English display names. |
 | `listLocations` | `schema-fallback` | The official raw Generic Connector action/schema live-returned 11,293 nested `ILocationDTO` objects, but the standard Takaro route at `0c63cf1c` throws `NotImplementedError` before requesting them. |
-| `getMapInfo` | `unsupported` | Returns an immediate schema-valid payload error; the dedicated server does not expose client map metadata. |
-| `getMapTile` | `unsupported` | Returns an immediate payload error; the dedicated server does not expose rendered client map tiles, and Takaro's API does not support map tiles for Generic-connector servers. |
+| `getMapInfo` | `live-supported` | `enabled:true` once the world-map raster is ready, with `maxZoom` 4, `mapBlockSize` 128 (metres per tile at `maxZoom`) and a 21,000 m extent on every `mapSize*` axis. Answered off the Unity main thread. |
+| `getMapTile` | `live-supported` | Base64 128 px PNG for `{x, y, z}` (`zoom` accepted), rendered off the main thread from the raster that `ValheimWorldMap` samples from `WorldGenerator` on the main thread (4 ms per frame, cached in `BepInEx/cache` per seed). Tiles outside the world answer `tile_out_of_range`; before the raster is ready, `map_not_ready`. |
 | `teleportPlayer` | `live-supported` | Routes Valheim's built-in `RPC_TeleportTo` to the server-known character ZDO, and returns `character_unavailable` when that identity is missing. |
 | `kickPlayer` | `live-supported` | Sends Valheim's built-in `Kicked` RPC and logs the supplied reason. It never calls `ZNet.Disconnect(peer)` directly, which is what previously crashed the headless server. |
 | `banPlayer` | `live-supported` | Writes the player identifier into Valheim's official ban list and disconnects them with the built-in `Kicked` RPC. **The ban reason is discarded**: Valheim's ban list stores only one identifier per line, so a reason supplied by Takaro is read back as `""`. |

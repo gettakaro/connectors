@@ -5,6 +5,7 @@
 #include "native/mapping.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 
 namespace native {
@@ -52,6 +53,13 @@ std::string PlayersJson(const std::vector<JsonValue>& players) {
 
 }  // namespace
 
+bool ValidStreamId(const std::string& id) {
+    if (id.empty() || id.size() > 128) return false;
+    for (char c : id)
+        if (!isalnum((unsigned char)c) && c != '_' && c != '-') return false;
+    return true;
+}
+
 std::string OutboxJson(const OutboxState& o) {
     std::string pending = "[";
     bool first = true;
@@ -71,6 +79,7 @@ std::string OutboxJson(const OutboxState& o) {
         .Raw("scan", CursorJson(o.scan))
         .Raw("confirmed", CursorJson(o.confirmed))
         .Raw("nextId", std::to_string(o.nextId))
+        .S("streamId", o.streamId)
         .Raw("losses", std::to_string(o.losses))
         .Raw("confirmedTotal", std::to_string(o.confirmedTotal))
         .B("legacyImported", o.legacyImported)
@@ -89,6 +98,8 @@ bool ParseOutbox(const std::string& text, OutboxState& o, std::string& err) {
     if (!U64(v.get("nextId"), n.nextId) || n.nextId == 0) return err = "missing nextId", false;
     U64(v.get("losses"), n.losses);
     U64(v.get("confirmedTotal"), n.confirmedTotal);
+    const JsonValue* sid = v.get("streamId");
+    if (sid && sid->type == JsonValue::String && ValidStreamId(sid->str)) n.streamId = sid->str;
     const JsonValue* li = v.get("legacyImported");
     n.legacyImported = li && li->type == JsonValue::Bool && li->b;
     const JsonValue* pend = v.get("pending");

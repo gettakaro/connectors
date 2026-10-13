@@ -214,27 +214,64 @@ server JVM. In order of preference:
 
 ## Configuration
 
-Config is read from `<cachedir>/Takaro/TakaroConfig.txt` (`key=value`), each key overridable by a
-`TAKARO_*` environment variable (env wins):
+One file, `TakaroConfig.txt`, in the folder that holds the agent jar (`<Zomboid>/Takaro/`,
+resolved by `TakaroPaths` from the jar's own location, so Linux and Windows alike). The README
+upgrade replaces only the jar, so the file is never overwritten. `-Dtakaro.configFile`,
+`-Dtakaro.logFile` and `-Dtakaro.bansFile` override each file. The release ships no config.
 
-```
-wsUrl=wss://connect.takaro.io/
-identityToken=
-registrationToken=
-debug=false
-logEvents=false
-serverChatName=
-```
+- Every key: `TAKARO_*` env, else the file (`ConfigFiles.resolve`). The env is never written.
+- The connector writes the file in exactly two cases, on the first tick: it is missing (the
+  template in `agent/src/main/resources/io/takaro/zomboid/agent/TakaroConfig.txt` with a new
+  UUID `identityToken`), or its `identityToken` is empty (a new UUID, or the one in use when it
+  was emptied while running). Takaro refuses an empty identity, so a new UUID orphans nothing.
+- Phases, because `premain` runs in all three JVMs of the launch chain: `load()` in premain only
+  reads; `prepareForStart()` on the first tick (real server JVM) does those writes; then a
+  daemon thread polls the file every 5 s (`poll()`), compares the text, and applies a change
+  only when a second read 300 ms later sees the same text. A missing file keeps the current
+  settings; an emptied token disconnects.
+- Rewrites are atomic (tmp + move) and keep the file's owner and mode (a new file takes its
+  folder's owner), so a server running as root does not lock the owner out of the file.
+- `TakaroConnector` serialises connect, `applyConfig` and shutdown on one lock. A changed URL,
+  token or identity retires the current socket (`TakaroWebSocketClient.retire()`: no reconnect,
+  no identify, no events) and connects at once, skipping backoff. No registration token: a `*`
+  banner naming the file, no socket. A rejected identify: a banner (409 has its own), only the
+  error's name, message and HTTP status are logged, the socket is closed and retried with
+  backoff (Takaro keeps an unidentified socket open). Close codes 1008/4001/4003 stop retrying
+  until the file changes.
 
 Env overrides: `TAKARO_WS_URL`, `TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN`,
-`TAKARO_DEBUG`, `TAKARO_LOG_EVENTS`, `TAKARO_SERVER_CHAT_NAME`, `TAKARO_DEBUG_CATALOG`.
-
-The config file path itself can be redirected with the `takaro.configFile` system property, and
-the log file with `takaro.logFile` (defaults: `/home/steam/Zomboid/Takaro/TakaroConfig.txt` and
-`/home/steam/Zomboid/Takaro/takaro-agent.log`).
+`TAKARO_DEBUG`, `TAKARO_LOG_EVENTS`, `TAKARO_SERVER_CHAT_NAME`, `TAKARO_DEBUG_CATALOG`,
+`TAKARO_PROTOCOL` (`0` = file key `protocol=0`: offer protocol 0 only, no map).
 
 `debugCatalog` logs the `listItems`/`listEntities`/`listLocations` sizes once at start — a
 server-side way to prove the catalogue when no Takaro REST driver is available.
+
+## Protocol v1 and the map
+
+`identify` offers `protocolVersions: [0, 1]` with a Capability Manifest (`core/Capabilities`:
+the 16 action capabilities, `server.shutdown`, the six `events.*`, and `map` once ready). The
+version Takaro returns in `identifyResponse` holds for that connection; a missing value is 0.
+
+- **Errors** on protocol 1 are `{error: {code, message}}` (`ProtocolException` codes;
+  `IllegalArgumentException` → `invalid_args`, `UnsupportedOperationException` → `unsupported`,
+  anything else → `game_error`). Void actions and an unknown player's `getPlayer` /
+  `getPlayerLocation` answer `payload: null`. Protocol 0 keeps the old string error and `{}`.
+- **Events** go through `core/EventOutbox` (one `streamId` per process, `seq` from 1, 1000
+  events, drop-oldest). They wait there until an `eventAck` covers them, and every identify
+  resends the rest in order, so events produced during an outage are no longer lost. Nothing
+  is sent before `identifyResponse`; if Takaro picks protocol 0 the buffer is flushed in the
+  old shape.
+- **Map:** `agent/MapService` reads the server's `Map=` option, finds
+  `<install>/media/maps/<map>/pyramid.zip` (the world-map raster the in-game map draws: 256 px
+  PNG tiles per level plus `pyramid.txt` with the world bounds), and on a low-priority thread
+  joins the most detailed level that fits Takaro's 8192 px limit into one JPEG (`PyramidMap`;
+  vanilla: level 2, 4992 x 4032, about 2.4 MB, about 17 s). It is cached as
+  `Takaro/map/<revision>.jpg` (revision = sha256 of the zip). Once it is ready, a `capabilities`
+  replacement declares one `image` Dimension, `knox-county` (x right, y down, bounds = the
+  pyramid bounds, 0..19968 x 0..16128), and Takaro pulls it with `getMapImage` chunks and cuts
+  its own tile pyramid. Positions carry no `dimension`, so they belong to that first Dimension.
+  The floor `z` is not part of the plane. Map mods are only drawn if their folder ships a
+  `pyramid.zip`.
 
 ## Takaro coverage
 

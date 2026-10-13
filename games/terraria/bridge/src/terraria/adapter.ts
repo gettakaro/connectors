@@ -30,8 +30,12 @@ export class TerrariaAdapter {
 
   constructor(
     private readonly tshock: TShockApi,
-    private readonly options: AdapterOptions,
+    private options: AdapterOptions,
   ) {}
+
+  updateOptions(options: AdapterOptions): void {
+    this.options = options;
+  }
 
   async handleAction(action: GameServerAction | undefined, rawArgs: unknown): Promise<unknown> {
     if (!action) return { success: false, error: 'Missing action' };

@@ -13,6 +13,8 @@ export interface LogTailOptions {
   onError?: (err: Error) => void;
   /** Start at the end of an existing file rather than replaying it into Takaro. */
   fromEnd?: boolean;
+  /** Called at the end of every tick, whether or not the file grew. */
+  onTick?: () => void;
 }
 
 export class LogTailer {
@@ -40,6 +42,14 @@ export class LogTailer {
   }
 
   private tick(): void {
+    try {
+      this.readNew();
+    } finally {
+      this.options.onTick?.();
+    }
+  }
+
+  private readNew(): void {
     try {
       const stat = fs.statSync(this.options.file);
       if (!this.started) {
@@ -120,12 +130,55 @@ export function redactLog(msg: string): string {
   return replaced ? out : '[redacted: line mentions a secret]';
 }
 
-export function makeLogForwarder(mode: 'all' | 'filtered' | 'none', emit: (msg: string) => void): (line: string) => void {
-  return (line: string): void => {
+/**
+ * Lines forwarded per window. Takaro keeps about 50 `log` events per 30 s and discards the rest, while a map server
+ * prints thousands of lines in the minute it shuts down; forwarding those only congested the socket that the
+ * player-disconnected of the same shutdown had to use.
+ */
+export const LOG_BUDGET = { lines: 50, windowMs: 30_000 };
+
+export interface LogForwarder {
+  (line: string): void;
+  /** Reports suppressed lines once the budget allows it; the tailer calls this every tick, even with no new lines. */
+  flush(): void;
+}
+
+export function makeLogForwarder(
+  mode: 'all' | 'filtered' | 'none',
+  emit: (msg: string) => void,
+  budget: { lines: number; windowMs: number } = LOG_BUDGET,
+  now: () => number = Date.now,
+): LogForwarder {
+  // Send times of the lines forwarded in the last window: a sliding window, so no burst straddling a fixed window
+  // boundary can get twice the budget through.
+  const sent: number[] = [];
+  let suppressed = 0;
+  const hasRoom = (t: number): boolean => {
+    while (sent.length && t - sent[0] >= budget.windowMs) sent.shift();
+    return sent.length < budget.lines;
+  };
+  const send = (msg: string, t: number): void => {
+    sent.push(t);
+    emit(msg);
+  };
+  const flush = (): void => {
+    const t = now();
+    if (!suppressed || !hasRoom(t)) return;
+    send(`[takaro-dune] ${suppressed} map-server log line(s) suppressed over the ${budget.lines}/${budget.windowMs / 1000}s log budget`, t);
+    suppressed = 0;
+  };
+  const forward = (line: string): void => {
     const clean = redactLog(line);
     if (!shouldForwardLog(mode, clean)) return;
-    emit(clean);
+    flush();
+    const t = now();
+    if (!hasRoom(t)) {
+      suppressed += 1;
+      return;
+    }
+    send(clean, t);
   };
+  return Object.assign(forward, { flush });
 }
 
 export function warnMissingLogFile(file: string): void {

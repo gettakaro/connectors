@@ -11,10 +11,11 @@
 
 namespace native {
 
-const char* const kGameServerActions[17] = {
+const char* const kGameServerActions[19] = {
     "getPlayer",    "getPlayers",   "getPlayerLocation", "getPlayerInventory", "giveItem",   "listItems",
     "listEntities", "listLocations", "executeConsoleCommand", "sendMessage", "teleportPlayer", "testReachability",
-    "kickPlayer",   "banPlayer",    "unbanPlayer",       "listBans",           "shutdown"};
+    "kickPlayer",   "banPlayer",    "unbanPlayer",       "listBans",           "shutdown",
+    "getMapInfo",   "getMapTile"};
 const char* const kGameEventTypes[6] = {"log", "player-connected", "player-disconnected", "chat-message",
                                         "player-death", "entity-killed"};
 
@@ -25,6 +26,24 @@ bool IsGameEventType(const std::string& type) {
 }
 
 void Fail(const std::string& message) { throw NativeError(ErrorKind::Action, message); }
+void FailCode(const char* code, const std::string& message) { throw NativeError(ErrorKind::Action, message, 0, code); }
+
+std::string ProtocolErrorCode(const std::exception& e) {
+    auto* n = dynamic_cast<const NativeError*>(&e);
+    if (!n) return "internal";
+    if (!n->code.empty()) return n->code;
+    switch (n->kind) {
+        case ErrorKind::Action: return "invalid_args";
+        case ErrorKind::PluginUnimplemented: return "unsupported";
+        case ErrorKind::PluginHttp:
+            if (n->status == 404) return "not_found";
+            if (n->status == 400) return "invalid_args";
+            return "game_error";
+        case ErrorKind::PluginUnreachable:
+        case ErrorKind::Plain: return "game_error";
+    }
+    return "internal";
+}
 
 namespace {
 
@@ -226,11 +245,12 @@ JsonValue NormalizeArgs(const JsonValue* value) {
 }
 
 std::string CreateIdentify(const std::string& identityToken, const std::string& registrationToken,
-                           const std::string& serverName) {
+                           const std::string& serverName, const std::string& capabilitiesJson) {
     ObjBuilder p;
     p.S("identityToken", identityToken);
     if (!registrationToken.empty()) p.S("registrationToken", registrationToken);
     if (!serverName.empty()) p.S("name", serverName);
+    if (!capabilitiesJson.empty()) p.Raw("protocolVersions", "[0,1]").Raw("capabilities", capabilitiesJson);
     return ObjBuilder().S("type", "identify").Raw("payload", p.Done()).Done();
 }
 
@@ -244,6 +264,36 @@ std::string CreateResponse(const std::string& requestId, const JsonValue& payloa
 
 std::string CreateErrorResponse(const std::string& requestId, const std::string& error) {
     return ObjBuilder().S("type", "response").S("requestId", requestId).S("error", error).Done();
+}
+
+std::string CreateResponseV1(const std::string& requestId, const JsonValue& payload) {
+    return ObjBuilder().S("type", "response").S("requestId", requestId).Raw("payload", JsonDump(payload)).Done();
+}
+
+std::string CreateErrorResponseV1(const std::string& requestId, const std::string& code, const std::string& message) {
+    return ObjBuilder()
+        .S("type", "response")
+        .S("requestId", requestId)
+        .Raw("error", ObjBuilder().S("code", code).S("message", message.empty() ? "Enshrouded connector error" : message).Done())
+        .Done();
+}
+
+std::string GameEventFrameV1(const std::string& eventFrame, const std::string& streamId, uint64_t seq) {
+    JsonValue frame;
+    if (!ParseJson(eventFrame, frame)) return "";
+    const JsonValue& payload = AsRecord(frame.get("payload"));
+    auto type = Str(payload.get("type"));
+    const JsonValue* data = payload.get("data");
+    if (!type || !data) return "";
+    return ObjBuilder()
+        .S("type", "gameEvent")
+        .Raw("payload", ObjBuilder()
+                            .S("type", *type)
+                            .Raw("data", JsonDump(*data))
+                            .S("streamId", streamId)
+                            .Raw("seq", std::to_string(seq))
+                            .Done())
+        .Done();
 }
 
 std::string CreateGameEvent(const std::string& type, const JsonValue& data) {

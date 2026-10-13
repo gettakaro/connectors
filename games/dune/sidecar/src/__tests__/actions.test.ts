@@ -94,18 +94,18 @@ describe('reads', () => {
   it('getPlayerLocation prefers the live plugin, then the chat origin, then the last SAVED position', async () => {
     // 3. saved position only
     const saved = await harness();
-    expect(await saved.adapter.handleAction('getPlayerLocation', { gameId: FLS })).toEqual({ x: 21723, y: 219189, z: 1200 });
+    expect(await saved.adapter.handleAction('getPlayerLocation', { gameId: FLS })).toEqual({ x: 21723, y: 219189, z: 1200, dimension: 'survival_1' });
 
     // 2. a chat message gives a live origin, which outranks the saved one
     saved.battlegroup.deliverChat(
       MockBattlegroup.chatBody({ m_Id: 'c1', m_Message: { m_UnlocalizedMessage: 'hi' }, m_OriginLocation: { X: 1, Y: 2, Z: 3 } }),
       { userId: FLS },
     );
-    expect(await saved.adapter.handleAction('getPlayerLocation', { gameId: FLS })).toEqual({ x: 1, y: 2, z: 3 });
+    expect(await saved.adapter.handleAction('getPlayerLocation', { gameId: FLS })).toEqual({ x: 1, y: 2, z: 3, dimension: 'survival_1' });
 
     // 1. the plugin wins outright
     const withPlugin = await harness({ plugin: fakePlugin({ [`/players/${PLUGIN_REF}/location`]: { x: 9, y: 9, z: 9, source: 'pawn' } }) });
-    expect(await withPlugin.adapter.handleAction('getPlayerLocation', { gameId: FLS })).toEqual({ x: 9, y: 9, z: 9 });
+    expect(await withPlugin.adapter.handleAction('getPlayerLocation', { gameId: FLS })).toEqual({ x: 9, y: 9, z: 9, dimension: 'survival_1' });
 
     // nothing at all: fail honestly rather than report the map origin
     const nothing = await harness({ players: [mockPlayer({ position: null })] });

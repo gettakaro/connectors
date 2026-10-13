@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.3.0...minecraft-v0.4.0) (2026-10-11)
+
+
+### Features
+
+* **minecraft:** pick up config file changes without a restart and default the Takaro URL ([#439](https://github.com/gettakaro/connectors/issues/439)) ([b9956b5](https://github.com/gettakaro/connectors/commit/b9956b5954deac78049ba150dad81543315e6579))
+
 ## [0.3.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.2.0...minecraft-v0.3.0) (2026-10-07)
 
 

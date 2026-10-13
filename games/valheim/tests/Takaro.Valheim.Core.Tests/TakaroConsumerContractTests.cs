@@ -488,7 +488,7 @@ public sealed class TakaroConsumerContractTests
         public Task<TakaroActionResult> ListEntitiesAsync(CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default) => throw Unexpected();
-        public Task<TakaroActionResult> GetMapTileAsync(CancellationToken cancellationToken = default) => throw Unexpected();
+        public Task<TakaroActionResult> GetMapTileAsync(int x, int y, int z, CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> KickPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) => throw Unexpected();

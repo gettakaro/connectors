@@ -43,12 +43,13 @@ services:
       BACKUP_MAX_COUNT: "24"
       TZ: Europe/Brussels
       WINEDLLOVERRIDES: "dbghelp=n,b"
-      # The Takaro connection lives in dbghelp.dll. These win over takaro/plugin.json; leave
-      # them out and fill in data/enshrouded/server/takaro/plugin.json instead if you prefer.
+      # The Takaro connection lives in dbghelp.dll. A variable that is set wins over
+      # data/enshrouded/server/takaro/plugin.json; an empty one leaves that key to the file,
+      # where the connector writes a unique identity at the first start.
       TAKARO_WS_URL: "${TAKARO_WS_URL:-wss://connect.takaro.io/}"
-      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_ENSHROUDED:-my-enshrouded-server}"
+      TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_ENSHROUDED:-}"
       TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN:?required}"
-      TAKARO_SERVER_NAME: "My Enshrouded Server"
+      TAKARO_SERVER_NAME: "${TAKARO_SERVER_NAME:-}"
       # Optional: a secret for the plugin's diagnostics at 127.0.0.1:18890/health.
       TAKARO_PLUGIN_TOKEN: "${TAKARO_ENSHROUDED_PLUGIN_TOKEN:-}"
     volumes:

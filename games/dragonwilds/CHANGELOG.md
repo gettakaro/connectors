@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.3.1...dragonwilds-v0.4.0) (2026-10-11)
+
+
+### Features
+
+* **dragonwilds:** ship takaro.cfg and apply token changes without a restart ([#444](https://github.com/gettakaro/connectors/issues/444)) ([a38eae3](https://github.com/gettakaro/connectors/commit/a38eae3c985e42281736b2f8ffaa5d920699ccc3))
+
+## [0.3.1](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.3.0...dragonwilds-v0.3.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* **dragonwilds:** release the plugin for Steam build 25808123 ([#429](https://github.com/gettakaro/connectors/issues/429)) ([e2d463f](https://github.com/gettakaro/connectors/commit/e2d463fef0ae272d11955d5178e2e8a667779260))
+
 ## [0.3.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.2.0...dragonwilds-v0.3.0) (2026-10-07)
 
 

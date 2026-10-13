@@ -9,4 +9,7 @@ public interface EventEmitter {
     void emitPlayerDeath(PlayerInfo player, PlayerInfo attacker, double x, double y, double z, String dimension);
     void emitEntityKilled(PlayerInfo player, String entityCode, String weaponCode);
     void emitLog(String message);
+
+    /** The adapter's capabilities changed (for example the map image is ready): resend the manifest. */
+    default void capabilitiesChanged() {}
 }

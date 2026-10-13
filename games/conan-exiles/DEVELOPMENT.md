@@ -17,25 +17,26 @@ games/conan-exiles/
     mod/TakaroConanBridge/      # spec + DevKit handoff for the Takaro-owned .pak (no binary shipped)
     scripts/lib-target.sh       # resolves the catalog target every script builds against
     scripts/build-release.sh    # packages the native zip per target
-    scripts/templates/          # takaro.json examples and the README.txt of the native zips
+    scripts/templates/          # the README.txt of the native zips
     INSTALL.md                  # per-platform install, upgrade, rollback (ships in the zips)
     version.txt
     CHANGELOG.md
 
 catalog/conan-exiles/
     game.json                     # the Steam watch: app 443030, depot 443032, branch public
-    targets/linux-25738716.json   # Linux: the current pinned server build, images, deps, file hashes
-    targets/windows-25738716.json # Windows: the same Steam build, depot 443031, zig toolchain
-    targets/*-25639945.json       # the previous build, still pinned and still built
+    targets/linux-25792439.json   # Linux: the current pinned server build, images, deps, file hashes
+    targets/windows-25792439.json # Windows: the same Steam build, depot 443031, zig toolchain
+    targets/*-25738716.json       # the previous builds, still pinned and still built
+    targets/*-25639945.json
 ```
 
 ## The pinned server build
 
 The connector is built and verified against exact server builds. The default is declared in
-`catalog/conan-exiles/targets/linux-25738716.json`: Steam app `443030`, branch `public`, build
-`25738716`, depot `443032` manifest `3253120066949448972` plus the Steamworks redistributable depot
+`catalog/conan-exiles/targets/linux-25792439.json`: Steam app `443030`, branch `public`, build
+`25792439`, depot `443032` manifest `7357061300451132906` plus the Steamworks redistributable depot
 `1006` manifest `4559160656493359681`, with six declared file hashes. The previous build
-`25639945` keeps its targets: the library pins both, so each target's zip carries the same code. Nothing here runs the Steam
+`25738716` and `25639945` keep their targets: the library pins all three, so each target's zip carries the same code. Nothing here runs the Steam
 updater any more — the depot manifests are the bytes:
 
 ```bash
@@ -65,8 +66,8 @@ server: it is declared in the watch and disabled, so it is never observed and ne
 
 The rig (`dev-servers/scripts/install.sh conan-exiles`) installs the pinned build from the catalog,
 builds the native connector and unpacks it into `<server>/TakaroConanNative/TakaroConanNative/`. It
-does not preload the library: to run the connector on the rig, add `LD_PRELOAD` and `takaro.json`
-by hand exactly as an operator does ([INSTALL.md](INSTALL.md)). By hand, the native Linux launcher
+does not preload the library: to run the connector on the rig, add `LD_PRELOAD` by hand
+and paste the token into the `takaro.json` the connector creates, exactly as an operator does ([INSTALL.md](INSTALL.md)). By hand, the native Linux launcher
 is started like this:
 
 ```bash
@@ -89,14 +90,14 @@ games/conan-exiles/native/platform/windows/build.sh  # winmm.dll, with the pinne
 A release is built per catalog target, through the shared maintenance command:
 
 ```bash
-maintenance/bin/takaro-maint build --game conan-exiles [--target linux-25738716] \
+maintenance/bin/takaro-maint build --game conan-exiles [--target linux-25792439] \
   --version 1.0.2 --out dist
 ```
 
 That runs `scripts/build-release.sh <version> <out-dir> [--target <id>]`, which resolves the target
 and builds inside pinned images only, so the host needs no compiler. The result is
 `takaro-conan-exiles-native-<platform>-<build>-<version>.zip` holding one `TakaroConanNative/`
-folder (the binary, `takaro.json.example`, `INSTALL.md`, `README.txt`, `THIRD-PARTY.md`, licenses,
+folder (the binary, `INSTALL.md`, `README.txt`, `THIRD-PARTY.md`, licenses,
 `takaro-target.json`, `SHA256SUMS`, and on Linux `ca-certificates.crt`), plus a `.meta.json` beside
 it that `takaro-maint artifact validate` reads. Packaging is deterministic: entry modes and
 timestamps are normalised and the archive is written by CPython's `zipfile`.
@@ -128,18 +129,35 @@ native/
   tools/           sigderive.py (signatures for ELF and PE)
 ```
 
-- **Config.** Environment first (`TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN`,
-  `TAKARO_WS_URL`, `TAKARO_SERVER_NAME`, `TAKARO_CA_FILE`, `TAKARO_STATE_DIR`), then
-  `ConanSandbox/Saved/Config/Takaro/takaro.json` (keys `identityToken`, `registrationToken`, `url`,
-  `name`, `caFile`, `stateDir`; `TAKARO_CONAN_CONFIG` moves the file). It fails closed: missing
-  tokens, a `ws://` URL or a file that does not parse leave the library inert, with the reason in
-  `ConanSandbox/Saved/Logs/TakaroConanNative.log`. Token values are never logged.
+- **Config** (`core/takaro/config.*`, `core/takaro/config_watch.*`). One file:
+  `ConanSandbox/Saved/Config/Takaro/takaro.json` (`TAKARO_CONAN_CONFIG` moves it). It is not in
+  the zip and an upgrade never touches it. Per field: environment (`TAKARO_IDENTITY_TOKEN`,
+  `TAKARO_REGISTRATION_TOKEN`, `TAKARO_WS_URL`, `TAKARO_SERVER_NAME`, `TAKARO_CA_FILE`,
+  `TAKARO_STATE_DIR`, `TAKARO_PROTOCOL`; never written to disk), then the file, then the default.
+  - A missing file is created at load from `kConfigTemplate` (unless the environment carries both
+    tokens). When neither env nor file sets an identity, a new UUID v4 (and, with no name set,
+    `Conan Exiles (<first 8>)`) is written into the file; a save that empties it gets the running
+    one back. That is the only write: `SetJsonString` keeps the rest of the text, `ReplaceUserFile`
+    keeps mode and owner (Windows: `ReplaceFileW`). If it cannot be written, the connector holds.
+  - Live reload: the bridge thread re-reads the file every 5 s, applies a changed text when a read
+    1 s later matches, and ignores an unparseable one. A change of URL, token, identity or name
+    calls `ITransport::Retarget`, which drops the socket (Linux: on the lws service thread, after the
+    old socket's own CLOSED callback; Windows: under the transport lock, with a generation check for
+    a dial in flight) and redials at once. `caFile`, `stateDir` and the env-only tunables are read
+    at startup only.
+  - No token (also a token emptied while running), an unreadable or invalid file, a `ws://` URL or
+    an identity that could not be written:
+    the library still loads (hooks and all) but never dials, and prints a `****` banner to the
+    server's stdout naming the file; it repeats after 60 s and then every 15 minutes. Identify
+    refusals print a banner too (name conflict / 409 separately); Takaro's error is reduced to
+    name, message and HTTP status (`DescribeTakaroError`). Only `TAKARO_CONAN_NATIVE_DISABLE=1` is
+    inert. Token values are never logged.
 - **Pins.** Only the three raw globals come from fixed knowledge: `ProcessEvent`,
   `GUObjectArray.ObjObjects` and the `FNamePool` block table. At load the library scans the
   server's executable mappings for their signatures (`core/pins/pins.cpp`, derived with
   `tools/sigderive.py`, about 140 ms) and accepts the build only when every signature matches
-  exactly once and the GNU build-id is pinned with the same addresses (25738716:
-  `8d5382c1…`; 25639945: `3a05a6ef…`). On any other build it installs no hook, still connects and identifies, sends one
+  exactly once and the GNU build-id is pinned with the same addresses (25792439:
+  `ad0c0103…`; 25738716: `8d5382c1…`; 25639945: `3a05a6ef…`). On any other build it installs no hook, still connects and identifies, sends one
   critical notice (a `log` event) and refuses every action with a structured error.
   `TAKARO_CONAN_ALLOW_UNPINNED_BUILD=1` accepts a clean scan of an unpinned build, for re-pin work.
 - **Everything else is reflection.** At first use the library walks the object array in
@@ -152,10 +170,39 @@ native/
 - **Threads.** The libwebsockets service thread owns the socket; the bridge thread owns protocol
   state and the outbox; action workers run actions. The ProcessEvent detour only drains the
   game-thread queue when a job is pending, at most 4 jobs or 500 µs per drain.
+- **Protocol version.** identify offers `protocolVersions: [0, 1]` with a Capability Manifest and
+  speaks what `identifyResponse.protocolVersion` picks, per connection (missing = 0, so an older
+  Takaro keeps protocol 0). `"protocol": 0` in takaro.json (or `TAKARO_PROTOCOL=0`) sends the old
+  identify. The manifest (`Adapter::CapabilityManifest`) is built from the coverage registry: every
+  action with native code that is `live-supported` or `not-requested` (`locations.list` enables
+  Takaro's location markers), every live event, and `map` once the loaded map is known; a refused
+  build declares `[]`. The bridge compares it every 2 s and sends a `capabilities` replacement when
+  it changes (the world loads after identify, so the map arrives that way). On protocol 1: errors are
+  `{ code, message }` (`ActionResult.code`; unknown action `unsupported`, timeouts `game_error`),
+  void answers are `payload: null`, an unknown player's location is `payload: null`, and
+  `getPlayerLocation` carries `dimension`.
+- **Map** (`core/conan/map.*`). The dedicated server cook has no map art (the LinuxServer cook only
+  references the client texture `T_FullscreenMap`), so each Dimension is `source: none` and the
+  operator uploads the in-game map in Takaro. The bounds are the server's own calibration:
+  `Base/AlwaysCook/RegionDataTable`, struct `MapCoordinatesAndSpans`, holds two world <-> texture
+  reference points per map (rows `ExiledLands`, `IsleOfSiptah`); extended linearly to the full
+  4000 x 4000 texture they give `exiled_lands` x -342832.9..474770, y -445357.3..368713.7 and
+  `isle_of_siptah` x 1109298.9..2014173.4, y -400051.5..500990.5 (x right, y down). The loaded map
+  comes from the live GameState's path (`ReadService::CurrentRegion`); only that map is declared,
+  since one server runs one map. Live on staging 2026-10-12 (Exiled Lands, Linux): Takaro stored the
+  declared bounds, an image upload without settings took them, and two spots ~300 m apart landed
+  within ~4.5 in-game map pixels (~35 m) of the client's player icon. Siptah's texture size is
+  inferred from its encoded size (same as `T_FullscreenMap`) and not yet checked on a Siptah server.
 - **Delivery.** Every event goes through a durable outbox (`<Saved>/Takaro/state/event-outbox.json`,
-  tmp + fsync + rename) and leaves it only when the pong of a later WebSocket ping confirms it, so a
-  Takaro outage or a server restart replays the unconfirmed tail. Reconnect backoff doubles from
-  2 s to 60 s and resets after a successful identify. A health snapshot is written to
+  tmp + fsync + rename). On protocol 0 it leaves the outbox when the pong of a later WebSocket ping
+  confirms it; on protocol 1 only when an `eventAck` covers its `(streamId, seq)` (pongs are
+  ignored there: Takaro can read a frame and still fail to queue it). Each process sends its new
+  events in a fresh random stream, seq 1, 2, ...; events replayed from disk keep the stream and seq
+  they were first sent with (an outbox written before protocol 1 joins the current stream), so
+  Takaro's high-water deduplication drops what it already handled. Every identify resends the
+  unacknowledged tail in order. A Takaro outage or a server restart therefore replays it. Reconnect
+  backoff doubles from 2 s to 60 s and resets after a successful identify. A health snapshot
+  (including a `protocol` block: version, streamId, acks, the manifest sent) is written to
   `<Saved>/Takaro/state/health.json`.
 - **Toolchain.** `platform/linux/Dockerfile.build` is Debian buster pinned by digest, with
   packages from its dated snapshot, and builds OpenSSL 3.5.8 and libwebsockets 4.5.8 statically
@@ -165,7 +212,9 @@ native/
   the buster container: unit tests; the drift test (`capabilities.json` and `pins.json` equal the
   compiled tables); wire tests of the production Takaro half against a fake Takaro over TLS
   (identify, ping/pong, request correlation, every args shape, events, a forced 20 s outage with
-  outbox replay, a killed process replaying from disk, identify rejection, unknown-build refusal);
+  outbox replay, a killed process replaying from disk, identify rejection, unknown-build refusal,
+  and protocol 1: negotiation, manifest and map Dimension, streamId/seq, eventAck, resend after a
+  reconnect, `{ code, message }` errors, a manifest replacement, the protocol 0 fallbacks);
   and the real library preloaded into a stand-in server executable. With
   `CONAN_SERVER_BINARY=<25639945 ConanSandboxServer-Linux-Shipping>` it also checks that the scan
   reproduces the stage 1 addresses.
@@ -185,7 +234,7 @@ verification and nothing more.
 **Startup level — a real pinned server.** On a host that can boot it:
 
 ```bash
-maintenance/bin/takaro-maint verify --game conan-exiles --target linux-25738716 \
+maintenance/bin/takaro-maint verify --game conan-exiles --target linux-25792439 \
   --artifacts dist --out reports --checks build,startup \
   --startup-timeout 600 --cleanup-orphans
 ```

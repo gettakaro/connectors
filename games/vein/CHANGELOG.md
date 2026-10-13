@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/gettakaro/connectors/compare/vein-v0.5.0...vein-v0.6.0) (2026-10-11)
+
+
+### Features
+
+* **vein:** ship takaro.cfg and apply token changes without a restart ([#434](https://github.com/gettakaro/connectors/issues/434)) ([2a74b0f](https://github.com/gettakaro/connectors/commit/2a74b0f57a362e742a2e213ff9f1668176f3e800))
+
+## [0.5.0](https://github.com/gettakaro/connectors/compare/vein-v0.4.1...vein-v0.5.0) (2026-10-10)
+
+
+### Features
+
+* **vein:** install on any Linux panel with three files (libsteam.so loader, takaro.cfg, console status) ([#428](https://github.com/gettakaro/connectors/issues/428)) ([5e0877c](https://github.com/gettakaro/connectors/commit/5e0877c61ccd9b3393826346ad0916037388bd67))
+
 ## [0.4.1](https://github.com/gettakaro/connectors/compare/vein-v0.4.0...vein-v0.4.1) (2026-10-08)
 
 

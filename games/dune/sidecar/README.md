@@ -19,6 +19,7 @@
 
    ```bash
    docker run -d --name takaro-dune --env-file .env \
+     -v "$PWD:/takaro-config:ro" -e TAKARO_CONFIG_FILE=/takaro-config/.env \
      --network <battlegroup-network> -v takaro-dune-data:/data \
      ghcr.io/gettakaro/takaro-dune-sidecar:<version>
    ```

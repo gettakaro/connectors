@@ -238,8 +238,18 @@ export class DuneRmq {
     return now - hit.at <= maxAgeMs ? hit.position : null;
   }
 
+  /**
+   * A broker that is not up yet must not leave the chat bridge off for the life of the process: the battlegroup
+   * starts its brokers in parallel with this sidecar, and a refused first connect used to be final.
+   */
   async start(): Promise<void> {
-    await this.ensureChannel();
+    try {
+      await this.ensureChannel();
+    } catch (err) {
+      if (!this.options.url) throw err;
+      this.scheduleReconnect((err as Error).message);
+      throw err;
+    }
   }
 
   /** Shared with the AMQP GM publisher so both directions ride one connection. */
@@ -515,17 +525,20 @@ export class DuneRmq {
     this.consumerTag = null;
     // The map server may have joined (or left) the broker while we were away, and it owns `chat.map`.
     this.exchangeCache.clear();
+    this.scheduleReconnect('connection closed');
+  }
+
+  private scheduleReconnect(reason: string): void {
     if (this.closing) return;
-    this.lastError = 'connection closed';
+    this.lastError = reason;
     if (this.reconnectTimer) return;
     const delay = this.options.reconnectMs ?? 5000;
-    logger.warn(`Game RabbitMQ connection closed; reconnecting in ${delay}ms`);
+    logger.warn(`Game RabbitMQ unavailable (${reason}); reconnecting in ${delay}ms`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       void this.ensureChannel().catch((err) => {
-        this.lastError = (err as Error).message;
         logger.warn(`Game RabbitMQ reconnect failed: ${(err as Error).message}`);
-        this.onClosed();
+        this.scheduleReconnect((err as Error).message);
       });
     }, delay);
     this.reconnectTimer.unref?.();

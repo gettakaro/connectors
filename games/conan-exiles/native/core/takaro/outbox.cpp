@@ -4,8 +4,13 @@
 #include "takaro/fileio.h"
 #include "takaro/json_util.h"
 
+#include "takaro/protocol.h"
+
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
 #include <cstdlib>
+#include <random>
 
 namespace takaro {
 
@@ -17,12 +22,24 @@ bool U64(const JsonValue* v, uint64_t& out) {
 }
 }  // namespace
 
+std::string NewStreamId() {
+    std::random_device rd;
+    std::seed_seq seed{rd(), rd(), rd(), rd(),
+                       (unsigned)std::chrono::high_resolution_clock::now().time_since_epoch().count()};
+    std::mt19937_64 gen(seed);
+    char b[33];
+    snprintf(b, sizeof b, "%016llx%016llx", (unsigned long long)gen(), (unsigned long long)gen());
+    return b;
+}
+
 std::string OutboxJson(const OutboxState& o) {
     std::string pending = "[";
     bool first = true;
     for (auto& e : o.pending) {
-        pending += (first ? "" : ",") +
-                   ObjBuilder().Raw("id", std::to_string(e.id)).S("type", e.type).S("frame", e.frame).Done();
+        ObjBuilder b;
+        b.Raw("id", std::to_string(e.id)).S("type", e.type).S("frame", e.frame);
+        if (!e.stream.empty()) b.S("stream", e.stream).Raw("seq", std::to_string(e.seq));
+        pending += (first ? "" : ",") + b.Done();
         first = false;
     }
     pending += "]";
@@ -56,6 +73,13 @@ bool ParseOutbox(const std::string& text, OutboxState& o, std::string& err) {
         if (pe.id <= last || pe.id >= n.nextId) return err = "pending ids out of order", false;
         JsonValue frame;
         if (!ParseJson(f->str, frame) || frame.type != JsonValue::Object) return err = "pending frame is not JSON", false;
+        // stream/seq are absent in an outbox written before protocol 1; Store::Load assigns them.
+        const JsonValue* st = e.get("stream");
+        if (st) {
+            if (st->type != JsonValue::String || !IsStreamId(st->str) || !U64(e.get("seq"), pe.seq) || pe.seq == 0)
+                return err = "malformed pending event stream", false;
+            pe.stream = st->str;
+        }
         last = pe.id;
         pe.type = t->str;
         pe.frame = f->str;
@@ -66,7 +90,10 @@ bool ParseOutbox(const std::string& text, OutboxState& o, std::string& err) {
     return true;
 }
 
-Store::Store(std::string dir) : dir_(std::move(dir)), outboxPath_(JoinPath(dir_, "event-outbox.json")) {}
+Store::Store(std::string dir, std::string streamId)
+    : dir_(std::move(dir)), outboxPath_(JoinPath(dir_, "event-outbox.json")), streamId_(std::move(streamId)) {
+    if (streamId_.empty()) streamId_ = NewStreamId();
+}
 
 std::string Store::Load() {
     std::string notes, err;
@@ -86,6 +113,12 @@ std::string Store::Load() {
             fenced_["outbox"] = true;
             notes += (notes.empty() ? "" : "; ") + errors_["outbox"] + ", left untouched";
         } else {
+            // Events from an outbox written before protocol 1 join this process's stream, in order.
+            for (auto& e : outbox_.pending)
+                if (e.stream.empty()) {
+                    e.stream = streamId_;
+                    e.seq = nextSeq_++;
+                }
             notes += (notes.empty() ? "" : "; ") + std::string("outbox loaded: ") +
                      std::to_string(outbox_.pending.size()) + " unconfirmed event(s) to replay";
         }
@@ -115,6 +148,8 @@ uint64_t Store::Admit(const std::string& type, std::string frame) {
     ev.id = outbox_.nextId++;
     ev.type = type;
     ev.frame = std::move(frame);
+    ev.stream = streamId_;
+    ev.seq = nextSeq_++;
     outbox_.pendingBytes += ev.frame.size();
     uint64_t id = ev.id;
     outbox_.pending.push_back(std::move(ev));
@@ -136,6 +171,21 @@ size_t Store::ConfirmThrough(uint64_t outboxId) {
         outbox_.pendingBytes -= outbox_.pending.front().frame.size();
         outbox_.pending.pop_front();
         n++;
+    }
+    outbox_.confirmedTotal += n;
+    return n;
+}
+
+size_t Store::Acknowledge(const std::string& stream, uint64_t upTo) {
+    size_t n = 0;
+    for (auto it = outbox_.pending.begin(); it != outbox_.pending.end();) {
+        if (it->stream == stream && it->seq <= upTo) {
+            outbox_.pendingBytes -= it->frame.size();
+            it = outbox_.pending.erase(it);
+            n++;
+        } else {
+            ++it;
+        }
     }
     outbox_.confirmedTotal += n;
     return n;

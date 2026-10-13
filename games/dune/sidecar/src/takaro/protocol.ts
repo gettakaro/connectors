@@ -36,10 +36,32 @@ export function isGameEventType(value: unknown): value is GameEventType {
 }
 
 export interface WsMessage {
-  type: 'identify' | 'identifyResponse' | 'connected' | 'gameEvent' | 'request' | 'response' | 'error' | 'ping' | 'pong';
+  type:
+    | 'identify'
+    | 'identifyResponse'
+    | 'connected'
+    | 'gameEvent'
+    | 'request'
+    | 'response'
+    | 'error'
+    | 'ping'
+    | 'pong'
+    | 'capabilities'
+    | 'capabilitiesResponse'
+    | 'eventAck'
+    | 'eventError';
   requestId?: string;
   payload?: unknown;
-  error?: string;
+  /** A string on version 0; `{ code, message }` on version 1. */
+  error?: string | ProtocolError;
+}
+
+/** The version 1 response error codes. */
+export type ProtocolErrorCode = 'unsupported' | 'invalid_args' | 'not_found' | 'game_error' | 'internal';
+
+export interface ProtocolError {
+  code: ProtocolErrorCode;
+  message: string;
 }
 
 export interface IdentifyConfig {
@@ -48,16 +70,26 @@ export interface IdentifyConfig {
   serverName?: string;
 }
 
+/** What a version 1 identify adds: the offered versions and the Capability Manifest. */
+export interface IdentifyV1 {
+  protocolVersions: number[];
+  capabilities: unknown[];
+}
+
 export interface TakaroRequest {
   requestId: string;
   action: string;
   args: Record<string, unknown>;
 }
 
-export function createIdentify(config: IdentifyConfig): WsMessage {
+export function createIdentify(config: IdentifyConfig, v1?: IdentifyV1): WsMessage {
   const payload: Record<string, unknown> = { identityToken: config.identityToken };
   if (config.registrationToken) payload.registrationToken = config.registrationToken;
   if (config.serverName) payload.name = config.serverName;
+  if (v1) {
+    payload.protocolVersions = v1.protocolVersions;
+    payload.capabilities = v1.capabilities;
+  }
   return { type: 'identify', payload };
 }
 
@@ -70,9 +102,18 @@ export function createResponse(requestId: string, payload: unknown): WsMessage {
   return { type: 'response', requestId, payload: payload === undefined ? {} : payload };
 }
 
-/** Error response: same frame type as a success, with a top-level error string (proven on the PZ connector). */
-export function createErrorResponse(requestId: string, error: string): WsMessage {
+/**
+ * Error response: same frame type as a success. Version 0 takes a top-level error string (proven on the PZ
+ * connector); version 1 takes `{ code, message }`. The client converts between the two for the negotiated version.
+ */
+export function createErrorResponse(requestId: string, error: string | ProtocolError): WsMessage {
   return { type: 'response', requestId, error };
+}
+
+/** The error frame for the negotiated version: the plain message on version 0, `{ code, message }` on version 1. */
+export function errorForVersion(error: string | ProtocolError, version: number): string | ProtocolError {
+  if (version === 1) return typeof error === 'string' ? { code: 'game_error', message: error } : error;
+  return typeof error === 'string' ? error : error.message;
 }
 
 export function createGameEvent(type: GameEventType, data: unknown): WsMessage {

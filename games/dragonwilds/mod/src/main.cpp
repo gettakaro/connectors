@@ -2,6 +2,7 @@
 // server's own startup is never blocked or delayed by us.
 #include "actions.h"
 #include "common.h"
+#include "config_file.h"
 #include "events.h"
 #include "gamethread.h"
 #include "hooks.h"
@@ -40,17 +41,20 @@ void Sleep(unsigned ms) {
     nanosleep(&ts, nullptr);
 }
 
-// TAKARO_PLUGIN_IDLE=1 (or "idle": "1" in plugin.json): the library is mapped and logs one line,
+// TAKARO_PLUGIN_IDLE=1: the library is mapped and logs one line,
 // and that is all - no symbol scan, no hook, no game-thread job, no socket. It is the "plugin
 // loaded but idle" arm of a game-thread A/B measurement (docs/gamethread-policy.md).
 bool PluginIdle() {
-    std::string v = ConfigValue("TAKARO_PLUGIN_IDLE", "idle", "");
+    std::string v = ConfigValue("TAKARO_PLUGIN_IDLE", "");
     return v == "1" || v == "true";
 }
 
 void* InitThread(void*) {
-    // Populate immutable configuration before hooks can run on the game thread.
-    (void)ConfigValue(nullptr, nullptr);
+    // Create takaro.cfg, or give it an identity, before anything reads it; then populate the
+    // immutable configuration before hooks can run on the game thread.
+    const std::string configPath = ConfigFile::DefaultPath();
+    (void)ConfigFile::EnsureIdentity(configPath, ConfigFile::ReadText(configPath), ConfigFile::NewIdentity);
+    (void)ConfigFile::Current();
     (void)DebugEnabled();
     if (PluginIdle()) {
         PluginLog("takaro dragonwilds plugin %s loaded IDLE (TAKARO_PLUGIN_IDLE=1): no hooks, no game-thread "

@@ -4,6 +4,13 @@ All notable changes to the Takaro Project Zomboid connector are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0](https://github.com/gettakaro/connectors/compare/zomboid-v1.2.1...zomboid-v1.3.0) (2026-10-11)
+
+
+### Features
+
+* **zomboid:** ship TakaroConfig.txt in a release zip and apply token changes without a restart ([#437](https://github.com/gettakaro/connectors/issues/437)) ([74aa577](https://github.com/gettakaro/connectors/commit/74aa57791388b2f1599338c11ab525e7187ab925))
+
 ## [1.2.1](https://github.com/gettakaro/connectors/compare/zomboid-v1.2.0...zomboid-v1.2.1) (2026-10-08)
 
 

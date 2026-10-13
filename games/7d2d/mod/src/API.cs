@@ -24,7 +24,6 @@ namespace Takaro
 
             LogService.Instance.Info("Initializing mod");
 
-            // Initialize config
             ConfigManager.Instance.LoadConfig();
 
             // Register event handlers
@@ -82,6 +81,7 @@ namespace Takaro
             Log.LogCallbacksExtended -= HandleNativeLogMessage;
 
             MainThreadDispatcher.Instance.Shutdown();
+            ConfigManager.Instance.StopWatching();
             WebSocketTransport.Instance.Shutdown();
             ServiceRegistry.DestroyServices();
         }

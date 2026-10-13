@@ -47,10 +47,10 @@ export interface ChatWireVariant {
 
 export interface SidecarConfig {
   // --- Takaro ---
-  takaroWsUrl: string;
-  identityToken: string;
-  registrationToken: string;
+  // The connection settings (URL, tokens, server name) live in `takaro/settings.ts`: they can change at runtime.
   serverName: string;
+  /** How often the `.env` file is re-read for changed Takaro settings. */
+  configPollMs: number;
   /** Sender name shown in game for our own chat messages (spoofed-username field). */
   senderName: string;
   reconnectBaseMs: number;
@@ -133,6 +133,11 @@ export interface SidecarConfig {
   takaroRequestTimeoutMs: number;
   /** Safety margin subtracted from `takaroRequestTimeoutMs` to leave room for the reply to travel. */
   takaroRequestMarginMs: number;
+  /**
+   * `TAKARO_PROTOCOL`: 1 (default) offers protocol versions [0, 1], declaring the map Dimensions; Takaro picks the
+   * highest it speaks. 0 offers version 0 only, exactly as before.
+   */
+  takaroProtocol: 0 | 1;
   /** Max age of a `chat-message` queued during a Takaro outage; older lines are dropped instead of replayed. */
   outageChatMaxAgeMs: number;
 
@@ -223,10 +228,9 @@ export function loadConfig(env: Env = process.env): SidecarConfig {
   if (deliveryMode !== 1 && deliveryMode !== 2) throw new Error(`DUNE_CHAT_DELIVERY_MODE must be 1 or 2`);
 
   return {
-    takaroWsUrl: env.TAKARO_WS_URL || 'wss://connect.takaro.io/',
-    identityToken: env.TAKARO_IDENTITY_TOKEN || 'dune',
-    registrationToken: env.TAKARO_REGISTRATION_TOKEN?.trim() ?? '',
-    serverName: env.TAKARO_SERVER_NAME || 'Takaro Dev Dune',
+    // Replaced at start by the effective name from `takaro/settings.ts`.
+    serverName: env.TAKARO_SERVER_NAME || '',
+    configPollMs: Math.max(1000, int(env.TAKARO_CONFIG_POLL_MS, 5000)),
     // `Takaro` rather than `Server`: this is what a player sees in front of every connector message, and "Server" is
     // indistinguishable from the game's own notices. Overridable with `TAKARO_SENDER_NAME`.
     senderName: (env.TAKARO_SENDER_NAME || env.TAKARO_SERVER_CHAT_NAME || 'Takaro').trim(),
@@ -294,6 +298,7 @@ export function loadConfig(env: Env = process.env): SidecarConfig {
     banKickCooldownMs: int(env.DUNE_BAN_KICK_COOLDOWN_MS, 15000),
     takaroRequestTimeoutMs: int(env.TAKARO_REQUEST_TIMEOUT_MS, 10000),
     takaroRequestMarginMs: int(env.TAKARO_REQUEST_MARGIN_MS, 1500),
+    takaroProtocol: env.TAKARO_PROTOCOL?.trim() === '0' ? 0 : 1,
     outageChatMaxAgeMs: int(env.DUNE_OUTAGE_CHAT_MAX_AGE_MS, 600000),
 
     dataDir,

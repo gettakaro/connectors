@@ -1,8 +1,10 @@
 #include "native_behavior.h"
 #include "native_log.h"
+#include "native_map.h"
 #include "actions.h"
 #include "actions_util.h"
 #include "common.h"
+#include "config_file.h"
 #include "gamethread.h"
 #include "reflect.h"
 #include "state.h"
@@ -50,7 +52,7 @@ Json Player(const Json& raw){
     if(!Str(p,"ip").empty())out["ip"]=Str(p,"ip");if(p.contains("ping")&&p["ping"].is_number())out["ping"]=p["ping"];
     return out;
 }
-Json Position(const Json& raw){Json p=Object(raw);if(!HasNum(p,"x")||!HasNum(p,"y")||!HasNum(p,"z"))throw std::runtime_error("invalid position");Json o={{"x",Num(p,"x")},{"y",Num(p,"y")},{"z",Num(p,"z")}};if(!Str(p,"dimension").empty())o["dimension"]=Str(p,"dimension");return o;}
+Json Position(const Json& raw){Json p=Object(raw);if(!HasNum(p,"x")||!HasNum(p,"y")||!HasNum(p,"z"))throw std::runtime_error("invalid position");Json o={{"x",Num(p,"x")},{"y",Num(p,"y")},{"z",Num(p,"z")}};o["dimension"]=Str(p,"dimension").empty()?std::string(NativeMap::kDimensionId):Str(p,"dimension");return o;}
 std::string PlayerId(const Json& args){for(const Json& s:{Object(args),Object(args.value("player",Json::object())),Object(args.value("playerRef",Json::object()))})for(const char* k:{"gameId","steamId","platformId"})if(!Str(s,k).empty())return Str(s,k);throw std::runtime_error("Expected player identifier (gameId, or player.gameId)");}
 Json Body(const Json& j){JsonValue v; if(!JsonParse(j.dump(),v))throw std::runtime_error("invalid action body");return j;}
 JsonValue NativeBody(const Json& j){JsonValue v;if(!JsonParse(j.dump(),v))throw std::runtime_error("invalid action body");return v;}
@@ -226,8 +228,8 @@ NativePersistence::Result Engine::Load(){
         r=store_.ReadLegacy("knownPlayers",v->knownPlayersJson);if(!r)return r;
     }
     auto timed=store_.ReadLegacy("timedBans",x);if(!timed)return timed;v->timedBansJson=x;
-    v->senderName=Trim(ConfigValue("TAKARO_SENDER_NAME","senderName",ConfigValue("TAKARO_SERVER_CHAT_NAME","serverChatName","")));
-    v->serverName=ConfigValue("TAKARO_SERVER_NAME","serverName","Takaro Dev Vein");v->banRevision=state::BanRevision();
+    v->senderName=Trim(ConfigValue("TAKARO_SENDER_NAME",ConfigValue("TAKARO_SERVER_CHAT_NAME","")));
+    v->serverName=ConfigValue("TAKARO_SERVER_NAME",ConfigFile::DefaultServerName(ConfigValue("TAKARO_IDENTITY_TOKEN")));v->banRevision=state::BanRevision();
     std::string key,detail;if(!log_->parser.Configure(key,detail))return {false,key+": "+detail};
     std::string intent;auto r=store_.ReadBanIntent(intent);if(!r)return r;
     std::set<std::string> journalTargets;
@@ -408,7 +410,7 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p){
             id=ResolveId(p,a);Actions::Result raw=Actions::PlayerLocation(id);
             if(raw.status<400){Json position=Position(Parse(raw.body));out.payloadJson=position.dump();out.effects.push_back({Effect::Kind::RememberLocation,Json{{"gameId",id},{"position",position}}.dump()});}
             else {auto it=p.view->locationWindowUntilMs.find(id);if(it==p.view->locationWindowUntilMs.end()||it->second<WallMs())call(raw);
-                auto pos=p.view->lastLocationsJson.find(id);out.payloadJson=pos==p.view->lastLocationsJson.end()?R"({"x":0,"y":0,"z":0})":pos->second;}
+                auto pos=p.view->lastLocationsJson.find(id);out.payloadJson=pos==p.view->lastLocationsJson.end()?Position(Json{{"x",0},{"y",0},{"z",0}}).dump():pos->second;}
         }
         else if(action=="getPlayerInventory")out.payloadJson=Inventory(call(Actions::PlayerInventory(ResolveId(p,a)))).dump();
         else if(action=="giveItem"){
@@ -452,7 +454,8 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p){
             Json pending=Array(Parse(p.view->timedBansJson)),mapped=Json::array();std::map<std::string,Json> byId;for(auto& b:pending)byId[Str(Object(b),"gameId")]=b;
             for(auto& row:Rows(call(Actions::Bans()),"bans")){Json b=Ban(row);std::string key=Str(b["player"],"gameId");auto it=byId.find(key);if(it!=byId.end()){b["expiresAt"]=it->second.value("expiresAt",Json());if(Str(b,"reason").empty())b["reason"]=Str(it->second,"reason");byId.erase(it);}mapped.push_back(b);}
             for(auto& kv:byId)mapped.push_back(Json{{"player",Player(Json{{"gameId",kv.first}})},{"reason",Str(kv.second,"reason")},{"expiresAt",kv.second.value("expiresAt",Json())}});out.payloadJson=mapped.dump();
-        }else if(action=="shutdown"){out.payloadJson="{}";out.deferredShutdown=true;}
+        }else if(action=="getMapInfo")out.payloadJson=NativeMap::InfoJson();
+        else if(action=="shutdown"){out.payloadJson="{}";out.deferredShutdown=true;}
         else throw std::runtime_error("Unknown Takaro action '"+action+"'");
     }catch(const std::exception& e){out.errorText=e.what();}
     return out;
@@ -724,4 +727,26 @@ bool Engine::CustomLogJoin() const{return log_->parser.CustomJoin();}
 bool Engine::CustomLogChat() const{return log_->parser.CustomChat();}
 std::string Engine::HealthJson() const{return Json{{"revision",revision_},{"knownPlayers",Array(Parse(view_->knownPlayersJson)).size()},{"onlinePlayers",Array(Parse(view_->onlinePlayersJson)).size()},{"timedBans",Array(Parse(view_->timedBansJson)).size()},{"banPersistenceError",state::BanPersistenceError()},{"logParserError",log_->parser.LastError()},{"lastError",lastError_}}.dump();}
 NativePersistence::Result Engine::Publish(){return {true,{}};}
+std::string CapabilityManifestJson(){
+    Json manifest=Json::array();
+    for(const char* name:{"players.list","players.get","players.location","players.inventory","players.teleport",
+                          "items.list","items.give","entities.list","locations.list","chat.send","console.execute",
+                          "moderation.kick","moderation.ban","moderation.unban","moderation.listBans","server.shutdown",
+                          "events.player-connected","events.player-disconnected","events.chat-message",
+                          "events.player-death","events.entity-killed","events.log"})
+        manifest.push_back(Json{{"name",name}});
+    manifest.push_back(Parse(NativeMap::CapabilityJson()));
+    return manifest.dump();
+}
+std::string ErrorCode(const std::string& message){
+    const std::string m=Lower(message);
+    auto has=[&](const char* x){return m.find(x)!=std::string::npos;};
+    if(has("unknown takaro action"))return "unsupported";
+    if(has("overloaded")||has("duplicate requestid")||has("response exceeds")||has("connection expired")||
+       has("persistence")||has("native apply failed"))return "internal";
+    if(has("not online")||has("not found")||has("unknown player")||has("no such player"))return "not_found";
+    if(has("requires")||has("must be")||has("expected player identifier")||has("invalid request")||
+       has("argument json"))return "invalid_args";
+    return "game_error";
+}
 } // namespace NativeBehavior

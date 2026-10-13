@@ -1,6 +1,8 @@
 // Host-side unit tests: the .sym parser (against a synthetic fixture), JSON, the event ring buffer
 // and password redaction. No game process involved.
+#include "mapsurvey.h"
 #include "common.h"
+#include "config_file.h"
 #include "perf.h"
 #include "state.h"
 
@@ -11,6 +13,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -394,6 +397,152 @@ static void TestLogFlushAtExit() {
     CHECK(stray.empty(), "the exit flush created a stray file in the working directory");
 }
 
+// takaro.cfg: which value wins, the file the connector creates, and the identity it writes back.
+static void TestConfigResolve() {
+    std::map<std::string, std::string> envVars;
+    auto env = [&](const char* k) -> const char* {
+        auto it = envVars.find(k);
+        return it == envVars.end() ? nullptr : it->second.c_str();
+    };
+    auto load = [](const std::string& text) { return ConfigFile::FromText("/x/takaro.cfg", text); };
+    const std::string fresh = ConfigFile::Template("11111111-2222-4333-8444-555555555555");
+
+    // The created file: no token, the identity, a name of its own, the default URL.
+    auto r = ConfigFile::Resolve(load(fresh), env);
+    EQ(r.registration, "");
+    EQ(r.identity, "11111111-2222-4333-8444-555555555555");
+    EQ(r.serverName, "Dragonwilds (11111111)");
+    EQ(r.url, ConfigFile::kDefaultUrl);
+    CHECK(!r.envRegistration && !r.envIdentity && !r.envServerName && !r.envUrl, "nothing from env");
+    // No name in the file: the unique name; no identity: nothing to connect as.
+    r = ConfigFile::Resolve(load("TAKARO_IDENTITY_TOKEN= abcdefghij \nTAKARO_SERVER_NAME=\n"), env);
+    EQ(r.identity, "abcdefghij");
+    EQ(r.serverName, "Dragonwilds (abcdefgh)");
+    r = ConfigFile::Resolve(load("TAKARO_REGISTRATION_TOKEN=t\n"), env);
+    EQ(r.identity, "");
+    EQ(r.serverName, "");
+
+    // A non-empty environment variable wins per field; an empty one does not.
+    envVars["TAKARO_REGISTRATION_TOKEN"] = " envtok ";
+    envVars["TAKARO_IDENTITY_TOKEN"] = "";
+    envVars["TAKARO_WS_URL"] = "wss://self.hosted/";
+    r = ConfigFile::Resolve(load("TAKARO_REGISTRATION_TOKEN=filetok\nTAKARO_IDENTITY_TOKEN=fileid\n"), env);
+    EQ(r.registration, "envtok");
+    EQ(r.identity, "fileid");
+    EQ(r.url, "wss://self.hosted/");
+    CHECK(r.envRegistration && !r.envIdentity && r.envUrl, "env flags");
+    envVars.clear();
+
+    // Half-saved file: a line without '='.
+    CHECK(ConfigFile::Unparseable(ConfigFile::Parse("TAKARO_REGISTRATION_TOK")), "half line");
+    CHECK(!ConfigFile::Unparseable(ConfigFile::Parse(fresh)), "created file parses");
+    CHECK(ConfigFile::Parse(fresh).warnings.empty(), "created file has no warnings");
+    CHECK(!ConfigFile::Unparseable(ConfigFile::Parse("LD_PRELOAD=x\n")), "ignored key is not half-saved");
+    auto parsed = ConfigFile::Parse("\xEF\xBB\xBF" "export DRAGONWILDS_LOG_FILE = \"/x y\"\r\nOTHER=1\n");
+    CHECK(parsed.entries.size() == 1 && parsed.entries[0].second == "/x y" && parsed.warnings.size() == 1, "parse");
+
+    // SetKey fills in the identity line and keeps everything else.
+    const std::string noId = "# c\nTAKARO_REGISTRATION_TOKEN=t\nTAKARO_IDENTITY_TOKEN=\n";
+    std::string set = ConfigFile::SetKey(noId, "TAKARO_IDENTITY_TOKEN", "abc");
+    EQ(set, "# c\nTAKARO_REGISTRATION_TOKEN=t\nTAKARO_IDENTITY_TOKEN=abc\n");
+    EQ(ConfigFile::SetKey("A=1\r\nTAKARO_IDENTITY_TOKEN = \r\nB=2\r\n", "TAKARO_IDENTITY_TOKEN", "x"),
+       "A=1\r\nTAKARO_IDENTITY_TOKEN=x\r\nB=2\r\n");
+    EQ(ConfigFile::SetKey("A=1", "TAKARO_IDENTITY_TOKEN", "x"), "A=1\nTAKARO_IDENTITY_TOKEN=x\n");
+    EQ(ConfigFile::SetKey("", "TAKARO_IDENTITY_TOKEN", "x"), "TAKARO_IDENTITY_TOKEN=x\n");
+    EQ(ConfigFile::SetKey("#TAKARO_IDENTITY_TOKEN=c\n", "TAKARO_IDENTITY_TOKEN", "x"),
+       "#TAKARO_IDENTITY_TOKEN=c\nTAKARO_IDENTITY_TOKEN=x\n");
+
+    // UUIDs: version 4, distinct.
+    std::string a = ConfigFile::NewIdentity(), b = ConfigFile::NewIdentity();
+    CHECK(a.size() == 36 && a[14] == '4' && a[8] == '-' && a != b, "uuid %s %s", a.c_str(), b.c_str());
+
+    // WriteAtomic keeps the mode (and owner) of the file it replaces and leaves no temp file.
+    char dir[] = "/tmp/takaro-dw-cfgw-XXXXXX";
+    CHECK(mkdtemp(dir) != nullptr, "mkdtemp");
+    std::string path = std::string(dir) + "/takaro.cfg";
+    CHECK(ConfigFile::WriteAtomic(path, "A=1\n", 0640), "write new");
+    struct stat st{};
+    stat(path.c_str(), &st);
+    CHECK((st.st_mode & 0777) == 0640, "mode %o", st.st_mode & 0777);
+    chmod(path.c_str(), 0604);
+    CHECK(ConfigFile::WriteAtomic(path, "A=2\n", 0600), "replace");
+    struct stat after{};
+    stat(path.c_str(), &after);
+    CHECK((after.st_mode & 0777) == 0604, "kept mode %o", after.st_mode & 0777);
+    CHECK(after.st_uid == st.st_uid && after.st_gid == st.st_gid, "kept owner");
+    EQ(*ConfigFile::ReadText(path), "A=2\n");
+    DIR* d = opendir(dir);
+    int entries = 0;
+    while (dirent* e = d ? readdir(d) : nullptr) if (e->d_name[0] != '.') ++entries;
+    if (d) closedir(d);
+    CHECK(entries == 1, "no temp file left (%d entries)", entries);
+    CHECK(!ConfigFile::ReadText(std::string(dir) + "/absent"), "absent is nullopt");
+    unlink(path.c_str());
+
+    // EnsureIdentity: a missing file is created (0600) with a new identity; an empty identity is
+    // written back keeping the mode and every other line; anything else is left alone.
+    auto gen = [] { return std::string("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"); };
+    auto e = ConfigFile::EnsureIdentity(path, std::nullopt, gen);
+    CHECK(e.what == ConfigFile::Ensured::Created, "created");
+    EQ(*ConfigFile::ReadText(path), ConfigFile::Template("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"));
+    EQ(*e.text, *ConfigFile::ReadText(path));
+    stat(path.c_str(), &st);
+    CHECK((st.st_mode & 0777) == 0600, "created mode %o", st.st_mode & 0777);
+    e = ConfigFile::EnsureIdentity(path, ConfigFile::ReadText(path), gen);
+    CHECK(e.what == ConfigFile::Ensured::Unchanged, "has an identity");
+    CHECK(ConfigFile::WriteAtomic(path, noId), "user file");
+    chmod(path.c_str(), 0640);
+    e = ConfigFile::EnsureIdentity(path, noId, gen);
+    CHECK(e.what == ConfigFile::Ensured::IdentityAdded, "identity added");
+    EQ(*ConfigFile::ReadText(path), "# c\nTAKARO_REGISTRATION_TOKEN=t\nTAKARO_IDENTITY_TOKEN=aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\n");
+    stat(path.c_str(), &st);
+    CHECK((st.st_mode & 0777) == 0640 && st.st_uid == after.st_uid, "identity write kept mode %o", st.st_mode & 0777);
+    e = ConfigFile::EnsureIdentity(path, std::string("TAKARO_REGISTRATION_TOK"), gen);
+    CHECK(e.what == ConfigFile::Ensured::Unchanged, "half-saved file left alone");
+    // Duplicate lines: the last one counts, so that is the one filled in.
+    const std::string dup = "TAKARO_IDENTITY_TOKEN=old\nTAKARO_IDENTITY_TOKEN=\n";
+    CHECK(ConfigFile::WriteAtomic(path, dup), "dup file");
+    e = ConfigFile::EnsureIdentity(path, dup, gen);
+    EQ(ConfigFile::Resolve(ConfigFile::FromText(path, *ConfigFile::ReadText(path)), env).identity,
+       "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+    // Saved by someone else since it was read: left alone, the next read applies it.
+    CHECK(ConfigFile::WriteAtomic(path, noId), "reset");
+    e = ConfigFile::EnsureIdentity(path, std::string("TAKARO_IDENTITY_TOKEN=\n"), gen);
+    CHECK(e.what == ConfigFile::Ensured::Unchanged && *ConfigFile::ReadText(path) == noId, "concurrent save kept");
+    if (geteuid() != 0) {
+        // There but unreadable: never replaced by a new file.
+        chmod(path.c_str(), 0000);
+        e = ConfigFile::EnsureIdentity(path, ConfigFile::ReadText(path), gen);
+        chmod(path.c_str(), 0600);
+        CHECK(e.what == ConfigFile::Ensured::NotWritable && *ConfigFile::ReadText(path) == noId, "unreadable kept");
+    }
+    unlink(path.c_str());
+    if (geteuid() != 0) {
+        chmod(dir, 0555);
+        e = ConfigFile::EnsureIdentity(path, std::nullopt, gen);
+        CHECK(e.what == ConfigFile::Ensured::NotWritable && !e.text, "read-only folder");
+        chmod(dir, 0755);
+    }
+    rmdir(dir);
+}
+
+static void TestMapSurveyGrid() {
+    MapSurvey::Grid g;
+    CHECK(MapSurvey::PlanGrid(-1000, 1000, -500, 700, 100, 8192, g), "a normal box must plan");
+    CHECK(g.w == 20 && g.h == 12, "grid is %dx%d, want 20x12", g.w, g.h);
+    CHECK(g.minX == -1000 && g.minY == -500 && g.step == 100, "grid origin/step not kept");
+    CHECK(MapSurvey::PlanGrid(0, 1050, 0, 10, 100, 8192, g) && g.w == 11 && g.h == 1,
+          "a partial sample must round up (got %dx%d)", g.w, g.h);
+    MapSurvey::Grid keep = g;
+    CHECK(!MapSurvey::PlanGrid(0, 0, 0, 10, 100, 8192, g), "an empty box must be refused");
+    CHECK(!MapSurvey::PlanGrid(10, 0, 0, 10, 100, 8192, g), "an inverted box must be refused");
+    CHECK(!MapSurvey::PlanGrid(0, 10, 0, 10, 0, 8192, g), "a zero step must be refused");
+    CHECK(!MapSurvey::PlanGrid(0, 10, 0, 10, -5, 8192, g), "a negative step must be refused");
+    CHECK(!MapSurvey::PlanGrid(0, 1e9, 0, 10, 100, 8192, g), "more than maxSide samples must be refused");
+    CHECK(!MapSurvey::PlanGrid(0, NAN, 0, 10, 100, 8192, g), "NaN bounds must be refused");
+    CHECK(g.w == keep.w && g.h == keep.h, "a refused plan must leave the grid untouched");
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && strcmp(argv[1], "--exit-flush-child") == 0) return ExitFlushChild(argv[2]);
     TestSymParser();
@@ -407,6 +556,8 @@ int main(int argc, char** argv) {
     TestPerfJson();
     TestCharacterNameCache();
     TestLogFlushAtExit();
+    TestConfigResolve();
+    TestMapSurveyGrid();
     printf("%s: %d checks, %d failed\n", g_failed ? "FAILED" : "PASSED", g_ran, g_failed);
     return g_failed ? 1 : 0;
 }

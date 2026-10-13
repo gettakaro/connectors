@@ -18,12 +18,17 @@ enum class ErrorKind { Action, PluginHttp, PluginUnimplemented, PluginUnreachabl
 struct NativeError : std::runtime_error {
     ErrorKind kind;
     int status;
-    NativeError(ErrorKind k, const std::string& message, int httpStatus = 0)
-        : std::runtime_error(message), kind(k), status(httpStatus) {}
+    std::string code;  // protocol 1 error code when the thrower knows it better than the kind (ProtocolErrorCode)
+    NativeError(ErrorKind k, const std::string& message, int httpStatus = 0, std::string errorCode = "")
+        : std::runtime_error(message), kind(k), status(httpStatus), code(std::move(errorCode)) {}
 };
-[[noreturn]] void Fail(const std::string& message);  // ActionError
+[[noreturn]] void Fail(const std::string& message);  // ActionError (bad arguments: invalid_args on protocol 1)
+// ActionError with an explicit protocol 1 code: unsupported, invalid_args, not_found, game_error or internal.
+[[noreturn]] void FailCode(const char* code, const std::string& message);
+// The protocol 1 error code for a failed action.
+std::string ProtocolErrorCode(const std::exception& e);
 
-extern const char* const kGameServerActions[17];
+extern const char* const kGameServerActions[19];
 extern const char* const kGameEventTypes[6];
 bool IsGameEventType(const std::string& type);
 
@@ -47,11 +52,17 @@ std::optional<MappedEvent> MapPluginEvent(const std::string& type, const JsonVal
 // ---- protocol.ts ----
 // Takaro sends args as [], {}, a JSON string ("{}", "[]", "{...}"), "" or null.
 JsonValue NormalizeArgs(const JsonValue* value);
+// capabilitiesJson non-empty: a protocol 1 identify offering versions [0, 1] with that Capability Manifest.
 std::string CreateIdentify(const std::string& identityToken, const std::string& registrationToken,
-                           const std::string& serverName);
+                           const std::string& serverName, const std::string& capabilitiesJson = "");
 std::string CreateResponse(const std::string& requestId, const JsonValue& payload);
 std::string CreateErrorResponse(const std::string& requestId, const std::string& error);
 std::string CreateGameEvent(const std::string& type, const JsonValue& data);
+// Protocol 1: payload null stays null; failures are {"error":{"code","message"}}; events carry streamId + seq.
+std::string CreateResponseV1(const std::string& requestId, const JsonValue& payload);
+std::string CreateErrorResponseV1(const std::string& requestId, const std::string& code, const std::string& message);
+// eventFrame: a stored CreateGameEvent frame; returns it with streamId and seq added to its payload ("" if malformed).
+std::string GameEventFrameV1(const std::string& eventFrame, const std::string& streamId, uint64_t seq);
 
 // ---- adapter.ts helpers ----
 // Accepts flat { gameId } / { steamId } / { platformId } or nested { player: {...} } / { playerRef: {...} }.

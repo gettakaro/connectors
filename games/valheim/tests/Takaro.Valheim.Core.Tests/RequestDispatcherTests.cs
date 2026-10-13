@@ -41,20 +41,41 @@ public sealed class RequestDispatcherTests
     }
 
     [DataTestMethod]
-    [DataRow("getMapInfo")]
-    [DataRow("getMapTile")]
-    public async Task DispatchesPinnedButServerOnlyUnsupportedMapActionsActionably(string action)
+    [DataRow("""{"x":-3,"y":2,"z":4}""")]
+    [DataRow("""{"x":"-3","y":"2","zoom":"4"}""")]
+    [DataRow("""{"x":-3,"y":2,"z":4,"extra":null}""")]
+    public async Task DispatchesMapTileArgumentsOffTheMainThread(string args)
+    {
+        var adapter = new FakeAdapter();
+        var dispatcher = new TakaroRequestDispatcher(adapter, new ThrowingScheduler());
+
+        var response = await dispatcher.DispatchAsync(new TakaroRequest("tile", "getMapTile", JsonDocument.Parse(args).RootElement));
+        var info = await dispatcher.DispatchAsync(new TakaroRequest("info", "getMapInfo", JsonDocument.Parse("{}").RootElement));
+
+        Assert.IsTrue(response.Success);
+        Assert.IsTrue(info.Success);
+        CollectionAssert.Contains(adapter.Calls, "tile:-3:2:4");
+    }
+
+    [DataTestMethod]
+    [DataRow("""{}""")]
+    [DataRow("""{"x":1,"y":2}""")]
+    [DataRow("""{"x":1.5,"y":2,"z":0}""")]
+    [DataRow("""{"x":"east","y":2,"z":0}""")]
+    public async Task RejectsMalformedMapTileArguments(string args)
     {
         var dispatcher = new TakaroRequestDispatcher(new FakeAdapter());
 
-        var response = await dispatcher.DispatchAsync(new TakaroRequest(
-            "map",
-            action,
-            JsonDocument.Parse("""{}""").RootElement));
+        var response = await dispatcher.DispatchAsync(new TakaroRequest("tile", "getMapTile", JsonDocument.Parse(args).RootElement));
 
         Assert.IsFalse(response.Success);
-        Assert.AreEqual("server_only_unsupported", response.ErrorCode);
-        StringAssert.Contains(response.Message, "dedicated server");
+        Assert.AreEqual("invalid_args", response.ErrorCode);
+    }
+
+    private sealed class ThrowingScheduler : IMainThreadActionScheduler
+    {
+        public Task<T> ScheduleAsync<T>(Func<T> action, CancellationToken cancellationToken = default) =>
+            throw new AssertFailedException("map actions must not be queued on the Unity main thread");
     }
 
     [TestMethod]
@@ -492,10 +513,13 @@ public sealed class RequestDispatcherTests
             Task.FromResult(TakaroActionResult.Ok(new[] { LocationFactory.Create("StartTemple", "Start Temple", 0, 0, 0) }));
 
         public Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(TakaroActionResult.Error("server_only_unsupported", "Valheim dedicated server map metadata is unavailable."));
+            Task.FromResult(new WorldMapService().GetMapInfo());
 
-        public Task<TakaroActionResult> GetMapTileAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(TakaroActionResult.Error("server_only_unsupported", "Valheim dedicated server map tiles are unavailable."));
+        public Task<TakaroActionResult> GetMapTileAsync(int x, int y, int z, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"tile:{x}:{y}:{z}");
+            return Task.FromResult(TakaroActionResult.Ok("iVBORw0KGgo="));
+        }
 
         public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default) =>
             RecordCall($"teleport:{identifier}:{position.X}:{position.Y}:{position.Z}", Task.FromResult(TakaroActionResult.Ok(new { queued = true })));

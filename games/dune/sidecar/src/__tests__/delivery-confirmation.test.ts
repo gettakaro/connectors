@@ -141,7 +141,7 @@ describe('connect/disconnect location fallback', () => {
     const r = await rig();
     r.bridge.emit('player-connected', { player: { gameId: 'FLS1', name: 'Tester' } });
     // Takaro asks right after the event; nothing knows this player's position.
-    expect(r.bridge.eventLocationFallback({ gameId: 'FLS1' })).toEqual({ x: 0, y: 0, z: 0 });
+    expect(r.bridge.eventLocationFallback({ gameId: 'FLS1' })).toEqual({ x: 0, y: 0, z: 0, dimension: 'survival_1' });
     // Outside any event window there is no fallback: the request fails honestly.
     expect(r.bridge.eventLocationFallback({ gameId: 'someone-else' })).toBeNull();
   });

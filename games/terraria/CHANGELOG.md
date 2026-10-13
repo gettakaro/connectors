@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/gettakaro/connectors/compare/terraria-v0.4.1...terraria-v0.5.0) (2026-10-11)
+
+
+### Features
+
+* **terraria:** ship TakaroConfig.txt in the bridge zip, keep settings across upgrades and apply token changes without a restart ([#433](https://github.com/gettakaro/connectors/issues/433)) ([1cce164](https://github.com/gettakaro/connectors/commit/1cce16407b6b5d34a619b28d0d349508f262e7fe))
+
 ## [0.4.1](https://github.com/gettakaro/connectors/compare/terraria-v0.4.0...terraria-v0.4.1) (2026-10-07)
 
 

@@ -21,6 +21,8 @@ FAKE_SCENARIO:
             pong, a TCP abort with the unconfirmed player-disconnected resent on the next connection, a
             clean server close followed by a reconnect, and a silent (dead) link the connector must detect. Prints {"ev":"result",...} and exits 0 on success.
   count   accepts TLS and counts identifies (for the rejected-certificate runs).
+  accept  answers every identify: accepted when its registrationToken is FAKE_EXPECT_REGISTRATION, else refused;
+          logs the identity and name it carried (the plugin.json hot-reload runs).
 Every observation is one JSON line on stdout.
 """
 import asyncio
@@ -71,8 +73,12 @@ class Conn:
                 if t == "identify":
                     self.identify = msg.get("payload") or {}
                     p = self.identify
-                    ok = p.get("identityToken") == IDENTITY and p.get("registrationToken") == REGISTRATION and p.get("name") == NAME
-                    log("identify", conn=self.n, ok=ok, keys=sorted(p.keys()))
+                    if SCENARIO == "accept":
+                        ok = p.get("registrationToken") == REGISTRATION
+                        log("identify", conn=self.n, ok=ok, identity=p.get("identityToken"), name=p.get("name"))
+                    else:
+                        ok = p.get("identityToken") == IDENTITY and p.get("registrationToken") == REGISTRATION and p.get("name") == NAME
+                        log("identify", conn=self.n, ok=ok, keys=sorted(p.keys()))
                     if ok:
                         await self.send({"type": "identifyResponse", "payload": {"gameServerId": "fake-gs"}, "requestId": str(uuid.uuid4())})
                         self.identified.set()
@@ -283,7 +289,7 @@ async def main():
     ctx.load_cert_chain(os.environ.get("FAKE_CERT", "/certs/fake-takaro.pem"), os.environ.get("FAKE_KEY", "/certs/fake-takaro.key"))
     log("listen", port=PORT, scenario=SCENARIO, wsPingS=WS_PING_S, websockets=websockets.__version__, python=sys.version.split()[0])
     async with websockets.serve(handler, "0.0.0.0", PORT, ssl=ctx, ping_interval=None, max_size=2**20):
-        if SCENARIO == "count":
+        if SCENARIO in ("count", "accept"):
             await asyncio.Future()
         try:
             await asyncio.wait_for(scenario_native(), float(os.environ.get("FAKE_TIMEOUT_S", "240")))

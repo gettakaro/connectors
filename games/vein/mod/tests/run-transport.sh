@@ -9,12 +9,12 @@ fi
 prefix=${TAKARO_NATIVE_PREFIX:-/opt/takaro-native}
 mkdir -p tests/build
 ${CXX:-g++} -std=c++17 -O1 -g -Isrc -I"$prefix/include" \
-  tests/native_transport_tls.cpp src/native_transport.cpp \
+  tests/native_transport_tls.cpp src/native_transport.cpp src/ca_bundle.cpp \
   "$prefix/lib/libwebsockets.a" "$prefix/lib/libssl.a" "$prefix/lib/libcrypto.a" \
   -pthread -ldl -o tests/build/native_transport_tls
 python3 tests/native_transport_tls.py
 ${CXX:-g++} -std=c++17 -O1 -g -Isrc -I"$prefix/include" \
-  tests/native_game_http.cpp src/native_transport.cpp \
+  tests/native_game_http.cpp src/native_transport.cpp src/ca_bundle.cpp \
   "$prefix/lib/libwebsockets.a" "$prefix/lib/libssl.a" "$prefix/lib/libcrypto.a" \
   -pthread -ldl -o tests/build/native_game_http
 python3 tests/native_game_http.py

@@ -1,18 +1,44 @@
-import { loadConfig } from './config.js';
+import { type BridgeConfig, hasTshockCredentials } from './config.js';
+import { ConfigSource, type LoadedConfig, locateConfig } from './configFile.js';
 import { normalizeGameEvent } from './events/normalizeEvent.js';
 import { PlayerPoller } from './events/playerPoller.js';
 import { PresenceGate } from './events/presenceGate.js';
 import { HealthServer } from './health/server.js';
 import { logger } from './logger.js';
 import { LogTailer } from './logs/logTailer.js';
+import { buildManifest } from './takaro/capabilities.js';
 import { TakaroWsClient } from './takaro/client.js';
+import { MapImageError, MapImageStore } from './takaro/mapImage.js';
 import { logConnectionState } from './takaro/connectionLog.js';
+import { identifyErrorStatus, identifyErrorSummary, identifyErrorText } from './takaro/identifyError.js';
 import type { GameEventType, RequestPayload, WsMessage } from './takaro/protocol.js';
 import { TerrariaAdapter } from './terraria/adapter.js';
 import { TShockClient } from './tshock/client.js';
 
+const CONFIG_POLL_MS = 5000;
+const MAP_POLL_MS = 30000;
+
 async function main(): Promise<void> {
-  const config = loadConfig();
+  const source = new ConfigSource(locateConfig());
+  const configPath = source.path;
+  logger.info(`Terraria bridge config: ${configPath}`);
+  let stopping = false;
+  let stop: () => Promise<void> = async () => {
+    stopping = true;
+    process.exit(0);
+  };
+  process.on('SIGINT', () => void stop());
+  process.on('SIGTERM', () => void stop());
+
+  // A file that could not be created, or is empty, is waited for, not fatal.
+  let loaded: LoadedConfig | null = await source.poll();
+  while (!loaded && !stopping) {
+    await new Promise((resolve) => setTimeout(resolve, CONFIG_POLL_MS));
+    loaded = await source.poll();
+  }
+  if (!loaded) return;
+  let config = loaded.config;
+  logIdentity(loaded);
   const tshock = new TShockClient(config.tshock);
   const adapter = new TerrariaAdapter(tshock, {
     commandAllowlistExact: config.commandAllowlistExact,
@@ -20,10 +46,15 @@ async function main(): Promise<void> {
     enableShutdown: config.enableShutdown,
     serverChatName: config.serverChatName,
   });
+  const mapImage = new MapImageStore(config.mapDir);
+  await mapImage.refresh();
   const takaro = new TakaroWsClient(config.takaroWsUrl, {
     identityToken: config.identityToken,
     registrationToken: config.registrationToken,
     name: config.serverName,
+  }, undefined, undefined, {
+    offerV1: config.protocolVersion === 1,
+    manifest: () => buildManifest(mapImage.current()),
   });
 
   // Reachability from the startup probe only. It seeds /health for the window before the
@@ -63,7 +94,7 @@ async function main(): Promise<void> {
   });
 
   takaro.on('request', (message: WsMessage & { payload?: RequestPayload }) => {
-    void handleTakaroRequest(message, adapter, takaro);
+    void handleTakaroRequest(message, adapter, takaro, mapImage);
   });
   takaro.on('clientError', (err) => {
     logger.error(`Takaro client error: ${err instanceof Error ? err.message : JSON.stringify(err)}`);
@@ -71,13 +102,46 @@ async function main(): Promise<void> {
   takaro.on('serverError', (payload) => {
     logger.error(`Takaro server error: ${JSON.stringify(payload)}`);
   });
+  takaro.on('eventError', (payload) => {
+    logger.warn(`Takaro rejected event: ${JSON.stringify(payload)}`);
+  });
+  takaro.on('eventsDropped', (count) => {
+    logger.warn(`Takaro event buffer full, ${count} oldest unacknowledged events dropped so far`);
+  });
+  takaro.on('capabilitiesError', (error) => {
+    logger.error(`Takaro rejected the capability manifest: ${JSON.stringify(error)}`);
+  });
+  takaro.on('capabilitiesAccepted', () => {
+    logger.info(`Takaro accepted the capability manifest (map revision ${mapImage.current()?.revision ?? 'none'})`);
+  });
   takaro.on('identifyError', (payload) => {
-    logger.error(`Takaro identify error: ${JSON.stringify(payload)}`);
+    // Only the summary: Takaro's error object can carry its own request, auth header included.
+    logger.error(`Takaro identify error: ${identifyErrorSummary(payload)}`);
+    if (identifyErrorStatus(payload) === 409) {
+      banner([
+        `Takaro rejected identify: ${identifyErrorText(payload)}`,
+        `This is usually another game server in Takaro already named "${config.serverName}".`,
+        `Set a different serverName= in ${configPath}`,
+        'and save it. The bridge reconnects within a few seconds, no restart needed.',
+      ]);
+      return;
+    }
+    banner([
+      `Takaro rejected identify: ${identifyErrorText(payload)}`,
+      ...(process.env.TAKARO_REGISTRATION_TOKEN
+        ? ['Check TAKARO_REGISTRATION_TOKEN in the environment; it overrides the config file.']
+        : [
+          `Check registrationToken in ${configPath}`,
+          'and save it. The bridge reconnects within a few seconds, no restart needed.',
+        ]),
+    ]);
   });
   // The connection state goes to the log through one place: `takaro-maint verify` reads
   // those two lines out of this bridge's log to prove the handshake and the reconnect.
   logConnectionState(takaro);
   takaro.on('identified', () => {
+    const map = mapImage.current();
+    logger.info(`Takaro protocol version ${takaro.getProtocolVersion()}${takaro.getProtocolVersion() === 1 ? `, map ${map ? `revision ${map.revision} (${map.width}x${map.height})` : 'not rendered yet'}` : ''}`);
     presence.reset();
     poller.reset();
     poller.start();
@@ -93,38 +157,155 @@ async function main(): Promise<void> {
   const reachability = await adapter.handleAction('testReachability', {});
   startupReachable = Boolean((reachability as { connectable?: boolean }).connectable);
   logger.info(`Terraria bridge health: http://127.0.0.1:${health.port()}/health`);
+  announceMissing(config, configPath, undefined, Boolean(loaded.identityNotSaved));
   takaro.connect();
 
-  const stop = async (): Promise<void> => {
+  const apply = (next: LoadedConfig): void => {
+    const previous = config;
+    config = next.config;
+    logIdentity(next);
+    tshock.updateConfig(config.tshock);
+    if (JSON.stringify(previous.tshock) !== JSON.stringify(config.tshock)) {
+      // /health falls back to the startup probe until the poller runs, so probe again.
+      void adapter.handleAction('testReachability', {}).then((result) => {
+        startupReachable = Boolean((result as { connectable?: boolean }).connectable);
+      });
+    }
+    adapter.updateOptions({
+      commandAllowlistExact: config.commandAllowlistExact,
+      commandAllowlistPrefixes: config.commandAllowlistPrefixes,
+      enableShutdown: config.enableShutdown,
+      serverChatName: config.serverChatName,
+    });
+    const needsRestart = restartOnlyChanges(previous, config);
+    if (needsRestart.length) {
+      logger.warn(`${needsRestart.join(', ')} changed in ${configPath}; restart the bridge to apply ${needsRestart.length > 1 ? 'them' : 'it'}.`);
+    }
+    const reconnecting = takaro.reconfigure(config.takaroWsUrl, {
+      identityToken: config.identityToken,
+      registrationToken: config.registrationToken,
+      name: config.serverName,
+    });
+    if (reconnecting && config.registrationToken) {
+      logger.info(`Takaro connection settings changed in ${configPath}; connecting now`);
+    }
+    announceMissing(config, configPath, previous, Boolean(next.identityNotSaved));
+  };
+
+  // The plugin re-renders the world on its own schedule; a new revision is announced to
+  // Takaro by replacing the manifest, and Takaro then fetches the new image.
+  let mapPolling = false;
+  const mapWatcher = setInterval(() => {
+    if (mapPolling || stopping) return;
+    mapPolling = true;
+    mapImage.setDir(config.mapDir);
+    mapImage.refresh()
+      .then((changed) => {
+        if (!changed) return;
+        const map = mapImage.current();
+        logger.info(`World map revision ${map?.revision} (${map?.width}x${map?.height}) found in ${config.mapDir}`);
+        takaro.sendCapabilities();
+      })
+      .catch((err) => logger.error(`Map refresh failed: ${err instanceof Error ? err.message : String(err)}`))
+      .finally(() => {
+        mapPolling = false;
+      });
+  }, MAP_POLL_MS);
+
+  let polling = false;
+  const watcher = setInterval(() => {
+    if (polling || stopping) return;
+    polling = true;
+    source.poll()
+      .then((next) => {
+        if (next && !stopping) apply(next);
+      })
+      .catch((err) => logger.error(`Config reload failed: ${err instanceof Error ? err.message : String(err)}`))
+      .finally(() => {
+        polling = false;
+      });
+  }, CONFIG_POLL_MS);
+
+  stop = async (): Promise<void> => {
+    if (stopping) return;
+    stopping = true;
     logger.info('Shutting down Terraria Takaro bridge');
+    clearInterval(watcher);
+    clearInterval(mapWatcher);
     poller.stop();
     for (const tailer of tailers) tailer.stop();
     takaro.shutdown();
     await health.stop();
     setTimeout(() => process.exit(0), 100);
   };
+}
 
-  process.on('SIGINT', () => void stop());
-  process.on('SIGTERM', () => void stop());
+function logIdentity(loaded: LoadedConfig): void {
+  if (loaded.identityNotSaved) {
+    banner([
+      'identityToken could not be saved, the server is not connected to Takaro.',
+      loaded.identityNotSaved,
+      'and save it. The bridge connects within a few seconds, no restart needed.',
+    ]);
+  }
+}
+
+/** Settings read once at startup. */
+function restartOnlyChanges(previous: BridgeConfig, next: BridgeConfig): string[] {
+  const changed: string[] = [];
+  if (previous.httpPort !== next.httpPort) changed.push('httpPort');
+  if (previous.pollIntervalMs !== next.pollIntervalMs) changed.push('pollIntervalMs');
+  if (previous.logFiles.join(',') !== next.logFiles.join(',')) changed.push('logFiles');
+  if (previous.logExcludePatterns.join(',') !== next.logExcludePatterns.join(',')) changed.push('logExcludePatterns');
+  if (previous.protocolVersion !== next.protocolVersion) changed.push('protocolVersion');
+  return changed;
+}
+
+/** The banners for what keeps the bridge from working, each once per time it goes missing. */
+function announceMissing(config: BridgeConfig, configPath: string, previous?: BridgeConfig, blocked = false): void {
+  if (!blocked && !config.registrationToken && (!previous || previous.registrationToken)) {
+    banner([
+      'RegistrationToken not set, the server is not connected to Takaro.',
+      `Paste the registration token from Takaro into registrationToken= in ${configPath}`,
+      'and save it. The bridge connects within a few seconds, no restart needed.',
+    ]);
+  }
+  if (!hasTshockCredentials(config) && (!previous || hasTshockCredentials(previous))) {
+    banner([
+      'tshockToken not set, the bridge cannot reach the TShock REST API.',
+      `Paste a TShock application REST token into tshockToken= in ${configPath}`,
+      'and save it. The bridge picks it up within a few seconds, no restart needed.',
+    ]);
+  }
+}
+
+function banner(lines: string[]): void {
+  const rule = '*'.repeat(73);
+  logger.warn([rule, ...lines.map((line) => `  ${line}`), rule].join('\n'));
 }
 
 async function handleTakaroRequest(
   message: WsMessage & { payload?: RequestPayload },
   adapter: TerrariaAdapter,
   takaro: TakaroWsClient,
+  mapImage: MapImageStore,
 ): Promise<void> {
   const requestId = message.requestId;
   if (!requestId) return;
   try {
     const action = message.payload?.action;
-    if (action !== 'getPlayerLocation') {
+    if (action !== 'getPlayerLocation' && action !== 'getMapImage') {
       logger.info(`Accepted Takaro request requestId=${requestId} action=${action ?? '<missing>'}`);
+    }
+    if (action === 'getMapImage') {
+      takaro.sendResponse(requestId, await mapImage.chunk(message.payload?.args));
+      return;
     }
     const result = await adapter.handleAction(action, message.payload?.args);
     takaro.sendResponse(requestId, result);
   } catch (err) {
     const messageText = err instanceof Error ? err.message : String(err);
-    takaro.sendError(requestId, messageText);
+    takaro.sendError(requestId, messageText, err instanceof MapImageError ? err.code : 'game_error');
   }
 }
 

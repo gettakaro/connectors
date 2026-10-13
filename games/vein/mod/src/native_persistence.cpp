@@ -1,4 +1,5 @@
 #include "native_persistence.h"
+#include "config_file.h"
 #include "common.h"
 
 #include <nlohmann/json.hpp>
@@ -20,7 +21,7 @@ namespace fs = std::filesystem;
 std::function<void(const std::string&)> beforeRenameHook;
 std::function<bool(const std::string&)> directorySyncFailureHook;
 #endif
-std::string Env(const char* key) { const char* v = getenv(key); return v && *v ? v : ""; }
+std::string Env(const char* key) { const char* v = ConfigFile::Get(key); return v && *v ? v : ""; }
 std::string Error(const std::string& what, const std::string& file) {
     return what + " " + file + ": " + std::strerror(errno);
 }

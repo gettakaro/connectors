@@ -25,8 +25,33 @@ mod/       C++17, builds libtakaro-dune.so (LD_PRELOAD into the MAP server proce
   tools/     sigderive.py, vtprobe.py — offline binary inspection
   build.sh, Dockerfile.build, Makefile
 scripts/build-release.sh
-docker-compose.example.yml, .env.example, version.txt, CHANGELOG.md
+docker-compose.example.yml, version.txt, CHANGELOG.md
 ```
+
+## Configuration model
+
+`src/dune/config.ts` reads every `DUNE_*` setting from the environment once, at start. The four Takaro connection
+settings (`TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`, `TAKARO_WS_URL`, `TAKARO_SERVER_NAME`) come from
+`src/takaro/settings.ts` instead, and can change while the sidecar runs:
+
+- Sources: the environment, and the `.env` file at `TAKARO_CONFIG_FILE` (default `../.env` beside the sidecar folder;
+  the compose example mounts its own folder read-only at `/takaro-config` and points there). Only those four keys are
+  read from the file.
+- Precedence: a non-empty environment value wins at start. The file is re-read every
+  `TAKARO_CONFIG_POLL_MS` (5000) and compared by text; once a key's file value differs from what the file said at
+  start, the file wins for that key. compose bakes `--env-file` values into the container at create, so this is what
+  lets a saved `.env` take effect without `up -d`. A failed read keeps the current settings.
+- A changed effective value calls `TakaroWsClient.reconfigure`: drop the socket, reset the backoff, connect at once.
+  Late callbacks of the dropped socket are ignored (`this.ws !== ws`); shutdown wins over a pending reconfigure.
+- No registration token: no socket, a `TAKARO_REGISTRATION_TOKEN not set` banner. A rejected identify: a banner with
+  only the error's name, message and HTTP status (Takaro errors can embed an `x-takaro-token` JWT; the logger also
+  redacts JWTs), then retry with backoff.
+- Identity: a configured `TAKARO_IDENTITY_TOKEN` is used as is and never copied anywhere. Without one, the sidecar
+  uses `TAKARO_DATA_DIR/takaro-identity.json`, generating a UUID into it on the first start. That file is the only
+  thing the sidecar writes about its config: the `.env` is mounted read-only in Docker, and `/data` is the volume
+  every upgrade keeps anyway (it also holds the bans).
+- Server name: Takaro uses it only when it creates the record, and names are unique per domain (a deleted record keeps
+  its name reserved for a while). The default is `Dune (<first 8 identity characters>)`; a 409 gets its own banner.
 
 **Ownership rule: game truth lives in the plugin, Takaro protocol shape lives in the sidecar.** Never parse Takaro
 DTOs in C++; never guess game state in TypeScript. Change `mod/docs/API.md` first, then both sides.
@@ -87,7 +112,7 @@ holds a copy of the Steam app, the depot manifest, the image tag, a dependency U
 
 ```
 maintenance/bin/takaro-maint targets list --game dune --format table
-maintenance/bin/takaro-maint build --game dune --target linux-25689360 --version 0.1.0 --out dist
+maintenance/bin/takaro-maint build --game dune --target linux-25789279 --version 0.1.0 --out dist
 scripts/build-release.sh <version> <out-dir> [--target <id>]     # the same build, directly
 ```
 

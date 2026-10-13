@@ -1,15 +1,26 @@
 package io.takaro.minecraft.core;
 
+import java.util.Objects;
+import java.util.function.Function;
+
+/**
+ * The settings in use. Fields are volatile because the config watcher replaces them while the
+ * websocket threads read them.
+ */
 public class TakaroConfig {
-    private String wsUrl;
-    private String identityToken;
-    private String registrationToken;
-    private boolean reconnectEnabled = true;
-    private long reconnectDelay = 5000;
-    private long maxReconnectDelay = 300000;
-    private double backoffMultiplier = 1.5;
-    private boolean debugEnabled = false;
-    private String targetPolicy = "enforce";
+    /** The URL a new config file is written with. */
+    public static final String DEFAULT_WS_URL = "wss://connect.takaro.io/";
+
+    private volatile String wsUrl;
+    private volatile String identityToken;
+    private volatile String registrationToken;
+    private volatile boolean reconnectEnabled = true;
+    private volatile long reconnectDelay = 5000;
+    private volatile long maxReconnectDelay = 300000;
+    private volatile double backoffMultiplier = 1.5;
+    private volatile boolean debugEnabled = false;
+    private volatile String targetPolicy = "enforce";
+    private volatile boolean mapEnabled = false;
 
     public String getWsUrl() { return wsUrl; }
     public void setWsUrl(String wsUrl) { this.wsUrl = wsUrl; }
@@ -39,26 +50,73 @@ public class TakaroConfig {
     public String getTargetPolicy() { return targetPolicy; }
     public void setTargetPolicy(String targetPolicy) { this.targetPolicy = targetPolicy; }
 
+    /**
+     * Serve the world map. The map needs Takaro protocol v1, so this also offers v1 when
+     * identifying; Takaro picks it when it speaks it.
+     */
+    public boolean isMapEnabled() { return mapEnabled; }
+    public void setMapEnabled(boolean mapEnabled) { this.mapEnabled = mapEnabled; }
+
     public void applyEnvOverrides() {
-        String wsUrlEnv = System.getenv("TAKARO_WS_URL");
+        applyEnvOverrides(System::getenv);
+    }
+
+    /** A TAKARO_* variable that is set and not empty wins over the file. */
+    public void applyEnvOverrides(Function<String, String> env) {
+        String wsUrlEnv = env.apply("TAKARO_WS_URL");
         if (wsUrlEnv != null && !wsUrlEnv.isEmpty()) {
             this.wsUrl = wsUrlEnv;
         }
-        String identityEnv = System.getenv("TAKARO_IDENTITY_TOKEN");
+        String identityEnv = env.apply("TAKARO_IDENTITY_TOKEN");
         if (identityEnv != null && !identityEnv.isEmpty()) {
             this.identityToken = identityEnv;
         }
-        String registrationEnv = System.getenv("TAKARO_REGISTRATION_TOKEN");
+        String registrationEnv = env.apply("TAKARO_REGISTRATION_TOKEN");
         if (registrationEnv != null && !registrationEnv.isEmpty()) {
             this.registrationToken = registrationEnv;
         }
-        String policyEnv = System.getenv("TAKARO_TARGET_POLICY");
+        String policyEnv = env.apply("TAKARO_TARGET_POLICY");
         if (policyEnv != null && !policyEnv.isEmpty()) {
             this.targetPolicy = policyEnv;
         }
-        String debugEnv = System.getenv("TAKARO_DEBUG");
+        String debugEnv = env.apply("TAKARO_DEBUG");
         if (debugEnv != null && !debugEnv.isEmpty()) {
             this.debugEnabled = "true".equalsIgnoreCase(debugEnv) || "1".equals(debugEnv);
         }
+        String mapEnv = env.apply("TAKARO_MAP");
+        if (mapEnv != null && !mapEnv.isEmpty()) {
+            this.mapEnabled = "true".equalsIgnoreCase(mapEnv) || "1".equals(mapEnv);
+        }
+    }
+
+    /** True when switching from this config to {@code other} needs a new connection. */
+    public boolean sameConnection(TakaroConfig other) {
+        return Objects.equals(wsUrl, other.wsUrl)
+                && Objects.equals(identityToken, other.identityToken)
+                && Objects.equals(registrationToken, other.registrationToken)
+                && Objects.equals(targetPolicy, other.targetPolicy)
+                && reconnectEnabled == other.reconnectEnabled
+                && mapEnabled == other.mapEnabled;
+    }
+
+    public boolean sameSettings(TakaroConfig other) {
+        return sameConnection(other)
+                && reconnectDelay == other.reconnectDelay
+                && maxReconnectDelay == other.maxReconnectDelay
+                && backoffMultiplier == other.backoffMultiplier
+                && debugEnabled == other.debugEnabled;
+    }
+
+    public void copyFrom(TakaroConfig other) {
+        wsUrl = other.wsUrl;
+        identityToken = other.identityToken;
+        registrationToken = other.registrationToken;
+        reconnectEnabled = other.reconnectEnabled;
+        reconnectDelay = other.reconnectDelay;
+        maxReconnectDelay = other.maxReconnectDelay;
+        backoffMultiplier = other.backoffMultiplier;
+        debugEnabled = other.debugEnabled;
+        targetPolicy = other.targetPolicy;
+        mapEnabled = other.mapEnabled;
     }
 }

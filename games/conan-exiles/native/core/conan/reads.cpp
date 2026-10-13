@@ -5,6 +5,7 @@
 #include "conan/text.h"
 #include "gamethread.h"
 #include "takaro/json_util.h"
+#include "takaro/protocol.h"
 #include "ue/ue.h"
 
 #include <cmath>
@@ -26,9 +27,10 @@ const std::vector<std::string> kScanNames = {
     "Default__KismetTextLibrary", "ItemTable", "ItemNameToTemplateID", "SpawnDataTable", "MapMarkers_ConanSandbox",
 };
 
-ActionResult Fail(const std::string& error) {
+ActionResult Fail(const std::string& error, const char* code = "") {
     ActionResult r;
     r.error = error;
+    r.code = code;
     return r;
 }
 
@@ -145,7 +147,16 @@ bool ReadService::EnsureGameStates(std::string& error) {
         error = "no live GameState (world not loaded yet)";
         return false;
     }
+    std::string region = Region();
+    std::lock_guard<std::mutex> g(regionMu_);
+    if (region != region_) NativeLog("reads: loaded map %s", region.empty() ? "unknown" : region.c_str());
+    region_ = region;
     return true;
+}
+
+std::string ReadService::CurrentRegion() {
+    std::lock_guard<std::mutex> g(regionMu_);
+    return region_;
 }
 
 std::string ReadService::Region() {
@@ -623,7 +634,7 @@ ActionResult ReadService::ExecuteImpl(const std::string& action, const JsonValue
     std::vector<std::string> ids = Candidates(args);
     if (ids.empty()) {
         errors_++;
-        return Fail(action + " needs a player (gameId, steamId, platformId or name)");
+        return Fail(action + " needs a player (gameId, steamId, platformId or name)", takaro::kInvalidArgs);
     }
     const PlayerRecord* p = Match(players, ids);
 
@@ -678,13 +689,14 @@ ActionResult ReadService::ExecuteImpl(const std::string& action, const JsonValue
             if (reader.Location(p->pc, loc, error)) return Raw(Vec(loc.x, loc.y, loc.z));
         }
         errors_++;
-        return Fail("getPlayerLocation: player " + ids.front() + (p ? " has no character in the world right now" : " is not online"));
+        return Fail("getPlayerLocation: player " + ids.front() + (p ? " has no character in the world right now" : " is not online"),
+                    takaro::kNotFound);
     }
 
     if (action == "getPlayerInventory") {
         if (!p) {
             errors_++;
-            return Fail("getPlayerInventory: player " + ids.front() + " is not online");
+            return Fail("getPlayerInventory: player " + ids.front() + " is not online", takaro::kNotFound);
         }
         if (!p->pawn) {
             errors_++;

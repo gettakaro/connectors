@@ -51,8 +51,9 @@ with undefined strong symbols: `LD_PRELOAD` would crash-loop the server.
 
 ## Deploying
 
-The plugin file is mounted/copied read-only outside the Steam tree and `LD_PRELOAD` is applied to
-the server launch line only (never to 32-bit steamcmd):
+The plugin file is copied outside the Steam tree and `LD_PRELOAD` is applied to the server launch
+line only (never to 32-bit steamcmd). The connector creates `takaro.cfg` next to it; the environment
+variables below win over that file:
 
 ```
 cp dist/libtakaro-dragonwilds.so <somewhere outside the Steam tree>/
@@ -62,7 +63,7 @@ LD_PRELOAD=<that path>/libtakaro-dragonwilds.so \
 ```
 
 Runtime artefacts land in `<server>/RSDragonwilds/Binaries/Linux/takaro/`: `plugin.log`,
-`symcache.json`, `bans.json`, the connector state files, optional `plugin.json`. Diagnostics, when
+`symcache.json`, `bans.json`, the connector state files. Diagnostics, when
 `TAKARO_PLUGIN_TOKEN` is set:
 `curl -s -H "Authorization: Bearer $TAKARO_PLUGIN_TOKEN" http://127.0.0.1:18890/health`.
 

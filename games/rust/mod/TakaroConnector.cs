@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net.WebSockets;
 using System.Text;
@@ -13,30 +14,456 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("TakaroConnector", "Takaro", "0.1.3")] // x-release-please-version
+    [Info("TakaroConnector", "Takaro", "0.2.0")] // x-release-please-version
     [Description("Takaro Generic Connector — connects outbound to Takaro via WebSocket")]
     public class TakaroConnector : RustPlugin
     {
         // --- Configuration ---
 
-        private string _wsUrl;
-        private string _registrationToken;
-        private string _identityToken;
-        private bool _debug;
+        // takaro:config-begin
+        // The plugin's config is <framework config dir>/TakaroConnector.json, created on first
+        // load. Environment variables, when set and non-empty, win over the file field by
+        // field and are never written to it.
+        internal const string DefaultWsUrl = "wss://connect.takaro.io/";
+        internal const string EnvWsUrl = "TAKARO_WS_URL";
+        internal const string EnvRegistrationToken = "TAKARO_REGISTRATION_TOKEN";
+        internal const string EnvIdentityToken = "TAKARO_IDENTITY_TOKEN";
+        internal const string EnvDebug = "TAKARO_DEBUG";
+
+        internal sealed class ConnectorSettings
+        {
+            public string WsUrl = DefaultWsUrl;
+            public string RegistrationToken = "";
+            public string IdentityToken = "";
+            public bool Debug;
+            public bool RegistrationFromEnv;
+            public bool IdentityFromEnv;
+
+            public bool SameConnection(ConnectorSettings other)
+            {
+                return other != null
+                    && WsUrl == other.WsUrl
+                    && RegistrationToken == other.RegistrationToken
+                    && IdentityToken == other.IdentityToken;
+            }
+        }
+
+        // What the file says; null means the key is absent.
+        internal sealed class ConfigFileValues
+        {
+            public string RegistrationToken;
+            public string IdentityToken;
+            public string WsUrl;
+            public bool? Debug;
+
+            public bool HasAnyKey
+            {
+                get { return RegistrationToken != null || IdentityToken != null || WsUrl != null || Debug != null; }
+            }
+        }
+
+        // Throws on anything that is not a JSON object: the caller keeps its settings.
+        internal static ConfigFileValues ParseConfigText(string text)
+        {
+            var json = JObject.Parse(text);
+            var values = new ConfigFileValues
+            {
+                RegistrationToken = StringField(json, "RegistrationToken"),
+                IdentityToken = StringField(json, "IdentityToken"),
+                WsUrl = StringField(json, "WebSocketUrl"),
+            };
+            var debug = json["Debug"];
+            if (debug != null && debug.Type == JTokenType.Boolean)
+                values.Debug = debug.Value<bool>();
+            else if (debug != null && debug.Type == JTokenType.String)
+                values.Debug = string.Equals(debug.Value<string>()?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+            return values;
+        }
+
+        private static string StringField(JObject json, string key)
+        {
+            var token = json[key];
+            if (token == null) return null;
+            if (token.Type == JTokenType.Null) return "";
+            return (token.Type == JTokenType.String ? token.Value<string>() : token.ToString()).Trim();
+        }
+
+        internal static string RenderConfigText(ConfigFileValues values)
+        {
+            var json = new JObject
+            {
+                ["RegistrationToken"] = values.RegistrationToken ?? "",
+                ["IdentityToken"] = values.IdentityToken ?? "",
+                ["WebSocketUrl"] = string.IsNullOrEmpty(values.WsUrl) ? DefaultWsUrl : values.WsUrl,
+                ["Debug"] = values.Debug ?? false,
+            };
+            return json.ToString(Formatting.Indented) + "\n";
+        }
+
+        // While running: a missing, empty or unparseable file is one being saved or edited,
+        // so it yields nothing and the current settings stay.
+        internal static bool TryParseRunningConfig(string text, out ConfigFileValues values)
+        {
+            values = null;
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            try { values = ParseConfigText(text); }
+            catch { return false; }
+            return true;
+        }
+
+        // A file the plugin never wrote: absent, empty, or the "{}" a framework may leave.
+        internal static bool IsFreshConfig(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return true;
+            try { return !ParseConfigText(text).HasAnyKey; }
+            catch { return false; }
+        }
+
+        // The file a first load writes: no token yet and a new identity.
+        internal static ConfigFileValues FirstConfig(Func<string> newIdentity)
+        {
+            return new ConfigFileValues
+            {
+                RegistrationToken = "",
+                IdentityToken = newIdentity(),
+                WsUrl = DefaultWsUrl,
+                Debug = false,
+            };
+        }
+
+        // The file text with IdentityToken set; every other key stays as it was.
+        internal static string WithIdentity(string text, string identity)
+        {
+            var json = JObject.Parse(text);
+            json["IdentityToken"] = identity;
+            return json.ToString(Formatting.Indented) + "\n";
+        }
+
+        // `current` is what is in use (null on first load): an absent key while running is a
+        // file being edited, so it keeps the current token instead of dropping it.
+        internal static ConnectorSettings ResolveSettings(ConfigFileValues file, Func<string, string> env, ConnectorSettings current)
+        {
+            var settings = new ConnectorSettings();
+
+            var envUrl = env(EnvWsUrl);
+            settings.WsUrl = !string.IsNullOrEmpty(envUrl) ? envUrl
+                : !string.IsNullOrEmpty(file.WsUrl) ? file.WsUrl
+                : DefaultWsUrl;
+
+            var envRegistration = env(EnvRegistrationToken);
+            settings.RegistrationFromEnv = !string.IsNullOrEmpty(envRegistration);
+            settings.RegistrationToken = settings.RegistrationFromEnv ? envRegistration
+                : file.RegistrationToken ?? (current != null && !current.RegistrationFromEnv ? current.RegistrationToken : "");
+
+            var envIdentity = env(EnvIdentityToken);
+            settings.IdentityFromEnv = !string.IsNullOrEmpty(envIdentity);
+            settings.IdentityToken = settings.IdentityFromEnv ? envIdentity
+                : file.IdentityToken ?? (current != null && !current.IdentityFromEnv ? current.IdentityToken : "");
+
+            var envDebug = env(EnvDebug);
+            settings.Debug = !string.IsNullOrEmpty(envDebug)
+                ? envDebug.ToLower() == "true"
+                : file.Debug ?? false;
+            return settings;
+        }
+        // Takaro's identify errors can carry its own internal request, x-takaro-token JWT and
+        // all: only name, message and HTTP status are logged, and anything shaped like a JWT
+        // is cut out of them.
+        internal static string IdentifyErrorText(JToken error)
+        {
+            if (error == null || error.Type == JTokenType.Null) return "unknown error";
+            if (error.Type != JTokenType.Object) return RedactJwt(error.ToString());
+
+            var obj = (JObject)error;
+            var parts = new List<string>();
+            foreach (var key in new[] { "name", "message" })
+            {
+                var value = obj[key];
+                if (value != null && value.Type == JTokenType.String && !string.IsNullOrEmpty(value.Value<string>()))
+                    parts.Add(value.Value<string>());
+            }
+            foreach (var key in new[] { "status", "statusCode", "httpCode" })
+            {
+                var value = obj[key];
+                if (value != null && (value.Type == JTokenType.Integer || value.Type == JTokenType.String))
+                {
+                    parts.Add("HTTP " + value);
+                    break;
+                }
+            }
+            return parts.Count == 0 ? "unknown error" : RedactJwt(string.Join(": ", parts));
+        }
+
+        internal static string RedactJwt(string text)
+        {
+            return System.Text.RegularExpressions.Regex.Replace(text ?? "",
+                @"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", "<redacted token>");
+        }
+        // takaro:config-end
+
+        // takaro:map-begin
+        //
+        // World map for Takaro's getMapInfo/getMapTile (protocol v0). The tiles follow the
+        // 7 Days to Die web-map layout the Takaro player map already draws: 128 px tiles,
+        // signed tile indices centred on the world origin, tile x grows east (+X), tile y
+        // grows north (+Z), and at MapMaxZoom one pixel is one metre. At zoom z one tile
+        // therefore spans 128 * 2^(MapMaxZoom - z) metres. Everything in this region is free
+        // of Unity and game types so tests/map can compile and run it on its own.
+
+        internal const int MapTilePixels = 128;
+        internal const int MapMaxZoom = 4;
+
+        // Ocean served around the world square, in metres. The in-game map shows open sea
+        // past the edge too, and players can swim or sail out there.
+        internal const float MapOceanPad = 512f;
+
+        // At most this many raster pixels along one side; bigger worlds render at less than
+        // one pixel per metre. Rendering is the game's own, on the main thread, and its cost
+        // grows with the pixel count.
+        internal const int MapMaxRasterSide = 2048;
+
+        /// <summary>
+        /// The world map as one RGB raster. Row 0 is the southern edge (Unity texture order),
+        /// column 0 the western edge. Immutable once built.
+        /// </summary>
+        internal sealed class MapRaster
+        {
+            public readonly byte[] Rgb;
+            public readonly int Width;
+            public readonly int Height;
+            public readonly float WorldSize;
+            public readonly float MinX;
+            public readonly float MinZ;
+            public readonly float PixelsPerMetre;
+            public readonly byte BackgroundR;
+            public readonly byte BackgroundG;
+            public readonly byte BackgroundB;
+            public readonly string Key;
+
+            public MapRaster(byte[] rgb, int width, int height, float worldSize, float minX, float minZ,
+                float pixelsPerMetre, byte backgroundR, byte backgroundG, byte backgroundB, string key)
+            {
+                if (width <= 0 || height <= 0 || rgb == null || rgb.Length != width * height * 3)
+                    throw new ArgumentException("map raster size does not match its pixels");
+                if (!(pixelsPerMetre > 0f) || !(worldSize > 0f))
+                    throw new ArgumentException("map raster scale must be positive");
+                Rgb = rgb;
+                Width = width;
+                Height = height;
+                WorldSize = worldSize;
+                MinX = minX;
+                MinZ = minZ;
+                PixelsPerMetre = pixelsPerMetre;
+                BackgroundR = backgroundR;
+                BackgroundG = backgroundG;
+                BackgroundB = backgroundB;
+                Key = key ?? "";
+            }
+        }
+
+        /// <summary>Raster pixels per metre for a world of this size: 1, or less for big worlds.</summary>
+        internal static float MapRenderScale(float worldSize)
+        {
+            if (!(worldSize > 0f)) return 1f;
+            return Math.Min(1f, Math.Max(0.25f, MapMaxRasterSide / worldSize));
+        }
+
+        internal static double MapTileWorldSize(int zoom)
+        {
+            return MapTilePixels * Math.Pow(2, MapMaxZoom - zoom);
+        }
+
+        /// <summary>True when the tile overlaps the world square plus its ocean pad.</summary>
+        internal static bool MapTileInRange(float worldSize, int zoom, int x, int y)
+        {
+            if (zoom < 0 || zoom > MapMaxZoom || !(worldSize > 0f)) return false;
+            var size = MapTileWorldSize(zoom);
+            var edge = worldSize / 2.0 + MapOceanPad;
+            var minX = x * size;
+            var minZ = y * size;
+            return minX < edge && minX + size > -edge && minZ < edge && minZ + size > -edge;
+        }
+
+        /// <summary>
+        /// Payload for Takaro's MapInfoDTO. mapBlockSize is the world size of one tile at
+        /// maxZoom. Every mapSize* is the horizontal extent so readers that take X/Y and those
+        /// that take X/Z as the ground plane both get it, and the vertical axis reads as Y.
+        /// </summary>
+        internal static JObject MapInfo(bool enabled, float worldSize)
+        {
+            var extent = (int)Math.Round(worldSize > 0f ? worldSize : 0f);
+            return new JObject
+            {
+                ["enabled"] = enabled,
+                ["mapBlockSize"] = MapTilePixels,
+                ["maxZoom"] = MapMaxZoom,
+                ["mapSizeX"] = extent,
+                ["mapSizeY"] = extent,
+                ["mapSizeZ"] = extent
+            };
+        }
+
+        /// <summary>
+        /// Reads getMapTile's {x, y, z} (z may come as "zoom"; numbers may come as strings).
+        /// Returns null when they are usable, or the reason they are not.
+        /// </summary>
+        internal static string ParseMapTileArgs(JObject args, out int x, out int y, out int zoom)
+        {
+            x = 0;
+            y = 0;
+            zoom = 0;
+            if (args == null) return "x, y and z are required";
+            if (!MapInt(args["x"], out x)) return "x must be an integer";
+            if (!MapInt(args["y"], out y)) return "y must be an integer";
+            var z = args["z"];
+            if (z == null || z.Type == JTokenType.Null) z = args["zoom"];
+            if (!MapInt(z, out zoom)) return "z must be an integer";
+            if (zoom < 0 || zoom > MapMaxZoom) return $"z must be between 0 and {MapMaxZoom}";
+            return null;
+        }
+
+        private static bool MapInt(JToken token, out int value)
+        {
+            value = 0;
+            if (token == null) return false;
+            if (token.Type == JTokenType.Integer)
+            {
+                var n = token.Value<long>();
+                if (n < int.MinValue || n > int.MaxValue) return false;
+                value = (int)n;
+                return true;
+            }
+            if (token.Type == JTokenType.Float)
+            {
+                var d = token.Value<double>();
+                if (d != Math.Floor(d) || d < int.MinValue || d > int.MaxValue) return false;
+                value = (int)d;
+                return true;
+            }
+            if (token.Type == JTokenType.String)
+                return int.TryParse(token.Value<string>(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+            return false;
+        }
+
+        /// <summary>
+        /// One tile as RGB, row 0 = the tile's southern edge (Unity texture order, which
+        /// EncodeToPNG writes as the bottom row). Each output pixel averages up to 4x4 raster
+        /// samples so zoomed-out tiles do not alias.
+        /// </summary>
+        internal static byte[] RenderMapTileRgb(MapRaster raster, int zoom, int x, int y)
+        {
+            const int n = MapTilePixels;
+            var rgb = new byte[n * n * 3];
+            var size = MapTileWorldSize(zoom);
+            var metresPerPixel = size / n;
+            var samples = (int)Math.Max(1, Math.Min(4, Math.Ceiling(metresPerPixel * raster.PixelsPerMetre)));
+            var step = metresPerPixel / samples;
+            var originX = x * size;
+            var originZ = y * size;
+            for (var row = 0; row < n; row++)
+            {
+                for (var column = 0; column < n; column++)
+                {
+                    int r = 0, g = 0, b = 0;
+                    for (var sz = 0; sz < samples; sz++)
+                    {
+                        var wz = originZ + row * metresPerPixel + (sz + 0.5) * step;
+                        for (var sx = 0; sx < samples; sx++)
+                        {
+                            var wx = originX + column * metresPerPixel + (sx + 0.5) * step;
+                            var index = MapRasterIndex(raster, wx, wz);
+                            if (index < 0)
+                            {
+                                r += raster.BackgroundR;
+                                g += raster.BackgroundG;
+                                b += raster.BackgroundB;
+                            }
+                            else
+                            {
+                                r += raster.Rgb[index];
+                                g += raster.Rgb[index + 1];
+                                b += raster.Rgb[index + 2];
+                            }
+                        }
+                    }
+                    var count = samples * samples;
+                    var offset = (row * n + column) * 3;
+                    rgb[offset] = (byte)((r + count / 2) / count);
+                    rgb[offset + 1] = (byte)((g + count / 2) / count);
+                    rgb[offset + 2] = (byte)((b + count / 2) / count);
+                }
+            }
+            return rgb;
+        }
+
+        /// <summary>Byte offset of the raster pixel under a world point, or -1 outside the raster.</summary>
+        internal static int MapRasterIndex(MapRaster raster, double worldX, double worldZ)
+        {
+            var px = (int)Math.Floor((worldX - raster.MinX) * raster.PixelsPerMetre);
+            var py = (int)Math.Floor((worldZ - raster.MinZ) * raster.PixelsPerMetre);
+            if (px < 0 || py < 0 || px >= raster.Width || py >= raster.Height) return -1;
+            return (py * raster.Width + px) * 3;
+        }
+
+        /// <summary>
+        /// Names the world a raster was drawn from, so a wipe, a new seed or size, a game
+        /// update that changes procedural generation, or a custom map never reuses an old
+        /// render. Safe as a file name.
+        /// </summary>
+        internal static string MapWorldKey(uint size, uint seed, string mapFileName, string checksum)
+        {
+            var source = (mapFileName ?? "") + "|" + (checksum ?? "");
+            ulong hash = 14695981039346656037UL;
+            foreach (var c in source)
+            {
+                hash ^= c;
+                hash *= 1099511628211UL;
+            }
+            return $"{size}_{seed}_{hash:x16}";
+        }
+        // takaro:map-end
+
+        private const string ConfigFileName = "TakaroConnector.json";
+        private const int ConfigCheckEverySeconds = 5;
+
+        private volatile ConnectorSettings _settings = new ConnectorSettings();
+        private string _configPath;
+        private string _configText;
+        private string _configProblem;
+        // The identity the file holds; put back when an edit removes it.
+        private string _fileIdentity;
+        private Timer _tickTimer;
+        private int _tickCount;
+
+        private bool _debug { get { return _settings.Debug; } }
 
         private const long InitialReconnectDelay = 5000;
         private const long MaxReconnectDelay = 300000;
         private const double BackoffMultiplier = 1.5;
 
         // --- WebSocket State ---
+        //
+        // Connections are started on the main thread only (Init, the 1 s tick). Every
+        // connection carries the generation it was started under; a socket task, close or
+        // reconnect request from an older generation is stale and changes nothing.
 
         private ClientWebSocket _ws;
         private CancellationTokenSource _cts;
         private volatile bool _shouldReconnect = true;
         private long _currentReconnectDelay = InitialReconnectDelay;
         private volatile bool _connected;
-        private volatile bool _identifySent;
+        private int _generation;
+        private int _identifySentGeneration = -1;
+        // An auth close stops retries for that connection only; a config change starts a new one.
+        private int _authClosedGeneration = -1;
+        private ReconnectRequest _pendingReconnect;
         private readonly object _sendLock = new object();
+
+        private sealed class ReconnectRequest
+        {
+            public int Generation;
+            public long DueTicks;
+        }
         private readonly Dictionary<string, Vector3> _lastPosition = new Dictionary<string, Vector3>();
 
         // --- Timed Bans ---
@@ -73,25 +500,22 @@ namespace Oxide.Plugins
             LoadTimedBans();
             _banSweepTimer = timer.Every(BanSweepInterval, () => PruneExpiredBans());
 
-            _wsUrl = Environment.GetEnvironmentVariable("TAKARO_WS_URL") ?? "wss://connect.takaro.io/";
-            _registrationToken = Environment.GetEnvironmentVariable("TAKARO_REGISTRATION_TOKEN") ?? "";
-            _identityToken = Environment.GetEnvironmentVariable("TAKARO_IDENTITY_TOKEN") ?? "";
-            _debug = Environment.GetEnvironmentVariable("TAKARO_DEBUG")?.ToLower() == "true";
+            _configPath = Path.GetFullPath(Path.Combine(Interface.Oxide.ConfigDirectory, ConfigFileName));
+            LoadSettings();
+            _tickTimer = timer.Every(1f, Tick);
 
-            if (string.IsNullOrEmpty(_registrationToken))
+            var settings = _settings;
+            LogInfo($"Config: {_configPath} (registration token {TokenSource(settings)})");
+            if (settings.RegistrationFromEnv)
+                LogInfo($"{EnvRegistrationToken} is set in the server's environment and overrides RegistrationToken in the config file");
+
+            if (string.IsNullOrEmpty(settings.RegistrationToken))
             {
-                PrintWarning("TAKARO_REGISTRATION_TOKEN not set. Plugin will not connect.");
+                LogMissingToken();
                 return;
             }
 
-            Subscribe("OnPlayerConnected");
-            Subscribe("OnPlayerDisconnected");
-            Subscribe("OnPlayerChat");
-            Subscribe("OnPlayerDeath");
-            Subscribe("OnEntityDeath");
-            Subscribe("OnServerMessage");
-
-            LogInfo($"Connecting to {_wsUrl}");
+            LogInfo($"Connecting to {settings.WsUrl}");
             StartConnection();
         }
 
@@ -99,6 +523,10 @@ namespace Oxide.Plugins
         {
             _shouldReconnect = false;
             _connected = false;
+            Interlocked.Increment(ref _generation);
+            Interlocked.Exchange(ref _pendingReconnect, null);
+            _tickTimer?.Destroy();
+            _tickTimer = null;
             _cts?.Cancel();
             try { _ws?.Dispose(); } catch { }
             _banSweepTimer?.Destroy();
@@ -106,60 +534,288 @@ namespace Oxide.Plugins
             _lastPosition.Clear();
         }
 
+        // --- Config file ---
+
+        private static string EnvValue(string name)
+        {
+            return Environment.GetEnvironmentVariable(name);
+        }
+
+        private static string TokenSource(ConnectorSettings settings)
+        {
+            if (settings.RegistrationFromEnv) return $"from {EnvRegistrationToken}";
+            return string.IsNullOrEmpty(settings.RegistrationToken) ? "not set" : "set";
+        }
+
+        private static string ReadConfigText(string path)
+        {
+            return File.Exists(path) ? File.ReadAllText(path) : null;
+        }
+
+        // First load: an absent (or never-written) file is created with an empty token and a
+        // new identity; an existing file without an identity gets one written into it.
+        private void LoadSettings()
+        {
+            string text;
+            try { text = ReadConfigText(_configPath); }
+            catch (Exception ex)
+            {
+                // Never recreate a file that exists but could not be read: that would replace
+                // its token and identity. The 5 s check picks it up once it reads.
+                LogWarning($"Could not read {_configPath} ({ex.Message}); trying again in a few seconds");
+                _configText = null;
+                _configProblem = "";
+                _settings = ResolveSettings(new ConfigFileValues(), EnvValue, null);
+                return;
+            }
+
+            ConfigFileValues file = null;
+            if (text == null || IsFreshConfig(text))
+            {
+                file = FirstConfig(() => Guid.NewGuid().ToString());
+                _fileIdentity = file.IdentityToken;
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(_configPath));
+                    File.WriteAllText(_configPath, RenderConfigText(file));
+                    text = File.ReadAllText(_configPath);
+                    LogInfo($"Created {_configPath} with a new identity token");
+                }
+                catch (Exception ex)
+                {
+                    LogWarning($"Could not create {_configPath}: {ex.Message}");
+                }
+            }
+            else
+            {
+                try
+                {
+                    file = ParseConfigText(text);
+                    text = EnsureIdentity(text, file);
+                }
+                catch (Exception ex)
+                {
+                    _configProblem = text;
+                    LogWarning($"Could not read {_configPath} ({ex.Message}); fix the file and save it, the plugin re-reads it every few seconds");
+                    file = new ConfigFileValues();
+                }
+            }
+
+            _configText = text;
+            _settings = ResolveSettings(file, EnvValue, null);
+        }
+
+        // A file without an IdentityToken gets this server's identity (a new one if it never
+        // had one) written back. Returns the text now in the file.
+        private string EnsureIdentity(string text, ConfigFileValues file)
+        {
+            if (!string.IsNullOrEmpty(file.IdentityToken))
+            {
+                _fileIdentity = file.IdentityToken;
+                return text;
+            }
+            var generated = _fileIdentity == null;
+            if (generated) _fileIdentity = Guid.NewGuid().ToString();
+            file.IdentityToken = _fileIdentity;
+            try
+            {
+                var updated = WithIdentity(text, _fileIdentity);
+                // Replaced in one step, so a crash never leaves the token half written.
+                var tmp = _configPath + ".tmp";
+                File.WriteAllText(tmp, updated);
+                File.Replace(tmp, _configPath, null);
+                LogInfo(generated
+                    ? $"No IdentityToken in {_configPath}; generated one and saved it"
+                    : $"IdentityToken was removed from {_configPath}; putting this server's identity back");
+                return updated;
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"Could not save the IdentityToken in {_configPath} ({ex.Message}); using it for this run");
+                return text;
+            }
+        }
+
+        // Runs on the main thread every second: re-reads the config every few seconds and
+        // starts any reconnect a closed socket asked for.
+        private void Tick()
+        {
+            if (++_tickCount % ConfigCheckEverySeconds == 0)
+            {
+                try { CheckConfig(); }
+                catch (Exception ex) { LogWarning($"Error checking {_configPath}: {ex.Message}"); }
+            }
+
+            var request = Interlocked.Exchange(ref _pendingReconnect, null);
+            if (request == null || request.Generation != _generation) return;
+            if (DateTime.UtcNow.Ticks < request.DueTicks)
+            {
+                Interlocked.CompareExchange(ref _pendingReconnect, request, null);
+                return;
+            }
+            if (_shouldReconnect && !string.IsNullOrEmpty(_settings.RegistrationToken))
+                StartConnection();
+        }
+
+        // Compares the whole text: a timestamp can miss a same-length edit. A file that is
+        // missing, empty or unparseable mid-save keeps the current settings until next time.
+        private void CheckConfig()
+        {
+            string text;
+            try { text = ReadConfigText(_configPath); }
+            catch { return; }
+            if (text == _configText) { _configProblem = null; return; }
+
+            ConfigFileValues file;
+            if (!TryParseRunningConfig(text, out file))
+            {
+                if (_configProblem != (text ?? ""))
+                    LogWarning(string.IsNullOrWhiteSpace(text)
+                        ? $"{_configPath} is missing or empty; keeping the current settings. Reload the plugin to recreate it"
+                        : $"Could not read {_configPath}; keeping the current settings and trying again in a few seconds");
+                _configProblem = text ?? "";
+                return;
+            }
+
+            _configProblem = null;
+            _configText = EnsureIdentity(text, file);
+            var previous = _settings;
+            var next = ResolveSettings(file, EnvValue, previous);
+            _settings = next;
+            if (next.SameConnection(previous)) return;
+
+            LogInfo($"{ConfigFileName} changed; reconnecting with the new settings (registration token {TokenSource(next)})");
+            Reconnect();
+        }
+
+        // Drops the current socket and connects afresh, skipping whatever backoff a rejected
+        // token had built up.
+        private void Reconnect()
+        {
+            Interlocked.Increment(ref _generation);
+            Interlocked.Exchange(ref _pendingReconnect, null);
+            _connected = false;
+            _cts?.Cancel();
+            try { _ws?.Dispose(); } catch { }
+            _ws = null;
+            _currentReconnectDelay = InitialReconnectDelay;
+            _shouldReconnect = true;
+
+            if (string.IsNullOrEmpty(_settings.RegistrationToken))
+            {
+                LogMissingToken();
+                return;
+            }
+            LogInfo($"Connecting to {_settings.WsUrl}");
+            StartConnection();
+        }
+
+        // Config problems stop the connection outright, so they must stand out in a busy
+        // server console.
+        private void LogBanner(params string[] lines)
+        {
+            const string rule = "*************************************************************************";
+            var text = new StringBuilder();
+            text.Append(rule);
+            foreach (var line in lines)
+                text.Append("\n  ").Append(line);
+            text.Append('\n').Append(rule);
+            try { PrintWarning("\n" + text); } catch { }
+        }
+
+        private void LogMissingToken()
+        {
+            LogBanner(
+                "RegistrationToken not set, the server is not connected to Takaro.",
+                $"Paste the registration token from Takaro into {_configPath}",
+                "and save it. The plugin connects within a few seconds, no restart needed.");
+        }
+
+        private void LogRejected(string reason)
+        {
+            if (_settings.RegistrationFromEnv)
+            {
+                LogBanner(
+                    $"Takaro rejected identify: {reason}.",
+                    $"Check {EnvRegistrationToken} in the server's environment; it overrides",
+                    $"{_configPath}. The environment is only read when the server starts.");
+                return;
+            }
+            LogBanner(
+                $"Takaro rejected identify: {reason}.",
+                $"Check RegistrationToken in {_configPath}. Saving a corrected",
+                "token reconnects within a few seconds, no restart needed.");
+        }
+
         // --- WebSocket Connection ---
 
+        // Main thread only.
         private void StartConnection()
         {
+            var generation = Interlocked.Increment(ref _generation);
+            var settings = _settings;
             _cts?.Cancel();
-            _cts = new CancellationTokenSource();
-            var token = _cts.Token;
+            var cts = new CancellationTokenSource();
+            _cts = cts;
+            var token = cts.Token;
+            var ws = new ClientWebSocket();
+            _ws = ws;
 
             Task.Run(async () =>
             {
                 try
                 {
-                    _ws = new ClientWebSocket();
-                    await _ws.ConnectAsync(new Uri(_wsUrl), token);
-                    _identifySent = false;
+                    await ws.ConnectAsync(new Uri(settings.WsUrl), token);
+                    if (!IsCurrent(generation)) return;
                     LogInfo("WebSocket connected");
                     // Identify is the first frame this connector sends, the way every other
                     // Takaro connector in this repository does it. Waiting to be greeted
                     // instead means a peer that expects the client to speak first never
                     // hears from this server at all: the socket sits open and silent.
-                    SendIdentify();
-                    await ReceiveLoop(token);
+                    SendIdentify(ws, generation, settings);
+                    await ReceiveLoop(ws, generation, settings, token);
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception ex)
                 {
-                    LogWarning($"WebSocket connection failed: {ex.Message}");
+                    if (IsCurrent(generation))
+                        LogWarning($"WebSocket connection failed: {ex.Message}");
                 }
                 finally
                 {
-                    _connected = false;
-                    try { _ws?.Dispose(); } catch { }
-                    _ws = null;
-
-                    if (_shouldReconnect)
-                        ScheduleReconnect();
+                    try { ws.Dispose(); } catch { }
+                    if (IsCurrent(generation))
+                    {
+                        _connected = false;
+                        Interlocked.CompareExchange(ref _ws, null, ws);
+                        if (_shouldReconnect && Volatile.Read(ref _authClosedGeneration) != generation)
+                            ScheduleReconnect(generation);
+                    }
                 }
             });
         }
 
-        private async Task ReceiveLoop(CancellationToken token)
+        private bool IsCurrent(int generation)
+        {
+            return Volatile.Read(ref _generation) == generation;
+        }
+
+        private async Task ReceiveLoop(ClientWebSocket ws, int generation, ConnectorSettings settings, CancellationToken token)
         {
             var buffer = new byte[8192];
 
-            while (_ws?.State == WebSocketState.Open && !token.IsCancellationRequested)
+            while (ws.State == WebSocketState.Open && !token.IsCancellationRequested)
             {
                 var sb = new StringBuilder();
                 WebSocketReceiveResult result;
 
                 do
                 {
-                    result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+                    result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
                     sb.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
                 } while (!result.EndOfMessage);
+
+                if (!IsCurrent(generation)) break;
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
@@ -169,8 +825,8 @@ namespace Oxide.Plugins
 
                     if (code == 1008 || code == 4001 || code == 4003)
                     {
-                        LogWarning("Authentication error, disabling reconnect");
-                        _shouldReconnect = false;
+                        Volatile.Write(ref _authClosedGeneration, generation);
+                        LogRejected(string.IsNullOrEmpty(reason) ? $"connection closed with code {code}" : reason);
                     }
                     break;
                 }
@@ -181,7 +837,7 @@ namespace Oxide.Plugins
 
                 try
                 {
-                    OnWsMessage(message);
+                    OnWsMessage(message, ws, generation, settings);
                 }
                 catch (Exception ex)
                 {
@@ -249,7 +905,7 @@ namespace Oxide.Plugins
             return json;
         }
 
-        private void OnWsMessage(string message)
+        private void OnWsMessage(string message, ClientWebSocket ws, int generation, ConnectorSettings settings)
         {
             var json = JObject.Parse(message);
             var type = json.Value<string>("type") ?? "";
@@ -260,7 +916,7 @@ namespace Oxide.Plugins
                     // Takaro greets a fresh connection. Identify has already gone out when
                     // the socket opened, so this only does anything if the greeting beat it.
                     LogInfo("Received server hello");
-                    SendIdentify();
+                    SendIdentify(ws, generation, settings);
                     break;
 
                 case "identifyResponse":
@@ -268,7 +924,7 @@ namespace Oxide.Plugins
                     break;
 
                 case "request":
-                    HandleRequest(json);
+                    HandleRequest(json, ws, generation);
                     break;
 
                 case "error":
@@ -276,7 +932,7 @@ namespace Oxide.Plugins
                                    ?? json.Value<string>("message")
                                    ?? "unknown";
                     var reqId = json.Value<string>("requestId");
-                    LogWarning($"Server error: {errorMsg}" + (reqId != null ? $" (requestId={reqId})" : ""));
+                    LogWarning($"Server error: {RedactJwt(errorMsg)}" + (reqId != null ? $" (requestId={reqId})" : ""));
                     break;
 
                 default:
@@ -287,17 +943,18 @@ namespace Oxide.Plugins
 
         // --- Reconnection ---
 
-        private void ScheduleReconnect()
+        // Called from a socket task; the main-thread tick starts the connection when it is due.
+        private void ScheduleReconnect(int generation)
         {
             if (!_shouldReconnect) return;
 
             var delaySec = _currentReconnectDelay / 1000.0f;
             LogInfo($"Reconnecting in {delaySec:F0}s...");
 
-            timer.In(delaySec, () =>
+            Interlocked.Exchange(ref _pendingReconnect, new ReconnectRequest
             {
-                if (_shouldReconnect)
-                    StartConnection();
+                Generation = generation,
+                DueTicks = DateTime.UtcNow.Ticks + _currentReconnectDelay * TimeSpan.TicksPerMillisecond,
             });
 
             _currentReconnectDelay = Math.Min(
@@ -310,7 +967,13 @@ namespace Oxide.Plugins
 
         private void WsSend(string message)
         {
-            var ws = _ws;
+            WsSendOn(_ws, message);
+        }
+
+        // Identify and responses go out on the socket they belong to, never on one a config
+        // reconnect has put in its place.
+        private void WsSendOn(ClientWebSocket ws, string message)
+        {
             if (ws?.State != WebSocketState.Open) return;
 
             if (_debug && !message.Contains("\"type\":\"identify\""))
@@ -338,24 +1001,23 @@ namespace Oxide.Plugins
             });
         }
 
-        private void SendIdentify()
+        private void SendIdentify(ClientWebSocket ws, int generation, ConnectorSettings settings)
         {
             // At most once per connection: the socket opening and a server greeting both
             // lead here, and a second identify would look like a second session.
-            if (_identifySent) return;
-            _identifySent = true;
+            if (Interlocked.Exchange(ref _identifySentGeneration, generation) == generation) return;
 
             var msg = new JObject
             {
                 ["type"] = "identify",
                 ["payload"] = new JObject
                 {
-                    ["identityToken"] = _identityToken ?? "",
-                    ["registrationToken"] = _registrationToken ?? ""
+                    ["identityToken"] = settings.IdentityToken ?? "",
+                    ["registrationToken"] = settings.RegistrationToken ?? ""
                 }
             };
             LogDebug("WS SEND identify (tokens redacted)");
-            WsSend(msg.ToString(Formatting.None));
+            WsSendOn(ws, msg.ToString(Formatting.None));
         }
 
         private void HandleIdentifyResponse(JObject json)
@@ -365,10 +1027,9 @@ namespace Oxide.Plugins
             var error = payload["error"];
             if (error != null && error.Type != JTokenType.Null)
             {
-                var errorMessage = error.Type == JTokenType.Object
-                    ? error.Value<string>("message") ?? error.ToString()
-                    : error.ToString();
+                var errorMessage = IdentifyErrorText(error);
                 LogWarning($"Identify failed: {errorMessage}");
+                LogRejected(errorMessage);
                 return;
             }
 
@@ -383,7 +1044,7 @@ namespace Oxide.Plugins
                 LogInfo("Identified successfully");
         }
 
-        private void SendResponse(string requestId, JToken payload, string error)
+        private void SendResponse(ClientWebSocket ws, string requestId, JToken payload, string error)
         {
             var msg = new JObject
             {
@@ -399,7 +1060,7 @@ namespace Oxide.Plugins
             if (_debug)
                 LogDebug($"WS SEND response (requestId={requestId})");
 
-            WsSend(msg.ToString(Formatting.None));
+            WsSendOn(ws, msg.ToString(Formatting.None));
         }
 
         private void SendGameEvent(string eventType, JObject data)
@@ -424,7 +1085,7 @@ namespace Oxide.Plugins
 
         // --- Request Handling ---
 
-        private void HandleRequest(JObject json)
+        private void HandleRequest(JObject json, ClientWebSocket ws, int generation)
         {
             var requestId = json.Value<string>("requestId");
             if (requestId == null)
@@ -458,14 +1119,14 @@ namespace Oxide.Plugins
             }
             catch (Exception ex)
             {
-                SendResponse(requestId, null, $"Invalid args JSON: {ex.Message}");
+                SendResponse(ws, requestId, null, $"Invalid args JSON: {ex.Message}");
                 return;
             }
 
             switch (action)
             {
                 case "testReachability":
-                    SendResponse(requestId, new JObject { ["connectable"] = true, ["reason"] = null }, null);
+                    SendResponse(ws, requestId, new JObject { ["connectable"] = true, ["reason"] = null }, null);
                     break;
 
                 case "getPlayer":
@@ -484,28 +1145,37 @@ namespace Oxide.Plugins
                 case "unbanPlayer":
                 case "listBans":
                 case "shutdown":
-                    RunOnMainThread(requestId, action, args);
+                case "getMapInfo":
+                case "getMapTile":
+                    RunOnMainThread(ws, generation, requestId, action, args);
                     break;
 
                 default:
-                    SendResponse(requestId, null, $"Action not implemented: {action}");
+                    SendResponse(ws, requestId, null, $"Action not implemented: {action}");
                     break;
             }
         }
 
-        private void RunOnMainThread(string requestId, string action, JObject args)
+        private void RunOnMainThread(ClientWebSocket ws, int generation, string requestId, string action, JObject args)
         {
             NextTick(() =>
             {
+                // A request from a connection that has since been replaced is dropped: its
+                // socket is gone, and Takaro re-sends what it still wants on the new one.
+                if (!IsCurrent(generation))
+                {
+                    LogInfo($"Dropped {action} from a replaced connection (requestId={requestId})");
+                    return;
+                }
                 try
                 {
                     var result = ExecuteAction(action, args);
-                    SendResponse(requestId, result, null);
+                    SendResponse(ws, requestId, result, null);
                 }
                 catch (Exception ex)
                 {
                     LogWarning($"Action {action} failed: {ex.Message}");
-                    SendResponse(requestId, null, ex.Message);
+                    SendResponse(ws, requestId, null, ex.Message);
                 }
             });
         }
@@ -530,6 +1200,8 @@ namespace Oxide.Plugins
                 case "unbanPlayer": HandleUnbanPlayer(args); return new JObject();
                 case "listBans": return HandleListBans();
                 case "shutdown": HandleShutdown(); return new JObject();
+                case "getMapInfo": return HandleGetMapInfo();
+                case "getMapTile": return HandleGetMapTile(args);
                 default: throw new Exception($"Unknown action: {action}");
             }
         }
@@ -871,6 +1543,152 @@ namespace Oxide.Plugins
             }
         }
         // takaro:names-end
+
+        // --- World map (getMapInfo / getMapTile) ---
+        //
+        // The map is the game's own render (MapImageRenderer, the code behind world.rendermap
+        // and the Rust+ map), drawn once per world on the main thread and kept as a PNG in the
+        // data directory, so later starts and reloads only decode it. Tiles are cut from that
+        // raster on the main thread, where every action already runs.
+
+        private const string MapCachePrefix = "TakaroConnector_map_";
+        private const int MapTileCacheSize = 1024;
+
+        private MapRaster _mapRaster;
+        private string _mapStatus = "the world has not loaded yet";
+        private readonly Dictionary<long, string> _mapTiles = new Dictionary<long, string>();
+        private readonly Queue<long> _mapTileOrder = new Queue<long>();
+
+        private void OnServerInitialized()
+        {
+            // Draw the map before anyone asks for it, so the first getMapInfo is not the one
+            // that pays for the render.
+            timer.Once(2f, () =>
+            {
+                try { EnsureMapRaster(); }
+                catch (Exception ex) { LogWarning($"World map: {ex.Message}"); }
+            });
+        }
+
+        private MapRaster EnsureMapRaster()
+        {
+            if (_mapRaster != null) return _mapRaster;
+
+            var terrainSize = TerrainMeta.Size.x;
+            if (global::World.Size == 0 || TerrainMeta.HeightMap == null || TerrainTexturing.Instance == null || !(terrainSize > 0f))
+            {
+                _mapStatus = "the world has not loaded yet";
+                return null;
+            }
+
+            var key = MapWorldKey(global::World.Size, global::World.Seed, global::World.MapFileName, global::World.Checksum);
+            var path = Path.Combine(Interface.Oxide.DataDirectory, MapCachePrefix + key + ".png");
+            byte[] png = null;
+            var source = "cache";
+            if (File.Exists(path))
+            {
+                try { png = File.ReadAllBytes(path); }
+                catch (Exception ex) { LogWarning($"World map: could not read {path}: {ex.Message}"); }
+            }
+
+            if (png == null)
+            {
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                png = MapImageRenderer.Render(out _, out _, out _, MapRenderScale(terrainSize), lossy: false, transparent: false, oceanMargin: 0);
+                if (png == null)
+                {
+                    _mapStatus = "the game could not render the map yet";
+                    return null;
+                }
+                source = $"rendered in {watch.ElapsedMilliseconds} ms";
+                try
+                {
+                    Directory.CreateDirectory(Interface.Oxide.DataDirectory);
+                    foreach (var old in Directory.GetFiles(Interface.Oxide.DataDirectory, MapCachePrefix + "*.png"))
+                        File.Delete(old);
+                    File.WriteAllBytes(path, png);
+                }
+                catch (Exception ex)
+                {
+                    LogWarning($"World map: could not cache the render at {path}: {ex.Message}");
+                }
+            }
+
+            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            try
+            {
+                if (!texture.LoadImage(png))
+                {
+                    _mapStatus = "the map render could not be decoded";
+                    try { File.Delete(path); } catch { }
+                    return null;
+                }
+                var pixels = texture.GetPixels32();
+                int width = texture.width, height = texture.height;
+                var rgb = new byte[width * height * 3];
+                for (var i = 0; i < pixels.Length; i++)
+                {
+                    rgb[i * 3] = pixels[i].r;
+                    rgb[i * 3 + 1] = pixels[i].g;
+                    rgb[i * 3 + 2] = pixels[i].b;
+                }
+                // The game takes its background (open sea) from the corner pixel too.
+                var corner = pixels[0];
+                _mapRaster = new MapRaster(rgb, width, height, terrainSize,
+                    TerrainMeta.Position.x, TerrainMeta.Position.z, width / terrainSize,
+                    corner.r, corner.g, corner.b, key);
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(texture);
+            }
+
+            _mapTiles.Clear();
+            _mapTileOrder.Clear();
+            _mapStatus = "ready";
+            LogInfo($"World map ready: {_mapRaster.Width}x{_mapRaster.Height} px for a {terrainSize:0} m world ({source}, key {key})");
+            return _mapRaster;
+        }
+
+        private JToken HandleGetMapInfo()
+        {
+            var raster = EnsureMapRaster();
+            return MapInfo(raster != null, raster?.WorldSize ?? global::World.Size);
+        }
+
+        private JToken HandleGetMapTile(JObject args)
+        {
+            var problem = ParseMapTileArgs(args, out var x, out var y, out var zoom);
+            if (problem != null) throw new Exception($"invalid_args: {problem}");
+
+            var raster = EnsureMapRaster();
+            if (raster == null) throw new Exception($"map_not_ready: the Rust world map is not ready: {_mapStatus}");
+            if (!MapTileInRange(raster.WorldSize, zoom, x, y))
+                throw new Exception($"tile_out_of_range: map tile {zoom}/{x}/{y} lies outside the Rust world");
+
+            var cacheKey = ((long)zoom << 56) | (((long)x & 0xFFFFFFF) << 28) | ((long)y & 0xFFFFFFF);
+            if (_mapTiles.TryGetValue(cacheKey, out var cached)) return new JValue(cached);
+
+            var rgb = RenderMapTileRgb(raster, zoom, x, y);
+            var texture = new Texture2D(MapTilePixels, MapTilePixels, TextureFormat.RGB24, false);
+            string encoded;
+            try
+            {
+                texture.LoadRawTextureData(rgb);
+                texture.Apply(false);
+                encoded = Convert.ToBase64String(texture.EncodeToPNG());
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(texture);
+            }
+
+            _mapTiles[cacheKey] = encoded;
+            _mapTileOrder.Enqueue(cacheKey);
+            while (_mapTileOrder.Count > MapTileCacheSize)
+                _mapTiles.Remove(_mapTileOrder.Dequeue());
+            return new JValue(encoded);
+        }
 
         private JToken HandleListLocations()
         {

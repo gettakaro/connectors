@@ -40,6 +40,7 @@ struct Config {
     std::string caFile;
     unsigned reconnectBaseMs = 2000;
     unsigned reconnectMaxMs = 60000;
+    bool connect = true; // false: hold off (no registration token) until Retarget enables it
 };
 struct Stats {
     bool connected = false;
@@ -66,4 +67,7 @@ bool RequestClose(uint64_t expectedEpoch, uint16_t code, std::string reason);
 // is reserved for the identify frame queued immediately after Open.
 bool Queue(Kind kind, std::string text, uint64_t eventSeq = 0, uint64_t expectedEpoch = 0);
 Stats Snapshot();
+// Applies new connection settings at once: the service thread drops the current socket (if any)
+// and, when `connect`, dials `url` without waiting for the reconnect backoff. Any thread.
+bool Retarget(std::string url, bool connect);
 } // namespace NativeTransport

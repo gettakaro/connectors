@@ -10,6 +10,8 @@
 
 #include <atomic>
 #include <memory>
+#include <regex>
+#include <set>
 
 using namespace native;
 
@@ -116,6 +118,7 @@ std::string File(const std::string& p) { return t::ReadFile(p); }
 void IdentifyAndHeartbeat() {
     t::Group("bridge-identify");
     Rig r("identify");
+    r.o.config.protocolV1 = false;  // protocol=0: the identify is byte-for-byte the protocol 0 one
     r.Start();
     uint64_t e = r.tr.Open();
     std::vector<t::Written> w;
@@ -157,6 +160,62 @@ void IdentifyError() {
     });
     CHECK_MSG(seen, r.bridge->HealthJson().substr(0, 400));
     CHECK(r.bridge->HealthJson().find("identity-secret-1") == std::string::npos);  // redacted
+}
+
+void ReconfigureWhileRunning() {
+    t::Group("bridge-reconfigure");
+    Rig r("reconfigure");
+    std::mutex mu;
+    std::vector<std::string> accepted, rejected;
+    r.o.onIdentified = [&](const LiveSettings& s) {
+        std::lock_guard<std::mutex> g(mu);
+        accepted.push_back(s.registrationToken + "|" + s.serverName);
+    };
+    r.o.onIdentifyRejected = [&](const std::string& summary, int status) {
+        std::lock_guard<std::mutex> g(mu);
+        rejected.push_back(std::to_string(status) + "|" + summary);
+    };
+    r.Start();
+    r.tr.Open();
+    r.tr.Inject(R"({"type":"identifyResponse","payload":{"error":{"name":"AxiosError","message":"Request failed with status code 409","config":{"headers":{"x-takaro-token":"registration-secret-2"}},"status":409}}})");
+    CHECK(t::WaitFor([&] {
+        std::lock_guard<std::mutex> g(mu);
+        return !rejected.empty();
+    }));
+    {
+        std::lock_guard<std::mutex> g(mu);
+        CHECK(!rejected.empty() && rejected[0] == "409|AxiosError: Request failed with status code 409 (HTTP 409)");
+    }
+    // A corrected token: the bridge retargets the transport, and the next connection identifies with it.
+    r.bridge->Reconfigure({"wss://other:8443/", "registration-new-3", "identity-secret-1", "Rig 2"}, true);
+    CHECK(t::WaitFor([&] { return !r.tr.Retargets().empty(); }));
+    CHECK(!r.tr.Retargets().empty() && r.tr.Retargets()[0] == "wss://other:8443/|connect");
+    r.tr.Close("connection settings changed");
+    r.tr.Drain();
+    uint64_t e2 = r.tr.Open();
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return !r.tr.WireFrames("identify").empty();
+    }));
+    auto ids = r.tr.WireFrames("identify");
+    CHECK(!ids.empty() && Str(AsRecord(ids.back().get("payload")).get("registrationToken")).value_or("") == "registration-new-3");
+    CHECK(!ids.empty() && Str(AsRecord(ids.back().get("payload")).get("name")).value_or("") == "Rig 2");
+    r.tr.Inject(R"({"type":"identifyResponse","payload":{"gameServerId":"gs-2"}})");
+    CHECK(t::WaitFor([&] { return r.tr.identifiedEpoch == e2; }));
+    CHECK(t::WaitFor([&] {
+        std::lock_guard<std::mutex> g(mu);
+        return !accepted.empty();
+    }));
+    {
+        std::lock_guard<std::mutex> g(mu);
+        CHECK(!accepted.empty() && accepted[0] == "registration-new-3|Rig 2");
+    }
+    std::string h = r.bridge->HealthJson();
+    CHECK(h.find("registration-secret-2") == std::string::npos && h.find("registration-new-3") == std::string::npos);
+    // Token removed: the transport goes idle.
+    r.bridge->Reconfigure({"wss://other:8443/", "", "identity-secret-1", "Rig 2"}, false);
+    CHECK(t::WaitFor([&] { return r.tr.Retargets().size() == 2; }));
+    CHECK(r.tr.Retargets().size() == 2 && r.tr.Retargets()[1] == "wss://other:8443/|idle");
 }
 
 void EventsConfirmOnLaterPong() {
@@ -698,9 +757,232 @@ void CorruptOutbox() {
 
 }  // namespace
 
+// ---- protocol 1 ----
+
+// Opens a connection and returns the identify frame the bridge wrote.
+JsonValue OpenForIdentify(Rig& r) {
+    r.tr.Open();
+    JsonValue identify;
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        auto f = r.tr.WireFrames("identify");
+        if (f.empty()) return false;
+        identify = f.back();
+        return true;
+    }));
+    return identify;
+}
+
+uint64_t IdentifyV1(Rig& r) {
+    uint64_t e = r.tr.Epoch();
+    r.tr.Inject(R"({"type":"identifyResponse","payload":{"gameServerId":"gs-1","protocolVersion":1}})");
+    CHECK(t::WaitFor([&] { return r.tr.identifiedEpoch == e; }));
+    CHECK(t::WaitFor([&] { return r.HealthNum(nullptr, "protocol") == 1; }));
+    return e;
+}
+
+void ProtocolV1Identify() {
+    t::Group("bridge-v1-identify");
+    Rig r("v1-identify");
+    r.Start();
+    JsonValue id = OpenForIdentify(r);
+    const JsonValue& p = AsRecord(id.get("payload"));
+    CHECK_EQ(JsonDump(*p.get("protocolVersions")), std::string("[0,1]"));
+    const JsonValue* caps = p.get("capabilities");
+    CHECK(caps && caps->type == JsonValue::Array && caps->arr.size() == 23);
+    std::set<std::string> names;
+    const JsonValue* map = nullptr;
+    for (auto& c : caps->arr) {
+        std::string n = c.get("name")->str;
+        CHECK_MSG(std::regex_match(n, std::regex("^[a-z][a-zA-Z0-9]*(\\.[a-z][a-zA-Z0-9-]*)*$")), n);
+        CHECK_MSG(names.insert(n).second, "duplicate " + n);
+        if (n == "map") map = &c;
+    }
+    for (const char* need : {"players.list", "players.location", "items.give", "moderation.listBans", "server.shutdown",
+                             "locations.list", "events.chat-message", "events.entity-killed"})
+        CHECK_MSG(names.count(need), need);
+    CHECK(!names.count("testReachability"));
+    CHECK(map != nullptr);
+    if (map) {
+        CHECK(t::JsonTextEq(JsonDump(*map->get("parameters")),
+                            R"({"dimensions":[{"id":"embervale","name":"Embervale",)"
+                            R"("axes":{"horizontal":{"field":"x","direction":"right"},"vertical":{"field":"z","direction":"up"}},)"
+                            R"("bounds":{"horizontal":{"min":0,"max":10240},"vertical":{"min":0,"max":10240}},)"
+                            R"("source":{"type":"none"}}]})"));
+    }
+    CHECK(JsonDump(id).find("identity-secret-1") != std::string::npos);  // the identify itself carries the token
+    IdentifyV1(r);
+}
+
+void ProtocolV1Responses() {
+    t::Group("bridge-v1-responses");
+    Rig r("v1-responses");
+    r.Start();
+    OpenForIdentify(r);
+    IdentifyV1(r);
+    std::string limon = std::string("{\"gameId\":\"") + LIMON + "\"}";
+    // void actions answer payload null
+    JsonValue resp = r.Call("kickPlayer", limon);
+    CHECK_MSG(t::JsonTextEq(JsonDump(resp), R"({"type":"response","requestId":"req-1","payload":null})"), JsonDump(resp));
+    resp = r.Call("sendMessage", R"({"message":"hello"})");
+    CHECK(resp.get("payload") && resp.get("payload")->type == JsonValue::Null && !resp.get("error"));
+    // positions carry the declared Dimension
+    resp = r.Call("getPlayerLocation", limon);
+    CHECK_MSG(t::JsonTextEq(JsonDump(*resp.get("payload")), R"({"x":10.5,"y":20,"z":-3,"dimension":"embervale"})"),
+              JsonDump(resp));
+    // an unknown player has no position: payload null, not an error
+    resp = r.Call("getPlayerLocation", R"({"gameId":"76561198000009999"})");
+    CHECK_MSG(resp.get("payload") && resp.get("payload")->type == JsonValue::Null && !resp.get("error"), JsonDump(resp));
+    resp = r.Call("getPlayer", R"({"gameId":"76561198000009999"})");
+    CHECK(resp.get("payload") && resp.get("payload")->type == JsonValue::Null);
+    // failures use {"error":{"code","message"}} with a protocol 1 code
+    auto code = [](const JsonValue& v) {
+        const JsonValue& e = AsRecord(v.get("error"));
+        return Str(e.get("code")).value_or("<none>");
+    };
+    resp = r.Call("sendMessage", "{}");
+    CHECK_EQ(code(resp), std::string("invalid_args"));
+    CHECK(Str(AsRecord(resp.get("error")).get("message")).value_or("") == "sendMessage requires 'message'");
+    CHECK(!resp.get("payload"));
+    resp = r.Call("getPlayerInventory", R"({"gameId":"76561198000009999"})");
+    CHECK_EQ(code(resp), std::string("not_found"));
+    resp = r.Call("fooBar", "{}");
+    CHECK_EQ(code(resp), std::string("unsupported"));
+    r.fake.unimplemented.insert("POST /teleport");
+    resp = r.Call("teleportPlayer", std::string("{\"gameId\":\"") + LIMON + "\",\"x\":1,\"y\":2,\"z\":3}");
+    CHECK_EQ(code(resp), std::string("unsupported"));
+    std::string dup = r.Send("testReachability", "{}", "dup-1");
+    r.Response(dup, resp);
+    r.Send("testReachability", "{}", "dup-1");
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        auto f = r.tr.WireFrames("response", "dup-1");
+        return f.size() == 2 && Str(AsRecord(f[1].get("error")).get("code")).value_or("") == "invalid_args";
+    }));
+    // non-void results are unchanged
+    resp = r.Call("testReachability", "{}");
+    CHECK(t::JsonTextEq(JsonDump(*resp.get("payload")), R"({"connectable":true,"reason":null})"));
+}
+
+std::string PayloadStream(const JsonValue& ev) { return Str(ev.get("payload")->get("streamId")).value_or(""); }
+double PayloadSeq(const JsonValue& ev) { return Num(ev.get("payload")->get("seq")).value_or(-1); }
+
+void ProtocolV1Events() {
+    t::Group("bridge-v1-events");
+    Rig r("v1-events");
+    r.fake.PushEvent("chat-message", "{\"msg\":\"one\",\"channel\":\"global\"}");
+    r.fake.PushEvent("chat-message", "{\"msg\":\"two\",\"channel\":\"global\"}");
+    r.Start();
+    OpenForIdentify(r);
+    // nothing before identifyResponse
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    r.tr.Drain();
+    CHECK(r.Events().empty());
+    IdentifyV1(r);
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return r.Events().size() == 2;
+    }));
+    auto ev = r.Events();
+    std::string stream = Str(r.Health().get("outbox")->get("streamId")).value_or("");
+    CHECK(ValidStreamId(stream) && stream.size() == 36);
+    CHECK(ev.size() == 2 && PayloadStream(ev[0]) == stream && PayloadStream(ev[1]) == stream);
+    CHECK(ev.size() == 2 && PayloadSeq(ev[0]) == 1 && PayloadSeq(ev[1]) == 2);
+    CHECK(ev.size() == 2 && t::JsonTextEq(JsonDump(*ev[0].get("payload")->get("data")), R"({"msg":"one","channel":"global"})"));
+    // the ping watermark confirms nothing on protocol 1: only eventAck does
+    r.tr.Ping();
+    r.tr.Pong();
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    CHECK_EQ(r.HealthNum("outbox", "pending"), 2.0);
+    r.tr.Inject(R"({"type":"eventAck","payload":{"streamId":"some-other-stream","upTo":2}})");
+    r.tr.Inject("{\"type\":\"eventAck\",\"payload\":{\"streamId\":" + JsonStr(stream) + ",\"upTo\":1}}");
+    CHECK(t::WaitFor([&] { return r.HealthNum("outbox", "pending") == 1; }));
+    // a reconnect resends what is not acknowledged, with the same stream and seq
+    r.tr.Close("tcp abort");
+    r.tr.wire.clear();
+    OpenForIdentify(r);
+    IdentifyV1(r);
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return r.Events().size() == 1;
+    }));
+    ev = r.Events();
+    CHECK(ev.size() == 1 && PayloadSeq(ev[0]) == 2 && PayloadStream(ev[0]) == stream &&
+          ev[0].get("payload")->get("data")->get("msg")->str == "two");
+    // new events continue the sequence
+    r.fake.PushEvent("chat-message", "{\"msg\":\"three\",\"channel\":\"global\"}");
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return r.Events().size() == 2;
+    }));
+    ev = r.Events();
+    CHECK(ev.size() == 2 && PayloadSeq(ev[1]) == 3);
+    r.tr.Inject(R"({"type":"eventError","payload":{"streamId":"x","seq":3},"error":{"code":"invalid_args","message":"bad data"}})");
+    r.tr.Inject("{\"type\":\"eventAck\",\"payload\":{\"streamId\":" + JsonStr(stream) + ",\"upTo\":3}}");
+    CHECK(t::WaitFor([&] { return r.HealthNum("outbox", "pending") == 0 && r.HealthNum("outbox", "eventErrors") == 1; }));
+    // the stream outlives a restart together with the outbox, so a resend after it still dedups
+    r.fake.PushEvent("chat-message", "{\"msg\":\"four\",\"channel\":\"global\"}");
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/event-outbox.json").find("four") != std::string::npos; }));
+    r.Stop();
+    CHECK(File(r.StateDir() + "/event-outbox.json").find(stream) != std::string::npos);
+    r.fake.NewBoot("boot-b");
+    r.tr.wire.clear();
+    r.Start();
+    OpenForIdentify(r);
+    IdentifyV1(r);
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return r.Events().size() == 1;
+    }));
+    ev = r.Events();
+    CHECK(ev.size() == 1 && PayloadStream(ev[0]) == stream && PayloadSeq(ev[0]) == 4);
+}
+
+void ProtocolV1Fallbacks() {
+    t::Group("bridge-v1-fallbacks");
+    {
+        // Takaro without protocol 1 (no protocolVersion): protocol 0 shapes, ping-watermark confirmation
+        Rig r("v1-old-takaro");
+        r.fake.PushEvent("chat-message", "{\"msg\":\"old\"}");
+        r.Start();
+        r.Connect();
+        CHECK_EQ(r.HealthNum(nullptr, "protocol"), 0.0);
+        CHECK(t::WaitFor([&] {
+            r.tr.Drain();
+            return r.Events().size() == 1;
+        }));
+        CHECK(r.Events().size() == 1 && !r.Events()[0].get("payload")->get("seq"));
+        JsonValue resp = r.Call("kickPlayer", std::string("{\"gameId\":\"") + LIMON + "\"}");
+        CHECK(t::JsonTextEq(JsonDump(*resp.get("payload")), "{}"));
+        resp = r.Call("sendMessage", "{}");
+        CHECK(resp.get("error") && resp.get("error")->type == JsonValue::String);
+        r.tr.Ping();
+        r.tr.Pong();
+        r.tr.Ping();
+        r.tr.Pong();
+        CHECK(t::WaitFor([&] { return r.HealthNum("outbox", "pending") == 0; }));
+    }
+    {
+        // protocol 1 identify failure: top-level error, the code reaches health
+        Rig r("v1-identify-error");
+        r.Start();
+        uint64_t e = r.tr.Open();
+        r.tr.Inject(R"({"type":"identifyResponse","payload":null,"error":{"code":"invalid_args","message":"No registrationToken provided"}})");
+        CHECK(t::WaitFor([&] { return !r.tr.CloseRequests().empty(); }));
+        CHECK(!r.tr.CloseRequests().empty() && r.tr.CloseRequests()[0] == std::to_string(e) + ":identify rejected");
+        bool seen = t::WaitFor([&] {
+            JsonValue h = r.Health();
+            const JsonValue* v = h.get("lastIdentifyError");
+            return v && v->str.find("invalid_args: No registrationToken provided") != std::string::npos;
+        });
+        CHECK_MSG(seen, r.bridge->HealthJson().substr(0, 600));
+    }
+}
+
 void RunBridgeTests() {
     IdentifyAndHeartbeat();
     IdentifyError();
+    ReconfigureWhileRunning();
     EventsConfirmOnLaterPong();
     ReconnectResend();
     BacklogLatency();
@@ -719,4 +1001,8 @@ void RunBridgeTests() {
     PeriodicReconcileNeedsTwoMisses();
     OfflineGetPlayer();
     CorruptOutbox();
+    ProtocolV1Identify();
+    ProtocolV1Responses();
+    ProtocolV1Events();
+    ProtocolV1Fallbacks();
 }

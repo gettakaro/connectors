@@ -2,7 +2,7 @@
 
 Everything the native connector persists lives in one directory, by default the plugin data
 directory `<server>/RSDragonwilds/Binaries/Linux/takaro/` (next to `plugin.log`, `symcache.json`,
-`bans.json` and the optional `plugin.json`). All writes are atomic: temporary file, `fsync`,
+`bans.json`). All writes are atomic: temporary file, `fsync`,
 `rename`, `fsync` of the directory. The connector writes them from background workers only.
 
 ## Location

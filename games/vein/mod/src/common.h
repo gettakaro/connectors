@@ -12,7 +12,7 @@
 #ifdef TAKARO_DEBUG_CORRUPT_SIG
 #define TAKARO_PLUGIN_VERSION "0.1.0-debug-corrupt-" TAKARO_DEBUG_CORRUPT_SIG
 #else
-#define TAKARO_PLUGIN_VERSION "0.4.1" // x-release-please-version
+#define TAKARO_PLUGIN_VERSION "0.6.0" // x-release-please-version
 #endif
 
 // Random per-process id (hex), so clients can tell a server restart from a cursor that merely lags.
@@ -51,9 +51,14 @@ void PluginLog(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 void FlushPluginLogs(); // background threads only; redacts before writing
 uint64_t PluginLogDropped();
 bool DebugEnabled();  // TAKARO_PLUGIN_DEBUG=1
+// One "[Takaro] ..." line on the server's stdout (the panel console) and in plugin.log. For the
+// few status changes an admin must see; never pass secrets.
+void ConsoleLine(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+// The same for a problem the admin must fix: the lines framed by rules of asterisks, in one write.
+void ConsoleBanner(const std::vector<std::string>& lines);
 
-// Config: env first, then <PluginDataDir>/plugin.json. Returns `def` when neither has it.
-std::string ConfigValue(const char* envName, const char* jsonKey, const std::string& def = "");
+// A setting: a non-empty environment variable, else takaro.cfg, else `def`.
+std::string ConfigValue(const char* envName, const std::string& def = "");
 
 // ---- redaction ----
 // Masks WorldPassword / AdminPassword / Password= values (ini, JSON and CLI forms).

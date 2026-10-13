@@ -17,15 +17,18 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     private readonly PlayerPositionCache playerPositions = new(TimeSpan.FromSeconds(30));
     private readonly Dictionary<string, HashSet<string>> banAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> banNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly WorldMapService worldMap;
 
     public ValheimServerAdapter(
         ManualLogSource logger,
         ConnectorConfig config,
         Action requestShutdown,
         ValheimPlayerResolver playerResolver,
-        CompanionInventoryCache companionInventory)
+        CompanionInventoryCache companionInventory,
+        WorldMapService worldMap)
     {
         this.logger = logger;
+        this.worldMap = worldMap ?? throw new ArgumentNullException(nameof(worldMap));
         commandPolicy = new ConsoleCommandPolicy(config.CommandAllowlistExact, config.CommandAllowlistPrefixes);
         this.requestShutdown = requestShutdown;
         this.playerResolver = playerResolver ?? throw new ArgumentNullException(nameof(playerResolver));
@@ -394,15 +397,13 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         return Task.FromResult(RuntimeArrayActionPolicy.FromSource(true, locations, "Valheim location registry"));
     }
 
+    // Both run off the main thread (see TakaroRequestDispatcher) and read only the published
+    // raster that ValheimWorldMap rendered from the world generator.
     public Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(TakaroActionResult.Error(
-            "server_only_unsupported",
-            "Valheim dedicated servers do not expose the client map metadata required by getMapInfo."));
+        Task.FromResult(worldMap.GetMapInfo());
 
-    public Task<TakaroActionResult> GetMapTileAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(TakaroActionResult.Error(
-            "server_only_unsupported",
-            "Valheim dedicated servers do not expose client map tiles."));
+    public Task<TakaroActionResult> GetMapTileAsync(int x, int y, int z, CancellationToken cancellationToken = default) =>
+        Task.FromResult(worldMap.GetMapTile(x, y, z));
 
     public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default)
     {
@@ -759,10 +760,10 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         Task.FromResult(RuntimeArrayActionPolicy.FromSource<object>(false, null, "Valheim zone system"));
 
     public Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(TakaroActionResult.Error("server_only_unsupported", "Valheim dedicated servers do not expose client map metadata."));
+        Task.FromResult(new WorldMapService().GetMapInfo());
 
-    public Task<TakaroActionResult> GetMapTileAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(TakaroActionResult.Error("server_only_unsupported", "Valheim dedicated servers do not expose client map tiles."));
+    public Task<TakaroActionResult> GetMapTileAsync(int x, int y, int z, CancellationToken cancellationToken = default) =>
+        Task.FromResult(TakaroActionResult.Error("scaffold_mode", "Build with Valheim references to render the world map."));
 
     public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default) =>
         Task.FromResult(TakaroActionResult.Error("scaffold_mode", "Build with Valheim references to enable teleport."));

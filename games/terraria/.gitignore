@@ -1,3 +1,5 @@
 _data/
 bin/
 obj/
+# Created by a local bridge run, beside bridge/.
+/TakaroConfig.txt

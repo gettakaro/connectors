@@ -1,4 +1,5 @@
 #include "common.h"
+#include "config_file.h"
 
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -48,7 +49,7 @@ const std::string& ExeDir() {
 
 const std::string& PluginDataDir() {
     static const std::string& d = *new std::string([] {
-        const char* env = getenv("TAKARO_PLUGIN_DATA_DIR");
+        const char* env = ConfigFile::Get("TAKARO_PLUGIN_DATA_DIR");
         std::string dir = (env && *env) ? std::string(env) : ExeDir() + "/takaro";
         ::mkdir(dir.c_str(), 0775);
         return dir;
@@ -58,7 +59,7 @@ const std::string& PluginDataDir() {
 
 bool DebugEnabled() {
     static const bool on = [] {
-        std::string v = ConfigValue("TAKARO_PLUGIN_DEBUG", "debug", "");
+        std::string v = ConfigValue("TAKARO_PLUGIN_DEBUG", "");
         return v == "1" || v == "true";
     }();
     return on;
@@ -459,23 +460,41 @@ bool WriteFileAtomic(const std::string& path, const std::string& content) {
     return ok;
 }
 
-std::string ConfigValue(const char* envName, const char* jsonKey, const std::string& def) {
-    if (envName) {
-        const char* v = getenv(envName);
-        if (v && *v) return v;
+std::string ConfigValue(const char* key, const std::string& def) {
+    const char* v = ConfigFile::Get(key);
+    return v && *v ? v : def;
+}
+
+void ConsoleLine(const char* fmt, ...) {
+    char msg[1024];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(msg, sizeof msg, fmt, ap);
+    va_end(ap);
+    PluginLog("console: %s", msg);
+    std::string out = "[Takaro] " + Redact(msg) + "\n";
+#ifdef TAKARO_BRIDGE_TEST
+    const int fd = STDERR_FILENO;
+#else
+    const int fd = STDOUT_FILENO;
+#endif
+    ssize_t ignored = write(fd, out.data(), out.size());
+    (void)ignored;
+}
+
+void ConsoleBanner(const std::vector<std::string>& lines) {
+    static const char rule[] = "*************************************************************************";
+    std::string out = std::string("[Takaro] ") + rule + "\n";
+    for (const auto& l : lines) {
+        PluginLog("console: %s", l.c_str());
+        out += "[Takaro]   " + Redact(l) + "\n";
     }
-    static const JsonValue cfg = [] {
-        JsonValue parsed;
-        std::string text;
-        if (ReadFile(PluginDataDir() + "/plugin.json", text)) {
-            if (!JsonParse(text, parsed)) PluginLog("config: plugin.json parse failed");
-        }
-        return parsed;
-    }();
-    if (jsonKey) {
-        auto* v = cfg.get(jsonKey);
-        if (v && v->isStr() && !v->str.empty()) return v->str;
-        if (v && v->isNum()) return v->str;
-    }
-    return def;
+    out += std::string("[Takaro] ") + rule + "\n";
+#ifdef TAKARO_BRIDGE_TEST
+    const int fd = STDERR_FILENO;
+#else
+    const int fd = STDOUT_FILENO;
+#endif
+    ssize_t ignored = write(fd, out.data(), out.size());  // one write: never split by engine output
+    (void)ignored;
 }

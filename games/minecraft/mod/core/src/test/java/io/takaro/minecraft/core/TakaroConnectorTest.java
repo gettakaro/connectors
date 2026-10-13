@@ -16,7 +16,7 @@ class TakaroConnectorTest {
 
     private static final String TARGET_CHECK = "Takaro target-check: ";
 
-    private static class TestAdapter implements GameAdapter {
+    static class TestAdapter implements GameAdapter {
         final List<String> infos = new ArrayList<>();
         final List<String> warnings = new ArrayList<>();
         final List<String> debugs = new ArrayList<>();
@@ -122,6 +122,8 @@ class TakaroConnectorTest {
         TestAdapter adapter = new TestAdapter();
         TakaroConfig config = new TakaroConfig();
         config.setWsUrl("not a valid url %%");
+        config.setRegistrationToken("reg");
+        config.setIdentityToken("id");
 
         TakaroConnector connector = new TakaroConnector(adapter, config);
         connector.connect();
@@ -158,6 +160,8 @@ class TakaroConnectorTest {
         adapter.identity = new RuntimeIdentity("26.1.2", "fabric", "0.19.5", 25);
         TakaroConfig config = new TakaroConfig();
         config.setWsUrl("ws://127.0.0.1:1/");
+        config.setRegistrationToken("reg");
+        config.setIdentityToken("id");
 
         new TakaroConnector(adapter, config, Optional.of(fabric262())).connect();
 
@@ -176,6 +180,8 @@ class TakaroConnectorTest {
         adapter.identity = new RuntimeIdentity("26.1.2", "fabric", "0.19.5", 25);
         TakaroConfig config = new TakaroConfig();
         config.setWsUrl("not a valid url %%");
+        config.setRegistrationToken("reg");
+        config.setIdentityToken("id");
         config.setTargetPolicy("warn");
 
         new TakaroConnector(adapter, config, Optional.of(fabric262())).connect();
@@ -193,6 +199,8 @@ class TakaroConnectorTest {
         adapter.identity = new RuntimeIdentity("26.2", "fabric", "0.19.5", 25);
         TakaroConfig config = new TakaroConfig();
         config.setWsUrl("not a valid url %%");
+        config.setRegistrationToken("reg");
+        config.setIdentityToken("id");
 
         new TakaroConnector(adapter, config, Optional.of(fabric262())).connect();
 
@@ -207,10 +215,42 @@ class TakaroConnectorTest {
         adapter.identity = new RuntimeIdentity("26.2", "fabric", "0.19.5", 25);
         TakaroConfig config = new TakaroConfig();
         config.setWsUrl("not a valid url %%");
+        config.setRegistrationToken("reg");
+        config.setIdentityToken("id");
 
         new TakaroConnector(adapter, config, Optional.empty()).connect();
 
         assertTrue(targetCheckLine(adapter).contains("\"result\":\"unchecked\""));
         assertTrue(adapter.infos.stream().anyMatch(l -> l.contains("Connecting to Takaro")));
+    }
+
+    @Test
+    void emptyTokenLogsBannerAndDoesNotConnect() {
+        TestAdapter adapter = new TestAdapter();
+        TakaroConfig config = new TakaroConfig();
+        config.setWsUrl("ws://127.0.0.1:1/");
+        config.setRegistrationToken("");
+
+        new TakaroConnector(adapter, config, Optional.empty()).connect();
+
+        assertTrue(adapter.warnings.stream().anyMatch(l -> l.contains("registration_token not set")));
+        assertTrue(adapter.warnings.stream().anyMatch(l -> l.contains("no restart needed")));
+        assertTrue(adapter.infos.stream().noneMatch(l -> l.contains("Connecting to Takaro")),
+                "no token must not open a connection");
+    }
+
+    @Test
+    void emptyIdentityDoesNotConnect() {
+        TestAdapter adapter = new TestAdapter();
+        TakaroConfig config = new TakaroConfig();
+        config.setWsUrl("ws://127.0.0.1:1/");
+        config.setRegistrationToken("reg");
+        config.setIdentityToken("");
+
+        new TakaroConnector(adapter, config, Optional.empty()).connect();
+
+        assertTrue(adapter.warnings.stream().anyMatch(l -> l.contains("identity_token not set")));
+        assertTrue(adapter.infos.stream().noneMatch(l -> l.contains("Connecting to Takaro")),
+                "Takaro rejects an empty identity, so do not try");
     }
 }

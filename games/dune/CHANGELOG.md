@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/gettakaro/connectors/compare/dune-v0.2.3...dune-v0.3.0) (2026-10-11)
+
+
+### Features
+
+* **dune:** apply Takaro token and identity changes from .env without a restart ([#438](https://github.com/gettakaro/connectors/issues/438)) ([01ea5a2](https://github.com/gettakaro/connectors/commit/01ea5a237c8a855c3d7d04830aea85e614a002a2))
+
+## [0.2.3](https://github.com/gettakaro/connectors/compare/dune-v0.2.2...dune-v0.2.3) (2026-10-10)
+
+
+### Bug Fixes
+
+* **dune:** support Steam build 25789279, keep presence events flowing under log floods ([#418](https://github.com/gettakaro/connectors/issues/418)) ([c187efc](https://github.com/gettakaro/connectors/commit/c187efc52ceac40094425129a19a1cbd9fa15f72))
+
 ## [0.2.2](https://github.com/gettakaro/connectors/compare/dune-v0.2.1...dune-v0.2.2) (2026-10-08)
 
 

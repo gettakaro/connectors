@@ -17,34 +17,36 @@ files: `native-state.md`. Game-thread rules: `gamethread-policy.md`.
 
 ## Configuration
 
-Environment of the game process; the `plugin.json` column is `<data dir>/plugin.json`.
+Each key is read from the game process environment (a non-empty value wins) or from `takaro.cfg` next to
+the library (`TAKARO_CONFIG_FILE` overrides the path), the one config file; the connector creates it
+when it is missing. Only the first four are re-read while the server runs.
 
-| env | `plugin.json` | default | meaning |
-|---|---|---|---|
-| `TAKARO_WS_URL` | — | `wss://connect.takaro.io/` | Takaro WebSocket; must be `wss://` |
-| `TAKARO_IDENTITY_TOKEN` | — | `dragonwilds` | identity token (server identity in Takaro) |
-| `TAKARO_REGISTRATION_TOKEN` | — | — | registration token, sent with `identify` when set (trimmed) |
-| `TAKARO_SERVER_NAME` | `serverName` | `Dragonwilds` | name sent with `identify` (env only); last chat-sender fallback |
-| `TAKARO_SENDER_NAME` | `senderName` | — | chat sender name (`TAKARO_SERVER_CHAT_NAME` / `serverChatName` is the alias) |
-| `TAKARO_CA_FILE` | — | `/etc/ssl/certs/ca-certificates.crt` | CA bundle; chain and host name are always verified |
-| `TAKARO_RECONNECT_BASE_MS` / `TAKARO_RECONNECT_MAX_MS` | — | `2000` / `60000` | reconnect backoff (2000..60000) |
-| `TAKARO_REQUEST_DEADLINE_MS` | — | `8500` | every Takaro request is answered within this (1000..9500); Takaro gives up at 10 s |
-| `TAKARO_STATE_DIR` | — | `<data dir>` | connector state, see `native-state.md` |
-| `TAKARO_CURSOR_FILE`, `TAKARO_ONLINE_FILE`, `TAKARO_BAN_FILE`, `TAKARO_KNOWN_PLAYERS_FILE` | — | in the state dir | 0.2.x file locations, see `native-state.md` |
-| `DRAGONWILDS_LOG_TAIL` | — | `auto` | `auto`: the log tail takes over join/leave while the `players` capability is degraded; `always`; `never` |
-| `DRAGONWILDS_LOG_EVENTS` | — | `filtered` | `log` events: `filtered` drops UE/EOS noise and every `Verbose`/`VeryVerbose` line; `all`; `none` |
-| `DRAGONWILDS_LOG_RATE` | — | `40` | most `log` events forwarded per 30 s (Takaro rate-limits `log` at ~50 per 30 s per server); the rest are counted and summarised in one `[takaro] N server log line(s) not forwarded` line; `0` = unlimited |
-| `DRAGONWILDS_LOG_FILE` | — | — | server log path; honoured only if it exists in the game process (it was the sidecar's mount path) |
-| `TAKARO_LOG_PATH` | `logPath` | `<game>/Saved/Logs/RSDragonwilds.log` | server log path |
-| `TAKARO_TICK_BUDGET_US` | `tickBudgetUs` | `500` | game-thread job budget per tick (50..33000) |
-| `TAKARO_PLUGIN_IDLE` | `idle` | off | `1`: load, log one line, do nothing else (A/B arm) |
-| `TAKARO_NATIVE_DISABLE` | — | off | `1`: no Takaro connection (hooks and pump still run) |
-| `TAKARO_PLUGIN_TOKEN` | `token` | — | enables the diagnostic HTTP listener; not needed for Takaro |
-| `TAKARO_PLUGIN_PORT` | `port` | `18890` | diagnostic listener port (loopback only) |
-| `TAKARO_PLUGIN_DEBUG` | `debug` | off | enables `/debug/*` and per-request logging |
-| `TAKARO_WIRE_DEBUG` | — | off | `1` logs every Takaro frame (requests, responses, events, error frames; truncated to 1500 bytes) to `plugin.log`; the identify frame is never logged |
-| `TAKARO_SYM_PATH` | `symPath` | `<exe>.sym` | symbol database |
-| `TAKARO_PLUGIN_DATA_DIR` | — | `<exe dir>/takaro` | `plugin.log`, `symcache.json`, `plugin.json`, `bans.json` |
+| key | default | meaning |
+|---|---|---|
+| `TAKARO_WS_URL` | `wss://connect.takaro.io/` | Takaro WebSocket; must be `wss://` |
+| `TAKARO_IDENTITY_TOKEN` | a new UUID, written into `takaro.cfg` | identity token (server identity in Takaro) |
+| `TAKARO_REGISTRATION_TOKEN` | — | registration token, sent with `identify` when set (trimmed) |
+| `Dragonwilds (<first 8 identity characters>)` | name sent with `identify`; last chat-sender fallback |
+| `TAKARO_SENDER_NAME` | — | chat sender name (`TAKARO_SERVER_CHAT_NAME` is the alias) |
+| `TAKARO_CA_FILE` | `/etc/ssl/certs/ca-certificates.crt` | CA bundle; chain and host name are always verified |
+| `TAKARO_RECONNECT_BASE_MS` / `TAKARO_RECONNECT_MAX_MS` | `2000` / `60000` | reconnect backoff (2000..60000) |
+| `TAKARO_REQUEST_DEADLINE_MS` | `8500` | every Takaro request is answered within this (1000..9500); Takaro gives up at 10 s |
+| `TAKARO_STATE_DIR` | `<data dir>` | connector state, see `native-state.md` |
+| `TAKARO_CURSOR_FILE`, `TAKARO_ONLINE_FILE`, `TAKARO_BAN_FILE`, `TAKARO_KNOWN_PLAYERS_FILE` | in the state dir | 0.2.x file locations, see `native-state.md` |
+| `DRAGONWILDS_LOG_TAIL` | `auto` | `auto`: the log tail takes over join/leave while the `players` capability is degraded; `always`; `never` |
+| `DRAGONWILDS_LOG_EVENTS` | `filtered` | `log` events: `filtered` drops UE/EOS noise and every `Verbose`/`VeryVerbose` line; `all`; `none` |
+| `DRAGONWILDS_LOG_RATE` | `40` | most `log` events forwarded per 30 s (Takaro rate-limits `log` at ~50 per 30 s per server); the rest are counted and summarised in one `[takaro] N server log line(s) not forwarded` line; `0` = unlimited |
+| `DRAGONWILDS_LOG_FILE` | — | server log path; honoured only if it exists in the game process (it was the sidecar's mount path) |
+| `TAKARO_LOG_PATH` | `<game>/Saved/Logs/RSDragonwilds.log` | server log path |
+| `TAKARO_TICK_BUDGET_US` | `500` | game-thread job budget per tick (50..33000) |
+| `TAKARO_PLUGIN_IDLE` | off | `1`: load, log one line, do nothing else (A/B arm) |
+| `TAKARO_NATIVE_DISABLE` | off | `1`: no Takaro connection (hooks and pump still run) |
+| `TAKARO_PLUGIN_TOKEN` | — | enables the diagnostic HTTP listener; not needed for Takaro |
+| `TAKARO_PLUGIN_PORT` | `18890` | diagnostic listener port (loopback only) |
+| `TAKARO_PLUGIN_DEBUG` | off | enables `/debug/*` and per-request logging |
+| `TAKARO_WIRE_DEBUG` | off | `1` logs every Takaro frame (requests, responses, events, error frames; truncated to 1500 bytes) to `plugin.log`; the identify frame is never logged |
+| `TAKARO_SYM_PATH` | `<exe>.sym` | symbol database |
+| `TAKARO_PLUGIN_DATA_DIR` | `<exe dir>/takaro` | `plugin.log`, `symcache.json`, `bans.json` |
 
 `TAKARO_NATIVE_GATE=1` is a test-only transport mode (memory outbox, three actions); never use it in
 an installation. `plugin.log` lines are redacted (`*Password`, `*Token`, `Ticket` values).
@@ -116,7 +118,7 @@ a Steam player has `steamId` and `platformId:"steam:<steamId>"`, everyone else `
 
 ## Diagnostic HTTP surface (optional)
 
-Off unless `TAKARO_PLUGIN_TOKEN` (or `token` in `plugin.json`) is set. Loopback only.
+Off unless `TAKARO_PLUGIN_TOKEN` is set. Loopback only.
 - HTTP/1.1, one short-lived thread per connection, every response closes it (`Connection: close`).
   Bodies are JSON (`Content-Type: application/json`), UTF-8.
 - Every request needs `Authorization: Bearer <token>`; wrong or missing → `401 {"error":"unauthorized"}`.

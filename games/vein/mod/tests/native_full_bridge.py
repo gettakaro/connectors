@@ -68,6 +68,63 @@ class Run(wire.Run):
         self.peer.close()
 
 
+class V1Run(Run):
+    identify_reply = {'gameServerId': 'test-server', 'protocolVersion': 1}
+
+
+def protocol_v1(cert, key, state):
+    run = V1Run(cert, key, state)
+    try:
+        offered = run.identify_payload
+        assert offered['protocolVersions'] == [0, 1], offered
+        names = [c['name'] for c in offered['capabilities']]
+        assert len(names) == len(set(names)) and 'testReachability' not in names, names
+        assert {'players.location', 'moderation.ban', 'events.player-connected', 'map'} <= set(names), names
+        dimension = offered['capabilities'][names.index('map')]['parameters']['dimensions'][0]
+        assert dimension['id'] == 'champlain-valley' and dimension['source'] == {'type': 'none'}, dimension
+        assert dimension['axes'] == {'horizontal': {'field': 'y', 'direction': 'right'},
+                                     'vertical': {'field': 'x', 'direction': 'up'}}, dimension
+        eventually(lambda: run.health()['protocolVersion'] == 1)
+
+        run.command('emit:v1-event', 'EMITTED')
+        event = run.event('v1-event')
+        stream, seq = event['payload']['streamId'], event['payload']['seq']
+        assert stream.startswith('vein-') and isinstance(seq, int) and seq >= 1, event
+        # A pong is not an acknowledgement on version 1: the event stays until eventAck.
+        time.sleep(1.5)
+        assert read(state / 'event-outbox.json')['pending'], 'version 1 event confirmed without eventAck'
+
+        # Reconnect before the ack: the same event is resent with the same stream and seq.
+        run.peer.close_session(run.index)
+        run.index = run.identify()
+        run.pending = []
+        resent = run.event('v1-event')
+        assert (resent['payload']['streamId'], resent['payload']['seq']) == (stream, seq), resent
+        run.peer.send(run.index, {'type': 'eventAck', 'payload': {'streamId': 'someone-else', 'upTo': seq}})
+        time.sleep(0.5)
+        assert read(state / 'event-outbox.json')['pending'], 'ack for another stream confirmed our event'
+        # An ack beyond what was sent confirms only what was sent, never a later event.
+        run.peer.send(run.index, {'type': 'eventAck', 'payload': {'streamId': stream, 'upTo': seq + 1000}})
+        eventually(lambda: not read(state / 'event-outbox.json')['pending'])
+        run.command('emit:v1-later', 'EMITTED')
+        later = run.event('v1-later')
+        assert later['payload']['streamId'] == stream and later['payload']['seq'] > seq, later
+        time.sleep(1)
+        assert read(state / 'event-outbox.json')['pending'], 'oversized ack confirmed a later event'
+        run.peer.send(run.index, {'type': 'eventAck', 'payload': {'streamId': stream, 'upTo': later['payload']['seq']}})
+        eventually(lambda: not read(state / 'event-outbox.json')['pending'])
+
+        run.request('v1-unknown', 'getMapImage', '{"dimension":"champlain-valley","offset":0,"length":1}')
+        error = run.response('v1-unknown')['error']
+        assert error['code'] == 'unsupported' and error['message'], error
+        run.request('v1-bad', 'giveItem', {'gameId': '76561198000000001'})
+        error = run.response('v1-bad')['error']
+        assert error == {'code': 'invalid_args', 'message': "giveItem requires 'item'"}, error
+        print('production bridge protocol version 1 manifest, streamId/seq, eventAck and error codes: pass', flush=True)
+    finally:
+        run.close()
+
+
 def eventually(check, timeout=8):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -483,7 +540,7 @@ def main():
         subprocess.run(['openssl', 'x509', '-req', '-in', str(csr), '-signkey', str(key),
                         '-days', '1', '-extfile', str(ext), '-out', str(cert)],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for test in (replay, backlog_request_latency, crash_write, directory_sync, mutations, stale_effect,
+        for test in (protocol_v1, replay, backlog_request_latency, crash_write, directory_sync, mutations, stale_effect,
                      engine_before_plugin, ambiguous_engine_ban, newer_ban_after_crash, permanent_restart, timed_replacement,
                      failed_ban_write,
                      late_ban, late_permanent, partial_unban, shutdown):

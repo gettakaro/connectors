@@ -133,33 +133,26 @@ void QueueTests() {
 void ConfigTests() {
     t::Group("config");
     NativeConfig c = LoadNativeConfig("Z:\\srv", Env({}), "");
-    CHECK(!c.enabled);
-    CHECK(c.disabledReason.find("identityToken and registrationToken") != std::string::npos);
-    c = LoadNativeConfig("Z:\\srv", Env({}),
-                         R"({"token":"x","identityToken":"file-id","registrationToken":"file-reg","name":"My Server","caFile":"takaro\\ca.pem"})");
-    CHECK(c.enabled);
-    CHECK_EQ(c.identityToken, std::string("file-id"));
-    CHECK_EQ(c.serverName, std::string("My Server"));
-    CHECK_EQ(c.url, std::string("wss://connect.takaro.io/"));
+    CHECK(c.enabled);  // the connection settings come from ConfigWatcher; only the kill switch disables
+    c = LoadNativeConfig("Z:\\srv", Env({}), R"({"token":"x","caFile":"takaro\\ca.pem"})");
     CHECK_EQ(c.caFile, std::string("Z:\\srv\\takaro\\ca.pem"));  // relative CA path resolves against the exe dir
-    c = LoadNativeConfig("Z:\\srv",
-                         Env({{"TAKARO_IDENTITY_TOKEN", "env-id"}, {"TAKARO_REGISTRATION_TOKEN", " env-reg "},
-                              {"TAKARO_WS_URL", "wss://fake:8443/"}, {"TAKARO_CA_FILE", "Z:\\certs\\ca.pem"}}),
-                         R"({"identityToken":"file-id","registrationToken":"file-reg"})");
-    CHECK_EQ(c.identityToken, std::string("env-id"));  // env wins
-    CHECK_EQ(c.registrationToken, std::string("env-reg"));
-    CHECK_EQ(c.url, std::string("wss://fake:8443/"));
-    CHECK_EQ(c.caFile, std::string("Z:\\certs\\ca.pem"));
-    CHECK_EQ(c.serverName, std::string("Takaro Dev Enshrouded"));
+    c = LoadNativeConfig("Z:\\srv", Env({{"TAKARO_CA_FILE", "Z:\\certs\\ca.pem"}}), "\xEF\xBB\xBF{\"caFile\":\"x.pem\"}");
+    CHECK_EQ(c.caFile, std::string("Z:\\certs\\ca.pem"));  // env wins; a BOM is no parse error
+    CHECK(c.warnings.empty());
+    LiveResolution live;
+    live.s = {"wss://fake:8443/", "env-reg", "env-id", "My Server"};
+    live.url = live.registration = live.identity = live.name = Source::Env;
+    ApplyLive(c, live);
+    CHECK_EQ(c.identityToken, std::string("env-id"));
+    CHECK_EQ(c.serverName, std::string("My Server"));
     std::string summary = ConfigSummaryJson(c);
     CHECK(summary.find("env-id") == std::string::npos && summary.find("env-reg") == std::string::npos);  // no secrets
-    c = LoadNativeConfig("Z:\\srv", Env({{"TAKARO_IDENTITY_TOKEN", "a"}, {"TAKARO_REGISTRATION_TOKEN", "b"}, {"TAKARO_NATIVE_DISABLE", "1"}}), "");
+    CHECK(summary.find("\"registrationToken\":\"environment\"") != std::string::npos);
+    c = LoadNativeConfig("Z:\\srv", Env({{"TAKARO_NATIVE_DISABLE", "1"}}), "");
     CHECK(!c.enabled && c.disabledReason.find("TAKARO_NATIVE_DISABLE") != std::string::npos);
-    c = LoadNativeConfig("Z:\\srv", Env({{"TAKARO_IDENTITY_TOKEN", "a"}, {"TAKARO_REGISTRATION_TOKEN", "b"}, {"TAKARO_WS_URL", "ws://plain/"}}), "");
-    CHECK(!c.enabled && c.disabledReason.find("wss://") != std::string::npos);
     c = LoadNativeConfig("Z:\\srv",
-                         Env({{"TAKARO_IDENTITY_TOKEN", "a"}, {"TAKARO_REGISTRATION_TOKEN", "b"}, {"ENSHROUDED_LOG_EVENTS", "bogus"},
-                              {"TAKARO_RECONNECT_BASE_MS", "5"}, {"ENSHROUDED_LOG_TAIL", "never"}, {"TAKARO_LEGACY_HTTP", "1"}}),
+                         Env({{"ENSHROUDED_LOG_EVENTS", "bogus"}, {"TAKARO_RECONNECT_BASE_MS", "5"},
+                              {"ENSHROUDED_LOG_TAIL", "never"}, {"TAKARO_LEGACY_HTTP", "1"}}),
                          "not json");
     CHECK(c.enabled);
     CHECK(c.logEvents == LogEventsMode::Filtered && c.logTail == LogTailMode::Never && c.legacyHttp);
@@ -338,9 +331,61 @@ void IdentityTests() {
     CHECK_EQ(Str(mb.get("player")->get("steamId")).value_or("?"), sid);
 }
 
+void ProtocolV1Tests() {
+    t::Group("protocol-v1");
+    // error codes: arguments, missing things, the game, the connector
+    auto code = [](auto thrower) {
+        try {
+            thrower();
+        } catch (const std::exception& e) {
+            return ProtocolErrorCode(e);
+        }
+        return std::string("none");
+    };
+    CHECK_EQ(code([] { Fail("sendMessage requires 'message'"); }), std::string("invalid_args"));
+    CHECK_EQ(code([] { FailCode("not_found", "x"); }), std::string("not_found"));
+    CHECK_EQ(code([] { throw NativeError(ErrorKind::PluginHttp, "x", 404); }), std::string("not_found"));
+    CHECK_EQ(code([] { throw NativeError(ErrorKind::PluginHttp, "x", 400); }), std::string("invalid_args"));
+    CHECK_EQ(code([] { throw NativeError(ErrorKind::PluginHttp, "x", 500); }), std::string("game_error"));
+    CHECK_EQ(code([] { throw NativeError(ErrorKind::PluginUnimplemented, "x"); }), std::string("unsupported"));
+    CHECK_EQ(code([] { throw NativeError(ErrorKind::PluginUnreachable, "x"); }), std::string("game_error"));
+    CHECK_EQ(code([] { throw NativeError(ErrorKind::Plain, "x"); }), std::string("game_error"));
+    CHECK_EQ(code([] { throw std::runtime_error("x"); }), std::string("internal"));
+
+    CHECK(t::JsonTextEq(CreateErrorResponseV1("r1", "not_found", "Player 1 is not online"),
+                        R"({"type":"response","requestId":"r1","error":{"code":"not_found","message":"Player 1 is not online"}})"));
+    CHECK(t::JsonTextEq(CreateResponseV1("r1", JNull()), R"({"type":"response","requestId":"r1","payload":null})"));
+    CHECK(t::JsonTextEq(CreateResponse("r1", JNull()), R"({"type":"response","requestId":"r1","payload":{}})"));
+    std::string v0 = CreateGameEvent("chat-message", t::J(R"({"msg":"hi"})"));
+    CHECK(t::JsonTextEq(GameEventFrameV1(v0, "s-1", 7),
+                        R"({"type":"gameEvent","payload":{"type":"chat-message","data":{"msg":"hi"},"streamId":"s-1","seq":7}})"));
+    CHECK_EQ(GameEventFrameV1("not json", "s", 1), std::string(""));
+    CHECK_EQ(GameEventFrameV1(R"({"type":"gameEvent","payload":{"type":"x"}})", "s", 1), std::string(""));
+    CHECK(t::JsonTextEq(CreateIdentify("i", "r", "n"), R"({"type":"identify","payload":{"identityToken":"i","registrationToken":"r","name":"n"}})"));
+    CHECK(t::JsonTextEq(CreateIdentify("i", "r", "n", "[]"),
+                        R"({"type":"identify","payload":{"identityToken":"i","registrationToken":"r","name":"n","protocolVersions":[0,1],"capabilities":[]}})"));
+
+    CHECK(ValidStreamId("4f0e9a1c-6c2b-4d3a-9f8e-7b6a5c4d3e2f") && ValidStreamId("a_B-1"));
+    CHECK(!ValidStreamId("") && !ValidStreamId("a b") && !ValidStreamId(std::string(129, 'a')));
+    OutboxState o, back;
+    o.streamId = "stream-1";
+    std::string err;
+    CHECK(ParseOutbox(OutboxJson(o), back, err) && back.streamId == "stream-1");
+    o.streamId = "";
+    CHECK(ParseOutbox(OutboxJson(o), back, err) && back.streamId.empty());
+
+    // protocol=0 turns the protocol 1 identify off; anything else keeps it on (with a warning)
+    CHECK(LoadNativeConfig("Z:\\srv", Env({}), "").protocolV1);
+    CHECK(!LoadNativeConfig("Z:\\srv", Env({{"TAKARO_PROTOCOL", "0"}}), "").protocolV1);
+    CHECK(!LoadNativeConfig("Z:\\srv", Env({}), R"({"protocol":"0"})").protocolV1);
+    NativeConfig c = LoadNativeConfig("Z:\\srv", Env({{"TAKARO_PROTOCOL", "2"}}), "");
+    CHECK(c.protocolV1 && !c.warnings.empty());
+}
+
 }  // namespace
 
 void RunUnitTests() {
+    ProtocolV1Tests();
     IdentityTests();
     JsonUtilTests();
     IsoTests();

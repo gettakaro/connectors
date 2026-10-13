@@ -24,6 +24,8 @@ class ActionRoutingTest {
         adapter = new RecordingAdapter();
         TakaroConfig config = new TakaroConfig();
         config.setDebugEnabled(false);
+        // The protocol 0 wire shapes (ProtocolV1Test covers protocol 1).
+        config.setProtocolV1Enabled(false);
 
         // Create client with a dummy URI - we won't actually connect
         client = new TakaroWebSocketClient(new URI("ws://localhost:9999"), adapter, config) {

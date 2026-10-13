@@ -5,7 +5,9 @@
 //
 // Usage: harness <wss-url> <ca-file> <state-dir> ready|refused
 //        harness --registry | --pins     (print the compiled-in tables for tests/drift_test.py)
+// env:    TAKARO_HARNESS_REGION   -> the loaded map the adapter reports (conan/map.h), default none
 // stdin:  emit <type> <json-data>  -> queue a game event
+//         region <name>            -> change the loaded map
 //         health                   -> print "HEALTH <json>"
 //         quit                     -> stop cleanly (outbox persisted) and exit 0
 // stdout: READY, CHAT <json>, HEALTH <json>, BYE
@@ -79,6 +81,12 @@ int main(int argc, char** argv) {
                           .Done());
         return o;
     };
+    std::mutex regionMu;
+    std::string region = env("TAKARO_HARNESS_REGION");
+    ao.region = [&] {
+        std::lock_guard<std::mutex> g(regionMu);
+        return region;
+    };
     conan::Adapter adapter(ao);
     takaro::Store store(cfg.stateDir);
     takaro::LwsConfig lc;
@@ -103,6 +111,11 @@ int main(int argc, char** argv) {
         if (line == "quit") break;
         if (line == "health") {
             say("HEALTH " + bridge.HealthJson());
+            continue;
+        }
+        if (line.compare(0, 7, "region ") == 0) {
+            std::lock_guard<std::mutex> g(regionMu);
+            region = line.substr(7);
             continue;
         }
         if (line.compare(0, 5, "emit ") == 0) {

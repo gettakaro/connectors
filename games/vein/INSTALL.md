@@ -6,8 +6,8 @@ The Linux dedicated server loads `libtakaro-vein.so` into `VeinServer-Linux-Test
 
 1. Create a Takaro **Generic** game server and obtain its registration token. Stop the VEIN dedicated server and verify the client and server run the same VEIN game version. Steam client and server build IDs may differ.
 2. Verify the release archive against the accompanying top-level `SHA256SUMS`, then extract `takaro-vein-plugin.tar.gz`. Verify `TakaroVein/SHA256SUMS` inside it. Keep the extracted licenses and `THIRD-PARTY.md` with the installation record.
-3. Put `libtakaro-vein.so` outside Steam's installation tree, for example `data/vein-plugin/libtakaro-vein.so`. SteamCMD `validate` can remove unknown files from the game tree. Mount the plugin directory read-only at `/opt/takaro` if using containers.
-4. Create a writable persistent connector directory, for example `data/vein-connector`, mounted at `/opt/takaro-state`. Copy `.env.example` and `docker-compose.example.yml` from the archive and set `TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN` and the VEIN server settings. The example keeps `TAKARO_PLUGIN_DATA_DIR=/home/steam/vein/Vein/Binaries/Linux/takaro` inside the mounted game data, so the plugin's `bans.json` stays at its existing enforcement path. It sets `TAKARO_STATE_DIR=/opt/takaro-state/connector-state` for connector state. Keep both directories across restarts and upgrades.
+3. Put `libtakaro-vein.so` where the game process can read it, for example `data/vein-plugin/libtakaro-vein.so` (SteamCMD update and validate leave extra files in the game tree alone, so `Vein/Binaries/Linux` also works). Mount the plugin directory read-only at `/opt/takaro` if using containers.
+4. Create a writable persistent connector directory, for example `data/vein-connector`, mounted at `/opt/takaro-state`. Copy `.env.example` and `docker-compose.example.yml` from the archive and set `TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN` and the VEIN server settings. The example keeps `TAKARO_PLUGIN_DATA_DIR=/home/steam/vein/Vein/Binaries/Linux/takaro` inside the mounted game data, so the plugin's `bans.json` stays at its existing enforcement path. It sets `TAKARO_STATE_DIR=/opt/takaro-state/connector-state` for connector state. Keep both directories across restarts and upgrades. Where the launch environment cannot be edited (game panels), use `takaro.cfg` next to `libtakaro-vein.so` instead: the connector creates it on the first start with a new server identity and an empty registration token (`TAKARO_CONFIG_FILE` sets another path). A non-empty environment variable always wins over the file and is never written to it. Changes to the URL, registration token, identity and server name in the file apply while the server runs. With a read-only plugin directory the file cannot be created; then set `TAKARO_IDENTITY_TOKEN` in the environment, as the example does.
 5. Apply `LD_PRELOAD` to the **game binary only**, for example:
 
    ```bash
@@ -15,9 +15,9 @@ The Linux dedicated server loads `libtakaro-vein.so` into `VeinServer-Linux-Test
    ```
 
    Do not export it globally or pass it to SteamCMD, which is 32-bit. The server image in the Compose example must apply `TAKARO_PLUGIN_SO` only when launching the game binary.
-6. Start the one game service. Confirm the game answers its own loopback `:8080/status`, the plugin is mapped in the game PID, and Takaro reports the same identity reachable. `VEIN_HTTP_API` defaults to the game's built-in read-only `http://127.0.0.1:8080` for player/name fallback; an explicit empty value disables that fallback. It is distinct from plugin diagnostics. If `TAKARO_PLUGIN_TOKEN` is set, authenticated loopback diagnostics are available at `127.0.0.1:18890/health`; the native connection does not use this token. An empty environment token falls back to `token` in `TAKARO_PLUGIN_DATA_DIR/plugin.json`; check that existing file during upgrades. The diagnostic listener is disabled only when neither supplies a token. The optional `TAKARO_CA_FILE` must point to a CA file readable **inside** the game container; an invalid file or certificate fails closed.
+6. Start the one game service. Confirm the game answers its own loopback `:8080/status`, the plugin is mapped in the game PID, and Takaro reports the same identity reachable. `VEIN_HTTP_API` defaults to the game's built-in read-only `http://127.0.0.1:8080` for player/name fallback; an explicit empty value disables that fallback. It is distinct from plugin diagnostics. If `TAKARO_PLUGIN_TOKEN` is set, authenticated loopback diagnostics are available at `127.0.0.1:18890/health`; the native connection does not use this token. Without it (environment or `takaro.cfg`) the diagnostic listener is disabled. The optional `TAKARO_CA_FILE` must point to a CA file readable **inside** the game container; an invalid file or certificate fails closed.
 
-`TakaroVein/scripts/smoke-server.py` is an operator precheck against an already-started container. It checks the exact installed Steam server build, game status, native connection, queue and persistence fields, and the durable outbox. From the bundled Compose directory, run `./scripts/smoke-server.py --expected-build <server Steam build ID>`; its defaults are container `vein` and host manifest `data/vein/steamapps/appmanifest_2131400.acf`. Override them with `--game <container name> --manifest <host manifest path>` for other layouts. It needs `TAKARO_PLUGIN_TOKEN` in the container environment for diagnostics, even if the listener uses a file token. A successful precheck is not a substitute for real-client events and Takaro responses.
+`TakaroVein/scripts/smoke-server.py` is an operator precheck against an already-started container. It checks the exact installed Steam server build, game status, native connection, queue and persistence fields, and the durable outbox. From the bundled Compose directory, run `./scripts/smoke-server.py --expected-build <server Steam build ID>`; its defaults are container `vein` and host manifest `data/vein/steamapps/appmanifest_2131400.acf`. Override them with `--game <container name> --manifest <host manifest path>` for other layouts. It needs `TAKARO_PLUGIN_TOKEN` in the container environment for diagnostics. A successful precheck is not a substitute for real-client events and Takaro responses.
 
 ## Upgrade from the former sidecar
 
@@ -57,6 +57,37 @@ The connector confirms event transmission after a later ping receives a pong on 
 On the first native start after a sidecar upgrade, the connector imports legacy `timed-bans.json` expiry metadata into the current game-enforcement ban records once. Completion is recorded durably as `legacyBanMigrationDone` in `event-outbox.json`. On later native starts, current ban records are authoritative; a stale legacy timed-ban row must not turn a newer permanent ban back into a timed ban. Preserve the outbox and its migration marker across native restarts. If the marker cannot be written durably or legacy timed metadata conflicts with current enforcement, resolve the reported error before admitting players or claiming migration complete.
 
 An interrupted ban or unban can leave `ban-intent.json` with the intended canonical ban state, including expiry and reason, while the game and plugin ban files disagree. The connector keeps that intent, reports `banRecoveryPending=true` and degraded health when it cannot prove the result. Inspect the current game ban, plugin `bans.json`, timed metadata and journal, then retry the **intended canonical ban or unban** through Takaro after resolving any ambiguity. Do not delete the journal to silence the warning, and do not copy an old ban file over current state.
+
+## World map
+
+The connector speaks Takaro's Generic Game Protocol version 1 and declares the map area as one
+Dimension, **Champlain Valley**, with no picture of its own (`source: none`). The dedicated
+server's files hold no map image (the server build strips the pixels of every texture), and the
+connector does not ship the game's art. Player dots land in the right place on the grid as soon as
+the server connects. For a picture behind them, upload one image once in the Takaro dashboard
+(game server → Map → Upload). Takaro keeps it across restarts and connector updates.
+
+Which image works: the game's own in-game map, **uncropped and unrotated**. It is the texture
+`Vein/Content/Vein/UI/Map/T_ChamplainValley_Oct30_2026` in the game client
+(`Vein/Content/Paks/pakchunk200-Windows.pak`, 4096 x 4096). Export it to PNG with an Unreal asset
+viewer such as FModel from your own copy of the game, and upload it without changing it.
+
+Framing, if you make or crop your own image:
+
+- The image is a square that covers exactly 12 km x 12 km (1,200,000 x 1,200,000 Unreal units),
+  centred on the world origin. The origin lies in Dannemora.
+- North is up and east is right. Top-left is the north-west corner: world X = 600,000 (north),
+  world Y = -600,000 (west). Bottom-right is X = -600,000, Y = 600,000.
+- Takaro stretches the image over these bounds, so any square size works up to 8192 px.
+
+When you upload, leave the bounds empty: the connector already declared them. These numbers come
+from the game's own map widget (`UZoomUserWidget::ConvertMapLocationToWorldSpace` and the level's
+`MapMakerMarker`, `OrthoWidth` 1,200,000). A future VEIN map update can change them; check the
+bounds the connector declares (`GET /gameserver/{id}/capabilities`) against the new map.
+
+On an older Takaro that only speaks protocol version 0, the connector falls back to version 0. It
+then reports `getMapInfo` with `enabled: false`, and an operator upload is again the only
+picture. `TAKARO_PROTOCOL=0` forces version 0.
 
 ## Rollback
 

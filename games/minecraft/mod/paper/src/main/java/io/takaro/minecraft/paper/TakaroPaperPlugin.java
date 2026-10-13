@@ -2,7 +2,9 @@ package io.takaro.minecraft.paper;
 
 import io.takaro.minecraft.core.EventEmitter;
 import io.takaro.minecraft.core.GameAdapter;
-import io.takaro.minecraft.core.TakaroConfig;
+import io.takaro.minecraft.core.config.ConfigFile;
+import io.takaro.minecraft.core.map.RegionRenderer;
+import io.takaro.minecraft.core.map.WorldMap;
 import io.takaro.minecraft.core.TakaroConnector;
 import io.takaro.minecraft.core.model.*;
 import io.takaro.minecraft.core.target.RuntimeIdentity;
@@ -23,34 +25,22 @@ import java.util.stream.Collectors;
 public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
 
     private TakaroConnector connector;
-    private EventEmitter eventEmitter;
+    private volatile EventEmitter eventEmitter;
     private final ConcurrentHashMap<String, PlayerLocation> lastKnownLocations = new ConcurrentHashMap<>();
 
     @Override
     public void onEnable() {
+        // Writes the commented config.yml from the jar when there is none yet.
         saveDefaultConfig();
 
-        TakaroConfig config = new TakaroConfig();
-        config.setWsUrl(getConfig().getString("takaro.websocket.url", ""));
-        config.setIdentityToken(getConfig().getString("takaro.authentication.identity_token", ""));
-        config.setRegistrationToken(getConfig().getString("takaro.authentication.registration_token", ""));
-        config.setReconnectEnabled(getConfig().getBoolean("takaro.reconnect.enabled", true));
-        config.setReconnectDelay(getConfig().getLong("takaro.reconnect.delay", 5000));
-        config.setMaxReconnectDelay(getConfig().getLong("takaro.reconnect.max_delay", 300000));
-        config.setBackoffMultiplier(getConfig().getDouble("takaro.reconnect.backoff_multiplier", 1.5));
-        config.setDebugEnabled(getConfig().getBoolean("takaro.debug", false));
-        config.applyEnvOverrides();
-
-        if (config.getWsUrl() == null || config.getWsUrl().isEmpty()) {
-            getLogger().warning("No WebSocket URL configured, skipping Takaro connection");
-            return;
-        }
-
-        connector = new TakaroConnector(this, config);
-        connector.connect();
-
-        // Register event listeners
+        // Listeners first: a token pasted later connects without a restart, and the
+        // listeners skip events while there is no connection.
         getServer().getPluginManager().registerEvents(new TakaroPaperEventListener(this), this);
+
+        ConfigFile configFile = new ConfigFile(
+                getDataFolder().toPath().resolve("config.yml"), new PaperYamlConfigFormat(), this);
+        connector = new TakaroConnector(this, configFile);
+        connector.start();
     }
 
     @Override
@@ -293,6 +283,42 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
                 player.getAddress() != null ? player.getAddress().getAddress().getHostAddress() : "",
                 player.getPing()
         );
+    }
+
+    // --- GameAdapter: World map ---
+
+    @Override
+    public List<WorldMap.Dimension> mapDimensions() {
+        List<WorldMap.Dimension> out = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (org.bukkit.World world : Bukkit.getWorlds()) {
+            String id = mapDimension(world);
+            if (!seen.add(id)) continue; // extra worlds of the same kind: the first one is the map
+            java.nio.file.Path folder = world.getWorldFolder().toPath();
+            switch (world.getEnvironment()) {
+                case NETHER -> out.add(new WorldMap.Dimension(id, "Nether", folder.resolve("DIM-1").resolve("region"), true));
+                case THE_END -> out.add(new WorldMap.Dimension(id, "The End", folder.resolve("DIM1").resolve("region"), false));
+                case NORMAL -> out.add(0, new WorldMap.Dimension(id, "Overworld", folder.resolve("region"), false));
+                default -> out.add(new WorldMap.Dimension(id, world.getName(), folder.resolve("region"), false));
+            }
+        }
+        return out;
+    }
+
+    @Override
+    public RegionRenderer.BlockColors mapColors() {
+        // Vanilla's own map colours (MapColor), the ones an in-game filled map uses.
+        Map<String, Integer> colors = new HashMap<>();
+        for (Material material : Material.values()) {
+            if (material.isLegacy() || !material.isBlock()) continue;
+            try {
+                int rgb = material.createBlockData().getMapColor().asRGB();
+                colors.put(material.getKey().toString(), rgb == 0 ? RegionRenderer.BlockColors.NONE : rgb);
+            } catch (RuntimeException e) {
+                // a block without block data; the map shows through it
+            }
+        }
+        return name -> colors.getOrDefault(name, RegionRenderer.BlockColors.NONE);
     }
 
     String mapDimension(org.bukkit.World world) {

@@ -93,4 +93,12 @@ private:
     std::string lastError_;
     std::unique_ptr<class LogState> log_;
 };
+
+// Protocol version 1 Capability Manifest: every action ExecuteAction answers with real game data,
+// the six event types MapEvent emits, and the map Dimension. testReachability and the version 0
+// getMapInfo are not capabilities.
+std::string CapabilityManifestJson();
+
+// Protocol version 1 error code for an action failure message.
+std::string ErrorCode(const std::string& message);
 } // namespace NativeBehavior

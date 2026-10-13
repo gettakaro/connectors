@@ -286,6 +286,7 @@ export class MockBattlegroup {
  * | `serverId` | `player_state.server_id` | **`TEXT`** (`Survival_1`), FK to `farm_state.server_id` — not a number |
  * | `partitionId` | `actors.partition_id` | `BIGINT` → `world_partition.partition_id` |
  * | `map` | `world_partition.label` / `actors.map` | `TEXT` (the rig's Survival partition is labelled `Abbir`) |
+ * | `worldMap` | `world_partition.map` | `TEXT` (`Survival_1`, `DeepDesert_1`, `SH_Arrakeen`, …) |
  * | `reconnectGraceEnd` | `player_state.reconnect_grace_period_end` | `TIMESTAMP` (UTC, nullable) |
  * | `transferCount` | `player_state.transfer_count` | `INTEGER NOT NULL DEFAULT 0` |
  * | `inventory[].templateId` | `items.template_id` | `TEXT NOT NULL` |
@@ -307,6 +308,7 @@ export function mockPlayer(overrides: Partial<MockPlayer> = {}): MockPlayer {
     serverId: 'Survival_1',
     partitionId: 1,
     map: 'Abbir',
+    worldMap: 'Survival_1',
     reconnectGraceEnd: null,
     transferCount: 0,
     inventory: [{ templateId: 'PowerPack2', stackSize: 2, qualityLevel: 1, positionIndex: 0, inventoryType: 0 }],
@@ -333,6 +335,7 @@ function toRow(p: MockPlayer, actorColumns: Set<string>, playerStateColumns: Set
     server_id: p.serverId ?? '',
     partition_id: p.partitionId ?? null,
     map: p.map ?? '',
+    world_map: p.worldMap ?? '',
     last_seen: p.lastSeen ?? '',
     reconnect_grace_end: playerStateColumns.has('reconnect_grace_period_end') ? (p.reconnectGraceEnd ?? '') : '',
     transfer_count: playerStateColumns.has('transfer_count') ? (p.transferCount ?? null) : null,

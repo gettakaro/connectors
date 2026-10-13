@@ -7,13 +7,13 @@ namespace Takaro.Valheim.Core.Tests;
 public sealed class ConfigTests
 {
     [TestMethod]
-    public void FromDictionaryRequiresRegistrationTokenAndServerName()
+    public void FromDictionaryAcceptsAMissingTokenAndDefaultsTheServerName()
     {
-        var error = Assert.ThrowsException<ArgumentException>(() =>
-            ConnectorConfig.FromDictionary(new Dictionary<string, string>()));
+        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string> { ["identityToken"] = "id" });
 
-        StringAssert.Contains(error.Message, "registrationToken");
-        StringAssert.Contains(error.Message, "serverName");
+        Assert.AreEqual("", config.RegistrationToken);
+        Assert.IsFalse(config.HasRegistrationToken);
+        Assert.AreEqual("Valheim Server", config.ServerName);
     }
 
     [TestMethod]
@@ -38,28 +38,29 @@ public sealed class ConfigTests
     }
 
     [TestMethod]
-    public void TryFromDictionaryReturnsErrorInsteadOfThrowingForMissingCredentials()
+    public void TryFromDictionarySucceedsWithoutCredentials()
     {
         var ok = ConnectorConfig.TryFromDictionary(new Dictionary<string, string>
         {
-            ["serverName"] = "Meadows"
+            ["serverName"] = "Meadows",
+            ["identityToken"] = "id"
         }, out var config, out var error);
 
-        Assert.IsFalse(ok);
-        Assert.IsNull(config);
-        StringAssert.Contains(error, "registrationToken");
+        Assert.IsTrue(ok, error);
+        Assert.IsFalse(config!.HasRegistrationToken);
     }
 
     [TestMethod]
-    public void FromDictionaryDefaultsIdentityTokenToServerName()
+    public void FromDictionaryRequiresAnIdentityToken()
     {
-        var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
+        var ok = ConnectorConfig.TryFromDictionary(new Dictionary<string, string>
         {
             ["registrationToken"] = "reg-123",
             ["serverName"] = "Meadows"
-        });
+        }, out _, out var error);
 
-        Assert.AreEqual("Meadows", config.IdentityToken);
+        Assert.IsFalse(ok);
+        StringAssert.Contains(error, "identityToken");
     }
 
     [TestMethod]
@@ -68,6 +69,7 @@ public sealed class ConfigTests
         var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
         {
             ["registrationToken"] = "reg-123",
+            ["identityToken"] = "id",
             ["serverName"] = "Meadows",
             ["commandAllowlistExact"] = "help;players",
             ["commandAllowlistPrefixes"] = "say , broadcast "
@@ -83,6 +85,7 @@ public sealed class ConfigTests
         var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
         {
             ["registrationToken"] = "reg-123",
+            ["identityToken"] = "id",
             ["serverName"] = "Meadows"
         });
 
@@ -96,6 +99,7 @@ public sealed class ConfigTests
         var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
         {
             ["registrationToken"] = "reg-123",
+            ["identityToken"] = "id",
             ["serverName"] = "Meadows",
             ["chatSenderName"] = "  Server Bot  "
         });
@@ -111,6 +115,7 @@ public sealed class ConfigTests
             var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
             {
                 ["registrationToken"] = "reg-123",
+                ["identityToken"] = "id",
                 ["serverName"] = "Meadows",
                 ["chatSenderName"] = value!
             });
@@ -126,6 +131,7 @@ public sealed class ConfigTests
         var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
         {
             ["registrationToken"] = "reg-123",
+            ["identityToken"] = "id",
             ["serverName"] = "Meadows",
             ["chatSenderName"] = name
         });
@@ -140,6 +146,7 @@ public sealed class ConfigTests
         var ok = ConnectorConfig.TryFromDictionary(new Dictionary<string, string>
         {
             ["registrationToken"] = "reg-123",
+            ["identityToken"] = "id",
             ["serverName"] = "Meadows",
             ["chatSenderName"] = new string('n', ConnectorConfig.MaximumChatSenderNameCharacters + 1)
         }, out var config, out var error);
@@ -155,6 +162,7 @@ public sealed class ConfigTests
         var config = ConnectorConfig.FromDictionary(new Dictionary<string, string>
         {
             ["registrationToken"] = "reg-123",
+            ["identityToken"] = "id",
             ["serverName"] = "Meadows",
             ["companionMode"] = "required"
         });

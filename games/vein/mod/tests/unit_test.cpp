@@ -8,11 +8,17 @@
 #include "resolve.h"
 #include "state.h"
 #include "actions_util.h"
+#include "config_file.h"
+#include "instance_guard.h"
+#include "ca_bundle.h"
 
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <cerrno>
 
 #include <cstdio>
+#include <map>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -1091,7 +1097,217 @@ static void TestItemSearchMatchesDisplayName() {
     CHECK(!MatchesSearch(e, "hammer"), "an unrelated needle does not match");
 }
 
+// takaro.cfg: the panel-friendly fallback for environment variables.
+static void TestConfigFileParse() {
+    auto p = ConfigFile::Parse(
+        "\xEF\xBB\xBF# comment\r\n"
+        "; also a comment\r\n"
+        "\r\n"
+        "TAKARO_REGISTRATION_TOKEN = abc123 \r\n"
+        "export TAKARO_IDENTITY_TOKEN=\"my vein\"\n"
+        "TAKARO_SERVER_NAME='Hendrik''s server'\n"
+        "VEIN_HTTP_API=\n"
+        "LD_PRELOAD=/evil.so\n"
+        "takaro_lowercase=x\n"
+        "no equals sign here\n"
+        "TAKARO_WS_URL=wss://a/?x=1");
+    CHECK(p.entries.size() == 5, "entries %zu", p.entries.size());
+    if (p.entries.size() == 5) {
+        EQ(p.entries[0].first, "TAKARO_REGISTRATION_TOKEN");
+        EQ(p.entries[0].second, "abc123");
+        EQ(p.entries[1].first, "TAKARO_IDENTITY_TOKEN");
+        EQ(p.entries[1].second, "my vein");
+        EQ(p.entries[2].second, "Hendrik''s server");
+        EQ(p.entries[3].first, "VEIN_HTTP_API");
+        EQ(p.entries[3].second, "");
+        EQ(p.entries[4].second, "wss://a/?x=1");  // only the first '=' splits
+    }
+    CHECK(p.warnings.size() == 3, "warnings %zu", p.warnings.size());
+    for (const auto& w : p.warnings) CHECK(w.find("/evil.so") == std::string::npos, "value leaked: %s", w.c_str());
+    CHECK(ConfigFile::Parse("").entries.empty(), "empty file");
+    CHECK(ConfigFile::Parse("TAKARO_X=1").entries.size() == 1, "no trailing newline");
+}
+
+static void TestConfigFileLookup() {
+    char dir[] = "/tmp/takaro-cfg-XXXXXX";
+    CHECK(mkdtemp(dir) != nullptr, "mkdtemp");
+    std::string path = std::string(dir) + "/takaro.cfg";
+    FILE* f = fopen(path.c_str(), "w");
+    fputs("TAKARO_CFGTEST_A=fromfile\nTAKARO_CFGTEST_B=fromfile\nTAKARO_CFGTEST_C=first\n"
+          "TAKARO_CFGTEST_C=second\nTAKARO_CFGTEST_D=fromfile\nTAKARO_CFGTEST_E=\n", f);
+    fclose(f);
+    auto file = ConfigFile::FromText(path, *ConfigFile::ReadText(path));
+    CHECK(file.found && file.values.size() == 5, "loaded %zu", file.values.size());
+    setenv("TAKARO_CFGTEST_B", "fromenv", 1);
+    setenv("TAKARO_CFGTEST_D", "", 1);  // an empty variable (AMP renders unset fields so) counts as unset
+    unsetenv("TAKARO_CFGTEST_A");
+    unsetenv("TAKARO_CFGTEST_C");
+    setenv("TAKARO_CFGTEST_F", "", 1);
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_A")), "fromfile");
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_B")), "fromenv");
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_C")), "second");
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_D")), "fromfile");
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_E")), "");
+    EQ(std::string(ConfigFile::Lookup(file, "TAKARO_CFGTEST_F")), "");  // explicit empty env is kept
+    CHECK(ConfigFile::Lookup(file, "TAKARO_CFGTEST_UNSET") == nullptr, "unset stays nullptr");
+    CHECK(getenv("TAKARO_CFGTEST_A") == nullptr, "lookup never writes the environment");
+    const ConfigFile::Loaded missing;
+    CHECK(!ConfigFile::ReadText(std::string(dir) + "/absent.cfg"), "absent file is not an error");
+    CHECK(ConfigFile::Lookup(missing, "TAKARO_CFGTEST_UNSET") == nullptr, "absent file lookup");
+    setenv("TAKARO_CONFIG_FILE", path.c_str(), 1);
+    EQ(ConfigFile::DefaultPath(), path);
+    unsetenv("TAKARO_CONFIG_FILE");
+    std::string def = ConfigFile::DefaultPath();
+    CHECK(def.size() >= 10 && def.compare(def.size() - 10, 10, "takaro.cfg") == 0, "default %s", def.c_str());
+    unlink(path.c_str());
+    rmdir(dir);
+}
+
+// takaro.cfg at runtime: which value wins, and the file the connector creates or completes.
+static void TestConfigResolve() {
+    using ConfigFile::Source;
+    std::map<std::string, std::string> envVars;
+    auto env = [&](const char* k) -> const char* {
+        auto it = envVars.find(k);
+        return it == envVars.end() ? nullptr : it->second.c_str();
+    };
+    auto load = [](const std::string& text) { return ConfigFile::FromText("/x/takaro.cfg", text); };
+    const std::string id = "11111111-2222-4333-8444-555555555555";
+    const std::string fresh = ConfigFile::Template(id);
+
+    // The created file: no token, this identity, a name unique to it, the default URL.
+    auto r = ConfigFile::Resolve(load(fresh), env);
+    EQ(r.settings.registration, "");
+    EQ(r.settings.identity, id);
+    EQ(r.settings.serverName, "My VEIN server (11111111)");
+    EQ(r.settings.url, ConfigFile::kDefaultUrl);
+    CHECK(r.identity == Source::File && r.registration == Source::Default && r.url == Source::Default, "sources");
+    CHECK(!ConfigFile::Unparseable(ConfigFile::Parse(fresh)) && ConfigFile::Parse(fresh).warnings.empty(),
+          "template parses cleanly");
+
+    // Nothing anywhere: no identity, and a name without one.
+    r = ConfigFile::Resolve(load(""), env);
+    EQ(r.settings.identity, "");
+    CHECK(r.identity == Source::Default, "no identity");
+    r = ConfigFile::Resolve(load("TAKARO_IDENTITY_TOKEN=abcdefghijk\nTAKARO_SERVER_NAME= \n"), env);
+    EQ(r.settings.serverName, "My VEIN server (abcdefgh)");
+
+    // A non-empty environment variable wins; an empty one does not.
+    envVars["TAKARO_REGISTRATION_TOKEN"] = "envtok";
+    envVars["TAKARO_IDENTITY_TOKEN"] = "";
+    envVars["TAKARO_WS_URL"] = " wss://self.hosted/ ";
+    r = ConfigFile::Resolve(load("TAKARO_REGISTRATION_TOKEN=filetok\nTAKARO_IDENTITY_TOKEN=fileid\n"), env);
+    EQ(r.settings.registration, "envtok");
+    EQ(r.settings.identity, "fileid");
+    EQ(r.settings.url, "wss://self.hosted/");
+    CHECK(r.registration == Source::Env && r.identity == Source::File && r.url == Source::Env, "env sources");
+    envVars.clear();
+
+    // Half-saved file: a line without '='.
+    CHECK(ConfigFile::Unparseable(ConfigFile::Parse("TAKARO_REGISTRATION_TOK")), "half line");
+    CHECK(!ConfigFile::Unparseable(ConfigFile::Parse("LD_PRELOAD=x\n")), "ignored key is not half-saved");
+
+    // SetKey fills in the identity line and keeps everything else.
+    const std::string blank = ConfigFile::SetKey(fresh, "TAKARO_IDENTITY_TOKEN", "");
+    std::string set = ConfigFile::SetKey(blank, "TAKARO_IDENTITY_TOKEN", "abc");
+    CHECK(set.find("\nTAKARO_IDENTITY_TOKEN=abc\n") != std::string::npos, "identity line set");
+    CHECK(set.size() == blank.size() + 3, "size %zu vs %zu", set.size(), blank.size());
+    EQ(ConfigFile::SetKey("A=1\r\nTAKARO_IDENTITY_TOKEN = \r\nB=2\r\n", "TAKARO_IDENTITY_TOKEN", "x"),
+       "A=1\r\nTAKARO_IDENTITY_TOKEN=x\r\nB=2\r\n");
+    EQ(ConfigFile::SetKey("A=1", "TAKARO_IDENTITY_TOKEN", "x"), "A=1\nTAKARO_IDENTITY_TOKEN=x\n");
+    EQ(ConfigFile::SetKey("", "TAKARO_IDENTITY_TOKEN", "x"), "TAKARO_IDENTITY_TOKEN=x\n");
+    EQ(ConfigFile::SetKey("export TAKARO_IDENTITY_TOKEN=old\n", "TAKARO_IDENTITY_TOKEN", "x"), "TAKARO_IDENTITY_TOKEN=x\n");
+    EQ(ConfigFile::SetKey("#TAKARO_IDENTITY_TOKEN=c\n", "TAKARO_IDENTITY_TOKEN", "x"),
+       "#TAKARO_IDENTITY_TOKEN=c\nTAKARO_IDENTITY_TOKEN=x\n");
+
+    // UUIDs: version 4, distinct.
+    std::string a = ConfigFile::NewIdentity(), b = ConfigFile::NewIdentity();
+    CHECK(a.size() == 36 && a[14] == '4' && a[8] == '-' && a != b, "uuid %s %s", a.c_str(), b.c_str());
+
+    char dir[] = "/tmp/takaro-cfgw-XXXXXX";
+    CHECK(mkdtemp(dir) != nullptr, "mkdtemp");
+    std::string path = std::string(dir) + "/takaro.cfg";
+    auto gen = [&] { return id; };
+    std::string note;
+    struct stat st{};
+
+    // Missing: created (owner-only) only when asked to, with a new identity.
+    CHECK(!ConfigFile::Ensure(path, false, note, gen) && access(path.c_str(), F_OK) != 0, "not created at runtime");
+    auto text = ConfigFile::Ensure(path, true, note, gen);
+    CHECK(text && *text == fresh && *ConfigFile::ReadText(path) == fresh, "created from the template");
+    CHECK(note.find("created") != std::string::npos, "note %s", note.c_str());
+    stat(path.c_str(), &st);
+    CHECK((st.st_mode & 0777) == 0600, "new mode %o", st.st_mode & 0777);
+    // Complete: never written again.
+    text = ConfigFile::Ensure(path, true, note, [] { return std::string("other"); });
+    CHECK(text && *text == fresh && note.empty(), "complete file untouched");
+    // Identity emptied: a new one is written into that line; the mode and the rest are kept.
+    CHECK(ConfigFile::WriteAtomic(path, ConfigFile::SetKey(fresh, "TAKARO_REGISTRATION_TOKEN", "tok"), 0600), "w");
+    CHECK(ConfigFile::WriteAtomic(path, ConfigFile::SetKey(*ConfigFile::ReadText(path), "TAKARO_IDENTITY_TOKEN", " "), 0600), "w");
+    chmod(path.c_str(), 0640);
+    text = ConfigFile::Ensure(path, false, note, [] { return std::string("22222222-new"); });
+    CHECK(text && text->find("\nTAKARO_IDENTITY_TOKEN=22222222-new\n") != std::string::npos &&
+          text->find("TAKARO_REGISTRATION_TOKEN=tok\n") != std::string::npos && *ConfigFile::ReadText(path) == *text,
+          "identity written back");
+    stat(path.c_str(), &st);
+    CHECK((st.st_mode & 0777) == 0640 && st.st_uid == getuid(), "kept mode %o", st.st_mode & 0777);
+    // Never replaces a file that appeared or changed meanwhile, and leaves no temp file.
+    const std::string onDisk = *ConfigFile::ReadText(path), other = "TAKARO_X=1\n";
+    CHECK(!ConfigFile::WriteAtomic(path, other, 0600, nullptr, true) && errno == EEXIST, "create is exclusive");
+    CHECK(!ConfigFile::WriteAtomic(path, other, 0600, &other) && errno == EAGAIN, "changed file kept");
+    EQ(*ConfigFile::ReadText(path), onDisk);
+    unsigned entries = 0;
+    if (DIR* d = opendir(dir)) { while (dirent* e = readdir(d)) entries += e->d_name[0] != '.'; closedir(d); }
+    CHECK(entries == 1, "no temp file left (%u entries)", entries);
+    // A half-saved file is not written to.
+    CHECK(ConfigFile::WriteAtomic(path, "TAKARO_IDENTITY_TOKEN=\nTAKARO_REGISTRATION_TOK", 0600), "w");
+    text = ConfigFile::Ensure(path, true, note, gen);
+    EQ(*ConfigFile::ReadText(path), "TAKARO_IDENTITY_TOKEN=\nTAKARO_REGISTRATION_TOK");
+    // A file that cannot be created is reported, not fatal.
+    text = ConfigFile::Ensure(std::string(dir) + "/no/such/dir/takaro.cfg", true, note, gen);
+    CHECK(!text && note.find("could not create") != std::string::npos, "note %s", note.c_str());
+    unlink(path.c_str());
+    rmdir(dir);
+}
+
+static void TestInstanceGuard() {
+    const std::string self = "/AMP/vein/linux64/libtakaro-vein.so";
+    std::string maps =
+        "7f00-7f01 r-xp 00000000 08:01 12 /usr/lib/x86_64-linux-gnu/libc.so.6\n"
+        "7f02-7f03 r-xp 00000000 08:01 13 /AMP/vein/linux64/libtakaro-vein.so\n";
+    CHECK(!InstanceGuard::OtherCopyMapped(maps, self), "own mapping is not another copy");
+    CHECK(InstanceGuard::OtherCopyMapped(maps + "7f04-7f05 r-xp 0 08:01 14 /opt/takaro/libtakaro-vein.so\n", self),
+          "a preloaded copy elsewhere is another copy");
+    CHECK(!InstanceGuard::OtherCopyMapped(maps + "7f04-7f05 r-xp 0 08:01 15 /opt/x/libtakaro-vein.so.bak\n", self),
+          "only exact file names count");
+    CHECK(!InstanceGuard::OtherCopyMapped("", self), "empty maps");
+    std::string why;
+    CHECK(InstanceGuard::ClaimProcess(&why), "first claim succeeds: %s", why.c_str());
+    why.clear();
+    CHECK(!InstanceGuard::ClaimProcess(&why), "second claim in the same process is refused");
+    CHECK(why.find("already runs") != std::string::npos, "reason: %s", why.c_str());
+}
+
+static void TestCaBundleChoice() {
+    EQ(CaBundle::Choose("/custom/ca.pem", [](const std::string&) { return false; }), "/custom/ca.pem");
+    EQ(CaBundle::Choose("", [](const std::string& p) { return p == "/etc/ssl/certs/ca-certificates.crt"; }),
+       "/etc/ssl/certs/ca-certificates.crt");
+    EQ(CaBundle::Choose("", [](const std::string& p) { return p == "/etc/pki/tls/certs/ca-bundle.crt"; }),
+       "/etc/pki/tls/certs/ca-bundle.crt");
+    EQ(CaBundle::Choose("", [](const std::string& p) { return p == "/etc/ssl/cert.pem"; }), "/etc/ssl/cert.pem");
+    EQ(CaBundle::Choose("", [](const std::string& p) {
+           return p == "/etc/ssl/cert.pem" || p == "/etc/ssl/ca-bundle.pem";
+       }), "/etc/ssl/ca-bundle.pem");  // list order wins
+    EQ(CaBundle::Choose("", [](const std::string&) { return false; }), "");
+    CHECK(CaBundle::Candidates().size() == 5, "candidates %zu", CaBundle::Candidates().size());
+}
+
 int main() {
+    // Code under test reads settings through ConfigFile::Current(), which creates its file.
+    char cfgDir[] = "/tmp/takaro-unit-XXXXXX";
+    const std::string cfgPath = std::string(mkdtemp(cfgDir) ? cfgDir : "/tmp") + "/takaro.cfg";
+    setenv("TAKARO_CONFIG_FILE", cfgPath.c_str(), 1);
+    (void)ConfigFile::Current();
     TestElfParser();
     TestSignatureMatcher();
     TestDepotSymParser();
@@ -1131,6 +1347,13 @@ int main() {
     TestPlayerInventoryClassGuard();
     TestCharacterIdFormatting();
     TestKillWeaponName();
+    TestConfigFileParse();
+    TestConfigFileLookup();
+    TestConfigResolve();
+    TestInstanceGuard();
+    TestCaBundleChoice();
+    unlink(cfgPath.c_str());
+    rmdir(cfgDir);
     printf("%s: %d checks, %d failed\n", g_failed ? "FAILED" : "PASSED", g_ran, g_failed);
     return g_failed ? 1 : 0;
 }

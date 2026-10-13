@@ -35,7 +35,13 @@ export interface CommandResult {
 export class TShockClient {
   private cachedToken: string | null;
 
-  constructor(private readonly config: TShockConfig) {
+  constructor(private config: TShockConfig) {
+    this.cachedToken = config.token || null;
+  }
+
+  /** New REST settings from a saved config; a token made from credentials is made again. */
+  updateConfig(config: TShockConfig): void {
+    this.config = config;
     this.cachedToken = config.token || null;
   }
 

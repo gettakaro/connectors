@@ -62,7 +62,7 @@
       "implementation": "native",
       "responseShape": "Takaro location DTO array",
       "verification": "Live 2026-10-03: 255 Exiled Lands markers built in-process; the player stood 82 m from marker 'The Broken Highway' on the paved road (client). Takaro never requests listLocations: 0 requests in more than 24 h of native log, and the Takaro API has no locations endpoint or sync job (El-Limon evidence native-stage2/hardtest-linux)",
-      "reason": "/Game/Systems/Map/MapMarkers_ConanSandbox named places of the loaded map with world coordinates and discovery radius; retried until the table is loaded."
+      "reason": "/Game/Systems/Map/MapMarkers_ConanSandbox named places of the loaded map with world coordinates and discovery radius; retried until the table is loaded; declared on protocol 1 as locations.list, which enables Takaro's location markers on the map."
     },
     "executeConsoleCommand": {
       "status": "live-supported",
@@ -132,14 +132,14 @@
       "implementation": "native",
       "responseShape": "{ enabled: false, mapBlockSize: 0, maxZoom: 0, mapSizeX: 0, mapSizeY: 0, mapSizeZ: 0 }",
       "verification": "MCP gameserverGetMapInfo",
-      "reason": "Hosted Takaro shows no map tiles for Generic servers; answers the disabled MapInfo DTO Takaro validates."
+      "reason": "Protocol 0 only (Takaro refuses getMapInfo on protocol 1, where the connector declares the map capability instead: one Dimension per loaded map, source none, bounds from the server RegionDataTable); answers the disabled MapInfo DTO Takaro validates."
     },
     "getMapTile": {
       "status": "unsupported",
       "implementation": "native",
       "responseShape": "structured error",
       "verification": "MCP gameserverGetMapTile returns the structured error",
-      "reason": "Hosted Takaro shows no map tiles for Generic servers; no tile renderer exists for Conan."
+      "reason": "The server has no map art to render tiles from; on protocol 1 the map Dimension is source none and the operator uploads the in-game map image in Takaro."
     }
   },
   "events": {

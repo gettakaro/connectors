@@ -21,6 +21,8 @@ export function redactSecrets(message: string): string {
       .replace(/(\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)[^\s@/]+(@)/gi, '$1<redacted>$2')
       // Funcom join-password style query args
       .replace(/(\?p=)[^\s"&]+/gi, '$1<redacted>')
+      // JWTs (Takaro's errors can quote its internal `x-takaro-token`)
+      .replace(/\beyJ[\w-]+\.[\w-]+\.[\w-]+/g, '<redacted-jwt>')
   );
 }
 

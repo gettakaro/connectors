@@ -74,8 +74,8 @@ That is the whole install — one file, no extra libraries. On Fabric, keep the 
 
 ### 4. Configure
 
-Start the server once and let it finish loading, then stop it again. The connector writes an empty
-config file on that first start:
+Start the server. On its first start the connector writes its config file (you can also create
+it yourself before the first start, with the content below):
 
 | Your server | Config file |
 |---|---|
@@ -83,18 +83,30 @@ config file on that first start:
 | NeoForge | `<server>/config/takaro.properties` |
 | Paper | `<server>/plugins/TakaroMinecraft/config.yml` |
 
-Open it and fill in the WebSocket URL, your Takaro **registration token**, and an **identity
-token** — any string you choose that is unique to this server (for example `my-smp-survival`).
-The connector does not invent one for you, and the server will not connect while the URL is empty.
+Open it, paste your Takaro **registration token** between the quotes (or after the `=`), and save.
+Saving is enough: the connector checks the file every few seconds and connects as soon as the token
+is saved, no restart needed. Leave `identity_token` empty; the connector fills it in itself and it
+is how Takaro knows this server, so keep it when you move or copy the server.
 
 **Fabric** (`config/takaro.json`):
 
 ```json
 {
-  "websocket": { "url": "wss://connect.takaro.io/" },
+  "websocket": {
+    "url": "wss://connect.takaro.io/"
+  },
   "authentication": {
-    "identity_token": "my-smp-survival",
-    "registration_token": "your-registration-token-here"
+    "identity_token": "",
+    "registration_token": ""
+  },
+  "reconnect": {
+    "enabled": true,
+    "delay": 5000,
+    "max_delay": 300000,
+    "backoff_multiplier": 1.5
+  },
+  "settings": {
+    "debug": false
   }
 }
 ```
@@ -103,8 +115,13 @@ The connector does not invent one for you, and the server will not connect while
 
 ```properties
 takaro.websocket.url=wss://connect.takaro.io/
-takaro.authentication.identity_token=my-smp-survival
-takaro.authentication.registration_token=your-registration-token-here
+takaro.authentication.identity_token=
+takaro.authentication.registration_token=
+takaro.reconnect.enabled=true
+takaro.reconnect.delay=5000
+takaro.reconnect.max_delay=300000
+takaro.reconnect.backoff_multiplier=1.5
+takaro.debug=false
 ```
 
 **Paper** (`plugins/TakaroMinecraft/config.yml`):
@@ -114,11 +131,15 @@ takaro:
   websocket:
     url: "wss://connect.takaro.io/"
   authentication:
-    identity_token: "my-smp-survival"
-    registration_token: "your-registration-token-here"
+    identity_token: ""
+    registration_token: ""
+  reconnect:
+    enabled: true
+    delay: 5000
+    max_delay: 300000
+    backoff_multiplier: 1.5
+  debug: false
 ```
-
-Leave the `reconnect` values alone. Save the file and start the server.
 
 ### 5. Check that it worked
 
@@ -129,9 +150,20 @@ Connecting to Takaro at wss://connect.takaro.io/
 Identified successfully, server ID: <your server id>
 ```
 
-And in Takaro, the game server shows as **online**. If it stays offline, look for
-`Identify failed:` or `No WebSocket URL configured` in the log — the registration token and the
-`url` line in the config file are the first things to re-check.
+And in Takaro, the game server shows as **online**.
+
+If no token is set yet, the log shows a banner instead, naming the exact file to edit:
+
+```
+*************************************************************************
+  registration_token not set, the server is not connected to Takaro.
+  Paste the registration token from Takaro into /srv/mc/config/takaro.json
+  and save it. The connector connects within a few seconds, no restart needed.
+*************************************************************************
+```
+
+If the token is wrong, the banner starts with `Identify failed:` instead. Fix the token in the
+config file and save; the connector reconnects within a few seconds.
 
 **Version check.** Just before connecting, the connector logs one `Takaro target-check:` line
 saying which server build it was made for and which one it found. If they do not match it refuses
@@ -148,9 +180,10 @@ and `off` skips the check entirely, but neither makes an untested combination wo
 
 ### 6. Upgrading
 
-**Stop the server first.** Delete the old `takaro-<platform>-<version>.jar` from `mods/`
-(or `plugins/`) and drop the new jar in its place, then start the server again. Leave the config
-file alone — your tokens survive the upgrade. Never swap the jar under a running server.
+**Stop the server first.** Delete the old Takaro jar from `mods/` (or `plugins/`) and drop the new
+jar in its place, then start the server again. Leave the config file alone: it is not part of the
+jar, so your token and identity survive the upgrade and the server keeps its place in Takaro.
+Never swap the jar under a running server.
 
 ## What works, what doesn't
 

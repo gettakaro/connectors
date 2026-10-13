@@ -222,6 +222,7 @@ export class DunePg {
     select.push(this.has('actors', 'partition_id') ? `a.partition_id::int8 AS partition_id` : `NULL::int8 AS partition_id`);
     const mapParts = [this.has('actors', 'map') ? `NULLIF(a.map, '')` : null, this.has('world_partition', 'label') ? `NULLIF(wp.label, '')` : null, this.has('world_partition', 'map') ? `NULLIF(wp.map, '')` : null].filter(Boolean);
     select.push(mapParts.length ? `COALESCE(${mapParts.join(', ')}, '') AS map` : `'' AS map`);
+    select.push(this.has('world_partition', 'map') && this.has('actors', 'partition_id') ? `COALESCE(wp.map, '') AS world_map` : `'' AS world_map`);
     const seenCol = this.has('player_state', 'last_avatar_activity')
       ? 'ps.last_avatar_activity'
       : this.has('player_state', 'last_login_time')
@@ -399,6 +400,7 @@ function toPlayerRow(r: Record<string, unknown>): DunePlayerRow {
     reconnectGraceEnd: str(r.reconnect_grace_end),
     transferCount: num(r.transfer_count),
     map: str(r.map),
+    worldMap: str(r.world_map),
     lastSeen: str(r.last_seen),
   };
 }

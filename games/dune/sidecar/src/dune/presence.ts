@@ -1,6 +1,7 @@
 import { logger } from '../logger.js';
 import type { GameEventType } from '../takaro/protocol.js';
 import { mapPlayer } from './identity.js';
+import { dimensionForMap } from './mapDimensions.js';
 import { withDeathMessage } from './mapping.js';
 import { isDead, isLeaving, isOnline } from './pg.js';
 import type { DunePlayerRow, Position, TakaroPlayer } from './types.js';
@@ -183,7 +184,7 @@ export class PresencePoller {
       if (previous === undefined || previous === state || !isDead(tracked.row)) continue;
       const position = this.options.locationOf?.(tracked.row) ?? tracked.row.deathLocation ?? tracked.row.position ?? null;
       const data: Record<string, unknown> = { player: tracked.player };
-      if (position) data.position = position;
+      if (position) data.position = { ...position, dimension: position.dimension ?? dimensionForMap(tracked.row.worldMap, tracked.row.map) };
       const death = withDeathMessage(data, { lifeState: state });
       if (this.options.emitDeath) this.options.emitDeath(gameId, death);
       else this.options.emit('player-death', death);

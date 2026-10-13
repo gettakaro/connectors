@@ -14,31 +14,52 @@ work the same way but has not been tried.
 2. Check the release zip against the release's `SHA256SUMS`, unzip it, and check the files against
    `TakaroEnshrouded/SHA256SUMS` (`cd TakaroEnshrouded && sha256sum -c SHA256SUMS`). Keep
    `THIRD-PARTY.md` and `licenses/` with your installation record.
-3. Stop the game server. Copy `dbghelp.dll` and the `takaro/` folder next to
-   `enshrouded_server.exe`, and rename `takaro/plugin.json.example` to `takaro/plugin.json`.
-4. Fill in `registrationToken` and `identityToken` (any stable name for this server) in
-   `takaro/plugin.json`; optionally `name`, and `token` (a long random secret) if you want the
-   diagnostics endpoint. Keep the file readable only by the account the server runs as: it holds a
-   secret. The environment variables `TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`,
+3. Stop the game server. Copy `dbghelp.dll` next to `enshrouded_server.exe`.
+4. The configuration is one file, `takaro/plugin.json` next to `enshrouded_server.exe`. The
+   connector creates it at the first start (all keys, an empty `registrationToken` and a unique
+   `identityToken`); you can also create it before:
+
+   ```json
+   {
+     "registrationToken": "<your registration token>",
+     "identityToken": "",
+     "name": "",
+     "url": "wss://connect.takaro.io/",
+     "token": ""
+   }
+   ```
+
+   Paste the registration token into `registrationToken` and save. An empty `identityToken` gets a
+   unique one written in (the file keeps its owner and permissions); an empty `name` means the
+   server's own name plus the start of the identity (Takaro needs a different name for every game
+   server in a domain). Optionally set `token` (a long random secret) for the diagnostics endpoint.
+   Keep the file readable only by the account the server runs as: it holds a secret. The
+   environment variables `TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`,
    `TAKARO_SERVER_NAME`, `TAKARO_WS_URL`, `TAKARO_CA_FILE` and `TAKARO_PLUGIN_TOKEN` override the
-   file when they are set. `caFile`/`TAKARO_CA_FILE` is only for a Takaro behind your own
-   certificate authority; certificate and host-name checks always stay on, and a CA file that cannot
-   be read stops the connection instead of falling back.
+   file when they are set (a changed variable needs a restart). `caFile`/`TAKARO_CA_FILE` is only
+   for a Takaro behind your own certificate authority; certificate and host-name checks always stay
+   on, and a CA file that cannot be read stops the connection instead of falling back.
 5. Under Wine/Proton set `WINEDLLOVERRIDES=dbghelp=n,b` on the game server process. The Docker
    example in the repository does this, pins the image by digest, and mounts
    `server/enshrouded-updater` over the image's updater so the game is never updated underneath the
    plugin. Turn automatic game updates off however you host the server.
-6. Start the server and read `takaro/plugin.log`:
+6. Start the server. The server console (stdout, where a panel or `docker logs` shows it) and
+   `takaro/plugin.log` show:
 
    ```
-   takaro enshrouded plugin <version> starting (pid ...)
-   native: config registrationToken from plugin.json registrationToken
-   native: starting direct Takaro connection to wss://connect.takaro.io/ as '<name>' ...
-   native: identified with Takaro gameServerId=...
+   [Takaro] connecting to wss://connect.takaro.io/ as "<name>"
+   [Takaro] connected to Takaro as "<name>"; the server shows as reachable in the Takaro dashboard
    ```
 
-   Takaro shows the server online. `native: direct Takaro connection OFF: <reason>` says what is
-   missing. The log names where each setting came from, never its value.
+   Takaro shows the server online. Without a token, or when Takaro refuses the token or the name, a
+   block of `*` lines names the problem and the file to edit. `plugin.log` names where each setting
+   came from (`native: config registrationToken from plugin.json`), never its value.
+
+`url`, `registrationToken`, `identityToken` and `name` in `takaro/plugin.json` apply without a
+restart: the connector reads the file every 5 seconds and, when one of them changed, reconnects at
+once; an emptied token disconnects. A half-saved or broken file is ignored (the console says so)
+until it parses again. The other
+keys (`caFile`, `token`) are read at startup.
 
 With `token` set, `curl -H "Authorization: Bearer <token>" http://127.0.0.1:18890/health` from the
 server's own network (inside the container for Docker) shows each capability's state and, under
@@ -50,10 +71,34 @@ outbox, the online and known players, timed bans and the ban journal. Keep that 
 restarts and upgrades. A file there that is damaged is never overwritten or treated as empty: the
 affected feature reports itself degraded until you fix or remove the file.
 
+## Map
+
+The connector speaks Takaro protocol 1 and declares one map, `embervale` ("Embervale"): x runs to the
+right (east) and z upwards (north), from 0 to 10240 m on both axes. The dedicated server ships no map
+picture, so Takaro first shows a grid with the player dots. To get a real map, upload one image on the
+game server's map page in the Takaro dashboard ("upload map"). Leave the bounds empty: the connector
+already declared them.
+
+The image must show the **whole world, north up, square, edge to edge**: its top-left pixel is the
+north-west corner of the world (x 0, z 10240) and its bottom-right pixel the south-east corner
+(x 10240, z 0). PNG, JPEG or WebP, at most 8192 px per side and 32 MB; Takaro stretches it over the
+world, so any square size works (8192 px gives about 1.25 m per pixel). The in-game map screen cannot
+be exported as one picture; `mod/tools/map-tiles/render_tiles.py --image map.jpg` draws exactly this
+image from the map data of your own game client install (see its README). Do not share an image made
+from the game's assets publicly.
+
+Set `"protocol": "0"` in `takaro/plugin.json` (or `TAKARO_PROTOCOL=0`; read at server start) to
+connect with protocol 0 only. A Takaro without protocol 1 is detected and gets protocol 0
+automatically. On protocol 0 the map comes from a tile pack in `takaro/map/` instead (`map.json` plus
+`<z>/<x>/<y>.png` in a `pack-…` folder named by `takaro/map/current`; `TAKARO_MAP_DIR` or `mapDir` in
+`plugin.json` moves it), also rendered from your client with `render_tiles.py`. Without one,
+protocol 0 shows no map.
+
 ## Upgrading
 
-Stop the server, replace `dbghelp.dll` with the new one, start the server. `takaro/plugin.json` and
-`takaro/connector-state/` stay. Events that had not been delivered are sent after the restart.
+Stop the server, replace only `dbghelp.dll` with the new one, start the server. Your config in
+`takaro/plugin.json` and the state in `takaro/connector-state/` are never touched. Events that had not
+been delivered are sent after the restart.
 
 ## Upgrade from 0.5.0 (plugin + sidecar)
 

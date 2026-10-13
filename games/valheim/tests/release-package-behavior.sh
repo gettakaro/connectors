@@ -149,6 +149,7 @@ for forbidden in \
   }
 done
 
+# No config ships: the connector creates BepInEx/config/com.takaro.valheim.cfg on the server.
 while IFS= read -r packaged_file; do
   packaged_name="$(basename "$packaged_file")"
   case "$packaged_name" in

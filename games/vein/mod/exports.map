@@ -1,3 +1,4 @@
 {
+    global: takaro_vein_instance;
     local: *;
 };

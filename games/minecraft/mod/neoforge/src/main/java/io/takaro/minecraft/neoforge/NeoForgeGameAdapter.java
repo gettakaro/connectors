@@ -2,6 +2,8 @@ package io.takaro.minecraft.neoforge;
 
 import io.takaro.minecraft.core.EventEmitter;
 import io.takaro.minecraft.core.GameAdapter;
+import io.takaro.minecraft.core.map.RegionRenderer;
+import io.takaro.minecraft.core.map.WorldMap;
 import io.takaro.minecraft.core.model.*;
 import io.takaro.minecraft.core.target.RuntimeIdentity;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -13,6 +15,8 @@ import net.minecraft.server.players.NameAndId;
 import net.minecraft.server.players.UserBanListEntry;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.storage.LevelResource;
 import org.apache.logging.log4j.Logger;
 
 import java.util.*;
@@ -23,7 +27,7 @@ public class NeoForgeGameAdapter implements GameAdapter {
 
     private final Logger logger;
     private final MinecraftServer server;
-    private EventEmitter eventEmitter;
+    private volatile EventEmitter eventEmitter;
     private final ConcurrentHashMap<String, PlayerLocation> lastKnownLocations = new ConcurrentHashMap<>();
 
     public NeoForgeGameAdapter(Logger logger, MinecraftServer server) {
@@ -262,6 +266,39 @@ public class NeoForgeGameAdapter implements GameAdapter {
                 ip != null ? ip : "",
                 player.connection.latency()
         );
+    }
+
+    // --- GameAdapter: World map ---
+
+    @Override
+    public List<WorldMap.Dimension> mapDimensions() {
+        java.nio.file.Path root = server.getWorldPath(LevelResource.ROOT);
+        List<WorldMap.Dimension> out = new ArrayList<>();
+        for (ServerLevel level : server.getAllLevels()) {
+            Identifier key = level.dimension().identifier();
+            String id = mapDimension(key);
+            String name = switch (id) {
+                case "overworld" -> "Overworld";
+                case "nether" -> "Nether";
+                case "the_end" -> "The End";
+                default -> key.toString();
+            };
+            WorldMap.Dimension dimension = new WorldMap.Dimension(id, name,
+                    WorldMap.regionDir(root, key.getNamespace(), key.getPath()), level.dimensionType().hasCeiling());
+            if (id.equals("overworld")) out.add(0, dimension); else out.add(dimension);
+        }
+        return out;
+    }
+
+    @Override
+    public RegionRenderer.BlockColors mapColors() {
+        // Vanilla's own map colours (MapColor), the ones an in-game filled map uses.
+        Map<String, Integer> colors = new HashMap<>();
+        for (Block block : BuiltInRegistries.BLOCK) {
+            int rgb = block.defaultMapColor().col;
+            colors.put(BuiltInRegistries.BLOCK.getKey(block).toString(), rgb == 0 ? RegionRenderer.BlockColors.NONE : rgb);
+        }
+        return name -> colors.getOrDefault(name, RegionRenderer.BlockColors.NONE);
     }
 
     String mapDimension(Identifier dimensionId) {

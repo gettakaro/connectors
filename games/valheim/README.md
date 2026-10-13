@@ -51,46 +51,84 @@ Copy the whole folder as-is.
 
 ### 4. Configure
 
-Start the server once so the plugin creates `BepInEx/config/com.takaro.valheim.cfg`, then stop
-it and edit the `[Takaro]` section:
+The config is one file, `BepInEx/config/com.takaro.valheim.cfg`. Start the server: the connector
+creates the file with a new `identityToken` for this server. Open it, paste your Takaro
+registration token after `registrationToken =` and save. Saving is enough: the connector checks
+the file every few seconds and connects, no restart needed.
+
+You can also create the file yourself before the first start, with this content:
 
 ```ini
+## Takaro Valheim connector settings. Saving this file applies the token, identity,
+## serverName and takaroWsUrl within a few seconds; other settings need a server restart.
+
 [Takaro]
+
+## Takaro registration token: paste it here and save; the connector connects within a few seconds.
 registrationToken = your-registration-token-here
-serverName = My Valheim Server
+
+## The server name shown in Takaro; must be unique in your Takaro domain. Empty: the server's own name plus the start of identityToken.
+serverName =
+
+## Identifies this server in Takaro. Filled in by the connector; keep it.
+identityToken =
+
+## Takaro connector WebSocket URL; keep the default.
+takaroWsUrl = wss://connect.takaro.io/
+
+## Connector log level.
+logLevel = Information
+
+## Forward connector log events to Takaro.
+enableLogEvents = true
+
+## Semicolon-separated exact console commands allowed for executeConsoleCommand.
+commandAllowlistExact = help
+
+## Semicolon-separated console command prefixes allowed for executeConsoleCommand.
+commandAllowlistPrefixes =
+
+## Name shown in game chat for Takaro messages (unless Takaro sends its own sender name).
+chatSenderName = Takaro
 ```
 
-| Key | Required | What it does |
-|---|---|---|
-| `registrationToken` | yes | Your Takaro registration token. |
-| `serverName` | yes | The server name shown in Takaro. |
-| `identityToken` | no | Filled in by the plugin after the first registration; leave it alone. |
-| `takaroWsUrl` | no | Takaro endpoint; keep the default. |
-| `logLevel` | no | Connector log level (default `Information`). |
-| `enableLogEvents` | no | Forward connector log lines to Takaro (default `true`). |
-| `commandAllowlistExact` | no | Console commands Takaro may run, `;`-separated (default `help`). |
-| `commandAllowlistPrefixes` | no | Console command prefixes Takaro may run, `;`-separated. |
-| `chatSenderName` | no | Name shown in game chat for Takaro messages (default `Takaro`, max 128 characters). Used unless Takaro sends its own sender name. |
-
-Save the file. Restart the dedicated server so the saved configuration is loaded.
+The connector writes a new `identityToken` into the file when it is empty, and never changes
+anything else. `registrationToken`, `serverName`, `identityToken` and `takaroWsUrl` apply as soon
+as you save; the other keys apply after a server restart. Emptying `registrationToken`
+disconnects the server. `chatSenderName` is at most 128 characters.
 
 ### 5. Check that it worked
 
-In `BepInEx/LogOutput.log` on the server, look for:
+In the server console (or `BepInEx/LogOutput.log`), look for:
 
 ```
 Takaro Valheim identified as gameServerId=<your game server id>.
 Takaro Valheim chat participant 'Takaro' active (server-side chat relay).
 ```
 
-The game server then shows as **online** in Takaro. If it stays offline, re-check
-`registrationToken`.
+The game server then shows as **online** in Takaro.
+
+If no token is set yet, the log shows a banner instead:
+
+```
+*************************************************************************
+  registrationToken not set, the server is not connected to Takaro.
+  Paste the registration token from Takaro into <server>/BepInEx/config/com.takaro.valheim.cfg
+  and save it. The connector connects within a few seconds, no restart needed.
+*************************************************************************
+```
+
+If the token is wrong, the banner starts with `Takaro rejected this server:`; if another game
+server in your Takaro domain has the same name, it starts with `Takaro refused the server name`.
+Fix the value in `com.takaro.valheim.cfg` and save; the connector reconnects within a few seconds.
 
 ### 6. Upgrading
 
 Stop the server, delete `BepInEx/plugins/TakaroValheim/` and unzip the new version in its place.
 Delete `BepInEx/cache/chainloader_typeloader.dat` before starting again, or BepInEx may keep
-loading the old plugin. Your config file stays as it is.
+loading the old plugin. Replace only the plugin folder; your config at
+`BepInEx/config/com.takaro.valheim.cfg` is never touched, so the server keeps its token and the
+identity the connector wrote into that file on the first start.
 
 ### 7. Optional: inventory mod for players
 
@@ -149,8 +187,8 @@ Tested on Valheim 1.0.16 with BepInExPack 5.4.2351 and a vanilla game client, 20
 | Player death event | ✅ | Player and position included. |
 | Entity kill event | ✅ | Every player kill counted; with the mod, assists aren't counted as kills. |
 | Log events | ✅ | Connector log lines forwarded (`enableLogEvents`). |
-| Map info | ❌ | Not available for Generic game servers. |
-| Map tiles | ❌ | Not available for Generic game servers. |
+| Map info | ✅ | The whole world map, drawn by the server from the world seed. |
+| Map tiles | ✅ | Ready about 4 minutes after the first start, then at once on later starts. Shows the whole world, not only explored areas. |
 | Modules: chat commands | ✅ | `@` commands work; replies show in normal chat. |
 | Modules: hooks | ✅ | Join, leave and chat hooks fire. |
 | Modules: cronjobs | ✅ | Run on schedule for this server. |
@@ -160,6 +198,7 @@ Tested on Valheim 1.0.16 with BepInExPack 5.4.2351 and a vanilla game client, 20
 | Shop & economy | ✅ | Chat purchases deliver at the buyer's feet. |
 | Reconnects after a server restart | ✅ | Re-identifies on its own; events resume. |
 | Events raised while connecting | ✅ | Held until Takaro accepts the server, then sent. |
+| Token change without a restart | ✅ | Saving `com.takaro.valheim.cfg` reconnects within a few seconds. |
 | Takaro outage | ✅ | Events are kept and delivered after reconnecting. |
 
 ### Known issues

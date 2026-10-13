@@ -353,7 +353,7 @@ describe('getPlayerLocation never reports the map origin as a live position', ()
         )) as unknown as typeof fetch,
     });
     const { adapter } = await harness({ plugin, players: [mockPlayer({ position: { x: 168960, y: 333430, z: 1271 } })] });
-    expect(await adapter.getPlayerLocation('6FF6498F4074E3DE')).toEqual({ x: 168960, y: 333430, z: 1271 });
+    expect(await adapter.getPlayerLocation('6FF6498F4074E3DE')).toEqual({ x: 168960, y: 333430, z: 1271, dimension: 'survival_1' });
   });
 });
 

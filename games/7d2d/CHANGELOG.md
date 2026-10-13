@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.3.1...7d2d-v0.4.0) (2026-10-11)
+
+
+### Features
+
+* **7d2d:** ship Config.xml in Mods/Takaro and apply token changes without a restart ([#431](https://github.com/gettakaro/connectors/issues/431)) ([5e4976f](https://github.com/gettakaro/connectors/commit/5e4976f6001b6be582f2e55704ce6d1d9d565fef))
+
 ## [0.3.1](https://github.com/gettakaro/connectors/compare/7d2d-v0.3.0...7d2d-v0.3.1) (2026-10-08)
 
 

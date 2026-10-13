@@ -4,10 +4,13 @@
 #
 #   linux target    takaro-conan-exiles-native-linux-<build>-<version>.zip
 #                     TakaroConanNative/  libtakaro-conan-native.so (LD_PRELOAD), ca-certificates.crt,
-#                                         takaro.json.example, INSTALL.md, README.txt, licenses
-#   windows target  takaro-conan-exiles-native-windows-<build>-<version>.zip
-#                     TakaroConanNative/  winmm.dll (next to the server exe), takaro.json.example,
 #                                         INSTALL.md, README.txt, licenses
+#   windows target  takaro-conan-exiles-native-windows-<build>-<version>.zip
+#                     TakaroConanNative/  winmm.dll (next to the server exe), INSTALL.md, README.txt,
+#                                         licenses
+#
+# No config ships: the connector creates ConanSandbox/Saved/Config/Takaro/takaro.json on the first
+# start, outside anything an upgrade replaces.
 #
 # Usage: build-release.sh <version> <out-dir> [--target <catalog target id>]
 #
@@ -99,7 +102,6 @@ JSON
 native_common() {
   local pkg="$1" binary="$2"
   mkdir -p "${pkg}/licenses"
-  cp "${SCRIPT_DIR}/templates/takaro.${PLATFORM}.json.example" "${pkg}/takaro.json.example"
   cp "${PROJECT_ROOT}/INSTALL.md" "${pkg}/INSTALL.md"
   cp "${PROJECT_ROOT}/native/third_party/README.md" "${pkg}/THIRD-PARTY.md"
   sed -e "s/@VERSION@/${VERSION}/g" -e "s/@REVISION@/${CONAN_EXILES_REVISION}/g" \

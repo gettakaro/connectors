@@ -62,7 +62,7 @@ Takaro connector on its own: deploy takaro-terraria-bridge-${TERRARIA_TARGET}-${
 EOF
 
 cp -R ./bridge/dist ./bridge/node_modules ./bridge/package.json ./bridge/package-lock.json \
-      ./bridge/TakaroConfig.example.txt "${STAGE}/TakaroTerrariaBridge/"
+      "${STAGE}/TakaroTerrariaBridge/"
 cp ./README.md "${STAGE}/TakaroTerrariaBridge/"
 rm -rf "${STAGE}/TakaroTerrariaBridge/dist/__tests__"
 # Every path segment a deployed archive may carry has to start with an alphanumeric, and npm
@@ -76,9 +76,13 @@ Built for ${TERRARIA_TARGET} (TShock ${TERRARIA_TSHOCK_TAG}) on ${TERRARIA_BRIDG
 
 Install:
 1. Extract this folder on the TShock server host.
-2. Copy TakaroConfig.example.txt to TakaroConfig.txt and fill it in.
-3. Enable RestApiEnabled in tshock/config.json and set an application REST token.
-4. Start with: node dist/index.js
+2. Enable RestApiEnabled in tshock/config.json and set an application REST token.
+3. Start with: node dist/index.js
+4. The bridge creates TakaroConfig.txt next to this folder (not inside it). Paste the Takaro
+   registration token into registrationToken= and the TShock REST token into tshockToken=,
+   and save: the bridge reads the file every few seconds and connects, no restart needed.
+
+An upgrade replaces this folder only; TakaroConfig.txt beside it is never touched.
 
 node_modules is already in this archive (npm ci --omit=dev, lock-pinned), so there is
 nothing to install. Run npm ci --omit=dev only if you delete it.

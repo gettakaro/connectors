@@ -124,6 +124,28 @@ bool AtomicWriteFile(const std::string& path, const std::string& text, std::stri
     return true;
 }
 
+static bool OverwriteExistingFile(const std::string& path, const std::string& text, std::string& err) {
+    HANDLE h = CreateFileW(W(path).c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+                           nullptr);
+    if (h == INVALID_HANDLE_VALUE) {
+        err = ErrText("open", path);
+        return false;
+    }
+    size_t off = 0;
+    bool ok = true;
+    while (ok && off < text.size()) {
+        DWORD put = 0;
+        DWORD chunk = (DWORD)std::min<size_t>(text.size() - off, 1 << 20);
+        ok = WriteFile(h, text.data() + off, chunk, &put, nullptr) && put != 0;
+        off += put;
+    }
+    if (!ok) err = ErrText("write", path);
+    else if (!SetEndOfFile(h)) ok = false, err = ErrText("truncate", path);
+    else if (!FlushFileBuffers(h)) ok = false, err = ErrText("flush", path);
+    CloseHandle(h);
+    return ok;
+}
+
 bool EnsureDirectory(const std::string& dir, std::string& err) {
     if (dir.empty()) return true;
     std::wstring w = W(dir);
@@ -206,7 +228,7 @@ bool ReadWholeFile(const std::string& path, std::string& text, bool& exists, std
 
 bool AtomicWriteFile(const std::string& path, const std::string& text, std::string& err) {
     std::string tmp = path + ".tmp";
-    int fd = open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int fd = open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
     if (fd < 0) {
         err = "create '" + tmp + "' failed: " + strerror(errno);
         return false;
@@ -235,6 +257,28 @@ bool AtomicWriteFile(const std::string& path, const std::string& text, std::stri
         return false;
     }
     return true;
+}
+
+static bool OverwriteExistingFile(const std::string& path, const std::string& text, std::string& err) {
+    int fd = open(path.c_str(), O_WRONLY);
+    if (fd < 0) {
+        err = "open '" + path + "' failed: " + strerror(errno);
+        return false;
+    }
+    size_t off = 0;
+    while (off < text.size()) {
+        ssize_t n = write(fd, text.data() + off, text.size() - off);
+        if (n <= 0) {
+            err = "write '" + path + "' failed: " + strerror(errno);
+            close(fd);
+            return false;
+        }
+        off += (size_t)n;
+    }
+    bool ok = ftruncate(fd, (off_t)text.size()) == 0 && fsync(fd) == 0;
+    if (!ok) err = "truncate '" + path + "' failed: " + strerror(errno);
+    close(fd);
+    return ok;
 }
 
 bool EnsureDirectory(const std::string& dir, std::string& err) {
@@ -282,5 +326,17 @@ bool ReadFileRange(const std::string& path, uint64_t offset, uint64_t length, st
 }
 
 #endif
+
+bool RewriteKeepingAccess(const std::string& path, const std::string& expected, const std::string& text,
+                          std::string& err) {
+    std::string now;
+    bool exists = false;
+    if (!ReadWholeFile(path, now, exists, err)) return false;
+    if (!exists || now != expected) {
+        err = "'" + path + "' changed meanwhile";
+        return false;
+    }
+    return OverwriteExistingFile(path, text, err);
+}
 
 }  // namespace native

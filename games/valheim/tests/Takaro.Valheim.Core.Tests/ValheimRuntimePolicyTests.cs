@@ -47,4 +47,13 @@ public sealed class ValheimRuntimePolicyTests
             processName: "dotnet",
             executablePath: "--config=/tmp/valheim_server.x86_64.json"));
     }
+
+    [TestMethod]
+    public void ServerNameArgumentReadsTheDedicatedServerName()
+    {
+        Assert.AreEqual("Takaro Dev Valheim", ValheimRuntimePolicy.ServerNameArgument(
+            new[] { "valheim_server.x86_64", "-nographics", "-name", "Takaro Dev Valheim", "-port", "2456" }));
+        Assert.IsNull(ValheimRuntimePolicy.ServerNameArgument(new[] { "valheim_server.x86_64", "-name" }));
+        Assert.IsNull(ValheimRuntimePolicy.ServerNameArgument(null));
+    }
 }

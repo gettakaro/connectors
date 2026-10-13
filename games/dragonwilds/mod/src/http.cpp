@@ -5,6 +5,7 @@
 #include "events.h"
 #include "gamethread.h"
 #include "hooks.h"
+#include "mapsurvey.h"
 #include "native_bridge.h"
 #include "perf.h"
 #include "reflect.h"
@@ -353,6 +354,16 @@ Response Route(const Request& r) {
             if (!r.body.empty() && !JsonParse(r.body, body)) return Err(400, "body must be JSON");
             return FromAction(Actions::KillNearest(body));
         }
+        if (p.size() == 3 && p[1] == "map" && p[2] == "survey") {
+            if (GET) return {200, MapSurvey::Status()};
+            if (r.method != "POST") return Err(405, "method not allowed");
+            JsonValue body;
+            if (!r.body.empty() && (!JsonParse(r.body, body) || body.type != JsonValue::Object))
+                return Err(400, "body must be a JSON object");
+            std::string out;
+            int status = MapSurvey::Start(body, out);
+            return {status, out};
+        }
         if (!GET) return Err(405, "method not allowed");
         if (p.size() == 2 && p[1] == "gamethread") return DebugGameThread();
         if (p.size() == 2 && p[1] == "symbols") return DebugSymbols();
@@ -448,12 +459,12 @@ void* ConnThread(void* arg) {
 }
 
 void LoadToken() {
-    g_token = ConfigValue("TAKARO_PLUGIN_TOKEN", "token", "");
+    g_token = ConfigValue("TAKARO_PLUGIN_TOKEN", "");
     if (g_token.empty())
         PluginLog("http: diagnostics disabled (TAKARO_PLUGIN_TOKEN is not configured)");
     else
         PluginLog("http: token configured (%zu chars)", g_token.size());
-    std::string port = ConfigValue("TAKARO_PLUGIN_PORT", "port", "");
+    std::string port = ConfigValue("TAKARO_PLUGIN_PORT", "");
     if (!port.empty()) {
         int v = atoi(port.c_str());
         if (v > 0 && v < 65536) g_port = v;

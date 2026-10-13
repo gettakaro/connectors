@@ -5,7 +5,7 @@
 #
 #   TakaroDragonwilds/
 #     libtakaro-dragonwilds.so        the plugin, which also holds the Takaro connection
-#     env.example                     the configuration, to be copied to .env
+#     env.example                     Docker .env template (game settings; overrides takaro.cfg)
 #     docker-compose.example.yml      the game service with the plugin preloaded
 #     README.txt, INSTALL.md          install, upgrade from the 0.2.x sidecar, rollback
 #     scripts/drain-legacy.py         the one-time 0.2.x sidecar drain and state import
@@ -112,10 +112,14 @@ libtakaro-dragonwilds.so is loaded into the Linux dedicated server with LD_PRELO
 connects to Takaro itself; there is no sidecar. Preload it on the game binary's own launch
 line only, never onto SteamCMD (32-bit; it fails with a 64-bit preload).
 
+On first start the connector creates takaro.cfg next to libtakaro-dragonwilds.so.
+Paste your Takaro registration token into it; saving the file is enough, also while
+the server runs. To upgrade, replace only libtakaro-dragonwilds.so.
+
 Install, upgrade from the 0.2.x sidecar, and rollback: INSTALL.md.
 Check the files you unpacked: sha256sum -c SHA256SUMS
 
-Never commit or share a filled-in .env: it holds your Takaro registration token.
+Never commit or share a filled-in takaro.cfg or .env: they hold your registration token.
 TXT
 
 cat > "${PKG}/takaro-target.json" <<JSON

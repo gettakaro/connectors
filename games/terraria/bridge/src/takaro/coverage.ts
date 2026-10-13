@@ -88,7 +88,13 @@ export const ACTION_COVERAGE: Record<GameServerAction, ActionCoverage> = {
     status: 'unsupported',
     responseShape: '{ success: false, error: string }',
     liveVerification: 'fake harness returns explicit unsupported response',
-    reason: 'TShock REST does not render map tiles.',
+    reason: 'The map is served whole through getMapImage on protocol v1; the version 0 tile layout is not built.',
+  },
+  getMapImage: {
+    status: 'live-supported',
+    responseShape: '{ revision: string, data: base64 }',
+    liveVerification: 'protocol v1 map capability; Takaro staging fetched the plugin-rendered world image and cut its tile pyramid',
+    reason: 'The plugin renders the loaded world with the game\'s own map colours into tshock/takaro/map-<revision>.png; the bridge declares it as the v1 map image and serves it in chunks.',
   },
   giveItem: {
     status: 'live-supported',

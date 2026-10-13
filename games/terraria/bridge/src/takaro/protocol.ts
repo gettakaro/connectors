@@ -11,6 +11,7 @@ export type GameServerAction =
   | 'getPlayerInventory'
   | 'getMapInfo'
   | 'getMapTile'
+  | 'getMapImage'
   | 'giveItem'
   | 'sendMessage'
   | 'teleportPlayer'
@@ -32,6 +33,7 @@ export const ALL_GAME_SERVER_ACTIONS = [
   'getPlayerInventory',
   'getMapInfo',
   'getMapTile',
+  'getMapImage',
   'giveItem',
   'sendMessage',
   'teleportPlayer',
@@ -62,6 +64,10 @@ export interface WsMessage {
   type:
     | 'identify'
     | 'identifyResponse'
+    | 'capabilities'
+    | 'capabilitiesResponse'
+    | 'eventAck'
+    | 'eventError'
     | 'connected'
     | 'gameEvent'
     | 'request'
@@ -71,6 +77,7 @@ export interface WsMessage {
     | 'pong';
   payload?: RequestPayload | IdentifyResponsePayload | unknown;
   requestId?: string;
+  error?: unknown;
   eventType?: GameEventType;
   data?: unknown;
 }
@@ -79,10 +86,17 @@ export interface IdentifyPayload {
   identityToken: string;
   registrationToken: string;
   name: string;
+  /** Offered protocol versions; absent means a version 0 identify. */
+  protocolVersions?: number[];
+  capabilities?: unknown[];
 }
+
+/** The version 1 response error codes. */
+export type ProtocolErrorCode = 'unsupported' | 'invalid_args' | 'not_found' | 'game_error' | 'internal';
 
 export interface IdentifyResponsePayload {
   gameServerId?: string;
+  protocolVersion?: number;
   error?: unknown;
 }
 

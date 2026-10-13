@@ -70,6 +70,9 @@ public:
     std::string EntityNameForClass(const std::string& npcClass);
     // The player name from the last getPlayers/getPlayer snapshot that saw this Steam64; "" if none.
     std::string KnownName(const std::string& steam64);
+    // "ExiledLands" / "IsleOfSiptah" once a GameState of the loaded map was found, else "". Any
+    // thread, never waits on a read.
+    std::string CurrentRegion();
 
 private:
     takaro::ActionResult ExecuteImpl(const std::string& action, const JsonValue& args);
@@ -99,6 +102,8 @@ private:
     std::string indexError_;
     PlayerLayout layout_;
     std::vector<uintptr_t> gameStates_;
+    std::mutex regionMu_;
+    std::string region_;  // Region() of the last GameState scan, for CurrentRegion()
     // UFunctions for the self-checks and the fallbacks
     UE::FuncInfo fnPing_, fnLocation_, fnIntStat_, fnFloatStat_, fnTextToString_;
     uintptr_t textLibCdo_ = 0;

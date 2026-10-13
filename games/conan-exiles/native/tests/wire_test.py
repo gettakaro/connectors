@@ -37,10 +37,10 @@ def check(cond, label, detail=''):
 
 
 class Harness:
-    def __init__(self, binary, fake, cert, state, mode='ready'):
+    def __init__(self, binary, fake, cert, state, mode='ready', extra_env=None):
         env = dict(os.environ, TAKARO_IDENTITY_TOKEN=IDENTITY, TAKARO_REGISTRATION_TOKEN=REGISTRATION,
                    TAKARO_SERVER_NAME='Wire Test Conan', TAKARO_RECONNECT_BASE_MS='500',
-                   TAKARO_RECONNECT_MAX_MS='4000', TAKARO_ACTION_TIMEOUT_MS='5000')
+                   TAKARO_RECONNECT_MAX_MS='4000', TAKARO_ACTION_TIMEOUT_MS='5000', **(extra_env or {}))
         self.proc = subprocess.Popen([binary, f'wss://localhost:{fake.port}/', str(cert), str(state), mode],
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      text=True, bufsize=1, env=env)
@@ -336,6 +336,134 @@ def refused(binary, cert, key, root):
         fake.close()
 
 
+def protocol_v1(binary, cert, key, root):
+    fake = FakeTakaro(key, cert)
+    fake.protocol = 1
+    h = Harness(binary, fake, cert, root / 'v1', extra_env={'TAKARO_HARNESS_REGION': 'ExiledLands'})
+    try:
+        _, ident = fake.next_frame(lambda v: isinstance(v, dict) and v.get('type') == 'identify', what='identify')
+        p = ident['payload']
+        names = [c['name'] for c in p.get('capabilities', [])]
+        check(p.get('protocolVersions') == [0, 1], 'identify offers protocol versions [0, 1]', p.get('protocolVersions'))
+        check({'players.list', 'players.location', 'players.inventory', 'chat.send', 'moderation.ban',
+               'events.chat-message', 'events.player-connected', 'map'} <= set(names)
+              and 'testReachability' not in names and not any('MapInfo' in n or 'MapTile' in n for n in names),
+              'the manifest declares the live actions, the events and the map', names)
+        dims = next(c for c in p['capabilities'] if c['name'] == 'map')['parameters']['dimensions']
+        check(len(dims) == 1 and dims[0]['id'] == 'exiled_lands' and dims[0]['source'] == {'type': 'none'}
+              and dims[0]['axes'] == {'horizontal': {'field': 'x', 'direction': 'right'},
+                                      'vertical': {'field': 'y', 'direction': 'down'}}
+              and dims[0]['bounds'] == {'horizontal': {'min': -342832.9, 'max': 474770},
+                                        'vertical': {'min': -445357.3, 'max': 368713.7}},
+              'map: one Dimension exiled_lands, source none, server-calibrated bounds', dims)
+        eventually(lambda: h.health()['protocol']['version'] == 1, what='protocol 1 negotiated')
+        check(True, 'Takaro picked protocol 1 and the bridge speaks it')
+
+        for n in range(1, 4):
+            h.emit('chat-message', chat(n))
+        eventually(lambda: len(events_of(fake.log)) == 3, what='3 events')
+        evs = events_of(fake.log)
+        stream = evs[0].get('streamId')
+        check(stream and all(e.get('streamId') == stream for e in evs) and [e.get('seq') for e in evs] == [1, 2, 3]
+              and set(evs[0]) == {'type', 'data', 'streamId', 'seq'},
+              'events carry one streamId and seq 1, 2, 3 next to type and data', evs[0])
+        eventually(lambda: h.health()['outbox']['pending'] == 0 and h.health()['protocol']['ackedEvents'] == 3,
+                   what='eventAck empties the outbox')
+        check(True, 'eventAck removes the acknowledged events')
+
+        fake.auto_ack = False  # Takaro reads the frames (pongs flow) but acknowledges nothing
+        h.emit('chat-message', chat(4))
+        h.emit('chat-message', chat(5))
+        eventually(lambda: [e.get('seq') for e in events_of(fake.log)][-2:] == [4, 5], what='events 4-5 on the wire')
+        time.sleep(3)
+        check(h.health()['outbox']['pending'] == 2, 'protocol 1: pongs alone never confirm an event')
+        conns = len(fake.conns)
+        fake.drop_all()
+        eventually(lambda: len(fake.conns) > conns and fake.conns[-1].alive, timeout=15, what='reconnect')
+        new = fake.conns[-1].index
+        eventually(lambda: [e.get('seq') for e in events_of(fake.log, new)] == [4, 5], what='resend after identify')
+        again = events_of(fake.log, new)
+        check(all(e['streamId'] == stream for e in again) and [e['data']['msg'] for e in again] == ['event-4', 'event-5'],
+              'after a reconnect the unacknowledged events are resent with the same streamId and seq')
+        fake.auto_ack = True
+        h.emit('chat-message', chat(6))
+        eventually(lambda: h.health()['outbox']['pending'] <= 2 and [e.get('seq') for e in events_of(fake.log, new)][-1] == 6,
+                   what='event 6')
+        fake.current().send_json({'type': 'eventAck', 'payload': {'streamId': stream, 'upTo': 6}})
+        eventually(lambda: h.health()['outbox']['pending'] == 0, what='cumulative ack')
+        check(True, 'a cumulative eventAck (upTo 6) confirms 4, 5 and 6')
+
+        r = fake.response(fake.request('bogus', '{}'))
+        check(r.get('error', {}).get('code') == 'unsupported' and r['error'].get('message'),
+              'protocol 1 error shape: { code, message }', r)
+        r = fake.response(fake.request('sendMessage', json.dumps({'message': 'hi'})))
+        h.expect('CHAT')
+        check('payload' in r and r['payload'] is None and not r.get('error'), 'protocol 1: a void action answers payload null', r)
+        r = fake.response(fake.request('testReachability', '{}'))
+        check(r.get('payload', {}).get('connectable') is True, 'testReachability still answers', r)
+
+        h.send('region IsleOfSiptah')
+        _, caps = fake.next_frame(lambda v: isinstance(v, dict) and v.get('type') == 'capabilities', timeout=8,
+                                  what='capabilities replacement')
+        dims = next(c for c in caps['payload']['capabilities'] if c['name'] == 'map')['parameters']['dimensions']
+        check(caps.get('requestId') and [d['id'] for d in dims] == ['isle_of_siptah']
+              and 'players.list' in [c['name'] for c in caps['payload']['capabilities']],
+              'a map change sends the full manifest again with the new Dimension', dims)
+        eventually(lambda: h.health()['protocol']['manifestsSent'] == 1 and
+                   h.health()['protocol']['manifest'][-1]['parameters']['dimensions'][0]['id'] == 'isle_of_siptah',
+                   what='manifest in health')
+        time.sleep(2.5)
+        check(len([v for _, _, v in fake.log if isinstance(v, dict) and v.get('type') == 'capabilities']) == 1,
+              'an unchanged manifest is not sent again')
+        h.quit()
+    finally:
+        if h.proc.poll() is None:
+            h.kill()
+        fake.close()
+
+    # Takaro without protocol 1 (or an operator's "protocol": 0): the protocol 0 identify and shapes.
+    fake = FakeTakaro(key, cert)
+    h = Harness(binary, fake, cert, root / 'v0', extra_env={'TAKARO_HARNESS_REGION': 'ExiledLands'})
+    try:
+        wait_identified(fake, h, 1)
+        check(h.health()['protocol']['version'] == 0, 'old Takaro (no protocolVersion in identifyResponse): protocol 0')
+        h.emit('chat-message', chat(1))
+        eventually(lambda: events_of(fake.log), what='event')
+        check(set(events_of(fake.log)[0]) == {'type', 'data'}, 'protocol 0 events carry no streamId/seq')
+        eventually(lambda: h.health()['outbox']['pending'] == 0, what='pong confirmation')
+        r = fake.response(fake.request('bogus', '{}'))
+        check(isinstance(r.get('error'), str), 'protocol 0 error is a string', r)
+        h.quit()
+    finally:
+        if h.proc.poll() is None:
+            h.kill()
+        fake.close()
+    fake = FakeTakaro(key, cert)
+    fake.protocol = 1
+    h = Harness(binary, fake, cert, root / 'v0-forced', extra_env={'TAKARO_PROTOCOL': '0'})
+    try:
+        _, ident = fake.next_frame(lambda v: isinstance(v, dict) and v.get('type') == 'identify', what='identify')
+        check('protocolVersions' not in ident['payload'] and 'capabilities' not in ident['payload'],
+              'TAKARO_PROTOCOL=0 sends the protocol 0 identify')
+        h.quit()
+    finally:
+        if h.proc.poll() is None:
+            h.kill()
+        fake.close()
+    fake = FakeTakaro(key, cert)
+    fake.protocol = 1
+    fake.reject_identify_v1 = 'invalid_args'
+    h = Harness(binary, fake, cert, root / 'v1-rejected')
+    try:
+        eventually(lambda: 'invalid_args' in h.health()['lastIdentifyError'], what='v1 identify error')
+        check(not h.health()['identified'], 'a protocol 1 identify error (top-level error) is surfaced, not identified')
+        h.quit()
+    finally:
+        if h.proc.poll() is None:
+            h.kill()
+        fake.close()
+
+
 def main():
     binary = sys.argv[1]
     with tempfile.TemporaryDirectory(prefix='conan-wire-') as tmp:
@@ -343,6 +471,7 @@ def main():
         key, cert = make_cert(root)
         only = os.environ.get('WIRE_ONLY')
         for name, fn in (('basics', basics), ('outage', outage), ('restart', restart), ('rejected', rejected),
+                         ('protocol_v1', protocol_v1),
                          ('refused', refused)):
             if only and name not in only.split(','):
                 continue

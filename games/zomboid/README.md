@@ -30,34 +30,31 @@ Download **`takaro-zomboid-agent-linux-42.21.0-<version>.jar`** from the latest
 Direct link pattern:
 `https://github.com/gettakaro/connectors/releases/download/zomboid-v<version>/takaro-zomboid-agent-linux-42.21.0-<version>.jar`
 
-The old name `TakaroConnector-<version>.jar` is published beside it as a byte-identical copy and
-will be kept for two more releases.
-
-Use `zomboid-v1.0.0` or newer. The results in the table below were proven on the code that
-shipped in 1.0.0. Do not use the `zomboid-dev` pre-release; that is an untested rolling build.
+`TakaroConnector-<version>.jar` beside it is the same file under its old name. It is one
+self-contained jar; there is nothing to unzip. Do not use the `zomboid-dev` pre-release; that is
+an untested rolling build.
 
 **Supported server build:** Project Zomboid 42.21.0, Steam build 25485538 (the current `public`
 branch). The connector checks the server jar when it starts and refuses to hook another build
 unless you set `TAKARO_TARGET_POLICY=warn` on the server process. Releases up to 1.1.0 were built
 for 42.20.4 and refuse a 42.21.0 server; update the connector when you update the game.
 
-The download is a **single self-contained jar** — everything it needs (ByteBuddy, the WebSocket
-client, Gson) is already inside it. There is nothing to unzip.
+### 3. Put the jar in place
 
-### 3. Copy it into place
-
-Stop the server, then put the jar in the Takaro folder inside the server's Zomboid data
-directory, **renamed to `TakaroConnector.jar`**:
+Stop the server and save the jar as `TakaroConnector.jar` in a `Takaro` folder inside the
+server's Zomboid data folder (where your saves, logs and `db/` live, not the game install
+directory):
 
 ```
 /home/steam/Zomboid/Takaro/TakaroConnector.jar
 ```
 
-On Windows that folder is `C:\Users\<user>\Zomboid\Takaro\`. Create the `Takaro` folder if it
-does not exist. This is the *data* directory (where your saves, logs and `db/` live), not the
-game install directory — so a SteamCMD `validate` never touches it.
+On Windows that is `C:\Users\<user>\Zomboid\Takaro\TakaroConnector.jar`. A SteamCMD `validate`
+never touches this folder.
 
-Now attach it to the server JVM. Set this environment variable on the server process:
+### 4. Attach it to the server JVM
+
+Set this environment variable on the server process:
 
 ```
 JAVA_TOOL_OPTIONS=-javaagent:/home/steam/Zomboid/Takaro/TakaroConnector.jar
@@ -71,40 +68,46 @@ If you cannot set an environment variable, add the same `-javaagent:` argument t
 `ProjectZomboid64.json` in the game install directory instead — that works too, but SteamCMD
 `validate` reverts it, so you have to re-apply it after every game update.
 
-If you keep the versioned file name, point the `-javaagent:` path at that exact file name
-instead of `TakaroConnector.jar`.
+### 5. Paste your registration token
 
-### 4. Configure
-
-Create the config file next to the jar:
+The settings live in `TakaroConfig.txt` next to the jar:
 
 ```
 /home/steam/Zomboid/Takaro/TakaroConfig.txt
 ```
 
-with your Takaro registration token:
+Start the server. If the file is not there yet, the connector creates it with a new
+`identityToken`, and the console says that the token is missing. Open the file, paste the token
+after `registrationToken=` and save. Saving is enough: the connector connects within a few
+seconds, no restart needed. The same goes for a corrected token later on.
+
+You can also create the file yourself before the first start, with this content (leave
+`identityToken` empty; the connector fills it in):
 
 ```
 wsUrl=wss://connect.takaro.io/
-registrationToken=your-registration-token-here
+registrationToken=<your registration token>
 identityToken=
+serverChatName=
 debug=false
 logEvents=false
+debugCatalog=false
 ```
 
-`registrationToken` is the key that matters — the server cannot identify to Takaro without it.
-Leave `wsUrl` as it is, and leave `identityToken` alone; the connector fills it in by itself.
+Every key can also be given as an environment variable, which wins over the file and is never
+written into it: `TAKARO_WS_URL`, `TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`,
+`TAKARO_SERVER_CHAT_NAME`, `TAKARO_DEBUG`, `TAKARO_LOG_EVENTS`, `TAKARO_DEBUG_CATALOG`,
+`TAKARO_PROTOCOL`.
 
-Every key can also be given as an environment variable, which wins over the file:
-`TAKARO_WS_URL`, `TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`, `TAKARO_DEBUG`,
-`TAKARO_LOG_EVENTS`. That is handy in Docker, where you may not want a config file at all.
+The connector speaks Takaro's Generic Game Protocol version 1 when Takaro offers it (it falls
+back to version 0 on an older Takaro). Version 1 gives the map below and resends events that
+happened while the connection was down. `protocol=0` in `TakaroConfig.txt` (or
+`TAKARO_PROTOCOL=0`) turns version 1 off, and with it the map.
 
-Save the file and start the server.
+### 6. Check that it worked
 
-### 5. Check that it worked
-
-The connector writes its own log to `/home/steam/Zomboid/Takaro/takaro-agent.log` and mirrors
-it to the server console. In order, you should see:
+The connector writes its own log to `Takaro/takaro-agent.log` and mirrors it to the server
+console. In order, you should see:
 
 ```
 premain: Takaro Project Zomboid connector (M2)
@@ -112,24 +115,25 @@ target-check: {"result":"ok", ...}
 config: loaded /home/steam/Zomboid/Takaro/TakaroConfig.txt
 premain: hooks installed
 first tick reached — starting Takaro connector
-WebSocket connected, sending identify...
+Connecting to Takaro at wss://connect.takaro.io/
+Identified successfully
 ```
 
-If you see `config: /home/steam/Zomboid/Takaro/TakaroConfig.txt not present, using env only`,
-the connector did not find your config file — check the path and the file name.
+In Takaro, the game server shows as **online**.
+
+If the token is missing or Takaro rejects it, the console shows a block of `*` lines that names
+the file to edit. Fix the token there and save; no restart needed. Emptying the token
+disconnects the server from Takaro.
 
 If the `target-check` line says `"result":"refuse"`, your server is a different Project Zomboid
 build from the one this jar was built for and no hooks were installed. Use the release built for
 your build, or set `TAKARO_TARGET_POLICY=warn` to run it anyway (the hooks may bind nothing).
 
-And in Takaro, the game server shows as **online**. If it stays offline, the registration token
-is the first thing to re-check.
+### 7. Upgrading
 
-### 6. Upgrading
-
-**Stop the server first.** Replace `/home/steam/Zomboid/Takaro/TakaroConnector.jar` with the new
-one and start the server again. Leave `TakaroConfig.txt` alone — your token and identity survive
-the upgrade. Never swap the jar under a running server; the agent is loaded into the live JVM.
+**Stop the server first.** Replace only `Takaro/TakaroConnector.jar` with the new jar (renamed to
+`TakaroConnector.jar`) and start the server again. Your `Takaro/TakaroConfig.txt` is never
+touched. Never swap the jar under a running server.
 
 ## What works, what doesn't
 
@@ -145,6 +149,7 @@ timed-ban expiry, shutdown and the zombie-kill event.
 |---|---|---|
 | Connection & heartbeat | ✅ | The server reports itself reachable to Takaro while it is up, with a player connected. |
 | Server restart / reconnect | ✅ | After a restart the connector comes back and re-identifies on its own, no manual step. |
+| Token change without a restart | ✅ | A token pasted or corrected in `TakaroConfig.txt` while the server runs connects within a few seconds; a missing or rejected token is reported in the console. |
 | Player list | ✅ | Name, Steam id, platform id, IP and ping. Empty list when nobody is online. |
 | Single player lookup | ✅ | Same details for one player, looked up by name. |
 | Player location | ✅ | Live X/Y/Z, and it follows teleports. |
@@ -169,8 +174,7 @@ timed-ban expiry, shutdown and the zombie-kill event.
 | Player death event | ✅ | Includes the position where the player died. |
 | Entity kill event | ✅ | Proven with a real zombie kill; the weapon used is included. A bare-handed kill reports no weapon. Rate-limited to about 20 per second so a horde cannot flood Takaro. |
 | Log events | ⚠️ | Server log lines are forwarded, but **off by default** — set `logEvents=true` (or `TAKARO_LOG_EVENTS=true`) to turn them on. |
-| Map info | ❌ | Not implemented by this connector. |
-| Map tiles | ❌ | Not supported by Takaro for this connector type. |
+| Map | ⚠️ | Takaro shows your server's own world map (the picture the in-game map draws, read from the game install) with player dots. Ground floor only; areas added by map mods show as grey. |
 | Discord chat bridge | ⚠️ | Not verified in a live test. The underlying chat in both directions works, so it is expected to, but it was not proven. |
 | Shop & economy | ⚠️ | Not verified in a live test. The pieces it needs — item catalogue, give an item, player inventory — are all proven, but the shop itself was not exercised. |
 
@@ -183,8 +187,9 @@ timed-ban expiry, shutdown and the zombie-kill event.
   Takaro setting, so it is left unset by default.
 - **No named locations.** Build 42 simply does not keep a registry of named places, so Takaro
   can only ever see safehouses players have claimed.
-- **No map.** Takaro's API does not support map tiles for Generic-connector servers; nothing on
-  the game server side changes that.
+- **One map, one floor.** The map is the vanilla Knox County picture that ships with the game,
+  built once when the server starts (about 20 seconds, cached in `Takaro/map/`). Basements and
+  upper floors are not separate maps, and map mods that add new areas are not drawn.
 - **A teleport takes a few seconds to show up.** The move happens immediately in game, but the
   position Takaro reads back can lag by roughly 15 seconds.
 - **The connector must be attached before the server starts.** It hooks game classes as the JVM

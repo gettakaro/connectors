@@ -58,6 +58,11 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         {
             HelpText = "Lifts every active Takaro ban identifier for a player."
         });
+        Commands.ChatCommands.Add(new Command(AdminPermission, TakaroMap, "takaromap")
+        {
+            HelpText = "Renders the world map image Takaro shows, in the background."
+        });
+        ServerApi.Hooks.GamePostInitialize.Register(this, OnWorldLoaded);
         // The leading text is the line `takaro-maint verify` waits for; the version
         // behind it is what build-mod.sh stamped in, so a log says which build loaded.
         var build = typeof(TakaroTerrariaEventsPlugin)
@@ -78,9 +83,42 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takarogive"));
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaroban"));
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takarounban"));
+            Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaromap"));
+            ServerApi.Hooks.GamePostInitialize.Deregister(this, OnWorldLoaded);
+            _mapTimer?.Dispose();
         }
 
         base.Dispose(disposing);
+    }
+
+    private Timer? _mapTimer;
+
+    // The map image is rendered once the world is loaded and then every
+    // TAKARO_MAP_INTERVAL_MINUTES (default 30, 0 = only on load and on /takaromap), so
+    // building and digging show up on the Takaro map without a restart.
+    private void OnWorldLoaded(EventArgs args)
+    {
+        MapRenderer.Start("world-loaded");
+        var minutes = MapIntervalMinutes(Environment.GetEnvironmentVariable("TAKARO_MAP_INTERVAL_MINUTES"));
+        if (minutes > 0)
+        {
+            var period = TimeSpan.FromMinutes(minutes);
+            _mapTimer = new Timer(_ => MapRenderer.Start("interval"), null, period, period);
+        }
+    }
+
+    internal static int MapIntervalMinutes(string? value)
+    {
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var minutes) && minutes >= 0
+            ? minutes
+            : 30;
+    }
+
+    private static void TakaroMap(CommandArgs args)
+    {
+        args.Player.SendInfoMessage(MapRenderer.Start("command")
+            ? "TAKARO_MAP render started"
+            : "TAKARO_MAP render already running");
     }
 
     private static void TakaroTeleport(CommandArgs args)

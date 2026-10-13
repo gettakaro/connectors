@@ -1,6 +1,6 @@
 # Takaro 7D2D Connector
 
-A server-side-only mod (version **0.3.1**) that connects a 7 Days to Die dedicated server to <!-- x-release-please-version -->
+A server-side-only mod (version **0.4.0**) that connects a 7 Days to Die dedicated server to <!-- x-release-please-version -->
 Takaro. Players do not install anything.
 
 It is built once per exact server build, and each zip names the build it is for:
@@ -84,25 +84,32 @@ Examples:
 
 ### 4. Configure
 
-Start the server once and let it finish loading, then stop it again. The mod creates its config at:
+The mod keeps its settings in **`<server>/Takaro/Config.xml`**: a `Takaro` folder next to
+`Mods/`, in the folder the server starts in (for example `/home/steam/7dtd/Takaro/Config.xml` or
+`C:\7DaysToDieServer\Takaro\Config.xml`). The zip does not contain this file.
 
-```
-<server>/Takaro/Config.xml
-```
-
-Note this is **next to `Mods/`, not inside it** — it lands in the folder the server runs from
-(for example `/home/steam/7dtd/Takaro/Config.xml`).
-
-Open that file and paste your Takaro registration token:
+Either start the server once (the mod creates the file, with a new `IdentityToken`), or create it
+yourself before the first start with this content:
 
 ```xml
-<RegistrationToken>your-registration-token-here</RegistrationToken>
-<Url>wss://connect.takaro.io/</Url>
+<?xml version="1.0" encoding="utf-8"?>
+<Takaro>
+  <WebSocket>
+    <Url>wss://connect.takaro.io/</Url>
+    <RegistrationToken>your-registration-token-here</RegistrationToken>
+    <IdentityToken></IdentityToken>
+    <Enabled>true</Enabled>
+    <ReconnectIntervalSeconds>30</ReconnectIntervalSeconds>
+  </WebSocket>
+</Takaro>
 ```
 
-Leave `<Url>` as it is, and leave `IdentityToken` alone — the mod fills it in by itself (unless you are
-migrating an existing game server, see below).
-Save the file and start the server.
+Paste your Takaro registration token between the `RegistrationToken` tags and save. Leave `<Url>`
+as it is, and leave `IdentityToken` empty; the mod fills it in and uses it to identify this server in
+Takaro (unless you are migrating an existing game server, see below).
+
+Saving is enough: the mod checks the file every few seconds and connects as soon as it has a
+token. No restart needed. Emptying the token disconnects the server.
 
 ### 5. Check that it worked
 
@@ -123,19 +130,28 @@ WebSocket connection confirmed (identify accepted); releasing 0 buffered outboun
 
 Against an older Takaro the same line says `protocol version 0`; the mod works with both.
 
-And in Takaro, the game server shows as **online**. If the token is wrong, the log says so instead:
+And in Takaro, the game server shows as **online**.
+
+If no token is set yet, the server log shows a banner instead:
 
 ```
-Takaro rejected identify (invalid_args): Invalid registrationToken provided. Check RegistrationToken and IdentityToken in Takaro/Config.xml; retrying with backoff
+*************************************************************************
+  RegistrationToken not set, the server is not connected to Takaro.
+  Paste the registration token from Takaro into /home/steam/7dtd/Takaro/Config.xml
+  and save it. The mod connects within a few seconds, no restart needed.
+*************************************************************************
 ```
 
-Fix the token in `Config.xml` and restart the server.
+If the token is wrong, the banner says `Takaro rejected identify (invalid_args): Invalid
+registrationToken provided.` Fix the token in `<server>/Takaro/Config.xml` and save; the mod reconnects within a
+few seconds.
 
 ### 6. Upgrading
 
 **Stop the server first.** Delete `<server>/Mods/Takaro/` and unzip the new version in its place,
-then start the server again. Leave `<server>/Takaro/Config.xml` alone — your token and identity
-survive the upgrade. Never swap `Takaro.dll` under a running server; it can crash the server.
+then start the server again. Replace only `Mods/Takaro/`; your config at `<server>/Takaro/Config.xml`
+is never touched, so the token and the server's identity in Takaro stay as they are. Never swap
+`Takaro.dll` under a running server; it can crash the server.
 
 ## Moving from Takaro's built-in 7 Days to Die integration (Connector Migration)
 

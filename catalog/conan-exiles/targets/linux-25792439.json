@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-25792439",
+  "game": "conan-exiles",
+  "platform": "linux",
+  "revision": "25792439",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-10-09",
+    "evidence": [
+      "games/conan-exiles/README.md (What works, what doesn't: the native connector on Linux build 25792439, live with a real client through hosted Takaro)",
+      "games/conan-exiles/native/tests (contract level, every build: unit, drift, fake-Takaro wire tests incl. a forced outage, and the real library preloaded into a stand-in server)"
+    ],
+    "notes": "Exact Steam pin of the public head observed 2026-10-09 (native Linux dedicated server; depot 443032 manifest 7357061300451132906). The shipped connector is the native library libtakaro-conan-native.so (LD_PRELOAD into the server): it holds the Takaro connection itself, needs no RCON and no mod, and hooks this build (GNU build-id ad0c0103e496b7c19bfda90800c59ae494295d35, games/conan-exiles/native/core/pins/pins.json) and the previous 25738716 and 25639945; on any other build it connects, reports the unknown build and refuses every action. The three anchors kept their signatures and their addresses (unchanged vs 25738716). It is built in its own pinned buster toolchain (games/conan-exiles/native/platform/linux/Dockerfile.build), which compiles the two build.deps below from the same SHA-256-checked archives; this record's build toolchain image is not used by the Linux build and is kept because the schema requires one. A hosted runner cannot boot the 4.3 GB server, so release verification is contract level."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 443030,
+      "branch": "public",
+      "buildid": 25792439,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "1006": {
+          "manifest": "4559160656493359681",
+          "size": 111284048,
+          "files": 4
+        },
+        "443032": {
+          "manifest": "7357061300451132906",
+          "size": 4342220118,
+          "files": 251
+        }
+      },
+      "files": {
+        "ConanSandbox/Binaries/Linux/ConanSandboxServer-Linux-Shipping": {
+          "sha256": "e313b466f79733b7fe71e5bf02c598a686c1e45cf6c50e34a51b31333a2f88d5",
+          "size": 201698760
+        },
+        "ConanSandbox/Binaries/Linux/libDreamworld.so": {
+          "sha256": "e501d3eb060a60dac10fb5292d6299471c5efc6e95fa3606e57554d86426a9e1",
+          "size": 11218520
+        },
+        "ConanSandbox/Content/Paks/global.utoc": {
+          "sha256": "c0dbb6841d455b5138d48dfbd6524d82abae7d7609736b8ea355993142d68f7f",
+          "size": 962
+        },
+        "ConanSandbox/Content/Paks/pakchunk0-LinuxServer.utoc": {
+          "sha256": "341c54d712bc80387a0de43c4c09bf6a19fe4805b4e5321f9a53192979e17d2a",
+          "size": 676940
+        },
+        "ConanSandboxServer.sh": {
+          "sha256": "0eff1e0969d72ac8e323f52cf85cf265b7c1bdae409a884a7e2251f761a13999",
+          "size": 305
+        },
+        "linux64/steamclient.so": {
+          "sha256": "1a99f39637a505ce2dbfec697dafa118c2d1b8df7dea1412557e2d5ad0a2c7d4",
+          "size": 46728928
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm-slim",
+      "digest": "sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9",
+      "env": {
+        "HOME": "/conan/.takaro/home"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/conan-exiles/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm-slim",
+      "digest": "sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9"
+    },
+    "deps": {
+      "openssl": {
+        "coordinate": "openssl:openssl:3.5.8",
+        "sha256": "a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2",
+        "resolvedCoordinate": "https://github.com/openssl/openssl/releases/download/openssl-3.5.8/openssl-3.5.8.tar.gz"
+      },
+      "libwebsockets": {
+        "coordinate": "warmcat:libwebsockets:4.5.8",
+        "sha256": "b6ade658f4af3a823d0dc806ae5ef0623f0f4f5e2aeb895a0f77c4783840c30e",
+        "resolvedCoordinate": "https://github.com/warmcat/libwebsockets/archive/refs/tags/v4.5.8.tar.gz"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "native",
+      "artifact": "takaro-conan-exiles-native-linux-25792439-{version}.zip",
+      "installDir": "TakaroConanNative"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup"
+    ]
+  },
+  "preserve": [
+    "ConanSandbox/Saved/",
+    "TakaroConanNative/",
+    ".takaro/"
+  ],
+  "devServers": {
+    "gameId": "conan-exiles"
+  },
+  "notes": "The dedicated server is a self-contained UE5 Linux build that needs only glibc/libstdc++, so it runs in the pinned Node image recorded as the runtime; the rig and the verifier start it by command (ConanSandboxServer.sh). The Steamworks redist depot 1006 is pinned because the proven install carried it; it is not watched (Valve's depot)."
+}

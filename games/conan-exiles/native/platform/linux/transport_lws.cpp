@@ -42,6 +42,11 @@ struct LwsTransport::Impl {
     uint64_t connects = 0, connectFailures = 0, framesSent = 0, bytesSent = 0, framesReceived = 0;
     int64_t backoffMs = 0;
     Heartbeat hb;
+    // Retarget: written by any thread, applied by the service thread.
+    std::string targetUrl;
+    bool targetConnect = true;
+    uint64_t targetGeneration = 0;
+    uint64_t retargets = 0;
 
     // service thread only
     struct Timer {
@@ -270,17 +275,36 @@ void LwsTransport::Impl::Run() {
     }
     X509_STORE_free(trust);
 
-    std::string url = cfg.url;
-    const char *protocol = nullptr, *address = nullptr, *path = nullptr;
+    std::string host, uriPath;
     int port = 0;
-    if (lws_parse_uri(&url[0], &protocol, &address, &port, &path) || !protocol || strcmp(protocol, "wss") != 0 ||
-        !address || !*address || !path) {
-        Error(0, "the Takaro URL must be a valid wss:// URL");
-        return;
+    bool connectEnabled = false;
+    // An invalid URL holds the connection (the loop keeps serving) until a corrected one arrives.
+    auto applyUrl = [&](std::string url, bool connect) {
+        connectEnabled = false;
+        if (!connect) return;
+        const char *protocol = nullptr, *address = nullptr, *path = nullptr;
+        int parsedPort = 0;
+        if (lws_parse_uri(&url[0], &protocol, &address, &parsedPort, &path) || !protocol ||
+            strcmp(protocol, "wss") != 0 || !address || !*address || !path) {
+            Error(0, "the Takaro URL must be a valid wss:// URL");
+            return;
+        }
+        host = address;
+        uriPath = path;
+        port = parsedPort;
+        if (uriPath.empty() || uriPath[0] != '/') uriPath.insert(uriPath.begin(), '/');
+        connectEnabled = true;
+    };
+    uint64_t appliedGeneration;
+    {
+        std::lock_guard<std::mutex> g(mu);
+        appliedGeneration = targetGeneration;
+        if (targetGeneration) {
+            cfg.url = targetUrl;
+            cfg.connect = targetConnect;
+        }
     }
-    const std::string host = address;
-    std::string uriPath = path;
-    if (uriPath.empty() || uriPath[0] != '/') uriPath.insert(uriPath.begin(), '/');
+    applyUrl(cfg.url, cfg.connect);
 
     lws_set_log_level(LLL_ERR, nullptr);
     lws_context_creation_info info{};
@@ -301,10 +325,35 @@ void LwsTransport::Impl::Run() {
     }
     lws_sul_schedule(local, 0, &serviceTimer.sul, ServiceTimer, 250 * LWS_US_PER_MS);
     int64_t delay = cfg.reconnectBaseMs, nextConnect = 0;
-    bool awaiting = false;
+    bool awaiting = false, redialNow = false;
     while (!stopping) {
         int64_t now = SteadyMs();
-        if (!wsi && now >= nextConnect) {
+        bool retarget = false;
+        std::string url;
+        bool connect = false;
+        {
+            std::lock_guard<std::mutex> g(mu);
+            if (targetGeneration != appliedGeneration) {
+                appliedGeneration = targetGeneration;
+                retarget = true;
+                url = targetUrl;
+                connect = targetConnect;
+                retargets++;
+            }
+        }
+        if (retarget) {
+            applyUrl(url, connect);
+            delay = cfg.reconnectBaseMs;
+            nextConnect = now;
+            // The old socket's own CLOSED callback clears `wsi`; only then does the loop dial
+            // again, so a late callback can never touch the new connection.
+            if (wsi) {
+                lws_set_timeout(wsi, PENDING_TIMEOUT_CLOSE_SEND, LWS_TO_KILL_ASYNC);
+                timeoutSet = true;
+                redialNow = true;
+            }
+        }
+        if (connectEnabled && !wsi && now >= nextConnect) {
             lws_client_connect_info ci{};
             ci.context = local;
             ci.address = host.c_str();
@@ -325,7 +374,11 @@ void LwsTransport::Impl::Run() {
         }
         lws_service(local, 100);
         now = SteadyMs();
-        if (awaiting && !wsi) {  // the attempt (or the connection) ended: back off
+        if (redialNow && !wsi) {  // dropped for new settings: dial again at once
+            nextConnect = now;
+            delay = cfg.reconnectBaseMs;
+            awaiting = redialNow = false;
+        } else if (awaiting && !wsi) {  // the attempt (or the connection) ended: back off
             {
                 std::lock_guard<std::mutex> g(mu);
                 if (identifiedEpoch && identifiedEpoch == epoch) delay = cfg.reconnectBaseMs;
@@ -417,6 +470,15 @@ void LwsTransport::RequestClose(uint64_t epoch, const std::string& reason) {
     if (impl_->context) lws_cancel_service(impl_->context);
 }
 
+void LwsTransport::Retarget(const std::string& url, bool connect) {
+    std::lock_guard<std::mutex> g(impl_->mu);
+    if (impl_->stopping) return;
+    impl_->targetUrl = url;
+    impl_->targetConnect = connect;
+    impl_->targetGeneration++;
+    if (impl_->context) lws_cancel_service(impl_->context);
+}
+
 void LwsTransport::MarkIdentified(uint64_t epoch) {
     std::lock_guard<std::mutex> g(impl_->mu);
     impl_->identifiedEpoch = epoch;
@@ -443,6 +505,7 @@ std::string LwsTransport::StatsJson() {
         .Raw("eventsWritten", std::to_string(i.hb.Written()))
         .Raw("eventsConfirmed", std::to_string(i.hb.Confirmed()))
         .N("backoffMs", (double)i.backoffMs)
+        .N("retargets", (double)i.retargets)
         .S("lastError", i.lastError)
         .Done();
 }

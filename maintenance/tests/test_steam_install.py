@@ -244,6 +244,31 @@ def test_preserve_survives_an_upgrade_and_previous_is_kept(run: Any, repo: Path,
     )
 
 
+def test_an_upgrade_keeps_the_dragonwilds_plugin_ban_list(run: Any, repo: Path, dd_log: Path, tmp_path: Path) -> None:
+    # The Dragonwilds plugin writes bans.json next to the server binary, inside the depot tree.
+    # Installing the next build with that game's preserve list must carry it over.
+    dragonwilds = json.loads(
+        (fake.REPO_ROOT / "catalog" / "dragonwilds" / "targets" / "linux-25808123.json").read_text()
+    )
+    record = fake.read_target(repo)
+    record["preserve"] = dragonwilds["preserve"]
+    fake.write_target(repo, record)
+    dest = tmp_path / "ServerFiles"
+    assert install(run, repo, dest)[0] == 0
+    bans = dest / "RSDragonwilds" / "Binaries" / "Linux" / "takaro" / "bans.json"
+    bans.parent.mkdir(parents=True)
+    bans.write_text('{"version":1,"bans":[{"gameId":"000204f6f3a444a99a44c995d80ff2a7"}]}')
+
+    record["inputs"]["server"]["buildid"] = record["inputs"]["server"]["buildid"] + 1
+    fake.write_target(repo, record)
+    code, payload, _ = install(run, repo, dest)
+
+    assert code == 0, payload
+    assert payload["status"] == "installed"
+    assert "RSDragonwilds/Binaries/Linux/takaro" in payload["preserved"]
+    assert bans.read_text() == '{"version":1,"bans":[{"gameId":"000204f6f3a444a99a44c995d80ff2a7"}]}'
+
+
 def test_an_upgrade_survives_a_file_name_that_is_not_utf8(run: Any, repo: Path, dd_log: Path, tmp_path: Path) -> None:
     # A crashing process can leave a file named after raw heap bytes in the game tree; hashing the
     # tree for the swap guard must not fall over on it.

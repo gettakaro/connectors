@@ -5,6 +5,7 @@
 
 #include "actions.h"
 #include "common.h"
+#include "config_file.h"
 #include "events.h"
 #include "gamethread.h"
 #include "reflect.h"
@@ -20,6 +21,7 @@
 #include <cstdlib>
 #include <deque>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -305,34 +307,215 @@ std::pair<size_t, size_t> ExternalBudget() {
     return {rawLogBytes + rawMappedBytes, rawLogLines.size() + rawMappedEvents.size()};
 }
 
+bool consoleLive = false;     // bridge thread: "connected" was printed for the current settings
+std::string consoleProblem;   // bridge thread: the banner shown last, so a retry loop prints it once
+
+// Identity and registration token, and anything shaped like a long token (a JWT that a Takaro
+// error carries in its own request), never reach a log line.
+std::string RedactSecrets(std::string detail) {
+    for (const std::string* secret : {&identity, &registration}) {
+        if (secret->empty()) continue;
+        for (size_t at = 0; (at = detail.find(*secret, at)) != std::string::npos;) {
+            detail.replace(at, secret->size(), "[redacted]"); at += sizeof("[redacted]") - 1;
+        }
+    }
+    std::string out;
+    for (size_t i = 0; i < detail.size();) {
+        size_t j = i;
+        while (j < detail.size() && (std::isalnum(static_cast<unsigned char>(detail[j])) || detail[j] == '-' ||
+                                     detail[j] == '_' || detail[j] == '.'))
+            ++j;
+        if (j - i >= 40) out += "[redacted]"; else out.append(detail, i, j - i);
+        if (j < detail.size()) out += detail[j];
+        i = j + 1;
+    }
+    return out;
+}
+
+// A rejected identify: only the error's name, message and HTTP status. Takaro's error object can
+// embed its own internal request, x-takaro-token included, so nothing else of it is read.
+std::string IdentifyErrorSummary(const Json& e, int& httpStatus) {
+    httpStatus = 0;
+    std::string name, message;
+    if (e.is_string()) message = e.get<std::string>();
+    else if (e.is_object()) {
+        if (e.contains("name") && e["name"].is_string()) name = e["name"].get<std::string>();
+        if (e.contains("message") && e["message"].is_string()) message = e["message"].get<std::string>();
+        for (const char* key : {"http", "status", "statusCode"}) {
+            if (e.contains(key) && e[key].is_number_integer()) { httpStatus = e[key].get<int>(); break; }
+        }
+        if (!httpStatus && e.contains("response") && e["response"].is_object() &&
+            e["response"].contains("status") && e["response"]["status"].is_number_integer())
+            httpStatus = e["response"]["status"].get<int>();
+    } else message = "unexpected error value";
+    if (!httpStatus) {
+        size_t at = message.find("status code ");
+        if (at != std::string::npos) httpStatus = std::atoi(message.c_str() + at + 12);
+    }
+    if (httpStatus < 100 || httpStatus >= 600) httpStatus = 0;
+    if (message.size() > 200) message.resize(200);
+    std::string out = name.empty() ? message : message.empty() ? name : name + ": " + message;
+    if (out.empty()) out = "no message";
+    if (httpStatus) out += " (HTTP " + std::to_string(httpStatus) + ")";
+    return RedactSecrets(out);
+}
+
+void ConsoleProblemBanner(const std::string& key, const std::vector<std::string>& lines) {
+    if (key == consoleProblem) return;
+    consoleProblem = key;
+    ConsoleBanner(lines);
+}
+
+// ---- takaro.cfg while the server runs (bridge thread only once Start has returned) ----
+// The connection settings are re-read every 5 s; a change reconnects at once. A text that differs
+// is applied only when the next read, 1 s later, returns the same text, so a save in progress is
+// never applied half-written.
+std::string configPath;
+ConfigFile::Settings active;
+std::optional<std::string> appliedText, candidateText;
+Clock::time_point nextConfigPoll;
+std::chrono::milliseconds configPoll{5000}, configSettle{1000};
+std::string configHealth = "{}"; // protected by mu
+
+bool Connectable() { return !active.registration.empty() && !active.identity.empty(); }
+
+void PublishConfigHealth() {
+    Json fromEnv = Json::array();
+    if (active.envUrl) fromEnv.push_back("TAKARO_WS_URL");
+    if (active.envRegistration) fromEnv.push_back("TAKARO_REGISTRATION_TOKEN");
+    if (active.envIdentity) fromEnv.push_back("TAKARO_IDENTITY_TOKEN");
+    if (active.envServerName) fromEnv.push_back("TAKARO_SERVER_NAME");
+    Json j = {{"file", configPath}, {"fileFound", appliedText.has_value()},
+              {"registrationTokenSet", !active.registration.empty()}, {"identitySet", !active.identity.empty()},
+              {"fromEnvironment", fromEnv}};
+    std::lock_guard<std::mutex> g(mu);
+    configHealth = j.dump();
+}
+
+void BannerNotConnectable() {
+    if (active.identity.empty()) {
+        ConsoleProblemBanner("no-identity", {
+            "TAKARO_IDENTITY_TOKEN is empty and the connector cannot write " + configPath + ",",
+            "so the server is not connected to Takaro. Set TAKARO_IDENTITY_TOKEN in that file to a",
+            "unique id (for example a UUID) and save it. The connector picks it up within a few seconds."});
+    } else {
+        ConsoleProblemBanner("no-token", {
+            "TAKARO_REGISTRATION_TOKEN not set, the server is not connected to Takaro.",
+            "Paste the registration token from Takaro into " + configPath,
+            "and save it. The connector connects within a few seconds, no restart needed."});
+    }
+}
+
+void BannerRefused(const std::string& why, int httpStatus) {
+    if (httpStatus == 409) {
+        const bool envName = active.envServerName;
+        ConsoleProblemBanner("name-taken", {
+            "Takaro refused the server name \"" + serverName + "\": " + why + ".",
+            "Another game server in your Takaro domain already has this name.",
+            envName ? "Change the TAKARO_SERVER_NAME environment variable and restart the server."
+                    : "Set TAKARO_SERVER_NAME in " + configPath + " to a unique name",
+            envName ? "(it wins over " + configPath + ")."
+                    : "and save it. The connector reconnects within a few seconds, no restart needed."});
+    } else if (active.envRegistration) {
+        ConsoleProblemBanner("refused", {
+            "Takaro refused this server: " + why + ".",
+            "Check the TAKARO_REGISTRATION_TOKEN environment variable; it wins over " + configPath,
+            "and a changed environment variable needs a server restart."});
+    } else {
+        ConsoleProblemBanner("refused", {
+            "Takaro refused this server: " + why + ".",
+            "Check TAKARO_REGISTRATION_TOKEN in " + configPath,
+            "and save it. The connector reconnects within a few seconds, no restart needed."});
+    }
+}
+
+// `text` (nullopt: no file) after giving the file an identity where it has none, then the
+// settings it resolves to.
+void LoadSettings(std::optional<std::string> text) {
+    appliedText = ConfigFile::EnsureIdentity(configPath, text, ConfigFile::NewIdentity).text;
+    ConfigFile::Loaded file;
+    file.path = configPath;
+    if (appliedText) file = ConfigFile::FromText(configPath, *appliedText);
+    active = ConfigFile::Resolve(file);
+    identity = active.identity;
+    registration = active.registration;
+    serverName = active.serverName;
+    PublishConfigHealth();
+}
+
+void ApplyUserConfig(const std::string& text) {
+    const ConfigFile::Settings before = active;
+    LoadSettings(text);
+    if (active == before) return;
+    PluginLog("config: %s changed; reconnecting with the new settings", configPath.c_str());
+    // Only the answer to an identify sent with these settings counts: the old socket is dropped
+    // below, and nothing it still delivers is handled.
+    liveEpoch = false; identified = false;
+    consoleLive = false; consoleProblem.clear();
+    if (!Connectable()) BannerNotConnectable();
+    else ConsoleLine("%s changed; connecting to %s as \"%s\"", configPath.c_str(), active.url.c_str(),
+                     serverName.c_str());
+    NativeTransport::Retarget(active.url, Connectable());
+}
+
+void PollConfig() {
+    const auto now = Clock::now();
+    if (now < nextConfigPoll) return;
+    nextConfigPoll = now + configPoll;
+    auto text = ConfigFile::ReadText(configPath);
+    if (text == appliedText) { candidateText.reset(); return; }
+    if (!text) { appliedText.reset(); candidateText.reset(); return; }  // removed: keep what runs
+    if (candidateText != text) { candidateText = text; nextConfigPoll = now + configSettle; return; }
+    candidateText.reset();
+    appliedText = text;
+    const auto parsed = ConfigFile::Parse(*text);
+    if (ConfigFile::Unparseable(parsed)) {
+        for (const auto& w : parsed.warnings)
+            ConsoleLine("WARNING: %s %s; keeping the current settings until the file is fixed and saved",
+                        configPath.c_str(), w.c_str());
+        return;
+    }
+    ApplyUserConfig(*text);
+}
+
 void HandleFrame(const NativeTransport::Notice& n) {
     if (n.text.size() > 1024*1024 || !WithinDepth(n.text)) { lastError = "invalid JSON size or depth"; return; }
     Json f = Json::parse(n.text, nullptr, false);
     if (f.is_discarded() || !f.is_object()) { lastError = "malformed Takaro frame"; return; }
     std::string type = Str(f, "type");
-    if (type != "ping") WireLog("RECV", n.text);
+    if (type != "ping" && type != "identifyResponse" && type != "error") WireLog("RECV", n.text);
     if (type == "identifyResponse") {
+        // Answers arrive per connection epoch; HandleFrame only sees the current one, so a late
+        // answer to an identify sent with older settings never counts.
         Json p = Record(f.value("payload", Json::object()));
         if (p.contains("error") && !p["error"].is_null()) {
-            lastError = "Takaro rejected identity";
+            int status = 0;
+            const std::string why = IdentifyErrorSummary(p["error"], status);
+            WireLog("RECV", "identifyResponse error: " + why);
+            lastError = "Takaro rejected identity: " + why;
+            PluginLog("native: Takaro rejected identify: %s", why.c_str());
+            BannerRefused(why, status);
             NativeTransport::RequestClose(n.epoch, 1013, "identity rejected");
             return;
         }
+        WireLog("RECV", n.text);
         identified = true;
         PluginLog("native: identified with Takaro (epoch %llu)", (unsigned long long)n.epoch);
+        if (!consoleLive) {
+            consoleLive = true; consoleProblem.clear();
+            ConsoleLine("connected to Takaro as \"%s\"; the server now shows as reachable in the dashboard",
+                        serverName.c_str());
+        }
     } else if (type == "error") {
+        WireLog("RECV", RedactSecrets(n.text));
         ++protocolErrorCount;
         const Json p = Record(f.value("payload", Json::object()));
         std::string detail = Str(p, "message", Str(p, "error", Str(f, "error")));
         if (detail.empty()) detail = "unspecified protocol error";
-        if (!identity.empty()) for (size_t at = 0; (at = detail.find(identity, at)) != std::string::npos;) {
-            detail.replace(at, identity.size(), "[redacted]"); at += sizeof("[redacted]") - 1;
-        }
-        if (!registration.empty()) for (size_t at = 0; (at = detail.find(registration, at)) != std::string::npos;) {
-            detail.replace(at, registration.size(), "[redacted]"); at += sizeof("[redacted]") - 1;
-        }
+        detail = RedactSecrets(detail);
         if (detail.size() > 512) detail.resize(512);
         lastError = "Takaro protocol error: " + detail;
+        if (!identified) BannerRefused(detail, 0);
     } else if (type == "ping") {
         if (!NativeTransport::Queue(NativeTransport::Kind::Control, R"({"type":"pong"})", 0, n.epoch))
             NativeTransport::RequestClose(n.epoch, 1013, "control queue full");
@@ -503,7 +686,7 @@ void PollEvents() {
 std::deque<int64_t> logSendTimes;
 bool LogSendAllowed() {
     static const int limit = [] {
-        const char* v = getenv("DRAGONWILDS_LOG_RATE");
+        const char* v = ConfigFile::Get("DRAGONWILDS_LOG_RATE");
         if (!v || !*v) return 40;
         char* end = nullptr;
         long n = strtol(v, &end, 10);
@@ -836,6 +1019,7 @@ void BridgeLoop() {
                 batch.push_back(std::move(notices.front())); notices.pop_front();
             }
         }
+        PollConfig();
         // Confirmations only move forward, so one ConfirmThrough(highest) per batch is equivalent
         // to one per notice and saves an outbox rewrite plus two fsyncs for each.
         uint64_t confirmThrough = 0, confirmEpoch = 0;
@@ -1288,19 +1472,29 @@ bool Start() {
             rawLogBytes += line.size(); rawLogLines.push_back(std::move(line)); cv.notify_one();
         });
     }
-    { const char* w = getenv("TAKARO_WIRE_DEBUG"); wireDebug = w && std::string(w) == "1"; }
-    const char* id = getenv("TAKARO_IDENTITY_TOKEN"); identity = id && *id ? id : "dragonwilds";
-    const char* reg = getenv("TAKARO_REGISTRATION_TOKEN"); registration = reg ? reg : "";
-    while (!registration.empty() && std::isspace(static_cast<unsigned char>(registration.front())))
-        registration.erase(registration.begin());
-    while (!registration.empty() && std::isspace(static_cast<unsigned char>(registration.back())))
-        registration.pop_back();
-    const char* name = getenv("TAKARO_SERVER_NAME"); serverName = name && *name ? name : "Dragonwilds";
+    { const char* w = ConfigFile::Get("TAKARO_WIRE_DEBUG"); wireDebug = w && std::string(w) == "1"; }
+    configPath = ConfigFile::DefaultPath();
+    candidateText.reset();
+    configPoll = std::chrono::milliseconds(5000); configSettle = std::chrono::milliseconds(1000);
+#ifdef TAKARO_BRIDGE_TEST
+    if (const char* ms = getenv("TAKARO_TEST_CONFIG_POLL_MS")) {
+        configPoll = std::chrono::milliseconds(atoi(ms));
+        configSettle = std::chrono::milliseconds(atoi(ms) / 2);
+    }
+#endif
+    nextConfigPoll = Clock::now() + configPoll;
+    LoadSettings(ConfigFile::ReadText(configPath));
+    PluginLog("config: %s (%s); registration token %s, identity %s", configPath.c_str(),
+              appliedText ? "found" : "missing", active.registration.empty() ? "empty" : "set",
+              active.identity.empty() ? "empty" : "set");
+    consoleLive = false; consoleProblem.clear();
+    if (!Connectable()) BannerNotConnectable();
     NativeTransport::Config c;
-    const char* url = getenv("TAKARO_WS_URL"); c.url = url && *url ? url : "wss://connect.takaro.io/";
-    const char* ca = getenv("TAKARO_CA_FILE"); c.caFile = ca ? ca : "";
+    c.url = active.url;
+    c.connect = Connectable();
+    const char* ca = ConfigFile::Get("TAKARO_CA_FILE"); c.caFile = ca ? ca : "";
     auto backoff = [](const char* key, unsigned fallback) {
-        const char* value = getenv(key);
+        const char* value = ConfigFile::Get(key);
         if (!value || !*value) return fallback;
         char* end = nullptr;
         unsigned long parsed = std::strtoul(value, &end, 10);
@@ -1332,6 +1526,7 @@ bool Start() {
         noticeBytes += n.text.size(); notices.push_back(std::move(n)); cv.notify_one();
         return true;
     };
+    if (c.connect) ConsoleLine("connecting to %s as \"%s\"", c.url.c_str(), serverName.c_str());
     bridgeWorker = std::thread(BridgeLoop);
     actionWorker = std::thread(ActionLoop);
     if (!NativeTransport::Start(std::move(c), sink)) { Stop(); return false; }
@@ -1395,7 +1590,8 @@ std::string HealthJson() {
                {"stateVersion", published.stateVersion},
                {"persistenceLastError", published.persistenceError},
                {"behavior", Json::parse(published.behaviorHealth, nullptr, false)},
-               {"gate", {{"experimental", gateMode.load()}, {"durableOutbox", !gateMode.load()}}} };
+               {"gate", {{"experimental", gateMode.load()}, {"durableOutbox", !gateMode.load()}}},
+               {"config", Json::parse(configHealth, nullptr, false)} };
     return j.dump();
 }
 #ifdef TAKARO_BRIDGE_TEST

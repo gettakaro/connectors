@@ -8,7 +8,10 @@ It speaks just enough of the real server to drive the native connector:
     unconfirmed), and records every application frame the connector sends;
   - sends `request` frames and Takaro's application `ping`;
   - can drop every connection and refuse new ones for a while (an outage like the 20 s one hosted
-    Takaro had on 2026-10-03).
+    Takaro had on 2026-10-03);
+  - protocol 1 (`protocol = 1`): picks version 1 when identify offers it, acknowledges events with
+    eventAck (switchable with `auto_ack`), answers `capabilities`, and can reject identify in the
+    protocol 1 shape (`reject_identify_v1`).
 """
 import base64
 import hashlib
@@ -110,6 +113,9 @@ class FakeTakaro:
         self.pongs = True
         self.reject_identify = False
         self.answer_identify = True
+        self.protocol = 0             # highest version this fake speaks
+        self.auto_ack = True          # protocol 1: eventAck every event at once
+        self.reject_identify_v1 = None  # protocol 1: an error code to refuse identify with
         self.frames = queue.Queue()   # (conn index, parsed JSON or raw text)
         self.log = []                 # every (time, conn index, value) received
         self.conns = []
@@ -252,13 +258,29 @@ class FakeTakaro:
                     self.log.append((time.monotonic(), conn.index, value))
                     if isinstance(value, dict) and value.get('type') == 'identify':
                         self.identifies += 1
-                        if self.answer_identify:
+                        offered = (value.get('payload') or {}).get('protocolVersions')
+                        v1 = self.protocol >= 1 and isinstance(offered, list) and 1 in offered
+                        conn.protocol = 1 if v1 else 0
+                        if self.answer_identify and v1 and self.reject_identify_v1:
+                            conn.send_json({'type': 'identifyResponse', 'payload': None,
+                                            'error': {'code': self.reject_identify_v1, 'message': 'bad manifest'}})
+                        elif self.answer_identify and v1:
+                            conn.send_json({'type': 'identifyResponse',
+                                            'payload': {'gameServerId': 'fake-gameserver', 'protocolVersion': 1}})
+                        elif self.answer_identify:
                             if self.reject_identify:
                                 conn.send_json({'type': 'identifyResponse',
                                                 'payload': {'error': {'message': 'bad token'}}})
                             else:
                                 conn.send_json({'type': 'identifyResponse',
                                                 'payload': {'gameServerId': 'fake-gameserver'}})
+                    if isinstance(value, dict) and getattr(conn, 'protocol', 0) == 1:
+                        if value.get('type') == 'gameEvent' and self.auto_ack and 'seq' in value.get('payload', {}):
+                            p = value['payload']
+                            conn.send_json({'type': 'eventAck', 'payload': {'streamId': p['streamId'], 'upTo': p['seq']}})
+                        if value.get('type') == 'capabilities':
+                            conn.send_json({'type': 'capabilitiesResponse', 'payload': None,
+                                            'requestId': value.get('requestId')})
                     self.frames.put((conn.index, value))
         except (ssl.SSLError, EOFError, ConnectionError, socket.timeout, OSError, ValueError):
             pass

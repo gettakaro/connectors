@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { loadConfig, parseKeyValues } from '../config.js';
+import { buildConfig, hasTshockCredentials, parseKeyValues } from '../config.js';
+
+function loadConfig(file: string, env: NodeJS.ProcessEnv) {
+  return buildConfig(parseKeyValues(readFileSync(file, 'utf8')), env);
+}
 
 test('parses key value config with command guards and log files', () => {
   const values = parseKeyValues(`
@@ -85,7 +89,7 @@ logFiles=${logs}
   assert.deepEqual(config.logFiles, [logs]);
 });
 
-test('requires a registration token and one TShock authentication method', () => {
+test('a missing registration token or TShock credentials leaves the bridge waiting, not failing', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'terraria-config-missing-'));
   const file = path.join(dir, 'TakaroConfig.txt');
   writeFileSync(file, `
@@ -93,8 +97,18 @@ serverName=Terraria Local
 tshockBaseUrl=http://127.0.0.1:7878
 `);
 
-  assert.throws(() => loadConfig(file, {}), /registrationToken/);
-  assert.throws(() => loadConfig(file, { TAKARO_REGISTRATION_TOKEN: 'token' }), /tshockToken or tshockUsername\/tshockPassword/);
+  const config = loadConfig(file, {});
+  assert.equal(config.registrationToken, '');
+  assert.equal(hasTshockCredentials(config), false);
+  assert.equal(loadConfig(file, { TAKARO_REGISTRATION_TOKEN: 'token' }).registrationToken, 'token');
+  assert.equal(hasTshockCredentials(loadConfig(file, { TSHOCK_TOKEN: 't' })), true);
+});
+
+test('an empty serverName registers under a name unique to the identity', () => {
+  const config = buildConfig({ identityToken: '0123abcd-1111-4111-8111-111111111111' }, {});
+  assert.equal(config.serverName, 'Terraria Server (0123abcd)');
+  assert.equal(config.serverChatName, 'Terraria Server (0123abcd)');
+  assert.equal(buildConfig({ identityToken: 'id', serverName: 'Mine' }, {}).serverName, 'Mine');
 });
 
 /** Minimal valid config; each exclude-pattern case varies only the one line it tests. */

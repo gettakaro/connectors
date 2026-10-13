@@ -2,6 +2,7 @@
 
 #include "conan/actions_game.h"
 #include "conan/coverage.h"
+#include "conan/map.h"
 #include "conan/reads.h"
 #include "conan/text.h"
 #include "gtstats.h"
@@ -70,6 +71,13 @@ Adapter::Adapter(AdapterOptions o) : o_(std::move(o)) {
             return rs ? rs->HealthJson() : std::string("null");
         };
         if (o_.ready) ProductionReads();  // starts the catalogue warm-up on its worker thread
+    }
+    if (!o_.region) {
+        bool ready = o_.ready;
+        o_.region = [ready] {
+            ReadService* rs = ready ? ProductionReads() : nullptr;
+            return rs ? rs->CurrentRegion() : std::string();
+        };
     }
     if (o_.ready && (!o_.savedDir.empty() || o_.mutationGame)) {
         MutationOptions mo = o_.mutationOptions;
@@ -147,6 +155,67 @@ ActionResult Adapter::Execute(const std::string& action, const JsonValue& args) 
     }
     if (o_.reads(action, args, r)) return r;
     return Fail(action + " has no native handler");
+}
+
+ActionResult Adapter::Execute(const std::string& action, const JsonValue& args, int protocolVersion) {
+    ActionResult r = Execute(action, args);
+    if (protocolVersion < 1) return r;
+    if (!r.ok && r.code.empty()) {
+        if (!ActionCoverage(action)) r.code = takaro::kUnsupported;
+    }
+    if (action == "getPlayerLocation") {
+        if (r.ok && r.payload.type == JsonValue::Object) {
+            const MapCalibration* map = MapForRegion(o_.region());
+            if (map) takaro::Put(r.payload, "dimension", takaro::JStr(map->id));
+        } else if (!r.ok && r.code == takaro::kNotFound) {
+            r = ActionResult();
+            r.ok = true;  // payload null: the protocol's answer for a player without a position
+        }
+    }
+    return r;
+}
+
+std::string Adapter::CapabilityName(const std::string& action) {
+    static const std::pair<const char*, const char*> kCapabilityOf[] = {
+        {"getPlayers", "players.list"},
+        {"getPlayer", "players.get"},
+        {"getPlayerLocation", "players.location"},
+        {"getPlayerInventory", "players.inventory"},
+        {"teleportPlayer", "players.teleport"},
+        {"listItems", "items.list"},
+        {"giveItem", "items.give"},
+        {"listEntities", "entities.list"},
+        {"listLocations", "locations.list"},
+        {"sendMessage", "chat.send"},
+        {"executeConsoleCommand", "console.execute"},
+        {"kickPlayer", "moderation.kick"},
+        {"banPlayer", "moderation.ban"},
+        {"unbanPlayer", "moderation.unban"},
+        {"listBans", "moderation.listBans"},
+        {"shutdown", "server.shutdown"},
+    };
+    for (auto& n : kCapabilityOf)
+        if (action == n.first) return n.second;
+    return "";
+}
+
+std::string Adapter::CapabilityManifest() {
+    if (!o_.ready) return "[]";
+    std::string out = "[";
+    auto add = [&](const std::string& entry) { out += (out.size() > 1 ? "," : "") + entry; };
+    for (const Coverage* c : ActionCoverages()) {
+        std::string name = CapabilityName(c->name), status = c->status;
+        if (name.empty() || std::string(c->implementation) != "native") continue;
+        if (status == "live-supported" || status == "not-requested") add(ObjBuilder().S("name", name).Done());
+    }
+    for (const Coverage* c : EventCoverages())
+        if (std::string(c->status) == "live-supported") add(ObjBuilder().S("name", std::string("events.") + c->name).Done());
+    if (const MapCalibration* map = MapForRegion(o_.region()))
+        add(ObjBuilder()
+                .S("name", "map")
+                .Raw("parameters", ObjBuilder().Raw("dimensions", "[" + DimensionJson(*map) + "]").Done())
+                .Done());
+    return out + "]";
 }
 
 bool Adapter::IsBanned(const std::string& steam64) const { return mutations_ && mutations_->IsBanned(steam64); }

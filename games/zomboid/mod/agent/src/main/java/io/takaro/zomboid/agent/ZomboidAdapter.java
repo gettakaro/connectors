@@ -8,6 +8,8 @@ import io.takaro.zomboid.core.model.GameEntity;
 import io.takaro.zomboid.core.model.GameItem;
 import io.takaro.zomboid.core.model.GameLocation;
 import io.takaro.zomboid.core.model.InventoryItem;
+import io.takaro.zomboid.core.model.MapDimension;
+import io.takaro.zomboid.core.model.MapImageChunk;
 import io.takaro.zomboid.core.model.PlayerInfo;
 import io.takaro.zomboid.core.model.PlayerLocation;
 
@@ -32,6 +34,8 @@ public final class ZomboidAdapter implements GameAdapter {
     private final Reconciler reconciler;
     private final BanStore banStore;
     private final boolean debug;
+    private final MapService map = new MapService();
+    private volatile EventEmitter emitter;
 
     public ZomboidAdapter(MainThreadQueue queue, PlayerRegistry registry,
                           Reconciler reconciler, BanStore banStore, boolean debug) {
@@ -74,10 +78,33 @@ public final class ZomboidAdapter implements GameAdapter {
 
     @Override
     public void setEventEmitter(EventEmitter emitter) {
+        this.emitter = emitter;
         reconciler.setEmitter(emitter);
         // Chat/death advice emit directly through the Bridge, so it needs the
         // emitter too. The emitter object is stable across reconnects.
         io.takaro.zomboid.agent.hooks.Bridge.setEmitter(emitter);
+    }
+
+    // --- map (protocol v1) ---
+
+    /** Builds the world map in the background; once ready the manifest is sent again. */
+    public void startMap() {
+        map.startAsync(() -> {
+            EventEmitter current = emitter;
+            if (current != null) {
+                current.capabilitiesChanged();
+            }
+        });
+    }
+
+    @Override
+    public List<MapDimension> getMapDimensions() {
+        return map.dimensions();
+    }
+
+    @Override
+    public MapImageChunk readMapImage(String dimension, long offset, int length) {
+        return map.read(dimension, offset, length);
     }
 
     // --- player queries (M1) ---

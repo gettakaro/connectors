@@ -232,13 +232,14 @@ Built against: ${VALHEIM_TARGET} (Valheim ${VALHEIM_REVISION}, BepInExPack ${BEP
 Dedicated server install:
 1. Install BepInExPack Valheim ${BEPINEX_PACK_VERSION} on the dedicated server.
 2. Copy TakaroValheim into BepInEx/plugins/TakaroValheim.
-3. Start once, then configure BepInEx/config/com.takaro.valheim.cfg.
-4. Set registrationToken (and optionally chatSenderName, the name Takaro messages show in chat).
-5. Restart the dedicated server so the saved configuration is loaded.
+3. Start the server. The connector creates BepInEx/config/com.takaro.valheim.cfg with a new
+   identity for this server.
+4. Open that file, paste your Takaro registration token after "registrationToken =" and save.
+   The connector checks the file every few seconds and connects, no restart needed.
 
 The optional inventory companion (takaro-valheim-inventory-companion.zip) is a separate download for players, not for this server.
 
-Upgrade note: after replacing this folder, delete BepInEx/cache/chainloader_typeloader.dat before restarting. Deterministic archive timestamps can otherwise leave cached metadata from a previous same-size DLL.
+Upgrade note: after replacing this folder, delete BepInEx/cache/chainloader_typeloader.dat before restarting. Deterministic archive timestamps can otherwise leave cached metadata from a previous same-size DLL. Your config in BepInEx/config/com.takaro.valheim.cfg is never touched.
 
 This is the dedicated-server plugin; players need no mod to join. Never commit live registration tokens.
 EOF

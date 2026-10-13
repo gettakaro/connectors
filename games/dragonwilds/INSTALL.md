@@ -10,11 +10,13 @@ with `LD_PRELOAD`. The library connects directly to Takaro. Players use the unmo
 2. Verify the release archive against the top-level `SHA256SUMS`, extract it, and verify
    `TakaroDragonwilds/SHA256SUMS` inside it. Keep `licenses/` and `THIRD-PARTY.md` with the install.
 3. Put `libtakaro-dragonwilds.so` outside Steam's installation tree, for example
-   `data/dragonwilds-plugin/`, mounted read-only at `/opt/takaro`. SteamCMD `validate` removes unknown
+   `data/dragonwilds-plugin/`, mounted writable at `/opt/takaro`. SteamCMD `validate` removes unknown
    files from the game tree.
 4. Create a writable, persistent state directory, for example `data/dragonwilds-state`, mounted at
-   `/opt/takaro-state`. Copy `env.example` to `.env` and set `TAKARO_REGISTRATION_TOKEN`,
-   `TAKARO_IDENTITY_TOKEN`, `TAKARO_STATE_DIR` and `DRAGONWILDS_LOG_FILE`.
+   `/opt/takaro-state`, and set `TAKARO_STATE_DIR` (with Docker, in `.env` from `env.example`).
+   On first start the connector creates `takaro.cfg` next to the library with a new identity; paste
+   the registration token into it and save (README step 3 shows the whole file). It is re-read while
+   the server runs: saving it is enough, no restart. A non-empty environment variable wins over it.
 5. Apply `LD_PRELOAD` to the **game binary only**:
 
    ```bash
@@ -59,7 +61,7 @@ The 0.2.x sidecar and the native connector must never use the same Takaro identi
 4. Read `drain-report.json`. It states `exactBarrier: false`: an event between the last ring read and
    the game stop cannot be excluded. Keep the archived samples.
 5. Remove the sidecar service from your Compose file so nothing recreates it. Replace the plugin,
-   add the native settings, and start only the game. Reopen ingress after Takaro shows the server
+   add the native settings with the sidecar's `TAKARO_IDENTITY_TOKEN`, and start only the game. Reopen ingress after Takaro shows the server
    online, and record the cleanup.
 
 If the game and the sidecar are already stopped, copy the state on its own:

@@ -114,7 +114,7 @@ describe('presence differ', () => {
     await h.tick();
     await h.tick(); // still dead: not a second death
     expect(h.events.map((e) => e.type)).toEqual(['player-death']);
-    expect(h.events[0].data.position).toEqual({ x: 5, y: 6, z: 7 });
+    expect(h.events[0].data.position).toEqual({ x: 5, y: 6, z: 7, dimension: 'survival_1' });
     expect(h.events[0].data.msg).toBe('Tester died (sandworm)');
 
     // Respawn, then die again: a fresh edge, a fresh event.

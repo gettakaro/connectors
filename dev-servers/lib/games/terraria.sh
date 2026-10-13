@@ -19,7 +19,7 @@ install_terraria() {
 
     ds_info "Resolving the catalog target for terraria..."
     ds_write_target_env terraria
-    mkdir -p "${dest}/tshock" "${dest}/worlds" "${dest}/plugins" "${dest}/bridge"
+    mkdir -p "${dest}/tshock" "${dest}/tshock/takaro" "${dest}/worlds" "${dest}/plugins" "${dest}/bridge"
 
     ds_info "Installing the pinned TShock distribution (${target}) into ${dest}..."
     ds_maint install --game terraria --target "$target" --dest "$dest"
@@ -64,6 +64,7 @@ tshockToken=${TERRARIA_REST_TOKEN}
 httpPort=3020
 pollIntervalMs=5000
 logFiles=/tshock/logs
+mapDir=/tshock/takaro
 commandAllowlistExact=help,/help
 commandAllowlistPrefixes=say,time
 enableShutdown=false

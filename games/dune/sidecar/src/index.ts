@@ -27,7 +27,10 @@ import { PresencePoller } from './dune/presence.js';
 import { DuneRmq, type AmqpConnection, type AmqpConnector } from './dune/rmq.js';
 import { HealthServer, type AdminRoute } from './healthServer.js';
 import { logger } from './logger.js';
+import { MAP_DIMENSIONS } from './dune/mapDimensions.js';
+import { buildManifest } from './takaro/capabilities.js';
 import { TakaroWsClient } from './takaro/client.js';
+import { resolveConfigFile, TakaroSettingsSource } from './takaro/settings.js';
 import type { WsMessage } from './takaro/protocol.js';
 
 /** amqplib is loaded lazily so the unit tests (which inject a fake connector) never need the native-ish dependency. */
@@ -58,11 +61,33 @@ async function main(): Promise<void> {
   const catalogue = new Catalogue({ itemsFile: config.itemsFile, entitiesFile: config.entitiesFile });
   catalogue.load();
 
-  const takaro = new TakaroWsClient(
-    config.takaroWsUrl,
-    { identityToken: config.identityToken, registrationToken: config.registrationToken, serverName: config.serverName },
-    { baseReconnectMs: config.reconnectBaseMs, maxReconnectMs: config.reconnectMaxMs },
+  const settings = new TakaroSettingsSource({
+    env: process.env,
+    configFile: resolveConfigFile(process.env),
+    dataDir: config.dataDir,
+    log: logger,
+  });
+  const initial = settings.current();
+  const configHint = (): { file: string; hasFile: boolean } => ({
+    file: process.env.TAKARO_CONFIG_DISPLAY_PATH?.trim() || settings.configFile,
+    hasFile: settings.hasConfigFile(),
+  });
+  logger.info(
+    settings.hasConfigFile()
+      ? `Takaro settings: environment, then ${configHint().file} (re-read every ${config.configPollMs / 1000}s, saving it applies without a restart)`
+      : `Takaro settings: environment only (${configHint().file} not found; it is picked up if it appears)`,
   );
+  config.serverName = initial.serverName;
+  const takaro = new TakaroWsClient(
+    initial.wsUrl,
+    { identityToken: initial.identityToken, registrationToken: initial.registrationToken, serverName: initial.serverName },
+    {
+      baseReconnectMs: config.reconnectBaseMs,
+      maxReconnectMs: config.reconnectMaxMs,
+      ...(config.takaroProtocol === 1 ? { manifest: () => buildManifest(MAP_DIMENSIONS) } : {}),
+    },
+  );
+  takaro.setConfigHint(configHint());
 
   let rmq: DuneRmq | null = null;
   const onChat = (message: { msg: string; senderFlsId?: string; senderFuncomId?: string; channelType?: string }): void => {
@@ -172,11 +197,13 @@ async function main(): Promise<void> {
     onError: (err) => logger.warn(`Presence poll failed: ${err.message}`),
   });
 
+  const forwardLog = makeLogForwarder(config.logEvents, (msg) => void bridge.emit('log', { msg }));
   const logTailer = config.logFile
     ? new LogTailer({
         file: config.logFile,
         intervalMs: config.pollIntervalMs,
-        onLine: makeLogForwarder(config.logEvents, (msg) => void bridge.emit('log', { msg })),
+        onLine: forwardLog,
+        onTick: forwardLog.flush,
         onError: (err) => logger.debug(`Log tail: ${err.message}`),
       })
     : null;
@@ -372,8 +399,17 @@ async function main(): Promise<void> {
   await bridge.startSources();
   takaro.connect();
 
+  const settingsWatch = setInterval(() => {
+    const next = settings.poll();
+    takaro.setConfigHint(configHint());
+    if (!next) return;
+    takaro.reconfigure(next.wsUrl, { identityToken: next.identityToken, registrationToken: next.registrationToken, serverName: next.serverName });
+  }, config.configPollMs);
+  settingsWatch.unref?.();
+
   const stop = async (): Promise<void> => {
     logger.info('Shutting down the Dune Takaro sidecar');
+    clearInterval(settingsWatch);
     clearInterval(banSweep);
     bridge.stopSources();
     bridge.stopHealthWatch();

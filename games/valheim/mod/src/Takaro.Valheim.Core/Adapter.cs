@@ -17,7 +17,7 @@ public interface IValheimTakaroAdapter
     Task<TakaroActionResult> ListEntitiesAsync(CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default);
     Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default);
-    Task<TakaroActionResult> GetMapTileAsync(CancellationToken cancellationToken = default);
+    Task<TakaroActionResult> GetMapTileAsync(int x, int y, int z, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> KickPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default);
@@ -112,6 +112,19 @@ public sealed class TakaroRequestDispatcher
                 return await adapter.TestReachabilityAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            // Map actions read an immutable raster built earlier on the main thread. Tile
+            // rendering is CPU work, so it stays off the game loop entirely.
+            if (request.Action == TakaroActionNames.GetMapInfo)
+            {
+                return await adapter.GetMapInfoAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            if (request.Action == TakaroActionNames.GetMapTile)
+            {
+                var (x, y, z) = RequiredTile(request.Args);
+                return await adapter.GetMapTileAsync(x, y, z, cancellationToken).ConfigureAwait(false);
+            }
+
             return await mainThreadActions.ScheduleAsync(
                 () => DispatchScheduled(request, cancellationToken),
                 cancellationToken).ConfigureAwait(false);
@@ -151,8 +164,6 @@ public sealed class TakaroRequestDispatcher
             TakaroActionNames.ListItems => adapter.ListItemsAsync(cancellationToken).GetAwaiter().GetResult(),
             TakaroActionNames.ListEntities => adapter.ListEntitiesAsync(cancellationToken).GetAwaiter().GetResult(),
             TakaroActionNames.ListLocations => adapter.ListLocationsAsync(cancellationToken).GetAwaiter().GetResult(),
-            TakaroActionNames.GetMapInfo => adapter.GetMapInfoAsync(cancellationToken).GetAwaiter().GetResult(),
-            TakaroActionNames.GetMapTile => adapter.GetMapTileAsync(cancellationToken).GetAwaiter().GetResult(),
             TakaroActionNames.TeleportPlayer => adapter.TeleportPlayerAsync(RequiredIdentifier(request.Args), RequiredPosition(request.Args), cancellationToken).GetAwaiter().GetResult(),
             TakaroActionNames.KickPlayer => NullPayloadOnSuccess(adapter.KickPlayerAsync(RequiredIdentifier(request.Args), OptionalString(request.Args, "reason"), cancellationToken).GetAwaiter().GetResult()),
             TakaroActionNames.BanPlayer => NullPayloadOnSuccess(adapter.BanPlayerAsync(RequiredIdentifier(request.Args), OptionalString(request.Args, "reason"), cancellationToken).GetAwaiter().GetResult()),
@@ -314,6 +325,40 @@ public sealed class TakaroRequestDispatcher
         }
 
         return number;
+    }
+
+    /// <summary>Takaro sends <c>{x, y, z}</c>; <c>zoom</c> is accepted for <c>z</c>.</summary>
+    private static (int X, int Y, int Z) RequiredTile(JsonElement args) =>
+        (RequiredInteger(args, "x"),
+            RequiredInteger(args, "y"),
+            OptionalInteger(args, "z") ?? OptionalInteger(args, "zoom")
+                ?? throw new ArgumentException("Expected integer argument 'z'."));
+
+    private static int RequiredInteger(JsonElement args, string property) =>
+        OptionalInteger(args, property) ?? throw new ArgumentException($"Expected integer argument '{property}'.");
+
+    private static int? OptionalInteger(JsonElement args, string property)
+    {
+        if (args.ValueKind != JsonValueKind.Object
+            || !args.TryGetProperty(property, out var value)
+            || value.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number))
+        {
+            return number;
+        }
+
+        if (value.ValueKind == JsonValueKind.String
+            && int.TryParse(value.GetString(), System.Globalization.NumberStyles.AllowLeadingSign,
+                System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+        {
+            return parsed;
+        }
+
+        throw new ArgumentException($"Expected integer argument '{property}'.");
     }
 
     private static double RequiredNumber(JsonElement args, string property)

@@ -4,12 +4,15 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.takaro.minecraft.core.map.WorldMap;
 import io.takaro.minecraft.core.model.*;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 
 import java.net.URI;
+import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -26,24 +29,114 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     });
     private volatile long currentReconnectDelay;
     private volatile boolean shouldReconnect = true;
+    private volatile boolean closed;
+    private final String configPath;
+    private final EventOutbox outbox;
+    private final WorldMap worldMap;
+    // The protocol Takaro chose in the last identifyResponse; 0 until then and on every reconnect.
+    private volatile int protocol;
+
+    // Takaro polls every connected server several times a minute. A socket that stays open
+    // but goes quiet has been dropped on Takaro's side (seen on staging 2026-10-12: no close
+    // frame, the ingress kept answering pings), so reconnect instead of waiting forever.
+    static final long SILENCE_LIMIT_MILLIS = 180_000;
+    private volatile long silenceLimitMillis = SILENCE_LIMIT_MILLIS;
+    private volatile long lastInboundMillis = System.currentTimeMillis();
+    private volatile boolean watchdogStarted;
+
+    /** The v1 action capabilities this connector implements; testReachability needs none. */
+    static final String[] ACTION_CAPABILITIES = {
+            "players.list", "players.get", "players.location", "players.inventory", "players.teleport",
+            "items.list", "items.give", "entities.list", "locations.list", "chat.send", "console.execute",
+            "moderation.kick", "moderation.ban", "moderation.unban", "moderation.listBans", "server.shutdown"};
+    static final String[] EVENT_TYPES = {
+            "log", "player-connected", "player-disconnected", "chat-message", "player-death", "entity-killed"};
+    // Takaro gives a connector 10 s per request; leave room for the round trip.
+    static final long MAP_TILE_WAIT_MILLIS = 6000;
 
     public TakaroWebSocketClient(URI serverUri, GameAdapter adapter, TakaroConfig config) {
+        this(serverUri, adapter, config, "the Takaro config file");
+    }
+
+    public TakaroWebSocketClient(URI serverUri, GameAdapter adapter, TakaroConfig config, String configPath) {
+        this(serverUri, adapter, config, configPath, new EventOutbox(), null);
+    }
+
+    public TakaroWebSocketClient(URI serverUri, GameAdapter adapter, TakaroConfig config, String configPath,
+                                 EventOutbox outbox, WorldMap worldMap) {
         super(serverUri);
         this.adapter = adapter;
         this.config = config;
+        this.configPath = configPath;
+        this.outbox = outbox;
+        this.worldMap = worldMap;
         this.currentReconnectDelay = config.getReconnectDelay();
+    }
+
+    private synchronized void startWatchdog() {
+        if (watchdogStarted) return;
+        watchdogStarted = true;
+        long period = Math.max(1000, Math.min(15_000, silenceLimitMillis / 4));
+        scheduler.scheduleWithFixedDelay(this::checkSilence, period, period, TimeUnit.MILLISECONDS);
+    }
+
+    /** One watchdog tick: drops a connection Takaro has not spoken on for too long. */
+    void checkSilence() {
+        try {
+            long quiet = System.currentTimeMillis() - lastInboundMillis;
+            if (closed || !identified || !isOpen() || quiet < silenceLimitMillis) return;
+            adapter.logWarning("No message from Takaro for " + quiet / 1000 + " s on an open connection; reconnecting");
+            identified = false;
+            dropConnection();
+        } catch (RuntimeException e) {
+            adapter.logWarning("Connection watchdog failed: " + e);
+        }
+    }
+
+    /** Closes the socket at once, without waiting for a close handshake a dead peer never sends. */
+    void dropConnection() {
+        getConnection().closeConnection(1001, "no traffic from Takaro");
+    }
+
+    void setSilenceLimitMillis(long millis) {
+        this.silenceLimitMillis = millis;
+    }
+
+    /** True once Takaro accepted protocol v1 on this connection. */
+    boolean isV1() {
+        return protocol >= 1;
+    }
+
+    /** The settings this connection uses; the connector updates the ones that need no reconnect. */
+    TakaroConfig settings() {
+        return config;
     }
 
     @Override
     public void onOpen(ServerHandshake handshake) {
+        if (closed) {
+            // A reconnect that was already under way when a config change replaced this client.
+            close();
+            return;
+        }
+        protocol = 0;
+        identified = false;
+        lastInboundMillis = System.currentTimeMillis();
+        startWatchdog();
         adapter.logInfo("WebSocket connected, sending identify...");
         sendIdentify();
     }
 
     @Override
     public void onMessage(String message) {
+        if (closed) {
+            return; // a replaced connection: its answers no longer describe the current settings
+        }
+        lastInboundMillis = System.currentTimeMillis();
         if (config.isDebugEnabled()) {
-            adapter.logDebug("WS RECV: " + message);
+            // identify errors can embed Takaro's internal request, auth token included
+            adapter.logDebug(message.contains("\"identifyResponse\"")
+                    ? "WS RECV: identifyResponse (body not logged)" : "WS RECV: " + message);
         }
         try {
             JsonObject json = JsonParser.parseString(message).getAsJsonObject();
@@ -62,6 +155,27 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                     break;
                 case "request":
                     handleRequest(json);
+                    break;
+                case "eventAck": {
+                    JsonObject ack = optObject(json, "payload");
+                    if (ack != null && hasValue(ack, "upTo")) {
+                        outbox.ack(optString(ack, "streamId", ""), ack.get("upTo").getAsLong());
+                    }
+                    break;
+                }
+                case "eventError": {
+                    JsonObject err = optObject(json, "payload");
+                    JsonObject detail = optObject(err, "error");
+                    adapter.logWarning("Takaro rejected event seq " + optString(err, "seq", "?") + ": "
+                            + optString(detail, "code", "?") + " " + optString(detail, "message", ""));
+                    break;
+                }
+                case "capabilitiesResponse":
+                    if (hasValue(json, "error")) {
+                        adapter.logWarning("Takaro refused the capability update: " + json.get("error"));
+                    } else {
+                        adapter.logInfo("Takaro accepted the capability update");
+                    }
                     break;
                 case "error":
                     String errorMsg = "unknown";
@@ -85,11 +199,16 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     @Override
     public void onClose(int code, String reason, boolean remote) {
+        identified = false;
+        protocol = 0;
         adapter.logInfo("WebSocket closed (code=" + code + ", reason=" + reason + ", remote=" + remote + ")");
 
-        if (code == 1008 || code == 4001 || code == 4003) {
-            adapter.logWarning("Authentication error, disabling reconnect");
+        if (!closed && (code == 1008 || code == 4001 || code == 4003)) {
             shouldReconnect = false;
+            TakaroConnector.logBanner(adapter,
+                    "Takaro refused the connection (" + (reason == null || reason.isEmpty() ? "code " + code : reason) + ").",
+                    "Check registration_token and identity_token in " + configPath + ".",
+                    "Saving a corrected token reconnects within a few seconds, no restart needed.");
         }
 
         if (shouldReconnect && config.isReconnectEnabled()) {
@@ -103,6 +222,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     public void shutdown() {
+        closed = true;
         shouldReconnect = false;
         scheduler.shutdownNow();
         try {
@@ -113,7 +233,14 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             while (isOpen() && hasBufferedData() && System.currentTimeMillis() < deadline) {
                 Thread.sleep(20);
             }
-            closeBlocking();
+            // Not closeBlocking(): it waits forever on a client that is between reconnect
+            // attempts, which would hang the server stop or a config change.
+            close();
+            deadline = System.currentTimeMillis() + 2000L;
+            while (!isClosed() && getReadyState() != org.java_websocket.enums.ReadyState.NOT_YET_CONNECTED
+                    && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20);
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -198,12 +325,32 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     // --- Private helpers ---
 
     private void sendGameEvent(String eventType, JsonObject data) {
+        if (config.isMapEnabled()) {
+            // v1 is on offer: keep every event until Takaro acks it, and send it once identified.
+            JsonObject payload = outbox.add(eventType, data);
+            if (isV1() && isOpen()) {
+                sendEventPayload(payload);
+                return;
+            }
+            if (protocol == 0 && isOpen() && identified) {
+                // Takaro chose v0: plain events, nothing to ack.
+                outbox.ack(outbox.streamId(), payload.get("seq").getAsLong());
+                JsonObject plain = new JsonObject();
+                plain.addProperty("type", eventType);
+                plain.add("data", data);
+                sendEventPayload(plain);
+            }
+            return;
+        }
         if (!isOpen()) return;
 
         JsonObject payload = new JsonObject();
         payload.addProperty("type", eventType);
         payload.add("data", data);
+        sendEventPayload(payload);
+    }
 
+    private void sendEventPayload(JsonObject payload) {
         JsonObject msg = new JsonObject();
         msg.addProperty("type", "gameEvent");
         msg.add("payload", payload);
@@ -214,12 +361,61 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         send(msg.toString());
     }
 
+    /** Replaces the capability manifest, for example when the map bounds grew. */
+    void sendCapabilities() {
+        if (!isV1() || !isOpen()) return;
+        JsonObject msg = new JsonObject();
+        msg.addProperty("type", "capabilities");
+        msg.addProperty("requestId", java.util.UUID.randomUUID().toString());
+        JsonObject payload = new JsonObject();
+        payload.add("capabilities", capabilities());
+        msg.add("payload", payload);
+        if (config.isDebugEnabled()) {
+            adapter.logDebug("WS SEND capabilities: " + msg);
+        }
+        send(msg.toString());
+    }
+
+    JsonArray capabilities() {
+        JsonArray caps = new JsonArray();
+        for (String name : ACTION_CAPABILITIES) {
+            caps.add(capability(name));
+        }
+        for (String event : EVENT_TYPES) {
+            caps.add(capability("events." + event));
+        }
+        if (worldMap != null) {
+            JsonObject map = capability("map");
+            JsonObject parameters = new JsonObject();
+            parameters.add("dimensions", GSON.toJsonTree(worldMap.declaration()));
+            map.add("parameters", parameters);
+            caps.add(map);
+        }
+        return caps;
+    }
+
+    private static JsonObject capability(String name) {
+        JsonObject cap = new JsonObject();
+        cap.addProperty("name", name);
+        return cap;
+    }
+
+    private static final com.google.gson.Gson GSON = new com.google.gson.Gson();
+    private volatile boolean identified;
+
     private void sendIdentify() {
         JsonObject payload = new JsonObject();
         String identity = config.getIdentityToken();
         String registration = config.getRegistrationToken();
         payload.addProperty("identityToken", identity != null ? identity : "");
         payload.addProperty("registrationToken", registration != null ? registration : "");
+        if (config.isMapEnabled()) {
+            JsonArray versions = new JsonArray();
+            versions.add(0);
+            versions.add(1);
+            payload.add("protocolVersions", versions);
+            payload.add("capabilities", capabilities());
+        }
 
         JsonObject msg = new JsonObject();
         msg.addProperty("type", "identify");
@@ -234,27 +430,58 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         JsonObject payloadOrNull = optObject(json, "payload");
         JsonObject payload = payloadOrNull != null ? payloadOrNull : new JsonObject();
 
-        if (hasValue(payload, "error")) {
-            JsonElement errorElement = payload.get("error");
+        // v0 puts the error in the payload; v1 sends a null payload and a top-level error.
+        JsonElement errorElement = hasValue(payload, "error") ? payload.get("error")
+                : hasValue(json, "error") ? json.get("error") : null;
+        if (errorElement != null) {
             String errorMessage;
             if (errorElement.isJsonObject()) {
+                // Only name, message and status: the full error can carry Takaro's request headers.
                 JsonObject errorObj = errorElement.getAsJsonObject();
-                errorMessage = hasValue(errorObj, "message") ? optString(errorObj, "message", "") : errorObj.toString();
+                String name = optString(errorObj, "name", "");
+                errorMessage = optString(errorObj, "message", name.isEmpty() ? "unknown error" : name);
+                JsonElement http = errorObj.get("http");
+                if (http != null && http.isJsonPrimitive()) {
+                    errorMessage += " (HTTP " + http.getAsString() + ")";
+                }
             } else {
                 errorMessage = errorElement.getAsString();
             }
-            adapter.logWarning("Identify failed: " + errorMessage);
+            if (errorMessage.endsWith("(HTTP 409)")) {
+                // Takaro names a new server after its identity, and names are unique per domain.
+                TakaroConnector.logBanner(adapter,
+                        "Identify failed: " + errorMessage,
+                        "Takaro already has a game server with this name. Set a different",
+                        "identity_token in " + configPath + " and save it, or remove the old server in Takaro.");
+                close();
+                return;
+            }
+            TakaroConnector.logBanner(adapter,
+                    "Identify failed: " + errorMessage,
+                    "Check registration_token in " + configPath + ". Saving a corrected",
+                    "token reconnects within a few seconds; until then the connector retries with backoff.");
+            // Close so the reconnect timer retries: a rejection can also be a passing Takaro outage.
+            close();
             return;
         }
 
         currentReconnectDelay = config.getReconnectDelay();
+        protocol = optInt(payload, "protocolVersion", 0);
+        identified = true;
 
         JsonObject server = optObject(payload, "server");
-        if (server != null && hasValue(server, "id")) {
-            String serverId = optString(server, "id", "");
-            adapter.logInfo("Identified successfully, server ID: " + serverId);
-        } else {
-            adapter.logInfo("Identified successfully");
+        String serverId = server != null && hasValue(server, "id") ? optString(server, "id", "")
+                : optString(payload, "gameServerId", null);
+        adapter.logInfo("Identified successfully" + (serverId != null ? ", server ID: " + serverId : "")
+                + (config.isMapEnabled() ? ", protocol v" + protocol : ""));
+        if (isV1()) {
+            List<JsonObject> backlog = outbox.unacked();
+            if (!backlog.isEmpty()) {
+                adapter.logInfo("Resending " + backlog.size() + " events Takaro has not acknowledged");
+            }
+            for (JsonObject event : backlog) {
+                sendEventPayload(event);
+            }
         }
     }
 
@@ -282,6 +509,11 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             args = argsElement.getAsJsonObject();
         } else {
             args = new JsonObject();
+        }
+
+        if (action.equals("getMapTile") && isV1()) {
+            handleGetMapTile(requestId, args);
+            return;
         }
 
         switch (action) {
@@ -337,9 +569,39 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                 handleOnMainThread(requestId, () -> { adapter.shutdownServer(); return null; });
                 break;
             default:
-                sendResponse(requestId, null, "Action not implemented: " + action);
+                sendError(requestId, "unsupported", "Action not implemented: " + action);
                 break;
         }
+    }
+
+    private void handleGetMapTile(String requestId, JsonObject args) {
+        if (worldMap == null) {
+            sendError(requestId, "unsupported", "the world map is switched off");
+            return;
+        }
+        String dimension = optString(args, "dimension", null);
+        if (dimension == null || !hasValue(args, "zoom") || !hasValue(args, "x") || !hasValue(args, "y")) {
+            sendError(requestId, "invalid_args", "getMapTile needs dimension, zoom, x and y");
+            return;
+        }
+        int zoom = optInt(args, "zoom", -1), x = optInt(args, "x", -1), y = optInt(args, "y", -1);
+        // Off the websocket thread: a cold tile reads region files for a few seconds.
+        CompletableFuture.runAsync(() -> {
+            try {
+                byte[] png = worldMap.tile(dimension, zoom, x, y, MAP_TILE_WAIT_MILLIS);
+                JsonObject tile = new JsonObject();
+                tile.addProperty("mimeType", "image/png");
+                tile.addProperty("data", Base64.getEncoder().encodeToString(png));
+                sendResponse(requestId, tile, null);
+            } catch (WorldMap.NotReadyException e) {
+                sendError(requestId, "not_found", e.getMessage());
+            } catch (IllegalArgumentException e) {
+                sendError(requestId, "invalid_args", e.getMessage());
+            } catch (RuntimeException e) {
+                adapter.logWarning("Map tile failed: " + e);
+                sendError(requestId, "game_error", "map tile failed: " + e.getMessage());
+            }
+        });
     }
 
     private void handleOnMainThread(String requestId, java.util.function.Supplier<JsonElement> handler) {
@@ -355,9 +617,14 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         future.whenCompleteAsync((result, error) -> {
             if (error != null) {
                 adapter.logWarning("Action failed: " + error.getMessage());
-                sendResponse(requestId, null, error.getMessage());
+                Throwable cause = error instanceof java.util.concurrent.CompletionException && error.getCause() != null
+                        ? error.getCause() : error;
+                sendError(requestId, cause instanceof IllegalArgumentException ? "invalid_args" : "game_error",
+                        cause.getMessage());
             } else if (result != null) {
                 sendResponse(requestId, result, null);
+            } else if (isV1()) {
+                sendResponse(requestId, com.google.gson.JsonNull.INSTANCE, null);
             } else {
                 sendResponse(requestId, new JsonObject(), null);
             }
@@ -609,6 +876,25 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     // --- Response helpers ---
+
+    /** v1 errors carry a code Takaro understands; v0 keeps its free-text error. */
+    private void sendError(String requestId, String code, String message) {
+        if (!isV1()) {
+            sendResponse(requestId, null, message);
+            return;
+        }
+        JsonObject msg = new JsonObject();
+        msg.addProperty("type", "response");
+        msg.addProperty("requestId", requestId);
+        JsonObject error = new JsonObject();
+        error.addProperty("code", code);
+        error.addProperty("message", message == null || message.isEmpty() ? code : message);
+        msg.add("error", error);
+        if (config.isDebugEnabled()) {
+            adapter.logDebug("WS SEND response (requestId=" + requestId + "): " + msg);
+        }
+        send(msg.toString());
+    }
 
     private void sendResponse(String requestId, JsonElement payload, String error) {
         JsonObject msg = new JsonObject();

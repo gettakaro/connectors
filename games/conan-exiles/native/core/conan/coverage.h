@@ -9,6 +9,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace conan {
 
@@ -23,6 +24,8 @@ struct Coverage {
 
 const Coverage* ActionCoverage(const std::string& action);  // nullptr: not a Takaro action
 const Coverage* EventCoverage(const std::string& type);
+std::vector<const Coverage*> ActionCoverages();
+std::vector<const Coverage*> EventCoverages();
 std::string RegistryJson();  // same shape as capabilities.json minus the comment and legend
 
 }  // namespace conan

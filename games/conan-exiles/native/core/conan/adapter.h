@@ -31,6 +31,9 @@ struct AdapterOptions {
     std::string savedDir;
     std::shared_ptr<MutationGame> mutationGame;  // default: the real UE game (actions_game.h)
     MutationOptions mutationOptions;             // savedDir is filled in from above
+    // The loaded map ("ExiledLands" / "IsleOfSiptah", "" until known; conan/map.h). Any thread, cheap.
+    // Defaults to the production ReadService; host tests inject a fake.
+    std::function<std::string()> region;
 };
 
 // sendMessage arguments as Takaro sends them: { message, opts: { recipient: { gameId }, senderNameOverride } }
@@ -41,6 +44,16 @@ class Adapter : public takaro::Game {
 public:
     explicit Adapter(AdapterOptions o);
     takaro::ActionResult Execute(const std::string& action, const JsonValue& args) override;
+    // Protocol 1: positions carry the loaded map's Dimension id, and an unknown player's location is
+    // payload null (protocol 0 keeps the error Takaro needs there).
+    takaro::ActionResult Execute(const std::string& action, const JsonValue& args, int protocolVersion) override;
+    // The actions in the coverage registry with native code (live-supported or not-requested), every
+    // live-supported event, and `map` with the loaded map's Dimension once it is known. "[]" on a
+    // refused build (every action is refused there anyway).
+    std::string CapabilityManifest() override;
+    // The protocol 1 capability of a Takaro action ("players.list"); "" for testReachability and the
+    // protocol 0 map actions.
+    static std::string CapabilityName(const std::string& action);
     void DrainEvents(std::vector<takaro::GameEvent>& out) override;
     std::string HealthJson() override;
     // Any thread: queue an event for Takaro (bounded; the oldest `log` event is dropped first).

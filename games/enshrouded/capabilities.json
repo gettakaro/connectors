@@ -77,6 +77,14 @@
     },
     "shutdown": {
       "status": "proven"
+    },
+    "getMapInfo": {
+      "status": "proven",
+      "note": "protocol 0 only: from the tile pack manifest takaro/map/<pack>/map.json (mod/tools/map-tiles); enabled:false with the reason when no pack is installed. On protocol 1 (default since 2026-10-12) Takaro refuses getMapInfo ('not available on protocol version 1') and uses the declared map capability instead: Dimension embervale, x right, z up, bounds 0..10240, source none; the operator uploads the image. Live on staging 2026-10-12: manifest stored, upload without settings took the connector's bounds, tracker markers at 2 spots match the in-game map"
+    },
+    "getMapTile": {
+      "status": "proven",
+      "note": "protocol 0 only: base64 PNG from takaro/map/<pack named by takaro/map/current>/<z>/<x>/<y>.png (rendered by the operator from their own client's map data); outside the world answers outside.png; zoom >4 refused. Live on staging 2026-10-11 (v0). Protocol 1 declares a source-none Dimension, so Takaro never sends getMapTile there"
     }
   },
   "events": {

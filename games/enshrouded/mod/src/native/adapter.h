@@ -27,6 +27,7 @@ struct TimedBan {
 struct ActionView {
     std::vector<JsonValue> knownPlayers;  // Takaro-shaped players this connector has seen
     std::map<std::string, TimedBan> timedBans;
+    std::string mapDir;         // map tile pack directory (maptiles.h)
     std::string banStoreError;  // non-empty: the timed-ban store is unreadable; timed bans and listBans refuse
 };
 
@@ -39,6 +40,7 @@ struct ActionOutcome {
     bool ok = false;
     JsonValue payload;  // Null answers {} (the sidecar's createResponse)
     std::string error;  // response error text when !ok
+    std::string errorCode = "internal";  // protocol 1 error code when !ok (ProtocolErrorCode)
     std::vector<JsonValue> seenPlayers;
     BanChange ban;
 };

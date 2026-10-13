@@ -298,15 +298,19 @@ def test_the_wired_fixture_serves_exactly_the_targets_it_says(wired: Any) -> Non
         "carbon-25670169": "no repinner for platform 'carbon'",
         "carbon-25681086": "no repinner for platform 'carbon'",
         "carbon-25773132": "no repinner for platform 'carbon'",
+        "carbon-25823813": "no repinner for platform 'carbon'",
         "fabric-26.3": "the repinner has no fixture for this target",
         "linux-1.0.17": "no repinner for platform 'linux'",
         "linux-25689360": "no repinner for platform 'linux'",
+        "linux-25789279": "no repinner for platform 'linux'",
         "linux-25465077": "no repinner for platform 'linux'",
         "linux-25501739": "no repinner for platform 'linux'",
         "linux-25630937": "no repinner for platform 'linux'",
         "linux-25639945": "no repinner for platform 'linux'",
         "linux-25708939": "no repinner for platform 'linux'",
         "linux-25738716": "no repinner for platform 'linux'",
+        "linux-25792439": "no repinner for platform 'linux'",
+        "linux-25808123": "no repinner for platform 'linux'",
         "linux-3.2.0.b10": "no repinner for platform 'linux'",
         "linux-3.3.0.b18": "no repinner for platform 'linux'",
         "linux-42.20.4": "no repinner for platform 'linux'",
@@ -317,6 +321,7 @@ def test_the_wired_fixture_serves_exactly_the_targets_it_says(wired: Any) -> Non
         "tshock-v6.2.1": "no repinner for platform 'tshock'",
         "windows-25639945": "no repinner for platform 'windows'",
         "windows-25738716": "no repinner for platform 'windows'",
+        "windows-25792439": "no repinner for platform 'windows'",
     }
     remaining = sorted(
         json.loads(path.read_text(encoding="utf-8"))["id"] for path in (wired.root / "catalog").glob("*/targets/*.json")
