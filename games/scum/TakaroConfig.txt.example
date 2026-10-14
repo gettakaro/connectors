@@ -1,0 +1,15 @@
+# TakaroSCUM connector settings. Edit, then restart the server.
+# Takaro WebSocket endpoint (leave as is for takaro.io).
+TAKARO_WS_URL=wss://connect.takaro.io/
+# Paste the registration token from the Takaro dashboard (Game servers > Add > Generic).
+REGISTRATION_TOKEN=
+# Stable id of this server in Takaro. Leave empty to have one generated and kept in TakaroIdentity.txt.
+IDENTITY_TOKEN=
+# Name shown in Takaro.
+SERVER_NAME=SCUM server
+# Allow Takaro to shut the server down (shutdown action). true/false.
+ENABLE_DESTRUCTIVE_COMMANDS=false
+# Comma-separated console commands Takaro may run (first word, without '#'), e.g. announce,listplayers
+COMMAND_ALLOWLIST=
+# Log every Takaro frame to takaro.log (tokens are redacted). true/false.
+LOG_FRAMES=false

@@ -1,0 +1,110 @@
+name: SCUM Connector
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'games/scum/**'
+      - 'catalog/scum/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/scum.yml'
+      - '.github/workflows/connector-release.yml'
+  pull_request:
+    paths:
+      - 'games/scum/**'
+      - 'catalog/scum/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/scum.yml'
+      - '.github/workflows/connector-release.yml'
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+  # Manual re-run to (re)attach assets to an existing release tag, for recovering a
+  # release that release-please published without them.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to embed in the built artifact (e.g. 0.1.0)
+        required: true
+        type: string
+      tag:
+        description: Existing release tag to upload the assets to (e.g. scum-v0.1.0)
+        required: true
+        type: string
+
+concurrency:
+  group: scum-${{ github.ref }}-${{ inputs.tag || 'ci' }}
+  # A push during a release run queues behind it; only ordinary CI runs are cancelled.
+  cancel-in-progress: ${{ inputs.tag == '' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The same commit the release job builds: a recovery run for an older tag is
+          # gated on that tag's sources, never on whatever main has become.
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
+      # The mod's Lua protocol and game adapter against a fake UE4SS and a fake Takaro, and the
+      # capabilities.json drift check, in the pinned image the release build uses.
+      - name: Lua tests (Lua 5.4)
+        run: |
+          docker run --rm -v "$PWD/games/scum:/scum:ro" \
+            debian:13.7@sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5 \
+            bash -c 'set -euo pipefail
+              apt-get update -qq >/dev/null
+              apt-get install -y -qq --no-install-recommends lua5.4=5.4.7-1+b2 >/dev/null
+              cp -r /scum /tmp/scum
+              LUA=lua5.4 bash /tmp/scum/tests/run.sh'
+
+  params:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.params.outputs.version }}
+      tag: ${{ steps.params.outputs.tag }}
+      publish: ${{ steps.params.outputs.publish }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve release params
+        id: params
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          IN_TAG: ${{ inputs.tag }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEV_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/release-params.sh scum >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: [test, params]
+    uses: ./.github/workflows/connector-release.yml
+    secrets: inherit
+    with:
+      connector: scum
+      version: ${{ needs.params.outputs.version }}
+      tag: ${{ needs.params.outputs.tag }}
+      publish: ${{ needs.params.outputs.publish }}
+      pr_number: ${{ github.event.pull_request.number }}
+      # The SCUM dedicated server is Windows-only (a 15 GB Steam depot) and no runtime image
+      # runs it here, so the release claims contract verification: the Lua tests above, the
+      # UE4SS import check and the reproducible clang-cl build of main.dll. Live proof comes
+      # from the runbook against a real Windows server.
+      runtime: false

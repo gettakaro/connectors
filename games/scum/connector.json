@@ -1,0 +1,19 @@
+{
+  "name": "SCUM",
+  "tagline": "Native connector for SCUM dedicated servers: one UE4SS mod inside SCUMServer.exe that connects to Takaro itself, no sidecar.",
+  "assetMode": "all",
+  "requirements": [
+    "SCUM Windows dedicated server (Steam app 3792580) build named in the release",
+    "File access to the server's SCUM\\Binaries\\Win64 folder",
+    "Takaro registration token"
+  ],
+  "assets": [
+    {
+      "pattern": "takaro-scum-*.zip",
+      "label": "Server mod (UE4SS included)",
+      "requires": "SCUM dedicated server on Windows",
+      "hint": "Stop the server, unzip into SCUM\\Binaries\\Win64 (next to SCUMServer.exe), copy ue4ss\\Mods\\TakaroSCUM\\TakaroConfig.txt.example to TakaroConfig.txt, paste the registration token and start the server.",
+      "required": true
+    }
+  ]
+}

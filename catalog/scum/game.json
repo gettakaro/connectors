@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "scum",
+  "name": "SCUM",
+  "connector": "scum",
+  "platforms": [
+    "windows"
+  ],
+  "sources": {
+    "steam": {
+      "provider": "steam",
+      "baseUrl": "https://store.steampowered.com",
+      "watch": {
+        "kind": "game",
+        "component": "scum",
+        "app": 3792580,
+        "os": "windows",
+        "depots": [
+          "3792581"
+        ],
+        "channels": {
+          "public": {
+            "branch": "public"
+          }
+        },
+        "knownBranches": [],
+        "readinessNote": "The connector is a UE4SS mod (Lua reflection plus a small C++ WebSocket DLL) inside SCUMServer.exe, proven on game 1.3.4.2.161892 (Steam build 25803875) with UE4SS v3.0.1-1171-g91d90727. It names game classes and functions, not code addresses, so a new build usually keeps working, but every new build needs a live retest before it is declared."
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "projectDir": "games/scum"
+  },
+  "componentRoles": {
+    "mod": {
+      "description": "The release zip unpacked into SCUM/Binaries/Win64: the pinned UE4SS loader (dwmapi.dll + ue4ss/) with the required hook settings and the TakaroSCUM mod (Lua scripts + dlls/main.dll), which holds the Takaro connection itself; no sidecar",
+      "artifactPattern": "takaro-scum-{target}-{version}.zip"
+    }
+  },
+  "legacyAssetAliases": {}
+}

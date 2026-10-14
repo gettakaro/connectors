@@ -1,0 +1,21 @@
+; Import definitions for the UE4SS.dll exports TakaroSCUM uses (UE4SS v3.0.1-1171-g91d90727).
+; Generated from the DLL export table; lib.exe /def turns this into UE4SS.lib. Check: check-imports.py.
+LIBRARY UE4SS.dll
+EXPORTS
+    ??0CppUserModBase@RC@@QEAA@XZ
+    ??1CppUserModBase@RC@@UEAA@XZ
+    ?discard_value@Lua@LuaMadeSimple@RC@@QEBAXH@Z
+    ?get_integer@Lua@LuaMadeSimple@RC@@QEBA_JH@Z
+    ?get_number@Lua@LuaMadeSimple@RC@@QEBANH@Z
+    ?get_stack_size@Lua@LuaMadeSimple@RC@@QEBAHXZ
+    ?get_string@Lua@LuaMadeSimple@RC@@QEBA?AV?$basic_string_view@DU?$char_traits@D@std@@@std@@H@Z
+    ?is_integer@Lua@LuaMadeSimple@RC@@QEBA_NH@Z
+    ?is_nil@Lua@LuaMadeSimple@RC@@QEBA_NH@Z
+    ?is_number@Lua@LuaMadeSimple@RC@@QEBA_NH@Z
+    ?is_string@Lua@LuaMadeSimple@RC@@QEBA_NH@Z
+    ?register_function@Lua@LuaMadeSimple@RC@@QEBAXAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEBQ6AHAEBV123@@Z@Z
+    ?register_on_lua_start@CppUserModBase@RC@@IEAAXP6AXPEAV12@AEAVLua@LuaMadeSimple@2@11PEAV342@@Z@Z
+    ?set_bool@Lua@LuaMadeSimple@RC@@QEBAX_N@Z
+    ?set_integer@Lua@LuaMadeSimple@RC@@QEBAX_J@Z
+    ?set_nil@Lua@LuaMadeSimple@RC@@QEBAXXZ
+    ?set_string@Lua@LuaMadeSimple@RC@@QEBAXV?$basic_string_view@DU?$char_traits@D@std@@@std@@@Z

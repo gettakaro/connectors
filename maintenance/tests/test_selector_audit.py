@@ -37,6 +37,7 @@ TARGETED_BASELINE = (
     "enshrouded",
     "minecraft",
     "rust",
+    "scum",
     "terraria",
     "valheim",
     "zomboid",
@@ -516,9 +517,10 @@ def test_every_catalog_game_registers_sources_roles_targets_and_declared_rigs() 
             compose = REPO_ROOT / "dev-servers" / "compose" / compose_name
             assert compose.is_file(), f"{game} names a rig compose file that does not exist: {compose.name}"
 
-    # Phase-2 follow-up F6 owns the missing Enshrouded dispatch. Keep that gap visible and make
-    # any second missing rig fail instead of silently weakening the rollout audit.
-    assert missing_rigs == ["enshrouded"]
+    # Phase-2 follow-up F6 owns the missing Enshrouded dispatch. SCUM's dedicated server is
+    # Windows-only, so no Linux dev-servers rig can run it. Keep those gaps visible and make any
+    # other missing rig fail instead of silently weakening the rollout audit.
+    assert missing_rigs == ["enshrouded", "scum"]
 
 
 def test_every_catalog_connector_releases_through_the_shared_workflow() -> None:

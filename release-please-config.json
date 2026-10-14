@@ -105,6 +105,15 @@
       "release-type": "simple",
       "component": "terraria",
       "changelog-path": "CHANGELOG.md"
+    },
+    "games/scum": {
+      "release-type": "simple",
+      "component": "scum",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        { "type": "generic", "path": "native/src/version.h" },
+        { "type": "generic", "path": "mod/TakaroSCUM/Scripts/takaro/app.lua" }
+      ]
     }
   }
 }

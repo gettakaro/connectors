@@ -60,3 +60,7 @@ games/ark/scripts/start-diagnostic.sh
 games/ark/scripts/start-native-gate.sh
 **/__pycache__/
 .runner-reports/
+
+# SCUM: local MSVC build output (native/build.bat) and a DLL dropped in for a manual test
+games/scum/native/build/
+games/scum/mod/TakaroSCUM/dlls/

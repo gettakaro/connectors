@@ -147,6 +147,7 @@ CONNECTOR_WORKFLOWS = (
     "enshrouded",
     "minecraft",
     "rust",
+    "scum",
     "terraria",
     "valheim",
     "zomboid",
