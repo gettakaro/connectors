@@ -13,3 +13,5 @@ ENABLE_DESTRUCTIVE_COMMANDS=false
 COMMAND_ALLOWLIST=
 # Log every Takaro frame to takaro.log (tokens are redacted). true/false.
 LOG_FRAMES=false
+# Takaro protocol: 1 offers version 1 (world map, falls back to 0 on an older Takaro); 0 speaks version 0 only.
+TAKARO_PROTOCOL=1

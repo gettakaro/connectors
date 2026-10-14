@@ -48,6 +48,21 @@ SCUM's chat and attack RPCs), so the release turns every other hook off
 (`native/ue4ss/UE4SS-settings.required.txt`). The UE4SS build is pinned and bundled because its
 `experimental-latest` release is replaced in place.
 
+## Protocol 1 and the map
+
+The connector offers Takaro protocol versions `[0, 1]` (`takaro/protocol.lua`, `takaro/v1.lua`). On version 1 it
+declares a Capability Manifest built from the live-supported coverage entries plus the `map` capability, answers
+errors as `{ code, message }`, adds `dimension` to positions, and sends events with `streamId` and `seq` until
+Takaro's cumulative `eventAck` confirms them. `TAKARO_PROTOCOL=0` in `TakaroConfig.txt` keeps version 0.
+
+The map is one Dimension, `the_island` (`takaro/map.lua`), with `source: none`: the server ships no map art, so the
+operator uploads the in-game map texture (`/Game/ConZ_Files/UI/HUD/IslandMap`, 2048 x 2048, stored upside down) in
+Takaro. The bounds are the server's `AConZWorldSettings.WorldBounds` (read at runtime; -954800..669200 cm on
+1.3.4.2) inset by 50,000 cm on every side, which is the 5 x 5 sector grid at 304,800 cm per sector that the map
+image frames. World X grows to the left of the map and Y grows up. A live check on 1.3.4.2 put the player dot
+within about 2 m of the in-game marker at four spots spread over the island; `tests/test_v1.lua` keeps those pairs.
+After a SCUM update, compare `GET /gameserver/{id}/map` with the in-game map at two spots.
+
 ## A new SCUM build
 
 The Lua side finds classes and functions by name, so a new build usually keeps working. Before a new

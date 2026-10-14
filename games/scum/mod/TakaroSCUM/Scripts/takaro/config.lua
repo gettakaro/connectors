@@ -15,6 +15,7 @@ M.DEFAULTS = {
   COMMAND_ALLOWLIST = "",
   LOG_FRAMES = "false",
   TAKARO_CA_FILE = "",
+  TAKARO_PROTOCOL = "1",
 }
 
 M.SECRET_KEYS = { IDENTITY_TOKEN = true, REGISTRATION_TOKEN = true }
@@ -35,6 +36,8 @@ ENABLE_DESTRUCTIVE_COMMANDS=false
 COMMAND_ALLOWLIST=
 # Log every Takaro frame to takaro.log (tokens are redacted). true/false.
 LOG_FRAMES=false
+# Takaro protocol: 1 offers version 1 (world map, falls back to 0 on an older Takaro); 0 speaks version 0 only.
+TAKARO_PROTOCOL=1
 ]]
 
 local function bool(v)
@@ -84,6 +87,7 @@ function M.build(raw)
     allowlist = M.allowlist_set(v.COMMAND_ALLOWLIST),
     logFrames = bool(v.LOG_FRAMES),
     caFile = v.TAKARO_CA_FILE,
+    protocol = util.trim(v.TAKARO_PROTOCOL) == "0" and 0 or 1,
   }
 end
 
@@ -108,10 +112,11 @@ function M.describe(cfg)
   for k in pairs(cfg.allowlist) do allow[#allow + 1] = k end
   table.sort(allow)
   return string.format(
-    "url=%s serverName=%q registrationToken=%s identityToken=%s destructive=%s allowlist=[%s] logFrames=%s caFile=%s",
+    "url=%s serverName=%q registrationToken=%s identityToken=%s destructive=%s allowlist=[%s] logFrames=%s caFile=%s "
+      .. "protocol=%s",
     cfg.url, cfg.serverName, cfg.registrationToken ~= "" and "set" or "MISSING",
     cfg.identityToken ~= "" and "set" or "generated", tostring(cfg.destructive), table.concat(allow, ","),
-    tostring(cfg.logFrames), cfg.caFile ~= "" and "set" or "system")
+    tostring(cfg.logFrames), cfg.caFile ~= "" and "set" or "system", cfg.protocol == 0 and "0" or "[0,1]")
 end
 
 return M

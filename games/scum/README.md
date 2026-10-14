@@ -21,7 +21,7 @@ Tested on 2026-10-13/14 with a real game client on SCUM 1.3.4.2.161892 (Steam bu
 | Item list | ✅ | 2854 items with their in-game names. |
 | Creature list | ⚠️ | Animals use in-game names; zombie and NPC names come from codes (e.g. "Zombie Civilian Skinny Male"). |
 | Locations / points of interest | ❌ | SCUM has no list of named places. |
-| Map | ❌ | No map tiles. |
+| World map with player positions | ✅ | Player dots on Takaro's map line up with the in-game map. The map picture needs a one-time upload (step 3). |
 | Send a message to everyone | ✅ | Shows in chat as an orange server line. |
 | Send a message to one player | ✅ | Arrives in that player's chat only. |
 | Run a console command | ⚠️ | Only listed commands; most need an admin online; output stays in game. |
@@ -64,6 +64,7 @@ Tested on 2026-10-13/14 with a real game client on SCUM 1.3.4.2.161892 (Steam bu
 | `COMMAND_ALLOWLIST` | Commands Takaro may run, comma separated, without `#`, e.g. `announce,listplayers`. Empty = none. |
 | `ENABLE_DESTRUCTIVE_COMMANDS` | `true` lets Takaro shut the server down. Default `false`. |
 | `LOG_FRAMES` | `true` logs all Takaro traffic for troubleshooting (tokens are hidden). Default `false`. |
+| `TAKARO_PROTOCOL` | Leave `1`. `0` only for a Takaro that refuses the connection with `no_shared_protocol_version`. |
 
 5. Start the server. For console commands other than `announce` and `listplayers`, an admin from `AdminUsers.ini` must be online.
 
@@ -73,6 +74,23 @@ Do not change the `[Hooks]` values in `ue4ss\UE4SS-settings.ini`: with UE4SS's d
 
 After the world has loaded (one to two minutes), `ue4ss\Mods\TakaroSCUM\takaro.log` shows `identified with Takaro as game server …` and Takaro lists the server as reachable. If not, `takaro.log` and `ue4ss\UE4SS.log` say why.
 
-### 3. Update
+### 3. Map picture (optional)
+
+Takaro's map shows your players on a grid out of the box. The server files contain no map picture and this
+connector ships none, so for the in-game map as background upload it once in Takaro: open the game server's map,
+pick **The Island** and upload the image. Leave the bounds empty; the connector already gives Takaro the exact ones.
+
+Which image: the game's own map texture from a SCUM **client** install, exported to PNG with an Unreal asset viewer
+such as FModel (the game's paks are encrypted; the viewer needs SCUM's AES key):
+
+| Texture (client paks) | Size |
+|---|---|
+| `SCUM/Content/ConZ_Files/UI/HUD/IslandMap` (in `pakchunk14-WindowsNoEditor.pak`) | 2048 × 2048 |
+
+The texture is stored **upside down**. Turn it by 180° before the upload (any image editor, or
+`magick IslandMap.png -rotate 180 island.png`), so it looks like the map in the game: sector D4 top left, Z0 bottom
+right. Do not crop it or add borders; a smaller copy of the same full image works too.
+
+### 4. Update
 
 Stop the server, unzip the new release over `SCUM\Binaries\Win64` (it replaces `Scripts\` and `dlls\main.dll`), start it. Keep `TakaroConfig.txt` and `TakaroIdentity.txt`. After a SCUM update, wait for a connector release that names the new game version.

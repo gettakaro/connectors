@@ -9,6 +9,8 @@ local protocol = require("takaro.protocol")
 local actions = require("takaro.actions")
 local events = require("takaro.events")
 local game = require("takaro.game")
+local map = require("takaro.map")
+local v1 = require("takaro.v1")
 
 local M = {}
 
@@ -18,6 +20,7 @@ M.STATUS_EVERY_MS = 60000
 M.SAVE_KNOWN_EVERY_MS = 30000
 M.IDENTITY_FILE = "TakaroIdentity.txt"
 M.KNOWN_FILE = "known-players.json"
+M.WORLD_BOUNDS_RETRY_MS = 10000
 
 local App = {}
 App.__index = App
@@ -100,6 +103,8 @@ function App:start()
   end
   self.lastKnownSave = self:now()
   self.lastStatus = self:now()
+  self.mapBounds = nil -- map frame from the live world bounds; the SCUM 1.3.4.2 frame until it is read
+  self.nextBoundsTry = 0
 
   self.game = self.game_override or game.new(self.env, self.log, { mod_dir = self.dir })
   self.router = actions.new({
@@ -115,6 +120,8 @@ function App:start()
       return { identityToken = self.identityToken, registrationToken = self.cfg.registrationToken,
         name = self.cfg.serverName }
     end,
+    offer_v1 = self.cfg.protocol >= 1,
+    manifest = function() return v1.manifest(self.mapBounds) end,
     on_request = function(action, args, reply) self.router:handle(action, args, reply) end,
     timeout_payload = function(action, why, rawArgs) return self.router:fallback(action, why, rawArgs) end,
   })
@@ -149,6 +156,7 @@ function App:tick()
     local okg, errg = pcall(self.game.tick, self.game, now)
     if not okg then self.log:error("game tick failed: %s", tostring(errg)) end
   end
+  self:read_map_bounds(now)
   if #self.timers > 0 then
     local due, keep = {}, {}
     for _, t in ipairs(self.timers) do
@@ -171,6 +179,19 @@ function App:tick()
   end
 end
 
+-- Reads the server's world bounds once the world is loaded (retried) and re-declares the map when they differ from
+-- the built-in frame.
+function App:read_map_bounds(now)
+  if self.mapBounds or now < self.nextBoundsTry or not self.game.world_bounds then return end
+  self.nextBoundsTry = now + M.WORLD_BOUNDS_RETRY_MS
+  local ok, res = pcall(self.game.world_bounds, self.game)
+  if not (ok and type(res) == "table" and res.ok and map.valid_bounds(res.value)) then return end
+  self.mapBounds = map.map_bounds(res.value)
+  local b = self.mapBounds
+  self.log:info("map bounds from the world: x %.0f..%.0f y %.0f..%.0f", b.minX, b.maxX, b.minY, b.maxY)
+  self.client:update_manifest()
+end
+
 -- tick() that never lets an error escape into UE4SS's loop
 function App:tick_safe()
   local ok, err = pcall(self.tick, self)
@@ -179,10 +200,10 @@ end
 
 function App:log_status()
   local s = self.client:status()
-  self.log:info("status identified=%s gameServerId=%s requests=%d responses=%d timeouts=%d events sent=%d "
-    .. "confirmed=%d queued=%d inflight=%d dropped=%d errorFrames=%d", tostring(s.identified),
-    tostring(s.gameServerId), s.requests, s.responses, s.timeouts, s.eventsSent, s.eventsConfirmed, s.queuedEvents,
-    s.inflightEvents, s.eventsDropped, s.errorFrames)
+  self.log:info("status identified=%s protocol=%d gameServerId=%s requests=%d responses=%d timeouts=%d events sent=%d "
+    .. "confirmed=%d queued=%d inflight=%d dropped=%d errorFrames=%d acks=%d eventErrors=%d", tostring(s.identified),
+    s.protocolVersion, tostring(s.gameServerId), s.requests, s.responses, s.timeouts, s.eventsSent, s.eventsConfirmed, s.queuedEvents,
+    s.inflightEvents, s.eventsDropped, s.errorFrames, s.acks, s.eventErrors)
   if self.game.perf_summary then self.log:info("perf %s", self.game:perf_summary()) end
 end
 

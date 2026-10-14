@@ -72,7 +72,8 @@ M.actions = {
     status = "schema-fallback",
     responseShape = "[] (bare array)",
     liveVerification = NO_LIVE,
-    reason = "SCUM exposes no named location registry on the server; the connector answers [].",
+    reason = "SCUM exposes no named location registry on the server; the connector answers [] and does not declare "
+      .. "locations.list on protocol 1.",
   },
   executeConsoleCommand = {
     status = "live-supported",
@@ -143,13 +144,16 @@ M.actions = {
     status = "schema-fallback",
     responseShape = "{ enabled: false, mapBlockSize: 0, maxZoom: 0, mapSizeX: 0, mapSizeY: 0, mapSizeZ: 0 }",
     liveVerification = NO_LIVE,
-    reason = "Hosted Takaro shows no map tiles for Generic servers; a disabled map DTO keeps validation happy.",
+    reason = "Protocol 0 only (Takaro does not ask for map info on protocol 1, where the connector declares the map "
+      .. "capability instead: Dimension the_island, source none, bounds from the server's ConZWorldSettings.WorldBounds); "
+      .. "a disabled map DTO keeps validation happy.",
   },
   getMapTile = {
     status = "unsupported",
     responseShape = "{ success: false, errorMessage }",
     liveVerification = NO_LIVE,
-    reason = "No map tiles are rendered (hosted Takaro shows none for Generic servers).",
+    reason = "The server has no map art to render tiles from; on protocol 1 the map Dimension is source none and the "
+      .. "operator uploads the in-game map image in Takaro.",
   },
 }
 

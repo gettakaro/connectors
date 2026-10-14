@@ -598,6 +598,15 @@ function Game:list_locations()
   return { ok = false, reason = "SCUM has no named location registry the server exposes" }
 end
 
+-- AConZWorldSettings.WorldBounds (FBox2D, world cm): the box the island map is centred in (see map.lua).
+function Game:world_bounds()
+  local ws = self.env.FindFirstOf and self.env.FindFirstOf("ConZWorldSettings")
+  if not valid(ws) then return { ok = false, reason = "world not loaded" } end
+  local b = ws.WorldBounds
+  if not b or not b.bIsValid then return { ok = false, reason = "WorldBounds not set" } end
+  return { ok = true, value = { minX = b.Min.X, maxX = b.Max.X, minY = b.Min.Y, maxY = b.Max.Y } }
+end
+
 -- Bans. Two stores: BannedUsers.ini (the game's own, one SteamID64 per line) and takaro-bans.json (reason, expiresAt,
 -- name). SCUM reads BannedUsers.ini ONCE at start into memory and refuses those players at join itself; the list is
 -- not reflected, so the connector cannot edit it. Hence:

@@ -2,6 +2,7 @@
 -- usage (from the source folder): LUA_PATH="mod/TakaroSCUM/Scripts/?.lua;;" lua5.4 scripts/gen-capabilities.lua > capabilities.json
 local json = require("takaro.json")
 local coverage = require("takaro.coverage")
+local map = require("takaro.map")
 
 local doc = json.object({
   game = "SCUM",
@@ -10,7 +11,8 @@ local doc = json.object({
     .. "WebSocket transport (dlls/main.dll); outbound WSS only, no sidecar, no inbound port",
   runtime = "SCUMServer.exe (Steam app 3792580) with UE4SS v3.0.1-1171-g91d90727",
   takaroConnection = "outbound_websocket",
-  protocolVersion = 0,
+  protocolVersions = { 0, 1 },
+  map = map.dimension(),
   statusDefinitions = json.object({
     ["live-supported"] = "proven end to end through Takaro on a real server",
     ["schema-fallback"] = "answers a valid empty or placeholder DTO; the game data is not wired yet or not available",
