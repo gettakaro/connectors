@@ -38,19 +38,23 @@ M.actions = {
   },
   getPlayerInventory = {
     status = "live-supported",
-    responseShape = "IItemDTO[] { code, name, amount } (bare array)",
-    liveVerification = live("Takaro recorded player-inventory-changed for Shirt, Pants, Trainer Shoes, Socks"),
-    reason = "SCUM's inventory is not reflected; every carried AItem actor's Owner chain reaches the prisoner. Items "
-      .. "SCUM virtualises (not spawned as actors) are not listed; quality is not reported.",
+    responseShape = "IItemDTO[] { code, name, amount, quality } (bare array; quality = durability %)",
+    liveVerification = live4("3 client comparisons: worn clothes, backpack/holster contents, item in hands, "
+      .. "stacks 13x/20x/4x, durability 50%/75%/99%; Takaro history + player-inventory-changed match"),
+    reason = "SCUM's inventory is not reflected; the prisoner's AActor.Children tree holds every carried item (worn, "
+      .. "hands, container contents, nested). amount = UStackableItemComponent._repQuantity for stacks, quality = "
+      .. "GetHealth/GetMaxHealth in whole percent. A failed read answers an error, never [] (Takaro would record "
+      .. "removals). Rounds loaded in a weapon or magazine are not items and are not listed.",
   },
   giveItem = {
     status = "live-supported",
     responseShape = "{ success, rawResult }",
     liveVerification = live4("2 Apples into shirt+pants pockets, Katana into holster 1, 5 x .50 AE merged into one stack "
       .. "(5x -> 10x), full pockets -> Apple into empty hands; shop deliveries in the inventory (client screenshots)"),
-    reason = "Loads the Item primary asset by code, spawns it at the player and calls the controller's "
+    reason = "Loads the Item primary asset by code, spawns it at the player; clothes go onto a free body slot "
+      .. "(Server_CharacterInventoryComponent_EquipClothes), quality (1-100) sets the durability; else the controller's "
       .. "InventoryUserComponent:Server_CharacterInventoryComponent_PickupItem(prisoner inventory, item) = the player's own "
-      .. "pickup; read back by Owner chain (stackables merge: count 0 / destroyed = delivered). Items that fit nowhere: "
+      .. "pickup; read back by Owner chain (stackables merge: stack quantity 0 / destroyed = delivered). Items that fit nowhere: "
       .. "the first goes into empty hands, the rest stays at the player's feet; rawResult reports the split.",
   },
   listItems = {
@@ -83,7 +87,9 @@ M.actions = {
     reason = "COMMAND_ALLOWLIST gate. SCUM runs admin commands only through a player controller (the only "
       .. "IAdminCommandExecutor), so allowlisted verbs go through an online admin's PlayerRpcChannel:"
       .. "Chat_Server_ProcessAdminCommand (output only in that admin's chat) and fail with no_executor when no admin "
-      .. "is online. announce and listplayers are implemented natively and work with nobody online.",
+      .. "is online. announce and listplayers are implemented natively and work with nobody online. A server-owned "
+      .. "executor is not possible from UE4SS Lua: SCUM ignores a server-spawned controller (and crashed ~60 s later), "
+      .. "and running through a non-admin's channel would act in that player's name.",
   },
   sendMessage = {
     status = "live-supported",
@@ -192,8 +198,8 @@ M.events = {
   ["entity-killed"] = {
     status = "live-supported",
     payloadShape = "{ player: IGamePlayer, entity: string, weapon: string }",
-    liveVerification = live4("Katana kill of a spawned zombie -> entity 'Zombie Civilian Skinny Male', weapon 'Katana' "
-      .. "(melee only, no firearm sample)"),
+    liveVerification = live4("spawned zombies killed with a Katana (melee) and a DEagle 50 (firearm) -> entity 'Zombie "
+      .. "Civilian Skinny Male', weapon 'Katana' / 'DEagle 50'"),
     reason = "Attack-RPC hooks (projectile damage, melee capsule hit, base-damage, explosive) record which player "
       .. "attacked; a liveness scan of non-player AConZCharacters (2 s, 0.5 s after an attack) sees the death; the weapon "
       .. "is the NPC's _weaponClassLastHitBy, both named from the catalogues. No attacker within 300 m / 15 s or no "

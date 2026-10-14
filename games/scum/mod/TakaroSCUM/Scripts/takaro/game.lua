@@ -379,7 +379,8 @@ function Game:give_item(params)
   -- the item into a free clothes/backpack slot (live 2026-10-14: 2 apples -> shirt + pants pockets, ground empty).
   local iuc, inv = self:inventory_components(pc, prisoner)
   local me = str(prisoner:GetFullName())
-  local inInv, onGround, toHands = 0, 0, nil
+  local inInv, onGround, toHands, wornItems = 0, 0, nil, {}
+  local quality = M.quality_percent(params.quality)
   for i = 1, n do
     local a = gps:BeginDeferredActorSpawnFromClass(prisoner, cls, xf, 1, nil)
     local item = valid(a) and gps:FinishSpawningActor(a, xf) or nil
@@ -387,12 +388,25 @@ function Game:give_item(params)
       return { ok = false, reason = string.format("spawning %s failed after %d (%d in inventory, %d on the ground)",
         params.item, i - 1, inInv, onGround) }
     end
+    if quality then pcall(function() item:SetHealth(item:GetMaxHealth() * quality / 100) end) end
     local stored = false
     if iuc and inv then
-      pcall(function() iuc:Server_CharacterInventoryComponent_PickupItem(inv, item) end)
-      -- Stackables (ammo) merge into a stack already in the inventory: the picked-up actor is left with a count of 0
-      -- and the game destroys it a moment later (live 2026-10-14: 5 x Cal_50_AE -> one "5x" stack in the pants).
-      stored = not valid(item) or self:owned_by(item, me) or M.merged(item)
+      -- Clothes (backpack, vest, holster, ...) go onto a free body slot first, like the player's own "wear"; a
+      -- taken slot leaves the item unowned and it is picked up into a container like anything else.
+      if self:is_a(item, "_clothesC", M.UE.ClothesClass) then
+        pcall(function() iuc:Server_CharacterInventoryComponent_EquipClothes(inv, item) end)
+        if valid(item) and self:owned_by(item, me) then
+          stored = true
+          wornItems[#wornItems + 1] = item
+        end
+      end
+      if not stored then
+        pcall(function() iuc:Server_CharacterInventoryComponent_PickupItem(inv, item) end)
+        -- Stackables (ammo, bandages) merge into a stack already in the inventory: the picked-up actor is left with a
+        -- quantity of 0 and the game destroys it a moment later (live 2026-10-14: 5 x Cal_50_AE -> one "5x" stack;
+        -- 2 x Emergency_bandage -> one "2x" stack). Never GetAmmoCount alone: an empty weapon or magazine reports 0.
+        stored = not valid(item) or self:owned_by(item, me) or self:merged(item)
+      end
     end
     if stored then
       inInv = inInv + 1
@@ -406,8 +420,16 @@ function Game:give_item(params)
   if toHands then
     self.handQueue[#self.handQueue + 1] = { id = params.gameId, item = toHands, due = self:now_ms() + M.HANDS_DELAY_MS }
   end
-  local msg = string.format("gave %d x %s to %s: %d in inventory, %d at the player's feet%s", n, params.item,
-    params.gameId, inInv, onGround, toHands and " (first one into empty hands)" or "")
+  -- Worn = on the body (direct child of the prisoner) when the give is done: a later EquipClothes on a taken slot
+  -- swaps, and the earlier one moves into a container (live 2026-10-14: 2 caps -> one on the head, one in the backpack).
+  local worn = 0
+  for _, it in ipairs(wornItems) do
+    local ok, o = pcall(function() return it:GetOwner() end)
+    if ok and valid(it) and valid(o) and str(o:GetFullName()) == me then worn = worn + 1 end
+  end
+  local msg = string.format("gave %d x %s to %s: %d in inventory%s, %d at the player's feet%s%s", n, params.item,
+    params.gameId, inInv, worn > 0 and string.format(" (%d worn)", worn) or "", onGround,
+    toHands and " (first one into empty hands)" or "", quality and string.format(", durability %d%%", quality) or "")
   self.log:info("giveItem: %s", msg)
   return { ok = true, value = msg }
 end
@@ -425,9 +447,18 @@ function Game:inventory_components(pc, prisoner)
   return iuc, inv
 end
 
-function M.merged(item)
-  local ok, n = pcall(function() return item:GetAmmoCount() end)
-  return ok and n == 0
+function Game:merged(item)
+  return self:stack_quantity(item) == 0
+end
+
+-- Takaro's giveItem quality (a string; modules send null or "") -> durability percent 1..100, or nil to keep the
+-- game's default. SCUM has no quality tiers; durability is the matching per-item number (getPlayerInventory reports it).
+function M.quality_percent(q)
+  local n = tonumber(type(q) == "string" and util.trim(q) or q)
+  if not n or n ~= n then return nil end
+  n = math.floor(n + 0.5)
+  if n < 1 or n > 100 then return nil end
+  return n
 end
 
 function Game:owned_by(item, me)
@@ -442,36 +473,171 @@ function Game:owned_by(item, me)
 end
 
 -- Inventory entries are not reflected in SCUM (UInventoryComponent exposes only _repHasEntries). Every carried item is
--- an AItem actor whose Owner chain reaches the prisoner: clothes and the item in hands are owned by BP_Prisoner_C,
--- container contents by the clothing they sit in (live 2026-10-13: shirt -> Starter Bank Card).
+-- an AItem actor in the prisoner's AActor.Children tree: worn clothes, holsters and the item in hands are children of
+-- BP_Prisoner_C, container contents children of the clothing they sit in (backpack -> ammo, holster -> pistol), and so
+-- on down. Walking that tree costs O(carried items) (live 2026-10-14: 16 items, < 0.1 ms) instead of scanning every
+-- item in the world. A stack is one actor (13x .50 AE = one Cal_50_AE_C with quantity 13, see stack_quantity); a
+-- weapon's or magazine's loaded rounds are not items and not a stack, so amount stays 1 for those. quality = durability in percent (GetHealth / GetMaxHealth, rounded), the number the client shows.
 M.OWNER_DEPTH = 5
+M.INVENTORY_MAX_DEPTH = 8
+M.INVENTORY_MAX_ITEMS = 1000
+M.UE.ItemClass = "/Script/SCUM.Item"
+M.UE.AmmoClass = "/Script/SCUM.AmmunitionItem"
+M.UE.ClothesClass = "/Script/SCUM.ClothesItem"
+
+function Game:is_a(obj, key, path)
+  local cls = self:static(key, path)
+  if not cls then return nil end
+  local ok, r = pcall(function() return obj:IsA(cls) end)
+  if ok then return r == true end
+  return nil
+end
+
+function M.durability(it)
+  local okH, h = pcall(function() return it:GetHealth() end)
+  local okM, m = pcall(function() return it:GetMaxHealth() end)
+  if not (okH and okM) or type(h) ~= "number" or type(m) ~= "number" or m <= 0 then return nil end
+  local pct = math.floor(h / m * 100 + 0.5)
+  if pct < 0 then pct = 0 elseif pct > 100 then pct = 100 end
+  return tostring(pct)
+end
+
+M.UE.StackableComponent = "/Script/SCUM.StackableItemComponent"
+
+-- Stack size of a stackable item (ammo, bandages, rags, ...): its UStackableItemComponent._repQuantity, the "13x" the
+-- client shows; nil for items that do not stack. Uses (Apple "1/1") live on UDiscreteUsageItemComponent and are not a
+-- stack. Ammunition also answers GetAmmoCount with the same number (fallback).
+function Game:stack_quantity(it)
+  local okL, comps = pcall(function() return it._itemComponents end)
+  if okL and comps ~= nil then
+    local okN, n = pcall(function() return #comps end)
+    for i = 1, (okN and n or 0) do
+      local c = comps[i]
+      if valid(c) and self:is_a(c, "_stackC", M.UE.StackableComponent) then
+        local okQ, q = pcall(function() return c._repQuantity end)
+        if okQ and type(q) == "number" then return math.floor(q) end
+      end
+    end
+  end
+  if self:is_a(it, "_ammoC", M.UE.AmmoClass) then
+    local ok, q = pcall(function() return it:GetAmmoCount() end)
+    if ok and type(q) == "number" then return math.floor(q) end
+  end
+  return nil
+end
+
+function Game:item_amount(it)
+  local q = self:stack_quantity(it)
+  if q and q >= 1 then return q end
+  return 1
+end
+
+-- The prisoner's carried items, depth first (container before its contents). nil when Children is not readable.
+function Game:carried_items(prisoner)
+  local out, seen = {}, {}
+  local function children(a)
+    local ok, ch = pcall(function() return a.Children end)
+    if not ok or ch == nil then return nil end
+    local list = {}
+    local okN, n = pcall(function() return #ch end)
+    if not okN then return nil end
+    for i = 1, n do
+      local c = ch[i]
+      list[#list + 1] = c
+    end
+    return list
+  end
+  local top = children(prisoner)
+  if not top then return nil end
+  local function walk(list, depth)
+    for _, c in ipairs(list) do
+      if #out >= M.INVENTORY_MAX_ITEMS then return end
+      if valid(c) then
+        local key = str(c:GetFullName()) or tostring(c)
+        if not seen[key] then
+          seen[key] = true
+          if self:is_a(c, "_itemC", M.UE.ItemClass) ~= false then out[#out + 1] = c end
+          if depth < M.INVENTORY_MAX_DEPTH then
+            local sub = children(c)
+            if sub then walk(sub, depth + 1) end
+          end
+        end
+      end
+    end
+  end
+  walk(top, 1)
+  return out
+end
+
+-- Fallback when AActor.Children cannot be read: every item in the world whose Owner chain reaches the prisoner.
+function Game:owned_items_by_scan(prisoner)
+  local me = str(prisoner:GetFullName())
+  local out = {}
+  for _, it in ipairs(self.env.FindAllOf and self.env.FindAllOf("Item") or {}) do
+    if valid(it) and self:owned_by(it, me) then out[#out + 1] = it end
+  end
+  return out
+end
+
+-- Item code = the catalogue's primary-asset name. The class is "<asset>_C" for all but a few assets whose class
+-- differs in case (live 2026-10-14, 2/2854: Weapon_DEagle_357 -> Weapon_Deagle_357_C, Weapon_Parts_Deagle_50 ->
+-- Weapon_Parts_DEagle_50_C); Takaro matches inventory codes to listItems codes exactly, so those map back here.
+function Game:item_code(className)
+  local code = tostring(className):gsub("_C$", "")
+  local c = self.catalogs.items
+  if not c or #c.entries == 0 then return code end
+  if c.lowerIndexSize ~= #c.entries then
+    c.lowerIndex = {}
+    for _, e in ipairs(c.entries) do c.lowerIndex[e.code:lower()] = e.code end
+    c.lowerIndexSize = #c.entries
+  end
+  return c.lowerIndex[code:lower()] or code
+end
+
 function Game:get_player_inventory(params)
   local pc = self:find_pc(params.gameId)
   if not pc then return { ok = false, reason = "player is offline" } end
   local prisoner = self:pawn(pc)
-  if not prisoner then return { ok = true, value = {} } end
-  local me = str(prisoner:GetFullName())
-  local counts, order = {}, {}
-  for _, it in ipairs(self.env.FindAllOf and self.env.FindAllOf("Item") or {}) do
-    local o = valid(it) and it:GetOwner() or nil
-    local depth = 0
-    while valid(o) and depth < M.OWNER_DEPTH and str(o:GetFullName()) ~= me do
-      o = o:GetOwner()
-      depth = depth + 1
-    end
-    if valid(o) and str(o:GetFullName()) == me then
-      local code = (str(it:GetClass():GetFName()) or "?"):gsub("_C$", "")
-      if not counts[code] then
-        local name
-        pcall(function() name = str(it:GetInteractableName(nil)) end)
-        counts[code] = { code = code, name = (name and name ~= "") and name or M.humanize(code), amount = 0 }
-        order[#order + 1] = code
-      end
-      counts[code].amount = counts[code].amount + 1
+  -- No character (dead, respawn screen, still loading): the state is unknown, so no answer rather than [] (Takaro
+  -- would record every item as removed and re-added). The next read after the respawn diffs the real change.
+  if not prisoner then return { ok = false, reason = "player has no character right now" } end
+  local items = self:carried_items(prisoner)
+  if items == nil then
+    items = self:owned_items_by_scan(prisoner)
+  elseif #items == 0 then
+    -- Guard: an empty walk is cross-checked with the world scan; items found there mean the walk failed, and an
+    -- error (not []) keeps Takaro from recording removals. Both empty = the player really carries nothing.
+    local scan = self:owned_items_by_scan(prisoner)
+    if #scan > 0 then
+      return { ok = false, reason = string.format("inventory walk found nothing but %d items are owned by the player", #scan) }
     end
   end
+  -- The item in hands is normally a child of the prisoner; add it if it is not.
+  local okH, inHands = pcall(function() return prisoner:GetItemInHands() end)
+  if okH and valid(inHands) then
+    local k = str(inHands:GetFullName())
+    local found = false
+    for _, it in ipairs(items) do if str(it:GetFullName()) == k then found = true break end end
+    if not found then items[#items + 1] = inHands end
+  end
+  local rows, order = {}, {}
+  for _, it in ipairs(items) do
+    local code = self:item_code(str(it:GetClass():GetFName()) or "?")
+    local quality = M.durability(it)
+    local key = code .. "|" .. (quality or "")
+    local row = rows[key]
+    if not row then
+      local name
+      pcall(function() name = str(it:GetInteractableName(nil)) end)
+      row = { code = code, name = (name and name ~= "") and util.trim(name) or M.humanize(code), amount = 0,
+        quality = quality }
+      rows[key] = row
+      order[#order + 1] = key
+    end
+    row.amount = row.amount + self:item_amount(it)
+  end
   local out = {}
-  for _, code in ipairs(order) do out[#out + 1] = counts[code] end
+  for _, key in ipairs(order) do out[#out + 1] = rows[key] end
   return { ok = true, value = out }
 end
 
@@ -803,6 +969,9 @@ end
 -- IAdminCommandExecutor); MiscStatics:Test_ProcessAdminCommand is a no-op without a player. So:
 --  * verbs the connector implements with direct UFunctions work with nobody online (announce, listplayers);
 --  * every other allowlisted verb is sent through an online admin's PlayerRpcChannel:Chat_Server_ProcessAdminCommand.
+-- Dead ends (live 2026-10-14): a server-spawned BP_ConZPlayerController (no connection, no user) is ignored by SCUM's
+-- command handler and crashed the server ~60 s later; borrowing a non-admin player's channel with the command CDO's
+-- _requiredExecutorLevel lowered would run the command in that player's name (admin log, output in their chat).
 function Game:execute_command(params)
   local cmd = util.trim(params.command):gsub("^#", "")
   local verb = (cmd:match("^(%S+)") or ""):lower()
@@ -1036,7 +1205,7 @@ function Game:on_npc_death(ch, cls, nowMs)
   local code = cls:gsub("_C$", "")
   local entity = self:entity_name(code) or M.humanize(code)
   local okW, w = pcall(function() return ch._weaponClassLastHitBy end)
-  local weaponCode = okW and valid(w) and (str(w:GetFName()) or ""):gsub("_C$", "") or nil
+  local weaponCode = okW and valid(w) and self:item_code(str(w:GetFName()) or "") or nil
   local okP, at = pcall(function() return ch:K2_GetActorLocation() end)
   local best, bestD
   for _, c in ipairs(self:controllers()) do

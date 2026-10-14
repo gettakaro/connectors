@@ -129,6 +129,25 @@ t.test("version 1: failures become { code, message } errors; a refused console c
   t.deep(last_response(native, ok).payload, {}, "a bare array stays a payload")
 end)
 
+t.test("version 1: a failed inventory read is an error (Takaro skips the sync), never an empty payload", function()
+  local _, native, tk = F.app({ script = {
+    get_player_inventory = function(params)
+      if params.gameId == STEAM then return { ok = false, reason = "inventory walk found nothing but 3 items are owned by the player" } end
+      return { ok = false, reason = "player has no character right now" }
+    end,
+  } })
+  connect_v1(tk, native)
+  local walk = tk.request("getPlayerInventory", { gameId = STEAM })
+  local dead = tk.request("getPlayerInventory", { gameId = "76561198000000002" })
+  tk.pump()
+  local w, d = last_response(native, walk), last_response(native, dead)
+  t.eq(w.payload, nil)
+  t.eq(w.error.code, "game_error")
+  t.ok(w.error.message:find("3 items are owned"), w.error.message)
+  t.eq(d.payload, nil)
+  t.eq(d.error.code, "not_found", "no character")
+end)
+
 t.test("version 1 events: streamId + seq, cumulative eventAck, resend with the same seq after a reconnect", function()
   local app, native, tk = F.app()
   connect_v1(tk, native)

@@ -82,6 +82,7 @@ end
 -- The answer for an action that could not finish (timeout or internal error).
 function Router:fallback(action, why, rawArgs)
   why = why or "unavailable"
+  if action == "getPlayerInventory" then return { error = "inventory unavailable: " .. why } end
   if M.LIST_ACTIONS[action] then return {} end
   if action == "getPlayer" then
     return self.known:resolve(players.game_id_from_args(M.normalize_args(rawArgs)) or "")
@@ -181,10 +182,20 @@ function H.getPlayerLocation(self, args, reply)
   end)
 end
 
+-- Takaro diffs every inventory answer against the previous one: an empty list records "removed" for every item the
+-- player carries. So a game-side failure answers { error } (Takaro's generic client throws and skips that sync)
+-- instead of []; only an offline player (Takaro polls online players only) or no id gets an empty list.
+M.INVENTORY_EMPTY_REASONS = { ["player is offline"] = true }
 function H.getPlayerInventory(self, args, reply)
   local id = players.game_id_from_args(args)
   if not id then return reply({}) end
-  self:call("get_player_inventory", { gameId = id }, list_reply(self, "getPlayerInventory", reply))
+  self:call("get_player_inventory", { gameId = id }, function(res)
+    if res.ok and type(res.value) == "table" then return reply(res.value) end
+    local why = tostring(res.reason)
+    if M.INVENTORY_EMPTY_REASONS[why] then return reply({}) end
+    self.log:warn("getPlayerInventory: %s; answering an error so Takaro keeps the last inventory", why)
+    reply({ error = "inventory unavailable: " .. why })
+  end)
 end
 
 function H.listItems(self, _args, reply) self:call("list_items", {}, list_reply(self, "listItems", reply)) end

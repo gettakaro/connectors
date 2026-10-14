@@ -239,7 +239,9 @@ t.test("always respond: every action answers with a stub adapter, in the shape T
   for _, action in ipairs(coverage.ACTIONS) do
     local p, frame = tk.response("all-" .. action)
     t.ok(p ~= nil, action .. " answered")
-    if actions.LIST_ACTIONS[action] then
+    if action == "getPlayerInventory" then
+      t.ok(type(p.error) == "string", "getPlayerInventory: a failing adapter answers { error }, Takaro keeps the last inventory")
+    elseif actions.LIST_ACTIONS[action] then
       t.eq(frame.text:match('"payload":(.)'), "[", action .. " is a bare array")
     end
   end
@@ -423,6 +425,25 @@ t.test("error frames and junk frames are counted, never fatal", function()
   t.eq(app.client.stats.badFrames, 1)
   t.eq(app.client.stats.unknownFrames, 1)
   t.ok(app.client.identified)
+end)
+
+t.test("getPlayerInventory: a game-side failure answers { error } (never [] = 'everything removed'); offline = []", function()
+  local cases = {
+    { { ok = true, value = { { code = "Apple", name = "Apple", amount = 1 } } }, { { code = "Apple", name = "Apple", amount = 1 } } },
+    { { ok = false, reason = "player is offline" }, {} },
+    { { ok = false, reason = "boom" }, { error = "inventory unavailable: boom" } },
+    { function() error("lua blew up") end, nil },
+  }
+  for i, c in ipairs(cases) do
+    local game = F.game({ get_player_inventory = c[1] })
+    local _, _, tk = F.app({ game = game })
+    tk.connect()
+    tk.request("getPlayerInventory", { gameId = STEAM }, "inv")
+    tk.pump()
+    local r = tk.response("inv")
+    if c[2] then t.deep(r, c[2], "case " .. i) else
+      t.ok(type(r) == "table" and type(r.error) == "string" and r.error:find("lua blew up"), "case " .. i .. " adapter error") end
+  end
 end)
 
 t.run("wire")

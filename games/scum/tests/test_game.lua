@@ -141,6 +141,8 @@ local function world(opts)
       end
     end,
     StaticFindObject = function(p)
+      local cls = p:match("^/Script/SCUM%.(%w+)$")
+      if cls then return obj({ name = cls }) end
       if p:find("MiscStatics") then return W.ms end
       if p:find("KismetSystemLibrary") then return W.ksl end
       if p:find("GameplayStatics") then return W.gps end
@@ -409,18 +411,99 @@ t.test("giveItem: every item goes into the inventory through the player's own pi
   t.eq(#W.find("TakeItemInHands"), 0, "nothing for the hands")
 end)
 
-t.test("giveItem: ammo merging into one stack (picked-up actor left at count 0) counts as delivered", function()
+-- Fake UE classes: an object "is a" class when its isa set names it (IsA takes the class object from StaticFindObject).
+local function isa(o, ...)
+  o.isa = {}
+  for _, n in ipairs({ ... }) do o.isa[n] = true end
+  o.IsA = function(self, cls) return self.isa[cls.name] == true end
+  return o
+end
+
+local function stack(q)
+  local c = isa(obj({ _repQuantity = q, get = "TrivialObject" }), "StackableItemComponent", "DiscreteAmountItemComponent")
+  return { c }
+end
+
+t.test("giveItem: a stackable merging into one stack (picked-up actor left at quantity 0) counts as delivered", function()
   local W = world()
   W.add_pc(ID1, "Alice")
   W.invFull = true
   local orig = W.gps.BeginDeferredActorSpawnFromClass
   W.gps.BeginDeferredActorSpawnFromClass = function(...)
-    local it = orig(...)
-    it.GetAmmoCount = function() return 0 end
+    local it = isa(orig(...), "Item")
+    it._itemComponents = stack(0)
     return it
   end
   local r = W.g:give_item({ gameId = ID1, item = "Weapon_M9", amount = 5 })
   t.ok(r.value:find("5 in inventory, 0 at the player's feet"), r.value)
+end)
+
+t.test("giveItem: an empty weapon or magazine (GetAmmoCount 0, no stack) is NOT mistaken for a merged stack", function()
+  local W = world()
+  W.add_pc(ID1, "Alice")
+  W.invFull = true
+  local orig = W.gps.BeginDeferredActorSpawnFromClass
+  W.gps.BeginDeferredActorSpawnFromClass = function(...)
+    local it = isa(orig(...), "Item")
+    it.GetAmmoCount = function() return 0 end
+    it._itemComponents = {}
+    return it
+  end
+  local r = W.g:give_item({ gameId = ID1, item = "Weapon_M9", amount = 1 })
+  t.ok(r.value:find("0 in inventory, 1 at the player's feet %(first one into empty hands%)"), r.value)
+end)
+
+t.test("giveItem: clothes go onto a free body slot (EquipClothes) before the pickup", function()
+  local W = world()
+  local pc = W.add_pc(ID1, "Alice")
+  local pawn = pc:GetPrisoner()
+  W.invFull = true
+  local orig = W.gps.BeginDeferredActorSpawnFromClass
+  W.gps.BeginDeferredActorSpawnFromClass = function(...) return isa(orig(...), "Item", "ClothesItem") end
+  W.iucs[1].Server_CharacterInventoryComponent_EquipClothes = function(_, _inv, item)
+    W.calls[#W.calls + 1] = { name = "EquipClothes", args = { item.code } }
+    if not W.slotTaken then item.owner = pawn; W.slotTaken = true end
+  end
+  local r = W.g:give_item({ gameId = ID1, item = "Weapon_M9", amount = 2 })
+  t.ok(r.value:find("1 in inventory %(1 worn%), 1 at the player's feet"), r.value)
+  t.eq(#W.find("EquipClothes"), 2, "tried for both; the second slot was taken")
+  t.eq(#W.find("PickupItem"), 1, "only the one that was not worn is picked up")
+end)
+
+t.test("giveItem: an EquipClothes swap (the earlier item moves into a container) counts one worn, both delivered", function()
+  local W = world()
+  local pc = W.add_pc(ID1, "Alice")
+  local pawn = pc:GetPrisoner()
+  local backpack = obj({ GetFullName = function() return "Backpack_1" end, GetOwner = function() return pawn end })
+  local orig = W.gps.BeginDeferredActorSpawnFromClass
+  W.gps.BeginDeferredActorSpawnFromClass = function(...) return isa(orig(...), "Item", "ClothesItem") end
+  W.iucs[1].Server_CharacterInventoryComponent_EquipClothes = function(_, _inv, item)
+    if W.wornNow then W.wornNow.owner = backpack end
+    item.owner = pawn
+    W.wornNow = item
+  end
+  local r = W.g:give_item({ gameId = ID1, item = "Weapon_M9", amount = 2 })
+  t.ok(r.value:find("2 in inventory %(1 worn%), 0 at the player's feet"), r.value)
+end)
+
+t.test("giveItem: Takaro quality (durability percent) is applied with SetHealth; null/''/junk keeps the default", function()
+  local W = world()
+  W.add_pc(ID1, "Alice")
+  local set = {}
+  local orig = W.gps.BeginDeferredActorSpawnFromClass
+  W.gps.BeginDeferredActorSpawnFromClass = function(...)
+    local it = orig(...)
+    it.GetMaxHealth = function() return 200 end
+    it.SetHealth = function(_, h) set[#set + 1] = h end
+    return it
+  end
+  local r = W.g:give_item({ gameId = ID1, item = "Weapon_M9", amount = 1, quality = "50" })
+  t.deep(set, { 100 })
+  t.ok(r.value:find("durability 50%%"), r.value)
+  for _, q in ipairs({ nil, "", "abc", "0", "101" }) do W.g:give_item({ gameId = ID1, item = "Weapon_M9", amount = 1, quality = q }) end
+  t.deep(set, { 100 }, "no SetHealth without a usable percent")
+  t.eq(game.quality_percent(" 75 "), 75)
+  t.eq(game.quality_percent(99.6), 100)
 end)
 
 t.test("giveItem with a full inventory: items stay at the feet, the first goes into empty hands later", function()
@@ -507,27 +590,122 @@ t.test("kill log -> player-death with attacker (players only) and victim positio
     attacker = { steamId = ID1, name = "Alice" }, position = { x = 4, y = 5, z = 6 } } })
 end)
 
-t.test("inventory: items whose Owner chain reaches the prisoner, counted per code with display names", function()
+-- A carried item: class name, display name, children (contents), durability and item components.
+local function citem(cls, name, opts)
+  opts = opts or {}
+  local it = isa(obj({ GetFullName = function() return opts.full or (cls .. "_" .. tostring(opts.n or 1)) end,
+    GetClass = function() return { GetFName = function() return cls end } end,
+    GetInteractableName = function() return name end,
+    GetHealth = function() return opts.hp or 100 end, GetMaxHealth = function() return opts.max or 100 end,
+    GetOwner = function() return opts.owner end,
+    Children = opts.children or {}, _itemComponents = opts.comps or {},
+    -- UE4SS answers any unknown member of a UObject with a non-callable TrivialObject (live 2026-10-14: an
+    -- `elem.get and elem:get()` unwrap raised on every child and the answer was [])
+    get = "TrivialObject" }), table.unpack(opts.isa or { "Item" }))
+  if opts.ammo then it.GetAmmoCount = function() return opts.ammo end end
+  return it
+end
+
+t.test("inventory: the prisoner's Children tree = worn clothes, holsters, container contents, with stacks and durability", function()
+  local W = world()
+  local pc = W.add_pc(ID1, "Alice")
+  local prisoner = pc:GetPrisoner()
+  local backpack = citem("Backpack_02_01_C", "Backpack", { isa = { "Item", "ClothesItem" }, children = {
+    citem("Cal_50_AE_C", ".50 AE Ammo", { comps = stack(13), isa = { "Item", "AmmunitionItem" }, ammo = 13 }),
+    citem("Cal_9mm_C", "9mm Ammo", { comps = stack(20), isa = { "Item", "AmmunitionItem" } }),
+    citem("Magazine_M9_C", "M9 Magazine", { ammo = 0 }),
+    citem("Emergency_bandage_C", "Emergency Bandage", { comps = stack(2) }),
+    citem("Apple_C", "Apple", { comps = { isa(obj({ _repQuantity = 1 }), "DiscreteAmountItemComponent") } }),
+    citem("Weapon_M9_C", "TEC01 M9", { ammo = 0 }),
+    citem("Spade_C", "Spade Shovel ", { hp = 37.4 }),
+  } })
+  local holster = citem("Belt_Pistol_Holster_C", "Leather Belt Pistol Holster", { children = {
+    citem("Weapon_M1911_C", "M1911", { ammo = 7 }) } })
+  local fx = obj({ GetFullName = function() return "Emitter_1" end, Children = {}, IsA = function() return false end })
+  prisoner.Children = { citem("Inmate_shirt_01_C", "Shirt", { hp = 99.99 }), backpack, holster,
+    citem("Sock_01_C", "Socks", { n = 1, hp = 50 }), citem("Sock_01_C", "Socks", { n = 2, hp = 50 }), fx }
+  local inv = W.g:get_player_inventory({ gameId = ID1 }).value
+  t.deep(inv, {
+    { code = "Inmate_shirt_01", name = "Shirt", amount = 1, quality = "100" },
+    { code = "Backpack_02_01", name = "Backpack", amount = 1, quality = "100" },
+    { code = "Cal_50_AE", name = ".50 AE Ammo", amount = 13, quality = "100" },
+    { code = "Cal_9mm", name = "9mm Ammo", amount = 20, quality = "100" },
+    { code = "Magazine_M9", name = "M9 Magazine", amount = 1, quality = "100" },
+    { code = "Emergency_bandage", name = "Emergency Bandage", amount = 2, quality = "100" },
+    { code = "Apple", name = "Apple", amount = 1, quality = "100" },
+    { code = "Weapon_M9", name = "TEC01 M9", amount = 1, quality = "100" },
+    { code = "Spade", name = "Spade Shovel", amount = 1, quality = "37" },
+    { code = "Belt_Pistol_Holster", name = "Leather Belt Pistol Holster", amount = 1, quality = "100" },
+    { code = "Weapon_M1911", name = "M1911", amount = 1, quality = "100" },
+    { code = "Sock_01", name = "Socks", amount = 2, quality = "50" },
+  })
+end)
+
+t.test("inventory: the item in hands is added when it is not in the Children tree; different durability = own row", function()
+  local W = world()
+  local pc = W.add_pc(ID1, "Alice")
+  local prisoner = pc:GetPrisoner()
+  prisoner.Children = { citem("Weapon_M9_C", "TEC01 M9", { n = 1, hp = 80 }) }
+  local inHands = citem("Weapon_M9_C", "TEC01 M9", { n = 2, hp = 100 })
+  prisoner.GetItemInHands = function() return inHands end
+  t.deep(W.g:get_player_inventory({ gameId = ID1 }).value, {
+    { code = "Weapon_M9", name = "TEC01 M9", amount = 1, quality = "80" },
+    { code = "Weapon_M9", name = "TEC01 M9", amount = 1, quality = "100" } })
+  prisoner.Children = { inHands }
+  t.deep(W.g:get_player_inventory({ gameId = ID1 }).value, {
+    { code = "Weapon_M9", name = "TEC01 M9", amount = 1, quality = "100" } }, "not counted twice")
+end)
+
+t.test("inventory: a class whose case differs from its asset name reports the catalogue code (Takaro matches exactly)", function()
+  local W = world()
+  local pc = W.add_pc(ID1, "Alice")
+  pc:GetPrisoner().Children = { citem("Weapon_Deagle_357_C", "DEagle 357"), citem("Apple_C", "Apple") }
+  t.eq(W.g:get_player_inventory({ gameId = ID1 }).value[1].code, "Weapon_Deagle_357", "no catalogue yet: class name")
+  W.g.catalogs.items = { entries = { { code = "Apple", name = "Apple" }, { code = "Weapon_DEagle_357", name = "DEagle 357" } } }
+  local inv = W.g:get_player_inventory({ gameId = ID1 }).value
+  t.eq(inv[1].code, "Weapon_DEagle_357")
+  t.eq(inv[2].code, "Apple")
+end)
+
+t.test("inventory guard: an empty walk while the world scan finds owned items is an error, never []; no character = error", function()
   local W = world()
   local pc = W.add_pc(ID1, "Alice")
   local prisoner = pc:GetPrisoner()
   prisoner.GetFullName = function() return "BP_Prisoner_C_1" end
-  local other = obj({ GetFullName = function() return "BP_Prisoner_C_2" end, GetOwner = function() return nil end })
-  local function item(cls, name, owner)
-    return obj({ GetOwner = function() return owner end, GetFullName = function() return cls .. "_x" end,
-      GetClass = function() return { GetFName = function() return cls end } end,
-      GetInteractableName = function() return name end })
+  prisoner.Children = {}
+  W.items = { citem("Inmate_shirt_01_C", "Shirt", { owner = prisoner }) }
+  W.env.FindAllOf = function(n)
+    if n == "ConZPlayerController" then return W.pcs end
+    if n == "Item" then return W.items end
   end
-  local shirt = item("Inmate_shirt_01_C", "Shirt", prisoner)
-  W.items = { shirt, item("Credit_Card_Starter_C", "Starter Bank Card", shirt), item("Cal_9mm_C", "9mm Ammo", shirt),
-    item("Cal_9mm_C", "9mm Ammo", shirt), item("Weapon_M9_C", "TEC01 M9", other), item("Apple_C", "Apple", nil) }
+  local r = W.g:get_player_inventory({ gameId = ID1 })
+  t.eq(r.ok, false)
+  t.ok(r.reason:find("1 items are owned"), r.reason)
+  W.items = {}
+  t.deep(W.g:get_player_inventory({ gameId = ID1 }), { ok = true, value = {} }, "really naked: []")
+  pc.GetPrisoner = function() return nil end
+  r = W.g:get_player_inventory({ gameId = ID1 })
+  t.eq(r.ok, false, "no character: unknown state")
+end)
+
+t.test("inventory fallback (Children unreadable): items whose Owner chain reaches the prisoner, corpse items excluded", function()
+  local W = world()
+  local pc = W.add_pc(ID1, "Alice")
+  local prisoner = pc:GetPrisoner()
+  prisoner.GetFullName = function() return "BP_Prisoner_C_1" end
+  local corpse = obj({ GetFullName = function() return "BP_PrisonerCorpse_C_2" end, GetOwner = function() return nil end })
+  local shirt = citem("Inmate_shirt_01_C", "Shirt", { owner = prisoner, full = "shirt" })
+  W.items = { shirt, citem("Credit_Card_Starter_C", "Starter Bank Card", { owner = shirt }),
+    citem("Cal_9mm_C", "9mm Ammo", { owner = shirt, comps = stack(7) }), citem("Weapon_M9_C", "TEC01 M9", { owner = corpse }),
+    citem("Apple_C", "Apple", {}) }
   W.env.FindAllOf = function(n)
     if n == "ConZPlayerController" then return W.pcs end
     if n == "Item" then return W.items end
   end
   local inv = W.g:get_player_inventory({ gameId = ID1 }).value
-  t.deep(inv, { { code = "Inmate_shirt_01", name = "Shirt", amount = 1 },
-    { code = "Credit_Card_Starter", name = "Starter Bank Card", amount = 1 }, { code = "Cal_9mm", name = "9mm Ammo", amount = 2 } })
+  t.deep(inv, { { code = "Inmate_shirt_01", name = "Shirt", amount = 1, quality = "100" },
+    { code = "Credit_Card_Starter", name = "Starter Bank Card", amount = 1, quality = "100" },
+    { code = "Cal_9mm", name = "9mm Ammo", amount = 7, quality = "100" } })
 end)
 
 t.test("death without a kill-log line: IsAlive poll -> player-death with last position after the hold time", function()
