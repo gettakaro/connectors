@@ -1,6 +1,6 @@
 // Native connector configuration: environment first, then takaro\plugin.json next to the server exe
 // (the rented-server path). Token values never leave this struct: health and logs name the source only.
-// The connection settings (url, tokens, name) are resolved by ConfigWatcher (config_file.h) and can
+// The connection settings (url, tokens, name, protocol) are resolved by ConfigWatcher (config_file.h) and can
 // change while the server runs; everything else is read once at startup.
 #pragma once
 #include "native/config_file.h"

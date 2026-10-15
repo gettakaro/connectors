@@ -86,7 +86,9 @@ void FreshInstall() {
     CHECK_EQ(f.String("identityToken"), std::string(kId1));
     CHECK_EQ(f.String("name"), std::string("Limon World (3f2a9c1e)"));
     CHECK_EQ(f.String("url"), std::string(kDefaultUrl));
-    CHECK(f.obj.get("registrationToken") && f.obj.get("token"));  // every key, ready to fill in
+    CHECK(f.obj.get("registrationToken") && f.obj.get("token") && f.obj.get("mapDir") && f.obj.get("caFile"));
+    CHECK(f.obj.get("protocol") && JsonDump(*f.obj.get("protocol")) == "1");  // every key, ready to fill in
+    CHECK(r.s.protocolV1);
 
     // The token is pasted and saved while the server runs.
     in.SetKey("registrationToken", "reg-AAAA");
@@ -105,6 +107,17 @@ void FreshInstall() {
     in.SetKey("registrationToken", "reg-AAAA");
     CHECK(in.Settle());
     CHECK_EQ(in.w->Active().s.registrationToken, std::string("reg-AAAA"));
+
+    // A saved protocol alone is a change (the caller reconnects with it); the created file holds a number.
+    std::string text = Read(in.path);
+    CHECK(text.find("\"protocol\": 1") != std::string::npos);
+    Write(in.path, text.replace(text.find("\"protocol\": 1"), 13, "\"protocol\": 0"));
+    CHECK(in.Settle());
+    CHECK(!in.w->Active().s.protocolV1);
+    CHECK_EQ(SourceName(in.w->Active().protocol), std::string("plugin.json"));
+    in.SetKey("protocol", "1");
+    CHECK(in.Settle());
+    CHECK(in.w->Active().s.protocolV1);
 
     // Emptying the token disconnects.
     in.SetKey("registrationToken", "");

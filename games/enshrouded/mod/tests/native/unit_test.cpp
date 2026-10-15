@@ -378,6 +378,9 @@ void ProtocolV1Tests() {
     CHECK(LoadNativeConfig("Z:\\srv", Env({}), "").protocolV1);
     CHECK(!LoadNativeConfig("Z:\\srv", Env({{"TAKARO_PROTOCOL", "0"}}), "").protocolV1);
     CHECK(!LoadNativeConfig("Z:\\srv", Env({}), R"({"protocol":"0"})").protocolV1);
+    CHECK(!LoadNativeConfig("Z:\\srv", Env({}), R"({"protocol":0})").protocolV1);  // a number, as in the created file
+    NativeConfig one = LoadNativeConfig("Z:\\srv", Env({}), R"({"protocol":1})");
+    CHECK(one.protocolV1 && one.warnings.empty());
     NativeConfig c = LoadNativeConfig("Z:\\srv", Env({{"TAKARO_PROTOCOL", "2"}}), "");
     CHECK(c.protocolV1 && !c.warnings.empty());
 }

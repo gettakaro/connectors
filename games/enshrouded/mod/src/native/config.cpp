@@ -59,8 +59,11 @@ NativeConfig LoadNativeConfig(const std::string& baseDir, const EnvFn& env, cons
     std::string md = pick("mapDir", {"TAKARO_MAP_DIR"}, "mapDir", "");
     c.mapDir = md.empty() ? JoinPath(JoinPath(baseDir, "takaro"), "map") : ResolvePath(baseDir, md);
 
-    std::string proto = pick("protocol", {"TAKARO_PROTOCOL"}, "protocol", "1");
-    if (proto != "0" && proto != "1") c.warnings.push_back("protocol must be 0 or 1, got '" + proto + "'; using 1");
+    Source protoSource;
+    std::string proto = ProtocolText(ParseSettingsFile(!pluginJson.empty(), pluginJson), env, protoSource);
+    c.sources.push_back({"protocol", SourceName(protoSource)});
+    if (!proto.empty() && proto != "0" && proto != "1")
+        c.warnings.push_back("protocol must be 0 or 1, got '" + proto + "'; using 1");
     c.protocolV1 = proto != "0";
 
     c.reconnectBaseMs = ParseUnsigned(Trim(env("TAKARO_RECONNECT_BASE_MS")), 2000, 500, 600000, "TAKARO_RECONNECT_BASE_MS", c.warnings);
@@ -91,10 +94,12 @@ void ApplyLive(NativeConfig& c, const LiveResolution& r) {
     c.identityToken = r.s.identityToken;
     c.registrationToken = r.s.registrationToken;
     c.serverName = r.s.serverName;
+    c.protocolV1 = r.s.protocolV1;
     std::vector<std::pair<std::string, std::string>> live = {{"url", SourceName(r.url)},
                                                              {"identityToken", SourceName(r.identity)},
                                                              {"registrationToken", SourceName(r.registration)},
-                                                             {"name", SourceName(r.name)}};
+                                                             {"name", SourceName(r.name)},
+                                                             {"protocol", SourceName(r.protocol)}};
     for (auto& kv : live) {
         bool replaced = false;
         for (auto& s : c.sources)
