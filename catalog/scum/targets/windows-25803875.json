@@ -80,9 +80,9 @@
         "sha256": "1c93dbe4516d5062c4d7c28558dc941daab202eae70a73382be0383c7d3746bd"
       },
       "ue4ss": {
-        "coordinate": "UE4SS-RE:RE-UE4SS:v3.0.1-1171-g91d90727",
-        "sha256": "000d8a1de5e9488554c623e7cec3b114e7d3a42d30f0dba5619d6342e1dd3f38",
-        "resolvedCoordinate": "https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental-latest/UE4SS_v3.0.1-1171-g91d90727.zip"
+        "coordinate": "UE4SS-RE:RE-UE4SS:v3.0.1-1176-g1ba38db4",
+        "sha256": "e615ee7a2c24344ea5aeef85183d6cfd550f4f6352225976679f9fefffd0b9a5",
+        "resolvedCoordinate": "https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental-latest/UE4SS_v3.0.1-1176-g1ba38db4.zip"
       }
     }
   },

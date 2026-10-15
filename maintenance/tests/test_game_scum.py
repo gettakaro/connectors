@@ -71,7 +71,7 @@ def test_the_build_pins_compiler_inputs_and_ue4ss_by_hash() -> None:
 
     assert set(deps) == {"xwin", "msvc-sysroot", "ue4ss"}
     assert all(len(dep["sha256"]) == 64 for dep in deps.values())
-    assert deps["ue4ss"]["coordinate"] == "UE4SS-RE:RE-UE4SS:v3.0.1-1171-g91d90727"
+    assert deps["ue4ss"]["coordinate"] == "UE4SS-RE:RE-UE4SS:v3.0.1-1176-g1ba38db4"
 
 
 def test_the_target_claims_contract_and_keeps_operator_state() -> None:
@@ -93,7 +93,7 @@ def test_resolve_names_the_artifact_and_build_inputs(run: Any) -> None:
     env = adapter_for(GAME).env(payload, "SCUM")
     assert env["SCUM_STEAM_BUILDID"] == "25803875"
     assert env["SCUM_ARTIFACT_MOD"] == f"takaro-scum-{TARGET}-{{version}}.zip"
-    assert env["SCUM_DEP_UE4SS_URL"].endswith("/UE4SS_v3.0.1-1171-g91d90727.zip")
+    assert env["SCUM_DEP_UE4SS_URL"].endswith("/UE4SS_v3.0.1-1176-g1ba38db4.zip")
     assert env["SCUM_DEP_MSVC_SYSROOT_COORDINATE"] == "microsoft:msvc-crt-14.44.17.14+winsdk:10.0.26100"
 
 

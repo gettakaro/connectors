@@ -33,7 +33,7 @@
   "game": "SCUM",
   "map": {"axes":{"horizontal":{"direction":"left","field":"x"},"vertical":{"direction":"up","field":"y"}},"bounds":{"horizontal":{"max":619200,"min":-904800},"vertical":{"max":619200,"min":-904800}},"id":"the_island","name":"The Island","source":{"type":"none"}},
   "protocolVersions": [0,1],
-  "runtime": "SCUMServer.exe (Steam app 3792580) with UE4SS v3.0.1-1171-g91d90727",
+  "runtime": "SCUMServer.exe (Steam app 3792580) with UE4SS v3.0.1-1176-g1ba38db4",
   "statusDefinitions": {
     "live-supported": "proven end to end through Takaro on a real server",
     "schema-fallback": "answers a valid empty or placeholder DTO; the game data is not wired yet or not available",

@@ -9,7 +9,7 @@ local doc = json.object({
   connector = "Takaro SCUM native connector (UE4SS mod TakaroSCUM)",
   architecture = "in-process UE4SS mod inside SCUMServer.exe: Lua protocol + game adapter (Scripts/), C++ WinHTTP "
     .. "WebSocket transport (dlls/main.dll); outbound WSS only, no sidecar, no inbound port",
-  runtime = "SCUMServer.exe (Steam app 3792580) with UE4SS v3.0.1-1171-g91d90727",
+  runtime = "SCUMServer.exe (Steam app 3792580) with UE4SS v3.0.1-1176-g1ba38db4",
   takaroConnection = "outbound_websocket",
   protocolVersions = { 0, 1 },
   map = map.dimension(),
