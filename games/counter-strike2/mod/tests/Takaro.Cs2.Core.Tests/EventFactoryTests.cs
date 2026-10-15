@@ -27,6 +27,7 @@ public sealed class EventFactoryTests
         Assert.AreEqual("team", data.GetProperty("channel").GetString());
         Assert.IsTrue(data.TryGetProperty("timestamp", out _));
         Assert.AreEqual("Sender", data.GetProperty("player").GetProperty("name").GetString());
+        Assert.IsFalse(data.GetProperty("player").TryGetProperty("online", out _));
     }
 
     [TestMethod]

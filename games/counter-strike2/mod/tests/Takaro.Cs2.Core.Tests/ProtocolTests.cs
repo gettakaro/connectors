@@ -85,13 +85,24 @@ public sealed class ProtocolTests
     }
 
     [TestMethod]
-    public void CreateResponseKeepsStructuredFailureForFailedActionResult()
+    public void CreateResponseKeepsExplicitErrorForFailedActionResult()
     {
         var response = JsonDocument.Parse(TakaroProtocol.CreateResponse("req-4", TakaroActionResult.Fail("blocked_command", "nope"))).RootElement;
 
         var payload = response.GetProperty("payload");
-        Assert.IsFalse(payload.GetProperty("success").GetBoolean());
-        Assert.AreEqual("blocked_command", payload.GetProperty("errorCode").GetString());
-        Assert.AreEqual("nope", payload.GetProperty("message").GetString());
+        Assert.AreEqual("blocked_command: nope", payload.GetProperty("error").GetString());
+    }
+
+    [TestMethod]
+    public void FailedActionsRetainTakaroValidatedResponseShapes()
+    {
+        var result = TakaroActionResult.Fail("offline", "Player is not spawned.");
+        var location = JsonDocument.Parse(TakaroProtocol.CreateActionResponse("req-loc", "getPlayerLocation", result)).RootElement.GetProperty("payload");
+        Assert.AreEqual(0d, location.GetProperty("x").GetDouble());
+        Assert.AreEqual("offline: Player is not spawned.", location.GetProperty("error").GetString());
+
+        var reachability = JsonDocument.Parse(TakaroProtocol.CreateActionResponse("req-reach", "testReachability", result)).RootElement.GetProperty("payload");
+        Assert.IsFalse(reachability.GetProperty("connectable").GetBoolean());
+        Assert.AreEqual("offline: Player is not spawned.", reachability.GetProperty("reason").GetString());
     }
 }

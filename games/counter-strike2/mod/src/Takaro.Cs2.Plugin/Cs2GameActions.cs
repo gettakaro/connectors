@@ -17,7 +17,8 @@ public sealed partial class Cs2ServerAdapter
     public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default) =>
         RunOnServerAsync(() =>
         {
-            var point = FindController(identifier)?.PlayerPawn.Value?.AbsOrigin;
+            var target = FindController(identifier);
+            var point = target is { PawnIsAlive: true } ? target.PlayerPawn.Value?.AbsOrigin : null;
             return point is null
                 ? TakaroActionResult.Fail("position_unavailable", "Player is offline or has no spawned pawn.")
                 : TakaroActionResult.Ok(new { x = point.X, y = point.Y, z = point.Z });
@@ -48,27 +49,48 @@ public sealed partial class Cs2ServerAdapter
             if (amount != 1)
                 return TakaroActionResult.Fail("invalid_amount", "CS2 weapons are individual equipped items; this action delivers one.");
             var target = FindController(identifier);
-            if (target?.PlayerPawn.Value?.WeaponServices is null)
+            if (target is not { PawnIsAlive: true } || target.PlayerPawn.Value?.WeaponServices is not { } services)
                 return TakaroActionResult.Fail("player_not_ready", "Player is offline or has no spawned pawn.");
             var count = CountItem(target, code);
+            var slot = Cs2ItemCatalog.FirearmSlot(code);
+            string? replacedCode = null;
+            if (slot is not null)
+            {
+                var occupied = services.MyWeapons.Select(handle => handle.Value)
+                    .FirstOrDefault(weapon => weapon is { IsValid: true } && Cs2ItemCatalog.FirearmSlot(weapon.DesignerName) == slot);
+                if (occupied is not null)
+                {
+                    if (occupied.DesignerName == code)
+                        return TakaroActionResult.Fail("slot_occupied", "Player already has this weapon in its CS2 equipment slot.");
+                    replacedCode = occupied.DesignerName;
+                    target.PlayerPawn.Value.RemovePlayerItem(occupied);
+                    occupied.Remove();
+                }
+            }
             if (target.GiveNamedItem(code) == IntPtr.Zero)
+            {
+                if (replacedCode is not null) target.GiveNamedItem(replacedCode);
                 return TakaroActionResult.Fail("delivery_failed", "CS2 refused to create the requested item.");
-            return TakaroActionResult.Ok(count);
+            }
+            return TakaroActionResult.Ok(new DeliveryBefore(count, replacedCode));
         }, cancellationToken);
         if (!before.Success) return before;
         return await RunOnServerAsync(() =>
         {
             var target = FindController(identifier);
-            return target is not null && CountItem(target, code) > (int)before.Payload!
-                ? TakaroActionResult.Ok()
-                : TakaroActionResult.Fail("delivery_failed", "CS2 did not add the requested item to equipped inventory.");
+            var previous = (DeliveryBefore)before.Payload!;
+            if (target is not null && CountItem(target, code) > previous.Count)
+                return TakaroActionResult.Ok();
+            if (target is not null && previous.ReplacedCode is not null) target.GiveNamedItem(previous.ReplacedCode);
+            return TakaroActionResult.Fail("delivery_failed", "CS2 did not add the requested item to equipped inventory.");
         }, cancellationToken);
     }
 
     public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default) =>
         RunOnServerAsync(() =>
         {
-            var pawn = FindController(identifier)?.PlayerPawn.Value;
+            var target = FindController(identifier);
+            var pawn = target is { PawnIsAlive: true } ? target.PlayerPawn.Value : null;
             if (pawn?.AbsOrigin is null)
                 return TakaroActionResult.Fail("position_unavailable", "Player is offline or has no spawned pawn.");
             pawn.Teleport(new Vector((float)position.X, (float)position.Y, (float)position.Z));
@@ -140,6 +162,8 @@ public sealed partial class Cs2ServerAdapter
         player.PlayerPawn.Value?.WeaponServices?.MyWeapons.Count(handle =>
             handle.Value is { IsValid: true } weapon && weapon.DesignerName == code) ?? 0;
 
+    private sealed record DeliveryBefore(int Count, string? ReplacedCode);
+
     private static string? SteamId(string identifier)
     {
         var value = identifier.StartsWith("steam:", StringComparison.OrdinalIgnoreCase) ? identifier[6..] : identifier;
@@ -160,4 +184,10 @@ internal static class Cs2ItemCatalog
 
     public static bool Contains(string code) => All.Any(item => item.code == code);
     public static string Name(string code) => All.FirstOrDefault(item => item.code == code).name ?? code;
+    public static string? FirearmSlot(string code) => code switch
+    {
+        "weapon_ak47" or "weapon_m4a1" or "weapon_awp" => "primary",
+        "weapon_deagle" or "weapon_glock" or "weapon_usp_silencer" or "weapon_hkp2000" or "weapon_p250" => "secondary",
+        _ => null
+    };
 }
