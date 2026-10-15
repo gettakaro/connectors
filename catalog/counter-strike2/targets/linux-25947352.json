@@ -84,7 +84,7 @@
     {"role": "plugin", "artifact": "takaro-counter-strike2-linux-25947352-{version}.zip", "installDir": "game/csgo/addons/counterstrikesharp/plugins"}
   ],
   "verification": {
-    "required": "contract",
+    "required": "gameplay",
     "separate": []
   },
   "preserve": [
@@ -93,5 +93,5 @@
     "game/csgo/addons/counterstrikesharp/data/TakaroCs2/players.json",
     "game/csgo/cfg/"
   ],
-  "notes": "The runtime container field records the pinned .NET 10 build environment; the live CS2 server runs directly on Linux from SteamCMD and requires separate proof."
+  "notes": "The runtime container field records the pinned .NET 10 build environment. Gameplay verification deliberately blocks release assembly until real-client proof passes and the target is explicitly approved for publication."
 }
