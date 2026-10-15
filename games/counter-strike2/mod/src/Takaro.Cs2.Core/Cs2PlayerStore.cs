@@ -24,10 +24,7 @@ public sealed class Cs2PlayerStore
             var known = PlayerMapper.Find(players.Values, identifier);
             if (known is not null) return known with { Online = false };
         }
-        var id = identifier.StartsWith("steam:", StringComparison.OrdinalIgnoreCase) ? identifier[6..] : identifier;
-        return ulong.TryParse(id, out var number) && number >= 76561197960265728UL
-            ? new TakaroPlayer(id, id, id, $"steam:{id}", null, null, false)
-            : null;
+        return null;
     }
 
     public void Remember(TakaroPlayer player)

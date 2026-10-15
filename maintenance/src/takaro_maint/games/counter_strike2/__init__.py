@@ -43,9 +43,19 @@ class CounterStrike2Adapter(BaseAdapter):
         if source_revision:
             env["TAKARO_SOURCE_REVISION"] = source_revision
         proc = subprocess.run(
-            ["bash", str(repo_root / "games/counter-strike2/scripts/build-release.sh"),
-             version, str(artifact.parent), "--target", str(resolved["id"])],
-            cwd=repo_root, env=env, text=True, capture_output=True, check=False,
+            [
+                "bash",
+                str(repo_root / "games/counter-strike2/scripts/build-release.sh"),
+                version,
+                str(artifact.parent),
+                "--target",
+                str(resolved["id"]),
+            ],
+            cwd=repo_root,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
         )
         log = proc.stdout + proc.stderr
         if proc.returncode:

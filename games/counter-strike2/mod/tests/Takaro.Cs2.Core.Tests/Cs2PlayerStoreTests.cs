@@ -18,7 +18,7 @@ public sealed class Cs2PlayerStoreTests
             Assert.AreEqual("Limon", restored?.Name);
             Assert.AreEqual(false, restored?.Online);
             Assert.IsNull(restored?.Ip);
-            Assert.AreEqual("76561198000000002", new Cs2PlayerStore(path).Find("76561198000000002")?.GameId);
+            Assert.IsNull(new Cs2PlayerStore(path).Find("76561198000000002"));
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
