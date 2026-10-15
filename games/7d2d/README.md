@@ -1,6 +1,6 @@
 # Takaro 7D2D Connector
 
-A server-side-only mod (version **0.1.4**) that connects a 7 Days to Die dedicated server to
+A server-side-only mod that connects a 7 Days to Die dedicated server to
 Takaro. Players do not install anything.
 
 It is built once per exact server build, and each zip names the build it is for:
@@ -92,10 +92,20 @@ yourself before the first start with this content:
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Takaro connection settings.
+
+  Paste the registration token Takaro shows when you add a Generic game server
+  into RegistrationToken and save. The mod picks the change up within a few
+  seconds, no restart needed.
+
+  IdentityToken identifies this server in Takaro; the mod fills it in when it
+  is empty. Keep it if you move or reinstall the server.
+-->
 <Takaro>
   <WebSocket>
     <Url>wss://connect.takaro.io/</Url>
-    <RegistrationToken>your-registration-token-here</RegistrationToken>
+    <RegistrationToken></RegistrationToken>
     <IdentityToken></IdentityToken>
     <Enabled>true</Enabled>
     <ReconnectIntervalSeconds>30</ReconnectIntervalSeconds>
@@ -114,7 +124,7 @@ token. No restart needed. Emptying the token disconnects the server.
 In the server console / server log:
 
 ```
-[MODS] Loaded Mod: Takaro (0.1.4)
+[MODS] Loaded Mod: Takaro (<version>)
 ```
 
 In the mod's own log at `<server>/Takaro/logs/<M-D-YYYY>.log` (for example
