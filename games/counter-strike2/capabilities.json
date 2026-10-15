@@ -3,7 +3,7 @@
   "architecture": "native CounterStrikeSharp plugin with outbound Takaro WebSocket",
   "target": "linux-25947352",
   "version": "0.1.0",
-  "verification": "2026-10-15 real-client proof in progress; final archive and integration gates pending",
+  "verification": "2026-10-15 real-client core-action and final-archive proof complete; lifecycle and remaining event/integration gates pending",
   "actions": {
     "testReachability": {
       "status": "supported",

@@ -4,9 +4,9 @@ This is a server-side CounterStrikeSharp plugin. Players do not install anything
 
 ## Release status
 
-**0.1.0 candidate, not approved for publication.** A real CS2 client and production Takaro confirmed the core actions on 2026-10-15. Integration, resilience, event completeness, and final archive checks remain open. CounterStrikeSharp `Server.ExecuteCommand` returns no command output, so `executeConsoleCommand` supports read-only allowlisted ConVar queries through the server API and refuses other commands instead of inventing `rawResult`. Shop quantities above one are refused because CS2 weapons are individual equipped items. See the private proof page linked from the CS2 control panel entry for current check status.
+**0.1.0 candidate, not approved for publication.** A real CS2 client and production Takaro confirmed the core actions, server restart, scoped network recovery, module commands, and both Discord chat directions on 2026-10-15. The committed archive was installed and checked against the live binaries. Disconnect event storage, nonplayer kill and log events, event deduplication, and shop inventory history remain open. CounterStrikeSharp `Server.ExecuteCommand` returns no command output, so `executeConsoleCommand` supports read-only allowlisted ConVar queries through the server API and refuses other commands instead of inventing `rawResult`. Shop quantities above one are refused because CS2 weapons are individual equipped items. See the private proof page linked from the CS2 control panel entry for current check status.
 
-The catalog requires gameplay verification. The release assembler refuses that level until current real-client evidence is reviewed and the target is explicitly approved for publication.
+The catalog requires gameplay verification. The release assembler refuses that level until the remaining real-client checks pass, the evidence is reviewed, and the target is explicitly approved for publication.
 
 ## Install
 
