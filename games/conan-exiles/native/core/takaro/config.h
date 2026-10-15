@@ -1,6 +1,6 @@
 // Native connector configuration: per field the environment, then the one config file
 // ConanSandbox/Saved/Config/Takaro/takaro.json (TAKARO_CONAN_CONFIG moves it), then the default.
-// URL, registration token, identity and name apply without a restart (core/takaro/config_watch.h);
+// URL, registration token, identity, name and protocol apply without a restart (core/takaro/config_watch.h);
 // everything else is read at startup.
 //
 // Holding vs inert: a missing token, an unreadable or unparseable file or a non-wss URL leaves the

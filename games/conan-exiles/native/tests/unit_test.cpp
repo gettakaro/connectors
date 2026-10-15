@@ -259,6 +259,13 @@ static void TestConfigWatcher() {
     CHECK(f.find("feedc0de-1111") != std::string::npos && f.find("reg-AAAA-1111") != std::string::npos,
           "running identity written back: %s", f.c_str());
     CHECK(stat(file.c_str(), &st) == 0 && (st.st_mode & 0777) == 0640, "mode kept on rewrite: %o", st.st_mode & 0777);
+    // A changed protocol alone reconnects with it.
+    CHECK(ReplaceUserFile(file,
+                          "{\"registrationToken\": \"reg-AAAA-1111\", \"identityToken\": "
+                          "\"feedc0de-1111-4111-8111-111111111111\", \"protocol\": 0}",
+                          0600, err),
+          "w");
+    CHECK(!w.Poll(550, next) && w.Poll(555, next) && next.enabled && next.protocol == 0, "protocol change reconnects");
     // Token emptied: disconnects (hold).
     CHECK(ReplaceUserFile(file, *SetJsonString(f, "registrationToken", ""), 0600, err), "w");
     CHECK(!w.Poll(600, next) && w.Poll(605, next) && next.hold == Hold::NoToken, "emptied token holds");

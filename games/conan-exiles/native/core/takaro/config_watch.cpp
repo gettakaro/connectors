@@ -187,7 +187,8 @@ bool ConfigWatcher::Poll(int64_t nowMs, Config& out) {
     next.inert = active_.inert;
     for (auto& w : next.warnings) NativeLog("config warning: %s", w.c_str());
     const bool changed =
-        next.Connection() != active_.Connection() || next.enabled != active_.enabled || next.hold != active_.hold;
+        next.Connection() != active_.Connection() || next.protocol != active_.protocol ||
+        next.enabled != active_.enabled || next.hold != active_.hold;
     active_ = next;
     if (!changed) return false;
     reloads_++;
