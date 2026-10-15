@@ -109,7 +109,6 @@
     "games/scum": {
       "release-type": "simple",
       "component": "scum",
-      "release-as": "0.1.0",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         { "type": "generic", "path": "native/src/version.h" },
