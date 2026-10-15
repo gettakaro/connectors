@@ -30,7 +30,7 @@ import { logger } from './logger.js';
 import { MAP_DIMENSIONS } from './dune/mapDimensions.js';
 import { buildManifest } from './takaro/capabilities.js';
 import { TakaroWsClient } from './takaro/client.js';
-import { resolveConfigFile, TakaroSettingsSource } from './takaro/settings.js';
+import { parseTakaroProtocol, resolveConfigFile, TakaroSettingsSource } from './takaro/settings.js';
 import type { WsMessage } from './takaro/protocol.js';
 
 /** amqplib is loaded lazily so the unit tests (which inject a fake connector) never need the native-ish dependency. */
@@ -68,6 +68,7 @@ async function main(): Promise<void> {
     log: logger,
   });
   const initial = settings.current();
+  config.takaroProtocol = parseTakaroProtocol(settings.startupValue('TAKARO_PROTOCOL'));
   const configHint = (): { file: string; hasFile: boolean } => ({
     file: process.env.TAKARO_CONFIG_DISPLAY_PATH?.trim() || settings.configFile,
     hasFile: settings.hasConfigFile(),
