@@ -51,6 +51,21 @@ public static class TakaroProtocol
         }, JsonOptions);
     }
 
+    public static string CreateActionResponse(string requestId, string action, TakaroActionResult result)
+    {
+        if (result.Success) return CreateResponse(requestId, result.Payload);
+
+        var error = $"{result.Error?.Code ?? "action_failed"}: {result.Error?.Message ?? "CS2 action failed."}";
+        return action switch
+        {
+            "testReachability" => CreateResponse(requestId, new { connectable = false, reason = error, error }),
+            "getPlayer" => CreateResponse(requestId, new { gameId = string.Empty, name = string.Empty, error }),
+            "getPlayerLocation" => CreateResponse(requestId, new { x = 0d, y = 0d, z = 0d, error }),
+            "executeConsoleCommand" => CreateResponse(requestId, new { success = false, rawResult = string.Empty, errorMessage = error, error }),
+            _ => CreateResponse(requestId, new { error })
+        };
+    }
+
     public static string CreateGameEvent(string eventType, object data)
     {
         return JsonSerializer.Serialize(new
@@ -113,12 +128,6 @@ public static class TakaroProtocol
             return actionResult.Payload;
         }
 
-        return new
-        {
-            success = false,
-            errorCode = actionResult.Error?.Code,
-            message = actionResult.Error?.Message,
-            payload = actionResult.Payload
-        };
+        return new { error = $"{actionResult.Error?.Code ?? "action_failed"}: {actionResult.Error?.Message ?? "CS2 action failed."}" };
     }
 }

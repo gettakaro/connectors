@@ -3,49 +3,49 @@
   "architecture": "native CounterStrikeSharp plugin with outbound Takaro WebSocket",
   "target": "linux-25947352",
   "version": "0.1.0",
-  "verification": "candidate; no current real-client acceptance run",
+  "verification": "2026-10-15 real-client proof in progress; final archive and integration gates pending",
   "actions": {
     "testReachability": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "Server.MapName and Server.MaxPlayers",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
+      "liveVerified": true
     },
     "getPlayers": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "Utilities.GetPlayers and AuthorizedSteamID",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
+      "liveVerified": true
     },
     "getPlayer": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "authenticated online roster",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
+      "liveVerified": true
     },
     "getPlayerLocation": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "CCSPlayerPawn.AbsOrigin",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
+      "liveVerified": true
     },
     "getPlayerInventory": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "CCSPlayerPawn.WeaponServices.MyWeapons",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
+      "liveVerified": true
     },
     "giveItem": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "CCSPlayerController.GiveNamedItem with inventory readback",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
+      "liveVerified": true
     },
     "listItems": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "curated CounterStrikeSharp CsItem codes",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
+      "liveVerified": true
     },
     "listEntities": {
       "status": "unsupported",
@@ -72,40 +72,40 @@
       "liveVerified": false
     },
     "executeConsoleCommand": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "CounterStrikeSharp ConVar.Find and StringValue",
-      "reason": "Read-only ConVar queries are implemented but have no current real-client proof. General command execution has no output capture and is refused.",
-      "liveVerified": false
+      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
+      "liveVerified": true
     },
     "sendMessage": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "CCSPlayerController.PrintToChat",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
+      "liveVerified": true
     },
     "teleportPlayer": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "CCSPlayerPawn.Teleport with position readback",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
+      "liveVerified": true
     },
     "kickPlayer": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "CCSPlayerController.Disconnect",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
+      "liveVerified": true
     },
     "banPlayer": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "durable SteamID64 ban store and join enforcement",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
+      "liveVerified": true
     },
     "unbanPlayer": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "durable SteamID64 ban store",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
+      "liveVerified": true
     },
     "listBans": {
       "status": "unsupported",
@@ -128,10 +128,10 @@
       "liveVerified": false
     },
     "player-connected": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "OnClientAuthorized and EventPlayerConnectFull",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Verified as a current-run Takaro event row from the real CS2 client on 2026-10-15.",
+      "liveVerified": true
     },
     "player-disconnected": {
       "status": "unsupported",
@@ -140,16 +140,16 @@
       "liveVerified": false
     },
     "chat-message": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "say and say_team post listeners",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Verified as a current-run Takaro event row from the real CS2 client on 2026-10-15.",
+      "liveVerified": true
     },
     "player-death": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "EventPlayerDeath",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Verified as a current-run Takaro event row from the real CS2 client on 2026-10-15.",
+      "liveVerified": true
     },
     "entity-killed": {
       "status": "unsupported",

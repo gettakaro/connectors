@@ -105,6 +105,7 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
                 return;
             }
             if (knownPlayers.ContainsKey(player.GameId)) return;
+            Console.WriteLine($"[Takaro CS2] Authenticated player remembered: {player.GameId}.");
             knownPlayers[player.GameId] = player;
             if (controller is not null) knownBySlot[controller.Slot] = player;
             playerStore?.Remember(player);
@@ -171,6 +172,7 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
     {
         var player = MapPlayer(controller);
         var message = commandInfo.ArgString.Trim().Trim('"');
+        Console.WriteLine($"[Takaro CS2] Chat hook: authenticated={player is not null}, teamOnly={teamOnly}.");
         if (player is not null && !string.IsNullOrWhiteSpace(message))
         {
             _ = EmitAsync("chat-message", EventFactory.ChatMessage(player, message, teamOnly));
@@ -190,6 +192,9 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
         return PlayerMapper.ToTakaroPlayer(player);
     }
 
-    private Task EmitAsync(string eventType, object data) =>
-        runner?.SendGameEventAsync(eventType, data) ?? Task.CompletedTask;
+    private Task EmitAsync(string eventType, object data)
+    {
+        Console.WriteLine($"[Takaro CS2] Event queued: {eventType}.");
+        return runner?.SendGameEventAsync(eventType, data) ?? Task.CompletedTask;
+    }
 }

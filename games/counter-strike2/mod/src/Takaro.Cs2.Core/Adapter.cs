@@ -59,7 +59,7 @@ public sealed class TakaroRequestDispatcher
                 "getPlayer" => TakaroActionResult.Ok(await adapter.GetPlayerAsync(RequiredIdentifier(request.Args), cancellationToken)),
                 "getPlayerLocation" => await adapter.GetPlayerLocationAsync(RequiredIdentifier(request.Args), cancellationToken),
                 "getPlayerInventory" => await adapter.GetPlayerInventoryAsync(RequiredIdentifier(request.Args), cancellationToken),
-                "giveItem" => await adapter.GiveItemAsync(RequiredIdentifier(request.Args), RequiredString(request.Args, "code"), OptionalPositiveInt(request.Args, "amount") ?? OptionalPositiveInt(request.Args, "quantity") ?? 1, cancellationToken),
+                "giveItem" => await adapter.GiveItemAsync(RequiredIdentifier(request.Args), RequiredItemCode(request.Args), OptionalPositiveInt(request.Args, "amount") ?? OptionalPositiveInt(request.Args, "quantity") ?? 1, cancellationToken),
                 "listItems" => await adapter.ListItemsAsync(cancellationToken),
                 "sendMessage" => await adapter.SendMessageAsync(RequiredString(request.Args, "message"), OptionalRecipient(request.Args), OptionalSender(request.Args), cancellationToken),
                 "executeConsoleCommand" => await adapter.ExecuteConsoleCommandAsync(RequiredString(request.Args, "command"), cancellationToken),
@@ -97,10 +97,17 @@ public sealed class TakaroRequestDispatcher
     private static string? OptionalSender(JsonElement args) =>
         TryObject(args, "opts", out var opts) ? OptionalString(opts, "senderNameOverride") : null;
 
+    private static string RequiredItemCode(JsonElement args) =>
+        OptionalString(args, "code")
+        ?? OptionalString(args, "name")
+        ?? OptionalString(args, "itemId")
+        ?? OptionalString(args, "item")
+        ?? (TryObject(args, "item", out var item) ? OptionalString(item, "code") ?? OptionalString(item, "name") : null)
+        ?? throw new ArgumentException("Expected an item code in code, name, itemId, or item.code.");
+
     private static TakaroPosition RequiredPosition(JsonElement args)
     {
-        if (!TryObject(args, "position", out var position))
-            throw new ArgumentException("Expected position object.");
+        var position = TryObject(args, "position", out var nested) ? nested : args;
         static double Number(JsonElement value, string key) =>
             value.TryGetProperty(key, out var member) && member.TryGetDouble(out var number) && double.IsFinite(number)
                 ? number : throw new ArgumentException($"Expected finite position.{key}.");

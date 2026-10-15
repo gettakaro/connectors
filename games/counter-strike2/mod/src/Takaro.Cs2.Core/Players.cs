@@ -16,7 +16,7 @@ public sealed record TakaroPlayer(
     [property: JsonPropertyName("platformId")] string? PlatformId,
     [property: JsonPropertyName("ip")] string? Ip,
     [property: JsonPropertyName("ping")] int? Ping,
-    [property: JsonPropertyName("online")] bool? Online = null);
+    [property: JsonPropertyName("online"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Online = null);
 
 public static class PlayerMapper
 {

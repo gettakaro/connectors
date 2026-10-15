@@ -147,7 +147,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 var request = TakaroProtocol.ParseRequest(message);
                 log($"Takaro CS2 request received: action={request.Action}, requestId={request.RequestId}.");
                 var response = await dispatcher.DispatchAsync(request, cancellationToken);
-                await SendAsync(activeSocket, TakaroProtocol.CreateResponse(request.RequestId, response), cancellationToken);
+                await SendAsync(activeSocket, TakaroProtocol.CreateActionResponse(request.RequestId, request.Action, response), cancellationToken);
                 log($"Takaro CS2 response sent: action={request.Action}, success={response.Success}.");
             }
             catch (Exception ex)
@@ -250,6 +250,23 @@ public sealed class TakaroWebSocketRunner : IDisposable
 
     private void LogTakaroError(string message)
     {
-        log("Takaro CS2 WebSocket error message received; inspect Takaro server diagnostics.");
+        try
+        {
+            using var doc = JsonDocument.Parse(message);
+            var payload = doc.RootElement.TryGetProperty("payload", out var value) ? value : doc.RootElement;
+            var code = payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("code", out var codeValue)
+                ? codeValue.ToString() : "unknown";
+            var detail = payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("message", out var messageValue)
+                ? messageValue.ToString() : "No message supplied.";
+            foreach (var secret in new[] { config.RegistrationToken, config.IdentityToken })
+            {
+                if (!string.IsNullOrEmpty(secret)) detail = detail.Replace(secret, "[redacted]", StringComparison.Ordinal);
+            }
+            log($"Takaro CS2 WebSocket error: code={code}, message={detail[..Math.Min(detail.Length, 300)]}");
+        }
+        catch (JsonException)
+        {
+            log("Takaro CS2 WebSocket error frame was not JSON.");
+        }
     }
 }

@@ -12,7 +12,7 @@
       "SteamCMD app_info_print 730 on 2026-10-15 recorded public build 25947352 and the listed depot manifests",
       "CounterStrikeSharp v1.0.376 and Metamod:Source 2.0.0.1481 upstream GitHub release asset digests"
     ],
-    "notes": "Candidate only. The current build still needs Linux startup and a real-client Takaro acceptance run. gameinfo.gi SHA-256 was recorded while the SteamCMD install was in progress and must be rechecked after completion."
+    "notes": "Candidate only. Installed gameinfo.gi SHA-256 was rechecked after SteamCMD completed and matches the catalog. Linux dedicated server and real client passed core action proof; integration and final archive acceptance remain pending."
   },
   "inputs": {
     "server": {
@@ -25,13 +25,28 @@
       "os": "linux",
       "arch": "64",
       "depots": {
-        "731": {"manifest": "2684716067374661784", "size": 8},
-        "2347770": {"manifest": "2312433566686574487", "size": 65027793761},
-        "2347773": {"manifest": "5513399157532729905", "size": 7223679990},
-        "2347774": {"manifest": "6845003340509320862", "size": 1142065743}
+        "731": {
+          "manifest": "2684716067374661784",
+          "size": 8
+        },
+        "2347770": {
+          "manifest": "2312433566686574487",
+          "size": 65027793761
+        },
+        "2347773": {
+          "manifest": "5513399157532729905",
+          "size": 7223679990
+        },
+        "2347774": {
+          "manifest": "6845003340509320862",
+          "size": 1142065743
+        }
       },
       "files": {
-        "game/csgo/gameinfo.gi": {"sha256": "bfcb4f966b63cd19bfc22bc6d5e82a0e31d69e2631f7a8bd0355db16b8c0d930", "size": 26056}
+        "game/csgo/gameinfo.gi": {
+          "sha256": "bfcb4f966b63cd19bfc22bc6d5e82a0e31d69e2631f7a8bd0355db16b8c0d930",
+          "size": 26056
+        }
       },
       "credentials": null
     },
@@ -81,7 +96,11 @@
     }
   },
   "components": [
-    {"role": "plugin", "artifact": "takaro-counter-strike2-linux-25947352-{version}.zip", "installDir": "game/csgo/addons/counterstrikesharp/plugins"}
+    {
+      "role": "plugin",
+      "artifact": "takaro-counter-strike2-linux-25947352-{version}.zip",
+      "installDir": "game/csgo/addons/counterstrikesharp/plugins"
+    }
   ],
   "verification": {
     "required": "gameplay",

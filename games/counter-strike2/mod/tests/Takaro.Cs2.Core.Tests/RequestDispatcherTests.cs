@@ -45,6 +45,17 @@ public sealed class RequestDispatcherTests
     }
 
     [TestMethod]
+    public async Task GiveItemAcceptsTakaroNameArgument()
+    {
+        var adapter = new FakeAdapter();
+        var result = await new TakaroRequestDispatcher(adapter).DispatchAsync(Request("giveItem",
+            """{"player":{"gameId":"76561198000000001"},"name":"weapon_deagle","amount":1,"quality":"1"}"""));
+        Assert.AreEqual("unsupported", result.Error?.Code);
+        Assert.AreEqual("weapon_deagle", adapter.LastItemCode);
+        Assert.AreEqual(1, adapter.LastAmount);
+    }
+
+    [TestMethod]
     public async Task InvalidPositionFailsBeforeGameMutation()
     {
         var adapter = new FakeAdapter();
@@ -52,6 +63,16 @@ public sealed class RequestDispatcherTests
             """{"gameId":"76561198000000001","position":{"x":1,"y":2}}"""));
         Assert.AreEqual("invalid_args", result.Error?.Code);
         Assert.IsNull(adapter.LastIdentifier);
+    }
+
+    [TestMethod]
+    public async Task TeleportAcceptsTakaroFlatCoordinates()
+    {
+        var adapter = new FakeAdapter();
+        var result = await new TakaroRequestDispatcher(adapter).DispatchAsync(Request("teleportPlayer",
+            """{"player":{"gameId":"76561198000000001"},"x":334,"y":2434,"z":-120}"""));
+        Assert.AreEqual("unsupported", result.Error?.Code);
+        Assert.AreEqual(new TakaroPosition(334, 2434, -120), adapter.LastPosition);
     }
 
     [TestMethod]
@@ -118,6 +139,9 @@ public sealed class RequestDispatcherTests
         public string? LastRecipient { get; private set; }
         public string? LastSender { get; private set; }
         public string? LastIdentifier { get; private set; }
+        public string? LastItemCode { get; private set; }
+        public int? LastAmount { get; private set; }
+        public TakaroPosition? LastPosition { get; private set; }
 
         public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(TakaroActionResult.Ok(new { connectable = true, reason = (string?)null }));
@@ -141,9 +165,19 @@ public sealed class RequestDispatcherTests
 
         public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default) { LastIdentifier = identifier; return Unsupported(); }
         public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default) { LastIdentifier = identifier; return Unsupported(); }
-        public Task<TakaroActionResult> GiveItemAsync(string identifier, string code, int amount, CancellationToken cancellationToken = default) => Unsupported();
+        public Task<TakaroActionResult> GiveItemAsync(string identifier, string code, int amount, CancellationToken cancellationToken = default)
+        {
+            LastIdentifier = identifier;
+            LastItemCode = code;
+            LastAmount = amount;
+            return Unsupported();
+        }
         public Task<TakaroActionResult> ListItemsAsync(CancellationToken cancellationToken = default) => Unsupported();
-        public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default) => Unsupported();
+        public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default)
+        {
+            LastPosition = position;
+            return Unsupported();
+        }
         public Task<TakaroActionResult> KickPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) => Unsupported();
         public Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, string? expiresAt, CancellationToken cancellationToken = default) => Unsupported();
         public Task<TakaroActionResult> UnbanPlayerAsync(string identifier, CancellationToken cancellationToken = default) => Unsupported();
