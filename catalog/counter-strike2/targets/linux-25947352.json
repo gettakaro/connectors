@@ -12,7 +12,7 @@
       "SteamCMD app_info_print 730 on 2026-10-15 recorded public build 25947352 and the listed depot manifests",
       "CounterStrikeSharp v1.0.376 and Metamod:Source 2.0.0.1481 upstream GitHub release asset digests"
     ],
-    "notes": "Candidate only. Installed gameinfo.gi SHA-256 was rechecked after SteamCMD completed and matches the catalog. Linux dedicated server and real client passed core action proof; integration and final archive acceptance remain pending."
+    "notes": "Candidate only. Installed gameinfo.gi SHA-256 matches the catalog. Linux dedicated server, real client, scoped outage recovery, and the committed archive passed core checks; lifecycle and remaining event/integration gates are pending."
   },
   "inputs": {
     "server": {
