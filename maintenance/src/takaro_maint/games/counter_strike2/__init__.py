@@ -74,7 +74,11 @@ class CounterStrike2Adapter(BaseAdapter):
         try:
             with open_zip(artifact) as archive:
                 names = archive.namelist()
-                required = {"TakaroCs2/TakaroCs2.dll", "TakaroCs2/Takaro.Cs2.Core.dll", "TakaroCs2/TakaroCs2.example.json"}
+                required = {
+                    "TakaroCs2/TakaroCs2.dll",
+                    "TakaroCs2/Takaro.Cs2.Core.dll",
+                    "TakaroCs2/TakaroCs2.example.json",
+                }
                 if not required.issubset(names):
                     raise ConflictError(f"{artifact.name} lacks required plugin files")
                 for member in archive.infolist():
