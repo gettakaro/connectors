@@ -33,4 +33,17 @@ public sealed class ConfigTests
 
         CollectionAssert.Contains(config.Validate().ToList(), "IdentityToken is required and must be stable for this server.");
     }
+
+    [TestMethod]
+    public void ValidateRejectsHttpUrlThatClientWebSocketCannotDial()
+    {
+        var config = new ConnectorConfig
+        {
+            TakaroWsUrl = "https://connect.takaro.io/",
+            ServerName = "CS2",
+            IdentityToken = "cs2-test"
+        };
+
+        CollectionAssert.Contains(config.Validate().ToList(), "TakaroWsUrl must be an absolute ws or wss URL.");
+    }
 }
