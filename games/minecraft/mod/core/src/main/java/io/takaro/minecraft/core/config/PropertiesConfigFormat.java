@@ -49,7 +49,9 @@ public final class PropertiesConfigFormat implements ConfigFormat {
                 + "takaro.reconnect.delay=5000\n"
                 + "takaro.reconnect.max_delay=300000\n"
                 + "takaro.reconnect.backoff_multiplier=1.5\n"
-                + "takaro.debug=false\n";
+                + "takaro.debug=false\n"
+                + "# World map in Takaro. Needs Takaro protocol v1, not yet on takaro.io.\n"
+                + "takaro.map=false\n";
     }
 
     @Override
