@@ -1,0 +1,161 @@
+{
+  "game": "Counter-Strike 2",
+  "architecture": "native CounterStrikeSharp plugin with outbound Takaro WebSocket",
+  "target": "linux-25947352",
+  "version": "0.1.0",
+  "verification": "candidate; no current real-client acceptance run",
+  "actions": {
+    "testReachability": {
+      "status": "unsupported",
+      "surface": "Server.MapName and Server.MaxPlayers",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "getPlayers": {
+      "status": "unsupported",
+      "surface": "Utilities.GetPlayers and AuthorizedSteamID",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "getPlayer": {
+      "status": "unsupported",
+      "surface": "authenticated online roster",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "getPlayerLocation": {
+      "status": "unsupported",
+      "surface": "CCSPlayerPawn.AbsOrigin",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "getPlayerInventory": {
+      "status": "unsupported",
+      "surface": "CCSPlayerPawn.WeaponServices.MyWeapons",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "giveItem": {
+      "status": "unsupported",
+      "surface": "CCSPlayerController.GiveNamedItem with inventory readback",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "listItems": {
+      "status": "unsupported",
+      "surface": "curated CounterStrikeSharp CsItem codes",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "listEntities": {
+      "status": "unsupported",
+      "surface": "no validated entity catalog",
+      "reason": "Integration feasibility and game-owned surface have not been established; no game limitation is claimed.",
+      "liveVerified": false
+    },
+    "listLocations": {
+      "status": "unsupported",
+      "surface": "no validated named location catalog",
+      "reason": "Integration feasibility and game-owned surface have not been established; no game limitation is claimed.",
+      "liveVerified": false
+    },
+    "getMapInfo": {
+      "status": "unsupported",
+      "surface": "no validated CS2 map raster source",
+      "reason": "Integration feasibility and game-owned surface have not been established; no game limitation is claimed.",
+      "liveVerified": false
+    },
+    "getMapTile": {
+      "status": "unsupported",
+      "surface": "no validated CS2 map raster source",
+      "reason": "Integration feasibility and game-owned surface have not been established; no game limitation is claimed.",
+      "liveVerified": false
+    },
+    "executeConsoleCommand": {
+      "status": "unsupported",
+      "surface": "CounterStrikeSharp ConVar.Find and StringValue",
+      "reason": "Read-only ConVar queries are implemented but have no current real-client proof. General command execution has no output capture and is refused.",
+      "liveVerified": false
+    },
+    "sendMessage": {
+      "status": "unsupported",
+      "surface": "CCSPlayerController.PrintToChat",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "teleportPlayer": {
+      "status": "unsupported",
+      "surface": "CCSPlayerPawn.Teleport with position readback",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "kickPlayer": {
+      "status": "unsupported",
+      "surface": "CCSPlayerController.Disconnect",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "banPlayer": {
+      "status": "unsupported",
+      "surface": "durable SteamID64 ban store and join enforcement",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "unbanPlayer": {
+      "status": "unsupported",
+      "surface": "durable SteamID64 ban store",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "listBans": {
+      "status": "unsupported",
+      "surface": "durable SteamID64 ban store",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "shutdown": {
+      "status": "unsupported",
+      "surface": "AllowShutdown gate and Server.ExecuteCommand quit",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    }
+  },
+  "events": {
+    "log": {
+      "status": "unsupported",
+      "surface": "plugin lifecycle",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "player-connected": {
+      "status": "unsupported",
+      "surface": "OnClientAuthorized and EventPlayerConnectFull",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "player-disconnected": {
+      "status": "unsupported",
+      "surface": "EventPlayerDisconnect",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "chat-message": {
+      "status": "unsupported",
+      "surface": "say and say_team post listeners",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "player-death": {
+      "status": "unsupported",
+      "surface": "EventPlayerDeath",
+      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
+      "liveVerified": false
+    },
+    "entity-killed": {
+      "status": "unsupported",
+      "surface": "EventOtherDeath with authenticated player attacker",
+      "reason": "Implemented in source; nonplayer death with a real client has not been observed through Takaro.",
+      "liveVerified": false
+    }
+  }
+}
