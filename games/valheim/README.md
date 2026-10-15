@@ -187,8 +187,8 @@ Tested on Valheim 1.0.16 with BepInExPack 5.4.2351 and a vanilla game client, 20
 | Player death event | ✅ | Player and position included. |
 | Entity kill event | ✅ | Every player kill counted; with the mod, assists aren't counted as kills. |
 | Log events | ✅ | Connector log lines forwarded (`enableLogEvents`). |
-| Map info | ✅ | The whole world map, drawn by the server from the world seed. |
-| Map tiles | ✅ | Ready about 4 minutes after the first start, then at once on later starts. Shows the whole world, not only explored areas. |
+| Map info | ⚠️ | The whole world map, drawn by the server from the world seed. Proven on Takaro staging; not yet verified on takaro.io. |
+| Map tiles | ⚠️ | Ready about 4 minutes after the first start, then at once on later starts. Shows the whole world, not only explored areas. Proven on Takaro staging; not yet verified on takaro.io. |
 | Modules: chat commands | ✅ | `@` commands work; replies show in normal chat. |
 | Modules: hooks | ✅ | Join, leave and chat hooks fire. |
 | Modules: cronjobs | ✅ | Run on schedule for this server. |
