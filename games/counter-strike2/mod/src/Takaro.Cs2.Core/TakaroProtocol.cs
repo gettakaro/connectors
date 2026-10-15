@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace Takaro.Cs2.Core;
 
@@ -7,10 +6,7 @@ public sealed record TakaroRequest(string RequestId, string Action, JsonElement 
 
 public static class TakaroProtocol
 {
-    public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
+    public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public static string CreateIdentify(ConnectorConfig config)
     {

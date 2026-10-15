@@ -74,6 +74,17 @@ public sealed class ProtocolTests
     }
 
     [TestMethod]
+    public void CreateResponseKeepsExplicitNullReason()
+    {
+        var response = JsonDocument.Parse(TakaroProtocol.CreateResponse("req-reachability",
+            TakaroActionResult.Ok(new { connectable = true, reason = (string?)null }))).RootElement;
+
+        var payload = response.GetProperty("payload");
+        Assert.IsTrue(payload.GetProperty("connectable").GetBoolean());
+        Assert.AreEqual(JsonValueKind.Null, payload.GetProperty("reason").ValueKind);
+    }
+
+    [TestMethod]
     public void CreateResponseKeepsStructuredFailureForFailedActionResult()
     {
         var response = JsonDocument.Parse(TakaroProtocol.CreateResponse("req-4", TakaroActionResult.Fail("blocked_command", "nope"))).RootElement;
