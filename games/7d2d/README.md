@@ -93,10 +93,20 @@ yourself before the first start with this content:
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Takaro connection settings.
+
+  Paste the registration token Takaro shows when you add a Generic game server
+  into RegistrationToken and save. The mod picks the change up within a few
+  seconds, no restart needed.
+
+  IdentityToken identifies this server in Takaro; the mod fills it in when it
+  is empty. Keep it if you move or reinstall the server.
+-->
 <Takaro>
   <WebSocket>
     <Url>wss://connect.takaro.io/</Url>
-    <RegistrationToken>your-registration-token-here</RegistrationToken>
+    <RegistrationToken></RegistrationToken>
     <IdentityToken></IdentityToken>
     <Enabled>true</Enabled>
     <ReconnectIntervalSeconds>30</ReconnectIntervalSeconds>

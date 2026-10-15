@@ -1,4 +1,5 @@
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -169,6 +170,18 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn('DefaultUrl = "wss://connect.takaro.io/"', config)
         self.assertNotIn("wss://your-takaro-websocket-server.com", config)
         self.assertIn("<Url>wss://connect.takaro.io/</Url>", readme)
+
+    def test_readme_shows_the_config_file_the_mod_creates(self):
+        config = self.source("src/Config/ConfigFiles.cs")
+        readme = self.game_file("README.md")
+        header_source = config.split("public const string Header =", 1)[1]
+        header_source = header_source.split('";\n', 1)[0] + '"'
+        parts = re.findall(r'"((?:[^"\\]|\\.)*)"', header_source)
+        header = "".join(part.encode().decode("unicode_escape") for part in parts)
+        self.assertIn("<!--" + header + "-->\n<Takaro>", readme)
+        self.assertIn("<RegistrationToken></RegistrationToken>", readme)
+        self.assertNotIn("your-registration-token-here", readme)
+        self.assertNotIn("Loaded Mod: Takaro (0.", readme)
 
     def test_config_lives_outside_the_mod_folder(self):
         project = self.source("Takaro.csproj")
