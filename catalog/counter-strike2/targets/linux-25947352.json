@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-25947352",
+  "game": "counter-strike2",
+  "platform": "linux",
+  "revision": "25947352",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-10-15",
+    "evidence": [
+      "SteamCMD app_info_print 730 on 2026-10-15 recorded public build 25947352 and the listed depot manifests",
+      "CounterStrikeSharp v1.0.376 and Metamod:Source 2.0.0.1481 upstream GitHub release asset digests"
+    ],
+    "notes": "Candidate only. The current build still needs Linux startup and a real-client Takaro acceptance run. gameinfo.gi SHA-256 was recorded while the SteamCMD install was in progress and must be rechecked after completion."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 730,
+      "branch": "public",
+      "buildid": 25947352,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "731": {"manifest": "2684716067374661784", "size": 8},
+        "2347770": {"manifest": "2312433566686574487", "size": 65027793761},
+        "2347773": {"manifest": "5513399157532729905", "size": 7223679990},
+        "2347774": {"manifest": "6845003340509320862", "size": 1142065743}
+      },
+      "files": {
+        "game/csgo/gameinfo.gi": {"sha256": "bfcb4f966b63cd19bfc22bc6d5e82a0e31d69e2631f7a8bd0355db16b8c0d930", "size": 26056}
+      },
+      "credentials": null
+    },
+    "metamod": {
+      "kind": "http-file",
+      "source": "metamod",
+      "hashOrigin": "upstream",
+      "path": "/alliedmodders/metamod-source/releases/download/2.0.0.1481/mmsource-2.0.0-git1481-linux.tar.gz",
+      "sha256": "687a82f596fa6824559c82fb43a24b28b1a954bef00add6c80fe6a9532b205d9",
+      "size": 20365970,
+      "installPath": "deps/mmsource-2.0.0-git1481-linux.tar.gz"
+    },
+    "counterstrikesharp": {
+      "kind": "http-file",
+      "source": "counterstrikesharp",
+      "hashOrigin": "upstream",
+      "path": "/roflmuffin/CounterStrikeSharp/releases/download/v1.0.376/counterstrikesharp-with-runtime-linux-1.0.376.zip",
+      "sha256": "8d50a25a467fe9c7ebbbc7032028d402cd428e118308f1c4d627a0a5ddf36783",
+      "size": 52627304,
+      "installPath": "deps/counterstrikesharp-with-runtime-linux-1.0.376.zip"
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "mcr.microsoft.com/dotnet/sdk",
+      "tag": "10.0",
+      "digest": "sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa"
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/counter-strike2/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "mcr.microsoft.com/dotnet/sdk",
+      "tag": "10.0",
+      "digest": "sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa"
+    },
+    "deps": {
+      "CounterStrikeSharp.API": {
+        "coordinate": "nuget:CounterStrikeSharp.API:1.0.376",
+        "sha256": "8cb2fb1c0515f7dc5e34ce6106dc907ffb75e9c75992614061e6747e0b875e22",
+        "resolvedCoordinate": "https://api.nuget.org/v3-flatcontainer/counterstrikesharp.api/1.0.376/counterstrikesharp.api.1.0.376.nupkg"
+      }
+    }
+  },
+  "components": [
+    {"role": "plugin", "artifact": "takaro-counter-strike2-linux-25947352-{version}.zip", "installDir": "game/csgo/addons/counterstrikesharp/plugins"}
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": []
+  },
+  "preserve": [
+    "game/csgo/addons/counterstrikesharp/configs/plugins/TakaroCs2/TakaroCs2.json",
+    "game/csgo/addons/counterstrikesharp/data/TakaroCs2/bans.json",
+    "game/csgo/addons/counterstrikesharp/data/TakaroCs2/players.json",
+    "game/csgo/cfg/"
+  ],
+  "notes": "The runtime container field records the pinned .NET 10 build environment; the live CS2 server runs directly on Linux from SteamCMD and requires separate proof."
+}

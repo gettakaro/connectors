@@ -1,0 +1,87 @@
+name: Counter-Strike 2 Connector
+
+on:
+  push:
+    branches: [main]
+    paths: ['games/counter-strike2/**', 'catalog/counter-strike2/**', 'maintenance/**', 'scripts/**', '.github/workflows/counter-strike2.yml']
+  pull_request:
+    paths: ['games/counter-strike2/**', 'catalog/counter-strike2/**', 'maintenance/**', 'scripts/**', '.github/workflows/counter-strike2.yml']
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Connector version to build
+        required: true
+        type: string
+      tag:
+        description: Existing release tag for recovery
+        required: true
+        type: string
+
+concurrency:
+  group: counter-strike2-${{ github.ref }}-${{ inputs.tag || 'ci' }}
+  cancel-in-progress: ${{ inputs.tag == '' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
+      - name: .NET protocol and adapter tests
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo/games/counter-strike2/mod \
+            mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa \
+            bash -lc 'dotnet restore Takaro.Cs2.sln --locked-mode --nologo && dotnet test Takaro.Cs2.sln --no-restore --nologo'
+      - name: Build server plugin
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo/games/counter-strike2/mod \
+            mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa \
+            bash -lc 'dotnet restore src/Takaro.Cs2.Plugin/Takaro.Cs2.Plugin.csproj --locked-mode --nologo && dotnet build src/Takaro.Cs2.Plugin/Takaro.Cs2.Plugin.csproj -c Release --no-restore --nologo'
+
+  params:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.params.outputs.version }}
+      tag: ${{ steps.params.outputs.tag }}
+      publish: ${{ steps.params.outputs.publish }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Resolve release params
+        id: params
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          IN_TAG: ${{ inputs.tag }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEV_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/release-params.sh counter-strike2 >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: [test, params]
+    uses: ./.github/workflows/connector-release.yml
+    secrets: inherit
+    with:
+      connector: counter-strike2
+      version: ${{ needs.params.outputs.version }}
+      tag: ${{ needs.params.outputs.tag }}
+      publish: ${{ needs.params.outputs.publish }}
+      pr_number: ${{ github.event.pull_request.number }}
+      runtime: false
