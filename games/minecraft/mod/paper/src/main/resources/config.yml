@@ -14,3 +14,5 @@ takaro:
     max_delay: 300000
     backoff_multiplier: 1.5
   debug: false
+  # World map in Takaro. Needs Takaro protocol v1, not yet on takaro.io.
+  map: false

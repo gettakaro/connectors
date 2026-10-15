@@ -58,4 +58,15 @@ class ConfigFormatTest {
                 YamlText.withIdentity("    identity_token:\n", "abc"));
         assertNull(YamlText.withIdentity("    identity_token: \"set\"\n", "abc"), "a set identity is left alone");
     }
+
+    @Test
+    void createdFilesListTheMapSwitchOff() throws Exception {
+        JsonConfigFormat json = new JsonConfigFormat();
+        assertTrue(json.defaultText().contains("\"map\": false"));
+        assertFalse(json.parse(json.defaultText()).isMapEnabled());
+        PropertiesConfigFormat props = new PropertiesConfigFormat();
+        assertTrue(props.defaultText().contains("\ntakaro.map=false\n"));
+        assertFalse(props.parse(props.defaultText()).isMapEnabled());
+        assertTrue(props.parse(props.defaultText().replace("takaro.map=false", "takaro.map=true")).isMapEnabled());
+    }
 }

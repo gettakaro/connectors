@@ -62,7 +62,8 @@ public final class JsonConfigFormat implements ConfigFormat {
                 + "    \"backoff_multiplier\": 1.5\n"
                 + "  },\n"
                 + "  \"settings\": {\n"
-                + "    \"debug\": false\n"
+                + "    \"debug\": false,\n"
+                + "    \"map\": false\n"
                 + "  }\n"
                 + "}\n";
     }
