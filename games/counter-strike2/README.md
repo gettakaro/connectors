@@ -6,6 +6,8 @@ This is a server-side CounterStrikeSharp plugin. Players do not install anything
 
 **0.1.0 candidate, not approved for publication.** The imported prototype and the first native expansion build, but the current Linux dedicated server has not passed a real-client acceptance run. CounterStrikeSharp `Server.ExecuteCommand` returns no command output, so `executeConsoleCommand` supports read-only allowlisted ConVar queries through the server API and refuses other commands instead of inventing `rawResult`. Shop quantities above one are refused because CS2 weapons are individual equipped items. Do not infer live support from this source or the old July smoke run.
 
+The catalog requires gameplay verification. The release assembler refuses that level until current real-client evidence is reviewed and the target is explicitly approved for publication.
+
 ## Install
 
 ### Linux x86-64 dedicated server
