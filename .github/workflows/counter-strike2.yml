@@ -48,7 +48,9 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo/games/counter-strike2/mod \
             mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa \
-            bash -lc 'dotnet restore src/Takaro.Cs2.Plugin/Takaro.Cs2.Plugin.csproj --locked-mode --nologo && dotnet build src/Takaro.Cs2.Plugin/Takaro.Cs2.Plugin.csproj -c Release --no-restore --nologo'
+            bash -lc 'set -e
+              dotnet restore src/Takaro.Cs2.Plugin/Takaro.Cs2.Plugin.csproj --locked-mode --nologo
+              dotnet build src/Takaro.Cs2.Plugin/Takaro.Cs2.Plugin.csproj -c Release --no-restore --nologo'
 
   params:
     runs-on: ubuntu-latest
@@ -76,6 +78,7 @@ jobs:
 
   release:
     needs: [test, params]
+    if: ${{ needs.params.outputs.publish != 'pr' }}
     uses: ./.github/workflows/connector-release.yml
     secrets: inherit
     with:

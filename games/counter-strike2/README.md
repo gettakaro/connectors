@@ -1,4 +1,4 @@
-# Counter-Strike 2 connector for Takaro
+# Takaro Counter-Strike 2 Connector
 
 This is a server-side CounterStrikeSharp plugin. Players do not install anything. The plugin owns the outbound Takaro WebSocket; there is no sidecar or inbound connector port.
 
@@ -6,7 +6,9 @@ This is a server-side CounterStrikeSharp plugin. Players do not install anything
 
 **0.1.0 candidate, not approved for publication.** The imported prototype and the first native expansion build, but the current Linux dedicated server has not passed a real-client acceptance run. CounterStrikeSharp `Server.ExecuteCommand` returns no command output, so `executeConsoleCommand` supports read-only allowlisted ConVar queries through the server API and refuses other commands instead of inventing `rawResult`. Shop quantities above one are refused because CS2 weapons are individual equipped items. Do not infer live support from this source or the old July smoke run.
 
-## Install on a Linux x86-64 server
+## Install
+
+### Linux x86-64 dedicated server
 
 1. Install the exact CS2 Steam build named by the [catalog target](../../catalog/counter-strike2/targets/). The dedicated server uses Steam app 730. Keep the server updated only after a new catalog target and live proof are available.
 2. Install Metamod:Source **2.0.0.1481** and CounterStrikeSharp **1.0.376 with runtime** into `game/csgo/addons/`. This plugin was compiled against `CounterStrikeSharp.API` **1.0.376** and .NET **10**. Follow the [CounterStrikeSharp installation guide](https://docs.cssharp.dev/docs/guides/getting-started.html), including the Metamod `gameinfo.gi` SearchPaths entry. These frameworks are server dependencies and are not bundled in the Takaro archive.
@@ -15,6 +17,20 @@ This is a server-side CounterStrikeSharp plugin. Players do not install anything
 5. Restart the server. Confirm `meta list`, `css_plugins list`, and the plugin's identify response log. Set `+sv_hibernate_when_empty 0` while testing idle server requests. For the Linux runtime, put `game/csgo/bin/linuxsteamrt64` before `game/bin/linuxsteamrt64` in `LD_LIBRARY_PATH`.
 
 `AllowShutdown` defaults to false. Enable it only for a disposable server where a Takaro shutdown action is intended to stop the process. Console queries use an exact/prefix allowlist. The input must be one ConVar name, and the returned `rawResult` is its current server value. Mutating commands and unavailable ConVars return `success:false` with `errorMessage`.
+
+## What works, what doesn't
+
+The target is CS2 build **25947352** on Linux x86-64. As of **2026-10-15**, no behavior in this candidate has passed the current live server and real-client acceptance run. ✅ means live verified, ⚠️ means implemented but not yet live verified, and ❌ means unavailable.
+
+| Capability | Status | Current evidence |
+| --- | --- | --- |
+| Reachability, Steam identity, player lookup | ⚠️ | Native implementation and protocol tests; real-client proof pending |
+| Chat, location, inventory, item catalog, item delivery, teleport | ⚠️ | Native implementation; Takaro and client side effects pending |
+| Read-only allowlisted console ConVar query | ⚠️ | Native server API implementation; real server result pending |
+| Kick, durable bans, unban, shutdown gate | ⚠️ | Native implementation and persistence tests; real-client proof pending |
+| Connect, disconnect, chat, death, nonplayer kill, log events | ⚠️ | Hook implementation; Takaro event rows pending |
+| General console command output | ❌ | CounterStrikeSharp execution API does not expose output |
+| Entity and named location catalog, map tiles | ❌ | Integration feasibility not yet established |
 
 ## Capability accounting
 
