@@ -19,9 +19,9 @@ public sealed class ConnectorConfig
             errors.Add("TakaroWsUrl is required.");
         }
         else if (!Uri.TryCreate(TakaroWsUrl, UriKind.Absolute, out var uri)
-                 || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != "wss" && uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != "ws"))
+                 || (uri.Scheme != "wss" && uri.Scheme != "ws"))
         {
-            errors.Add("TakaroWsUrl must be an absolute ws, wss, http, or https URL.");
+            errors.Add("TakaroWsUrl must be an absolute ws or wss URL.");
         }
 
         if (string.IsNullOrWhiteSpace(ServerName))
