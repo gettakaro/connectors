@@ -38,20 +38,33 @@ archive also holds `docker-compose.example.yml`, `INSTALL.md` (upgrade and rollb
 The connector's one config file is `takaro.cfg` next to the library
 (`data/dragonwilds-plugin/takaro.cfg`). The connector creates it on first start, with a new
 identity and the name `Dragonwilds (<8 characters>)`. Open it, paste the registration token after
-`TAKARO_REGISTRATION_TOKEN=` and save. Saving is enough, also while the server runs: the connector
-connects within a few seconds, no restart. You can also create the file before the first start:
+`TAKARO_REGISTRATION_TOKEN=` and save. For the URL, token, identity and name, saving is enough,
+also while the server runs: the connector connects within a few seconds, no restart. Every other
+key in the table below can also go in `takaro.cfg`; those apply after a restart. You can also
+create the file before the first start; leave `TAKARO_IDENTITY_TOKEN` empty and the connector
+fills in a new identity (keep it once it is set):
 
 ```ini
-TAKARO_REGISTRATION_TOKEN=<your registration token>
-# Leave empty: the connector fills in a new identity. Keep it once it is set.
+# Takaro connector settings for this RuneScape: Dragonwilds server. One KEY=VALUE per line.
+# Saving is enough for the four keys below: the connector re-reads them within a few
+# seconds, no restart. Any other key from the README can be added here too; those apply
+# after a restart. A non-empty environment variable with the same name wins over the line here.
+
+# The registration token of your Takaro Generic game server.
+TAKARO_REGISTRATION_TOKEN=
+
+# This server's identity in Takaro, created by the connector. Keep it.
 TAKARO_IDENTITY_TOKEN=
-# Optional; unique in your Takaro domain. Empty: "Dragonwilds (<first 8 identity characters>)".
+
+# The name Takaro shows for this server; unique in your Takaro domain.
 TAKARO_SERVER_NAME=
+
 TAKARO_WS_URL=wss://connect.takaro.io/
 ```
 
-Every key can also be set in the **game process** environment (`.env` with the Compose example);
-a non-empty environment variable wins over `takaro.cfg` and needs a restart to change.
+An empty `TAKARO_SERVER_NAME` means `Dragonwilds (<first 8 identity characters>)`. Every key can
+also be set in the **game process** environment (`.env` with the Compose example); a non-empty
+environment variable wins over `takaro.cfg` and needs a restart to change.
 
 | Key | Required | What to put there |
 |---|---|---|

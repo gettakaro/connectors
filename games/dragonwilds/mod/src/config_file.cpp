@@ -152,8 +152,9 @@ Settings Resolve(const Loaded& file, const std::function<const char*(const char*
 
 std::string Template(const std::string& identity) {
     return "# Takaro connector settings for this RuneScape: Dragonwilds server. One KEY=VALUE per line.\n"
-           "# Saving is enough: the connector re-reads this file within a few seconds, no restart.\n"
-           "# A non-empty environment variable with the same name wins over the line here.\n"
+           "# Saving is enough for the four keys below: the connector re-reads them within a few\n"
+           "# seconds, no restart. Any other key from the README can be added here too; those apply\n"
+           "# after a restart. A non-empty environment variable with the same name wins over the line here.\n"
            "\n"
            "# The registration token of your Takaro Generic game server.\n"
            "TAKARO_REGISTRATION_TOKEN=\n"

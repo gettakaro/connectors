@@ -16,7 +16,8 @@ with `LD_PRELOAD`. The library connects directly to Takaro. Players use the unmo
    `/opt/takaro-state`, and set `TAKARO_STATE_DIR` (with Docker, in `.env` from `env.example`).
    On first start the connector creates `takaro.cfg` next to the library with a new identity; paste
    the registration token into it and save (README step 3 shows the whole file). It is re-read while
-   the server runs: saving it is enough, no restart. A non-empty environment variable wins over it.
+   the server runs: for the URL, token, identity and name, saving it is enough, no restart; other
+   keys apply after a restart. A non-empty environment variable wins over it.
 5. Apply `LD_PRELOAD` to the **game binary only**:
 
    ```bash
