@@ -78,6 +78,9 @@ public final class TakaroAgent {
                 loader.startWatching(changed -> {
                     LocalAccounts.setScope(changed.config.getIdentityToken());
                     connector.applyConfig(changed.config);
+                    if (config.isProtocolV1Enabled()) {
+                        adapter.startMap();
+                    }
                 });
             };
             Bridge.configure(queue, reconciler, registry, starter,

@@ -101,6 +101,21 @@ class ConfigReloadTest {
     }
 
     @Test
+    void changedProtocolReconnectsWithTheNewVersions() throws Exception {
+        connector = new TakaroConnector(new LogAdapter(logs), config("good-token"));
+        connector.connect();
+        waitFor(() -> takaro.versionsSeen.size() == 1);
+
+        TakaroConfig v0 = config("good-token");
+        v0.setProtocolV1Enabled(false);
+        connector.applyConfig(v0);
+
+        waitFor(() -> takaro.versionsSeen.size() == 2);
+        assertTrue(logs.stream().anyMatch(l -> l.contains("Config changed; reconnecting")));
+        assertEquals(List.of("[0,1]", "none"), takaro.versionsSeen);
+    }
+
+    @Test
     void replacedClientDoesNotReconnectBehindTheNewOne() throws Exception {
         connector = new TakaroConnector(new LogAdapter(logs), config("good-token"));
         connector.connect();
@@ -144,6 +159,7 @@ class ConfigReloadTest {
     private static final class FakeTakaro extends WebSocketServer {
         private final String goodToken;
         final List<String> tokensSeen = new CopyOnWriteArrayList<>();
+        final List<String> versionsSeen = new CopyOnWriteArrayList<>();
         private volatile boolean started;
 
         FakeTakaro(String goodToken) {
@@ -172,6 +188,8 @@ class ConfigReloadTest {
             }
             String token = json.getAsJsonObject("payload").get("registrationToken").getAsString();
             tokensSeen.add(token);
+            JsonObject payload = json.getAsJsonObject("payload");
+            versionsSeen.add(payload.has("protocolVersions") ? payload.get("protocolVersions").toString() : "none");
             if ("conflict-token".equals(token)) {
                 conn.send("{\"type\":\"identifyResponse\",\"payload\":{\"error\":{\"name\":\"ConflictError\","
                         + "\"message\":\"Conflict\",\"http\":409,\"request\":{\"headers\":{\"x-takaro-token\":\"SECRET-JWT\"}}}}}");

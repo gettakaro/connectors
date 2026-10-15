@@ -89,6 +89,7 @@ wsUrl=wss://connect.takaro.io/
 registrationToken=<your registration token>
 identityToken=
 serverChatName=
+protocol=1
 debug=false
 logEvents=false
 debugCatalog=false
@@ -102,7 +103,8 @@ written into it: `TAKARO_WS_URL`, `TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_
 The connector speaks Takaro's Generic Game Protocol version 1 when Takaro offers it (it falls
 back to version 0 on an older Takaro). Version 1 gives the map below and resends events that
 happened while the connection was down. `protocol=0` in `TakaroConfig.txt` (or
-`TAKARO_PROTOCOL=0`) turns version 1 off, and with it the map.
+`TAKARO_PROTOCOL=0`) turns version 1 off, and with it the map; changing `protocol` reconnects
+without a restart. `logEvents` and `debugCatalog` (extra diagnostics in the log) need a restart.
 
 ### 6. Check that it worked
 
@@ -174,7 +176,7 @@ timed-ban expiry, shutdown and the zombie-kill event.
 | Player death event | ✅ | Includes the position where the player died. |
 | Entity kill event | ✅ | Proven with a real zombie kill; the weapon used is included. A bare-handed kill reports no weapon. Rate-limited to about 20 per second so a horde cannot flood Takaro. |
 | Log events | ⚠️ | Server log lines are forwarded, but **off by default** — set `logEvents=true` (or `TAKARO_LOG_EVENTS=true`) to turn them on. |
-| Map | ⚠️ | Takaro shows your server's own world map (the picture the in-game map draws, read from the game install) with player dots. Ground floor only; areas added by map mods show as grey. |
+| Map | ⚠️ | Needs Takaro protocol v1 (not yet on takaro.io). Takaro shows your server's own world map (the picture the in-game map draws, read from the game install) with player dots. Ground floor only; areas added by map mods show as grey. |
 | Discord chat bridge | ⚠️ | Not verified in a live test. The underlying chat in both directions works, so it is expected to, but it was not proven. |
 | Shop & economy | ⚠️ | Not verified in a live test. The pieces it needs — item catalogue, give an item, player inventory — are all proven, but the shop itself was not exercised. |
 

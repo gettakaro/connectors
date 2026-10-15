@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * The Project Zomboid {@link GameAdapter}. Every query/action runs on the game
@@ -35,6 +36,7 @@ public final class ZomboidAdapter implements GameAdapter {
     private final BanStore banStore;
     private final boolean debug;
     private final MapService map = new MapService();
+    private final AtomicBoolean mapStarted = new AtomicBoolean();
     private volatile EventEmitter emitter;
 
     public ZomboidAdapter(MainThreadQueue queue, PlayerRegistry registry,
@@ -87,8 +89,14 @@ public final class ZomboidAdapter implements GameAdapter {
 
     // --- map (protocol v1) ---
 
-    /** Builds the world map in the background; once ready the manifest is sent again. */
+    /**
+     * Builds the world map in the background (once per process, so a reload that turns
+     * protocol v1 on starts it); once ready the manifest is sent again.
+     */
     public void startMap() {
+        if (!mapStarted.compareAndSet(false, true)) {
+            return;
+        }
         map.startAsync(() -> {
             EventEmitter current = emitter;
             if (current != null) {

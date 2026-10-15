@@ -66,12 +66,13 @@ public class TakaroConfig {
         return value != null && !value.isEmpty();
     }
 
-    /** True when both would open the same Takaro connection (URL and both tokens). */
+    /** True when both would open the same Takaro connection (URL, both tokens, protocol). */
     public boolean sameConnection(TakaroConfig other) {
         return other != null
                 && Objects.equals(wsUrl, other.wsUrl)
                 && Objects.equals(identityToken, other.identityToken)
-                && Objects.equals(registrationToken, other.registrationToken);
+                && Objects.equals(registrationToken, other.registrationToken)
+                && protocolV1Enabled == other.protocolV1Enabled;
     }
 
     /** Takes over the settings a config file can change; the reconnect tuning stays. */
