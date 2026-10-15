@@ -105,8 +105,9 @@ public sealed class CapabilityRegistryTests
 
         Assert.AreEqual("dedicated-server-plugin-with-optional-inventory-companion", root.GetProperty("architecture").GetString());
         Assert.AreEqual("live-supported", root.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
-        Assert.AreEqual("live-supported", root.GetProperty("actions").GetProperty("getMapInfo").GetString());
-        Assert.AreEqual("live-supported", root.GetProperty("actions").GetProperty("getMapTile").GetString());
+        // The map was proven on Takaro staging only, never on hosted takaro.io.
+        Assert.AreEqual("schema-fallback", root.GetProperty("actions").GetProperty("getMapInfo").GetString());
+        Assert.AreEqual("schema-fallback", root.GetProperty("actions").GetProperty("getMapTile").GetString());
         Assert.AreEqual("schema-fallback", root.GetProperty("actions").GetProperty("listLocations").GetString());
         foreach (var eventName in RequiredEvents)
         {
