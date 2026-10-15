@@ -28,5 +28,6 @@
       "artifactPattern": "takaro-counter-strike2-{target}-{version}.zip"
     }
   },
-  "legacyAssetAliases": {}
+  "legacyAssetAliases": {},
+  "devServers": {"composeFile": "counter-strike2.yml"}
 }
