@@ -982,8 +982,7 @@ void BridgeLoop() {
                 // Offer version 1 with version 0 as fallback; older Takaro ignores both keys.
                 // TAKARO_PROTOCOL=0 keeps the plain version 0 identify. The gate path has no
                 // durable outbox ids to use as seq, so it stays on version 0.
-                const char* forced = ConfigFile::Get("TAKARO_PROTOCOL");
-                if (!gateMode && !(forced && strcmp(forced, "0") == 0)) {
+                if (!gateMode && active.settings.protocolV1) {
                     p["protocolVersions"] = {0, 1};
                     p["capabilities"] = Json::parse(NativeBehavior::CapabilityManifestJson());
                 }

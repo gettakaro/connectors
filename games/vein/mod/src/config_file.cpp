@@ -119,7 +119,10 @@ std::string Template(const std::string& identity) {
            "# The name Takaro gives this server, also shown in front of Takaro's chat messages.\n"
            "TAKARO_SERVER_NAME=" + DefaultServerName(identity) + "\n"
            "# Optional: SteamID64s that get VEIN's in-game admin rights, comma separated.\n"
-           "TAKARO_ADMIN_STEAMIDS=\n";
+           "TAKARO_ADMIN_STEAMIDS=\n"
+           "# 1 offers Takaro protocol 1 (game map, event acks) and falls back to 0 on an older Takaro;\n"
+           "# 0 speaks protocol 0 only. A saved change reconnects within seconds.\n"
+           "TAKARO_PROTOCOL=1\n";
 }
 
 std::optional<std::string> Ensure(const std::string& path, bool create, std::string& note,
@@ -183,6 +186,9 @@ Resolution Resolve(const Loaded& file, const std::function<const char*(const cha
     pick("TAKARO_IDENTITY_TOKEN", r.settings.identity, r.identity);
     pick("TAKARO_SERVER_NAME", r.settings.serverName, r.serverName);
     if (r.settings.serverName.empty()) r.settings.serverName = DefaultServerName(r.settings.identity);
+    std::string protocol;
+    pick("TAKARO_PROTOCOL", protocol, r.protocol);
+    r.settings.protocolV1 = protocol != "0";
     return r;
 }
 
