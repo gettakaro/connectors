@@ -282,7 +282,8 @@ in [README.md](README.md) for what has actually been verified.
 | `listEntities` | Not applicable | Terraria NPCs spawn from world state; there is no queryable entity registry. |
 | `listLocations` | Not applicable | Terraria has no named-location concept for Takaro to list. |
 | `getMapInfo` | Not applicable | Returns a disabled map DTO. TShock exposes no map metadata. |
-| `getMapTile` | Not applicable | TShock does not render map tiles. |
+| `getMapTile` | Not applicable | The version 0 tile layout is not built; the map is served whole through `getMapImage`. |
+| `getMapImage` | Supported, protocol v1 only | The plugin's rendered world image from `mapDir`, declared as the v1 map capability. Proven only on Takaro staging; takaro.io does not speak protocol v1 yet. |
 
 ### Events
 

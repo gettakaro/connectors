@@ -27,6 +27,7 @@ export function configTemplate(identityToken: string, serverName: string): strin
 # paste the registration token and save, no restart needed.
 # identityToken is this server's identity in Takaro; the bridge fills it in when empty.
 # An empty serverName means "Terraria Server (<first 8 characters of identityToken>)".
+# Relative paths (logFiles, mapDir) start at the folder holding this file: the server folder.
 
 # Takaro connection
 registrationToken=
@@ -57,6 +58,8 @@ enableShutdown=false
 # The world map: the plugin renders the loaded world into mapDir (<TShock folder>/takaro) and
 # the bridge shows it on Takaro's map. protocolVersion=1 speaks Takaro protocol 1 when Takaro
 # offers it (the map, events resent after a reconnect); 0 stays on version 0. Restart to apply.
+# The plugin renders the map at world load, every TAKARO_MAP_INTERVAL_MINUTES (environment of
+# the TShock server: default 30, 0 = off) and when an admin runs /takaromap.
 mapDir=tshock/takaro
 protocolVersion=1
 `;
@@ -156,7 +159,7 @@ export class ConfigSource {
         identityNotSaved = `Set identityToken=${values.identityToken} in ${this.path}`;
       }
     }
-    const config = buildConfig(values, this.env);
+    const config = buildConfig(values, this.env, path.dirname(path.resolve(this.path)));
     return identityNotSaved ? { config: { ...config, registrationToken: '' }, identityNotSaved } : { config };
   }
 
