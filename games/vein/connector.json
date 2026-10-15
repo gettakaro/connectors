@@ -11,7 +11,7 @@
       "pattern": "takaro-vein-plugin.tar.gz",
       "label": "Plugin",
       "requires": "VEIN Linux dedicated server",
-      "hint": "Load with LD_PRELOAD on the game binary's launch line only; the archive includes configuration, licenses and upgrade instructions.",
+      "hint": "Load with LD_PRELOAD on the game binary's launch line only; the plugin creates takaro.cfg next to the .so; the archive includes licenses and upgrade instructions.",
       "required": true
     }
   ]
