@@ -1,5 +1,5 @@
-// The connection settings that apply without a restart: Takaro URL, registration token, identity and
-// server name. takaro\plugin.json next to enshrouded_server.exe is the one config file; a non-empty
+// The connection settings that apply without a restart: Takaro URL, registration token, identity,
+// server name and protocol. takaro\plugin.json next to enshrouded_server.exe is the one config file; a non-empty
 // environment variable wins per field and is never written to disk. ConfigWatcher creates the file
 // when it is missing, writes a generated identity into it when its identity is empty, and re-reads it
 // while the server runs; the caller polls it from one thread. Pure apart from fileio, so the host
@@ -21,9 +21,10 @@ const char* SourceName(Source s);
 
 struct LiveSettings {
     std::string url, registrationToken, identityToken, serverName;
+    bool protocolV1 = true;  // offer protocol versions [0, 1]; false: the plain protocol 0 identify
     bool operator==(const LiveSettings& o) const {
         return url == o.url && registrationToken == o.registrationToken && identityToken == o.identityToken &&
-               serverName == o.serverName;
+               serverName == o.serverName && protocolV1 == o.protocolV1;
     }
     bool operator!=(const LiveSettings& o) const { return !(*this == o); }
 };
@@ -31,7 +32,7 @@ struct LiveSettings {
 struct LiveResolution {
     LiveSettings s;
     Source url = Source::Default, registration = Source::Default, identity = Source::Default,
-           name = Source::Default;
+           name = Source::Default, protocol = Source::Default;
 };
 
 // One parsed settings file. found=false when the file is absent; ok=false when it is not a JSON object.
@@ -47,6 +48,9 @@ SettingsFile ParseSettingsFile(bool found, const std::string& text);  // tolerat
 // tokens; for the name "<hostName or Enshrouded> (<first 8 identity characters>)", because Takaro keeps
 // game-server names unique per domain).
 LiveResolution ResolveLive(const SettingsFile& file, const std::string& hostName, const EnvFn& env);
+// The "protocol" setting as text: TAKARO_PROTOCOL, else plugin.json "protocol" (a number or a string),
+// else "". Anything but "0" offers protocol 1.
+std::string ProtocolText(const SettingsFile& file, const EnvFn& env, Source& src);
 std::string DefaultServerName(const std::string& hostName, const std::string& identity);
 
 // What the connector must not connect without: "" when the settings can connect.

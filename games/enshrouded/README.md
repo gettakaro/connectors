@@ -40,8 +40,8 @@ client and Takaro. ✅ = works, ⚠️ = works with a caveat or not re-verified,
 | Player death event | ✅ | Falls and creature kills, with the position; the creature that killed the player is named in the message the same way as in the entity catalogue, e.g. "Limon was killed by Rat". |
 | Entity kill event | ⚠️ | Real kills reach Takaro, once each, with the weapon's in-game name (melee and bow tested). The creature is named the same way as in the entity catalogue, e.g. "Rat". Kills with magic are not tested yet. Destroyed props are not reported. |
 | Log events | ⚠️ | Sent, but Takaro does not store server log lines as events. |
-| Map | ✅ | The connector tells Takaro the size and orientation of the world ("Embervale", 10,240 m square, north up). The server has no map picture of its own, so you upload one image once on the game server's map page in Takaro (see INSTALL.md, "Map"); player dots then sit at the right spot on it. Without an upload Takaro shows a grid with the player dots. |
-| Map on an older Takaro | ⚠️ | A Takaro without protocol 1 shows a map only from a tile pack in `takaro/map/` that you render yourself (see INSTALL.md). |
+| Map | ⚠️ | Needs Takaro protocol 1 (proven on Takaro staging, not yet on takaro.io). The connector tells Takaro the size and orientation of the world ("Embervale", 10,240 m square, north up). The server has no map picture of its own, so you upload one image once on the game server's map page in Takaro (see INSTALL.md, "Map"); player dots then sit at the right spot on it. Without an upload Takaro shows a grid with the player dots. |
+| Map on an older Takaro | ⚠️ | An older Takaro is today's takaro.io. A Takaro without protocol 1 shows a map only from a tile pack in `takaro/map/` that you render yourself (see INSTALL.md). |
 | Modules: chat commands | ✅ | In-game `@` commands reach the module and answer in chat. |
 | Modules: hooks | ✅ | Chat and join hooks fire and run their code. |
 | Modules: cronjobs | ✅ | Scheduled and triggered runs message the server. |
@@ -106,7 +106,10 @@ it connect at the first start instead, create the file yourself before starting:
   "identityToken": "",
   "name": "",
   "url": "wss://connect.takaro.io/",
-  "token": ""
+  "protocol": 1,
+  "token": "",
+  "mapDir": "",
+  "caFile": ""
 }
 ```
 
@@ -124,10 +127,13 @@ it connect at the first start instead, create the file yourself before starting:
 | `identityToken` | Leave it empty: the connector writes a unique identity there. Keep it once set; it is what Takaro knows this server by. |
 | `name` | The server name shown in Takaro. Left empty, it is your server's name plus the start of the identity, because Takaro needs a different name for every game server. |
 | `url` | Leave `wss://connect.takaro.io/`. |
-| `token` | Optional: a long random secret (e.g. `openssl rand -hex 32`) to read the plugin's diagnostics at `http://127.0.0.1:18890/health`. |
+| `protocol` | Leave `1`: the connector offers Takaro protocol 1 (the map) and falls back to 0 on a Takaro without it. `0` speaks protocol 0 only. |
+| `token` | Optional: a long random secret (e.g. `openssl rand -hex 32`) to read the plugin's diagnostics at `http://127.0.0.1:18890/health`. Needs a restart. |
+| `mapDir` | Optional: the folder of a protocol 0 map tile pack. Empty: `takaro/map`. Needs a restart. |
+| `caFile` | Optional: a CA file, only for a Takaro behind your own certificate authority. Empty: the system's trust. Needs a restart. |
 
-Every change you save applies within a few seconds: a corrected token or name reconnects, an emptied
-token disconnects.
+A change to `registrationToken`, `identityToken`, `name`, `url` or `protocol` applies within a few
+seconds: it reconnects, an emptied token disconnects. `token`, `mapDir` and `caFile` need a restart.
 
 Instead of the file you can set the environment variables `TAKARO_REGISTRATION_TOKEN`,
 `TAKARO_IDENTITY_TOKEN`, `TAKARO_SERVER_NAME`, `TAKARO_WS_URL` and `TAKARO_PLUGIN_TOKEN` on the game

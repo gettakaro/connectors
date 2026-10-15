@@ -80,7 +80,7 @@
     },
     "getMapInfo": {
       "status": "proven",
-      "note": "protocol 0 only: from the tile pack manifest takaro/map/<pack>/map.json (mod/tools/map-tiles); enabled:false with the reason when no pack is installed. On protocol 1 (default since 2026-10-12) Takaro refuses getMapInfo ('not available on protocol version 1') and uses the declared map capability instead: Dimension embervale, x right, z up, bounds 0..10240, source none; the operator uploads the image. Live on staging 2026-10-12: manifest stored, upload without settings took the connector's bounds, tracker markers at 2 spots match the in-game map"
+      "note": "protocol 0 only: from the tile pack manifest takaro/map/<pack>/map.json (mod/tools/map-tiles); enabled:false with the reason when no pack is installed. On protocol 1 (default since 2026-10-12) Takaro refuses getMapInfo ('not available on protocol version 1') and uses the declared map capability instead: Dimension embervale, x right, z up, bounds 0..10240, source none; the operator uploads the image. The protocol 1 map needs Takaro protocol v1 (not yet on takaro.io). Live on staging 2026-10-12: manifest stored, upload without settings took the connector's bounds, tracker markers at 2 spots match the in-game map"
     },
     "getMapTile": {
       "status": "proven",

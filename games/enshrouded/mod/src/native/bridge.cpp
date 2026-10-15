@@ -192,6 +192,7 @@ void Bridge::ApplyPendingSettings() {
     o_.config.identityToken = s.identityToken;
     o_.config.registrationToken = s.registrationToken;
     o_.config.serverName = s.serverName;
+    o_.config.protocolV1 = s.protocolV1;
     lastIdentifyError_.clear();
     PluginLog("native: new connection settings; %s", connect ? "reconnecting now" : "disconnecting until they allow connecting");
     if (o_.transport) o_.transport->Retarget(s.url, connect);

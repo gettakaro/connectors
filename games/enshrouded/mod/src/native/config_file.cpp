@@ -64,6 +64,21 @@ std::string DefaultServerName(const std::string& hostName, const std::string& id
     return base + " (" + id8 + ")";
 }
 
+std::string ProtocolText(const SettingsFile& file, const EnvFn& env, Source& src) {
+    std::string v = EnvValue(env, {"TAKARO_PROTOCOL"});
+    if (!v.empty()) {
+        src = Source::Env;
+        return v;
+    }
+    const JsonValue* j = file.ok ? file.obj.get("protocol") : nullptr;
+    if (j && (j->type == JsonValue::String || j->type == JsonValue::Number) && !(v = Trim(j->str)).empty()) {
+        src = Source::File;
+        return v;
+    }
+    src = Source::Default;
+    return "";
+}
+
 LiveResolution ResolveLive(const SettingsFile& file, const std::string& hostName, const EnvFn& env) {
     LiveResolution r;
     auto pick = [&](std::initializer_list<const char*> envNames, const char* key, std::string& out, Source& src) {
@@ -78,6 +93,7 @@ LiveResolution ResolveLive(const SettingsFile& file, const std::string& hostName
     pick({"TAKARO_SERVER_NAME", "TAKARO_NAME"}, "name", r.s.serverName, r.name);
     if (r.s.serverName.empty() && !r.s.identityToken.empty())
         r.s.serverName = DefaultServerName(hostName, r.s.identityToken);
+    r.s.protocolV1 = ProtocolText(file, env, r.protocol) != "0";
     return r;
 }
 
@@ -100,7 +116,10 @@ std::string FreshPluginJson(const std::string& identity, const std::string& name
     Put(obj, "identityToken", JStr(identity));
     Put(obj, "name", JStr(name));
     Put(obj, "url", JStr(kDefaultUrl));
+    Put(obj, "protocol", JNum(1));
     Put(obj, "token", JStr(""));
+    Put(obj, "mapDir", JStr(""));
+    Put(obj, "caFile", JStr(""));
     return PrettyObject(obj);
 }
 
@@ -219,7 +238,7 @@ bool ConfigWatcher::Poll(int64_t nowMs) {
     if (active_.s == before) return false;
     Log(std::string("config: ") + o_.path + " changed (identity from " + SourceName(active_.identity) +
         ", registration token from " + SourceName(active_.registration) + ", url from " + SourceName(active_.url) +
-        ", name from " + SourceName(active_.name) + ")");
+        ", name from " + SourceName(active_.name) + ", protocol from " + SourceName(active_.protocol) + ")");
     return true;
 }
 
