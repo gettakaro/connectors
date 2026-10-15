@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type { PlayerIdKind } from './identity.js';
+import { parseTakaroProtocol } from '../takaro/settings.js';
 
 export type GmPublisherKind = 'amqp' | 'docker-exec' | 'kubectl-exec';
 export type GlobalMessageMode = 'chat' | 'broadcast' | 'both';
@@ -135,7 +136,8 @@ export interface SidecarConfig {
   takaroRequestMarginMs: number;
   /**
    * `TAKARO_PROTOCOL`: 1 (default) offers protocol versions [0, 1], declaring the map Dimensions; Takaro picks the
-   * highest it speaks. 0 offers version 0 only, exactly as before.
+   * highest it speaks. 0 offers version 0 only, exactly as before. The environment wins; `index.ts` falls back to the
+   * `.env` file the sidecar reads (`TakaroSettingsSource.startupValue`).
    */
   takaroProtocol: 0 | 1;
   /** Max age of a `chat-message` queued during a Takaro outage; older lines are dropped instead of replayed. */
@@ -298,7 +300,7 @@ export function loadConfig(env: Env = process.env): SidecarConfig {
     banKickCooldownMs: int(env.DUNE_BAN_KICK_COOLDOWN_MS, 15000),
     takaroRequestTimeoutMs: int(env.TAKARO_REQUEST_TIMEOUT_MS, 10000),
     takaroRequestMarginMs: int(env.TAKARO_REQUEST_MARGIN_MS, 1500),
-    takaroProtocol: env.TAKARO_PROTOCOL?.trim() === '0' ? 0 : 1,
+    takaroProtocol: parseTakaroProtocol(env.TAKARO_PROTOCOL),
     outageChatMaxAgeMs: int(env.DUNE_OUTAGE_CHAT_MAX_AGE_MS, 600000),
 
     dataDir,

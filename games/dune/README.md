@@ -94,7 +94,8 @@ node dist/index.js
 ```
 
 Set the `DUNE_*` values in the environment. The Takaro values are also read from `../.env`
-(beside `sidecar/`), and saving that file applies them without a restart.
+(beside `sidecar/`), and saving that file applies them without a restart. `TAKARO_PROTOCOL` is
+read from it too, at start only.
 
 The installation is ready when the log contains `Identified with Takaro`, the game server is
 online in Takaro, and `http://127.0.0.1:18891/health` reports `ok`.
@@ -141,7 +142,8 @@ the same square. Do not share the exported image: it is Funcom's artwork.
 
 Players on other maps (Deep Desert, social hubs) carry their own map id, for example
 `deepdesert_1`, so they never show up on the Hagga Basin image. Those maps are not declared yet.
-The map needs Takaro protocol version 1. Set `TAKARO_PROTOCOL=0` in `.env` to stay on version 0.
+The map needs Takaro protocol version 1. Set `TAKARO_PROTOCOL=0` in `.env` to stay on version 0;
+this needs a restart (`docker compose ... up -d`, or restart `node dist/index.js`).
 
 ### Upgrade
 
@@ -177,7 +179,7 @@ the `.so` with one for the same server build, and start it again.
 | Player death events | ✅ | Includes environment, fall, and NPC causes. |
 | Entity kill events | ✅ | Plugin reports entity and weapon display name. |
 | Log events | ⚠️ | Secrets are redacted; at most 50 lines per 30 s are forwarded; Takaro does not retain logs. |
-| Map | ⚠️ | Hagga Basin, calibrated by the connector; you upload the image (see Map in Takaro). |
+| Map | ⚠️ | Hagga Basin, calibrated by the connector; you upload the image (see Map in Takaro). Needs Takaro protocol v1 (not yet on takaro.io). |
 | Module chat commands | ✅ | Commands run and answer in game chat. |
 | Module hooks and cronjobs | ✅ | Hooks and scheduled jobs run normally. |
 | Module teleports | ✅ | Teleport commands move the player. |

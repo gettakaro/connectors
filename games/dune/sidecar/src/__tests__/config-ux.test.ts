@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { describeTakaroError, isNameConflict, TakaroWsClient } from '../takaro/client.js';
-import { IDENTITY_FILE_NAME, parseDotenv, resolveConfigFile, TakaroSettingsSource } from '../takaro/settings.js';
+import { IDENTITY_FILE_NAME, parseDotenv, parseTakaroProtocol, resolveConfigFile, TakaroSettingsSource } from '../takaro/settings.js';
 import { redactSecrets } from '../logger.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -188,6 +188,34 @@ describe('settings precedence and reload', () => {
     fs.writeFileSync(i.configFile, 'TAKARO_IDENTITY_TOKEN=\nTAKARO_REGISTRATION_TOKEN=r\n');
     expect(s.poll()).toMatchObject({ identityToken: generated });
     expect(generated).toMatch(UUID);
+  });
+});
+
+describe('TAKARO_PROTOCOL', () => {
+  it('is read from the .env file when the environment does not set it', () => {
+    const s = install({ file: 'TAKARO_REGISTRATION_TOKEN=r\nTAKARO_PROTOCOL=0\n' }).make();
+    expect(parseTakaroProtocol(s.startupValue('TAKARO_PROTOCOL'))).toBe(0);
+  });
+
+  it('the environment wins; an empty one (compose with nothing set) falls back to the file', () => {
+    expect(install({ env: { TAKARO_PROTOCOL: '1' }, file: 'TAKARO_PROTOCOL=0\n' }).make().startupValue('TAKARO_PROTOCOL')).toBe('1');
+    expect(install({ env: { TAKARO_PROTOCOL: '' }, file: 'TAKARO_PROTOCOL=0\n' }).make().startupValue('TAKARO_PROTOCOL')).toBe('0');
+  });
+
+  it('defaults to 1, and a later edit needs a restart', () => {
+    const i = install({ file: 'TAKARO_REGISTRATION_TOKEN=r\n' });
+    const s = i.make();
+    expect(parseTakaroProtocol(s.startupValue('TAKARO_PROTOCOL'))).toBe(1);
+    fs.writeFileSync(i.configFile, 'TAKARO_REGISTRATION_TOKEN=r\nTAKARO_PROTOCOL=0\n');
+    expect(s.poll()).toBeNull();
+    expect(parseTakaroProtocol(s.startupValue('TAKARO_PROTOCOL'))).toBe(1);
+  });
+
+  it('parses only 0 as version 0', () => {
+    expect(parseTakaroProtocol(' 0 ')).toBe(0);
+    expect(parseTakaroProtocol('1')).toBe(1);
+    expect(parseTakaroProtocol(undefined)).toBe(1);
+    expect(parseTakaroProtocol('')).toBe(1);
   });
 });
 

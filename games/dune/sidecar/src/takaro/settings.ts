@@ -12,11 +12,21 @@ import { fileURLToPath } from 'node:url';
  *    file differs from what the file said at start, the file wins for that key: Docker bakes the environment at
  *    container create, so the edited file is the newest word.
  *
- * Only these four keys are read from the file. Every other `DUNE_*` setting still comes from the environment alone and
- * needs a sidecar restart, so the file can never switch on a setting compose does not pass through.
+ * Only these four keys are reloaded from the file, plus the `STARTUP_KEYS`, which are read from it once at start and
+ * need a sidecar restart. Every other `DUNE_*` setting still comes from the environment alone and needs a restart, so
+ * the file can never switch on a setting compose does not pass through.
  */
 export const RELOADABLE_KEYS = ['TAKARO_WS_URL', 'TAKARO_REGISTRATION_TOKEN', 'TAKARO_IDENTITY_TOKEN', 'TAKARO_SERVER_NAME'] as const;
 type ReloadableKey = (typeof RELOADABLE_KEYS)[number];
+
+/** Read from the environment, else from the file as it was at start; a change needs a restart. */
+export const STARTUP_KEYS = ['TAKARO_PROTOCOL'] as const;
+type StartupKey = (typeof STARTUP_KEYS)[number];
+
+/** `TAKARO_PROTOCOL`: `0` keeps Takaro protocol version 0 only; anything else (or unset) offers version 1. */
+export function parseTakaroProtocol(value: string | undefined): 0 | 1 {
+  return value?.trim() === '0' ? 0 : 1;
+}
 
 export const IDENTITY_FILE_NAME = 'takaro-identity.json';
 const DEFAULT_WS_URL = 'wss://connect.takaro.io/';
@@ -87,6 +97,7 @@ export class TakaroSettingsSource {
   private lastReadError = '';
   private baseline: Partial<Record<ReloadableKey, string>> | null = null;
   private file: Partial<Record<ReloadableKey, string>> = {};
+  private startup: Partial<Record<StartupKey, string>> = {};
   private readonly overridden = new Set<ReloadableKey>();
   private settings: TakaroSettings;
   /** This run's generated identity, so a failed save does not mean a new one on every read. */
@@ -107,6 +118,12 @@ export class TakaroSettingsSource {
   /** Whether the config file existed on the last read. */
   hasConfigFile(): boolean {
     return this.lastText !== null;
+  }
+
+  /** A `STARTUP_KEYS` value: the environment when set, else the file as it was read at start. */
+  startupValue(key: StartupKey): string {
+    const fromEnv = this.env[key]?.trim() ?? '';
+    return fromEnv ? fromEnv : (this.startup[key] ?? '');
   }
 
   current(): TakaroSettings {
@@ -152,6 +169,7 @@ export class TakaroSettingsSource {
     for (const key of RELOADABLE_KEYS) if (parsed[key] !== undefined) values[key] = parsed[key].trim();
     if (this.baseline === null) {
       this.baseline = values;
+      for (const key of STARTUP_KEYS) if (parsed[key] !== undefined) this.startup[key] = parsed[key].trim();
     } else {
       for (const key of RELOADABLE_KEYS) if ((values[key] ?? '') !== (this.baseline[key] ?? '')) this.overridden.add(key);
     }
