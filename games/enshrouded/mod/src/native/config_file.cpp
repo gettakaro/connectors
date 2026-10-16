@@ -56,14 +56,6 @@ std::string PrettyObject(const JsonValue& obj) {
 
 }  // namespace
 
-std::string DefaultServerName(const std::string& hostName, const std::string& identity) {
-    std::string id8;
-    for (char c : identity)
-        if (isalnum((unsigned char)c) && id8.size() < 8) id8 += c;
-    std::string base = Trim(hostName).empty() ? "Enshrouded" : Trim(hostName);
-    return base + " (" + id8 + ")";
-}
-
 std::string ProtocolText(const SettingsFile& file, const EnvFn& env, Source& src) {
     std::string v = EnvValue(env, {"TAKARO_PROTOCOL"});
     if (!v.empty()) {
@@ -79,7 +71,7 @@ std::string ProtocolText(const SettingsFile& file, const EnvFn& env, Source& src
     return "";
 }
 
-LiveResolution ResolveLive(const SettingsFile& file, const std::string& hostName, const EnvFn& env) {
+LiveResolution ResolveLive(const SettingsFile& file, const EnvFn& env) {
     LiveResolution r;
     auto pick = [&](std::initializer_list<const char*> envNames, const char* key, std::string& out, Source& src) {
         if (!(out = EnvValue(env, envNames)).empty()) src = Source::Env;
@@ -91,8 +83,10 @@ LiveResolution ResolveLive(const SettingsFile& file, const std::string& hostName
     pick({"TAKARO_REGISTRATION_TOKEN"}, "registrationToken", r.s.registrationToken, r.registration);
     pick({"TAKARO_IDENTITY_TOKEN"}, "identityToken", r.s.identityToken, r.identity);
     pick({"TAKARO_SERVER_NAME", "TAKARO_NAME"}, "name", r.s.serverName, r.name);
-    if (r.s.serverName.empty() && !r.s.identityToken.empty())
-        r.s.serverName = DefaultServerName(hostName, r.s.identityToken);
+    if (r.s.registrationToken == kTokenPlaceholder) r.s.registrationToken.clear(), r.registration = Source::Default;
+    if (r.s.identityToken == kIdentityPlaceholder) r.s.identityToken.clear(), r.identity = Source::Default;
+    if (r.s.serverName == kIdentityPlaceholder) r.s.serverName.clear(), r.name = Source::Default;
+    if (r.s.serverName.empty()) r.s.serverName = r.s.identityToken;
     r.s.protocolV1 = ProtocolText(file, env, r.protocol) != "0";
     return r;
 }
@@ -110,16 +104,10 @@ std::string SetJsonKey(const SettingsFile& file, const std::string& key, const s
     return PrettyObject(obj);
 }
 
-std::string FreshPluginJson(const std::string& identity, const std::string& name) {
+std::string FreshPluginJson() {
     JsonValue obj = JObj();
-    Put(obj, "registrationToken", JStr(""));
-    Put(obj, "identityToken", JStr(identity));
-    Put(obj, "name", JStr(name));
-    Put(obj, "url", JStr(kDefaultUrl));
-    Put(obj, "protocol", JNum(1));
-    Put(obj, "token", JStr(""));
-    Put(obj, "mapDir", JStr(""));
-    Put(obj, "caFile", JStr(""));
+    Put(obj, "registrationToken", JStr(kTokenPlaceholder));
+    Put(obj, "identityToken", JStr(kIdentityPlaceholder));
     return PrettyObject(obj);
 }
 
@@ -158,8 +146,7 @@ const LiveResolution& ConfigWatcher::Start(int64_t nowMs) {
         return active_;
     }
     if (!exists) {
-        std::string id = o_.newIdentity();
-        std::string fresh = FreshPluginJson(id, DefaultServerName(o_.hostName, id));
+        std::string fresh = FreshPluginJson();
         if (EnsureDirectory(DirName(o_.path), err) && AtomicWriteFile(o_.path, fresh, err)) {
             Log("config: created " + o_.path);
             exists = true;
@@ -184,22 +171,7 @@ void ConfigWatcher::Apply(bool found, const std::string& text) {
     appliedFound_ = found;
     appliedText_ = text;
     SettingsFile file = ParseSettingsFile(found, text);
-    active_ = ResolveLive(file, o_.hostName, o_.env);
-    if (!file.ok || active_.identity == Source::Env || file.HasValue("identityToken")) return;
-    std::string next = SetJsonKey(file, "identityToken", o_.newIdentity()), err;
-    if (RewriteKeepingAccess(o_.path, text, next, err)) {
-        Log("config: wrote a generated identityToken into " + o_.path);
-        appliedText_ = next;
-        writeError_.clear();
-        active_ = ResolveLive(ParseSettingsFile(true, next), o_.hostName, o_.env);
-        return;
-    }
-    appliedFound_ = false;  // not applied for good: the next poll reads the file and tries again
-    appliedText_.clear();
-    if (writeError_ != err)
-        consoleWarnings_.push_back("could not write a generated identityToken into " + o_.path + " (" + err +
-                                   "). Set \"identityToken\" there to any unique value, for example a UUID.");
-    writeError_ = err;
+    active_ = ResolveLive(file, o_.env);
 }
 
 bool ConfigWatcher::Poll(int64_t nowMs) {

@@ -109,21 +109,16 @@ Stop the game server first: a running server holds `dbghelp.dll` open. The zip h
 `TakaroEnshrouded/`; copy its **`dbghelp.dll` next to `enshrouded_server.exe`** and start the server.
 
 The connector keeps its whole configuration in one file, **`takaro/plugin.json` next to
-`enshrouded_server.exe`**. It creates the file at the first start, with a unique `identityToken`, and
-the console says so. Open it, paste the registration token of your Takaro Generic game server into
-`registrationToken` and save: the connector connects within a few seconds while the server keeps running. To have
-it connect at the first start instead, create the file yourself before starting:
+`enshrouded_server.exe`**, with two settings. It creates the file at the first start and the console
+says so. Open it, paste the registration token of your Takaro Generic game server into
+`registrationToken`, put your server's name into `identityToken` and save: the connector connects
+within a few seconds while the server keeps running. To have it connect at the first start instead,
+create the file yourself before starting:
 
 ```json
 {
-  "registrationToken": "<your registration token>",
-  "identityToken": "",
-  "name": "",
-  "url": "wss://connect.takaro.io/",
-  "protocol": 1,
-  "token": "",
-  "mapDir": "",
-  "caFile": ""
+  "registrationToken": "paste-your-token-here",
+  "identityToken": "name-your-server"
 }
 ```
 
@@ -137,14 +132,12 @@ it connect at the first start instead, create the file yourself before starting:
 
 | Key | What to put there |
 |---|---|
-| `registrationToken` | The registration token of your Takaro Generic game server. Required. |
-| `identityToken` | Leave it empty: the connector writes a unique identity there. Keep it once set; it is what Takaro knows this server by. |
-| `name` | The server name shown in Takaro. Left empty, it is your server's name plus the start of the identity, because Takaro needs a different name for every game server. |
-| `url` | Leave `wss://connect.takaro.io/`. |
-| `protocol` | Leave `1`: the connector offers Takaro protocol 1 (the map) and falls back to 0 on a Takaro without it. `0` speaks protocol 0 only. |
-| `token` | Optional: a long random secret (e.g. `openssl rand -hex 32`) to read the plugin's diagnostics at `http://127.0.0.1:18890/health`. Needs a restart. |
-| `mapDir` | Optional: the folder of a protocol 0 map tile pack. Empty: `takaro/map`. Needs a restart. |
-| `caFile` | Optional: a CA file, only for a Takaro behind your own certificate authority. Empty: the system's trust. Needs a restart. |
+| `registrationToken` | The registration token of your Takaro Generic game server. |
+| `identityToken` | Your server's name. Takaro creates the game server under this name and recognizes it by it from then on, so pick a name no other game server in your Takaro uses and keep it. |
+
+The Takaro address (`wss://connect.takaro.io/`) is built in. Optional settings for special setups
+(`protocol`, `mapDir`, `caFile`, `token`) can be added by hand; see INSTALL.md. A `plugin.json` from an
+earlier version, with `name`, `url` and other lines, keeps working as it is.
 
 A change to `registrationToken`, `identityToken`, `name`, `url` or `protocol` applies within a few
 seconds: it reconnects, an emptied token disconnects. `token`, `mapDir` and `caFile` need a restart.
