@@ -70,10 +70,12 @@ Download the latest release: https://takaro.io/connectors/enshrouded
 
 ### 1. Before you start
 
-- An **Enshrouded dedicated server** on game build 1024233 that you can stop, start and copy files to.
-  The tested setup is the Linux Docker image `mornedhels/enshrouded-server`, where
-  `enshrouded_server.exe` runs under Wine/Proton. A Windows dedicated server should work the same
-  way (the plugin is a Windows DLL), but that has not been tried.
+- An **Enshrouded dedicated server** you can stop, start and copy files to, on a game build the
+  plugin's game data knows: **1267041 (Enshrouded 1.0 hotfix 1.0.0.1)** or 1024233. Tested natively on
+  Windows (1.0) and under Wine/Proton in the Linux Docker image `mornedhels/enshrouded-server` (1024233).
+  On another build the plugin logs `gamedata: no section for build <n>` and uses its older heuristics;
+  features whose code moved report themselves degraded. Adding a section to
+  `takaro/enshrouded-gamedata.json` (see DEVELOPMENT.md) brings them back without a new DLL.
 - A **Takaro** game server of type **Generic**, and its **registration token**.
 
 ### 2. Download
@@ -171,6 +173,8 @@ that name.
 
 Stop the server, replace only `dbghelp.dll` with the new one, start it again. Your config in
 `takaro/plugin.json` and the connector's state in `takaro/connector-state/` are never touched.
+`takaro/enshrouded-gamedata.json` is yours too: a newer plugin uses its own embedded copy for any build
+your file has no section for, so delete the file to pick up the new defaults for every build.
 
 **From 0.5.0 (plugin + sidecar):** 0.6.0 replaces the sidecar. Stop and remove the sidecar before the
 new DLL starts, because both must never connect with the same identity at once; move the tokens from
