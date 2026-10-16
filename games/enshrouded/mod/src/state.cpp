@@ -149,8 +149,24 @@ void PluginState::FinalizeLoginLocked() {
             break;
         }
     }
+    if (waitCharacterNames_ && p.characterName.empty()) {
+        p.connectPending = true;
+        p.connectDueMs = NowMs() + 20000;
+        return;
+    }
+    EmitConnectLocked(p);
+}
+
+void PluginState::EmitConnectLocked(PlayerRecord& p) {
+    p.connectPending = false;
     PushEvent("player-connected", "{\"player\":" + PlayerJsonLocked(p) + "}");
-    PluginLog("player-connected name=%s peer=%s group=%s", p.name.c_str(), p.peerId.c_str(), p.group.c_str());
+    PluginLog("player-connected name=%s character=%s peer=%s group=%s", p.name.c_str(), p.characterName.c_str(), p.peerId.c_str(),
+              p.group.c_str());
+}
+
+void PluginState::SetWaitForCharacterNames(bool on) {
+    Guard g(lock_);
+    waitCharacterNames_ = on;
 }
 
 void PluginState::OnLogLine(int level, const std::string& line) {
@@ -259,6 +275,7 @@ void PluginState::OnLogLine(int level, const std::string& line) {
         std::string name = line.substr(24, line.size() - 25);
         for (auto it = players_.begin(); it != players_.end(); ++it) {
             if (it->online && it->name == name) {
+                if (it->connectPending) EmitConnectLocked(*it);
                 PushEvent("player-disconnected", "{\"player\":" + PlayerJsonLocked(*it, false) + "}");
                 PluginLog("player-disconnected name=%s (Remove Player)", name.c_str());
                 it->online = false;
@@ -276,6 +293,7 @@ void PluginState::OnLogLine(int level, const std::string& line) {
         for (auto it = players_.begin(); it != players_.end(); ++it) {
             if (it->peerId == peer) {
                 if (it->online) {
+                    if (it->connectPending) EmitConnectLocked(*it);
                     PushEvent("player-disconnected", "{\"player\":" + PlayerJsonLocked(*it, false) + "}");
                     PluginLog("player-disconnected name=%s (Removed peer)", it->name.c_str());
                 }
@@ -294,6 +312,8 @@ void PluginState::OnLogLine(int level, const std::string& line) {
 void PluginState::Housekeep() {
     Guard g(lock_);
     if (collectingPerms_ && NowMs() - lastPermLineMs_ > 750) FinalizeLoginLocked();
+    for (auto& p : players_)
+        if (p.connectPending && p.online && NowMs() >= p.connectDueMs) EmitConnectLocked(p);
 }
 
 std::string PluginState::PlayerJsonLocked(const PlayerRecord& p, bool online) const {
@@ -302,7 +322,9 @@ std::string PluginState::PlayerJsonLocked(const PlayerRecord& p, bool online) co
     for (size_t i = 0; i < p.permissions.size(); i++) perms += (i ? "," : "") + JsonStr(p.permissions[i]);
     perms += "]";
     const std::string& shown = p.characterName.empty() ? p.name : p.characterName;
-    return "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(shown) + ",\"steamId\":" + JsonStr(id) +
+    std::string level = p.level < 0 ? "" : ",\"level\":" + std::to_string(p.level) + ",\"experience\":" + std::to_string(p.experience) +
+                                              ",\"experienceRequired\":" + std::to_string(p.experienceRequired);
+    return "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(shown) + ",\"steamId\":" + JsonStr(id) + level +
            ",\"peerId\":" + JsonStr(p.peerId) + ",\"group\":" + JsonStr(p.group) + ",\"permissions\":" + perms +
            ",\"connectedAt\":" + JsonStr(p.connectedAt) + ",\"online\":" + (online ? "true" : "false") + "}";
 }
@@ -335,9 +357,23 @@ bool PluginState::PlayerJson(const std::string& gameId, std::string& out) const 
 void PluginState::SetCharacterName(const std::string& persona, const std::string& character) {
     Guard g(lock_);
     for (auto& p : players_)
-        if (p.online && p.name == persona && p.characterName != character) {
-            p.characterName = character;
-            PluginLog("character name: steam=%s persona=%s character=%s", p.steamId.c_str(), persona.c_str(), character.c_str());
+        if (p.online && p.name == persona) {
+            if (p.characterName != character) {
+                p.characterName = character;
+                PluginLog("character name: steam=%s persona=%s character=%s", p.steamId.c_str(), persona.c_str(), character.c_str());
+            }
+            if (p.connectPending) EmitConnectLocked(p);
+        }
+}
+
+void PluginState::SetLevel(const std::string& persona, int level, int experience, int experienceRequired) {
+    Guard g(lock_);
+    for (auto& p : players_)
+        if (p.online && p.name == persona) {
+            if (p.level != level) PluginLog("character level: steam=%s persona=%s level=%d", p.steamId.c_str(), persona.c_str(), level);
+            p.level = level;
+            p.experience = experience;
+            p.experienceRequired = experienceRequired;
         }
 }
 

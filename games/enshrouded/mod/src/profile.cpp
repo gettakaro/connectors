@@ -1,6 +1,7 @@
 #include "profile.h"
 
 #include "common.h"
+#include "derive.h"
 #include "scan.h"
 
 #include <cstdio>
@@ -55,6 +56,100 @@ bool SelectBuild(const JsonValue& root, const std::string& build) {
     return true;
 }
 
+void Serialize(const JsonValue& v, int depth, std::string& out) {
+    std::string pad(depth * 2, ' ');
+    switch (v.type) {
+        case JsonValue::Object: {
+            // a function entry ({rva, verify}) stays on one line, like the hand-written file
+            bool flat = depth >= 4;
+            out += "{";
+            for (size_t i = 0; i < v.obj.size(); i++) {
+                out += i ? "," : "";
+                out += flat ? " " : "\n" + pad + "  ";
+                out += JsonStr(v.obj[i].first) + ": ";
+                Serialize(v.obj[i].second, depth + 1, out);
+            }
+            out += v.obj.empty() ? "}" : (flat ? " }" : "\n" + pad + "}");
+            break;
+        }
+        case JsonValue::Array:
+            out += "[";
+            for (size_t i = 0; i < v.arr.size(); i++) {
+                out += i ? ", " : "";
+                Serialize(v.arr[i], depth + 1, out);
+            }
+            out += "]";
+            break;
+        case JsonValue::String: out += JsonStr(v.str); break;
+        case JsonValue::Number: out += v.str; break;
+        case JsonValue::Bool: out += v.b ? "true" : "false"; break;
+        default: out += "null";
+    }
+}
+
+JsonValue Str(const std::string& s) {
+    JsonValue v;
+    v.type = JsonValue::String;
+    v.str = s;
+    return v;
+}
+
+// The layout of the newest build in the file: supplies the constants no anchor can derive.
+const JsonValue* TemplateLayout(const JsonValue& root) {
+    const JsonValue* builds = root.get("builds");
+    if (!builds || builds->type != JsonValue::Object) return nullptr;
+    const JsonValue* best = nullptr;
+    uint64_t bestN = 0;
+    for (auto& kv : builds->obj) {
+        uint64_t n = strtoull(kv.first.c_str(), nullptr, 10);
+        const JsonValue* l = kv.second.get("layout");
+        if (!l || l->type != JsonValue::Object || n < bestN) continue;
+        best = l;
+        bestN = n;
+    }
+    return best;
+}
+
+// Derives a section for `gameBuild`, stores it in `root` and writes `root` to `path`. Returns the file text.
+bool DeriveInto(JsonValue& root, const std::string& gameBuild, const std::string& path, std::string& written) {
+    derive::Result r = derive::Derive(TemplateLayout(root));
+    if (!r.ok) {
+        PluginLog("gamedata: deriving build %s failed: %s", gameBuild.c_str(), r.error.c_str());
+        return false;
+    }
+    SYSTEMTIME t;
+    GetSystemTime(&t);
+    char note[160];
+    snprintf(note, sizeof note, "derived automatically by plugin %s on %04u-%02u-%02u (%d values from anchors)",
+             TAKARO_PLUGIN_VERSION, t.wYear, t.wMonth, t.wDay, r.derivedValues);
+    JsonValue section;
+    section.type = JsonValue::Object;
+    section.obj = {{"note", Str(note)}, {"functions", r.functions}, {"callsites", r.callsites}, {"layout", r.layout}};
+    if (root.type != JsonValue::Object) root.type = JsonValue::Object;
+    JsonValue* builds = nullptr;
+    for (auto& kv : root.obj)
+        if (kv.first == "builds") builds = &kv.second;
+    if (!builds) {
+        root.obj.push_back({"builds", JsonValue{}});
+        builds = &root.obj.back().second;
+    }
+    builds->type = JsonValue::Object;
+    bool replaced = false;
+    for (auto& kv : builds->obj)
+        if (kv.first == gameBuild) kv.second = section, replaced = true;
+    if (!replaced) builds->obj.push_back({gameBuild, section});
+    written.clear();
+    Serialize(root, 0, written);
+    written += "\n";
+    if (!WriteFile(path, written)) {
+        PluginLog("gamedata: cannot write derived section to %s", path.c_str());
+        return false;
+    }
+    PluginLog("gamedata: derived build %s (%d values) and saved it to %s", gameBuild.c_str(), r.derivedValues,
+              path.c_str());
+    return true;
+}
+
 }  // namespace
 
 void Load(const std::string& gameBuild) {
@@ -62,18 +157,39 @@ void Load(const std::string& gameBuild) {
     std::string path = dir + "\\enshrouded-gamedata.json";
     std::string text;
     CreateDirectoryA(dir.c_str(), nullptr);
-    JsonValue embedded;
+    JsonValue embedded, fileRoot;
     bool embeddedOk = JsonParse(kEmbedded, embedded);
+    bool fileOk = false;
     if (ReadFile(path, text)) {
         std::string body = text.rfind("\xEF\xBB\xBF", 0) == 0 ? text.substr(3) : text;
-        if (JsonParse(body, g_root) && SelectBuild(g_root, gameBuild)) {
+        fileOk = JsonParse(body, fileRoot) && fileRoot.type == JsonValue::Object;
+        if (fileOk && (g_root = fileRoot, SelectBuild(g_root, gameBuild))) {
             g_source = "file " + path;
         } else if (embeddedOk && (g_root = embedded, SelectBuild(g_root, gameBuild))) {
             g_source = "embedded (file " + path + " has no valid section for this build)";
         }
     } else {
         if (WriteFile(path, kEmbedded)) PluginLog("gamedata: wrote default %s", path.c_str());
+        fileOk = embeddedOk && (fileRoot = embedded, true);
         if (embeddedOk && (g_root = embedded, SelectBuild(g_root, gameBuild))) g_source = "embedded";
+    }
+    // A build without a section: derive one from the running exe, save it, then load the saved file back, so the
+    // section in use is exactly what is on disk. takaro/gamedata-derive-test forces this for a known build and saves
+    // to enshrouded-gamedata-derived.json instead, leaving the main file as it is.
+    bool forceDerive = GetFileAttributesA((dir + "\\gamedata-derive-test").c_str()) != INVALID_FILE_ATTRIBUTES;
+    if (!g_build || forceDerive) {
+        std::string target = forceDerive ? dir + "\\enshrouded-gamedata-derived.json" : path;
+        // keep the sections already in the file; a file that does not parse is rebuilt from the embedded copy
+        JsonValue work = fileOk ? fileRoot : embedded;
+        std::string written;
+        JsonValue reread;
+        const JsonValue* builds = nullptr;
+        if (DeriveInto(work, gameBuild, target, written) && JsonParse(written, reread) &&
+            (builds = reread.get("builds")) && builds->get(gameBuild)) {
+            g_build = nullptr;
+            g_root = std::move(reread);
+            if (SelectBuild(g_root, gameBuild)) g_source = "derived, file " + target;
+        }
     }
     if (g_build) {
         const JsonValue* note = g_build->get("note");
@@ -97,8 +213,8 @@ uint32_t JobFunction(const char* jobName) {
         // {char* name, u64 nameLen, fn*}: the length must match, the function must be code
         if (scan::ReadU64(ref + 8) != strlen(jobName)) continue;
         uint64_t fn = scan::ReadU64(ref + 16);
-        if (fn < scan::Base()) continue;
-        uint32_t rva = (uint32_t)(fn - scan::Base());
+        if (fn < scan::PointerBase()) continue;
+        uint32_t rva = (uint32_t)(fn - scan::PointerBase());
         if (!scan::InText(rva)) continue;
         if (found != rva) hits++;
         found = rva;

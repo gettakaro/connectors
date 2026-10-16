@@ -133,13 +133,26 @@ section per game build (the number the plugin log prints as `game build:`):
 - `callsites`: return addresses the detours compare against (player-chat receive, the
   inventory admin gate); each must sit right after an `E8` call to the matching function.
 - `layout`: struct offsets and ABI switches (server slot table, chat-system bookkeeping, combat
-  context and paged event views, give-item version fields, the account-action event).
+  context and paged event views, give-item version fields, the account-action event, the character-name
+  component, and `attributes*`: the `keen::ecs::NetworkPlayerAttributes` component hash with the offsets of
+  `level`, `experience` and `experienceRequired`, taken from that type's reflection field table).
 
 `build.sh` embeds the file; the plugin writes it to `takaro/enshrouded-gamedata.json` next to the
 server on first start and reads that copy from then on, so an operator can add a section without a
 new DLL. A section whose entry fails its `verify` bytes disables only that capability (reported
-`degraded`). A build with no section falls back to the built-in signature heuristics in `hooks.cpp`
-and `world.cpp` (written for 1024233).
+`degraded`).
+
+A build with no section in the file or the embedded copy gets one derived at start (`src/derive.cpp`):
+the recipes start from log strings, the ECS job table and instruction shapes inside the functions
+those lead to, and read each RVA, callsite and offset from there. The constants that no anchor
+carries (chat-system strides, the paged event-view layout, `loginMachine`, ...) come from the newest
+build's `layout` in the file. The section is written into `takaro/enshrouded-gamedata.json` with
+the note `derived automatically by plugin <version> ...`, read back, and used like a hand-written
+one, so every `verify` check still applies. If a required value cannot be derived the plugin logs
+which one and falls back to the built-in signature heuristics in `hooks.cpp` and `world.cpp`
+(written for 1024233). An empty file `takaro/gamedata-derive-test` forces a derive on a known build
+and saves the result to `takaro/enshrouded-gamedata-derived.json` instead, which leaves the main
+file untouched, for checking the recipes on a test server.
 
 ### Static tables (items, entities, labels)
 
@@ -154,9 +167,11 @@ and `world.cpp` (written for 1024233).
 
 ### Moving to a new game build
 
-0. Add a `builds.<new build>` section to `mod/gamedata/enshrouded-gamedata.json` (diff the new exe
-   against the previous one: string anchors, the ECS job table and the reflection field descriptors
-   `{name*, len, type*, offset}` give most values), and regenerate the static tables above.
+0. Run `mod/tests/derive_test.sh <new enshrouded_server.exe>`: it prints the derived section. Check
+   it against the game (string anchors, the ECS job table and the reflection field descriptors
+   `{name*, len, type*, offset}`), add it as `builds.<new build>` in
+   `mod/gamedata/enshrouded-gamedata.json` with a real `note`, and regenerate the static tables above.
+   For a build already in the file the script compares every derived value with the section.
 1. `takaro-maint steam pin --game enshrouded --metadata` to see what moved, then
    `--record-files … --write` to re-pin the record (id and `revision` follow the new game
    build, so the target is a new file).
@@ -201,6 +216,7 @@ For a quick loop without the packaging step:
 # plugin: cross-compile dbghelp.dll with zig 0.13 (set ZIG=/path/to/zig if not on PATH)
 ./mod/build.sh                 # -> mod/build/dbghelp.dll
 ./mod/tests/run.sh             # host-side plugin tests (needs docker; pinned gcc:14 by digest)
+./mod/tests/derive_test.sh <enshrouded_server.exe>...   # gamedata derivation against real binaries (WSL + zig)
 NATIVE_ONLY=1 ./mod/tests/run.sh   # just the native connector tests
 ./mod/tests/wine/run.sh        # the real DLL under the pinned Proton image against tests/fake_takaro_ws.py
 

@@ -15,6 +15,9 @@
 namespace native {
 
 constexpr const char* kDefaultUrl = "wss://connect.takaro.io/";
+// What a new plugin.json holds until the operator fills it in; both count as not set.
+constexpr const char* kTokenPlaceholder = "paste-your-token-here";
+constexpr const char* kIdentityPlaceholder = "name-your-server";
 
 enum class Source { Env, File, Default };
 const char* SourceName(Source s);
@@ -45,21 +48,20 @@ struct SettingsFile {
 SettingsFile ParseSettingsFile(bool found, const std::string& text);  // tolerates a UTF-8 BOM
 
 // Per field: a non-empty environment variable, else plugin.json, else the default (the Takaro URL; no
-// tokens; for the name "<hostName or Enshrouded> (<first 8 identity characters>)", because Takaro keeps
-// game-server names unique per domain).
-LiveResolution ResolveLive(const SettingsFile& file, const std::string& hostName, const EnvFn& env);
+// tokens). The identityToken is the server's name in Takaro (Takaro names a new game server after it),
+// so the name defaults to it; an older plugin.json may still set "name". Placeholders count as not set.
+LiveResolution ResolveLive(const SettingsFile& file, const EnvFn& env);
 // The "protocol" setting as text: TAKARO_PROTOCOL, else plugin.json "protocol" (a number or a string),
 // else "". Anything but "0" offers protocol 1.
 std::string ProtocolText(const SettingsFile& file, const EnvFn& env, Source& src);
-std::string DefaultServerName(const std::string& hostName, const std::string& identity);
 
 // What the connector must not connect without: "" when the settings can connect.
 std::string ConnectBlocker(const LiveSettings& s);
 
 // plugin.json text with `key` set (or added) to a string value, as a 2-space indented object.
 std::string SetJsonKey(const SettingsFile& file, const std::string& key, const std::string& value);
-// The text of the plugin.json the connector creates: every key, empty tokens, the identity and name.
-std::string FreshPluginJson(const std::string& identity, const std::string& name);
+// The text of the plugin.json the connector creates: registrationToken and identityToken, as placeholders.
+std::string FreshPluginJson();
 
 // A random UUID (version 4) from 16 random bytes.
 std::string UuidFromBytes(const unsigned char b[16]);
@@ -69,9 +71,7 @@ class ConfigWatcher {
 public:
     struct Options {
         std::string path;
-        std::string hostName;  // "name" from enshrouded_server.json, for the default server name
         EnvFn env;
-        std::function<std::string()> newIdentity;
         int64_t pollMs = 5000, settleMs = 1000;
         std::function<void(const std::string&)> log;  // plugin.log only
     };
@@ -88,7 +88,7 @@ public:
     std::vector<std::string> TakeConsoleWarnings();
 
 private:
-    // Resolves `text`; an empty identityToken in the file gets a generated one, written back.
+    // Resolves `text`.
     void Apply(bool found, const std::string& text);
     void Log(const std::string& line) const;
 
@@ -100,7 +100,6 @@ private:
     std::string candidateText_;
     int64_t nextPoll_ = 0;
     std::vector<std::string> consoleWarnings_;
-    std::string writeError_;  // the last identity write-back failure, reported once
 };
 
 }  // namespace native

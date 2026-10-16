@@ -58,6 +58,7 @@ struct Layout {
     // which slot field the chat handle is (1024233: the player handle @0; 1.0: the machine handle @4), and where the
     // session manager keeps the sender's account (1.0 passes it to queueMessage; 0 = not needed)
     uint32_t chatHandleSlotField = 0;
+    uint32_t chatNoticeType = 0;  // 1.0: 4 = free-text notice without a sender name
     // Teleport.searchBestSpawnPosition: 1024233 placed with it; 1.0 resolves the search to the current spot (the
     // player snaps back), and the game's own teleports leave it off
     uint32_t teleportSearchBest = 1;
@@ -98,6 +99,8 @@ using CharNameFn = uint8_t*(__fastcall*)(uint8_t* out, uint64_t table, uint64_t 
 CharNameFn g_charName = nullptr;
 uint32_t g_charComp = 0, g_charTable = 0;
 uint64_t g_charLastMs = 0;
+// 1.0: ecs::NetworkPlayerAttributes of a player entity holds level / experience / experienceRequired as u16
+uint32_t g_attrComp = 0, g_attrLevel = 0, g_attrXp = 0, g_attrXpReq = 0;
 
 GetCompFn g_getRead = nullptr;
 AddCompFn g_addComp = nullptr;
@@ -152,7 +155,7 @@ uint64_t __fastcall UpdDetour(uint64_t server, uint64_t b, uint64_t c, uint64_t 
     PerfScope perf(kPerfUpdatePlayers);
     InterlockedIncrement64(&g_updTicks);
     InterlockedExchange64(&g_server, (LONG64)server);
-    if (g_charName && NowMs() - g_charLastMs >= 2000) {
+    if ((g_charName || g_attrComp) && NowMs() - g_charLastMs >= 2000) {
         g_charLastMs = NowMs();
         RefreshCharacterNames(server);
     }
@@ -263,6 +266,16 @@ void RefreshCharacterNames(uint64_t server) {
         if (persona.empty()) continue;
         std::string ch = CharacterNameOf(server, eid);
         if (!ch.empty()) PluginState::Get().SetCharacterName(persona, ch);
+        if (g_attrComp) {
+            CompRef a = Read(World(server), g_attrComp, eid);
+            uint32_t need = (g_attrLevel > g_attrXp ? g_attrLevel : g_attrXp) + 2;
+            if (g_attrXpReq + 2 > need) need = g_attrXpReq + 2;
+            if (a.ptr && a.size >= need) {
+                const uint8_t* b = (const uint8_t*)a.ptr;
+                PluginState::Get().SetLevel(persona, *(const uint16_t*)(b + g_attrLevel), *(const uint16_t*)(b + g_attrXp),
+                                            *(const uint16_t*)(b + g_attrXpReq));
+            }
+        }
     }
 }
 
@@ -677,6 +690,7 @@ void LoadProfileLayout() {
     L.chatRecMask = u("chatRecMask", L.chatRecMask);
     L.chatRecSizeAdd = u("chatRecSizeAdd", L.chatRecSizeAdd);
     L.chatHandleSlotField = u("chatHandleSlotField", L.chatHandleSlotField);
+    L.chatNoticeType = u("chatNoticeType", 0);
     L.teleportSearchBest = u("teleportSearchBest", L.teleportSearchBest);
     L.sessMgr = u("sessionMgr", L.sessMgr);
     L.sessVer = u("sessionVersion", L.sessVer);
@@ -996,10 +1010,21 @@ void WorldHooksInit() {
         g_charTable = (uint32_t)profile::L("characterTable", 0);
         if (cn && g_charComp && g_charTable) {
             g_charName = (CharNameFn)scan::Ptr(cn);
+            PluginState::Get().SetWaitForCharacterNames(true);
             RecordResolve("characterName", cn, "gamedata; component 0x" + std::string(Hx(g_charComp)).substr(2) + " table +" + Hx(g_charTable), false);
         } else {
             RecordResolve("characterName", cn, "unresolved: " + h3, false);
         }
+        g_attrComp = (uint32_t)profile::L("attributesComponent", 0);
+        g_attrLevel = (uint32_t)profile::L("attributesLevel", 0);
+        g_attrXp = (uint32_t)profile::L("attributesExperience", 0);
+        g_attrXpReq = (uint32_t)profile::L("attributesExperienceRequired", 0);
+        if (!g_attrLevel || !g_attrXp || !g_attrXpReq) g_attrComp = 0;
+        RecordResolve("characterLevel", 0,
+                      g_attrComp ? "gamedata; component 0x" + std::string(Hx(g_attrComp)).substr(2) + " level +" + Hx(g_attrLevel) +
+                                       " experience +" + Hx(g_attrXp) + " required +" + Hx(g_attrXpReq)
+                                 : std::string("unresolved: gamedata has no attributes* layout"),
+                      false);
     }
     st.SetCapability("killEvents", g_combatOk ? "ok" : "degraded",
                      g_combatOk ? std::string("combat_experience_source detour (killing-blow HitEvent)") +
@@ -1284,9 +1309,12 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                 if (target >= (int)L.chatMachines) return "!recipient machine index out of range";
                 if (target >= 0 && !*(uint8_t*)(chat + L.chatActive + (uint64_t)target * L.chatMStride))
                     return "!recipient machine is not an active chat recipient";
-                // The client only renders free text for chat type 0 with a valid player handle, shown as
-                // "<character name>: text" (live-tested: handle 0 and types 1-3 are dropped or become canned notices).
-                // So the message is carried by the recipient's own handle (whisper) or the first logged-in player.
+                // The client renders free text for chat type 0 as "<character name>: text", and on 1.0 for type 4
+                // (the type of the join/leave notices) with no localization key as a plain notice without a name.
+                // Both need a valid player handle (live-tested: handle 0 is dropped; types 1-3 become canned
+                // notices), so the message is carried by the recipient's own handle (whisper) or the first
+                // logged-in player. Messages without an explicit sender use the notice type when gamedata has one.
+                uint8_t msgType = type == 0 && senderHandle == 0 && L.chatNoticeType ? (uint8_t)L.chatNoticeType : type;
                 uint32_t handle = senderHandle;
                 for (int i = 0; i < 16 && !handle; i++) {
                     uint64_t s = Slot(server, i);
@@ -1302,7 +1330,7 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                 StringView sv{text.data(), text.size()};
                 Opt64 o1{}, o2{};
                 uint8_t e[16] = {0};
-                g_origAddMsg(e, chat, type, &sv, 0, 0, handle, L.chatArg8Value ? account : (uint64_t)&o1, &o2);
+                g_origAddMsg(e, chat, msgType, &sv, 0, 0, handle, L.chatArg8Value ? account : (uint64_t)&o1, &o2);
                 if (e[0]) return "!addMessage error " + std::to_string(e[0]);
                 uint64_t rec = *(uint64_t*)(chat + L.chatTail);
                 if (*(uint64_t*)(chat + L.chatCount) != countBefore + 1 || !rec) return "!message was not queued";
@@ -1321,7 +1349,7 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                         excluded++;
                     }
                 }
-                PluginLog("message: queued type=%u handle=0x%x account=%s len=%zu target=%d excluded=%d", type, handle,
+                PluginLog("message: queued type=%u handle=0x%x account=%s len=%zu target=%d excluded=%d", msgType, handle,
                           account ? "set" : "none", text.size(), target, excluded);
                 return "ok";
             },

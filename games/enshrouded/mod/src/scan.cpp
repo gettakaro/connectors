@@ -11,6 +11,7 @@ struct Range {
     uint32_t begin = 0, end = 0;
 };
 uintptr_t g_base = 0;
+uint64_t g_ptrBase = 0;  // ImageBase from the in-memory header: the loader rewrites it to the load address
 uint32_t g_timestamp = 0;
 std::vector<Range> g_text, g_rdata, g_data;
 const RUNTIME_FUNCTION* g_pdata = nullptr;
@@ -20,13 +21,19 @@ std::vector<uint32_t> g_pdataBegins;  // sorted copy index
 const uint8_t* B(uint32_t rva) { return (const uint8_t*)(g_base + rva); }
 }  // namespace
 
-bool Init() {
-    g_base = (uintptr_t)GetModuleHandleA(nullptr);
+bool Init() { return InitAt((uintptr_t)GetModuleHandleA(nullptr)); }
+
+bool InitAt(uintptr_t imageBase) {
+    g_base = imageBase;
+    g_text.clear();
+    g_rdata.clear();
+    g_data.clear();
     auto* dos = (IMAGE_DOS_HEADER*)g_base;
     if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
     auto* nt = (IMAGE_NT_HEADERS64*)(g_base + dos->e_lfanew);
     if (nt->Signature != IMAGE_NT_SIGNATURE || nt->FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64) return false;
     g_timestamp = nt->FileHeader.TimeDateStamp;
+    g_ptrBase = nt->OptionalHeader.ImageBase;
     auto* sec = IMAGE_FIRST_SECTION(nt);
     for (int i = 0; i < nt->FileHeader.NumberOfSections; i++, sec++) {
         Range r{sec->VirtualAddress, sec->VirtualAddress + sec->Misc.VirtualSize};
@@ -44,11 +51,12 @@ bool Init() {
 }
 
 uintptr_t Base() { return g_base; }
+uint64_t PointerBase() { return g_ptrBase; }
 uint32_t TimeDateStamp() { return g_timestamp; }
 
 std::vector<uint32_t> FindPointerRefs(uint32_t targetRva, size_t maxHits) {
     std::vector<uint32_t> out;
-    uint64_t va = (uint64_t)g_base + targetRva;
+    uint64_t va = g_ptrBase + targetRva;
     for (auto& r : g_data) {
         for (uint32_t a = (r.begin + 7) & ~7u; a + 8 <= r.end && out.size() < maxHits; a += 8) {
             uint64_t v;
@@ -56,6 +64,13 @@ std::vector<uint32_t> FindPointerRefs(uint32_t targetRva, size_t maxHits) {
             if (v == va) out.push_back(a);
         }
     }
+    return out;
+}
+
+std::vector<std::pair<uint32_t, uint32_t>> FunctionChunks(uint32_t root) {
+    std::vector<std::pair<uint32_t, uint32_t>> out;
+    for (size_t i = 0; i < g_pdataCount; i++)
+        if (FunctionRoot(g_pdata[i].BeginAddress) == root) out.push_back({g_pdata[i].BeginAddress, g_pdata[i].EndAddress});
     return out;
 }
 
