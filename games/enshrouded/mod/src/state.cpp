@@ -301,7 +301,8 @@ std::string PluginState::PlayerJsonLocked(const PlayerRecord& p, bool online) co
     std::string perms = "[";
     for (size_t i = 0; i < p.permissions.size(); i++) perms += (i ? "," : "") + JsonStr(p.permissions[i]);
     perms += "]";
-    return "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(p.name) + ",\"steamId\":" + JsonStr(id) +
+    const std::string& shown = p.characterName.empty() ? p.name : p.characterName;
+    return "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(shown) + ",\"steamId\":" + JsonStr(id) +
            ",\"peerId\":" + JsonStr(p.peerId) + ",\"group\":" + JsonStr(p.group) + ",\"permissions\":" + perms +
            ",\"connectedAt\":" + JsonStr(p.connectedAt) + ",\"online\":" + (online ? "true" : "false") + "}";
 }
@@ -329,6 +330,15 @@ bool PluginState::PlayerJson(const std::string& gameId, std::string& out) const 
             return true;
         }
     return false;
+}
+
+void PluginState::SetCharacterName(const std::string& persona, const std::string& character) {
+    Guard g(lock_);
+    for (auto& p : players_)
+        if (p.online && p.name == persona && p.characterName != character) {
+            p.characterName = character;
+            PluginLog("character name: steam=%s persona=%s character=%s", p.steamId.c_str(), persona.c_str(), character.c_str());
+        }
 }
 
 void PluginState::SetMachineIsPeerIndexPlusOne(bool on) {
@@ -377,7 +387,8 @@ bool PluginState::FindOnline(const std::string& idOrName, std::string& steamId, 
     if (!hit) {
         int n = 0;
         for (auto& p : players_)
-            if (p.online && LowerStr(p.name) == LowerStr(idOrName)) {
+            if (p.online && (LowerStr(p.name) == LowerStr(idOrName) ||
+                             (!p.characterName.empty() && LowerStr(p.characterName) == LowerStr(idOrName)))) {
                 hit = &p;
                 n++;
             }

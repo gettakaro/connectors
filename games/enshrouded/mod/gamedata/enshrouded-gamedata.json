@@ -18,7 +18,8 @@
         "chatAddMessage":     { "rva": "0x9085d0", "verify": "40 55 56 41 54 41 55 41 57 48 83 EC 30 49 8B 41 08" },
         "combatXpSource":     { "job": "combat_experience_source", "rva": "0xec560", "verify": "48 89 4C 24 08 55 53 57 41 54 41 55 41 57" },
         "combatContext":      { "rva": "0x65b7f0", "verify": "48 89 5C 24 10 55 56 57 41 54 41 55 41 56 41 57 48 83 EC 60" },
-        "entityTemplateGuid": { "rva": "0x647ac0", "verify": "48 89 5C 24 08 57 48 83 EC 20 48 8B 01 48 8B DA" }
+        "entityTemplateGuid": { "rva": "0x647ac0", "verify": "48 89 5C 24 08 57 48 83 EC 20 48 8B 01 48 8B DA" },
+        "characterName":      { "rva": "0x9290d0", "verify": "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20 48 8B BA A0 01 00 00" }
       },
       "callsites": {
         "chatReceiveRet":       "0x7b2cbe",
@@ -26,6 +27,8 @@
       },
       "layout": {
         "loginMachine": "peerIndexPlusOne",
+        "characterComponent": "0xe699564",
+        "characterTable": "0x58",
         "serverReadyA": "0x10",
         "serverReadyB": "0x30",
         "worldOff": "0x1d0",

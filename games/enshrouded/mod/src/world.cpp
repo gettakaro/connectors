@@ -92,6 +92,12 @@ using AddMsgFn = uint8_t*(__fastcall*)(uint8_t* err, uint64_t chat, uint64_t typ
                                          uint64_t loca2, uint64_t handle, uint64_t o1, Opt64* o2);
 using CtxFn = uint64_t(__fastcall*)(uint64_t sys, uint8_t* buf, uint64_t size);
 using TmplFn = uint8_t*(__fastcall*)(uint64_t sys, uint8_t* outGuid, uint64_t eid);
+// 1.0: character name of a player entity: fn(out{u8 err; ptr @8; len @16}, server->characterTable, key) where key is the
+// first u64 of the player's character component (the same lookup the game's ban code uses for bannedAccounts)
+using CharNameFn = uint8_t*(__fastcall*)(uint8_t* out, uint64_t table, uint64_t key);
+CharNameFn g_charName = nullptr;
+uint32_t g_charComp = 0, g_charTable = 0;
+uint64_t g_charLastMs = 0;
 
 GetCompFn g_getRead = nullptr;
 AddCompFn g_addComp = nullptr;
@@ -139,11 +145,17 @@ struct WorldTask {
 SrwLock g_wqLock;
 std::deque<std::shared_ptr<WorldTask>> g_wq;
 
+void RefreshCharacterNames(uint64_t server);
+
 uint64_t __fastcall UpdDetour(uint64_t server, uint64_t b, uint64_t c, uint64_t d) {
     uint64_t ret = g_origUpd(server, b, c, d);
     PerfScope perf(kPerfUpdatePlayers);
     InterlockedIncrement64(&g_updTicks);
     InterlockedExchange64(&g_server, (LONG64)server);
+    if (g_charName && NowMs() - g_charLastMs >= 2000) {
+        g_charLastMs = NowMs();
+        RefreshCharacterNames(server);
+    }
     for (int budget = 0; budget < 16; budget++) {
         std::shared_ptr<WorldTask> t;
         {
@@ -226,6 +238,32 @@ CompRef Read(uint64_t world, uint32_t hash, uint32_t eid) {
     CompRef r{nullptr, 0};
     g_getRead(&r, world, hash, eid);
     return r;
+}
+
+std::string CharacterNameOf(uint64_t server, uint32_t eid) {
+    if (!g_charName || !eid) return "";
+    CompRef c = Read(World(server), g_charComp, eid);
+    if (!c.ptr || c.size < 8) return "";
+    uint64_t table = *(uint64_t*)(server + g_charTable);
+    if (!table || !Readable(table, 0x1e8)) return "";  // the lookup reads its hash map header up to +0x1e4
+    uint8_t out[24] = {0};
+    g_charName(out, table, *(uint64_t*)c.ptr);
+    const char* p = *(const char**)(out + 8);
+    uint64_t n = *(uint64_t*)(out + 16);
+    if (out[0] || !p || n == 0 || n > 64 || !Readable((uint64_t)p, (size_t)n)) return "";
+    return std::string(p, (size_t)n);
+}
+
+void RefreshCharacterNames(uint64_t server) {
+    for (int i = 0; i < 16; i++) {
+        uint64_t s = Slot(server, i);
+        uint32_t eid = *(uint32_t*)(s + kSlotEid);
+        if (!*(uint32_t*)s || !eid) continue;
+        std::string persona = SlotName(s);
+        if (persona.empty()) continue;
+        std::string ch = CharacterNameOf(server, eid);
+        if (!ch.empty()) PluginState::Get().SetCharacterName(persona, ch);
+    }
 }
 
 // Resolves the player entity on the server thread; "" + err on failure.
@@ -949,6 +987,19 @@ void WorldHooksInit() {
     }
     st.SetCapability("deathEvents", g_combatOk ? "ok" : "degraded",
                      g_combatOk ? "combat_experience_source detour (EntityDiedEvent of player entities)" : combatErr);
+    // --- character names (1.0 gamedata): optional, players keep their Steam name without it ---
+    if (profile::Active() && g_worldOk) {
+        std::string h3;
+        uint32_t cn = profile::Fn("characterName", h3);
+        g_charComp = (uint32_t)profile::L("characterComponent", 0);
+        g_charTable = (uint32_t)profile::L("characterTable", 0);
+        if (cn && g_charComp && g_charTable) {
+            g_charName = (CharNameFn)scan::Ptr(cn);
+            RecordResolve("characterName", cn, "gamedata; component 0x" + std::string(Hx(g_charComp)).substr(2) + " table +" + Hx(g_charTable), false);
+        } else {
+            RecordResolve("characterName", cn, "unresolved: " + h3, false);
+        }
+    }
     st.SetCapability("killEvents", g_combatOk ? "ok" : "degraded",
                      g_combatOk ? std::string("combat_experience_source detour (killing-blow HitEvent)") +
                                       (g_tmplOf ? "" : "; entity template lookup unresolved")
