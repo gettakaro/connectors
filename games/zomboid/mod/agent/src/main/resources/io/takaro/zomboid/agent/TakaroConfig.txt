@@ -5,14 +5,18 @@
 # identityToken: how Takaro knows this server. The connector generates it; keep it
 #   when you move or reinstall the server.
 # serverChatName: sender name for messages without one (empty: the server name).
+# protocol: 1 offers Takaro protocol v1 (map, events resent after a reconnect) and
+#   falls back to 0 on a Takaro without it; 0 turns v1 and the map off.
+# logEvents, debugCatalog: extra diagnostics in the log; these two need a restart.
 # TAKARO_* environment variables (TAKARO_WS_URL, TAKARO_REGISTRATION_TOKEN,
-# TAKARO_IDENTITY_TOKEN, TAKARO_SERVER_CHAT_NAME, TAKARO_DEBUG, TAKARO_LOG_EVENTS,
-# TAKARO_DEBUG_CATALOG) win over this file.
+# TAKARO_IDENTITY_TOKEN, TAKARO_SERVER_CHAT_NAME, TAKARO_PROTOCOL, TAKARO_DEBUG,
+# TAKARO_LOG_EVENTS, TAKARO_DEBUG_CATALOG) win over this file.
 
 wsUrl=wss://connect.takaro.io/
 registrationToken=
 identityToken=
 serverChatName=
+protocol=1
 debug=false
 logEvents=false
 debugCatalog=false

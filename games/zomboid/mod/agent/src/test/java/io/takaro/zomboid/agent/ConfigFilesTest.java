@@ -33,6 +33,7 @@ class ConfigFilesTest {
         assertEquals("", values.get("identityToken"));
         assertEquals("wss://connect.takaro.io/", values.get("wsUrl"));
         assertEquals("false", values.get("debug"));
+        assertEquals("1", values.get("protocol"));
     }
 
     @Test
