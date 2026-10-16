@@ -13,8 +13,8 @@ change, with its `RSDragonwildsServer-Linux-Shipping.sym` file next to the serve
 downloads it; `app_update 4019830 validate` restores it). Create a Takaro **Generic** game server and
 copy its registration token. Client and server must run the same game version.
 
-The latest release is tested live against Dragonwilds public build 25808123 with a real game
-client. It also ships plugins for the older builds 25465077, 25501739 and 25630937.
+The latest release is tested live against Dragonwilds public build 25811348 with a real game
+client. It also ships plugins for the older builds 25465077, 25501739, 25630937 and 25808123.
 
 ### 2. Download and copy
 

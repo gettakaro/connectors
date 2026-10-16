@@ -199,7 +199,7 @@ class Run:
                         self.pending.pop(pos)
                         return message
             try:
-                entry = self.peer.frames.get(timeout=min(0.2, end - time.monotonic()))
+                entry = self.peer.frames.get(timeout=max(0.0, min(0.2, end - time.monotonic())))
             except queue.Empty:
                 continue
             self.pending.append(entry)
