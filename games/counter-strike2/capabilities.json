@@ -3,7 +3,7 @@
   "architecture": "native CounterStrikeSharp plugin with outbound Takaro WebSocket",
   "target": "linux-25947352",
   "version": "0.1.0",
-  "verification": "2026-10-15 real-client core-action and final-archive proof complete; lifecycle and remaining event/integration gates pending",
+  "verification": "2026-10-15 core-action proof and 2026-10-16 live lifecycle, nonplayer-kill and log-hook proof complete; engine frame-time gate pending",
   "actions": {
     "testReachability": {
       "status": "supported",
@@ -50,13 +50,13 @@
     "listEntities": {
       "status": "unsupported",
       "surface": "no validated entity catalog",
-      "reason": "Integration feasibility and game-owned surface have not been established; no game limitation is claimed.",
+      "reason": "No validated entity catalog exists yet; return an empty array because Takaro requires an array for list actions. No game limitation is claimed.",
       "liveVerified": false
     },
     "listLocations": {
       "status": "unsupported",
       "surface": "no validated named location catalog",
-      "reason": "Integration feasibility and game-owned surface have not been established; no game limitation is claimed.",
+      "reason": "No validated named location catalog exists yet; return an empty array because Takaro requires an array for list actions. No game limitation is claimed.",
       "liveVerified": false
     },
     "getMapInfo": {
@@ -122,10 +122,10 @@
   },
   "events": {
     "log": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "plugin lifecycle",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "Takaro ran an installed regex-matched hook on the plugin startup log and stored a hook-executed row on 2026-10-16.",
+      "liveVerified": true
     },
     "player-connected": {
       "status": "supported",
@@ -134,10 +134,10 @@
       "liveVerified": true
     },
     "player-disconnected": {
-      "status": "unsupported",
-      "surface": "EventPlayerDisconnect",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "status": "supported",
+      "surface": "EventPlayerDisconnect with last observed position for Takaro event processing",
+      "reason": "Verified as one current-run Takaro event row from a real CS2 client disconnect on 2026-10-16.",
+      "liveVerified": true
     },
     "chat-message": {
       "status": "supported",
@@ -152,10 +152,10 @@
       "liveVerified": true
     },
     "entity-killed": {
-      "status": "unsupported",
+      "status": "supported",
       "surface": "EventOtherDeath with authenticated player attacker",
-      "reason": "Implemented in source; nonplayer death with a real client has not been observed through Takaro.",
-      "liveVerified": false
+      "reason": "Verified in Takaro as a real-client chicken kill with authenticated SteamID64 attacker and USP-S on 2026-10-16.",
+      "liveVerified": true
     }
   }
 }

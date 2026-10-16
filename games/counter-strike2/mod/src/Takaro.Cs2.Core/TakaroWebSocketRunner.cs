@@ -14,7 +14,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private readonly CancellationTokenSource shutdown = new();
     private readonly SemaphoreSlim sendLock = new(1, 1);
     private readonly SemaphoreSlim eventLock = new(1, 1);
-    private readonly ConcurrentQueue<string> pendingEvents = new();
+    private readonly ConcurrentQueue<(string Type, string Frame)> pendingEvents = new();
     private volatile bool identified;
     private ClientWebSocket? socket;
     private Task? runLoop;
@@ -41,7 +41,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
             log("Takaro CS2 event queue is full; event rejected.");
             return;
         }
-        pendingEvents.Enqueue(TakaroProtocol.CreateGameEvent(eventType, data));
+        pendingEvents.Enqueue((eventType, TakaroProtocol.CreateGameEvent(eventType, data)));
         await FlushEventsAsync(cancellationToken);
     }
 
@@ -239,10 +239,11 @@ public sealed class TakaroWebSocketRunner : IDisposable
         await eventLock.WaitAsync(cancellationToken);
         try
         {
-            while (identified && activeSocket.State == WebSocketState.Open && pendingEvents.TryPeek(out var frame))
+            while (identified && activeSocket.State == WebSocketState.Open && pendingEvents.TryPeek(out var pending))
             {
-                if (!await SendAsync(activeSocket, frame, cancellationToken)) break;
+                if (!await SendAsync(activeSocket, pending.Frame, cancellationToken)) break;
                 pendingEvents.TryDequeue(out _);
+                log($"Takaro CS2 event sent: {pending.Type}.");
             }
         }
         finally { eventLock.Release(); }

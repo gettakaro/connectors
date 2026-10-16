@@ -10,6 +10,16 @@ public sealed partial class Cs2ServerAdapter
 {
     private Cs2BanStore? bans;
     private Cs2PlayerStore? playerStore;
+    private readonly Dictionary<string, (TakaroPosition Position, DateTimeOffset ExpiresAt)> lastKnownPositions = new(StringComparer.OrdinalIgnoreCase);
+
+    public void RememberPosition(TakaroPlayer player, CCSPlayerController? controller)
+    {
+        var origin = controller?.PlayerPawn.Value?.AbsOrigin;
+        if (origin is not null) RememberLocation(player.GameId, origin.X, origin.Y, origin.Z);
+    }
+
+    private void RememberLocation(string gameId, double x, double y, double z) =>
+        lastKnownPositions[gameId] = (new TakaroPosition(x, y, z), DateTimeOffset.UtcNow.AddDays(1));
 
     public void SetBanStore(Cs2BanStore store) => bans = store;
     public void SetPlayerStore(Cs2PlayerStore store) => playerStore = store;
@@ -19,9 +29,24 @@ public sealed partial class Cs2ServerAdapter
         {
             var target = FindController(identifier);
             var point = target is { PawnIsAlive: true } ? target.PlayerPawn.Value?.AbsOrigin : null;
-            return point is null
-                ? TakaroActionResult.Fail("position_unavailable", "Player is offline or has no spawned pawn.")
-                : TakaroActionResult.Ok(new { x = point.X, y = point.Y, z = point.Z });
+            if (point is not null)
+            {
+                var player = ToCs2Player(target);
+                if (player is not null) RememberLocation(player.SteamId64.ToString(), point.X, point.Y, point.Z);
+                return TakaroActionResult.Ok(new { x = point.X, y = point.Y, z = point.Z });
+            }
+
+            // Takaro asks for location before it records player events, including
+            // disconnects and deaths after CS2 has removed the live pawn. Return the
+            // last observed position so queued events can survive a network outage.
+            var gameId = playerStore?.Find(identifier)?.GameId ?? identifier;
+            if (lastKnownPositions.TryGetValue(gameId, out var departure))
+            {
+                if (departure.ExpiresAt > DateTimeOffset.UtcNow)
+                    return TakaroActionResult.Ok(new { x = departure.Position.X, y = departure.Position.Y, z = departure.Position.Z });
+                lastKnownPositions.Remove(gameId);
+            }
+            return TakaroActionResult.Fail("position_unavailable", "Player is offline or has no spawned pawn.");
         }, cancellationToken);
 
     public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default) =>

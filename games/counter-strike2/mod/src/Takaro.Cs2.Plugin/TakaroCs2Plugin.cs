@@ -7,10 +7,12 @@ namespace Takaro.Cs2.Plugin;
 public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
 {
     private TakaroWebSocketRunner? runner;
+    private Cs2ServerAdapter? adapter;
     private Cs2BanStore? bans;
     private Cs2PlayerStore? playerStore;
     private readonly Dictionary<string, TakaroPlayer> knownPlayers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, TakaroPlayer> knownBySlot = new();
+    private readonly HashSet<string> connectedEmitted = new(StringComparer.OrdinalIgnoreCase);
 
     public override string ModuleName => "Takaro CS2 Bridge";
     public override string ModuleVersion => "0.1.0";
@@ -48,13 +50,14 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
             Console.WriteLine($"[Takaro CS2] Ban store cannot be loaded: {ex.Message}");
             return;
         }
-        var adapter = new Cs2ServerAdapter(coreConfig);
+        adapter = new Cs2ServerAdapter(coreConfig);
         adapter.SetBanStore(bans);
         adapter.SetPlayerStore(playerStore);
         runner = new TakaroWebSocketRunner(coreConfig, adapter, message => Console.WriteLine($"[Takaro CS2] {message}"));
         _ = runner.StartAsync();
 
         RegisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFull);
+        RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
         RegisterListener<Listeners.OnClientAuthorized>(OnClientAuthorized);
         RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect);
         RegisterEventHandler<EventPlayerDeath>(OnPlayerDeath);
@@ -70,8 +73,10 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
         _ = EmitAsync("log", EventFactory.Log("Takaro CS2 bridge unloading."));
         runner?.Dispose();
         runner = null;
+        adapter = null;
         knownPlayers.Clear();
         knownBySlot.Clear();
+        connectedEmitted.Clear();
         bans = null;
         playerStore = null;
     }
@@ -79,6 +84,17 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
     private HookResult OnPlayerConnectFull(EventPlayerConnectFull ev, GameEventInfo info)
     {
         RememberAuthenticatedPlayer(ev.Userid);
+        return HookResult.Continue;
+    }
+
+    private HookResult OnPlayerSpawn(EventPlayerSpawn ev, GameEventInfo info)
+    {
+        if (ev.Userid is { } controller)
+        {
+            var slot = controller.Slot;
+            CounterStrikeSharp.API.Server.NextWorldUpdate(() =>
+                RememberAuthenticatedPlayer(CounterStrikeSharp.API.Utilities.GetPlayerFromSlot(slot)));
+        }
         return HookResult.Continue;
     }
 
@@ -104,12 +120,18 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
                 controller?.Disconnect(CounterStrikeSharp.API.ValveConstants.Protobuf.NetworkDisconnectionReason.NETWORK_DISCONNECT_KICKBANADDED);
                 return;
             }
-            if (knownPlayers.ContainsKey(player.GameId)) return;
-            Console.WriteLine($"[Takaro CS2] Authenticated player remembered: {player.GameId}.");
-            knownPlayers[player.GameId] = player;
-            if (controller is not null) knownBySlot[controller.Slot] = player;
-            playerStore?.Remember(player);
-            _ = EmitAsync("player-connected", EventFactory.PlayerConnected(player));
+            if (!knownPlayers.ContainsKey(player.GameId))
+            {
+                Console.WriteLine($"[Takaro CS2] Authenticated player remembered: {player.GameId}.");
+                knownPlayers[player.GameId] = player;
+                if (controller is not null) knownBySlot[controller.Slot] = player;
+                playerStore?.Remember(player);
+            }
+            if (controller is { PawnIsAlive: true } && connectedEmitted.Add(player.GameId))
+            {
+                adapter?.RememberPosition(player, controller);
+                _ = EmitAsync("player-connected", EventFactory.PlayerConnected(player));
+            }
         }
     }
 
@@ -118,7 +140,9 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
         var player = MapPlayer(ev.Userid) ?? (ev.Userid is not null && knownBySlot.TryGetValue(ev.Userid.Slot, out var known) ? known : null);
         if (player is not null)
         {
-            if (knownPlayers.Remove(player.GameId))
+            adapter?.RememberPosition(player, ev.Userid);
+            knownPlayers.Remove(player.GameId);
+            if (connectedEmitted.Remove(player.GameId))
                 _ = EmitAsync("player-disconnected", EventFactory.PlayerDisconnected(player, ev.Reason.ToString()));
             if (ev.Userid is not null) knownBySlot.Remove(ev.Userid.Slot);
         }
