@@ -3,6 +3,7 @@
 #include "entity.h"
 #include "hooks.h"
 #include "names.h"
+#include "profile.h"
 #include "scan.h"
 #include "state.h"
 #include "weapon.h"
@@ -44,8 +45,18 @@ struct Layout {
     uint32_t piCreateVer = 0; // PlayerInput.fromAdminClient.adminInventoryCreateAction.version (0x334)
     uint32_t scCreateVer = 0; // ServerConsumedPlayerInput.consumedAdminInventoryCreateAction  (0x94)
     uint32_t ctxHits = 0x58, ctxDied = 0x50;  // combat_experience_source context: HitEvent / EntityDiedEvent views
+    uint32_t ctxSize = 0x68;
+    // event views: flat (data @+0x18, count @+0x28) or paged (1.0: count, pages base, first page, 0x800-byte pages)
+    bool paged = false;
+    uint32_t viewData = 0x18, viewCount = 0x28, viewPages = 0x30, viewFirstPage = 0x40;
+    uint32_t pageSize = 0x800, pageHeader = 8, pageNext = 2;
+    uint32_t hitStride = 0xe8, diedStride = 0x10, diedEid = 8;
+    // ChatMessagesSystem internals (send path)
+    bool chatArg8Value = false;
+    uint32_t chatMachines = 32, chatActive = 0x14, chatPending = 0x1c, chatMStride = 0xc;
+    uint32_t chatTail = 0x1d0, chatCount = 0x1d8, chatRecLen = 8, chatRecMask = 0x20, chatRecSizeAdd = 0xf;
 } L;
-const uint32_t kSlotEid = 0x38, kSlotName = 0x40, kSlotState = 0x0a;
+uint32_t kSlotEid = 0x38, kSlotName = 0x40, kSlotState = 0x0a, kSlotPerms = 0x0b, kSlotMachine = 4;
 
 struct CompRef {
     void* ptr;
@@ -69,8 +80,9 @@ using GetCompFn = CompRef*(__fastcall*)(CompRef* out, uint64_t world, uint32_t h
 using AddCompFn = uint64_t(__fastcall*)(uint64_t world, uint32_t eid, uint32_t hash, Span* data);
 using Fn4 = uint64_t(__fastcall*)(uint64_t, uint64_t, uint64_t, uint64_t);
 using IsAdminFn = uint64_t(__fastcall*)(uint64_t eid, uint64_t table);
+// arg 8 is an Opt64* up to 1024233 and a plain u64 (sender account) in 1.0; the detour passes it through untouched
 using AddMsgFn = uint8_t*(__fastcall*)(uint8_t* err, uint64_t chat, uint64_t type, StringView* text, uint64_t loca1,
-                                         uint64_t loca2, uint64_t handle, Opt64* o1, Opt64* o2);
+                                         uint64_t loca2, uint64_t handle, uint64_t o1, Opt64* o2);
 using CtxFn = uint64_t(__fastcall*)(uint64_t sys, uint8_t* buf, uint64_t size);
 using TmplFn = uint8_t*(__fastcall*)(uint64_t sys, uint8_t* outGuid, uint64_t eid);
 
@@ -300,15 +312,17 @@ uint64_t __fastcall IsAdminDetour(uint64_t eid, uint64_t table) {
 
 // ---- chat receive ----
 uint8_t* __fastcall AddMsgDetour(uint8_t* err, uint64_t chat, uint64_t type, StringView* text, uint64_t l1, uint64_t l2,
-                                 uint64_t handle, Opt64* o1, Opt64* o2) {
+                                 uint64_t handle, uint64_t o1, Opt64* o2) {
     if ((uintptr_t)__builtin_return_address(0) == g_recvRet && text && text->ptr && text->len > 0 && text->len <= 0x400) {
         InterlockedIncrement64(&g_chatSeen);
         std::string msg(text->ptr, (size_t)text->len);
         uint64_t server = (uint64_t)g_server;
         std::string name, player;
-        if (server) {
-            uint64_t s = Slot(server, (int)(handle & 0x3f));
-            if (*(uint32_t*)s == (uint32_t)handle) name = SlotName(s);
+        if (server && (uint32_t)handle) {
+            for (int i = 0; i < 16 && name.empty(); i++) {
+                uint64_t s = Slot(server, i);
+                if (*(uint32_t*)s == (uint32_t)handle) name = SlotName(s);
+            }
         }
         std::string data = "{\"msg\":" + JsonStr(msg) + ",\"channel\":\"global\",\"chatType\":" +
                            std::to_string((unsigned)(type & 0xff)) + ",\"senderName\":" + JsonStr(name);
@@ -365,6 +379,38 @@ std::string PlayerJsonForSlot(uint64_t server, int slot, std::string* nameOut = 
 
 volatile LONG64 g_lastCombatSys = 0;
 
+// Element pointers of an ECS event view: one flat array, or (1.0) a chain of fixed-size pages, each with a header
+// whose u16 at `pageNext` is the 1-based index of the next page.
+void ViewEvents(uint64_t view, uint32_t stride, std::vector<const uint8_t*>& out) {
+    if (!stride || !Readable(view, 0x48)) return;
+    if (!L.paged) {
+        uint64_t data = *(uint64_t*)(view + L.viewData);
+        uint32_t n = *(uint32_t*)(view + L.viewCount);
+        if (!n || n >= 4096 || !data || !Readable(data, (size_t)n * stride)) return;
+        for (uint32_t i = 0; i < n; i++) out.push_back((const uint8_t*)(data + (uint64_t)i * stride));
+        return;
+    }
+    uint32_t n = *(uint32_t*)(view + L.viewCount);
+    uint64_t pages = *(uint64_t*)(view + L.viewPages);
+    uint16_t first = *(uint16_t*)(view + L.viewFirstPage);
+    if (!n || n >= 4096 || !pages || !first) return;
+    uint64_t page = pages + (uint64_t)(first - 1) * L.pageSize;
+    uint32_t off = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        if (off + stride > L.pageSize - L.pageHeader) {
+            if (!Readable(page, L.pageHeader)) return;
+            uint16_t next = *(uint16_t*)(page + L.pageNext);
+            if (!next) return;
+            page = pages + (uint64_t)(next - 1) * L.pageSize;
+            off = 0;
+        }
+        uint64_t e = page + L.pageHeader + off;
+        if (!Readable(e, stride)) return;
+        out.push_back((const uint8_t*)e);
+        off += stride;
+    }
+}
+
 // The weapon of a killing blow: HitEvent.weaponPideId (0xac) or, for a projectile/impact source
 // without it, that source's ImpactHierarchy.weaponPideId; then the PIDE's ItemState.itemId. Two
 // component reads at most, once per killing blow; the name lookup is a binary search over a
@@ -387,19 +433,21 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
     InterlockedExchange64(&g_lastCombatSys, (LONG64)sys);
     uint64_t server = (uint64_t)g_server;
     if (server && g_getCtx) {
-        uint8_t ctx[0x68];
+        uint8_t ctx[0x100];
         memset(ctx, 0, sizeof ctx);
-        g_getCtx(sys, ctx, sizeof ctx);
+        g_getCtx(sys, ctx, L.ctxSize);
         uint64_t hits = *(uint64_t*)(ctx + L.ctxHits);
         uint64_t died = *(uint64_t*)(ctx + L.ctxDied);
         uint64_t now = NowMs();
-        if (hits && Readable(hits, 0x30)) {
-            uint64_t data = *(uint64_t*)(hits + 0x18);
-            uint32_t n = *(uint32_t*)(hits + 0x28);
-            if (n && n < 4096 && data && Readable(data, (size_t)n * 0xe8)) {
+        std::vector<const uint8_t*> hitEv, diedEv;
+        if (hits) ViewEvents(hits, L.hitStride, hitEv);
+        if (died) ViewEvents(died, L.diedStride, diedEv);
+        if (!hitEv.empty()) {
+            {
+                uint32_t n = (uint32_t)hitEv.size();
                 InterlockedExchangeAdd64(&g_hitsSeen, n);
                 for (uint32_t i = 0; i < n; i++) {
-                    const uint8_t* e = (const uint8_t*)(data + (uint64_t)i * 0xe8);
+                    const uint8_t* e = hitEv[i];
                     uint32_t flags = *(uint32_t*)(e + 0x98);
                     if (g_hitsSeen < 400)
                         PluginLog("hit: src=%u rootSrc=%u target=%u rootTarget=%u flags=0x%x healthChange=%d", *(uint32_t*)(e + 0xa4),
@@ -469,13 +517,12 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                 }
             }
         }
-        if (died && Readable(died, 0x30)) {
-            uint64_t data = *(uint64_t*)(died + 0x18);
-            uint32_t n = *(uint32_t*)(died + 0x28);
-            if (n && n < 4096 && data && Readable(data, (size_t)n * 0x10)) {
+        if (!diedEv.empty()) {
+            {
+                uint32_t n = (uint32_t)diedEv.size();
                 InterlockedExchangeAdd64(&g_diedSeen, n);
                 for (uint32_t i = 0; i < n; i++) {
-                    uint32_t dead = *(uint32_t*)(data + (uint64_t)i * 0x10 + 8);
+                    uint32_t dead = *(const uint32_t*)(diedEv[i] + L.diedEid);
                     int ps = SlotByEntity(server, dead);
                     if (ps < 0) continue;
                     uint32_t killer = 0;
@@ -550,7 +597,74 @@ uint32_t Unique(const char* pattern, const char* what, std::string& how) {
     return hits[0];
 }
 
+// Layout values from the build's gamedata section (defaults are the 1024233 values the heuristics derive or assume).
+void LoadProfileLayout() {
+    auto u = [](const char* k, uint32_t d) { return (uint32_t)profile::L(k, d); };
+    L.worldOff = u("worldOff", 0);
+    L.slotBase = u("slotBase", 0);
+    L.slotStride = u("slotStride", 0);
+    L.chatOff = u("chatOff", 0);
+    L.piCreateVer = u("piCreateVer", 0);
+    L.scCreateVer = u("scCreateVer", 0);
+    L.ctxHits = u("combatCtxHits", L.ctxHits);
+    L.ctxDied = u("combatCtxDied", L.ctxDied);
+    L.ctxSize = std::min<uint32_t>(u("combatCtxSize", L.ctxSize), 0x100);
+    L.paged = u("eventViewPaged", 0) != 0;
+    L.viewData = u("viewData", L.viewData);
+    L.viewCount = u("viewCount", L.viewCount);
+    L.viewPages = u("viewPages", L.viewPages);
+    L.viewFirstPage = u("viewFirstPage", L.viewFirstPage);
+    L.pageSize = u("pageSize", L.pageSize);
+    L.pageHeader = u("pageHeader", L.pageHeader);
+    L.pageNext = u("pageNext", L.pageNext);
+    L.hitStride = u("hitStride", L.hitStride);
+    L.diedStride = u("diedStride", L.diedStride);
+    L.diedEid = u("diedEid", L.diedEid);
+    L.chatArg8Value = u("chatArg8IsValue", 0) != 0;
+    L.chatMachines = std::min<uint32_t>(u("chatMachines", L.chatMachines), 32);
+    L.chatActive = u("chatMachineActive", L.chatActive);
+    L.chatPending = u("chatMachinePending", L.chatPending);
+    L.chatMStride = u("chatMachineStride", L.chatMStride);
+    L.chatTail = u("chatTail", L.chatTail);
+    L.chatCount = u("chatCount", L.chatCount);
+    L.chatRecLen = u("chatRecLen", L.chatRecLen);
+    L.chatRecMask = u("chatRecMask", L.chatRecMask);
+    L.chatRecSizeAdd = u("chatRecSizeAdd", L.chatRecSizeAdd);
+    kSlotEid = u("slotEid", kSlotEid);
+    kSlotName = u("slotName", kSlotName);
+    kSlotState = u("slotState", kSlotState);
+    kSlotPerms = u("slotPerms", kSlotPerms);
+    kSlotMachine = u("slotMachine", kSlotMachine);
+}
+
+bool ResolveWorldCoreProfile(std::string& how) {
+    LoadProfileLayout();
+    std::string h;
+    g_updRva = profile::Fn("updatePlayers", h);
+    if (!g_updRva) {
+        how = "updatePlayers: " + h;
+        return false;
+    }
+    uint32_t readFn = profile::Fn("getComponentRead", h);
+    if (!readFn) {
+        how = "getComponentRead: " + h;
+        return false;
+    }
+    if (!L.worldOff || !L.slotBase || !L.slotStride) {
+        how = "gamedata layout lacks worldOff/slotBase/slotStride";
+        return false;
+    }
+    g_getRead = (GetCompFn)scan::Ptr(readFn);
+    char b[256];
+    snprintf(b, sizeof b, "gamedata: updatePlayers=0x%x getComponentRead=0x%x world=+0x%x slots=+0x%x*0x%x", g_updRva, readFn,
+             L.worldOff, L.slotBase, L.slotStride);
+    how = b;
+    RecordResolve("getCompRead", readFn, "gamedata", false);
+    return true;
+}
+
 bool ResolveWorldCore(std::string& how) {
+    if (profile::Active()) return ResolveWorldCoreProfile(how);
     uint32_t sys = ModerationSystemRva();
     if (!sys) {
         how = "server network update (moderation system) unresolved";
@@ -649,7 +763,8 @@ void WorldHooksInit() {
         st.SetCapability(c, "degraded", g_worldOk ? "hook installed, waiting for first server tick" : coreErr);
 
     // --- teleport: World_addComponent(Teleport) ---
-    uint32_t add = Unique("48 83 EC 38 41 0F 10 01 48 81 C1 ?? ?? ?? 00 4C 8D 4C 24 20", "addComponent", how);
+    uint32_t add = profile::Active() ? profile::Fn("addComponent", how)
+                                     : Unique("48 83 EC 38 41 0F 10 01 48 81 C1 ?? ?? ?? 00 4C 8D 4C 24 20", "addComponent", how);
     if (add) {
         bool calledByUpd = false;
         for (uint32_t a : scan::FindDirectCalls(add)) calledByUpd = calledByUpd || (g_updRva && scan::FunctionRoot(a) == g_updRva);
@@ -664,10 +779,30 @@ void WorldHooksInit() {
     st.SetCapability("teleport", "degraded", g_teleportOk ? "waiting for first server tick" : (g_worldOk ? how : coreErr));
 
     // --- give: inventory_actions job + isAdminEntity bypass ---
-    uint32_t isAdmin = Unique("8D 41 FF 4C 8B C2 3D FE 03 00 00 77 17 48 8D 14 40", "isAdminEntity", how);
-    uint32_t inv = isAdmin ? Unique("40 55 41 56 48 8D AC 24 ?? ?? FF FF B8 ?? ?? 00 00 E8", "inventory_actions", how) : 0;
+    uint32_t isAdmin = profile::Active() ? profile::Fn("isAdminEntity", how)
+                                         : Unique("8D 41 FF 4C 8B C2 3D FE 03 00 00 77 17 48 8D 14 40", "isAdminEntity", how);
+    uint32_t inv = !isAdmin ? 0
+                   : profile::Active() ? profile::Fn("inventoryActions", how)
+                                       : Unique("40 55 41 56 48 8D AC 24 ?? ?? FF FF B8 ?? ?? 00 00 E8", "inventory_actions", how);
     std::string giveErr;
-    if (isAdmin && inv) {
+    if (isAdmin && inv && profile::Active()) {
+        uint32_t gate = profile::CallsiteRet("inventoryAdminGateRet");
+        if (!gate || scan::CallDest(gate - 5) != isAdmin) giveErr = "gamedata inventoryAdminGateRet is not a call to isAdminEntity";
+        else if (!L.piCreateVer || !L.scCreateVer) giveErr = "gamedata layout lacks piCreateVer/scCreateVer";
+        else if (!g_worldOk) giveErr = coreErr;
+        else if (!InstallHook(isAdmin, (LPVOID)&IsAdminDetour, (LPVOID*)&g_origIsAdmin, err)) giveErr = "isAdminEntity hook: " + err;
+        else if (!InstallHook(inv, (LPVOID)&InvJobDetour, (LPVOID*)&g_origInvJob, err)) giveErr = "inventory_actions hook: " + err;
+        else {
+            g_invGateRet = scan::Base() + gate;
+            g_isAdminRva = isAdmin;
+            g_invJobRva = inv;
+            g_giveOk = true;
+            char b[160];
+            snprintf(b, sizeof b, "gamedata; gate ret=0x%x PlayerInput+0x%x ServerConsumed+0x%x", gate, L.piCreateVer, L.scCreateVer);
+            RecordResolve("isAdminEntity", isAdmin, "hook installed", true);
+            RecordResolve("inventoryActions", inv, std::string("hook installed; ") + b, true);
+        }
+    } else if (isAdmin && inv) {
         for (uint32_t a = inv; a < inv + 0x200; a++)
             if (scan::CallDest(a) == isAdmin) {
                 g_invGateRet = scan::Base() + a + 5;
@@ -706,9 +841,24 @@ void WorldHooksInit() {
     st.SetCapability("giveItem", "degraded", g_giveOk ? "waiting for first server tick" : giveErr);
 
     // --- chat: ChatSystem::addMessage (send + receive) ---
-    uint32_t addMsg = Unique("40 55 57 41 56 41 57 48 81 EC 78 04 00 00 49 81 79 08 00 04 00 00", "addMessage", how);
+    uint32_t addMsg = profile::Active() ? profile::Fn("chatAddMessage", how)
+                                        : Unique("40 55 57 41 56 41 57 48 81 EC 78 04 00 00 49 81 79 08 00 04 00 00", "addMessage", how);
     std::string chatErr = how;
-    if (addMsg) {
+    if (addMsg && profile::Active()) {
+        uint32_t ret = profile::CallsiteRet("chatReceiveRet");
+        if (!ret || scan::CallDest(ret - 5) != addMsg) chatErr = "gamedata chatReceiveRet is not a call to chatAddMessage";
+        else if (!L.chatOff) chatErr = "gamedata layout lacks chatOff";
+        else if (!g_worldOk) chatErr = coreErr;
+        else if (!InstallHook(addMsg, (LPVOID)&AddMsgDetour, (LPVOID*)&g_origAddMsg, err)) chatErr = "addMessage hook: " + err;
+        else {
+            g_addMsgRva = addMsg;
+            g_recvRet = scan::Base() + ret;
+            g_chatSendOk = g_chatRecvOk = true;
+            char b[128];
+            snprintf(b, sizeof b, "gamedata; hook installed; receive ret=0x%x chat=+0x%x", ret, L.chatOff);
+            RecordResolve("chatAddMessage", addMsg, b, true);
+        }
+    } else if (addMsg) {
         // receive call site: `mov byte [rbp+50h],0; mov byte [rbp+40h],0; call addMessage` inside processIncomingMessages,
         // which is a direct callee of the server network update; the chat system pointer is loaded ~0x50 bytes earlier.
         uint32_t sys = ModerationSystemRva();
@@ -744,11 +894,28 @@ void WorldHooksInit() {
                      g_chatRecvOk ? "ChatSystem::addMessage detour (player chat call site)" : chatErr);
 
     // --- combat: combat_experience_source system (HitEvent + EntityDiedEvent views) ---
-    uint32_t combat = Unique("48 89 5C 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ?? FF FF FF 48 81 EC ?? ?? 00 00 "
-                             "41 B8 68 00 00 00 48 8D 55 00 4C 8B E9 E8 ?? ?? ?? ?? 4C 8B 7D 58",
-                             "combat_experience_source", how);
+    uint32_t combat = profile::Active() ? profile::Fn("combatXpSource", how)
+                                        : Unique("48 89 5C 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ?? FF FF FF 48 81 EC ?? ?? 00 00 "
+                                                 "41 B8 68 00 00 00 48 8D 55 00 4C 8B E9 E8 ?? ?? ?? ?? 4C 8B 7D 58",
+                                                 "combat_experience_source", how);
     std::string combatErr = how;
-    if (combat) {
+    if (combat && profile::Active()) {
+        std::string h2;
+        uint32_t ctxFn = profile::Fn("combatContext", h2);
+        uint32_t tmpl = profile::Fn("entityTemplateGuid", h2);
+        if (!ctxFn) combatErr = "combatContext: " + h2;
+        else if (!InstallHook(combat, (LPVOID)&CombatDetour, (LPVOID*)&g_origCombat, err)) combatErr = "combat hook: " + err;
+        else {
+            g_getCtx = (CtxFn)scan::Ptr(ctxFn);
+            if (tmpl) g_tmplOf = (TmplFn)scan::Ptr(tmpl);
+            g_combatRva = combat;
+            g_combatOk = true;
+            char b[160];
+            snprintf(b, sizeof b, "gamedata; hook installed; ctx 0x%x size 0x%x hits+0x%x died+0x%x %s; template lookup %s", ctxFn,
+                     L.ctxSize, L.ctxHits, L.ctxDied, L.paged ? "paged" : "flat", tmpl ? Hx(tmpl) : "missing");
+            RecordResolve("combatXpSource", combat, b, true);
+        }
+    } else if (combat) {
         bool diedOk = false;
         for (uint32_t a = combat; a < combat + 0x300 && !diedOk; a++) diedOk = scan::MatchAt(a, "48 8B 55 50 45 33 FF");
         uint32_t tmpl = Unique("48 89 5C 24 08 57 48 83 EC 20 48 8B 01 48 8B DA 48 8D 54 24 40 44 89 44 24 40 48 8B 78 30 "
@@ -1035,7 +1202,8 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
             [text, target, type, senderHandle](uint64_t server) -> std::string {
                 uint64_t chat = *(uint64_t*)(server + L.chatOff);
                 if (!chat || !Readable(chat, 0x1e0)) return "!chat system not available";
-                if (target >= 0 && !*(uint8_t*)(chat + 0x14 + (uint64_t)target * 0xc))
+                if (target >= (int)L.chatMachines) return "!recipient machine index out of range";
+                if (target >= 0 && !*(uint8_t*)(chat + L.chatActive + (uint64_t)target * L.chatMStride))
                     return "!recipient machine is not an active chat recipient";
                 // The client only renders free text for chat type 0 with a valid player handle, shown as
                 // "<character name>: text" (live-tested: handle 0 and types 1-3 are dropped or become canned notices).
@@ -1045,30 +1213,30 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                     uint64_t s = Slot(server, i);
                     uint32_t h = *(uint32_t*)s;
                     if (!h || *(uint8_t*)(s + kSlotState) != 3) continue;
-                    if (target >= 0 && (int)(*(uint32_t*)(s + 4) & 0x7f) != target) continue;
+                    if (target >= 0 && (int)(*(uint32_t*)(s + kSlotMachine) & 0x7f) != target) continue;
                     handle = h;
                 }
                 if (!handle) return std::string(target >= 0 ? "!recipient has no logged-in player slot" : "=nobody online");
-                uint64_t countBefore = *(uint64_t*)(chat + 0x1d8);
+                uint64_t countBefore = *(uint64_t*)(chat + L.chatCount);
                 StringView sv{text.data(), text.size()};
                 Opt64 o1{}, o2{};
-                uint8_t e = 0;
-                g_origAddMsg(&e, chat, type, &sv, 0, 0, handle, &o1, &o2);
-                if (e) return "!addMessage error " + std::to_string(e);
-                uint64_t rec = *(uint64_t*)(chat + 0x1d0);
-                if (*(uint64_t*)(chat + 0x1d8) != countBefore + 1 || !rec) return "!message was not queued";
+                uint8_t e[16] = {0};
+                g_origAddMsg(e, chat, type, &sv, 0, 0, handle, L.chatArg8Value ? 0 : (uint64_t)&o1, &o2);
+                if (e[0]) return "!addMessage error " + std::to_string(e[0]);
+                uint64_t rec = *(uint64_t*)(chat + L.chatTail);
+                if (*(uint64_t*)(chat + L.chatCount) != countBefore + 1 || !rec) return "!message was not queued";
                 int excluded = 0;
                 if (target >= 0) {
                     // whisper: mark the record as already delivered to every other active machine (mirrors the flush's
                     // per-machine "sent" bookkeeping: done bit + pending byte count)
-                    uint32_t size = *(uint32_t*)(rec + 8) + 0xf;
+                    uint32_t size = *(uint32_t*)(rec + L.chatRecLen) + L.chatRecSizeAdd;
                     if (size & 3) size = size - (size & 3) + 4;
-                    for (int k = 0; k < 32; k++) {
-                        if (k == target || !*(uint8_t*)(chat + 0x14 + (uint64_t)k * 0xc)) continue;
-                        uint32_t* mask = (uint32_t*)(rec + 0x20);
+                    for (int k = 0; k < (int)L.chatMachines && k < 32; k++) {
+                        if (k == target || !*(uint8_t*)(chat + L.chatActive + (uint64_t)k * L.chatMStride)) continue;
+                        uint32_t* mask = (uint32_t*)(rec + L.chatRecMask);
                         if (*mask & (1u << k)) continue;
                         *mask |= (1u << k);
-                        *(uint32_t*)(chat + 0x1c + (uint64_t)k * 0xc) -= size;
+                        *(uint32_t*)(chat + L.chatPending + (uint64_t)k * L.chatMStride) -= size;
                         excluded++;
                     }
                 }
@@ -1103,7 +1271,7 @@ bool WorldSlotsJson(std::string& json, std::string& err) {
                 if (!h) continue;
                 char b[200];
                 snprintf(b, sizeof b, "{\"slot\":%d,\"handle\":%u,\"machineHandle\":%u,\"loginState\":%u,\"perms\":%u,\"entityId\":%u,",
-                         i, h, *(uint32_t*)(s + 4), *(uint8_t*)(s + kSlotState), *(uint8_t*)(s + 0xb),
+                         i, h, *(uint32_t*)(s + kSlotMachine), *(uint8_t*)(s + kSlotState), *(uint8_t*)(s + kSlotPerms),
                          *(uint32_t*)(s + kSlotEid));
                 o += std::string(first ? "" : ",") + b + "\"name\":" + JsonStr(SlotName(s)) + "}";
                 first = false;

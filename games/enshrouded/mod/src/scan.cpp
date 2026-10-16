@@ -12,7 +12,7 @@ struct Range {
 };
 uintptr_t g_base = 0;
 uint32_t g_timestamp = 0;
-std::vector<Range> g_text, g_rdata;
+std::vector<Range> g_text, g_rdata, g_data;
 const RUNTIME_FUNCTION* g_pdata = nullptr;
 size_t g_pdataCount = 0;
 std::vector<uint32_t> g_pdataBegins;  // sorted copy index
@@ -33,6 +33,7 @@ bool Init() {
         if (sec->Characteristics & IMAGE_SCN_MEM_EXECUTE) g_text.push_back(r);
         else if ((sec->Characteristics & IMAGE_SCN_MEM_READ) && !(sec->Characteristics & IMAGE_SCN_MEM_WRITE))
             g_rdata.push_back(r);
+        if (!(sec->Characteristics & IMAGE_SCN_MEM_EXECUTE) && (sec->Characteristics & IMAGE_SCN_MEM_READ)) g_data.push_back(r);
     }
     auto& dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
     g_pdata = (const RUNTIME_FUNCTION*)(g_base + dir.VirtualAddress);
@@ -44,6 +45,25 @@ bool Init() {
 
 uintptr_t Base() { return g_base; }
 uint32_t TimeDateStamp() { return g_timestamp; }
+
+std::vector<uint32_t> FindPointerRefs(uint32_t targetRva, size_t maxHits) {
+    std::vector<uint32_t> out;
+    uint64_t va = (uint64_t)g_base + targetRva;
+    for (auto& r : g_data) {
+        for (uint32_t a = (r.begin + 7) & ~7u; a + 8 <= r.end && out.size() < maxHits; a += 8) {
+            uint64_t v;
+            memcpy(&v, B(a), 8);
+            if (v == va) out.push_back(a);
+        }
+    }
+    return out;
+}
+
+uint64_t ReadU64(uint32_t rva) {
+    uint64_t v;
+    memcpy(&v, B(rva), 8);
+    return v;
+}
 
 bool InText(uint32_t rva) {
     for (auto& r : g_text)
