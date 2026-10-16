@@ -62,7 +62,7 @@
     "getMapInfo": {
       "status": "unsupported",
       "surface": "no validated CS2 map raster source",
-      "reason": "Integration feasibility and game-owned surface have not been established; no game limitation is claimed.",
+      "reason": "Returns enabled:false through Takaro's map status contract. Overview assets exist in the server VPK, but no decoded and calibrated tile source is validated; no game limitation is claimed.",
       "liveVerified": false
     },
     "getMapTile": {

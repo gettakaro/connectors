@@ -103,6 +103,18 @@ public sealed class RequestDispatcherTests
     }
 
     [TestMethod]
+    public async Task ReportsUnavailableMapAsDisabled()
+    {
+        var dispatcher = new TakaroRequestDispatcher(new FakeAdapter());
+        var result = await dispatcher.DispatchAsync(Request("getMapInfo", """{}"""));
+
+        Assert.IsTrue(result.Success);
+        var map = JsonSerializer.SerializeToElement(result.Payload);
+        Assert.IsFalse(map.GetProperty("enabled").GetBoolean());
+        Assert.AreEqual(0, map.GetProperty("mapSizeX").GetInt32());
+    }
+
+    [TestMethod]
     public async Task ReturnsUnsupportedActionForUnknownFunction()
     {
         var dispatcher = new TakaroRequestDispatcher(new FakeAdapter());
