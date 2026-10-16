@@ -88,16 +88,18 @@ public sealed class RequestDispatcherTests
     }
 
     [TestMethod]
-    public async Task ReturnsEmptyArrayForUnavailableListCatalogs()
+    public async Task ReturnsVerifiedEntityCatalogAndRefusesMissingLocationCatalog()
     {
         var dispatcher = new TakaroRequestDispatcher(new FakeAdapter());
-        foreach (var action in new[] { "listEntities", "listLocations" })
-        {
-            var result = await dispatcher.DispatchAsync(Request(action, """{}"""));
-            Assert.IsTrue(result.Success);
-            Assert.IsInstanceOfType(result.Payload, typeof(object[]));
-            Assert.AreEqual(0, ((object[])result.Payload!).Length);
-        }
+        var entities = await dispatcher.DispatchAsync(Request("listEntities", """{}"""));
+        Assert.IsTrue(entities.Success);
+        var catalog = JsonSerializer.SerializeToElement(entities.Payload);
+        Assert.AreEqual("chicken", catalog[0].GetProperty("code").GetString());
+        Assert.AreEqual("neutral", catalog[0].GetProperty("type").GetString());
+
+        var locations = await dispatcher.DispatchAsync(Request("listLocations", """{}"""));
+        Assert.IsFalse(locations.Success);
+        Assert.AreEqual("unsupported_action", locations.Error?.Code);
     }
 
     [TestMethod]
