@@ -414,6 +414,9 @@ static void TestConfigResolve() {
     EQ(r.serverName, "Dragonwilds (11111111)");
     EQ(r.url, ConfigFile::kDefaultUrl);
     CHECK(!r.envRegistration && !r.envIdentity && !r.envServerName && !r.envUrl, "nothing from env");
+    // It says which keys reload: only the four above; any other key needs a restart.
+    CHECK(fresh.find("Saving is enough for the four keys below") != std::string::npos, "reload scope");
+    CHECK(fresh.find("those apply\n# after a restart") != std::string::npos, "restart note");
     // No name in the file: the unique name; no identity: nothing to connect as.
     r = ConfigFile::Resolve(load("TAKARO_IDENTITY_TOKEN= abcdefghij \nTAKARO_SERVER_NAME=\n"), env);
     EQ(r.identity, "abcdefghij");
