@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/gettakaro/connectors/compare/dune-v0.3.0...dune-v0.4.0) (2026-10-16)
+
+
+### Features
+
+* **dune:** protocol v1 with the Hagga Basin map Dimension ([#481](https://github.com/gettakaro/connectors/issues/481)) ([0418d20](https://github.com/gettakaro/connectors/commit/0418d207491ea96f19d5a1de396b21b422e07043))
+
+
+### Bug Fixes
+
+* **dune:** keep the config in one file the connector creates ([#467](https://github.com/gettakaro/connectors/issues/467)) ([9256c31](https://github.com/gettakaro/connectors/commit/9256c315507228bdf7fe68749ec920ce6b9ffa1b))
+
 ## [0.3.0](https://github.com/gettakaro/connectors/compare/dune-v0.2.3...dune-v0.3.0) (2026-10-11)
 
 
