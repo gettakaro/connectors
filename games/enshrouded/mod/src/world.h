@@ -24,6 +24,8 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                       std::string& err);
 // Diagnostic: entities with enemy/animal/npc/boss/faction components within `radius` metres of the player.
 bool WorldNearbyJson(const std::string& playerName, double radius, std::string& json, std::string& err);
+// Account hash of the logged-in slot on machine `machine` via the session table (1.0 gamedata layout).
+bool WorldAccountForMachine(uint32_t machine, uint64_t& account, std::string& err);
 bool WorldSlotsJson(std::string& json, std::string& err);  // diagnostic dump of the 16 player slots
 
 const ItemDef* FindItemByCode(const std::string& code);  // exact, then case-insensitive, then numeric/hex itemId

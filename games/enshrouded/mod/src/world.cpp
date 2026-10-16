@@ -55,6 +55,13 @@ struct Layout {
     bool chatArg8Value = false;
     uint32_t chatMachines = 32, chatActive = 0x14, chatPending = 0x1c, chatMStride = 0xc;
     uint32_t chatTail = 0x1d0, chatCount = 0x1d8, chatRecLen = 8, chatRecMask = 0x20, chatRecSizeAdd = 0xf;
+    // which slot field the chat handle is (1024233: the player handle @0; 1.0: the machine handle @4), and where the
+    // session manager keeps the sender's account (1.0 passes it to queueMessage; 0 = not needed)
+    uint32_t chatHandleSlotField = 0;
+    // Teleport.searchBestSpawnPosition: 1024233 placed with it; 1.0 resolves the search to the current spot (the
+    // player snaps back), and the game's own teleports leave it off
+    uint32_t teleportSearchBest = 1;
+    uint32_t sessMgr = 0, sessVer = 0x3c, sessBase = 0x48, sessVerStride = 0, sessRecStride = 0, sessRecHandle = 0, sessRecAccount = 0;
 } L;
 uint32_t kSlotEid = 0x38, kSlotName = 0x40, kSlotState = 0x0a, kSlotPerms = 0x0b, kSlotMachine = 4;
 
@@ -321,7 +328,7 @@ uint8_t* __fastcall AddMsgDetour(uint8_t* err, uint64_t chat, uint64_t type, Str
         if (server && (uint32_t)handle) {
             for (int i = 0; i < 16 && name.empty(); i++) {
                 uint64_t s = Slot(server, i);
-                if (*(uint32_t*)s == (uint32_t)handle) name = SlotName(s);
+                if (*(uint32_t*)(s + L.chatHandleSlotField) == (uint32_t)handle) name = SlotName(s);
             }
         }
         std::string data = "{\"msg\":" + JsonStr(msg) + ",\"channel\":\"global\",\"chatType\":" +
@@ -630,6 +637,15 @@ void LoadProfileLayout() {
     L.chatRecLen = u("chatRecLen", L.chatRecLen);
     L.chatRecMask = u("chatRecMask", L.chatRecMask);
     L.chatRecSizeAdd = u("chatRecSizeAdd", L.chatRecSizeAdd);
+    L.chatHandleSlotField = u("chatHandleSlotField", L.chatHandleSlotField);
+    L.teleportSearchBest = u("teleportSearchBest", L.teleportSearchBest);
+    L.sessMgr = u("sessionMgr", L.sessMgr);
+    L.sessVer = u("sessionVersion", L.sessVer);
+    L.sessBase = u("sessionBase", L.sessBase);
+    L.sessVerStride = u("sessionVersionStride", L.sessVerStride);
+    L.sessRecStride = u("sessionRecordStride", L.sessRecStride);
+    L.sessRecHandle = u("sessionRecordHandle", L.sessRecHandle);
+    L.sessRecAccount = u("sessionRecordAccount", L.sessRecAccount);
     kSlotEid = u("slotEid", kSlotEid);
     kSlotName = u("slotName", kSlotName);
     kSlotState = u("slotState", kSlotState);
@@ -1028,7 +1044,7 @@ bool WorldTeleport(const std::string& name, const Vec3& to, std::string& err) {
                 memcpy(t, &px, 8);
                 memcpy(t + 8, &py, 8);
                 memcpy(t + 16, &pz, 8);
-                t[0x49] = 1;  // searchBestSpawnPosition: voxel-safe placement (same as the admin teleport)
+                t[0x49] = L.teleportSearchBest ? 1 : 0;  // searchBestSpawnPosition (gamedata teleportSearchBest)
                 Span sp{t, sizeof t};
                 uint64_t ok = g_addComp(world, eid, kTeleport, &sp);
                 PluginLog("teleport: %s eid=%u -> (%.2f, %.2f, %.2f) addComponent=%u", name.c_str(), eid, to.x, to.y,
@@ -1182,6 +1198,17 @@ bool WorldGiveItem(const std::string& name, const ItemDef& item, uint32_t amount
     return true;
 }
 
+// Account hash of the machine `handle` from the session manager's active record table (1.0 layout), 0 if absent.
+static uint64_t SessionAccount(uint64_t server, uint32_t handle) {
+    uint64_t mgr = *(uint64_t*)(server + L.sessMgr);
+    if (!mgr || !Readable(mgr, L.sessBase)) return 0;
+    uint32_t ver = *(uint32_t*)(mgr + L.sessVer);
+    if (ver > 1) return 0;
+    uint64_t rec = mgr + L.sessBase + (uint64_t)ver * L.sessVerStride + (uint64_t)(handle & 0x3f) * L.sessRecStride;
+    if (!Readable(rec, L.sessRecAccount + 8) || *(uint32_t*)(rec + L.sessRecHandle) != handle) return 0;
+    return *(uint64_t*)(rec + L.sessRecAccount);
+}
+
 bool WorldSendMessage(const std::string& text, const std::string& recipientMachine, uint8_t type, uint32_t senderHandle,
                       std::string& err) {
     if (!g_chatSendOk) {
@@ -1214,14 +1241,16 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                     uint32_t h = *(uint32_t*)s;
                     if (!h || *(uint8_t*)(s + kSlotState) != 3) continue;
                     if (target >= 0 && (int)(*(uint32_t*)(s + kSlotMachine) & 0x7f) != target) continue;
-                    handle = h;
+                    handle = *(uint32_t*)(s + L.chatHandleSlotField);
                 }
+                uint64_t account = 0;
+                if (L.chatArg8Value && L.sessVerStride && handle) account = SessionAccount(server, handle);
                 if (!handle) return std::string(target >= 0 ? "!recipient has no logged-in player slot" : "=nobody online");
                 uint64_t countBefore = *(uint64_t*)(chat + L.chatCount);
                 StringView sv{text.data(), text.size()};
                 Opt64 o1{}, o2{};
                 uint8_t e[16] = {0};
-                g_origAddMsg(e, chat, type, &sv, 0, 0, handle, L.chatArg8Value ? 0 : (uint64_t)&o1, &o2);
+                g_origAddMsg(e, chat, type, &sv, 0, 0, handle, L.chatArg8Value ? account : (uint64_t)&o1, &o2);
                 if (e[0]) return "!addMessage error " + std::to_string(e[0]);
                 uint64_t rec = *(uint64_t*)(chat + L.chatTail);
                 if (*(uint64_t*)(chat + L.chatCount) != countBefore + 1 || !rec) return "!message was not queued";
@@ -1240,8 +1269,8 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                         excluded++;
                     }
                 }
-                PluginLog("message: queued type=%u handle=0x%x len=%zu target=%d excluded=%d", type, handle,
-                          text.size(), target, excluded);
+                PluginLog("message: queued type=%u handle=0x%x account=%s len=%zu target=%d excluded=%d", type, handle,
+                          account ? "set" : "none", text.size(), target, excluded);
                 return "ok";
             },
             res, e2)) {
@@ -1253,6 +1282,35 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
         err = res.substr(1);
         return false;
     }
+    return true;
+}
+
+bool WorldAccountForMachine(uint32_t machine, uint64_t& account, std::string& err) {
+    account = 0;
+    if (!g_worldOk || !L.sessVerStride) {
+        err = "no gamedata session layout";
+        return false;
+    }
+    std::string res;
+    if (!RunOnWorld(
+            [machine](uint64_t server) -> std::string {
+                uint64_t found = 0;
+                int matches = 0;
+                for (int i = 0; i < 16; i++) {
+                    uint64_t s = Slot(server, i);
+                    uint32_t h = *(uint32_t*)s;
+                    if (!h || (*(uint32_t*)(s + kSlotMachine) & 0x7f) != machine) continue;
+                    uint64_t acc = SessionAccount(server, *(uint32_t*)(s + L.chatHandleSlotField));
+                    if (acc) {
+                        found = acc;
+                        matches++;
+                    }
+                }
+                return matches == 1 ? std::to_string(found) : std::string("0");
+            },
+            res, err))
+        return false;
+    account = strtoull(res.c_str(), nullptr, 10);
     return true;
 }
 
