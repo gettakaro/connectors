@@ -98,6 +98,8 @@ using CharNameFn = uint8_t*(__fastcall*)(uint8_t* out, uint64_t table, uint64_t 
 CharNameFn g_charName = nullptr;
 uint32_t g_charComp = 0, g_charTable = 0;
 uint64_t g_charLastMs = 0;
+// 1.0: ecs::NetworkPlayerAttributes of a player entity holds level / experience / experienceRequired as u16
+uint32_t g_attrComp = 0, g_attrLevel = 0, g_attrXp = 0, g_attrXpReq = 0;
 
 GetCompFn g_getRead = nullptr;
 AddCompFn g_addComp = nullptr;
@@ -152,7 +154,7 @@ uint64_t __fastcall UpdDetour(uint64_t server, uint64_t b, uint64_t c, uint64_t 
     PerfScope perf(kPerfUpdatePlayers);
     InterlockedIncrement64(&g_updTicks);
     InterlockedExchange64(&g_server, (LONG64)server);
-    if (g_charName && NowMs() - g_charLastMs >= 2000) {
+    if ((g_charName || g_attrComp) && NowMs() - g_charLastMs >= 2000) {
         g_charLastMs = NowMs();
         RefreshCharacterNames(server);
     }
@@ -263,6 +265,16 @@ void RefreshCharacterNames(uint64_t server) {
         if (persona.empty()) continue;
         std::string ch = CharacterNameOf(server, eid);
         if (!ch.empty()) PluginState::Get().SetCharacterName(persona, ch);
+        if (g_attrComp) {
+            CompRef a = Read(World(server), g_attrComp, eid);
+            uint32_t need = (g_attrLevel > g_attrXp ? g_attrLevel : g_attrXp) + 2;
+            if (g_attrXpReq + 2 > need) need = g_attrXpReq + 2;
+            if (a.ptr && a.size >= need) {
+                const uint8_t* b = (const uint8_t*)a.ptr;
+                PluginState::Get().SetLevel(persona, *(const uint16_t*)(b + g_attrLevel), *(const uint16_t*)(b + g_attrXp),
+                                            *(const uint16_t*)(b + g_attrXpReq));
+            }
+        }
     }
 }
 
@@ -1000,6 +1012,16 @@ void WorldHooksInit() {
         } else {
             RecordResolve("characterName", cn, "unresolved: " + h3, false);
         }
+        g_attrComp = (uint32_t)profile::L("attributesComponent", 0);
+        g_attrLevel = (uint32_t)profile::L("attributesLevel", 0);
+        g_attrXp = (uint32_t)profile::L("attributesExperience", 0);
+        g_attrXpReq = (uint32_t)profile::L("attributesExperienceRequired", 0);
+        if (!g_attrLevel || !g_attrXp || !g_attrXpReq) g_attrComp = 0;
+        RecordResolve("characterLevel", 0,
+                      g_attrComp ? "gamedata; component 0x" + std::string(Hx(g_attrComp)).substr(2) + " level +" + Hx(g_attrLevel) +
+                                       " experience +" + Hx(g_attrXp) + " required +" + Hx(g_attrXpReq)
+                                 : std::string("unresolved: gamedata has no attributes* layout"),
+                      false);
     }
     st.SetCapability("killEvents", g_combatOk ? "ok" : "degraded",
                      g_combatOk ? std::string("combat_experience_source detour (killing-blow HitEvent)") +

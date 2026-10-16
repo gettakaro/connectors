@@ -497,6 +497,34 @@ void Run(Builder& o) {
             }
         }
     }
+
+    // character level (optional): the reflection type of keen::ecs::NetworkPlayerAttributes {name*, +0x10 "ecs.<name>",
+    // +0x20 "keen::ecs::<name>", +0x48 u32 field count, +0x50 u32 component hash, +0x58 fields*}; each field is
+    // {name*, u64 len, type*, u64 offset}, 0x30 apart. keen::ds::ecs:: is the data-schema twin with another hash.
+    if (uint32_t an = scan::FindCString("keen::ecs::NetworkPlayerAttributes")) {
+        for (uint32_t ref : scan::FindPointerRefs(an, 8)) {
+            if (ref < 0x20) continue;
+            uint32_t t = ref - 0x20;
+            uint32_t count = (uint32_t)scan::ReadU64(t + 0x48), hash = (uint32_t)scan::ReadU64(t + 0x50);
+            uint64_t fields = scan::ReadU64(t + 0x58);
+            if (!hash || !count || count > 512 || fields < scan::PointerBase()) continue;
+            uint32_t f = (uint32_t)(fields - scan::PointerBase());
+            std::map<std::string, uint32_t> at;
+            for (uint32_t k = 0; k < count; k++) {
+                uint64_t np = scan::ReadU64(f + k * 0x30), len = scan::ReadU64(f + k * 0x30 + 8);
+                if (np < scan::PointerBase() || len == 0 || len > 64) continue;
+                const char* nm = (const char*)P((uint32_t)(np - scan::PointerBase()));
+                at[std::string(nm, (size_t)len)] = (uint32_t)scan::ReadU64(f + k * 0x30 + 0x18);
+            }
+            if (at.count("level") && at.count("experience") && at.count("experienceRequired")) {
+                o.L("attributesComponent", hash);
+                o.L("attributesLevel", at["level"]);
+                o.L("attributesExperience", at["experience"]);
+                o.L("attributesExperienceRequired", at["experienceRequired"]);
+                break;
+            }
+        }
+    }
 }
 
 std::string VerifyBytes(uint32_t rva) {
