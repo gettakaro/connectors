@@ -91,7 +91,7 @@ maintenance/bin/takaro-maint targets resolve --game enshrouded --format env --pr
 | `ENSHROUDED_TARGET`, `ENSHROUDED_FINGERPRINT`, `ENSHROUDED_FP16` | the target id and the hash of everything pinned in it |
 | `ENSHROUDED_REVISION`, `ENSHROUDED_GAME_BUILD` | the game's own build id, `1024233` — what the server prints and the plugin pins against |
 | `ENSHROUDED_HOOKS_PROVEN_BUILD` | the build the signatures were derived on; `verify` fails when the running server reports another one |
-| `ENSHROUDED_IMAGE`, `ENSHROUDED_PROTON` | the game image by digest and the Proton inside it (`GE-Proton10-30`) |
+| `ENSHROUDED_IMAGE`, `ENSHROUDED_PROTON` | the game image by digest and the Proton inside it (`GE-Proton11-9`) |
 | `ENSHROUDED_STEAM_APP`, `_STEAM_BRANCH`, `_STEAM_BUILDID`, `_STEAM_DEPOTS` | the exact Steam pin |
 | `ENSHROUDED_TOOLCHAIN`, `ENSHROUDED_DEP_ZIG_URL`, `ENSHROUDED_DEP_ZIG_SHA256` | the builder image and the zig it installs |
 | `ENSHROUDED_ARTIFACT_SERVER_PLUGIN` | the artifact name pattern |

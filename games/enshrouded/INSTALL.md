@@ -4,9 +4,10 @@
 and holds the connection to Takaro itself, so the whole connector is that one file plus its
 configuration. Players use the unmodified game client.
 
-It is built for Enshrouded game build **1024233** (Steam build 23178631) and tested under
-GE-Proton10-30 in `mornedhels/enshrouded-server:1.7.2-proton`. A Windows dedicated server should
-work the same way but has not been tried.
+It is built for Enshrouded 1.0 (game build **1267041**, Steam build 25967645) and tested under
+GE-Proton11-9 in `mornedhels/enshrouded-server:dev-proton`. Older Proton images cannot start the 1.0
+server. On a server still on build 1024233 the new DLL turns the item/creature catalogue and
+`giveItem` off (degraded) because their tables are the 1.0 tables; use plugin 0.7.x there.
 
 ## Clean installation
 

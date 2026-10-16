@@ -13,7 +13,7 @@ services:
   # every container start and update over it. There is deliberately no UPDATE_CRON,
   # RESTART_CRON, GAME_BRANCH or STEAMCMD_ARGS here.
   enshrouded:
-    image: mornedhels/enshrouded-server:1.7.2-proton@sha256:85978a10f88a85ab0a0aa92e9821d30424895d38bf81fe543532451219c42d0d
+    image: mornedhels/enshrouded-server:dev-proton@sha256:d122801bb54498f41a6c0d8b27f336ec4c9266ffd5e4660611cb7c20c162318f
     container_name: enshrouded-server
     restart: unless-stopped
     stop_grace_period: 2m

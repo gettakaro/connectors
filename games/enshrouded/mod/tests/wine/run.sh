@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Wine integration test for the native Takaro connector: the real dbghelp.dll, loaded by a tiny host exe under
-# the pinned Enshrouded Proton image (GE-Proton10-30), talks WSS to a fake Takaro (tests/fake_takaro_ws.py) with a
+# the pinned Enshrouded Proton image (GE-Proton11-9), talks WSS to a fake Takaro (tests/fake_takaro_ws.py) with a
 # test CA. No game runs, so game capabilities degrade; transport, bridge, outbox, log-tail fallback and the
 # diagnostics endpoint are the real code.
 #
@@ -12,7 +12,7 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 MOD=$(cd "$HERE/../.." && pwd)
-IMG=${ENSHROUDED_IMAGE:-mornedhels/enshrouded-server:1.7.2-proton@sha256:85978a10f88a85ab0a0aa92e9821d30424895d38bf81fe543532451219c42d0d}
+IMG=${ENSHROUDED_IMAGE:-mornedhels/enshrouded-server:dev-proton@sha256:d122801bb54498f41a6c0d8b27f336ec4c9266ffd5e4660611cb7c20c162318f}
 PYIMG=ensh-native-wine-py:local
 NET=ensh-native-wine-net
 RT=ensh-native-wine-rt

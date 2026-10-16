@@ -149,7 +149,7 @@ def scan_runtime_identity(adapter: Any, log_file: Path) -> dict[str, Any]:
 
 
 def _proton_version(container_ref: str) -> str:
-    """``/usr/local/bin/version`` of the pinned image: ``<epoch> GE-Proton10-30``."""
+    """``/usr/local/bin/version`` of the pinned image: ``<epoch> GE-Proton11-9``."""
     if not container_ref:
         return ""
     completed = subprocess.run(

@@ -162,7 +162,7 @@ def test_targets_resolve_env_for_enshrouded(run: Any) -> None:
     assert env["ENSHROUDED_ARTIFACT_SERVER_PLUGIN"] == f"takaro-enshrouded-plugin-{TARGET}-{{version}}.zip"
     # One component: the plugin holds the Takaro connection, so nothing else is built or pinned.
     assert not [key for key in env if "SIDECAR" in key]
-    assert env["ENSHROUDED_PROTON"] == "GE-Proton10-30"
+    assert env["ENSHROUDED_PROTON"] == "GE-Proton11-9"
     # The hook-compatibility statement, and the fact that it is the pinned build itself.
     assert env["ENSHROUDED_HOOKS_PROVEN_BUILD"] == env["ENSHROUDED_REVISION"] == "1267041"
     assert not any(key.endswith("_JAVA") for key in env)
