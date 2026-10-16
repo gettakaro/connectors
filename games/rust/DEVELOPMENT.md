@@ -237,8 +237,9 @@ env-precedence, half-saved-file and identity cases (CI runs it in the `test` job
 ### World map (getMapInfo / getMapTile)
 
 The map is the game's own render (`MapImageRenderer.Render`, the code behind `world.rendermap`),
-drawn once per world on the main thread a moment after `OnServerInitialized` (about 3.6 s for a
-1000 m world) and kept as `carbon/data/TakaroConnector_map_<size>_<seed>_<hash>.png`. The hash covers
+drawn once per world on the main thread a moment after `OnServerInitialized` (3.6 s to 12 s for a
+1000 m world in our runs, not measured on big worlds; the console logs the real time) and kept as
+`carbon/data/TakaroConnector_map_<size>_<seed>_<hash>.png`. The hash covers
 `World.MapFileName` and `World.Checksum`, so a new seed, size, game protocol or custom map gets a new
 render and older renders are deleted; later starts and reloads only decode the PNG. Tiles use the
 7 Days to Die web-map layout the Takaro player map draws: 128 px tiles, signed indices centred on the
