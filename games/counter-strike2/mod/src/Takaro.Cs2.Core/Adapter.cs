@@ -63,6 +63,7 @@ public sealed class TakaroRequestDispatcher
                 "listItems" => await adapter.ListItemsAsync(cancellationToken),
                 "listEntities" => TakaroActionResult.Ok(new[] { new { code = "chicken", name = "Chicken", type = "neutral" } }),
                 "listLocations" => TakaroActionResult.Fail("unsupported_action", "CS2 does not expose a map-wide catalog of named locations with coordinates through CounterStrikeSharp."),
+                "getMapInfo" => TakaroActionResult.Ok(new { enabled = false, mapBlockSize = 0, maxZoom = 0, mapSizeX = 0, mapSizeY = 0, mapSizeZ = 0 }),
                 "sendMessage" => await adapter.SendMessageAsync(RequiredString(request.Args, "message"), OptionalRecipient(request.Args), OptionalSender(request.Args), cancellationToken),
                 "executeConsoleCommand" => await adapter.ExecuteConsoleCommandAsync(RequiredString(request.Args, "command"), cancellationToken),
                 "teleportPlayer" => await adapter.TeleportPlayerAsync(RequiredIdentifier(request.Args), RequiredPosition(request.Args), cancellationToken),
