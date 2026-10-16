@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.0](https://github.com/gettakaro/connectors/compare/enshrouded-v0.7.0...enshrouded-v0.8.0) (2026-10-16)
+
+
+### Features
+
+* **enshrouded:** speak Takaro protocol 1 and declare the world map ([#488](https://github.com/gettakaro/connectors/issues/488)) ([918ce6e](https://github.com/gettakaro/connectors/commit/918ce6e76283da25f64d6e92c28fd19a0cc2e943))
+* **enshrouded:** support Enshrouded 1.0 (Steam 25967645) on Proton ([#525](https://github.com/gettakaro/connectors/issues/525)) ([e194a95](https://github.com/gettakaro/connectors/commit/e194a9572e0899ec05a782101bc2ad1d0e5b6214))
+
+
+### Bug Fixes
+
+* **enshrouded:** keep the config in one file the connector creates ([#464](https://github.com/gettakaro/connectors/issues/464)) ([27cb11a](https://github.com/gettakaro/connectors/commit/27cb11a248b6d9ab37d72a44fa933b80d9b1f31d))
+
 ## [0.7.0](https://github.com/gettakaro/connectors/compare/enshrouded-v0.6.1...enshrouded-v0.7.0) (2026-10-11)
 
 
