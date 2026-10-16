@@ -106,7 +106,8 @@ is how Takaro knows this server, so keep it when you move or copy the server.
     "backoff_multiplier": 1.5
   },
   "settings": {
-    "debug": false
+    "debug": false,
+    "map": false
   }
 }
 ```
@@ -122,6 +123,8 @@ takaro.reconnect.delay=5000
 takaro.reconnect.max_delay=300000
 takaro.reconnect.backoff_multiplier=1.5
 takaro.debug=false
+# World map in Takaro. Needs Takaro protocol v1, not yet on takaro.io.
+takaro.map=false
 ```
 
 **Paper** (`plugins/TakaroMinecraft/config.yml`):
@@ -139,7 +142,13 @@ takaro:
     max_delay: 300000
     backoff_multiplier: 1.5
   debug: false
+  # World map in Takaro. Needs Takaro protocol v1, not yet on takaro.io.
+  map: false
 ```
+
+`map` (in the Fabric file: `settings.map`; or `TAKARO_MAP=true`) turns on the world map in Takaro.
+It needs Takaro protocol v1, which takaro.io does not have yet, so leave it `false` there. Changing
+it reconnects to Takaro, no restart needed.
 
 ### 5. Check that it worked
 
@@ -220,8 +229,7 @@ level — treat every row below as unverified on those two platforms.**
 | Player death event | ✅ | Reaches Takaro and can drive modules. |
 | Entity kill event | ✅ | Proven with a real kill (zombie, diamond sword); the entity type and the weapon used are included. |
 | Log events | ❌ | The connector never sends server log lines to Takaro. |
-| Map info | ❌ | Not implemented — the connector answers "action not implemented". |
-| Map tiles | ❌ | Not supported by Takaro for this connector type yet; nothing on the game server side changes that. |
+| Map | ⚠️ | Off by default. Set `map` to `true` (or `TAKARO_MAP=true`) for a world map with player dots in Takaro. Needs Takaro protocol v1, not yet on takaro.io; on takaro.io leave it off. |
 | Discord chat bridge | ⚠️ | Game → Discord works: chat, deaths and cron messages were all delivered to the Discord channel. Discord → game was **not** confirmed with a post from a real Discord account. Use the `chatBridgeNoEcho` module; the plain chat bridge echoes Takaro's own messages back into the game. |
 | Shop & economy | ✅ | Buying in chat (`@shop`), ordering through the Takaro API, currency grants and balance checks all work, and purchases arrive in the inventory. Buying without enough currency is correctly refused. |
 
@@ -232,8 +240,9 @@ level — treat every row below as unverified on those two platforms.**
 - **Item quality is ignored.** Everything the shop or Takaro hands out arrives in default
   condition; there is no durability or quality control.
 - **Teleport snaps to the ground.** The Y you ask for is replaced by ground level at that spot.
-- **No map and no locations.** Takaro's API does not support map tiles for Generic-connector
-  servers, and Minecraft has no named-location list for the connector to report.
+- **Map is opt-in and needs protocol v1.** `map=true` only works with a Takaro that speaks
+  protocol v1, which takaro.io does not yet. Minecraft has no named-location list for the
+  connector to report.
 - **Paper and NeoForge are untested.** They build and ship, but no end-to-end run has been done
   on either; only Fabric on Minecraft 26.2 has been proven.
 
