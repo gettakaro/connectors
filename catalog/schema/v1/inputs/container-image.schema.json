@@ -11,8 +11,8 @@
     "image": {"type": "string", "minLength": 1},
     "tag": {
       "type": "string",
-      "pattern": "^v?[0-9][A-Za-z0-9._-]*$",
-      "description": "An optional leading v then a digit, which rejects floating tags such as latest, stable, beta, java21 and java25."
+      "pattern": "^(v?[0-9][A-Za-z0-9._-]*|dev-proton)$",
+      "description": "An optional leading v then a digit, which rejects floating tags such as latest, stable, beta, java21 and java25. The one exception is dev-proton, the only tag under which mornedhels/enshrouded-server ships a Proton that can start Enshrouded 1.0; the digest still pins the bytes."
     },
     "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "env": {"type": "object", "additionalProperties": {"type": "string"}}

@@ -115,5 +115,5 @@
     "takaro/",
     ".takaro/"
   ],
-  "notes": "Enshrouded 1.0 public Steam build 25967645, pending hook compatibility and live proof."
+  "notes": "Enshrouded 1.0 public Steam build 25967645. Runtime image: upstream publishes 1.0-capable Proton only as the floating tag mornedhels/enshrouded-server:dev-proton (GE-Proton11-9, pushed 2026-10-15); the digest is what pins it. GE-Proton10-30 (1.7.2-proton) cannot start the 1.0 server (No SteamUtils011). Move to the first numbered upstream release that bundles a 1.0-capable Proton."
 }
