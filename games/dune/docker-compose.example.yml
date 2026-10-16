@@ -59,6 +59,8 @@ services:
       # Must match your Takaro game server's `serverChatName` setting, or Takaro's chat bridge
       # echoes the connector's own messages back into the game.
       TAKARO_SENDER_NAME: ${TAKARO_SENDER_NAME:-Server}
+      # 1 (empty) offers Takaro protocol version 1 and declares the Hagga Basin map; 0 keeps version 0. Needs `up -d`.
+      TAKARO_PROTOCOL: ${TAKARO_PROTOCOL:-}
 
       # Read-only. The database NAME is build-specific: check it with `\l`.
       DUNE_PG_URL: ${DUNE_PG_URL:-postgres://dune:${POSTGRES_DUNE_PASSWORD:-}@postgres:5432/${DUNE_DB_NAME:-dune}}
