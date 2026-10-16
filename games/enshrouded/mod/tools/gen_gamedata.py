@@ -4,7 +4,7 @@ server's enshrouded_server.kfc, build noted in each file's "source"). Re-run aft
 import json, os, uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-RES = os.path.normpath(os.path.join(HERE, '..', '..', '..', 'research'))
+RES = os.path.normpath(os.path.join(HERE, '..', '..', 'research'))
 OUT = os.path.normpath(os.path.join(HERE, '..', 'src', 'gamedata.cpp'))
 
 

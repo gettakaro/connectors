@@ -37,6 +37,14 @@ const char* const kLeadingEntity[] = {"base",  "prop",  "teleport", "enemy",    
                                       "townsfolk", "player", "trap",             "shroud",  "zone",
                                       "attack", "projectile", "collider", "wildbeast", "wildlife"};
 
+// Lower-case compounds the camel split cannot see, opened into their words (1.0's
+// `Collection_Worldmap_Desert` world-map fragments).
+struct Compound {
+    const char* lowered;
+    const char* words[3];
+};
+const Compound kCompounds[] = {{"worldmap", {"World", "Map", nullptr}}};
+
 // The same for items: the item's category, which listItems answers in its description.
 const char* const kLeadingItem[] = {"block",    "buildtool",   "voxel",       "prop",    "decoration",
                                     "component", "material",   "food",        "craft",   "tool",
@@ -220,6 +228,14 @@ std::string DisplayNameAt(const char* code, NameKind kind, int detail) {
     for (const std::string& part : pieces) {
         const std::string lowered = Lower(part);
         if (IsNoise(part, kind)) continue;
+        const Compound* compound = nullptr;
+        for (const Compound& c : kCompounds)
+            if (lowered == c.lowered) compound = &c;
+        if (compound) {
+            for (const char* w : compound->words)
+                if (w) tokens.push_back(w);
+            continue;
+        }
         if (IsDigits(part) || IsTierRange(part) ||
             (!split_all && (In(kAtomic, sizeof kAtomic / sizeof *kAtomic, lowered) || IsHint(lowered) ||
                             IsVersion(lowered))))

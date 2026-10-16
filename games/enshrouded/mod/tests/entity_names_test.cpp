@@ -52,14 +52,14 @@ bool Lowercase(const std::string& s) {
 
 int main() {
     // The client's own names: boss health bars and NPCs.
-    Expect("Enemy_Fogger_Heavy_BossHealthBar", "Fell Thunderbrute", "client");
+    Expect("Enemy_Fogger_Heavy_BossHealthBar", "Armored Fell Thunderbrute", "client");  // renamed in 1.0
     Expect("Enemy_Boss_GiantLizard", "Fell Wispwyvern", "client");
     Expect("Enemy_Fog_Predator_BossHealthBar", "Shroud Stalker", "client");
     Expect("Enemy_Midboss_Vukah_Bigfoot_BossHealthBar", "Vukah Brawler", "client");
     Expect("NPC_Workshop_Blacksmith01", "Oswald Anders", "client");
     Expect("NPC_Workshop_cryptKeeper_Assistant_01", "Nameless One", "client");
     // A variant of a named template: the named one's name.
-    Expect("Enemy_Fogger_Heavy_SummonStone", "Fell Thunderbrute", "sibling");
+    Expect("Enemy_Fogger_Heavy_SummonStone", "Armored Fell Thunderbrute", "sibling");
     Expect("Enemy_Fogger_MageHeavy_hook", "Fell Sicklescythe", "sibling");
     Expect("Enemy_Fog_Predator", "Shroud Stalker", "sibling");
     Expect("NPC_Workshop_Alchemist01", "Balthazar", "sibling");
