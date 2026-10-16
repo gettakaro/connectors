@@ -398,6 +398,7 @@ Response DoTeleport(const std::string& id, double x, double y, double z) {
 Response DoGive(const std::string& id, const std::string& code, double amount) {
     std::string steam, name, err, detail;
     if (!PluginState::Get().FindOnline(id, steam, name)) return Err(404, "player not online");
+    if (!ItemTablesUsable()) return Err(503, "giveItem unavailable: " + ItemTablesReason());
     const ItemDef* item = FindItemByCode(code);
     if (!item) return Err(400, "unknown item code '" + code + "' (see GET /items)");
     if (!(amount >= 1) || amount > 100000) return Err(400, "amount must be >= 1");
@@ -771,6 +772,8 @@ Response Route(const Request& r) {
         }
     }
     if (get && parts.size() == 1 && p0 == "bans") return BansJson();
+    if (get && parts.size() == 1 && (p0 == "items" || p0 == "entities") && !ItemTablesUsable())
+        return Err(503, "catalog unavailable: " + ItemTablesReason());
     if (get && parts.size() == 1 && p0 == "items") return {200, ItemsJson()};
     if (get && parts.size() == 1 && p0 == "entities") return {200, EntitiesJson()};
     if (get && parts.size() == 1 && p0 == "locations") return {200, LocationsJson()};

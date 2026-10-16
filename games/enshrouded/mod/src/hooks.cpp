@@ -543,6 +543,7 @@ void HooksInit() {
     ReadGameBuild();
     bool scanOk = scan::Init();
     if (scanOk) profile::Load(g_gameBuild);
+    SetItemTablesBuild(g_gameBuild, profile::Active());
     if (!scanOk) {
         st.SetCapability("logEvents", "degraded", "PE scan init failed");
         st.SetCapability("players", "degraded", "PE scan init failed");

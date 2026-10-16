@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "id": "proton-25967645",
+  "id": "proton-1267041",
   "game": "enshrouded",
   "platform": "proton",
-  "revision": "25967645",
-  "default": false,
+  "revision": "1267041",
+  "default": true,
   "support": {
     "status": "candidate",
     "since": "2026-10-16",
@@ -86,7 +86,7 @@
   "components": [
     {
       "role": "server-plugin",
-      "artifact": "takaro-enshrouded-plugin-proton-25967645-{version}.zip",
+      "artifact": "takaro-enshrouded-plugin-proton-1267041-{version}.zip",
       "installDir": "takaro/plugin"
     }
   ],

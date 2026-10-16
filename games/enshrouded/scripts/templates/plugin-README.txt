@@ -4,9 +4,9 @@ A server-side connector only: players do not install anything. dbghelp.dll is a 
 the Enshrouded dedicated server loads in place of the system dbghelp; it hooks the game
 and holds the connection to Takaro itself. There is nothing else to run.
 
-It hooks the server by pinned code signatures and is proven on Enshrouded game build
-1024233 (Steam app 2278520, branch public, build 23178631). On any other game build the
-affected capabilities self-check as "degraded" at load; the server keeps running, and
+It hooks the server through per-build game data (takaro/enshrouded-gamedata.json) and is
+proven on Enshrouded 1.0, game build 1267041 (Steam app 2278520, branch public, build
+25967645). On a game build without a section in that file the affected capabilities self-check as "degraded" at load; the server keeps running, and
 Takaro's reachability reason names what no longer works.
 
 Install (full steps, upgrade and rollback: INSTALL.md):

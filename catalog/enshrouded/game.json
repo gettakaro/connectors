@@ -19,7 +19,7 @@
           "experimental": {"branch": "experimental", "enabled": false}
         },
         "knownBranches": [],
-        "readinessNote": "The Takaro plugin hooks this build by pinned code signatures (proven on game build 1024233 / Steam build 23178631). On any other build every capability self-checks at load and reports degraded; a new build is blocked until the signatures are re-derived and `takaro-maint verify --game enshrouded` reports plugin-health ok (see games/enshrouded/DEVELOPMENT.md)."
+        "readinessNote": "The Takaro plugin hooks this build by pinned code signatures (per-build data for game build 1267041 / Steam build 25967645, Enshrouded 1.0). A build without a gamedata section falls back to built-in heuristics and capabilities that fail their self-check report degraded; a new build is blocked until the signatures are re-derived and `takaro-maint verify --game enshrouded` reports plugin-health ok (see games/enshrouded/DEVELOPMENT.md)."
       }
     }
   },
@@ -31,7 +31,7 @@
     }
   },
   "legacyAssetAliases": {
-    "takaro-enshrouded-plugin.zip": "proton-1024233/server-plugin",
-    "takaro-enshrouded-sidecar.zip": "proton-1024233/sidecar"
+    "takaro-enshrouded-plugin.zip": "proton-1267041/server-plugin",
+    "takaro-enshrouded-sidecar.zip": "proton-1267041/sidecar"
   }
 }

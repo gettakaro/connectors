@@ -1,7 +1,7 @@
 2026-09-13T18:05:02.113Z supervisord: enshrouded-updater INFO - Running enshrouded-updater (takaro-maint pinned install: the update path is disabled)
 2026-09-13T18:05:02.180Z supervisord: enshrouded-updater INFO - Starting the Enshrouded server on the pinned build
 2026-09-13T18:05:02.402Z supervisord: INFO spawned: 'enshrouded-server' with pid 214
-2026-09-13T18:05:06.551Z supervisord: enshrouded-server [app] Enshrouded Server, Game Version (SVN): 1024233
+2026-09-13T18:05:06.551Z supervisord: enshrouded-server [app] Enshrouded Server, Game Version (SVN): 1267041
 2026-09-13T18:05:06.559Z supervisord: enshrouded-server [app] Build: 2026-05-11T10:44:54.050433Z, branch: ^/game38/branches/ea_update_08
 2026-09-13T18:05:09.884Z supervisord: enshrouded-server [online] Server connected to Steam successfully
 2026-09-13T18:05:11.037Z supervisord: enshrouded-server [Session] 'HostOnline' (up)!

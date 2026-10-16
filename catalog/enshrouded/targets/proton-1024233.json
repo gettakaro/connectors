@@ -4,14 +4,14 @@
   "game": "enshrouded",
   "platform": "proton",
   "revision": "1024233",
-  "default": true,
+  "default": false,
   "support": {
-    "status": "candidate",
+    "status": "retired",
     "since": "2026-09-14",
     "evidence": [
       "games/enshrouded/README.md (What works, what doesn't - verified 2026-09-29 with the native connector on game build 1024233 / Steam build 23178631; the sidecar-era proof was 2026-09-13/14 with plugin 0.4.2)"
     ],
-    "notes": "Exact Steam pin of the build the 2026-09-13/14 hard test proved. The native plugin resolves game code by signature and is proven ONLY on this build: on any other build the affected capabilities self-check as degraded and takaro-maint verify fails plugin-health; that is the hook-compatibility claim, not a process-alive check. The native connector runs under this target's Proton image in CI against a fake Takaro (no game server); booting the server itself in CI is a separate follow-up (#173); gameplay evidence #174."
+    "notes": "Retired for Enshrouded 1.0: the item and entity tables compiled into the plugin are the 1.0 tables (241 old items gone, 22 item ids changed), so giveItem and the catalog on this game build would use 1.0 ids. The plugin therefore refuses giveItem and the item and entity lists on any build without a gamedata section (capabilities report degraded); the build is no longer on the public branch. Exact Steam pin of the build the 2026-09-13/14 hard test proved. The native plugin resolves game code by signature and is proven ONLY on this build: on any other build the affected capabilities self-check as degraded and takaro-maint verify fails plugin-health; that is the hook-compatibility claim, not a process-alive check. The native connector runs under this target's Proton image in CI against a fake Takaro (no game server); booting the server itself in CI is a separate follow-up (#173); gameplay evidence #174."
   },
   "inputs": {
     "server": {

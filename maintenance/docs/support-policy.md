@@ -37,7 +37,7 @@ answer, and the record is the authority.
 | Conan Exiles | `linux-25738716` | linux | 25738716 | candidate | contract |
 | Conan Exiles | `linux-25792439` | linux | 25792439 | candidate | contract |
 | RuneScape: Dragonwilds | `linux-25465077` | linux | 25465077 | candidate | contract |
-| Enshrouded | `proton-1024233` | proton | 1024233 | candidate | contract |
+| Enshrouded | `proton-1267041` | proton | 1267041 | candidate | contract |
 | Minecraft | `fabric-26.1.2` | fabric | 26.1.2 | maintained | protocol |
 | Minecraft | `fabric-26.2` | fabric | 26.2 | maintained | protocol |
 | Minecraft | `neoforge-1.21.11` | neoforge | 1.21.11 | maintained | protocol |

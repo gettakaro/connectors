@@ -472,7 +472,7 @@ def test_the_catalog_rigs_take_their_images_from_the_resolved_target() -> None:
 #: asset name stays on record for a release. Anything else pointing at an unknown role is a typo.
 RETIRED_ALIASES = {
     # The sidecar was dropped in enshrouded 0.6.0: the plugin connects to Takaro itself.
-    ("enshrouded", "takaro-enshrouded-sidecar.zip"): "proton-1024233/sidecar",
+    ("enshrouded", "takaro-enshrouded-sidecar.zip"): "proton-1267041/sidecar",
 }
 
 
