@@ -2,9 +2,9 @@
   "game": "Enshrouded",
   "connector": "Takaro Enshrouded native connector (dbghelp.dll)",
   "architecture": "in-process native plugin (dbghelp.dll proxy loaded by enshrouded_server.exe under Wine/Proton) that hooks the game and holds the Takaro Generic Connector WebSocket itself (WinHTTP, TLS); loopback HTTP 127.0.0.1:18890 serves diagnostics only",
-  "runtime": "enshrouded_server.exe game build 1024233 (Steam build 23178631) under GE-Proton10-30 in mornedhels/enshrouded-server:1.7.2-proton; native connector (0.6.0 candidate)",
+  "runtime": "enshrouded_server.exe game build 1267041 (Enshrouded 1.0 hotfix 1.0.0.1, Steam build 25967645) natively on Windows Server, via mod/gamedata/enshrouded-gamedata.json; build 1024233 under GE-Proton10-30 via the built-in heuristics",
   "takaroConnection": "outbound_websocket",
-  "updated": "2026-09-29",
+  "updated": "2026-10-15",
   "oracle": "Takaro MCP (takaro-mcp 127.0.0.1:3000/mcp)",
   "statusDefinitions": {
     "proven": "observed end-to-end via MCP plus game-side check",
@@ -174,5 +174,30 @@
       "status": "proven",
       "note": "the game process owns the Takaro socket; no other process or container"
     }
+  },
+  "verified1267041": {
+    "date": "2026-10-15",
+    "how": "live client on a Windows test server + Takaro MCP",
+    "proven": [
+      "player-connected",
+      "player-disconnected",
+      "getPlayers",
+      "getPlayerLocation",
+      "getPlayerInventory",
+      "chat-message (with player)",
+      "sendMessage broadcast",
+      "giveItem (stack + weapon)",
+      "teleportPlayer",
+      "entity-killed (melee + bow, item names)",
+      "player-death (position)",
+      "kickPlayer (Admin target)",
+      "banPlayer (rejoin refused)",
+      "unbanPlayer (offline, rejoin ok)",
+      "chatBridge Discord<->game"
+    ],
+    "notTested": [
+      "whisper exclusion (one player)",
+      "timed ban expiry on 1.0"
+    ]
   }
 }
