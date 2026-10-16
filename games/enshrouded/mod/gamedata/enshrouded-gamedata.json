@@ -29,6 +29,7 @@
         "loginMachine": "peerIndexPlusOne",
         "characterComponent": "0xe699564",
         "characterTable": "0x58",
+        "chatNoticeType": "0x4",
         "attributesComponent": "0x0bbc95fb",
         "attributesLevel": "0xb8",
         "attributesExperience": "0xa8",
