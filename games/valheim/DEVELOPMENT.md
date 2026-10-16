@@ -355,8 +355,8 @@ Ownership values are `server-owned`, `upstream-blocked` or `unsupported`.
 | `listItems` | `live-supported` | Lists item prefabs visible to the server, with English display names. |
 | `listEntities` | `live-supported` | Lists non-player character prefabs visible to the server, with English display names. |
 | `listLocations` | `schema-fallback` | The official raw Generic Connector action/schema live-returned 11,293 nested `ILocationDTO` objects, but the standard Takaro route at `0c63cf1c` throws `NotImplementedError` before requesting them. |
-| `getMapInfo` | `live-supported` | `enabled:true` once the world-map raster is ready, with `maxZoom` 4, `mapBlockSize` 128 (metres per tile at `maxZoom`) and a 21,000 m extent on every `mapSize*` axis. Answered off the Unity main thread. |
-| `getMapTile` | `live-supported` | Base64 128 px PNG for `{x, y, z}` (`zoom` accepted), rendered off the main thread from the raster that `ValheimWorldMap` samples from `WorldGenerator` on the main thread (4 ms per frame, cached in `BepInEx/cache` per seed). Tiles outside the world answer `tile_out_of_range`; before the raster is ready, `map_not_ready`. |
+| `getMapInfo` | `schema-fallback` | `enabled:true` once the world-map raster is ready, with `maxZoom` 4, `mapBlockSize` 128 (metres per tile at `maxZoom`) and a 21,000 m extent on every `mapSize*` axis. Answered off the Unity main thread. |
+| `getMapTile` | `schema-fallback` | Base64 128 px PNG for `{x, y, z}` (`zoom` accepted), rendered off the main thread from the raster that `ValheimWorldMap` samples from `WorldGenerator` on the main thread (4 ms per frame, cached in `BepInEx/cache` per seed). Tiles outside the world answer `tile_out_of_range`; before the raster is ready, `map_not_ready`. |
 | `teleportPlayer` | `live-supported` | Routes Valheim's built-in `RPC_TeleportTo` to the server-known character ZDO, and returns `character_unavailable` when that identity is missing. |
 | `kickPlayer` | `live-supported` | Sends Valheim's built-in `Kicked` RPC and logs the supplied reason. It never calls `ZNet.Disconnect(peer)` directly, which is what previously crashed the headless server. |
 | `banPlayer` | `live-supported` | Writes the player identifier into Valheim's official ban list and disconnects them with the built-in `Kicked` RPC. **The ban reason is discarded**: Valheim's ban list stores only one identifier per line, so a reason supplied by Takaro is read back as `""`. |
@@ -423,7 +423,9 @@ Historical dedicated-server evidence from 2026-06-21/22 and the 2026-07-10 turn 
 vanilla-client player location, built-in teleport, moderation, delayed shutdown, player
 connect/disconnect persistence, and an official raw `listLocations` response containing
 11,293 nested locations; the standard Takaro `listLocations` route remained unavailable, so
-that action is `schema-fallback`, not `live-supported`.
+that action is `schema-fallback`, not `live-supported`. `getMapInfo` and `getMapTile` were
+live-proven on 2026-10-11 on Takaro staging only; hosted takaro.io has not been checked and has
+shown no map tiles for Generic servers, so both are `schema-fallback` too.
 
 On 2026-09-02 the deployed `2.0.1` artifact was run against the reusable Takaro connector
 acceptance checklist with a real game client attached. That run moved `kickPlayer`,
