@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "id": "proton-25967645",
+  "game": "enshrouded",
+  "platform": "proton",
+  "revision": "25967645",
+  "default": false,
+  "support": {
+    "status": "candidate",
+    "since": "2026-10-16",
+    "evidence": [],
+    "notes": "Enshrouded 1.0 public Steam build 25967645; native plugin compatibility pending real game and client verification."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 2278520,
+      "branch": "public",
+      "buildid": 25967645,
+      "os": "windows",
+      "arch": "64",
+      "depots": {
+        "1004": {
+          "manifest": "7604377918839582995",
+          "size": 67863136,
+          "files": 8
+        },
+        "2278521": {
+          "manifest": "3715394091293008757",
+          "size": 8047210563,
+          "files": 17
+        }
+      },
+      "files": {
+        "enshrouded_server.exe": {
+          "sha256": "4de2acdd3b18e562f129bc488a2daea2da16b00341497304423e1e18c49a83ba",
+          "size": 22721024
+        },
+        "enshrouded_server.kfc": {
+          "sha256": "035555bcf225b232ff0aa3abb48b18df3d4780a125ddc53e76234c6e7848248b",
+          "size": 4259840
+        },
+        "steam_api64.dll": {
+          "sha256": "e6d9bafb9a41e42fba7b21553db49f8719027af3f0deb23ff86cfc44d60e776d",
+          "size": 319128
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "mornedhels/enshrouded-server",
+      "tag": "1.7.2-proton",
+      "digest": "sha256:85978a10f88a85ab0a0aa92e9821d30424895d38bf81fe543532451219c42d0d",
+      "env": {
+        "WINEDLLOVERRIDES": "dbghelp=n,b",
+        "SERVER_ENABLE_TEXT_CHAT": "true",
+        "SERVER_SLOT_COUNT": "4",
+        "TZ": "Etc/UTC",
+        "TAKARO_PINNED_PROTON": "GE-Proton10-30"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/enshrouded/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22-bookworm-slim",
+      "digest": "sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9"
+    },
+    "deps": {
+      "zig": {
+        "coordinate": "ziglang:zig-linux-x86_64:0.13.0",
+        "sha256": "d45312e61ebcc48032b77bc4cf7fd6915c11fa16e4aad116b66c9468211230ea",
+        "resolvedCoordinate": "https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "server-plugin",
+      "artifact": "takaro-enshrouded-plugin-proton-25967645-{version}.zip",
+      "installDir": "takaro/plugin"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup",
+      "plugin-health",
+      "native-identify",
+      "native-players",
+      "native-catalog",
+      "native-console",
+      "action",
+      "reconnect",
+      "event",
+      "stop",
+      "negative-degraded-hooks"
+    ]
+  },
+  "preserve": [
+    "enshrouded_server.json",
+    "savegame/",
+    "logs/",
+    "backups/",
+    "steamapps/compatdata/",
+    "takaro/",
+    ".takaro/"
+  ],
+  "notes": "Enshrouded 1.0 public Steam build 25967645, pending hook compatibility and live proof."
+}
