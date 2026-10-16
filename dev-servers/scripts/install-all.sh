@@ -38,7 +38,7 @@ INSTALLED=()
 SKIPPED=()
 
 for game in "${GAMES[@]}"; do
-    free="$(ds_free_disk_gb)"
+    free="$(ds_free_disk_gb "$game")"
     if [ "$free" -lt "$MIN_FREE" ]; then
         ds_die "only ${free} GB free, below DEV_SERVERS_MIN_FREE_GB=${MIN_FREE}. Stopping before ${game}."
     fi

@@ -386,6 +386,15 @@ past it, the build fails loudly rather than producing a silently broken mod.
 
 ## Layout
 
+On hosts with a dedicated server disk, set `DEV_SERVERS_DATA_MOUNT=/srv/servers`
+in `dev-servers/.env`. The installer checks that this path is mounted before
+placing a new game under `/srv/servers/takaro-dev/`. It links the corresponding
+`dev-servers/_data/<game>` path there so the existing Compose mounts work.
+Existing game directories stay where they are, including on reinstall. If the
+disk is disconnected, installation of a new game stops instead of filling the
+system disk. Keep repositories, worktrees, and build sources on the system SSD.
+Back up any world saves that need to survive a failed server disk.
+
 ```
 dev-servers/
 ├── compose/      one file per game; each has its own compose project name

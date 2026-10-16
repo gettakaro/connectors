@@ -216,6 +216,28 @@ ds_is_installed() { [ -f "$(ds_marker "$1")" ]; }
 
 ds_data_dir() { printf '%s/%s' "$DS_DATA" "$(ds_data_subdir "$1")"; }
 
+# Existing installs stay where they are. New game data can live on a mounted
+# storage disk while the compose files continue to use their _data paths.
+ds_prepare_data_dir() {
+    local id="$1" path mount target
+    path="$(ds_data_dir "$id")"
+    if [ -e "$path" ] || [ -L "$path" ]; then
+        [ -d "$path" ] || ds_die "game data path is not an accessible directory: $path"
+        return 0
+    fi
+
+    mount="${DEV_SERVERS_DATA_MOUNT:-}"
+    if [ -z "$mount" ]; then
+        mkdir -p "$path"
+        return 0
+    fi
+    case "$mount" in /*) ;; *) ds_die "DEV_SERVERS_DATA_MOUNT must be an absolute path" ;; esac
+    mountpoint -q -- "$mount" || ds_die "server storage is not mounted at $mount; refusing to create game data on the system disk"
+    target="${mount}/takaro-dev/$(ds_data_subdir "$id")"
+    mkdir -p "$(dirname "$path")" "$target"
+    ln -s -- "$target" "$path"
+}
+
 # ── Utilities ────────────────────────────────────────────────────────────────
 # Render ${VAR} placeholders in a template using the current environment.
 # Only substitutes variables, never executes anything from the template.
@@ -293,7 +315,22 @@ ds_steam_app_ready() {
     grep -qE '"StateFlags"[[:space:]]+"4"' "$manifest"
 }
 
-ds_free_disk_gb() { df -BG --output=avail "$DS_DIR" | tail -1 | tr -dc '0-9'; }
+ds_free_disk_gb() {
+    local path="$DS_DIR" data mount
+    if [ -n "${1:-}" ]; then
+        data="$(ds_data_dir "$1")"
+        if [ -d "$data" ]; then
+            path="$data"
+        elif [ -L "$data" ]; then
+            ds_die "game data path is unavailable: $data"
+        elif [ -n "${DEV_SERVERS_DATA_MOUNT:-}" ]; then
+            mount="${DEV_SERVERS_DATA_MOUNT}"
+            mountpoint -q -- "$mount" || ds_die "server storage is not mounted at $mount"
+            path="$mount"
+        fi
+    fi
+    df -BG --output=avail "$path" | tail -1 | tr -dc '0-9'
+}
 
 # Run a build command in a toolchain container when the host lacks the tool.
 # The repo is mounted at its own absolute path so relative paths and realpath

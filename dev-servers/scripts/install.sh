@@ -29,8 +29,8 @@ if ds_is_installed "$GAME" && [ "$FORCE" != "--force" ]; then
     exit 0
 fi
 
-DATA="$(ds_data_dir "$GAME")"
-mkdir -p "$DATA" "$(dirname "$(ds_marker "$GAME")")"
+ds_prepare_data_dir "$GAME"
+mkdir -p "$(dirname "$(ds_marker "$GAME")")"
 
 # Every server gets its own identity token so one Takaro organisation can hold
 # all of them at once. Exported for template rendering.
@@ -44,7 +44,7 @@ cleanup_stop() {
 # ── Run ──────────────────────────────────────────────────────────────────────
 
 ds_info "Installing ${GAME} — $(ds_description "$GAME")"
-ds_info "Estimated download/disk: ~$(ds_disk_gb "$GAME") GB; free now: $(ds_free_disk_gb) GB"
+ds_info "Estimated download/disk: ~$(ds_disk_gb "$GAME") GB; free now: $(ds_free_disk_gb "$GAME") GB"
 
 ds_dispatch install "$GAME"
 
