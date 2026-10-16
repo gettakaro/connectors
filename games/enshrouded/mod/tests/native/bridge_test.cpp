@@ -212,10 +212,25 @@ void ReconfigureWhileRunning() {
     }
     std::string h = r.bridge->HealthJson();
     CHECK(h.find("registration-secret-2") == std::string::npos && h.find("registration-new-3") == std::string::npos);
+    CHECK(!ids.empty() && AsRecord(ids.back().get("payload")).get("protocolVersions"));
+    // Only the protocol changed: reconnects, and the next identify is the plain protocol 0 one.
+    r.bridge->Reconfigure({"wss://other:8443/", "registration-new-3", "identity-secret-1", "Rig 2", false}, true);
+    CHECK(t::WaitFor([&] { return r.tr.Retargets().size() == 2; }));
+    CHECK(r.tr.Retargets().size() == 2 && r.tr.Retargets()[1] == "wss://other:8443/|connect");
+    r.tr.Close("connection settings changed");
+    r.tr.Drain();
+    const size_t before = r.tr.WireFrames("identify").size();
+    r.tr.Open();
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return r.tr.WireFrames("identify").size() > before;
+    }));
+    ids = r.tr.WireFrames("identify");
+    CHECK(ids.size() > before && !AsRecord(ids.back().get("payload")).get("protocolVersions"));
     // Token removed: the transport goes idle.
     r.bridge->Reconfigure({"wss://other:8443/", "", "identity-secret-1", "Rig 2"}, false);
-    CHECK(t::WaitFor([&] { return r.tr.Retargets().size() == 2; }));
-    CHECK(r.tr.Retargets().size() == 2 && r.tr.Retargets()[1] == "wss://other:8443/|idle");
+    CHECK(t::WaitFor([&] { return r.tr.Retargets().size() == 3; }));
+    CHECK(r.tr.Retargets().size() == 3 && r.tr.Retargets()[2] == "wss://other:8443/|idle");
 }
 
 void EventsConfirmOnLaterPong() {

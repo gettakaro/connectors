@@ -25,7 +25,10 @@ work the same way but has not been tried.
      "identityToken": "",
      "name": "",
      "url": "wss://connect.takaro.io/",
-     "token": ""
+     "protocol": 1,
+     "token": "",
+     "mapDir": "",
+     "caFile": ""
    }
    ```
 
@@ -55,11 +58,11 @@ work the same way but has not been tried.
    block of `*` lines names the problem and the file to edit. `plugin.log` names where each setting
    came from (`native: config registrationToken from plugin.json`), never its value.
 
-`url`, `registrationToken`, `identityToken` and `name` in `takaro/plugin.json` apply without a
+`url`, `registrationToken`, `identityToken`, `name` and `protocol` in `takaro/plugin.json` apply without a
 restart: the connector reads the file every 5 seconds and, when one of them changed, reconnects at
 once; an emptied token disconnects. A half-saved or broken file is ignored (the console says so)
 until it parses again. The other
-keys (`caFile`, `token`) are read at startup.
+keys (`caFile`, `token`, `mapDir`) are read at startup.
 
 With `token` set, `curl -H "Authorization: Bearer <token>" http://127.0.0.1:18890/health` from the
 server's own network (inside the container for Docker) shows each capability's state and, under
@@ -87,9 +90,10 @@ be exported as one picture; `mod/tools/map-tiles/render_tiles.py --image map.jpg
 image from the map data of your own game client install (see its README). Do not share an image made
 from the game's assets publicly.
 
-Set `"protocol": "0"` in `takaro/plugin.json` (or `TAKARO_PROTOCOL=0`; read at server start) to
-connect with protocol 0 only. A Takaro without protocol 1 is detected and gets protocol 0
-automatically. On protocol 0 the map comes from a tile pack in `takaro/map/` instead (`map.json` plus
+Takaro protocol 1 is proven on Takaro staging and not yet on takaro.io; today's takaro.io is a Takaro
+without protocol 1. Set `"protocol": 0` in `takaro/plugin.json` (or `TAKARO_PROTOCOL=0`, which needs
+a restart) to connect with protocol 0 only; a saved change reconnects within a few seconds. A Takaro
+without protocol 1 is detected and gets protocol 0 automatically. On protocol 0 the map comes from a tile pack in `takaro/map/` instead (`map.json` plus
 `<z>/<x>/<y>.png` in a `pack-…` folder named by `takaro/map/current`; `TAKARO_MAP_DIR` or `mapDir` in
 `plugin.json` moves it), also rendered from your client with `render_tiles.py`. Without one,
 protocol 0 shows no map.

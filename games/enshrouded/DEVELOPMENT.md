@@ -338,7 +338,7 @@ instead of creating an empty tree and a directory named `dbghelp.dll`.
 ## Configuration
 
 `takaro\plugin.json` next to `enshrouded_server.exe` is the one config file (`registrationToken`,
-`identityToken`, `name`, `url`, `caFile`, `token`). The release does not ship it and an upgrade (only
+`identityToken`, `name`, `url`, `protocol`, `token`, `mapDir`, `caFile`). The release does not ship it and an upgrade (only
 `dbghelp.dll`) never touches it. An environment variable, when set and not blank, wins per field and is
 never written to disk. The plugin logs where each value came from, never the value.
 
@@ -350,7 +350,7 @@ never written to disk. The plugin logs where each value came from, never the val
   UUID written in place (`RewriteKeepingAccess`: owner, mode and ACL stay; skipped when the file changed
   since it was read, then retried at the next poll). Nothing else is ever written. A file or identity that cannot be written leaves
   the identity empty: no connection, and a banner says what to set.
-- **Live settings** (`url`, `registrationToken`, `identityToken`, `name`; `src/native/config_file.*`):
+- **Live settings** (`url`, `registrationToken`, `identityToken`, `name`, `protocol`; `src/native/config_file.*`):
   `ConfigWatcher` runs on its own thread (never the game thread) and re-reads the file every 5 s, comparing
   the text. A changed text applies only when the next read 1 s later is the same and it parses (a BOM is
   fine); otherwise the running settings stay and the console says the file is broken. A change calls
@@ -358,7 +358,7 @@ never written to disk. The plugin logs where each value came from, never the val
   the WinHTTP supervisor closes the current epoch and connects at once (no backoff), or idles while there
   is no registration token. An epoch that was being opened during a Retarget is dropped before its Open
   notice. Without a registration token at startup no bridge, transport or state is created; the watcher
-  starts them when a token appears. `caFile`, `token` and every other setting are read at startup.
+  starts them when a token appears. `caFile`, `token`, `mapDir` and every other setting are read at startup.
 - **Defaults:** `url` `wss://connect.takaro.io/` (anything but `wss://` never connects), `name` as above.
   An emptied `registrationToken` disconnects and shows the banner again.
 - **Console:** banners and the `connecting` / `connected` lines go to the process's stdout (one `WriteFile`
