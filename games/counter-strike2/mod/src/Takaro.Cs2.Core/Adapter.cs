@@ -61,6 +61,7 @@ public sealed class TakaroRequestDispatcher
                 "getPlayerInventory" => await adapter.GetPlayerInventoryAsync(RequiredIdentifier(request.Args), cancellationToken),
                 "giveItem" => await adapter.GiveItemAsync(RequiredIdentifier(request.Args), RequiredItemCode(request.Args), OptionalPositiveInt(request.Args, "amount") ?? OptionalPositiveInt(request.Args, "quantity") ?? 1, cancellationToken),
                 "listItems" => await adapter.ListItemsAsync(cancellationToken),
+                "listEntities" or "listLocations" => TakaroActionResult.Ok(Array.Empty<object>()),
                 "sendMessage" => await adapter.SendMessageAsync(RequiredString(request.Args, "message"), OptionalRecipient(request.Args), OptionalSender(request.Args), cancellationToken),
                 "executeConsoleCommand" => await adapter.ExecuteConsoleCommandAsync(RequiredString(request.Args, "command"), cancellationToken),
                 "teleportPlayer" => await adapter.TeleportPlayerAsync(RequiredIdentifier(request.Args), RequiredPosition(request.Args), cancellationToken),

@@ -88,12 +88,23 @@ public sealed class RequestDispatcherTests
     }
 
     [TestMethod]
-    public async Task ReturnsUnsupportedActionForOutOfScopeFunctions()
+    public async Task ReturnsEmptyArrayForUnavailableListCatalogs()
     {
         var dispatcher = new TakaroRequestDispatcher(new FakeAdapter());
-        var request = Request("listEntities", """{}""");
+        foreach (var action in new[] { "listEntities", "listLocations" })
+        {
+            var result = await dispatcher.DispatchAsync(Request(action, """{}"""));
+            Assert.IsTrue(result.Success);
+            Assert.IsInstanceOfType(result.Payload, typeof(object[]));
+            Assert.AreEqual(0, ((object[])result.Payload!).Length);
+        }
+    }
 
-        var result = await dispatcher.DispatchAsync(request);
+    [TestMethod]
+    public async Task ReturnsUnsupportedActionForUnknownFunction()
+    {
+        var dispatcher = new TakaroRequestDispatcher(new FakeAdapter());
+        var result = await dispatcher.DispatchAsync(Request("unknownAction", """{}"""));
 
         Assert.IsFalse(result.Success);
         Assert.AreEqual("unsupported_action", result.Error?.Code);
