@@ -88,6 +88,14 @@ static std::string ParenPart(const std::string& id) {
     return id.substr(a + 1, b - a - 1);
 }
 
+// "1(1)" -> "2": the machine number 1.0 prints for peer index 1
+static std::string PeerIndexPlusOne(const std::string& id) {
+    auto a = id.find('(');
+    std::string n = id.substr(0, a);
+    if (n.empty() || n.find_first_not_of("0123456789") != std::string::npos) return "";
+    return std::to_string(strtoul(n.c_str(), nullptr, 10) + 1);
+}
+
 void PluginState::LoadGroupsLocked() {
     groupsLoaded_ = true;
     std::string path = PluginBaseDir() + "\\enshrouded_server.json";
@@ -216,7 +224,8 @@ void PluginState::OnLogLine(int level, const std::string& line) {
         int idx = -1;
         for (size_t i = 0; i < players_.size(); i++)  // exact machine match first
             if (!players_[i].online && !players_[i].removed && !lastLoginMachine_.empty() &&
-                ParenPart(players_[i].peerId) == lastLoginMachine_) {
+                (machineIsPeerIndexPlusOne_ ? PeerIndexPlusOne(players_[i].peerId) : ParenPart(players_[i].peerId)) ==
+                    lastLoginMachine_) {
                 idx = (int)i;
                 break;
             }
@@ -320,6 +329,11 @@ bool PluginState::PlayerJson(const std::string& gameId, std::string& out) const 
             return true;
         }
     return false;
+}
+
+void PluginState::SetMachineIsPeerIndexPlusOne(bool on) {
+    Guard g(lock_);
+    machineIsPeerIndexPlusOne_ = on;
 }
 
 bool PluginState::OnlineMachine(const std::string& gameId, std::string& machine) const {

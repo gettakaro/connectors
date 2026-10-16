@@ -607,6 +607,7 @@ void HooksInit() {
     Record("accountAction", handler, how, false);
     std::string modErr;
     if (profile::Active()) {
+        st.SetMachineIsPeerIndexPlusOne(profile::LStr("loginMachine", "peerGeneration") == "peerIndexPlusOne");
         g_readyA = (uint32_t)profile::L("serverReadyA", 0x10);
         g_readyB = (uint32_t)profile::L("serverReadyB", 0x38);
         if (profile::LStr("accountActionAbi", "args") == "event") {

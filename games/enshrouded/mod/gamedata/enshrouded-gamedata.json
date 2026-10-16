@@ -25,6 +25,7 @@
         "inventoryAdminGateRet": "0x19f505"
       },
       "layout": {
+        "loginMachine": "peerIndexPlusOne",
         "serverReadyA": "0x10",
         "serverReadyB": "0x30",
         "worldOff": "0x1d0",

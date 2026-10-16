@@ -45,6 +45,8 @@ public:
     bool PlayerJson(const std::string& gameId, std::string& out) const;
     bool IsOnline(const std::string& gameId) const;
     // machine index (as printed in "Machine 'M'") of an online player; false if unknown
+    // How "Machine 'M'" maps to "Added peer N(G)": 1024233 prints G == M, 1.0 prints M == N + 1 (gamedata loginMachine).
+    void SetMachineIsPeerIndexPlusOne(bool on);
     bool OnlineMachine(const std::string& gameId, std::string& machine) const;
     std::vector<std::pair<std::string, std::string>> OnlineMachines() const;  // (steamId, machine)
 
@@ -71,6 +73,7 @@ private:
     // player tracking
     std::vector<PlayerRecord> players_;  // pending (not online) + online
     std::string lastLoginMachine_, lastLoginHandle_;
+    bool machineIsPeerIndexPlusOne_ = false;  // 1.0: Machine 'M' is peer N(..) with M = N + 1
     bool collectingPerms_ = false;
     int loginIdx_ = -1;
     uint64_t lastPermLineMs_ = 0;
