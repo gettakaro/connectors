@@ -15,11 +15,13 @@ const char* const kConfigTemplate =
     "  \"_comment\": \"Paste the registration token from Takaro (a game server of type Generic) into "
     "registrationToken and save: the connector connects within a few seconds, no restart needed. Leave "
     "identityToken empty: the connector fills in a unique one. Never change it afterwards, Takaro keys "
-    "this server on it.\",\n"
+    "this server on it. protocol: 1 offers Takaro protocol 1 (game map, event acks) and falls back to 0 on "
+    "an older Takaro; set 0 only if Takaro refuses protocol 1. A changed protocol reconnects, no restart needed.\",\n"
     "  \"url\": \"wss://connect.takaro.io/\",\n"
     "  \"registrationToken\": \"\",\n"
     "  \"identityToken\": \"\",\n"
-    "  \"name\": \"\"\n"
+    "  \"name\": \"\",\n"
+    "  \"protocol\": 1\n"
     "}\n";
 
 namespace {

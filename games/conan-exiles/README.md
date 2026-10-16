@@ -60,11 +60,15 @@ You can also create the file yourself before the first start, with this content:
   "url": "wss://connect.takaro.io/",
   "registrationToken": "<your registration token>",
   "identityToken": "",
-  "name": ""
+  "name": "",
+  "protocol": 1
 }
 ```
 
 Leave `identityToken` empty; the connector fills in a unique one. Never change it afterwards.
+`protocol`: `1` (default) offers Takaro protocol 1 (game map, event acks) and falls back to 0 on an
+older Takaro; set `0` only if the console says Takaro refuses protocol 1. Saving a changed `protocol`
+reconnects, no restart needed.
 
 ### 6. Check that it worked
 

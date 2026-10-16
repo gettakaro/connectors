@@ -51,7 +51,7 @@ You also need a Takaro game server of type **Generic** and its **registration to
 
 `ConanSandbox/Saved/Config/Takaro/takaro.json` is the only config file. If it is missing, the
 connector creates it on the first start with a new `identityToken` and an empty token. Saving the
-file is enough: the connector applies a changed token, identity, name or URL within a few seconds,
+file is enough: the connector applies a changed token, identity, name, URL or protocol within a few seconds,
 no restart needed; an emptied token disconnects. You can also create it yourself before the first
 start:
 
@@ -60,7 +60,8 @@ start:
   "url": "wss://connect.takaro.io/",
   "registrationToken": "<your registration token>",
   "identityToken": "",
-  "name": ""
+  "name": "",
+  "protocol": 1
 }
 ```
 
@@ -70,6 +71,7 @@ start:
 | `identityToken` | Leave empty: the connector fills in a unique one on the first start. Never change it later: Takaro keys the server on it. |
 | `name` | The server name Takaro shows. Empty: `Conan Exiles (<first 8 identity characters>)`. Names are unique per Takaro domain. |
 | `url` | `wss://connect.takaro.io/` |
+| `protocol` | `1` (default): offers Takaro protocol 1 (game map, event acks), falls back to 0 on an older Takaro. `0`: only if the console says Takaro refuses protocol 1. Env: `TAKARO_PROTOCOL`. |
 | `caFile` | Optional, Linux: a PEM bundle (relative to `ConanSandbox/Saved`). Default: `ca-certificates.crt` next to the library. Windows uses the system certificate store. |
 
 Environment variables override the file: `TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN`,
