@@ -106,8 +106,9 @@ void OnTick() {
 
 using FnTick = void (*)(void* self, float dt, bool idle);
 
-// One detour slot per Tick candidate. On this build the live engine is UDomGameEngine, whose slot 98
-// holds the inherited UJgxGameEngine::Tick; UGameEngine::Tick is kept as the stock fallback.
+// One detour slot per Tick candidate. The live engine is UDomGameEngine. Up to CL-247725 its slot 98
+// held the inherited UJgxGameEngine::Tick; from CL-248854 it holds its own UDomGameEngine::Tick, so
+// every candidate is hooked wherever it appears. UGameEngine::Tick is kept as the stock fallback.
 struct TickHook {
     const char* symbol;
     FnTick orig;
@@ -116,6 +117,7 @@ struct TickHook {
 TickHook g_tick[] = {
     {"UJgxGameEngine::Tick", nullptr, nullptr},
     {"UGameEngine::Tick", nullptr, nullptr},
+    {"UDomGameEngine::Tick", nullptr, nullptr},
 };
 const size_t kTickCount = sizeof(g_tick) / sizeof(g_tick[0]);
 
@@ -125,7 +127,7 @@ void TickDetour(void* self, float dt, bool idle) {
     if (g_tick[I].fired) g_tick[I].fired->fetch_add(1, std::memory_order_relaxed);
     try { OnTick(); } catch (...) {}
 }
-void* const kDetours[kTickCount] = {(void*)&TickDetour<0>, (void*)&TickDetour<1>};
+void* const kDetours[kTickCount] = {(void*)&TickDetour<0>, (void*)&TickDetour<1>, (void*)&TickDetour<2>};
 
 // Swaps every *exported* vtable slot that holds `target`.
 //
