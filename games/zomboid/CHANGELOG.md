@@ -4,6 +4,18 @@ All notable changes to the Takaro Project Zomboid connector are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.0](https://github.com/gettakaro/connectors/compare/zomboid-v1.3.0...zomboid-v1.4.0) (2026-10-16)
+
+
+### Features
+
+* **zomboid:** protocol v1 with a world map from the server's own map raster ([#484](https://github.com/gettakaro/connectors/issues/484)) ([d40ba7e](https://github.com/gettakaro/connectors/commit/d40ba7edef08860fb38af7448b0afd02afb9d5c3))
+
+
+### Bug Fixes
+
+* **zomboid:** keep the config in one file the connector creates ([#460](https://github.com/gettakaro/connectors/issues/460)) ([7f05a66](https://github.com/gettakaro/connectors/commit/7f05a6675e6f1810e757d4b5651fe90060bb78f1))
+
 ## [1.3.0](https://github.com/gettakaro/connectors/compare/zomboid-v1.2.1...zomboid-v1.3.0) (2026-10-11)
 
 
