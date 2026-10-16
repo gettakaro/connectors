@@ -3,7 +3,7 @@
   "architecture": "native CounterStrikeSharp plugin with outbound Takaro WebSocket",
   "target": "linux-25947352",
   "version": "0.1.0",
-  "verification": "2026-10-15 core-action proof and 2026-10-16 live lifecycle, nonplayer-kill and log-hook proof complete; engine frame-time gate pending",
+  "verification": "2026-10-15 core-action proof and 2026-10-16 live lifecycle, nonplayer-kill, log-hook, entity-catalog and VProf A/B proof complete; named locations and map tiles remain unproved",
   "actions": {
     "testReachability": {
       "status": "supported",
@@ -48,15 +48,15 @@
       "liveVerified": true
     },
     "listEntities": {
-      "status": "unsupported",
-      "surface": "no validated entity catalog",
-      "reason": "No validated entity catalog exists yet; return an empty array because Takaro requires an array for list actions. No game limitation is claimed.",
-      "liveVerified": false
+      "status": "supported",
+      "surface": "curated nonplayer entity catalog",
+      "reason": "A real client killed a chicken and Takaro synced the curated neutral Chicken entry on 2026-10-16.",
+      "liveVerified": true
     },
     "listLocations": {
       "status": "unsupported",
-      "surface": "no validated named location catalog",
-      "reason": "No validated named location catalog exists yet; return an empty array because Takaro requires an array for list actions. No game limitation is claimed.",
+      "surface": "CCSPlayerPawn.LastPlaceName and CCSPlace probe",
+      "reason": "The pawn exposes only its last place name; a live de_dust2 server exposed zero CCSPlace entities for a map-wide catalog with coordinates. The action returns unsupported_action until a usable map-wide source is validated.",
       "liveVerified": false
     },
     "getMapInfo": {
