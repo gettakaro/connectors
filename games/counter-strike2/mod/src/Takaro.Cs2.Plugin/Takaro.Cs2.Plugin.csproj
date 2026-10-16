@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>TakaroCs2</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Takaro.Cs2.Core\Takaro.Cs2.Core.csproj" />
+    <PackageReference Include="CounterStrikeSharp.API" Version="1.0.376" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "counter-strike2",
+  "name": "Counter-Strike 2",
+  "connector": "counter-strike2",
+  "platforms": ["linux"],
+  "sources": {
+    "steam": {
+      "provider": "steam",
+      "baseUrl": "https://store.steampowered.com",
+      "watch": {
+        "kind": "game",
+        "component": "counter-strike2",
+        "app": 730,
+        "os": "linux",
+        "depots": ["731", "2347770", "2347773", "2347774"],
+        "channels": {"public": {"branch": "public"}},
+        "knownBranches": []
+      }
+    },
+    "metamod": {"provider": "github-release", "baseUrl": "https://github.com"},
+    "counterstrikesharp": {"provider": "github-release", "baseUrl": "https://github.com"}
+  },
+  "build": {"system": "script", "projectDir": "games/counter-strike2"},
+  "componentRoles": {
+    "plugin": {
+      "description": "Native CounterStrikeSharp server plugin with the outbound Takaro WebSocket",
+      "artifactPattern": "takaro-counter-strike2-{target}-{version}.zip"
+    }
+  },
+  "legacyAssetAliases": {}
+}

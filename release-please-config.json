@@ -106,6 +106,15 @@
       "component": "terraria",
       "changelog-path": "CHANGELOG.md"
     },
+    "games/counter-strike2": {
+      "release-type": "simple",
+      "component": "counter-strike2",
+      "changelog-path": "CHANGELOG.md",
+      "initial-version": "0.1.0",
+      "extra-files": [
+        { "type": "generic", "path": "mod/src/Takaro.Cs2.Plugin/TakaroCs2Plugin.cs" }
+      ]
+    },
     "games/scum": {
       "release-type": "simple",
       "component": "scum",

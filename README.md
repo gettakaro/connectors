@@ -18,6 +18,7 @@ Monorepo for connector plugins that implement the [Takaro Generic Connector Prot
 | VEIN | [`games/vein/`](games/vein/) | C++ (`LD_PRELOAD` native connector) | `debian:bookworm` g++ |
 | Dune: Awakening | [`games/dune/`](games/dune/) | TypeScript sidecar + optional C++ (`LD_PRELOAD` native plugin) | Node.js + `debian:bookworm` g++ |
 | SCUM | [`games/scum/`](games/scum/) | Lua + C++ (UE4SS mod inside `SCUMServer.exe`) | clang-cl cross-compile (`debian:13.7`) |
+| Counter-Strike 2 (candidate) | [`games/counter-strike2/`](games/counter-strike2/) | C# / .NET 10 (CounterStrikeSharp server plugin) | pinned .NET SDK container |
 
 Each connector is self-contained with its own Docker dev environment, build system, and scripts. See each connector's README for details.
 

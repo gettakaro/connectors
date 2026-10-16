@@ -517,10 +517,9 @@ def test_every_catalog_game_registers_sources_roles_targets_and_declared_rigs() 
             compose = REPO_ROOT / "dev-servers" / "compose" / compose_name
             assert compose.is_file(), f"{game} names a rig compose file that does not exist: {compose.name}"
 
-    # Phase-2 follow-up F6 owns the missing Enshrouded dispatch. SCUM's dedicated server is
-    # Windows-only, so no Linux dev-servers rig can run it. Keep those gaps visible and make any
-    # other missing rig fail instead of silently weakening the rollout audit.
-    assert missing_rigs == ["enshrouded", "scum"]
+    # CS2's candidate is run directly under mounted /srv/servers/ until the native stack
+    # passes live proof. Enshrouded and SCUM have their separately documented rig gaps.
+    assert missing_rigs == ["counter-strike2", "enshrouded", "scum"]
 
 
 def test_every_catalog_connector_releases_through_the_shared_workflow() -> None:

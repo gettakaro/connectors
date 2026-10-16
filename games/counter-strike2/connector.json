@@ -1,0 +1,19 @@
+{
+  "name": "Counter-Strike 2",
+  "tagline": "Native server-side CounterStrikeSharp plugin connecting CS2 to Takaro.",
+  "assetMode": "all",
+  "requirements": [
+    "Linux x86-64 Counter-Strike 2 dedicated server build listed in the catalog",
+    "Metamod:Source 2.0.0.1481",
+    "CounterStrikeSharp 1.0.376 with .NET 10 runtime",
+    "Takaro registration token"
+  ],
+  "assets": [
+    {
+      "pattern": "takaro-counter-strike2-*.zip",
+      "label": "Server plugin",
+      "hint": "Extract TakaroCs2 into game/csgo/addons/counterstrikesharp/plugins/ and configure the plugin JSON.",
+      "required": true
+    }
+  ]
+}
