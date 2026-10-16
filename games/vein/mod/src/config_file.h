@@ -66,8 +66,8 @@ const char* Lookup(const Loaded& file, const char* name);
 inline const char* Get(const char* name) { return Lookup(Current(), name); }
 
 // ---- settings that apply without a restart ----
-// URL, registration token, identity and server name are re-read from the file while the server
-// runs (the bridge thread polls it); every other key keeps the value read at startup.
+// URL, registration token, identity, server name and TAKARO_PROTOCOL are re-read from the file while
+// the server runs (the bridge thread polls it); every other key keeps the value read at startup.
 
 constexpr const char* kDefaultUrl = "wss://connect.takaro.io/";
 
@@ -76,20 +76,21 @@ const char* SourceName(Source s);
 
 struct Settings {
     std::string url, registration, identity, serverName;
+    bool protocolV1 = true;  // TAKARO_PROTOCOL=0: false, the plain version 0 identify
     bool operator==(const Settings& o) const {
         return url == o.url && registration == o.registration && identity == o.identity &&
-               serverName == o.serverName;
+               serverName == o.serverName && protocolV1 == o.protocolV1;
     }
     bool operator!=(const Settings& o) const { return !(*this == o); }
 };
 struct Resolution {
     Settings settings;
     Source url = Source::Default, registration = Source::Default, identity = Source::Default,
-           serverName = Source::Default;
+           serverName = Source::Default, protocol = Source::Default;
 };
 
 // Per field: a non-empty environment variable, else the file, else the default (the Takaro URL,
-// no token, no identity, DefaultServerName(identity)). `getenv` is injectable for tests.
+// no token, no identity, DefaultServerName(identity), protocol 1 offered). `getenv` is injectable for tests.
 Resolution Resolve(const Loaded& file, const std::function<const char*(const char*)>& env = ::getenv);
 
 // `text` with KEY's line set to KEY=value (the first matching line, else appended), keeping every

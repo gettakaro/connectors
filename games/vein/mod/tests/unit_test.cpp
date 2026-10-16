@@ -1184,6 +1184,15 @@ static void TestConfigResolve() {
     CHECK(r.identity == Source::File && r.registration == Source::Default && r.url == Source::Default, "sources");
     CHECK(!ConfigFile::Unparseable(ConfigFile::Parse(fresh)) && ConfigFile::Parse(fresh).warnings.empty(),
           "template parses cleanly");
+    CHECK(r.settings.protocolV1 && r.protocol == Source::File, "template offers protocol 1");
+
+    // TAKARO_PROTOCOL is a live setting: 0 from the file is a change that reconnects; env wins.
+    auto r0 = ConfigFile::Resolve(load(ConfigFile::SetKey(fresh, "TAKARO_PROTOCOL", "0")), env);
+    CHECK(!r0.settings.protocolV1 && r0.settings != r.settings, "file protocol 0 is a change");
+    envVars["TAKARO_PROTOCOL"] = "0";
+    CHECK(!ConfigFile::Resolve(load(fresh), env).settings.protocolV1, "env TAKARO_PROTOCOL=0 wins");
+    envVars.clear();
+    CHECK(ConfigFile::Resolve(load(""), env).settings.protocolV1, "default offers protocol 1");
 
     // Nothing anywhere: no identity, and a name without one.
     r = ConfigFile::Resolve(load(""), env);

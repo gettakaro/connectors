@@ -29,9 +29,10 @@ TAKARO_REGISTRATION_TOKEN=<your registration token>
 TAKARO_IDENTITY_TOKEN=
 TAKARO_SERVER_NAME=My VEIN server
 TAKARO_ADMIN_STEAMIDS=
+TAKARO_PROTOCOL=1
 ```
 
-`TAKARO_IDENTITY_TOKEN` identifies this server in Takaro; keep it when you move the server. `TAKARO_SERVER_NAME` is the name Takaro shows (a file the connector creates names it `My VEIN server (<first 8 characters of the identity>)`). `TAKARO_ADMIN_STEAMIDS` (optional, comma separated SteamID64s) get VEIN's in-game admin rights.
+`TAKARO_IDENTITY_TOKEN` identifies this server in Takaro; keep it when you move the server. `TAKARO_SERVER_NAME` is the name Takaro shows (a file the connector creates names it `My VEIN server (<first 8 characters of the identity>)`). `TAKARO_ADMIN_STEAMIDS` (optional, comma separated SteamID64s) get VEIN's in-game admin rights. `TAKARO_PROTOCOL`: leave `1` (offers Takaro protocol 1 for the map and falls back to 0 on an older Takaro); `0` speaks protocol 0 only. A saved change to the token, identity, name, URL or `TAKARO_PROTOCOL` reconnects within a few seconds; `TAKARO_ADMIN_STEAMIDS` and every other key need a restart.
 
 This works with every panel and needs no startup-line or setting change: while Steam starts, the game looks for an optional `libsteam.so` in that folder, and the small loader with that name starts the connector next to it. Steam itself is unaffected. A SteamCMD update or validate leaves the files in place. To remove the connector, delete `libsteam.so`.
 
@@ -79,8 +80,8 @@ Verified on the native connector (v0.3.0) with a real game client and Takaro on 
 | Player death event | ✅ | Position and cause included; falls and drowning have no attacker. |
 | Entity kill event | ✅ | Creature, player and held item. AI-on-AI kills are not reported. |
 | Log events | ⚠️ | Forwarded with secrets redacted, but Takaro does not store log events. |
-| Map info | ✅ | The connector declares the 12 km map area to Takaro, so player dots land in the right place. |
-| Map tiles | ⚠️ | The server files carry no map picture. Upload the in-game map once in the Takaro dashboard ([INSTALL.md](INSTALL.md#world-map)). |
+| Map info | ⚠️ | Needs Takaro protocol 1 (proven on Takaro staging, not yet on takaro.io). The connector declares the 12 km map area to Takaro, so player dots land in the right place. |
+| Map tiles | ⚠️ | Needs Takaro protocol 1 (not yet on takaro.io). The server files carry no map picture. Upload the in-game map once in the Takaro dashboard ([INSTALL.md](INSTALL.md#world-map)). |
 | Modules: chat commands | ✅ | In-game commands reach the module and answer in chat. |
 | Modules: hooks | ✅ | Chat and join hooks fire and run their code. |
 | Modules: cronjobs | ✅ | Scheduled module runs fire and can message the server. |
