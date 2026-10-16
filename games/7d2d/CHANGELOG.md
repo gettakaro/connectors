@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.4.0...7d2d-v0.5.0) (2026-10-16)
+
+
+### Features
+
+* **7d2d:** connector migration support for takaro[#4349](https://github.com/gettakaro/connectors/issues/4349) ([#458](https://github.com/gettakaro/connectors/issues/458)) ([cc64e0a](https://github.com/gettakaro/connectors/commit/cc64e0a7590ed0e92d44d5a3542c1288d2f520e5))
+
+
+### Bug Fixes
+
+* **7d2d:** keep the config in one file the connector creates ([#462](https://github.com/gettakaro/connectors/issues/462)) ([32f0f14](https://github.com/gettakaro/connectors/commit/32f0f14a7c63fe4bf03da8386bba9f61880db193))
+
 ## [0.4.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.3.1...7d2d-v0.4.0) (2026-10-11)
 
 
