@@ -2,9 +2,9 @@
   "game": "Enshrouded",
   "connector": "Takaro Enshrouded native connector (dbghelp.dll)",
   "architecture": "in-process native plugin (dbghelp.dll proxy loaded by enshrouded_server.exe under Wine/Proton) that hooks the game and holds the Takaro Generic Connector WebSocket itself (WinHTTP, TLS); loopback HTTP 127.0.0.1:18890 serves diagnostics only",
-  "runtime": "enshrouded_server.exe game build 1267041 (Enshrouded 1.0 hotfix 1.0.0.1, Steam build 25967645) natively on Windows Server, via mod/gamedata/enshrouded-gamedata.json; build 1024233 under GE-Proton10-30 via the built-in heuristics",
+  "runtime": "enshrouded_server.exe game build 1269579 (Enshrouded 1.0, Steam build 25988414) under GE-Proton11-9 and game build 1267041 (hotfix 1.0.0.1, Steam build 25967645) natively on Windows Server, via mod/gamedata/enshrouded-gamedata.json; build 1024233 under GE-Proton10-30 via the built-in heuristics",
   "takaroConnection": "outbound_websocket",
-  "updated": "2026-10-15",
+  "updated": "2026-10-16",
   "oracle": "Takaro MCP (takaro-mcp 127.0.0.1:3000/mcp)",
   "statusDefinitions": {
     "proven": "observed end-to-end via MCP plus game-side check",
@@ -198,6 +198,34 @@
     "notTested": [
       "whisper exclusion (one player)",
       "timed ban expiry on 1.0"
+    ]
+  },
+  "verified1269579": {
+    "date": "2026-10-16",
+    "how": "live Steam client (build 1269579) on the Windows gamer PC against the server under GE-Proton11-9 + Takaro MCP (staging)",
+    "proven": [
+      "player-connected",
+      "player-disconnected",
+      "chat-message (with player)",
+      "player-death (position)",
+      "testReachability",
+      "getPlayers",
+      "executeConsoleCommand",
+      "sendMessage broadcast",
+      "giveItem (stack, counted in client)",
+      "teleportPlayer",
+      "kickPlayer",
+      "banPlayer (rejoin refused)",
+      "unbanPlayer (rejoin ok)",
+      "shutdown (save kept, re-identified within seconds)",
+      "command path (@ping -> Pong in client)",
+      "chatBridge Discord<->game (game->Discord hook POST 200; Discord->game via synthetic discord-message trigger)"
+    ],
+    "notTested": [
+      "entity-killed",
+      "whisper exclusion (one player)",
+      "timed ban expiry on this build",
+      "item/entity tables re-exported on this build (they are the 1267041 export)"
     ]
   }
 }
