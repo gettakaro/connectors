@@ -5,16 +5,52 @@
   "description": "An OCI image pinned by an immutable tag and its manifest digest.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["kind", "image", "tag", "digest"],
+  "required": [
+    "kind",
+    "image",
+    "tag",
+    "digest"
+  ],
   "properties": {
-    "kind": {"const": "container-image"},
-    "image": {"type": "string", "minLength": 1},
+    "kind": {
+      "const": "container-image"
+    },
+    "image": {
+      "type": "string",
+      "minLength": 1
+    },
     "tag": {
       "type": "string",
       "pattern": "^(v?[0-9][A-Za-z0-9._-]*|dev-proton)$",
-      "description": "An optional leading v then a digit, which rejects floating tags such as latest, stable, beta, java21 and java25. The one exception is dev-proton, the only tag under which mornedhels/enshrouded-server ships a Proton that can start Enshrouded 1.0; the digest still pins the bytes."
+      "description": "An optional leading v then a digit, which rejects floating tags such as latest, stable, beta, java21 and java25."
     },
-    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "env": {"type": "object", "additionalProperties": {"type": "string"}}
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "tag": {
+        "const": "dev-proton"
+      }
+    },
+    "required": [
+      "tag"
+    ]
+  },
+  "then": {
+    "properties": {
+      "image": {
+        "const": "mornedhels/enshrouded-server"
+      }
+    },
+    "description": "dev-proton is a floating tag, accepted only for the one image whose upstream ships a Proton able to start Enshrouded 1.0 under that tag; the digest still pins the bytes."
   }
 }
