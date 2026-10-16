@@ -149,7 +149,7 @@ and `world.cpp` (written for 1024233).
    and `tools/eml-export`: against the **server** for items/templates, against the **client** for the
    En_Us names. 1.0 changed the container magic to `KFC4`; kfc-parser 0.1.2 refuses it, but accepting
    `0x3443464B` next to `KFC3` in `crates/kfc-base/src/container/header.rs` is the only change needed.
-2. Write `research/{items,entities,locations}.json`, then `tools/gen_gamedata.py`,
+2. Write the generator inputs (`items/entities/locations.json`, see `tools/gen_gamedata.py` for the path), then `tools/gen_gamedata.py`,
    `tools/gen_item_labels.py <export> <note>` and `tools/gen_entity_labels.py <export> research/entities.json <note>`.
 
 ### Moving to a new game build
