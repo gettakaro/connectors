@@ -1,8 +1,8 @@
 # Takaro Enshrouded Connector
 
 Connects an Enshrouded dedicated server to Takaro with one file: `dbghelp.dll`, placed next to
-`enshrouded_server.exe`. The DLL hooks the game and talks to Takaro itself; nothing else runs next to
-the server, and players do not install anything.
+`enshrouded_server.exe`. The DLL hooks the game and talks to Takaro itself, so it is the only thing the
+server needs; players join as usual.
 
 It supports **Enshrouded 1.0** (game build **1267041**, hotfix 1.0.0.1, Steam build 25967645), tested
 natively on a Windows dedicated server, and the earlier game build **1024233** (Steam build 23178631),
@@ -93,9 +93,8 @@ build in its game data file, including Enshrouded 1.0 on Windows:
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
-`takaro-enshrouded-plugin.zip` on the same release is the same file under its old name. Do not
-download GitHub's "Source code" archives, the `enshrouded-dev` pre-release or a `pr-<number>-enshrouded`
-build.
+`takaro-enshrouded-plugin.zip` on the same release is the same file under its old name. Use these
+release assets; the `enshrouded-dev` and `pr-<number>-enshrouded` pre-releases are test builds.
 
 ### 3. Copy it into place
 
@@ -105,7 +104,7 @@ Stop the game server first: a running server holds `dbghelp.dll` open. The zip h
 The connector keeps its whole configuration in one file, **`takaro/plugin.json` next to
 `enshrouded_server.exe`**. It creates the file at the first start, with a unique `identityToken`, and
 the console says so. Open it, paste the registration token of your Takaro Generic game server into
-`registrationToken` and save: the connector connects within a few seconds, no restart needed. To have
+`registrationToken` and save: the connector connects within a few seconds while the server keeps running. To have
 it connect at the first start instead, create the file yourself before starting:
 
 ```json
@@ -178,15 +177,15 @@ that name.
 ### 5. Upgrading
 
 Stop the server, replace only `dbghelp.dll` with the new one, start it again. Your config in
-`takaro/plugin.json` and the connector's state in `takaro/connector-state/` are never touched.
+`takaro/plugin.json` and the connector's state in `takaro/connector-state/` stay as they are.
 `takaro/enshrouded-gamedata.json` is yours too: a newer plugin uses its own embedded copy for any build
 your file has no section for, so delete the file to pick up the new defaults for every build.
 
 **From 0.5.0 (plugin + sidecar):** 0.6.0 replaces the sidecar. Stop and remove the sidecar before the
-new DLL starts, because both must never connect with the same identity at once; move the tokens from
+new DLL starts, so only one of them connects with the server's identity; move the tokens from
 the sidecar's settings into `takaro/plugin.json` (or the game server's environment), and copy the
-sidecar's `event-cursor.json` and `online-players.json` into `takaro/connector-state/` so nothing is
-sent twice. [INSTALL.md](INSTALL.md) (also inside the zip) has the exact steps and the rollback to
+sidecar's `event-cursor.json` and `online-players.json` into `takaro/connector-state/` so every event is
+sent exactly once. [INSTALL.md](INSTALL.md) (also inside the zip) has the exact steps and the rollback to
 0.5.0.
 
 ---
