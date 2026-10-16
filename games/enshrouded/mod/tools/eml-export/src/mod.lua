@@ -4,7 +4,8 @@ local hash = nil
 local langs = {}
 for _, l in ipairs(loc.languages) do
   langs[#langs + 1] = tostring(l.language)
-  if tostring(l.language) == "En_Us" then hash = l.dataHash end
+  -- 1.0 (KFC4) moved the content hash into `data.hash`
+  if tostring(l.language) == "En_Us" then hash = l.dataHash or (l.data and l.data.hash) end
 end
 print("languages: " .. table.concat(langs, ","))
 local buf = game.assets.get_content(game.guid.from_content_hash(hash)):read_data()
@@ -22,13 +23,25 @@ for _, r in ipairs(game.assets.get_resources_by_type("keen::ItemInfo")) do
 end
 io.export("items-en.tsv", table.concat(out, "\n") .. "\n")
 local cats, seen = {}, {}
+local dirCats = {}
+local okDir, dirs = pcall(game.assets.get_resources_by_type, "keen::WeaponCategoryDirectoryResource")
+if okDir and dirs then
+  for _, d in ipairs(dirs) do
+    for _, e in ipairs(d.data.weaponCategories) do dirCats[tostring(e.guid)] = e.weaponCategory end
+  end
+end
 for _, r in ipairs(game.assets.get_resources_by_type("keen::ItemInfo")) do
   local ref = r.data.weaponCategoryReference
   if ref and ref ~= "00000000-0000-0000-0000-000000000000" and not seen[ref] then
     seen[ref] = true
-    local ok, res = pcall(game.assets.get_resource, ref, "keen::WeaponCategory")
-    if ok and res then
-      local w = res.data
+    -- 1.0 keeps weapon categories inside WeaponCategoryDirectoryResource; older builds as their own resources
+    local w = dirCats[tostring(ref)]
+    local ok, res = true, nil
+    if not w then
+      ok, res = pcall(game.assets.get_resource, ref, "keen::WeaponCategory")
+      if ok and res then w = res.data end
+    end
+    if w then
       cats[#cats + 1] = tostring(game.guid.hash(ref)) .. "\t" .. tostring(ref) .. "\t" .. tostring(w.categoryType) .. "\t" .. clean(dict[game.guid.hash(w.locaTag)])
     else
       print("category " .. tostring(ref) .. " unresolved: " .. tostring(res))

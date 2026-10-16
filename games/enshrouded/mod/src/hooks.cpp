@@ -1,5 +1,6 @@
 #include "hooks.h"
 #include "moderation.h"
+#include "profile.h"
 #include "world.h"
 #include "scan.h"
 #include "state.h"
@@ -236,11 +237,19 @@ uint32_t ResolveTick(std::string& how) {
 // where the game itself calls handleAccountAction. Queued moderation tasks are drained right after the
 // original returns, so a programmatic kick/ban/unban is indistinguishable from the in-game admin action.
 using AccountActionFn = void(__fastcall*)(uint64_t server, uint64_t accountId, uint64_t type);
+// 1.0+: handleAccountAction(Server*, const AccountActionEvent*) with accountId/type at gamedata offsets
+using AccountEventFn = void(__fastcall*)(uint64_t server, const uint8_t* event);
+struct EventAbi {
+    bool on = false;
+    uint32_t size = 0x18, account = 8, type = 0x14;
+    uint32_t slotBase = 0, slotStride = 0, slotPerms = 0;
+} g_evAbi;
 using ModSysFn = uint64_t(__fastcall*)(uint64_t, uint64_t, uint64_t, uint64_t);
 AccountActionFn g_accountAction = nullptr;
 ModSysFn g_origModSys = nullptr;
 volatile LONG64 g_modTicks = 0;
 volatile LONG64 g_server = 0;
+uint32_t g_readyA = 0x10, g_readyB = 0x38;  // server members the moderation system requires before acting
 SrwLock g_modLock;
 std::deque<std::shared_ptr<GameTask>> g_modQueue;
 
@@ -249,7 +258,7 @@ uint64_t __fastcall ModSysDetour(uint64_t a, uint64_t b, uint64_t server, uint64
     PerfScope perf(kPerfModeration);
     InterlockedIncrement64(&g_modTicks);
     // the original bails out early unless these server members are set; require the same before acting
-    if (server && *(uint64_t*)(server + 0x10) && *(uint64_t*)(server + 0x38)) InterlockedExchange64(&g_server, (LONG64)server);
+    if (server && *(uint64_t*)(server + g_readyA) && *(uint64_t*)(server + g_readyB)) InterlockedExchange64(&g_server, (LONG64)server);
     for (int budget = 0; budget < 8; budget++) {
         std::shared_ptr<GameTask> task;
         {
@@ -408,6 +417,33 @@ bool AccountAction(uint64_t accountId, uint8_t type, std::string& err, DWORD tim
         return false;
     }
     auto task = std::make_shared<GameTask>();
+    if (g_evAbi.on) {
+        task->fn = [accountId, type]() -> std::string {
+            uint64_t server = (uint64_t)g_server;
+            uint8_t ev[64];
+            memset(ev, 0, sizeof ev);
+            memcpy(ev + g_evAbi.account, &accountId, 8);
+            ev[g_evAbi.type] = type;
+            // The game skips Kick/Ban targets whose slot permissions have bit 0 (canKickBan). The handler only acts on
+            // the slot of this account, so clear the bit on every slot for this one synchronous call and restore it.
+            uint8_t saved[16];
+            bool prot = false;
+            for (int i = 0; i < 16; i++) {
+                uint8_t* b = (uint8_t*)(server + g_evAbi.slotBase + (uint64_t)i * g_evAbi.slotStride + g_evAbi.slotPerms);
+                saved[i] = *b;
+                if (type != 2 && (*b & 1)) {
+                    *b &= (uint8_t)~1u;
+                    prot = true;
+                }
+            }
+            PluginLog("moderation: handleAccountAction(server=%p, account=%llu, type=%u, protectedSlotsLifted=%d)",
+                      (void*)server, (unsigned long long)accountId, (unsigned)type, prot ? 1 : 0);
+            ((AccountEventFn)g_accountAction)(server, ev);
+            for (int i = 0; i < 16; i++)
+                *(uint8_t*)(server + g_evAbi.slotBase + (uint64_t)i * g_evAbi.slotStride + g_evAbi.slotPerms) = saved[i];
+            return std::string(prot ? "bypass" : "ok");
+        };
+    } else
     task->fn = [accountId, type]() -> std::string {
         uint64_t server = (uint64_t)g_server;
         int slot = -1;
@@ -505,7 +541,9 @@ void HooksInit() {
     st.SetCapability("listBans", "ok", "reads bannedAccounts from enshrouded_server.json");
 
     ReadGameBuild();
-    if (!scan::Init()) {
+    bool scanOk = scan::Init();
+    if (scanOk) profile::Load(g_gameBuild);
+    if (!scanOk) {
         st.SetCapability("logEvents", "degraded", "PE scan init failed");
         st.SetCapability("players", "degraded", "PE scan init failed");
         st.SetCapability("gameThread", "degraded", "PE scan init failed");
@@ -522,12 +560,17 @@ void HooksInit() {
 
     // --- logger sink ---
     std::string how;
-    uint32_t logger = ResolveLogger(how);
-    Record("logger", logger, how, false);
     uint32_t sink = 0;
-    if (logger) {
-        sink = ResolveSink(logger, how);
+    if (profile::Active()) {
+        sink = profile::Fn("logSink", how);
         Record("logSink", sink, how, false);
+    } else {
+        uint32_t logger = ResolveLogger(how);
+        Record("logger", logger, how, false);
+        if (logger) {
+            sink = ResolveSink(logger, how);
+            Record("logSink", sink, how, false);
+        }
     }
     if (sink) {
         std::string err;
@@ -545,7 +588,7 @@ void HooksInit() {
     }
 
     // --- game thread tick ---
-    uint32_t tick = ResolveTick(how);
+    uint32_t tick = profile::Active() ? profile::Fn("sessionTick", how) : ResolveTick(how);
     Record("sessionTick", tick, how, false);
     if (tick) {
         std::string err;
@@ -560,11 +603,29 @@ void HooksInit() {
     }
 
     // --- moderation ---
-    uint32_t handler = ResolveAccountAction(how);
+    uint32_t handler = profile::Active() ? profile::Fn("accountAction", how) : ResolveAccountAction(how);
     Record("accountAction", handler, how, false);
     std::string modErr;
+    if (profile::Active()) {
+        st.SetMachineIsPeerIndexPlusOne(profile::LStr("loginMachine", "peerGeneration") == "peerIndexPlusOne");
+        g_readyA = (uint32_t)profile::L("serverReadyA", 0x10);
+        g_readyB = (uint32_t)profile::L("serverReadyB", 0x38);
+        if (profile::LStr("accountActionAbi", "args") == "event") {
+            g_evAbi.on = true;
+            g_evAbi.size = (uint32_t)profile::L("accountEventSize", 0x18);
+            g_evAbi.account = (uint32_t)profile::L("accountEventAccount", 8);
+            g_evAbi.type = (uint32_t)profile::L("accountEventType", 0x14);
+            g_evAbi.slotBase = (uint32_t)profile::L("slotBase", 0);
+            g_evAbi.slotStride = (uint32_t)profile::L("slotStride", 0);
+            g_evAbi.slotPerms = (uint32_t)profile::L("slotPerms", 0);
+            if (g_evAbi.size > 64 || g_evAbi.account + 8 > g_evAbi.size || g_evAbi.type >= g_evAbi.size || !g_evAbi.slotStride) {
+                handler = 0;
+                modErr = "gamedata accountAction event layout invalid";
+            }
+        }
+    }
     if (handler) {
-        uint32_t sys = ResolveModerationSystem(handler, how);
+        uint32_t sys = profile::Active() ? profile::Fn("moderationSys", how) : ResolveModerationSystem(handler, how);
         Record("moderationSys", sys, how, false);
         if (sys) {
             g_modSysRva = sys;
@@ -572,24 +633,28 @@ void HooksInit() {
                 g_accountAction = (AccountActionFn)scan::Ptr(handler);
                 Record("moderationSys", sys, "hook installed", true);
                 // the handler's .pdata is split into chained chunks, so scan a fixed window (anchors must be unique in it)
-                g_protect = moderation::ParseHandler((const uint8_t*)scan::Ptr(handler), 0x1000);
+                if (!g_evAbi.on) g_protect = moderation::ParseHandler((const uint8_t*)scan::Ptr(handler), 0x1000);
                 char pb[160];
-                snprintf(pb, sizeof pb, "canKickBan skip test: flags+0x%x bit0, machineHandle+0x%x, stride 0x%x%s",
-                         g_protect.protOff, g_protect.mhOff, g_protect.slotStride,
-                         g_protect.ok() ? "" : " (self-check FAILED: kick/ban refuse to run)");
+                if (g_evAbi.on)
+                    snprintf(pb, sizeof pb, "event abi: account+0x%x type+0x%x; canKickBan bit0 at slot+0x%x (base 0x%x stride 0x%x)",
+                             g_evAbi.account, g_evAbi.type, g_evAbi.slotPerms, g_evAbi.slotBase, g_evAbi.slotStride);
+                else
+                    snprintf(pb, sizeof pb, "canKickBan skip test: flags+0x%x bit0, machineHandle+0x%x, stride 0x%x%s",
+                             g_protect.protOff, g_protect.mhOff, g_protect.slotStride,
+                             g_protect.ok() ? "" : " (self-check FAILED: kick/ban refuse to run)");
                 Record("adminProtect", handler, pb, false);
             }
         } else {
             modErr = "moderation system not resolved: " + how;
         }
-    } else {
+    } else if (modErr.empty()) {
         modErr = "account action handler not resolved: " + how;
     }
     for (auto* c : {"kick", "ban", "unban"})
         st.SetCapability(c, "degraded", g_origModSys ? "hook installed, waiting for moderation system to run" : modErr);
 
     // --- shutdown ---
-    uint32_t ctrl = ResolveCtrlHandler(how);
+    uint32_t ctrl = profile::Active() ? profile::Fn("ctrlHandler", how) : ResolveCtrlHandler(how);
     Record("ctrlHandler", ctrl, how, false);
     if (ctrl) {
         g_ctrlHandler = (CtrlHandlerFn)scan::Ptr(ctrl);

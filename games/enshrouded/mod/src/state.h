@@ -6,7 +6,8 @@
 
 struct PlayerRecord {
     std::string steamId;  // SteamID64 as decimal string; used as gameId
-    std::string name;     // Steam persona name as printed by the server
+    std::string name;     // Steam persona name as printed by the server (matches the game's player slot)
+    std::string characterName;  // in-game character name, read from the game once the player's entity exists
     std::string peerId;   // e.g. "0(1)"
     std::string machine;  // machine index as printed in "Machine 'M'"
     std::string handle;   // player handle as printed, e.g. "0(0)"
@@ -45,6 +46,10 @@ public:
     bool PlayerJson(const std::string& gameId, std::string& out) const;
     bool IsOnline(const std::string& gameId) const;
     // machine index (as printed in "Machine 'M'") of an online player; false if unknown
+    // How "Machine 'M'" maps to "Added peer N(G)": 1024233 prints G == M, 1.0 prints M == N + 1 (gamedata loginMachine).
+    void SetMachineIsPeerIndexPlusOne(bool on);
+    // Character name of the online player whose Steam persona name is `persona` (reported to Takaro as "name").
+    void SetCharacterName(const std::string& persona, const std::string& character);
     bool OnlineMachine(const std::string& gameId, std::string& machine) const;
     std::vector<std::pair<std::string, std::string>> OnlineMachines() const;  // (steamId, machine)
 
@@ -71,6 +76,7 @@ private:
     // player tracking
     std::vector<PlayerRecord> players_;  // pending (not online) + online
     std::string lastLoginMachine_, lastLoginHandle_;
+    bool machineIsPeerIndexPlusOne_ = false;  // 1.0: Machine 'M' is peer N(..) with M = N + 1
     bool collectingPerms_ = false;
     int loginIdx_ = -1;
     uint64_t lastPermLineMs_ = 0;

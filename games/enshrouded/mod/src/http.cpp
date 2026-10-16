@@ -278,6 +278,11 @@ bool CachedAccount(const std::string& steamId, uint64_t& hash) {
 uint64_t LookupAccountHash(const std::string& machine) {
     if (machine.empty()) return 0;
     uint32_t idx = (uint32_t)strtoul(machine.c_str(), nullptr, 10);
+    {
+        uint64_t acc = 0;
+        std::string err;
+        if (WorldAccountForMachine(idx, acc, err)) return acc;  // 1.0+: gamedata session layout
+    }
     std::string out;
     if (!RunOnModerationThread(
             [idx](uint64_t server) {

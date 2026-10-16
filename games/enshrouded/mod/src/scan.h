@@ -34,6 +34,10 @@ uint32_t FindImportSlot(const char* dll, const char* fn);
 // All RVAs of `FF 15 rel32` (call [rip+disp]) whose memory operand is `slotRva`.
 std::vector<uint32_t> FindIndirectCalls(uint32_t slotRva);
 
+// 8-aligned RVAs in readable data sections that hold the absolute address of `targetRva`.
+std::vector<uint32_t> FindPointerRefs(uint32_t targetRva, size_t maxHits = 8);
+uint64_t ReadU64(uint32_t rva);
+
 inline void* Ptr(uint32_t rva) { return (void*)(Base() + rva); }
 
 }  // namespace scan

@@ -122,8 +122,41 @@ over the install when they differ. Both compose files bind-mount
 server and nothing else, and a test asserts it contains no update path at all. `verify`
 greps the boot log for one and fails the run if it finds one.
 
+### Per-build game data (`mod/gamedata/enshrouded-gamedata.json`)
+
+Everything that moves when Keen ships a new `enshrouded_server.exe` lives in one JSON file, one
+section per game build (the number the plugin log prints as `game build:`):
+
+- `functions`: each hooked or called game function as an `rva`, checked against `verify` bytes
+  (the prologue), or a unique `pattern`, or an ECS `job` name (resolved from the job registration
+  table `{char* name, u64 len, fn*}`, which survives code moves).
+- `callsites`: return addresses the detours compare against (player-chat receive, the
+  inventory admin gate); each must sit right after an `E8` call to the matching function.
+- `layout`: struct offsets and ABI switches (server slot table, chat-system bookkeeping, combat
+  context and paged event views, give-item version fields, the account-action event).
+
+`build.sh` embeds the file; the plugin writes it to `takaro/enshrouded-gamedata.json` next to the
+server on first start and reads that copy from then on, so an operator can add a section without a
+new DLL. A section whose entry fails its `verify` bytes disables only that capability (reported
+`degraded`). A build with no section falls back to the built-in signature heuristics in `hooks.cpp`
+and `world.cpp` (written for 1024233).
+
+### Static tables (items, entities, labels)
+
+`src/gamedata.cpp`, `src/itemlabels.cpp` and `src/entitylabels.cpp` are generated:
+
+1. Export with the Enshrouded Mod Loader CLI (`emm run -g <dir> --export`, github.com/Brabb3l/kfc-parser)
+   and `tools/eml-export`: against the **server** for items/templates, against the **client** for the
+   En_Us names. 1.0 changed the container magic to `KFC4`; kfc-parser 0.1.2 refuses it, but accepting
+   `0x3443464B` next to `KFC3` in `crates/kfc-base/src/container/header.rs` is the only change needed.
+2. Write the generator inputs (`items/entities/locations.json`, see `tools/gen_gamedata.py` for the path), then `tools/gen_gamedata.py`,
+   `tools/gen_item_labels.py <export> <note>` and `tools/gen_entity_labels.py <export> research/entities.json <note>`.
+
 ### Moving to a new game build
 
+0. Add a `builds.<new build>` section to `mod/gamedata/enshrouded-gamedata.json` (diff the new exe
+   against the previous one: string anchors, the ECS job table and the reflection field descriptors
+   `{name*, len, type*, offset}` give most values), and regenerate the static tables above.
 1. `takaro-maint steam pin --game enshrouded --metadata` to see what moved, then
    `--record-files … --write` to re-pin the record (id and `revision` follow the new game
    build, so the target is a new file).
