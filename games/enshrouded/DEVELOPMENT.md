@@ -133,7 +133,9 @@ section per game build (the number the plugin log prints as `game build:`):
 - `callsites`: return addresses the detours compare against (player-chat receive, the
   inventory admin gate); each must sit right after an `E8` call to the matching function.
 - `layout`: struct offsets and ABI switches (server slot table, chat-system bookkeeping, combat
-  context and paged event views, give-item version fields, the account-action event).
+  context and paged event views, give-item version fields, the account-action event, the character-name
+  component, and `attributes*`: the `keen::ecs::NetworkPlayerAttributes` component hash with the offsets of
+  `level`, `experience` and `experienceRequired`, taken from that type's reflection field table).
 
 `build.sh` embeds the file; the plugin writes it to `takaro/enshrouded-gamedata.json` next to the
 server on first start and reads that copy from then on, so an operator can add a section without a

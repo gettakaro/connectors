@@ -25,7 +25,8 @@ Takaro. Rows marked *(1.0 ✓)* were re-checked on 1.0; the others were verified
 | What | | Notes |
 |---|---|---|
 | Connection & heartbeat *(1.0 ✓)* | ✅ | The game server holds an encrypted connection to Takaro and shows as reachable while it runs. |
-| Player list *(1.0 ✓)* | ✅ | `gameId` is the SteamID64. Names are Steam persona names, not in-game character names (the server never exposes those). |
+| Player list *(1.0 ✓)* | ✅ | `gameId` is the SteamID64. On 1.0 the name is the in-game character name, read from the game once the character has loaded (the Steam name until then); lookups accept either. |
+| Character level *(1.0 ✓)* | ✅ | Level, experience and experience needed for each online player, read from the game. Takaro has no level field, so modules read them with the console commands `levels` and `level <player>` (e.g. `Mad (7656…): level 3, experience 120/450`). |
 | Single player lookup | ✅ | Also answers for a player who is offline but has been seen before. |
 | Player location *(1.0 ✓)* | ✅ | Matches the in-game position and follows teleports. |
 | Player inventory *(1.0 ✓)* | ✅ | Matches the in-game backpack. |
@@ -33,7 +34,7 @@ Takaro. Rows marked *(1.0 ✓)* were re-checked on 1.0; the others were verified
 | Item catalogue *(1.0 ✓)* | ✅ | On 1.0, 4,005 of 4,262 items sync with their in-game English names, e.g. "Spectral Ward" (1024233: 3,317). Items the game never names and abilities are left out; giving an item by its code works for every item. |
 | Entity catalogue | ⚠️ | On 1.0, 477 creature and NPC templates sync (1024233: 397). Bosses, NPCs and fish have their in-game names (e.g. "Armored Fell Thunderbrute", "Oswald Anders"). The game shows no name for other creatures, so they get a readable name built from the internal code, e.g. "Rat". |
 | Locations / points of interest | ⚠️ | The connector serves 1,031 locations. Takaro may show them as markers on the map; this was not checked. |
-| Run a console command *(1.0 ✓)* | ✅ | Enshrouded has no console; the connector provides its own set: `help`, `players`, `say`, `whisper`, `location`, `teleport`/`tp`, `inventory`, `give`, `item`, `kick`, `save-and-shutdown`. Unknown commands are refused with a hint. |
+| Run a console command *(1.0 ✓)* | ✅ | Enshrouded has no console; the connector provides its own set: `help`, `players`, `levels`, `level`, `say`, `whisper`, `location`, `teleport`/`tp`, `inventory`, `give`, `item`, `kick`, `save-and-shutdown`. Unknown commands are refused with a hint. |
 | Broadcast a message *(1.0 ✓)* | ✅ | Everyone sees it in chat, under the character name of an online player: Enshrouded has no "server" sender. |
 | Whisper a player | ⚠️ | Reaches the player; that nobody else sees it was not checked (one test account). |
 | Teleport a player *(1.0 ✓)* | ✅ | Takaro rounds to whole coordinates. On 1024233 the game nudges the player to the nearest free spot; on 1.0 that search snaps the player back, so the player lands exactly on the coordinates: pick a spot above ground. |
