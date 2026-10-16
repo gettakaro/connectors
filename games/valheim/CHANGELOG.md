@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.3.0](https://github.com/gettakaro/connectors/compare/valheim-v4.2.0...valheim-v4.3.0) (2026-10-16)
+
+
+### Features
+
+* **valheim:** serve a world map through getMapInfo and getMapTile ([#486](https://github.com/gettakaro/connectors/issues/486)) ([59955ee](https://github.com/gettakaro/connectors/commit/59955ee95097d810787d16dd4d0468fc274e13b0))
+
+
+### Bug Fixes
+
+* **valheim:** keep the config in one file the connector creates ([#459](https://github.com/gettakaro/connectors/issues/459)) ([70d73df](https://github.com/gettakaro/connectors/commit/70d73df9207d5af3f4054be531a77f75a0f736e0))
+
 ## [4.2.0](https://github.com/gettakaro/connectors/compare/valheim-v4.1.1...valheim-v4.2.0) (2026-10-11)
 
 
