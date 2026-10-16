@@ -28,8 +28,8 @@ from takaro_maint.providers import provider_for
 from takaro_maint.publish.manifest import artifact_row, write_manifest, write_meta
 
 GAME = "valheim"
-TARGET = "linux-1.0.17"
-REVISION = "1.0.17"
+TARGET = "linux-1.0.20"
+REVISION = "1.0.20"
 VERSION = "3.0.3-dev.abc1234"
 DEPOT = "896661"
 PINNED_MANIFEST = "6686760496212527200"
@@ -417,7 +417,7 @@ def test_targets_resolve_env_for_valheim(run: Any) -> None:
 
     assert code == 0, payload
     env = payload["env"]
-    assert env["VALHEIM_STEAM_DEPOTS"] == f"{DEPOT}:3707659388211752971"
+    assert env["VALHEIM_STEAM_DEPOTS"] == f"{DEPOT}:4001404753685205688"
     assert env["VALHEIM_STEAM_APP"] == "896660"
     assert env["VALHEIM_STEAM_BRANCH"] == "public"
     assert env["VALHEIM_ARTIFACT_SERVER_PLUGIN"] == f"takaro-valheim-plugin-{TARGET}-{{version}}.zip"
@@ -913,7 +913,7 @@ def test_the_hook_patterns_match_the_lines_the_server_really_writes() -> None:
         "10/07/2026 20:13:03: Loading: Done. Total seconds sinze ZNet start: 123.931405, Genloc duration: "
         "98223.915 ms, (Total genloc time: 00:01:38.8141400, locations: 183, iterations: 0)"
     )
-    # Valheim 1.0.17 logs these before the world has loaded, and the scene loader's own "Done"
+    # Valheim 1.0.20 logs these before the world has loaded, and the scene loader's own "Done"
     # comes earlier still; none of them means the server is serving.
     assert not hooks.READY_LINE.search("10/07/2026 19:56:16: Game server connected failed")
     assert not hooks.READY_LINE.search("10/07/2026 20:07:44: Game server connected")
