@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 export interface TShockConfig {
   baseUrl: string;
   token?: string;
@@ -54,8 +56,13 @@ export function defaultServerName(identityToken: string): string {
  * Builds the settings from the file values plus the environment, which wins per field and is
  * never written anywhere. An empty registration token or missing TShock credentials are not
  * errors: the bridge stays up, shows a banner and picks the values up when the file is saved.
+ *
+ * Relative `mapDir` and `logFiles` paths resolve against `baseDir`, the folder holding
+ * TakaroConfig.txt (the server folder in a default install), not the bridge's working directory.
  */
-export function buildConfig(values: Record<string, string>, env: NodeJS.ProcessEnv = process.env): BridgeConfig {
+export function buildConfig(values: Record<string, string>, env: NodeJS.ProcessEnv = process.env, baseDir?: string): BridgeConfig {
+  // join, not resolve: a trailing separator still marks a log directory that does not exist yet.
+  const resolvePath = (entry: string): string => (baseDir && !path.isAbsolute(entry) ? path.join(baseDir, entry) : entry);
   const identityToken = values.identityToken || '';
   const serverName = values.serverName || defaultServerName(identityToken);
   return {
@@ -73,12 +80,12 @@ export function buildConfig(values: Record<string, string>, env: NodeJS.ProcessE
     },
     httpPort: parseNumber(values.httpPort, 3020),
     pollIntervalMs: parseNumber(values.pollIntervalMs, 10000),
-    logFiles: resolveLogFiles(parseCsv(values.logFiles)),
+    logFiles: resolveLogFiles(parseCsv(values.logFiles)).map(resolvePath),
     logExcludePatterns: resolveLogExcludePatterns(values.logExcludePatterns),
     commandAllowlistExact: parseCsv(values.commandAllowlistExact),
     commandAllowlistPrefixes: parseCsv(values.commandAllowlistPrefixes),
     enableShutdown: parseBoolean(values.enableShutdown, false),
-    mapDir: values.mapDir || DEFAULTS.mapDir,
+    mapDir: resolvePath(values.mapDir || DEFAULTS.mapDir),
     protocolVersion: values.protocolVersion?.trim() === '0' ? 0 : 1,
   };
 }

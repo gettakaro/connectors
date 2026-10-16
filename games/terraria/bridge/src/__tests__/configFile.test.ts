@@ -162,6 +162,20 @@ test('a file with an identity (the dev rig, takaro-maint verify) is read as it i
   assert.equal(existsSync(`${file}.tmp-${process.pid}`), false);
 });
 
+test('relative mapDir and logFiles start at the config folder (the server folder), not the working directory', async () => {
+  const { parent, file } = install();
+  const first = await sourceFor(file).poll();
+  assert.ok(first);
+  // The plugin writes <server>/tshock/takaro; TakaroConfig.txt sits in <server> beside the bridge folder.
+  assert.equal(first.config.mapDir, path.join(parent, 'tshock', 'takaro'));
+  assert.deepEqual(first.config.logFiles, [path.join(parent, 'tshock', 'logs')]);
+  edit(file, { mapDir: '/srv/terraria/tshock/takaro', logFiles: '/var/log/tshock/,logs/,logs/*.log' });
+  const next = await sourceFor(file).poll();
+  assert.ok(next);
+  assert.equal(next.config.mapDir, '/srv/terraria/tshock/takaro');
+  assert.deepEqual(next.config.logFiles, ['/var/log/tshock/', `${path.join(parent, 'logs')}${path.sep}`, path.join(parent, 'logs', '*.log')]);
+});
+
 test('the README shows the file the bridge creates', () => {
   const readme = readFileSync(new URL('../../../README.md', import.meta.url), 'utf8');
   assert.ok(readme.includes(`\`\`\`\n${configTemplate('', '')}\`\`\``), 'README config block differs from configTemplate');

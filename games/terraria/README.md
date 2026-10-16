@@ -73,8 +73,10 @@ folder around it:
 ```
 
 **Bridge.** The zip contains one folder, `TakaroTerrariaBridge/`, holding `dist/`,
-`node_modules/`, `package.json`, `package-lock.json` and two readme files. Extract it anywhere on
-the same host. Its one runtime dependency is already in the archive, so
+`node_modules/`, `package.json`, `package-lock.json` and two readme files. Extract it into the
+server folder, as `<server>/TakaroTerrariaBridge/`: the relative `logFiles` and `mapDir` in its
+config start at the folder beside it. Anywhere else, set both to absolute paths. Its one runtime
+dependency is already in the archive, so
 there is nothing to install — run `npm ci --omit=dev` only if you delete `node_modules/`.
 
 ### 4. Configure
@@ -114,6 +116,7 @@ You can also create the file yourself before the first start. This is its full c
 # paste the registration token and save, no restart needed.
 # identityToken is this server's identity in Takaro; the bridge fills it in when empty.
 # An empty serverName means "Terraria Server (<first 8 characters of identityToken>)".
+# Relative paths (logFiles, mapDir) start at the folder holding this file: the server folder.
 
 # Takaro connection
 registrationToken=
@@ -144,6 +147,8 @@ enableShutdown=false
 # The world map: the plugin renders the loaded world into mapDir (<TShock folder>/takaro) and
 # the bridge shows it on Takaro's map. protocolVersion=1 speaks Takaro protocol 1 when Takaro
 # offers it (the map, events resent after a reconnect); 0 stays on version 0. Restart to apply.
+# The plugin renders the map at world load, every TAKARO_MAP_INTERVAL_MINUTES (environment of
+# the TShock server: default 30, 0 = off) and when an admin runs /takaromap.
 mapDir=tshock/takaro
 protocolVersion=1
 ```
@@ -154,6 +159,9 @@ protocolVersion=1
   restart; a directory lets the bridge follow that rotation. Chat, join/leave and death/kill events
   all come through here.
 - `enableShutdown` — set to `true` only if you want Takaro to be able to stop the server.
+- `TAKARO_MAP_INTERVAL_MINUTES` — set it in the TShock server's environment, not in this file:
+  how often the plugin re-renders the world map (default 30, `0` renders only at world load).
+  An admin can render it at any time with `/takaromap`.
 
 Keep real registration tokens and REST tokens out of version control.
 
@@ -246,8 +254,7 @@ client-adjacent proof below is still the one recorded on 6.1.0 and has not been 
 | Player death event | ✅ | Reaches Takaro, including who killed the player. Needs the plugin. |
 | Entity kill event | ✅ | Reaches Takaro with the NPC and a weapon. Needs the plugin. The weapon is the killer's held item at that moment, not the thing that actually dealt the damage — see known issues. |
 | Log events | ⚠️ | The bridge ships TShock log lines, but it must filter its own REST traffic out (`logExcludePatterns`) or it floods Takaro's rate limiter. Not verified in a live test. |
-| Map info | ⚠️ | Answers with a disabled map; TShock exposes no map metadata. |
-| Map tiles | ❌ | Takaro's API does not support map tiles for Generic-connector servers. |
+| Map | ⚠️ | Needs Takaro protocol v1 (not yet on takaro.io; proven only on Takaro staging). The plugin renders the world into `mapDir` with the game's map colours and the bridge serves it as Takaro's map image. On protocol 0 the map stays disabled. |
 | Discord chat bridge | ⚠️ | Nothing connector-side blocks it, but it was never tried in a live test. |
 | Shop & economy | ⚠️ | Item delivery goes through `giveItem`, which is implemented, but buying and currency were never tried in a live test. |
 
