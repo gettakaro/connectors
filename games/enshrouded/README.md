@@ -4,41 +4,45 @@ Connects an Enshrouded dedicated server to Takaro with one file: `dbghelp.dll`, 
 `enshrouded_server.exe`. The DLL hooks the game and talks to Takaro itself; nothing else runs next to
 the server, and players do not install anything.
 
-It is built for one exact server: game build **1024233** (Steam app 2278520, branch `public`, Steam
-build 23178631), tested under **GE-Proton10-30** in `mornedhels/enshrouded-server:1.7.2-proton`. On
-another game build the plugin still loads, but the features whose game code moved switch themselves
-off (see "A game update can switch a feature off" below). **Keep the server on the build the release
-was made for.**
+It supports **Enshrouded 1.0** (game build **1267041**, hotfix 1.0.0.1, Steam build 25967645), tested
+natively on a Windows dedicated server, and the earlier game build **1024233** (Steam build 23178631),
+tested under **GE-Proton10-30** in `mornedhels/enshrouded-server:1.7.2-proton`. Everything that
+changes between game builds lives in one data file, `takaro/enshrouded-gamedata.json`, so a new game
+build needs a new section there rather than a new DLL. On a build the file does not know, the plugin
+still loads, but the features whose game code moved switch themselves off (see "A game update can
+switch a feature off" below). **Keep the server on a build the connector supports.**
 
 ## What works, what doesn't
 
-Verified end to end on **2026-09-29** with the native connector on game build **1024233**, a real game
-client and Takaro. ✅ = works, ⚠️ = works with a caveat or not re-verified, ❌ = does not work.
+Verified end to end on **2026-09-29** on game build **1024233** (Proton), and re-verified on
+**2026-10-15** on game build **1267041** (Enshrouded 1.0, Windows), each with a real game client and
+Takaro. Rows marked *(1.0 ✓)* were re-checked on 1.0; the others were verified on 1024233 only.
+✅ = works, ⚠️ = works with a caveat or not re-verified, ❌ = does not work.
 
 | What | | Notes |
 |---|---|---|
-| Connection & heartbeat | ✅ | The game server holds an encrypted connection to Takaro and shows as reachable while it runs. |
-| Player list | ✅ | `gameId` is the SteamID64. Names are Steam persona names, not in-game character names (the server never exposes those). |
+| Connection & heartbeat *(1.0 ✓)* | ✅ | The game server holds an encrypted connection to Takaro and shows as reachable while it runs. |
+| Player list *(1.0 ✓)* | ✅ | `gameId` is the SteamID64. Names are Steam persona names, not in-game character names (the server never exposes those). |
 | Single player lookup | ✅ | Also answers for a player who is offline but has been seen before. |
-| Player location | ✅ | Matches the in-game position and follows teleports. |
-| Player inventory | ✅ | Matches the in-game backpack. |
-| Give an item | ✅ | The item arrives in the backpack. The game ignores the count, so the connector splits it into stacks of at most 64. |
-| Item catalogue | ✅ | 3,317 items sync with their in-game English names, e.g. "Spectral Ward". Items the game never names and abilities are left out; giving an item by its code works for every item. |
-| Entity catalogue | ⚠️ | 397 creature and NPC templates sync. Bosses, NPCs and fish have their in-game names (e.g. "Fell Thunderbrute", "Oswald Anders"). The game shows no name for other creatures, so they get a readable name built from the internal code, e.g. "Rat". |
+| Player location *(1.0 ✓)* | ✅ | Matches the in-game position and follows teleports. |
+| Player inventory *(1.0 ✓)* | ✅ | Matches the in-game backpack. |
+| Give an item *(1.0 ✓)* | ✅ | The item arrives in the backpack. The game ignores the count, so the connector splits it into stacks of at most 64. |
+| Item catalogue *(1.0 ✓)* | ✅ | On 1.0, 4,005 of 4,262 items sync with their in-game English names, e.g. "Spectral Ward" (1024233: 3,317). Items the game never names and abilities are left out; giving an item by its code works for every item. |
+| Entity catalogue | ⚠️ | On 1.0, 477 creature and NPC templates sync (1024233: 397). Bosses, NPCs and fish have their in-game names (e.g. "Armored Fell Thunderbrute", "Oswald Anders"). The game shows no name for other creatures, so they get a readable name built from the internal code, e.g. "Rat". |
 | Locations / points of interest | ⚠️ | The connector serves 1,031 locations. Takaro may show them as markers on the map; this was not checked. |
-| Run a console command | ✅ | Enshrouded has no console; the connector provides its own set: `help`, `players`, `say`, `whisper`, `location`, `teleport`/`tp`, `inventory`, `give`, `item`, `kick`, `save-and-shutdown`. Unknown commands are refused with a hint. |
-| Broadcast a message | ✅ | Everyone sees it in chat, under the character name of an online player: Enshrouded has no "server" sender. |
+| Run a console command *(1.0 ✓)* | ✅ | Enshrouded has no console; the connector provides its own set: `help`, `players`, `say`, `whisper`, `location`, `teleport`/`tp`, `inventory`, `give`, `item`, `kick`, `save-and-shutdown`. Unknown commands are refused with a hint. |
+| Broadcast a message *(1.0 ✓)* | ✅ | Everyone sees it in chat, under the character name of an online player: Enshrouded has no "server" sender. |
 | Whisper a player | ⚠️ | Reaches the player; that nobody else sees it was not checked (one test account). |
-| Teleport a player | ✅ | Takaro rounds to whole coordinates and the game nudges the player to the nearest free spot. |
-| Kick a player | ✅ | The player must be online. Works for Admins-group players too. |
-| Ban a player (timed and permanent) | ✅ | The player must be online. The game only knows permanent bans; the connector remembers the end time and lifts a timed ban itself when it expires. |
-| Unban a player | ✅ | Works offline, for any player the connector has seen online once. |
-| Ban list | ✅ | The game's banned accounts. Timed bans show their reason and end time; permanent bans show no reason, because the game stores none. |
+| Teleport a player *(1.0 ✓)* | ✅ | Takaro rounds to whole coordinates. On 1024233 the game nudges the player to the nearest free spot; on 1.0 that search snaps the player back, so the player lands exactly on the coordinates: pick a spot above ground. |
+| Kick a player *(1.0 ✓)* | ✅ | The player must be online. Works for Admins-group players too. |
+| Ban a player (timed and permanent) *(1.0 ✓ permanent)* | ✅ | The player must be online. The game only knows permanent bans; the connector remembers the end time and lifts a timed ban itself when it expires. |
+| Unban a player *(1.0 ✓)* | ✅ | Works offline, for any player the connector has seen online once. |
+| Ban list *(1.0 ✓)* | ✅ | The game's banned accounts. Timed bans show their reason and end time; permanent bans show no reason, because the game stores none. |
 | Shut the server down | ✅ | Saves first, then quits; the container's restart policy brings it back. |
-| Player joined / left events | ✅ | From real joins and leaves, kicks, bans and shutdowns; a player still online when the server crashed is reported as left on the next start. |
-| Player chat event | ✅ | Real player chat reaches Takaro with the player attached. |
-| Player death event | ✅ | Falls and creature kills, with the position; the creature that killed the player is named in the message the same way as in the entity catalogue, e.g. "Limon was killed by Rat". |
-| Entity kill event | ⚠️ | Real kills reach Takaro, once each, with the weapon's in-game name (melee and bow tested). The creature is named the same way as in the entity catalogue, e.g. "Rat". Kills with magic are not tested yet. Destroyed props are not reported. |
+| Player joined / left events *(1.0 ✓)* | ✅ | From real joins and leaves, kicks, bans and shutdowns; a player still online when the server crashed is reported as left on the next start. |
+| Player chat event *(1.0 ✓)* | ✅ | Real player chat reaches Takaro with the player attached. |
+| Player death event *(1.0 ✓)* | ✅ | Falls and creature kills, with the position; the creature that killed the player is named in the message the same way as in the entity catalogue, e.g. "Limon was killed by Rat". |
+| Entity kill event *(1.0 ✓)* | ⚠️ | Real kills reach Takaro, once each, with the weapon's in-game name (melee and bow tested). The creature is named the same way as in the entity catalogue, e.g. "Rat". Kills with magic are not tested yet. Destroyed props are not reported. |
 | Log events | ⚠️ | Sent, but Takaro does not store server log lines as events. |
 | Map | ✅ | The connector tells Takaro the size and orientation of the world ("Embervale", 10,240 m square, north up). The server has no map picture of its own, so you upload one image once on the game server's map page in Takaro (see INSTALL.md, "Map"); player dots then sit at the right spot on it. Without an upload Takaro shows a grid with the player dots. |
 | Map on an older Takaro | ⚠️ | A Takaro without protocol 1 shows a map only from a tile pack in `takaro/map/` that you render yourself (see INSTALL.md). |
@@ -53,13 +57,13 @@ client and Takaro. ✅ = works, ⚠️ = works with a caveat or not re-verified,
 | Shop: order while offline, claim later | ✅ | The order stays paid while the player is offline and is delivered after they rejoin. |
 | Shop: not enough currency | ✅ | Refused, no order, no deduction. |
 | Economy: currency and `@balance` | ✅ | Balances set in Takaro show in game. |
-| Discord: game chat → Discord | ⚠️ | Player chat reaches the chat-bridge module and Takaro's Discord post succeeds; the message was not read back in Discord on this run. |
-| Discord: Discord → game chat | ✅ | A real person's post in the linked channel appears in game chat; bot posts are ignored by design. |
+| Discord: game chat → Discord *(1.0 ✓)* | ⚠️ | Player chat reaches the chat-bridge module and Takaro's Discord post succeeds (HTTP 200 on 1.0); the message was not read back in Discord. |
+| Discord: Discord → game chat *(1.0 ✓)* | ✅ | A real person's post in the linked channel appears in game chat; bot posts are ignored by design. |
 | Discord: module hook / cronjob posts | ✅ | Hooks and cronjobs post to Discord and can edit their messages. |
 | Discord: join/leave notices | ⚠️ | Takaro's Discord post succeeds on real joins and leaves; not read back in Discord on this run. |
 | Discord: no echo of server messages | ✅ | Use the `chatBridgeNoEcho` module: the stock `chatBridge` re-posts Takaro's own server messages. |
-| Reconnects after a restart or crash | ✅ | Back on its own within about 25 seconds after a graceful restart, a crash or a container restart. |
-| Survives a network drop to Takaro | ✅ | Notices a dead link within 20 seconds and reconnects by itself, without restarting the game. |
+| Reconnects after a restart or crash *(1.0 ✓)* | ✅ | Back on its own within about 25 seconds after a graceful restart, a crash or a container restart. |
+| Survives a network drop to Takaro *(1.0 ✓)* | ✅ | Notices a dead link within 20 seconds and reconnects by itself, without restarting the game. |
 | Events while Takaro is unreachable | ✅ | Kept on disk and delivered once the connection is back (tested with a 30-minute outage). A lost confirmation can cause one duplicate event after a reconnect. |
 | Timed bans expire on their own | ✅ | Lifted within seconds of the end time. |
 | A game update can switch a feature off | ✅ | A feature whose game code moved reports itself as degraded, Takaro's reachability reason names it, and everything else keeps working. |
@@ -81,7 +85,9 @@ Download the latest release: https://takaro.io/connectors/enshrouded
 ### 2. Download
 
 From the latest `enshrouded-vX.Y.Z` release at https://github.com/gettakaro/connectors/releases download
-**`takaro-enshrouded-plugin-proton-1024233-<version>.zip`** and **`SHA256SUMS`**, and check the zip:
+**`takaro-enshrouded-plugin-proton-1024233-<version>.zip`** and **`SHA256SUMS`**, and check the zip. The
+name carries the build the release target was first pinned to; the same `dbghelp.dll` runs on every
+build in its game data file, including Enshrouded 1.0 on Windows:
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
