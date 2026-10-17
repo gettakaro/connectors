@@ -248,7 +248,7 @@ def test_an_upgrade_keeps_the_dragonwilds_plugin_ban_list(run: Any, repo: Path, 
     # The Dragonwilds plugin writes bans.json next to the server binary, inside the depot tree.
     # Installing the next build with that game's preserve list must carry it over.
     dragonwilds = json.loads(
-        (fake.REPO_ROOT / "catalog" / "dragonwilds" / "targets" / "linux-25808123.json").read_text()
+        (fake.REPO_ROOT / "catalog" / "dragonwilds" / "targets" / "linux-25991736.json").read_text()
     )
     record = fake.read_target(repo)
     record["preserve"] = dragonwilds["preserve"]

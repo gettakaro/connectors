@@ -4,7 +4,7 @@
   "game": "dragonwilds",
   "platform": "linux",
   "revision": "25808123",
-  "default": true,
+  "default": false,
   "support": {
     "status": "candidate",
     "since": "2026-10-09",
@@ -14,7 +14,7 @@
       "takaro-maint install of this target on the dev rig 2026-10-09: declared sha256 verified, ledger check passed, server ++dominion+hotfix-CL-247725 boots with the plugin (108/108 symbols from a cold .sym scan, 6/6 reflection validations)",
       "connector-runner e2e 2026-10-09 (gettakaro/connectors#413): real PC client (network version 247725) through hosted Takaro MCP on this target - player-connected 982b4f34-c047-48c8-a1c5-dfa98c705049, chat-message 177916bf-588b-4ed9-bc83-f9996f77c5e4, command-executed 66844ab1-6929-4272-8ec0-ffaf785e5142, player-disconnected f9ac9ea2-7b70-416a-adcf-b57f18fd3c7c, player-death 94c9780c-c195-4a93-a42a-a5437c6f4ac1, entity-killed 5487fa95-b3c8-428a-aa33-35d624db59d0; testReachability, getPlayers, sendMessage, executeConsoleCommand, giveItem, teleportPlayer, kickPlayer, banPlayer (rejoin refused), unbanPlayer, shutdown, a shop order and Discord both ways passed"
     ],
-    "notes": "Steam pin of the public branch head observed 2026-10-09 (build published 2026-10-08, manifest dated 2026-10-06): tool app 4019830, Linux depot 3501791, build 25808123. The plugin resolves every engine address from this build's own `.sym` at load time, so the target needs no source change. `verification.required` is `contract` until this pin is proven at runtime: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
+    "notes": "Steam pin of the public branch head observed 2026-10-09 (build published 2026-10-08, manifest dated 2026-10-06): tool app 4019830, Linux depot 3501791, build 25808123. Superseded as the default by linux-25991736; kept so a server still on this build gets a matching plugin. The plugin resolves every engine address from this build's own `.sym` at load time, so the target needs no source change. `verification.required` is `contract` until this pin is proven at runtime: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
   },
   "inputs": {
     "server": {
