@@ -10,7 +10,9 @@
     "since": "2026-10-17",
     "evidence": [
       "games/dragonwilds/README.md (What works, what doesn't)",
-      "games/dragonwilds/mod/tests/ (plugin unit and native connector tests, every build)"
+      "games/dragonwilds/mod/tests/ (plugin unit and native connector tests, every build)",
+      "takaro-maint install of this target on the dev rig 2026-10-17: declared sha256 verified, server ++dominion+live-CL-251392 boots with the plugin (113/113 symbols from a cold .sym scan, game thread ticking via the UDomGameEngine::Tick hook)",
+      "connector-runner e2e 2026-10-17 (gettakaro/connectors#532, staging domain): real PC client (CL-251392) through hosted Takaro MCP on this target - player-connected d030ff80-6eac-4fd3-933a-9364ff8be3ea, chat-message 9cfa40db-52dd-4ff6-bce4-00436f0e1148, command-executed e728abfb-5e6e-4692-aec3-5a18c2c33599 (@ping, Pong rendered in game), player-disconnected 2ed9050f-c6fb-4693-bd30-243489dc439e, player-death f581921e-0936-409f-91d4-fd7291047492, entity-killed de787963-f7e9-484b-b8de-f41745df4392 (real kill, weapon Bronze Sword); testReachability, getPlayers, sendMessage, executeConsoleCommand, giveItem, teleportPlayer, kickPlayer, banPlayer (rejoin refused), unbanPlayer, shutdown and Discord both ways passed"
     ],
     "notes": "Steam pin of the public branch head observed 2026-10-17 (manifest dated 2026-10-16): tool app 4019830, Linux depot 3501791, build 25991736. The plugin resolves every engine address from this build's own `.sym` at load time, so the target needs no source change. `verification.required` is `contract` until this pin is proven at runtime: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
   },
