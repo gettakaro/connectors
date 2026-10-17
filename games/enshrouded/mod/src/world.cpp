@@ -678,8 +678,9 @@ void LoadProfileLayout() {
     L.chatRecMask = u("chatRecMask", L.chatRecMask);
     L.chatRecSizeAdd = u("chatRecSizeAdd", L.chatRecSizeAdd);
     L.chatHandleSlotField = u("chatHandleSlotField", L.chatHandleSlotField);
-    // Existing 0.8.0 installs keep their on-disk gamedata section, which lacks this new key.
-    L.chatNoticeType = u("chatNoticeType", GameBuild() == "1267041" ? 4 : 0);
+    // Existing installs can keep an on-disk gamedata section without this key after upgrading.
+    const std::string build = GameBuild();
+    L.chatNoticeType = u("chatNoticeType", (build == "1267041" || build == "1269579") ? 4 : 0);
     L.teleportSearchBest = u("teleportSearchBest", L.teleportSearchBest);
     L.sessMgr = u("sessionMgr", L.sessMgr);
     L.sessVer = u("sessionVersion", L.sessVer);

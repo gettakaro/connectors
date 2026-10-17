@@ -59,6 +59,43 @@ jobs:
       scum_tag: ${{ steps.rp.outputs['games/scum--tag_name'] }}
       scum_version: ${{ steps.rp.outputs['games/scum--version'] }}
     steps:
+      # release-please creates the stable tag in this job. Check the merged release
+      # candidate before calling it; asset-build jobs run only after the tag exists.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 2
+      - name: Detect Enshrouded release
+        id: enshrouded-proof
+        run: |
+          previous=$(git show HEAD^:.release-please-manifest.json | jq -r '."games/enshrouded"')
+          current=$(jq -r '."games/enshrouded"' .release-please-manifest.json)
+          if [ "$previous" != "$current" ]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Generate private proof token
+        if: steps.enshrouded-proof.outputs.required == 'true'
+        id: proof-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.TAKARO_CI_APP_ID }}
+          private-key: ${{ secrets.TAKARO_CI_APP_PRIV_KEY }}
+          owner: El-Limon
+          repositories: gamingconnectors
+      - name: Read private Enshrouded proof
+        if: steps.enshrouded-proof.outputs.required == 'true'
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          repository: El-Limon/gamingconnectors
+          token: ${{ steps.proof-token.outputs.token }}
+          path: private-proof
+      - name: Require complete live proof before a stable tag
+        if: steps.enshrouded-proof.outputs.required == 'true'
+        run: |
+          node games/enshrouded/scripts/check-release-proof.mjs
+          cmp games/enshrouded/release-checklist.json private-proof/scripts/proof-page/checklists/enshrouded.json
+          node private-proof/scripts/proof-page/validate-release.mjs \
+            "private-proof/$(jq -r '.proofRun' games/enshrouded/release-proof.json)" \
+            games/enshrouded/release-proof.json
       # Author Release PRs as takaro-ci-bot[bot] instead of GITHUB_TOKEN. PRs/commits made
       # with GITHUB_TOKEN don't fire downstream events, so the required `conventional-title`
       # check never ran on Release PRs and they couldn't merge. An App token triggers it.
