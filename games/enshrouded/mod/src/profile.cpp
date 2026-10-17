@@ -107,6 +107,13 @@ uint32_t JobFunction(const char* jobName) {
 }
 
 uint32_t Fn(const char* name, std::string& how) {
+#ifdef TAKARO_DEBUG_CORRUPT_SIG
+    if (strcmp(name, TAKARO_DEBUG_CORRUPT_SIG) == 0 ||
+        (strcmp(name, "chatAddMessage") == 0 && strcmp(TAKARO_DEBUG_CORRUPT_SIG, "addMessage") == 0)) {
+        how = std::string("DEBUG: gamedata function '") + name + "' deliberately corrupted";
+        return 0;
+    }
+#endif
     const JsonValue* fns = Section("functions");
     const JsonValue* f = fns ? fns->get(name) : nullptr;
     if (!f || f->type != JsonValue::Object) {
