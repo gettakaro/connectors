@@ -280,6 +280,9 @@ HostOnline, 24.5 s after the boot; it re-identified 2.2 s after a
 reachability reason). It proves the release artifact against a fake Takaro; the live proof
 with a real client and real Takaro is separate.
 
+For a `sendMessage` live check, inspect the entire client chat line. A Takaro announcement must not appear under an
+online player's character name; seeing the message text alone does not pass this check.
+
 `--negative` needs zig on the host (`TAKARO_MAINT_ZIG=/path/to/zig`); without it the check
 is skipped with that reason rather than passed.
 
@@ -379,7 +382,7 @@ Evidence is kept in the El-Limon workspace, not in this repository.
 
 - **Player name is the Steam persona name**, not the in-game character name (the server never exposes it). `gameId` = SteamID64.
 - **Kick/ban need the player online**; unban needs the player to have been seen online once (account-hash cache). The game stores no ban reason and no expiry: the connector keeps both (`timed-bans.json`) and lifts a timed ban itself at expiry.
-- **Whisper isolation is unproven**: whispers reach the recipient, but exclusion of other players was not verified (only one player account; accepted limitation).
+- **Whisper isolation still needs two clients**: one recipient has received the notice, but a stable release now requires a second client to prove other players do not receive it.
 - **Admins cannot be kicked/banned by the game itself**: Enshrouded ignores kick/ban for players whose group has `canKickBan`. Plugin >= 0.4.2 lifts that check for each Takaro kick/ban; older plugins return success while nothing happens.
 - **listLocations** is implemented (1031 locations) but Takaro never calls it, so it is not observable end-to-end.
 - **Log events are not stored** by Takaro as searchable events; they only surface via rate-limit records.
@@ -396,6 +399,17 @@ component `enshrouded`, tags `enshrouded-vX.Y.Z`). Merging a conventional commit
 tags the release and bumps both `games/enshrouded/version.txt` and the annotated
 `#define TAKARO_PLUGIN_VERSION "X.Y.Z" // x-release-please-version` line in `mod/src/common.h`,
 so the plugin's `takaro enshrouded plugin <version> starting` log line always matches the tag.
+
+Before release-please creates an Enshrouded stable tag, `release-please.yml` validates
+`release-proof.json` against `release-checklist.json` and reads the matching private run
+from El-Limon/gamingconnectors. All supported checks must be PASS on the exact server and
+Windows client build, with raw Takaro JSON and required client screenshots present. The
+private validator checks their hashes, and the public attestation binds the run to the
+candidate source digest and release artifact SHA-256. The tag job rebuilds that versioned
+archive and checks its SHA-256 before calling release-please. ZIP timestamps use the fixed
+1980-01-01 floor so a release PR merge does not alter otherwise identical package bytes.
+A missing proof, any SKIP/FAIL, or a changed artifact blocks the tag; keep the release PR
+open until the full live run passes.
 
 `.github/workflows/enshrouded.yml` runs `mod/tests/run.sh` (host tests, native connector
 included), the retired sidecar's typecheck and tests (it still produces the parity fixtures)

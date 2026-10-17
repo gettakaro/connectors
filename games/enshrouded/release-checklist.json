@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "supported": {
+    "actions": ["testReachability", "getPlayers", "getPlayer", "getPlayerLocation", "getPlayerInventory", "giveItem", "listItems", "listEntities", "executeConsoleCommand", "sendMessageBroadcast", "sendMessageDirected", "sendMessageDirectedIsolation", "senderNameOverride", "teleportPlayer", "kickPlayer", "banPlayer", "unbanPlayer", "listBans", "shutdown"],
+    "events": ["player-connected", "player-disconnected", "chat-message", "player-death", "entity-killed"],
+    "modules": ["command", "hook", "cronjob", "teleports", "serverMessages", "playerOnboarding", "chatBridgeNoEcho"],
+    "discord": ["gameToDiscord", "discordToGame", "customHookToDiscord", "customCronToDiscord", "joinLeaveNotices", "noEcho"],
+    "shop": ["economyEnabled", "balance", "buyInGame", "orderViaMcp", "insufficientFunds", "multiItemBundle", "orderWhileOffline"],
+    "resilience": ["containerRestartReconnect", "symbolSelfCheckDegrade", "wsDropReconnect", "outageReconnect", "shutdownAction", "timedBanLiftedByConnector", "transportRestartWithoutGameRestart", "bootIdentityChange", "serverCrashOnlineReconcile"]
+  },
+  "excluded": {
+    "listLocations": "Takaro has no location action for a Generic connector",
+    "log": "Takaro does not store log events as searchable rows",
+    "getMapInfo": "The game has no verified map tile surface",
+    "getMapTile": "The game has no verified map tile surface"
+  },
+  "clientScreenshotRequired": ["getPlayers", "getPlayerLocation", "getPlayerInventory", "giveItem", "sendMessageBroadcast", "sendMessageDirected", "sendMessageDirectedIsolation", "senderNameOverride", "teleportPlayer", "kickPlayer", "banPlayer", "unbanPlayer", "shutdown", "player-connected", "player-disconnected", "chat-message", "player-death", "entity-killed", "command", "teleports", "serverMessages", "playerOnboarding", "discordToGame", "buyInGame", "multiItemBundle", "orderWhileOffline"]
+}

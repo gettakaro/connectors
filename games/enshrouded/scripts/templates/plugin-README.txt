@@ -5,8 +5,8 @@ the Enshrouded dedicated server loads in place of the system dbghelp; it hooks t
 and holds the connection to Takaro itself. There is nothing else to run.
 
 It hooks the server through per-build game data (takaro/enshrouded-gamedata.json) and is
-proven on Enshrouded 1.0, game build 1267041 (Steam app 2278520, branch public, build
-25967645). On a game build without a section in that file the affected capabilities self-check as "degraded" at load; the server keeps running, and
+proven on Enshrouded 1.0, game builds 1269579 and 1267041 (Steam app 2278520, branch public, builds
+25988414 and 25967645). On a game build without a section in that file the affected capabilities self-check as "degraded" at load; the server keeps running, and
 Takaro's reachability reason names what no longer works.
 
 Install (full steps, upgrade and rollback: INSTALL.md):

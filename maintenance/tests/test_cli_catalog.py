@@ -319,6 +319,7 @@ def test_the_wired_fixture_serves_exactly_the_targets_it_says(wired: Any) -> Non
         "neoforge-1.21.11": "no repinner for platform 'neoforge'",
         "paper-1.21.11": "no repinner for platform 'paper'",
         "proton-1267041": "no repinner for platform 'proton'",
+        "proton-1269579": "no repinner for platform 'proton'",
         "proton-1024233": "no repinner for platform 'proton'",
         "tshock-v6.2.1": "no repinner for platform 'tshock'",
         "windows-25639945": "no repinner for platform 'windows'",

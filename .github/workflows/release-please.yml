@@ -59,6 +59,74 @@ jobs:
       scum_tag: ${{ steps.rp.outputs['games/scum--tag_name'] }}
       scum_version: ${{ steps.rp.outputs['games/scum--version'] }}
     steps:
+      # release-please creates the stable tag in this job. Check the merged release
+      # candidate before calling it; asset-build jobs run only after the tag exists.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 2
+      - name: Detect Enshrouded release
+        id: enshrouded-proof
+        run: |
+          current=$(jq -r '."games/enshrouded"' .release-please-manifest.json)
+          if [ -z "$current" ] || [ "$current" = null ]; then
+            echo 'Enshrouded release version is missing' >&2
+            exit 1
+          fi
+          # A failed release run may be retried by a later, unrelated push.
+          # Check for the tag itself so every retry stays behind the proof gate.
+          if ! git ls-remote --exit-code --refs --tags origin "refs/tags/enshrouded-v${current}" >/dev/null; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Generate private proof token
+        if: steps.enshrouded-proof.outputs.required == 'true'
+        id: proof-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.TAKARO_CI_APP_ID }}
+          private-key: ${{ secrets.TAKARO_CI_APP_PRIV_KEY }}
+          owner: El-Limon
+          repositories: gamingconnectors
+      - name: Read private Enshrouded proof
+        if: steps.enshrouded-proof.outputs.required == 'true'
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          repository: El-Limon/gamingconnectors
+          token: ${{ steps.proof-token.outputs.token }}
+          path: private-proof
+      - name: Require complete live proof before a stable tag
+        if: steps.enshrouded-proof.outputs.required == 'true'
+        run: |
+          node games/enshrouded/scripts/check-release-proof.mjs
+          cmp games/enshrouded/release-checklist.json private-proof/scripts/proof-page/checklists/enshrouded.json
+          node private-proof/scripts/proof-page/validate-release.mjs \
+            "private-proof/$(jq -r '.proofRun' games/enshrouded/release-proof.json)" \
+            games/enshrouded/release-proof.json
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        if: steps.enshrouded-proof.outputs.required == 'true'
+        with:
+          version: "0.12.15"
+      - name: Set up Enshrouded release builder
+        if: steps.enshrouded-proof.outputs.required == 'true'
+        run: |
+          uv python install
+          uv sync --frozen --project maintenance
+      - name: Match the live-tested release artifact before tagging
+        if: steps.enshrouded-proof.outputs.required == 'true'
+        run: |
+          version=$(jq -r '."games/enshrouded"' .release-please-manifest.json)
+          maintenance/bin/takaro-maint build \
+            --game enshrouded \
+            --target proton-1269579 \
+            --version "$version" \
+            --out "$RUNNER_TEMP/enshrouded-release-proof" \
+            --toolchain container
+          mapfile -t artifacts < <(jq -r '.artifacts[].file' "$RUNNER_TEMP/enshrouded-release-proof/build-manifest.json")
+          if [ "${#artifacts[@]}" -ne 1 ]; then
+            echo 'Expected exactly one Enshrouded release artifact' >&2
+            exit 1
+          fi
+          expected=$(jq -r '.artifactSha256' games/enshrouded/release-proof.json)
+          echo "$expected  $RUNNER_TEMP/enshrouded-release-proof/${artifacts[0]}" | sha256sum -c -
       # Author Release PRs as takaro-ci-bot[bot] instead of GITHUB_TOKEN. PRs/commits made
       # with GITHUB_TOKEN don't fire downstream events, so the required `conventional-title`
       # check never ran on Release PRs and they couldn't merge. An App token triggers it.

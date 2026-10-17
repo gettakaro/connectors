@@ -4,12 +4,13 @@ Connects an Enshrouded dedicated server to Takaro with one file: `dbghelp.dll`, 
 `enshrouded_server.exe`. The DLL hooks the game and talks to Takaro itself, so it is the only thing the
 server needs; players join as usual.
 
-It supports **Enshrouded 1.0** (game build **1267041**, hotfix 1.0.0.1, Steam build 25967645): tested
+It supports **Enshrouded 1.0** (game build **1269579**, Steam build 25988414; the earlier hotfix 1267041, Steam build
+25967645, is still known to the data file): tested
 natively on a Windows dedicated server and under **GE-Proton11-9** in
 `mornedhels/enshrouded-server:dev-proton` (the older GE-Proton10-30 image cannot start the 1.0 server:
 `No SteamUtils011`). Everything that changes between game builds lives in one data file,
 `takaro/enshrouded-gamedata.json`. **The item and creature catalogue and `giveItem` are compiled for 1.0
-and are switched off (degraded) on any other game build, including the earlier build 1024233, which is
+(exported on build 1267041; build 1269579 reuses them) and are switched off (degraded) on any other game build, including the earlier build 1024233, which is
 no longer a supported target.** A build the data file does not know keeps the hooks that still match;
 the rest switch themselves off (see "A game update can switch a feature off" below). **Keep the server on
 a build the connector supports.**
@@ -17,8 +18,9 @@ a build the connector supports.**
 ## What works, what doesn't
 
 Verified end to end on **2026-09-29** on game build **1024233** (Proton, plugin 0.7.x), and re-verified on
-**2026-10-15** on game build **1267041** (Enshrouded 1.0, Windows), each with a real game client and
-Takaro. Rows marked *(1.0 ✓)* were re-checked on 1.0; the others were verified on 1024233 only.
+**2026-10-15** on game build **1267041** (Enshrouded 1.0, Windows), and on **2026-10-16** on game build **1269579**
+(Enshrouded 1.0, Proton, plugin 0.8.0: connect, chat, disconnect, sendMessage, giveItem, teleport, kick, ban, unban, shutdown, death,
+commands and the Discord bridge in both directions), each with a real game client and Takaro. Rows marked *(1.0 ✓)* were re-checked on 1.0; the others were verified on 1024233 only.
 ✅ = works, ⚠️ = works with a caveat or not re-verified, ❌ = does not work.
 
 | What | | Notes |
@@ -33,7 +35,7 @@ Takaro. Rows marked *(1.0 ✓)* were re-checked on 1.0; the others were verified
 | Entity catalogue | ⚠️ | On 1.0, 477 creature and NPC templates sync (1024233: 397). Bosses, NPCs and fish have their in-game names (e.g. "Armored Fell Thunderbrute", "Oswald Anders"). The game shows no name for other creatures, so they get a readable name built from the internal code, e.g. "Rat". |
 | Locations / points of interest | ⚠️ | The connector serves 1,031 locations. Takaro may show them as markers on the map; this was not checked. |
 | Run a console command *(1.0 ✓)* | ✅ | Enshrouded has no console; the connector provides its own set: `help`, `players`, `say`, `whisper`, `location`, `teleport`/`tp`, `inventory`, `give`, `item`, `kick`, `save-and-shutdown`. Unknown commands are refused with a hint. |
-| Broadcast a message *(1.0 ✓)* | ✅ | Everyone sees it in chat, under the character name of an online player: Enshrouded has no "server" sender. |
+| Broadcast a message *(1.0)* | ⚠️ | Released 0.8.0 shows Takaro messages under an online player's character name. This branch selects the game's notice style; the client display still needs a matching-build live test. |
 | Whisper a player | ⚠️ | Reaches the player; that nobody else sees it was not checked (one test account). |
 | Teleport a player *(1.0 ✓)* | ✅ | Takaro rounds to whole coordinates. On 1024233 the game nudges the player to the nearest free spot; on 1.0 that search snaps the player back, so the player lands exactly on the coordinates: pick a spot above ground. |
 | Kick a player *(1.0 ✓)* | ✅ | The player must be online. Works for Admins-group players too. |
@@ -77,7 +79,7 @@ Download the latest release: https://takaro.io/connectors/enshrouded
 ### 1. Before you start
 
 - An **Enshrouded dedicated server** you can stop, start and copy files to, on a game build the
-  plugin's game data knows: **1267041 (Enshrouded 1.0 hotfix 1.0.0.1)**. Tested natively on
+  plugin's game data knows: **1269579 (Enshrouded 1.0, Steam build 25988414)** or 1267041 (hotfix 1.0.0.1). Tested natively on
   Windows and under Proton in the Linux Docker image `mornedhels/enshrouded-server:dev-proton`.
   On another build the plugin logs `gamedata: no section for build <n>` and uses its older heuristics;
   features whose code moved report themselves degraded. Adding a section to

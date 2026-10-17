@@ -37,7 +37,9 @@ mkdir -p "${OUT_DIR}"
 OUT_DIR=$(cd -- "${OUT_DIR}" && pwd)
 PLUGIN_ZIP="${ENSHROUDED_ARTIFACT_SERVER_PLUGIN/\{version\}/${VERSION}}"
 export PLUGIN_ZIP VERSION
-export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "${REPO_ROOT}" log -1 --format=%ct)}"
+# The release PR changes the commit without changing these package bytes. A fixed ZIP
+# timestamp lets its pre-merge live-tested archive match the later tagged build.
+export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-315532800}"
 
 # A release is built from nothing but the sources and the pinned inputs, so no object file
 # from an earlier build of another target or version can reach the archive.
