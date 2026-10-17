@@ -325,7 +325,8 @@ cheat <gameId> <dom command> # 501: the Shipping dedicated server creates no Che
   the declaring class is not enough — a derived class has its own vtable holding the *same* inherited
   pointer. The plugin therefore sweeps every exported `_ZTV*` symbol (44 800 of them) and swaps every
   slot holding the target. On this build the live engine is `UDomGameEngine`, whose slot 98 holds
-  `UJgxGameEngine::Tick`; hooking only `_ZTV14UJgxGameEngine` never fires. The detour calls the
+  `UJgxGameEngine::Tick` up to CL-247725 and its own `UDomGameEngine::Tick` from CL-248854;
+  hooking only `_ZTV14UJgxGameEngine` never fires. The detour calls the
   original first, then drains at most 16 queued jobs within `TAKARO_TICK_BUDGET_US`. Workers only
   enqueue owned jobs and wait (5 s → 503). See `gamethread-policy.md`.
 - **Hooks** (`src/hooks.cpp`): vtable slot swaps only, with `mprotect` + restore on unload. No inline

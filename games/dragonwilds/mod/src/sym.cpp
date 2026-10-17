@@ -42,6 +42,8 @@ constexpr Want kWanted[] = {
     // --- engine / world ---
     {"UGameEngine::Tick", "UGameEngine::Tick(float, bool)"},
     {"UJgxGameEngine::Tick", "UJgxGameEngine::Tick(float, bool)"},
+    // Builds from CL-248854 on override Tick in the game engine class itself.
+    {"UDomGameEngine::Tick", "UDomGameEngine::Tick(float, bool)"},
     {"UGameplayStatics::GetGameMode", nullptr},
     {"UGameplayStatics::GetGameState", nullptr},
     {"UGameplayStatics::GetPlayerController", nullptr},

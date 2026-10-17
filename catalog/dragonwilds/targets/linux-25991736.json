@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-25991736",
+  "game": "dragonwilds",
+  "platform": "linux",
+  "revision": "25991736",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-10-17",
+    "evidence": [
+      "games/dragonwilds/README.md (What works, what doesn't)",
+      "games/dragonwilds/mod/tests/ (plugin unit and native connector tests, every build)",
+      "takaro-maint install of this target on the dev rig 2026-10-17: declared sha256 verified, server ++dominion+live-CL-251392 boots with the plugin (113/113 symbols from a cold .sym scan, game thread ticking via the UDomGameEngine::Tick hook)",
+      "connector-runner e2e 2026-10-17 (gettakaro/connectors#532, staging domain): real PC client (CL-251392) through hosted Takaro MCP on this target - player-connected d030ff80-6eac-4fd3-933a-9364ff8be3ea, chat-message 9cfa40db-52dd-4ff6-bce4-00436f0e1148, command-executed e728abfb-5e6e-4692-aec3-5a18c2c33599 (@ping, Pong rendered in game), player-disconnected 2ed9050f-c6fb-4693-bd30-243489dc439e, player-death f581921e-0936-409f-91d4-fd7291047492, entity-killed de787963-f7e9-484b-b8de-f41745df4392 (real kill, weapon Bronze Sword); testReachability, getPlayers, sendMessage, executeConsoleCommand, giveItem, teleportPlayer, kickPlayer, banPlayer (rejoin refused), unbanPlayer, shutdown and Discord both ways passed"
+    ],
+    "notes": "Steam pin of the public branch head observed 2026-10-17 (manifest dated 2026-10-16): tool app 4019830, Linux depot 3501791, build 25991736. The plugin resolves every engine address from this build's own `.sym` at load time, so the target needs no source change. `verification.required` is `contract` until this pin is proven at runtime: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 4019830,
+      "branch": "public",
+      "buildid": 25991736,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "3501791": {
+          "manifest": "7566118055392661601",
+          "size": 5515686309,
+          "files": 56
+        }
+      },
+      "files": {
+        "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping": {
+          "sha256": "b5017cf67bc6127dbec443e00fed1f818e82afd5d6d17f912d959a1dd87d5687",
+          "size": 230033416
+        },
+        "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping.sym": {
+          "sha256": "26d6721043df28922013400f987ffc7d19212e26d8dc55e5bece8e2bd0c8b8b4",
+          "size": 301556206
+        },
+        "RSDragonwildsServer.sh": {
+          "sha256": "1cb3257de649da88c5b67c69a7aeb130c84878480e8862dbf4b9749c0b4f7d41",
+          "size": 310
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844",
+      "env": {
+        "HOME": "/tmp"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/dragonwilds/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844"
+    },
+    "deps": {
+      "openssl": {
+        "coordinate": "github:openssl/openssl:openssl-3.5.8",
+        "sha256": "a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2",
+        "resolvedCoordinate": "https://github.com/openssl/openssl/releases/download/openssl-3.5.8/openssl-3.5.8.tar.gz"
+      },
+      "libwebsockets": {
+        "coordinate": "github:warmcat/libwebsockets:v4.5.8",
+        "sha256": "b6ade658f4af3a823d0dc806ae5ef0623f0f4f5e2aeb895a0f77c4783840c30e",
+        "resolvedCoordinate": "https://github.com/warmcat/libwebsockets/archive/refs/tags/v4.5.8.tar.gz"
+      },
+      "pcre2": {
+        "coordinate": "github:PCRE2Project/pcre2:pcre2-10.47",
+        "sha256": "47fe8c99461250d42f89e6e8fdaeba9da057855d06eb7fc08d9ca03fd08d7bc7",
+        "resolvedCoordinate": "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.47/pcre2-10.47.tar.bz2"
+      },
+      "nlohmann-json": {
+        "coordinate": "github:nlohmann/json:v3.12.0",
+        "sha256": "42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa",
+        "resolvedCoordinate": "https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "plugin",
+      "artifact": "takaro-dragonwilds-plugin-linux-25991736-{version}.tar.gz",
+      "installDir": "TakaroDragonwilds"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup",
+      "connector-load",
+      "identify",
+      "heartbeat",
+      "players",
+      "console",
+      "shutdown"
+    ]
+  },
+  "preserve": [
+    "RSDragonwilds/Saved/",
+    "RSDragonwilds/Binaries/Linux/takaro/",
+    "TakaroDragonwilds/"
+  ],
+  "devServers": {
+    "gameId": "dragonwilds"
+  },
+  "notes": "One image builds and tests the plugin: node:*-bookworm (not slim) carries g++ on the same glibc as the dedicated server image, and Dockerfile.builder adds the four pinned static libraries on top of it. The server itself is a plain Steam depot install (no container images to load), so it installs through the shared Steam exact-install path like Conan Exiles."
+}
