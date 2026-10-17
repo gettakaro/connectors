@@ -67,9 +67,14 @@ jobs:
       - name: Detect Enshrouded release
         id: enshrouded-proof
         run: |
-          previous=$(git show HEAD^:.release-please-manifest.json | jq -r '."games/enshrouded"')
           current=$(jq -r '."games/enshrouded"' .release-please-manifest.json)
-          if [ "$previous" != "$current" ]; then
+          if [ -z "$current" ] || [ "$current" = null ]; then
+            echo 'Enshrouded release version is missing' >&2
+            exit 1
+          fi
+          # A failed release run may be retried by a later, unrelated push.
+          # Check for the tag itself so every retry stays behind the proof gate.
+          if ! git ls-remote --exit-code --refs --tags origin "refs/tags/enshrouded-v${current}" >/dev/null; then
             echo "required=true" >> "$GITHUB_OUTPUT"
           fi
       - name: Generate private proof token
