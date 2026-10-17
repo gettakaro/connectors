@@ -141,15 +141,7 @@ class EnshroudedAdapter(BaseAdapter):
         environment["TAKARO_MAINT_REPO_ROOT"] = str(repo_root)
         if source_revision:
             environment["TAKARO_SOURCE_REVISION"] = source_revision
-        if "SOURCE_DATE_EPOCH" not in environment:
-            stamp = subprocess.run(
-                ["git", "-C", str(repo_root), "log", "-1", "--format=%ct"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if stamp.returncode == 0 and stamp.stdout.strip().isdigit():
-                environment["SOURCE_DATE_EPOCH"] = stamp.stdout.strip()
+        environment.setdefault("SOURCE_DATE_EPOCH", "315532800")
         # A build that produces nothing must be a failure, not a success reported over the
         # leftovers of the previous one, so the names this build claims are cleared before
         # the script runs.

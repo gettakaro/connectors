@@ -405,8 +405,11 @@ Before release-please creates an Enshrouded stable tag, `release-please.yml` val
 from El-Limon/gamingconnectors. All supported checks must be PASS on the exact server and
 Windows client build, with raw Takaro JSON and required client screenshots present. The
 private validator checks their hashes, and the public attestation binds the run to the
-candidate source digest and release artifact SHA-256. A missing proof or any SKIP/FAIL
-blocks the tag; keep the release PR open until the full live run passes.
+candidate source digest and release artifact SHA-256. The tag job rebuilds that versioned
+archive and checks its SHA-256 before calling release-please. ZIP timestamps use the fixed
+1980-01-01 floor so a release PR merge does not alter otherwise identical package bytes.
+A missing proof, any SKIP/FAIL, or a changed artifact blocks the tag; keep the release PR
+open until the full live run passes.
 
 `.github/workflows/enshrouded.yml` runs `mod/tests/run.sh` (host tests, native connector
 included), the retired sidecar's typecheck and tests (it still produces the parity fixtures)
