@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/gettakaro/connectors/compare/enshrouded-v0.8.0...enshrouded-v0.8.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **enshrouded:** complete plugin.json and apply protocol on save ([#513](https://github.com/gettakaro/connectors/issues/513)) ([34bd1a4](https://github.com/gettakaro/connectors/commit/34bd1a484b98b1f9a2ff11195f968e66885383ac))
+
 ## [0.8.0](https://github.com/gettakaro/connectors/compare/enshrouded-v0.7.0...enshrouded-v0.8.0) (2026-10-16)
 
 
