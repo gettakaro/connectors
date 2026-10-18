@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.4.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.3.0...conan-exiles-v3.4.0) (2026-10-18)
+
+
+### Features
+
+* **conan-exiles:** protocol v1 with a map Dimension calibrated from the server's RegionDataTable ([#485](https://github.com/gettakaro/connectors/issues/485)) ([97ec59c](https://github.com/gettakaro/connectors/commit/97ec59c7870b42b09204e084ff5fe2e2abfdaf06))
+
+
+### Bug Fixes
+
+* **conan-exiles:** keep the config in one file the connector creates ([#468](https://github.com/gettakaro/connectors/issues/468)) ([7f6f401](https://github.com/gettakaro/connectors/commit/7f6f401da64913d8281003316c4ff2b593e1e71d))
+* **conan-exiles:** show protocol in takaro.json and apply it on save ([#512](https://github.com/gettakaro/connectors/issues/512)) ([f090a6b](https://github.com/gettakaro/connectors/commit/f090a6b4786f8897afa431dc8467f9829d502996))
+
 ## [3.3.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.2.0...conan-exiles-v3.3.0) (2026-10-11)
 
 
