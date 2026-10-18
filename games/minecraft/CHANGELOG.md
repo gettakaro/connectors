@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.4.0...minecraft-v0.5.0) (2026-10-18)
+
+
+### Features
+
+* **minecraft:** world map from the server's region files over Takaro protocol v1 ([#487](https://github.com/gettakaro/connectors/issues/487)) ([0cf3e7e](https://github.com/gettakaro/connectors/commit/0cf3e7e568a6ea2c3ee20938015af1a7ca30acea))
+
+
+### Bug Fixes
+
+* **minecraft:** keep the config in one file the connector creates ([#465](https://github.com/gettakaro/connectors/issues/465)) ([d032ccf](https://github.com/gettakaro/connectors/commit/d032ccff02538a5ce5071e35dc1fe50443a7a502))
+* **minecraft:** list the map switch in the config files and README ([#502](https://github.com/gettakaro/connectors/issues/502)) ([3a57b18](https://github.com/gettakaro/connectors/commit/3a57b1801b5a277fbced9a6773ac3fd181cff369))
+
 ## [0.4.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.3.0...minecraft-v0.4.0) (2026-10-11)
 
 
