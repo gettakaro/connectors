@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.4.0...dragonwilds-v0.5.0) (2026-10-18)
+
+
+### Features
+
+* **dragonwilds:** debug map survey for an operator map upload ([#490](https://github.com/gettakaro/connectors/issues/490)) ([e4ed9a2](https://github.com/gettakaro/connectors/commit/e4ed9a2c638758f9c336d75ef360cfdceecc99b6))
+* **dragonwilds:** support Steam build 25991736 ([#533](https://github.com/gettakaro/connectors/issues/533)) ([a4633e7](https://github.com/gettakaro/connectors/commit/a4633e77c436174f4ec1ef05ac5277c09d3cef5a))
+
+
+### Bug Fixes
+
+* **dragonwilds:** keep the config in one file the connector creates ([#469](https://github.com/gettakaro/connectors/issues/469)) ([2f55ab1](https://github.com/gettakaro/connectors/commit/2f55ab1198bef83c126ed3bb6c74ccbefa01a467))
+* **dragonwilds:** say which takaro.cfg keys reload, document DRAGONWILDS_LOG_RATE ([#504](https://github.com/gettakaro/connectors/issues/504)) ([367a753](https://github.com/gettakaro/connectors/commit/367a75366845cef12549740bc7e4ce4953968372))
+
 ## [0.4.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.3.1...dragonwilds-v0.4.0) (2026-10-11)
 
 
