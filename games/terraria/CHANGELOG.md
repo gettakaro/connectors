@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/gettakaro/connectors/compare/terraria-v0.5.0...terraria-v0.6.0) (2026-10-18)
+
+
+### Features
+
+* **terraria:** world map on Takaro via protocol v1 ([#483](https://github.com/gettakaro/connectors/issues/483)) ([43b85e8](https://github.com/gettakaro/connectors/commit/43b85e8640be155b684d8684727206044a538443))
+
+
+### Bug Fixes
+
+* **terraria:** keep the config in one file the connector creates ([#461](https://github.com/gettakaro/connectors/issues/461)) ([30c5df6](https://github.com/gettakaro/connectors/commit/30c5df6a5d47fe2fee3eace3117bb0264fb10f3d))
+* **terraria:** resolve mapDir and logFiles from the config folder, document the map ([#503](https://github.com/gettakaro/connectors/issues/503)) ([5bce9d5](https://github.com/gettakaro/connectors/commit/5bce9d5bff427fa2008edeff655dcd2616552794))
+
 ## [0.5.0](https://github.com/gettakaro/connectors/compare/terraria-v0.4.1...terraria-v0.5.0) (2026-10-11)
 
 
