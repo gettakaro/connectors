@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/gettakaro/connectors/compare/vein-v0.6.0...vein-v0.7.0) (2026-10-18)
+
+
+### Features
+
+* **vein:** declare the map as a protocol v1 Dimension instead of shipping client tiles ([#489](https://github.com/gettakaro/connectors/issues/489)) ([800e79f](https://github.com/gettakaro/connectors/commit/800e79f5b6d8bbcc92668036c92886a3f647fa54))
+
+
+### Bug Fixes
+
+* **vein:** apply TAKARO_PROTOCOL on save and align its docs ([#515](https://github.com/gettakaro/connectors/issues/515)) ([5ee9fb4](https://github.com/gettakaro/connectors/commit/5ee9fb4556e55db4e366395e5797879627b48fe6))
+* **vein:** keep the config in one file the connector creates ([#463](https://github.com/gettakaro/connectors/issues/463)) ([24c76cc](https://github.com/gettakaro/connectors/commit/24c76cc3103f0af537e0cf875fb2c8e5bc3c1ba1))
+
 ## [0.6.0](https://github.com/gettakaro/connectors/compare/vein-v0.5.0...vein-v0.6.0) (2026-10-11)
 
 
