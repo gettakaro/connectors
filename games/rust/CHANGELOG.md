@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/gettakaro/connectors/compare/rust-v0.2.0...rust-v0.3.0) (2026-10-18)
+
+
+### Features
+
+* **rust:** serve the world map through getMapInfo and getMapTile ([#482](https://github.com/gettakaro/connectors/issues/482)) ([e033d64](https://github.com/gettakaro/connectors/commit/e033d649bbfd63311e645841969270d9dc948f62))
+
+
+### Bug Fixes
+
+* **rust:** keep the config in one file the connector creates ([#466](https://github.com/gettakaro/connectors/issues/466)) ([5d2234c](https://github.com/gettakaro/connectors/commit/5d2234c26fc9ab756cbc2bc3232c6648764defab))
+* **rust:** mark the staging-only map rows and state one render time ([#506](https://github.com/gettakaro/connectors/issues/506)) ([db4d50a](https://github.com/gettakaro/connectors/commit/db4d50ad462326801da814c4efcc0505a6586d1c))
+* **rust:** target the 2026-10-13 Rust update build 25902425 ([#514](https://github.com/gettakaro/connectors/issues/514)) ([98be1d2](https://github.com/gettakaro/connectors/commit/98be1d2fa3a0615f249ade1d6457a9ccbd605d27))
+
 ## [0.2.0](https://github.com/gettakaro/connectors/compare/rust-v0.1.4...rust-v0.2.0) (2026-10-11)
 
 
