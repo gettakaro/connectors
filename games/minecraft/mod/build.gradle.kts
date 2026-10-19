@@ -2,7 +2,8 @@ plugins {
     java
 }
 
-val versionFromFile = rootProject.file("version.txt").takeIf { it.exists() }?.readText()?.trim()
+// release-please keeps games/minecraft/version.txt, one level above this Gradle root.
+val versionFromFile = rootProject.file("../version.txt").takeIf { it.exists() }?.readText()?.trim()
 
 allprojects {
     version = findProperty("version")?.toString()?.takeIf { it != "unspecified" }
