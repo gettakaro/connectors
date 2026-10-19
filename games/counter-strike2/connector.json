@@ -4,8 +4,8 @@
   "assetMode": "all",
   "requirements": [
     "Linux x86-64 Counter-Strike 2 dedicated server build listed in the catalog",
-    "Metamod:Source 2.0.0.1481",
-    "CounterStrikeSharp 1.0.376 with .NET 10 runtime",
+    "Metamod:Source 2.0.0.1483",
+    "CounterStrikeSharp 1.0.377 with .NET 10 runtime",
     "Takaro registration token"
   ],
   "assets": [

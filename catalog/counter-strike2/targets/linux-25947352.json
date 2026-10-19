@@ -4,7 +4,7 @@
   "game": "counter-strike2",
   "platform": "linux",
   "revision": "25947352",
-  "default": true,
+  "default": false,
   "support": {
     "status": "candidate",
     "since": "2026-10-15",
