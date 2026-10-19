@@ -43,7 +43,7 @@ if not ok then
   return
 end
 
--- All Lua of this mod runs on the game thread. In the pinned UE4SS (1ba38db4) LoopAsync callbacks run on the
+-- All Lua of this mod runs on the game thread. In the pinned UE4SS (83330635) LoopAsync callbacks run on the
 -- async thread WITHOUT LuaMod::m_thread_actions_mutex, while RegisterHook/ExecuteInGameThread callbacks run on
 -- the game thread; all share one Lua global state, so mixing them is a data race. The tick is cheap (it polls
 -- the native inbox, which the WinHTTP threads fill), so a 100 ms game-thread loop costs microseconds when idle.

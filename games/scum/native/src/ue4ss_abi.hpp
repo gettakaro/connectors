@@ -1,5 +1,5 @@
 // Hand-written declarations of the few UE4SS symbols this mod uses, written to match the public
-// RE-UE4SS headers at the pinned commit 1ba38db4 (UE4SS/include/Mod/CppUserModBase.hpp and
+// RE-UE4SS headers at the pinned commit 83330635 (UE4SS/include/Mod/CppUserModBase.hpp and
 // deps/first/LuaMadeSimple/include/LuaMadeSimple/LuaMadeSimple.hpp, MIT). We do not use the full UE4SS
 // headers because they pull in Re-UE4SS/UEPseudo, which is Epic-gated.
 //

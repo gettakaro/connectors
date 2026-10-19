@@ -1,4 +1,4 @@
-; Import definitions for the UE4SS.dll exports TakaroSCUM uses (UE4SS v3.0.1-1176-g1ba38db4).
+; Import definitions for the UE4SS.dll exports TakaroSCUM uses (UE4SS v3.0.1-1181-g83330635).
 ; Generated from the DLL export table; lib.exe /def turns this into UE4SS.lib. Check: check-imports.py.
 LIBRARY UE4SS.dll
 EXPORTS

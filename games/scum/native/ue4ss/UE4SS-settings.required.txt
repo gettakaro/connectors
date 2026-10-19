@@ -1,4 +1,4 @@
-; Required UE4SS-settings.ini changes for SCUMServer 1.3.4.2 with UE4SS v3.0.1-1176-g1ba38db4 (verified 2026-10-15).
+; Required UE4SS-settings.ini changes for SCUMServer 1.3.4.2 with UE4SS v3.0.1-1181-g83330635 (verified 2026-10-19).
 ; With the stock hook set the server crashes on every player join (EXCEPTION_ACCESS_VIOLATION reading 0xce at
 ; SCUMServer.exe+0x4295f3f). TakaroSCUM only needs
 ; EngineTick (game-thread loop) and ProcessEvent; RegisterHook on a native UFunction needs neither.
