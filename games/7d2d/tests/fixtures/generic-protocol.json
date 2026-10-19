@@ -173,6 +173,22 @@
       1
     ],
     "game": "7d2d",
+    "gameProfile": {
+      "oracle": [
+        "packages/lib-gameserver/src/gameservers/generic/gameProfile.ts",
+        "packages/lib-gameserver/src/gameservers/generic/connectorIdentity.ts",
+        "packages/app-api/src/service/GameServer/GameIconSyncService.ts"
+      ],
+      "connectorName": "takaro-7d2d",
+      "connectorVersion": "1.2.3-fixture.1",
+      "displayName": "7 Days to Die",
+      "gameVersion": "V 3.3.0 (b18)",
+      "nameMaxLength": 64,
+      "versionMaxLength": 32,
+      "connectorVersionMaxLength": 64,
+      "iconSide": 256,
+      "iconMaxBytes": 131072
+    },
     "migrationSource": "7d2d",
     "patterns": {
       "capabilityName": "^[a-z][a-zA-Z0-9]*(\\.[a-z][a-zA-Z0-9-]*)*$",
@@ -239,6 +255,9 @@
       },
       "getMapTile": {
         "mapCapability": "map"
+      },
+      "getGameIcon": {
+        "gameProfileIcon": true
       }
     },
     "eventTypes": [
@@ -330,9 +349,24 @@
             "parameters": {
               "from": "7d2d"
             }
+          },
+          {
+            "name": "game.profile",
+            "parameters": {
+              "name": "7 Days to Die",
+              "version": "V 3.3.0 (b18)",
+              "icon": {
+                "revision": "3d3cbea50ab2",
+                "size": 33
+              }
+            }
           }
         ],
-        "game": "7d2d"
+        "game": "7d2d",
+        "connector": {
+          "name": "takaro-7d2d",
+          "version": "1.2.3-fixture.1"
+        }
       },
       "requestId": null
     },

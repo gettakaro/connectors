@@ -183,6 +183,23 @@ namespace Takaro.WebSocket
             Send(WebSocketMessage.CreateResponse(requestId, tile));
         }
 
+        /// <summary>
+        /// Serves the icon game.profile declares, from the bytes shipped in the mod.
+        /// Takaro retries game_error with backoff and only ever asks for a declared
+        /// revision, so the answer always names the revision of these bytes.
+        /// </summary>
+        public static void GetGameIcon(string requestId)
+        {
+            Dictionary<string, object> icon = GameProfile.BuildIconResponse();
+            if (icon == null)
+            {
+                SendError(requestId, "The game icon is not available");
+                return;
+            }
+
+            Send(WebSocketMessage.CreateResponse(requestId, icon));
+        }
+
         private static void Send(WebSocketMessage message)
         {
             WebSocketTransport.Instance.Send(message);

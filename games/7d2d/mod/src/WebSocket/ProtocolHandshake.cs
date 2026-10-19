@@ -126,6 +126,7 @@ namespace Takaro.WebSocket
                     },
                 }
             );
+            manifest.Add(GameProfile.BuildCapability());
             return manifest;
         }
 
@@ -134,7 +135,7 @@ namespace Takaro.WebSocket
             string identityToken
         )
         {
-            return new Dictionary<string, object>
+            var payload = new Dictionary<string, object>
             {
                 { "registrationToken", registrationToken },
                 { "identityToken", identityToken },
@@ -142,6 +143,12 @@ namespace Takaro.WebSocket
                 { "capabilities", BuildCapabilityManifest(RequestRouter.SupportedActions) },
                 { "game", GameIdentifier },
             };
+            // Takaro fails identify on a malformed connector version, so a mod whose
+            // own version is not strict semver leaves the identity out instead.
+            Dictionary<string, object> connector = GameProfile.BuildConnectorIdentity();
+            if (connector != null)
+                payload["connector"] = connector;
+            return payload;
         }
 
         public static IdentifyReply ParseIdentifyResponse(string json)
