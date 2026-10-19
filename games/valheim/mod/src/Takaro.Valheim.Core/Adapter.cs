@@ -48,6 +48,9 @@ public static class TakaroActionNames
     public const string ListBans = "listBans";
     public const string Shutdown = "shutdown";
 
+    // Protocol version 1 only, served by the connector itself from the game.profile icon.
+    public const string GetGameIcon = "getGameIcon";
+
     public static IReadOnlyList<string> All { get; } =
     [
         TestReachability,

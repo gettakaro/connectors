@@ -9,7 +9,7 @@ public static class TakaroProtocol
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public static string CreateIdentify(ConnectorConfig config)
+    public static string CreateIdentify(ConnectorConfig config, GameProfile? profile = null, bool includeIcon = true)
     {
         var protocolVersions = new JsonArray();
         foreach (var version in ProtocolHandshake.OfferedProtocolVersions)
@@ -17,18 +17,21 @@ public static class TakaroProtocol
             protocolVersions.Add(version);
         }
 
-        return new JsonObject
+        var payload = new JsonObject
         {
-            ["type"] = "identify",
-            ["payload"] = new JsonObject
-            {
-                ["identityToken"] = config.IdentityToken,
-                ["registrationToken"] = config.RegistrationToken,
-                ["name"] = config.ServerName,
-                ["protocolVersions"] = protocolVersions,
-                ["capabilities"] = ProtocolHandshake.BuildCapabilityManifest()
-            }
-        }.ToJsonString();
+            ["identityToken"] = config.IdentityToken,
+            ["registrationToken"] = config.RegistrationToken,
+            ["name"] = config.ServerName,
+            ["protocolVersions"] = protocolVersions,
+            ["capabilities"] = ProtocolHandshake.BuildCapabilityManifest(profile, includeIcon)
+        };
+        if (profile is not null)
+        {
+            payload["game"] = GameProfile.GameIdentifier;
+            payload["connector"] = profile.ToIdentifyConnector();
+        }
+
+        return new JsonObject { ["type"] = "identify", ["payload"] = payload }.ToJsonString();
     }
 
     /// <summary>
@@ -212,6 +215,15 @@ public static class TakaroProtocol
                 return true;
         }
     }
+
+    /// <summary>A version 1 replacement of the whole Capability Manifest.</summary>
+    public static string CreateCapabilities(string requestId, GameProfile? profile) =>
+        new JsonObject
+        {
+            ["type"] = "capabilities",
+            ["requestId"] = requestId,
+            ["payload"] = new JsonObject { ["capabilities"] = ProtocolHandshake.BuildCapabilityManifest(profile) }
+        }.ToJsonString();
 
     /// <summary>The version 1 standard error shape: a present error wins over any payload.</summary>
     public static string CreateErrorResponse(string requestId, string code, string message)

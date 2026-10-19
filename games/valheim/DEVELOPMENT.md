@@ -309,7 +309,27 @@ names, per connection (missing means 0, so an older Takaro keeps working unchang
   buffer; after every reconnect the unacknowledged ones are resent in `seq` order. On version 0
   the ping/pong confirmation above is unchanged.
 - A version 1 identify rejection closes the socket; the connector backs off (2 s doubling to
-  60 s) instead of reconnecting at once.
+  60 s) instead of reconnecting at once. Identify goes out once per connection, when the socket
+  opens; Takaro's `connected` message is only logged.
+- On version 1, `getPlayerLocation` for a player who is not online answers `payload: null`.
+
+### Game Profile
+
+`identify` sends `game: "valheim"` and `connector: { "name": "takaro-valheim", "version" }`, and the
+manifest declares `game.profile` (`GameProfile`):
+
+- `connector.version` is the release version: `TakaroValheimReleaseVersion`, which
+  `build-release.sh` passes and which otherwise defaults to `version.txt` (a test keeps them equal).
+- `name` is `Valheim`; `version` is the running game build from `Version.CurrentVersion` (for
+  example `1.0.17`; `GetVersionString()` would prefix the platform, `l-1.0.17` on Linux), omitted
+  when it is empty or not 1 to 32 printable ASCII characters.
+- `icon` is `assets/icon-256.png` (Steam library capsule art of app 892970, 256 × 256 PNG, at
+  most 128 KiB), embedded in `Takaro.Valheim.Core`; `revision` is the first 12 hex characters of
+  its sha256 and `size` its byte length, both computed from the shipped bytes at startup. A
+  changed icon therefore always gets a new revision. Takaro fetches it with `getGameIcon` only
+  on version 1 and only for a revision it has not stored or rejected.
+- If the profile cannot be built, the connector still connects without it (Takaro then shows
+  the `game` identifier).
 
 ## Configuration
 
@@ -385,6 +405,7 @@ Ownership values are `server-owned`, `upstream-blocked` or `unsupported`.
 | `unbanPlayer` | `live-supported` | Removes the identifier from Valheim's official ban list; `listBans` then returns an empty array. |
 | `listBans` | `live-supported` | Reads Valheim's official ban entries. |
 | `shutdown` | `live-supported` | Writes its success response before quitting, then shuts down on Unity's main thread. Valheim performs a clean `ZNet` shutdown and the server process exits. |
+| `getGameIcon` | `live-supported` | Protocol version 1 only. Serves the shipped `assets/icon-256.png` (embedded in `Takaro.Valheim.Core`) as base64 under the revision declared in `game.profile`, off the main thread. See "Game Profile". |
 
 ### Events
 

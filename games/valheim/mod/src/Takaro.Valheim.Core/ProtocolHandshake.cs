@@ -66,7 +66,7 @@ public static class ProtocolHandshake
         [TakaroActionNames.Shutdown] = "server.shutdown",
     };
 
-    public static JsonArray BuildCapabilityManifest()
+    public static JsonArray BuildCapabilityManifest(GameProfile? profile = null, bool includeIcon = true)
     {
         var manifest = new JsonArray();
         foreach (var capability in ActionCapabilities.Values)
@@ -79,12 +79,19 @@ public static class ProtocolHandshake
             manifest.Add(new JsonObject { ["name"] = "events." + eventType });
         }
 
+        if (profile is not null)
+        {
+            manifest.Add(profile.ToCapability(includeIcon));
+        }
+
         return manifest;
     }
 
     /// <summary>Whether a version 1 connection may run the action; Takaro refuses the rest itself.</summary>
-    public static bool IsDeclared(string action) =>
-        action == TakaroActionNames.TestReachability || ActionCapabilities.ContainsKey(action);
+    public static bool IsDeclared(string action, GameProfile? profile = null) =>
+        action == TakaroActionNames.TestReachability
+        || ActionCapabilities.ContainsKey(action)
+        || (action == TakaroActionNames.GetGameIcon && profile?.IconRevision is not null);
 
     public static IdentifyReply ParseIdentifyResponse(string json)
     {

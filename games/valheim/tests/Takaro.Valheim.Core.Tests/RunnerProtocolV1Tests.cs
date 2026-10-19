@@ -108,6 +108,89 @@ public sealed class RunnerProtocolV1Tests
     }
 
     [TestMethod]
+    public async Task VersionOneServesTheDeclaredIconWithoutTheGame()
+    {
+        using var takaro = new FakeTakaro(chosenVersion: 1);
+        var profile = new GameProfile("4.2.0", "1.0.17", GameProfile.LoadEmbeddedIcon());
+        using var runner = Runner(takaro, profile: profile);
+        await runner.StartAsync();
+        await Until(() => takaro.Identifies >= 1 && takaro.Connected);
+
+        await takaro.SendAsync("""{"type":"request","requestId":"icon","payload":{"action":"getGameIcon","args":"{}"}}""");
+        await Until(() => takaro.Responses.ContainsKey("icon"));
+
+        using var response = JsonDocument.Parse(takaro.Responses["icon"]);
+        var payload = response.RootElement.GetProperty("payload");
+        Assert.AreEqual(profile.IconRevision, payload.GetProperty("revision").GetString());
+        CollectionAssert.AreEqual(GameProfile.LoadEmbeddedIcon(), Convert.FromBase64String(payload.GetProperty("data").GetString()!));
+        StringAssert.Contains(takaro.IdentifyFrames.Single(), "\"game.profile\"");
+    }
+
+    [TestMethod]
+    public async Task TheIconIsDeclaredOnlyOnceTheServerIsReachable()
+    {
+        using var takaro = new FakeTakaro(chosenVersion: 1);
+        var adapter = new RecordingAdapter { Reachable = false };
+        var profile = new GameProfile("4.2.0", "1.0.20", GameProfile.LoadEmbeddedIcon());
+        using var runner = Runner(takaro, adapter, profile);
+        await runner.StartAsync();
+        await Until(() => takaro.Identifies >= 1 && takaro.Connected);
+
+        var identify = JsonDocument.Parse(takaro.IdentifyFrames.Single()).RootElement.GetProperty("payload");
+        var declared = identify.GetProperty("capabilities").EnumerateArray().Single(c => c.GetProperty("name").GetString() == "game.profile");
+        Assert.AreEqual("Valheim", declared.GetProperty("parameters").GetProperty("name").GetString());
+        Assert.IsFalse(declared.GetProperty("parameters").TryGetProperty("icon", out _), "no icon while the world is loading");
+        await Task.Delay(500);
+        Assert.AreEqual(0, takaro.CapabilityFrames.Count);
+
+        adapter.Reachable = true;
+        await Until(() => takaro.CapabilityFrames.Count >= 1);
+        await Task.Delay(6000);
+
+        Assert.AreEqual(1, takaro.CapabilityFrames.Count, "declared once");
+        var manifest = JsonDocument.Parse(takaro.CapabilityFrames.Single()).RootElement.GetProperty("payload").GetProperty("capabilities");
+        var profileEntry = manifest.EnumerateArray().Single(c => c.GetProperty("name").GetString() == "game.profile");
+        Assert.AreEqual(profile.IconRevision, profileEntry.GetProperty("parameters").GetProperty("icon").GetProperty("revision").GetString());
+        Assert.IsTrue(manifest.EnumerateArray().Any(c => c.GetProperty("name").GetString() == "chat.send"), "the replacement is the full manifest");
+        Assert.IsTrue(takaro.LogLines.Any(l => l.Contains("capability manifest accepted", StringComparison.Ordinal)));
+
+        // Takaro then fetches the newly declared revision.
+        await takaro.SendAsync("""{"type":"request","requestId":"icon","payload":{"action":"getGameIcon","args":"{}"}}""");
+        await Until(() => takaro.Responses.ContainsKey("icon"));
+        using var icon = JsonDocument.Parse(takaro.Responses["icon"]);
+        Assert.AreEqual(profile.IconRevision, icon.RootElement.GetProperty("payload").GetProperty("revision").GetString());
+    }
+
+    [TestMethod]
+    public async Task AReachableServerDeclaresTheIconInIdentify()
+    {
+        using var takaro = new FakeTakaro(chosenVersion: 1);
+        var profile = new GameProfile("4.2.0", "1.0.20", GameProfile.LoadEmbeddedIcon());
+        using var runner = Runner(takaro, profile: profile);
+        await runner.StartAsync();
+        await Until(() => takaro.Identifies >= 1 && takaro.Connected);
+        await Task.Delay(6000);
+
+        StringAssert.Contains(takaro.IdentifyFrames.Single(), profile.IconRevision!);
+        Assert.AreEqual(0, takaro.CapabilityFrames.Count);
+    }
+
+    [TestMethod]
+    public async Task WithoutAProfileTheIconIsUndeclared()
+    {
+        using var takaro = new FakeTakaro(chosenVersion: 1);
+        using var runner = Runner(takaro);
+        await runner.StartAsync();
+        await Until(() => takaro.Identifies >= 1 && takaro.Connected);
+
+        await takaro.SendAsync("""{"type":"request","requestId":"icon","payload":{"action":"getGameIcon","args":"{}"}}""");
+        await Until(() => takaro.Responses.ContainsKey("icon"));
+
+        using var response = JsonDocument.Parse(takaro.Responses["icon"]);
+        Assert.AreEqual("unsupported", response.RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [TestMethod]
     public async Task VersionZeroStillRunsActionsVersionOneWouldNotDeclare()
     {
         using var takaro = new FakeTakaro(chosenVersion: 0);
@@ -137,8 +220,8 @@ public sealed class RunnerProtocolV1Tests
         Assert.AreEqual(1, takaro.Identifies, "the close that follows a v1 rejection must not skip the backoff");
     }
 
-    private static TakaroWebSocketRunner Runner(FakeTakaro takaro, IValheimTakaroAdapter? adapter = null) =>
-        new(Config(takaro), adapter ?? new RecordingAdapter(), takaro.Log, null, takaro.Log, "cfg");
+    private static TakaroWebSocketRunner Runner(FakeTakaro takaro, IValheimTakaroAdapter? adapter = null, GameProfile? profile = null) =>
+        new(Config(takaro), adapter ?? new RecordingAdapter(), takaro.Log, null, takaro.Log, "cfg", profile: profile);
 
     private static ConnectorConfig Config(FakeTakaro takaro) =>
         ConnectorConfig.FromDictionary(new Dictionary<string, string>
@@ -198,6 +281,10 @@ public sealed class RunnerProtocolV1Tests
         public ConcurrentQueue<ReceivedEvent> Events { get; } = new();
 
         public ConcurrentDictionary<string, string> Responses { get; } = new();
+
+        public ConcurrentQueue<string> IdentifyFrames { get; } = new();
+
+        public ConcurrentQueue<string> CapabilityFrames { get; } = new();
 
         public void Log(string line) => logs.Enqueue(line);
 
@@ -262,13 +349,21 @@ public sealed class RunnerProtocolV1Tests
                 var buffer = new byte[64 * 1024];
                 while (socket.State == WebSocketState.Open && !stop.IsCancellationRequested)
                 {
-                    var result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), stop.Token);
+                    using var message = new MemoryStream();
+                    WebSocketReceiveResult result;
+                    do
+                    {
+                        result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), stop.Token);
+                        message.Write(buffer, 0, result.Count);
+                    }
+                    while (!result.EndOfMessage && result.MessageType != WebSocketMessageType.Close);
+
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         break;
                     }
 
-                    var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    var text = Encoding.UTF8.GetString(message.ToArray());
                     using var frame = JsonDocument.Parse(text);
                     var root = frame.RootElement;
                     switch (root.GetProperty("type").GetString())
@@ -278,6 +373,7 @@ public sealed class RunnerProtocolV1Tests
                             break;
                         case "identify":
                             Interlocked.Increment(ref identifies);
+                            IdentifyFrames.Enqueue(text);
                             if (rejectWith is not null)
                             {
                                 await SendAsync("{\"type\":\"identifyResponse\",\"payload\":null,\"error\":{\"code\":\"" + rejectWith + "\",\"message\":\"bad manifest\"}}");
@@ -294,6 +390,10 @@ public sealed class RunnerProtocolV1Tests
                                 payload.TryGetProperty("streamId", out var stream) ? stream.GetString() : null,
                                 payload.TryGetProperty("seq", out var seq) ? seq.GetInt64() : null,
                                 payload.GetProperty("data").TryGetProperty("msg", out var msg) ? msg.GetString() : null));
+                            break;
+                        case "capabilities":
+                            CapabilityFrames.Enqueue(text);
+                            await SendAsync("{\"type\":\"capabilitiesResponse\",\"payload\":null,\"requestId\":\"" + root.GetProperty("requestId").GetString() + "\"}");
                             break;
                         case "response":
                             Responses[root.GetProperty("requestId").GetString()!] = text;
@@ -314,7 +414,10 @@ public sealed class RunnerProtocolV1Tests
         public int GetPlayerCalls;
         public string? LastMessage;
 
-        public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) => Task.FromResult(TakaroActionResult.Ok(new { connectable = true }));
+        public volatile bool Reachable = true;
+
+        public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(TakaroActionResult.Ok(Reachable ? new { connectable = true, reason = (string?)null } : new { connectable = false, reason = (string?)"world loading" }));
         public Task<TakaroActionResult> GetPlayersAsync(CancellationToken cancellationToken = default) => Task.FromResult(TakaroActionResult.Ok(Array.Empty<TakaroPlayer>()));
         public Task<TakaroActionResult> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default)
         {

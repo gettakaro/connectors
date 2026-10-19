@@ -26,7 +26,8 @@ public sealed class CapabilityRegistryTests
         "banPlayer",
         "unbanPlayer",
         "listBans",
-        "shutdown"
+        "shutdown",
+        "getGameIcon"
     ];
 
     private static readonly string[] RequiredEvents =
@@ -88,9 +89,10 @@ public sealed class CapabilityRegistryTests
 
         CollectionAssert.AreEqual(upstreamActionsAt0c63cf1c, TakaroActionNames.All.ToArray());
 
+        // getGameIcon came with Generic Game Protocol v1's game.profile, after 0c63cf1c.
         using var registry = ReadRegistry();
         CollectionAssert.AreEquivalent(
-            upstreamActionsAt0c63cf1c,
+            upstreamActionsAt0c63cf1c.Append(TakaroActionNames.GetGameIcon).ToArray(),
             registry.RootElement.GetProperty("actions").EnumerateObject().Select(entry => entry.Name).ToArray());
     }
 

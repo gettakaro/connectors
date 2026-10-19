@@ -6,7 +6,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>TakaroValheim</AssemblyName>
     <EnableValheimPluginBuild Condition="'$(EnableValheimPluginBuild)' == ''">false</EnableValheimPluginBuild>
-    <TakaroValheimReleaseVersion Condition="'$(TakaroValheimReleaseVersion)' == ''">0.1.0</TakaroValheimReleaseVersion>
+    <TakaroValheimReleaseVersion Condition="'$(TakaroValheimReleaseVersion)' == ''">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../../../version.txt').Trim())</TakaroValheimReleaseVersion>
     <TakaroValheimBepInExVersion Condition="'$(TakaroValheimBepInExVersion)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(TakaroValheimReleaseVersion)', '[-+].*$', ''))</TakaroValheimBepInExVersion>
     <Version>$(TakaroValheimReleaseVersion)</Version>
     <PackageVersion>$(TakaroValheimReleaseVersion)</PackageVersion>

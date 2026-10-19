@@ -19,7 +19,8 @@
     "banPlayer": "live-supported",
     "unbanPlayer": "live-supported",
     "listBans": "live-supported",
-    "shutdown": "live-supported"
+    "shutdown": "live-supported",
+    "getGameIcon": "live-supported"
   },
   "events": {
     "log": "live-supported",
@@ -49,7 +50,8 @@
       "banPlayer": "server-owned",
       "unbanPlayer": "server-owned",
       "listBans": "server-owned",
-      "shutdown": "server-owned"
+      "shutdown": "server-owned",
+      "getGameIcon": "server-owned"
     },
     "events": {
       "log": "server-owned",
@@ -65,6 +67,7 @@
     "Server chat works through one 'Takaro' entry the server adds to the player list it sends to clients (outgoing packet only; the server's own player list and history never contain it). Vanilla clients send each chat line once per player-list entry and only render chat from listed senders, so player chat reaches the server even when a player is alone and server messages render as normal chat with the sender name.",
     "chat-message and player-death come from routed Say, ChatMessage, and OnDeath RPCs, accepted only when the packet's claimed sender equals the authenticated peer it arrived on and, for Say and OnDeath, the target is that peer's own character. Spoofed senders are rejected. Copies of one chat line are collapsed within 3 seconds.",
     "Game events are queued until Takaro accepts identify and flushed afterwards, so events raised while identifying are not lost.",
+    "Game Profile: identify reports game 'valheim' and connector takaro-valheim with the release version, and on protocol version 1 the game.profile capability declares the display name Valheim, the running game build (Version.CurrentVersion, for example 1.0.17) and the shipped 256x256 icon (assets/icon-256.png, revision = first 12 hex characters of its sha256). getGameIcon serves that PNG and exists only on protocol version 1.",
     "The connector offers Generic Game Protocol versions 0 and 1. On version 1 it declares a Capability Manifest of exactly the live-supported actions here plus every event, numbers events with streamId and seq, keeps them until Takaro's eventAck and resends the rest after a reconnect, and reports failures with the standard error codes. getPlayer, listLocations and the version 0 map (getMapInfo, getMapTile) are not declared on version 1; on version 0 everything works as before.",
     "getPlayer is implemented by filtering the dedicated server player list, but its final Takaro response shape has not been independently live-proven, so it remains unsupported.",
     "getPlayerLocation uses only a real ready-peer/public observation or a fresh 30-second player-keyed last-known observation. If neither exists, a required-coordinate payload with error is rejected by current Takaro Generic.requestFromServer rather than returned as a position.",

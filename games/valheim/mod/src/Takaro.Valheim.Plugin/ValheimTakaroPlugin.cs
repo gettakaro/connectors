@@ -74,7 +74,8 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             message => Logger.LogInfo(message),
             mainThreadActions,
             message => Logger.LogWarning(message),
-            configStore.FilePath);
+            configStore.FilePath,
+            profile: CreateGameProfile());
         TakaroChatParticipant.Initialize(config.ChatSenderName, Logger.LogInfo);
         ValheimServerEventBridge.Initialize(runner, playerResolver, Logger.LogInfo);
         // Optional: only players who install the inventory companion ever answer it.
@@ -114,6 +115,24 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
         runner?.Dispose();
         companionInventory?.Clear();
         mainThreadActions?.Dispose();
+    }
+
+    private GameProfile? CreateGameProfile()
+    {
+        try
+        {
+            var icon = GameProfile.LoadEmbeddedIcon();
+            // CurrentVersion, not GetVersionString(): that prefixes the platform ("l-1.0.17" on Linux).
+            var profile = new GameProfile(ReleaseVersion, global::Version.CurrentVersion.ToString(), icon);
+            Logger.LogInfo($"Takaro Valheim game profile: {GameProfile.DisplayName} {profile.GameVersion ?? "(build unknown)"}, connector {GameProfile.ConnectorName} {profile.ConnectorVersion}, icon {profile.IconRevision ?? "missing"} ({profile.IconSize} bytes).");
+            return profile;
+        }
+        catch (Exception exception)
+        {
+            // Never block the connection on presentation data: Takaro then shows the server as Generic.
+            Logger.LogWarning($"Takaro Valheim game profile unavailable: {exception.Message}");
+            return null;
+        }
     }
 
     private void RequestShutdown()

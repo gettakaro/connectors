@@ -10,4 +10,9 @@
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
     <ProjectReference Include="..\Takaro.Valheim.Companion.Protocol\Takaro.Valheim.Companion.Protocol.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- The game.profile icon; its revision and size are computed from these bytes at startup. -->
+    <EmbeddedResource Include="..\..\..\assets\icon-256.png" LogicalName="Takaro.Valheim.icon-256.png" />
+  </ItemGroup>
 </Project>
