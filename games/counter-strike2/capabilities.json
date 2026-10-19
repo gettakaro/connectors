@@ -44,14 +44,14 @@
     "listItems": {
       "status": "supported",
       "surface": "curated CounterStrikeSharp CsItem codes",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "The current-build server answered a Takaro syncItems job and itemSearch returned all ten curated entries on 2026-10-19.",
+      "liveVerified": true
     },
     "listEntities": {
       "status": "supported",
       "surface": "curated nonplayer entity catalog",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "The current-build server answered a Takaro syncEntities job and entitySearch returned the neutral Chicken entry on 2026-10-19.",
+      "liveVerified": true
     },
     "listLocations": {
       "status": "unsupported",

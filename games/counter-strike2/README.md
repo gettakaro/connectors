@@ -28,13 +28,14 @@ The target is CS2 build **25966348** on Linux x86-64. Current-build real-client 
 | --- | --- | --- |
 | Reachability | ✅ | Updated server identified through Takaro and reported de_dust2 |
 | Steam identity, player lookup | ⚠️ | Requires a real-client join on this target |
-| Chat, location, inventory, item catalog, item delivery, teleport | ⚠️ | Requires current-build action and readback checks |
+| Chat, location, inventory, item delivery, teleport | ⚠️ | Requires current-build action and readback checks |
+| Item catalog | ✅ | Current-build Takaro sync returned the curated ten-item catalog |
 | Read-only allowlisted console ConVar query | ✅ | Takaro returned the server's `sv_cheats` value and refused an unlisted command |
 | Kick, durable bans, unban | ⚠️ | Requires current-build client effects and restart persistence |
 | Shutdown gate | ✅ | Takaro received `shutdown_disabled`; enabled path is untested |
 | Connect, disconnect, chat, player death events | ⚠️ | Requires current-build Takaro event rows |
 | Nonplayer kill | ⚠️ | Requires a current-build real-client kill and Takaro event row |
-| Entity catalog | ⚠️ | Requires current-build Takaro entity sync |
+| Entity catalog | ✅ | Current-build Takaro sync returned the neutral Chicken entry |
 | Log event | ⚠️ | Requires a current-build Takaro hook execution |
 | Idle server tick timing | ⚠️ | Requires current-build engine timing captures |
 | General console command output | ❌ | CounterStrikeSharp execution API does not expose output |
