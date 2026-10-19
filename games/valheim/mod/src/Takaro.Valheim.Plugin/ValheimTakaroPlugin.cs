@@ -75,7 +75,8 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             mainThreadActions,
             message => Logger.LogWarning(message),
             configStore.FilePath,
-            profile: CreateGameProfile());
+            profile: CreateGameProfile(),
+            worldMap: worldMapService);
         TakaroChatParticipant.Initialize(config.ChatSenderName, Logger.LogInfo);
         ValheimServerEventBridge.Initialize(runner, playerResolver, Logger.LogInfo);
         // Optional: only players who install the inventory companion ever answer it.

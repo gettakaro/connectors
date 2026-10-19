@@ -296,9 +296,16 @@ through a bounded `Update()`-drained action scheduler (`QueuedMainThreadActionSc
 names, per connection (missing means 0, so an older Takaro keeps working unchanged).
 
 - The manifest declares exactly the `live-supported` actions of `capabilities.json`
-  (testReachability is always allowed) and an `events.<type>` entry per event. getPlayer,
-  listLocations and the version 0 map (`getMapInfo`/`getMapTile { x, y, z }`) are not
-  declared, so a version 1 Takaro never sends them; on version 0 they work as before.
+  (testReachability is always allowed) and an `events.<type>` entry per event. getPlayer and
+  listLocations are not declared, so a version 1 Takaro never sends them; on version 0 they
+  work as before.
+- The world map is declared as the `map` capability (`WorldMapFrame`): one tiled Dimension
+  `valheim` (the `dimension` every position reports), bounds = the world square ±10,500 m, +X
+  right and +Z (north) up, 256 px tiles, zoom 0 to 4 (about 5 m per pixel at zoom 4). Version 1
+  refuses `getMapInfo` and sends `getMapTile { dimension, zoom, x, y }` in the standard XYZ
+  layout; those tiles are rendered from the same raster as the version 0 ones, off the main
+  thread, and answer `not_found` until the raster is ready (Takaro retries). Version 0 keeps
+  `getMapInfo`/`getMapTile { x, y, z }` unchanged.
 - Version 1 failures use the standard error shape
   `{ "type": "response", "requestId", "error": { "code", "message" } }`; the connector's own
   codes map onto `invalid_args`, `not_found`, `unsupported`, `game_error` and `internal`. Array

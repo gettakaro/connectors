@@ -43,7 +43,10 @@ public sealed class ProtocolV1Tests
         }
 
         CollectionAssert.DoesNotContain(names, "players.get", "getPlayer is unsupported");
-        CollectionAssert.DoesNotContain(names, "map", "the version 0 map has no version 1 equivalent yet");
+        CollectionAssert.DoesNotContain(names, "map", "declared only when the runner has the world map");
+        CollectionAssert.Contains(
+            ProtocolHandshake.BuildCapabilityManifest(includeMap: true).Select(c => c!["name"]!.GetValue<string>()).ToArray(),
+            "map");
         foreach (var name in names)
         {
             StringAssert.Matches(name, new System.Text.RegularExpressions.Regex(@"^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9-]*)*$"));
@@ -57,6 +60,8 @@ public sealed class ProtocolV1Tests
         Assert.IsTrue(ProtocolHandshake.IsDeclared(TakaroActionNames.SendMessage));
         Assert.IsFalse(ProtocolHandshake.IsDeclared(TakaroActionNames.GetPlayer));
         Assert.IsFalse(ProtocolHandshake.IsDeclared(TakaroActionNames.GetMapInfo));
+        Assert.IsFalse(ProtocolHandshake.IsDeclared(TakaroActionNames.GetMapInfo, mapDeclared: true), "version 1 refuses getMapInfo");
+        Assert.IsTrue(ProtocolHandshake.IsDeclared(TakaroActionNames.GetMapTile, mapDeclared: true));
         Assert.IsFalse(ProtocolHandshake.IsDeclared("blowUpTheWorld"));
     }
 

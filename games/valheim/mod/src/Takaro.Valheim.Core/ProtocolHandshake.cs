@@ -66,7 +66,7 @@ public static class ProtocolHandshake
         [TakaroActionNames.Shutdown] = "server.shutdown",
     };
 
-    public static JsonArray BuildCapabilityManifest(GameProfile? profile = null, bool includeIcon = true)
+    public static JsonArray BuildCapabilityManifest(GameProfile? profile = null, bool includeIcon = true, bool includeMap = false)
     {
         var manifest = new JsonArray();
         foreach (var capability in ActionCapabilities.Values)
@@ -84,14 +84,20 @@ public static class ProtocolHandshake
             manifest.Add(profile.ToCapability(includeIcon));
         }
 
+        if (includeMap)
+        {
+            manifest.Add(WorldMapFrame.CreateCapability());
+        }
+
         return manifest;
     }
 
     /// <summary>Whether a version 1 connection may run the action; Takaro refuses the rest itself.</summary>
-    public static bool IsDeclared(string action, GameProfile? profile = null) =>
+    public static bool IsDeclared(string action, GameProfile? profile = null, bool mapDeclared = false) =>
         action == TakaroActionNames.TestReachability
         || ActionCapabilities.ContainsKey(action)
-        || (action == TakaroActionNames.GetGameIcon && profile?.IconRevision is not null);
+        || (action == TakaroActionNames.GetGameIcon && profile?.IconRevision is not null)
+        || (action == TakaroActionNames.GetMapTile && mapDeclared);
 
     public static IdentifyReply ParseIdentifyResponse(string json)
     {
@@ -198,7 +204,7 @@ public static class ProtocolHandshake
     {
         null or "" or "action_failed" => ProtocolErrorCodes.Internal,
         ProtocolErrorCodes.InvalidArgs or "invalid_quality" or "invalid_message" => ProtocolErrorCodes.InvalidArgs,
-        "player_not_found" or "item_not_found" => ProtocolErrorCodes.NotFound,
+        "player_not_found" or "item_not_found" or "map_not_ready" or "tile_out_of_range" => ProtocolErrorCodes.NotFound,
         "unsupported_action" or CompanionInventoryActionPolicy.UnsupportedErrorCode => ProtocolErrorCodes.Unsupported,
         ProtocolErrorCodes.Unsupported or ProtocolErrorCodes.NotFound or ProtocolErrorCodes.GameError or ProtocolErrorCodes.Internal => errorCode,
         _ => ProtocolErrorCodes.GameError,

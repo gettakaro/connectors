@@ -286,6 +286,60 @@ public sealed class WorldMapTests
         Assert.IsTrue(results.All(result => result.Success));
     }
 
+    [TestMethod]
+    public void VersionOneMapCapabilityFollowsTheProtocolRules()
+    {
+        var capability = WorldMapFrame.CreateCapability();
+        var dimension = capability["parameters"]!["dimensions"]!.AsArray().Single()!;
+        var source = dimension["source"]!;
+        var bounds = dimension["bounds"]!;
+
+        Assert.AreEqual("map", capability["name"]!.GetValue<string>());
+        StringAssert.Matches(dimension["id"]!.GetValue<string>(), new System.Text.RegularExpressions.Regex("^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"));
+        Assert.AreEqual("valheim", dimension["id"]!.GetValue<string>(), "the dimension every Valheim position reports");
+        Assert.AreEqual("tiled", source["type"]!.GetValue<string>());
+        Assert.IsTrue(source["tileSize"]!.GetValue<int>() is >= 64 and <= 1024);
+        Assert.IsTrue(source["minZoom"]!.GetValue<int>() <= source["maxZoom"]!.GetValue<int>());
+        Assert.AreNotEqual(dimension["axes"]!["horizontal"]!["field"]!.GetValue<string>(), dimension["axes"]!["vertical"]!["field"]!.GetValue<string>());
+        Assert.IsTrue(bounds["horizontal"]!["min"]!.GetValue<double>() < bounds["horizontal"]!["max"]!.GetValue<double>());
+        Assert.IsTrue(bounds["vertical"]!["min"]!.GetValue<double>() < bounds["vertical"]!["max"]!.GetValue<double>());
+    }
+
+    [TestMethod]
+    public void VersionOneTilesFollowTheXyzSchemeWithNorthUp()
+    {
+        var (topLeftX, topLeftZ) = WorldMapFrame.PixelCenter(0, 0, 0, 0, 0);
+        var (zoom1X, zoom1Z) = WorldMapFrame.PixelCenter(1, 1, 1, 0, 0);
+
+        Assert.IsTrue(topLeftX < -10000 && topLeftZ > 10000, "zoom 0 starts at the north-west corner");
+        Assert.AreEqual(0.0, zoom1X, 50.0, "tile (1,1) starts at the centre ...");
+        Assert.AreEqual(0.0, zoom1Z, 50.0);
+        Assert.IsTrue(WorldMapFrame.PixelCenter(1, 1, 1, 255, 255).WorldZ < 0, "... and covers the south-east quarter");
+        Assert.IsFalse(WorldMapFrame.IsValidTile(1, 2, 0));
+        Assert.IsFalse(WorldMapFrame.IsValidTile(WorldMapFrame.MaxZoom + 1, 0, 0));
+    }
+
+    [TestMethod]
+    public void ServiceServesVersionOneTilesAsPngWithAMimeType()
+    {
+        var service = new WorldMapService();
+        Assert.AreEqual("map_not_ready", service.GetFrameTile("valheim", 0, 0, 0).ErrorCode);
+        Assert.AreEqual("not_found", ProtocolHandshake.ToProtocolErrorCode("map_not_ready"), "Takaro retries a not_found tile");
+
+        service.Publish(BuildRaster(64, 1, (_, _) => new WorldMapSample(WorldMapBiome.Meadows, 40, false)));
+        var tile = service.GetFrameTile("valheim", 1, 0, 1);
+
+        Assert.IsTrue(tile.Success);
+        using var payload = JsonDocument.Parse(JsonSerializer.Serialize(tile.Payload));
+        Assert.AreEqual("image/png", payload.RootElement.GetProperty("mimeType").GetString());
+        var png = Convert.FromBase64String(payload.RootElement.GetProperty("data").GetString()!);
+        var rgb = DecodeRgb(png, WorldMapFrame.TileSize, WorldMapFrame.TileSize);
+        Assert.AreEqual(WorldMapFrame.TileSize * WorldMapFrame.TileSize * 3, rgb.Length);
+        Assert.AreEqual("not_found", service.GetFrameTile("nether", 0, 0, 0).ErrorCode);
+        Assert.AreEqual("invalid_args", service.GetFrameTile("valheim", 2, 4, 0).ErrorCode);
+        Assert.AreNotSame(service.GetMapTile(0, 0, 0).Payload, service.GetFrameTile("valheim", 0, 0, 0).Payload, "the two layouts never share a cached tile");
+    }
+
     private static WorldMapRaster BuildRaster(int size, long worldKey, Func<double, double, WorldMapSample> sample)
     {
         var builder = new WorldMapRasterBuilder(size, worldKey, (x, z) => sample(x, z));

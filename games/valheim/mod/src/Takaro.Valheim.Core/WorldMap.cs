@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text.Json.Nodes;
 
 namespace Takaro.Valheim.Core;
 
@@ -105,6 +106,72 @@ public static class WorldMapGeometry
         mapSizeY = WorldExtent,
         mapSizeZ = WorldExtent
     };
+}
+
+/// <summary>
+/// Tile layout of the protocol version 1 <c>map</c> capability: one Dimension, the world square
+/// [-edge, edge]² with +X to the right and +Z (north) up, cut into the standard XYZ pyramid
+/// (zoom 0 is one tile over the whole frame, tile y grows down). At <see cref="MaxZoom"/> a
+/// pixel is about 5 m, finer than the 10 m raster underneath.
+/// </summary>
+public static class WorldMapFrame
+{
+    /// <summary>Equals the <c>dimension</c> every Valheim position reports.</summary>
+    public const string DimensionId = "valheim";
+    public const int TileSize = 256;
+    public const int MinZoom = 0;
+    public const int MaxZoom = 4;
+
+    public static double TileWorldSize(int zoom) => 2.0 * WorldMapGeometry.WorldEdgeRadius / (1 << zoom);
+
+    public static bool IsValidTile(int zoom, int x, int y) =>
+        zoom >= MinZoom && zoom <= MaxZoom && x >= 0 && y >= 0 && x < 1 << zoom && y < 1 << zoom;
+
+    /// <summary>World X/Z at the centre of pixel (column, row); row 0 is the top (north) edge.</summary>
+    public static (double WorldX, double WorldZ) PixelCenter(int zoom, int x, int y, int column, int row)
+    {
+        var size = TileWorldSize(zoom);
+        var metresPerPixel = size / TileSize;
+        return (-WorldMapGeometry.WorldEdgeRadius + x * size + (column + 0.5) * metresPerPixel,
+            WorldMapGeometry.WorldEdgeRadius - y * size - (row + 0.5) * metresPerPixel);
+    }
+
+    public static JsonObject CreateCapability()
+    {
+        var edge = (double)WorldMapGeometry.WorldEdgeRadius;
+        return new JsonObject
+        {
+            ["name"] = "map",
+            ["parameters"] = new JsonObject
+            {
+                ["dimensions"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["id"] = DimensionId,
+                        ["name"] = "Valheim",
+                        ["axes"] = new JsonObject
+                        {
+                            ["horizontal"] = new JsonObject { ["field"] = "x", ["direction"] = "right" },
+                            ["vertical"] = new JsonObject { ["field"] = "z", ["direction"] = "up" }
+                        },
+                        ["bounds"] = new JsonObject
+                        {
+                            ["horizontal"] = new JsonObject { ["min"] = -edge, ["max"] = edge },
+                            ["vertical"] = new JsonObject { ["min"] = -edge, ["max"] = edge }
+                        },
+                        ["source"] = new JsonObject
+                        {
+                            ["type"] = "tiled",
+                            ["tileSize"] = TileSize,
+                            ["minZoom"] = MinZoom,
+                            ["maxZoom"] = MaxZoom
+                        }
+                    }
+                }
+            }
+        };
+    }
 }
 
 /// <summary>
@@ -308,11 +375,28 @@ public static class WorldMapTileRenderer
     private static readonly (byte R, byte G, byte B) OutsideWorld = (24, 32, 48);
 
     /// <summary>Renders one tile as packed RGB (row-major, row 0 = north).</summary>
-    public static byte[] RenderRgb(WorldMapRaster raster, int zoom, int x, int y)
+    public static byte[] RenderRgb(WorldMapRaster raster, int zoom, int x, int y) =>
+        Render(
+            raster,
+            WorldMapGeometry.TilePixels,
+            WorldMapGeometry.TileWorldSize(zoom) / WorldMapGeometry.TilePixels,
+            (column, row) => WorldMapGeometry.PixelCenter(zoom, x, y, column, row));
+
+    /// <summary>Renders one protocol version 1 tile of <see cref="WorldMapFrame"/> as packed RGB.</summary>
+    public static byte[] RenderFrameRgb(WorldMapRaster raster, int zoom, int x, int y) =>
+        Render(
+            raster,
+            WorldMapFrame.TileSize,
+            WorldMapFrame.TileWorldSize(zoom) / WorldMapFrame.TileSize,
+            (column, row) => WorldMapFrame.PixelCenter(zoom, x, y, column, row));
+
+    private static byte[] Render(
+        WorldMapRaster raster,
+        int n,
+        double metresPerPixel,
+        Func<int, int, (double WorldX, double WorldZ)> pixelCenter)
     {
-        const int n = WorldMapGeometry.TilePixels;
         var rgb = new byte[n * n * 3];
-        var metresPerPixel = WorldMapGeometry.TileWorldSize(zoom) / n;
         // Hill shading reads the slope over at least one raster cell.
         var slopeStep = Math.Max(metresPerPixel, raster.CellSize);
 
@@ -320,7 +404,7 @@ public static class WorldMapTileRenderer
         {
             for (var column = 0; column < n; column++)
             {
-                var (wx, wz) = WorldMapGeometry.PixelCenter(zoom, x, y, column, row);
+                var (wx, wz) = pixelCenter(column, row);
                 var color = ColorAt(raster, wx, wz, slopeStep);
                 var offset = (row * n + column) * 3;
                 rgb[offset] = color.R;
@@ -561,8 +645,9 @@ public sealed class WorldMapService
     public const int DefaultTileCacheCapacity = 512;
 
     private readonly object cacheGate = new();
-    private readonly Dictionary<(int Z, int X, int Y), LinkedListNode<((int Z, int X, int Y) Key, string Png)>> cache = new();
-    private readonly LinkedList<((int Z, int X, int Y) Key, string Png)> lru = new();
+    // Frame marks a protocol version 1 tile; the two layouts share one cache.
+    private readonly Dictionary<(bool Frame, int Z, int X, int Y), LinkedListNode<((bool Frame, int Z, int X, int Y) Key, string Png)>> cache = new();
+    private readonly LinkedList<((bool Frame, int Z, int X, int Y) Key, string Png)> lru = new();
     private readonly int cacheCapacity;
     private WorldMapRaster? raster;
     private volatile string status = "the world has not loaded yet";
@@ -614,19 +699,52 @@ public sealed class WorldMapService
                 $"Map tile {zoom}/{x}/{y} lies outside the Valheim world.");
         }
 
-        var key = (zoom, x, y);
+        return TakaroActionResult.Ok(CachedPng(
+            current,
+            (false, zoom, x, y),
+            () => PngEncoder.EncodeRgb(WorldMapGeometry.TilePixels, WorldMapGeometry.TilePixels, WorldMapTileRenderer.RenderRgb(current, zoom, x, y))));
+    }
+
+    /// <summary>A protocol version 1 <c>getMapTile { dimension, zoom, x, y }</c> answer.</summary>
+    public TakaroActionResult GetFrameTile(string dimension, int zoom, int x, int y)
+    {
+        if (dimension != WorldMapFrame.DimensionId)
+        {
+            return TakaroActionResult.Error("not_found", $"Valheim has no map dimension '{dimension}'.");
+        }
+
+        if (!WorldMapFrame.IsValidTile(zoom, x, y))
+        {
+            return TakaroActionResult.Error("invalid_args", $"Map tile {zoom}/{x}/{y} is outside the declared pyramid.");
+        }
+
+        var current = Volatile.Read(ref raster);
+        if (current is null)
+        {
+            // not_found makes Takaro show a transparent tile and ask again later.
+            return TakaroActionResult.Error("map_not_ready", $"Valheim world map is not ready: {status}.");
+        }
+
+        var png = CachedPng(
+            current,
+            (true, zoom, x, y),
+            () => PngEncoder.EncodeRgb(WorldMapFrame.TileSize, WorldMapFrame.TileSize, WorldMapTileRenderer.RenderFrameRgb(current, zoom, x, y)));
+        return TakaroActionResult.Ok(new { mimeType = "image/png", data = png });
+    }
+
+    private string CachedPng(WorldMapRaster current, (bool Frame, int Z, int X, int Y) key, Func<byte[]> render)
+    {
         lock (cacheGate)
         {
             if (cache.TryGetValue(key, out var hit))
             {
                 lru.Remove(hit);
                 lru.AddFirst(hit);
-                return TakaroActionResult.Ok(hit.Value.Png);
+                return hit.Value.Png;
             }
         }
 
-        var rgb = WorldMapTileRenderer.RenderRgb(current, zoom, x, y);
-        var png = Convert.ToBase64String(PngEncoder.EncodeRgb(WorldMapGeometry.TilePixels, WorldMapGeometry.TilePixels, rgb));
+        var png = Convert.ToBase64String(render());
 
         lock (cacheGate)
         {
@@ -642,6 +760,6 @@ public sealed class WorldMapService
             }
         }
 
-        return TakaroActionResult.Ok(png);
+        return png;
     }
 }

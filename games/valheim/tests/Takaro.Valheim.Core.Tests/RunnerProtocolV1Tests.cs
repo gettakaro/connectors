@@ -191,6 +191,25 @@ public sealed class RunnerProtocolV1Tests
     }
 
     [TestMethod]
+    public async Task VersionOneDeclaresTheMapAndServesDimensionTiles()
+    {
+        using var takaro = new FakeTakaro(chosenVersion: 1);
+        var map = new WorldMapService();
+        var adapter = new RecordingAdapter();
+        using var runner = new TakaroWebSocketRunner(Config(takaro), adapter, takaro.Log, null, takaro.Log, "cfg", worldMap: map);
+        await runner.StartAsync();
+        await Until(() => takaro.Identifies >= 1 && takaro.Connected);
+
+        StringAssert.Contains(takaro.IdentifyFrames.Single(), "\"name\":\"map\"");
+        await takaro.SendAsync("""{"type":"request","requestId":"tile","payload":{"action":"getMapTile","args":"{\"dimension\":\"valheim\",\"zoom\":0,\"x\":0,\"y\":0}"}}""");
+        await Until(() => takaro.Responses.ContainsKey("tile"));
+
+        using var response = JsonDocument.Parse(takaro.Responses["tile"]);
+        Assert.AreEqual("not_found", response.RootElement.GetProperty("error").GetProperty("code").GetString(), "no raster yet");
+        Assert.AreEqual(0, adapter.MapTileCalls, "the version 0 tile route is not used");
+    }
+
+    [TestMethod]
     public async Task VersionZeroStillRunsActionsVersionOneWouldNotDeclare()
     {
         using var takaro = new FakeTakaro(chosenVersion: 0);
@@ -439,7 +458,14 @@ public sealed class RunnerProtocolV1Tests
         public Task<TakaroActionResult> ListEntitiesAsync(CancellationToken cancellationToken = default) => Unused();
         public Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default) => Unused();
         public Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default) => Unused();
-        public Task<TakaroActionResult> GetMapTileAsync(int x, int y, int z, CancellationToken cancellationToken = default) => Unused();
+        public int MapTileCalls;
+
+        public Task<TakaroActionResult> GetMapTileAsync(int x, int y, int z, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref MapTileCalls);
+            return Unused();
+        }
+
         public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default) => Unused();
         public Task<TakaroActionResult> KickPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) => Unused();
         public Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) => Unused();

@@ -21,6 +21,8 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private readonly IMainThreadActionScheduler mainThreadActions;
     private readonly Action<string> log;
     private readonly GameProfile? profile;
+    // Declared as the version 1 map when present; version 0 keeps getMapInfo/getMapTile.
+    private readonly WorldMapService? worldMap;
     private readonly CancellationTokenSource shutdown = new();
     private readonly SemaphoreSlim sendLock = new(1, 1);
     private readonly PlayerLifecyclePollCoordinator lifecycleCoordinator = new();
@@ -57,10 +59,12 @@ public sealed class TakaroWebSocketRunner : IDisposable
         Action<string>? warn = null,
         string configPath = "BepInEx/config/com.takaro.valheim.cfg",
         TimeSpan? backoffUnit = null,
-        GameProfile? profile = null)
+        GameProfile? profile = null,
+        WorldMapService? worldMap = null)
     {
         this.config = config;
         this.profile = profile;
+        this.worldMap = worldMap;
         this.backoffUnit = backoffUnit ?? TimeSpan.FromSeconds(1);
         this.configPath = configPath;
         this.adapter = adapter;
@@ -366,7 +370,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 connectedAt = DateTimeOffset.UtcNow;
                 log("Takaro Valheim WebSocket connected.");
                 iconDeclared = profile?.IconRevision is not null && await IsGameReachableAsync(cancellationToken);
-                await SendAsync(client, TakaroProtocol.CreateIdentify(current, profile, iconDeclared), cancellationToken);
+                await SendAsync(client, TakaroProtocol.CreateIdentify(current, profile, iconDeclared, worldMap is not null), cancellationToken);
                 log("Takaro Valheim identify sent.");
                 attempt = 0;
 
@@ -597,9 +601,23 @@ public sealed class TakaroWebSocketRunner : IDisposable
             return;
         }
 
-        await SendAsync(activeSocket, TakaroProtocol.CreateCapabilities(Guid.NewGuid().ToString(), profile), cancellationToken);
+        await SendAsync(activeSocket, TakaroProtocol.CreateCapabilities(Guid.NewGuid().ToString(), profile, worldMap is not null), cancellationToken);
         iconDeclared = true;
         log($"Takaro Valheim server is reachable; declared game icon {profile.IconRevision}.");
+    }
+
+    private TakaroActionResult GetFrameTile(JsonElement args)
+    {
+        if (args.ValueKind != JsonValueKind.Object
+            || !args.TryGetProperty("dimension", out var dimension) || dimension.ValueKind != JsonValueKind.String
+            || !args.TryGetProperty("zoom", out var zoom) || zoom.ValueKind != JsonValueKind.Number || !zoom.TryGetInt32(out var z)
+            || !args.TryGetProperty("x", out var x) || x.ValueKind != JsonValueKind.Number || !x.TryGetInt32(out var tileX)
+            || !args.TryGetProperty("y", out var y) || y.ValueKind != JsonValueKind.Number || !y.TryGetInt32(out var tileY))
+        {
+            return TakaroActionResult.Error(ProtocolErrorCodes.InvalidArgs, "getMapTile needs { dimension, zoom, x, y }.");
+        }
+
+        return worldMap!.GetFrameTile(dimension.GetString()!, z, tileX, tileY);
     }
 
     private async Task<bool> IsGameReachableAsync(CancellationToken cancellationToken)
@@ -725,7 +743,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
             log($"Takaro Valheim request received: action={request.Action}, requestId={request.RequestId}.");
             var version = protocolVersion;
             TakaroActionResult response;
-            if (version >= 1 && !ProtocolHandshake.IsDeclared(request.Action, profile))
+            if (version >= 1 && !ProtocolHandshake.IsDeclared(request.Action, profile, worldMap is not null))
             {
                 response = TakaroActionResult.Error(ProtocolErrorCodes.Unsupported, $"Valheim connector did not declare action '{request.Action}'.");
             }
@@ -733,6 +751,11 @@ public sealed class TakaroWebSocketRunner : IDisposable
             {
                 // The icon is bytes shipped with the plugin; it never needs the game thread.
                 response = profile!.GetGameIcon();
+            }
+            else if (version >= 1 && request.Action == TakaroActionNames.GetMapTile)
+            {
+                // The version 1 shape { dimension, zoom, x, y }; rendering stays off the game loop.
+                response = GetFrameTile(request.Args);
             }
             else
             {
