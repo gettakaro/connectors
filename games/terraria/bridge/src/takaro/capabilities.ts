@@ -1,4 +1,5 @@
 import { ACTION_COVERAGE, EVENT_COVERAGE } from './coverage.js';
+import { gameProfileCapability } from './gameProfile.js';
 import { mapCapability, type MapImageMeta } from './mapImage.js';
 import { ALL_GAME_EVENT_TYPES, ALL_GAME_SERVER_ACTIONS, type GameServerAction } from './protocol.js';
 
@@ -29,11 +30,11 @@ export const ACTION_CAPABILITY: Partial<Record<GameServerAction, string>> = {
 
 /**
  * The Capability Manifest: exactly the live-supported actions and events of the coverage
- * registry, so a placeholder answer (schema-fallback) is never declared, plus the map once
- * the plugin has rendered one.
+ * registry, so a placeholder answer (schema-fallback) is never declared, the game profile, and
+ * the map once the plugin has rendered one.
  */
-export function buildManifest(map: MapImageMeta | null): Capability[] {
-  const manifest: Capability[] = [];
+export function buildManifest(map: MapImageMeta | null, gameVersion: string | null = null): Capability[] {
+  const manifest: Capability[] = [gameProfileCapability(gameVersion)];
   for (const action of ALL_GAME_SERVER_ACTIONS) {
     const name = ACTION_CAPABILITY[action];
     if (name && ACTION_COVERAGE[action].status === 'live-supported') manifest.push({ name });
