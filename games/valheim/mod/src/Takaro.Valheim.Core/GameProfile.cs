@@ -86,11 +86,11 @@ public sealed class GameProfile
     public JsonObject ToIdentifyConnector() =>
         new() { ["name"] = ConnectorName, ["version"] = ConnectorVersion };
 
-    /// <param name="includeIcon">
-    /// False until the server is reachable: Takaro fetches a newly declared icon only while it
-    /// is, and gives up on the identify-time fetch long before a Valheim world has loaded.
-    /// </param>
-    public JsonObject ToCapability(bool includeIcon = true)
+    /// <remarks>
+    /// The icon is always declared, also while the world is still loading: a manifest without it
+    /// makes Takaro drop the stored icon.
+    /// </remarks>
+    public JsonObject ToCapability()
     {
         var parameters = new JsonObject { ["name"] = DisplayName };
         if (GameVersion is not null)
@@ -98,7 +98,7 @@ public sealed class GameProfile
             parameters["version"] = GameVersion;
         }
 
-        if (includeIcon && IconRevision is not null)
+        if (IconRevision is not null)
         {
             parameters["icon"] = new JsonObject { ["revision"] = IconRevision, ["size"] = IconSize };
         }

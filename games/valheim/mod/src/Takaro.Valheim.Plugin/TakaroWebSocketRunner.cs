@@ -45,8 +45,6 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private volatile bool identified;
     // Negotiated per connection; 0 until Takaro picks a version.
     private volatile int protocolVersion;
-    // Whether this connection's manifest already declares the game icon.
-    private volatile bool iconDeclared;
     // One event stream per process: kept across reconnects so Takaro dedupes resent events.
     private readonly string streamId = Guid.NewGuid().ToString("N");
     private Task? runLoop;
@@ -369,8 +367,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
                     cancellationToken);
                 connectedAt = DateTimeOffset.UtcNow;
                 log("Takaro Valheim WebSocket connected.");
-                iconDeclared = profile?.IconRevision is not null && await IsGameReachableAsync(cancellationToken);
-                await SendAsync(client, TakaroProtocol.CreateIdentify(current, profile, iconDeclared, worldMap is not null), cancellationToken);
+                await SendAsync(client, TakaroProtocol.CreateIdentify(current, profile, worldMap is not null), cancellationToken);
                 log("Takaro Valheim identify sent.");
                 attempt = 0;
 
@@ -505,19 +502,6 @@ public sealed class TakaroWebSocketRunner : IDisposable
         {
             try
             {
-                await DeclareIconOnceReachableAsync(socket, cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                log($"Takaro Valheim could not declare the game icon: {ex.Message}");
-            }
-
-            try
-            {
                 var playersResult = await RunAdapterActionAsync(
                     () => adapter.GetPlayersAsync(cancellationToken),
                     cancellationToken);
@@ -586,26 +570,6 @@ public sealed class TakaroWebSocketRunner : IDisposable
         }
     }
 
-    // Takaro fetches a newly declared icon only while the server is reachable and stops retrying
-    // the identify-time fetch after about 30 s, well before a Valheim world has loaded. So the
-    // icon is declared once the server answers reachable: in identify when it already is,
-    // otherwise by a capabilities replacement here.
-    private async Task DeclareIconOnceReachableAsync(ClientWebSocket activeSocket, CancellationToken cancellationToken)
-    {
-        if (iconDeclared
-            || !identified
-            || protocolVersion < 1
-            || profile?.IconRevision is null
-            || !await IsGameReachableAsync(cancellationToken))
-        {
-            return;
-        }
-
-        await SendAsync(activeSocket, TakaroProtocol.CreateCapabilities(Guid.NewGuid().ToString(), profile, worldMap is not null), cancellationToken);
-        iconDeclared = true;
-        log($"Takaro Valheim server is reachable; declared game icon {profile.IconRevision}.");
-    }
-
     private TakaroActionResult GetFrameTile(JsonElement args)
     {
         if (args.ValueKind != JsonValueKind.Object
@@ -618,18 +582,6 @@ public sealed class TakaroWebSocketRunner : IDisposable
         }
 
         return worldMap!.GetFrameTile(dimension.GetString()!, z, tileX, tileY);
-    }
-
-    private async Task<bool> IsGameReachableAsync(CancellationToken cancellationToken)
-    {
-        var result = await adapter.TestReachabilityAsync(cancellationToken);
-        if (!result.Success || result.Payload is null)
-        {
-            return false;
-        }
-
-        var payload = JsonSerializer.SerializeToElement(result.Payload);
-        return payload.TryGetProperty("connectable", out var connectable) && connectable.ValueKind == JsonValueKind.True;
     }
 
     private async Task ReceiveLoopAsync(ClientWebSocket socket, ConnectorConfig current, CancellationToken cancellationToken)
@@ -688,13 +640,6 @@ public sealed class TakaroWebSocketRunner : IDisposable
                     throw new IdentifyRejectedException(rejection);
                 }
 
-                continue;
-            }
-
-            if (ContainsIgnoreCase(message, "\"type\":\"capabilitiesResponse\"")
-                || ContainsIgnoreCase(message, "\"type\": \"capabilitiesResponse\""))
-            {
-                LogCapabilitiesResponse(message);
                 continue;
             }
 
@@ -879,21 +824,6 @@ public sealed class TakaroWebSocketRunner : IDisposable
         {
             log($"Takaro Valheim could not parse identifyResponse: {ex.Message}");
             return false;
-        }
-    }
-
-    private void LogCapabilitiesResponse(string message)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(message);
-            log(doc.RootElement.TryGetProperty("error", out var error) && error.ValueKind is not (JsonValueKind.Null or JsonValueKind.False)
-                ? $"Takaro Valheim capability manifest rejected; the previous one stays in force: {TakaroProtocol.DescribeError(error)}"
-                : "Takaro Valheim capability manifest accepted.");
-        }
-        catch (Exception ex)
-        {
-            log($"Takaro Valheim could not parse capabilitiesResponse: {ex.Message}");
         }
     }
 

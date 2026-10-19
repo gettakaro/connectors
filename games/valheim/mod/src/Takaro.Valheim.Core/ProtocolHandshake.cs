@@ -66,7 +66,7 @@ public static class ProtocolHandshake
         [TakaroActionNames.Shutdown] = "server.shutdown",
     };
 
-    public static JsonArray BuildCapabilityManifest(GameProfile? profile = null, bool includeIcon = true, bool includeMap = false)
+    public static JsonArray BuildCapabilityManifest(GameProfile? profile = null, bool includeMap = false)
     {
         var manifest = new JsonArray();
         foreach (var capability in ActionCapabilities.Values)
@@ -81,7 +81,7 @@ public static class ProtocolHandshake
 
         if (profile is not null)
         {
-            manifest.Add(profile.ToCapability(includeIcon));
+            manifest.Add(profile.ToCapability());
         }
 
         if (includeMap)

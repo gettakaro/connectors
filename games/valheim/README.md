@@ -164,7 +164,7 @@ Tested on Valheim 1.0.16 with BepInExPack 5.4.2351 and a vanilla game client, 20
 | What | | Notes |
 |---|---|---|
 | Connection & heartbeat | ✅ | Dials out to Takaro; server shows online. |
-| Game name, build and icon | ✅ | Takaro shows "Valheim", the server's game build, the Valheim icon and the connector version. The icon appears once the world has loaded. |
+| Game name, build and icon | ✅ | Takaro shows "Valheim", the server's game build, the Valheim icon and the connector version. On a fresh install the icon can take up to about two hours to appear (Takaro fetches it on its periodic sync when the first try came before the world loaded). |
 | Player list | ✅ | Name, Steam id and online state. |
 | Single player lookup | ❌ | Takaro offers no route to ask for one player. |
 | Player location | ✅ | The server's known position; never invented. |

@@ -127,52 +127,19 @@ public sealed class RunnerProtocolV1Tests
     }
 
     [TestMethod]
-    public async Task TheIconIsDeclaredOnlyOnceTheServerIsReachable()
+    public async Task TheIconIsDeclaredInIdentifyEvenWhileTheWorldLoads()
     {
+        // Leaving it out until the server is reachable made Takaro drop the stored icon on
+        // every restart.
         using var takaro = new FakeTakaro(chosenVersion: 1);
-        var adapter = new RecordingAdapter { Reachable = false };
         var profile = new GameProfile("4.2.0", "1.0.20", GameProfile.LoadEmbeddedIcon());
-        using var runner = Runner(takaro, adapter, profile);
+        using var runner = Runner(takaro, new RecordingAdapter { Reachable = false }, profile);
         await runner.StartAsync();
         await Until(() => takaro.Identifies >= 1 && takaro.Connected);
 
         var identify = JsonDocument.Parse(takaro.IdentifyFrames.Single()).RootElement.GetProperty("payload");
         var declared = identify.GetProperty("capabilities").EnumerateArray().Single(c => c.GetProperty("name").GetString() == "game.profile");
-        Assert.AreEqual("Valheim", declared.GetProperty("parameters").GetProperty("name").GetString());
-        Assert.IsFalse(declared.GetProperty("parameters").TryGetProperty("icon", out _), "no icon while the world is loading");
-        await Task.Delay(500);
-        Assert.AreEqual(0, takaro.CapabilityFrames.Count);
-
-        adapter.Reachable = true;
-        await Until(() => takaro.CapabilityFrames.Count >= 1);
-        await Task.Delay(6000);
-
-        Assert.AreEqual(1, takaro.CapabilityFrames.Count, "declared once");
-        var manifest = JsonDocument.Parse(takaro.CapabilityFrames.Single()).RootElement.GetProperty("payload").GetProperty("capabilities");
-        var profileEntry = manifest.EnumerateArray().Single(c => c.GetProperty("name").GetString() == "game.profile");
-        Assert.AreEqual(profile.IconRevision, profileEntry.GetProperty("parameters").GetProperty("icon").GetProperty("revision").GetString());
-        Assert.IsTrue(manifest.EnumerateArray().Any(c => c.GetProperty("name").GetString() == "chat.send"), "the replacement is the full manifest");
-        Assert.IsTrue(takaro.LogLines.Any(l => l.Contains("capability manifest accepted", StringComparison.Ordinal)));
-
-        // Takaro then fetches the newly declared revision.
-        await takaro.SendAsync("""{"type":"request","requestId":"icon","payload":{"action":"getGameIcon","args":"{}"}}""");
-        await Until(() => takaro.Responses.ContainsKey("icon"));
-        using var icon = JsonDocument.Parse(takaro.Responses["icon"]);
-        Assert.AreEqual(profile.IconRevision, icon.RootElement.GetProperty("payload").GetProperty("revision").GetString());
-    }
-
-    [TestMethod]
-    public async Task AReachableServerDeclaresTheIconInIdentify()
-    {
-        using var takaro = new FakeTakaro(chosenVersion: 1);
-        var profile = new GameProfile("4.2.0", "1.0.20", GameProfile.LoadEmbeddedIcon());
-        using var runner = Runner(takaro, profile: profile);
-        await runner.StartAsync();
-        await Until(() => takaro.Identifies >= 1 && takaro.Connected);
-        await Task.Delay(6000);
-
-        StringAssert.Contains(takaro.IdentifyFrames.Single(), profile.IconRevision!);
-        Assert.AreEqual(0, takaro.CapabilityFrames.Count);
+        Assert.AreEqual(profile.IconRevision, declared.GetProperty("parameters").GetProperty("icon").GetProperty("revision").GetString());
     }
 
     [TestMethod]
@@ -207,6 +174,29 @@ public sealed class RunnerProtocolV1Tests
         using var response = JsonDocument.Parse(takaro.Responses["tile"]);
         Assert.AreEqual("not_found", response.RootElement.GetProperty("error").GetProperty("code").GetString(), "no raster yet");
         Assert.AreEqual(0, adapter.MapTileCalls, "the version 0 tile route is not used");
+    }
+
+    [TestMethod]
+    public async Task VersionOneServesARenderedDimensionTile()
+    {
+        using var takaro = new FakeTakaro(chosenVersion: 1);
+        var map = new WorldMapService();
+        var builder = new WorldMapRasterBuilder(32, 1, (_, _) => new WorldMapSample(WorldMapBiome.Meadows, 40, false));
+        builder.Step(() => true);
+        map.Publish(builder.Raster);
+        using var runner = new TakaroWebSocketRunner(Config(takaro), new RecordingAdapter(), takaro.Log, null, takaro.Log, "cfg", worldMap: map);
+        await runner.StartAsync();
+        await Until(() => takaro.Identifies >= 1 && takaro.Connected);
+
+        await takaro.SendAsync("""{"type":"request","requestId":"tile","payload":{"action":"getMapTile","args":"{\"dimension\":\"valheim\",\"zoom\":2,\"x\":1,\"y\":2}"}}""");
+        await Until(() => takaro.Responses.ContainsKey("tile"));
+
+        using var response = JsonDocument.Parse(takaro.Responses["tile"]);
+        var payload = response.RootElement.GetProperty("payload");
+        Assert.AreEqual("image/png", payload.GetProperty("mimeType").GetString());
+        var png = Convert.FromBase64String(payload.GetProperty("data").GetString()!);
+        CollectionAssert.AreEqual(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, png[..4]);
+        Assert.AreEqual(WorldMapFrame.TileSize, (png[16] << 24) | (png[17] << 16) | (png[18] << 8) | png[19]);
     }
 
     [TestMethod]
@@ -302,8 +292,6 @@ public sealed class RunnerProtocolV1Tests
         public ConcurrentDictionary<string, string> Responses { get; } = new();
 
         public ConcurrentQueue<string> IdentifyFrames { get; } = new();
-
-        public ConcurrentQueue<string> CapabilityFrames { get; } = new();
 
         public void Log(string line) => logs.Enqueue(line);
 
@@ -409,10 +397,6 @@ public sealed class RunnerProtocolV1Tests
                                 payload.TryGetProperty("streamId", out var stream) ? stream.GetString() : null,
                                 payload.TryGetProperty("seq", out var seq) ? seq.GetInt64() : null,
                                 payload.GetProperty("data").TryGetProperty("msg", out var msg) ? msg.GetString() : null));
-                            break;
-                        case "capabilities":
-                            CapabilityFrames.Enqueue(text);
-                            await SendAsync("{\"type\":\"capabilitiesResponse\",\"payload\":null,\"requestId\":\"" + root.GetProperty("requestId").GetString() + "\"}");
                             break;
                         case "response":
                             Responses[root.GetProperty("requestId").GetString()!] = text;

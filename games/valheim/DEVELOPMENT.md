@@ -335,6 +335,11 @@ manifest declares `game.profile` (`GameProfile`):
   its sha256 and `size` its byte length, both computed from the shipped bytes at startup. A
   changed icon therefore always gets a new revision. Takaro fetches it with `getGameIcon` only
   on version 1 and only for a revision it has not stored or rejected.
+- The icon is declared in every identify, also while the world is still loading: a manifest
+  without it makes Takaro drop the stored icon. Takaro fetches a new revision only while the
+  server answers reachable and gives up on the identify-time fetch after about 30 s, so on a
+  fresh install (or a new icon) whose world takes longer to load, the icon shows after Takaro's
+  periodic game-icon sync (or a manual `syncGameIcons` job) instead of at once.
 - If the profile cannot be built, the connector still connects without it (Takaro then shows
   the `game` identifier).
 

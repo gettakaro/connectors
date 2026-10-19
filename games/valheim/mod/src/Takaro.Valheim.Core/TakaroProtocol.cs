@@ -9,7 +9,7 @@ public static class TakaroProtocol
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public static string CreateIdentify(ConnectorConfig config, GameProfile? profile = null, bool includeIcon = true, bool includeMap = false)
+    public static string CreateIdentify(ConnectorConfig config, GameProfile? profile = null, bool includeMap = false)
     {
         var protocolVersions = new JsonArray();
         foreach (var version in ProtocolHandshake.OfferedProtocolVersions)
@@ -23,7 +23,7 @@ public static class TakaroProtocol
             ["registrationToken"] = config.RegistrationToken,
             ["name"] = config.ServerName,
             ["protocolVersions"] = protocolVersions,
-            ["capabilities"] = ProtocolHandshake.BuildCapabilityManifest(profile, includeIcon, includeMap)
+            ["capabilities"] = ProtocolHandshake.BuildCapabilityManifest(profile, includeMap)
         };
         if (profile is not null)
         {
@@ -215,15 +215,6 @@ public static class TakaroProtocol
                 return true;
         }
     }
-
-    /// <summary>A version 1 replacement of the whole Capability Manifest.</summary>
-    public static string CreateCapabilities(string requestId, GameProfile? profile, bool includeMap = false) =>
-        new JsonObject
-        {
-            ["type"] = "capabilities",
-            ["requestId"] = requestId,
-            ["payload"] = new JsonObject { ["capabilities"] = ProtocolHandshake.BuildCapabilityManifest(profile, includeMap: includeMap) }
-        }.ToJsonString();
 
     /// <summary>The version 1 standard error shape: a present error wins over any payload.</summary>
     public static string CreateErrorResponse(string requestId, string code, string message)
