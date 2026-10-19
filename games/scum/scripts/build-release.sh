@@ -72,7 +72,8 @@ docker run --rm -e HOME=/tmp -e SOURCE_DATE_EPOCH="$epoch" \
       "clang-19=$LLVM_VERSION" "lld-19=$LLVM_VERSION" "llvm-19=$LLVM_VERSION" "lua5.4=$LUA_VERSION" "ca-certificates=$CA_VERSION" >/dev/null
 
     echo "== Lua tests"
-    cp -r /project/mod /project/tests /project/capabilities.json /project/TakaroConfig.txt.example /stage/
+    cp -r /project/mod /project/tests /project/assets /project/capabilities.json /project/TakaroConfig.txt.example \
+      /project/version.txt /stage/
     (cd /stage && LUA=lua5.4 bash tests/run.sh)
 
     sysroot="/cache/msvc-$CRT_VERSION-$SDK_VERSION"
@@ -175,6 +176,7 @@ for root, _dirs, names in os.walk(scripts):
                 sys.exit("app.lua: expected exactly one M.VERSION line")
         files[f"{MOD}/{rel}"] = data
 files[f"{MOD}/dlls/main.dll"] = open(dll, "rb").read()
+files[f"{MOD}/icon-256.png"] = open(os.path.join(project, "assets", "icon-256.png"), "rb").read()
 files[f"{MOD}/TakaroConfig.txt.example"] = open(os.path.join(project, "TakaroConfig.txt.example"), "rb").read()
 files[f"{MOD}/VERSION"] = (version + "\n").encode()
 identity = {

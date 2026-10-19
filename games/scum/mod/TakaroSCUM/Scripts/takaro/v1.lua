@@ -31,9 +31,10 @@ M.CAPABILITY_OF = {
   shutdown = "server.shutdown",
 }
 
--- The Capability Manifest: every live-supported action and event of the coverage registry plus the map Dimension.
--- Placeholder answers (schema-fallback) are not declared, so Takaro does not rely on them.
-function M.manifest(bounds)
+-- The Capability Manifest: every live-supported action and event of the coverage registry, the map Dimension and
+-- the game.profile entry (profileCap, from profile.lua). Placeholder answers (schema-fallback) are not declared, so
+-- Takaro does not rely on them.
+function M.manifest(bounds, profileCap)
   local out = {}
   for _, action in ipairs(coverage.ACTIONS) do
     local name, c = M.CAPABILITY_OF[action], coverage.actions[action]
@@ -44,6 +45,7 @@ function M.manifest(bounds)
     if c and c.status == "live-supported" then out[#out + 1] = { name = "events." .. ev } end
   end
   out[#out + 1] = map.capability(bounds)
+  if profileCap then out[#out + 1] = profileCap end
   return out
 end
 

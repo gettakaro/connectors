@@ -31,6 +31,7 @@
     "player-disconnected": {"liveVerification":"live 2026-10-13 on SCUM 1.3.4.2 through Takaro: after kick and ban kick; Takaro record","payloadShape":"{ player: IGamePlayer }","reason":"SCUM login log 'logged out' line (partial: log-derived, ~1 s latency).","status":"live-supported"}
   },
   "game": "SCUM",
+  "gameProfile": {"actions":["getGameIcon"],"connector":"takaro-scum","game":"scum","icon":"icon-256.png in the mod folder (256x256 PNG); revision = first 12 hex of its sha256","name":"SCUM","version":"the running build from GeneralProjectSettings.ProjectVersion (e.g. 1.3.4.2.161892), declared once read"},
   "map": {"axes":{"horizontal":{"direction":"left","field":"x"},"vertical":{"direction":"up","field":"y"}},"bounds":{"horizontal":{"max":619200,"min":-904800},"vertical":{"max":619200,"min":-904800}},"id":"the_island","name":"The Island","source":{"type":"none"}},
   "protocolVersions": [0,1],
   "runtime": "SCUMServer.exe (Steam app 3792580) with UE4SS v3.0.1-1176-g1ba38db4",

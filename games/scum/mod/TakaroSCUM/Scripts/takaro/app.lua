@@ -11,6 +11,7 @@ local events = require("takaro.events")
 local game = require("takaro.game")
 local map = require("takaro.map")
 local v1 = require("takaro.v1")
+local profile = require("takaro.profile")
 
 local M = {}
 
@@ -21,6 +22,7 @@ M.SAVE_KNOWN_EVERY_MS = 30000
 M.IDENTITY_FILE = "TakaroIdentity.txt"
 M.KNOWN_FILE = "known-players.json"
 M.WORLD_BOUNDS_RETRY_MS = 10000
+M.GAME_VERSION_RETRY_MS = 10000
 
 local App = {}
 App.__index = App
@@ -105,6 +107,15 @@ function App:start()
   self.lastStatus = self:now()
   self.mapBounds = nil -- map frame from the live world bounds; the SCUM 1.3.4.2 frame until it is read
   self.nextBoundsTry = 0
+  self.gameVersion = nil -- the running SCUM build, read from the engine once it is available
+  self.nextVersionTry = 0
+  local icon, why = profile.load_icon(self.fs, self.dir)
+  self.icon = icon
+  if icon then
+    self.log:info("game icon %s: %d bytes, revision %s", profile.ICON_FILE, icon.size, icon.revision)
+  else
+    self.log:warn("no game icon declared: %s", tostring(why))
+  end
 
   self.game = self.game_override or game.new(self.env, self.log, { mod_dir = self.dir })
   self.router = actions.new({
@@ -117,16 +128,22 @@ function App:start()
     now = function() return self:now() end,
     log_frames = self.cfg.logFrames,
     identify = function()
+      local gameSlug, connector = profile.identity(M.VERSION)
       return { identityToken = self.identityToken, registrationToken = self.cfg.registrationToken,
-        name = self.cfg.serverName }
+        name = self.cfg.serverName, game = gameSlug, connector = connector }
     end,
     offer_v1 = self.cfg.protocol >= 1,
-    manifest = function() return v1.manifest(self.mapBounds) end,
-    on_request = function(action, args, reply) self.router:handle(action, args, reply) end,
+    manifest = function() return v1.manifest(self.mapBounds, profile.capability(self.gameVersion, self.icon)) end,
+    on_request = function(action, args, reply, info)
+      -- getGameIcon is a protocol 1 action (Takaro only asks when game.profile declares an icon)
+      if action == "getGameIcon" and info and info.version == 1 then return reply(profile.icon_response(self.icon)) end
+      self.router:handle(action, args, reply)
+    end,
     timeout_payload = function(action, why, rawArgs) return self.router:fallback(action, why, rawArgs) end,
   })
   self.events = events.new({ client = self.client, known = self.known, log = self.log,
     now = function() return self:now() end })
+  self:read_game_version(self:now())
 
   local ok, res = pcall(self.game.start_events, self.game, self.events)
   if not ok then
@@ -157,6 +174,7 @@ function App:tick()
     if not okg then self.log:error("game tick failed: %s", tostring(errg)) end
   end
   self:read_map_bounds(now)
+  self:read_game_version(now)
   if #self.timers > 0 then
     local due, keep = {}, {}
     for _, t in ipairs(self.timers) do
@@ -189,6 +207,18 @@ function App:read_map_bounds(now)
   self.mapBounds = map.map_bounds(res.value)
   local b = self.mapBounds
   self.log:info("map bounds from the world: x %.0f..%.0f y %.0f..%.0f", b.minX, b.maxX, b.minY, b.maxY)
+  self.client:update_manifest()
+end
+
+-- Reads the running game build (retried until the engine has it) and re-declares game.profile with it.
+function App:read_game_version(now)
+  if self.gameVersion or now < self.nextVersionTry or not self.game.game_version then return end
+  self.nextVersionTry = now + M.GAME_VERSION_RETRY_MS
+  local ok, res = pcall(self.game.game_version, self.game)
+  local v = ok and type(res) == "table" and res.ok and profile.clean_version(res.value) or nil
+  if not v then return end
+  self.gameVersion = v
+  self.log:info("game build %s", v)
   self.client:update_manifest()
 end
 

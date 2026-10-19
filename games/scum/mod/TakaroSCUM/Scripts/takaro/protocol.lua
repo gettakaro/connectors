@@ -31,8 +31,8 @@ end
 local Client = {}
 Client.__index = Client
 
--- opts: transport, log, now(), identify() -> payload table, on_request(action, args, reply, info),
---       timeout_payload(action, why, rawArgs) -> payload, log_frames (bool),
+-- opts: transport, log, now(), identify() -> payload table, on_request(action, args, reply, info { requestId,
+--       version }), timeout_payload(action, why, rawArgs) -> payload, log_frames (bool),
 --       offer_v1 (bool), manifest() -> Capability Manifest array (version 1), stream_id (optional)
 function M.new(opts)
   local c = setmetatable({}, Client)
@@ -152,6 +152,7 @@ function Client:handle_message(msg, epoch)
     self.sentManifest = self.version == 1 and self.offeredManifest or nil
     self.transport.identified(epoch)
     self.log:info("identified with Takaro as game server %s, protocol %d", self.gameServerId, self.version)
+    self:update_manifest() -- the manifest may have changed between identify and its answer
     self:flush_events()
   elseif t == "request" then
     self:handle_request(msg, epoch)
@@ -206,7 +207,8 @@ function Client:handle_request(msg, epoch)
     self:respond(requestId, epoch, action, result, entry.version)
     return true
   end
-  local ok, err = pcall(self.on_request, action, payload.args, reply, { requestId = requestId })
+  local ok, err = pcall(self.on_request, action, payload.args, reply,
+    { requestId = requestId, version = self.version })
   if not ok then
     self.log:error("action %s raised: %s", action, tostring(err))
     reply(self.timeout_payload(action, "internal error: " .. tostring(err), payload.args))

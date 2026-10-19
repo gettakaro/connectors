@@ -19,6 +19,7 @@ M.UE = {
   PlayerController = "ConZPlayerController",                 -- the only IAdminCommandExecutor
   MiscStatics = "/Script/SCUM.Default__MiscStatics",         -- BroadcastChatLine, SendChatLineToPlayer
   KismetSystem = "/Script/Engine.Default__KismetSystemLibrary",
+  ProjectSettings = "/Script/EngineSettings.Default__GeneralProjectSettings", -- ProjectVersion "1.3.4.2.161892+0"
   GameplayStatics = "/Script/Engine.Default__GameplayStatics",
   ChatRpc = "/Script/SCUM.PlayerRpcChannel:Chat_Server_BroadcastChatMessage",
 }
@@ -762,6 +763,14 @@ end
 
 function Game:list_locations()
   return { ok = false, reason = "SCUM has no named location registry the server exposes" }
+end
+
+-- The running game build: SCUM sets GeneralProjectSettings.ProjectVersion from its release config at start.
+function Game:game_version()
+  local gps = self:static("_projectSettings", M.UE.ProjectSettings)
+  local v = gps and str(gps.ProjectVersion)
+  if not v or v == "" then return { ok = false, reason = "ProjectVersion not set" } end
+  return { ok = true, value = v }
 end
 
 -- AConZWorldSettings.WorldBounds (FBox2D, world cm): the box the island map is centred in (see map.lua).

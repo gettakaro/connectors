@@ -3,6 +3,7 @@
 local json = require("takaro.json")
 local coverage = require("takaro.coverage")
 local map = require("takaro.map")
+local profile = require("takaro.profile")
 
 local doc = json.object({
   game = "SCUM",
@@ -13,6 +14,14 @@ local doc = json.object({
   takaroConnection = "outbound_websocket",
   protocolVersions = { 0, 1 },
   map = map.dimension(),
+  gameProfile = json.object({
+    game = profile.GAME,
+    connector = profile.CONNECTOR_NAME,
+    name = profile.DISPLAY_NAME,
+    version = "the running build from GeneralProjectSettings.ProjectVersion (e.g. 1.3.4.2.161892), declared once read",
+    icon = profile.ICON_FILE .. " in the mod folder (256x256 PNG); revision = first 12 hex of its sha256",
+    actions = { "getGameIcon" },
+  }),
   statusDefinitions = json.object({
     ["live-supported"] = "proven end to end through Takaro on a real server",
     ["schema-fallback"] = "answers a valid empty or placeholder DTO; the game data is not wired yet or not available",

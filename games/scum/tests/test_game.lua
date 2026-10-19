@@ -146,6 +146,7 @@ local function world(opts)
       if p:find("MiscStatics") then return W.ms end
       if p:find("KismetSystemLibrary") then return W.ksl end
       if p:find("GameplayStatics") then return W.gps end
+      if p:find("GeneralProjectSettings") and W.projectVersion then return obj({ ProjectVersion = W.projectVersion }) end
       return nil
     end,
     RegisterHook = function(path, fn) W.hooks[path] = fn end,
@@ -835,6 +836,13 @@ t.test("game-thread cost is measured per tick", function()
   local W = world()
   W.g:tick(0)
   t.ok(W.g:perf_summary():find("ticks=1"), W.g:perf_summary())
+end)
+
+t.test("game_version reads GeneralProjectSettings.ProjectVersion (SCUM sets it from its release config)", function()
+  local W = world()
+  t.eq(W.g:game_version().ok, false, "not set yet")
+  W.projectVersion = "1.3.4.2.161892+0"
+  t.deep(W.g:game_version(), { ok = true, value = "1.3.4.2.161892+0" })
 end)
 
 t.run("game")

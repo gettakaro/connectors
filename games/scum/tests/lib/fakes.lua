@@ -143,6 +143,7 @@ function F.app(opts)
   local App = require("takaro.app")
   local native = F.native()
   local fs = F.fs({ ["/mod/TakaroConfig.txt"] = opts.config or F.config_text(opts.extra) })
+  for path, text in pairs(opts.files or {}) do fs.files[path] = text end
   local g = opts.game or F.game(opts.script)
   local app = App.new({ native = native, mod_dir = "/mod", fs = fs, game = g })
   app:start()
