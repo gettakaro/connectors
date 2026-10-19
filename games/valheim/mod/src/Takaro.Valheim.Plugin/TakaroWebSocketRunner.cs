@@ -44,10 +44,6 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private volatile int protocolVersion;
     // One event stream per process: kept across reconnects so Takaro dedupes resent events.
     private readonly string streamId = Guid.NewGuid().ToString("N");
-    // Identify goes out on connect and again on Takaro's "connected"; both are answered, and for a
-    // server Takaro does not know yet the second create can fail with a 409 while the first
-    // succeeds. Only the last outstanding answer decides a rejection.
-    private int identifiesAwaiting;
     private Task? runLoop;
 
     public TakaroWebSocketRunner(
@@ -364,7 +360,6 @@ public sealed class TakaroWebSocketRunner : IDisposable
                     cancellationToken);
                 connectedAt = DateTimeOffset.UtcNow;
                 log("Takaro Valheim WebSocket connected.");
-                Interlocked.Exchange(ref identifiesAwaiting, 1);
                 await SendAsync(client, TakaroProtocol.CreateIdentify(current), cancellationToken);
                 log("Takaro Valheim identify sent.");
                 attempt = 0;
@@ -597,18 +592,17 @@ public sealed class TakaroWebSocketRunner : IDisposable
             if (ContainsIgnoreCase(message, "\"type\":\"connected\"")
                 || ContainsIgnoreCase(message, "\"type\": \"connected\""))
             {
-                log("Takaro Valheim WebSocket acknowledged by Takaro; sending identify.");
-                Interlocked.Increment(ref identifiesAwaiting);
-                await SendAsync(socket, TakaroProtocol.CreateIdentify(current), cancellationToken);
-                log("Takaro Valheim identify sent.");
+                // Informational: identify already went out when the socket opened. A second one
+                // would race the first create of a new server into a 409, which on protocol
+                // version 1 closes the socket.
+                log("Takaro Valheim WebSocket acknowledged by Takaro.");
                 continue;
             }
 
             if (ContainsIgnoreCase(message, "\"type\":\"identifyResponse\"")
                 || ContainsIgnoreCase(message, "\"type\": \"identifyResponse\""))
             {
-                var stillAwaiting = Math.Max(0, Interlocked.Decrement(ref identifiesAwaiting));
-                if (LogIdentifyResponse(message, out var rejection, out var closesSocket))
+                if (LogIdentifyResponse(message, out var rejection))
                 {
                     identified = true;
                     var waiting = pendingEvents.Count;
@@ -619,10 +613,9 @@ public sealed class TakaroWebSocketRunner : IDisposable
 
                     _ = Task.Run(() => FlushPendingEventsAsync(cancellationToken), cancellationToken);
                 }
-                else if (rejection is not null && !identified && (stillAwaiting == 0 || closesSocket))
+                else if (rejection is not null && !identified)
                 {
-                    // A version 1 rejection closes the socket and never answers the other
-                    // identify, so it decides at once; otherwise the close would skip the backoff.
+                    // Thrown before Takaro's close arrives, so a rejection always backs off.
                     throw new IdentifyRejectedException(rejection);
                 }
 
@@ -773,10 +766,9 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private static bool ContainsIgnoreCase(string text, string value) =>
         text.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
 
-    private bool LogIdentifyResponse(string message, out string? rejection, out bool closesSocket)
+    private bool LogIdentifyResponse(string message, out string? rejection)
     {
         rejection = null;
-        closesSocket = false;
         try
         {
             var reply = ProtocolHandshake.ParseIdentifyResponse(message);
@@ -788,7 +780,6 @@ public sealed class TakaroWebSocketRunner : IDisposable
             }
 
             rejection = reply.ErrorCode is null ? reply.Reason : $"{reply.Reason} ({reply.ErrorCode})";
-            closesSocket = reply.ErrorCode is not null;
             log($"Takaro Valheim identification failed: {rejection}");
             return false;
         }

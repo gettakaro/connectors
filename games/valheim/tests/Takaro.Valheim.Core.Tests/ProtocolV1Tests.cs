@@ -199,6 +199,29 @@ public sealed class ProtocolV1Tests
     }
 
     [TestMethod]
+    public void VersionOneLocationOfAPlayerWhoIsNotOnlineIsNull()
+    {
+        TakaroProtocol.TryCreateActionResponse(
+            "req-1",
+            TakaroActionNames.GetPlayerLocation,
+            TakaroActionResult.Error("player_not_found", "No online Valheim player matched Steam_1."),
+            out var frame,
+            protocolVersion: 1);
+
+        var root = JsonDocument.Parse(frame!).RootElement;
+        Assert.AreEqual(JsonValueKind.Null, root.GetProperty("payload").ValueKind);
+        Assert.IsFalse(root.TryGetProperty("error", out _));
+
+        TakaroProtocol.TryCreateActionResponse(
+            "req-2",
+            TakaroActionNames.GetPlayerLocation,
+            TakaroActionResult.Error("runtime_unavailable", "no observed position"),
+            out frame,
+            protocolVersion: 1);
+        Assert.AreEqual("game_error", JsonDocument.Parse(frame!).RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [TestMethod]
     public void StreamPositionsAreAssignedOnEnqueueAndSurviveAReconnect()
     {
         var queue = new PendingEventQueue(capacity: 10);

@@ -66,19 +66,22 @@ public sealed class RunnerConfigReloadTests
     }
 
     [TestMethod]
-    public async Task ConflictOnTheSecondIdentifyOfANewServerIsNotARejection()
+    public async Task TakarosConnectedMessageDoesNotSendASecondIdentify()
     {
+        // This fake answers a second identify on one socket with a 409, as Takaro does for the
+        // racing create of a new server; on protocol version 1 that closes the socket.
         using var takaro = new FakeTakaro(conflictOnSecondIdentify: true);
         var logs = new Log();
         using var runner = Runner(takaro, "good", "new-id", logs);
         await runner.StartAsync();
 
-        await Until(() => takaro.Identifies.Count >= 2 && logs.Infos.Any(l => l.Contains("409", StringComparison.Ordinal)));
+        await Until(() => logs.Infos.Any(l => l.Contains("acknowledged by Takaro", StringComparison.Ordinal))
+            && logs.Infos.Any(l => l.Contains("identified as gameServerId=gs-new-id", StringComparison.Ordinal)));
         await Task.Delay(1500);
 
-        Assert.IsTrue(logs.Infos.Any(l => l.Contains("identified as gameServerId=gs-new-id", StringComparison.Ordinal)));
+        Assert.AreEqual(1, takaro.Identifies.Count, "One identify per connection, no reconnect.");
+        Assert.IsFalse(logs.Infos.Any(l => l.Contains("409", StringComparison.Ordinal)));
         Assert.IsFalse(logs.Warnings.Any(w => w.Contains("rejected", StringComparison.Ordinal)));
-        Assert.AreEqual(2, takaro.Identifies.Count, "The connection is kept, no reconnect.");
     }
 
     [TestMethod]

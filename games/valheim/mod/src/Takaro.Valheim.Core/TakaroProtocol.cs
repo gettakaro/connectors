@@ -120,10 +120,22 @@ public static class TakaroProtocol
 
         if (protocolVersion >= 1)
         {
-            response = action == TakaroActionNames.TestReachability
+            if (action == TakaroActionNames.TestReachability)
+            {
                 // Unreachable is the answer to this action, not a failure of it.
-                ? CreateResponse(requestId, new { connectable = false, reason = FormatActionError(result) })
-                : CreateErrorResponse(requestId, ProtocolHandshake.ToProtocolErrorCode(result.ErrorCode), FormatActionError(result));
+                response = CreateResponse(requestId, new { connectable = false, reason = FormatActionError(result) });
+            }
+            else if (action is TakaroActionNames.GetPlayer or TakaroActionNames.GetPlayerLocation
+                     && result.ErrorCode == "player_not_found")
+            {
+                // The protocol keeps null as the answer for a player who is not online.
+                response = JsonSerializer.Serialize(new { type = "response", requestId, payload = (object?)null }, JsonOptions);
+            }
+            else
+            {
+                response = CreateErrorResponse(requestId, ProtocolHandshake.ToProtocolErrorCode(result.ErrorCode), FormatActionError(result));
+            }
+
             return true;
         }
 

@@ -531,7 +531,7 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(source, "pendingEvents.ConfirmOldestCheckpoint(releaseFrames: protocolVersion == 0);");
         StringAssert.Contains(source, "pendingEvents.ResetForNewConnection();");
         StringAssert.Contains(source, "activeSocket.Abort();");
-        var identifiedAt = source.IndexOf("if (LogIdentifyResponse(message, out var rejection, out var closesSocket))", StringComparison.Ordinal);
+        var identifiedAt = source.IndexOf("if (LogIdentifyResponse(message, out var rejection))", StringComparison.Ordinal);
         Assert.IsTrue(identifiedAt >= 0);
         Assert.IsTrue(source.IndexOf("identified = true;", identifiedAt, StringComparison.Ordinal) > identifiedAt);
         StringAssert.Contains(source, "TakaroProtocol.TryCreateActionResponse");
