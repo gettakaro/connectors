@@ -6,6 +6,7 @@ import type { OnlineStore } from './dune/onlineStore.js';
 import type { Position, TakaroPlayer } from './dune/types.js';
 import { logger } from './logger.js';
 import { sanitizeGameEvent } from './takaro/eventWhitelist.js';
+import { gameIconPayload } from './takaro/gameProfile.js';
 import { createErrorResponse, createResponse, parseTakaroRequest, type GameEventType, type WsMessage } from './takaro/protocol.js';
 
 /**
@@ -327,7 +328,8 @@ export class Bridge {
       logger.debug(`Takaro request ${request.action} ${JSON.stringify(request.args)}`);
       let payload: unknown;
       try {
-        payload = await this.adapter.handleAction(request.action, request.args);
+        // Takaro protocol, not game truth: the icon the manifest's `game.profile` declares.
+        payload = request.action === 'getGameIcon' ? gameIconPayload() : await this.adapter.handleAction(request.action, request.args);
         if (request.action === 'getPlayerLocation') this.rememberPosition(request.args, payload);
       } catch (err) {
         const fallback = request.action === 'getPlayerLocation' ? this.eventLocationFallback(request.args) : null;
