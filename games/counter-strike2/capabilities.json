@@ -1,57 +1,57 @@
 {
   "game": "Counter-Strike 2",
   "architecture": "native CounterStrikeSharp plugin with outbound Takaro WebSocket",
-  "target": "linux-25947352",
+  "target": "linux-25966348",
   "version": "0.1.0",
-  "verification": "2026-10-15 core-action proof and 2026-10-16 live lifecycle, nonplayer-kill, log-hook, entity-catalog and VProf A/B proof complete; named locations and map tiles remain unproved",
+  "verification": "2026-10-19 current-build server startup and Takaro reachability passed; real-client actions and events await current-build verification",
   "actions": {
     "testReachability": {
       "status": "supported",
       "surface": "Server.MapName and Server.MaxPlayers",
-      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
+      "reason": "CS2 build 25966348 identified through production Takaro and returned connectable:true with de_dust2 on 2026-10-19.",
       "liveVerified": true
     },
     "getPlayers": {
       "status": "supported",
       "surface": "Utilities.GetPlayers and AuthorizedSteamID",
-      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "getPlayer": {
       "status": "supported",
       "surface": "authenticated online roster",
-      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "getPlayerLocation": {
       "status": "supported",
       "surface": "CCSPlayerPawn.AbsOrigin",
-      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "getPlayerInventory": {
       "status": "supported",
       "surface": "CCSPlayerPawn.WeaponServices.MyWeapons",
-      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "giveItem": {
       "status": "supported",
       "surface": "CCSPlayerController.GiveNamedItem with inventory readback",
-      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "listItems": {
       "status": "supported",
       "surface": "curated CounterStrikeSharp CsItem codes",
-      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "listEntities": {
       "status": "supported",
       "surface": "curated nonplayer entity catalog",
-      "reason": "A real client killed a chicken and Takaro synced the curated neutral Chicken entry on 2026-10-16.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "listLocations": {
       "status": "unsupported",
@@ -74,38 +74,38 @@
     "executeConsoleCommand": {
       "status": "supported",
       "surface": "CounterStrikeSharp ConVar.Find and StringValue",
-      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
+      "reason": "Takaro returned the real sv_cheats value and refused an unlisted command on CS2 build 25966348 on 2026-10-19.",
       "liveVerified": true
     },
     "sendMessage": {
       "status": "supported",
       "surface": "CCSPlayerController.PrintToChat",
-      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "teleportPlayer": {
       "status": "supported",
       "surface": "CCSPlayerPawn.Teleport with position readback",
-      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "kickPlayer": {
       "status": "supported",
       "surface": "CCSPlayerController.Disconnect",
-      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "banPlayer": {
       "status": "supported",
       "surface": "durable SteamID64 ban store and join enforcement",
-      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "unbanPlayer": {
       "status": "supported",
       "surface": "durable SteamID64 ban store",
-      "reason": "Verified with a real CS2 client and production Takaro on 2026-10-15; see the private proof page and raw MCP records.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "listBans": {
       "status": "unsupported",
@@ -116,46 +116,46 @@
     "shutdown": {
       "status": "unsupported",
       "surface": "AllowShutdown gate and Server.ExecuteCommand quit",
-      "reason": "Implemented in source; current pinned CS2 build and real client have not passed Takaro-side effect proof.",
-      "liveVerified": false
+      "reason": "The default gate returned shutdown_disabled through Takaro on CS2 build 25966348 on 2026-10-19. The opt-in enabled path has not been tested.",
+      "liveVerified": true
     }
   },
   "events": {
     "log": {
       "status": "supported",
       "surface": "plugin lifecycle",
-      "reason": "Takaro ran an installed regex-matched hook on the plugin startup log and stored a hook-executed row on 2026-10-16.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "player-connected": {
       "status": "supported",
       "surface": "OnClientAuthorized and EventPlayerConnectFull",
-      "reason": "Verified as a current-run Takaro event row from the real CS2 client on 2026-10-15.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "player-disconnected": {
       "status": "supported",
       "surface": "EventPlayerDisconnect with last observed position for Takaro event processing",
-      "reason": "Verified as one current-run Takaro event row from a real CS2 client disconnect on 2026-10-16.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "chat-message": {
       "status": "supported",
       "surface": "say and say_team post listeners",
-      "reason": "Verified as a current-run Takaro event row from the real CS2 client on 2026-10-15.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "player-death": {
       "status": "supported",
       "surface": "EventPlayerDeath",
-      "reason": "Verified as a current-run Takaro event row from the real CS2 client on 2026-10-15.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     },
     "entity-killed": {
       "status": "supported",
       "surface": "EventOtherDeath with authenticated player attacker",
-      "reason": "Verified in Takaro as a real-client chicken kill with authenticated SteamID64 attacker and USP-S on 2026-10-16.",
-      "liveVerified": true
+      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
+      "liveVerified": false
     }
   }
 }
