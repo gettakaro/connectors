@@ -3,7 +3,7 @@
   "architecture": "native CounterStrikeSharp plugin with outbound Takaro WebSocket",
   "target": "linux-25966348",
   "version": "0.1.0",
-  "verification": "2026-10-19 current-build server startup and Takaro reachability passed; real-client actions and events await current-build verification",
+  "verification": "2026-10-19 current-build core actions, moderation persistence, events, economy, Discord, shop delivery, network recovery and idle tick timing passed; named-location and map-tile scope remains open",
   "actions": {
     "testReachability": {
       "status": "supported",
@@ -14,32 +14,32 @@
     "getPlayers": {
       "status": "supported",
       "surface": "Utilities.GetPlayers and AuthorizedSteamID",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "Takaro returned the authenticated SteamID64 client on CS2 build 25966348 on 2026-10-19.",
+      "liveVerified": true
     },
     "getPlayer": {
       "status": "supported",
       "surface": "authenticated online roster",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "Takaro resolved the authenticated SteamID64 player during current-build lifecycle processing on 2026-10-19.",
+      "liveVerified": true
     },
     "getPlayerLocation": {
       "status": "supported",
       "surface": "CCSPlayerPawn.AbsOrigin",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "Takaro stored live position and exact teleport readback on CS2 build 25966348 on 2026-10-19.",
+      "liveVerified": true
     },
     "getPlayerInventory": {
       "status": "supported",
       "surface": "CCSPlayerPawn.WeaponServices.MyWeapons",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "Takaro returned the live equipped inventory, including delivered Desert Eagle, on CS2 build 25966348 on 2026-10-19.",
+      "liveVerified": true
     },
     "giveItem": {
       "status": "supported",
       "surface": "CCSPlayerController.GiveNamedItem with inventory readback",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "Takaro delivered a Desert Eagle; the real client and equipped inventory showed it on CS2 build 25966348 on 2026-10-19.",
+      "liveVerified": true
     },
     "listItems": {
       "status": "supported",
@@ -80,32 +80,32 @@
     "sendMessage": {
       "status": "supported",
       "surface": "CCSPlayerController.PrintToChat",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "Global and private Takaro messages appeared in the real client; a missing recipient was refused on CS2 build 25966348 on 2026-10-19.",
+      "liveVerified": true
     },
     "teleportPlayer": {
       "status": "supported",
       "surface": "CCSPlayerPawn.Teleport with position readback",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "Takaro teleported the real client and stored the requested position on CS2 build 25966348 on 2026-10-19.",
+      "liveVerified": true
     },
     "kickPlayer": {
       "status": "supported",
       "surface": "CCSPlayerController.Disconnect",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "Takaro kicked the real client and its roster emptied on CS2 build 25966348 on 2026-10-19.",
+      "liveVerified": true
     },
     "banPlayer": {
       "status": "supported",
       "surface": "durable SteamID64 ban store and join enforcement",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "Timed SteamID64 ban survived server restart and blocked the real client on CS2 build 25966348 on 2026-10-19.",
+      "liveVerified": true
     },
     "unbanPlayer": {
       "status": "supported",
       "surface": "durable SteamID64 ban store",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "Takaro unbanned the SteamID64 client; durable storage emptied and the client rejoined on CS2 build 25966348 on 2026-10-19.",
+      "liveVerified": true
     },
     "listBans": {
       "status": "unsupported",
@@ -124,38 +124,38 @@
     "log": {
       "status": "supported",
       "surface": "plugin lifecycle",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "An installed Takaro hook executed on the plugin startup log event on CS2 build 25966348 on 2026-10-19.",
+      "liveVerified": true
     },
     "player-connected": {
       "status": "supported",
       "surface": "OnClientAuthorized and EventPlayerConnectFull",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "Takaro stored one authenticated real-client connect event on CS2 build 25966348 on 2026-10-19.",
+      "liveVerified": true
     },
     "player-disconnected": {
       "status": "supported",
       "surface": "EventPlayerDisconnect with last observed position for Takaro event processing",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "Takaro stored one disconnect after a real-client kick on CS2 build 25966348 on 2026-10-19.",
+      "liveVerified": true
     },
     "chat-message": {
       "status": "supported",
       "surface": "say and say_team post listeners",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "Takaro stored the real-client chat message with authenticated SteamID64 on CS2 build 25966348 on 2026-10-19.",
+      "liveVerified": true
     },
     "player-death": {
       "status": "supported",
       "surface": "EventPlayerDeath",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "Takaro stored real-client death events with position and weapon on CS2 build 25966348 on 2026-10-19.",
+      "liveVerified": true
     },
     "entity-killed": {
       "status": "supported",
       "surface": "EventOtherDeath with authenticated player attacker",
-      "reason": "Implemented; prior target proof does not establish behavior on CS2 build 25966348. Awaiting current-build Takaro and real-client verification.",
-      "liveVerified": false
+      "reason": "The real client shot a Chicken and Takaro stored entity-killed with the authenticated SteamID64 attacker and Glock-18 on CS2 build 25966348 on 2026-10-19.",
+      "liveVerified": true
     }
   }
 }
