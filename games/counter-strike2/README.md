@@ -4,7 +4,7 @@ This is a server-side CounterStrikeSharp plugin. Players do not install anything
 
 ## Release status
 
-**0.1.0 candidate, not approved for publication.** The current target is Linux x86-64 CS2 build 25966348 with Metamod:Source 2.0.0.1483 and CounterStrikeSharp 1.0.377. The plugin builds and connects to Takaro on this target. Real-client actions and events still require current-build verification. CounterStrikeSharp `Server.ExecuteCommand` returns no command output, so `executeConsoleCommand` supports read-only allowlisted ConVar queries and refuses other commands instead of inventing `rawResult`. Shop quantities above one are refused because CS2 weapons are individual equipped items.
+**0.1.0 candidate, not approved for publication.** The current target is Linux x86-64 CS2 build 25966348 with Metamod:Source 2.0.0.1483 and CounterStrikeSharp 1.0.377. A real client has passed core actions, moderation persistence, lifecycle events, the economy module, the Discord chat bridge, and shop delivery. Network recovery and idle tick measurements also passed. Named-location and map-tile scope remains unresolved. CounterStrikeSharp `Server.ExecuteCommand` returns no command output, so `executeConsoleCommand` supports read-only allowlisted ConVar queries and refuses other commands instead of inventing `rawResult`. Shop quantities above one are refused because CS2 weapons are individual equipped items.
 
 The catalog requires gameplay verification. The release assembler refuses that level until the remaining real-client checks pass, the evidence is reviewed, and the target is explicitly approved for publication.
 
@@ -27,17 +27,19 @@ The target is CS2 build **25966348** on Linux x86-64. Current-build real-client 
 | Capability | Status | Current evidence |
 | --- | --- | --- |
 | Reachability | ✅ | Updated server identified through Takaro and reported de_dust2 |
-| Steam identity, player lookup | ⚠️ | Requires a real-client join on this target |
-| Chat, location, inventory, item delivery, teleport | ⚠️ | Requires current-build action and readback checks |
+| Steam identity, player lookup | ✅ | Takaro returned the authenticated real client as SteamID64 |
+| Chat, location, inventory, item delivery, teleport | ✅ | Takaro results, inventory and position readback, and real-client view |
 | Item catalog | ✅ | Current-build Takaro sync returned the curated ten-item catalog |
 | Read-only allowlisted console ConVar query | ✅ | Takaro returned the server's `sv_cheats` value and refused an unlisted command |
-| Kick, durable bans, unban | ⚠️ | Requires current-build client effects and restart persistence |
+| Kick, durable bans, unban | ✅ | Client disconnect, persisted ban after restart, blocked rejoin, then unban and rejoin |
 | Shutdown gate | ✅ | Takaro received `shutdown_disabled`; enabled path is untested |
-| Connect, disconnect, chat, player death events | ⚠️ | Requires current-build Takaro event rows |
-| Nonplayer kill | ⚠️ | Requires a current-build real-client kill and Takaro event row |
+| Connect, disconnect, chat, player death events | ✅ | Real-client event rows and one connect/disconnect per completed session |
+| Nonplayer kill | ✅ | Real client killed a spawned Chicken; Takaro recorded the attacker and weapon |
 | Entity catalog | ✅ | Current-build Takaro sync returned the neutral Chicken entry |
-| Log event | ⚠️ | Requires a current-build Takaro hook execution |
-| Idle server tick timing | ⚠️ | Requires current-build engine timing captures |
+| Log event | ✅ | Takaro executed an installed hook on the current plugin startup event |
+| Economy, Discord bridge, shop delivery | ✅ | Module and hook executions, completed shop order, inventory history and client item view |
+| Network recovery | ✅ | Scoped WebSocket outage, automatic reconnect, real-client message after recovery |
+| Idle server tick timing | ✅ | Two loaded and two unloaded VProf captures on the same empty server; 0.0075 ms observed difference per tick |
 | General console command output | ❌ | CounterStrikeSharp execution API does not expose output |
 | Named location catalog, map tiles | ❌ | No map-wide location catalog or validated server map raster source |
 
