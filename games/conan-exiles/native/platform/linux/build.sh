@@ -47,7 +47,8 @@ if [ "$NATIVE" = 0 ]; then
     mounts+=(-v "$CONAN_SERVER_BINARY_WIN:/conan-server-binary-win.exe:ro")
     env+=(-e CONAN_SERVER_BINARY_WIN=/conan-server-binary-win.exe)
   fi
-  exec docker run --rm -v "$PWD":/src -w /src -u "$(id -u):$(id -g)" "${env[@]}" "${mounts[@]}" "$IMAGE" \
+  # The whole game folder is mounted: the tests read ../version.txt and ../assets/icon-256.png.
+  exec docker run --rm -v "$(cd .. && pwd)":/src -w /src/native -u "$(id -u):$(id -g)" "${env[@]}" "${mounts[@]}" "$IMAGE" \
       platform/linux/build.sh "${args[@]}"
 fi
 

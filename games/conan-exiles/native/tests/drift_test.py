@@ -3,6 +3,7 @@
 
   core/conan/capabilities.json == conan::RegistryJson()   (coverage registry)
   core/pins/pins.json          == pins::TableJson()       (startup signatures and pinned builds)
+  core/conan/game_icon_png.inc == ../assets/icon-256.png  (the Game Profile icon, tools/gen_game_icon.py)
 
 and the registry must cover exactly Takaro's 19 actions and 6 event types.
 Usage: drift_test.py <harness binary>
@@ -54,11 +55,15 @@ def main():
     if pins_compiled != pins_published:
         failures.append('core/pins/pins.json differs from the table in core/pins/pins.cpp')
 
+    if subprocess.run([sys.executable, str(ROOT / 'tools/gen_game_icon.py'), '--check']).returncode != 0:
+        failures.append('core/conan/game_icon_png.inc differs from assets/icon-256.png')
+
     for f in failures:
         print('FAIL ' + f)
     if not failures:
         print('PASS capabilities.json equals the compiled coverage registry (19 actions, 6 events)')
         print('PASS pins.json equals the compiled signature and build table')
+        print('PASS game_icon_png.inc equals assets/icon-256.png')
     return 1 if failures else 0
 
 

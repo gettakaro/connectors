@@ -2,6 +2,7 @@
 // core/takaro never includes a UE or Conan header; host tests implement this with a fake game.
 #pragma once
 #include "common.h"
+#include "takaro/protocol.h"
 
 #include <string>
 #include <vector>
@@ -33,6 +34,8 @@ public:
     // Bridge thread, cheap, never blocks. The protocol 1 Capability Manifest as a JSON array; it may
     // change while running (the map is declared once the world is loaded). "" = offer protocol 0 only.
     virtual std::string CapabilityManifest() { return ""; }
+    // Bridge thread, cheap. The game and connector identity sent in identify.
+    virtual ConnectorIdentity Identity() { return {}; }
     // Bridge thread. Moves the events produced since the last call into `out`; never blocks.
     virtual void DrainEvents(std::vector<GameEvent>& out) = 0;
     // Any thread. A small JSON object for the health snapshot (pins, readiness, perf).

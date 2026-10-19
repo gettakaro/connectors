@@ -64,6 +64,7 @@ int main(int argc, char** argv) {
     conan::AdapterOptions ao;
     ao.version = "harness";
     ao.ready = std::string(argv[4]) == "ready";
+    if (ao.ready) ao.build = "25639945";
     if (!ao.ready) ao.refusal = "unsupported server build (harness); this connector is pinned to build 25639945";
     ao.chat = [&](const conan::ChatRequest& r) {
         conan::ChatOutcome o;

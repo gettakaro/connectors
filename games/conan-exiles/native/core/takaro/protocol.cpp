@@ -40,11 +40,15 @@ JsonValue NormalizeArgs(const JsonValue* value) {
 }
 
 std::string CreateIdentify(const std::string& identityToken, const std::string& registrationToken,
-                           const std::string& serverName, const std::string& capabilities) {
+                           const std::string& serverName, const std::string& capabilities,
+                           const ConnectorIdentity& identity) {
     ObjBuilder p;
     p.S("identityToken", identityToken);
     if (!registrationToken.empty()) p.S("registrationToken", registrationToken);
     if (!serverName.empty()) p.S("name", serverName);
+    if (!identity.game.empty()) p.S("game", identity.game);
+    if (!identity.name.empty() && !identity.version.empty())
+        p.Raw("connector", ObjBuilder().S("name", identity.name).S("version", identity.version).Done());
     if (!capabilities.empty()) p.Raw("protocolVersions", "[0,1]").Raw("capabilities", capabilities);
     return ObjBuilder().S("type", "identify").Raw("payload", p.Done()).Done();
 }

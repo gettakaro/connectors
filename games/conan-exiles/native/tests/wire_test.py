@@ -9,6 +9,8 @@ and the unknown-build refusal mode.
 
 Usage: wire_test.py <harness binary>   (OUTAGE_SECONDS=20 by default)
 """
+import base64
+import hashlib
 import json
 import os
 import queue
@@ -20,6 +22,7 @@ import threading
 import time
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parent.parent  # games/conan-exiles/native
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_takaro import FakeTakaro, events_of, make_cert  # noqa: E402
 
@@ -119,6 +122,9 @@ def basics(binary, cert, key, root):
         p = ident['payload']
         check(p.get('identityToken') == IDENTITY and p.get('registrationToken') == REGISTRATION
               and p.get('name') == 'Wire Test Conan', 'identify carries both tokens and the server name')
+        version = (ROOT.parent / 'version.txt').read_text().strip()
+        check(p.get('game') == 'conan-exiles' and p.get('connector') == {'name': 'takaro-conan-exiles', 'version': version},
+              'protocol 0 identify carries game and connector {name, version.txt}', p)
         wait_identified(fake, h, 1)
         check(fake.identifies == 1, 'exactly one identify on the first connection')
         check(not fake.errors, 'no WebSocket subprotocol, masked client frames', fake.errors)
@@ -349,6 +355,15 @@ def protocol_v1(binary, cert, key, root):
                'events.chat-message', 'events.player-connected', 'map'} <= set(names)
               and 'testReachability' not in names and not any('MapInfo' in n or 'MapTile' in n for n in names),
               'the manifest declares the live actions, the events and the map', names)
+        version = (ROOT.parent / 'version.txt').read_text().strip()
+        check(p.get('game') == 'conan-exiles' and p.get('connector') == {'name': 'takaro-conan-exiles', 'version': version},
+              'protocol 1 identify carries game and connector {name, version.txt}', p)
+        icon_png = (ROOT.parent / 'assets' / 'icon-256.png').read_bytes()
+        revision = hashlib.sha256(icon_png).hexdigest()[:12]
+        profile = next(c for c in p['capabilities'] if c['name'] == 'game.profile')['parameters']
+        check(profile == {'name': 'Conan Exiles', 'version': '25639945', 'icon': {'revision': revision, 'size': len(icon_png)}},
+              'game.profile: display name, the pinned server build and the icon revision/size of assets/icon-256.png',
+              profile)
         dims = next(c for c in p['capabilities'] if c['name'] == 'map')['parameters']['dimensions']
         check(len(dims) == 1 and dims[0]['id'] == 'exiled_lands' and dims[0]['source'] == {'type': 'none'}
               and dims[0]['axes'] == {'horizontal': {'field': 'x', 'direction': 'right'},
@@ -393,6 +408,10 @@ def protocol_v1(binary, cert, key, root):
         eventually(lambda: h.health()['outbox']['pending'] == 0, what='cumulative ack')
         check(True, 'a cumulative eventAck (upTo 6) confirms 4, 5 and 6')
 
+        r = fake.response(fake.request('getGameIcon', '{}'))
+        data = base64.b64decode(r.get('payload', {}).get('data', ''))
+        check(r['payload'].get('revision') == revision and data == icon_png,
+              'getGameIcon answers the declared revision and the whole PNG in base64', {k: v[:40] for k, v in r['payload'].items()})
         r = fake.response(fake.request('bogus', '{}'))
         check(r.get('error', {}).get('code') == 'unsupported' and r['error'].get('message'),
               'protocol 1 error shape: { code, message }', r)
@@ -433,6 +452,8 @@ def protocol_v1(binary, cert, key, root):
         eventually(lambda: h.health()['outbox']['pending'] == 0, what='pong confirmation')
         r = fake.response(fake.request('bogus', '{}'))
         check(isinstance(r.get('error'), str), 'protocol 0 error is a string', r)
+        r = fake.response(fake.request('getGameIcon', '{}'))
+        check(isinstance(r.get('error'), str) and 'payload' not in r, 'protocol 0: getGameIcon is an unknown action', r)
         h.quit()
     finally:
         if h.proc.poll() is None:

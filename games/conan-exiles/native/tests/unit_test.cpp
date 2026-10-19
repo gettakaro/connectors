@@ -8,6 +8,7 @@
 #include "gtstats.h"
 #include "conan/adapter.h"
 #include "conan/coverage.h"
+#include "conan/game_profile.h"
 #include "conan/map.h"
 #include "conan/text.h"
 #include "elfscan.h"
@@ -768,6 +769,10 @@ static void TestProtocolV1() {
     CHECK(JsonParse(CreateIdentify("i", "r", "n", "[{\"name\":\"players.list\"}]"), v), "v1 identify json");
     EQ(JsonDump(v), "{\"type\":\"identify\",\"payload\":{\"identityToken\":\"i\",\"registrationToken\":\"r\",\"name\":\"n\","
                     "\"protocolVersions\":[0,1],\"capabilities\":[{\"name\":\"players.list\"}]}}");
+    CHECK(JsonParse(CreateIdentify("i", "r", "n", "[]", {"conan-exiles", "takaro-conan-exiles", "3.4.0"}), v), "identity json");
+    EQ(JsonDump(v), "{\"type\":\"identify\",\"payload\":{\"identityToken\":\"i\",\"registrationToken\":\"r\",\"name\":\"n\","
+                    "\"game\":\"conan-exiles\",\"connector\":{\"name\":\"takaro-conan-exiles\",\"version\":\"3.4.0\"},"
+                    "\"protocolVersions\":[0,1],\"capabilities\":[]}}");
     EQ(CreateResponseV1("r1", JsonValue()), "{\"type\":\"response\",\"requestId\":\"r1\",\"payload\":null}");
     EQ(CreateResponseV1("r1", J("{\"x\":1}")), "{\"type\":\"response\",\"requestId\":\"r1\",\"payload\":{\"x\":1}}");
     EQ(CreateErrorResponseV1("r2", "not_found", "gone"),
@@ -881,7 +886,7 @@ static void TestProtocolV1() {
     std::string joined;
     for (auto& n : names) joined += n + " ";
     EQ(joined,
-       "players.get players.list players.location players.inventory items.give items.list entities.list "
+       "game.profile players.get players.list players.location players.inventory items.give items.list entities.list "
        "locations.list console.execute chat.send players.teleport moderation.kick moderation.ban moderation.unban "
        "moderation.listBans server.shutdown events.player-connected events.player-disconnected events.chat-message "
        "events.player-death events.entity-killed events.log ");
@@ -912,7 +917,9 @@ static void TestProtocolV1() {
     refused.refusal = "unsupported server build (abc)";
     refused.region = [] { return std::string("ExiledLands"); };
     Adapter rf(refused);
-    EQ(rf.CapabilityManifest(), "[]");
+    EQ(rf.CapabilityManifest(), "[" + GameProfileCapability("") + "]");
+    r = rf.Execute("getGameIcon", J("{}"), 1);
+    CHECK(r.ok, "a refused build still serves the icon");
 
     Config c = LoadConfig("/nonexistent", [](const char* n) { return std::string(!strcmp(n, "TAKARO_PROTOCOL") ? "0" : ""); },
                           "{}", true);
@@ -925,9 +932,76 @@ static void TestProtocolV1() {
     CHECK(c.protocol == 1 && !c.warnings.empty(), "out of range warns");
 }
 
+static std::string ReadFile(const std::string& path) {
+    std::string out;
+    FILE* f = fopen(path.c_str(), "rb");
+    if (!f) return out;
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof buf, f)) > 0) out.append(buf, n);
+    fclose(f);
+    return out;
+}
+
+// Game Profile: identity, the game.profile capability and getGameIcon (tests run in native/).
+static void TestGameProfile() {
+    using namespace takaro;
+    EQ(Sha256Hex(""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    EQ(Sha256Hex("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    EQ(Sha256Hex(std::string(1000, 'a')), "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3");
+    EQ(Base64(""), "");
+    EQ(Base64("f"), "Zg==");
+    EQ(Base64("fo"), "Zm8=");
+    EQ(Base64("foo"), "Zm9v");
+    EQ(Base64(std::string("\xff\x00\x10", 3)), "/wAQ");
+
+    std::string version = Trim(ReadFile("../version.txt"));
+    CHECK(!version.empty(), "../version.txt readable");
+    AdapterOptions opts;
+    opts.ready = true;
+    opts.build = "25792439";
+    Adapter ad(opts);
+    ConnectorIdentity id = ad.Identity();
+    EQ(id.game, "conan-exiles");
+    EQ(id.name, "takaro-conan-exiles");
+    EQ(id.version, version);  // release-please keeps common.h and version.txt equal
+
+    std::string png = ReadFile("../assets/icon-256.png");
+    CHECK(png.size() > 24 && png.size() <= 128 * 1024, "assets/icon-256.png at most 128 KiB (%zu)", png.size());
+    CHECK(png == GameIconPng(), "the compiled-in icon is assets/icon-256.png (run tools/gen_game_icon.py)");
+    CHECK(png.compare(0, 8, "\x89PNG\r\n\x1a\n") == 0 && png.compare(12, 4, "IHDR") == 0, "PNG signature + IHDR");
+    auto be32 = [&](size_t at) {
+        return (uint32_t)(unsigned char)png[at] << 24 | (uint32_t)(unsigned char)png[at + 1] << 16 |
+               (uint32_t)(unsigned char)png[at + 2] << 8 | (unsigned char)png[at + 3];
+    };
+    CHECK(be32(16) == 256 && be32(20) == 256, "icon is 256x256");
+    EQ(GameIconRevision(), Sha256Hex(png).substr(0, 12));
+
+    JsonValue m;
+    CHECK(JsonParse(ad.CapabilityManifest(), m) && m.type == JsonValue::Array && !m.arr.empty(), "manifest");
+    const JsonValue& profile = m.arr[0];
+    EQ(Str(profile.get("name")).value_or(""), "game.profile");
+    EQ(JsonDump(*profile.get("parameters")), "{\"name\":\"Conan Exiles\",\"version\":\"25792439\",\"icon\":{\"revision\":\"" +
+                                                 GameIconRevision() + "\",\"size\":" + std::to_string(png.size()) + "}}");
+    // version: trimmed, 1-32 printable ASCII, else omitted
+    JsonValue p;
+    CHECK(JsonParse(GameProfileCapability("  1.2 "), p) && Str(p.get("parameters")->get("version")).value_or("") == "1.2",
+          "version trimmed");
+    for (const std::string bad : {std::string(""), std::string(33, '1'), std::string("1\x01"), std::string("\xc3\xa9")}) {
+        CHECK(JsonParse(GameProfileCapability(bad), p) && !p.get("parameters")->get("version"), "bad version omitted");
+    }
+
+    ActionResult r = ad.Execute("getGameIcon", J("{}"), 1);
+    CHECK(r.ok && Str(r.payload.get("revision")).value_or("") == GameIconRevision(), "getGameIcon revision");
+    EQ(Str(r.payload.get("data")).value_or(""), Base64(png));
+    r = ad.Execute("getGameIcon", J("{}"), 0);
+    CHECK(!r.ok, "protocol 0 has no getGameIcon");
+}
+
 int main() {
     TestProtocol();
     TestProtocolV1();
+    TestGameProfile();
     TestConfig();
     TestSetJsonString();
     TestConfigWatcher();

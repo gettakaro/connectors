@@ -2,6 +2,7 @@
 
 #include "conan/actions_game.h"
 #include "conan/coverage.h"
+#include "conan/game_profile.h"
 #include "conan/map.h"
 #include "conan/reads.h"
 #include "conan/text.h"
@@ -158,6 +159,12 @@ ActionResult Adapter::Execute(const std::string& action, const JsonValue& args) 
 }
 
 ActionResult Adapter::Execute(const std::string& action, const JsonValue& args, int protocolVersion) {
+    if (action == "getGameIcon" && protocolVersion >= 1) {  // the compiled-in icon; needs no game
+        ActionResult icon;
+        icon.ok = true;
+        icon.payload = GameIconPayload();
+        return icon;
+    }
     ActionResult r = Execute(action, args);
     if (protocolVersion < 1) return r;
     if (!r.ok && r.code.empty()) {
@@ -199,10 +206,13 @@ std::string Adapter::CapabilityName(const std::string& action) {
     return "";
 }
 
+takaro::ConnectorIdentity Adapter::Identity() { return {kGameSlug, kConnectorName, TAKARO_CONAN_NATIVE_VERSION}; }
+
 std::string Adapter::CapabilityManifest() {
-    if (!o_.ready) return "[]";
+    if (!o_.ready) return "[" + GameProfileCapability("") + "]";
     std::string out = "[";
     auto add = [&](const std::string& entry) { out += (out.size() > 1 ? "," : "") + entry; };
+    add(GameProfileCapability(o_.build));
     for (const Coverage* c : ActionCoverages()) {
         std::string name = CapabilityName(c->name), status = c->status;
         if (name.empty() || std::string(c->implementation) != "native") continue;

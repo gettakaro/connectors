@@ -14,6 +14,7 @@ is ignored; an emptied token disconnects; a restart keeps the identity; the envi
 
 Usage: so_test.py <library .so> <fake server executable>
 """
+import hashlib
 import json
 import os
 import re
@@ -30,6 +31,18 @@ IDENTITY = 'so-identity-SECRET-55aa'
 REGISTRATION = 'so-registration-SECRET-66bb'
 OUTAGE = float(os.environ.get('OUTAGE_SECONDS', '20'))
 RESULTS = []
+GAME_DIR = Path(__file__).resolve().parent.parent.parent  # games/conan-exiles
+ICON = (GAME_DIR / 'assets' / 'icon-256.png').read_bytes()
+
+
+def refused_identify(**fields):
+    """The protocol 1 identify of the stand-in server (an unknown build): the given fields, the game and
+    connector identity, and a manifest of only game.profile (no build version; it refuses every action)."""
+    return {**fields, 'game': 'conan-exiles',
+            'connector': {'name': 'takaro-conan-exiles', 'version': (GAME_DIR / 'version.txt').read_text().strip()},
+            'protocolVersions': [0, 1],
+            'capabilities': [{'name': 'game.profile', 'parameters': {
+                'name': 'Conan Exiles', 'icon': {'revision': hashlib.sha256(ICON).hexdigest()[:12], 'size': len(ICON)}}}]}
 
 
 def check(cond, label, detail=''):
@@ -136,9 +149,8 @@ def config_reload(tmp, exe, lib, fake, url, cert):
     save(s.config, json.dumps(created, indent=2))
     _, ident = fake.next_frame(lambda v: isinstance(v, dict) and v.get('type') == 'identify', timeout=15,
                                what='identify after the token was saved')
-    check(ident['payload'] == {'identityToken': identity, 'registrationToken': REGISTRATION,
-                               'name': 'Conan Exiles (' + identity[:8] + ')', 'protocolVersions': [0, 1],
-                               'capabilities': []},
+    check(ident['payload'] == refused_identify(identityToken=identity, registrationToken=REGISTRATION,
+                                               name='Conan Exiles (' + identity[:8] + ')'),
           'token saved while running: identifies with the generated identity, no restart', ident['payload'])
     eventually(lambda: 'connected to Takaro as' in s.console(), what='connected line')
     check(sorted(p.name for p in s.config.parent.iterdir()) == ['takaro.json']
@@ -248,9 +260,10 @@ def main():
             s.start({'TAKARO_SERVER_NAME': 'From Env'})
             _, ident = fake.next_frame(lambda v: isinstance(v, dict) and v.get('type') == 'identify',
                                        what='identify')
-            # Protocol 1 is offered; an unknown build declares nothing (it refuses every action anyway).
-            check(ident['payload'] == {'identityToken': IDENTITY, 'registrationToken': REGISTRATION,
-                                       'name': 'From Env', 'protocolVersions': [0, 1], 'capabilities': []},
+            # Protocol 1 is offered with the game and connector identity; an unknown build declares only
+            # game.profile (no build version), as it refuses every action anyway.
+            check(ident['payload'] == refused_identify(identityToken=IDENTITY, registrationToken=REGISTRATION,
+                                                       name='From Env'),
                   'identifies with the takaro.json tokens; env wins over the file (name)', ident['payload'])
             eventually(lambda: events_of(fake.log), what='critical notice')
             notice = events_of(fake.log)

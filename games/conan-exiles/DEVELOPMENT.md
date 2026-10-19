@@ -175,12 +175,23 @@ native/
   Takaro keeps protocol 0). `"protocol": 0` in takaro.json (or `TAKARO_PROTOCOL=0`) sends the old
   identify. The manifest (`Adapter::CapabilityManifest`) is built from the coverage registry: every
   action with native code that is `live-supported` or `not-requested` (`locations.list` enables
-  Takaro's location markers), every live event, and `map` once the loaded map is known; a refused
-  build declares `[]`. The bridge compares it every 2 s and sends a `capabilities` replacement when
+  Takaro's location markers), every live event, `game.profile` and `map` once the loaded map is
+  known; a refused build declares only `game.profile` (without a version). The bridge compares it every 2 s and sends a `capabilities` replacement when
   it changes (the world loads after identify, so the map arrives that way). On protocol 1: errors are
   `{ code, message }` (`ActionResult.code`; unknown action `unsupported`, timeouts `game_error`),
   void answers are `payload: null`, an unknown player's location is `payload: null`, and
   `getPlayerLocation` carries `dimension`.
+- **Game Profile** (`core/conan/game_profile.*`). Every identify (protocol 0 and 1) sends
+  `game: "conan-exiles"` and `connector: { name: "takaro-conan-exiles", version }`, where version is
+  `TAKARO_CONAN_NATIVE_VERSION` (`core/common.h`, kept equal to `version.txt` by release-please).
+  The `game.profile` capability carries the name `Conan Exiles`, the pinned Steam build as
+  `version` (omitted on a refused build) and the icon's `revision` and `size`. The icon is
+  `assets/icon-256.png` (256 × 256 PNG, at most 128 KiB, from the official Steam library capsule),
+  compiled in as `core/conan/game_icon_png.inc`; after replacing the PNG run
+  `native/tools/gen_game_icon.py` (the drift test fails until the two match). The revision is the
+  first 12 hex characters of the PNG's sha256, computed at startup, so a new icon always declares a
+  new revision. `getGameIcon` (protocol 1 only) answers `{ revision, data }` with the whole PNG in
+  base64; it needs no game, so a refused build still serves it.
 - **Map** (`core/conan/map.*`). The dedicated server cook has no map art (the LinuxServer cook only
   references the client texture `T_FullscreenMap`), so each Dimension is `source: none` and the
   operator uploads the in-game map in Takaro. The bounds are the server's own calibration:
@@ -213,7 +224,8 @@ native/
   compiled tables); wire tests of the production Takaro half against a fake Takaro over TLS
   (identify, ping/pong, request correlation, every args shape, events, a forced 20 s outage with
   outbox replay, a killed process replaying from disk, identify rejection, unknown-build refusal,
-  and protocol 1: negotiation, manifest and map Dimension, streamId/seq, eventAck, resend after a
+  and protocol 1: negotiation, manifest, Game Profile (identify fields, `game.profile`,
+  `getGameIcon`) and map Dimension, streamId/seq, eventAck, resend after a
   reconnect, `{ code, message }` errors, a manifest replacement, the protocol 0 fallbacks);
   and the real library preloaded into a stand-in server executable. With
   `CONAN_SERVER_BINARY=<25639945 ConanSandboxServer-Linux-Shipping>` it also checks that the scan

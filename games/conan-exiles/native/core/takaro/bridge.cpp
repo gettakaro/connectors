@@ -197,7 +197,8 @@ void Bridge::HandleNotice(Notice& n) {
                       offeredManifest_.empty() ? "protocol 0" : "protocol versions [0, 1]");
             auto st = o_.transport->Queue({FrameKind::Control,
                                            Text(CreateIdentify(o_.config.identityToken, o_.config.registrationToken,
-                                                               o_.config.serverName, offeredManifest_)),
+                                                               o_.config.serverName, offeredManifest_,
+                                                               o_.game->Identity())),
                                            n.epoch, 0});
             if (st != QueueStatus::Accepted) o_.transport->RequestClose(n.epoch, "identify not queued");
             break;

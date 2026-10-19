@@ -48,12 +48,15 @@ public:
     // payload null (protocol 0 keeps the error Takaro needs there).
     takaro::ActionResult Execute(const std::string& action, const JsonValue& args, int protocolVersion) override;
     // The actions in the coverage registry with native code (live-supported or not-requested), every
-    // live-supported event, and `map` with the loaded map's Dimension once it is known. "[]" on a
-    // refused build (every action is refused there anyway).
+    // live-supported event, `game.profile` (name, the pinned server build, icon) and `map` with the
+    // loaded map's Dimension once it is known. Only `game.profile` (without a version) on a refused
+    // build (every action is refused there anyway).
     std::string CapabilityManifest() override;
     // The protocol 1 capability of a Takaro action ("players.list"); "" for testReachability and the
     // protocol 0 map actions.
     static std::string CapabilityName(const std::string& action);
+    // conan-exiles / takaro-conan-exiles / the release version (TAKARO_CONAN_NATIVE_VERSION).
+    takaro::ConnectorIdentity Identity() override;
     void DrainEvents(std::vector<takaro::GameEvent>& out) override;
     std::string HealthJson() override;
     // Any thread: queue an event for Takaro (bounded; the oldest `log` event is dropped first).

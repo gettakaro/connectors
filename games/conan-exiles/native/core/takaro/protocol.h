@@ -21,10 +21,18 @@ bool IsEventType(const std::string& type);
 // The result is always an object (possibly empty).
 JsonValue NormalizeArgs(const JsonValue* value);
 
+// Who the connector is, sent in identify on protocol 0 and 1. Empty fields are left out.
+struct ConnectorIdentity {
+    std::string game;     // the game slug ("conan-exiles")
+    std::string name;     // the connector slug ("takaro-conan-exiles")
+    std::string version;  // strict semver, the release version
+};
+
 // `capabilities` (a JSON array) set: protocol 1 is offered as protocolVersions [0, 1] with that
 // Capability Manifest; empty: the protocol 0 identify, unchanged.
 std::string CreateIdentify(const std::string& identityToken, const std::string& registrationToken,
-                           const std::string& serverName, const std::string& capabilities = "");
+                           const std::string& serverName, const std::string& capabilities = "",
+                           const ConnectorIdentity& identity = {});
 std::string CreateResponse(const std::string& requestId, const JsonValue& payload);  // Null payload -> {}
 std::string CreateErrorResponse(const std::string& requestId, const std::string& error);
 std::string CreateGameEvent(const std::string& type, const JsonValue& data);
