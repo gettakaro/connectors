@@ -10,9 +10,10 @@
     "since": "2026-10-16",
     "evidence": [
       "VEIN public build 25969514 (0.025h3 Build 13293) pinned from Steam app metadata: depot 2131402 manifest 249441576548896915; server binary and .sym hashes recorded from the depot and matched on the dev rig after a fresh install (issue #523)",
-      "Plugin built reproducibly from this tree (takaro-vein-plugin-linux-25969514-0.4.1.tar.gz sha256 e8a22a9724b038cf113a78591acfc15350e5ac9236c69fa025152c44447aa344); deployed to the dev rig, games/vein/scripts/smoke-server.py --expected-build 25969514 passed without a player (identified, zero delivery losses and persistence errors). Real-client MCP proof pending."
+      "Plugin built reproducibly from this tree (takaro-vein-plugin-linux-25969514-0.4.1.tar.gz sha256 e8a22a9724b038cf113a78591acfc15350e5ac9236c69fa025152c44447aa344); deployed to the dev rig, games/vein/scripts/smoke-server.py --expected-build 25969514 passed without a player (identified, zero delivery losses and persistence errors).",
+      "Real Windows client on 0.025h3 (Build 13293) through Takaro MCP on 2026-10-19: events player-connected, chat-message, command-executed, player-death, entity-killed (driven by the plugin's debug kill endpoint, weapon \"debug\", not a hand-swung weapon) and player-disconnected; all 16 callable actions (reachability, players, player, location, inventory, giveItem, items, entities, console command, sendMessage, teleport, kick, ban with refused rejoin, unban, listBans, shutdown) proven with client or game-side evidence. Discord chat bridge proven both ways (game chat posted to the test channel by the bridge module; a synthetic discord-message shown in the client chat; player-less messages not echoed back)."
     ],
-    "notes": "Candidate for VEIN public build 25969514 (0.025h3). Steam no longer serves the previous manifest, so the rig needs a fresh depot install. The Steam server and client build IDs differ; compare the reported VEIN game version (0.025h3) before joining."
+    "notes": "Candidate for VEIN public build 25969514 (0.025h3). Steam no longer serves the previous manifest, so the previous target can no longer be installed or re-tested; promotion to maintained and the default marker are left to the maintainers. The Steam server and client build IDs differ; compare the reported VEIN game version (0.025h3) before joining. listLocations has no Takaro route and log is wire-only."
   },
   "inputs": {
     "server": {
