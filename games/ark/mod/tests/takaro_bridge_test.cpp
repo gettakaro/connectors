@@ -4,6 +4,7 @@
 // for offline players, ban metadata/expiry, event replay after an outage and
 // the shutdown response-before-exit ordering.
 #include "../src/takaro_bridge.hpp"
+#include "../src/config_file.hpp"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -16,6 +17,9 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <functional>
 #include <iostream>
 #include <mutex>
@@ -729,6 +733,121 @@ void test_protocol_v1() {
   bridge.stop();
 }
 
+// Shipped files beside this test: games/ark/{version.txt,assets/icon-256.png}.
+std::string repo_path(const std::string& relative) {
+  return (std::filesystem::path(__FILE__).parent_path() / "../.." / relative).string();
+}
+
+std::string repo_file(const std::string& relative) {
+  std::ifstream in(repo_path(relative), std::ios::binary);
+  return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+std::string base64_decode(const std::string& text) {
+  std::string out(text.size() / 4 * 3, '\0');
+  const int n = EVP_DecodeBlock(reinterpret_cast<unsigned char*>(out.data()),
+                                reinterpret_cast<const unsigned char*>(text.data()), static_cast<int>(text.size()));
+  if (n < 0) return {};
+  size_t padding = 0;
+  while (padding < 2 && padding < text.size() && text[text.size() - 1 - padding] == '=') ++padding;
+  out.resize(static_cast<size_t>(n) - padding);
+  return out;
+}
+
+void test_game_profile() {
+  // The reported connector version is the release version (release-please keeps both equal).
+  const std::string version_txt = ark_config::trim(repo_file("version.txt"));
+  CHECK(!version_txt.empty() && std::string(takaro::kConnectorVersion) == version_txt);
+
+  // The shipped icon: a 256x256 PNG of at most 128 KiB, revision = sha256[:12] of its bytes.
+  const std::string png = repo_file("assets/icon-256.png");
+  std::string error;
+  auto icon = takaro::load_game_icon(repo_path("assets/icon-256.png"), error);
+  CHECK(icon && icon->png == png && png.size() <= 131072 && icon->revision == takaro::sha256_hex(png).substr(0, 12));
+  CHECK(icon && icon->revision.find_first_not_of("0123456789abcdef") == std::string::npos);
+  std::string not_png = png;
+  not_png[1] = 'X';
+  CHECK(!takaro::parse_game_icon(not_png, error) && error == "icon is not a PNG");
+  std::string wrong_side = png;
+  wrong_side[18] = 2;  // IHDR width 256 -> 512
+  CHECK(!takaro::parse_game_icon(wrong_side, error) && error.find("not 256x256") != std::string::npos);
+  CHECK(!takaro::parse_game_icon(png + std::string(131073 - png.size(), '\0'), error));
+  CHECK(!takaro::load_game_icon("/nonexistent/icon-256.png", error));
+
+  // v1: identify carries game + connector, the manifest declares game.profile, getGameIcon serves the bytes.
+  FakeTakaro takaro;
+  takaro.v1 = true;
+  gate::Server gate("boot-profile");
+  FakeGame game(gate);
+  auto config = config_for(takaro, temp_dir());
+  config.game_version = "361.7";
+  config.game_icon = icon;
+  takaro::Bridge bridge(config, gate, [](const std::string&) {});
+  bridge.start();
+  auto identify = takaro.wait_for([](const json::Value& m) { return is_type(m, "identify"); });
+  CHECK(identify);
+  if (identify) {
+    const auto* payload = identify->get("payload");
+    CHECK(payload->get("game")->as_string() == "ark");
+    CHECK(payload->get("connector")->get("name")->as_string() == "takaro-ark");
+    CHECK(payload->get("connector")->get("version")->as_string() == version_txt);
+    int profiles = 0;
+    for (const auto& c : payload->get("capabilities")->as_array()) {
+      if (c.get("name")->as_string() != "game.profile") continue;
+      ++profiles;
+      const auto* p = c.get("parameters");
+      CHECK(p->get("name")->as_string() == "ARK: Survival Evolved");
+      CHECK(p->get("version")->as_string() == "361.7");
+      CHECK(icon && p->get("icon")->get("revision")->as_string() == icon->revision);
+      CHECK(p->get("icon")->get("size")->as_number() == static_cast<double>(png.size()));
+    }
+    CHECK(profiles == 1);
+  }
+  CHECK(eventually([&] { return bridge.identified(); }));
+  auto served = takaro.request("icon-1", "getGameIcon", json::Value::object(), 2000ms);
+  CHECK(served && !served->get("error"));
+  if (served && served->get("payload") && served->get("payload")->is_object()) {
+    CHECK(icon && served->get("payload")->get("revision")->as_string() == icon->revision);
+    const std::string bytes = base64_decode(served->get("payload")->get("data")->as_string());
+    CHECK(bytes == png && bytes.size() == png.size());
+  }
+  bridge.stop();
+
+  // No icon declared: no icon in the profile and getGameIcon is refused as unsupported;
+  // an unknown game build is omitted, never sent empty.
+  FakeTakaro bare;
+  bare.v1 = true;
+  gate::Server gate2("boot-profile-2");
+  FakeGame game2(gate2);
+  takaro::Bridge bridge2(config_for(bare, temp_dir()), gate2, [](const std::string&) {});
+  bridge2.start();
+  auto identify2 = bare.wait_for([](const json::Value& m) { return is_type(m, "identify"); });
+  CHECK(identify2);
+  if (identify2)
+    for (const auto& c : identify2->get("payload")->get("capabilities")->as_array())
+      if (c.get("name")->as_string() == "game.profile")
+        CHECK(!c.get("parameters")->get("icon") && !c.get("parameters")->get("version"));
+  CHECK(eventually([&] { return bridge2.identified(); }));
+  auto refused = bare.request("icon-2", "getGameIcon", json::Value::object(), 2000ms);
+  CHECK(refused && refused->get("error")->get("code")->as_string() == "unsupported");
+  bridge2.stop();
+
+  // v0 (no protocol 1 offered): game + connector still identify, no manifest.
+  FakeTakaro old;
+  gate::Server gate3("boot-profile-3");
+  FakeGame game3(gate3);
+  auto v0 = config_for(old, temp_dir());
+  v0.protocol_versions = {0};
+  v0.game_icon = icon;
+  takaro::Bridge bridge3(v0, gate3, [](const std::string&) {});
+  bridge3.start();
+  auto identify3 = old.wait_for([](const json::Value& m) { return is_type(m, "identify"); });
+  CHECK(identify3 && identify3->get("payload")->get("game")->as_string() == "ark" &&
+        identify3->get("payload")->get("connector")->get("version")->as_string() == version_txt &&
+        !identify3->get("payload")->get("capabilities"));
+  bridge3.stop();
+}
+
 int main() {
   test_redaction_and_codec();
   test_identify_and_wire();
@@ -738,6 +857,7 @@ int main() {
   test_game_thread_stall_withholds();
   test_identify_rejected_backs_off();
   test_protocol_v1();
+  test_game_profile();
   if (failures) { std::cerr << failures << " check(s) failed\n"; return 1; }
   std::cout << "takaro_bridge_test passed\n";
   return 0;

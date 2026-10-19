@@ -57,6 +57,9 @@ struct Config {
   // The loaded map (from the server command line). Only maps with a verified
   // world<->lat/long calibration get a declared map Dimension.
   std::string map_name;
+  // game.profile: the running game build ("" = omitted) and the shipped icon (null = none).
+  std::string game_version;
+  std::shared_ptr<const GameIcon> game_icon;
 };
 
 // TheIsland: lat = 50 + y/8000, lon = 50 + x/8000 (verified against the client GPS),
@@ -177,6 +180,7 @@ class Bridge {
               known_),
         adapter_(gate_, bans_, known_) {
     if (!config_.state_dir.empty()) cursor_path_ = config_.state_dir + "/event-cursor.json";
+    adapter_.set_game_icon(config_.game_icon);
     adapter_.set_delivery_waiter([this](uint64_t seq, std::chrono::milliseconds timeout) {
       const auto deadline = std::chrono::steady_clock::now() + timeout;
       while (persisted_.load() < seq && std::chrono::steady_clock::now() < deadline)
@@ -308,6 +312,8 @@ class Bridge {
     payload.set("identityToken", json::str(config_.identity_token));
     if (!config_.registration_token.empty()) payload.set("registrationToken", json::str(config_.registration_token));
     if (!config_.server_name.empty()) payload.set("name", json::str(config_.server_name));
+    payload.set("game", json::str(kGameSlug));
+    payload.set("connector", json::obj({{"name", json::str(kConnectorName)}, {"version", json::str(kConnectorVersion)}}));
     if (std::find(config_.protocol_versions.begin(), config_.protocol_versions.end(), 1) !=
         config_.protocol_versions.end()) {
       json::Value versions = json::Value::array();
@@ -315,6 +321,7 @@ class Bridge {
       payload.set("protocolVersions", std::move(versions));
       json::Value manifest = json::Value::array();
       for (const auto& name : capability_manifest()) manifest.push(json::obj({{"name", json::str(name)}}));
+      manifest.push(game_profile_capability(config_.game_version, config_.game_icon.get()));
       if (auto dimension = map_dimension(config_.map_name)) {
         json::Value dimensions = json::Value::array();
         dimensions.push(std::move(*dimension));
