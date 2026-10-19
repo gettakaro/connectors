@@ -2,7 +2,7 @@ plugins {
     java
 }
 
-val versionFromFile = rootProject.file("version.txt").takeIf { it.exists() }?.readText()?.trim()
+val versionFromFile = rootProject.file("../version.txt").takeIf { it.exists() }?.readText()?.trim()
 
 allprojects {
     version = findProperty("version")?.toString()?.takeIf { it != "unspecified" }

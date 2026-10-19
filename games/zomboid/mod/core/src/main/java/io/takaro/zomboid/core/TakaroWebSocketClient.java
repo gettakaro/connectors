@@ -354,10 +354,19 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         }
     }
 
+    private String gameVersion() {
+        try {
+            return adapter.getGameVersion();
+        } catch (RuntimeException e) {
+            adapter.logWarning("Game version unavailable: " + e.getMessage());
+            return null;
+        }
+    }
+
     private void sendCapabilities() {
         List<io.takaro.zomboid.core.model.MapDimension> dims = mapDimensions();
         JsonObject payload = new JsonObject();
-        payload.add("capabilities", Capabilities.manifest(dims));
+        payload.add("capabilities", Capabilities.manifest(dims, gameVersion()));
         JsonObject msg = new JsonObject();
         msg.addProperty("type", "capabilities");
         msg.addProperty("requestId", UUID.randomUUID().toString());
@@ -375,6 +384,11 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         String registration = config.getRegistrationToken();
         payload.addProperty("identityToken", identity != null ? identity : "");
         payload.addProperty("registrationToken", registration != null ? registration : "");
+        payload.addProperty("game", GameProfile.GAME);
+        JsonObject connector = GameProfile.connectorJson();
+        if (connector != null) {
+            payload.add("connector", connector);
+        }
         int mapDimensions = 0;
         if (config.isProtocolV1Enabled()) {
             JsonArray versions = new JsonArray();
@@ -383,7 +397,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             payload.add("protocolVersions", versions);
             List<io.takaro.zomboid.core.model.MapDimension> dims = mapDimensions();
             mapDimensions = dims.size();
-            payload.add("capabilities", Capabilities.manifest(dims));
+            payload.add("capabilities", Capabilities.manifest(dims, gameVersion()));
         }
 
         JsonObject msg = new JsonObject();
@@ -553,6 +567,13 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                     sendError(requestId, ProtocolException.UNSUPPORTED, "Action not implemented: " + action);
                 }
                 break;
+            case "getGameIcon":
+                if (protocolVersion >= 1) {
+                    handleGetGameIcon(requestId);
+                } else {
+                    sendError(requestId, ProtocolException.UNSUPPORTED, "Action not implemented: " + action);
+                }
+                break;
             default:
                 sendError(requestId, ProtocolException.UNSUPPORTED, "Action not implemented: " + action);
                 break;
@@ -706,6 +727,20 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             adapter.logWarning("getMapImage failed: " + e);
             sendError(requestId, ProtocolException.GAME_ERROR, "Map image read failed: " + e.getMessage());
         }
+    }
+
+    /** The whole declared icon in one response; its revision is the one game.profile declares. */
+    private void handleGetGameIcon(String requestId) {
+        byte[] icon = GameProfile.icon();
+        if (icon == null) {
+            sendError(requestId, ProtocolException.GAME_ERROR, "The connector has no game icon");
+            return;
+        }
+        JsonObject payload = new JsonObject();
+        payload.addProperty("revision", GameProfile.iconRevision());
+        payload.addProperty("data", Base64.getEncoder().encodeToString(icon));
+        adapter.logInfo("Serving game icon revision " + GameProfile.iconRevision() + " (" + icon.length + " bytes)");
+        sendResponse(requestId, payload, null);
     }
 
     // --- Action handlers ---

@@ -177,6 +177,7 @@ timed-ban expiry, shutdown and the zombie-kill event.
 | Entity kill event | ✅ | Proven with a real zombie kill; the weapon used is included. A bare-handed kill reports no weapon. Rate-limited to about 20 per second so a horde cannot flood Takaro. |
 | Log events | ⚠️ | Server log lines are forwarded, but **off by default** — set `logEvents=true` (or `TAKARO_LOG_EVENTS=true`) to turn them on. |
 | Map | ⚠️ | Needs Takaro protocol v1 (not yet on takaro.io). Takaro shows your server's own world map (the picture the in-game map draws, read from the game install) with player dots. Ground floor only; areas added by map mods show as grey. |
+| Game name, icon and version | ✅ | Takaro shows the server as Project Zomboid with its icon, the running game build and the connector version (needs Takaro protocol v1). |
 | Discord chat bridge | ⚠️ | Not verified in a live test. The underlying chat in both directions works, so it is expected to, but it was not proven. |
 | Shop & economy | ⚠️ | Not verified in a live test. The pieces it needs — item catalogue, give an item, player inventory — are all proven, but the shop itself was not exercised. |
 

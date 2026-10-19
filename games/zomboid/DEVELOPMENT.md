@@ -249,8 +249,19 @@ server-side way to prove the catalogue when no Takaro REST driver is available.
 ## Protocol v1 and the map
 
 `identify` offers `protocolVersions: [0, 1]` with a Capability Manifest (`core/Capabilities`:
-the 16 action capabilities, `server.shutdown`, the six `events.*`, and `map` once ready). The
-version Takaro returns in `identifyResponse` holds for that connection; a missing value is 0.
+the 16 action capabilities, `server.shutdown`, the six `events.*`, `game.profile`, and `map`
+once ready). The version Takaro returns in `identifyResponse` holds for that connection; a
+missing value is 0.
+
+- **Game profile** (`core/GameProfile`): every identify, on both versions, sends
+  `game: "zomboid"` and `connector: {name: "takaro-zomboid", version}`. The version is
+  `games/zomboid/version.txt` (or `-Pversion`), written into the jar as a resource by
+  `core/build.gradle.kts`, never typed by hand. `game.profile` declares the name
+  `Project Zomboid`, the running build from `Core.getGameVersion()` plus `buildVersion`
+  (`42.21.0`), and the icon: `games/zomboid/assets/icon-256.png` (256 x 256 PNG, at most
+  128 KiB) embedded in the jar, with `revision` = the first 12 hex of its sha256 and `size` =
+  its byte length. Takaro fetches it with `getGameIcon` (protocol 1 only), answered in one
+  response with the whole file base64 encoded. A changed PNG gets a new revision by itself.
 
 - **Errors** on protocol 1 are `{error: {code, message}}` (`ProtocolException` codes;
   `IllegalArgumentException` → `invalid_args`, `UnsupportedOperationException` → `unsupported`,

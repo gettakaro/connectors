@@ -9,7 +9,8 @@ import java.util.List;
 
 /**
  * The protocol v1 Capability Manifest: the actions this connector really answers, the
- * events it emits, and the {@code map} capability when the game has a map to declare.
+ * events it emits, the {@code game.profile} capability, and the {@code map} capability when
+ * the game has a map to declare.
  */
 public final class Capabilities {
 
@@ -41,10 +42,16 @@ public final class Capabilities {
             "events.entity-killed",
             "events.log");
 
+    static final String GAME_PROFILE = "game.profile";
+
     private Capabilities() {
     }
 
     public static JsonArray manifest(List<MapDimension> dimensions) {
+        return manifest(dimensions, null);
+    }
+
+    public static JsonArray manifest(List<MapDimension> dimensions, String gameVersion) {
         JsonArray out = new JsonArray();
         for (String name : ACTIONS) {
             out.add(named(name));
@@ -52,6 +59,9 @@ public final class Capabilities {
         for (String name : EVENTS) {
             out.add(named(name));
         }
+        JsonObject profile = named(GAME_PROFILE);
+        profile.add("parameters", GameProfile.parameters(gameVersion));
+        out.add(profile);
         if (dimensions != null && !dimensions.isEmpty()) {
             JsonObject map = named("map");
             JsonObject parameters = new JsonObject();

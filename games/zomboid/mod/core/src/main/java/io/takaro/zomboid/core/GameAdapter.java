@@ -11,6 +11,8 @@ public interface GameAdapter {
 
     /** The game server's display name, used as the default chat sender name. */
     default String getServerName() { return null; }
+    /** The running game build for {@code game.profile}, or {@code null} when unknown. */
+    default String getGameVersion() { return null; }
     void runOnMainThread(Runnable task);
 
     /**

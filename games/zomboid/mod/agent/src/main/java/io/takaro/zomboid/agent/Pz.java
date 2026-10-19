@@ -19,6 +19,8 @@ import zombie.characters.IsoGameCharacter;
 import zombie.characters.IsoPlayer;
 import zombie.characters.Roles;
 import zombie.chat.ChatMessage;
+import zombie.core.Core;
+import zombie.core.GameVersion;
 import zombie.core.Translator;
 import zombie.core.logger.LoggerManager;
 import zombie.core.logger.ZLogger;
@@ -46,7 +48,8 @@ import zombie.scripting.objects.VehicleScript;
  * <p>Every method here links directly against the game classes (compiled
  * {@code compileOnly} against {@code projectzomboid.jar}); the only reflection
  * is {@link ServerWorldDatabase}'s package-private {@code conn} field, read to
- * list banned usernames for {@code listBans} completeness.
+ * list banned usernames for {@code listBans} completeness, and {@code Core}'s private
+ * {@code buildVersion} for {@link #gameVersion}.
  *
  * <p>All methods that touch {@link GameServer} state MUST be called on the game
  * main thread. The call sequences for {@link #teleport} and {@link #giveItem}
@@ -61,6 +64,27 @@ public final class Pz {
     public static String serverName() {
         String n = GameServer.serverName;
         return (n != null && !n.isEmpty()) ? n : null;
+    }
+
+    /**
+     * The running build as the game prints it, e.g. {@code 42.20.4}: {@link GameVersion} holds
+     * major, minor and suffix; the patch is {@code Core}'s private {@code buildVersion}
+     * constant. Without it the {@code 42.20} string alone is returned.
+     */
+    public static String gameVersion() {
+        GameVersion v = Core.getInstance().getGameVersion();
+        if (v == null) {
+            return null;
+        }
+        try {
+            Field build = Core.class.getDeclaredField("buildVersion");
+            build.setAccessible(true);
+            String suffix = v.getSuffix() != null ? v.getSuffix().trim() : "";
+            return v.getMajor() + "." + v.getMinor() + "." + build.getInt(null)
+                    + (suffix.isEmpty() ? "" : " " + suffix);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return v.toString();
+        }
     }
 
     // --- lifecycle / reachability ---

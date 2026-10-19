@@ -271,7 +271,73 @@ class ProtocolV1Test {
         assertTrue(sent.isEmpty());
     }
 
+    @Test
+    void identifyNamesTheGameAndTheConnectorOnBothVersions() {
+        for (boolean v1 : new boolean[] {true, false}) {
+            sent.clear();
+            config.setProtocolV1Enabled(v1);
+            client.onOpen(null);
+            JsonObject payload = frame(0).getAsJsonObject("payload");
+            assertEquals("zomboid", payload.get("game").getAsString());
+            JsonObject connector = payload.getAsJsonObject("connector");
+            assertEquals("takaro-zomboid", connector.get("name").getAsString());
+            assertEquals(GameProfile.connectorVersion(), connector.get("version").getAsString());
+        }
+    }
+
+    @Test
+    void manifestDeclaresTheGameProfileWithVersionAndIcon() {
+        client.onOpen(null);
+        JsonObject profile = capability(frame(0).getAsJsonObject("payload").getAsJsonArray("capabilities"),
+                "game.profile");
+        JsonObject parameters = profile.getAsJsonObject("parameters");
+        assertEquals("Project Zomboid", parameters.get("name").getAsString());
+        assertEquals("42.20.4", parameters.get("version").getAsString());
+        JsonObject icon = parameters.getAsJsonObject("icon");
+        assertEquals(GameProfile.iconRevision(), icon.get("revision").getAsString());
+        assertEquals(GameProfile.icon().length, icon.get("size").getAsInt());
+    }
+
+    @Test
+    void unknownGameVersionIsOmittedNotSentEmpty() {
+        adapter.gameVersion = null;
+        client.onOpen(null);
+        JsonObject parameters = capability(frame(0).getAsJsonObject("payload").getAsJsonArray("capabilities"),
+                "game.profile").getAsJsonObject("parameters");
+        assertFalse(parameters.has("version"));
+    }
+
+    @Test
+    void getGameIconServesTheDeclaredRevisionAndAllItsBytes() {
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        request("getGameIcon", "g1", "{}");
+        JsonObject response = frame(0);
+        assertEquals("response", response.get("type").getAsString());
+        assertEquals("g1", response.get("requestId").getAsString());
+        JsonObject payload = response.getAsJsonObject("payload");
+        assertEquals(GameProfile.iconRevision(), payload.get("revision").getAsString());
+        assertArrayEquals(GameProfile.icon(), Base64.getDecoder().decode(payload.get("data").getAsString()));
+    }
+
+    @Test
+    void getGameIconIsRefusedOnVersion0() {
+        client.onOpen(null);
+        identify(0);
+        sent.clear();
+        request("getGameIcon", "g1", "{}");
+        assertEquals("Action not implemented: getGameIcon", frame(0).get("error").getAsString());
+    }
+
     // --- helpers ---
+
+    private static JsonObject capability(JsonArray manifest, String name) {
+        for (JsonElement e : manifest) {
+            if (name.equals(e.getAsJsonObject().get("name").getAsString())) return e.getAsJsonObject();
+        }
+        throw new AssertionError("no " + name + " in the manifest");
+    }
 
     private void identify(int version) {
         client.onMessage("{\"type\":\"identifyResponse\",\"payload\":{\"gameServerId\":\"gs\",\"protocolVersion\":"
@@ -311,6 +377,9 @@ class ProtocolV1Test {
     private static class FakeAdapter implements GameAdapter {
         List<MapDimension> dimensions = List.of();
         RuntimeException failGiveWith;
+        String gameVersion = "42.20.4";
+
+        @Override public String getGameVersion() { return gameVersion; }
 
         @Override public void logInfo(String msg) { }
         @Override public void logWarning(String msg) { }

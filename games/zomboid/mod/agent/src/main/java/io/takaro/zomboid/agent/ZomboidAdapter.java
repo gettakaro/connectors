@@ -87,6 +87,21 @@ public final class ZomboidAdapter implements GameAdapter {
         io.takaro.zomboid.agent.hooks.Bridge.setEmitter(emitter);
     }
 
+    // --- game profile ---
+
+    private volatile String gameVersion;
+
+    /** {@code Core}'s version is fixed for the process, so it is read once and cached. */
+    @Override
+    public String getGameVersion() {
+        String version = gameVersion;
+        if (version == null) {
+            version = Pz.gameVersion();
+            gameVersion = version;
+        }
+        return version;
+    }
+
     // --- map (protocol v1) ---
 
     /**
