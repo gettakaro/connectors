@@ -1,4 +1,5 @@
 #include "native_behavior.h"
+#include "game_profile.h"
 #include "native_log.h"
 #include "actions.h"
 #include "common.h"
@@ -888,6 +889,8 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p) {
                                       {"reason", Str(kv.second, "reason")},
                                       {"expiresAt", kv.second.value("expiresAt", Json())}});
             out.payloadJson = mapped.dump();
+        } else if (action == "getGameIcon") {
+            out.payloadJson = GameProfile::IconResponseJson();
         } else if (action == "shutdown") {
             out.payloadJson = "{}";
             out.deferredShutdown = true;
@@ -1351,7 +1354,7 @@ std::string Engine::HealthJson() const {
 }
 
 NativePersistence::Result Engine::Publish() { return {true, {}}; }
-std::string CapabilityManifestJson() {
+std::string CapabilityManifestJson(const std::string& gameVersion) {
     Json manifest = Json::array();
     for (const char* name : {"players.list", "players.get", "players.location", "players.inventory", "players.teleport",
                              "items.list", "items.give", "entities.list", "locations.list", "chat.send",
@@ -1360,6 +1363,7 @@ std::string CapabilityManifestJson() {
                              "events.player-disconnected", "events.chat-message", "events.player-death",
                              "events.entity-killed", "events.log"})
         manifest.push_back(Json{{"name", name}});
+    manifest.push_back(Parse(GameProfile::CapabilityJson(gameVersion)));
     return manifest.dump();
 }
 

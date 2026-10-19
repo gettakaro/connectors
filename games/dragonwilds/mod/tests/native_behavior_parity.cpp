@@ -4,6 +4,7 @@
 // NativeLog + PluginState/bans; only the game-thread action handlers are stubbed.
 // Every id below is a fake fixture value.
 #include "native_behavior.h"
+#include "game_profile.h"
 #include "native_log.h"
 #include "actions.h"
 #include "common.h"
@@ -12,6 +13,8 @@
 #include "state.h"
 
 #include <nlohmann/json.hpp>
+#include <openssl/evp.h>
+#include <openssl/sha.h>
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
@@ -619,6 +622,42 @@ int main() {
                 Check(std::find(names.begin(), names.end(), name) != names.end(), std::string("manifest declares ") + name);
             Check(std::find(names.begin(), names.end(), "testReachability") == names.end(), "testReachability is not a capability");
             Check(std::find(names.begin(), names.end(), "map") == names.end(), "no map capability without map tiles");
+            // Game Profile: display name, the running version only when it is valid, and the compiled-in icon.
+            Check(manifest.back()["name"] == "game.profile", "game.profile is declared");
+            const Json profile = manifest.back()["parameters"];
+            Check(profile["name"] == "RuneScape: Dragonwilds", "game.profile name");
+            Check(!profile.contains("version"), "unknown game version is left out");
+            Check(Parse(NativeBehavior::CapabilityManifestJson(" 1.0.1.1 ")).back()["parameters"]["version"] == "1.0.1.1",
+                  "game version is trimmed");
+            Check(!Parse(NativeBehavior::CapabilityManifestJson(std::string(33, '1'))).back()["parameters"].contains("version"),
+                  "a version over 32 characters is left out");
+            Check(!Parse(NativeBehavior::CapabilityManifestJson("1.0\x01")).back()["parameters"].contains("version"),
+                  "a version with control characters is left out");
+            const std::string& png = GameProfile::IconPng();
+            unsigned char digest[SHA256_DIGEST_LENGTH];
+            SHA256(reinterpret_cast<const unsigned char*>(png.data()), png.size(), digest);
+            char hex[13];
+            for (int i = 0; i < 6; i++) snprintf(hex + 2 * i, 3, "%02x", digest[i]);
+            Check(profile["icon"] == Json{{"revision", std::string(hex, 12)}, {"size", png.size()}},
+                  "icon revision and size come from the bytes");
+            Check(png.size() <= 128 * 1024 && png.compare(0, 8, "\x89PNG\r\n\x1a\n") == 0 && png.compare(12, 4, "IHDR") == 0,
+                  "icon is a PNG within 128 KiB");
+            const auto be32 = [&](size_t at) {
+                return (uint32_t)(unsigned char)png[at] << 24 | (uint32_t)(unsigned char)png[at + 1] << 16 |
+                       (uint32_t)(unsigned char)png[at + 2] << 8 | (unsigned char)png[at + 3];
+            };
+            Check(be32(16) == 256 && be32(20) == 256, "icon is 256 x 256");
+            const Json icon = h.Ok("getGameIcon");
+            Check(icon["revision"] == profile["icon"]["revision"], "getGameIcon serves the declared revision");
+            const std::string data = icon["data"].get<std::string>();
+            std::string decoded(data.size(), '\0');
+            const int n = EVP_DecodeBlock(reinterpret_cast<unsigned char*>(&decoded[0]),
+                                          reinterpret_cast<const unsigned char*>(data.data()), (int)data.size());
+            Check(n >= 0, "getGameIcon data is base64");
+            decoded.resize((size_t)n - std::count(data.end() - std::min<size_t>(2, data.size()), data.end(), '='));
+            Check(decoded == png, "getGameIcon data is the whole PNG");
+            Check(Parse(GameProfile::ConnectorJson()) == Json{{"name", "takaro-dragonwilds"}, {"version", TAKARO_PLUGIN_VERSION}},
+                  "connector identity is takaro-dragonwilds at the release version");
             Check(NativeBehavior::ErrorCode("Unknown Takaro action 'getMapTile'") == "unsupported" &&
                   NativeBehavior::ErrorCode("Dragonwilds connector cannot perform this action: not implemented") == "unsupported" &&
                   NativeBehavior::ErrorCode("teleportPlayer requires numeric x, y, z") == "invalid_args" &&

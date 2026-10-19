@@ -1,5 +1,6 @@
 #include "native_bridge.h"
 #include "native_transport.h"
+#include "game_profile.h"
 #include "native_behavior.h"
 #include "native_persistence.h"
 
@@ -1112,13 +1113,15 @@ void BridgeLoop() {
                 Json p = {{"identityToken", identity}};
                 if (!registration.empty()) p["registrationToken"] = registration;
                 if (!serverName.empty()) p["name"] = serverName;
+                p["game"] = GameProfile::kGameSlug;
+                p["connector"] = Json::parse(GameProfile::ConnectorJson());
                 // Offer version 1 with version 0 as fallback; older Takaro ignores both keys.
                 // TAKARO_PROTOCOL=0 keeps the plain version 0 identify. The gate path has no
                 // durable outbox ids to use as seq, so it stays on version 0.
                 const char* forced = ConfigFile::Get("TAKARO_PROTOCOL");
                 if (!gateMode && !(forced && strcmp(forced, "0") == 0)) {
                     p["protocolVersions"] = {0, 1};
-                    p["capabilities"] = Json::parse(NativeBehavior::CapabilityManifestJson());
+                    p["capabilities"] = Json::parse(NativeBehavior::CapabilityManifestJson(Reflect::GameVersion()));
                 }
                 if (!NativeTransport::Queue(NativeTransport::Kind::Control,
                                             Json({{"type", "identify"}, {"payload", p}}).dump(), 0, n.epoch))

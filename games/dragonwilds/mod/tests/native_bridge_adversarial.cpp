@@ -24,6 +24,7 @@ bool released = false;
 
 bool GameThread::Alive() { return true; }
 bool Reflect::Validated() { return true; }
+std::string Reflect::GameVersion() { return ""; }
 Actions::Result Actions::Players() { return {200, "[]"}; }
 Actions::Result Actions::PlayerLocation(const std::string& id) {
     if (id == "00000000000000000000000000000003")

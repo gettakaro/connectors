@@ -15,6 +15,10 @@ import tempfile
 import threading
 import time
 
+RELEASE = re.search(r'#define TAKARO_PLUGIN_VERSION "([^"]+)" // x-release-please-version',
+                    (Path(__file__).resolve().parent.parent / 'src/common.h').read_text()).group(1)
+CONNECTOR = {'game': 'dragonwilds', 'connector': {'name': 'takaro-dragonwilds', 'version': RELEASE}}
+
 BINARY = Path(__file__).resolve().parent / 'build/native_bridge_adversarial'
 
 
@@ -375,7 +379,9 @@ def config_reload(cert, key):
 
             write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-first'))
             index, payload = next_identify(run)
-            assert payload == {'identityToken': identity, 'registrationToken': 'tok-first', 'name': name}, payload
+            # Version 0 identify names the game and the connector too.
+            assert payload == {'identityToken': identity, 'registrationToken': 'tok-first', 'name': name,
+                               **CONNECTOR}, payload
             run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
 
             write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-wrong'))
@@ -492,7 +498,7 @@ def config_reload(cert, key):
             cfg.write_text('TAKARO_REGISTRATION_TOKEN=tok-ro\nTAKARO_IDENTITY_TOKEN=my-own-id\n')  # in place
             index, payload = next_identify(run)
             assert payload == {'identityToken': 'my-own-id', 'registrationToken': 'tok-ro',
-                               'name': 'Dragonwilds (my-own-i)'}, payload
+                               'name': 'Dragonwilds (my-own-i)', **CONNECTOR}, payload
             run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
         finally:
             run.close()

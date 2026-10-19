@@ -95,9 +95,11 @@ private:
     std::unique_ptr<class LogState> log_;
 };
 
-// Protocol version 1 Capability Manifest: every action ExecuteAction answers with real game data and
-// the six event types MapEvent emits. testReachability is not a capability.
-std::string CapabilityManifestJson();
+// Protocol version 1 Capability Manifest: every action ExecuteAction answers with real game data, the
+// six event types MapEvent emits and the Game Profile (`gameVersion` is the running game version, ""
+// when unknown). testReachability and getGameIcon are not capabilities; Takaro asks for the icon
+// because game.profile declares one.
+std::string CapabilityManifestJson(const std::string& gameVersion = {});
 
 // Protocol version 1 error code for an action failure message.
 std::string ErrorCode(const std::string& message);

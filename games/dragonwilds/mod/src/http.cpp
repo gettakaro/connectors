@@ -227,6 +227,7 @@ Response Health() {
     std::string o = "{\"status\":" + JsonStr(status) + ",\"version\":\"" TAKARO_PLUGIN_VERSION "\"" +
                     ",\"bootId\":" + JsonStr(BootId()) + ",\"pid\":" + std::to_string(getpid()) +
                     ",\"gameBuild\":" + JsonStr(Reflect::GameBuild()) +
+                    ",\"gameVersion\":" + JsonStr(Reflect::GameVersion()) +
                     ",\"engineVersion\":" + JsonStr(Reflect::EngineVersion()) +
                     ",\"buildId\":" + JsonStr(Elf().buildId) +
                     ",\"uptimeMs\":" + std::to_string(NowMs() - StartMs()) +

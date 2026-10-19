@@ -3,8 +3,12 @@
 Only calls into the unavailable Dragonwilds engine are stubbed in the companion binary.
 Every id is a fake fixture value.
 """
+import base64
+import hashlib
 import json
 import os
+import re
+import struct
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import queue
@@ -15,6 +19,7 @@ import time
 import native_bridge_adversarial as wire
 
 BINARY = Path(__file__).resolve().parent / 'build/native_full_bridge'
+COMMON_H = Path(__file__).resolve().parent.parent / 'src/common.h'
 PONGS = threading.Event()
 PONGS.set()
 original_send = wire.send_frame
@@ -88,7 +93,25 @@ def protocol_v1(cert, key, state):
         names = [c['name'] for c in offered['capabilities']]
         assert len(names) == len(set(names)) and 'testReachability' not in names, names
         assert {'players.location', 'moderation.ban', 'events.player-connected', 'events.chat-message'} <= set(names), names
+        # Game Profile: the game and connector identity, game.profile with the running version and icon.
+        release = re.search(r'#define TAKARO_PLUGIN_VERSION "([^"]+)" // x-release-please-version',
+                            COMMON_H.read_text()).group(1)
+        assert offered['game'] == 'dragonwilds', offered.get('game')
+        assert offered['connector'] == {'name': 'takaro-dragonwilds', 'version': release}, offered.get('connector')
+        profile = offered['capabilities'][names.index('game.profile')]['parameters']
+        assert profile['name'] == 'RuneScape: Dragonwilds' and profile['version'] == '1.0.1.1', profile
+        icon = profile['icon']
+        assert re.fullmatch(r'[0-9a-f]{12}', icon['revision']) and 0 < icon['size'] <= 128 * 1024, icon
         eventually(lambda: run.health()['protocolVersion'] == 1)
+        run.request('v1-icon', 'getGameIcon', '{}')
+        answer = run.response('v1-icon')
+        assert 'error' not in answer or answer['error'] is None, answer
+        payload = answer['payload']
+        png = base64.b64decode(payload['data'], validate=True)
+        assert payload['revision'] == icon['revision'], payload['revision']
+        assert len(png) == icon['size'], (len(png), icon['size'])
+        assert hashlib.sha256(png).hexdigest()[:12] == icon['revision']
+        assert png[:8] == b'\x89PNG\r\n\x1a\n' and struct.unpack('>II', png[16:24]) == (256, 256)
 
         run.command('emit:v1-event', 'EMITTED')
         event = run.event('v1-event')
@@ -135,6 +158,8 @@ def protocol_v0_forced(cert, key, state):
     try:
         assert 'protocolVersions' not in run.identify_payload and 'capabilities' not in run.identify_payload, \
             run.identify_payload
+        assert run.identify_payload['game'] == 'dragonwilds', run.identify_payload
+        assert run.identify_payload['connector']['name'] == 'takaro-dragonwilds', run.identify_payload
         assert run.health()['protocolVersion'] == 0
         run.command('emit:v0-event', 'EMITTED')
         event = run.event('v0-event')

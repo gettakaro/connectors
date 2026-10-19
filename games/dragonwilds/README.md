@@ -162,6 +162,7 @@ Your `takaro.cfg` next to it, `.env` and the state directory are never touched.
 | Log events | ✅ | Passwords removed; rate-limited to stay under Takaro's limit. |
 | Map info | ❌ | Takaro has no map info for Generic game servers. |
 | Map tiles | ❌ | Takaro has no map tiles for Generic game servers. |
+| Game name, version and icon | ⚠️ | Needs Takaro protocol 1 (not yet on takaro.io). Takaro shows the server as RuneScape: Dragonwilds with the running game version (for example `1.0.1.1`), the game icon and the connector version. |
 | Modules: chat commands | ✅ |  |
 | Modules: hooks | ✅ |  |
 | Modules: cronjobs | ✅ |  |

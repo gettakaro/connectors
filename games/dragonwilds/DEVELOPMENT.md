@@ -67,7 +67,7 @@ environment is never written to disk. The release does not ship the file.
 
 ```bash
 ./mod/build.sh --tests                     # debian:bookworm container, pinned static deps, all tests
-python3 -m unittest discover -s scripts -p 'test_*.py'   # drain-legacy
+python3 -m unittest discover -s scripts -p 'test_*.py'   # drain-legacy, Game Profile
 ./scripts/build-release.sh 0.0.0-dev dist  # takaro-dragonwilds-plugin-<target>-<version>.tar.gz
 ```
 
@@ -88,6 +88,21 @@ That build must still load, keep the server running, and report exactly that cap
 The plugin version is a compile-time constant in `mod/src/common.h`
 (`// x-release-please-version`); release-please bumps it together with `version.txt` and the
 changelog. Never hand-edit it.
+
+### Game Profile
+
+`identify` names the game (`dragonwilds`) and the connector (`takaro-dragonwilds`, version
+`TAKARO_PLUGIN_VERSION` from `mod/src/common.h`, which release-please keeps equal to `version.txt`) on
+both protocol versions. On protocol 1 the manifest also declares `game.profile`
+(`mod/src/game_profile.cpp`): the display name, the running game version (`ProjectVersion` of the
+`GeneralProjectSettings` default object, the `1.0.1.1` of the server log's `Set ProjectVersion to`
+line, read on the game thread during boot validation; left out when it cannot be read) and the icon.
+The icon is `assets/icon-256.png` (256 x 256 PNG, at most 128 KiB), compiled into
+`libtakaro-dragonwilds.so` from `mod/src/game_icon_png.inc`; its revision (first 12 hex characters of
+the sha256) and size are computed from those bytes at startup, and `getGameIcon` answers with the
+whole file. After replacing the PNG run `mod/tools/gen_game_icon.py`; `scripts/test_game_profile.py`
+fails while the two differ. Takaro never fetches a revision twice, so a changed icon always has to
+change its bytes.
 
 ## Symbol resolution (`.sym`) and reflection
 

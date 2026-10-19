@@ -66,7 +66,7 @@ jobs:
         run: |
           chmod +x games/dragonwilds/mod/build.sh games/dragonwilds/mod/tests/*.sh
           games/dragonwilds/mod/build.sh --tests
-      - name: Test the 0.2.x drain and state import tool
+      - name: Test the 0.2.x drain tool and the Game Profile (version, icon)
         run: python3 -m unittest discover -s games/dragonwilds/scripts -p 'test_*.py' -v
 
   params:
