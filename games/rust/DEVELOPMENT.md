@@ -269,6 +269,23 @@ without `streamId`/`seq`, as before, and what was raised while disconnected goes
 Every frame leaves through one queue in order, so events never overtake each other. The pure part
 lives between `takaro:protocol-begin` / `takaro:protocol-end`; `tests/protocol/run.sh` runs it.
 
+### Game profile
+
+Identify also sends `game: "rust"`, `connector: { name: "takaro-rust", version }` and the server's
+hostname as `name` (Takaro follows it until an operator renames the server). `version` is the
+plugin's own `[Info]` version (Oxide's `Version`), which release-please keeps equal to `version.txt`;
+it is left out if it is ever not strict semver, because Takaro refuses the whole identify over it.
+The manifest declares `game.profile` with `name: "Rust"`, `version` = `Rust.Protocol.printable`
+(the build the server's `version` command prints, for example `2634.289.1`) and the icon's
+`revision` and `size`. `getGameIcon` is answered off the game thread with the whole PNG as base64.
+
+The icon is `assets/icon-256.png` (Steam library art of app 252490, 256 x 256). The plugin ships as
+one `.cs`, so `scripts/embed-icon.sh` writes the PNG into it as the base64 constant between
+`takaro:icon-begin` / `takaro:icon-end`; the plugin computes the revision (first 12 hex of the
+sha256) and size from those bytes when it loads. Changing the icon is: replace the PNG, run
+`scripts/embed-icon.sh`. `tests/protocol/run.sh` fails when the constant and the PNG differ, when
+the PNG is not 256 x 256 or over 128 KiB, and when the `[Info]` version is not `version.txt`.
+
 ### Environment variables
 
 | Variable | Description | Default |

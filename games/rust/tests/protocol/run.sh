@@ -2,7 +2,9 @@
 # Compiles the connector's protocol region (with the config region it reads identify errors
 # with) on its own and runs it against Generic Game Protocol v0 and v1: the identify offer and
 # Capability Manifest, identifyResponse in both versions, response and error frames, and the
-# numbered event stream with acks, resend and overflow.
+# numbered event stream with acks, resend and overflow; and the Game Profile: the identify
+# identity, the game.profile capability and getGameIcon against the shipped icon, and the
+# reported connector version against version.txt.
 #
 # The regions in mod/TakaroConnector.cs depend only on Newtonsoft.Json, so they compile as a
 # plain console project inside the catalog target's pinned .NET SDK image, against the
@@ -38,11 +40,25 @@ mkdir -p "${WORK}"
     echo '{'
     sed -n '/\/\/ takaro:config-begin/,/\/\/ takaro:config-end/p' mod/TakaroConnector.cs
     sed -n '/\/\/ takaro:protocol-begin/,/\/\/ takaro:protocol-end/p' mod/TakaroConnector.cs
+    sed -n '/\/\/ takaro:icon-begin/,/\/\/ takaro:icon-end/p' mod/TakaroConnector.cs
     echo '}'
 } > "${WORK}/Connector.cs"
 grep -q 'takaro:protocol-begin' "${WORK}/Connector.cs" || { echo "error: the protocol region markers are gone from mod/TakaroConnector.cs" >&2; exit 5; }
 
 cp tests/protocol/Program.cs "${WORK}/Program.cs"
+cp assets/icon-256.png "${WORK}/icon-256.png"
+
+# What the plugin reports as connector.version is its [Info] version (Oxide's Version);
+# release-please keeps it equal to version.txt.
+INFO_VERSION=$(sed -n 's/.*\[Info("TakaroConnector", "Takaro", "\([^"]*\)")\].*/\1/p' mod/TakaroConnector.cs | head -n 1)
+[ -n "${INFO_VERSION}" ] || { echo "error: no [Info] version in mod/TakaroConnector.cs" >&2; exit 5; }
+cat > "${WORK}/Versions.cs" <<CS
+internal static class Versions
+{
+    public const string Info = "${INFO_VERSION}";
+    public const string VersionTxt = "$(tr -d '[:space:]' < version.txt)";
+}
+CS
 
 cat > "${WORK}/Protocol.Tests.csproj" <<CSPROJ
 <Project Sdk="Microsoft.NET.Sdk">
@@ -58,6 +74,7 @@ cat > "${WORK}/Protocol.Tests.csproj" <<CSPROJ
   <ItemGroup>
     <Compile Include="Connector.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="Versions.cs" />
     <Reference Include="Newtonsoft.Json" HintPath="/work/games/rust/${GAME_REFS}/Newtonsoft.Json.dll" />
   </ItemGroup>
 </Project>

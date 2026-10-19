@@ -2,7 +2,9 @@
 // against Generic Game Protocol v0 and v1.
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using Newtonsoft.Json.Linq;
 
 internal static class Program
@@ -25,6 +27,7 @@ internal static class Program
         IdentifyReplies();
         Responses();
         Events();
+        Profile();
         Console.WriteLine("checks: " + _checks + ", failures: " + _failures);
         return _failures == 0 ? 0 : 1;
     }
@@ -71,6 +74,72 @@ internal static class Program
         Check(payload["capabilities"] is JArray caps && caps.Count == 22, "identify: carries the manifest");
         var empty = Connector.BuildIdentifyPayload(null, null, new JArray());
         Check((string)empty["identityToken"] == "" && (string)empty["registrationToken"] == "", "identify: missing tokens are empty strings");
+        Check((string)payload["game"] == "rust", "identify: game is the slug rust");
+        Check(empty["connector"] == null && empty["name"] == null, "identify: no connector or name when there is none");
+    }
+
+    private static void Profile()
+    {
+        // Identity
+        var payload = Connector.BuildIdentifyPayload("i", "r", new JArray(), "  My Rust Server ", Versions.Info);
+        Check((string)payload["connector"]["name"] == "takaro-rust", "identify: connector name is takaro-rust");
+        Check((string)payload["connector"]["version"] == Versions.Info, "identify: connector version is the [Info] version");
+        Check(Versions.Info == Versions.VersionTxt, "version: [Info] " + Versions.Info + " equals version.txt " + Versions.VersionTxt);
+        Check((string)payload["name"] == "My Rust Server", "identify: the hostname is sent trimmed");
+        Check(Connector.BuildIdentifyPayload("i", "r", new JArray(), "ab", null)["name"] == null, "identify: a name under 3 characters is not sent");
+        foreach (var slug in new[] { Connector.GameIdentifier, Connector.ConnectorName })
+            Check(System.Text.RegularExpressions.Regex.IsMatch(slug, "^[a-z0-9][a-z0-9-]*$") && slug.Length <= 64, "identify: slug " + slug);
+        foreach (var good in new[] { "0.3.0", "1.4.0", "2.0.0-beta.1", "0.8.1+abc1234" })
+            Check(Connector.IsStrictSemver(good), "semver: " + good + " is valid");
+        foreach (var bad in new[] { "", null, "0.3", "v1.0.0", "01.0.0", "1.0.0-", "1.0.0.0" })
+            Check(!Connector.IsStrictSemver(bad), "semver: '" + bad + "' is refused");
+        Check(Connector.BuildIdentifyPayload("i", "r", new JArray(), null, "0.3")["connector"] == null,
+            "identify: a version that is not strict semver leaves connector out instead of failing identify");
+
+        // Game build label
+        Check(Connector.GameVersionLabel(" 2611.264.1 ") == "2611.264.1", "build: trimmed");
+        Check(Connector.GameVersionLabel(null) == null && Connector.GameVersionLabel("  ") == null, "build: empty is omitted");
+        Check(Connector.GameVersionLabel("a\u0001b\u00e9c") == "abc", "build: only printable ASCII");
+        Check(Connector.GameVersionLabel(new string('9', 40)).Length == 32, "build: at most 32 characters");
+
+        // Icon
+        var shipped = File.ReadAllBytes("icon-256.png");
+        var icon = Connector.GameIcon.FromBase64(Connector.GameIconBase64);
+        Check(icon.Bytes.SequenceEqual(shipped), "icon: the embedded constant is exactly assets/icon-256.png (run scripts/embed-icon.sh)");
+        Check(icon.Size == shipped.Length && icon.Size > 0 && icon.Size <= 131072, "icon: size is the byte length, at most 128 KiB (" + icon.Size + ")");
+        string sha;
+        using (var hash = SHA256.Create())
+            sha = string.Concat(hash.ComputeHash(shipped).Select(b => b.ToString("x2")));
+        Check(icon.Revision == sha.Substring(0, 12), "icon: revision is the first 12 hex of the sha256 (" + icon.Revision + ")");
+        Check(shipped.Take(8).SequenceEqual(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }), "icon: PNG signature");
+        Check(System.Text.Encoding.ASCII.GetString(shipped, 12, 4) == "IHDR"
+            && ReadBigEndian(shipped, 16) == 256 && ReadBigEndian(shipped, 20) == 256, "icon: IHDR says 256 x 256");
+
+        // game.profile
+        var profile = Connector.GameProfileCapability(" 2611.264.1", icon);
+        Check((string)profile["name"] == "game.profile", "profile: capability name");
+        var parameters = (JObject)profile["parameters"];
+        Check((string)parameters["name"] == "Rust", "profile: display name Rust");
+        Check((string)parameters["version"] == "2611.264.1", "profile: game build");
+        Check((string)parameters["icon"]["revision"] == icon.Revision && (int)parameters["icon"]["size"] == shipped.Length,
+            "profile: icon revision and size");
+        Check(parameters.Properties().Select(p => p.Name).All(n => n == "name" || n == "version" || n == "icon"), "profile: no other keys");
+        var bare = (JObject)Connector.GameProfileCapability(null, null)["parameters"];
+        Check(bare["version"] == null && bare["icon"] == null && (string)bare["name"] == "Rust", "profile: build and icon are optional");
+        var names = Connector.BuildManifest(profile).Select(c => (string)c["name"]).ToList();
+        Check(names.Count(n => n == "game.profile") == 1, "manifest: game.profile declared once");
+
+        // getGameIcon
+        var response = Connector.GameIconResponse(icon);
+        Check((string)response["revision"] == icon.Revision, "getGameIcon: answers the declared revision");
+        Check(Convert.FromBase64String((string)response["data"]).SequenceEqual(shipped), "getGameIcon: data is the whole PNG, exactly size bytes");
+        var frame = Connector.ResponseFrame(1, "icon-req", response, null);
+        Check((string)frame["requestId"] == "icon-req" && frame["payload"]["data"] != null && frame["error"] == null, "getGameIcon: response frame");
+    }
+
+    private static int ReadBigEndian(byte[] bytes, int offset)
+    {
+        return (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
     }
 
     private static void IdentifyReplies()
