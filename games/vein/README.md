@@ -82,6 +82,7 @@ Verified on the native connector (v0.3.0) with a real game client and Takaro on 
 | Log events | ⚠️ | Forwarded with secrets redacted, but Takaro does not store log events. |
 | Map info | ⚠️ | Needs Takaro protocol 1 (proven on Takaro staging, not yet on takaro.io). The connector declares the 12 km map area to Takaro, so player dots land in the right place. |
 | Map tiles | ⚠️ | Needs Takaro protocol 1 (not yet on takaro.io). The server files carry no map picture. Upload the in-game map once in the Takaro dashboard ([INSTALL.md](INSTALL.md#world-map)). |
+| Game name, build and icon | ⚠️ | Needs Takaro protocol 1 (not yet on takaro.io). Takaro shows the server as VEIN with the running game version (for example `0.025h3`), the VEIN icon and the connector version. |
 | Modules: chat commands | ✅ | In-game commands reach the module and answer in chat. |
 | Modules: hooks | ✅ | Chat and join hooks fire and run their code. |
 | Modules: cronjobs | ✅ | Scheduled module runs fire and can message the server. |

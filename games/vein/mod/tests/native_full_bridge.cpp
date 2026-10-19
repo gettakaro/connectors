@@ -50,6 +50,7 @@ void PersistGameBan(const std::string& id, bool add, const std::string& reason =
 
 bool GameThread::Alive() { return true; }
 bool Reflect::Validated() { return true; }
+std::string Reflect::GameVersion() { return "0.025h3"; }
 Actions::Result Actions::Players() {
     if (holdPlayers) {
         std::unique_lock<std::mutex> lock(mu);

@@ -497,7 +497,7 @@ void Reflect::Validate() {
 }
 
 namespace {
-std::string g_gameBuild, g_engineVersion;
+std::string g_gameBuild, g_engineVersion, g_gameVersion;
 Mutex g_versionLock;
 
 void CacheVersionStrings() {
@@ -524,15 +524,30 @@ void CacheVersionStrings() {
             engineVersion = Reflect::ToStd(out, true);
         }
     }
-    PluginLog("reflect: gameBuild='%s' engineVersion='%s'", gameBuild.c_str(), engineVersion.c_str());
+    // VEIN's own version ("0.025h3", the one the game logs at boot) is the ProjectVersion of the
+    // GeneralProjectSettings CDO; FApp::GetBuildVersion is only "UE5-CL-0" on this build.
+    std::string gameVersion;
+    if (void* settings = Reflect::FindObjectByPath("/Script/EngineSettings", "Default__GeneralProjectSettings")) {
+        void* prop = Reflect::FindProperty(Reflect::ObjClass(settings), "ProjectVersion");
+        const int32_t off = prop ? Reflect::PropertyOffset(prop) : -1;
+        if (off >= 0 && MemReadable((const char*)settings + off, sizeof(UE::FString))) {
+            const auto* s = (const UE::FString*)((const char*)settings + off);
+            if (s->Data && s->Num > 1 && s->Num <= 256 && MemReadable(s->Data, (size_t)s->Num * 2))
+                gameVersion = Reflect::Utf16To8(s->Data, s->Num - 1);
+        }
+    }
+    PluginLog("reflect: gameBuild='%s' engineVersion='%s' gameVersion='%s'", gameBuild.c_str(),
+              engineVersion.c_str(), gameVersion.c_str());
     Guard guard(g_versionLock);
     g_gameBuild = std::move(gameBuild);
     g_engineVersion = std::move(engineVersion);
+    g_gameVersion = std::move(gameVersion);
 }
 }  // namespace
 
 std::string Reflect::GameBuild() { Guard guard(g_versionLock); return g_gameBuild; }
 std::string Reflect::EngineVersion() { Guard guard(g_versionLock); return g_engineVersion; }
+std::string Reflect::GameVersion() { Guard guard(g_versionLock); return g_gameVersion; }
 
 // Reference offsets for this exact build. Two independent sources agree on every value below: the
 // depot's own DWARF (`VeinServer-Linux-Test.debug`, read by `tools/dwarfoffsets.py`) and UE4SS-Vein's

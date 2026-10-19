@@ -1,4 +1,5 @@
 #include "native_behavior.h"
+#include "game_profile.h"
 #include "native_log.h"
 #include "native_map.h"
 #include "actions.h"
@@ -455,6 +456,7 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p){
             for(auto& row:Rows(call(Actions::Bans()),"bans")){Json b=Ban(row);std::string key=Str(b["player"],"gameId");auto it=byId.find(key);if(it!=byId.end()){b["expiresAt"]=it->second.value("expiresAt",Json());if(Str(b,"reason").empty())b["reason"]=Str(it->second,"reason");byId.erase(it);}mapped.push_back(b);}
             for(auto& kv:byId)mapped.push_back(Json{{"player",Player(Json{{"gameId",kv.first}})},{"reason",Str(kv.second,"reason")},{"expiresAt",kv.second.value("expiresAt",Json())}});out.payloadJson=mapped.dump();
         }else if(action=="getMapInfo")out.payloadJson=NativeMap::InfoJson();
+        else if(action=="getGameIcon")out.payloadJson=GameProfile::IconResponseJson();
         else if(action=="shutdown"){out.payloadJson="{}";out.deferredShutdown=true;}
         else throw std::runtime_error("Unknown Takaro action '"+action+"'");
     }catch(const std::exception& e){out.errorText=e.what();}
@@ -727,7 +729,7 @@ bool Engine::CustomLogJoin() const{return log_->parser.CustomJoin();}
 bool Engine::CustomLogChat() const{return log_->parser.CustomChat();}
 std::string Engine::HealthJson() const{return Json{{"revision",revision_},{"knownPlayers",Array(Parse(view_->knownPlayersJson)).size()},{"onlinePlayers",Array(Parse(view_->onlinePlayersJson)).size()},{"timedBans",Array(Parse(view_->timedBansJson)).size()},{"banPersistenceError",state::BanPersistenceError()},{"logParserError",log_->parser.LastError()},{"lastError",lastError_}}.dump();}
 NativePersistence::Result Engine::Publish(){return {true,{}};}
-std::string CapabilityManifestJson(){
+std::string CapabilityManifestJson(const std::string& gameVersion){
     Json manifest=Json::array();
     for(const char* name:{"players.list","players.get","players.location","players.inventory","players.teleport",
                           "items.list","items.give","entities.list","locations.list","chat.send","console.execute",
@@ -736,6 +738,7 @@ std::string CapabilityManifestJson(){
                           "events.player-death","events.entity-killed","events.log"})
         manifest.push_back(Json{{"name",name}});
     manifest.push_back(Parse(NativeMap::CapabilityJson()));
+    manifest.push_back(Parse(GameProfile::CapabilityJson(gameVersion)));
     return manifest.dump();
 }
 std::string ErrorCode(const std::string& message){

@@ -2,7 +2,11 @@
 """Production native bridge: real workers, TLS, protocol, ring and durable stores.
 Only calls into the unavailable VEIN engine are stubbed in the companion binary.
 """
+import base64
+import hashlib
 import json
+import re
+import struct
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import queue
@@ -13,6 +17,7 @@ import time
 import native_bridge_adversarial as wire
 
 BINARY = Path(__file__).resolve().parent / 'build/native_full_bridge'
+COMMON_H = Path(__file__).resolve().parent.parent / 'src/common.h'
 PONGS = threading.Event()
 PONGS.set()
 original_send = wire.send_frame
@@ -84,7 +89,25 @@ def protocol_v1(cert, key, state):
         assert dimension['id'] == 'champlain-valley' and dimension['source'] == {'type': 'none'}, dimension
         assert dimension['axes'] == {'horizontal': {'field': 'y', 'direction': 'right'},
                                      'vertical': {'field': 'x', 'direction': 'up'}}, dimension
+        # Game Profile: the game and connector identity, game.profile with the running build and icon.
+        release = re.search(r'#define TAKARO_PLUGIN_VERSION "([^"]+)" // x-release-please-version',
+                            COMMON_H.read_text()).group(1)
+        assert offered['game'] == 'vein', offered.get('game')
+        assert offered['connector'] == {'name': 'takaro-vein', 'version': release}, offered.get('connector')
+        profile = offered['capabilities'][names.index('game.profile')]['parameters']
+        assert profile['name'] == 'VEIN' and profile['version'] == '0.025h3', profile
+        icon = profile['icon']
+        assert re.fullmatch(r'[0-9a-f]{12}', icon['revision']) and 0 < icon['size'] <= 128 * 1024, icon
         eventually(lambda: run.health()['protocolVersion'] == 1)
+        run.request('v1-icon', 'getGameIcon', '{}')
+        answer = run.response('v1-icon')
+        assert 'error' not in answer or answer['error'] is None, answer
+        payload = answer['payload']
+        png = base64.b64decode(payload['data'], validate=True)
+        assert payload['revision'] == icon['revision'], payload['revision']
+        assert len(png) == icon['size'], (len(png), icon['size'])
+        assert hashlib.sha256(png).hexdigest()[:12] == icon['revision']
+        assert png[:8] == b'\x89PNG\r\n\x1a\n' and struct.unpack('>II', png[16:24]) == (256, 256)
 
         run.command('emit:v1-event', 'EMITTED')
         event = run.event('v1-event')

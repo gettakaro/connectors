@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import socket
 import ssl
 import struct
@@ -14,6 +15,9 @@ import subprocess
 import tempfile
 import threading
 import time
+
+RELEASE = re.search(r'#define TAKARO_PLUGIN_VERSION "([^"]+)" // x-release-please-version',
+                    (Path(__file__).resolve().parent.parent / 'src/common.h').read_text()).group(1)
 
 BINARY = Path(__file__).resolve().parent / 'build/native_bridge_adversarial'
 
@@ -405,7 +409,9 @@ def config_reload(cert, key):
 
             write_cfg(cfg, set_line(cfg.read_text(), 'TAKARO_REGISTRATION_TOKEN', 'tok-first'))
             index, payload = next_identify(run)
-            assert payload == {'identityToken': identity, 'registrationToken': 'tok-first', 'name': name}, payload
+            # Version 0 identify names the game and the connector too.
+            assert payload == {'identityToken': identity, 'registrationToken': 'tok-first', 'name': name,
+                               'game': 'vein', 'connector': {'name': 'takaro-vein', 'version': RELEASE}}, payload
             run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
             eventually(lambda: run.health()['connection']['identified'])
 

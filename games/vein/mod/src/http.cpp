@@ -227,6 +227,7 @@ Response Health() {
                     ",\"bootId\":" + JsonStr(BootId()) + ",\"pid\":" + std::to_string(getpid()) +
                     ",\"gameBuild\":" + JsonStr(Reflect::GameBuild()) +
                     ",\"engineVersion\":" + JsonStr(Reflect::EngineVersion()) +
+                    ",\"gameVersion\":" + JsonStr(Reflect::GameVersion()) +
                     ",\"buildId\":" + JsonStr(Elf().buildId) +
                     ",\"uptimeMs\":" + std::to_string(NowMs() - StartMs()) +
                     ",\"capabilities\":" + st.CapabilitiesJson() +

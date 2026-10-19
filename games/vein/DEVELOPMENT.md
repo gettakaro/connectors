@@ -25,7 +25,7 @@ Without a registration token or identity the connector does not dial at all (emp
 ```bash
 ./mod/build.sh --tests          # pinned static deps, Debian Bookworm toolchain, native tests
 ./scripts/build-release.sh      # one takaro-vein-plugin.tar.gz plus SHA256SUMS
-python3 -m unittest discover -s scripts -p test_smoke_server.py
+python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
 The build pins libwebsockets, OpenSSL, nlohmann/json and PCRE2 and hides bundled symbols. Check the actual server image loader and `ldd` before deployment, then verify the candidate hash in the game PID's `/proc/1/maps`. A local unit pass or HTTP response cannot replace a real PC-client trigger paired with Takaro MCP event UUIDs and action responses. The [native smoke](scripts/smoke-server.py) checks exact Steam server build, game status, native connection, queue/loss/persistence fields and durable outbox; it requires an authenticated diagnostic token, but the direct Takaro connection does not.
@@ -33,6 +33,19 @@ The build pins libwebsockets, OpenSSL, nlohmann/json and PCRE2 and hides bundled
 The isolated `dev-servers/` rig has its own world and a version-locked Steam installation. One operator owns its deployment and the PC client under the rig/client locks. `dev-servers/scripts/deploy-connector.sh vein` builds the library, checks loader symbols and swaps it under the rig lock. It refuses to deploy while a legacy sidecar container still exists. Do not auto-update the server behind the test client's VEIN version; matching game versions matter, while Steam build IDs may differ.
 
 The preload applies to `VeinServer-Linux-Test` only; SteamCMD is 32-bit. Mount the plugin directory read-only **outside** Steam's installation tree, because `app_update ... validate` removes unknown files. Never call `NetMulticast_SendChat` with a null sender, `FName::ToString` on an unvalidated value, or a game object from a background worker. A byte signature matching more than once is not a resolved symbol. Mutating Takaro actions may contain explicit JSON `null` for optional fields and a nested `player` object; preserve that behavior.
+
+### Game Profile
+
+`identify` names the game (`vein`) and the connector (`takaro-vein`, version `TAKARO_PLUGIN_VERSION` from
+`mod/src/common.h`, which release-please keeps equal to `version.txt`) on both protocol versions. On
+protocol 1 the manifest also declares `game.profile` (`mod/src/game_profile.cpp`): the display name, the
+running game version (`ProjectVersion` of the `GeneralProjectSettings` default object, the `0.025h3` the
+game logs at boot, read on the game thread during boot validation; left out when it cannot be read) and
+the icon. The icon is `assets/icon-256.png` (256 x 256 PNG, at most 128 KiB), compiled into
+`libtakaro-vein.so` from `mod/src/game_icon_png.inc`; its revision (first 12 hex characters of the sha256)
+and size are computed from those bytes at startup, and `getGameIcon` answers with the whole file. After
+replacing the PNG run `mod/tools/gen_game_icon.py`; `scripts/test_game_profile.py` fails while the two
+differ. Takaro never fetches a revision twice, so a changed icon always has to change its bytes.
 
 ## Compatibility and acceptance
 

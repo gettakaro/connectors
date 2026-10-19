@@ -95,9 +95,10 @@ private:
 };
 
 // Protocol version 1 Capability Manifest: every action ExecuteAction answers with real game data,
-// the six event types MapEvent emits, and the map Dimension. testReachability and the version 0
-// getMapInfo are not capabilities.
-std::string CapabilityManifestJson();
+// the six event types MapEvent emits, the map Dimension and the Game Profile (`gameVersion` is the
+// running game build, "" when unknown). testReachability, the version 0 getMapInfo and getGameIcon
+// are not capabilities; Takaro asks for the icon because game.profile declares one.
+std::string CapabilityManifestJson(const std::string& gameVersion = {});
 
 // Protocol version 1 error code for an action failure message.
 std::string ErrorCode(const std::string& message);

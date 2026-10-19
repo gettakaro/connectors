@@ -1,12 +1,16 @@
 #include "native_behavior.h"
 #include "native_log.h"
 #include "native_map.h"
+#include "game_profile.h"
+#include "common.h"
 #include "actions.h"
 #include "state.h"
 #include "gamethread.h"
 #include "reflect.h"
 #include "config_file.h"
 #include <nlohmann/json.hpp>
+#include <openssl/evp.h>
+#include <openssl/sha.h>
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
@@ -160,7 +164,7 @@ int main(){
         for(const char* name:{"players.list","players.location","moderation.listBans","server.shutdown","events.chat-message","events.log","map"})
             Check(std::find(names.begin(),names.end(),name)!=names.end(),std::string("manifest declares ")+name);
         Check(std::find(names.begin(),names.end(),"testReachability")==names.end(),"testReachability is not a capability");
-        const Json map=manifest.back();
+        const Json map=manifest[std::find(names.begin(),names.end(),"map")-names.begin()];
         Check(map["name"]=="map"&&map["parameters"]["dimensions"].size()==1,"one map Dimension");
         const Json dim=map["parameters"]["dimensions"][0];
         Check(dim["id"]==NativeMap::kDimensionId&&dim["source"]==Json{{"type","none"}},"Dimension id and none source");
@@ -168,6 +172,37 @@ int main(){
               "east (+y) is right and north (+x) is up");
         Check(dim["bounds"]==Json{{"horizontal",{{"min",-600000},{"max",600000}}},{"vertical",{{"min",-600000},{"max",600000}}}},
               "bounds are MapMakerMarker OrthoWidth 1,200,000 cm around the origin");
+        {
+            // Game Profile: display name, the running build only when it is valid, and the compiled-in icon.
+            const Json profile=manifest.back()["parameters"];
+            Check(manifest.back()["name"]=="game.profile"&&profile["name"]=="VEIN","game.profile follows the map");
+            Check(!profile.contains("version"),"unknown game build is left out");
+            const Json withBuild=Parse(NativeBehavior::CapabilityManifestJson(" 0.025h3 ")).back()["parameters"];
+            Check(withBuild["version"]=="0.025h3","game build is trimmed");
+            Check(!Parse(NativeBehavior::CapabilityManifestJson(std::string(33,'1'))).back()["parameters"].contains("version"),
+                  "a build over 32 characters is left out");
+            Check(!Parse(NativeBehavior::CapabilityManifestJson("0.025\x01")).back()["parameters"].contains("version"),
+                  "a build with control characters is left out");
+            const std::string& png=GameProfile::IconPng();
+            unsigned char digest[SHA256_DIGEST_LENGTH];
+            SHA256(reinterpret_cast<const unsigned char*>(png.data()),png.size(),digest);
+            char hex[13];for(int i=0;i<6;i++)snprintf(hex+2*i,3,"%02x",digest[i]);
+            Check(profile["icon"]==Json{{"revision",std::string(hex,12)},{"size",png.size()}},"icon revision and size come from the bytes");
+            Check(png.size()<=128*1024&&png.compare(0,8,"\x89PNG\r\n\x1a\n")==0&&png.compare(12,4,"IHDR")==0,"icon is a PNG within 128 KiB");
+            const auto be32=[&](size_t at){return (uint32_t)(unsigned char)png[at]<<24|(uint32_t)(unsigned char)png[at+1]<<16|
+                                                   (uint32_t)(unsigned char)png[at+2]<<8|(unsigned char)png[at+3];};
+            Check(be32(16)==256&&be32(20)==256,"icon is 256 x 256");
+            const Json icon=run("getGameIcon",Json::object());
+            Check(icon["revision"]==profile["icon"]["revision"],"getGameIcon serves the declared revision");
+            const std::string data=icon["data"].get<std::string>();
+            std::string decoded(data.size(),'\0');
+            int n=EVP_DecodeBlock(reinterpret_cast<unsigned char*>(&decoded[0]),reinterpret_cast<const unsigned char*>(data.data()),(int)data.size());
+            Check(n>=0,"getGameIcon data is base64");
+            decoded.resize((size_t)n-std::count(data.end()-std::min<size_t>(2,data.size()),data.end(),'='));
+            Check(decoded==png,"getGameIcon data is the whole PNG");
+            Check(Parse(GameProfile::ConnectorJson())==Json{{"name","takaro-vein"},{"version",TAKARO_PLUGIN_VERSION}},
+                  "connector identity is takaro-vein at the release version");
+        }
         const Json off=run("getMapInfo",Json::object());
         Check(off==Json{{"enabled",false},{"mapBlockSize",128},{"maxZoom",0},{"mapSizeX",0},{"mapSizeY",0},{"mapSizeZ",0}},
               "version 0 map info is a full DTO with enabled=false");

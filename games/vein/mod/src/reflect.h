@@ -118,5 +118,7 @@ std::string LayoutJson();
 // Cached build strings; filled by Validate() on the game thread, "" until then.
 std::string GameBuild();
 std::string EngineVersion();
+// VEIN's own version (GeneralProjectSettings.ProjectVersion, e.g. "0.025h3"); "" until Validate().
+std::string GameVersion();
 
 }  // namespace Reflect
