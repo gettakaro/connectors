@@ -572,11 +572,13 @@ bool RunCommand(const std::string& line, std::string& out) {
         std::string q = a[1];
         for (auto& c : q) c = (char)tolower((unsigned char)c);
         int n = 0;
-        for (size_t i = 0; i < kItemCount && n < 25; i++) {
-            std::string c = kItems[i].code;
+        size_t count;
+        const ItemDef* items = ItemTable(count);
+        for (size_t i = 0; i < count && n < 25; i++) {
+            std::string c = items[i].code;
             for (auto& ch : c) ch = (char)tolower((unsigned char)ch);
             if (c.find(q) == std::string::npos) continue;
-            out += std::string(n ? "\n" : "") + kItems[i].code + " (" + kItems[i].category + ", max " + std::to_string(kItems[i].maxStack) + ")";
+            out += std::string(n ? "\n" : "") + items[i].code + " (" + items[i].category + ", max " + std::to_string(items[i].maxStack) + ")";
             n++;
         }
         if (!n) out = "no item matches '" + a[1] + "'";
@@ -792,8 +794,9 @@ Response Route(const Request& r) {
         }
     }
     if (get && parts.size() == 1 && p0 == "bans") return BansJson();
-    if (get && parts.size() == 1 && (p0 == "items" || p0 == "entities") && !ItemTablesUsable())
-        return Err(503, "catalog unavailable: " + ItemTablesReason());
+    if (get && parts.size() == 1 && p0 == "items" && !ItemTablesUsable()) return Err(503, "catalog unavailable: " + ItemTablesReason());
+    if (get && parts.size() == 1 && p0 == "entities" && !EntityTablesUsable())
+        return Err(503, "catalog unavailable: " + EntityTablesReason());
     if (get && parts.size() == 1 && p0 == "items") return {200, ItemsJson()};
     if (get && parts.size() == 1 && p0 == "entities") return {200, EntitiesJson()};
     if (get && parts.size() == 1 && p0 == "locations") return {200, LocationsJson()};

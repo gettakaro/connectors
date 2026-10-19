@@ -165,6 +165,14 @@ file untouched, for checking the recipes on a test server.
 2. Write the generator inputs (`items/entities/locations.json`, see `tools/gen_gamedata.py` for the path), then `tools/gen_gamedata.py`,
    `tools/gen_item_labels.py <export> <note>` and `tools/gen_entity_labels.py <export> research/entities.json <note>`.
 
+On a game build other than the one `src/gamedata.cpp` was generated for, the plugin rebuilds the item
+table itself (`src/items_kfc.cpp`): it reads the `keen::ItemInfo` field offsets and the
+`ItemCategory`/`ItemRarity`/`ItemFlag` enums from the exe's reflection tables, decompresses the
+ItemInfo resources from `enshrouded_server.kfc_resources` (zstd, `third_party/zstd`) and saves the
+rows with the game build in `takaro/enshrouded-items.json`; the next start on that build reads the
+file. `mod/tests/items_kfc_test.sh <server folder>` runs the rebuild offline and compares it with
+the compiled table. Item names for new items still come from `src/itemlabels.cpp`.
+
 ### Moving to a new game build
 
 0. Run `mod/tests/derive_test.sh <new enshrouded_server.exe>`: it prints the derived section. Check

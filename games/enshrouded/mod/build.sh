@@ -15,6 +15,8 @@ MH=third_party/minhook
 for f in $MH/src/hook.c $MH/src/buffer.c $MH/src/trampoline.c $MH/src/hde/hde64.c; do
   "$ZIG" cc -target $TARGET -O2 -I$MH/include -c "$f" -o "$OUT/obj/$(basename "$f" .c).o"
 done
+# zstd decoder (single-file amalgamation) for reading enshrouded_server.kfc_resources
+"$ZIG" cc -target $TARGET -O2 -c third_party/zstd/zstddeclib.c -o "$OUT/obj/zstddeclib.o"
 "$ZIG" c++ -target $TARGET -O2 -std=c++17 "${DEFS[@]}" -Wall -Wno-unused-function -I$MH/include -Isrc -I"$OUT" \
   -shared -s -o "$OUT/dbghelp.dll" src/*.cpp src/native/*.cpp "$OUT"/obj/*.o -lws2_32 -lwinhttp -lcrypt32 -lbcrypt
 rm -f "$OUT"/*.lib "$OUT"/*.pdb

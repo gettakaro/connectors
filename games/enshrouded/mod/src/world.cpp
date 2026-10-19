@@ -2,6 +2,7 @@
 
 #include "entity.h"
 #include "hooks.h"
+#include "items_kfc.h"
 #include "names.h"
 #include "profile.h"
 #include "scan.h"
@@ -411,7 +412,7 @@ std::string GuidStr(const uint8_t* g) {
 
 // Entity template code for a raw 16-byte GUID; tries RFC byte order and the mixed-endian (bytes_le) layout.
 const EntityDef* EntityByGuid(const uint8_t* raw, const char** form) {
-    if (!ItemTablesUsable()) return nullptr;
+    if (!EntityTablesUsable()) return nullptr;
     uint8_t le[16];
     le[0] = raw[3], le[1] = raw[2], le[2] = raw[1], le[3] = raw[0], le[4] = raw[5], le[5] = raw[4], le[6] = raw[7],
     le[7] = raw[6];
@@ -548,9 +549,12 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                     KillWeaponItem(World(server), e, pide, itemId);
                     const ItemDef* wd = nullptr;
                     const char* label = itemId ? ItemLabelById(itemId) : nullptr;
-                    if (itemId && !label)  // only then is the code needed (derived-name fallback)
-                        for (size_t q = 0; ItemTablesUsable() && q < kItemCount && !wd; q++)
-                            if (kItems[q].itemId == itemId) wd = &kItems[q];
+                    if (itemId && !label) {  // only then is the code needed (derived-name fallback)
+                        size_t n;
+                        const ItemDef* items = ItemTable(n);
+                        for (size_t q = 0; q < n && !wd; q++)
+                            if (items[q].itemId == itemId) wd = &items[q];
+                    }
                     KillWeapon kw = ResolveKillWeapon(itemId, wd ? wd->code : nullptr, category);
                     const char* catName = WeaponCategoryName(category);
                     // `entity` is what Takaro shows: the client's name, else the code-derived one;
@@ -1166,8 +1170,10 @@ bool WorldInventoryJson(const std::string& name, std::string& json, std::string&
                         const uint32_t* st = (const uint32_t*)((uint8_t*)r.ptr + j * 12);
                         if (!st[0] || !st[1]) continue;
                         const ItemDef* d = nullptr;
-                        for (size_t q = 0; ItemTablesUsable() && q < kItemCount && !d; q++)
-                            if (kItems[q].itemId == st[0]) d = &kItems[q];
+                        size_t n;
+                        const ItemDef* items = ItemTable(n);
+                        for (size_t q = 0; q < n && !d; q++)
+                            if (items[q].itemId == st[0]) d = &items[q];
                         char idHex[16];
                         snprintf(idHex, sizeof idHex, "0x%08x", st[0]);
                         std::string code = d ? d->code : idHex;
@@ -1484,34 +1490,58 @@ bool WorldNearbyJson(const std::string& name, double radius, std::string& json, 
 
 // ------------------------------------------------------------------------------------------------
 static const char kTablesGameBuild[] = "1267041";
-static std::atomic<bool> g_tablesUsable{true};
-static std::string g_tablesReason;
+static std::atomic<bool> g_itemsUsable{false};
+static std::atomic<bool> g_entitiesUsable{false};
+static std::string g_itemsReason = "initializing", g_entitiesReason = "initializing";
+static const ItemDef* g_items = kItems;
+static size_t g_itemCount = kItemCount;
 
 void SetItemTablesBuild(const std::string& gameBuild, bool haveGamedataSection) {
     (void)haveGamedataSection;  // a valid hook profile does not validate item ids
-    bool ok = gameBuild == kTablesGameBuild;
-    if (!ok) {
-        g_tablesReason = std::string("item and entity tables are for game build ") + kTablesGameBuild + ", this server is build " +
-                         gameBuild + "; use the plugin release for that build";
-        auto& st = PluginState::Get();
-        for (auto* c : {"listItems", "listEntities", "giveItem"}) st.SetCapability(c, "degraded", g_tablesReason);
+    auto& st = PluginState::Get();
+    if (gameBuild == kTablesGameBuild) {
+        g_itemsUsable = g_entitiesUsable = true;
+        return;
     }
-    g_tablesUsable = ok;
+    // Another game build: the item table is rebuilt from this server's enshrouded_server.kfc once per build.
+    std::string source, err;
+    const ItemDef* items = nullptr;
+    size_t count = 0;
+    if (items_kfc::Load(gameBuild, items, count, source, err)) {
+        g_items = items;
+        g_itemCount = count;
+        g_itemsUsable = true;
+        st.SetCapability("listItems", "ok", source + " (" + std::to_string(count) + " ItemInfo)");
+    } else {
+        g_itemsReason = "item table is for game build " + std::string(kTablesGameBuild) + ", this server is build " + gameBuild +
+                        "; rebuilding it from enshrouded_server.kfc failed: " + err;
+        for (auto* c : {"listItems", "giveItem"}) st.SetCapability(c, "degraded", g_itemsReason);
+    }
+    g_entitiesReason = std::string("entity table is for game build ") + kTablesGameBuild + ", this server is build " + gameBuild +
+                       "; use the plugin release for that build";
+    st.SetCapability("listEntities", "degraded", g_entitiesReason);
 }
-bool ItemTablesUsable() { return g_tablesUsable; }
-std::string ItemTablesReason() { return g_tablesReason; }
+bool ItemTablesUsable() { return g_itemsUsable; }
+std::string ItemTablesReason() { return g_itemsReason; }
+bool EntityTablesUsable() { return g_entitiesUsable; }
+std::string EntityTablesReason() { return g_entitiesReason; }
+const ItemDef* ItemTable(size_t& count) {
+    count = g_itemsUsable ? g_itemCount : 0;
+    return g_items;
+}
 
 const ItemDef* FindItemByCode(const std::string& code) {
-    if (!g_tablesUsable) return nullptr;
-    for (size_t i = 0; i < kItemCount; i++)
-        if (code == kItems[i].code) return &kItems[i];
-    for (size_t i = 0; i < kItemCount; i++)
-        if (_stricmp(code.c_str(), kItems[i].code) == 0) return &kItems[i];
+    size_t n;
+    const ItemDef* items = ItemTable(n);
+    for (size_t i = 0; i < n; i++)
+        if (code == items[i].code) return &items[i];
+    for (size_t i = 0; i < n; i++)
+        if (_stricmp(code.c_str(), items[i].code) == 0) return &items[i];
     char* end = nullptr;
     unsigned long long v = strtoull(code.c_str(), &end, 0);
     if (end && *end == 0 && !code.empty())
-        for (size_t i = 0; i < kItemCount; i++)
-            if (kItems[i].itemId == v) return &kItems[i];
+        for (size_t i = 0; i < n; i++)
+            if (items[i].itemId == v) return &items[i];
     return nullptr;
 }
 
@@ -1523,14 +1553,16 @@ const std::string& ItemsJson() {
         // Only what the game client names: an item without an En_Us name is never shown to a
         // player (character-creator parts, placement tools, cut content), and an Ability_ row
         // is a skill, not an item. giveItem still takes any code (FindItemByCode).
+        size_t n;
+        const ItemDef* items = ItemTable(n);
         s = "[";
         bool first = true;
-        for (size_t i = 0; i < kItemCount; i++) {
-            const char* name = ItemLabelById(kItems[i].itemId);
-            if (!IsCatalogueItem(kItems[i].code, name)) continue;
-            s += std::string(first ? "" : ",") + "{\"code\":" + JsonStr(kItems[i].code) + ",\"name\":" + JsonStr(name) +
-                 ",\"description\":" + JsonStr(std::string(kItems[i].category) + ", " + kItems[i].rarity) +
-                 ",\"itemId\":" + std::to_string(kItems[i].itemId) + ",\"maxStackSize\":" + std::to_string(kItems[i].maxStack) + "}";
+        for (size_t i = 0; i < n; i++) {
+            const char* name = ItemLabelById(items[i].itemId);
+            if (!IsCatalogueItem(items[i].code, name)) continue;
+            s += std::string(first ? "" : ",") + "{\"code\":" + JsonStr(items[i].code) + ",\"name\":" + JsonStr(name) +
+                 ",\"description\":" + JsonStr(std::string(items[i].category) + ", " + items[i].rarity) +
+                 ",\"itemId\":" + std::to_string(items[i].itemId) + ",\"maxStackSize\":" + std::to_string(items[i].maxStack) + "}";
             first = false;
         }
         s += "]";

@@ -8,9 +8,10 @@ It supports **Enshrouded 1.0** (game build **1267041**, hotfix 1.0.0.1, Steam bu
 natively on a Windows dedicated server and under **GE-Proton11-9** in
 `mornedhels/enshrouded-server:dev-proton` (the older GE-Proton10-30 image cannot start the 1.0 server:
 `No SteamUtils011`). Everything that changes between game builds lives in one data file,
-`takaro/enshrouded-gamedata.json`. **The item and creature catalogue and `giveItem` are compiled for 1.0
-and are switched off (degraded) on any other game build, including the earlier build 1024233, which is
-no longer a supported target.** On a build the data file does not know yet, the plugin works the new
+`takaro/enshrouded-gamedata.json`. **The item catalogue and `giveItem` follow the game build: on a build
+other than 1267041 the plugin rebuilds the item table once from the server's own `enshrouded_server.kfc`
+and saves it as `takaro/enshrouded-items.json` for that build. The creature catalogue is compiled for
+1.0 and reports degraded on other builds. The earlier build 1024233 is no longer a supported target.** On a build the data file does not know yet, the plugin works the new
 section out itself from stable anchors in the game code, saves it to that file and uses it; anything it
 cannot work out reports itself degraded (see "A game update can switch a feature off" below) while the
 rest keeps running. **Keep the server on a build the connector supports.**
@@ -87,6 +88,9 @@ Download the latest release: https://takaro.io/connectors/enshrouded
   derived it logs `gamedata: deriving build <n> failed: <value>` and uses its older heuristics;
   features whose code moved then report themselves degraded, and a hand-written section in
   `takaro/enshrouded-gamedata.json` (see DEVELOPMENT.md) brings them back without a new DLL.
+  The item table follows the same way: the plugin logs `[items] <n> items rebuilt from
+  enshrouded_server.kfc (...) for game build <n>` once and reads `takaro/enshrouded-items.json` on
+  the next starts of that build.
 - A **Takaro** game server of type **Generic**, and its **registration token**.
 
 ### 2. Download
