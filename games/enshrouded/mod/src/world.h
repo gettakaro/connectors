@@ -18,7 +18,9 @@ struct Vec3 {
 bool WorldGetLocation(const std::string& playerName, Vec3& out, std::string& err);
 bool WorldTeleport(const std::string& playerName, const Vec3& to, std::string& err);
 bool WorldInventoryJson(const std::string& playerName, std::string& json, std::string& err);
-bool WorldGiveItem(const std::string& playerName, const ItemDef& item, uint32_t amount, std::string& err, std::string& detail);
+// level: AdminInventoryCreateAction.level (1-255), 0 = the game's default level for the item.
+bool WorldGiveItem(const std::string& playerName, const ItemDef& item, uint32_t amount, std::string& err, std::string& detail,
+                   uint8_t level = 0);
 // recipientMachine: "" broadcasts; otherwise the machine index printed in "[server] Machine 'M'" of the recipient.
 bool WorldSendMessage(const std::string& text, const std::string& recipientMachine, uint8_t type, uint32_t senderHandle,
                       std::string& err);

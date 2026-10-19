@@ -395,14 +395,14 @@ Response DoTeleport(const std::string& id, double x, double y, double z) {
     return {200, "{\"success\":true}"};
 }
 
-Response DoGive(const std::string& id, const std::string& code, double amount) {
+Response DoGive(const std::string& id, const std::string& code, double amount, uint8_t level = 0) {
     std::string steam, name, err, detail;
     if (!PluginState::Get().FindOnline(id, steam, name)) return Err(404, "player not online");
     if (!ItemTablesUsable()) return Err(503, "giveItem unavailable: " + ItemTablesReason());
     const ItemDef* item = FindItemByCode(code);
     if (!item) return Err(400, "unknown item code '" + code + "' (see GET /items)");
     if (!(amount >= 1) || amount > 100000) return Err(400, "amount must be >= 1");
-    if (!WorldGiveItem(name, *item, (uint32_t)amount, err, detail)) return Err(503, err + (detail.empty() ? "" : " (" + detail + ")"));
+    if (!WorldGiveItem(name, *item, (uint32_t)amount, err, detail, level)) return Err(503, err + (detail.empty() ? "" : " (" + detail + ")"));
     return {200, "{\"success\":true,\"code\":" + JsonStr(item->code) + ",\"detail\":" + JsonStr(detail) + "}"};
 }
 
@@ -468,7 +468,7 @@ bool RunCommand(const std::string& line, std::string& out) {
     auto& st = PluginState::Get();
     if (cmd == "help") {
         out = "commands: help | version | players | say <text> | whisper <player> <text> | location <player> | "
-              "teleport <player> <x> <y> <z> | tp <player> <toPlayer> | inventory <player> | give <player> <itemCode> [amount] | "
+              "teleport <player> <x> <y> <z> | tp <player> <toPlayer> | inventory <player> | give <player> <itemCode> [amount] [level] | "
               "item <search> | kick <player> | levels | level <player> | save-and-shutdown. <player> = SteamID64 or exact name.";
         return true;
     }
@@ -560,10 +560,11 @@ bool RunCommand(const std::string& line, std::string& out) {
             out += "\n" + i.get("amount")->str + " x " + i.get("code")->str + " [" + i.get("inventory")->str + "]";
         return true;
     }
-    if (cmd == "give" && (a.size() == 3 || a.size() == 4)) {
-        double n = 1;
-        if (a.size() == 4 && !Num(a[3], n)) return out = "usage: give <player> <itemCode> [amount]", false;
-        Response r = DoGive(a[1], a[2], n);
+    if (cmd == "give" && a.size() >= 3 && a.size() <= 5) {
+        double n = 1, lvl = 0;
+        if ((a.size() >= 4 && !Num(a[3], n)) || (a.size() == 5 && (!Num(a[4], lvl) || lvl < 1 || lvl > 255)))
+            return out = "usage: give <player> <itemCode> [amount] [level]", false;
+        Response r = DoGive(a[1], a[2], n, (uint8_t)lvl);
         if (r.status != 200) return out = ErrText(r), false;
         out = "gave " + std::to_string((long long)n) + " x " + a[2];
         return true;
