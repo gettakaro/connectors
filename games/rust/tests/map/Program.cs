@@ -77,6 +77,7 @@ internal static class Program
         Args();
         Tiles();
         WorldKey();
+        MapV1();
         Console.WriteLine("checks: " + _checks + ", failures: " + _failures);
         return _failures == 0 ? 0 : 1;
     }
@@ -198,5 +199,49 @@ internal static class Program
         Check(a != Map.MapWorldKey(1000, 12345, "proceduralmap.1000.12345.289.map", "def"), "key: a new checksum (custom map) is a new map");
         Check(Map.MapWorldKey(0, 0, null, null).Length > 0, "key: missing names still give a key");
         Check(Regex.IsMatch(a, "^[0-9a-z_]+$"), "key: safe as a file name");
+    }
+
+    // Protocol v1: one "world" Dimension, x right and z up, over the world plus its ocean pad,
+    // tiles on the XYZ layout (zoom 0 = the whole square, tile y grows south).
+    private static void MapV1()
+    {
+        var quad = Quadrants();
+        Check(Map.MapV1Min(quad) == -1012f && Map.MapV1Side(quad) == 2024f, "v1: bounds are the world square plus the ocean pad");
+        Check(Map.MapV1MaxZoom(2024f) == 4, "v1: max zoom is where a tile pixel is at most one metre (2024 m)");
+        Check(Map.MapV1MaxZoom(128f) == 0 && Map.MapV1MaxZoom(4500f + 1024f) == 6, "v1: max zoom for tiny and 4.5 km worlds");
+
+        var cap = Map.MapCapability(quad);
+        var dim = (JObject)cap["parameters"]["dimensions"][0];
+        Check((string)cap["name"] == "map" && (string)dim["id"] == "world", "v1: the map capability declares the world dimension");
+        Check((string)dim["axes"]["horizontal"]["field"] == "x" && (string)dim["axes"]["horizontal"]["direction"] == "right"
+            && (string)dim["axes"]["vertical"]["field"] == "z" && (string)dim["axes"]["vertical"]["direction"] == "up",
+            "v1: axes are x right, z up (north up)");
+        Check((float)dim["bounds"]["horizontal"]["min"] == -1012f && (float)dim["bounds"]["vertical"]["max"] == 1012f,
+            "v1: bounds in game metres");
+        Check((string)dim["source"]["type"] == "tiled" && (int)dim["source"]["tileSize"] == Map.MapTilePixels
+            && (int)dim["source"]["minZoom"] == 0 && (int)dim["source"]["maxZoom"] == 4, "v1: tiled source with tile size and zoom range");
+
+        int z, x, y;
+        Check(Map.ParseMapTileV1Args(JObject.Parse("{\"dimension\":\"world\",\"zoom\":1,\"x\":1,\"y\":0}"), 2024f, out z, out x, out y) == null
+            && z == 1 && x == 1 && y == 0, "v1 args: {dimension, zoom, x, y}");
+        Check(Map.ParseMapTileV1Args(JObject.Parse("{\"dimension\":\"world\",\"zoom\":\"2\",\"x\":\"3\",\"y\":\"3\"}"), 2024f, out z, out x, out y) == null,
+            "v1 args: numbers as strings");
+        Check(Map.ParseMapTileV1Args(JObject.Parse("{\"x\":0,\"y\":0,\"z\":0}"), 2024f, out z, out x, out y) != null, "v1 args: the legacy {x, y, z} shape is refused");
+        Check(Map.ParseMapTileV1Args(JObject.Parse("{\"dimension\":\"other\",\"zoom\":0,\"x\":0,\"y\":0}"), 2024f, out z, out x, out y) != null, "v1 args: unknown dimension");
+        Check(Map.ParseMapTileV1Args(JObject.Parse("{\"dimension\":\"world\",\"zoom\":5,\"x\":0,\"y\":0}"), 2024f, out z, out x, out y) != null, "v1 args: zoom above max");
+        Check(Map.ParseMapTileV1Args(JObject.Parse("{\"dimension\":\"world\",\"zoom\":1,\"x\":2,\"y\":0}"), 2024f, out z, out x, out y) != null, "v1 args: x past 2^zoom");
+        Check(Map.ParseMapTileV1Args(JObject.Parse("{\"dimension\":\"world\",\"zoom\":1,\"x\":0,\"y\":-1}"), 2024f, out z, out x, out y) != null, "v1 args: negative y");
+
+        // Zoom 1, tile (0,0) is the north-west quarter: land (green) at its south-east corner,
+        // open sea at its north-west corner. Tile (1,1) is the south-east quarter: blue.
+        var northWest = Map.RenderMapTileV1Rgb(quad, 1, 0, 0);
+        Check(Pixel(northWest, 127, 0) == (0, 255, 0), "v1 tiles: tile (0,0) is north-west (green near the centre)");
+        Check(Pixel(northWest, 0, 127) == (BgR, BgG, BgB), "v1 tiles: tile (0,0) has sea at its north-west corner");
+        var southEast = Map.RenderMapTileV1Rgb(quad, 1, 1, 1);
+        Check(Pixel(southEast, 0, 127) == (0, 0, 255), "v1 tiles: tile (1,1) is south-east (blue near the centre)");
+        var northEast = Map.RenderMapTileV1Rgb(quad, 1, 1, 0);
+        Check(Pixel(northEast, 0, 0) == (255, 0, 0), "v1 tiles: tile (1,0) is north-east (red near the centre)");
+        var whole = Map.RenderMapTileV1Rgb(quad, 0, 0, 0);
+        Check(Pixel(whole, 0, 0) == (BgR, BgG, BgB) && Pixel(whole, 64, 64) != (BgR, BgG, BgB), "v1 tiles: zoom 0 is the whole map, sea round the edge");
     }
 }

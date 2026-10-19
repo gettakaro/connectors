@@ -352,14 +352,18 @@ namespace Oxide.Plugins
         /// </summary>
         internal static byte[] RenderMapTileRgb(MapRaster raster, int zoom, int x, int y)
         {
+            var size = MapTileWorldSize(zoom);
+            return RenderMapAreaRgb(raster, x * size, y * size, size);
+        }
+
+        /// <summary>The square world area whose south-west corner is (originX, originZ).</summary>
+        internal static byte[] RenderMapAreaRgb(MapRaster raster, double originX, double originZ, double size)
+        {
             const int n = MapTilePixels;
             var rgb = new byte[n * n * 3];
-            var size = MapTileWorldSize(zoom);
             var metresPerPixel = size / n;
             var samples = (int)Math.Max(1, Math.Min(4, Math.Ceiling(metresPerPixel * raster.PixelsPerMetre)));
             var step = metresPerPixel / samples;
-            var originX = x * size;
-            var originZ = y * size;
             for (var row = 0; row < n; row++)
             {
                 for (var column = 0; column < n; column++)
@@ -421,7 +425,346 @@ namespace Oxide.Plugins
             }
             return $"{size}_{seed}_{hash:x16}";
         }
+
+        // Protocol v1 asks for tiles of a declared Dimension: {dimension, zoom, x, y} on the
+        // XYZ web-map layout, zoom 0 being one tile over the whole bounds square, tile y
+        // growing down (south). Rust's world is x east, z north, so the one Dimension is
+        // drawn with x to the right and z up, over the world square plus its ocean pad.
+        internal const string MapDimensionId = "world";
+
+        internal static float MapV1Min(MapRaster raster) { return Math.Min(raster.MinX, raster.MinZ) - MapOceanPad; }
+        internal static float MapV1Side(MapRaster raster) { return raster.WorldSize + 2 * MapOceanPad; }
+
+        /// <summary>The smallest zoom at which one tile pixel is at most one metre.</summary>
+        internal static int MapV1MaxZoom(float side)
+        {
+            var zoom = 0;
+            while (zoom < 20 && side / Math.Pow(2, zoom) / MapTilePixels > 1.0) zoom++;
+            return zoom;
+        }
+
+        internal static JObject MapCapability(MapRaster raster)
+        {
+            var min = MapV1Min(raster);
+            var max = min + MapV1Side(raster);
+            var bounds = new JObject { ["min"] = min, ["max"] = max };
+            return new JObject
+            {
+                ["name"] = "map",
+                ["parameters"] = new JObject
+                {
+                    ["dimensions"] = new JArray
+                    {
+                        new JObject
+                        {
+                            ["id"] = MapDimensionId,
+                            ["name"] = "World",
+                            ["axes"] = new JObject
+                            {
+                                ["horizontal"] = new JObject { ["field"] = "x", ["direction"] = "right" },
+                                ["vertical"] = new JObject { ["field"] = "z", ["direction"] = "up" },
+                            },
+                            ["bounds"] = new JObject { ["horizontal"] = bounds, ["vertical"] = bounds.DeepClone() },
+                            ["source"] = new JObject
+                            {
+                                ["type"] = "tiled",
+                                ["tileSize"] = MapTilePixels,
+                                ["minZoom"] = 0,
+                                ["maxZoom"] = MapV1MaxZoom(MapV1Side(raster)),
+                            },
+                        },
+                    },
+                },
+            };
+        }
+
+        /// <summary>
+        /// Reads a v1 getMapTile's {dimension, zoom, x, y}. Returns null when they name a tile
+        /// of this map, or the reason they do not.
+        /// </summary>
+        internal static string ParseMapTileV1Args(JObject args, float side, out int zoom, out int x, out int y)
+        {
+            zoom = 0;
+            x = 0;
+            y = 0;
+            if (args == null) return "dimension, zoom, x and y are required";
+            var dimension = args.Value<string>("dimension");
+            if (dimension != MapDimensionId) return $"unknown dimension '{dimension}'";
+            if (!MapInt(args["zoom"], out zoom)) return "zoom must be an integer";
+            if (!MapInt(args["x"], out x)) return "x must be an integer";
+            if (!MapInt(args["y"], out y)) return "y must be an integer";
+            var maxZoom = MapV1MaxZoom(side);
+            if (zoom < 0 || zoom > maxZoom) return $"zoom must be between 0 and {maxZoom}";
+            var tiles = 1 << zoom;
+            if (x < 0 || y < 0 || x >= tiles || y >= tiles) return $"tile {zoom}/{x}/{y} is outside the map";
+            return null;
+        }
+
+        /// <summary>A v1 tile as RGB, row 0 = the tile's southern edge like RenderMapTileRgb.</summary>
+        internal static byte[] RenderMapTileV1Rgb(MapRaster raster, int zoom, int x, int y)
+        {
+            var size = MapV1Side(raster) / Math.Pow(2, zoom);
+            var west = MapV1Min(raster) + x * size;
+            var north = MapV1Min(raster) + MapV1Side(raster) - y * size;
+            return RenderMapAreaRgb(raster, west, north - size, size);
+        }
         // takaro:map-end
+
+        // takaro:protocol-begin
+        //
+        // Generic Game Protocol v1 next to v0: what identify offers, how Takaro's answer is
+        // read, the error shapes of both versions and the numbered event stream. Free of Unity
+        // and game types so tests/protocol can compile and run it on its own.
+
+        internal static readonly int[] OfferedProtocolVersions = { 0, 1 };
+
+        // testReachability is always allowed. getMapInfo has no v1 capability, and getMapTile
+        // belongs to the map capability, which is declared once the map raster is ready.
+        internal static readonly string[][] ActionCapabilities =
+        {
+            new[] { "getPlayers", "players.list" },
+            new[] { "getPlayer", "players.get" },
+            new[] { "getPlayerLocation", "players.location" },
+            new[] { "getPlayerInventory", "players.inventory" },
+            new[] { "teleportPlayer", "players.teleport" },
+            new[] { "listItems", "items.list" },
+            new[] { "giveItem", "items.give" },
+            new[] { "listEntities", "entities.list" },
+            new[] { "listLocations", "locations.list" },
+            new[] { "sendMessage", "chat.send" },
+            new[] { "executeConsoleCommand", "console.execute" },
+            new[] { "kickPlayer", "moderation.kick" },
+            new[] { "banPlayer", "moderation.ban" },
+            new[] { "unbanPlayer", "moderation.unban" },
+            new[] { "listBans", "moderation.listBans" },
+            new[] { "shutdown", "server.shutdown" },
+        };
+
+        internal static readonly string[] GameEventTypes =
+        {
+            "player-connected", "player-disconnected", "chat-message", "player-death", "entity-killed", "log",
+        };
+
+        internal const string ErrorUnsupported = "unsupported";
+        internal const string ErrorInvalidArgs = "invalid_args";
+        internal const string ErrorNotFound = "not_found";
+        internal const string ErrorGameError = "game_error";
+        internal const string ErrorInternal = "internal";
+
+        /// <summary>
+        /// A request failure with its v1 code. V0Message is what a v0 connection gets, where
+        /// errors are free text; it defaults to Message.
+        /// </summary>
+        internal sealed class ProtocolError : Exception
+        {
+            public readonly string Code;
+            public readonly string V0Message;
+
+            public ProtocolError(string code, string message, string v0Message = null) : base(message)
+            {
+                Code = code;
+                V0Message = v0Message ?? message;
+            }
+        }
+
+        /// <summary>The full manifest. `extra` are the optional capabilities (map); nulls are skipped.</summary>
+        internal static JArray BuildManifest(params JObject[] extra)
+        {
+            var manifest = new JArray();
+            foreach (var pair in ActionCapabilities)
+                manifest.Add(new JObject { ["name"] = pair[1] });
+            foreach (var eventType in GameEventTypes)
+                manifest.Add(new JObject { ["name"] = "events." + eventType });
+            foreach (var capability in extra)
+                if (capability != null) manifest.Add(capability);
+            return manifest;
+        }
+
+        internal static bool IsDeclaredAction(string action)
+        {
+            foreach (var pair in ActionCapabilities)
+                if (pair[0] == action) return true;
+            return false;
+        }
+
+        internal static JObject BuildIdentifyPayload(string identityToken, string registrationToken, JArray manifest)
+        {
+            return new JObject
+            {
+                ["identityToken"] = identityToken ?? "",
+                ["registrationToken"] = registrationToken ?? "",
+                ["protocolVersions"] = new JArray(OfferedProtocolVersions),
+                ["capabilities"] = manifest,
+            };
+        }
+
+        internal sealed class IdentifyReply
+        {
+            public bool Accepted;
+            public string GameServerId;
+            public int ProtocolVersion;
+            // The v1 rejection code; null for a v0 rejection, which has none.
+            public string ErrorCode;
+            public string Reason;
+        }
+
+        // A v1 rejection is a top-level error (payload null, socket closed 1008); a v0 one
+        // is payload.error with the socket left open. A missing protocolVersion is v0.
+        internal static IdentifyReply ParseIdentifyResponse(JObject frame)
+        {
+            var topError = frame["error"];
+            if (topError != null && topError.Type != JTokenType.Null && !(topError.Type == JTokenType.Boolean && !topError.Value<bool>()))
+            {
+                var code = topError.Type == JTokenType.Object ? (topError as JObject).Value<string>("code") : null;
+                return new IdentifyReply { ErrorCode = code, Reason = (code != null ? code + ": " : "") + IdentifyErrorText(topError) };
+            }
+
+            var payload = frame["payload"] as JObject ?? new JObject();
+            var error = payload["error"];
+            if (error != null && error.Type != JTokenType.Null)
+                return new IdentifyReply { Reason = IdentifyErrorText(error) };
+
+            var version = 0;
+            var versionToken = payload["protocolVersion"];
+            if (versionToken != null && versionToken.Type != JTokenType.Null)
+            {
+                if (versionToken.Type != JTokenType.Integer || Array.IndexOf(OfferedProtocolVersions, versionToken.Value<int>()) < 0)
+                    return new IdentifyReply
+                    {
+                        ErrorCode = "no_shared_protocol_version",
+                        Reason = $"Takaro selected protocol version {versionToken}, which this plugin does not speak",
+                    };
+                version = versionToken.Value<int>();
+            }
+
+            return new IdentifyReply
+            {
+                Accepted = true,
+                ProtocolVersion = version,
+                GameServerId = payload["gameServerId"]?.Value<string>() ?? (payload["server"] as JObject)?.Value<string>("id"),
+            };
+        }
+
+        /// <summary>
+        /// A response frame. Success: the payload, where null means "nothing to return" (v1
+        /// sends null, v0 keeps its empty object). Failure: v1 {code, message}, v0 a string.
+        /// </summary>
+        internal static JObject ResponseFrame(int protocolVersion, string requestId, JToken payload, ProtocolError error)
+        {
+            var frame = new JObject { ["type"] = "response", ["requestId"] = requestId };
+            if (error != null)
+            {
+                frame["error"] = protocolVersion >= 1
+                    ? (JToken)new JObject { ["code"] = error.Code, ["message"] = error.Message }
+                    : error.V0Message;
+                return frame;
+            }
+            frame["payload"] = payload ?? (protocolVersion >= 1 ? JValue.CreateNull() : (JToken)new JObject());
+            return frame;
+        }
+
+        /// <summary>
+        /// The game events of this process as one v1 stream: numbered from 1 under a streamId
+        /// made at load, buffered until Takaro acks them, the oldest dropped past Capacity.
+        /// Thread-safe; Add runs on the game thread and never blocks on the network.
+        /// </summary>
+        internal sealed class EventStream
+        {
+            public const int Capacity = 2000;
+            public readonly string StreamId;
+            private readonly LinkedList<KeyValuePair<long, JObject>> _pending = new LinkedList<KeyValuePair<long, JObject>>();
+            private readonly object _lock = new object();
+            private long _nextSeq = 1;
+            public long Dropped;
+
+            public EventStream(string streamId) { StreamId = streamId; }
+
+            public object Lock { get { return _lock; } }
+
+            /// <summary>Numbers the event and returns its v1 frame; v1 keeps it until acked.</summary>
+            public JObject Add(string eventType, JObject data, bool keep)
+            {
+                lock (_lock)
+                {
+                    var seq = _nextSeq++;
+                    var frame = new JObject
+                    {
+                        ["type"] = "gameEvent",
+                        ["payload"] = new JObject
+                        {
+                            ["type"] = eventType,
+                            ["data"] = data,
+                            ["streamId"] = StreamId,
+                            ["seq"] = seq,
+                        },
+                    };
+                    if (keep)
+                    {
+                        _pending.AddLast(new KeyValuePair<long, JObject>(seq, frame));
+                        while (_pending.Count > Capacity)
+                        {
+                            _pending.RemoveFirst();
+                            Dropped++;
+                        }
+                    }
+                    return frame;
+                }
+            }
+
+            public void Ack(string streamId, long upTo)
+            {
+                if (streamId != StreamId) return;
+                lock (_lock)
+                {
+                    while (_pending.First != null && _pending.First.Value.Key <= upTo)
+                        _pending.RemoveFirst();
+                }
+            }
+
+            /// <summary>The unacknowledged frames in seq order.</summary>
+            public List<JObject> Pending()
+            {
+                lock (_lock)
+                    return _pending.Select(p => p.Value).ToList();
+            }
+
+            public int PendingCount { get { lock (_lock) return _pending.Count; } }
+
+            /// <summary>A v0 connection has no acks: what is buffered is sent once and forgotten.</summary>
+            public List<JObject> TakeAll()
+            {
+                lock (_lock)
+                {
+                    var all = _pending.Select(p => p.Value).ToList();
+                    _pending.Clear();
+                    return all;
+                }
+            }
+        }
+
+        /// <summary>The same event as a v0 frame: no streamId or seq.</summary>
+        internal static JObject V0EventFrame(JObject v1Frame)
+        {
+            var payload = (JObject)v1Frame["payload"];
+            return new JObject
+            {
+                ["type"] = "gameEvent",
+                ["payload"] = new JObject { ["type"] = payload["type"], ["data"] = payload["data"] },
+            };
+        }
+
+        internal static bool TryParseEventAck(JObject frame, out string streamId, out long upTo)
+        {
+            streamId = null;
+            upTo = 0;
+            var payload = frame["payload"] as JObject;
+            var upToToken = payload?["upTo"];
+            streamId = payload?.Value<string>("streamId");
+            if (string.IsNullOrEmpty(streamId) || upToToken == null || upToToken.Type != JTokenType.Integer) return false;
+            upTo = upToToken.Value<long>();
+            return true;
+        }
+        // takaro:protocol-end
 
         private const string ConfigFileName = "TakaroConnector.json";
         private const int ConfigCheckEverySeconds = 5;
@@ -457,7 +800,24 @@ namespace Oxide.Plugins
         // An auth close stops retries for that connection only; a config change starts a new one.
         private int _authClosedGeneration = -1;
         private ReconnectRequest _pendingReconnect;
-        private readonly object _sendLock = new object();
+        // The protocol version Takaro chose for the current connection; -1 until identified.
+        private volatile int _protocolVersion = -1;
+        // Frames go out one at a time in the order they were queued: v1 events must reach
+        // Takaro in seq order, or its high-water mark drops the overtaken ones as duplicates.
+        private readonly Queue<OutgoingFrame> _sendQueue = new Queue<OutgoingFrame>();
+        private bool _sendDraining;
+        // One event stream per process: a reload or restart is a new streamId starting at 1.
+        private readonly EventStream _events = new EventStream(Guid.NewGuid().ToString());
+        // The map capability, set on the main thread once the raster is ready.
+        private volatile JObject _mapCapability;
+
+        private sealed class OutgoingFrame
+        {
+            public ClientWebSocket Socket;
+            public string Text;
+            // The connection's token: a reconnect cancels a send stuck on the old socket.
+            public CancellationToken Token;
+        }
 
         private sealed class ReconnectRequest
         {
@@ -523,6 +883,7 @@ namespace Oxide.Plugins
         {
             _shouldReconnect = false;
             _connected = false;
+            _protocolVersion = -1;
             Interlocked.Increment(ref _generation);
             Interlocked.Exchange(ref _pendingReconnect, null);
             _tickTimer?.Destroy();
@@ -695,6 +1056,7 @@ namespace Oxide.Plugins
             Interlocked.Increment(ref _generation);
             Interlocked.Exchange(ref _pendingReconnect, null);
             _connected = false;
+            _protocolVersion = -1;
             _cts?.Cancel();
             try { _ws?.Dispose(); } catch { }
             _ws = null;
@@ -787,6 +1149,7 @@ namespace Oxide.Plugins
                     if (IsCurrent(generation))
                     {
                         _connected = false;
+                        _protocolVersion = -1;
                         Interlocked.CompareExchange(ref _ws, null, ws);
                         if (_shouldReconnect && Volatile.Read(ref _authClosedGeneration) != generation)
                             ScheduleReconnect(generation);
@@ -920,7 +1283,27 @@ namespace Oxide.Plugins
                     break;
 
                 case "identifyResponse":
-                    HandleIdentifyResponse(json);
+                    HandleIdentifyResponse(json, ws, generation);
+                    break;
+
+                case "eventAck":
+                    if (TryParseEventAck(json, out var ackStream, out var upTo))
+                        _events.Ack(ackStream, upTo);
+                    break;
+
+                case "eventError":
+                    var eventErrorObj = json["error"] as JObject;
+                    LogWarning($"Takaro rejected event seq={json["payload"]?["seq"]}: " +
+                               $"{eventErrorObj?.Value<string>("code") ?? "error"}: {RedactJwt(eventErrorObj?.Value<string>("message") ?? "")}");
+                    break;
+
+                case "capabilitiesResponse":
+                    var capabilitiesError = json["error"];
+                    if (capabilitiesError != null && capabilitiesError.Type == JTokenType.Object)
+                        LogWarning($"Takaro rejected the capability manifest: {IdentifyErrorText(capabilitiesError)}");
+                    break;
+
+                case "pong":
                     break;
 
                 case "request":
@@ -979,26 +1362,50 @@ namespace Oxide.Plugins
             if (_debug && !message.Contains("\"type\":\"identify\""))
                 LogDebug($"WS SEND: {message}");
 
-            var bytes = Encoding.UTF8.GetBytes(message);
-            _ = Task.Run(() =>
+            lock (_sendQueue)
             {
-                lock (_sendLock)
+                _sendQueue.Enqueue(new OutgoingFrame { Socket = ws, Text = message, Token = _cts?.Token ?? CancellationToken.None });
+                if (_sendDraining) return;
+                _sendDraining = true;
+            }
+            _ = Task.Run(DrainSendQueue);
+        }
+
+        private void DrainSendQueue()
+        {
+            while (true)
+            {
+                OutgoingFrame next;
+                lock (_sendQueue)
                 {
-                    try
+                    if (_sendQueue.Count == 0)
                     {
-                        ws.SendAsync(
-                            new ArraySegment<byte>(bytes),
-                            WebSocketMessageType.Text,
-                            true,
-                            _cts?.Token ?? CancellationToken.None
-                        ).GetAwaiter().GetResult();
+                        _sendDraining = false;
+                        return;
                     }
-                    catch (Exception ex)
-                    {
-                        LogWarning($"Send failed: {ex.Message}");
-                    }
+                    next = _sendQueue.Dequeue();
                 }
-            });
+                var ws = next.Socket;
+                if (ws.State != WebSocketState.Open) continue;
+                try
+                {
+                    ws.SendAsync(
+                        new ArraySegment<byte>(Encoding.UTF8.GetBytes(next.Text)),
+                        WebSocketMessageType.Text,
+                        true,
+                        next.Token
+                    ).GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    LogWarning($"Send failed: {ex.Message}");
+                }
+            }
+        }
+
+        private JArray CurrentManifest()
+        {
+            return BuildManifest(_mapCapability);
         }
 
         private void SendIdentify(ClientWebSocket ws, int generation, ConnectorSettings settings)
@@ -1010,77 +1417,84 @@ namespace Oxide.Plugins
             var msg = new JObject
             {
                 ["type"] = "identify",
-                ["payload"] = new JObject
-                {
-                    ["identityToken"] = settings.IdentityToken ?? "",
-                    ["registrationToken"] = settings.RegistrationToken ?? ""
-                }
+                ["payload"] = BuildIdentifyPayload(settings.IdentityToken, settings.RegistrationToken, CurrentManifest())
             };
             LogDebug("WS SEND identify (tokens redacted)");
             WsSendOn(ws, msg.ToString(Formatting.None));
         }
 
-        private void HandleIdentifyResponse(JObject json)
+        private void HandleIdentifyResponse(JObject json, ClientWebSocket ws, int generation)
         {
-            var payload = json["payload"] as JObject ?? new JObject();
-
-            var error = payload["error"];
-            if (error != null && error.Type != JTokenType.Null)
+            var reply = ParseIdentifyResponse(json);
+            if (!reply.Accepted)
             {
-                var errorMessage = IdentifyErrorText(error);
-                LogWarning($"Identify failed: {errorMessage}");
-                LogRejected(errorMessage);
+                LogWarning($"Identify failed: {reply.Reason}");
+                LogRejected(reply.Reason);
                 return;
             }
 
-            _connected = true;
             _currentReconnectDelay = InitialReconnectDelay;
-
-            var serverId = payload["gameServerId"]?.Value<string>()
-                           ?? payload["server"]?.Value<string>("id");
-            if (serverId != null)
-                LogInfo($"Identified successfully, server ID: {serverId}");
+            if (reply.GameServerId != null)
+                LogInfo($"Identified successfully, server ID: {reply.GameServerId} (protocol {reply.ProtocolVersion})");
             else
-                LogInfo("Identified successfully");
+                LogInfo($"Identified successfully (protocol {reply.ProtocolVersion})");
+
+            // Events raised before this point were buffered. v1 resends everything Takaro has
+            // not acked, in seq order; v0 has no acks, so the backlog goes out once.
+            lock (_events.Lock)
+            {
+                if (!IsCurrent(generation)) return;
+                _protocolVersion = reply.ProtocolVersion;
+                _connected = true;
+                var backlog = reply.ProtocolVersion >= 1 ? _events.Pending() : _events.TakeAll().Select(V0EventFrame).ToList();
+                if (backlog.Count > 0)
+                    LogInfo($"Sending {backlog.Count} buffered event(s)");
+                foreach (var frame in backlog)
+                    WsSendOn(ws, frame.ToString(Formatting.None));
+            }
         }
 
-        private void SendResponse(ClientWebSocket ws, string requestId, JToken payload, string error)
+        // Main thread: the map became available (or changed), so a v1 connection gets the
+        // full manifest again. Before identify, the next identify carries it.
+        private void SendCapabilities()
         {
+            if (!_connected || _protocolVersion < 1) return;
             var msg = new JObject
             {
-                ["type"] = "response",
-                ["requestId"] = requestId
+                ["type"] = "capabilities",
+                ["requestId"] = Guid.NewGuid().ToString(),
+                ["payload"] = new JObject { ["capabilities"] = CurrentManifest() }
             };
+            LogInfo("Sending the updated capability manifest");
+            WsSend(msg.ToString(Formatting.None));
+        }
 
-            if (error != null)
-                msg["error"] = error;
-            else if (payload != null)
-                msg["payload"] = payload;
-
+        private void SendResponse(ClientWebSocket ws, int protocolVersion, string requestId, JToken payload, ProtocolError error)
+        {
             if (_debug)
                 LogDebug($"WS SEND response (requestId={requestId})");
 
-            WsSendOn(ws, msg.ToString(Formatting.None));
+            WsSendOn(ws, ResponseFrame(protocolVersion, requestId, payload, error).ToString(Formatting.None));
         }
 
+        // Game thread. Never touches the network itself: the frame is queued for the sender.
         private void SendGameEvent(string eventType, JObject data)
         {
-            if (!_connected) return;
-
-            var msg = new JObject
+            lock (_events.Lock)
             {
-                ["type"] = "gameEvent",
-                ["payload"] = new JObject
+                if (!_connected)
                 {
-                    ["type"] = eventType,
-                    ["data"] = data
+                    _events.Add(eventType, data, keep: true);
+                    return;
                 }
-            };
+                var v1 = _protocolVersion >= 1;
+                var frame = _events.Add(eventType, data, keep: v1);
 
-            if (_debug)
-                LogDebug($"WS SEND gameEvent: {eventType}");
+                if (_debug)
+                    LogDebug($"WS SEND gameEvent: {eventType}");
 
-            WsSend(msg.ToString(Formatting.None));
+                WsSend((v1 ? frame : V0EventFrame(frame)).ToString(Formatting.None));
+            }
         }
 
         // --- Request Handling ---
@@ -1094,6 +1508,7 @@ namespace Oxide.Plugins
                 return;
             }
 
+            var protocol = Math.Max(0, _protocolVersion);
             var payload = json["payload"] as JObject ?? new JObject();
             var action = payload.Value<string>("action") ?? "";
             if (_debug)
@@ -1119,44 +1534,32 @@ namespace Oxide.Plugins
             }
             catch (Exception ex)
             {
-                SendResponse(ws, requestId, null, $"Invalid args JSON: {ex.Message}");
+                SendResponse(ws, protocol, requestId, null,
+                    new ProtocolError(ErrorInvalidArgs, $"Invalid args JSON: {ex.Message}"));
                 return;
             }
 
-            switch (action)
+            if (action == "testReachability")
             {
-                case "testReachability":
-                    SendResponse(ws, requestId, new JObject { ["connectable"] = true, ["reason"] = null }, null);
-                    break;
-
-                case "getPlayer":
-                case "getPlayers":
-                case "getPlayerLocation":
-                case "getPlayerInventory":
-                case "listItems":
-                case "listEntities":
-                case "listLocations":
-                case "executeConsoleCommand":
-                case "sendMessage":
-                case "giveItem":
-                case "teleportPlayer":
-                case "kickPlayer":
-                case "banPlayer":
-                case "unbanPlayer":
-                case "listBans":
-                case "shutdown":
-                case "getMapInfo":
-                case "getMapTile":
-                    RunOnMainThread(ws, generation, requestId, action, args);
-                    break;
-
-                default:
-                    SendResponse(ws, requestId, null, $"Action not implemented: {action}");
-                    break;
+                SendResponse(ws, protocol, requestId, new JObject { ["connectable"] = true, ["reason"] = null }, null);
+                return;
             }
+
+            // v1 has no getMapInfo (the map capability replaces it); getMapTile changes shape.
+            var handled = IsDeclaredAction(action)
+                || action == "getMapTile"
+                || (action == "getMapInfo" && protocol == 0);
+            if (!handled)
+            {
+                SendResponse(ws, protocol, requestId, null,
+                    new ProtocolError(ErrorUnsupported, $"Action not supported: {action}", $"Action not implemented: {action}"));
+                return;
+            }
+
+            RunOnMainThread(ws, generation, protocol, requestId, action, args);
         }
 
-        private void RunOnMainThread(ClientWebSocket ws, int generation, string requestId, string action, JObject args)
+        private void RunOnMainThread(ClientWebSocket ws, int generation, int protocol, string requestId, string action, JObject args)
         {
             NextTick(() =>
             {
@@ -1169,18 +1572,24 @@ namespace Oxide.Plugins
                 }
                 try
                 {
-                    var result = ExecuteAction(action, args);
-                    SendResponse(ws, requestId, result, null);
+                    var result = ExecuteAction(action, args, protocol);
+                    SendResponse(ws, protocol, requestId, result, null);
+                }
+                catch (ProtocolError ex)
+                {
+                    LogWarning($"Action {action} failed: {ex.Code}: {ex.Message}");
+                    SendResponse(ws, protocol, requestId, null, ex);
                 }
                 catch (Exception ex)
                 {
                     LogWarning($"Action {action} failed: {ex.Message}");
-                    SendResponse(ws, requestId, null, ex.Message);
+                    SendResponse(ws, protocol, requestId, null, new ProtocolError(ErrorGameError, ex.Message));
                 }
             });
         }
 
-        private JToken ExecuteAction(string action, JObject args)
+        // Null means "nothing to return": v1 answers null, v0 an empty object.
+        private JToken ExecuteAction(string action, JObject args, int protocol)
         {
             switch (action)
             {
@@ -1192,17 +1601,17 @@ namespace Oxide.Plugins
                 case "listEntities": return HandleListEntities();
                 case "listLocations": return HandleListLocations();
                 case "executeConsoleCommand": return HandleExecuteConsoleCommand(args);
-                case "sendMessage": HandleSendMessage(args); return new JObject();
-                case "giveItem": HandleGiveItem(args); return new JObject();
-                case "teleportPlayer": HandleTeleportPlayer(args); return new JObject();
-                case "kickPlayer": HandleKickPlayer(args); return new JObject();
-                case "banPlayer": HandleBanPlayer(args); return new JObject();
-                case "unbanPlayer": HandleUnbanPlayer(args); return new JObject();
+                case "sendMessage": HandleSendMessage(args); return null;
+                case "giveItem": HandleGiveItem(args); return null;
+                case "teleportPlayer": HandleTeleportPlayer(args); return null;
+                case "kickPlayer": HandleKickPlayer(args); return null;
+                case "banPlayer": HandleBanPlayer(args); return null;
+                case "unbanPlayer": HandleUnbanPlayer(args); return null;
                 case "listBans": return HandleListBans();
-                case "shutdown": HandleShutdown(); return new JObject();
+                case "shutdown": HandleShutdown(); return null;
                 case "getMapInfo": return HandleGetMapInfo();
-                case "getMapTile": return HandleGetMapTile(args);
-                default: throw new Exception($"Unknown action: {action}");
+                case "getMapTile": return protocol >= 1 ? HandleGetMapTileV1(args) : HandleGetMapTile(args);
+                default: throw new ProtocolError(ErrorUnsupported, $"Action not supported: {action}", $"Unknown action: {action}");
             }
         }
 
@@ -1647,6 +2056,8 @@ namespace Oxide.Plugins
             _mapTileOrder.Clear();
             _mapStatus = "ready";
             LogInfo($"World map ready: {_mapRaster.Width}x{_mapRaster.Height} px for a {terrainSize:0} m world ({source}, key {key})");
+            _mapCapability = MapCapability(_mapRaster);
+            SendCapabilities();
             return _mapRaster;
         }
 
@@ -1659,17 +2070,40 @@ namespace Oxide.Plugins
         private JToken HandleGetMapTile(JObject args)
         {
             var problem = ParseMapTileArgs(args, out var x, out var y, out var zoom);
-            if (problem != null) throw new Exception($"invalid_args: {problem}");
+            if (problem != null) throw new ProtocolError(ErrorInvalidArgs, problem, $"invalid_args: {problem}");
 
             var raster = EnsureMapRaster();
-            if (raster == null) throw new Exception($"map_not_ready: the Rust world map is not ready: {_mapStatus}");
+            if (raster == null)
+                throw new ProtocolError(ErrorNotFound, $"the Rust world map is not ready: {_mapStatus}", $"map_not_ready: the Rust world map is not ready: {_mapStatus}");
             if (!MapTileInRange(raster.WorldSize, zoom, x, y))
-                throw new Exception($"tile_out_of_range: map tile {zoom}/{x}/{y} lies outside the Rust world");
+                throw new ProtocolError(ErrorNotFound, $"map tile {zoom}/{x}/{y} lies outside the Rust world", $"tile_out_of_range: map tile {zoom}/{x}/{y} lies outside the Rust world");
 
+            // v0 keys keep bit 63 clear; v1 keys set it, so both layouts share one cache.
             var cacheKey = ((long)zoom << 56) | (((long)x & 0xFFFFFFF) << 28) | ((long)y & 0xFFFFFFF);
-            if (_mapTiles.TryGetValue(cacheKey, out var cached)) return new JValue(cached);
+            return new JValue(MapTilePng(cacheKey, () => RenderMapTileRgb(raster, zoom, x, y)));
+        }
 
-            var rgb = RenderMapTileRgb(raster, zoom, x, y);
+        private JToken HandleGetMapTileV1(JObject args)
+        {
+            var raster = EnsureMapRaster();
+            if (raster == null) throw new ProtocolError(ErrorNotFound, $"the Rust world map is not ready: {_mapStatus}");
+            var problem = ParseMapTileV1Args(args, MapV1Side(raster), out var zoom, out var x, out var y);
+            if (problem != null) throw new ProtocolError(ErrorInvalidArgs, problem);
+
+            var cacheKey = long.MinValue | ((long)zoom << 56) | (((long)x & 0xFFFFFFF) << 28) | ((long)y & 0xFFFFFFF);
+            return new JObject
+            {
+                ["mimeType"] = "image/png",
+                ["data"] = MapTilePng(cacheKey, () => RenderMapTileV1Rgb(raster, zoom, x, y)),
+            };
+        }
+
+        // Base64 PNG of one tile, from the cache or rendered now.
+        private string MapTilePng(long cacheKey, Func<byte[]> render)
+        {
+            if (_mapTiles.TryGetValue(cacheKey, out var cached)) return cached;
+
+            var rgb = render();
             var texture = new Texture2D(MapTilePixels, MapTilePixels, TextureFormat.RGB24, false);
             string encoded;
             try
@@ -1687,7 +2121,7 @@ namespace Oxide.Plugins
             _mapTileOrder.Enqueue(cacheKey);
             while (_mapTileOrder.Count > MapTileCacheSize)
                 _mapTiles.Remove(_mapTileOrder.Dequeue());
-            return new JValue(encoded);
+            return encoded;
         }
 
         private JToken HandleListLocations()
@@ -1780,10 +2214,10 @@ namespace Oxide.Plugins
             var amount = args.Value<int?>("amount") ?? 1;
 
             var player = FindPlayerByGameId(gameId);
-            if (player == null) throw new Exception("Player not found");
+            if (player == null) throw new ProtocolError(ErrorNotFound, "Player not found");
 
             var itemDef = ItemManager.FindItemDefinition(itemCode);
-            if (itemDef == null) throw new Exception($"Item not found: {itemCode}");
+            if (itemDef == null) throw new ProtocolError(ErrorNotFound, $"Item not found: {itemCode}");
 
             var item = ItemManager.Create(itemDef, amount);
             if (!player.inventory.GiveItem(item))
@@ -1800,7 +2234,7 @@ namespace Oxide.Plugins
             var z = args.Value<float?>("z") ?? 0;
 
             var player = FindPlayerByGameId(gameId);
-            if (player == null) throw new Exception("Player not found");
+            if (player == null) throw new ProtocolError(ErrorNotFound, "Player not found");
 
             player.Teleport(new Vector3(x, y, z));
         }
@@ -1811,7 +2245,7 @@ namespace Oxide.Plugins
             var reason = args.Value<string>("reason") ?? "";
 
             var player = FindPlayerByGameId(gameId);
-            if (player == null) throw new Exception("Player not found");
+            if (player == null) throw new ProtocolError(ErrorNotFound, "Player not found");
 
             player.Kick(reason);
         }
@@ -1822,8 +2256,8 @@ namespace Oxide.Plugins
             var reason = args.Value<string>("reason") ?? "";
             var expiresAt = args.Value<string>("expiresAt");
 
-            if (string.IsNullOrEmpty(gameId)) throw new Exception("gameId required");
-            if (!ulong.TryParse(gameId, out var steamId)) throw new Exception("Invalid gameId");
+            if (string.IsNullOrEmpty(gameId)) throw new ProtocolError(ErrorInvalidArgs, "gameId required");
+            if (!ulong.TryParse(gameId, out var steamId)) throw new ProtocolError(ErrorInvalidArgs, "Invalid gameId");
 
             var player = FindPlayerByGameId(gameId);
             var name = player?.displayName ?? KnownPlayerName(steamId) ?? gameId;
@@ -1859,8 +2293,8 @@ namespace Oxide.Plugins
         private void HandleUnbanPlayer(JObject args)
         {
             var gameId = GameIdFrom(args);
-            if (string.IsNullOrEmpty(gameId)) throw new Exception("gameId required");
-            if (!ulong.TryParse(gameId, out var steamId)) throw new Exception("Invalid gameId");
+            if (string.IsNullOrEmpty(gameId)) throw new ProtocolError(ErrorInvalidArgs, "gameId required");
+            if (!ulong.TryParse(gameId, out var steamId)) throw new ProtocolError(ErrorInvalidArgs, "Invalid gameId");
 
             if (_timedBans.Remove(steamId)) SaveTimedBans();
 
