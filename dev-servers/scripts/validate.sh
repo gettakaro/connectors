@@ -39,6 +39,7 @@ export DUNE_TEXT_ROUTER_IMAGE="${DUNE_TEXT_ROUTER_IMAGE:-target-not-resolved:val
 export DUNE_RABBITMQ_IMAGE="${DUNE_RABBITMQ_IMAGE:-target-not-resolved:validate}"
 export DUNE_DB_UTILS_IMAGE="${DUNE_DB_UTILS_IMAGE:-target-not-resolved:validate}"
 export DUNE_POSTGRES_IMAGE="${DUNE_POSTGRES_IMAGE:-target-not-resolved:validate}"
+export DUNE_DB_NAME="${DUNE_DB_NAME:-dune_target_not_resolved}"
 export DUNE_IMAGE_TAG="${DUNE_IMAGE_TAG:-validate}"
 
 ds_info "Validating compose files against ${ENV_FILE##*/}"

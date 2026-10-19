@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-25936522",
+  "game": "dune",
+  "platform": "linux",
+  "revision": "25936522",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-10-20",
+    "evidence": [],
+    "notes": "Exact Steam pin of the self-hosted server package head observed 2026-10-19 (public branch moved to build 25936522 at 2026-10-19T08:55Z, depot 4754532 manifest 8737510119665643119 dated 2026-10-14): image bundle 2156652-0-shipping, code branch sb-1.5.15.0. The new branch renames the database the battlegroup expects to dune_sb_1_5_15_0: bg-director and text-router take that name from the image and ignore Database__database, so a battlegroup upgraded from linux-25789279 (dune_sb_1_5_3_0) crash-loops on a missing database until the existing one is renamed (updatedb then found the schema current, no patches), and a connector whose DUNE_PG_URL still names the old database would read a frozen copy; the sidecar now warns about that at startup. The plugin's resolver re-validated on the new map binary (ELF build id 6e2f882a71643aa9c9bf84624564ee645c922c62): 3/3 required symbols, ProcessEvent slot 86 confirmed, 36417 live objects with 0 RTTI mismatches. It is the default because the public client moved with it (client app 1172710 build 25936403). Everything said about install and verification in the linux-25689360 record applies here unchanged: no anonymous boot (an operator Funcom self-hosting token is required), no `takaro-maint install` seam for the image bundle, and `verification.required` stays `contract` with runtime proof recorded on the dev rig."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 4754530,
+      "branch": "public",
+      "buildid": 25936522,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "4754532": {
+          "manifest": "8737510119665643119",
+          "size": 5208916377,
+          "files": 75
+        }
+      },
+      "files": {
+        "images/battlegroup/server-bg-director.tar": {
+          "sha256": "5482aa915fbba2c8e2867930f704477444f4445ade0dd62edf3b1653c3f147bc",
+          "size": 91951616
+        },
+        "images/battlegroup/server-db-utils.tar": {
+          "sha256": "f707b095cd87ed10e1b15e56d9be550604d084c11c3f77cc0df58f3b229677d9",
+          "size": 40295936
+        },
+        "images/battlegroup/server-gateway.tar": {
+          "sha256": "79b937c0904e23a3ffa210a1f2fcb8640736cf5d0a058829deeeb528d86d53ea",
+          "size": 29988352
+        },
+        "images/battlegroup/server-rabbitmq.tar": {
+          "sha256": "36d619bfcd89e7cc3bc47c66187fa62933ab9bebfc46860cdc8a16f4234f553e",
+          "size": 86023168
+        },
+        "images/battlegroup/server-text-router.tar": {
+          "sha256": "2c3dabcecac71c410d23f76acf53c818b94116af90bd124d1dd28a8a50e8d7c3",
+          "size": 91213824
+        },
+        "images/battlegroup/server.tar": {
+          "sha256": "0675e123d8ff8c657953377d1c3c11603b6f62b3173ee77324050a3bf5348c54",
+          "size": 4455862272
+        },
+        "images/battlegroup/version.txt": {
+          "sha256": "6acff783256e42d2b255e20db639c5f45309e7884ad11bb27a573f6ef14eeb27",
+          "size": 18
+        },
+        "images/operators/version.txt": {
+          "sha256": "754a821d671b2f29d4723900e691dcdc04936bb43446b7208d17cf76be46376f",
+          "size": 6
+        },
+        "images/prerequisites/igw-postgres.tar": {
+          "sha256": "740113dca15e96808abf02ee09e51e36c3422acd64a5b9692c2df686d5e0b48b",
+          "size": 147850240
+        },
+        "scripts/battlegroup.sh": {
+          "sha256": "4e4b94aec678e4ce7f25f5d53aaa0af20697f97b886ba1dacfbf64426d8c6171",
+          "size": 31689
+        },
+        "scripts/setup/world.sh": {
+          "sha256": "e3da2963a018a8654bd6b247ac1b3d2967e5ba8541b5d7072040f2548630eee4",
+          "size": 5670
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844",
+      "env": {
+        "HOME": "/tmp"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/dune/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844"
+    },
+    "references": [
+      "images/battlegroup/server.tar"
+    ],
+    "deps": {
+      "amqplib": {
+        "coordinate": "npm:amqplib:0.10.9",
+        "sha256": "f3102ba19abf66322e179f236756ecd8c7c835c2f7d56ab3236c7fc7572b7357",
+        "resolvedCoordinate": "https://registry.npmjs.org/amqplib/-/amqplib-0.10.9.tgz"
+      },
+      "pg": {
+        "coordinate": "npm:pg:8.23.0",
+        "sha256": "d9db7902694dbe59fd5ca21d6521b054cf030aa9360eba7a2f301ad1af10f4ac",
+        "resolvedCoordinate": "https://registry.npmjs.org/pg/-/pg-8.23.0.tgz"
+      },
+      "ws": {
+        "coordinate": "npm:ws:8.21.3",
+        "sha256": "df3454ef205791ce50b5b9241762dcf9bfe1aa9f7f01d3057229be7dac0c2dc3",
+        "resolvedCoordinate": "https://registry.npmjs.org/ws/-/ws-8.21.3.tgz"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "sidecar",
+      "artifact": "takaro-dune-sidecar-linux-25936522-{version}.tar.gz",
+      "installDir": "TakaroDuneSidecar"
+    },
+    {
+      "role": "plugin",
+      "artifact": "takaro-dune-plugin-linux-25936522-{version}.tar.gz",
+      "installDir": "TakaroDunePlugin"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup",
+      "connector-load",
+      "identify",
+      "heartbeat",
+      "players",
+      "catalog-items",
+      "catalog-entities",
+      "console",
+      "shutdown"
+    ]
+  },
+  "preserve": [
+    "saved/",
+    "postgres/",
+    "rmq-admin/",
+    "rmq-game/",
+    "tls/",
+    "TakaroDuneSidecar/",
+    "TakaroDunePlugin/"
+  ],
+  "notes": "One pinned Node image serves both halves of the build: the sidecar is TypeScript, and node:*-bookworm (not slim) carries the g++ the LD_PRELOAD plugin needs, on the same glibc 2.36 as the Funcom server image — a plugin built on anything newer would fail to preload. The server itself is not run from this image: it is Funcom's own seabass-server image, loaded out of the depot above and tagged 2156652-0-shipping. The game client is a different Steam app (1172710) and is not pinned here; the public client of 2026-10-20 (build 25936403) joins this build."
+}

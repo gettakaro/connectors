@@ -112,7 +112,7 @@ holds a copy of the Steam app, the depot manifest, the image tag, a dependency U
 
 ```
 maintenance/bin/takaro-maint targets list --game dune --format table
-maintenance/bin/takaro-maint build --game dune --target linux-25789279 --version 0.1.0 --out dist
+maintenance/bin/takaro-maint build --game dune --target linux-25936522 --version 0.1.0 --out dist
 scripts/build-release.sh <version> <out-dir> [--target <id>]     # the same build, directly
 ```
 
@@ -146,7 +146,7 @@ tested; the tests use fixtures under `src/testing/fixtures/` and never read the 
 - **The two GM gates and the `UserGame.ini` allow-list** (README step 3). Without them every GM command is accepted
   by the broker and silently dropped by the game. The connector's read-back turns that into a visible failure.
 - **`PlayerId` in a GM command is the FLS id**, not the Steam id or the character name (`DUNE_GM_PLAYER_ID_KIND`).
-- **`server_id` is TEXT** in the schema, and the database *name* is build-specific (`dune_sb_1_5_3_0`).
+- **`server_id` is TEXT** in the schema, and the database *name* follows the server's code branch (`dune_sb_1_5_15_0` since build 25936522, `dune_sb_1_5_3_0` before). The director and text-router take it from the image, not from `Database__database`, so an upgrade to a new branch must rename the existing database or they crash-loop on a missing one (the rig's `install.sh dune` does both).
 - **Presence is three-state** (`Offline` / `LoggingOut` / `Online`), and a map transfer must not look like a
   disconnect — hence `DUNE_TRANSFER_GRACE_SECONDS`.
 - **The chat sender is not ours to choose.** Dune renders it from the AMQP `user_id` of a real player account, so a

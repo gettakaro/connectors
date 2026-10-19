@@ -38,6 +38,25 @@ dune_tar_image_ref() {
         | jq -er '.[0].RepoTags | if length == 1 then .[0] else error("expected one RepoTag") end'
 }
 
+# A new code branch renames the database the battlegroup expects. Carry the world over by renaming
+# the previous branch's database (updatedb then applies the new branch's patches to it) rather than
+# letting db-init create an empty one beside it. Anything still connected to the old name is stopped
+# first, because Postgres refuses to rename a database in use.
+dune_migrate_db_name() {
+    local psql=(docker exec takaro-dev-dune-postgres psql -U dune -d postgres -Atc)
+    [ -z "$("${psql[@]}" "select 1 from pg_database where datname='${DUNE_DB_NAME}'")" ] || return 0
+    local old
+    old="$("${psql[@]}" "select datname from pg_database where datname like 'dune\\_sb\\_%'")"
+    [ -n "$old" ] || return 0
+    [ "$(printf '%s\n' "$old" | wc -l)" -eq 1 ] \
+        || ds_die "several old Dune databases (${old//$'\n'/, }); rename the one to keep to ${DUNE_DB_NAME} by hand"
+    ds_info "Renaming database ${old} -> ${DUNE_DB_NAME} for the new code branch..."
+    ds_compose dune --profile sidecar stop survival director text-router gateway dune-takaro >/dev/null 2>&1 || true
+    "${psql[@]}" "ALTER DATABASE \"${old}\" RENAME TO \"${DUNE_DB_NAME}\"" >/dev/null \
+        || ds_die "could not rename ${old} to ${DUNE_DB_NAME}"
+    ds_ok "database ${old} renamed to ${DUNE_DB_NAME}"
+}
+
 install_dune() {
     # There is no SteamCMD path: Steam tool app 4754530 refuses `login anonymous` in
     # steamcmd ("missing license for depot (No subscription)") even though depot 4754532 IS
@@ -151,6 +170,20 @@ EOF
             || ds_die "docker load failed for igw-postgres.tar"
     fi
 
+    # The director and text-router ignore Database__database and connect to the database named
+    # after the server image's code branch (perforce-keywords.json: //seabass/sb-1.5.15.0/...
+    # -> dune_sb_1_5_15_0). A hard-coded name crash-loops both on the first build of a new
+    # branch, so the name is read from the image every install.
+    local db_branch
+    db_branch="$(docker run --rm --entrypoint cat "$server_image" \
+        /home/dune/server/DuneSandbox/Config/perforce-keywords.json 2>/dev/null \
+        | sed -n 's|.*//seabass/\(sb-[0-9][0-9.]*\)/.*|\1|p' | head -1)"
+    [ -n "$db_branch" ] || ds_die "could not read the code branch from ${server_image}'s perforce-keywords.json"
+    DUNE_DB_NAME="dune_$(printf '%s' "$db_branch" | tr '.-' '__')"
+    export DUNE_DB_NAME
+    printf 'DUNE_DB_NAME=%s\n' "$DUNE_DB_NAME" >> "$(ds_target_env_file dune)"
+    ds_ok "database ${DUNE_DB_NAME} (code branch ${db_branch})"
+
     # ── 3. the game-broker TLS pair ──────────────────────────────────────────
     # The image ships /etc/rabbitmq/{cacert,cert,key}.pem, but it is a Funcom test cert for
     # *.funcom.com that expired 2022-04-22 — unusable. The broker runs verify_none, so a
@@ -215,11 +248,12 @@ EOF
     ds_info "Starting postgres and bootstrapping the schema (85 SQL files, Funcom's own updatedb)..."
     ds_compose dune up -d postgres
     ds_wait_for_condition dune \
-        "docker exec takaro-dev-dune-postgres pg_isready -U dune -d '${DUNE_DB_NAME:-dune_sb_1_5_3_0}' >/dev/null 2>&1" \
+        "docker exec takaro-dev-dune-postgres pg_isready -U dune -d postgres >/dev/null 2>&1" \
         300 "postgres accepting connections" \
         || ds_die "postgres never became ready"
+    dune_migrate_db_name
     ds_compose dune run --rm db-init || ds_die "db-init failed — see the output above"
-    ds_ok "schema ${DUNE_DB_NAME:-dune_sb_1_5_3_0}.dune initialised"
+    ds_ok "schema ${DUNE_DB_NAME}.dune initialised"
 
     # ── 7. the GM publisher account ──────────────────────────────────────────
     ds_info "Starting the game broker and provisioning the 'fls' publisher account..."

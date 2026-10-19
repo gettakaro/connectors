@@ -77,12 +77,12 @@ x-pg-env: &pg-env
   DuneDatabaseInterfacePSQL_DatabasePort: "5432"
   DuneDatabaseInterfacePSQL_DatabaseUser: dune
   DuneDatabaseInterfacePSQL_DatabasePassword: "${DUNE_PG_PASSWORD:?required}"
-  DuneDatabaseInterfacePSQL_DatabaseName: "${DUNE_DB_NAME:-dune_sb_1_5_3_0}"
+  DuneDatabaseInterfacePSQL_DatabaseName: "${DUNE_DB_NAME:?run dev-servers/scripts/install.sh dune}"
   Database__address: postgres
   Database__port: "5432"
   Database__user: dune
   Database__password: "${DUNE_PG_PASSWORD:?required}"
-  Database__database: "${DUNE_DB_NAME:-dune_sb_1_5_3_0}"
+  Database__database: "${DUNE_DB_NAME:?run dev-servers/scripts/install.sh dune}"
 
 services:
   # ── 1. state ───────────────────────────────────────────────────────────────
@@ -96,9 +96,10 @@ services:
       POSTGRES_PASSWORD: "${DUNE_PG_PASSWORD:?required}"
       # One database, created by the image. The game derives its name from
       # BaseGame.ini `DatabaseName=dune%_BRANCH%` and the branch in
-      # Config/perforce-keywords.json (sb-1.5.3.0) -> dune_sb_1_5_3_0. The tables live
+      # Config/perforce-keywords.json (sb-1.5.15.0) -> dune_sb_1_5_15_0; install.sh reads it
+      # from the server image. The tables live
       # in schema `dune` inside it, and db-init sets the database search_path.
-      POSTGRES_DB: "${DUNE_DB_NAME:-dune_sb_1_5_3_0}"
+      POSTGRES_DB: "${DUNE_DB_NAME:?run dev-servers/scripts/install.sh dune}"
       TZ: Europe/Brussels
     command:
       - postgres
@@ -107,7 +108,7 @@ services:
     volumes:
       - ../_data/dune-dev/postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dune -d ${DUNE_DB_NAME:-dune_sb_1_5_3_0}"]
+      test: ["CMD-SHELL", "pg_isready -U dune -d ${DUNE_DB_NAME:?run dev-servers/scripts/install.sh dune}"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -145,7 +146,7 @@ services:
       - --host
       - postgres:5432
       - --project-database
-      - "${DUNE_DB_NAME:-dune_sb_1_5_3_0}"
+      - "${DUNE_DB_NAME:?run dev-servers/scripts/install.sh dune}"
       - --project-user
       - dune
       - --project-password
@@ -376,7 +377,7 @@ services:
       # [AdminSetting.Global] +Allowed_GM_Commands in UserGame.ini.
       DUNE_EXTRA_GM_COMMANDS: "${DUNE_EXTRA_GM_COMMANDS:-KickPlayer,ServiceBroadcast,AwardXP,SpawnVehicleAt}"
       DUNE_DB_HOST: postgres:5432
-      DUNE_DB_NAME: "${DUNE_DB_NAME:-dune_sb_1_5_3_0}"
+      DUNE_DB_NAME: "${DUNE_DB_NAME:?run dev-servers/scripts/install.sh dune}"
       DUNE_DB_USER: dune
       DUNE_DB_PASSWORD: "${DUNE_PG_PASSWORD:?required}"
       DUNE_RMQ_GAME_HOST: game-rmq
@@ -440,7 +441,7 @@ services:
       TAKARO_SERVER_NAME: "${DUNE_WORLD_NAME:-Takaro Dev Dune}"
       # Read-only. The connector performs no DB writes: online rows are overwritten by
       # the game, so every mutation goes through a GM command instead.
-      DUNE_PG_URL: "postgres://dune:${DUNE_PG_PASSWORD:?required}@postgres:5432/${DUNE_DB_NAME:-dune_sb_1_5_3_0}"
+      DUNE_PG_URL: "postgres://dune:${DUNE_PG_PASSWORD:?required}@postgres:5432/${DUNE_DB_NAME:?run dev-servers/scripts/install.sh dune}"
       DUNE_PG_SCHEMA: dune
       # The GAME broker, TLS, over the private network.
       DUNE_RMQ_URL: "amqps://${DUNE_GM_AMQP_USER:-fls}:${DUNE_GM_AMQP_PASS:?required}@game-rmq:5672/"

@@ -59,6 +59,34 @@ export type TableName = keyof typeof OPTIONAL_COLUMNS;
 
 const IDENT_RE = /^[a-z_][a-z0-9_]*$/;
 
+/** `dune_sb_1_5_15_0` -> [1, 5, 15, 0]; null for any other name. */
+function branchVersion(name: string): number[] | null {
+  const m = /^dune_sb_(\d+(?:_\d+)*)$/.exec(name);
+  return m ? m[1].split('_').map(Number) : null;
+}
+
+/**
+ * The battlegroup names its database after the server's code branch (`dune_sb_1_5_3_0`, then `dune_sb_1_5_15_0` from
+ * Steam build 25936522) and an update moves the game to the new name. A `DUNE_PG_URL` left on the old name still
+ * connects and reads a frozen roster, so the newest branch database other than the current one is reported.
+ */
+export function newerBranchDatabase(current: string, names: string[]): string | null {
+  const own = branchVersion(current);
+  if (!own) return null;
+  let best: { name: string; v: number[] } | null = null;
+  for (const name of names) {
+    const v = branchVersion(name);
+    if (!v || name === current) continue;
+    const cmp = (a: number[], b: number[]) => {
+      for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) - (b[i] ?? 0);
+      return 0;
+    };
+    if (cmp(v, own) > 0 && (!best || cmp(v, best.v) > 0)) best = { name, v };
+  }
+  return best?.name ?? null;
+}
+
+
 /** Postgres identifiers are never parameterisable, so every one we interpolate must first be proven to be an identifier. */
 export function quoteIdent(name: string): string {
   if (!IDENT_RE.test(name)) throw new Error(`Refusing to interpolate '${name}' as a SQL identifier`);
@@ -126,6 +154,27 @@ export class DunePg {
     this.columns = next;
     this.probed = true;
     logger.debug(`Postgres schema probe: ${JSON.stringify(this.probedColumns())}`);
+    await this.checkDatabaseBranch();
+  }
+
+  /** Warns when a newer branch database than ours exists. Advisory: a failed lookup never fails the probe. */
+  private async checkDatabaseBranch(): Promise<void> {
+    try {
+      const { rows } = await this.db.query<{ current: string; names: string[] | null }>(
+        `SELECT current_database() AS current,
+                (SELECT array_agg(datname::text) FROM pg_database WHERE datname LIKE 'dune\\_sb\\_%') AS names`,
+      );
+      const current = rows[0]?.current;
+      const newer = current ? newerBranchDatabase(current, rows[0]?.names ?? []) : null;
+      if (newer) {
+        logger.warn(
+          `Postgres: connected to '${current}', but the newer branch database '${newer}' exists. After a game update ` +
+            `the battlegroup uses the new one, so this connector reads stale data until DUNE_PG_URL names '${newer}'.`,
+        );
+      }
+    } catch (err) {
+      logger.debug(`Postgres: branch database check skipped (${(err as Error).message})`);
+    }
   }
 
   /**
