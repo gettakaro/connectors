@@ -76,6 +76,77 @@ class Run(wire.Run):
         self.peer.close()
 
 
+class V1Run(Run):
+    identify_reply = {'gameServerId': 'test-server', 'protocolVersion': 1}
+
+
+def protocol_v1(cert, key, state):
+    run = V1Run(cert, key, state)
+    try:
+        offered = run.identify_payload
+        assert offered['protocolVersions'] == [0, 1], offered
+        names = [c['name'] for c in offered['capabilities']]
+        assert len(names) == len(set(names)) and 'testReachability' not in names, names
+        assert {'players.location', 'moderation.ban', 'events.player-connected', 'events.chat-message'} <= set(names), names
+        eventually(lambda: run.health()['protocolVersion'] == 1)
+
+        run.command('emit:v1-event', 'EMITTED')
+        event = run.event('v1-event')
+        stream, seq = event['payload']['streamId'], event['payload']['seq']
+        assert stream.startswith('dragonwilds-') and isinstance(seq, int) and seq >= 1, event
+        # A pong is not an acknowledgement on version 1: the event stays until eventAck.
+        time.sleep(1.5)
+        assert read(state / 'event-outbox.json')['pending'], 'version 1 event confirmed without eventAck'
+
+        # Reconnect before the ack: the same event is resent with the same stream and seq.
+        run.peer.close_session(run.index)
+        run.index = run.identify()
+        run.pending = []
+        resent = run.event('v1-event')
+        assert (resent['payload']['streamId'], resent['payload']['seq']) == (stream, seq), resent
+        run.peer.send(run.index, {'type': 'eventAck', 'payload': {'streamId': 'someone-else', 'upTo': seq}})
+        time.sleep(0.5)
+        assert read(state / 'event-outbox.json')['pending'], 'ack for another stream confirmed our event'
+        # An ack beyond what was sent confirms only what was sent, never a later event.
+        run.peer.send(run.index, {'type': 'eventAck', 'payload': {'streamId': stream, 'upTo': seq + 1000}})
+        eventually(lambda: not read(state / 'event-outbox.json')['pending'])
+        run.command('emit:v1-later', 'EMITTED')
+        later = run.event('v1-later')
+        assert later['payload']['streamId'] == stream and later['payload']['seq'] > seq, later
+        time.sleep(1)
+        assert read(state / 'event-outbox.json')['pending'], 'oversized ack confirmed a later event'
+        run.peer.send(run.index, {'type': 'eventAck', 'payload': {'streamId': stream, 'upTo': later['payload']['seq']}})
+        eventually(lambda: not read(state / 'event-outbox.json')['pending'])
+
+        run.request('v1-unknown', 'getMapTile', '{"dimension":"overworld","zoom":0,"x":0,"y":0}')
+        error = run.response('v1-unknown')['error']
+        assert error['code'] == 'unsupported' and error['message'], error
+        run.request('v1-bad', 'giveItem', {'gameId': '0123456789abcdef0123456789abcdef'})
+        error = run.response('v1-bad')['error']
+        assert error == {'code': 'invalid_args', 'message': "giveItem requires 'item'"}, error
+        print('production bridge protocol version 1 manifest, streamId/seq, eventAck and error codes: pass', flush=True)
+    finally:
+        run.close()
+
+
+def protocol_v0_forced(cert, key, state):
+    # TAKARO_PROTOCOL=0 keeps the plain version 0 identify, plain string errors and no seq.
+    run = Run(cert, key, state, env={'TAKARO_PROTOCOL': '0'})
+    try:
+        assert 'protocolVersions' not in run.identify_payload and 'capabilities' not in run.identify_payload, \
+            run.identify_payload
+        assert run.health()['protocolVersion'] == 0
+        run.command('emit:v0-event', 'EMITTED')
+        event = run.event('v0-event')
+        assert 'streamId' not in event['payload'] and 'seq' not in event['payload'], event
+        run.request('v0-unknown', 'getMapTile', '{}')
+        error = run.response('v0-unknown')['error']
+        assert isinstance(error, str) and 'Unknown Takaro action' in error, error
+        print('production bridge protocol version 0 fallback: pass', flush=True)
+    finally:
+        run.close()
+
+
 def eventually(check, timeout=8):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -690,7 +761,7 @@ def main():
         subprocess.run(['openssl', 'x509', '-req', '-in', str(csr), '-signkey', str(key),
                         '-days', '1', '-extfile', str(ext), '-out', str(cert)],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for test in (answer_deadline, outage, reconcile_after_crash, log_events, whitelist, args_shapes, timed_expiry_restart, legacy_import,
+        for test in (protocol_v1, protocol_v0_forced, answer_deadline, outage, reconcile_after_crash, log_events, whitelist, args_shapes, timed_expiry_restart, legacy_import,
                      replay, backlog_request_latency, crash_write, directory_sync, mutations, stale_effect,
                      engine_before_plugin, ambiguous_engine_ban, newer_ban_after_crash, permanent_restart, timed_replacement,
                      failed_ban_write,

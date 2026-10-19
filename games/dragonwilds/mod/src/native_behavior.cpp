@@ -1351,4 +1351,29 @@ std::string Engine::HealthJson() const {
 }
 
 NativePersistence::Result Engine::Publish() { return {true, {}}; }
+std::string CapabilityManifestJson() {
+    Json manifest = Json::array();
+    for (const char* name : {"players.list", "players.get", "players.location", "players.inventory", "players.teleport",
+                             "items.list", "items.give", "entities.list", "locations.list", "chat.send",
+                             "console.execute", "moderation.kick", "moderation.ban", "moderation.unban",
+                             "moderation.listBans", "server.shutdown", "events.player-connected",
+                             "events.player-disconnected", "events.chat-message", "events.player-death",
+                             "events.entity-killed", "events.log"})
+        manifest.push_back(Json{{"name", name}});
+    return manifest.dump();
+}
+
+std::string ErrorCode(const std::string& message) {
+    const std::string m = Lower(message);
+    auto has = [&](const char* x) { return m.find(x) != std::string::npos; };
+    if (has("unknown takaro action") || has("cannot perform this action")) return "unsupported";
+    if (has("overloaded") || has("duplicate requestid") || has("response exceeds") || has("connection expired") ||
+        has("persistence") || has("native apply failed") || has("connector busy"))
+        return "internal";
+    if (has("not online") || has("unknown player") || has("no such player")) return "not_found";
+    if (has("requires") || has("must be") || has("expected player identifier") || has("invalid request") ||
+        has("argument json") || has("invalid position"))
+        return "invalid_args";
+    return "game_error";
+}
 }  // namespace NativeBehavior

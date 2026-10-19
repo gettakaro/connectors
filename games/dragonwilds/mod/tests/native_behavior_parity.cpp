@@ -608,6 +608,26 @@ int main() {
               "degraded: the log tail takes connections over");
         PluginState::Get().SetCapability("players", "ok");
 
+        {
+            // Protocol version 1: the Capability Manifest and the error codes.
+            const Json manifest = Parse(NativeBehavior::CapabilityManifestJson());
+            std::vector<std::string> names;
+            for (const auto& c : manifest) names.push_back(c["name"].get<std::string>());
+            Check(std::set<std::string>(names.begin(), names.end()).size() == names.size(), "manifest has no duplicate names");
+            for (const char* name : {"players.list", "players.get", "players.location", "moderation.listBans",
+                                     "server.shutdown", "events.chat-message", "events.entity-killed", "events.log"})
+                Check(std::find(names.begin(), names.end(), name) != names.end(), std::string("manifest declares ") + name);
+            Check(std::find(names.begin(), names.end(), "testReachability") == names.end(), "testReachability is not a capability");
+            Check(std::find(names.begin(), names.end(), "map") == names.end(), "no map capability without map tiles");
+            Check(NativeBehavior::ErrorCode("Unknown Takaro action 'getMapTile'") == "unsupported" &&
+                  NativeBehavior::ErrorCode("Dragonwilds connector cannot perform this action: not implemented") == "unsupported" &&
+                  NativeBehavior::ErrorCode("teleportPlayer requires numeric x, y, z") == "invalid_args" &&
+                  NativeBehavior::ErrorCode("player not online") == "not_found" &&
+                  NativeBehavior::ErrorCode("native action queue overloaded") == "internal" &&
+                  NativeBehavior::ErrorCode("ADominionAICharacter class not found") == "game_error" &&
+                  NativeBehavior::ErrorCode("give failed: no inventory") == "game_error", "version 1 error codes");
+        }
+
         std::cout << "native behavior parity: " << checks << " checks passed" << std::endl;
         return 0;
     } catch (const std::exception& e) {

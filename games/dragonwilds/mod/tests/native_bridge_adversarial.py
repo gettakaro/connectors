@@ -180,7 +180,8 @@ class Run:
                 expected = getattr(self, 'expected_identity', 'test-identity')
                 if expected is not None:
                     assert self.identify_payload['identityToken'] == expected, self.identify_payload
-                self.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
+                self.peer.send(index, {'type': 'identifyResponse',
+                                       'payload': getattr(self, 'identify_reply', {})})
                 return index
 
     def request(self, ident, action, args=None, index=None):

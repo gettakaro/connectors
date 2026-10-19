@@ -72,6 +72,7 @@ environment variable wins over `takaro.cfg` and needs a restart to change.
 | `TAKARO_IDENTITY_TOKEN` | no | Filled in by the connector; keep it. |
 | `TAKARO_SERVER_NAME` | no | Server name shown in Takaro; unique in your Takaro domain. |
 | `TAKARO_WS_URL` | no | Default `wss://connect.takaro.io/`. |
+| `TAKARO_PROTOCOL` | no | Set `0` to stay on Takaro protocol version 0 (read at start). By default the connector offers versions 0 and 1 and Takaro picks. |
 | `TAKARO_SENDER_NAME` | no | Sender name for broadcasts; default is the server name. |
 | `TAKARO_STATE_DIR` | Docker: yes | A persistent, writable directory, e.g. `/opt/takaro-state`. Default `<server>/RSDragonwilds/Binaries/Linux/takaro`. |
 | `DRAGONWILDS_LOG_FILE` | no | The server log; found from the binary by default. |
