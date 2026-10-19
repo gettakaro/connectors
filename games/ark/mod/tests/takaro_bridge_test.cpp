@@ -848,6 +848,36 @@ void test_game_profile() {
   bridge3.stop();
 }
 
+// The first identify waits for the loaded world (so Takaro's icon fetch after identify finds the
+// server reachable), but never forever.
+void test_identify_waits_for_game() {
+  auto identifies = [](FakeTakaro& t) {
+    int n = 0;
+    for (const auto& m : t.messages()) n += is_type(m, "identify");
+    return n;
+  };
+  FakeTakaro takaro;
+  takaro.v1 = true;
+  gate::Server gate("boot-loading");
+  takaro::Bridge bridge(config_for(takaro, temp_dir()), gate, [](const std::string&) {});
+  bridge.start();
+  std::this_thread::sleep_for(800ms);
+  CHECK(identifies(takaro) == 0 && !bridge.identified());
+  gate.set_game_ready();
+  CHECK(eventually([&] { return bridge.identified(); }));
+  CHECK(identifies(takaro) == 1);
+  bridge.stop();
+
+  FakeTakaro stuck;
+  gate::Server never_ready("boot-stuck");
+  auto config = config_for(stuck, temp_dir());
+  config.identify_ready_wait = 300ms;
+  takaro::Bridge bounded(config, never_ready, [](const std::string&) {});
+  bounded.start();
+  CHECK(eventually([&] { return bounded.identified(); }));
+  bounded.stop();
+}
+
 int main() {
   test_redaction_and_codec();
   test_identify_and_wire();
@@ -858,6 +888,7 @@ int main() {
   test_identify_rejected_backs_off();
   test_protocol_v1();
   test_game_profile();
+  test_identify_waits_for_game();
   if (failures) { std::cerr << failures << " check(s) failed\n"; return 1; }
   std::cout << "takaro_bridge_test passed\n";
   return 0;
