@@ -12,8 +12,10 @@ PROJECT_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 SOURCE="${PROJECT_ROOT}/mod/TakaroConnector.cs"
 ICON="${PROJECT_ROOT}/assets/icon-256.png"
 
-grep -q '// takaro:icon-begin' "${SOURCE}" && grep -q '// takaro:icon-end' "${SOURCE}" \
-    || { echo "error: the icon region markers are missing from ${SOURCE}" >&2; exit 5; }
+if ! grep -q '// takaro:icon-begin' "${SOURCE}" || ! grep -q '// takaro:icon-end' "${SOURCE}"; then
+    echo "error: the icon region markers are missing from ${SOURCE}" >&2
+    exit 5
+fi
 
 TMP=$(mktemp)
 trap 'rm -f "${TMP}" "${TMP}.region"' EXIT
