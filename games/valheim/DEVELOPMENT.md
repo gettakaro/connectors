@@ -289,6 +289,28 @@ Hook bodies stay on the Unity game thread only long enough to read the packet; s
 serialisation run on pool threads. Valheim adapter calls are marshalled to the main thread
 through a bounded `Update()`-drained action scheduler (`QueuedMainThreadActionScheduler`).
 
+### Takaro protocol versions
+
+`identify` offers Generic Game Protocol versions `[0, 1]` with a Capability Manifest
+(`ProtocolHandshake`), and the connector speaks whatever `identifyResponse.protocolVersion`
+names, per connection (missing means 0, so an older Takaro keeps working unchanged).
+
+- The manifest declares exactly the `live-supported` actions of `capabilities.json`
+  (testReachability is always allowed) and an `events.<type>` entry per event. getPlayer,
+  listLocations and the version 0 map (`getMapInfo`/`getMapTile { x, y, z }`) are not
+  declared, so a version 1 Takaro never sends them; on version 0 they work as before.
+- Version 1 failures use the standard error shape
+  `{ "type": "response", "requestId", "error": { "code", "message" } }`; the connector's own
+  codes map onto `invalid_args`, `not_found`, `unsupported`, `game_error` and `internal`. Array
+  actions can now report a failure instead of letting the request expire. An undeclared
+  action is answered `unsupported` without reaching the game.
+- Version 1 events carry `streamId` (one per server process) and `seq` (assigned when the event
+  is queued, so a resent event keeps it). Only `eventAck` releases them from the 1000-event
+  buffer; after every reconnect the unacknowledged ones are resent in `seq` order. On version 0
+  the ping/pong confirmation above is unchanged.
+- A version 1 identify rejection closes the socket; the connector backs off (2 s doubling to
+  60 s) instead of reconnecting at once.
+
 ## Configuration
 
 One file, `BepInEx/config/com.takaro.valheim.cfg`, a BepInEx-style INI with a `[Takaro]` section,

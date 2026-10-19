@@ -6,6 +6,8 @@ namespace Takaro.Valheim.Core;
 /// stays queued after it was written until the pong for a ping sent after it arrives; only then
 /// is it known to have reached Takaro. Frames written to a connection that died before that
 /// pong are sent again after the next identify. When full, the oldest frame is dropped.
+/// Protocol version 1 numbers every frame in one stream per process (<see cref="StreamSeq"/>
+/// is assigned on enqueue and kept across reconnects) and confirms with eventAck instead.
 /// </summary>
 public sealed class PendingEventQueue
 {
@@ -13,6 +15,7 @@ public sealed class PendingEventQueue
     private readonly Queue<long> checkpoints = new();
     private readonly object syncRoot = new();
     private long nextSequence = 1;
+    private long nextStreamSeq = 1;
 
     public PendingEventQueue(int capacity)
     {
@@ -60,12 +63,15 @@ public sealed class PendingEventQueue
                 Dropped++;
             }
 
-            entries.AddLast(new Entry(frame));
+            entries.AddLast(new Entry(frame, nextStreamSeq++));
         }
     }
 
     /// <summary>The oldest frame not yet written on the current connection.</summary>
-    public bool TryPeekUnsent(out string frame)
+    public bool TryPeekUnsent(out string frame) => TryPeekUnsent(out frame, out _);
+
+    /// <summary>The oldest frame not yet written on the current connection, with its stream position.</summary>
+    public bool TryPeekUnsent(out string frame, out long streamSeq)
     {
         lock (syncRoot)
         {
@@ -74,12 +80,30 @@ public sealed class PendingEventQueue
                 if (entry.Sequence == 0)
                 {
                     frame = entry.Frame;
+                    streamSeq = entry.StreamSeq;
                     return true;
                 }
             }
 
             frame = string.Empty;
+            streamSeq = 0;
             return false;
+        }
+    }
+
+    /// <summary>A version 1 eventAck: every frame at or below <paramref name="upTo"/> is handled.</summary>
+    public int AcknowledgeUpTo(long upTo)
+    {
+        lock (syncRoot)
+        {
+            var acknowledged = 0;
+            while (entries.First is { } first && first.Value.StreamSeq <= upTo)
+            {
+                entries.RemoveFirst();
+                acknowledged++;
+            }
+
+            return acknowledged;
         }
     }
 
@@ -108,8 +132,12 @@ public sealed class PendingEventQueue
         }
     }
 
-    /// <summary>A pong arrived: everything written before its ping reached Takaro.</summary>
-    public int ConfirmOldestCheckpoint()
+    /// <summary>
+    /// A pong arrived: everything written before its ping reached Takaro. On protocol version 1
+    /// a pong only proves the link is alive (<paramref name="releaseFrames"/> false): Takaro
+    /// can still fail to queue an event it received, so only eventAck releases frames there.
+    /// </summary>
+    public int ConfirmOldestCheckpoint(bool releaseFrames = true)
     {
         lock (syncRoot)
         {
@@ -119,6 +147,11 @@ public sealed class PendingEventQueue
             }
 
             var upTo = checkpoints.Dequeue();
+            if (!releaseFrames)
+            {
+                return 0;
+            }
+
             var confirmed = 0;
             while (entries.First is { } first && first.Value.Sequence != 0 && first.Value.Sequence <= upTo)
             {
@@ -152,12 +185,15 @@ public sealed class PendingEventQueue
 
     private sealed class Entry
     {
-        public Entry(string frame)
+        public Entry(string frame, long streamSeq)
         {
             Frame = frame;
+            StreamSeq = streamSeq;
         }
 
         public string Frame { get; }
+
+        public long StreamSeq { get; }
 
         public long Sequence { get; set; }
     }
