@@ -6,6 +6,7 @@
 // token, URL, identity or name reconnects at once; an emptied token disconnects. What the operator must
 // fix is printed to the server console (stdout), where a panel shows it.
 #include "common.h"
+#include "hooks.h"
 #include "native/bridge.h"
 #include "native/config.h"
 #include "native/config_file.h"
@@ -206,6 +207,7 @@ native::Bridge* StartBridge(const std::string& base, const native::NativeConfig&
     native::BridgeOptions bo;
     bo.config = cfg;
     bo.game = &g_api;
+    if (GameBuild() != "unknown") bo.gameVersion = GameBuild();
     bo.transport = transport;
     bo.store = store;
     bo.onIdentified = OnIdentified;

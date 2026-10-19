@@ -1,5 +1,6 @@
 #include "native/mapping.h"
 
+#include "native/game_profile.h"
 #include "native/json_util.h"
 
 #include <cctype>
@@ -11,11 +12,11 @@
 
 namespace native {
 
-const char* const kGameServerActions[19] = {
+const char* const kGameServerActions[20] = {
     "getPlayer",    "getPlayers",   "getPlayerLocation", "getPlayerInventory", "giveItem",   "listItems",
     "listEntities", "listLocations", "executeConsoleCommand", "sendMessage", "teleportPlayer", "testReachability",
     "kickPlayer",   "banPlayer",    "unbanPlayer",       "listBans",           "shutdown",
-    "getMapInfo",   "getMapTile"};
+    "getMapInfo",   "getMapTile",   "getGameIcon"};
 const char* const kGameEventTypes[6] = {"log", "player-connected", "player-disconnected", "chat-message",
                                         "player-death", "entity-killed"};
 
@@ -250,6 +251,8 @@ std::string CreateIdentify(const std::string& identityToken, const std::string& 
     p.S("identityToken", identityToken);
     if (!registrationToken.empty()) p.S("registrationToken", registrationToken);
     if (!serverName.empty()) p.S("name", serverName);
+    p.S("game", kGameSlug);
+    p.Raw("connector", ObjBuilder().S("name", kConnectorName).S("version", kConnectorVersion).Done());
     if (!capabilitiesJson.empty()) p.Raw("protocolVersions", "[0,1]").Raw("capabilities", capabilitiesJson);
     return ObjBuilder().S("type", "identify").Raw("payload", p.Done()).Done();
 }

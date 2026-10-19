@@ -177,8 +177,18 @@ void Protocol(const JsonValue& fx) {
         std::string kind = c.get("kind")->str;
         const JsonValue* in = c.get("input");
         std::string got;
-        if (kind == "identify") got = CreateIdentify(in->get("identityToken")->str, in->get("registrationToken")->str, in->get("serverName")->str);
-        else if (kind == "response") got = CreateResponse(in->get("requestId")->str, *in->get("payload"));
+        if (kind == "identify") {
+            // The sidecar never named the game or the connector (Game Profile is native only): compare the rest.
+            JsonValue v;
+            ParseJson(CreateIdentify(in->get("identityToken")->str, in->get("registrationToken")->str, in->get("serverName")->str), v);
+            const JsonValue& payload = AsRecord(v.get("payload"));
+            CHECK(payload.get("game") && payload.get("connector"));
+            JsonValue rest = JObj();
+            for (auto& kv : payload.obj)
+                if (kv.first != "game" && kv.first != "connector") Put(rest, kv.first, kv.second);
+            Put(v, "payload", rest);
+            got = JsonDump(v);
+        } else if (kind == "response") got = CreateResponse(in->get("requestId")->str, *in->get("payload"));
         else if (kind == "error") got = CreateErrorResponse(in->get("requestId")->str, in->get("error")->str);
         else got = CreateGameEvent(in->get("type")->str, *in->get("data"));
         CHECK_MSG(t::JsonTextEq(got, JsonDump(*c.get("expect"))), kind + " got " + got);
