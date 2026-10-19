@@ -51,8 +51,8 @@ public class TakaroConfig {
     public void setTargetPolicy(String targetPolicy) { this.targetPolicy = targetPolicy; }
 
     /**
-     * Serve the world map. The map needs Takaro protocol v1, so this also offers v1 when
-     * identifying; Takaro picks it when it speaks it.
+     * Serve the world map. The map needs Takaro protocol v1, which the connector always offers;
+     * this only adds the {@code map} capability.
      */
     public boolean isMapEnabled() { return mapEnabled; }
     public void setMapEnabled(boolean mapEnabled) { this.mapEnabled = mapEnabled; }

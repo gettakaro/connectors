@@ -162,7 +162,7 @@ class ConfigReloadContractTest {
     void switchingTheMapOnReconnectsOfferingProtocolV1() throws Exception {
         startConnector("good");
         await("identified", () -> takaro.identifies.size() == 1);
-        assertFalse(takaro.identifies.get(0).has("protocolVersions"), "map off: plain protocol 0 identify");
+        assertTrue(takaro.identifies.get(0).has("protocolVersions"), "map off: identify still offers protocol v1");
 
         Files.writeString(file, Files.readString(file) + "takaro.map=true\n");
         connector.checkConfig();

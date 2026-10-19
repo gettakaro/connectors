@@ -118,13 +118,32 @@ class ProtocolV1Test {
     }
 
     @Test
-    void withoutTheMapSettingIdentifyStaysV0() throws Exception {
+    void withoutTheMapSettingIdentifyStillOffersV1WithoutTheMap() throws Exception {
         TakaroWebSocketClient client = client(false, new EventOutbox());
         client.onOpen(null);
 
         JsonObject identify = sentOfType("identify").get(0).getAsJsonObject("payload");
-        assertFalse(identify.has("protocolVersions"));
-        assertFalse(identify.has("capabilities"));
+        assertEquals("[0,1]", identify.get("protocolVersions").toString());
+        List<String> names = new ArrayList<>();
+        identify.getAsJsonArray("capabilities").forEach(c -> names.add(c.getAsJsonObject().get("name").getAsString()));
+        assertTrue(names.contains("game.profile"));
+        assertTrue(names.contains("players.list"));
+        assertFalse(names.contains("map"));
+    }
+
+    @Test
+    void v0EventsRaisedBeforeIdentifyAreSentPlainAfterIt() throws Exception {
+        EventOutbox outbox = new EventOutbox("stream-c");
+        TakaroWebSocketClient client = client(false, outbox);
+        client.onOpen(null);
+        client.emitChatMessage("u1", "Steve", "global", "early");
+        assertTrue(sentOfType("gameEvent").isEmpty());
+
+        client.onMessage(identifyResponse(0));
+        JsonObject payload = sentOfType("gameEvent").get(0).getAsJsonObject("payload");
+        assertEquals("early", payload.getAsJsonObject("data").get("msg").getAsString());
+        assertFalse(payload.has("seq"));
+        assertEquals(0, outbox.size());
     }
 
     @Test

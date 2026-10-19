@@ -37,6 +37,8 @@ class ActionRoutingTest {
                 return true;
             }
         };
+        // Takaro picks v0 here: these tests pin the v0 response shapes and plain events.
+        client.onMessage("{\"type\":\"identifyResponse\",\"payload\":{\"protocolVersion\":0}}");
         sentMessages = new ArrayList<>();
     }
 
