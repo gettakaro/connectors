@@ -294,7 +294,7 @@ void Bridge::HandleNotice(Notice& n) {
             auto st = o_.transport->Queue({FrameKind::Control,
                                            Text(CreateIdentify(o_.config.identityToken, o_.config.registrationToken,
                                                                o_.config.serverName,
-                                                               o_.config.protocolV1 ? CapabilityManifestJson() : "")),
+                                                               o_.config.protocolV1 ? CapabilityManifestJson(o_.gameVersion) : "")),
                                            n.epoch, 0});
             if (st != QueueStatus::Accepted) o_.transport->RequestClose(n.epoch, "identify not queued");
             break;

@@ -5,6 +5,7 @@
 #include "fake_transport.h"
 #include "native/bridge.h"
 #include "native/fileio.h"
+#include "native/game_profile.h"
 #include "native/mapping.h"
 #include "testlib.h"
 
@@ -128,7 +129,9 @@ void IdentifyAndHeartbeat() {
         return !w.empty();
     }));
     CHECK(!w.empty() && w[0].kind == FrameKind::Control &&
-          t::JsonTextEq(w[0].text, R"({"type":"identify","payload":{"identityToken":"identity-secret-1","registrationToken":"registration-secret-2","name":"Rig"}})"));
+          t::JsonTextEq(w[0].text, R"({"type":"identify","payload":{"identityToken":"identity-secret-1","registrationToken":"registration-secret-2","name":"Rig",)"
+                                      R"("game":"enshrouded","connector":{"name":"takaro-enshrouded","version":")" +
+                                      std::string(kConnectorVersion) + R"("}}})"));
     r.tr.Inject(R"({"type":"identifyResponse","payload":{"gameServerId":"gs-1"}})");
     CHECK(t::WaitFor([&] { return r.tr.identifiedEpoch == e; }));
     r.tr.Inject(R"({"type":"ping"})");
@@ -799,19 +802,22 @@ uint64_t IdentifyV1(Rig& r) {
 void ProtocolV1Identify() {
     t::Group("bridge-v1-identify");
     Rig r("v1-identify");
+    r.o.gameVersion = "1269579";
     r.Start();
     JsonValue id = OpenForIdentify(r);
     const JsonValue& p = AsRecord(id.get("payload"));
     CHECK_EQ(JsonDump(*p.get("protocolVersions")), std::string("[0,1]"));
     const JsonValue* caps = p.get("capabilities");
-    CHECK(caps && caps->type == JsonValue::Array && caps->arr.size() == 23);
+    CHECK(caps && caps->type == JsonValue::Array && caps->arr.size() == 24);
     std::set<std::string> names;
     const JsonValue* map = nullptr;
+    const JsonValue* profile = nullptr;
     for (auto& c : caps->arr) {
         std::string n = c.get("name")->str;
         CHECK_MSG(std::regex_match(n, std::regex("^[a-z][a-zA-Z0-9]*(\\.[a-z][a-zA-Z0-9-]*)*$")), n);
         CHECK_MSG(names.insert(n).second, "duplicate " + n);
         if (n == "map") map = &c;
+        if (n == "game.profile") profile = &c;
     }
     for (const char* need : {"players.list", "players.location", "items.give", "moderation.listBans", "server.shutdown",
                              "locations.list", "events.chat-message", "events.entity-killed"})
@@ -825,8 +831,33 @@ void ProtocolV1Identify() {
                             R"("bounds":{"horizontal":{"min":0,"max":10240},"vertical":{"min":0,"max":10240}},)"
                             R"("source":{"type":"none"}}]})"));
     }
+    CHECK(profile != nullptr);
+    if (profile) {
+        CHECK(t::JsonTextEq(JsonDump(*profile->get("parameters")),
+                            R"({"name":"Enshrouded","version":"1269579","icon":{"revision":")" + GameIconRevision() +
+                                R"(","size":)" + std::to_string(GameIconPng().size()) + "}}"));
+    }
+    CHECK_EQ(Str(p.get("game")).value_or(""), std::string("enshrouded"));
+    CHECK_EQ(Str(AsRecord(p.get("connector")).get("version")).value_or(""), std::string(kConnectorVersion));
     CHECK(JsonDump(id).find("identity-secret-1") != std::string::npos);  // the identify itself carries the token
     IdentifyV1(r);
+    // getGameIcon: the declared revision and the whole PNG in one response, args "{}"
+    JsonValue resp = r.Call("getGameIcon", "{}");
+    const JsonValue& icon = AsRecord(resp.get("payload"));
+    CHECK(!resp.get("error"));
+    CHECK_EQ(Str(icon.get("revision")).value_or(""), GameIconRevision());
+    CHECK_EQ(Str(icon.get("data")).value_or("").size(), (GameIconPng().size() + 2) / 3 * 4);
+}
+
+void ProtocolV1UnknownBuild() {
+    t::Group("bridge-v1-unknown-build");
+    Rig r("v1-unknown-build");  // gameVersion "": the profile has no version, the rest is unchanged
+    r.Start();
+    JsonValue id = OpenForIdentify(r);
+    const JsonValue* profile = nullptr;
+    for (auto& c : AsRecord(id.get("payload")).get("capabilities")->arr)
+        if (c.get("name")->str == "game.profile") profile = &c;
+    CHECK(profile && !profile->get("parameters")->get("version") && profile->get("parameters")->get("icon"));
 }
 
 void ProtocolV1Responses() {
@@ -1017,6 +1048,7 @@ void RunBridgeTests() {
     OfflineGetPlayer();
     CorruptOutbox();
     ProtocolV1Identify();
+    ProtocolV1UnknownBuild();
     ProtocolV1Responses();
     ProtocolV1Events();
     ProtocolV1Fallbacks();

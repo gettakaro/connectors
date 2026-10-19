@@ -1,6 +1,7 @@
 // Unit tests for the native connector building blocks.
 #include "native/config.h"
 #include "native/fileio.h"
+#include "native/game_profile.h"
 #include "native/json_util.h"
 #include "native/logtail.h"
 #include "native/mapping.h"
@@ -8,7 +9,9 @@
 #include "native/transport.h"
 #include "testlib.h"
 
+#include <cstdlib>
 #include <map>
+#include <regex>
 
 using namespace native;
 
@@ -361,9 +364,13 @@ void ProtocolV1Tests() {
                         R"({"type":"gameEvent","payload":{"type":"chat-message","data":{"msg":"hi"},"streamId":"s-1","seq":7}})"));
     CHECK_EQ(GameEventFrameV1("not json", "s", 1), std::string(""));
     CHECK_EQ(GameEventFrameV1(R"({"type":"gameEvent","payload":{"type":"x"}})", "s", 1), std::string(""));
-    CHECK(t::JsonTextEq(CreateIdentify("i", "r", "n"), R"({"type":"identify","payload":{"identityToken":"i","registrationToken":"r","name":"n"}})"));
+    const std::string who = R"("game":"enshrouded","connector":{"name":"takaro-enshrouded","version":")" +
+                            std::string(kConnectorVersion) + R"("})";
+    CHECK(t::JsonTextEq(CreateIdentify("i", "r", "n"),
+                        R"({"type":"identify","payload":{"identityToken":"i","registrationToken":"r","name":"n",)" + who + "}}"));
     CHECK(t::JsonTextEq(CreateIdentify("i", "r", "n", "[]"),
-                        R"({"type":"identify","payload":{"identityToken":"i","registrationToken":"r","name":"n","protocolVersions":[0,1],"capabilities":[]}})"));
+                        R"({"type":"identify","payload":{"identityToken":"i","registrationToken":"r","name":"n",)" + who +
+                            R"(,"protocolVersions":[0,1],"capabilities":[]}})"));
 
     CHECK(ValidStreamId("4f0e9a1c-6c2b-4d3a-9f8e-7b6a5c4d3e2f") && ValidStreamId("a_B-1"));
     CHECK(!ValidStreamId("") && !ValidStreamId("a b") && !ValidStreamId(std::string(129, 'a')));
@@ -385,9 +392,82 @@ void ProtocolV1Tests() {
     CHECK(c.protocolV1 && !c.warnings.empty());
 }
 
+std::string Base64Decode(const std::string& in) {
+    static const std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    uint32_t acc = 0;
+    int bits = 0;
+    for (char c : in) {
+        if (c == '=') break;
+        size_t v = alphabet.find(c);
+        if (v == std::string::npos) return "<invalid base64>";
+        acc = acc << 6 | (uint32_t)v;
+        if ((bits += 6) >= 8) out += (char)((acc >> (bits -= 8)) & 0xff);
+    }
+    return out;
+}
+
+uint32_t Be32(const std::string& s, size_t at) {
+    return (uint32_t)(unsigned char)s[at] << 24 | (uint32_t)(unsigned char)s[at + 1] << 16 |
+           (uint32_t)(unsigned char)s[at + 2] << 8 | (unsigned char)s[at + 3];
+}
+
+void GameProfileTests() {
+    t::Group("game-profile");
+    // release-please rewrites TAKARO_PLUGIN_VERSION and version.txt together; run.sh hands version.txt in.
+    const char* versionTxt = getenv("ENSHROUDED_VERSION_TXT");
+    CHECK_MSG(versionTxt && *versionTxt, "ENSHROUDED_VERSION_TXT not set (run tests/run.sh)");
+    if (versionTxt) CHECK_EQ(std::string(kConnectorVersion), Trim(versionTxt));
+    CHECK(std::regex_match(std::string(kConnectorVersion),
+                           std::regex("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$")));
+    for (const char* slug : {kGameSlug, kConnectorName})
+        CHECK_MSG(std::regex_match(std::string(slug), std::regex("^[a-z0-9][a-z0-9-]*$")), slug);
+
+    CHECK_EQ(Sha256Hex(""), std::string("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
+    CHECK_EQ(Sha256Hex("abc"), std::string("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
+    CHECK_EQ(Sha256Hex(std::string(1000, 'a')), std::string("41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3"));
+
+    // the shipped icon: a 256 x 256 PNG of at most 128 KiB; revision = first 12 hex of its sha256
+    const std::string& png = GameIconPng();
+    CHECK(png.size() > 33 && png.size() <= 131072);
+    CHECK(png.compare(0, 8, "\x89PNG\r\n\x1a\n") == 0 && png.compare(12, 4, "IHDR") == 0);
+    CHECK_EQ(Be32(png, 16), 256u);
+    CHECK_EQ(Be32(png, 20), 256u);
+    CHECK_EQ(GameIconRevision(), Sha256Hex(png).substr(0, 12));
+
+    JsonValue cap = t::J(GameProfileCapability(" 1269579 "));
+    CHECK_EQ(Str(cap.get("name")).value_or(""), std::string("game.profile"));
+    const JsonValue& p = AsRecord(cap.get("parameters"));
+    CHECK_EQ(Str(p.get("name")).value_or(""), std::string("Enshrouded"));
+    CHECK_EQ(Str(p.get("version")).value_or(""), std::string("1269579"));
+    const JsonValue& icon = AsRecord(p.get("icon"));
+    CHECK_EQ(Str(icon.get("revision")).value_or(""), GameIconRevision());
+    CHECK_EQ(Num(icon.get("size")).value_or(-1), (double)png.size());
+    // unknown, too long or non-printable builds are left out, never sent as-is
+    for (const std::string& bad : {std::string(""), std::string("   "), std::string(33, '1'), std::string("12\x01" "3")})
+        CHECK_MSG(!AsRecord(t::J(GameProfileCapability(bad)).get("parameters")).get("version"), bad);
+    CHECK(AsRecord(t::J(GameProfileCapability(std::string(32, '1'))).get("parameters")).get("version"));
+
+    JsonValue icon64 = GameIconPayload();
+    CHECK_EQ(Str(icon64.get("revision")).value_or(""), GameIconRevision());
+    std::string bytes = Base64Decode(Str(icon64.get("data")).value_or(""));
+    CHECK_EQ(bytes.size(), png.size());
+    CHECK(bytes == png);
+
+    // identify names the game and the connector on both protocol versions
+    for (const std::string& caps : {std::string(""), std::string("[]")}) {
+        JsonValue id = t::J(CreateIdentify("i", "r", "Server", caps));
+        const JsonValue& pl = AsRecord(id.get("payload"));
+        CHECK_EQ(Str(pl.get("game")).value_or(""), std::string("enshrouded"));
+        CHECK_EQ(Str(AsRecord(pl.get("connector")).get("name")).value_or(""), std::string("takaro-enshrouded"));
+        CHECK_EQ(Str(AsRecord(pl.get("connector")).get("version")).value_or(""), std::string(kConnectorVersion));
+    }
+}
+
 }  // namespace
 
 void RunUnitTests() {
+    GameProfileTests();
     ProtocolV1Tests();
     IdentityTests();
     JsonUtilTests();

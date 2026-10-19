@@ -1,5 +1,6 @@
 #include "native/adapter.h"
 
+#include "native/game_profile.h"
 #include "native/json_util.h"
 #include "native/mapping.h"
 #include "native/maptiles.h"
@@ -233,6 +234,7 @@ public:
             return list;
         }
         if (action == "getMapInfo") return MapInfoPayload(view_.mapDir);
+        if (action == "getGameIcon") return GameIconPayload();
         if (action == "getMapTile") return JStr(MapTileBase64(view_.mapDir, args));
         if (action == "shutdown") {
             plugin_.Post("/shutdown", "{}");
