@@ -111,6 +111,11 @@ jobs:
       - name: Check the world map tiles
         run: games/rust/tests/map/run.sh --target "${{ steps.target.outputs.target }}"
 
+      # Protocol v0 and v1 (identify offer, manifest, identifyResponse, error frames, the
+      # numbered event stream with acks and resend), run from the shipped region.
+      - name: Check the protocol handshake
+        run: games/rust/tests/protocol/run.sh --target "${{ steps.target.outputs.target }}"
+
   params:
     runs-on: ubuntu-latest
     permissions:
