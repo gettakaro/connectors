@@ -9,6 +9,8 @@ on:
       - 'maintenance/**'
       - 'scripts/**'
       - '.github/workflows/dune.yml'
+      - 'dev-servers/lib/games/dune.sh'
+      - 'tests/test_dune_db_migration.sh'
       - '.github/workflows/connector-release.yml'
   pull_request:
     paths:
@@ -17,6 +19,8 @@ on:
       - 'maintenance/**'
       - 'scripts/**'
       - '.github/workflows/dune.yml'
+      - 'dev-servers/lib/games/dune.sh'
+      - 'tests/test_dune_db_migration.sh'
       - '.github/workflows/connector-release.yml'
   workflow_call:
     inputs:
@@ -80,6 +84,8 @@ jobs:
         run: |
           chmod +x games/dune/mod/build.sh games/dune/mod/tests/run.sh
           games/dune/mod/build.sh --tests
+      - name: Test the rig's database migration
+        run: bash tests/test_dune_db_migration.sh
 
   params:
     runs-on: ubuntu-latest

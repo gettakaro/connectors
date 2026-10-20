@@ -38,15 +38,28 @@ dune_tar_image_ref() {
         | jq -er '.[0].RepoTags | if length == 1 then .[0] else error("expected one RepoTag") end'
 }
 
+# Characters in one Dune database; 0 when the schema is not there yet.
+dune_db_characters() {
+    local n
+    n="$(docker exec takaro-dev-dune-postgres psql -U dune -d "$1" -Atc 'select count(*) from dune.player_state' 2>/dev/null)"
+    printf '%s' "${n:-0}"
+}
+
 # A new code branch renames the database the battlegroup expects. Carry the world over by renaming
 # the previous branch's database (updatedb then applies the new branch's patches to it) rather than
 # letting db-init create an empty one beside it. Anything still connected to the old name is stopped
 # first, because Postgres refuses to rename a database in use.
 dune_migrate_db_name() {
     local psql=(docker exec takaro-dev-dune-postgres psql -U dune -d postgres -Atc)
-    [ -z "$("${psql[@]}" "select 1 from pg_database where datname='${DUNE_DB_NAME}'")" ] || return 0
     local old
-    old="$("${psql[@]}" "select datname from pg_database where datname like 'dune\\_sb\\_%'")"
+    old="$("${psql[@]}" "select datname from pg_database where datname like 'dune\\_sb\\_%' and datname <> '${DUNE_DB_NAME}'")"
+    if [ -n "$("${psql[@]}" "select 1 from pg_database where datname='${DUNE_DB_NAME}'")" ]; then
+        # Already on the new name. An older database beside it means a partial upgrade created the
+        # new one empty; continuing would silently start a fresh world.
+        [ -z "$old" ] || [ "$(dune_db_characters "$DUNE_DB_NAME")" -gt 0 ] \
+            || ds_die "${DUNE_DB_NAME} has no characters but ${old//$'\n'/, } exists; drop the empty ${DUNE_DB_NAME} and re-run install to carry the world over"
+        return 0
+    fi
     [ -n "$old" ] || return 0
     [ "$(printf '%s\n' "$old" | wc -l)" -eq 1 ] \
         || ds_die "several old Dune databases (${old//$'\n'/, }); rename the one to keep to ${DUNE_DB_NAME} by hand"
@@ -182,6 +195,11 @@ EOF
     DUNE_DB_NAME="dune_$(printf '%s' "$db_branch" | tr '.-' '__')"
     export DUNE_DB_NAME
     printf 'DUNE_DB_NAME=%s\n' "$DUNE_DB_NAME" >> "$(ds_target_env_file dune)"
+    # start.sh exports .env into the shell, and a shell variable beats compose's --env-file, so a
+    # DUNE_DB_NAME left in .env from an earlier build would win over the target file.
+    if grep -qE '^DUNE_DB_NAME=' "$DS_ENV_FILE" 2>/dev/null; then
+        ds_persist_env DUNE_DB_NAME "$DUNE_DB_NAME"
+    fi
     ds_ok "database ${DUNE_DB_NAME} (code branch ${db_branch})"
 
     # ── 3. the game-broker TLS pair ──────────────────────────────────────────
