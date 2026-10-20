@@ -1,0 +1,107 @@
+name: Team Fortress 2 Connector
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'games/tf2/**'
+      - 'catalog/tf2/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/tf2.yml'
+      - '.github/workflows/connector-release.yml'
+  pull_request:
+    paths:
+      - 'games/tf2/**'
+      - 'catalog/tf2/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/tf2.yml'
+      - '.github/workflows/connector-release.yml'
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+  # Manual re-run to (re)attach assets to an existing release tag, for recovering a
+  # release that release-please published without them.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to embed in the built artifact (e.g. 0.1.0)
+        required: true
+        type: string
+      tag:
+        description: Existing release tag to upload the assets to (e.g. tf2-v0.1.0)
+        required: true
+        type: string
+
+concurrency:
+  group: tf2-${{ github.ref }}-${{ inputs.tag || 'ci' }}
+  # A push during a release run queues behind it; only ordinary CI runs are cancelled.
+  cancel-in-progress: ${{ inputs.tag == '' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The same commit the release job builds: a recovery run for an older tag is
+          # gated on that tag's sources, never on whatever main has become.
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
+      # Source-level contract checks over the SourceMod plugin: every Takaro action and event,
+      # the cvars, the wire shapes and the capabilities.json it declares. The compile itself
+      # (zero warnings allowed) runs in the release build below.
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 22.x
+      - name: Static plugin checks
+        run: node games/tf2/tests/validate-static.mjs
+
+  params:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.params.outputs.version }}
+      tag: ${{ steps.params.outputs.tag }}
+      publish: ${{ steps.params.outputs.publish }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve release params
+        id: params
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          IN_TAG: ${{ inputs.tag }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEV_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/release-params.sh tf2 >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: [test, params]
+    uses: ./.github/workflows/connector-release.yml
+    secrets: inherit
+    with:
+      connector: tf2
+      version: ${{ needs.params.outputs.version }}
+      tag: ${{ needs.params.outputs.tag }}
+      publish: ${{ needs.params.outputs.publish }}
+      pr_number: ${{ github.event.pull_request.number }}
+      # The TF2 dedicated server is a 15 GB Steam depot set and needs MetaMod:Source and
+      # SourceMod installed by the operator, so no hosted runner boots it. The release claims
+      # contract verification: the static plugin checks above and the reproducible spcomp
+      # build. Live proof comes from a real server with a real client.
+      runtime: false

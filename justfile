@@ -57,6 +57,10 @@ build-release-terraria-bridge version out-dir='dist':
 build-release-valheim version out-dir='dist':
     ./games/valheim/scripts/build-release.sh {{version}} {{out-dir}}
 
+# Build the Team Fortress 2 connector release zip for one catalog target into <out-dir>
+build-release-tf2 version out-dir='dist' target='linux-25995664':
+    ./games/tf2/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
+
 # === Terraria Plugin ===
 
 # Prepare TShock reference assemblies

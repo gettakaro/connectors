@@ -18,6 +18,7 @@ Monorepo for connector plugins that implement the [Takaro Generic Connector Prot
 | VEIN | [`games/vein/`](games/vein/) | C++ (`LD_PRELOAD` native connector) | `debian:bookworm` g++ |
 | Dune: Awakening | [`games/dune/`](games/dune/) | TypeScript sidecar + optional C++ (`LD_PRELOAD` native plugin) | Node.js + `debian:bookworm` g++ |
 | SCUM | [`games/scum/`](games/scum/) | Lua + C++ (UE4SS mod inside `SCUMServer.exe`) | clang-cl cross-compile (`debian:13.7`) |
+| Team Fortress 2 | [`games/tf2/`](games/tf2/) | SourcePawn (SourceMod plugin + ProjectSky websocket/json extensions) | SourceMod 1.13 `spcomp64` (`debian:13.7`) |
 
 Each connector is self-contained with its own Docker dev environment, build system, and scripts. See each connector's README for details.
 
@@ -86,6 +87,7 @@ just build-release-zomboid 0.0.1
 just build-release-conan 1.0.0
 just build-release-terraria 0.1.0
 just build-release-valheim 2.0.0
+just build-release-tf2 0.1.0 dist windows-25995664
 ```
 
 ## Connector Notes
@@ -98,6 +100,7 @@ just build-release-valheim 2.0.0
   coordinate helper commands. It stores local build references under `games/terraria/_data/`.
 - [`games/valheim/`](games/valheim/README.md) is a BepInEx dedicated-server plugin. Players join with a vanilla client; chat, deaths and kills are observed on the server.
 - [`games/scum/`](games/scum/README.md) is a UE4SS mod inside the Windows dedicated server (Lua + a small C++ WebSocket DLL); the release zip bundles the pinned UE4SS build. No sidecar, players install nothing.
+- [`games/tf2/`](games/tf2/README.md) is a SourceMod plugin inside the TF2 dedicated server (Linux or Windows), with the ProjectSky websocket and json extensions holding the Takaro connection. No sidecar, players install nothing.
 
 ## Documentation
 

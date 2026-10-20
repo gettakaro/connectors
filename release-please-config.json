@@ -115,6 +115,14 @@
         { "type": "generic", "path": "native/src/version.h" },
         { "type": "generic", "path": "mod/TakaroSCUM/Scripts/takaro/app.lua" }
       ]
+    },
+    "games/tf2": {
+      "release-type": "simple",
+      "component": "tf2",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        { "type": "generic", "path": "mod/addons/sourcemod/scripting/takaro_tf2.sp" }
+      ]
     }
   }
 }
