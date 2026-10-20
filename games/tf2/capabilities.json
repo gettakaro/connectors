@@ -1,0 +1,67 @@
+{
+  "game": "Team Fortress 2",
+  "architecture": "in-game mod",
+  "runtime": "SourceMod SourcePawn plugin",
+  "distribution": "Drop-in zip per server OS (compiled SMX, ProjectSky websocket and json extensions, config)",
+  "gameInterfaces": [
+    "SourceMod API",
+    "TF2 game events",
+    "TF2 server console"
+  ],
+  "takaroConnection": "outbound_websocket",
+  "statusDefinitions": {
+    "live-supported": "Implemented in the SourceMod plugin and proven through Takaro with a real Steam client on a secure TF2 dedicated server.",
+    "schema-fallback": "Returns a Takaro-valid fallback or structured partial response because the SourceMod/TF2 server surface is configuration-dependent.",
+    "unsupported": "Returns an explicit structured unsupported response, or is intentionally not emitted by the TF2 server-side connector."
+  },
+  "functions": {
+    "getPlayer": "live-supported",
+    "getPlayers": "live-supported",
+    "getPlayerLocation": "live-supported",
+    "getPlayerInventory": "live-supported",
+    "giveItem": "unsupported",
+    "listItems": "live-supported",
+    "listEntities": "live-supported",
+    "listLocations": "live-supported",
+    "getMapInfo": "schema-fallback",
+    "getMapTile": "schema-fallback",
+    "executeConsoleCommand": "live-supported",
+    "sendMessage": "live-supported",
+    "teleportPlayer": "live-supported",
+    "testReachability": "live-supported",
+    "kickPlayer": "live-supported",
+    "banPlayer": "live-supported",
+    "unbanPlayer": "live-supported",
+    "listBans": "live-supported",
+    "shutdown": "schema-fallback"
+  },
+  "events": {
+    "log": "live-supported",
+    "player-connected": "live-supported",
+    "player-disconnected": "live-supported",
+    "chat-message": "live-supported",
+    "player-death": "live-supported",
+    "entity-killed": "live-supported"
+  },
+  "knownGaps": [
+    "SourceMod 1.13 and MetaMod:Source 1.12 are required; SourceMod 1.12 crashes current TF2 builds",
+    "getPlayerInventory reports equipped weapons (item definition index + catalog name); it does not expose the Steam backpack or cosmetics",
+    "listItems reports a generated TF2 weapon catalog (tsuza/tf2-item-schema); codes are item definition indexes",
+    "listEntities reports a fixed catalog: Engineer buildings, the sapper and Halloween bosses",
+    "listLocations reads the running map: intel home positions, team spawns and control points",
+    "getMapInfo returns a disabled MapInfoDTO and getMapTile a placeholder; TF2 has no map tiles",
+    "listBans reports connector bans (persisted in data/takaro_tf2_bans.txt) plus permanent bans in cfg/banned_user.cfg; Takaro cannot lift the latter",
+    "shutdown is off by default; server.shutdown is declared only when takaro_tf2_shutdown_enabled is 1",
+    "banPlayer and unbanPlayer require real SteamID64 identities; servers started with -insecure report SOURCE_* ids that cannot be banned",
+    "entity-killed covers TF2 object_destroyed events (Engineer buildings), not every entity removal",
+    "giveItem is unsupported: a TF2 server cannot grant Steam items, so shop item delivery is unavailable"
+  ],
+  "sourceRefs": [
+    "mod/addons/sourcemod/scripting/takaro_tf2.sp",
+    "mod/addons/sourcemod/scripting/takaro_tf2_item_catalog.inc",
+    "scripts/build-release.sh",
+    "scripts/run-live-smoke.sh",
+    "tests/live-harness.mjs",
+    "tests/validate-static.mjs"
+  ]
+}

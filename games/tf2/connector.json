@@ -1,0 +1,26 @@
+{
+  "name": "Team Fortress 2",
+  "tagline": "SourceMod plugin for Team Fortress 2 dedicated servers (Windows or Linux) that connects to Takaro itself, no sidecar.",
+  "assetMode": "pick-one",
+  "requirements": [
+    "Team Fortress 2 dedicated server (Steam app 232250) on Windows or Linux",
+    "MetaMod:Source 1.12 and SourceMod 1.13 on the server",
+    "Takaro registration token"
+  ],
+  "assets": [
+    {
+      "pattern": "takaro-tf2-windows-*.zip",
+      "label": "Windows server",
+      "requires": "TF2 Windows dedicated server · MetaMod:Source 1.12 · SourceMod 1.13",
+      "hint": "Stop the server, unzip into the server's tf\\ folder, set takaro_tf2_registration_token and takaro_tf2_identity_token in tf\\cfg\\sourcemod\\takaro_tf2.cfg and start the server.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-tf2-linux-*.zip",
+      "label": "Linux server",
+      "requires": "TF2 Linux dedicated server · MetaMod:Source 1.12 · SourceMod 1.13",
+      "hint": "Stop the server, unzip into the server's tf/ folder, set takaro_tf2_registration_token and takaro_tf2_identity_token in tf/cfg/sourcemod/takaro_tf2.cfg and start the server.",
+      "required": true
+    }
+  ]
+}
