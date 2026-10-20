@@ -1597,20 +1597,32 @@ int CountTakaroClients()
   return count;
 }
 
+// 0 = no recipient (broadcast), -1 = a recipient that is not online, else the client index.
 int ResolveRecipientFromRequest(const JSON request)
 {
+  // Pointers checked: /args/opts/recipient/gameId, steamId, platformId (and /payload/args/...).
+  static const char fields[][] = { "gameId", "steamId", "platformId" };
   char identifier[128];
-  if (request.PtrTryGetString("/args/opts/recipient/gameId", identifier, sizeof(identifier))
-    || request.PtrTryGetString("/args/opts/recipient/steamId", identifier, sizeof(identifier))
-    || request.PtrTryGetString("/args/opts/recipient/platformId", identifier, sizeof(identifier))
-    || request.PtrTryGetString("/payload/args/opts/recipient/gameId", identifier, sizeof(identifier))
-    || request.PtrTryGetString("/payload/args/opts/recipient/steamId", identifier, sizeof(identifier))
-    || request.PtrTryGetString("/payload/args/opts/recipient/platformId", identifier, sizeof(identifier))) {
-    int client = ResolveClientByIdentifier(identifier);
-    return client > 0 ? client : -1;
+  char pointer[96];
+  for (int i = 0; i < sizeof(fields); i++) {
+    Format(pointer, sizeof(pointer), "opts/recipient/%s", fields[i]);
+    // Takaro sends args either as an object or as a JSON-encoded string.
+    if (PtrTryGetArg(request, "/args/", pointer, identifier, sizeof(identifier))
+      || PtrTryGetArg(request, "/payload/args/", pointer, identifier, sizeof(identifier))
+      || ExtractStringArgFromArgsString(request, "/args", pointer, identifier, sizeof(identifier))
+      || ExtractStringArgFromArgsString(request, "/payload/args", pointer, identifier, sizeof(identifier))) {
+      int client = ResolveClientByIdentifier(identifier);
+      return client > 0 ? client : -1;
+    }
   }
-
   return 0;
+}
+
+bool PtrTryGetArg(const JSON request, const char[] prefix, const char[] path, char[] buffer, int maxlen)
+{
+  char pointer[160];
+  Format(pointer, sizeof(pointer), "%s%s", prefix, path);
+  return request.PtrTryGetString(pointer, buffer, maxlen);
 }
 
 bool ExtractSenderNameOverride(const JSON request, char[] buffer, int maxlen)
