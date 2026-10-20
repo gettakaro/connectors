@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "id": "tf2",
+  "name": "Team Fortress 2",
+  "connector": "tf2",
+  "platforms": [
+    "linux",
+    "windows"
+  ],
+  "defaultPlatform": "linux",
+  "sources": {
+    "steam": {
+      "provider": "steam",
+      "baseUrl": "https://store.steampowered.com",
+      "watch": {
+        "kind": "game",
+        "component": "tf2",
+        "app": 232250,
+        "os": "linux",
+        "depots": [
+          "232256"
+        ],
+        "channels": {
+          "public": {
+            "branch": "public"
+          }
+        },
+        "knownBranches": [],
+        "readinessNote": "One Steam build id covers both platforms (shared content depot 232250, Linux depot 232256, Windows depot 232255). The connector is a SourceMod plugin that uses game events and SDK calls by name, not code addresses, so a new TF2 build usually keeps working; a new build can still break MetaMod:Source or SourceMod, and every build needs a live retest before it is declared."
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "projectDir": "games/tf2"
+  },
+  "componentRoles": {
+    "plugin": {
+      "description": "The SourceMod plugin takaro_tf2.smx with the two ProjectSky extensions it needs (websocket, json) and its config template, unpacked into the server's tf/ folder. It holds the Takaro connection itself; no sidecar",
+      "artifactPattern": "takaro-tf2-{target}-{version}.zip"
+    }
+  },
+  "legacyAssetAliases": {}
+}

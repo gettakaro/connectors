@@ -149,6 +149,7 @@ CONNECTOR_WORKFLOWS = (
     "rust",
     "scum",
     "terraria",
+    "tf2",
     "valheim",
     "zomboid",
 )

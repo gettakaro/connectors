@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "id": "windows-25995664",
+  "game": "tf2",
+  "platform": "windows",
+  "revision": "25995664",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-10-20",
+    "evidence": [
+      "games/tf2/README.md (What works, what doesn't: Steam build 25995664, live with a real Steam client through hosted Takaro)",
+      "games/tf2/tests/validate-static.mjs (contract level, every build: action, event, cvar and wire-shape checks over the plugin source)"
+    ],
+    "notes": "The connector is a SourceMod plugin (takaro_tf2.smx) plus the ProjectSky websocket and json extensions; it holds the Takaro connection itself, no sidecar. It needs MetaMod:Source 1.12 and SourceMod 1.13 on the server (SourceMod 1.12 crashes current TF2 builds); neither is shipped in the zip. The plugin uses SourceMod's game-event and SDK APIs only, no code addresses, so a new TF2 build usually keeps working, but every build needs a live retest before it is declared."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 232250,
+      "branch": "public",
+      "buildid": 25995664,
+      "os": "windows",
+      "arch": "64",
+      "depots": {
+        "232250": {
+          "manifest": "2780266413356289931",
+          "size": 15082701184,
+          "files": 1062
+        },
+        "232255": {
+          "manifest": "256991621203216237",
+          "size": 268076621,
+          "files": 162
+        }
+      },
+      "files": {
+        "bin/engine.dll": {
+          "sha256": "aca809df6828eef3c5bd42da32c2868c0a53c1503dafa5fc287c4c6d72070a27",
+          "size": 4296856
+        },
+        "srcds.exe": {
+          "sha256": "1882c58dae96e1d59c4fb192cec39b2eb62a52a7ec55c281db1d9e03fb50930b",
+          "size": 190048
+        },
+        "tf/bin/server.dll": {
+          "sha256": "e39f50b2093da25fbe9e21d8b90a6496073767a75b0e9691ad98f824a3557c02",
+          "size": 11500184
+        },
+        "tf/steam.inf": {
+          "sha256": "9cbb586e2e44d1e3ed03c265bf2a3e916f3fce4d5a4834d6b24ed3049867345f",
+          "size": 118
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "debian",
+      "tag": "13.7",
+      "digest": "sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5"
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/tf2/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "debian",
+      "tag": "13.7",
+      "digest": "sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5"
+    },
+    "deps": {
+      "sourcemod": {
+        "coordinate": "alliedmodders:sourcemod-linux:1.13.0-git7477",
+        "sha256": "56171f6886ead1de187158f9e389938706d77aa4597145596fabe89b49d8e2a0",
+        "resolvedCoordinate": "https://sm.alliedmods.net/smdrop/1.13/sourcemod-1.13.0-git7477-linux.tar.gz"
+      },
+      "websocket-license": {
+        "coordinate": "ProjectSky:sm-ext-websocket-license:06e2cd0",
+        "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+        "resolvedCoordinate": "https://raw.githubusercontent.com/ProjectSky/sm-ext-websocket/06e2cd0/LICENSE"
+      },
+      "json-license": {
+        "coordinate": "ProjectSky:sm-ext-json-license:d404107",
+        "sha256": "077ad8edb7a80b509c31ff848c00595517078400455e2efaf45f28e996cc96e1",
+        "resolvedCoordinate": "https://raw.githubusercontent.com/ProjectSky/sm-ext-json/d404107/LICENSE"
+      },
+      "websocket-linux": {
+        "coordinate": "ProjectSky:sm-ext-websocket-linux:1.0.8-06e2cd0",
+        "sha256": "17fb87dfcb1d9785f991ae39c145d06fa6de9596e39c63d941c294c8f3e90c3c",
+        "resolvedCoordinate": "https://github.com/ProjectSky/sm-ext-websocket/releases/download/1.0.8/sm-ext-websocket-linux-sm1.13-06e2cd0.zip"
+      },
+      "json-linux": {
+        "coordinate": "ProjectSky:sm-ext-json-linux:1.1.5f-d404107",
+        "sha256": "146120ba50eaad6091edcd3b4e17bb4eb6ee0ac0c593cee5891cccb4f8d8a08a",
+        "resolvedCoordinate": "https://github.com/ProjectSky/sm-ext-json/releases/download/1.1.5f/sm-ext-json-linux-sm1.13-d404107.zip"
+      },
+      "websocket-windows": {
+        "coordinate": "ProjectSky:sm-ext-websocket-windows:1.0.8-06e2cd0",
+        "sha256": "67007791a1d8f02cc4f06e02e81b30bd9cde6ccd47d2a8cc274894e97e646929",
+        "resolvedCoordinate": "https://github.com/ProjectSky/sm-ext-websocket/releases/download/1.0.8/sm-ext-websocket-win-sm1.13-06e2cd0.zip"
+      },
+      "json-windows": {
+        "coordinate": "ProjectSky:sm-ext-json-windows:1.1.5f-d404107",
+        "sha256": "ed621c9d54a32f4c60ab04c2c14fef4506ac68271e68be08f7da39bafac58ee9",
+        "resolvedCoordinate": "https://github.com/ProjectSky/sm-ext-json/releases/download/1.1.5f/sm-ext-json-win-sm1.13-d404107.zip"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "plugin",
+      "artifact": "takaro-tf2-windows-25995664-{version}.zip",
+      "installDir": "tf"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": []
+  },
+  "preserve": [
+    "tf/cfg/sourcemod/takaro_tf2.cfg",
+    "tf/addons/sourcemod/data/takaro_tf2_bans.txt",
+    "tf/cfg/banned_user.cfg"
+  ],
+  "notes": "The plugin compiles once (SourceMod 1.13 spcomp64 inside the pinned Debian image, against the Linux extension includes), so the same .smx ships in both platform zips, which differ only in the extension binaries; this target also pins the Linux extension zips for those includes. A hosted runner cannot hold the 15 GB server, so release verification is contract level."
+}
