@@ -57,7 +57,7 @@ export function cleanGameVersion(value: string): string | null {
 /**
  * The map server logs its build once at boot: `LogNetVersion: Log: DuneSandbox 1.5.3.7, NetCL: 2147284`. The number
  * after `DuneSandbox` is the game build players see; the Postgres database name only carries the content version
- * (`dune_sb_1_5_3_0`), which does not change with a patch.
+ * (build 1.5.3.7 ran on `dune_sb_1_5_3_0`), which only changes with some patches.
  */
 const NET_VERSION_LINE = /LogNetVersion:.*\bDuneSandbox (\d+(?:\.\d+){1,3}), NetCL: \d+/;
 

@@ -142,7 +142,7 @@ its sha256) and the game build when known, and the sidecar answers `getGameIcon`
 - The game build is the `LogNetVersion: … DuneSandbox <build>, NetCL: …` line the map server logs at boot. The
   sidecar reads the head of `DUNE_LOG_FILE` at start and follows the tail, so a map restart on a new build sends a
   `capabilities` replacement. Without `DUNE_LOG_FILE` the version is omitted. The Postgres database name
-  (`dune_sb_1_5_3_0`) is not the build: it stays the same across patches.
+  is not the build: it carries a content version that lags it (build 1.5.3.7 ran on `dune_sb_1_5_3_0`).
 
 ## The item catalogue
 
