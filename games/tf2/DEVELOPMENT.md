@@ -85,6 +85,8 @@ item (code = item definition index) to `takaro_tf2_item_catalog.inc`.
 - `executeConsoleCommand` runs only commands in `takaro_tf2_command_allowlist_exact` or starting
   with a prefix in `takaro_tf2_command_allowlist_prefixes`. `shutdown` (and the `server.shutdown`
   capability on protocol v1) exists only when `takaro_tf2_shutdown_enabled` is `1`.
+- `sendMessage` with `opts.recipient` reaches only that player and answers `not_found` when the
+  player is not online; Takaro may send the args as a JSON string, so both forms are read.
 - `getPlayerInventory` lists the equipped weapons; `giveItem` answers a structured unsupported error.
 - `listLocations` reads the running map (intelligence, team spawns, control points); `getMapInfo`
   answers a disabled map and `getMapTile` a transparent placeholder.
