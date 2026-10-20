@@ -13,7 +13,9 @@ function harness(options: { initialOnline?: TakaroPlayer[]; transferGraceMs?: nu
   let now = 1_000_000;
   const events: Recorded[] = [];
   const saved: TakaroPlayer[][] = [];
+  const revived: string[] = [];
   const poller = new PresencePoller({
+    onRevive: (gameId) => revived.push(gameId),
     roster: async () => roster,
     emit: (type, data) => events.push({ type, data }),
     initialOnline: options.initialOnline,
@@ -25,6 +27,7 @@ function harness(options: { initialOnline?: TakaroPlayer[]; transferGraceMs?: nu
     poller,
     events,
     saved,
+    revived,
     set: (rows: DunePlayerRow[]) => (roster = rows),
     advance: (ms: number) => (now += ms),
     tick: () => poller.pollOnce(),
@@ -124,6 +127,22 @@ describe('presence differ', () => {
     await h.tick();
     expect(h.events.filter((e) => e.type === 'player-death')).toHaveLength(2);
     expect(h.events.at(-1)!.data.msg).toBe('Tester died');
+  });
+
+  it('reports a revival on the edge out of a dead state and on the first alive poll, never on alive to alive', async () => {
+    const h = harness();
+    h.set([TESTER]);
+    await h.tick(); // first poll after a join: alive
+    await h.tick();
+    expect(h.revived).toEqual([TESTER.flsId]);
+    h.set([{ ...TESTER, lifeState: 'Dead' }]);
+    await h.tick();
+    await h.tick();
+    expect(h.revived).toHaveLength(1);
+    h.set([{ ...TESTER, lifeState: 'Alive' }]);
+    await h.tick(); // respawn
+    await h.tick();
+    expect(h.revived).toEqual([TESTER.flsId, TESTER.flsId]);
   });
 
   it('a corpse found on the first poll is not reported as a death we witnessed', async () => {

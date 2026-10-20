@@ -36,6 +36,11 @@ export interface PresenceOptions {
    * instead of one from each source.
    */
   emitDeath?: (gameId: string, data: Record<string, unknown>) => void;
+  /**
+   * A player is alive after being dead (a respawn), or alive on their first poll after a join. The
+   * `DeathCoalescer` uses it to tell a new death from a late duplicate of the last one.
+   */
+  onRevive?: (gameId: string) => void;
 }
 
 interface Tracked {
@@ -181,6 +186,9 @@ export class PresencePoller {
       this.lifeStates.set(gameId, state);
       // The EDGE is the event. A player who stays dead across ten polls died once; and on the first poll after a
       // restart there is no previous state, so nothing is emitted — a corpse we find is not a death we witnessed.
+      if (!isDead(tracked.row) && (previous === undefined || isDead({ lifeState: previous }))) {
+        this.options.onRevive?.(gameId);
+      }
       if (previous === undefined || previous === state || !isDead(tracked.row)) continue;
       const position = this.options.locationOf?.(tracked.row) ?? tracked.row.deathLocation ?? tracked.row.position ?? null;
       const data: Record<string, unknown> = { player: tracked.player };

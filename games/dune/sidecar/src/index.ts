@@ -195,6 +195,7 @@ async function main(): Promise<void> {
     intervalMs: config.presenceIntervalMs,
     transferGraceMs: config.transferGraceMs,
     emitDeath: (gameId, data) => deaths.fromLifeState(gameId, data),
+    onRevive: (gameId) => deaths.revived(gameId),
     onError: (err) => logger.warn(`Presence poll failed: ${err.message}`),
   });
 

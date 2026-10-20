@@ -279,10 +279,36 @@ describe('death coalescing', () => {
     expect(emitted).toHaveLength(2);
   });
 
-  it('a genuine second death AFTER the window is a second event', () => {
+  it('a genuine second death after a revival is a second event', () => {
     const { c, emitted, advance } = rig(1000);
     c.fromPlugin(FLS, { player: { gameId: FLS } });
     advance(1500);
+    c.revived(FLS);
+    c.fromPlugin(FLS, { player: { gameId: FLS } });
+    expect(emitted).toHaveLength(2);
+  });
+
+  it('a plugin death trailing the emitted life_state edge by more than the window is still ONE event', () => {
+    // Steam build 26051014, dehydration defeat: Postgres said Dead 13 s before the plugin's death arrived.
+    const { c, emitted, advance } = rig(5000);
+    c.fromLifeState(FLS, { player: { gameId: FLS }, msg: 'Tester died' });
+    advance(5001);
+    expect(emitted).toHaveLength(1);
+    advance(8000);
+    c.fromPlugin(FLS, { player: { gameId: FLS }, msg: 'Tester died' });
+    expect(emitted).toHaveLength(1);
+    expect(c.status()).toMatchObject({ fromLifeState: 1, fromPlugin: 0, suppressedDuplicate: 1 });
+  });
+
+  it('without an observed revival the dead mark expires after maxDeadMs', () => {
+    const emitted: unknown[] = [];
+    let now = 0;
+    const c = new DeathCoalescer({ emit: (_t, d) => emitted.push(d), windowMs: 1000, maxDeadMs: 60_000, now: () => now });
+    c.fromPlugin(FLS, { player: { gameId: FLS } });
+    now += 59_999;
+    c.fromPlugin(FLS, { player: { gameId: FLS } });
+    expect(emitted).toHaveLength(1);
+    now += 2;
     c.fromPlugin(FLS, { player: { gameId: FLS } });
     expect(emitted).toHaveLength(2);
   });

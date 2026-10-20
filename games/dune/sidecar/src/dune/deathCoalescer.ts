@@ -29,6 +29,11 @@ import type { GameEventType } from '../takaro/protocol.js';
  *    emitted. The window is deliberately short (default 5 s): a real respawn-and-die-again is slower
  *    than that, and a genuinely fast second death being merged is a smaller error than every death
  *    being reported twice.
+ *  * After that, the player stays dead for the coalescer until the presence poller sees them alive again
+ *    (`revived`). The plugin's attributed death can trail the life_state edge by much more than the window:
+ *    on Steam build 26051014 a dehydration defeat reached the plugin 13 s after Postgres already said
+ *    `Dead`, and both went to Takaro. One life ends once, so any further death before a revival is a
+ *    duplicate. `maxDeadMs` (default 10 min) bounds the mark in case a revival is never observed.
  *  * With **no plugin at all** the hold still applies, so a death is at most `windowMs` late and the
  *    behaviour is identical for both configurations. That is stated in the README rather than hidden.
  *
@@ -38,6 +43,8 @@ export interface DeathCoalescerOptions {
   emit: (type: GameEventType, data: Record<string, unknown>) => void;
   /** How long a life_state death waits for the plugin's attributed one. Default 5000 ms. */
   windowMs?: number;
+  /** How long an emitted death stays the player's last one when no revival is observed. Default 600000 ms. */
+  maxDeadMs?: number;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
@@ -51,6 +58,7 @@ interface Pending {
 
 export class DeathCoalescer {
   private readonly pending = new Map<string, Pending>();
+  /** When each player's last death was emitted; cleared by `revived`. */
   private readonly emittedAt = new Map<string, number>();
   private readonly counters = { fromPlugin: 0, fromLifeState: 0, suppressedLifeState: 0, suppressedDuplicate: 0 };
 
@@ -69,10 +77,19 @@ export class DeathCoalescer {
     else clearTimeout(handle as NodeJS.Timeout);
   }
 
-  /** True when a death for this player was already emitted inside the window. */
+  private maxDeadMs(): number {
+    return this.options.maxDeadMs ?? 600_000;
+  }
+
+  /** True when this player's death was already emitted and they have not been seen alive since. */
   private recentlyEmitted(gameId: string): boolean {
     const at = this.emittedAt.get(gameId);
-    return at !== undefined && this.now() - at < this.windowMs();
+    return at !== undefined && this.now() - at < Math.max(this.windowMs(), this.maxDeadMs());
+  }
+
+  /** The presence poller saw the player alive after a death (respawn, or a fresh join): the next death is new. */
+  revived(gameId: string): void {
+    this.emittedAt.delete(gameId);
   }
 
   /** The plugin's attributed death. Wins, always, and cancels a held life_state death. */
@@ -84,9 +101,9 @@ export class DeathCoalescer {
       this.counters.suppressedLifeState++;
     }
     if (this.recentlyEmitted(gameId)) {
-      // The life_state edge already went out (it beat the plugin by more than the window). Emitting
-      // now would be a second death for the same event, so it is dropped — and counted, because a
-      // non-zero count here means the window is too short for this rig.
+      // The life_state edge already went out (it beat the plugin by more than the window) and the
+      // player has not been seen alive since. Emitting now would be a second death for the same
+      // life, so it is dropped and counted.
       this.counters.suppressedDuplicate++;
       return;
     }
