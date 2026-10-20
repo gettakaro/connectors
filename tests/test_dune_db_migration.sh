@@ -37,6 +37,8 @@ run_case() {
     local dir="$WORK/$name"; mkdir -p "$dir"; CASE_DIR="$dir"
     local spec
     for spec in "$@"; do printf '%s' "${spec#*=}" > "$dir/${spec%%=*}"; done
+    # The stubs below are called by the sourced library, which shellcheck cannot see.
+    # shellcheck disable=SC2317,SC2329,SC2034
     (
         export PATH="$WORK/bin:$PATH" FAKE_PG="$dir" REPO_ROOT="$ROOT" DS_DATA="$WORK/data"
         ds_register() { :; }
@@ -57,7 +59,9 @@ run_case() {
 
 expect_dbs() {
     local dir="$1" want="$2" got
-    got="$(cd "$dir" && ls -1 | grep '^dune_sb_' | sort | tr '\n' ' ')"
+    local f
+    got=""
+    for f in "$dir"/dune_sb_*; do [ -e "$f" ] && got+="${f##*/} "; done
     if [ "$got" != "$want" ]; then
         echo "FAIL ${dir##*/}: databases '$got', want '$want'"; FAILURES=$((FAILURES + 1))
     fi
