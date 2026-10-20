@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-26051014",
+  "game": "dune",
+  "platform": "linux",
+  "revision": "26051014",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-10-20",
+    "evidence": [
+      "games/dune/sidecar/src/__tests__/ (contract level, every build: 304 tests over a mock battlegroup, including the late plugin death case added in plugin-integration.test.ts for this target)",
+      "games/dune/mod/tests/unit_test.cpp (plugin unit level: 331 checks)",
+      "connector-runner e2e 2026-10-20 on this pin (gettakaro/connectors#564; dev rig artifacts byte-identical to `takaro-maint build --target linux-26051014 --version 0.4.0-rc.564.2`): real PC client 26050941 (in-game v1.5.15.1.2160922) through Takaro MCP - player-connected 0ce9bee8-eee0-4fe8-b307-45f25fd61334, chat-message 7fb3e94d-13bd-40d0-8ddc-ecc5e07144e3, command-executed 5e6feb18-15ce-4bd9-95f9-bd01e07ef8b0 (@ping, Pong rendered in game), player-death 4d679212-329d-4cf7-9ba7-91eda40e6cab (environment) and 5fa7924b-b932-4ba9-8a30-1c01721dde72 (killed by an NPC with a Maula Pistol), kickPlayer -> player-disconnected f73ce174-7187-4602-b6df-223b888ee3b7, voluntary leave -> player-disconnected 8303b4af-80c4-4494-ac9f-7b566f24dfa4; testReachability, getPlayers, sendMessage and executeConsoleCommand rendered in game; giveItem read-back verified (Postgres and client stack), teleportPlayer (plugin live position), banPlayer refused a real rejoin, unbanPlayer rejoin stayed online, shutdown -> player-disconnected 057f7fb5-90ba-4001-be42-47c97372958a with a clean stop and restart; game-to-Discord posts 200 OK and a synthetic discord-message rendered in game. A dehydration death stored two player-death events (18b7d129, 3f8146e9) because the plugin's death trailed the Postgres edge by 13 s; fixed in the sidecar, after which the same death stored one (f8afa2dc-41d8-4b63-8b87-e7ec27b23544). entity-killed was not reached on this pin."
+    ],
+    "notes": "Exact Steam pin of the self-hosted server package head observed 2026-10-20 (public branch moved to build 26051014 at 2026-10-20T11:29Z, depot 4754532 manifest 7714035349234915047 dated 2026-10-19): image bundle 2160922-0-shipping, still code branch sb-1.5.15.0, so the database name stays dune_sb_1_5_15_0 and a battlegroup upgraded from linux-25936522 needs no rename (updatedb found the schema current, no patches). All eleven pinned files hashed identically over two independent downloads (takaro-maint steam pin and a separate DepotDownloader fetch). The plugin's resolver re-validated on the new map binary (ELF build id d5a287a09fc3ab4a9e64b1c3fb5316a65aa1e9ce): 3/3 required symbols, ProcessEvent slot 86 derived and confirmed, name pool resolved once the engine finished allocating it. It is the default because the public client moved with it (client app 1172710 build 26050941). Everything said about install and verification in the linux-25689360 record applies here unchanged: no anonymous boot (an operator Funcom self-hosting token is required), no `takaro-maint install` seam for the image bundle, and `verification.required` stays `contract` with runtime proof recorded on the dev rig."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 4754530,
+      "branch": "public",
+      "buildid": 26051014,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "4754532": {
+          "manifest": "7714035349234915047",
+          "size": 5206509977,
+          "files": 75
+        }
+      },
+      "files": {
+        "images/battlegroup/server-bg-director.tar": {
+          "sha256": "f9c5b8ed4a281b4c3218b3f51d326c2adc3675ee950881da7b007ad3ffa91068",
+          "size": 91951616
+        },
+        "images/battlegroup/server-db-utils.tar": {
+          "sha256": "0914390434129a4e98e3385fbc8269d12ddbd125e444b6c72a44711d1e490cf9",
+          "size": 40295936
+        },
+        "images/battlegroup/server-gateway.tar": {
+          "sha256": "baae7099e7dda7782a36ddfecf90332f1dcd35dfbe38826008896416271868d0",
+          "size": 29990400
+        },
+        "images/battlegroup/server-rabbitmq.tar": {
+          "sha256": "7d603d749132295ae02225766e2e3ced2840ae2b986febc4d35bdad5b623c28b",
+          "size": 86023168
+        },
+        "images/battlegroup/server-text-router.tar": {
+          "sha256": "b2883a8c189f16ea93de31dea75633cdac9e8377edd40341dd5c1c116c917237",
+          "size": 91213824
+        },
+        "images/battlegroup/server.tar": {
+          "sha256": "c713c89eac553d809e9f2ba3d1a00616fcd4e400f09ee9881a55e1281515a340",
+          "size": 4453453824
+        },
+        "images/battlegroup/version.txt": {
+          "sha256": "5d8b7ae115792d46d603de8bd475bc0637e8efcb79e3e9af6e47260a042a9981",
+          "size": 18
+        },
+        "images/operators/version.txt": {
+          "sha256": "754a821d671b2f29d4723900e691dcdc04936bb43446b7208d17cf76be46376f",
+          "size": 6
+        },
+        "images/prerequisites/igw-postgres.tar": {
+          "sha256": "740113dca15e96808abf02ee09e51e36c3422acd64a5b9692c2df686d5e0b48b",
+          "size": 147850240
+        },
+        "scripts/battlegroup.sh": {
+          "sha256": "4e4b94aec678e4ce7f25f5d53aaa0af20697f97b886ba1dacfbf64426d8c6171",
+          "size": 31689
+        },
+        "scripts/setup/world.sh": {
+          "sha256": "e3da2963a018a8654bd6b247ac1b3d2967e5ba8541b5d7072040f2548630eee4",
+          "size": 5670
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844",
+      "env": {
+        "HOME": "/tmp"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/dune/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844"
+    },
+    "references": [
+      "images/battlegroup/server.tar"
+    ],
+    "deps": {
+      "amqplib": {
+        "coordinate": "npm:amqplib:0.10.9",
+        "sha256": "f3102ba19abf66322e179f236756ecd8c7c835c2f7d56ab3236c7fc7572b7357",
+        "resolvedCoordinate": "https://registry.npmjs.org/amqplib/-/amqplib-0.10.9.tgz"
+      },
+      "pg": {
+        "coordinate": "npm:pg:8.23.0",
+        "sha256": "d9db7902694dbe59fd5ca21d6521b054cf030aa9360eba7a2f301ad1af10f4ac",
+        "resolvedCoordinate": "https://registry.npmjs.org/pg/-/pg-8.23.0.tgz"
+      },
+      "ws": {
+        "coordinate": "npm:ws:8.21.3",
+        "sha256": "df3454ef205791ce50b5b9241762dcf9bfe1aa9f7f01d3057229be7dac0c2dc3",
+        "resolvedCoordinate": "https://registry.npmjs.org/ws/-/ws-8.21.3.tgz"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "sidecar",
+      "artifact": "takaro-dune-sidecar-linux-26051014-{version}.tar.gz",
+      "installDir": "TakaroDuneSidecar"
+    },
+    {
+      "role": "plugin",
+      "artifact": "takaro-dune-plugin-linux-26051014-{version}.tar.gz",
+      "installDir": "TakaroDunePlugin"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup",
+      "connector-load",
+      "identify",
+      "heartbeat",
+      "players",
+      "catalog-items",
+      "catalog-entities",
+      "console",
+      "shutdown"
+    ]
+  },
+  "preserve": [
+    "saved/",
+    "postgres/",
+    "rmq-admin/",
+    "rmq-game/",
+    "tls/",
+    "TakaroDuneSidecar/",
+    "TakaroDunePlugin/"
+  ],
+  "notes": "One pinned Node image serves both halves of the build: the sidecar is TypeScript, and node:*-bookworm (not slim) carries the g++ the LD_PRELOAD plugin needs, on the same glibc 2.36 as the Funcom server image — a plugin built on anything newer would fail to preload. The server itself is not run from this image: it is Funcom's own seabass-server image, loaded out of the depot above and tagged 2156652-0-shipping. The game client is a different Steam app (1172710) and is not pinned here; the public client of 2026-10-20 (build 25936403) joins this build."
+}
