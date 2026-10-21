@@ -1455,13 +1455,16 @@ bool WorldNearbyJson(const std::string& name, double radius, std::string& json, 
 }
 
 // ------------------------------------------------------------------------------------------------
+// 1267041 is the build the tables were exported on. 1273043 (Steam 26083076) is a hotfix whose exported ItemInfo
+// (id, code, stack size) and TemplateResource (guid, name) entries match these tables one for one.
 static const char kTablesGameBuild[] = "1267041";
+static const char kTablesGameBuildHotfix[] = "1273043";
 static std::atomic<bool> g_tablesUsable{true};
 static std::string g_tablesReason;
 
 void SetItemTablesBuild(const std::string& gameBuild, bool haveGamedataSection) {
     (void)haveGamedataSection;  // a valid hook profile does not validate item ids
-    bool ok = gameBuild == kTablesGameBuild;
+    bool ok = gameBuild == kTablesGameBuild || gameBuild == kTablesGameBuildHotfix;
     if (!ok) {
         g_tablesReason = std::string("item and entity tables are for game build ") + kTablesGameBuild + ", this server is build " +
                          gameBuild + "; use the plugin release for that build";
