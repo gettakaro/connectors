@@ -280,6 +280,9 @@ HostOnline, 24.5 s after the boot; it re-identified 2.2 s after a
 reachability reason). It proves the release artifact against a fake Takaro; the live proof
 with a real client and real Takaro is separate.
 
+For a `sendMessage` live check, inspect the entire client chat line. A Takaro announcement must not appear under an
+online player's character name; seeing the message text alone does not pass this check.
+
 `--negative` needs zig on the host (`TAKARO_MAINT_ZIG=/path/to/zig`); without it the check
 is skipped with that reason rather than passed.
 
