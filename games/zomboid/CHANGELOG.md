@@ -4,6 +4,13 @@ All notable changes to the Takaro Project Zomboid connector are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.0](https://github.com/gettakaro/connectors/compare/zomboid-v1.4.0...zomboid-v1.5.0) (2026-10-21)
+
+
+### Features
+
+* **zomboid:** report the game profile, connector identity and game icon ([#557](https://github.com/gettakaro/connectors/issues/557)) ([58f0c9e](https://github.com/gettakaro/connectors/commit/58f0c9e22fad87d0dfed6695cc76fc10506aa88b))
+
 ## [1.4.0](https://github.com/gettakaro/connectors/compare/zomboid-v1.3.0...zomboid-v1.4.0) (2026-10-18)
 
 
