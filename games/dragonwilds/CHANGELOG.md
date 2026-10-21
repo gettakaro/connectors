@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.5.0...dragonwilds-v0.6.0) (2026-10-21)
+
+
+### Features
+
+* **dragonwilds:** speak protocol v1 and report the game profile, connector identity and game icon ([#562](https://github.com/gettakaro/connectors/issues/562)) ([f14f237](https://github.com/gettakaro/connectors/commit/f14f237884786c89f7756190f99646e4e4d90d6e))
+
 ## [0.5.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.4.0...dragonwilds-v0.5.0) (2026-10-18)
 
 
