@@ -35,11 +35,11 @@ from takaro_maint.games.enshrouded import verify as hooks
 from takaro_maint.publish.manifest import artifact_row, write_manifest, write_meta
 
 GAME = "enshrouded"
-TARGET = "proton-1267041"
+TARGET = "proton-1273043"
 APP = 2278520
 GAME_DEPOT = "2278521"
 REDIST_DEPOT = "1004"
-PINNED = {GAME_DEPOT: "3715394091293008757", REDIST_DEPOT: "7604377918839582995"}
+PINNED = {GAME_DEPOT: "6075892735519937045", REDIST_DEPOT: "7604377918839582995"}
 MOVED = {GAME_DEPOT: "2900000000000000001", REDIST_DEPOT: "7900000000000000001"}
 VERSION = "0.4.3-dev.abc1234"
 PLUGIN_ZIP = f"takaro-enshrouded-plugin-{TARGET}-{VERSION}.zip"
@@ -155,18 +155,18 @@ def test_targets_resolve_env_for_enshrouded(run: Any) -> None:
 
     assert code == 0, payload
     env = payload["env"]
-    assert env["ENSHROUDED_STEAM_DEPOTS"] == "1004:7604377918839582995;2278521:3715394091293008757"
+    assert env["ENSHROUDED_STEAM_DEPOTS"] == "1004:7604377918839582995;2278521:6075892735519937045"
     assert env["ENSHROUDED_STEAM_APP"] == str(APP)
     assert env["ENSHROUDED_STEAM_BRANCH"] == "public"
-    assert env["ENSHROUDED_STEAM_BUILDID"] == "25967645"
+    assert env["ENSHROUDED_STEAM_BUILDID"] == "26083076"
     assert env["ENSHROUDED_ARTIFACT_SERVER_PLUGIN"] == f"takaro-enshrouded-plugin-{TARGET}-{{version}}.zip"
     # One component: the plugin holds the Takaro connection, so nothing else is built or pinned.
     assert not [key for key in env if "SIDECAR" in key]
     assert env["ENSHROUDED_PROTON"] == "GE-Proton11-9"
     # The hook-compatibility statement, and the fact that it is the pinned build itself.
-    assert env["ENSHROUDED_HOOKS_PROVEN_BUILD"] == env["ENSHROUDED_REVISION"] == "1267041"
+    assert env["ENSHROUDED_HOOKS_PROVEN_BUILD"] == env["ENSHROUDED_REVISION"] == "1273043"
     assert not any(key.endswith("_JAVA") for key in env)
-    assert payload["resolvedUrls"]["server"].startswith(f"steam://app/{APP}/branch/public/build/25967645/")
+    assert payload["resolvedUrls"]["server"].startswith(f"steam://app/{APP}/branch/public/build/26083076/")
 
 
 # --------------------------------------------------------------------------- 3 discovery
@@ -204,7 +204,7 @@ def test_scan_covers_the_pinned_head_and_files_a_moved_one(
     assert [obs.branch for obs in heads] == ["public"], "the disabled experimental channel is never observed"
     # No branch-review observation either: Steam lists only `public` for this app.
     assert [obs.kind for obs in result.observations] == ["game"]
-    assert heads[0].facts["buildid"] == 25967645
+    assert heads[0].facts["buildid"] == 26083076
     assert heads[0].facts["depots"][GAME_DEPOT]["manifest"] == PINNED[GAME_DEPOT]
     assert PROVIDER.covers(heads[0], targets) is True, "the pinned head needs no issue"
 
@@ -420,7 +420,7 @@ def write_build_stub(repo: Path, fingerprint: str, *, produces: tuple[str, ...] 
             f'\'TakaroEnshrouded\')" "$out/{name[:-4]}" )',
             f'cat > "$out/{name}.meta.json" <<JSON',
             f'{{"target": "{TARGET}", "fingerprint": "{fingerprint}", "connectorVersion": "$version", '
-            f'"game": "enshrouded", "platform": "proton", "revision": "1267041"}}',
+            f'"game": "enshrouded", "platform": "proton", "revision": "1273043"}}',
             "JSON",
         ]
     script.write_text("\n".join(body) + "\n", encoding="utf-8")
@@ -548,33 +548,33 @@ def _health(name: str) -> dict[str, Any]:
 
 def test_verify_hooks_classify_plugin_health() -> None:
     """The compatibility claim, in the one function both the check and the negative use."""
-    ok = hooks.classify_health(_health("plugin-health-ok.json"), "1267041", "0.4.2")
+    ok = hooks.classify_health(_health("plugin-health-ok.json"), "1273043", "0.4.2")
     assert ok["ok"] is True, ok["problems"]
     assert ok["degraded"] == []
 
     # A capability the plugin itself downgraded: the server is alive, the claim is not.
-    degraded = hooks.classify_health(_health("plugin-health-degraded.json"), "1267041", "0.4.2")
+    degraded = hooks.classify_health(_health("plugin-health-degraded.json"), "1273043", "0.4.2")
     assert degraded["ok"] is False
     assert degraded["degraded"] == ["teleport"]
     assert any("teleport" in problem for problem in degraded["problems"])
 
     overall = {**_health("plugin-health-ok.json"), "status": "degraded"}
-    assert hooks.classify_health(overall, "1267041", "0.4.2")["ok"] is False
+    assert hooks.classify_health(overall, "1273043", "0.4.2")["ok"] is False
 
     moved = {**_health("plugin-health-ok.json"), "gameBuild": "1030000"}
-    verdict = hooks.classify_health(moved, "1267041", "0.4.2")
+    verdict = hooks.classify_health(moved, "1273043", "0.4.2")
     assert verdict["ok"] is False
-    assert any("1267041" in problem and "1030000" in problem for problem in verdict["problems"])
+    assert any("1273043" in problem and "1030000" in problem for problem in verdict["problems"])
 
     # `unimplemented` is a capability nobody claimed, not a broken one.
     partial = _health("plugin-health-ok.json")
     partial["capabilities"]["listLocations"] = "unimplemented"
-    verdict = hooks.classify_health(partial, "1267041", "0.4.2")
+    verdict = hooks.classify_health(partial, "1273043", "0.4.2")
     assert verdict["ok"] is True
     assert verdict["unimplemented"] == ["listLocations"]
 
-    assert hooks.classify_health(_health("plugin-health-ok.json"), "1267041", "9.9.9")["ok"] is False
-    assert hooks.classify_health("not a document", "1267041")["ok"] is False
+    assert hooks.classify_health(_health("plugin-health-ok.json"), "1273043", "9.9.9")["ok"] is False
+    assert hooks.classify_health("not a document", "1273043")["ok"] is False
 
 
 def test_the_plugin_is_held_to_the_release_part_of_the_built_version(tmp_path: Path) -> None:
@@ -595,20 +595,20 @@ def test_the_plugin_is_held_to_the_release_part_of_the_built_version(tmp_path: P
     assert hooks.connector_version(Run()) == "0.4.3"
 
     # An older DLL left behind by an earlier deploy is still caught.
-    stale = hooks.classify_health(_health("plugin-health-ok.json"), "1267041", "0.4.3")
+    stale = hooks.classify_health(_health("plugin-health-ok.json"), "1273043", "0.4.3")
     assert stale["ok"] is False
     assert any("0.4.2" in problem for problem in stale["problems"])
 
 
 def test_a_health_document_that_is_not_shaped_like_one_fails_rather_than_raises() -> None:
     """A malformed answer is a failed compatibility claim, not a crashed verification run."""
-    for broken in ({"status": "ok", "gameBuild": "1267041", "capabilities": []}, "not a document", None):
-        verdict = hooks.classify_health(broken, "1267041")
+    for broken in ({"status": "ok", "gameBuild": "1273043", "capabilities": []}, "not a document", None):
+        verdict = hooks.classify_health(broken, "1273043")
         assert verdict["ok"] is False, broken
         assert verdict["problems"], broken
 
     # No capabilities at all is a failure too: nothing was self-checked.
-    empty = hooks.classify_health({"status": "ok", "gameBuild": "1267041", "capabilities": {}}, "1267041")
+    empty = hooks.classify_health({"status": "ok", "gameBuild": "1273043", "capabilities": {}}, "1273043")
     assert empty["ok"] is False
     assert any("no capabilities" in problem for problem in empty["problems"])
 
@@ -912,7 +912,7 @@ def test_verify_hooks_prepare_the_run_and_match_the_recorded_lines(tmp_path: Pat
     assert hooks.SAVED_LINE.search(boot)
     assert hooks.RESPAWN_LINE.search(boot)
     build = hooks.BUILD_LINE.search(boot)
-    assert build and build.group("build") == "1267041"
+    assert build and build.group("build") == "1273043"
     # The drift guard: this boot ran no update path, and it is the absence that is checked.
     assert not hooks.DRIFT_LINE.search(boot)
     assert hooks.DRIFT_LINE.search("INFO - Enshrouded server needs to be updated")
@@ -924,8 +924,8 @@ def test_verify_hooks_prepare_the_run_and_match_the_recorded_lines(tmp_path: Pat
 
     adapter = adapter_for(GAME)
     assert adapter.parse_runtime_identity(
-        "2026-09-13T18:05:06.551Z [app] Enshrouded Server, Game Version (SVN): 1267041"
-    ) == {"gameVersion": "1267041", "loader": "proton", "loaderVersion": None}
+        "2026-09-13T18:05:06.551Z [app] Enshrouded Server, Game Version (SVN): 1273043"
+    ) == {"gameVersion": "1273043", "loader": "proton", "loaderVersion": None}
     assert adapter.parse_runtime_identity("nothing to see here") is None
 
     paths.set_repo_root(REPO_ROOT)
@@ -1169,9 +1169,9 @@ def test_compat_record_carries_the_one_role_and_the_steam_pin(run: Any, repo: Pa
         "takaro": None,
     }
     url = entry["inputs"]["server"]["url"]
-    assert url.startswith(f"steam://app/{APP}/branch/public/build/25967645/")
+    assert url.startswith(f"steam://app/{APP}/branch/public/build/26083076/")
     assert "1004/manifest/7604377918839582995" in url
-    assert "2278521/manifest/3715394091293008757" in url
+    assert "2278521/manifest/6075892735519937045" in url
 
     # The plugin's legacy name still resolves, to exactly the bytes of the target-named file.
     assert (out / "takaro-enshrouded-plugin.zip").read_bytes() == (out / PLUGIN_ZIP).read_bytes()

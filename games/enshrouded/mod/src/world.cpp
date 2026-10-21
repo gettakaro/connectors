@@ -58,6 +58,7 @@ struct Layout {
     // which slot field the chat handle is (1024233: the player handle @0; 1.0: the machine handle @4), and where the
     // session manager keeps the sender's account (1.0 passes it to queueMessage; 0 = not needed)
     uint32_t chatHandleSlotField = 0;
+    uint32_t chatNoticeType = 0;
     // Teleport.searchBestSpawnPosition: 1024233 placed with it; 1.0 resolves the search to the current spot (the
     // player snaps back), and the game's own teleports leave it off
     uint32_t teleportSearchBest = 1;
@@ -677,6 +678,9 @@ void LoadProfileLayout() {
     L.chatRecMask = u("chatRecMask", L.chatRecMask);
     L.chatRecSizeAdd = u("chatRecSizeAdd", L.chatRecSizeAdd);
     L.chatHandleSlotField = u("chatHandleSlotField", L.chatHandleSlotField);
+    // Existing installs can keep an on-disk gamedata section without this key after upgrading.
+    const std::string build = GameBuild();
+    L.chatNoticeType = u("chatNoticeType", (build == "1267041" || build == "1273043") ? 4 : 0);
     L.teleportSearchBest = u("teleportSearchBest", L.teleportSearchBest);
     L.sessMgr = u("sessionMgr", L.sessMgr);
     L.sessVer = u("sessionVersion", L.sessVer);
@@ -1284,9 +1288,9 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                 if (target >= (int)L.chatMachines) return "!recipient machine index out of range";
                 if (target >= 0 && !*(uint8_t*)(chat + L.chatActive + (uint64_t)target * L.chatMStride))
                     return "!recipient machine is not an active chat recipient";
-                // The client only renders free text for chat type 0 with a valid player handle, shown as
-                // "<character name>: text" (live-tested: handle 0 and types 1-3 are dropped or become canned notices).
-                // So the message is carried by the recipient's own handle (whisper) or the first logged-in player.
+                // Enshrouded 1.0 renders type 4 as a plain notice. A valid player handle is still required
+                // for delivery, but a Takaro announcement must not appear to be spoken by that player.
+                uint8_t msgType = type == 0 && senderHandle == 0 && L.chatNoticeType ? (uint8_t)L.chatNoticeType : type;
                 uint32_t handle = senderHandle;
                 for (int i = 0; i < 16 && !handle; i++) {
                     uint64_t s = Slot(server, i);
@@ -1302,7 +1306,7 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                 StringView sv{text.data(), text.size()};
                 Opt64 o1{}, o2{};
                 uint8_t e[16] = {0};
-                g_origAddMsg(e, chat, type, &sv, 0, 0, handle, L.chatArg8Value ? account : (uint64_t)&o1, &o2);
+                g_origAddMsg(e, chat, msgType, &sv, 0, 0, handle, L.chatArg8Value ? account : (uint64_t)&o1, &o2);
                 if (e[0]) return "!addMessage error " + std::to_string(e[0]);
                 uint64_t rec = *(uint64_t*)(chat + L.chatTail);
                 if (*(uint64_t*)(chat + L.chatCount) != countBefore + 1 || !rec) return "!message was not queued";
@@ -1321,7 +1325,7 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                         excluded++;
                     }
                 }
-                PluginLog("message: queued type=%u handle=0x%x account=%s len=%zu target=%d excluded=%d", type, handle,
+                PluginLog("message: queued type=%u handle=0x%x account=%s len=%zu target=%d excluded=%d", msgType, handle,
                           account ? "set" : "none", text.size(), target, excluded);
                 return "ok";
             },
@@ -1455,13 +1459,16 @@ bool WorldNearbyJson(const std::string& name, double radius, std::string& json, 
 }
 
 // ------------------------------------------------------------------------------------------------
+// 1267041 is the build the tables were exported on. 1273043 (Steam 26083076) is a hotfix whose exported ItemInfo
+// (id, code, stack size) and TemplateResource (guid, name) entries match these tables one for one.
 static const char kTablesGameBuild[] = "1267041";
+static const char kTablesGameBuildHotfix[] = "1273043";
 static std::atomic<bool> g_tablesUsable{true};
 static std::string g_tablesReason;
 
 void SetItemTablesBuild(const std::string& gameBuild, bool haveGamedataSection) {
     (void)haveGamedataSection;  // a valid hook profile does not validate item ids
-    bool ok = gameBuild == kTablesGameBuild;
+    bool ok = gameBuild == kTablesGameBuild || gameBuild == kTablesGameBuildHotfix;
     if (!ok) {
         g_tablesReason = std::string("item and entity tables are for game build ") + kTablesGameBuild + ", this server is build " +
                          gameBuild + "; use the plugin release for that build";

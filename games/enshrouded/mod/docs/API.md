@@ -143,9 +143,10 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
   full-stack actions plus single-item actions (max 64 actions per request; ~15 ms each). Non-admin players get items
   without being granted anything else. Note for Admin-group players: their client's own admin version counters may
   differ after a give; the plugin never enables the gate for them outside a pending give.
-- **message**: calls `ChatSystem::addMessage` on the server thread. Live-tested client behaviour: only chat type 0 with a
-  valid player handle is rendered as free text, shown as `<character name>: <text>`; handle 0 is dropped and types 1-3
-  become canned notices (e.g. "set a ping"). The plugin therefore uses the recipient's own handle (whisper) or the first
+- **message**: calls `ChatSystem::addMessage` on the server thread. Type 0 with a valid player handle is rendered as
+  `<character name>: <text>`; handle 0 is dropped and types 1-3 become canned notices (e.g. "set a ping"). Enshrouded
+  1.0 has a type 4 plain notice, selected for Takaro messages without a player sender; the client shows it as
+  `Takaro: <text>` (live-tested on 1273043 under Proton). The plugin uses the recipient's own handle (whisper) or the first
   logged-in player's handle (broadcast). With `recipientGameId`, the queued record is marked as already delivered to
   every other active machine (done bit + pending bytes, mirroring the per-tick flush), so only the recipient receives it.
   With nobody online, a broadcast succeeds without delivering anything.
