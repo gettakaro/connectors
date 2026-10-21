@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/gettakaro/connectors/compare/dune-v0.4.0...dune-v0.5.0) (2026-10-21)
+
+
+### Features
+
+* **dune:** support Steam build 26051014 and report one death per life ([#565](https://github.com/gettakaro/connectors/issues/565)) ([3859fd8](https://github.com/gettakaro/connectors/commit/3859fd8aaabdd0c391153671f8bb2f0c0e10d1ba))
+
+
+### Bug Fixes
+
+* **dune:** support Steam build 25936522 and its renamed database ([#563](https://github.com/gettakaro/connectors/issues/563)) ([fd47600](https://github.com/gettakaro/connectors/commit/fd47600f52607a608428427ef152f166c59c6c05))
+
 ## [0.4.0](https://github.com/gettakaro/connectors/compare/dune-v0.3.0...dune-v0.4.0) (2026-10-18)
 
 
