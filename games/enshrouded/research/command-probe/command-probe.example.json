@@ -1,0 +1,17 @@
+{
+  "revision": "r1",
+  "prefix": "@",
+  "nonce": "tkp7f3a",
+  "issuedAtMs": 1792699200000,
+  "maxAgeSeconds": 7200,
+  "available": true,
+  "failDuringSend": false,
+  "commands": [
+    {"name": "tkprobe", "aliases": ["tkp"]},
+    {"name": "off", "enabled": false},
+    {"name": "admin", "permission": "probe.admin"},
+    {"name": "dupe-a", "aliases": ["dup"]},
+    {"name": "dupe-b", "aliases": ["dup"]}
+  ],
+  "grants": {}
+}
