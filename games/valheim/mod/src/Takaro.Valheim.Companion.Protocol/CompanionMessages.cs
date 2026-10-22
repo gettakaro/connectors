@@ -8,6 +8,12 @@ public static class CompanionMessageTypes
     public const string Heartbeat = "heartbeat";
     public const string InventorySnapshot = "inventory-snapshot";
     public const string KillVerdict = "kill-verdict";
+    public const string CommandProbeCatalog = "command-probe-catalog";
+    public const string CommandProbeInvoke = "command-probe-invoke";
+    public const string CommandProbeReceipt = "command-probe-receipt";
+
+    public static bool IsCommandProbe(string? type) =>
+        type == CommandProbeCatalog || type == CommandProbeInvoke || type == CommandProbeReceipt;
 
     public static bool IsNegotiation(string? type) =>
         type == Hello || type == HelloAck || type == HelloNack;
