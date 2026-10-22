@@ -160,9 +160,12 @@ jobs:
       tag: ${{ needs.params.outputs.tag }}
       publish: ${{ needs.params.outputs.publish }}
       pr_number: ${{ github.event.pull_request.number }}
-      # The Enshrouded dedicated server is a Windows binary that only runs under Proton in
-      # its pinned image, on top of an 8.8 GB Steam depot set. A hosted runner cannot
-      # install and boot that here, so the release claims contract verification only;
-      # runtime verification is proven locally by `takaro-maint verify --game enshrouded`
-      # and its CI onboarding is tracked separately.
-      runtime: false
+      # The verify leg boots the exact Windows server under the target's pinned Proton image
+      # with the built dbghelp.dll against a local fake Takaro (`takaro-maint verify --game
+      # enshrouded --negative`, see games/enshrouded/DEVELOPMENT.md), then boots a build with
+      # one corrupted signature and requires plugin-health to reject it. The 8 GB depot set
+      # would take most of the repository's Actions cache, so the verify leg downloads it on
+      # each run and the build leg never installs it.
+      runtime: true
+      runtime_large_server: true
+      runtime_negative: true

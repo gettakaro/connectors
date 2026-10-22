@@ -272,7 +272,7 @@ container, the bearer token on stdin. It reports:
 
 | Check | What it proves |
 |---|---|
-| `plugin-health` | the compatibility claim: `/health` `status: ok`, `gameBuild == 1024233`, no capability `degraded`, the plugin version this run built, and the container's Proton equal to the target's |
+| `plugin-health` | the compatibility claim: `/health` `status: ok`, `gameBuild` equal to the target's revision, no capability `degraded`, the plugin version this run built, and the container's Proton equal to the target's |
 | `native-identify` | the game process identified over TLS with both tokens, `plugin.log` says `native: identified with Takaro`, `/health` `diagnostics.native.state == identified`, its application ping got a pong and it answered Takaro's empty RFC 6455 ping (Enshrouded's `identify` and `heartbeat`) |
 | `native-players` | `testReachability` connectable with a **null** reason, `getPlayers` empty |
 | `native-catalog` | `listItems`/`listEntities`/`listLocations` non-empty, every entry with a `code` and a readable `name`; item and entity names distinct per code, location codes unique |
@@ -438,10 +438,43 @@ builds it twice and compares the bytes, and publishes:
   with both depot manifests, the image digest, the fingerprint, and
   `verification.required: "contract"` with `executed: null`
 
-`runtime: false`: the server is a Windows binary under Proton on top of an 8.8 GB depot set,
-which a hosted runner cannot boot, so CI claims contract verification only and the runtime
-proof comes from `takaro-maint verify --game enshrouded` run locally against the exact
-target. Onboarding that to CI is tracked separately.
+### Runtime CI
+
+Before anything is published, the `verify` leg of `connector-release.yml` (one job per
+`candidate`/`maintained` target, check name `Enshrouded Connector / release / verify
+(<target>)`) runs the same command a maintainer runs locally:
+
+```bash
+maintenance/bin/takaro-maint verify --game enshrouded --target <target> \
+  --artifacts dist --out reports --negative --startup-timeout 600 --cleanup-orphans
+```
+
+It downloads the target's exact Steam depots anonymously (no Steam account, no licence key:
+the dedicated server is free), boots `enshrouded_server.exe` under the target's pinned
+Proton image with the built `dbghelp.dll` and the updater override, and runs every check in
+the table under [Verify](#verify) against a local fake Takaro on a throwaway world in a
+throwaway data directory. It then boots a build with the `addComponent` signature corrupted
+and requires `plugin-health` to reject it while the server stays up. The release fails if
+any check fails: a degraded capability, a different game build, the wrong Proton, a plugin
+that never identifies or does not reconnect.
+
+Its trigger is the workflow's own: every PR or push to `main` that touches
+`games/enshrouded/**`, `catalog/enshrouded/**`, `maintenance/**`, `scripts/**` or either
+workflow, and every release. The report (`reports/verify.json`, server and plugin logs, the
+tested commit, target fingerprint, artifact hashes and runtime identity) is uploaded as
+`verify-enshrouded-<target>` and its table is written to the job summary.
+
+| | |
+|---|---|
+| Runner | GitHub-hosted `ubuntu-latest`, x86_64 (4 vCPU, 16 GB RAM, ~86 GB free disk) |
+| Needs | Docker, ~17 GB of disk (the 8 GB depot download plus the install's copy), ~4 GB of RAM for the server |
+| Time | ~2 min to download the depots, ~25 s to HostOnline, ~15 min for the whole leg; the job is cut off at 60 min, each boot at 600 s |
+| Cache | none for the depots (`runtime_large_server`): 8 GB would evict most of the repository's 10 GB Actions cache, and Steam serves it about as fast |
+| Credentials | none; the fake Takaro's tokens and TLS CA are generated per run and never reach a docker command line or a kept log |
+
+Still manual, because they need a real game client (see [README.md](README.md)): join and
+leave events, chat in both directions, whispers, giving items, teleport, kick and ban of a
+connected player, death and kill events, and player positions.
 
 Where a release goes depends on the trigger (`scripts/release-params.sh`): a PR gets a
 disposable `pr-<n>-enshrouded` pre-release plus a sticky PR comment, a push to main refreshes
