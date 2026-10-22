@@ -19,20 +19,31 @@ Linux and Windows. On any other build it stays connected but refuses every actio
 
 ### 2. Download
 
-From the latest `conan-exiles-v*` release on https://github.com/gettakaro/connectors/releases:
+Download the latest release: <https://takaro.io/connectors/conan-exiles>. The same files are on the
+latest `conan-exiles-v*` release at <https://github.com/gettakaro/connectors/releases>. Do not use
+the `conan-exiles-dev` or `pr-*` pre-releases. Take the zip for your platform and your server build:
 
 | Server | Download |
 |---|---|
-| Linux | `takaro-conan-exiles-native-linux-25792439-<version>.zip` |
-| Windows | `takaro-conan-exiles-native-windows-25792439-<version>.zip` |
+| Linux | `takaro-conan-exiles-native-linux-<build>-<version>.zip` |
+| Windows | `takaro-conan-exiles-native-windows-<build>-<version>.zip` |
 
-Each zip holds one folder, `TakaroConanNative/`. The `Source code` links on the release page are
-GitHub's own; you do not need them.
+`<build>` is 25792439, 25738716 or 25639945. Each zip holds one folder, `TakaroConanNative/`, with
+the connector (`libtakaro-conan-native.so` and `ca-certificates.crt` on Linux, `winmm.dll` on
+Windows), a copy of the full install guide and a `SHA256SUMS` of its files. The `Source code` links
+on the GitHub release page are GitHub's own; you do not need them.
 
 ### 3. Put the files in place
 
-Linux: unzip `TakaroConanNative/` anywhere the server user can read. Windows: copy `winmm.dll` into
-`ConanSandbox\Binaries\Win64\` (next to `ConanSandboxServer-Win64-Shipping.exe`).
+Stop the server first.
+
+Linux: unzip `TakaroConanNative/` anywhere the server user can read, for example
+`/home/steam/TakaroConanNative/`. Keep `ca-certificates.crt` next to `libtakaro-conan-native.so`:
+the connector uses it for the secure connection to Takaro. In Docker, mount the folder into the
+server container.
+
+Windows: copy `TakaroConanNative\winmm.dll` into `ConanSandbox\Binaries\Win64\` (next to
+`ConanSandboxServer-Win64-Shipping.exe`).
 
 Keep RCON off; the connector does not use it (`Game.ini`: `[RconPlugin]` `RconEnabled=0`).
 
@@ -43,6 +54,9 @@ Linux, with your usual flags:
 ```bash
 LD_PRELOAD=/path/to/TakaroConanNative/libtakaro-conan-native.so ./ConanSandboxServer.sh -log
 ```
+
+In Docker, set `LD_PRELOAD` in the server container's environment instead. The library only
+activates in the server process; the launcher script ignores it.
 
 Windows: start the server as usual.
 
@@ -73,30 +87,28 @@ reconnects, no restart needed.
 ### 6. Check that it worked
 
 - The server console shows `Takaro: connected to Takaro as "<name>"`.
+- The connector's own log, `ConanSandbox/Saved/Logs/TakaroConanNative.log`, shows
+  `build-id … = build 25792439, … verified` (your server build) and `takaro: identified`.
 - Takaro shows the server online and **Test connection** reports it reachable.
 - If it is not connected, the console shows a `****` block naming the problem and the file. Fix the
   file and save it; the connector reconnects within a few seconds, no restart needed.
 
 ### 7. Map (optional)
 
-On a Takaro with the protocol 1 game map, its map shows your players on a grid out of the box. The server files contain no map picture
-and this connector ships none, so for the in-game map as background upload it once in Takaro:
-open the game server's map, pick **The Exiled Lands** (or **Isle of Siptah**) and upload the image.
-Do not enter any bounds; the connector already gives Takaro the exact ones.
+On a Takaro with the protocol 1 game map, the map shows your players on a grid out of the box. For
+the in-game map as background, upload the game's map image once in Takaro (open the game server's
+map, pick **The Exiled Lands** or **Isle of Siptah**, upload; do not enter any bounds). Which image
+and where to get it: [MAP.md](MAP.md).
 
-Which image: the game's own full-screen map texture from a Conan Exiles **client** install, exported
-as PNG or JPEG with an Unreal asset viewer such as FModel:
+### 8. Upgrade to a later release
 
-| Map | Texture (client paks) |
-|---|---|
-| The Exiled Lands | `ConanSandbox/Content/UI/Textures/GUIs/Map/T_FullscreenMap` (4000 × 4000) |
-| Isle of Siptah | `ConanSandbox/Content/DLC/DLC_Siptah/UI/Map/T_Map_Siptah` |
+Stop the server, replace `libtakaro-conan-native.so` and `ca-certificates.crt` (Linux) or
+`winmm.dll` (Windows) with the files from the new zip, and start the server. `takaro.json` is never
+touched, so the server keeps its place in Takaro. When the game updates to a new server build, wait
+for a connector release that names the new build; until then the connector stays connected but
+refuses every action.
 
-Upload the whole texture: no cropping, rotating or added borders. Takaro stretches the image over the
-map's bounds with the top-left pixel at the top-left (north-west) corner, so a smaller copy of the
-same full image works too.
-
-Upgrading, rollback and removal: [INSTALL.md](INSTALL.md).
+Rollback and removal: [INSTALL.md](INSTALL.md).
 
 ## What works, what doesn't
 
