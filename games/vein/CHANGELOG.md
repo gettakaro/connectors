@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/gettakaro/connectors/compare/vein-v0.7.0...vein-v0.8.0) (2026-10-21)
+
+
+### Features
+
+* **vein:** report the game profile and connector identity to Takaro ([#559](https://github.com/gettakaro/connectors/issues/559)) ([4b6ef44](https://github.com/gettakaro/connectors/commit/4b6ef44e3d6f4cc443a22d5a7ce9f6c528a5f1ba))
+
 ## [0.7.0](https://github.com/gettakaro/connectors/compare/vein-v0.6.0...vein-v0.7.0) (2026-10-18)
 
 
