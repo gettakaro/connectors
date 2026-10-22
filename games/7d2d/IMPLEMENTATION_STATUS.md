@@ -209,6 +209,13 @@ mod/src/
 - `game` is `7d2d`. `migration.native { from: "7d2d" }` is the promise that the mod meets the
   parity contract of Takaro's built-in integration (gettakaro/connectors#419,
   gettakaro/takaro#4349); do not declare it for a change that weakens that parity.
+- Game Profile: identify carries `connector: { name: "takaro-7d2d", version }`, where `version` is
+  the deployed `ModInfo.xml` version (stamped by release-please and the release build; left out
+  if it is not strict semver). The manifest declares `game.profile` with `name: "7 Days to Die"`,
+  `version` from `Constants.cVersionInformation.LongString` (for example `V 3.3.0 (b18)`) and
+  `icon: { revision, size }` for `assets/icon-256.png`, which is embedded in `Takaro.dll`; the
+  revision is the first 12 hex characters of its sha256, computed at startup. `getGameIcon`
+  answers `{ revision, data }` with the whole PNG in base64, or `game_error` without an icon.
 - On v1, game events are sent as `{type, data, streamId, seq}`. `streamId` is new for every mod
   process; `seq` is assigned when the event enters `OutboundLedger`, so numbering equals write
   order. Events stay in flight until Takaro's cumulative `eventAck`; a pong no longer confirms
