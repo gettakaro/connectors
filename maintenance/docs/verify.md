@@ -219,8 +219,7 @@ summary, and uploads `verify-<connector>-<target>` (report plus logs) even when 
 Three opt-in inputs of the reusable workflow change the leg for a game that needs it, and default to
 the behaviour above: `runtime_depot_cache` (the verify leg caches the pinned Steam depots itself
 under `<connector>-depots-<fp16>`, and the build leg skips its server install), `runtime_negative`
-(adds `--negative`) and `startup_timeout` (default 600). Rust uses all three; Terraria raises
-`startup_timeout` to 900.
+(adds `--negative`) and `startup_timeout` (default 600). Rust uses all three.
 
 ## What this does not prove
 

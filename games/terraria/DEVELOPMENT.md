@@ -195,7 +195,8 @@ publishes one set with checksums, a compat record and the legacy aliases.
 It passes `runtime: true` with `startup_timeout: 900`. Every PR that changes Terraria's build
 inputs (`scripts/pr-build-scope.sh`), every push to `main` and every release run the `verify` leg
 of `connector-release.yml`; `publish` needs it to pass. The required check is
-`Terraria Connector / release / verify (tshock-v6.2.1)`, one per catalog target. It runs the same
+`release / verify (terraria, tshock-v6.2.1, tshock, v6.2.1, <fp16>, maintained)` in the
+`Terraria Connector` workflow, one per catalog target. It runs the same
 commands a maintainer runs locally:
 
 ```sh
@@ -208,7 +209,8 @@ maintenance/bin/takaro-maint verify --game terraria --target tshock-v6.2.1 --art
 - **Runner:** `ubuntu-latest` (Linux x86_64) with Docker, nothing else. The server runs in the
   pinned `ghcr.io/pryaxis/tshock` image (by digest) and the bridge in the pinned Node image (by
   digest, 512 MB limit) with `--network container:<server>`. A run needs about 2 GB of free disk
-  and RUNTIME_MINUTES on a cold runner, most of it the first boot generating the small world.
+  and the verify job takes about 2 minutes (the first boot, which generates a small world, about
+  1 minute of it); the whole workflow takes about 4.
 - **Inputs:** TShock and Terraria's dedicated server are free; no account, licence key or secret
   is involved. The pinned TShock release zip is cached under `terraria-<fp16>` by the build leg;
   the two images are pulled by digest.
