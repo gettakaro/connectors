@@ -24,6 +24,8 @@ public sealed class InventoryCompanionBridge : IDisposable
     private static readonly TimeSpan MaximumHelloRetry = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PeerSyncInterval = TimeSpan.FromSeconds(1);
     private const int MaximumLoggedKillVerdictsPerMinute = 30;
+    private static readonly TimeSpan CommandProbeMarkerPollInterval = TimeSpan.FromSeconds(2);
+    private const int MaximumCommandProbeMarkerBytes = 4096;
 
     private static readonly JsonSerializerOptions WireJsonOptions = new()
     {
@@ -44,6 +46,9 @@ public sealed class InventoryCompanionBridge : IDisposable
     private readonly Action<string> log;
     private readonly Func<DateTimeOffset> clock;
     private readonly Dictionary<long, TrackedPeer> trackedPeers = new();
+    private readonly CommandProbeServer? commandProbe;
+    private readonly string? commandProbeMarkerPath;
+    private DateTimeOffset nextCommandProbeMarkerPollAt;
     private ZRoutedRpc? registeredRpc;
     private object? currentWorldIdentity;
     private long? currentWorldUid;
@@ -56,7 +61,8 @@ public sealed class InventoryCompanionBridge : IDisposable
     public InventoryCompanionBridge(
         ValheimPlayerResolver playerResolver,
         CompanionInventoryCache inventory,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        string? commandProbeMarkerPath = null)
     {
         this.playerResolver = playerResolver ?? throw new ArgumentNullException(nameof(playerResolver));
         this.inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
@@ -71,12 +77,19 @@ public sealed class InventoryCompanionBridge : IDisposable
         rateLimiter = new CompanionRateLimiter(capacity: 10, refillTokens: 5, refillInterval: TimeSpan.FromSeconds(1));
         killVerdictRateLimiter = new CompanionRateLimiter(capacity: 8, refillTokens: 4, refillInterval: TimeSpan.FromSeconds(1));
         killVerdicts = new CompanionKillVerdictStore();
+        if (commandProbeMarkerPath is not null)
+        {
+            this.commandProbeMarkerPath = commandProbeMarkerPath;
+            commandProbe = new CommandProbeServer();
+        }
+
         messageHandler = new CompanionServerMessageHandler(
             sessions,
             rateLimiter,
             killVerdictRateLimiter,
             inventory,
-            killVerdicts);
+            killVerdicts,
+            commandProbe);
         CompanionKillVerdicts.Attach(sessions, killVerdicts, clock);
     }
 
@@ -154,6 +167,108 @@ public sealed class InventoryCompanionBridge : IDisposable
 
         nextPeerSyncAt = now + PeerSyncInterval;
         SynchronizeReadyPeers(network, routedRpc, now);
+        SynchronizeCommandProbe(routedRpc, now);
+    }
+
+    // Research probe (#200): reload the stub catalog from the marker file and push the current
+    // revision to every negotiated companion session that has not seen it yet.
+    private void SynchronizeCommandProbe(ZRoutedRpc routedRpc, DateTimeOffset now)
+    {
+        if (commandProbe is null || commandProbeMarkerPath is null)
+        {
+            return;
+        }
+
+        if (now >= nextCommandProbeMarkerPollAt)
+        {
+            nextCommandProbeMarkerPollAt = now + CommandProbeMarkerPollInterval;
+            if (commandProbe.ApplyMarker(ReadCommandProbeMarker(commandProbeMarkerPath)))
+            {
+                log(commandProbe.Enabled
+                    ? $"Takaro Valheim command probe (research) enabled: catalog revision {commandProbe.Catalog?.Revision} [{string.Join(", ", commandProbe.Catalog?.Commands ?? Array.Empty<string>())}], receipts {(commandProbe.ReceiptsEnabled ? "on" : "off")}."
+                    : "Takaro Valheim command probe (research) disabled: marker file removed.");
+            }
+        }
+
+        // Also runs after the marker was removed: the empty catalog clears the clients.
+        var catalog = commandProbe.Catalog;
+        if (catalog is null)
+        {
+            return;
+        }
+
+        foreach (var pair in trackedPeers)
+        {
+            var tracked = pair.Value;
+            if (!sessions.TryGetSnapshot(pair.Key, out var session)
+                || !session.IsNegotiated
+                || (string.Equals(tracked.CommandProbeCatalogNonce, session.Nonce, StringComparison.Ordinal)
+                    && tracked.CommandProbeCatalogRevision == catalog.Revision))
+            {
+                continue;
+            }
+
+            if (TrySendCommandProbeEnvelope(routedRpc, pair.Key, tracked, session.Nonce, CompanionMessageTypes.CommandProbeCatalog, catalog))
+            {
+                tracked.CommandProbeCatalogNonce = session.Nonce;
+                tracked.CommandProbeCatalogRevision = catalog.Revision;
+                log($"Takaro Valheim command probe sent catalog revision {catalog.Revision} ({catalog.Commands.Count} command(s)) to peer {pair.Key}.");
+            }
+        }
+    }
+
+    private bool TrySendCommandProbeEnvelope<TPayload>(
+        ZRoutedRpc routedRpc,
+        long peerId,
+        TrackedPeer tracked,
+        string nonce,
+        string messageType,
+        TPayload payload)
+    {
+        if (!sessions.TryGetSnapshot(peerId, out var session)
+            || session.SelectedProtocolVersion is not { } protocolVersion)
+        {
+            return false;
+        }
+
+        // Server-to-client sequence: the hello was 1 for this nonce, later messages count up.
+        if (!string.Equals(tracked.ServerSequenceNonce, nonce, StringComparison.Ordinal))
+        {
+            tracked.ServerSequenceNonce = nonce;
+            tracked.ServerSequence = 1;
+        }
+
+        var sequence = ++tracked.ServerSequence;
+        try
+        {
+            var envelope = CreateEnvelope(protocolVersion, nonce, sequence, $"server-{sequence}", messageType, payload);
+            routedRpc.InvokeRoutedRPC(peerId, CompanionProtocol.RpcName, CompanionEnvelopeCodec.EncodeEnvelope(envelope));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim command probe could not send {messageType} to peer {peerId}: {ex.Message}");
+            return false;
+        }
+    }
+
+    private string? ReadCommandProbeMarker(string path)
+    {
+        try
+        {
+            var file = new FileInfo(path);
+            if (!file.Exists)
+            {
+                return null;
+            }
+
+            return file.Length > MaximumCommandProbeMarkerBytes ? string.Empty : File.ReadAllText(path);
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim command probe could not read its marker file: {ex.Message}");
+            return commandProbe?.Enabled == true ? string.Empty : null;
+        }
     }
 
     private void SynchronizeReadyPeers(ZNet network, ZRoutedRpc routedRpc, DateTimeOffset now)
@@ -303,6 +418,35 @@ public sealed class InventoryCompanionBridge : IDisposable
             case CompanionMessageOutcome.KillVerdictAccepted when result.KillVerdict is { } verdict:
                 LogKillVerdict(who, verdict);
                 break;
+            case CompanionMessageOutcome.CommandProbeSubmitted when result.CommandProbeInvocation is { } invocation && result.SessionNonce is { } nonce:
+                HandleCommandProbeInvocation(sender, who, nonce, invocation);
+                break;
+            case CompanionMessageOutcome.CommandProbeRejected when result.CommandProbeInvocation is { } rejected:
+                log($"Takaro Valheim command probe refused invocation {rejected.InvocationId} from {who}: '{rejected.Command}' is not in the current catalog; no receipt.");
+                break;
+            case CompanionMessageOutcome.CommandProbeDuplicate when result.CommandProbeInvocation is { } duplicate:
+                log($"Takaro Valheim command probe ignored duplicate invocation {duplicate.InvocationId} from {who} (duplicates so far: {commandProbe?.DuplicateInvocations}).");
+                break;
+        }
+    }
+
+    // The invocation is bound to the arrival peer and its live session; nothing in it names a
+    // player. The probe stops here: nothing is forwarded to Takaro, no chat event is emitted.
+    private void HandleCommandProbeInvocation(long sender, string who, string nonce, CommandProbeInvocation invocation)
+    {
+        var receipts = commandProbe?.ReceiptsEnabled == true;
+        log($"Takaro Valheim command probe accepted invocation {invocation.InvocationId} from {who}: command={invocation.Command} arguments={invocation.Arguments.Count} [{string.Join(" ", invocation.Arguments)}]; receipt {(receipts ? "sent" : "withheld (receipts = off)")}. Not executed: the probe has no Takaro command route.");
+        if (receipts
+            && registeredRpc is { } routedRpc
+            && trackedPeers.TryGetValue(sender, out var tracked))
+        {
+            _ = TrySendCommandProbeEnvelope(
+                routedRpc,
+                sender,
+                tracked,
+                nonce,
+                CompanionMessageTypes.CommandProbeReceipt,
+                new CommandProbeReceipt(invocation.InvocationId, CommandProbeProtocol.SubmittedStatus));
         }
     }
 
@@ -343,6 +487,7 @@ public sealed class InventoryCompanionBridge : IDisposable
         rateLimiter.Clear();
         killVerdictRateLimiter.Clear();
         killVerdicts.Clear();
+        commandProbe?.Clear();
         currentWorldIdentity = worldIdentity;
         currentWorldUid = worldUid;
         hasCurrentWorldIdentity = true;
@@ -363,6 +508,7 @@ public sealed class InventoryCompanionBridge : IDisposable
         rateLimiter.RemovePeer(peerId);
         killVerdictRateLimiter.RemovePeer(peerId);
         killVerdicts.RemovePeer(peerId);
+        commandProbe?.RemovePeer(peerId);
         trackedPeers.Remove(peerId);
     }
 
@@ -419,6 +565,14 @@ public sealed class InventoryCompanionBridge : IDisposable
         public bool LoggedFirstHello { get; set; }
 
         public string? LoggedSnapshotForNonce { get; set; }
+
+        public string? ServerSequenceNonce { get; set; }
+
+        public long ServerSequence { get; set; }
+
+        public string? CommandProbeCatalogNonce { get; set; }
+
+        public long CommandProbeCatalogRevision { get; set; }
     }
 }
 

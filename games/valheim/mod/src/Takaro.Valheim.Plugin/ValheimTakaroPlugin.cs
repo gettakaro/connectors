@@ -80,7 +80,9 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
         TakaroChatParticipant.Initialize(config.ChatSenderName, Logger.LogInfo);
         ValheimServerEventBridge.Initialize(runner, playerResolver, Logger.LogInfo);
         // Optional: only players who install the inventory companion ever answer it.
-        inventoryCompanion = new InventoryCompanionBridge(playerResolver, companionInventory, Logger.LogInfo);
+        // Research probe for native commands (#200): off unless the marker file exists at load.
+        var commandProbeMarker = Path.Combine(Paths.ConfigPath, Takaro.Valheim.Companion.Protocol.CommandProbeProtocol.MarkerFileName);
+        inventoryCompanion = new InventoryCompanionBridge(playerResolver, companionInventory, Logger.LogInfo, File.Exists(commandProbeMarker) ? commandProbeMarker : null);
         harmony = new Harmony(PluginGuid);
         harmony.PatchAll(typeof(ValheimServerEventBridge).Assembly);
         _ = runner.StartAsync();

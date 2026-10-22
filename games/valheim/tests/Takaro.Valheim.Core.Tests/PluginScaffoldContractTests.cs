@@ -252,7 +252,7 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(entrypoint, "Monitor.TryEnter(configCheckGate)");
         Assert.IsFalse(entrypoint.Contains("Config.Bind", StringComparison.Ordinal), "BepInEx must not rewrite the config files.");
         Assert.IsFalse(entrypoint.Contains("companionMode", StringComparison.OrdinalIgnoreCase));
-        StringAssert.Contains(entrypoint, "new InventoryCompanionBridge(playerResolver, companionInventory, Logger.LogInfo)");
+        StringAssert.Contains(entrypoint, "new InventoryCompanionBridge(playerResolver, companionInventory, Logger.LogInfo, File.Exists(commandProbeMarker) ? commandProbeMarker : null)");
         StringAssert.Contains(entrypoint, "new ValheimPlayerResolver(Logger, knownPlayerNames)");
         StringAssert.Contains(entrypoint, "TakaroChatParticipant.Initialize(config.ChatSenderName");
 
