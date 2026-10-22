@@ -21,6 +21,15 @@
 #include <deque>
 #include <memory>
 
+#ifdef TAKARO_COMMAND_PROBE
+#include "probe_core.h"
+
+#include <fstream>
+#include <mutex>
+#include <sstream>
+#include <thread>
+#endif
+
 // ------------------------------------------------------------------------------------------------
 // Constants that are reflection type hashes (keen qualifiedHash of the type name); they only change if the type is
 // renamed. Offsets that are build-specific are derived from matched code in WorldHooksInit (see Layout).
@@ -373,9 +382,22 @@ uint64_t __fastcall IsAdminDetour(uint64_t eid, uint64_t table) {
     return g_origIsAdmin(eid, table);
 }
 
+#ifdef TAKARO_COMMAND_PROBE
+#include "probe_glue.inc"  // research/command-probe (#202); not in release builds
+#endif
+
 // ---- chat receive ----
 uint8_t* __fastcall AddMsgDetour(uint8_t* err, uint64_t chat, uint64_t type, StringView* text, uint64_t l1, uint64_t l2,
                                  uint64_t handle, uint64_t o1, Opt64* o2) {
+#ifdef TAKARO_COMMAND_PROBE
+    // a suppressed message leaves exactly what addMessage's success path leaves: err {u8 0; u32 0 @4}, returns err
+    if ((uintptr_t)__builtin_return_address(0) == g_recvRet && text && text->ptr && text->len > 0 && text->len <= 0x400 &&
+        cprobe::OnPlayerChat((uint8_t)type, text, (uint32_t)handle, o1)) {
+        err[0] = 0;
+        *(uint32_t*)(err + 4) = 0;
+        return err;
+    }
+#endif
     if ((uintptr_t)__builtin_return_address(0) == g_recvRet && text && text->ptr && text->len > 0 && text->len <= 0x400) {
         InterlockedIncrement64(&g_chatSeen);
         std::string msg(text->ptr, (size_t)text->len);
@@ -933,6 +955,9 @@ void WorldHooksInit() {
             char b[128];
             snprintf(b, sizeof b, "gamedata; hook installed; receive ret=0x%x chat=+0x%x", ret, L.chatOff);
             RecordResolve("chatAddMessage", addMsg, b, true);
+#ifdef TAKARO_COMMAND_PROBE
+            cprobe::Start();
+#endif
         }
     } else if (addMsg) {
         // receive call site: `mov byte [rbp+50h],0; mov byte [rbp+40h],0; call addMessage` inside processIncomingMessages,
