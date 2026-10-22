@@ -123,7 +123,7 @@
     }
   ],
   "verification": {
-    "required": "contract",
+    "required": "startup",
     "separate": [
       "startup",
       "carbon-compile",
@@ -132,7 +132,7 @@
       "players",
       "items",
       "entities",
-      "console",
+      "console-command",
       "action",
       "reconnect",
       "stop"

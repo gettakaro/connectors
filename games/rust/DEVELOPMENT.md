@@ -274,7 +274,7 @@ protocol harness — **no Rust client is involved**. What it proves:
 compile/load (`carbon-compile`: Carbon compiled the deployed source, loaded the version the build
 manifest names, wrote no compile error and did not self-update), `startup` (including input
 integrity across the boot), `identify`, `heartbeat` (`testReachability`), `players` on an empty
-server, `items` and `entities` (both catalogues, human display names spot-checked), `console`,
+server, `items` and `entities` (both catalogues, human display names spot-checked), `console-command`,
 `action` (a broadcast), `reconnect` and `stop`. With `--negative` it also runs
 `negative-broken-compile`: the same data directory boots again with `#error` prepended to the
 deployed plugin, and the row passes only when Carbon logs the failed compile, never logs the plugin as
@@ -289,11 +289,14 @@ others with the same lines in the same order. So `stop` asserts the sequence the
 writes — saved, connector unloaded, quit — and that the process is gone afterwards, and records the
 exit code without judging it.
 
-Rust's console echoes neither a command it was handed nor a chat broadcast, so `console` and
-`action` are observable only because the connector logs both (`console: <command>`,
-`broadcast: <message>`) — lines worth having anyway, since they are an operator's only record of
-what Takaro did on their server. What they prove is that the instruction reached the server and the
-connector carried it out, not that a player saw it.
+Rust's console echoes neither a command it was handed nor a chat broadcast, and the connector logs a
+console command by verb and argument count only (`console: say (1 args)`), never its text, because an
+operator can type a password or a player's details into one. So the base `console` check, which greps
+the server log for the command text, is replaced by `console-command`: the request succeeded, the
+connector logged `console: say (1 args)`, and the server's own output of that `say` (the marker) came
+back to Takaro as a `log` game event. Only a command the server really ran prints it. `action` is
+observable because the connector logs the broadcast (`broadcast: <message>`). What they prove is
+that the instruction reached the server and the connector carried it out, not that a player saw it.
 
 What it does **not** prove, and what therefore stays ⚠️ in the README: every player hook
 (connect/disconnect/chat/death/kill), `giveItem`, `teleportPlayer`, `kickPlayer`, `banPlayer`,
@@ -302,7 +305,7 @@ but only Carbon is booted), and hosted Takaro over TLS. Those need a client sess
 
 `connector-load`, `catalog-items` and `catalog-entities` are Minecraft-specific check ids — they
 look for lines and spot values only that connector writes — and, with the base `shutdown` that
-`stop` replaces, are never selected for Rust. A bare `verify --game rust` runs exactly the set
+`stop` replaces and the base `console` that `console-command` replaces, are never selected for Rust. A bare `verify --game rust` runs exactly the set
 the target record's `verification.separate` names (plus `build`); an explicit `--checks` is left
 as written, including one that names a check this game cannot pass.
 
@@ -339,15 +342,55 @@ before the game head is reconciled.
 - The release ships `takaro-rust-plugin-carbon-25454815-<version>.cs`, a byte-identical
   `TakaroConnector.cs` alias (so an existing install path keeps working), `SHA256SUMS` and
   `takaro-rust-<version>.compat.json`. The compat record names the Steam pseudo-URL and the Carbon
-  asset URL for each target and claims `verification: {required: "build", executed: null}` —
-  the runtime leg is off for this connector, because a 5.9 GB depot set with an 8 GB RAM footprint
-  does not fit a hosted runner. Runtime CI is tracked separately.
+  asset URL for each target and records the verification report the runtime leg produced
+  (`required: "startup"`; see **Runtime CI** below).
+
+### Runtime CI
+
+The release workflow's `verify` leg runs, on a hosted runner, exactly the command a maintainer runs
+locally, with `--negative`:
+
+```bash
+maintenance/bin/takaro-maint build  --game rust --version 0.0.0-local --out dist --toolchain container
+maintenance/bin/takaro-maint verify --game rust --artifacts dist --out reports \
+  --negative --startup-timeout 1200 --cleanup-orphans
+```
+
+- **Required check:** `Rust Connector / release / verify (carbon-25902425, …)`, one leg per
+  candidate or maintained target. `publish` needs every leg to pass, so nothing is released (stable,
+  rolling `rust-dev` or a PR build) that did not boot.
+- **Trigger policy:** every push to `main`, every release or recovery run, and every pull request that
+  changes Rust's build inputs (`scripts/pr-build-scope.sh`: `games/rust/**`, `catalog/rust/**`, the
+  Rust adapter, shared maintenance code and scripts, `rust.yml` and `connector-release.yml`).
+- **What fails it:** any selected check. Proven both ways on a hosted run: a plugin that compiles
+  but sends a wrong identify frame fails `identify`, and the `negative-broken-compile` row fails if
+  a plugin Carbon cannot compile is ever reported as loaded or connects.
+- **Runner:** `ubuntu-latest` (x86_64 Linux, 4 vCPU, 16 GB RAM). The server container is limited to
+  8 GB. The depot set is 6.1 GB, held twice during a run (the cache and the throwaway install), so
+  about 13 GB of disk; the hosted image has far more free. Measured on a hosted run: the cold depot
+  download, both boots and every check took under 4 minutes.
+  The leg's timeout is 40 minutes.
+- **Caching:** the leg restores and saves `~/.cache/takaro-maint/steam` under
+  `rust-depots-<fp16>`, so the depots are downloaded once per target fingerprint. Saving happens even
+  when a check failed; every depot is re-verified against its pinned manifest when it is used. The
+  build leg does not install the server at all (`runtime_depot_cache: true`).
+- **Isolation:** throwaway data directory, no published ports, a per-run registration token, a
+  local fake Takaro, `tm.run`/`tm.ttl` container labels and removal on success, failure, cancel or
+  signal (see `maintenance/docs/verify.md`). Nothing outside the runner is touched.
+- **Licenses and credentials:** none. App 258550 is downloaded anonymously from Steam and Carbon is a
+  public GitHub release asset; no Steam account, Takaro account or secret is involved.
+- **Report:** `reports/carbon-<build>/report.json` (uploaded as `verify-rust-<target>`) ties every
+  row to the source revision, the target fingerprint and its pinned inputs, the artifact sha256 and
+  the runtime identity the server printed (Rust protocol and Carbon version), with the server, the
+  negative boot, the fake Takaro and docker logs beside it.
+- **Still manual** (needs a real game client): every player hook, `giveItem`, `teleportPlayer`,
+  `kickPlayer`, `banPlayer`, `unbanPlayer`, `listBans`, `getPlayer*`, `listLocations`, Oxide, and a
+  hosted Takaro over TLS.
 - Versioning is release-please driven; the `// x-release-please-version` marker on the `[Info(...)]`
   line in `mod/TakaroConnector.cs` and `version.txt` are the version sources.
 
 ## Testing status
 
-The rows the README marks ✅ were proven by `takaro-maint verify` on Rust build 25353106 with Carbon
-2.0.259 and no client. The current target, build 25454815, is compile-checked against those same
-Carbon bytes; its runtime re-verification is tracked separately. Everything a client is needed for
-is still ⚠️ and unproven; see **Verification coverage** above.
+The rows the README marks ✅ are proven by `takaro-maint verify` with no client, on every CI run of
+the current target (build 25902425 with Carbon 2.0.262; see **Runtime CI**). Everything a client is
+needed for is still ⚠️ and unproven; see **Verification coverage** above.

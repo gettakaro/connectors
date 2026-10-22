@@ -300,14 +300,6 @@ jobs:
           path: ~/.cache/takaro-maint
           key: ${{ inputs.connector }}-${{ steps.target.outputs.fp16 }}
 
-      # A depot set this size does not fit beside the cache and its installed copy on a stock
-      # runner disk; the preinstalled SDKs it removes are tools no verify leg uses.
-      - name: Make room for the server
-        if: inputs.runtime_depot_cache
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
-          df -h / "$RUNNER_TEMP"
-
       # Separate from the build leg's cache so its small entry is not replaced by gigabytes,
       # and saved even when a check failed: the depots were verified against their manifests
       # either way, and the next run should not download them again.
