@@ -87,6 +87,7 @@ def test_every_terraria_verification_body_has_pass_and_failure_paths(
             "listItems": items,
             "listEntities": [],
             "sendMessage": {"success": True},
+            "unbanPlayer": {"success": True, "rawResult": "No active ban for takaro-verify-body-tests-nobody"},
             "testReachability": {"connectable": True},
         },
         identify_count=1,
@@ -105,6 +106,7 @@ def test_every_terraria_verification_body_has_pass_and_failure_paths(
     assert asyncio.run(hooks._check_items(run, fake)).status == "pass"
     assert asyncio.run(hooks._check_entities(run, fake)).status == "pass"
     assert asyncio.run(hooks._check_action(run, fake, lambda: True)).status == "pass"
+    assert asyncio.run(hooks._check_cooperation(run, fake)).status == "pass"
     assert asyncio.run(hooks._check_references(run)).status == "pass"
     assert asyncio.run(hooks._check_reconnect(run, fake, lambda: True)).status == "pass"
     asyncio.run(hooks.after_protocol(run, fake, lambda: True))
@@ -117,6 +119,8 @@ def test_every_terraria_verification_body_has_pass_and_failure_paths(
             "listItems": RuntimeError("no items"),
             "listEntities": ["unexpected"],
             "sendMessage": {"success": False},
+            # What the bridge's REST fallback answers when the plugin's marker is absent.
+            "unbanPlayer": {"success": True, "rawResult": "Ban removed"},
             "testReachability": None,
         },
         reconnects=False,
@@ -137,6 +141,7 @@ def test_every_terraria_verification_body_has_pass_and_failure_paths(
     assert asyncio.run(hooks._check_items(failed_run, failed)).status == "fail"
     assert asyncio.run(hooks._check_entities(failed_run, failed)).status == "fail"
     assert asyncio.run(hooks._check_action(failed_run, failed, lambda: False)).status == "fail"
+    assert asyncio.run(hooks._check_cooperation(failed_run, failed)).status == "fail"
     assert asyncio.run(hooks._check_references(failed_run)).status == "fail"
     assert asyncio.run(hooks._check_reconnect(failed_run, failed, lambda: False)).status == "fail"
     asyncio.run(hooks.after_protocol(failed_run, failed, lambda: False))
@@ -1433,12 +1438,15 @@ def test_builder_dockerfile_uses_the_catalog_toolchain(run: Any) -> None:
     assert first_from == resolved["toolchainRef"]
 
 
-def test_the_workflow_delegates_to_connector_release_without_runtime_ci() -> None:
+def test_the_workflow_delegates_to_connector_release_with_runtime_ci() -> None:
     body = (REPO_ROOT / ".github" / "workflows" / "terraria.yml").read_text()
 
     assert "uses: ./.github/workflows/connector-release.yml" in body
     assert "connector: terraria" in body
-    assert "runtime: false" in body
+    assert "runtime: true" in body
+    # The game's own first-boot budget, not the shared default of 600 s.
+    assert f"startup_timeout: {int(hooks.HOOKS.startup_timeout)}" in body
+    assert "runtime_depot_cache" not in body
     # The workflow packages nothing itself: it sets up no .NET and names no assets.
     assert "setup-dotnet" not in body
     assert "--mode legacy" not in body
