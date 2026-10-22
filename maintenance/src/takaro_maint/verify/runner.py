@@ -691,9 +691,13 @@ class TargetRun:
                     self.skip("identify", self.not_selected_reason("identify"))
                     # The protocol checks below talk to a connected connector. A game whose
                     # connector only dials out once the world is up (7D2D does so seconds
-                    # after its ready line) is given the identify budget to do that; this
+                    # after its ready line) is given the identify budget to do that when any of them runs; this
                     # records nothing, and a connector that never comes fails those checks.
-                    if fake.identify_count < 1:
+                    talks_to_connector = any(
+                        self.wanted(check_id)
+                        for check_id in ("heartbeat", "players", "catalog-items", "catalog-entities", "console")
+                    )
+                    if talks_to_connector and fake.identify_count < 1:
                         await checks_lifecycle.identify_within(fake, 1, checks_lifecycle.IDENTIFY_BUDGET, alive)
 
                 for check_id, coroutine in (
