@@ -197,7 +197,7 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
     {
         if (args.Parameters.Count < 1)
         {
-            args.Player.SendErrorMessage("Usage: /takaroban <player> [reason]");
+            args.Player.SendErrorMessage("Usage: /takaroban <player> [until=<unix seconds>] [reason]");
             return;
         }
 
@@ -216,8 +216,31 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         }
 
         var target = matches[0];
-        var reason = args.Parameters.Count > 1
-            ? string.Join(" ", args.Parameters.GetRange(1, args.Parameters.Count - 1))
+
+        // An optional `until=<unix seconds>` before the reason makes the ban timed; TShock then
+        // lets the player back in once it has passed. Without it the ban is permanent.
+        var reasonStart = 1;
+        var expires = DateTime.MaxValue;
+        if (args.Parameters.Count > 1 && args.Parameters[1].StartsWith("until=", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!long.TryParse(args.Parameters[1].Substring("until=".Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out var unixSeconds)
+                || unixSeconds < 0 || unixSeconds > 253402300799)
+            {
+                var failure = JsonSerializer.Serialize(new
+                {
+                    success = false,
+                    reason = $"'{args.Parameters[1]}' is not until=<unix seconds>."
+                });
+                args.Player.SendInfoMessage($"TAKARO_BAN {failure}");
+                return;
+            }
+
+            expires = DateTimeOffset.FromUnixTimeSeconds(unixSeconds).UtcDateTime;
+            reasonStart = 2;
+        }
+
+        var reason = args.Parameters.Count > reasonStart
+            ? string.Join(" ", args.Parameters.GetRange(reasonStart, args.Parameters.Count - reasonStart))
             : "Banned by Takaro";
 
         var identifiers = BanIdentifiersFor(target);
@@ -240,7 +263,7 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
                 // Tag the ban with the player name so TakaroUnban can find it later: a
                 // banned player is offline by definition, so the UUID cannot be re-derived
                 // from a live TSPlayer at unban time.
-                TShock.Bans.InsertBan(identifier, $"{reason} {BanNameTag(target.Name)}", "takaro", DateTime.UtcNow, DateTime.MaxValue);
+                TShock.Bans.InsertBan(identifier, $"{reason} {BanNameTag(target.Name)}", "takaro", DateTime.UtcNow, expires);
                 applied.Add(identifier);
             }
             catch (Exception ex)

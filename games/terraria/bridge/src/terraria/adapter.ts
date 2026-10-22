@@ -2,6 +2,7 @@ import { logger } from '../logger.js';
 import { schemaFallbackForAction, unsupportedActionError } from '../takaro/coverage.js';
 import type { GameServerAction } from '../takaro/protocol.js';
 import type { CommandResult, TShockBan, TShockPlayer, TShockStatus } from '../tshock/client.js';
+import { terrariaIdentity } from './identity.js';
 import { listTerrariaItems, resolveTerrariaItemCode, type TerrariaItemCatalogEntry } from './itemCatalog.js';
 
 export type TakaroItem = Omit<TerrariaItemCatalogEntry, 'aliases'>;
@@ -69,7 +70,7 @@ export class TerrariaAdapter {
       case 'unbanPlayer':
         return this.unbanPlayer(args);
       case 'listBans':
-        return this.tshock.listBans();
+        return this.listBansForTakaro();
       case 'listItems':
         return listTerrariaItems();
       case 'giveItem':
@@ -245,10 +246,13 @@ export class TerrariaAdapter {
   private async banPlayer(args: Record<string, unknown>): Promise<CommandResult | { error: string }> {
     const player = identifierName(args);
     const reason = optionalString(args, ['reason', 'message']) || 'Banned by Takaro';
+    // Takaro never lifts a ban itself when it runs out, so the expiry has to reach TShock.
+    const expiresAt = banExpiry(args.expiresAt);
+    const until = expiresAt ? ` until=${Math.floor(expiresAt.getTime() / 1000)}` : '';
 
     let result: CommandResult;
     try {
-      result = await this.tshock.rawCommand(`/takaroban ${quote(player)} ${reason}`);
+      result = await this.tshock.rawCommand(`/takaroban ${quote(player)}${until} ${reason}`);
     } catch (err) {
       return { error: `Failed to ban ${player}: ${errorMessage(err)}` };
     }
@@ -288,6 +292,33 @@ export class TerrariaAdapter {
     const count = typeof parsed.count === 'number' ? parsed.count : 0;
     // Zero removals is not an error: unbanning someone who is not banned should succeed.
     return { success: true, rawResult: count > 0 ? `Unbanned ${player} (${count} ban(s) lifted)` : `No active ban for ${player}` };
+  }
+
+  /**
+   * TShock's ban rows in the shape Takaro syncs: one entry per player, `{ player, reason, expiresAt }`.
+   *
+   * A Takaro ban is stored as one row per identifier (uuid:, ip:) tagged `[takaro:<name>]`, so
+   * the player comes from that tag; name: and acc: bans name the player themselves. Rows that
+   * name no player (an untagged uuid: or ip: ban) and rows that have run out are left out, since
+   * Takaro can attach neither to a player.
+   */
+  private async listBansForTakaro(): Promise<TakaroBan[]> {
+    const now = Date.now();
+    const byPlayer = new Map<string, TakaroBan>();
+    for (const row of await this.tshock.listBans()) {
+      const name = banPlayerName(row);
+      if (!name) continue;
+      const expires = ticksToDate(row.end_date_ticks);
+      if (expires && expires.getTime() <= now) continue;
+
+      const expiresAt = expires && expires.getUTCFullYear() < PERMANENT_BAN_YEAR ? expires.toISOString() : null;
+      const reason = (row.reason ?? '').replace(TAKARO_BAN_TAG, '').trim();
+      const known = byPlayer.get(name.toLowerCase());
+      // Several rows for one player: the one that lasts longest wins, and permanent beats timed.
+      if (known && (known.expiresAt === null || (expiresAt !== null && expiresAt <= known.expiresAt))) continue;
+      byPlayer.set(name.toLowerCase(), { player: { ...terrariaIdentity(name), name }, reason, expiresAt });
+    }
+    return [...byPlayer.values()];
   }
 
   private async executeConsoleCommand(args: Record<string, unknown>): Promise<CommandResult> {
@@ -464,6 +495,46 @@ function finiteNumber(value: unknown): number | undefined {
 function reasonSuffix(args: Record<string, unknown>): string {
   const reason = optionalString(args, ['reason', 'message']);
   return reason ? ` ${quote(reason)}` : '';
+}
+
+interface TakaroBan {
+  player: { gameId: string; name: string; platformId: string };
+  reason: string;
+  expiresAt: string | null;
+}
+
+const TICKS_AT_UNIX_EPOCH = 621355968000000000n;
+// Takaro sends a permanent ban as a far-future date (3021), and TShock stores one as year 9999.
+const PERMANENT_BAN_YEAR = 3000;
+const TAKARO_BAN_TAG = /\s*\[takaro:([^\]]+)\]/;
+
+/** The ban's end as a Date, or undefined when Takaro sent none, it is already past or it means "permanent". */
+function banExpiry(value: unknown): Date | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || date.getTime() <= Date.now()) return undefined;
+  return date.getUTCFullYear() < PERMANENT_BAN_YEAR ? date : undefined;
+}
+
+function ticksToDate(ticks: unknown): Date | undefined {
+  if (typeof ticks !== 'number' && typeof ticks !== 'string') return undefined;
+  let value: bigint;
+  try {
+    value = BigInt(typeof ticks === 'number' ? Math.trunc(ticks) : ticks.trim());
+  } catch {
+    return undefined;
+  }
+  return new Date(Number((value - TICKS_AT_UNIX_EPOCH) / 10000n));
+}
+
+function banPlayerName(row: TShockBan): string | null {
+  const tag = TAKARO_BAN_TAG.exec(row.reason ?? '');
+  if (tag?.[1]?.trim()) return tag[1].trim();
+  const identifier = (row.identifier ?? row.name ?? '').trim();
+  const prefixed = /^(?:name|acc):(.+)$/i.exec(identifier);
+  if (prefixed?.[1]?.trim()) return prefixed[1].trim();
+  // Bans from before TShock's typed identifiers are a bare name.
+  return identifier && !identifier.includes(':') ? identifier : null;
 }
 
 function quote(value: string): string {
