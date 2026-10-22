@@ -70,7 +70,8 @@ class Handler(BaseHTTPRequestHandler):
                     STATE["mode"] = body["mode"]
                 if "catalog" in body:
                     cat = body["catalog"]
-                    cat.setdefault("revision", STATE["catalog"]["revision"] + 1)
+                    if "revision" not in cat:
+                        cat["revision"] = int(STATE["catalog"]["revision"]) + 1
                     STATE["catalog"] = cat
                 out = dict(STATE)
             return self._send(200, out)

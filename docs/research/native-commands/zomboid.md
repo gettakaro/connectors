@@ -212,8 +212,12 @@ results. The adapter groups rows by name but never drops one.
 
 E1 to E6 ran on `1.4.0-probe201.1`. Review then added the guards listed under "How the probe
 works" (split-screen refusal, bounded pool, malformed catalog as offline, main-thread catalog
-apply, name-only logging); `1.4.0-probe201.2` carries them. They are covered by unit tests; the
-live re-run of E2 to E6 on `probe201.2` is blocked with the client.
+apply, name-only logging); `1.4.0-probe201.2` carries them. They are covered by unit tests.
+Live on `probe201.2` without a client: the catalog is applied on the main thread, and a catalog
+with a non-numeric revision turned the backend `OFFLINE (catalog revision 2 kept)` without
+stopping the poller, which applied revision 3 once the stub served it
+(`probe2-malformed-catalog.txt`). The live re-run of E2 to E6 on `probe201.2` is blocked with
+the client.
 
 ## Production boundary
 
