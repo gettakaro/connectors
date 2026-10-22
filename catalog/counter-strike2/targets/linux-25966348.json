@@ -4,7 +4,7 @@
   "game": "counter-strike2",
   "platform": "linux",
   "revision": "25966348",
-  "default": true,
+  "default": false,
   "support": {
     "status": "candidate",
     "since": "2026-10-19",
@@ -12,7 +12,7 @@
       "SteamCMD app_info_print 730 on 2026-10-19 recorded public build 25966348 and the listed depot manifests",
       "CounterStrikeSharp v1.0.377 and Metamod:Source 2.0.0.1483 upstream GitHub release asset digests"
     ],
-    "notes": "Candidate only until current-build gameplay and integration verification passes."
+    "notes": "Superseded public CS2 build; keep for reproducibility of the previous candidate and tests, not as a current release target."
   },
   "inputs": {
     "server": {
@@ -92,6 +92,16 @@
         "coordinate": "nuget:CounterStrikeSharp.API:1.0.377",
         "sha256": "afa89788c1327ca842b9d13f66f1e7e59717d2411082d70b702196a82a80b858",
         "resolvedCoordinate": "https://api.nuget.org/v3-flatcontainer/counterstrikesharp.api/1.0.377/counterstrikesharp.api.1.0.377.nupkg"
+      },
+      "StbImageSharp": {
+        "coordinate": "nuget:StbImageSharp:2.30.16",
+        "sha256": "7bc69c8fe8a2c764d07de320aa2009bb15603928ae004cde45686c0106ca849b",
+        "resolvedCoordinate": "https://api.nuget.org/v3-flatcontainer/stbimagesharp/2.30.16/stbimagesharp.2.30.16.nupkg"
+      },
+      "StbImageWriteSharp": {
+        "coordinate": "nuget:StbImageWriteSharp:1.16.7",
+        "sha256": "13d0103bab5c5e7783a38af0712696fdc361a850eff3cd68ef8c2a0767d31b46",
+        "resolvedCoordinate": "https://api.nuget.org/v3-flatcontainer/stbimagewritesharp/1.16.7/stbimagewritesharp.1.16.7.nupkg"
       }
     }
   },

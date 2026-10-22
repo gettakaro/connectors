@@ -88,7 +88,7 @@ public sealed class RequestDispatcherTests
     }
 
     [TestMethod]
-    public async Task ReturnsVerifiedEntityCatalogAndRefusesMissingLocationCatalog()
+    public async Task ReturnsVerifiedEntityCatalogAndRoutesLocationCatalog()
     {
         var dispatcher = new TakaroRequestDispatcher(new FakeAdapter());
         var entities = await dispatcher.DispatchAsync(Request("listEntities", """{}"""));
@@ -99,7 +99,7 @@ public sealed class RequestDispatcherTests
 
         var locations = await dispatcher.DispatchAsync(Request("listLocations", """{}"""));
         Assert.IsFalse(locations.Success);
-        Assert.AreEqual("unsupported_action", locations.Error?.Code);
+        Assert.AreEqual("unsupported", locations.Error?.Code);
     }
 
     [TestMethod]
@@ -112,6 +112,22 @@ public sealed class RequestDispatcherTests
         var map = JsonSerializer.SerializeToElement(result.Payload);
         Assert.IsFalse(map.GetProperty("enabled").GetBoolean());
         Assert.AreEqual(0, map.GetProperty("mapSizeX").GetInt32());
+    }
+
+    [TestMethod]
+    public async Task MapTileAcceptsTakaroStringIndicesAndZoomAlias()
+    {
+        var adapter = new FakeAdapter();
+        var dispatcher = new TakaroRequestDispatcher(adapter);
+        var result = await dispatcher.DispatchAsync(Request("getMapTile", """{"x":"-2","y":"3","z":"4"}"""));
+        Assert.AreEqual("unsupported", result.Error?.Code);
+        Assert.AreEqual((-2, 3, 4), adapter.LastTile);
+
+        result = await dispatcher.DispatchAsync(Request("getMapTile", """{"x":1,"y":2,"zoom":0}"""));
+        Assert.AreEqual((1, 2, 0), adapter.LastTile);
+
+        result = await dispatcher.DispatchAsync(Request("getMapTile", """{"x":1.5,"y":2,"z":0}"""));
+        Assert.AreEqual("invalid_args", result.Error?.Code);
     }
 
     [TestMethod]
@@ -167,6 +183,7 @@ public sealed class RequestDispatcherTests
         public string? LastItemCode { get; private set; }
         public int? LastAmount { get; private set; }
         public TakaroPosition? LastPosition { get; private set; }
+        public (int X, int Y, int Zoom)? LastTile { get; private set; }
 
         public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(TakaroActionResult.Ok(new { connectable = true, reason = (string?)null }));
@@ -198,6 +215,14 @@ public sealed class RequestDispatcherTests
             return Unsupported();
         }
         public Task<TakaroActionResult> ListItemsAsync(CancellationToken cancellationToken = default) => Unsupported();
+        public Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default) => Unsupported();
+        public Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(TakaroActionResult.Ok(new { enabled = false, mapBlockSize = 0, maxZoom = 0, mapSizeX = 0, mapSizeY = 0, mapSizeZ = 0 }));
+        public Task<TakaroActionResult> GetMapTileAsync(int x, int y, int zoom, CancellationToken cancellationToken = default)
+        {
+            LastTile = (x, y, zoom);
+            return Unsupported();
+        }
         public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default)
         {
             LastPosition = position;
