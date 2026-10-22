@@ -1338,9 +1338,10 @@ def test_the_broken_compile_negative_passes_only_when_carbon_refuses_the_plugin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(hooks, "COMPILE_BUDGET", 0.5)
+    monkeypatch.setattr(hooks, "NEGATIVE_GRACE", 0.0)
     refused = _NegativeRun(
         tmp_path / "refused",
-        ["Server startup complete", "Failed compiling 'TakaroConnector.cs':", "  1. error CS1029: #error: 'x'"],
+        ["Failed compiling 'TakaroConnector.cs':", "  1. error CS1029: #error: 'x'", "Server startup complete"],
     )
     asyncio.run(hooks.negative(refused, CannedSocket({}), refused.ws_url, {}))
     (result,) = refused.results
@@ -1439,3 +1440,40 @@ def test_a_rust_release_without_a_runtime_report_is_refused(run: Any, repo: Path
     assert code == 8
     assert payload["required"] == "startup"
     assert "evidence missing" in payload["error"]
+
+
+def test_the_broken_compile_watch_outlasts_the_compile_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A load or an identify after the error still fails the row: the error does not end the watch."""
+    import threading
+    import time
+
+    monkeypatch.setattr(hooks, "NEGATIVE_GRACE", 5.0)
+    log = tmp_path / "server-negative.log"
+    log.write_text("Failed compiling 'TakaroConnector.cs':\nServer startup complete\n", encoding="utf-8")
+
+    def late_load() -> None:
+        time.sleep(1.5)
+        with log.open("a", encoding="utf-8") as handle:
+            handle.write("Loaded plugin TakaroConnector v1.2.3 by Takaro [42ms]\n")
+
+    writer = threading.Thread(target=late_load)
+    writer.start()
+    failed, loaded = hooks._watch_compile(log, 30.0, lambda: True, lambda: False)
+    writer.join()
+    assert failed is not None
+    assert loaded is not None, "a load after the compile error must be seen"
+
+    identified = {"late": False}
+    quiet = tmp_path / "quiet.log"
+    quiet.write_text("Failed compiling 'TakaroConnector.cs':\nServer startup complete\n", encoding="utf-8")
+    threading.Timer(1.5, lambda: identified.update(late=True)).start()
+    started = time.monotonic()
+    failed, loaded = hooks._watch_compile(quiet, 30.0, lambda: True, lambda: identified["late"])
+    assert failed is not None and loaded is None
+    assert identified["late"] and time.monotonic() - started < 5.0, "an identify ends the watch at once"
+
+    still_booting = tmp_path / "booting.log"
+    still_booting.write_text("Failed compiling 'TakaroConnector.cs':\n", encoding="utf-8")
+    started = time.monotonic()
+    hooks._watch_compile(still_booting, 2.5, lambda: True, lambda: False)
+    assert time.monotonic() - started >= 2.0, "no ready line yet: the watch runs to its budget"
