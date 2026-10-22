@@ -104,7 +104,9 @@ timestamps are normalised and the archive is written by CPython's `zipfile`.
 
 `.github/workflows/conan-exiles.yml` runs the `native` and `native-windows` jobs and then hands the
 release to `connector-release.yml` in catalog mode, which builds each target, validates artifact
-identity, and publishes the target-qualified zips, `SHA256SUMS` and a compat record.
+identity, boots every Linux target with the library inside it ([Portable
+verification](#portable-verification)), and publishes the target-qualified zips, `SHA256SUMS` and a
+compat record.
 
 ## Native connector (`native/`)
 
@@ -239,26 +241,69 @@ native/
 ## Portable verification
 
 **Contract level — every build, no game.** `native/build.sh --tests` (Linux) and
-`platform/windows/build.sh --tests` plus the Wine run (Windows), as described above. This is what CI
-runs: a hosted runner cannot hold a 4.3 GB depot or 10 GB of RAM, so the release claims `contract`
-verification and nothing more.
+`platform/windows/build.sh --tests` plus the Wine run (Windows), as described above. CI runs both
+in the `native` and `native-windows` jobs of `.github/workflows/conan-exiles.yml`.
 
-**Startup level — a real pinned server.** On a host that can boot it:
+**Runtime level — the real pinned Linux server with the library inside it.** The release
+workflow's `verify` leg runs this for every Linux target, and a maintainer runs the same command
+locally:
 
 ```bash
+maintenance/bin/takaro-maint build --game conan-exiles --target linux-25792439 \
+  --version 0.0.0-local --out dist
 maintenance/bin/takaro-maint verify --game conan-exiles --target linux-25792439 \
-  --artifacts dist --out reports --checks build,startup \
-  --startup-timeout 600 --cleanup-orphans
+  --artifacts dist --out reports --startup-timeout 900 --cleanup-orphans
 ```
 
-The hooks live in `maintenance/src/takaro_maint/games/conan_exiles/verify.py`. The verifier boots
-the pinned server from the installed depot bytes **without** the native library, so `startup`
-proves only that the server boots in the runtime image and its declared files are still the
-ledger's bytes. Every base row that needs a connector to answer (`identify`, `connector-load`,
-`heartbeat`, `players`, `catalog-*`, `console`, `shutdown`) is excluded with that reason.
+Requirements: Linux x86_64 with Docker, about 16 GB of RAM for the server (it settles near
+8.5-10 GB RSS; the container is capped at 14 GB), about 15 GB of disk (the 4.3 GB depot is
+cached under `~/.cache/takaro-maint/steam` and copied into a throwaway install), and no
+credentials: app 443030 is anonymous. A hosted `ubuntu-latest` runner (4 vCPU, 16 GB) is enough.
 
-Everything a player sees (chat, Discord, kicks, bans, teleports, items, events) is proven only on
-the live runbook with a real client; see the table in [README.md](README.md).
+The hooks live in `maintenance/src/takaro_maint/games/conan_exiles/verify.py`. The run installs
+the exact depots, deploys the built zip into `TakaroConanNative/`, writes
+`ConanSandbox/Saved/Config/Takaro/takaro.json` (mode 0600: the fake Takaro's `wss://` URL, the
+run's throwaway tokens and CA), and starts `ConanSandboxServer.sh` with `LD_PRELOAD` on the
+library and `TAKARO_CONAN_SHUTDOWN_SECONDS=5`. The fake Takaro serves TLS from a CA made for that
+run alone and negotiates protocol 1. Nothing is published on a host port and nobody joins.
+
+| check | passes when |
+|---|---|
+| `build`, `startup` | the zip carries the target's identity; the server reaches `Engine is initialized` and the pinned files are still the ledger's bytes |
+| `native-load` | `TakaroConanNative.log` shows this checkout's `version.txt`, the pinned build recognised by build-id and a `verified` scan, `ProcessEvent hooked`, and the bridge started `ready` |
+| `native-identify` | identify carries `game`, `connector {name, version}`, offers protocol 1 and a `game.profile` with the pinned build; the library logs protocol 1; an empty ping is answered |
+| `native-players` | `testReachability` is connectable and `getPlayers` (live GameState) is `[]` |
+| `native-catalog` | `listItems` and `listEntities` return at least 1000 localised rows each, including `Stone`, `Plant Fiber`, `Rabbit`, `Hyena`; at most 5 % may carry their code as their name (rows like `Absinthe` are named after themselves) |
+| `native-console` | `executeConsoleCommand "log LogTemp Verbose"` succeeds on the engine console and `listplayers` is refused |
+| `action` | `sendMessage` reaches the chat code, which answers the structured `game_error` "No online Conan players are available for chat" (nobody is online, so not delivery) |
+| `game-icon` | `getGameIcon` returns the PNG whose revision and size `game.profile` declared |
+| `map` | a protocol 1 `capabilities` replacement carries the loaded map's dimension |
+| `reconnect` | after a 1001 close from Takaro the library re-identifies and answers `testReachability` |
+| `stop` | Takaro's `shutdown` ends the server with exit code 0 and `Takaro Conan native stopped` is logged |
+
+A library that does not recognise the build still loads, connects and refuses every action, so
+`native-load`, `native-identify` and every action row fail on it: that is the failure this lane
+exists to catch. Each run writes `reports/<target>/report.json` (source revision, target
+fingerprint, artifact hashes, image digest, the server's own build and engine banner, per-check
+outcomes) plus `server.log`, `ConanSandbox.log`, `TakaroConanNative.log`, `fake-takaro.log`
+(tokens redacted) and `docker.log`. The container and the install are removed on success, failure
+or interrupt; `--keep-on-failure` keeps the install for a post-mortem.
+
+**CI and trigger policy.** `conan-exiles.yml` hands `runtime: true`, `runtime_platform: linux`,
+`runtime_large_server: true` and `startup_timeout: 900` to `connector-release.yml`. The checks are
+`Conan Exiles Connector / release / verify (linux-<build>)`, one per Linux target, and they run on
+every pull request that changes Conan's build inputs (`scripts/pr-build-scope.sh`), every push to
+`main` touching Conan, and every release; a failing one stops `publish`. The Windows targets keep
+their contract verification (a Linux runner cannot host the Windows server). Each leg downloads its
+depot from Steam uncached: the three Linux builds together outgrow the repository's 10 GB Actions
+cache.
+
+**Manual coverage.** Everything that needs a player stays on the live runbook with a real client
+(the table in [README.md](README.md)), and every report lists it under `coverage.manual`: the
+`player-connected`, `player-disconnected`, `chat-message`, `player-death` and `entity-killed`
+events; `sendMessage` delivery, `getPlayer`, `getPlayerLocation`, `getPlayerInventory`, `giveItem`,
+`teleportPlayer`, `kickPlayer`, `banPlayer`, `unbanPlayer`, `listBans` with a player online; and
+the Discord chat bridge and module posts.
 
 ## Takaro-owned Conan mod path
 

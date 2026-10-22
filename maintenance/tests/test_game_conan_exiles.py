@@ -1129,6 +1129,12 @@ def test_native_catalog_wants_thousands_of_localised_rows(quick: None) -> None:
     )
     result = asyncio.run(hooks._check_catalog(good))
     assert result.status == "pass", result.detail
+
+    # A few rows are named after themselves; that alone is not a catalogue of codes.
+    rows = _rows(hooks.MIN_ITEMS, hooks.ITEM_NAMES)
+    rows[-10:] = [{"code": f"Absinthe{i}", "name": f"Absinthe{i}"} for i in range(10)]
+    some = StubTakaro({"listItems": rows, "listEntities": _rows(hooks.MIN_ENTITIES, hooks.ENTITY_NAMES)})
+    assert asyncio.run(hooks._check_catalog(some)).status == "pass"
     assert result.detail["counts"] == {"listItems": hooks.MIN_ITEMS, "listEntities": hooks.MIN_ENTITIES}
 
     codes = [{"code": "Stone", "name": "Stone"}]
@@ -1167,6 +1173,10 @@ def test_action_sends_a_message_into_the_game_thread(tmp_path: Path) -> None:
     assert result.status == "pass" and stub.requests == [
         ("sendMessage", {"message": "takaro-verify-t1-action", "opts": {}})
     ]
+
+    nobody = RuntimeError(json.dumps({"code": "game_error", "message": hooks.NOBODY_ONLINE}))
+    result = asyncio.run(hooks._check_action(run, StubTakaro({"sendMessage": nobody})))
+    assert result.status == "pass" and hooks.NOBODY_ONLINE in result.detail["result"]["refusal"]
 
     result = asyncio.run(hooks._check_action(run, StubTakaro({"sendMessage": RuntimeError("game_error")})))
     assert result.status == "fail" and "sendMessage failed" in result.detail["problems"][0]

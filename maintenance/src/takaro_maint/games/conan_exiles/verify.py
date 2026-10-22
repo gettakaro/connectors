@@ -115,6 +115,10 @@ RECONNECT_BUDGET = 90.0
 STOP_BUDGET = 600.0
 
 MIN_ITEMS = 1000
+#: The share of rows that may carry their code as their name; observed about 1.2 %.
+MAX_CODE_NAMED = 0.05
+#: What the library answers a message nobody is online to receive.
+NOBODY_ONLINE = "No online Conan players are available for chat"
 MIN_ENTITIES = 1000
 #: Rows whose localised names the live hard test read back from the client.
 ITEM_NAMES = ("Stone", "Plant Fiber")
@@ -394,9 +398,11 @@ def _catalogue_problems(action: str, entries: Any, minimum: int, names: tuple[st
     if malformed is not None:
         problems.append(f"{action} holds an entry without a code and a name: {malformed!r}")
         return problems
+    # Many ItemTable rows are named after their item ('Absinthe' -> 'Absinthe'), so only a
+    # catalogue where the codes came back in place of the names fails.
     same = [e for e in entries if e["name"] == e["code"]]
-    if same:
-        problems.append(f"{action}: {len(same)} names are the code itself, e.g. {same[0]['code']!r}")
+    if len(same) > len(entries) * MAX_CODE_NAMED:
+        problems.append(f"{action}: {len(same)} of {len(entries)} names are the code itself, e.g. {same[0]['code']!r}")
     known = {str(e["name"]) for e in entries}
     missing = [name for name in names if name not in known]
     if missing:
@@ -481,8 +487,11 @@ async def _check_action(run: Any, fake: Any) -> checks.CheckResult:
         result: Any = None
         try:
             result = await fake.request("sendMessage", {"message": marker, "opts": {}}, timeout=REQUEST_TIMEOUT)
-        except Exception as exc:  # noqa: BLE001 - reported as a check failure
-            problems.append(f"sendMessage failed: {exc}")
+        except Exception as exc:  # noqa: BLE001 - the nobody-online refusal is the expected answer
+            if NOBODY_ONLINE in str(exc) and "game_error" in str(exc):
+                result = {"refusal": str(exc)}
+            else:
+                problems.append(f"sendMessage failed: {exc}")
     return checks.CheckResult(
         "action",
         "pass" if not problems else "fail",
@@ -491,7 +500,10 @@ async def _check_action(run: Any, fake: Any) -> checks.CheckResult:
             "action": "sendMessage",
             "message": marker,
             "result": result,
-            "note": "proves the request path into the game thread, not delivery: nobody is online to read it",
+            "note": (
+                "with nobody online the library answers the structured game_error from its own list of "
+                "online controllers: the request path into the game, not delivery"
+            ),
             "problems": problems,
         },
     )
