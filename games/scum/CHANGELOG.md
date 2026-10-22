@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/gettakaro/connectors/compare/scum-v0.1.0...scum-v0.2.0) (2026-10-21)
+
+
+### Features
+
+* **scum:** report Game Profile (game, connector, build, icon) ([#556](https://github.com/gettakaro/connectors/issues/556)) ([3a9ac5e](https://github.com/gettakaro/connectors/commit/3a9ac5eec2b98c2f6db611b5e1155474850b8520))
+
 ## 0.1.0 (2026-10-15)
 
 
