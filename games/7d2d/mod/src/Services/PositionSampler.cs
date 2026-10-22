@@ -21,6 +21,9 @@ namespace Takaro.Services
         private DateTime _nextSampleUtc = DateTime.MinValue;
         private DateTime _nextBanSyncUtc = DateTime.MinValue;
 
+        // GameUpdate runs before GameStartDone, when the database is not open yet.
+        private volatile bool _started;
+
         public static PositionSampler Instance
         {
             get
@@ -36,8 +39,17 @@ namespace Takaro.Services
             }
         }
 
+        /// <summary>Called at GameStartDone, right after the database open is queued.</summary>
+        public void Start()
+        {
+            _started = true;
+        }
+
         public void OnGameUpdate(ref ModEvents.SGameUpdateData data)
         {
+            if (!_started)
+                return;
+
             DateTime now = DateTime.UtcNow;
 
             if (now >= _nextSampleUtc)
@@ -85,6 +97,9 @@ namespace Takaro.Services
 
         public void OnInit() { }
 
-        public void OnDestroy() { }
+        public void OnDestroy()
+        {
+            _started = false;
+        }
     }
 }

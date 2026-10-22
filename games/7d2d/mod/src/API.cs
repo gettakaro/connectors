@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using HarmonyLib;
 using Takaro.Config;
+using Takaro.Persistence;
 using Takaro.Services;
 using Takaro.WebSocket;
 using UnityEngine;
@@ -46,6 +47,15 @@ namespace Takaro
         {
             var harmony = new Harmony("com.takaro.patch");
             harmony.PatchAll();
+
+            PrismaCoreConflict.WarnIfLoaded();
+
+            // The database lives in the world's save directory, which is known from here on.
+            // Opening it is the first DbWriter operation, so every write queued after this
+            // line (seeding, the sampler, player events) finds it open.
+            string saveDirectory = GameIO.GetSaveGameDir();
+            DbWriter.Instance.Enqueue(() => Database.Instance.Open(saveDirectory));
+            PositionSampler.Instance.Start();
 
             // Seed the mirror from game truth before the WebSocket connects, so
             // requests can never observe a cold mirror. The game thread does not

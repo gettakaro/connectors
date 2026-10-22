@@ -10,7 +10,7 @@ using Takaro.Config;
 using Takaro.Services;
 using Takaro.WebSocket;
 
-public static class ContractHarness
+public static partial class ContractHarness
 {
     private static int _assertions;
 
@@ -68,6 +68,7 @@ public static class ContractHarness
             AssertMapCatalog();
             AssertMapRouting();
             AssertConfigFiles();
+            RunFamilies();
             Console.WriteLine("Contract harness passed: " + _assertions + " assertions");
             return 0;
         }
@@ -2833,6 +2834,32 @@ public static class ContractHarness
         }
     }
 
+    // Each tests/ContractHarness.<Family>.cs adds one `private static void Family<Name>()`;
+    // they run in name order, so a new command family adds a file instead of editing this one.
+    private static void RunFamilies()
+    {
+        foreach (
+            System.Reflection.MethodInfo family in typeof(ContractHarness)
+                .GetMethods(
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
+                )
+                .Where(method => method.Name.StartsWith("Family", StringComparison.Ordinal))
+                .OrderBy(method => method.Name, StringComparer.Ordinal)
+        )
+        {
+            try
+            {
+                family.Invoke(null, null);
+            }
+            catch (System.Reflection.TargetInvocationException ex)
+            {
+                System
+                    .Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException)
+                    .Throw();
+            }
+        }
+    }
+
     private static void True(bool condition, string description)
     {
         _assertions++;
@@ -3099,6 +3126,7 @@ namespace Takaro.Persistence
         public string SteamId { get; set; }
         public string XboxLiveId { get; set; }
         public string EpicOnlineServicesId { get; set; }
+        public string PlatformId { get; set; }
         public float X { get; set; }
         public float Y { get; set; }
         public float Z { get; set; }
