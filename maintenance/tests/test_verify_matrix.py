@@ -95,7 +95,7 @@ def test_the_opt_in_runtime_inputs_default_to_the_minecraft_shape() -> None:
 
 
 def test_a_server_too_large_to_cache_is_installed_once_by_the_verify_leg() -> None:
-    """`runtime_large_server`: no build-leg install, room made before the download, a longer budget."""
+    """`runtime_large_server`: no build-leg install, no cache, a longer budget."""
     text = WORKFLOW.read_text()
 
     declared = re.search(r"\n      runtime_large_server:\n(?P<body>(?:        .*\n)+)", text)
@@ -103,10 +103,7 @@ def test_a_server_too_large_to_cache_is_installed_once_by_the_verify_leg() -> No
     install = step(job("build"), "Install the pinned inputs")
     assert "if: inputs.runtime && !inputs.runtime_depot_cache && !inputs.runtime_large_server" in install
     verify = job("verify")
-    assert "timeout-minutes: ${{ inputs.runtime_large_server && 90 || 40 }}" in verify
-    room = step(verify, "Make room for the server")
-    assert "if: inputs.runtime_large_server" in room
-    assert verify.index("Make room for the server") < verify.index("takaro-maint verify")
+    assert "timeout-minutes: ${{ inputs.runtime_large_server && 60 || 40 }}" in verify
     # Nothing that size is ever handed to the Actions cache.
     assert "runtime_large_server" not in step(verify, "Save the pinned Steam depots")
 

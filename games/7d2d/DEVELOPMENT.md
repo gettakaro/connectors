@@ -107,16 +107,15 @@ on every push to `main`, on release and recovery runs, and on pull requests that
 connector's build inputs (`scripts/pr-build-scope.sh`). `publish` needs every one of them to
 pass.
 
-Runner requirements: `ubuntu-latest` (x86_64, 4 vCPU, 16 GB RAM) with docker. The server
-container is capped at 6 GB. The depot set is 17.7 GB, and it is on disk twice: once in
-`~/.cache/takaro-maint/steam` and once in the throwaway install. That is more than the hosted
-image has free, so the leg first removes SDKs it never uses (`runtime_large_server`). The
-depot set is also larger than the repository's whole Actions cache, so it is downloaded from
-Steam on each run: anonymously, no credentials. Trimming it does not help either, because the
-server hangs in `GameManager.Awake` without the asset bundles under `Data/Addressables`. The
-leg's budget is 90 minutes and the server's startup budget is 900 s. The run's containers
-carry `tm.run=<run id>` and are removed on success, failure, `SIGINT`/`SIGTERM`, and by the
-job's last step if the job is cancelled.
+Runner requirements: `ubuntu-latest` (x86_64, 4 vCPU, 16 GB RAM, about 86 GB free disk)
+with docker. The server container is capped at 6 GB. The depot set is 17.7 GB and is on disk
+twice, once in `~/.cache/takaro-maint/steam` and once in the throwaway install. It is larger
+than the repository's whole Actions cache, so the verify leg downloads it from Steam
+anonymously (no credentials) on each run (`runtime_large_server`), and the build leg never
+installs it. It cannot be trimmed: without the asset bundles under `Data/Addressables` the
+server hangs in `GameManager.Awake`. The leg's budget is 60 minutes and the server's startup
+budget is 900 s. The run's containers carry `tm.run=<run id>` and are removed on success,
+failure and `SIGINT`/`SIGTERM`, and by the job's last step if the job is cancelled.
 
 Reproduce it locally (about 36 GB free disk and 8 GB free RAM):
 

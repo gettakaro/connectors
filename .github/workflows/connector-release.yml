@@ -57,8 +57,7 @@ on:
       runtime_large_server:
         description: >-
           The pinned server is larger than the repository's whole Actions cache: the build leg does
-          not install it, and the verify leg makes room on the runner disk, downloads it once and
-          gets a longer job budget
+          not install it, and the verify leg downloads it once, uncached, with a longer job budget
         required: false
         default: false
         type: boolean
@@ -273,7 +272,7 @@ jobs:
     if: inputs.runtime
     runs-on: ubuntu-latest
     # A large server spends most of its budget downloading and copying its depots.
-    timeout-minutes: ${{ inputs.runtime_large_server && 90 || 40 }}
+    timeout-minutes: ${{ inputs.runtime_large_server && 60 || 40 }}
     permissions:
       contents: read
     strategy:
@@ -308,18 +307,6 @@ jobs:
         with:
           path: ~/.cache/takaro-maint
           key: ${{ inputs.connector }}-${{ steps.target.outputs.fp16 }}
-
-      # A depot set too large to cache is downloaded into the cache directory and copied into the
-      # throwaway install, so it needs twice its size on disk; the hosted image leaves about a
-      # third of that free until the SDKs this leg never uses are gone.
-      - name: Make room for the server
-        if: inputs.runtime_large_server
-        run: |
-          df -h / /mnt 2>/dev/null || true
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
-            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/boost
-          docker image prune -af >/dev/null
-          df -h /
 
       # Separate from the build leg's cache so its small entry is not replaced by gigabytes,
       # and saved even when a check failed: the depots were verified against their manifests
