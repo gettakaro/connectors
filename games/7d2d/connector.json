@@ -1,16 +1,23 @@
 {
   "name": "7 Days to Die",
   "tagline": "Server-side mod that connects a 7 Days to Die dedicated server to Takaro.",
-  "assetMode": "all",
+  "assetMode": "pick-one",
   "requirements": [
     "7 Days to Die dedicated server (Linux or Windows)",
     "Takaro registration token"
   ],
   "assets": [
     {
-      "pattern": "takaro-7d2d-mod.zip",
-      "label": "Mod",
-      "requires": "7 Days to Die V 3.2.0 b10+",
+      "pattern": "takaro-7d2d-mod-linux-3.3.0.b18-*.zip",
+      "label": "Mod (V 3.3.0 b18)",
+      "requires": "7 Days to Die V 3.3.0 b18",
+      "hint": "Unzip so the Takaro folder lands directly inside <server>/Mods/.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-7d2d-mod-linux-3.2.0.b10-*.zip",
+      "label": "Mod (V 3.2.0 b10)",
+      "requires": "7 Days to Die V 3.2.0 b10",
       "hint": "Unzip so the Takaro folder lands directly inside <server>/Mods/.",
       "required": true
     }
