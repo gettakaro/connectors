@@ -60,6 +60,9 @@ PLUGIN_FOLDER = "TakaroValheim"
 #: produce a same-size DLL, so the cache is dropped whenever the plugin is replaced.
 CHAINLOADER_CACHE = Path("BepInEx") / "cache" / "chainloader_typeloader.dat"
 
+#: The ``steam`` user the pinned runtime image's launcher always runs the server as.
+IMAGE_UID = 1000
+
 #: The assembly whose hash identifies the game build a plugin was compiled against.
 ASSEMBLY_VALHEIM = "valheim_server_Data/Managed/assembly_valheim.dll"
 
@@ -70,6 +73,31 @@ _GAME_BANNER = re.compile(
     r"Valheim version:\s*(?:l-)?(?P<version>[0-9][0-9.]*)(?:\s*\(network version (?P<network>[0-9]+)\))?"
 )
 _LOADER_BANNER = re.compile(r"BepInEx (?P<loader>[0-9][0-9.]+) - valheim_server")
+
+
+def share_with_image(data_dir: Path) -> None:
+    """Make what the caller owns under ``data_dir`` group-writable when the image runs as someone else.
+
+    Nothing changes when the caller is the image's own uid. Otherwise the image's user is in
+    the caller's group (:meth:`ValheimAdapter.container_options`), and this is what lets it
+    write the install, the config and the world. Files the server created itself are its
+    own already and are left alone.
+    """
+    if os.getuid() == IMAGE_UID:
+        return
+    uid = os.getuid()
+    for root, dirs, files in os.walk(data_dir):
+        for name in [*dirs, *files, ""]:
+            path = Path(root) / name if name else Path(root)
+            try:
+                info = path.lstat()
+                if info.st_uid != uid or path.is_symlink():
+                    continue
+                extra = 0o070 if path.is_dir() else 0o060
+                if info.st_mode & extra != extra:
+                    path.chmod(info.st_mode | extra)
+            except OSError:
+                continue
 
 
 def _env_key(name: str) -> str:
@@ -255,6 +283,18 @@ class ValheimAdapter(BaseAdapter):
             "PUID": str(os.getuid()),
             "PGID": str(os.getgid()),
         }
+
+    def container_options(self, resolved: dict[str, Any], data_dir: Path) -> list[str]:
+        """On a host whose user is not the image's, the image's user joins the caller's group.
+
+        The image's launcher always drops to its own ``steam`` user (uid 1000) and cannot
+        run as anyone else, so a caller with another uid -- a hosted CI runner is 1001 --
+        shares the install through its group instead (see :func:`share_with_image`).
+        """
+        del resolved, data_dir
+        if os.getuid() == IMAGE_UID:
+            return []
+        return ["--group-add", str(os.getgid())]
 
     def container_mounts(self, resolved: dict[str, Any], data_dir: Path) -> list[str]:
         """The install, plus the saves and backups the image writes outside it.

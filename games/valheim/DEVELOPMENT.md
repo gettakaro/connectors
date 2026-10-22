@@ -172,11 +172,55 @@ same names are used for `giveItem` resolution and for the entity and weapon fiel
 ## Verification evidence policy
 
 `takaro-maint verify --game valheim` boots a **dedicated server** with no game client attached.
-What a run covers is startup, identify, the catalogue, an allowlisted console action, reconnect
-after a dropped socket, and a clean stop. Chat, death, kill and item-delivery rows need a real
-game client and are claimed only from a recorded run with one attached. When such a row moves,
-say which run moved it and on which artifact — "the harness passed" is not an answer, because
-the harness does not look.
+What a run covers is startup, identify, `testReachability` and `getPlayers`, the catalogue, an
+allowlisted console action, the refusal of an action the connector does not offer
+(`unsupported`), reconnect after a dropped socket, and a clean stop. Chat, death, kill and
+item-delivery rows need a real game client and are claimed only from a recorded run with one
+attached. When such a row moves, say which run moved it and on which artifact — "the harness
+passed" is not an answer, because the harness does not look.
+
+### Runtime CI
+
+Every PR that changes Valheim's build inputs, every push to `main` and every release run the
+`verify` leg of `connector-release.yml`; `publish` needs it to pass. The required check is
+`Valheim Connector / release / verify (linux-1.0.20)`, one per catalog target. It runs the same
+command a maintainer runs locally:
+
+```sh
+maintenance/bin/takaro-maint build  --game valheim --target linux-1.0.20 --version 0.0.0-local \
+  --out dist --toolchain container
+maintenance/bin/takaro-maint verify --game valheim --target linux-1.0.20 --artifacts dist \
+  --out reports --startup-timeout 600 --negative --cleanup-orphans
+```
+
+- **Runner:** `ubuntu-latest` (Linux x86_64) with Docker. The server runs in the pinned
+  `mbround18/valheim` image with a 3 GB memory limit; a run needs about 6 GB of free disk (the
+  2 GB depot set, its install copy and the image). The verify job takes about 3 minutes with
+  the depot cache warm; a cold cache adds about a minute and a half of Steam download.
+  The image's launcher always runs the server as its own `steam` user (uid 1000). On a host
+  whose user has another uid (a hosted runner is 1001), that user joins the caller's group and
+  the run makes its own data directory group-writable.
+- **Inputs:** the Valheim dedicated server (Steam app 896660) is free and downloads anonymously,
+  so no Steam account or secret is involved. The depots are cached under
+  `valheim-depots-<fp16>`, so a run downloads them at most once per target fingerprint. The
+  BepInEx pack comes from Thunderstore by its pinned version and hash.
+- **Isolation:** every run generates a new world in a temporary data directory, publishes no
+  host ports, and talks to a local fake Takaro on `host.docker.internal` with a throwaway
+  token. Containers carry the run's `tm.run` label and are removed on success, failure
+  or cancellation; tokens are redacted from the uploaded `verify-valheim-<target>` report.
+- **Report:** `reports/<target>/report.json` names the source revision, the target fingerprint,
+  the artifact hashes, the image digest and the Valheim and BepInEx versions that actually
+  booted, with one row per check and the server, Docker and fake-Takaro logs.
+- **Negative boot** (`--negative`, check `negative-wrong-package`): the same server boots again
+  with the client companion unpacked where the plugin belongs. It passes only when the companion
+  disables itself on the dedicated server and nothing identifies to Takaro.
+- **Not covered, still manual:** the fake Takaro speaks protocol version 0, so the version 1
+  handshake, its Capability Manifest and Game Profile are covered by unit tests and the staging
+  live runs. Everything a connected player drives stays manual and needs a real vanilla client:
+  `player-connected`/`player-disconnected`, `chat-message`, `player-death`, `entity-killed`,
+  `sendMessage` reaching a player, `giveItem`, `teleportPlayer`, `getPlayerLocation`,
+  `kickPlayer`, `banPlayer`/`unbanPlayer`/`listBans` with a player, the map, and the optional
+  inventory companion in a graphical client (`getPlayerInventory` and its kill verdicts).
 
 ## Architecture
 
