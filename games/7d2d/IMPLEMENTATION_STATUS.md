@@ -48,21 +48,23 @@ hammer the connector with read requests without touching the game simulation.
 2. The game main thread never does DB I/O. Event handlers and the sampler
    capture plain POCO snapshots and enqueue them; the `DbWriter` background
    thread performs all LiteDB writes.
-3. One shared **in-memory** `LiteDatabase` (LiteDB 5, `:memory:`): the
-   DbWriter thread writes, the WebSocket thread reads. All access holds
-   `Database.SyncRoot` — LiteDB's engine is not reliably safe under concurrent
-   reads and writes, and both sides run off the game thread so the lock never
-   blocks the game.
+3. One shared `LiteDatabase` (LiteDB 5.0.21), a file in the world's save
+   directory (`takaro.db`, opened on write-through streams; see
+   DEVELOPMENT.md, "Storage"): the DbWriter thread writes, the WebSocket
+   thread reads. All access holds `Database.SyncRoot` — LiteDB's engine is
+   not reliably safe under concurrent reads and writes, and both sides run off
+   the game thread so the lock never blocks the game. Console commands read
+   the player registry under the same lock on the main thread, briefly.
 
-**Mirror lifecycle:** the database is **in-memory and ephemeral** — rebuilt
-from game truth on every boot. Nothing in the mirror has value across
-restarts: ordinary player reads serve only online players, while items,
-entities, locations, and bans are reseeded at `GameStartDone`. The location
-read alone retains the last sample for a bounded 10 minutes after disconnect
-so Takaro can enrich the lifecycle event. (The memory backend also sidesteps
-LiteDB 5 disk-engine
-failures under Mono — "ReadFull must read PAGE_SIZE bytes" during
-WAL/checkpoint.) Seeding happens *before* the WebSocket connects, so requests
+**Mirror lifecycle:** every collection is either **rebuilt at boot** (items,
+entities, locations, bans, inventories: dropped when the database opens and
+reseeded from game truth at `GameStartDone`) or **durable** (players,
+waypoints, settings). The durable `players` collection is the player
+registry: everyone is marked offline at boot, and offline players keep their
+last sampled position, so console commands can resolve them. Ordinary player
+reads still serve only online players; the location read alone retains the
+last sample for a bounded 10 minutes after disconnect so Takaro can enrich the
+lifecycle event. Seeding happens *before* the WebSocket connects, so requests
 never observe a cold mirror.
 
 ### Per-endpoint data flow
@@ -150,12 +152,20 @@ mod/src/
 ├── CommandResult.cs            # IConsoleConnection → TaskCompletionSource bridge
 ├── ServiceRegistry.cs          # Ordered service init/destroy
 ├── Interfaces/IService.cs
-├── Commands/Debug.cs           # takaro-debug console command
+├── Commands/
+│   ├── Debug.cs                # takaro-debug console command
+│   ├── PrismaCoreCommand.cs    # base of the PrismaCore-compatible commands (main thread)
+│   ├── PlayerTarget.cs         # shared player-id resolver (online: game; offline: registry)
+│   ├── ProgressionCommands.cs  # resetlevel/rl, resetskillpoints/rs
+│   ├── BloodMoonCommands.cs    # isbloodmoon
+│   └── Contract/               # game-free output contracts + PrismaCore detection
 ├── Config/ConfigFiles.cs       # Config.xml read/create/write identity (no game types)
 ├── Config/ConfigManager.cs     # loads Takaro/Config.xml, watches it for changes
 ├── Persistence/
-│   ├── Database.cs             # In-memory LiteDB instance, collections, access lock
-│   └── Records.cs              # Player, inventory, ban, item, entity, location records
+│   ├── Database.cs             # The LiteDB file in the save dir, collections, access lock
+│   ├── StorageLifecycle.cs     # Every collection's boot lifecycle (rebuilt or durable)
+│   ├── WriteThroughFileStream.cs # The stream LiteDB writes through (Mono buffer fix)
+│   └── Records.cs              # Player, inventory, ban, item, entity, location, setting records
 ├── Services/
 │   ├── LogService.cs           # File + console logging
 │   ├── DbWriter.cs             # Background writer thread (all DB writes)
@@ -165,6 +175,8 @@ mod/src/
 │   ├── ProtocolDiagnostics.cs   # bounded Takaro error diagnostics
 │   ├── PlayerLocationReadWindow.cs # bounded post-disconnect location access
 │   ├── ServerMessageEchoGuard.cs # bounded one-shot native chat echo guard
+│   ├── PlayerIdResolver.cs     # game-free player-id resolution and the game's failure lines
+│   ├── PrismaCoreConflict.cs   # one warning when a PrismaCore mod is loaded
 │   ├── StateMirror.cs          # Mirror reads (WS thread) + snapshot writes (main thread)
 │   └── PositionSampler.cs      # ~3s position/ping sampling + 60s ban resync
 └── WebSocket/

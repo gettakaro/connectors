@@ -28,6 +28,7 @@ public static class StorageHarness
                 AssertWriteThroughCheckpoints(Path.Combine(root, "write-through"));
                 AssertBootLifecycle(Path.Combine(root, "lifecycle"));
                 AssertRestartsAndKills(Path.Combine(root, "kills"));
+                AssertUnreadableFilesAreRecovered(Path.Combine(root, "recovery"));
             }
             finally
             {
@@ -273,6 +274,82 @@ public static class StorageHarness
                 "clean restart " + restart + " keeps the registry"
             );
             Close(db, data, log);
+        }
+    }
+
+    // A torn log costs at most what was not checkpointed yet; a damaged data file starts over.
+    private static void AssertUnreadableFilesAreRecovered(string directory)
+    {
+        var errors = new List<string>();
+        DatabaseFiles files = DatabaseFiles.Open(directory, errors.Add);
+        files.Db.GetCollection<PlayerRecord>("players").Insert(Player("kept", 1));
+        files.Db.Checkpoint();
+        files.Db.GetCollection<PlayerRecord>("players").Insert(Player("in-log", 2));
+        files.Dispose();
+        Equal(0, errors.Count, "a healthy database opens without recovery");
+
+        // A clean close checkpoints, so write the uncheckpointed commit again without one.
+        LiteDatabase db = Open(directory, out Stream data, out Stream log);
+        db.GetCollection<PlayerRecord>("players").Upsert(Player("in-log", 2));
+        data.Dispose();
+        log.Dispose();
+        string logPath = Path.Combine(directory, StorageLifecycle.LogFileName);
+        True(new FileInfo(logPath).Length > 0, "the commit is in the log, not yet checkpointed");
+        // What a crash leaves: the last page torn (zeros) and a partial page at the end.
+        using (var torn = new FileStream(logPath, FileMode.Open, FileAccess.Write))
+        {
+            torn.Position = torn.Length - 8192;
+            torn.Write(new byte[8192], 0, 8192);
+            torn.Write(new byte[100], 0, 100);
+        }
+
+        files = DatabaseFiles.Open(directory, errors.Add);
+        var players = files.Db.GetCollection<PlayerRecord>("players");
+        // LiteDB crops and skips what a crash tears; when it throws instead, only the log goes.
+        True(errors.Count <= 1, "a damaged log is recovered in one step");
+        if (errors.Count == 1)
+        {
+            True(
+                errors[0].Contains("set its log aside"),
+                "only the log is set aside: " + errors[0]
+            );
+            True(
+                Directory.GetFiles(directory, StorageLifecycle.LogFileName + ".unreadable-*").Length
+                    == 1,
+                "the damaged log is kept for inspection"
+            );
+        }
+        True(players.FindById("kept") != null, "the checkpointed registry survives a damaged log");
+        files.Dispose();
+
+        string broken = directory + "-data";
+        files = DatabaseFiles.Open(broken, errors.Add);
+        files.Db.GetCollection<PlayerRecord>("players").Insert(Player("lost", 1));
+        files.Dispose();
+        Garble(Path.Combine(broken, StorageLifecycle.FileName));
+        errors.Clear();
+        files = DatabaseFiles.Open(broken, errors.Add);
+        True(
+            errors.Count >= 1 && errors[errors.Count - 1].Contains("started a new one"),
+            "a damaged data file starts over"
+        );
+        Equal(0, files.Db.GetCollection<PlayerRecord>("players").Count(), "with an empty registry");
+        True(
+            Directory.GetFiles(broken, StorageLifecycle.FileName + ".unreadable-*").Length == 1,
+            "the damaged data file is kept for inspection"
+        );
+        files.Dispose();
+    }
+
+    // Overwrites the header page, which LiteDB validates on open.
+    private static void Garble(string path)
+    {
+        using (var file = new FileStream(path, FileMode.Open, FileAccess.Write))
+        {
+            var bytes = new byte[8192];
+            for (int i = 0; i < bytes.Length; i++)
+                bytes[i] = (byte)(i * 31 + 7);
+            file.Write(bytes, 0, bytes.Length);
         }
     }
 

@@ -24,7 +24,7 @@ namespace Takaro.Commands
                 PlayerIdResolver.Resolve<ClientInfo>(
                     id,
                     FindOnline,
-                    StateMirror.Instance.GetRegisteredPlayers
+                    () => StateMirror.Instance.GetRegisteredPlayers()
                 );
             failureLine = resolution.FailureLine;
             if (!resolution.Found)

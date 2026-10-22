@@ -11,8 +11,7 @@ namespace Takaro.Persistence
     /// (<see cref="StorageLifecycle.FileName"/>), so it belongs to that world and moves with
     /// its backups. The file is opened at GameStartDone, when the save directory is known,
     /// and before anything is written. What each collection does on boot is
-    /// <see cref="StorageLifecycle"/>; why the files are opened as streams is
-    /// <see cref="WriteThroughFileStream"/>.
+    /// <see cref="StorageLifecycle"/>; how the files are opened is <see cref="DatabaseFiles"/>.
     /// </summary>
     public class Database : IService
     {
@@ -34,8 +33,7 @@ namespace Takaro.Persistence
             }
         }
 
-        private WriteThroughFileStream _dataStream;
-        private WriteThroughFileStream _logStream;
+        private DatabaseFiles _files;
 
         public LiteDatabase Db { get; private set; }
 
@@ -69,9 +67,9 @@ namespace Takaro.Persistence
 
         /// <summary>
         /// Opens (or creates) the database in <paramref name="directory"/> and applies every
-        /// collection's boot lifecycle. A file LiteDB cannot read is moved aside and a new one
-        /// is started; a file that cannot be opened at all (another process holds it) leaves
-        /// the connector on an in-memory database, so the server still works without a
+        /// collection's boot lifecycle (<see cref="DatabaseFiles.Open"/> recovers from a file
+        /// LiteDB cannot read). A file that cannot be opened at all (another process holds it)
+        /// leaves the connector on an in-memory database, so the server still works without a
         /// registry. Both are logged as errors.
         /// </summary>
         public void Open(string directory)
@@ -81,31 +79,21 @@ namespace Takaro.Persistence
                 if (Db != null)
                     return;
 
-                string dataPath = Path.Combine(directory, StorageLifecycle.FileName);
-                string logPath = Path.Combine(directory, StorageLifecycle.LogFileName);
                 StorageLifecycle.BootReport report;
                 try
                 {
-                    Directory.CreateDirectory(directory);
-                    report = OpenFiles(dataPath, logPath);
-                }
-                catch (LiteException ex)
-                {
-                    CloseFiles();
-                    string suffix = ".unreadable-" + DateTime.UtcNow.ToString("yyyyMMddTHHmmssZ");
-                    LogService.Instance.Error(
-                        $"Database {dataPath} could not be read ({ex.Message}); moved it to {StorageLifecycle.FileName}{suffix} and started a new one"
+                    _files = DatabaseFiles.Open(
+                        directory,
+                        message => LogService.Instance.Error(message)
                     );
-                    File.Move(dataPath, dataPath + suffix);
-                    if (File.Exists(logPath))
-                        File.Move(logPath, logPath + suffix);
-                    report = OpenFiles(dataPath, logPath);
+                    Db = _files.Db;
+                    FilePath = _files.DataPath;
+                    report = _files.Report;
                 }
                 catch (IOException ex)
                 {
-                    CloseFiles();
                     LogService.Instance.Error(
-                        $"Database {dataPath} could not be opened ({ex.Message}); using an in-memory database, the player registry will not persist"
+                        $"Database in {directory} could not be opened ({ex.Message}); using an in-memory database, the player registry will not persist"
                     );
                     Db = new LiteDatabase(":memory:");
                     report = StorageLifecycle.ApplyAtBoot(Db);
@@ -122,41 +110,17 @@ namespace Takaro.Persistence
             }
         }
 
-        private StorageLifecycle.BootReport OpenFiles(string dataPath, string logPath)
-        {
-            _dataStream = new WriteThroughFileStream(dataPath);
-            _logStream = new WriteThroughFileStream(logPath);
-            Db = new LiteDatabase(_dataStream, null, _logStream);
-            StorageLifecycle.BootReport report = StorageLifecycle.ApplyAtBoot(Db);
-            FilePath = dataPath;
-            return report;
-        }
-
-        private void CloseFiles()
-        {
-            try
-            {
-                Db?.Dispose();
-            }
-            catch (Exception ex)
-            {
-                LogService.Instance.Warn($"Closing the database failed: {ex.Message}");
-            }
-            Db = null;
-            FilePath = null;
-            _dataStream?.Dispose();
-            _logStream?.Dispose();
-            _dataStream = null;
-            _logStream = null;
-        }
-
         public void OnDestroy()
         {
-            // Disposing LiteDB checkpoints the log into the data file; the streams are the
-            // connector's, so they are closed afterwards.
             lock (SyncRoot)
             {
-                CloseFiles();
+                if (_files != null)
+                    _files.Dispose();
+                else
+                    Db?.Dispose();
+                _files = null;
+                Db = null;
+                FilePath = null;
             }
         }
     }

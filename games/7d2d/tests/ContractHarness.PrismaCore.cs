@@ -134,6 +134,33 @@ public static partial class ContractHarness
 
         AssertOnlineThenRegistry(registry);
 
+        var oldHolder = new PlayerRecord
+        {
+            GameId = "0002old",
+            Name = "Old",
+            EntityId = 300,
+            LastSeenUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+        };
+        var newHolder = new PlayerRecord
+        {
+            GameId = "0002new",
+            Name = "New",
+            EntityId = 300,
+            LastSeenUtc = new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc),
+        };
+        AssertResolves(
+            new List<PlayerRecord> { newHolder, oldHolder },
+            "300",
+            newHolder,
+            "a reused entity id goes to the player seen last"
+        );
+        AssertResolves(
+            new List<PlayerRecord> { oldHolder, newHolder },
+            "300",
+            newHolder,
+            "a reused entity id goes to the player seen last, whatever the order"
+        );
+
         Equal(
             "\"Nobody\" is not a valid entity id, player name or user id.",
             PlayerIdResolver.NotFoundLine("Nobody"),

@@ -16,13 +16,23 @@ class PrismaCoreFoundationTests(unittest.TestCase):
 
     def test_the_database_is_a_write_through_file(self):
         database = self.source("Persistence/Database.cs")
+        files = self.source("Persistence/DatabaseFiles.cs")
         # Opening by filename hits Mono's buffered page write ("ReadFull must read PAGE_SIZE
         # bytes"); the streams are the fix, and :memory: is only the locked-file fallback.
-        self.assertIn("new LiteDatabase(_dataStream, null, _logStream)", database)
-        self.assertNotIn("Filename=", database)
+        self.assertIn("new LiteDatabase(_data, null, _log)", files)
+        self.assertIn("StorageLifecycle.ApplyAtBoot(Db)", files)
+        self.assertNotIn("Filename=", database + files)
         self.assertEqual(database.count('new LiteDatabase(":memory:")'), 1)
         self.assertIn("catch (IOException", database)
-        self.assertIn("StorageLifecycle.ApplyAtBoot(Db)", database)
+        self.assertIn("DatabaseFiles.Open(", database)
+        # A damaged log is set aside before the data file is.
+        self.assertLess(files.index("set its log aside"), files.index("started a new one"))
+
+    def test_commands_never_wait_for_the_database_lock(self):
+        mirror = self.source("Services/StateMirror.cs")
+        registry = mirror.split("public IReadOnlyList<PlayerRecord> GetRegisteredPlayers()", 1)[1].split("\n", 1)[0]
+        self.assertNotIn("SyncRoot", registry)
+        self.assertGreaterEqual(mirror.count("PublishRegistry();"), 2)
 
     def test_every_collection_has_a_lifecycle(self):
         database = self.source("Persistence/Database.cs")
@@ -82,7 +92,7 @@ class PrismaCoreFoundationTests(unittest.TestCase):
         project = (GAME_ROOT / "mod" / "Takaro.csproj").read_text(encoding="utf-8-sig")
         harness = (GAME_ROOT / "scripts" / "test-contract.sh").read_text()
         self.assertIn(r"src\Commands\**\*.cs", project)
-        for name in ("StorageLifecycle", "WriteThroughFileStream"):
+        for name in ("StorageLifecycle", "WriteThroughFileStream", "DatabaseFiles"):
             self.assertIn(rf"src\Persistence\{name}.cs", project)
             self.assertIn(f"/app/mod/src/Persistence/{name}.cs", harness)
         self.assertIn(r"src\Services\PlayerIdResolver.cs", project)

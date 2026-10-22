@@ -88,18 +88,19 @@ namespace Takaro.Services
         }
 
         /// <summary>
-        /// The whole player registry, online and offline. Console commands call this on the
-        /// main thread to resolve offline players; the registry is small and the lock is
-        /// only contended while the DbWriter is busy.
+        /// The whole player registry, online and offline, as the DbWriter last published it.
+        /// Console commands read it on the main thread to resolve offline players, so it is a
+        /// snapshot rather than a database read: the main thread never waits for the lock the
+        /// DbWriter holds through seeding and checkpoints.
         /// </summary>
-        public List<PlayerRecord> GetRegisteredPlayers()
+        public IReadOnlyList<PlayerRecord> GetRegisteredPlayers() => _registry;
+
+        private volatile IReadOnlyList<PlayerRecord> _registry = new PlayerRecord[0];
+
+        // DbWriter thread only: after every write that adds, renames or re-ids a player.
+        private void PublishRegistry()
         {
-            lock (Database.Instance.SyncRoot)
-            {
-                if (!Database.Instance.IsOpen)
-                    return new List<PlayerRecord>();
-                return new List<PlayerRecord>(Database.Instance.Players.FindAll());
-            }
+            _registry = new List<PlayerRecord>(Database.Instance.Players.FindAll()).AsReadOnly();
         }
 
         public PlayerRecord GetPlayerLocationRecord(string gameId)
@@ -371,6 +372,7 @@ namespace Takaro.Services
                     LogService.Instance.Info(
                         $"Player registry: added {added} player(s) the game remembers from players.xml"
                     );
+                PublishRegistry();
             });
         }
 
@@ -395,7 +397,11 @@ namespace Takaro.Services
                 record.Z = position.z;
             }
 
-            DbWriter.Instance.Enqueue(() => Database.Instance.Players.Upsert(record));
+            DbWriter.Instance.Enqueue(() =>
+            {
+                Database.Instance.Players.Upsert(record);
+                PublishRegistry();
+            });
         }
 
         public void MarkOffline(ClientInfo cInfo)

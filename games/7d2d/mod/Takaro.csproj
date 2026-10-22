@@ -95,6 +95,7 @@
     <Compile Include="src\Commands\**\*.cs" />
     <Compile Include="src\Interfaces\IService.cs" />
     <Compile Include="src\Persistence\Database.cs" />
+    <Compile Include="src\Persistence\DatabaseFiles.cs" />
     <Compile Include="src\Persistence\Records.cs" />
     <Compile Include="src\Persistence\StorageLifecycle.cs" />
     <Compile Include="src\Persistence\WriteThroughFileStream.cs" />

@@ -58,6 +58,7 @@ docker compose --project-directory "${PROJECT_ROOT}" run --rm --no-deps \
       /app/mod/src/Persistence/Records.cs \
       /app/mod/src/Persistence/StorageLifecycle.cs \
       /app/mod/src/Persistence/WriteThroughFileStream.cs \
+      /app/mod/src/Persistence/DatabaseFiles.cs \
       /app/tests/StorageHarness.cs
     cp /app/_data/7dtd-binaries/LiteDB.dll /app/_data/7dtd-binaries/System.Buffers.dll "$test_dir/"
     mono "$test_dir/storage-harness.exe"

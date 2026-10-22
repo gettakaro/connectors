@@ -93,7 +93,7 @@ namespace Takaro.Services
         /// <summary>
         /// Finds a registered player by any id form. Platform ids match the stored EOS game
         /// id, Steam id, Xbox id or native platform id; names match case-insensitively and
-        /// must be unique.
+        /// must be unique; an entity id held by several records goes to the last seen.
         /// </summary>
         public static Outcome ResolveRegistered(
             string id,
@@ -108,16 +108,18 @@ namespace Takaro.Services
             switch (Classify(id))
             {
                 case IdForm.EntityId:
+                    // Entity ids belong to a save, but the game can hand a freed id to a new
+                    // player; the player seen last is the one holding it.
                     int entityId = int.Parse(id);
                     foreach (PlayerRecord record in registry)
                     {
-                        if (record.EntityId == entityId)
-                        {
+                        if (
+                            record.EntityId == entityId
+                            && (match == null || record.LastSeenUtc > match.LastSeenUtc)
+                        )
                             match = record;
-                            return Outcome.Found;
-                        }
                     }
-                    return Outcome.NotFound;
+                    return match != null ? Outcome.Found : Outcome.NotFound;
 
                 case IdForm.PlatformId:
                     foreach (PlayerRecord record in registry)

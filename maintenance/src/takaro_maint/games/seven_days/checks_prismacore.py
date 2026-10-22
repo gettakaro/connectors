@@ -29,7 +29,8 @@ UNKNOWN_NAME = "TakaroVerifyNobody"
 PLAYERS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <!-- Written by takaro-maint verify: one offline player for the prismacore checks. -->
 <persistentplayerdata version="1">
-  <player platform="EOS" userid="{eos}" nativeplatform="Steam" nativeuserid="{steam}" playername="{name}" playgroup="Standalone" lastlogin="{lastlogin}" position="0,60,0" />
+  <player platform="EOS" userid="{eos}" nativeplatform="Steam" nativeuserid="{steam}"
+          playername="{name}" playgroup="Standalone" lastlogin="{lastlogin}" position="0,60,0" />
 </persistentplayerdata>
 """
 
