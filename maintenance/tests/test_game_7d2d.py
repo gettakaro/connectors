@@ -698,6 +698,13 @@ def test_verify_hooks_render_config_and_use_the_7d2d_ready_line(tmp_path: Path) 
     assert hooks.RECONNECT_BUDGET >= 120.0
 
 
+def test_the_server_gets_more_memory_than_the_runner_default(tmp_path: Path) -> None:
+    """An idle server already holds 2.3 GB; the runner's 3 GB would leave it no headroom."""
+    adapter = adapter_for(GAME)
+
+    assert adapter.container_options({}, tmp_path) == ["--memory", "6g"]
+
+
 def test_the_runtime_identity_comes_from_the_server_banner() -> None:
     adapter = adapter_for(GAME)
     mono = {"loader": "mono", "loaderVersion": None}
