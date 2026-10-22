@@ -4,14 +4,14 @@
   "assetMode": "all",
   "requirements": [
     "Takaro registration token",
-    "Control of the VEIN Linux dedicated server startup command"
+    "File access to the VEIN Linux dedicated server's Vein/Binaries/Linux folder"
   ],
   "assets": [
     {
       "pattern": "takaro-vein-plugin.tar.gz",
       "label": "Plugin",
       "requires": "VEIN Linux dedicated server",
-      "hint": "Load with LD_PRELOAD on the game binary's launch line only; the plugin creates takaro.cfg next to the .so; the archive includes licenses and upgrade instructions.",
+      "hint": "Copy libtakaro-vein.so and libsteam.so from the TakaroVein folder into Vein/Binaries/Linux, next to VeinServer-Linux-Test; no startup-line change is needed. The connector creates takaro.cfg there on the first start. The archive also holds licenses and the upgrade guide.",
       "required": true
     }
   ]
