@@ -13,6 +13,7 @@ struct PlayerRecord {
     int experienceRequired = -1;
     std::string peerId;   // e.g. "0(1)"
     std::string machine;  // machine index as printed in "Machine 'M'"
+    std::string authMachine;  // machine index from "Add remote machine index M" right after this account's Steam auth
     std::string handle;   // player handle as printed, e.g. "0(0)"
     std::string group;    // user group name matched from permissions, or "unknown"
     std::vector<std::string> permissions;
@@ -86,6 +87,7 @@ private:
     // player tracking
     std::vector<PlayerRecord> players_;  // pending (not online) + online
     std::string lastLoginMachine_, lastLoginHandle_;
+    std::string lastAuthSteam_;  // account of the last "Client '<id>' authenticated by steam"
     bool machineIsPeerIndexPlusOne_ = false;  // 1.0: Machine 'M' is peer N(..) with M = N + 1
     bool collectingPerms_ = false;
     bool waitCharacterNames_ = false;

@@ -216,6 +216,29 @@ void PluginState::OnLogLine(int level, const std::string& line) {
         return;
     }
 
+    // [online] Client '76561198046178228' authenticated by steam
+    if (StartsWith(line, "[online] Client '")) {
+        size_t a = strlen("[online] Client '");
+        size_t b = line.find("' authenticated by steam", a);
+        if (b != std::string::npos) lastAuthSteam_ = line.substr(a, b - a);
+        return;
+    }
+
+    // [session] Add remote machine index 2 (id: 2778328608).   -- follows the auth of the account that gets machine 2
+    if (StartsWith(line, "[session] Add remote machine index ")) {
+        size_t a = strlen("[session] Add remote machine index ");
+        size_t b = line.find(' ', a);
+        if (b != std::string::npos && !lastAuthSteam_.empty()) {
+            for (auto it = players_.rbegin(); it != players_.rend(); ++it)
+                if (it->steamId == lastAuthSteam_ && !it->online && !it->removed) {
+                    it->authMachine = line.substr(a, b - a);
+                    break;
+                }
+        }
+        lastAuthSteam_.clear();
+        return;
+    }
+
     // [server] Machine '1': Player '0(0)' logged in
     if (StartsWith(line, "[server] Machine '")) {
         size_t a = strlen("[server] Machine '");
@@ -238,7 +261,13 @@ void PluginState::OnLogLine(int level, const std::string& line) {
         line.compare(line.size() - strlen(kLoginSuffix), strlen(kLoginSuffix), kLoginSuffix) == 0) {
         std::string name = line.substr(17, line.size() - strlen(kLoginSuffix) - 17);
         int idx = -1;
-        for (size_t i = 0; i < players_.size(); i++)  // exact machine match first
+        for (size_t i = 0; i < players_.size(); i++)  // the account that was given this machine
+            if (!players_[i].online && !players_[i].removed && !lastLoginMachine_.empty() &&
+                players_[i].authMachine == lastLoginMachine_) {
+                idx = (int)i;
+                break;
+            }
+        for (size_t i = 0; idx < 0 && i < players_.size(); i++)  // machine number from the peer id
             if (!players_[i].online && !players_[i].removed && !lastLoginMachine_.empty() &&
                 (machineIsPeerIndexPlusOne_ ? PeerIndexPlusOne(players_[i].peerId) : ParenPart(players_[i].peerId)) ==
                     lastLoginMachine_) {
