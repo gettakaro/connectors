@@ -19,6 +19,7 @@ games/conan-exiles/
     scripts/build-release.sh    # packages the native zip per target
     scripts/templates/          # the README.txt of the native zips
     INSTALL.md                  # per-platform install, upgrade, rollback (ships in the zips)
+    MAP.md                      # where the map background image comes from (linked from README.md)
     version.txt
     CHANGELOG.md
 
