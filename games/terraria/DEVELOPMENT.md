@@ -312,7 +312,12 @@ empty value to disable filtering, or a comma-separated list to replace the defau
 fires. Terraria records no damage source on NPC death, so this is a proxy rather than exact
 attribution: a projectile fired earlier can land after the player swaps weapons, and minion,
 sentry, or damage-over-time kills may credit an item that dealt none of the damage. It reports
-`unknown` when no killer or held item resolves.
+`unknown` when no held item resolves.
+
+The killer is the one player in the NPC's `playerInteraction` (everyone who damaged it), else its
+`lastInteraction`. An NPC no player damaged (killed by a town NPC, a trap, lava) sends no
+`entity-killed` at all: crediting its aggro target or the only player online handed players kills
+they never made.
 
 ## Items and inventory
 
@@ -374,6 +379,16 @@ produces a fresh UUID.
 Because a banned player is offline — so their UUID can no longer be read from a live `TSPlayer` —
 each ban is tagged `[takaro:<name>]` in its reason, and `/takarounban` searches the ban list by
 that tag. Without that tag an unban can only ever succeed for a player who is not actually banned.
+
+A timed ban reaches the plugin as `/takaroban <player> until=<unix seconds> <reason>` and is stored
+with that end date; TShock lets the player back in once it passes. Takaro does not lift a ban when
+it runs out, so the end date has to be in TShock. A date in or after the year 3000 (Takaro's
+"permanent") and a missing date give a permanent ban.
+
+`listBans` answers one `{ player, reason, expiresAt }` per player: the name comes from the
+`[takaro:<name>]` tag or from a `name:`/`acc:` ban, the tag is stripped from the reason, and
+expired rows and rows that name no player (an untagged `uuid:` or `ip:` ban) are left out. That is
+how a ban made in the game reaches Takaro's ban list on its ban sync.
 
 Without the plugin loaded, both actions fall back to the old REST name ban, so an operator running
 the bridge alone keeps prior behaviour rather than losing bans outright.

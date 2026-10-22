@@ -1,30 +1,32 @@
 # Takaro Terraria Connector
 
-Two server-side pieces (version **0.2.0**) that connect a Terraria dedicated server running
-**TShock** to Takaro: a TShock plugin and a bridge service. Players do not install anything.
+Connects a Terraria dedicated server running **TShock 6.2.1** (Terraria **1.4.5.8**) to Takaro.
+It has two server-side parts: a TShock plugin and a bridge service that runs next to the server.
+Players do not install anything.
 
-The plugin alone cannot talk to Takaro, and the bridge alone cannot report deaths, NPC kills,
-player coordinates, inventories, or coordinate teleports. Install both.
+Install both parts. The bridge alone cannot report deaths, NPC kills, player positions or
+inventories, give items, teleport players or make bans that hold; the plugin alone cannot reach
+Takaro.
 
 ## Install
-
-Download the latest release: https://takaro.io/connectors/terraria
 
 ### 1. Before you start
 
 You need:
 
-- A **Terraria dedicated server running TShock** (Linux or Windows) that you can stop, start and
-  copy files to, plus its **`ServerPlugins/` folder** and its **`tshock/` folder**.
-- **Node.js 22** on the same host, to run the bridge next to the server.
-- A **Takaro account** with a game server created of type **Generic**, and its **registration
-  token** (Takaro shows it when you create the game server).
+- A **Terraria 1.4.5.8 dedicated server running TShock 6.2.1** (Linux or Windows) that you can
+  stop, start and copy files to. TShock must have been started once, so that its `tshock/` folder
+  with `tshock/config.json` exists.
+- **Node.js 22** on the same machine, to run the bridge. The bridge talks to TShock on
+  `127.0.0.1` and reads TShock's log files, so it must run on the server machine itself.
+- A tool to unpack `.zip` files.
+- A **Takaro** account and your Takaro **registration token**. Nothing needs to be port-forwarded:
+  the bridge connects out to `wss://connect.takaro.io/`.
 
-The plugin is compiled against **TShock 6.2.1 for Terraria 1.4.5.8**, using the assemblies
-inside `ghcr.io/pryaxis/tshock@sha256:70e59a8e6b4c79b5fad469d320962c1fc98625ed3a955510a2f2641dbff2f7e7`
-— the image by digest, never a floating `stable` tag. TShock must match the Terraria server
-protocol version, and Terraria clients must match the server — a client newer than the TShock
-build is rejected at join time with `You are not using the same version as this server.`
+Players need a Terraria client of the same version as the server (1.4.5.8). A newer client is
+refused at join time with `You are not using the same version as this server.`
+
+The exact server build this connector is maintained for:
 
 <!-- takaro-maint:targets:begin -->
 | Target | Game version | Platform | Loader / API | Java | Support | Verified level |
@@ -34,82 +36,86 @@ build is rejected at join time with `You are not using the same version as this 
 
 ### 2. Download
 
-From the latest `terraria-vX.Y.Z` release on the releases page:
+Download the latest release from <https://takaro.io/connectors/terraria>. You need both files;
+their names carry the TShock version they are built for and the connector version:
 
-> https://github.com/gettakaro/connectors/releases
+- **`takaro-terraria-plugin-tshock-v6.2.1-<version>.zip`**: the TShock plugin
+- **`takaro-terraria-bridge-tshock-v6.2.1-<version>.zip`**: the bridge
 
-Download both files. Their names carry the catalog target they were built for:
-
-- **`takaro-terraria-plugin-tshock-v6.2.1-<version>.zip`** — the TShock plugin
-- **`takaro-terraria-bridge-tshock-v6.2.1-<version>.zip`** — the bridge service
-
-Direct link pattern:
-`https://github.com/gettakaro/connectors/releases/download/terraria-v<version>/takaro-terraria-plugin-tshock-v6.2.1-<version>.zip`
-
-The short names **`takaro-terraria-plugin.zip`** and **`takaro-terraria-bridge.zip`** are on every
-release too, byte-identical to the target-named files. They are kept for two releases so existing
-links do not break; new instructions should use the target-named ones.
-
-Do not use the `terraria-dev` pre-release or a `pr-<number>-terraria` build; those are untested
-rolling builds.
+Do not use a `dev` or `pr-` build; those are untested.
 
 ### 3. Copy it into place
 
 Stop the server.
 
-**Plugin.** The zip contains one folder, `TakaroTerrariaEvents/`, holding:
-
-```
-TakaroTerrariaEvents/
-    TakaroTerrariaEvents.dll
-    README.txt
-```
-
-Copy **`TakaroTerrariaEvents.dll`** into the TShock server plugin folder — the DLL itself, not the
-folder around it:
+**Plugin.** The plugin zip holds one folder, `TakaroTerrariaEvents/`. Copy the
+**`TakaroTerrariaEvents.dll`** inside it (the file, not the folder) into TShock's plugin folder:
 
 ```
 <server>/ServerPlugins/TakaroTerrariaEvents.dll
 ```
 
-**Bridge.** The zip contains one folder, `TakaroTerrariaBridge/`, holding `dist/`,
-`node_modules/`, `package.json`, `package-lock.json` and two readme files. Extract it into the
-server folder, as `<server>/TakaroTerrariaBridge/`: the relative `logFiles` and `mapDir` in its
-config start at the folder beside it. Anywhere else, set both to absolute paths. Its one runtime
-dependency is already in the archive, so
-there is nothing to install — run `npm ci --omit=dev` only if you delete `node_modules/`.
+**Bridge.** The bridge zip holds one folder, `TakaroTerrariaBridge/`. Unpack it into the server
+folder, so that it sits next to the `tshock/` folder:
+
+```
+<server>/
+    ServerPlugins/TakaroTerrariaEvents.dll
+    tshock/
+    TakaroTerrariaBridge/
+        dist/
+        node_modules/
+        package.json
+        ...
+```
+
+Everything the bridge needs is in the zip; there is nothing to install with `npm`. If you put
+the folder anywhere else, set `logFiles` and `mapDir` (step 4) to absolute paths.
 
 ### 4. Configure
 
-**TShock REST.** In `<server>/tshock/config.json` set:
+**A TShock REST token for the bridge.** The bridge drives TShock through its REST API. In
+`<server>/tshock/config.json`, inside `"Settings"`, set `RestApiEnabled` to `true`, keep
+`RestApiPort` at `7878`, and add a token to `ApplicationRestTokens`. Use a long random string of
+your own as the token:
 
 ```json
 "RestApiEnabled": true,
-"RestApiPort": 7878
+"RestApiPort": 7878,
+"ApplicationRestTokens": {
+  "<a long random token>": {
+    "Username": "takaro-rest",
+    "UserGroupName": "superadmin"
+  }
+},
 ```
 
-Create an application REST token for a TShock user that holds the **`takaro.admin`** permission.
-A user in the `superadmin` group already has it through TShock's wildcard. Without
-`takaro.admin`, teleport fails, player location reports `0,0,0` and inventory comes back empty —
-all silently, without an error. Grant **`tshock.broadcast`** too if you are not using
-`superadmin`: with it, a message from Takaro is also written to the server console, which is
-where you would look for it. Without it the message still reaches the players.
+- The group must have the **`takaro.admin`** permission (`superadmin` has every permission).
+  Without it teleport fails, player positions read `0,0,0` and inventories come back empty, all
+  without an error.
+- Keep the user name **`takaro-rest`**. TShock writes a log line for every REST call
+  (`takaro-rest executed: ...`), and the bridge skips its own lines by that name. With another
+  name, add `<that name> executed:` to `logExcludePatterns` below, or those lines flood Takaro.
 
-**Bridge.** Its config is **`TakaroConfig.txt` next to the `TakaroTerrariaBridge/` folder** (not
-inside it), or the file `BRIDGE_CONFIG` names. Start the server, then start the bridge from inside
-`TakaroTerrariaBridge/`:
+Start the server (TShock reads `config.json` at start).
+
+**The bridge.** Start it from inside `TakaroTerrariaBridge/` and leave it running (in a terminal,
+or as a service):
 
 ```bash
+cd <server>/TakaroTerrariaBridge
 npm start
 ```
 
-On its first start the bridge creates `TakaroConfig.txt` with a new `identityToken` and a server
-name of its own, and shows a banner that names the file. Open it, paste the registration token from
-Takaro into `registrationToken=` and the TShock REST token into `tshockToken=`, and save. Saving is
-enough: the bridge reads the file every few seconds and connects, no restart needed.
+On its first start the bridge creates **`<server>/TakaroConfig.txt`** (next to the
+`TakaroTerrariaBridge/` folder, not inside it) with a new `identityToken`, and shows a banner that
+names the file. Open it, paste your Takaro registration token after `registrationToken=` and the
+REST token from `config.json` after `tshockToken=`, and save. Saving is enough: the bridge reads
+the file every few seconds and connects, no restart needed.
 
-You can also create the file yourself before the first start. This is its full content; leave
-`identityToken` empty and the bridge fills it in:
+This is the file with its defaults. When the bridge creates it, `identityToken` and `serverName`
+are already filled in. You can also write it yourself before the first start; leave
+`identityToken` empty and the bridge fills it in.
 
 ```
 # Takaro Terraria bridge settings. The bridge reads this file every few seconds:
@@ -153,131 +159,100 @@ mapDir=tshock/takaro
 protocolVersion=1
 ```
 
+- `serverName` is the name the server gets in Takaro and must be unique among your Takaro game
+  servers.
 - `TAKARO_REGISTRATION_TOKEN`, `TSHOCK_TOKEN`, `TSHOCK_USERNAME` and `TSHOCK_PASSWORD` in the
-  environment override the file and are never written to it.
-- `logFiles` — point at the log **directory**, not a single file. TShock opens a new log on every
-  restart; a directory lets the bridge follow that rotation. Chat, join/leave and death/kill events
-  all come through here.
-- `enableShutdown` — set to `true` only if you want Takaro to be able to stop the server.
-- `TAKARO_MAP_INTERVAL_MINUTES` — set it in the TShock server's environment, not in this file:
-  how often the plugin re-renders the world map (default 30, `0` renders only at world load).
-  An admin can render it at any time with `/takaromap`.
+  bridge's environment override the file and are never written to it.
+- `logFiles` is the TShock log **folder**, not one file: TShock starts a new log file on every
+  start, and the bridge follows it. Chat, joins and leaves, deaths and kills all come from there.
+- `enableShutdown=true` lets Takaro stop the server; it is off by default.
+- `TAKARO_MAP_INTERVAL_MINUTES` goes in the **TShock server's** environment, not in this file: how
+  often the plugin redraws the world map (default 30, `0` draws it only when the world loads). An
+  admin can redraw it at any time with `/takaromap`.
 
-Keep real registration tokens and REST tokens out of version control.
+Keep the registration token and the REST token private.
 
 ### 5. Check that it worked
 
-In the TShock server console / log:
+In the TShock log or console:
 
 ```
 Takaro Terraria Events plugin loaded (<version>)
 ```
 
-In the bridge's own output:
+In the bridge's output:
 
 ```
 Terraria bridge health: http://127.0.0.1:3020/health
 Identified successfully with Takaro (gameServerId=...)
 ```
 
-Then ask the bridge how it is doing:
+The game server now shows in Takaro under the `serverName` from the config file, as online. You
+can also ask the bridge:
 
 ```bash
 curl http://127.0.0.1:3020/health
 ```
 
-`takaroIdentified` and `tshockReachable` must both be `true`, and `gameServerId` must not be
-`null`. `GET /coverage` on the same port lists what each action and event is expected to do.
+`takaroIdentified` and `tshockReachable` must both be `true`.
 
-And in Takaro, the game server shows as **online**.
-
-If no token is set yet, the bridge shows a banner instead:
-
-```
-*************************************************************************
-  RegistrationToken not set, the server is not connected to Takaro.
-  Paste the registration token from Takaro into registrationToken= in /path/to/TakaroConfig.txt
-  and save it. The bridge connects within a few seconds, no restart needed.
-*************************************************************************
-```
-
-If the token is wrong, the banner says `Takaro rejected identify: Invalid registrationToken
-provided`. If another game server in Takaro already has this name, it says so and asks for a
-different `serverName`. Fix the line in `TakaroConfig.txt` and save; the bridge reconnects within a
-few seconds.
+If a token is missing, the bridge shows a banner instead that names the file and the line to fill
+in (`RegistrationToken not set, the server is not connected to Takaro.` or
+`tshockToken not set, the bridge cannot reach the TShock REST API.`). A wrong registration token
+shows `Takaro rejected identify: Invalid registrationToken provided`; a `serverName` that another
+of your game servers already uses is reported too. Fix the line in `TakaroConfig.txt` and save;
+the bridge reconnects within a few seconds.
 
 ### 6. Upgrading
 
-**Stop the server and the bridge first.** Replace
-`<server>/ServerPlugins/TakaroTerrariaEvents.dll` with the new one, delete the
-`TakaroTerrariaBridge/` folder and extract the new one in its place. Start the server, then the
-bridge. Your `TakaroConfig.txt` beside the folder is never touched, so the server keeps its token
-and its identity in Takaro.
+Stop the bridge and the server. Replace `<server>/ServerPlugins/TakaroTerrariaEvents.dll` with
+the one from the new plugin zip, delete the `TakaroTerrariaBridge/` folder and unpack the new one
+in its place. Start the server, then the bridge. `TakaroConfig.txt` next to the folder is not
+touched, so the server keeps its token, settings and identity in Takaro. Always upgrade both
+parts together.
 
 ## What works, what doesn't
 
-On 2026-09-21 the connector was run against a real TShock 6.1.0 server (the pinned image, the
-built plugin and bridge): once against a stand-in Takaro, which drove every action below that is
-marked proven, and once against Takaro itself, which identified the server and answered. The rows
-still marked "not verified in a live test" need a connected player, which that run did not have.
-The current target, `tshock-v6.2.1`, was proven the same way by `takaro-maint verify`
-(`build`, `startup`, `handshake`, `items`, `entities`, `action`, `references`, `reconnect` and
-`shutdown` all pass, reaching level `startup` against the required `contract`); the rig-hosted,
-client-adjacent proof below is still the one recorded on 6.1.0 and has not been rerun.
-✅ = proven, ⚠️ = works with a caveat or unproven, ❌ = does not work.
+Tested on 2026-10-22 against **TShock 6.2.1 on Terraria 1.4.5.8** (the `tshock-v6.2.1` target),
+with the 0.6.0 release and then the build that becomes the next release, on Takaro's staging
+service, with a Terraria 1.4.5.8 network client playing on the server. Fighting was not tested.
+More detail on every caveat: [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
+✅ = works, ⚠️ = works with a caveat or not tested, ❌ = not available.
 
 | What | | Notes |
 |---|---|---|
-| Connection & heartbeat | ✅ | Proven 2026-09-21: the bridge identified to Takaro itself and stayed answering its requests, with TShock reachable. |
-| Server restart / reconnect | ✅ | Proven 2026-09-21: the connection was cut and the bridge identified again ~3 s later, then answered normally. |
-| Player list | ⚠️ | Read from the TShock REST API. Proven 2026-09-21 on an empty server (an empty list, live); never checked with a player on it. |
-| Single player lookup | ⚠️ | Read from the TShock REST API. Not verified in a live test. |
-| Player location | ⚠️ | Uses the plugin's `/takaropos` command; checked against a connected player on a local server, but never end to end through Takaro. |
-| Player inventory | ⚠️ | The plugin's `/takaroinv` reports inventory, armour, dyes, trash, piggy bank/safe/forge/void vault and stored loadouts. The capability record still lists inventory as returning an empty list, so which behaviour you get is unconfirmed — not verified in a live test. |
-| Item catalogue | ⚠️ | 6147 items extracted from the server assemblies, so a name like `Wood` resolves to the code `/give` wants. Proven 2026-09-21: returned in full to a live request, with `Wood` resolving to `9`. The names are split out of the internal ids rather than read from Terraria's own language file, so some of them read wrong — see known issues. |
-| Entity catalogue | ❌ | Terraria NPCs spawn from world state; there is no registry to list, so Takaro gets an empty list. |
-| Locations / points of interest | ❌ | Terraria has no named-location concept for Takaro to list; Takaro gets an empty list. |
-| Chat messages from players | ⚠️ | Parsed out of the TShock log, which is best-effort text matching. Not verified in a live test. |
-| Broadcast a message | ✅ | Runs TShock's `/broadcast`, so it reaches the players and the server console. Proven 2026-09-21 against a live server. |
-| Whisper a player | ✅ | Runs TShock's `/w`, so only that player sees it (shown as `<From takaro>`). Proven 2026-10-05 against a live server: a module's private reply reached only the player who ran the command. |
-| Give an item | ⚠️ | Goes through the plugin so a full inventory is refused rather than dropping items on the floor. Not verified in a live test. |
-| Teleport a player | ⚠️ | Uses the plugin's `/takarotp` with world X/Y coordinates. Not verified in a live test. |
-| Run a console command | ✅ | Only commands you allowlist run — by default `help` and anything starting with `say` or `time`. Proven 2026-09-21 against a live server. |
-| Kick | ⚠️ | Runs the TShock kick command. Not verified in a live test. |
-| Ban (timed and permanent) | ⚠️ | The plugin bans the player's UUID **and** their IP and tags the reason `[takaro:<name>]`, because a TShock name ban does not hold against an unauthenticated player. Without the plugin the bridge falls back to the old name ban. Not verified in a live test. |
-| Unban | ⚠️ | The plugin finds the ban by its `[takaro:<name>]` tag and clears every identifier. Not verified in a live test. |
-| Ban list | ⚠️ | Read from the TShock REST API. Not verified in a live test. |
-| Shut the server down | ✅ | Off by default; needs `enableShutdown=true`. Proven 2026-09-21: the server saved and exited cleanly on request. |
-| Player joined event | ⚠️ | Derived by polling the player list, so it arrives up to `pollIntervalMs` (default 10 s) late. Not verified in a live test. |
-| Player left event | ⚠️ | Same polling as above, same delay. Not verified in a live test. |
-| Player chat event | ⚠️ | See "Chat messages from players". |
-| Player death event | ✅ | Reaches Takaro, including who killed the player. Needs the plugin. |
-| Entity kill event | ✅ | Reaches Takaro with the NPC and a weapon. Needs the plugin. The weapon is the killer's held item at that moment, not the thing that actually dealt the damage — see known issues. |
-| Log events | ⚠️ | The bridge ships TShock log lines, but it must filter its own REST traffic out (`logExcludePatterns`) or it floods Takaro's rate limiter. Not verified in a live test. |
-| Map | ⚠️ | Needs Takaro protocol v1 (not yet on takaro.io; proven only on Takaro staging). The plugin renders the world into `mapDir` with the game's map colours and the bridge serves it as Takaro's map image. On protocol 0 the map stays disabled. |
-| Discord chat bridge | ⚠️ | Nothing connector-side blocks it, but it was never tried in a live test. |
-| Shop & economy | ⚠️ | Item delivery goes through `giveItem`, which is implemented, but buying and currency were never tried in a live test. |
-
-### Known issues
-
-- **The 2026-09-21 run had no player on the server**, so joining, chat, give, teleport, kick
-  and ban are still unproven; the death and NPC-kill events were proven earlier, with a player.
-  Treat every ⚠️ row as untested rather than working.
-- **Kill weapons can be wrong.** Terraria records no damage source on NPC death, so the weapon is
-  whatever the killer was holding when the kill fired — minion, sentry, damage-over-time and
-  late-landing projectile kills can credit an item that dealt none of the damage, and it reports
-  `unknown` when nothing resolves.
-- **Join and leave events are polled, not pushed**, so they lag by up to `pollIntervalMs`.
-- **The item names are derived, not Terraria's own.** The catalogue splits each item's internal id
-  into words instead of reading the game's language file, so about 120 of the 6147 names glue a
-  short word onto the one before it (`A Horrible Nightfor Alchemy`, `Bandof Regeneration`) and
-  every apostrophe is gone (`Aarons Helmet`). Giving and looking up still work — the match ignores
-  spaces and punctuation, so `A Horrible Night for Alchemy` and `Aaron's Helmet` both find the
-  right item — but the names Takaro displays are wrong until the catalogue is regenerated from the
-  pinned image's language resource.
-- **Takaro only syncs the item list when it feels like it** — on server registration, hourly, or
-  on manual trigger — and it skips the sync if the bridge was not attached at registration time.
-  Attach the bridge before registering the server, or trigger the job by hand afterwards.
+| Connection & heartbeat | ✅ | The bridge connects out to Takaro; the server shows online. |
+| Reconnects after a restart | ✅ | After a server or bridge restart the bridge reconnects on its own and events resume. |
+| Config change without a restart | ✅ | Saving `TakaroConfig.txt` with a token connects within a few seconds. |
+| Player list | ✅ | Character names, as players join and leave. |
+| Single player lookup | ✅ | Takaro looks the player up by name, for example when they run a command. |
+| Player location | ✅ | The player's position in world pixels (16 per tile). |
+| Player inventory | ✅ | The items and amounts the player carries. |
+| Item catalogue | ⚠️ | All 6147 items; giving by name works, but some names read wrong (`Bandof Regeneration`). |
+| Entity catalogue | ❌ | Terraria has no list of creatures to offer; Takaro gets an empty list. |
+| Locations / points of interest | ❌ | Terraria has no named locations; Takaro gets an empty list. |
+| Run a console command | ✅ | Only allowlisted commands run (by default `help`, `say …`, `time …`); others are refused. |
+| Broadcast a message | ✅ | Shown to every player as a server broadcast. |
+| Whisper a player | ✅ | Only that player sees it. |
+| Give an item | ✅ | Straight into the inventory. Refused when it does not fit, instead of dropping items. |
+| Teleport a player | ✅ | To world pixel coordinates; a player put in the air falls to the ground. |
+| Kick a player | ✅ | The player sees the reason. |
+| Ban a player | ✅ | Timed and permanent. A banned player who rejoins sees the reason and the time left. |
+| Unban a player | ✅ | The player can rejoin at once. |
+| Ban list | ✅ | Bans made in the game show up in Takaro's ban list after its ban sync. |
+| Shut the server down | ✅ | Saves the world and stops the server. Off by default: set `enableShutdown=true` to allow it. |
+| Player joined event | ✅ | Within about a second of joining. |
+| Player left event | ✅ | On leaving and on a kick. |
+| Player chat event | ✅ | The player and the exact text. Messages starting with `/` are TShock commands and never reach Takaro. |
+| Player death event | ✅ | The player and Terraria's death message. |
+| Entity kill event | ⚠️ | The NPC's name and the killer's held item as the weapon (a guess). Kills by town NPCs, traps or lava are not sent. Player kills not re-tested. |
+| Log events | ⚠️ | Sent, but Takaro does not keep them as events. |
+| World map | ⚠️ | The whole world, drawn by the plugin. Works on Takaro's staging service; not yet on takaro.io. |
+| Modules: chat commands | ✅ | `@` commands work; replies are whispered to the player. |
+| Modules: teleports | ✅ | `@settp` and `@tp` move the player. |
+| Discord: game chat → Discord | ⚠️ | Takaro posts chat, joins and leaves, and Discord accepts each post; not checked in the Discord app. |
+| Discord: Discord → game chat | ✅ | A Discord message is broadcast in game as `[D] <name>: <text>`. |
+| Shop & economy | ✅ | `@balance` and `@shop` work; a purchase lands straight in the inventory. |
 
 ---
 
