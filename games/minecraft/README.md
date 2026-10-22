@@ -229,6 +229,7 @@ level — treat every row below as unverified on those two platforms.**
 | Player death event | ✅ | Reaches Takaro and can drive modules. |
 | Entity kill event | ✅ | Proven with a real kill (zombie, diamond sword); the entity type and the weapon used are included. |
 | Log events | ❌ | The connector never sends server log lines to Takaro. |
+| Game profile | ✅ | The server shows up in Takaro as Minecraft, with the Minecraft icon, the running game version (for example `26.2`) and the connector name and version. Needs a Takaro with protocol v1; an older Takaro ignores it. |
 | Map | ⚠️ | Off by default. Set `map` to `true` (or `TAKARO_MAP=true`) for a world map with player dots in Takaro. Needs Takaro protocol v1, not yet on takaro.io; on takaro.io leave it off. |
 | Discord chat bridge | ⚠️ | Game → Discord works: chat, deaths and cron messages were all delivered to the Discord channel. Discord → game was **not** confirmed with a post from a real Discord account. Use the `chatBridgeNoEcho` module; the plain chat bridge echoes Takaro's own messages back into the game. |
 | Shop & economy | ✅ | Buying in chat (`@shop`), ordering through the Takaro API, currency grants and balance checks all work, and purchases arrive in the inventory. Buying without enough currency is correctly refused. |
