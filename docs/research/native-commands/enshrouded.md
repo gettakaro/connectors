@@ -33,7 +33,7 @@ address of the player-chat call site.
 | --- | --- |
 | Enshrouded dedicated server | Steam app 2278520, build 26083076, game build `1273043` (`release_1.0`, 2026-10-20), `enshrouded_server.exe` sha256 `d7baa768eb00aa895d9f5a1cd8747ccf66858c7b542f50983092b2e3261588ee`, under GE-Proton |
 | Enshrouded client | Steam, Windows, build version `1273043` (shown in the main menu) |
-| Connector | `takaro-enshrouded` plugin 0.8.1 (`main` at 3859fd8) plus the 1273043 game data from #582, built with `TAKARO_COMMAND_PROBE=1`. First probe DLL md5 `e227edb1…`, final probe DLL md5 `7ee1cbe5…` (adds the whitespace fix below). Protocol 1, on Takaro staging as a GENERIC server |
+| Connector | `takaro-enshrouded` plugin 0.8.1 (`main` at 3859fd8) plus the 1273043 game data from #582, built with `TAKARO_COMMAND_PROBE=1`. Probe DLLs (md5): `e227edb1…` (first run), `7ee1cbe5…` (whitespace fix, below), `6b0fc03f…` and `0dc00514…` (review fixes, see [Verification](#verification)). Protocol 1, on Takaro staging as a GENERIC server |
 | Disassembler | capstone 5.0.7 + pefile over the exe above; function extents from `.pdata` with chained unwind entries followed |
 
 **Static** means read in the disassembly of that exe. **Live** means observed with a real
@@ -47,16 +47,18 @@ events, hook executions) and the client screen as the game-side check.
 | 1 | Preserve disassembly of `addMessage`, the player-chat call site and the normal return path | go | passed (static, 1273043) |
 | 2 | Argument widths, error-result size and success value, returned pointer, caller-observed side effects | go | passed (static); the suppressed return survived 22 live suppressions, a reconnect, a graceful shutdown and a restart |
 | 3 | Two real clients: ordinary, `/`, `!`, `@`, leading space, quoted, Unicode, max length; server text and sender echo | partial | one client: passed for ordinary, `/`, `!`, `@`, leading space, quoted and maximum length. Unicode: blocked (the gamer PC's input tool cannot type non-ASCII). Peer view: blocked (no second account) |
-| 4 | Suppress one magic probe trigger before broadcast; sender and peer see nothing; chat, reconnect and shutdown stay healthy | go (sender) | sender and Takaro: passed (live). Peer: blocked (no second client), statically certain (see finding 2) |
-| 5 | Bind the sender to SteamID64 through handle, slot, login state, entity and machine; reject stale, out-of-range, ambiguous and non-player senders | go | accept path: passed (live, two handle generations). Reject branches: passed (unit for the decision), code-reviewed for the memory checks; not triggerable with one client |
+| 4 | Suppress one magic probe trigger before broadcast; sender and peer see nothing; chat, reconnect and shutdown stay healthy | go (sender) | sender and Takaro: passed (live). Peer: blocked (no second client); statically no broadcast record exists (finding 2), not observed |
+| 5 | Bind the sender to SteamID64 through handle, slot, login state, entity and machine; reject stale, out-of-range, ambiguous and non-player senders | go | accept path: passed (live, two handle generations, account cross-check). Reject branches: the decision's handling is unit-tested; the memory checks that produce them are code-reviewed only (not reachable with one client, not host-testable) |
 | 6 | Unavailable before send, failure during send, restart, stale catalog, duplicate trigger/alias, disabled, reserved `link`, permission denial, unknown command | go | passed (live, each case) |
 | 7 | Recognised command stays private, fails privately at once when unavailable, never replays after reconnect, no duplicate invocation | go | passed (live, sender side); private relative to a peer: blocked (no second client) |
 | 8 | Production recommendation (catalog revision, prefix and aliases, reserved names, identity, invocation id, deadline, receipt, private failure, capability disable) | done | [Recommendation](#recommendation-for-production) |
 | 9 | `/verify` report-only after each probe phase, `/verify` at the end | done | [Verification](#verification) |
 
 **Overall: go** for server-side recognition, suppression and private reply on Enshrouded 1.0,
-with no client mod. Two cells stay open until someone joins with a second Steam account: what a
-peer sees, and Unicode input.
+with no client mod, as far as the sender, Takaro and Discord are concerned. What a second player
+sees is unobserved: statically the server builds no broadcast record for a suppressed message and
+marks the private reply as delivered to every other machine, but that needs a second Steam
+account to confirm. Unicode input is also still open.
 
 ## Static findings (game build 1273043)
 
@@ -129,7 +131,12 @@ server builds no broadcast at all.
   `logSink` hook), so the probe binds: handle → exactly one of the 16 slots with that full
   handle → login state `3` → non-zero player entity → session record for the full handle whose
   account equals argument 8 → machine `slot+4 & 0x7f` → exactly one online SteamID64 for that
-  machine. Persona and character names are never used.
+  machine → exactly one online SteamID64 for that machine, whose accountIdHash in the connector's
+  account cache (`accounts.json`) equals the game's session account; a second online SteamID with
+  that account is refused as ambiguous, a SteamID with no cached hash as unverified. Persona and
+  character names are never used. Residual: the cache entry is itself first learned through the
+  machine mapping, so the very first command of a never-seen account rests on the login log
+  correlation alone.
 - The current production `chat-message` event resolves the player **by persona name**
   (`PlayerJsonByName`). The chain above is strictly better, and it is a follow-up below.
 
@@ -208,9 +215,15 @@ What this shows:
 - **Receipt:** a local JSON line marked `"stub":true` with status `submitted`, `failed` or
   `rejected`. Nothing is sent to Takaro, and a stub receipt is not Takaro execution.
 - **Reply:** a type-4 notice queued on the server thread for the sender's machine only.
-- **Safety gates:** compiled only with `TAKARO_COMMAND_PROBE`; armed only on game build
-  `1273043` with the 1.0 chat and session layout; inert without the catalog file. Server-thread
-  work is memory reads and queueing; file I/O runs on the probe thread.
+- **Safety gates:** compiled only with `TAKARO_COMMAND_PROBE=1`; armed only on game build
+  `1273043` with the 1.0 chat and session layout, which needs that build's game data (#582, or a
+  `1273043` section in `takaro/enshrouded-gamedata.json`); inert without the catalog file.
+  Server-thread work is memory reads and queueing: catalog parsing, the account-cache snapshot,
+  `plugin.log` and the probe log all run on the probe thread, and the shared lock is held only to
+  swap pointers and queues. A catalog file that exists but cannot be read or parsed keeps the
+  previous claims and refuses everything; only a missing file turns the probe off.
+  `issuedAtMs` and `maxAgeSeconds` (1 s to 7 days) are required, so a bad value can never
+  disable the stale check.
 
 ## Release build unchanged
 
@@ -281,4 +294,15 @@ Enshrouded:
 - Probe decision core: `games/enshrouded/research/command-probe/tests/run.sh` → `probe_core_test: 38 passed, 0 failed`.
 - Connector host tests: `games/enshrouded/mod/tests/run.sh` (unchanged code paths) → see the PR body.
 - Release build identical to `main` (above). Probe build: `TAKARO_COMMAND_PROBE=1 ./mod/build.sh` compiles clean.
-- `/verify --mode=report-only --scope=branch` after the probe phases and `/verify` at the end: results in the PR body.
+- `/verify --mode=report-only --scope=branch` (light depth: Codex as the independent reviewer) after
+  the probe phases found 8 issues in the probe, all fixed:
+  file I/O (`PluginLog`) on the server thread → queued to the probe thread; SteamID picked by
+  machine only → cross-checked against the account cache; catalog parsed under the lock the
+  server thread takes → parsed outside it; a transient read error made claimed names public →
+  claims kept; missing or malformed freshness values disabled the stale check → now required and
+  strict; `TAKARO_COMMAND_PROBE=0` enabled the probe → only `=1`; the build/game-data dependency
+  and the peer claims are now stated precisely (this document). The fixed build was re-run live:
+  ordinary chat public, the nonce suppressed and receipted, `@off` refused privately, sender
+  bound with the account cross-check, an unreadable catalog refused everything and logged once,
+  and every probe log line came from the probe thread.
+- Final `/verify` after the fixes: results in the PR body.

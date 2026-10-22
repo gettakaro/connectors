@@ -92,11 +92,22 @@ int main() {
 
     // collision preflight
     Catalog x;
-    CHECK(!ParseCatalog(R"({"nonce":"tkp","commands":[{"name":"tkprobe","aliases":["tkp"]}]})", x, err));
+    const char* fresh = R"("issuedAtMs":1000000,"maxAgeSeconds":300)";
+    CHECK(!ParseCatalog(std::string("{\"nonce\":\"tkp\",") + fresh + R"(,"commands":[{"name":"tkprobe","aliases":["tkp"]}]})", x, err));
     CHECK(err.find("collides") != std::string::npos);
-    CHECK(!ParseCatalog(R"({"nonce":"link"})", x, err));
-    CHECK(!ParseCatalog(R"({"commands":[]})", x, err));  // no nonce
-    CHECK(!ParseCatalog(R"({"nonce":"a","prefix":""})", x, err));
+    CHECK(!ParseCatalog(std::string(R"({"nonce":"link",)") + fresh + "}", x, err));
+    CHECK(!ParseCatalog(std::string(R"({"commands":[],)") + fresh + "}", x, err));  // no nonce
+    CHECK(!ParseCatalog(std::string(R"({"nonce":"a","prefix":"",)") + fresh + "}", x, err));
+    CHECK(ParseCatalog(std::string(R"({"nonce":"a",)") + fresh + "}", x, err));
+    // freshness is required and strict: a bad value never turns the stale check off
+    CHECK(!ParseCatalog(R"({"nonce":"a","maxAgeSeconds":300})", x, err));                       // no issuedAtMs
+    CHECK(!ParseCatalog(R"({"nonce":"a","issuedAtMs":1000000})", x, err));                       // no maxAge
+    CHECK(!ParseCatalog(R"({"nonce":"a","issuedAtMs":1000000,"maxAgeSeconds":0})", x, err));
+    CHECK(!ParseCatalog(R"({"nonce":"a","issuedAtMs":1000000,"maxAgeSeconds":-5})", x, err));
+    CHECK(!ParseCatalog(R"({"nonce":"a","issuedAtMs":1000000,"maxAgeSeconds":1.5})", x, err));
+    CHECK(!ParseCatalog(R"({"nonce":"a","issuedAtMs":1000000,"maxAgeSeconds":"300"})", x, err));
+    CHECK(!ParseCatalog(R"({"nonce":"a","issuedAtMs":1000000,"maxAgeSeconds":99999999999999999999})", x, err));
+    CHECK(!ParseCatalog(R"({"nonce":"a","issuedAtMs":-1,"maxAgeSeconds":300})", x, err));
     CHECK(!ParseCatalog("not json", x, err));
 
     // replies

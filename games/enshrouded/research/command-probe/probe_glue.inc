@@ -9,10 +9,19 @@ namespace cprobe {
 
 const char kAbiBuild[] = "1273043";  // addMessage + processIncomingMessages disassembled on this build only
 
-std::mutex g_mu;
-std::shared_ptr<const probe::Catalog> g_cat;  // guarded by g_mu
-std::deque<std::string> g_out;                // JSON lines for the writer thread, guarded by g_mu
-uint64_t g_seq = 0;                           // server thread only
+// Online players as the connector knows them: SteamID64, machine ("Machine 'M'" of the login log line) and the
+// accountIdHash it cached for that SteamID (0 = not cached yet). Rebuilt by the probe thread.
+struct OnlinePlayer {
+    std::string steamId;
+    int machine;
+    uint64_t account;
+};
+
+std::mutex g_mu;  // held only to swap pointers and queues, never while parsing or doing I/O
+std::shared_ptr<const probe::Catalog> g_cat;                     // guarded by g_mu
+std::shared_ptr<const std::vector<OnlinePlayer>> g_online;       // guarded by g_mu
+std::deque<std::string> g_out, g_log;                            // JSON lines / plugin.log lines, guarded by g_mu
+uint64_t g_seq = 0;                                              // server thread only
 std::atomic<bool> g_started{false}, g_armed{false};
 
 std::string TakaroPath(const char* name) { return PluginBaseDir() + "\\takaro\\" + name; }
@@ -26,54 +35,87 @@ uint64_t WallMs() {
     return (u.QuadPart - 116444736000000000ULL) / 10000;
 }
 
-void Emit(const std::string& line) {
+void Emit(const std::string& line, const std::string& log) {
     std::lock_guard<std::mutex> g(g_mu);
     if (g_out.size() < 1000) g_out.push_back(line);
+    if (!log.empty() && g_log.size() < 1000) g_log.push_back(log);
+}
+
+void SetCatalog(std::shared_ptr<const probe::Catalog> c) {
+    std::lock_guard<std::mutex> g(g_mu);
+    g_cat = std::move(c);
+}
+
+std::shared_ptr<const probe::Catalog> GetCatalog() {
+    std::lock_guard<std::mutex> g(g_mu);
+    return g_cat;
+}
+
+// Re-reads the catalog file when it changed. Only a file that is really gone turns the probe off; a file that
+// exists but cannot be read or parsed keeps the previous claims and refuses everything.
+void PollCatalog(std::string& last, bool& present) {
+    std::string path = TakaroPath("command-probe.json");
+    if (GetFileAttributesA(path.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        DWORD e = GetLastError();
+        if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) {
+            if (present) {
+                SetCatalog(nullptr);
+                PluginLog("command-probe: catalog removed, probe off");
+            }
+            present = false;
+            last.clear();
+            return;
+        }
+    }
+    std::string text, err;
+    std::ifstream f(path, std::ios::binary);
+    if (f) {
+        std::stringstream ss;
+        ss << f.rdbuf();
+        text = ss.str();
+    } else {
+        text = std::string(1, '\0') + "unreadable";  // not valid JSON; also stops re-logging every poll
+        err = "cannot read the file";
+    }
+    if (present && text == last) return;
+    present = true;
+    last = text;
+    probe::Catalog c;
+    auto old = GetCatalog();
+    if (err.empty() && probe::ParseCatalog(text, c, err)) {
+        auto fresh = std::make_shared<const probe::Catalog>(std::move(c));
+        SetCatalog(fresh);
+        PluginLog("command-probe: catalog revision '%s' loaded (%zu commands, available=%d)", fresh->revision.c_str(),
+                  fresh->commands.size(), (int)fresh->available);
+    } else if (old) {
+        auto keep = std::make_shared<probe::Catalog>(*old);
+        keep->available = false;
+        SetCatalog(keep);
+        PluginLog("command-probe: catalog rejected (%s); previous claims kept, all refused", err.c_str());
+    } else {
+        PluginLog("command-probe: catalog rejected (%s); probe off", err.c_str());
+    }
 }
 
 void Writer() {
     std::string last;
     bool present = false;
     for (;;) {
-        std::ifstream f(TakaroPath("command-probe.json"), std::ios::binary);
-        if (!f) {
-            if (present) {
-                std::lock_guard<std::mutex> g(g_mu);
-                g_cat.reset();
-                PluginLog("command-probe: catalog removed, probe off");
-            }
-            present = false;
-            last.clear();
-        } else {
-            std::stringstream ss;
-            ss << f.rdbuf();
-            std::string text = ss.str();
-            if (!present || text != last) {
-                present = true;
-                last = text;
-                probe::Catalog c;
-                std::string err;
-                std::lock_guard<std::mutex> g(g_mu);
-                if (probe::ParseCatalog(text, c, err)) {
-                    g_cat = std::make_shared<const probe::Catalog>(std::move(c));
-                    PluginLog("command-probe: catalog revision '%s' loaded (%zu commands, available=%d)",
-                              g_cat->revision.c_str(), g_cat->commands.size(), (int)g_cat->available);
-                } else if (g_cat) {
-                    // keep every claimed name private: the old claims stay, but nothing is accepted
-                    auto keep = std::make_shared<probe::Catalog>(*g_cat);
-                    keep->available = false;
-                    g_cat = keep;
-                    PluginLog("command-probe: catalog rejected (%s); previous claims kept, all refused", err.c_str());
-                } else {
-                    PluginLog("command-probe: catalog rejected (%s); probe off", err.c_str());
-                }
-            }
+        PollCatalog(last, present);
+        auto online = std::make_shared<std::vector<OnlinePlayer>>();
+        for (auto& sm : PluginState::Get().OnlineMachines()) {
+            uint64_t acc = 0;
+            ProbeCachedAccount(sm.first, acc);
+            online->push_back({sm.first, atoi(sm.second.c_str()), acc});
         }
-        std::deque<std::string> q;
+        std::deque<std::string> q, logs;
         {
             std::lock_guard<std::mutex> g(g_mu);
+            g_online = online;
             q.swap(g_out);
+            logs.swap(g_log);
         }
+        for (auto& l : logs) PluginLog("%s", l.c_str());
         if (!q.empty()) {
             std::ofstream o(TakaroPath("connector-state\\command-probe.jsonl"), std::ios::app | std::ios::binary);
             for (auto& l : q) o << l << "\n";
@@ -141,17 +183,30 @@ probe::Sender ResolveSender(uint64_t server, uint32_t handle, uint64_t gameAccou
     if (!acc) return fail("no-session");
     if (acc != gameAccount) return fail("session-mismatch");
     s.machine = machine;
-    int found = 0;
-    for (auto& sm : PluginState::Get().OnlineMachines())
-        if (sm.second == std::to_string(machine)) {
-            s.steamId = sm.first;
-            found++;
-        }
-    if (found == 0) return fail("no-steamid");
-    if (found > 1) {
-        s.steamId.clear();
-        return fail("ambiguous-steamid");
+    // SteamID64: the one online player on this machine, and the connector's cached accountIdHash for that SteamID
+    // must equal the game's own session account. Another online SteamID with the same account is ambiguous.
+    std::shared_ptr<const std::vector<OnlinePlayer>> online;
+    {
+        std::lock_guard<std::mutex> g(g_mu);
+        online = g_online;
     }
+    int onMachine = 0, sameAccount = 0;
+    const OnlinePlayer* player = nullptr;
+    static const std::vector<OnlinePlayer> kNone;
+    for (auto& p : online ? *online : kNone) {
+        if (p.machine == machine) {
+            onMachine++;
+            player = &p;
+        }
+        if (p.account && p.account == acc) sameAccount++;
+    }
+    snprintf(b, sizeof b, ",\"steamOnMachine\":%d,\"steamWithAccount\":%d", onMachine, sameAccount);
+    facts += b;
+    if (onMachine == 0) return fail("no-steamid");
+    if (onMachine > 1 || sameAccount > 1) return fail("ambiguous-steamid");
+    if (!player->account) return fail("account-unverified");
+    if (player->account != acc) return fail("account-mismatch");
+    s.steamId = player->steamId;
     s.valid = true;
     return s;
 }
@@ -186,11 +241,7 @@ std::string PrivateReply(uint64_t server, int machine, uint32_t handle, uint64_t
 // Called from AddMsgDetour for the player-chat call site only, on the server thread. True = suppress the message.
 bool OnPlayerChat(uint8_t type, const StringView* text, uint32_t handle, uint64_t gameAccount) {
     if (!g_armed) return false;
-    std::shared_ptr<const probe::Catalog> cat;
-    {
-        std::lock_guard<std::mutex> g(g_mu);
-        cat = g_cat;
-    }
+    std::shared_ptr<const probe::Catalog> cat = GetCatalog();
     if (!cat) return false;
     uint64_t server = (uint64_t)g_server;
     std::string msg(text->ptr, (size_t)text->len), facts;
@@ -206,7 +257,7 @@ bool OnPlayerChat(uint8_t type, const StringView* text, uint32_t handle, uint64_
                        kKinds[(int)d.kind] + "\",\"trigger\":" + JsonStr(d.trigger) + ",\"command\":" +
                        JsonStr(d.command) + ",\"args\":" + JsonStr(d.args) + ",\"reason\":" + JsonStr(d.reason);
     if (d.kind == probe::Kind::Pass) {
-        Emit(line + "}");
+        Emit(line + "}", "");
         return false;
     }
     bool failed = d.kind == probe::Kind::Invoke && cat->failDuringSend;
@@ -214,10 +265,12 @@ bool OnPlayerChat(uint8_t type, const StringView* text, uint32_t handle, uint64_
     std::string reply = probe::ReplyText(d, id, failed);
     std::string route = sender.machine >= 0 ? PrivateReply(server, sender.machine, handle, gameAccount, 4, reply)
                                             : std::string("no verified sender, no reply");
-    Emit(line + ",\"suppressed\":true,\"receipt\":{\"status\":\"" + receipt +
-         "\",\"stub\":true},\"reply\":" + JsonStr(reply) + ",\"replyRoute\":" + JsonStr(route) + "}");
-    PluginLog("command-probe: %s %s '%s' -> %s (%s)", id.c_str(), kKinds[(int)d.kind], d.trigger.c_str(),
-              receipt.c_str(), route.c_str());
+    char logLine[256];
+    snprintf(logLine, sizeof logLine, "command-probe: %s %s '%s' -> %s (%s)", id.c_str(), kKinds[(int)d.kind],
+             d.trigger.c_str(), receipt.c_str(), route.c_str());
+    Emit(line + ",\"suppressed\":true,\"receipt\":{\"status\":\"" + receipt + "\",\"stub\":true},\"reply\":" +
+             JsonStr(reply) + ",\"replyRoute\":" + JsonStr(route) + "}",
+         logLine);
     return true;
 }
 

@@ -9,7 +9,8 @@ It is never part of a release:
 - Only `TAKARO_COMMAND_PROBE=1 ./mod/build.sh` compiles it, into `mod/build-probe/`. A normal build
   does not see these files and produces a byte-identical `dbghelp.dll`.
 - The probe build arms only on game build `1273043` (the build whose `addMessage` ABI was
-  recovered) with the 1.0 chat and session layout.
+  recovered) with the 1.0 chat and session layout. That needs the `1273043` game data: build on
+  top of #582, or add that build's section to `<server>\takaro\enshrouded-gamedata.json`.
 - It acts only while `<server>\takaro\command-probe.json` exists. Delete the file to turn it off.
 
 | File | What |
@@ -24,6 +25,6 @@ the exact bytes (hex), every sender check, the decision, the stub receipt and th
 contains SteamIDs; keep it out of public places.
 
 Catalog fields: `revision`, `prefix` (default `@`), `nonce` (the magic trigger, required),
-`issuedAtMs` and `maxAgeSeconds` (staleness), `available` (`false` = Takaro unreachable),
+`issuedAtMs` and `maxAgeSeconds` (staleness, both required; 1 s to 7 days), `available` (`false` = Takaro unreachable),
 `failDuringSend`, `commands[]` (`name`, `aliases`, `enabled`, `permission`) and
 `grants` (`{"<steamId>": ["<permission>"]}`).

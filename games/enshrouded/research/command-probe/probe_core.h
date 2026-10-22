@@ -24,8 +24,8 @@ struct Catalog {
     std::string revision;
     std::string prefix = "@";
     std::string nonce;             // the one magic probe trigger (claimed like a command name)
-    uint64_t issuedAtMs = 0;       // wall clock, Unix ms
-    uint64_t maxAgeMs = 0;         // 0 = never stale
+    uint64_t issuedAtMs = 0;       // wall clock, Unix ms (required)
+    uint64_t maxAgeMs = 0;         // required, 1 s .. 7 days
     bool available = true;         // false = "Takaro unreachable before send"
     bool failDuringSend = false;   // true = the stub invocation fails after it was accepted
     std::vector<Command> commands;

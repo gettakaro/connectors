@@ -28,6 +28,8 @@
 #include <mutex>
 #include <sstream>
 #include <thread>
+
+bool ProbeCachedAccount(const std::string& steamId, uint64_t& hash);  // http.cpp: SteamID64 -> accountIdHash cache
 #endif
 
 // ------------------------------------------------------------------------------------------------
