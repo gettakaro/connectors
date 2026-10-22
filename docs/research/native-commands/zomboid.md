@@ -41,11 +41,12 @@ are the same names and shapes the issue cites.
 | 9 | Production boundary (authorization, identity, idempotency, outcomes, timeouts, private delivery, help) | Defined below | n/a |
 
 "Server side" means the evidence is the agent log, the probe's receipts, the stub's receipts and
-Takaro's event store; all of it came from input typed in a real client. During the probed session
-the client's renderer froze (byte-identical frames, Esc ignored, while it still sent input), and
-two relaunches stalled on a white window, so there is no screenshot of the probed replies on the
-client yet. The uninstrumented baseline from the same client, minutes earlier, shows the same
-reply path (`sendMessageToServerChat(connection, …)`) arriving in the client's chat. The issue's
+Takaro's event store; all of it came from input typed in a real client. During both probed sessions the client's
+window showed a frozen or white image on the test PC while the game itself kept running: it
+joined, spawned, sent chat and commands, and received replies. So there is no screenshot of the
+probed replies on the client. The uninstrumented baseline from the same client, earlier the
+same evening, shows the same reply path (`sendMessageToServerChat(connection, …)`) arriving in
+the client's chat. The issue's
 two-client observer check was not possible: only one client account exists on the test server.
 
 ## Source findings (42.21.0 bytecode)
@@ -216,8 +217,14 @@ apply, name-only logging); `1.4.0-probe201.2` carries them. They are covered by 
 Live on `probe201.2` without a client: the catalog is applied on the main thread, and a catalog
 with a non-numeric revision turned the backend `OFFLINE (catalog revision 2 kept)` without
 stopping the poller, which applied revision 3 once the stub served it
-(`probe2-malformed-catalog.txt`). The live re-run of E2 to E6 on `probe201.2` is blocked with
-the client.
+(`probe2-malformed-catalog.txt`). A second real-client session on `probe201.2` repeated the core cases
+(`probe2-live-agent-log.txt`, `probe2-timeline.txt`): `/tprobe hello "two words"` and `/TPrObE x`
+fanned out to both installations, `/nosuchcmd401`, `/players` and `/changepwd old new` went to the
+game, stub `deny` was answered privately, the open quote was rejected, `offline` failed
+privately, and `ok` ran again. The agent log shows `/changepwd` with no arguments. In the same
+session a plain chat line produced a Takaro `chat-message` event and a Discord chat-bridge post,
+and the 9 slash inputs produced neither (`round3-takaro-mcp.json`). `getPlayers`,
+`testReachability` and a whisper `sendMessage` answered through Takaro with the player online.
 
 ## Production boundary
 
