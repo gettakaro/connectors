@@ -13,6 +13,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -43,6 +44,8 @@ public final class CommandProbe {
     public static final String UNAVAILABLE = "Takaro is unavailable right now. Your command was not run.";
     public static final String UNKNOWN_OUTCOME = "Takaro did not answer. Your command may or may not have run.";
     public static final String MALFORMED = "Takaro could not read that command: a quote is not closed.";
+    public static final String AMBIGUOUS = "Takaro cannot tell which local player sent that command. It was not run.";
+    public static final String BUSY = "Takaro is busy right now. Your command was not run.";
 
     /** Who sent the input, as the receiving connection reports it. */
     public record Caller(String username, long steamId, String role, int localPlayers, long connectionGuid) {
@@ -109,12 +112,17 @@ public final class CommandProbe {
      * Older revisions are ignored. Returns the applied snapshot, or null when nothing changed.
      */
     public synchronized Snapshot applyCatalog(JsonObject catalog) {
-        if (catalog == null) {
+        Snapshot next;
+        try {
+            next = catalog == null ? null : build(catalog, nativeCommand);
+        } catch (RuntimeException malformed) {
+            next = null;
+        }
+        if (next == null) {
             online = false;
             return null;
         }
         online = true;
-        Snapshot next = build(catalog, nativeCommand);
         if (next.revision() <= snapshot.revision()) {
             return null;
         }
@@ -229,7 +237,12 @@ public final class CommandProbe {
         }
         long seq = sequence.incrementAndGet();
         boolean backendOnline = online;
-        workers.execute(() -> run(seq, input, name, matches, snap.revision(), backendOnline, connection, caller));
+        try {
+            workers.execute(() -> run(seq, input, name, matches, snap.revision(), backendOnline, connection, caller));
+        } catch (RejectedExecutionException full) {
+            // Never queue without bound: a full pool fails the command privately, unsent.
+            replier.reply(connection, BUSY);
+        }
         return true;
     }
 
@@ -250,6 +263,9 @@ public final class CommandProbe {
         if (args == null) {
             outcome = "malformed";
             replies = List.of(MALFORMED);
+        } else if (caller.localPlayers() > 1) {
+            outcome = "ambiguous-caller";
+            replies = List.of(AMBIGUOUS);
         } else if (!backendOnline) {
             outcome = "offline";
             replies = List.of(UNAVAILABLE);

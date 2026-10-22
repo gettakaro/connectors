@@ -19,7 +19,9 @@ import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import zombie.characters.Role;
@@ -47,13 +49,15 @@ public final class CommandProbeRuntime {
     private final MainThreadQueue queue;
     private final Path receiptFile;
     private final AtomicBoolean firstPacket = new AtomicBoolean();
+    private boolean wasOnline; // main thread only
 
     private CommandProbeRuntime(String baseUrl, MainThreadQueue queue) {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.queue = queue;
         this.receiptFile = TakaroPaths.configFile().resolveSibling("command-probe-receipts.jsonl");
         this.probe = new CommandProbe(CommandProbeRuntime::isNativeCommand, this::invoke, this::reply,
-                this::writeReceipt, Executors.newFixedThreadPool(4, r -> daemon(r, "takaro-command-probe")));
+                this::writeReceipt, new ThreadPoolExecutor(4, 4, 0L, TimeUnit.MILLISECONDS,
+                        new ArrayBlockingQueue<>(16), r -> daemon(r, "takaro-command-probe")));
     }
 
     public static boolean enabled() {
@@ -89,8 +93,10 @@ public final class CommandProbeRuntime {
                         + Thread.currentThread().getName());
             }
             claimed = rt.probe.claim(input, c, caller(c));
+            // Only the name: arguments can carry secrets (for example /changepwd).
+            String name = CommandProbe.commandName(input);
             AgentLog.log("command-probe: input from " + c.getUserName() + " "
-                    + (claimed ? "CLAIMED" : "passed to game") + ": " + input);
+                    + (claimed ? "CLAIMED" : "passed to game") + ": /" + (name == null ? "" : name));
             return claimed;
         } finally {
             if (!claimed) {
@@ -151,7 +157,6 @@ public final class CommandProbeRuntime {
     }
 
     private void pollLoop() {
-        boolean wasOnline = false;
         while (true) {
             JsonObject catalog = null;
             try {
@@ -166,22 +171,28 @@ public final class CommandProbeRuntime {
             } catch (Exception e) {
                 catalog = null;
             }
-            CommandProbe.Snapshot applied = probe.applyCatalog(catalog);
-            boolean nowOnline = probe.online();
-            if (nowOnline != wasOnline) {
-                AgentLog.log("command-probe: backend " + (nowOnline ? "online" : "OFFLINE")
-                        + " (catalog revision " + probe.snapshot().revision() + " kept)");
-                wasOnline = nowOnline;
-            }
-            if (applied != null) {
-                AgentLog.log("command-probe: catalog revision " + applied.revision()
-                        + " names=" + applied.byName().keySet() + " refused=" + applied.refused());
-            }
+            // Applied on the main thread: the native-name check reads the game's command registry.
+            JsonObject fetched = catalog;
+            queue.runOnMainThread(() -> applyOnMainThread(fetched));
             try {
                 Thread.sleep(POLL.toMillis());
             } catch (InterruptedException e) {
                 return;
             }
+        }
+    }
+
+    private void applyOnMainThread(JsonObject catalog) {
+        CommandProbe.Snapshot applied = probe.applyCatalog(catalog);
+        boolean nowOnline = probe.online();
+        if (nowOnline != wasOnline) {
+            AgentLog.log("command-probe: backend " + (nowOnline ? "online" : "OFFLINE")
+                    + " (catalog revision " + probe.snapshot().revision() + " kept)");
+            wasOnline = nowOnline;
+        }
+        if (applied != null) {
+            AgentLog.log("command-probe: catalog revision " + applied.revision()
+                    + " names=" + applied.byName().keySet() + " refused=" + applied.refused());
         }
     }
 

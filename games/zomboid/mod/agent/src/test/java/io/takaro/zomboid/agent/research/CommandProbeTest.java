@@ -177,6 +177,40 @@ class CommandProbeTest {
     }
 
     @Test
+    void malformedCatalogCountsAsOfflineAndKeepsTheSnapshot() {
+        CommandProbe p = probe(ok());
+        p.applyCatalog(catalog("{revision:1,commands:[{name:'tprobe'}]}"));
+        assertNull(p.applyCatalog(catalog("{revision:'not a number',commands:[]}")));
+        assertFalse(p.online());
+        assertTrue(p.claim("/tprobe", "c", CALLER));
+        assertEquals(List.of("c:" + CommandProbe.UNAVAILABLE), replies);
+    }
+
+    @Test
+    void splitScreenCallerIsRefusedPrivately() {
+        CommandProbe p = probe(ok());
+        p.applyCatalog(catalog("{revision:1,commands:[{name:'tprobe'}]}"));
+        assertTrue(p.claim("/tprobe", "c", new CommandProbe.Caller("tester", 1L, "user", 2, 7L)));
+        assertTrue(sent.isEmpty());
+        assertEquals(List.of("c:" + CommandProbe.AMBIGUOUS), replies);
+    }
+
+    @Test
+    void fullWorkerPoolFailsPrivatelyInsteadOfQueueing() {
+        ExecutorService full = new DirectExecutor() {
+            @Override public void execute(Runnable r) {
+                throw new java.util.concurrent.RejectedExecutionException("full");
+            }
+        };
+        CommandProbe p = new CommandProbe(NATIVE::contains, ok(), (conn, text) -> replies.add(conn + ":" + text),
+                receipts::add, full);
+        p.applyCatalog(catalog("{revision:1,commands:[{name:'tprobe'}]}"));
+        assertTrue(p.claim("/tprobe", "c", CALLER));
+        assertTrue(sent.isEmpty());
+        assertEquals(List.of("c:" + CommandProbe.BUSY), replies);
+    }
+
+    @Test
     void commandNameAndArguments() {
         assertEquals("x", CommandProbe.commandName("/x"));
         assertEquals("x", CommandProbe.commandName("/  x  y"));
@@ -186,7 +220,7 @@ class CommandProbeTest {
     }
 
     /** Runs tasks inline so assertions see the reply without waiting. */
-    private static final class DirectExecutor extends java.util.concurrent.AbstractExecutorService {
+    private static class DirectExecutor extends java.util.concurrent.AbstractExecutorService {
         @Override public void execute(Runnable r) { r.run(); }
         @Override public void shutdown() { }
         @Override public List<Runnable> shutdownNow() { return List.of(); }

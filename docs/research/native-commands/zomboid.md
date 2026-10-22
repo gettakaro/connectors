@@ -32,7 +32,7 @@ are the same names and shapes the issue cites.
 | --- | --- | --- | --- |
 | 1 | Exact descriptors and control flow for receive, dispatch, reply, logging and native registry | Recorded below | passed (bytecode) |
 | 2 | A non-admin's slash command reaches the candidate handler; identity available | **go** | passed (server side, real client) |
-| 3 | A claimed command gets one targeted reply: no public echo, no vanilla unknown error, no duplicate, no native/RCON run, no replay | **go** | passed (server side); client-side view blocked, see below |
+| 3 | A claimed command gets one targeted reply: no public echo, no vanilla unknown error, no duplicate, no native/RCON run, no replay | **go** (server side) | passed (server side); what the sender and an observer see is blocked, see below |
 | 4 | A recognized command fails privately while the backend is offline | **go** | passed (server side) |
 | 5 | Unknown and unowned input behaves as in the uninstrumented game | **go** | passed (server side + uninstrumented client baseline) |
 | 6 | Case collisions, malformed args, denial, timeout, catalog replacement, add/change/remove | **go** | passed (live + unit tests) |
@@ -129,6 +129,12 @@ seam.
   `sendMessageToServerChat(connection, text)`, after checking the connection is still connected.
   A timeout or dropped socket is answered "Takaro did not answer. Your command may or may not
   have run." and is never retried. Receipts are written to `command-probe-receipts.jsonl`.
+- Guards: a connection with more than one local player is refused privately ("cannot tell which
+  local player sent that command") and nothing is sent; the worker pool is bounded (4 threads,
+  16 queued) and a full pool fails the command privately instead of queueing it; a catalog that
+  does not parse counts as offline; the catalog is applied on the main thread because the
+  native-name check reads the game's command registry; the agent log records only the command
+  name, never its arguments (native `/changepwd` carries a password).
 
 ## Experiments
 
@@ -193,13 +199,21 @@ screenshot of these replies under the probe is blocked with the client.
   fanned out to two installations.
 - Concurrent replacement: unit test `inFlightInvocationKeepsTheSnapshotItWasClaimedWith` replaces
   the catalog while an invocation is in flight; the invocation keeps its snapshot and the next
-  input sees the new one. 12 probe unit tests pass (`unit-tests.log`).
+  input sees the new one. 15 probe unit tests pass (`unit-tests.log`), including the malformed
+  catalog, split-screen refusal and full-pool cases.
 
 ### E6 Fanout: passed
 
 `/tprobe fan` with two catalog rows for the same name sent one invocation listing
 `["install-a","install-b"]`; the stub answered for both and the player got one line with both
 results. The adapter groups rows by name but never drops one.
+
+### Build used for each experiment
+
+E1 to E6 ran on `1.4.0-probe201.1`. Review then added the guards listed under "How the probe
+works" (split-screen refusal, bounded pool, malformed catalog as offline, main-thread catalog
+apply, name-only logging); `1.4.0-probe201.2` carries them. They are covered by unit tests; the
+live re-run of E2 to E6 on `probe201.2` is blocked with the client.
 
 ## Production boundary
 

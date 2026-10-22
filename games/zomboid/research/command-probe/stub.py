@@ -10,7 +10,9 @@ POST /invoke   -> records a receipt line and answers by mode:
                   offline: /catalog and /invoke answer 503
 POST /control  -> {"mode": "..."} and/or {"catalog": {...}} (the revision is bumped)
 
-Usage: stub.py [--port 8790] [--receipts receipts.jsonl]
+Usage: stub.py [--bind 127.0.0.1] [--port 8790] [--receipts receipts.jsonl]
+
+No authentication: bind it only to an address the test server alone can reach.
 """
 import argparse
 import json
@@ -103,7 +105,7 @@ def main():
     global RECEIPTS
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8790)
-    ap.add_argument("--bind", default="0.0.0.0")
+    ap.add_argument("--bind", default="127.0.0.1")
     ap.add_argument("--receipts", default="stub-receipts.jsonl")
     a = ap.parse_args()
     RECEIPTS = a.receipts
