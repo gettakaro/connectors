@@ -102,7 +102,7 @@ release is published from a run whose verification failed.
 | Runner | `ubuntu-latest` (x86_64, 4 vCPU, 16 GB RAM), Docker from the image. No secrets, no Steam account: the depots are anonymous. |
 | Disk | ~15 GB: the depot cache (7.2 GB) and its installed copy (7.2 GB), plus the server image. |
 | Memory | the server container is capped at 3 GB (`MAX_RAM=2048m` heap). |
-| Time | 40 min job budget; about 6 min warm. `runtime_depot_cache: true` keeps the three depots under the `zomboid-depots-<fp16>` cache key (about 2 GB compressed), saved even when a check failed, so only a re-pinned target downloads again. |
+| Time | 40 min job budget; the leg took 5 min with a cold cache and 3½ min with the depot cache warm, of which the boot to `*** SERVER STARTED ***` is about 100 s. `runtime_depot_cache: true` keeps the three depots under the `zomboid-depots-<fp16>` cache key (2.1 GB compressed), saved even when a check failed, so only a re-pinned target downloads again. |
 | Isolation | a `mktemp -d` install and data directory, world `takaro-verify`, no published host port, containers labelled `tm.run=gha-<run>-<attempt>` and removed in `finally` and again by an `always()` step. Logs are written by the harness with the run's own throwaway passwords only. |
 
 A run fails, and the release with it, when the agent is not picked up, a hook binds no
