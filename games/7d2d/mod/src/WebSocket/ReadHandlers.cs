@@ -156,7 +156,7 @@ namespace Takaro.WebSocket
 
         /// <summary>
         /// Serves a single rendered map tile as base64 PNG. Tiles only exist when
-        /// the server's web dashboard is enabled; otherwise this reports a clear
+        /// the server renders its map; otherwise this reports a clear
         /// error rather than an empty success.
         /// </summary>
         public static void GetMapTile(string requestId, int x, int y, int z)
@@ -168,7 +168,7 @@ namespace Takaro.WebSocket
                 SendError(
                     requestId,
                     "Map tiles are not available: this server has no web-map tile cache "
-                        + "(set WebDashboardEnabled=true in serverconfig.xml and restart)"
+                        + "(set EnableMapRendering=true in serverconfig.xml and restart)"
                 );
                 return;
             }
@@ -181,6 +181,112 @@ namespace Takaro.WebSocket
             }
 
             Send(WebSocketMessage.CreateResponse(requestId, tile));
+        }
+
+        /// <summary>
+        /// The v1 tile frame of this server, or null when it has no map: the
+        /// server neither renders tiles nor has a tile cache. Read at identify
+        /// time, so a map switched on later is declared on the next connection.
+        /// </summary>
+        public static MapFrame CurrentMapFrame()
+        {
+            StateMirror mirror = StateMirror.Instance;
+            int ignoredZoom;
+            if (
+                !mirror.MapRenderingEnabled
+                && !MapCatalog.TryInspect(mirror.MapRoot, out ignoredZoom)
+            )
+                return null;
+            if (string.IsNullOrEmpty(mirror.MapRoot))
+                return null;
+
+            int tilePixels;
+            int gameMaxZoom;
+            MapCatalog.ReadTileLayout(mirror.MapRoot, out tilePixels, out gameMaxZoom);
+            // Takaro refuses a tile size outside 64..1024 and a zoom above 20.
+            if (tilePixels < 64 || tilePixels > 1024 || gameMaxZoom > 18)
+                return null;
+
+            return MapFrame.ForWorld(tilePixels, gameMaxZoom, mirror.MapHalfExtent);
+        }
+
+        // The frame the last identify declared; tile requests are answered in it.
+        private static volatile MapFrame _declaredMapFrame;
+
+        /// <summary>
+        /// The <c>map</c> Capability to declare, or null when there is no map.
+        /// Called once per identify; it also fixes the frame tile requests use.
+        /// </summary>
+        public static Dictionary<string, object> CurrentMapCapability()
+        {
+            MapFrame frame = CurrentMapFrame();
+            _declaredMapFrame = frame;
+            return frame?.BuildCapability(StateMirror.Instance.WorldName);
+        }
+
+        /// <summary>
+        /// Protocol v1 <c>getMapTile {dimension, zoom, x, y}</c>: the game tile
+        /// under the Takaro tile, as <c>{mimeType, data}</c>. A tile the game has
+        /// not rendered yet is <c>not_found</c>, which Takaro shows as transparent.
+        /// </summary>
+        public static void GetMapTileV1(string requestId, string dimension, int zoom, int x, int y)
+        {
+            MapFrame frame = _declaredMapFrame;
+            if (frame == null)
+            {
+                SendError(
+                    requestId,
+                    "This server has no map: set EnableMapRendering=true in serverconfig.xml",
+                    ProtocolErrorCodes.Unsupported
+                );
+                return;
+            }
+
+            if (dimension != MapFrame.DimensionId)
+            {
+                SendError(
+                    requestId,
+                    $"7 Days to Die has no map dimension '{dimension}'",
+                    ProtocolErrorCodes.NotFound
+                );
+                return;
+            }
+
+            int gameZoom;
+            int gameX;
+            int gameY;
+            if (!frame.TryToGameTile(zoom, x, y, out gameZoom, out gameX, out gameY))
+            {
+                SendError(
+                    requestId,
+                    $"Map tile {zoom}/{x}/{y} is outside the declared pyramid",
+                    ProtocolErrorCodes.InvalidArgs
+                );
+                return;
+            }
+
+            string tile = MapCatalog.TryReadTileBase64(
+                StateMirror.Instance.MapRoot,
+                gameZoom,
+                gameX,
+                gameY
+            );
+            if (tile == null)
+            {
+                SendError(
+                    requestId,
+                    $"Map tile {zoom}/{x}/{y} (game tile {gameZoom}/{gameX}/{gameY}) has not been rendered yet",
+                    ProtocolErrorCodes.NotFound
+                );
+                return;
+            }
+
+            Send(
+                WebSocketMessage.CreateResponse(
+                    requestId,
+                    new Dictionary<string, object> { { "mimeType", "image/png" }, { "data", tile } }
+                )
+            );
         }
 
         private static void Send(WebSocketMessage message)

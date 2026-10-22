@@ -67,6 +67,9 @@ public static class ContractHarness
             AssertRawRequestsAreNotLogged();
             AssertMapCatalog();
             AssertMapRouting();
+            AssertMapFrameV1();
+            AssertMapCapabilityDeclaration();
+            AssertMapTileV1Routing();
             AssertConfigFiles();
             Console.WriteLine("Contract harness passed: " + _assertions + " assertions");
             return 0;
@@ -2679,6 +2682,440 @@ public static class ContractHarness
         WebSocketTransport.Instance.TerminalMessages.Clear();
     }
 
+    /// <summary>
+    /// The v1 frame must put every Takaro tile exactly on one game tile. The
+    /// expected rectangles come from a port of Takaro's mapTileGameRect
+    /// (lib-gameserver generic/map.ts); the game rectangle from the renderer's
+    /// layout (tile (x, y) at game zoom g covers [x*s, (x+1)*s) on x and z).
+    /// </summary>
+    private static void AssertMapFrameV1()
+    {
+        MapFrame navezgane = MapFrame.ForWorld(128, 4, 3072);
+        Equal(4096L, navezgane.HalfSize, "Navezgane (+-3072) fits the +-4096 frame");
+        Equal(2, navezgane.MinZoom, "game zoom 0 is Takaro zoom 2 on a +-4096 frame");
+        Equal(6, navezgane.MaxZoom, "game zoom 4 is Takaro zoom 6 on a +-4096 frame");
+
+        MapFrame small = MapFrame.ForWorld(128, 4, 2000);
+        Equal(2048L, small.HalfSize, "a small world uses the smallest frame");
+        Equal(1, small.MinZoom, "the smallest frame still centres on a tile edge");
+        Equal(
+            8192L,
+            MapFrame.ForWorld(128, 4, 0).HalfSize,
+            "an unknown extent assumes the largest world, so nothing is cropped"
+        );
+        MapFrame rwg10k = MapFrame.ForWorld(128, 4, 5120);
+        Equal(8192L, rwg10k.HalfSize, "a 10240 world fits the +-8192 frame");
+        Equal(3, rwg10k.MinZoom, "a +-8192 frame starts at Takaro zoom 3");
+        MapFrame exact = MapFrame.ForWorld(128, 4, 4096);
+        Equal(4096L, exact.HalfSize, "a world edge on the frame edge needs no larger frame");
+
+        foreach (MapFrame frame in new[] { navezgane, small, rwg10k })
+        {
+            for (int zoom = frame.MinZoom; zoom <= frame.MaxZoom; zoom++)
+            {
+                int perSide = 1 << zoom;
+                int step = Math.Max(1, perSide / 16);
+                bool allMatch = true;
+                for (int x = 0; x < perSide; x += step)
+                {
+                    for (int y = 0; y < perSide; y += step)
+                    {
+                        int gz;
+                        int gx;
+                        int gy;
+                        if (!frame.TryToGameTile(zoom, x, y, out gz, out gx, out gy))
+                        {
+                            allMatch = false;
+                            continue;
+                        }
+                        double half = frame.HalfSize;
+                        double side = 2 * half / perSide;
+                        double takaroMinX = -half + x * side;
+                        double takaroMinZ = half - (y + 1) * side;
+                        long gameSide = (long)frame.TilePixels << (frame.GameMaxZoom - gz);
+                        if (
+                            gz != zoom - frame.MinZoom
+                            || side != gameSide
+                            || takaroMinX != (double)gx * gameSide
+                            || takaroMinZ != (double)gy * gameSide
+                        )
+                            allMatch = false;
+                    }
+                }
+                True(
+                    allMatch,
+                    $"every Takaro tile at zoom {zoom} of the +-{frame.HalfSize} frame is one game tile"
+                );
+            }
+        }
+
+        int gameZoom;
+        int gameX;
+        int gameY;
+        True(
+            navezgane.TryToGameTile(6, 32, 31, out gameZoom, out gameX, out gameY)
+                && gameZoom == 4
+                && gameX == 0
+                && gameY == 0,
+            "the tile north-east of the origin is game tile 4/0/0"
+        );
+        True(
+            navezgane.TryToGameTile(6, 31, 32, out gameZoom, out gameX, out gameY)
+                && gameZoom == 4
+                && gameX == -1
+                && gameY == -1,
+            "the tile south-west of the origin is game tile 4/-1/-1 (signed, y flipped)"
+        );
+        True(
+            navezgane.TryToGameTile(2, 0, 0, out gameZoom, out gameX, out gameY)
+                && gameZoom == 0
+                && gameX == -2
+                && gameY == 1,
+            "the north-west corner at the lowest zoom is game tile 0/-2/1"
+        );
+        True(
+            !navezgane.TryToGameTile(1, 0, 0, out gameZoom, out gameX, out gameY),
+            "a zoom below the declared minZoom is refused"
+        );
+        True(
+            !navezgane.TryToGameTile(7, 0, 0, out gameZoom, out gameX, out gameY),
+            "a zoom above the declared maxZoom is refused"
+        );
+        True(
+            !navezgane.TryToGameTile(6, 64, 0, out gameZoom, out gameX, out gameY)
+                && !navezgane.TryToGameTile(6, 0, 64, out gameZoom, out gameX, out gameY)
+                && !navezgane.TryToGameTile(6, -1, 0, out gameZoom, out gameX, out gameY),
+            "tile indices outside 0..2^zoom-1 are refused"
+        );
+
+        // A player at x -179, z 415 (the rig's spawn) is on game tile 4/-2/3.
+        int takaroX = (int)Math.Floor((-179 + navezgane.HalfSize) / 128.0);
+        int takaroY = (int)Math.Floor((navezgane.HalfSize - 415) / 128.0);
+        True(
+            navezgane.TryToGameTile(6, takaroX, takaroY, out gameZoom, out gameX, out gameY)
+                && gameX == -2
+                && gameY == 3,
+            "a world position lands on the game tile the renderer draws it in"
+        );
+    }
+
+    /// <summary>
+    /// The map Capability must pass Takaro's parseMapParameters and be declared
+    /// only when the server has a map.
+    /// </summary>
+    private static void AssertMapCapabilityDeclaration()
+    {
+        JObject capability = JObject.FromObject(
+            MapFrame.ForWorld(128, 4, 3072).BuildCapability("Navezgane")
+        );
+        Equal("map", (string)capability["name"], "the capability is named map");
+        JArray dimensions = (JArray)capability["parameters"]["dimensions"];
+        Equal(1, dimensions.Count, "the map declares one Dimension");
+        JObject dimension = (JObject)dimensions[0];
+        Equal(MapFrame.DimensionId, (string)dimension["id"], "the Dimension id is stable");
+        True(
+            System.Text.RegularExpressions.Regex.IsMatch(
+                (string)dimension["id"],
+                "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            ),
+            "the Dimension id matches Takaro's pattern"
+        );
+        Equal("Navezgane", (string)dimension["name"], "the Dimension is named after the world");
+        Equal("x", (string)dimension["axes"]["horizontal"]["field"], "x runs horizontally");
+        Equal("right", (string)dimension["axes"]["horizontal"]["direction"], "+x is to the right");
+        Equal("z", (string)dimension["axes"]["vertical"]["field"], "z runs vertically");
+        Equal("up", (string)dimension["axes"]["vertical"]["direction"], "+z (north) is up");
+        foreach (string axis in new[] { "horizontal", "vertical" })
+        {
+            Equal(
+                -4096,
+                dimension["bounds"][axis]["min"].Value<int>(),
+                axis + " bounds start at -4096"
+            );
+            Equal(
+                4096,
+                dimension["bounds"][axis]["max"].Value<int>(),
+                axis + " bounds end at 4096"
+            );
+        }
+        JObject source = (JObject)dimension["source"];
+        Equal("tiled", (string)source["type"], "the source is tiled");
+        Equal(128, (int)source["tileSize"], "tiles are the game's 128 px tiles");
+        Equal(2, (int)source["minZoom"], "minZoom is the frame's game zoom 0");
+        Equal(6, (int)source["maxZoom"], "maxZoom is the frame's game zoom 4");
+        Equal(
+            "World",
+            (string)
+                JObject.FromObject(MapFrame.ForWorld(128, 4, 0).BuildCapability(" "))["parameters"][
+                    "dimensions"
+                ][0]["name"],
+            "a blank world name falls back to World"
+        );
+
+        var withMap = ProtocolHandshake.BuildCapabilityManifest(
+            RequestRouter.SupportedActions,
+            MapFrame.ForWorld(128, 4, 3072).BuildCapability("Navezgane")
+        );
+        Equal(
+            1,
+            withMap.Count(c => (string)c["name"] == "map"),
+            "a passed map Capability is declared once"
+        );
+        Equal(
+            0,
+            ProtocolHandshake
+                .BuildCapabilityManifest(RequestRouter.SupportedActions)
+                .Count(c => (string)c["name"] == "map"),
+            "no map Capability is declared without one"
+        );
+
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            "takaro-mapcap-" + Guid.NewGuid().ToString("N")
+        );
+        var mirror = Takaro.Services.StateMirror.Instance;
+        try
+        {
+            mirror.MapRoot = Path.Combine(root, "map");
+            mirror.MapHalfExtent = 3072;
+            mirror.WorldName = "Navezgane";
+
+            mirror.MapRenderingEnabled = false;
+            True(
+                ReadHandlers.CurrentMapCapability() == null,
+                "no map is declared when rendering is off and no tiles exist"
+            );
+            True(!IdentifyDeclaresMap(), "identify carries no map when the server has none");
+
+            mirror.MapRenderingEnabled = true;
+            True(
+                ReadHandlers.CurrentMapCapability() != null,
+                "a map is declared when rendering is on, before the first tile exists"
+            );
+            True(IdentifyDeclaresMap(), "identify declares the map when rendering is on");
+
+            mirror.MapRenderingEnabled = false;
+            Directory.CreateDirectory(Path.Combine(mirror.MapRoot, "4", "0"));
+            File.WriteAllText(
+                Path.Combine(mirror.MapRoot, "mapinfo.json"),
+                "{\"blockSize\":256,\"maxZoom\":3}"
+            );
+            JObject cached = JObject.FromObject(ReadHandlers.CurrentMapCapability());
+            JObject cachedSource = (JObject)cached["parameters"]["dimensions"][0]["source"];
+            Equal(256, (int)cachedSource["tileSize"], "tileSize follows mapinfo.json");
+            Equal(
+                (int)cachedSource["minZoom"] + 3,
+                (int)cachedSource["maxZoom"],
+                "the zoom range follows mapinfo.json's maxZoom"
+            );
+            True(IdentifyDeclaresMap(), "an existing tile cache is declared with rendering off");
+
+            File.WriteAllText(
+                Path.Combine(mirror.MapRoot, "mapinfo.json"),
+                "{\"blockSize\":32,\"maxZoom\":4}"
+            );
+            True(
+                ReadHandlers.CurrentMapCapability() == null,
+                "a tile size Takaro would refuse is never declared"
+            );
+
+            File.WriteAllText(
+                Path.Combine(mirror.MapRoot, "mapinfo.json"),
+                "{\"blockSize\":256,\"maxZoom\":99999999999}"
+            );
+            int halfPixels;
+            int halfZoom;
+            MapCatalog.ReadTileLayout(mirror.MapRoot, out halfPixels, out halfZoom);
+            True(
+                halfPixels == 128 && halfZoom == 4,
+                "a mapinfo.json with one unreadable field keeps both defaults"
+            );
+
+            File.WriteAllText(Path.Combine(mirror.MapRoot, "mapinfo.json"), "not json");
+            int tilePixels;
+            int gameMaxZoom;
+            MapCatalog.ReadTileLayout(mirror.MapRoot, out tilePixels, out gameMaxZoom);
+            True(
+                tilePixels == 128 && gameMaxZoom == 4,
+                "a damaged mapinfo.json falls back to the game defaults"
+            );
+        }
+        finally
+        {
+            mirror.MapRoot = null;
+            mirror.MapRenderingEnabled = false;
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch (Exception) { }
+        }
+    }
+
+    private static bool IdentifyDeclaresMap()
+    {
+        var payload = ProtocolHandshake.BuildIdentifyPayload("registration", "identity");
+        return ((List<Dictionary<string, object>>)payload["capabilities"]).Any(c =>
+            (string)c["name"] == "map"
+        );
+    }
+
+    /// <summary>
+    /// On protocol v1 getMapTile is {dimension, zoom, x, y} -> {mimeType, data};
+    /// the v0 {x, y, z} -> base64 string reply stays for v0 connections.
+    /// </summary>
+    private static void AssertMapTileV1Routing()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            "takaro-mapv1-" + Guid.NewGuid().ToString("N")
+        );
+        var mirror = Takaro.Services.StateMirror.Instance;
+        byte[] png = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x07 };
+        byte[] southWest = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x09 };
+        try
+        {
+            mirror.MapRoot = Path.Combine(root, "map");
+            mirror.MapHalfExtent = 3072;
+            mirror.MapRenderingEnabled = true;
+            Directory.CreateDirectory(Path.Combine(mirror.MapRoot, "4", "0"));
+            Directory.CreateDirectory(Path.Combine(mirror.MapRoot, "4", "-1"));
+            File.WriteAllText(
+                Path.Combine(mirror.MapRoot, "mapinfo.json"),
+                "{\"blockSize\":128,\"maxZoom\":4}"
+            );
+            File.WriteAllBytes(Path.Combine(mirror.MapRoot, "4", "0", "0.png"), png);
+            File.WriteAllBytes(Path.Combine(mirror.MapRoot, "4", "-1", "-1.png"), southWest);
+
+            WebSocketTransport.Instance.ProtocolVersion = 1;
+            True(ReadHandlers.CurrentMapCapability() != null, "identify declares the map");
+
+            // Tile requests stay in the declared frame even if mapinfo.json changes later.
+            File.WriteAllText(
+                Path.Combine(mirror.MapRoot, "mapinfo.json"),
+                "{\"blockSize\":256,\"maxZoom\":2}"
+            );
+
+            JObject reply = RouteV1Tile("world", 6, 32, 31);
+            Equal("image/png", (string)reply?["mimeType"], "a v1 tile reply names its mime type");
+            Equal(
+                Convert.ToBase64String(png),
+                (string)reply?["data"],
+                "a v1 tile reply carries the game tile's PNG as base64"
+            );
+            Equal(
+                Convert.ToBase64String(southWest),
+                (string)RouteV1Tile("world", 6, 31, 32)?["data"],
+                "the v1 tile south-west of the origin is the game's negative tile"
+            );
+
+            RouteV1Tile("world", 6, 0, 0);
+            Equal(
+                ProtocolErrorCodes.NotFound,
+                WebSocketTransport.Instance.ErrorCodes.SingleOrDefault(),
+                "an unrendered tile is not_found, shown transparent by Takaro"
+            );
+            RouteV1Tile("nether", 6, 32, 31);
+            Equal(
+                ProtocolErrorCodes.NotFound,
+                WebSocketTransport.Instance.ErrorCodes.SingleOrDefault(),
+                "an undeclared dimension is not_found"
+            );
+            RouteV1Tile("world", 9, 0, 0);
+            Equal(
+                ProtocolErrorCodes.InvalidArgs,
+                WebSocketTransport.Instance.ErrorCodes.SingleOrDefault(),
+                "a tile outside the declared pyramid is invalid_args"
+            );
+            WebSocketTransport.Instance.ErrorCodes.Clear();
+            WebSocketTransport.Instance.TerminalMessages.Clear();
+            RouteMapRequest(
+                "getMapTile",
+                "map-v1-bad",
+                new JObject
+                {
+                    ["x"] = 1,
+                    ["y"] = 2,
+                    ["z"] = 3,
+                }
+            );
+            Equal(
+                ProtocolErrorCodes.InvalidArgs,
+                WebSocketTransport.Instance.ErrorCodes.SingleOrDefault(),
+                "v0-shaped args on a v1 connection are invalid_args"
+            );
+
+            mirror.MapRenderingEnabled = false;
+            Directory.Delete(mirror.MapRoot, true);
+            True(ReadHandlers.CurrentMapCapability() == null, "identify declares no map");
+            RouteV1Tile("world", 6, 32, 31);
+            Equal(
+                ProtocolErrorCodes.Unsupported,
+                WebSocketTransport.Instance.ErrorCodes.SingleOrDefault(),
+                "a v1 tile request on a server without a map is unsupported"
+            );
+
+            // v0 keeps its own shape on the same tile cache.
+            mirror.MapRenderingEnabled = true;
+            Directory.CreateDirectory(Path.Combine(mirror.MapRoot, "4", "0"));
+            File.WriteAllBytes(Path.Combine(mirror.MapRoot, "4", "0", "0.png"), png);
+            WebSocketTransport.Instance.ProtocolVersion = 0;
+            WebSocketTransport.Instance.TerminalMessages.Clear();
+            RouteMapRequest(
+                "getMapTile",
+                "map-v0",
+                new JObject
+                {
+                    ["x"] = 0,
+                    ["y"] = 0,
+                    ["z"] = 4,
+                }
+            );
+            JToken v0 = JObject.Parse(
+                JsonConvert.SerializeObject(WebSocketTransport.Instance.TerminalMessages.Single())
+            )["payload"];
+            Equal(
+                Convert.ToBase64String(png),
+                v0.Type == JTokenType.String ? (string)v0 : null,
+                "a v0 tile reply stays a bare base64 string at the game's own index"
+            );
+        }
+        finally
+        {
+            WebSocketTransport.Instance.ProtocolVersion = 0;
+            WebSocketTransport.Instance.ErrorCodes.Clear();
+            WebSocketTransport.Instance.TerminalMessages.Clear();
+            mirror.MapRoot = null;
+            mirror.MapRenderingEnabled = false;
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch (Exception) { }
+        }
+    }
+
+    private static JObject RouteV1Tile(string dimension, int zoom, int x, int y)
+    {
+        WebSocketTransport.Instance.ErrorCodes.Clear();
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        RouteMapRequest(
+            "getMapTile",
+            "map-v1",
+            new JObject
+            {
+                ["dimension"] = dimension,
+                ["zoom"] = zoom,
+                ["x"] = x,
+                ["y"] = y,
+            }
+        );
+        WebSocketMessage message = WebSocketTransport.Instance.TerminalMessages.Single();
+        if (message.Type != WebSocketMessage.MessageTypes.Response)
+            return null;
+        return JObject.Parse(JsonConvert.SerializeObject(message))["payload"] as JObject;
+    }
+
     private static void RouteMapRequest(string action, string requestId, JToken args)
     {
         var payload = new JObject { ["action"] = action };
@@ -2991,6 +3428,9 @@ namespace Takaro.Services
         public int MapSizeX;
         public int MapSizeY;
         public int MapSizeZ;
+        public int MapHalfExtent;
+        public bool MapRenderingEnabled;
+        public string WorldName;
 
         public List<Takaro.TakaroPlayer> GetOnlinePlayers()
         {

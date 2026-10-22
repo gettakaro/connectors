@@ -73,8 +73,8 @@ namespace Takaro.WebSocket
 
         public static readonly int[] OfferedProtocolVersions = { 0, 1 };
 
-        // testReachability is always allowed and the map actions are not declared:
-        // the mod cannot yet answer v1's tiled map requests, so Takaro must not ask.
+        // testReachability is always allowed. getMapInfo is v0 only; getMapTile is
+        // covered by the map Capability, declared only when the server has a map.
         public static readonly IDictionary<string, string> ActionCapabilities = new Dictionary<
             string,
             string
@@ -99,7 +99,8 @@ namespace Takaro.WebSocket
         };
 
         public static List<Dictionary<string, object>> BuildCapabilityManifest(
-            IEnumerable<string> handledActions
+            IEnumerable<string> handledActions,
+            Dictionary<string, object> mapCapability = null
         )
         {
             var manifest = new List<Dictionary<string, object>>();
@@ -115,6 +116,9 @@ namespace Takaro.WebSocket
 
             foreach (string eventType in GameEventTypes.All)
                 manifest.Add(new Dictionary<string, object> { { "name", "events." + eventType } });
+
+            if (mapCapability != null)
+                manifest.Add(mapCapability);
 
             manifest.Add(
                 new Dictionary<string, object>
@@ -139,7 +143,13 @@ namespace Takaro.WebSocket
                 { "registrationToken", registrationToken },
                 { "identityToken", identityToken },
                 { "protocolVersions", OfferedProtocolVersions },
-                { "capabilities", BuildCapabilityManifest(RequestRouter.SupportedActions) },
+                {
+                    "capabilities",
+                    BuildCapabilityManifest(
+                        RequestRouter.SupportedActions,
+                        ReadHandlers.CurrentMapCapability()
+                    )
+                },
                 { "game", GameIdentifier },
             };
         }
