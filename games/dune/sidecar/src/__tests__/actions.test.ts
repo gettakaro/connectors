@@ -222,6 +222,44 @@ describe('mutations read the effect back', () => {
     expect(String(result.reason)).toMatch(/still online/);
   });
 
+  it('kickPlayer reports only a kick read back from Postgres to presence', async () => {
+    const reported: string[] = [];
+    const h = await harness({ onKicked: (gameId) => reported.push(gameId) });
+    setTimeout(() => h.battlegroup.setOnline(FLS, false), 10);
+    await h.adapter.handleAction('kickPlayer', { gameId: FLS });
+    expect(reported).toEqual([FLS]);
+
+    const stubbornReported: string[] = [];
+    const stubborn = await harness({ onKicked: (gameId) => stubbornReported.push(gameId) });
+    await stubborn.adapter.handleAction('kickPlayer', { gameId: FLS });
+    expect(stubbornReported).toEqual([]);
+  });
+
+  it('a kick whose read-back failed is not reported to presence', async () => {
+    const reported: string[] = [];
+    const h = await harness({ onKicked: (gameId) => reported.push(gameId) });
+    const lookUp = h.pg.findPlayer.bind(h.pg);
+    let calls = 0;
+    // The first lookup finds the row to kick; every read-back after the publish fails.
+    h.pg.findPlayer = async (id) => {
+      if (calls++ === 0) return lookUp(id);
+      throw new Error('connection terminated');
+    };
+    await h.adapter.handleAction('kickPlayer', { gameId: FLS });
+    expect(reported).toEqual([]);
+  });
+
+  it('a ban-enforcement kick on sight is reported to presence too', async () => {
+    const reported: string[] = [];
+    const h = await harness({ onKicked: (gameId) => reported.push(gameId) });
+    await h.adapter.handleAction('banPlayer', { gameId: FLS, reason: 'banned', expiresAt: null });
+    expect(reported).toEqual([]);
+    h.battlegroup.setOnline(FLS, true);
+    setTimeout(() => h.battlegroup.setOnline(FLS, false), 10);
+    expect(await h.bans.enforce([{ gameId: FLS, name: 'Tester' }])).toEqual([FLS]);
+    expect(reported).toEqual([FLS]);
+  });
+
   it('sendMessage whispers to a recipient and broadcasts without one', async () => {
     const h = await harness();
     const whisper = (await h.adapter.handleAction('sendMessage', {
