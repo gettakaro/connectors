@@ -248,6 +248,44 @@ the world edge. Errors start with `invalid_args`, `map_not_ready` or `tile_out_o
 part lives between `takaro:map-begin` / `takaro:map-end`; `tests/map/run.sh` runs it the same way
 as the config harness.
 
+On protocol v1 the same raster is declared as the `map` capability: one Dimension `world`, x to the
+right and z up, bounds = the world square plus the 512 m ocean pad, a `tiled` source of 128 px tiles
+from zoom 0 (the whole square) to the first zoom with at most one metre per pixel. `getMapTile`
+takes `{dimension, zoom, x, y}` and answers `{mimeType: "image/png", data}`; a map that is not
+rendered yet answers `not_found`. The capability goes out in a `capabilities` replacement as soon as
+the raster is ready, so a boot or reload declares it a few seconds after identify.
+
+### Protocol (v0 and v1)
+
+Identify offers `protocolVersions: [0, 1]` with a Capability Manifest (the 16 actions, the six
+`events.*` and, once the map is ready, `map`) and speaks whatever `identifyResponse` picks, per
+connection; a Takaro that names no version is v0. On v1, failures are
+`{ "type": "response", "error": { "code", "message" } }` (`not_found` for an unknown player or item,
+`invalid_args` for bad arguments, `game_error` for anything the game threw, `unsupported` for an
+unknown action and for `getMapInfo`), void actions answer `payload: null`, and every `gameEvent` carries
+the process's `streamId` and a `seq` from 1. Events wait in a buffer of 2000 (oldest dropped) until an
+`eventAck` covers them and are resent in order after every v1 identify; on v0 they are sent once
+without `streamId`/`seq`, as before, and what was raised while disconnected goes out after identify.
+Every frame leaves through one queue in order, so events never overtake each other. The pure part
+lives between `takaro:protocol-begin` / `takaro:protocol-end`; `tests/protocol/run.sh` runs it.
+
+### Game profile
+
+Identify also sends `game: "rust"`, `connector: { name: "takaro-rust", version }` and the server's
+hostname as `name` (Takaro follows it until an operator renames the server). `version` is the
+plugin's own `[Info]` version (Oxide's `Version`), which release-please keeps equal to `version.txt`;
+it is left out if it is ever not strict semver, because Takaro refuses the whole identify over it.
+The manifest declares `game.profile` with `name: "Rust"`, `version` = `Rust.Protocol.printable`
+(the build the server's `version` command prints, for example `2634.289.1`) and the icon's
+`revision` and `size`. `getGameIcon` is answered off the game thread with the whole PNG as base64.
+
+The icon is `assets/icon-256.png` (Steam library art of app 252490, 256 x 256). The plugin ships as
+one `.cs`, so `scripts/embed-icon.sh` writes the PNG into it as the base64 constant between
+`takaro:icon-begin` / `takaro:icon-end`; the plugin computes the revision (first 12 hex of the
+sha256) and size from those bytes when it loads. Changing the icon is: replace the PNG, run
+`scripts/embed-icon.sh`. `tests/protocol/run.sh` fails when the constant and the PNG differ, when
+the PNG is not 256 x 256 or over 128 KiB, and when the `[Info]` version is not `version.txt`.
+
 ### Environment variables
 
 | Variable | Description | Default |
