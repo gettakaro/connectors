@@ -168,6 +168,8 @@ internal static class Program
         var jwt = Connector.ParseIdentifyResponse(JObject.Parse(
             "{\"type\":\"identifyResponse\",\"payload\":null,\"error\":{\"code\":\"internal\",\"message\":\"failed eyJhbGciOi.eyJzdWIi.c2lnbmF0dXJl\"}}"));
         Check(!jwt.Reason.Contains("eyJ"), "reply: a JWT in a rejection is redacted");
+        Check(jwt.Retryable, "reply: an internal rejection is retried, not treated as a bad token");
+        Check(!v1Error.Retryable && !v0Error.Retryable && !v1.Retryable, "reply: other rejections and acceptances are not retried");
 
         var future = Connector.ParseIdentifyResponse(JObject.Parse(
             "{\"type\":\"identifyResponse\",\"payload\":{\"gameServerId\":\"gs\",\"protocolVersion\":2}}"));

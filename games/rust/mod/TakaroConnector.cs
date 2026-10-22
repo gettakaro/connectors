@@ -678,6 +678,8 @@ namespace Oxide.Plugins
             // The v1 rejection code; null for a v0 rejection, which has none.
             public string ErrorCode;
             public string Reason;
+            // Takaro failed on its side ("internal"); the token is fine, so retry with backoff.
+            public bool Retryable => !Accepted && ErrorCode == ErrorInternal;
         }
 
         // A v1 rejection is a top-level error (payload null, socket closed 1008); a v0 one
@@ -871,6 +873,8 @@ namespace Oxide.Plugins
         private int _identifySentGeneration = -1;
         // An auth close stops retries for that connection only; a config change starts a new one.
         private int _authClosedGeneration = -1;
+        // The connection whose identify failed on Takaro's side; its 1008 close is not an auth close.
+        private int _retryableRejectGeneration = -1;
         private ReconnectRequest _pendingReconnect;
         // The protocol version Takaro chose for the current connection; -1 until identified.
         private volatile int _protocolVersion = -1;
@@ -1263,7 +1267,7 @@ namespace Oxide.Plugins
                     var reason = result.CloseStatusDescription ?? "";
                     LogInfo($"WebSocket closed (code={code}, reason={reason})");
 
-                    if (code == 1008 || code == 4001 || code == 4003)
+                    if ((code == 1008 || code == 4001 || code == 4003) && Volatile.Read(ref _retryableRejectGeneration) != generation)
                     {
                         Volatile.Write(ref _authClosedGeneration, generation);
                         LogRejected(string.IsNullOrEmpty(reason) ? $"connection closed with code {code}" : reason);
@@ -1514,6 +1518,13 @@ namespace Oxide.Plugins
             if (!reply.Accepted)
             {
                 LogWarning($"Identify failed: {reply.Reason}");
+                if (reply.Retryable)
+                {
+                    // Takaro closes the socket right behind this; the close then reconnects with backoff.
+                    Volatile.Write(ref _retryableRejectGeneration, generation);
+                    LogWarning("Takaro could not identify this server on its side; retrying with backoff");
+                    return;
+                }
                 LogRejected(reply.Reason);
                 return;
             }
