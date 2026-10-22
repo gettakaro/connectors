@@ -124,8 +124,8 @@
     "log": {
       "status": "supported",
       "surface": "plugin lifecycle",
-      "reason": "The plugin emits a startup log, but the current build has no Takaro log-hook execution row after module install and restart; current live proof remains pending.",
-      "liveVerified": false
+      "reason": "Takaro stored successful installed hook executions for plugin startup logs on two server restarts with build 26087496 on 2026-10-22.",
+      "liveVerified": true
     },
     "player-connected": {
       "status": "supported",
