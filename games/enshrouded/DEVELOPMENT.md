@@ -375,6 +375,18 @@ Takaro as the oracle): 48 of 52 acceptance rows proven; the rest are partial by 
 or partial on catalogue names (`listItems`, `listEntities`).
 Evidence is kept in the El-Limon workspace, not in this repository.
 
+### Game Profile
+
+`identify` names the game (`enshrouded`) and the connector (`takaro-enshrouded`, version
+`TAKARO_PLUGIN_VERSION` from `mod/src/common.h`, which release-please keeps equal to `version.txt`).
+On protocol 1 the manifest also declares `game.profile` (`mod/src/native/game_profile.cpp`): the display
+name, the running game build read from `enshrouded_server.kfc` (left out when it cannot be read) and the
+icon. The icon is `assets/icon-256.png` (256 x 256 PNG, at most 128 KiB), compiled into `dbghelp.dll`
+from `mod/src/native/game_icon_png.inc`; its revision (first 12 hex characters of the sha256) and size
+are computed from those bytes at startup, and `getGameIcon` answers with the whole file. After replacing
+the PNG run `mod/tools/gen_game_icon.py`; `mod/tests/run.sh` fails while the two differ. Takaro never
+fetches a revision twice, so a changed icon always has to change its bytes.
+
 ## Known limitations
 
 - **Player name is the Steam persona name**, not the in-game character name (the server never exposes it). `gameId` = SteamID64.
