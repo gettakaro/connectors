@@ -1,6 +1,7 @@
 #include "http.h"
 
 #include "actions.h"
+#include "chat_probe.h"
 #include "admin.h"
 #include "events.h"
 #include "gamethread.h"
@@ -358,6 +359,7 @@ Response Route(const Request& r) {
             return {200, body};
         }
         if (p.size() == 2 && p[1] == "symbols") return DebugSymbols();
+        if (p.size() == 2 && p[1] == "chat-probe") return {200, ChatProbe::Json()};
         if (p.size() == 2 && p[1] == "nearby") {
             std::string rad = QueryParam(r.query, "radius");
             double radius = rad.empty() ? 5000.0 : atof(rad.c_str());

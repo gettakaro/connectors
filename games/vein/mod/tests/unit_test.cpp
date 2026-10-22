@@ -11,6 +11,7 @@
 #include "config_file.h"
 #include "instance_guard.h"
 #include "ca_bundle.h"
+#include "chat_probe.h"
 
 #include <sys/stat.h>
 #include <unistd.h>
@@ -1311,6 +1312,47 @@ static void TestCaBundleChoice() {
     CHECK(CaBundle::Candidates().size() == 5, "candidates %zu", CaBundle::Candidates().size());
 }
 
+// #204 research probe: only the exact owned trigger, as a whole first word, is consumed.
+static void TestChatProbeMatch() {
+    std::string trig, args;
+    CHECK(ChatProbe::MatchOwned("!tkprobe204", trig, args), "bare trigger");
+    EQ(trig, "!tkprobe204");
+    EQ(args, "");
+    CHECK(ChatProbe::MatchOwned("  /tkprobe204   a b  c ", trig, args), "slash form with args");
+    EQ(trig, "/tkprobe204");
+    EQ(args, "a b  c");
+    CHECK(!ChatProbe::MatchOwned("!tkprobe2045", trig, args), "prefix of a longer word");
+    CHECK(!ChatProbe::MatchOwned("!TKPROBE204", trig, args), "case-sensitive");
+    CHECK(!ChatProbe::MatchOwned("hello !tkprobe204", trig, args), "not the first word");
+    CHECK(!ChatProbe::MatchOwned("/help", trig, args), "native-looking command");
+    CHECK(!ChatProbe::MatchOwned("", trig, args), "empty");
+    CHECK(!ChatProbe::MatchOwned("!tkprobe204 " + std::string(600, 'x'), trig, args), "oversized message");
+    CHECK(ChatProbe::MatchOwned("!tkprobe204 " + std::string(400, 'x'), trig, args), "long args");
+    CHECK(args.size() == ChatProbe::kMaxArgs, "args capped, got %zu", args.size());
+}
+
+static void TestChatProbeStub() {
+    std::vector<std::pair<std::string, std::string>> notices;
+    ChatProbe::SetPrivateNotifier([&](const std::string& g, const std::string& t) { notices.push_back({g, t}); });
+    ChatProbe::TestEnable(true, true);
+    EQ(ChatProbe::Consume("76561198000000001", "P", 1, "!tkprobe204", "x"), "envelope");
+    ChatProbe::TestDrain();
+    std::string j = ChatProbe::Json();
+    CHECK(j.find("\"envelopes\":1") != std::string::npos, "one envelope: %s", j.c_str());
+    CHECK(j.find("\"stubReceived\":1") != std::string::npos, "stub took it: %s", j.c_str());
+    CHECK(j.find("\"dedupeId\":\"" + BootId() + ":1\"") != std::string::npos, "dedupe id: %s", j.c_str());
+    CHECK(notices.empty(), "no private notice when the stub is up");
+
+    ChatProbe::TestEnable(true, false);
+    EQ(ChatProbe::Consume("76561198000000001", "P", 2, "!tkprobe204", ""), "failed-private");
+    ChatProbe::TestDrain();
+    j = ChatProbe::Json();
+    CHECK(j.find("\"envelopes\":1") != std::string::npos, "no new envelope while down: %s", j.c_str());
+    CHECK(j.find("\"failedPrivate\":1") != std::string::npos, "failed privately: %s", j.c_str());
+    CHECK(notices.size() == 1 && notices[0].first == "76561198000000001", "one private notice to the sender");
+    ChatProbe::TestEnable(false, true);
+}
+
 int main() {
     // Code under test reads settings through ConfigFile::Current(), which creates its file.
     char cfgDir[] = "/tmp/takaro-unit-XXXXXX";
@@ -1329,6 +1371,8 @@ int main() {
     TestLogLineSplit();
     TestSteamIdShape();
     TestChatLineParser();
+    TestChatProbeMatch();
+    TestChatProbeStub();
     TestCharacterSelectParser();
     TestJoinLineParser();
     TestLoginRefusedParser();
