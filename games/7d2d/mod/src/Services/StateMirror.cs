@@ -87,6 +87,21 @@ namespace Takaro.Services
             return record != null && record.Online ? record : null;
         }
 
+        /// <summary>
+        /// The whole player registry, online and offline. Console commands call this on the
+        /// main thread to resolve offline players; the registry is small and the lock is
+        /// only contended while the DbWriter is busy.
+        /// </summary>
+        public List<PlayerRecord> GetRegisteredPlayers()
+        {
+            lock (Database.Instance.SyncRoot)
+            {
+                if (!Database.Instance.IsOpen)
+                    return new List<PlayerRecord>();
+                return new List<PlayerRecord>(Database.Instance.Players.FindAll());
+            }
+        }
+
         public PlayerRecord GetPlayerLocationRecord(string gameId)
         {
             PlayerRecord record;
@@ -258,8 +273,9 @@ namespace Takaro.Services
             SeedLocations();
             SeedWorldMap();
             RefreshBans();
+            SeedRegistryFromGame();
             LogService.Instance.Info(
-                "State mirror seeding enqueued (items, entities, locations, bans)"
+                "State mirror seeding enqueued (items, entities, locations, bans, player registry)"
             );
         }
 
@@ -299,6 +315,63 @@ namespace Takaro.Services
             LogService.Instance.Info(
                 $"World map captured (extent {_mapSizeX}x{_mapSizeY}x{_mapSizeZ}, tiles '{_mapRoot}')"
             );
+        }
+
+        /// <summary>
+        /// Adds the players the game itself remembers (players.xml) to the registry when the
+        /// registry does not know them yet: players from before the registry existed, or
+        /// from a database that had to be started over. Registered players are never
+        /// overwritten; join, leave, spawn and the sampler keep them current.
+        /// </summary>
+        private void SeedRegistryFromGame()
+        {
+            PersistentPlayerList playerList = GameManager.Instance.GetPersistentPlayerList();
+            if (playerList?.Players == null)
+                return;
+
+            var candidates = new List<PlayerRecord>();
+            foreach (PersistentPlayerData data in playerList.Players.Values)
+            {
+                string primaryId = data?.PrimaryId?.CombinedString;
+                if (primaryId == null || !primaryId.StartsWith("EOS_"))
+                    continue;
+
+                string gameId = primaryId.Substring("EOS_".Length);
+                string nativeId = data.NativeId?.CombinedString;
+                var record = new PlayerRecord
+                {
+                    GameId = gameId,
+                    EpicOnlineServicesId = gameId,
+                    Name = data.PlayerName?.playerName?.Text,
+                    PlatformId = nativeId,
+                    EntityId = data.EntityId,
+                    X = data.Position.x,
+                    Y = data.Position.y,
+                    Z = data.Position.z,
+                    LastSeenUtc = data.LastLogin.ToUniversalTime(),
+                };
+                if (nativeId != null && nativeId.StartsWith("Steam_"))
+                    record.SteamId = nativeId.Substring("Steam_".Length);
+                else if (nativeId != null && nativeId.StartsWith("XBL_"))
+                    record.XboxLiveId = nativeId.Substring("XBL_".Length);
+                candidates.Add(record);
+            }
+
+            DbWriter.Instance.Enqueue(() =>
+            {
+                int added = 0;
+                foreach (PlayerRecord record in candidates)
+                {
+                    if (Database.Instance.Players.FindById(record.GameId) != null)
+                        continue;
+                    Database.Instance.Players.Insert(record);
+                    added++;
+                }
+                if (added > 0)
+                    LogService.Instance.Info(
+                        $"Player registry: added {added} player(s) the game remembers from players.xml"
+                    );
+            });
         }
 
         public void UpsertPlayerOnline(ClientInfo cInfo)
