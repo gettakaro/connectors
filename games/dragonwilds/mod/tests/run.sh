@@ -12,3 +12,6 @@ set -x
 $CXX -std=c++17 -O1 -g -Wall -Wextra -Isrc -Itests \
     tests/unit_test.cpp src/common.cpp src/config_file.cpp src/state.cpp src/perf.cpp -o tests/build/unit_test -pthread
 ./tests/build/unit_test
+$CXX -std=c++17 -O1 -g -Wall -Wextra -Isrc \
+    tests/command_probe_test.cpp src/command_probe_logic.cpp -o tests/build/command_probe_test -pthread
+./tests/build/command_probe_test
