@@ -204,7 +204,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         protocol = 0;
         adapter.logInfo("WebSocket closed (code=" + code + ", reason=" + reason + ", remote=" + remote + ")");
 
-        if (!closed && (code == 1008 || code == 4001 || code == 4003)) {
+        if (!closed && (code == 1008 || code == 4001 || code == 4003) && !isTransientRefusal(reason)) {
             shouldReconnect = false;
             TakaroConnector.logBanner(adapter,
                     "Takaro refused the connection (" + (reason == null || reason.isEmpty() ? "code " + code : reason) + ").",
@@ -215,6 +215,18 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         if (shouldReconnect && config.isReconnectEnabled()) {
             scheduleReconnect();
         }
+    }
+
+    /**
+     * Takaro closes with 1008 after any failed identify and puts the error code in the reason.
+     * A fault on Takaro's side passes, so those keep the backoff instead of waiting for a token edit.
+     */
+    static boolean isTransientRefusal(String reason) {
+        if (reason == null) return false;
+        return switch (reason.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "internal", "timeout", "unavailable", "rate_limited" -> true;
+            default -> false;
+        };
     }
 
     @Override
