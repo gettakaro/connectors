@@ -63,6 +63,7 @@ export interface HarnessOptions {
   takaroRequestTimeoutMs?: number;
   takaroRequestMarginMs?: number;
   gmAuthToken?: string;
+  onKicked?: (gameId: string) => void;
 }
 
 /** A whole connector wired to the in-memory battlegroup: no Postgres, no broker, no game. */
@@ -148,6 +149,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     // Tests never burn real seconds on the shutdown countdown; the wait is asserted through this hook instead.
     sleep: options.sleep ?? (async () => {}),
     execRunner: options.execRunner,
+    onKicked: options.onKicked,
   });
 
   return {
