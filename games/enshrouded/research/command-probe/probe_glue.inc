@@ -119,6 +119,14 @@ void Writer() {
         if (!q.empty()) {
             std::ofstream o(TakaroPath("connector-state\\command-probe.jsonl"), std::ios::app | std::ios::binary);
             for (auto& l : q) o << l << "\n";
+            o.flush();
+            if (!o) {  // keep the lines for the next round rather than losing evidence
+                std::lock_guard<std::mutex> g(g_mu);
+                while (!q.empty() && g_out.size() < 1000) {
+                    g_out.push_front(q.back());
+                    q.pop_back();
+                }
+            }
         }
         Sleep(500);
     }

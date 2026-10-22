@@ -305,4 +305,9 @@ Enshrouded:
   ordinary chat public, the nonce suppressed and receipted, `@off` refused privately, sender
   bound with the account cross-check, an unreadable catalog refused everything and logged once,
   and every probe log line came from the probe thread.
-- Final `/verify` after the fixes: results in the PR body.
+- Final `/verify` (light, Codex) on the fixed branch: no regressions in the fixes. Two new points:
+  probe log lines were lost when a write failed (fixed: they are re-queued), and a catalog that is
+  unreadable at the very first poll leaves the probe off, because no claims are known yet. That is
+  the probe's design; production must instead persist the last applied catalog across restarts
+  (recommendation 2), so a server never starts without its claim set. Peer isolation remains the
+  open live cell.
