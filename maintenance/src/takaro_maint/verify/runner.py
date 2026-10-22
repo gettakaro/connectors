@@ -32,6 +32,7 @@ from ..games import adapter_for
 from ..install.ledger import read_ledger
 from ..publish import read_manifest
 from . import checks as base_checks
+from . import checks_lifecycle
 from .fake_takaro import FakeTakaro
 from .hooks import GameHooks
 from .report import build_report, write_report
@@ -688,6 +689,16 @@ class TargetRun:
                     self.record(await base_checks.check_identify(fake, self.server_log, 180, alive))
                 else:
                     self.skip("identify", self.not_selected_reason("identify"))
+                    # The protocol checks below talk to a connected connector. A game whose
+                    # connector only dials out once the world is up (7D2D does so seconds
+                    # after its ready line) is given the identify budget to do that when any of them runs; this
+                    # records nothing, and a connector that never comes fails those checks.
+                    talks_to_connector = any(
+                        self.wanted(check_id)
+                        for check_id in ("heartbeat", "players", "catalog-items", "catalog-entities", "console")
+                    )
+                    if talks_to_connector and fake.identify_count < 1:
+                        await checks_lifecycle.identify_within(fake, 1, checks_lifecycle.IDENTIFY_BUDGET, alive)
 
                 for check_id, coroutine in (
                     ("heartbeat", lambda: base_checks.check_heartbeat(fake)),

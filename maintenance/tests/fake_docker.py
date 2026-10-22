@@ -249,6 +249,12 @@ async def main():
                          "java": int(os.environ.get("TAKARO_JAVA", "25"))},
              "policy": "enforce", "result": "ok", "reasons": []}
     log("[Server thread/INFO]: Takaro target-check: " + json.dumps(check))
+    if FAIL == "late-connect":
+        # A connector that dials out only once the world is up, seconds after the ready line.
+        await asyncio.sleep(2)
+    if FAIL == "no-connect":
+        while True:
+            await asyncio.sleep(1)
     if FAIL == "restart" and NAME.endswith("-restart"):
         # Booted, but the connector never comes up: the restart check must not hang on it.
         await asyncio.sleep(1)

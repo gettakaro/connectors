@@ -82,6 +82,60 @@ manifest row, so the mod in `Mods/Takaro` is the one the ledger records.
    The target id, its fingerprint and every artifact name change with the build, which is the
    point: nothing claims to have been proven on bytes it was not proven on.
 
+## Runtime verification (CI)
+
+`takaro-maint verify --game 7d2d` installs a target's exact depot set into a throwaway
+directory, refuses it unless the declared files (`7DaysToDieServer.x86_64`, both
+`Assembly-CSharp` assemblies and Harmony) match the record's sha256, unpacks the built mod
+zip into `Mods/Takaro/` after checking it carries the target's fingerprint, and boots the
+pinned server image against a local fake Takaro. No host port is published.
+
+| Check | What has to happen |
+|---|---|
+| `build` | The manifest's artifact carries this target's fingerprint. |
+| `startup` | The server logs `StartGame done` and the pinned files are still byte-identical. |
+| `handshake` | The mod is loaded (`Loaded Mod: Takaro (<version>)`), sends `identify`, and logs Takaro's `identifyResponse`. |
+| `heartbeat`, `players` | Websocket ping/pong and `testReachability` answer; `getPlayers` on the empty server is `[]`. |
+| `console` | `executeConsoleCommand` runs on the server and is echoed in its log. |
+| `action` | `sendMessage` reaches the server's chat log. |
+| `reconnect` | Takaro drops the socket (1001); the mod identifies again within 120 s and answers on the new socket. |
+| `stop` | `shutdown` makes the server log its quit, the container exits 0 and the pinned files are intact. |
+
+The release workflow (`.github/workflows/7d2d.yml` → `connector-release.yml`) runs it for
+every candidate and maintained target in the `release / verify (<target>)` jobs. They run
+on every push to `main`, on release and recovery runs, and on pull requests that change this
+connector's build inputs (`scripts/pr-build-scope.sh`). `publish` needs every one of them to
+pass.
+
+Runner requirements: `ubuntu-latest` (x86_64, 4 vCPU, 16 GB RAM, about 86 GB free disk)
+with docker. The server container is capped at 6 GB. The depot set is 17.7 GB and is on disk
+twice, once in `~/.cache/takaro-maint/steam` and once in the throwaway install. It is larger
+than the repository's whole Actions cache, so the verify leg downloads it from Steam
+anonymously (no credentials) on each run (`runtime_large_server`), and the build leg never
+installs it. It cannot be trimmed: without the asset bundles under `Data/Addressables` the
+server hangs in `GameManager.Awake`. The leg's budget is 60 minutes and the server's startup
+budget is 900 s. The run's containers carry `tm.run=<run id>` and are removed on success,
+failure and `SIGINT`/`SIGTERM`, and by the job's last step if the job is cancelled.
+
+Reproduce it locally (about 36 GB free disk and 8 GB free RAM):
+
+```sh
+maintenance/bin/takaro-maint build --game 7d2d --target linux-3.3.0.b18 \
+  --version 0.0.0-local --out dist --toolchain container
+maintenance/bin/takaro-maint verify --game 7d2d --target linux-3.3.0.b18 \
+  --artifacts dist --out reports --startup-timeout 900
+```
+
+`reports/<target>/report.json` ties every check to the source revision, the target
+fingerprint, the artifact sha256 and the image digest that booted, with `server.log`,
+`fake-takaro.log`, `docker.log`, `install.json` and `deploy.json` beside it.
+
+Still manual, because they need a real game client (see the target record's evidence):
+`player-connected`/`player-disconnected`, `chat-message` from a player, `player-death`,
+`entity-killed`, `command-executed`, `getPlayer`/`getPlayerLocation`/`getPlayerInventory`,
+`giveItem`, `teleportPlayer`, `kickPlayer`, `banPlayer`/`unbanPlayer`/`listBans` with a
+rejoin, the Discord bridge, and registration against a hosted Takaro over TLS.
+
 ## Architecture
 
 The mod mirrors game state into an in-memory LiteDB database so that Takaro

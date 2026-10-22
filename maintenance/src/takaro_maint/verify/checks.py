@@ -202,6 +202,9 @@ async def check_heartbeat(fake: Any) -> CheckResult:
             except TimeoutError:
                 problems.append("a websocket ping was not answered within 5 s")
                 break
+            except RuntimeError as exc:
+                problems.append(f"no websocket ping could be sent: {exc}")
+                break
         reachable: Any = None
         try:
             reachable = await fake.request("testReachability", {})

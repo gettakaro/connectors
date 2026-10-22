@@ -154,7 +154,11 @@ jobs:
       tag: ${{ needs.params.outputs.tag }}
       publish: ${{ needs.params.outputs.publish }}
       pr_number: ${{ github.event.pull_request.number }}
-      # The 7D2D dedicated server is a 17.6 GB Steam depot set: a hosted runner cannot
-      # install or boot it, so the release claims contract verification only. Runtime
-      # onboarding for this connector is tracked separately.
-      runtime: false
+      # Every target's exact server boots on the hosted runner with the built mod against the
+      # local fake Takaro (`takaro-maint verify --game 7d2d`, see games/7d2d/DEVELOPMENT.md).
+      # The 17.7 GB depot set is larger than the repository's whole Actions cache, and the
+      # server will not start without its asset bundles, so the verify leg downloads it on
+      # each run and the build leg never installs it.
+      runtime: true
+      runtime_large_server: true
+      startup_timeout: 900

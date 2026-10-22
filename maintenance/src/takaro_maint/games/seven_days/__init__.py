@@ -43,6 +43,11 @@ MOD_FOLDER = "Takaro"
 #: Where an archive is unpacked before it replaces the live mod folder.
 MOD_STAGE = ".Takaro.staging"
 
+#: The runner boots every game with 3 GB. An idle V 3.3.0 server on Navezgane already holds
+#: 2.3 GB on the rig, so the default leaves it no headroom while the world loads; 6 GB keeps
+#: it clear of the ceiling and leaves most of a 16 GB hosted runner free.
+CONTAINER_MEMORY = "6g"
+
 DONT_REMOVE = (
     "Managed by takaro-maint: this directory holds an exactly pinned Steam build.\n"
     "Its presence stops the image reinstalling the branch head with SteamCMD.\n"
@@ -174,6 +179,11 @@ class SevenDaysAdapter(BaseAdapter):
             f"{runtime / 'saves'}:/home/sdtdserver/.local/share/7DaysToDie",
             f"{runtime / 'log'}:/home/sdtdserver/log",
         ]
+
+    def container_options(self, resolved: dict[str, Any], data_dir: Path) -> list[str]:
+        """This server's own memory limit, which wins over the runner's because it comes last."""
+        del resolved, data_dir
+        return ["--memory", CONTAINER_MEMORY]
 
     # -- install --------------------------------------------------------------
     def install(self, catalog: Any, target: Any, resolved: dict[str, Any], args: Any) -> int | None:
