@@ -116,7 +116,6 @@ jobs:
       pr_number: ${{ github.event.pull_request.number }}
       # The verify leg boots the pinned TShock image with the built plugin, starts the built
       # bridge as a second container in its network namespace, and runs `takaro-maint verify
-      # --game terraria` against a local fake Takaro. The first boot generates a small world,
-      # so the server gets the game's own 900 s budget instead of the default 600 s.
+      # --game terraria` against a local fake Takaro. The first boot generates a small world
+      # and took about a minute on a hosted runner, well inside the leg's 600 s budget.
       runtime: true
-      startup_timeout: 900

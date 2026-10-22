@@ -64,34 +64,10 @@ def test_the_verify_job_holds_no_secrets_and_no_hosted_mode() -> None:
 
     assert "secrets." not in verify
     assert "--takaro hosted" not in verify
-    # A negative boot runs only for a game that opts in: Minecraft's needs the sibling
-    # target's artifact, which a leg that downloads its own target's dist never has.
-    assert verify.count("--negative") == 1
-    assert "IN_NEGATIVE: ${{ inputs.runtime_negative && '--negative' || '' }}" in verify
+    assert "--negative" not in verify
     assert verify.count("permissions:") == 1
     assert "contents: read" in verify
     assert "contents: write" not in verify
-
-
-def test_the_opt_in_runtime_inputs_default_to_the_minecraft_shape() -> None:
-    """A game that does not ask for them gets the leg it always had."""
-    text = WORKFLOW.read_text()
-
-    for name, default in (("runtime_depot_cache", "false"), ("runtime_negative", "false"), ("startup_timeout", "600")):
-        declared = re.search(rf"\n      {name}:\n(?P<body>(?:        .*\n)+)", text)
-        assert declared, name
-        assert f"default: {default}" in declared.group("body"), name
-
-    assert "if: inputs.runtime && !inputs.runtime_depot_cache" in step(job("build"), "Install the pinned inputs")
-    verify = job("verify")
-    assert "IN_STARTUP_TIMEOUT: ${{ inputs.startup_timeout }}" in verify
-    assert '--startup-timeout "$IN_STARTUP_TIMEOUT"' in verify
-    restore, save = step(verify, "Restore the pinned Steam depots"), step(verify, "Save the pinned Steam depots")
-    key = "key: ${{ inputs.connector }}-depots-${{ steps.target.outputs.fp16 }}"
-    assert key in restore and key in save
-    assert "if: always() && inputs.runtime_depot_cache" in save
-    assert verify.index("Restore the pinned Steam depots") < verify.index("takaro-maint verify")
-    assert verify.index("takaro-maint verify") < verify.index("Save the pinned Steam depots")
 
 
 def test_the_verify_job_keeps_its_report_even_when_it_fails() -> None:

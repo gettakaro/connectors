@@ -192,7 +192,8 @@ publishes one set with checksums, a compat record and the legacy aliases.
 
 ### Runtime CI
 
-It passes `runtime: true` with `startup_timeout: 900`. Every PR that changes Terraria's build
+It passes `runtime: true`; the verify leg gives the server 600 s to start (the first boot took
+about a minute on a hosted runner). Every PR that changes Terraria's build
 inputs (`scripts/pr-build-scope.sh`), every push to `main` and every release run the `verify` leg
 of `connector-release.yml`; `publish` needs it to pass. The required check is
 `release / verify (terraria, tshock-v6.2.1, tshock, v6.2.1, <fp16>, maintained)` in the
@@ -203,7 +204,7 @@ commands a maintainer runs locally:
 maintenance/bin/takaro-maint build  --game terraria --target tshock-v6.2.1 --version 0.0.0-local \
   --out dist --toolchain container
 maintenance/bin/takaro-maint verify --game terraria --target tshock-v6.2.1 --artifacts dist \
-  --out reports --startup-timeout 900 --cleanup-orphans
+  --out reports --startup-timeout 600 --cleanup-orphans
 ```
 
 - **Runner:** `ubuntu-latest` (Linux x86_64) with Docker, nothing else. The server runs in the

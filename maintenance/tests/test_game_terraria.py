@@ -1444,8 +1444,6 @@ def test_the_workflow_delegates_to_connector_release_with_runtime_ci() -> None:
     assert "uses: ./.github/workflows/connector-release.yml" in body
     assert "connector: terraria" in body
     assert "runtime: true" in body
-    # The game's own first-boot budget, not the shared default of 600 s.
-    assert f"startup_timeout: {int(hooks.HOOKS.startup_timeout)}" in body
     assert "runtime_depot_cache" not in body
     # The workflow packages nothing itself: it sets up no .NET and names no assets.
     assert "setup-dotnet" not in body
