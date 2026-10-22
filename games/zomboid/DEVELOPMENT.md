@@ -73,15 +73,43 @@ All of it is ignored by git.
 ## Verifying a target
 
 ```sh
-maintenance/bin/takaro-maint build  --game zomboid --target linux-42.20.4 \
+maintenance/bin/takaro-maint build  --game zomboid --target linux-42.21.0 \
     --version <v> --out /tmp/dist --toolchain container
-maintenance/bin/takaro-maint verify --game zomboid --target linux-42.20.4 \
+maintenance/bin/takaro-maint verify --game zomboid --target linux-42.21.0 \
     --artifacts /tmp/dist --out /tmp/reports --run-id local --startup-timeout 900 \
     --checks build,startup,identify,heartbeat,players,agent-load,pinned-install,hooks-bound,catalog,rcon,action,reconnect,stop
 ```
 
 The run installs the pinned build into a temporary directory, deploys the jar, boots the
-server image and drives it from a fake Takaro. It reaches report level `startup`.
+server image and drives it from a fake Takaro. It reaches report level `startup`, which is
+what the target's `verification.required` asks for: `release assemble` refuses a release of
+`linux-42.21.0` that carries no passing report. Without `--checks` the same run selects
+the same checks, because the base checks this game cannot pass are excluded by its hooks.
+
+### In CI
+
+`.github/workflows/zomboid.yml` hands the release to `connector-release.yml` with
+`runtime: true`, so every candidate and maintained target gets a
+`release / verify (zomboid, <target>, …)` job that runs the command above (no `--checks`,
+`--startup-timeout 900`, run id `gha-<run>-<attempt>`) and uploads
+`verify-zomboid-<target>` with `report.json` and every log, even when a check failed.
+`publish` waits for it, so neither the rolling `zomboid-dev` build, a PR build nor a stable
+release is published from a run whose verification failed.
+
+| | |
+|---|---|
+| Trigger | push to `main` and pull requests touching `games/zomboid/**`, `catalog/zomboid/**`, `maintenance/**`, `scripts/**` or the two workflows; release-please's `workflow_call`. A pull request that changes none of the connector's build inputs (`scripts/pr-build-scope.sh`) skips the build and so the verify leg. |
+| Runner | `ubuntu-latest` (x86_64, 4 vCPU, 16 GB RAM), Docker from the image. No secrets, no Steam account: the depots are anonymous. |
+| Disk | ~15 GB: the depot cache (7.2 GB) and its installed copy (7.2 GB), plus the server image. |
+| Memory | the server container is capped at 3 GB (`MAX_RAM=2048m` heap). |
+| Time | 40 min job budget; about 6 min warm. `runtime_depot_cache: true` keeps the three depots under the `zomboid-depots-<fp16>` cache key (about 2 GB compressed), saved even when a check failed, so only a re-pinned target downloads again. |
+| Isolation | a `mktemp -d` install and data directory, world `takaro-verify`, no published host port, containers labelled `tm.run=gha-<run>-<attempt>` and removed in `finally` and again by an `always()` step. Logs are written by the harness with the run's own throwaway passwords only. |
+
+A run fails, and the release with it, when the agent is not picked up, a hook binds no
+method (`premain: hooks installed; unbound: [...]` or `matcher bound nothing`), a hooked
+class is never transformed, the tick hook never confirms, the agent's `target-check` reports
+a jar, target or fingerprint other than the catalog's (with `TAKARO_TARGET_POLICY=enforce`
+it then installs no hooks at all), or an action, the reconnect or the stop does not answer.
 
 Two things the run does that a reader would otherwise have to guess at:
 
@@ -123,8 +151,15 @@ broken display-name lookup would look like. Every row a player can hold is named
 `hooks-bound` proves the player-lifecycle hooks — connect, disconnect, chat, death,
 zombie-killed — are **bound, not fired**. Firing them needs a connected game client, which an
 unattended run does not have, so the check says so in its own detail and the report carries the
-same sentence. The last recorded client evidence is the 2026-09-13/16 hard tests, which stand
-for the connector, not for this pin.
+same sentence.
+
+What stays manual coverage, proven with a real client on the rig: the `player-connected`,
+`player-disconnected`, `chat-message`, `player-death` and `entity-killed` events, and every
+player-scoped action (`getPlayerLocation`, `getPlayerInventory`, `giveItem`, whisper
+`sendMessage`, `teleportPlayer`, `kickPlayer`, `banPlayer`/`unbanPlayer`). Each needs a
+spawned `IsoPlayer`, which only a connected client creates. The client run of 2026-10-01 on
+`linux-42.21.0` proved all of them except `entity-killed`, whose hook is bound but has not
+fired on this pin yet.
 
 ## The runtime target guard
 

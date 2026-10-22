@@ -773,7 +773,8 @@ def git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True, env=env).stdout.strip()
 
 
-def test_compat_record_carries_the_steam_pin_and_the_legacy_alias(run: Any, repo: Path, tmp_path: Path) -> None:
+def _assemble_without_reports(run: Any, repo: Path, tmp_path: Path) -> tuple[int, Any, str, Path]:
+    """`release assemble` over one built jar and no verification report."""
     git(repo, "init", "-q", "-b", "main")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "fixture")
@@ -814,6 +815,19 @@ def test_compat_record_carries_the_steam_pin_and_the_legacy_alias(run: Any, repo
         "o/r",
         repo=repo,
     )
+    return code, payload, err, out
+
+
+def test_compat_record_carries_the_steam_pin_and_the_legacy_alias(run: Any, repo: Path, tmp_path: Path) -> None:
+    # The real record requires the runtime leg's report; this test is about the pins, so it
+    # assembles a contract-level copy. The refusal without a report is asserted below.
+    path = repo / "catalog" / GAME / "targets" / f"{RELEASE_TARGET}.json"
+    record = json.loads(path.read_text())
+    assert record["verification"]["required"] == "startup"
+    record["verification"]["required"] = "contract"
+    path.write_text(json.dumps(record, indent=2) + "\n")
+
+    code, payload, err, out = _assemble_without_reports(run, repo, tmp_path)
 
     assert code == 0, f"{err}\n{payload}"
     record = json.loads((out / f"takaro-{GAME}-{VERSION}.compat.json").read_text())
@@ -825,6 +839,15 @@ def test_compat_record_carries_the_steam_pin_and_the_legacy_alias(run: Any, repo
     assert (out / RELEASE_JAR).is_file()
     assert (out / f"TakaroConnector-{VERSION}.jar").read_bytes() == (out / RELEASE_JAR).read_bytes()
     assert (out / "SHA256SUMS").is_file()
+
+
+def test_a_zomboid_release_without_a_runtime_report_is_refused(run: Any, repo: Path, tmp_path: Path) -> None:
+    """The record requires `startup`, so a set the verify leg never produced cannot ship."""
+    code, payload, _, _ = _assemble_without_reports(run, repo, tmp_path)
+
+    assert code == 8
+    assert payload["required"] == "startup"
+    assert "evidence missing" in payload["error"]
 
 
 # --------------------------------------------------------------------------- 22-23 the tracked scripts
