@@ -1,0 +1,161 @@
+{
+  "game": "Counter-Strike 2",
+  "architecture": "native CounterStrikeSharp plugin with outbound Takaro WebSocket",
+  "target": "linux-26087496",
+  "version": "0.1.0",
+  "verification": "CS2 build 26087496 current-client Takaro proof on 2026-10-22. Claims without current product-side proof remain unverified.",
+  "actions": {
+    "testReachability": {
+      "status": "supported",
+      "surface": "Server.MapName and Server.MaxPlayers",
+      "reason": "Takaro reported de_dust2 reachable after restart. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "getPlayers": {
+      "status": "supported",
+      "surface": "Utilities.GetPlayers and AuthorizedSteamID",
+      "reason": "Takaro returned the authenticated SteamID64 client. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "getPlayer": {
+      "status": "supported",
+      "surface": "authenticated online roster",
+      "reason": "Takaro resolved the authenticated SteamID64 player. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "getPlayerLocation": {
+      "status": "supported",
+      "surface": "CCSPlayerPawn.AbsOrigin",
+      "reason": "Takaro read back the real-client position after teleport. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "getPlayerInventory": {
+      "status": "supported",
+      "surface": "CCSPlayerPawn.WeaponServices.MyWeapons",
+      "reason": "Takaro returned equipped inventory after Desert Eagle delivery. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "giveItem": {
+      "status": "supported",
+      "surface": "CCSPlayerController.GiveNamedItem with inventory readback",
+      "reason": "Takaro delivered a Desert Eagle and the real client HUD and later inventory showed it. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "listItems": {
+      "status": "supported",
+      "surface": "curated CounterStrikeSharp CsItem codes",
+      "reason": "Takaro synced and listed ten curated items. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "listEntities": {
+      "status": "supported",
+      "surface": "curated nonplayer entity catalog",
+      "reason": "Takaro synced and listed the neutral Chicken entity. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "listLocations": {
+      "status": "unsupported",
+      "surface": "server-owned info_player_terrorist and info_player_counterterrorist map entities",
+      "reason": "Representative T/CT spawn points are implemented from server-owned map entities, but Takaro exposes no named-location sync or read route for product-side proof on 2026-10-22.",
+      "liveVerified": false
+    },
+    "getMapInfo": {
+      "status": "supported",
+      "surface": "server-owned radar image and overview calibration",
+      "reason": "Takaro returned enabled de_dust2 map metadata from prepared server-owned assets. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "getMapTile": {
+      "status": "supported",
+      "surface": "server-owned radar image and overview calibration",
+      "reason": "Takaro returned a calibrated 128 px PNG tile and an explicit out-of-range error. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "executeConsoleCommand": {
+      "status": "supported",
+      "surface": "CounterStrikeSharp ConVar.Find and StringValue",
+      "reason": "Takaro returned the real sv_cheats value and refused an unlisted command. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "sendMessage": {
+      "status": "supported",
+      "surface": "CCSPlayerController.PrintToChat",
+      "reason": "Global and private messages appeared in the real client; absent recipient returned player_not_found. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "teleportPlayer": {
+      "status": "supported",
+      "surface": "CCSPlayerPawn.Teleport with position readback",
+      "reason": "The real client moved and Takaro read back the requested coordinates. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "kickPlayer": {
+      "status": "supported",
+      "surface": "CCSPlayerController.Disconnect",
+      "reason": "Takaro kicked the real client. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "banPlayer": {
+      "status": "supported",
+      "surface": "durable SteamID64 ban store and join enforcement",
+      "reason": "The SteamID64 ban survived server restart and blocked real-client rejoin. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "unbanPlayer": {
+      "status": "supported",
+      "surface": "durable SteamID64 ban store",
+      "reason": "Takaro unbanned the client, who then rejoined. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "listBans": {
+      "status": "unsupported",
+      "surface": "durable SteamID64 ban store",
+      "reason": "Durable ban storage and rejoin enforcement passed, but Takaro exposes no listBans product action to verify this plugin method.",
+      "liveVerified": false
+    },
+    "shutdown": {
+      "status": "unsupported",
+      "surface": "AllowShutdown gate and Server.ExecuteCommand quit",
+      "reason": "Takaro verified the default shutdown_disabled gate on build 26087496; opt-in enabled shutdown remains untested.",
+      "liveVerified": false
+    }
+  },
+  "events": {
+    "log": {
+      "status": "supported",
+      "surface": "plugin lifecycle",
+      "reason": "Takaro stored successful installed hook executions for plugin startup logs on two server restarts with build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "player-connected": {
+      "status": "supported",
+      "surface": "OnClientAuthorized and EventPlayerConnectFull",
+      "reason": "Takaro stored authenticated real-client connect events across joins and recovery. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "player-disconnected": {
+      "status": "supported",
+      "surface": "EventPlayerDisconnect with last observed position for Takaro event processing",
+      "reason": "Takaro stored real-client disconnect events after kick and session end. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "chat-message": {
+      "status": "supported",
+      "surface": "say and say_team post listeners",
+      "reason": "Takaro stored real-client chat with authenticated SteamID64. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "player-death": {
+      "status": "supported",
+      "surface": "EventPlayerDeath",
+      "reason": "Takaro stored the real-client death with SteamID64, position, and weapon. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    },
+    "entity-killed": {
+      "status": "supported",
+      "surface": "EventOtherDeath with authenticated player attacker",
+      "reason": "The real client shot a Chicken and Takaro stored one entity-killed event with SteamID64 and Glock-18. Verified on CS2 build 26087496 on 2026-10-22.",
+      "liveVerified": true
+    }
+  }
+}
