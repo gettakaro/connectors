@@ -28,8 +28,8 @@ bool ParseCatalog(const std::string& text, Catalog& out, std::string& err) {
         return false;
     }
     Catalog c;
-    c.revision = takaro::JsString(v.get("revision"));
-    c.prefix = takaro::Lower(takaro::Trim(takaro::JsString(v.get("prefix"))));
+    c.revision = takaro::Str(v.get("revision")).value_or("");
+    c.prefix = takaro::Lower(takaro::Str(v.get("prefix")).value_or(""));
     if (c.prefix.empty() || c.prefix.find(' ') != std::string::npos) {
         err = "catalog needs a prefix without spaces";
         return false;
@@ -40,7 +40,7 @@ bool ParseCatalog(const std::string& text, Catalog& out, std::string& err) {
         return false;
     }
     for (const auto& cmd : cmds->arr) {
-        const std::string trigger = takaro::Trim(takaro::JsString(cmd.get("trigger")));
+        const std::string trigger = takaro::Str(cmd.get("trigger")).value_or("");
         if (trigger.empty() || trigger.find(' ') != std::string::npos) continue;
         std::vector<std::string> names{trigger};
         if (const JsonValue* al = cmd.get("aliases"); al && al->type == JsonValue::Array)
@@ -308,7 +308,9 @@ void Worker() {
             }
         }
         for (size_t i = 0; i < expired.size();) {
-            if (takaro::RemoveFileIfExists(takaro::JoinPath(outbox, expired[i].first + ".json"))) {
+            // RemoveFileIfExists also reports success for a missing file on Windows: stat first.
+            const std::string late = takaro::JoinPath(outbox, expired[i].first + ".json");
+            if (takaro::StatFile(late).exists && takaro::RemoveFileIfExists(late)) {
                 S().lateDropped++;
                 NativeLog("command-probe: late reply for %s dropped", expired[i].first.c_str());
             }
