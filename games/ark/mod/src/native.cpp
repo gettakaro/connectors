@@ -46,6 +46,9 @@
 
 namespace {
 constexpr char kExpectedHash[] = "7e7ded49e0c658e74199801d79630bd33da407d3e468e039837bf61a9de7c520";
+// The game build of that one executable (its own log line "ARK Version: 361.7"); the
+// hash gate guarantees no other build ever runs this plugin.
+constexpr char kGameVersion[] = "361.7";
 constexpr uintptr_t kExecThunk = 0x154a600; // reflected ServerSendChatMessage, verified by derive_bindings.py
 constexpr uintptr_t kTick = 0x81fce0; // only call at 0x8206ae in the main loop, build-specific
 constexpr uintptr_t kLogout = 0xe72ab0; // ShooterGameMode Logout vtable +0xc18, before controller removal
@@ -1349,6 +1352,14 @@ std::optional<takaro::Config> load_bridge_config() {
   config.ban_file = ark_config::get(file, "TAKARO_BAN_METADATA_FILE");
   config.wire_debug = ark_config::get(file, "TAKARO_WIRE_DEBUG") == "1";
   config.map_name = server_map_name();
+  config.game_version = kGameVersion;
+  {
+    std::string icon_error;
+    config.game_icon = takaro::load_game_icon(ark_config::plugin_file("icon-256.png"), icon_error);
+    enqueue(config.game_icon ? ("takaro-game-icon revision=" + config.game_icon->revision + " size=" +
+                                std::to_string(config.game_icon->png.size())).c_str()
+                             : ("takaro-game-icon-omitted " + icon_error).c_str());
+  }
   config.state_dir = ark_config::get(file, "TAKARO_STATE_DIR");
   if (config.state_dir.empty()) {
     const std::string root = server_root();

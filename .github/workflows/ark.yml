@@ -41,7 +41,7 @@ jobs:
           fetch-tags: true
       - name: Native unit and contract tests in pinned toolchain
         run: |
-          docker run --rm --network none -v "$PWD/games/ark/mod:/work" -w /work \
+          docker run --rm --network none -v "$PWD/games/ark:/work" -w /work/mod \
             node:22.23.2-bookworm@sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844 \
             bash -lc 'set -euo pipefail; for source in tests/*_test.cpp; do
               name=${source##*/}; name=${name%.cpp}

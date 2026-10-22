@@ -24,7 +24,10 @@
     "games/ark": {
       "release-type": "simple",
       "component": "ark",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        { "type": "generic", "path": "mod/src/version.hpp" }
+      ]
     },
     "games/rust": {
       "release-type": "simple",
