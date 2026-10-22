@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -29,10 +30,23 @@ from ... import paths
 from ...install.ledger import artifacts_of, read_ledger
 from ...verify import checks, checks_lifecycle
 from ...verify.hooks import GameHooks
+from . import PLUGIN_FILE
 
 PLUGIN_ROLE = "plugin"
 
-CHECK_IDS = ("carbon-compile", "items", "entities", "action", "reconnect", "stop")
+#: Opt-in (``--negative``): the plugin with a compile error in it must not load.
+NEGATIVE_CHECK = "negative-broken-compile"
+
+CHECK_IDS = (
+    "carbon-compile",
+    "items",
+    "entities",
+    "console-command",
+    "action",
+    "reconnect",
+    "stop",
+    NEGATIVE_CHECK,
+)
 
 #: "Server startup complete" is the last line of a successful boot; everything before it
 #: can appear on a boot that then dies.
@@ -45,6 +59,10 @@ UNSUPPORTED_CHECKS = {
     "catalog-items": ("spot-checks a Minecraft item id; `items` spot-checks a Rust one"),
     "catalog-entities": ("spot-checks a Minecraft entity id; `entities` spot-checks a Rust one"),
     "shutdown": ("asserts an exit code this Unity teardown does not give; `stop` asserts the shutdown"),
+    "console": (
+        "looks for the command text in the server log, which the connector deliberately does not write;"
+        " `console-command` asserts the redacted line and the server's own output reaching Takaro"
+    ),
 }
 
 LOADED_LINE = re.compile(r"Loaded plugin TakaroConnector v(?P<version>[^ ]+) by Takaro \[(?P<ms>[0-9]+)ms\]")
@@ -68,8 +86,17 @@ SELF_UPDATE_LINE = re.compile(
 SAVED_LINE = re.compile(r"^Saving complete")
 QUIT_LINE = re.compile(r"\[Raknet\] Server Shutting Down \(quit\)|^Quitting")
 UNLOADED_LINE = re.compile(r"Unloaded plugin TakaroConnector")
+#: The connector logs a console command's verb and argument count, never its text: an operator
+#: can type a password or a player's details into one.
+CONSOLE_LINE = re.compile(r"\[Takaro\] console: say \(1 args\)")
+
+#: What the negative boot prepends to the deployed source: one directive that no compiler
+#: accepts, so the rest of the file -- and what it would do if it loaded -- is unchanged.
+BROKEN_DIRECTIVE = "#error takaro-verify: this plugin must not compile"
 
 COMPILE_BUDGET = 180.0
+#: How long the broken boot is still watched after its ready line, for a late load or identify.
+NEGATIVE_GRACE = 15.0
 ACTION_BUDGET = 30.0
 QUIT_BUDGET = 120.0
 
@@ -200,6 +227,7 @@ async def after_protocol(run: Any, fake: Any, alive: Any) -> None:
             "entities",
             lambda: checks.check_catalog(fake, "listEntities", "entities", ENTITY_SPOT, _prefab_name_problems),
         ),
+        ("console-command", lambda: _check_console_command(run, fake, alive)),
         ("action", lambda: _check_action(run, fake, alive)),
         ("reconnect", lambda: checks_lifecycle.check_reconnect(run, fake, alive)),
     ):
@@ -245,6 +273,62 @@ async def _check_carbon_compile(run: Any, alive: Any) -> checks.CheckResult:
         },
         {"file": run.server_log.name, "line": loaded[0]} if loaded else {"file": run.server_log.name},
     )
+
+
+async def _check_console_command(run: Any, fake: Any, alive: Any) -> checks.CheckResult:
+    """A console command runs on the server, and what the server printed reaches Takaro.
+
+    The base ``console`` check greps the server log for the command's text, which this
+    connector redacts on purpose. What is asserted instead: the request succeeded, the
+    connector logged that it ran a one-argument ``say``, and Rust's own output of that ``say``
+    -- the marker -- came back to Takaro as a ``log`` game event. The last is the stronger
+    proof: only a command the server really executed prints it.
+    """
+    marker = f"takaro-verify-{run.options.run_id}-console"
+    with checks._Timer() as timer:
+        problems: list[str] = []
+        result: Any = None
+        baseline = len(fake.events)
+        try:
+            result = await fake.request("executeConsoleCommand", {"command": f"say {marker}"})
+        except Exception as exc:  # noqa: BLE001 - reported as a check failure
+            problems.append(f"executeConsoleCommand failed: {exc}")
+        if not isinstance(result, dict) or result.get("success") is not True:
+            problems.append(f"executeConsoleCommand returned {result!r}, expected success true")
+        found = await asyncio.to_thread(checks.wait_for_line, run.server_log, CONSOLE_LINE, ACTION_BUDGET, alive)
+        if not found:
+            problems.append("the connector never logged 'console: say (1 args)'")
+        echoed = await _wait_for_log_event(fake, baseline, marker, ACTION_BUDGET, alive)
+        if echoed is None:
+            problems.append(f"no 'log' game event carried the server's output '{marker}'")
+    return checks.CheckResult(
+        "console-command",
+        "pass" if not problems else "fail",
+        timer.elapsed_ms,
+        {
+            "command": f"say {marker}",
+            "result": result,
+            "connectorLine": found[1].strip() if found else None,
+            "logEvent": echoed,
+            "problems": problems,
+        },
+        {"file": run.server_log.name, "line": found[0]} if found else {"file": run.server_log.name},
+    )
+
+
+async def _wait_for_log_event(
+    fake: Any, baseline: int, marker: str, timeout: float, alive: Any
+) -> dict[str, Any] | None:
+    """The first ``log`` game event after ``baseline`` whose message carries ``marker``."""
+    deadline = time.monotonic() + timeout
+    while True:
+        for event in list(fake.events)[baseline:]:
+            data = event.get("data") if isinstance(event, dict) else None
+            if event.get("type") == "log" and isinstance(data, dict) and marker in str(data.get("msg", "")):
+                return dict(event)
+        if not alive() or time.monotonic() >= deadline:
+            return None
+        await asyncio.sleep(0.5)
 
 
 async def _check_action(run: Any, fake: Any, alive: Any) -> checks.CheckResult:
@@ -339,6 +423,94 @@ async def _check_stop(run: Any, fake: Any) -> checks.CheckResult:
     )
 
 
+async def negative(run: Any, fake: Any, ws_url: str, manifest: dict[str, Any]) -> None:
+    del manifest
+    if not run.wanted(NEGATIVE_CHECK):
+        run.skip(NEGATIVE_CHECK, "not selected by --checks")
+        return
+    run.record(await _check_negative_broken_compile(run, fake, ws_url))
+
+
+async def _check_negative_broken_compile(run: Any, fake: Any, ws_url: str) -> checks.CheckResult:
+    """A plugin Carbon cannot compile has to fail, never pass as a connector that loaded.
+
+    Rust has no sibling target whose artifact a server refuses -- every target's plugin is the
+    same source -- so the wrong artifact here is this one with a compile error in it. The
+    server boots again on the same data directory with that file deployed; the row passes
+    only when Carbon logs the failed compile, never logs the plugin as loaded, and no identify
+    frame arrives. The real plugin is put back byte-for-byte afterwards.
+    """
+    plugin = run.data_dir / PLUGIN_FILE
+    with checks._Timer() as timer:
+        problems: list[str] = []
+        failed: tuple[int, str] | None = None
+        loaded: tuple[int, str] | None = None
+        during = 0
+        log_name = "server-negative.log"
+        if not plugin.is_file():
+            problems.append(f"{PLUGIN_FILE} is not deployed; there is nothing to break")
+        else:
+            original = plugin.read_bytes()
+            plugin.write_bytes(BROKEN_DIRECTIVE.encode() + b"\n" + original)
+            try:
+                before = fake.identify_count
+                container = run.boot(ws_url, suffix="-negative", log_name=log_name)
+                run.extra_logs.append(container.log_file)
+                failed, loaded = await asyncio.to_thread(
+                    _watch_compile,
+                    container.log_file,
+                    run.startup_timeout + COMPILE_BUDGET,
+                    container.alive,
+                    lambda: fake.identify_count > before,
+                )
+                during = fake.identify_count - before
+                container.remove()
+            finally:
+                plugin.write_bytes(original)
+            if failed is None:
+                problems.append("Carbon never logged a failed compile of the broken plugin")
+            if loaded is not None:
+                problems.append(f"the broken plugin loaded: {loaded[1].strip()[:200]}")
+            if during:
+                problems.append(f"the broken plugin identified {during} time(s); it must never connect")
+    return checks.CheckResult(
+        NEGATIVE_CHECK,
+        "pass" if not problems else "fail",
+        timer.elapsed_ms,
+        {
+            "injected": BROKEN_DIRECTIVE,
+            "compileFailure": failed[1].strip()[:300] if failed else None,
+            "identifyFramesDuringNegative": during,
+            "problems": problems,
+        },
+        {"file": log_name, "line": failed[0]} if failed else {"file": log_name},
+    )
+
+
+def _watch_compile(
+    log_file: Path, timeout: float, alive: Any, identified: Any
+) -> tuple[tuple[int, str] | None, tuple[int, str] | None]:
+    """Watch the broken boot until it can no longer load the plugin, or until it does.
+
+    A compile error alone does not end the watch: the server keeps booting, and a load or an
+    identify after the error is exactly what this check exists to catch. So once the error is
+    seen the boot is followed to its ready line, and :data:`NEGATIVE_GRACE` beyond it. A load
+    or an identify ends the watch at once, and so does the container's death -- a Rust
+    server does not exit over a plugin, so that only cuts the wait short.
+    """
+    deadline = time.monotonic() + timeout
+    settle_at: float | None = None
+    while True:
+        failed = checks.find_line(log_file, COMPILE_FAILED)
+        loaded = checks.find_line(log_file, LOADED_LINE)
+        now = time.monotonic()
+        if failed and settle_at is None and checks.find_line(log_file, READY_LINE):
+            settle_at = now + NEGATIVE_GRACE
+        if loaded or identified() or not alive() or now >= deadline or (settle_at is not None and now >= settle_at):
+            return failed, loaded
+        time.sleep(1)
+
+
 def _where(run: Any, line: int | None) -> dict[str, Any]:
     """The report's ``log`` pointer, which carries a line number only when there is one."""
     where: dict[str, Any] = {"file": run.server_log.name}
@@ -351,9 +523,11 @@ def _where(run: Any, line: int | None) -> dict[str, Any]:
 HOOKS = GameHooks(
     ready_line=READY_LINE,
     check_ids=CHECK_IDS,
+    negative_check_ids=(NEGATIVE_CHECK,),
     unsupported_checks=UNSUPPORTED_CHECKS,
     before_boot=before_boot,
     after_protocol=after_protocol,
     after_shutdown=after_shutdown,
+    negative=negative,
     scan_runtime_identity=scan_runtime_identity,
 )
