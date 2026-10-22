@@ -819,11 +819,17 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             return;
         }
 
+        // A critter or monster that died to a town NPC, a trap, lava or a despawn has no killer,
+        // and Takaro can only file an entity kill under a player.
         var killer = ResolveKiller(npc);
+        if (killer is null)
+        {
+            return;
+        }
 
         Emit("entity-killed", new
         {
-            player = killer is null ? null : PlayerDto(killer, killer.Name),
+            player = PlayerDto(killer, killer.Name),
             entity = new
             {
                 gameId = $"npc:{npc.whoAmI}",
@@ -853,18 +859,15 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
     //     NOT -1 when unset: Terraria initialises it to 255 (Main.maxPlayers), a
     //     sentinel that is still inside TShock.Players' bounds, so a naive index
     //     check treats the "nobody" value as a real slot.
-    //  3. npc.target / npc.oldTarget - who the NPC was aggroed on. Weaker still,
-    //     since aggro can point at a player who dealt no damage at all, but it is
-    //     better than nothing for AI types that never set an interaction.
     //
-    // Returns null when nothing resolves, which surfaces as no player on the event.
+    // Who the NPC was aggroed on (npc.target) and "the only player online" are not
+    // used: both credited players with kills made by town NPCs, traps and lava.
+    //
+    // Returns null when no player damaged the NPC.
     private static TSPlayer? ResolveKiller(NPC npc)
     {
         return SoleInteractingPlayer(npc)
-            ?? ActivePlayerByIndex(npc.lastInteraction)
-            ?? ActivePlayerByIndex(npc.target)
-            ?? ActivePlayerByIndex(npc.oldTarget)
-            ?? SoleActiveTSPlayer();
+            ?? ActivePlayerByIndex(npc.lastInteraction);
     }
 
     // Returns the only player flagged in npc.playerInteraction, or null when zero
@@ -971,32 +974,6 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
 
         var player = TShock.Players[index];
         return player is not null && player.Active ? player : null;
-    }
-
-    // Last-resort killer guess. Only answers when exactly one player is online, in
-    // which case the kill must be theirs. With two or more connected, picking the
-    // first active slot is just a guess that is usually wrong on a busy server, and
-    // attributing a kill to the wrong player is worse than attributing it to nobody
-    // - so we return null and let the event report no killer.
-    private static TSPlayer? SoleActiveTSPlayer()
-    {
-        TSPlayer? found = null;
-        foreach (var player in TShock.Players)
-        {
-            if (player is null || !player.Active)
-            {
-                continue;
-            }
-
-            if (found is not null)
-            {
-                return null;
-            }
-
-            found = player;
-        }
-
-        return found;
     }
 
     private static object PlayerDto(TSPlayer? player, string fallbackName)
