@@ -34,6 +34,7 @@
 #include "actions.h"
 #include "admin.h"
 #include "actions_util.h"
+#include "chat_probe.h"
 #include "events_parse.h"
 #include "gamethread.h"
 #include "perf.h"
@@ -1075,6 +1076,49 @@ void HandleChat(void* self, void* func, void* params) {
              cp.haveSegment ? cp.segment : -1);
 }
 
+// #204 research probe (TAKARO_CHAT_PROBE=1 only; see chat_probe.h). Traces the call and, for an
+// inbound Server_Say whose first word is an owned trigger, consumes it: returns true and the detour
+// skips the original, so VEIN neither logs nor broadcasts it. Bounded work only: one reflection
+// walk, a whole-word compare, the identity read the chat path already does, and a queue push.
+std::string CommandClassOf(void* func, void* params) {
+    std::vector<void*> props;
+    WalkProps(func, props, 24);
+    for (void* prop : props) {
+        std::string type = Reflect::PropertyTypeName(prop);
+        if (type != "ClassProperty" && FieldName(prop).find("Command") == std::string::npos) continue;
+        int32_t off = Reflect::PropertyOffset(prop);
+        void* cls = nullptr;
+        if (off < 0 || !ReadAt(params, off, cls)) return "unreadable";
+        if (!cls) return "null";
+        return ValidObject(cls) ? Reflect::ObjName(cls) : "unreadable";
+    }
+    return "absent";
+}
+
+bool ProbeChat(void* self, void* func, void* params, const char* fnName) {
+    ChatParams cp = ReadChatParams(func, params);
+    void* st = cp.sender ? PlayerStateOf(cp.sender) : PlayerStateOf(self);
+    Ident id;
+    if (st) IdentFromPlayerState(st, id);
+    ChatProbe::Trace t;
+    t.function = fnName;
+    t.receiverClass = SafeClassName(self);
+    t.message = cp.msg;
+    t.segment = cp.haveSegment ? cp.segment : -1;
+    t.commandClass = CommandClassOf(func, params);
+    t.senderGameId = id.gameId;
+    t.senderName = id.name.empty() ? id.platformName : id.name;
+    std::string trigger, args;
+    bool owned = strcmp(fnName, "Server_Say") == 0 && id.valid() && ChatProbe::MatchOwned(cp.msg, trigger, args);
+    t.consumed = owned;
+    ChatProbe::RecordTrace(t);
+    if (!owned) return false;
+    std::string outcome = ChatProbe::Consume(id.gameId, t.senderName, t.segment, trigger, args);
+    PluginLog("chat-probe: consumed %s from %s before the original (%s)", trigger.c_str(), id.gameId.c_str(),
+              outcome.c_str());
+    return true;
+}
+
 // Reads a location out of an actor: RootComponent -> RelativeLocation (FVector of doubles in UE5).
 bool ActorLocation(void* actor, double& x, double& y, double& z) {
     void* root = nullptr;
@@ -1496,6 +1540,7 @@ void DetourProcessEvent(void* self, void* func, void* params) {
 
     // Read what we need *before* the call: RPC parameter buffers do not survive it.
     Kind what = kNone;
+    bool consumed = false;  // #204 research probe only: an owned trigger skips the original
     FnCandidate* hit = nullptr;
     bool cacheHit = false;
     try {
@@ -1542,7 +1587,11 @@ void DetourProcessEvent(void* self, void* func, void* params) {
         uint64_t tHandler0 = what != kNone ? Perf::NowNs() : 0;
         if (what == kChat) {
             g_chat.fired++;
-            HandleChat(self, func, params);
+            if (ChatProbe::Enabled() && ProbeChat(self, func, params, hit ? hit->name : "chat")) {
+                consumed = true;
+            } else {
+                HandleChat(self, func, params);
+            }
         } else if (what == kDeath) {
             g_death.fired++;
             g_kill.fired++;  // one event feeds both capabilities; the dispatch decides which emits
@@ -1553,6 +1602,7 @@ void DetourProcessEvent(void* self, void* func, void* params) {
     } catch (...) {
         PluginLog("events: ProcessEvent handler threw (kind=%d)", (int)what);
     }
+    if (consumed) return;
     if (orig) orig(self, func, params);
 }
 
@@ -2520,6 +2570,20 @@ void Events::SetRawLogSink(std::function<void(std::string)> sink, bool customJoi
 
 void Events::Init() {
     auto& st = PluginState::Get();
+    ChatProbe::Init();  // #204 research probe; a no-op unless TAKARO_CHAT_PROBE=1
+    ChatProbe::SetPrivateNotifier([](const std::string& gameId, const std::string& text) {
+        JsonValue body;
+        body.type = JsonValue::Object;
+        JsonValue v;
+        v.type = JsonValue::String;
+        v.str = text;
+        body.obj.push_back({"text", v});
+        v.str = gameId;
+        body.obj.push_back({"recipientGameId", v});
+        v.str = "Takaro";
+        body.obj.push_back({"senderName", v});
+        Actions::Message(body);
+    });
     for (const char* cap : {"logEvents", "joinLeaveEvents", "connectEvents", "chatEvents", "deathEvents",
                             "killEvents", "playerConnected", "playerDisconnected", "chatMessage",
                             "playerDeath", "entityKilled", "log"})
