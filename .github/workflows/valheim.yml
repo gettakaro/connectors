@@ -112,8 +112,11 @@ jobs:
       tag: ${{ needs.params.outputs.tag }}
       publish: ${{ needs.params.outputs.publish }}
       pr_number: ${{ github.event.pull_request.number }}
-      # The build compiles against the reference assemblies of the pinned depot
-      # manifests, which is what a hosted runner can do. Booting the 2 GB Valheim
-      # dedicated server and proving the plugin on it is the runtime-CI child issue;
-      # this release therefore claims contract verification only.
-      runtime: false
+      # The verify leg boots the pinned 2 GB dedicated server with the pinned BepInEx pack
+      # and the built plugin against a local fake Takaro (`takaro-maint verify --game
+      # valheim --negative`), then boots it again with the client companion where the
+      # plugin belongs and requires that nothing identifies. The depots are cached by the
+      # verify leg alone, so a run downloads them at most once per fingerprint.
+      runtime: true
+      runtime_depot_cache: true
+      runtime_negative: true

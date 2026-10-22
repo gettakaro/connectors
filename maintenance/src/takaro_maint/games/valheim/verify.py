@@ -8,6 +8,12 @@ What a Valheim report may claim, and what it may not:
   ``action``, ``reconnect`` and ``stop`` below are this game's equivalents and say so in
   their details. ``items`` and ``entities`` run by default and fail until the plugin
   translates its catalogue names, so a bare verification reports that limitation.
+* ``unsupported`` asserts what the connector does with an action it does not offer: an error
+  Takaro can show, never a made-up answer. ``negative-wrong-package`` (opt-in, ``--negative``)
+  boots the same server again with the client companion where the plugin belongs and requires
+  that nothing identifies to Takaro.
+* The local fake Takaro speaks protocol version 0, so the version 1 handshake, its Capability
+  Manifest and its error shape are covered by the plugin's unit tests, not by this run.
 * **Player-driven events are not covered by any of this.** A ``verify`` run boots a
   dedicated server in a container with no game client connected, so chat, deaths, kills and
   server chat to players are never exercised. The optional graphical-client inventory
@@ -27,7 +33,10 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import shutil
 import subprocess
+import time
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -35,13 +44,21 @@ from ... import net, output
 from ...verify import checks, checks_lifecycle
 from ...verify.hooks import GameHooks
 from ...verify.runner import docker_command
+from . import IMAGE_UID, share_with_image
 
-CHECK_IDS = ("handshake", "items", "entities", "action", "reconnect", "stop")
+#: Opt-in (``--negative``): the wrong role's package where the plugin belongs must never identify.
+NEGATIVE_CHECK = "negative-wrong-package"
+
+CHECK_IDS = ("handshake", "items", "entities", "action", "unsupported", "reconnect", "stop", NEGATIVE_CHECK)
 
 #: Verify always boots a fresh world, and the game logs this once it has generated it. Since
 #: Valheim 1.0.17, "Game server connected" (and "... failed") comes before the world loads,
 #: so it no longer says the server is serving. "sinze" is the game's own spelling.
 READY_LINE = re.compile(r"Loading: Done\. Total seconds sin[cz]e ZNet start")
+
+#: The negative boot reuses the world the first boot saved, and a loaded world never logs
+#: :data:`READY_LINE` (its locations are not generated again); it logs this instead.
+WORLD_LOADED_LINE = re.compile(rf"{READY_LINE.pattern}|ZoneSystem\.Load => Loaded [0-9,]+ locations")
 
 #: Base checks this connector cannot satisfy, and the check that stands in for each.
 #: A run that names no ``--checks`` excludes these rather than failing them.
@@ -56,6 +73,10 @@ UNSUPPORTED_CHECKS = {
 
 HANDSHAKE_LINE = re.compile(r"Takaro Valheim identified as gameServerId=")
 LOADED_LINE = re.compile(r"Loading \[Takaro Valheim (?P<version>[^\]]+)\]")
+#: The server plugin by its BepInEx GUID, which the companion's ``Loading [Takaro Valheim
+#: Inventory Companion …]`` line would otherwise also match.
+PLUGIN_LOADED_LINE = re.compile(r"Loading \[Takaro Valheim [0-9][^\]]*\] \(com\.takaro\.valheim\)")
+COMPANION_DISABLED_LINE = re.compile(r"Takaro Valheim Inventory Companion only runs in the graphical Valheim client")
 STARTED_LINE = re.compile(r"Takaro Valheim connector started\.")
 LIST_ITEMS_LINE = re.compile(r"Takaro Valheim listItems returned (?P<count>[0-9]+) item prefab")
 QUIT_LINE = re.compile(r"Takaro Valheim executing scheduled shutdown|Application\.Quit|World saved|Shutting down")
@@ -70,6 +91,15 @@ CATALOGUE_LOG_BUDGET = 60.0
 RECONNECT_BUDGET = 150.0
 QUIT_BUDGET = 120.0
 STOP_TIMEOUT = 120
+#: How long the wrong-package boot is still watched after its ready line, for a late identify.
+NEGATIVE_GRACE = 20.0
+#: An action no connector declares, and one Valheim's capabilities.json marks unsupported.
+UNKNOWN_ACTION = "takaroVerifyUndeclaredAction"
+UNSUPPORTED_ACTION = ("getPlayer", {"gameId": "takaro-verify-nobody"})
+PLUGIN_DIR = Path("BepInEx") / "plugins" / "TakaroValheim"
+COMPANION_DIR = Path("BepInEx") / "plugins" / "TakaroValheimInventoryCompanion"
+PARKED_COMPANION = Path("takaro-companion")
+CHAINLOADER_CACHE = Path("BepInEx") / "cache" / "chainloader_typeloader.dat"
 ITEM_SPOT = ("SwordBronze", "Bronze Sword")
 ENTITY_SPOT = ("Greydwarf_Elite", "Greydwarf Brute")
 
@@ -105,6 +135,9 @@ def render_config(data_dir: Path, takaro_env: dict[str, str]) -> Path:
     """The plugin's only configuration, written where BepInEx will look for it."""
     path = data_dir / CONFIG_RELATIVE
     path.parent.mkdir(parents=True, exist_ok=True)
+    # BepInEx may have rewritten the file as the image's user on an earlier boot.
+    if path.exists() and path.stat().st_uid != os.getuid():
+        path.unlink()
     path.write_text(
         CONFIG_TEMPLATE.format(
             relative=CONFIG_RELATIVE.as_posix(),
@@ -114,13 +147,15 @@ def render_config(data_dir: Path, takaro_env: dict[str, str]) -> Path:
         ),
         encoding="utf-8",
     )
-    os.chmod(path, 0o600)
+    # Group-readable only when the image's user reads it through the caller's group.
+    os.chmod(path, 0o600 if os.getuid() == IMAGE_UID else 0o640)
     return path
 
 
 def before_boot(run: Any, takaro_env: dict[str, str]) -> None:
     render_config(run.data_dir, takaro_env)
-    output.info(f"wrote {CONFIG_RELATIVE.as_posix()} for this run (mode 0600)")
+    share_with_image(run.data_dir)
+    output.info(f"wrote {CONFIG_RELATIVE.as_posix()} for this run")
 
 
 def scan_runtime_identity(adapter: Any, log_file: Path) -> dict[str, Any]:
@@ -189,6 +224,7 @@ async def after_protocol(run: Any, fake: Any, alive: Any) -> None:
         ("items", lambda: _check_catalogue(run, fake, alive, "listItems", "items", ITEM_SPOT)),
         ("entities", lambda: _check_catalogue(run, fake, alive, "listEntities", "entities", ENTITY_SPOT)),
         ("action", lambda: _check_action(run, fake)),
+        ("unsupported", lambda: _check_unsupported(run, fake)),
         ("reconnect", lambda: _check_reconnect(run, fake, alive)),
     ):
         if run.wanted(check_id):
@@ -326,6 +362,54 @@ async def _check_action(run: Any, fake: Any) -> checks.CheckResult:
     )
 
 
+async def _check_unsupported(run: Any, fake: Any) -> checks.CheckResult:
+    """An action the connector does not offer is refused with an error, and the socket stays usable.
+
+    Two cases: an action no connector declares, and ``getPlayer``, which capabilities.json
+    marks unsupported. On protocol version 0 both answer with a top-level ``error`` that
+    Takaro rejects at once; a ``getPlayer`` answer must also not name a player.
+    """
+    with checks._Timer() as timer:
+        problems: list[str] = []
+        answers: dict[str, Any] = {}
+        for action, args in ((UNKNOWN_ACTION, {}), UNSUPPORTED_ACTION):
+            answer: Any = None
+            try:
+                answer = await fake.request(action, args, timeout=15)
+            except Exception as exc:  # noqa: BLE001 - reported as a check failure
+                problems.append(f"{action} was not answered: {exc}")
+            answers[action] = answer
+            if answer is None:
+                continue
+            if not isinstance(answer, dict) or not str(answer.get("error") or "").strip():
+                problems.append(f"{action} returned {answer!r}, expected an error")
+            elif answer.get("gameId") or answer.get("name"):
+                problems.append(f"{action} returned a player for an unsupported action: {answer!r}")
+        if UNKNOWN_ACTION not in str(answers.get(UNKNOWN_ACTION)):
+            problems.append(f"the error for {UNKNOWN_ACTION} does not name the action")
+        reachable: Any = None
+        try:
+            reachable = await fake.request("testReachability", {})
+        except Exception as exc:  # noqa: BLE001 - reported as a check failure
+            problems.append(f"testReachability failed after the refused actions: {exc}")
+        if not isinstance(reachable, dict) or reachable.get("connectable") is not True:
+            problems.append(
+                f"testReachability returned {reachable!r} after the refused actions, expected connectable true"
+            )
+    return checks.CheckResult(
+        "unsupported",
+        "pass" if not problems else "fail",
+        timer.elapsed_ms,
+        {
+            "answers": answers,
+            "testReachabilityAfter": reachable,
+            "note": "protocol version 0 shape; the version 1 'unsupported' error code is covered by unit tests",
+            "problems": problems,
+        },
+        {"file": run.server_log.name},
+    )
+
+
 async def _check_reconnect(run: Any, fake: Any, alive: Any) -> checks.CheckResult:
     """Takaro drops the socket; the plugin comes back and is usable again."""
     with checks._Timer() as timer:
@@ -430,6 +514,121 @@ async def _check_stop(run: Any, fake: Any, ledger_inputs: list[dict[str, Any]]) 
     )
 
 
+async def negative(run: Any, fake: Any, ws_url: str, manifest: dict[str, Any]) -> None:
+    del manifest
+    if not run.wanted(NEGATIVE_CHECK):
+        run.skip(NEGATIVE_CHECK, "not selected by --checks")
+        return
+    run.record(await _check_negative_wrong_package(run, fake, ws_url))
+
+
+async def _check_negative_wrong_package(run: Any, fake: Any, ws_url: str) -> checks.CheckResult:
+    """The client companion installed where the server plugin belongs must never identify to Takaro.
+
+    Valheim has one target, so there is no sibling build for a server to refuse. The package
+    mix-up an operator can really make is the other zip of the same release: the optional
+    client companion unpacked into the server's ``BepInEx/plugins``. The server boots again on
+    the same data directory with the plugin moved out and the parked companion unpacked in its
+    place. The row passes only when the companion logs that it disabled itself on a dedicated
+    server, the server plugin never loads, and no identify frame arrives through the ready line
+    and :data:`NEGATIVE_GRACE` beyond it. The plugin folder is put back afterwards.
+    """
+    data_dir = run.data_dir
+    plugin = data_dir / PLUGIN_DIR
+    companion = data_dir / COMPANION_DIR
+    aside = data_dir / ".takaro" / "verify-negative" / PLUGIN_DIR.name
+    log_name = "server-negative.log"
+    with checks._Timer() as timer:
+        problems: list[str] = []
+        disabled: tuple[int, str] | None = None
+        loaded: tuple[int, str] | None = None
+        ready: tuple[int, str] | None = None
+        during = 0
+        parked = sorted((data_dir / PARKED_COMPANION).glob("takaro-valheim-inventory-companion-*.zip"))
+        if not plugin.is_dir():
+            problems.append(f"{PLUGIN_DIR.as_posix()} is not deployed; there is nothing to replace")
+        elif len(parked) != 1:
+            problems.append(f"expected one parked companion zip in {PARKED_COMPANION.as_posix()}/, found {len(parked)}")
+        else:
+            aside.parent.mkdir(parents=True, exist_ok=True)
+            plugin.rename(aside)
+            try:
+                with zipfile.ZipFile(parked[0]) as archive:
+                    archive.extractall(data_dir / PLUGIN_DIR.parent)
+                _drop_chainloader_cache(data_dir)
+                before = fake.identify_count
+                container = run.boot(ws_url, suffix="-negative", log_name=log_name)
+                run.extra_logs.append(container.log_file)
+                disabled, loaded, ready = await asyncio.to_thread(
+                    _watch_wrong_package,
+                    container.log_file,
+                    run.startup_timeout,
+                    container.alive,
+                    lambda: fake.identify_count > before,
+                )
+                during = fake.identify_count - before
+                container.remove()
+            finally:
+                shutil.rmtree(companion, ignore_errors=True)
+                if aside.is_dir():
+                    shutil.rmtree(plugin, ignore_errors=True)
+                    aside.rename(plugin)
+                _drop_chainloader_cache(data_dir)
+            if disabled is None:
+                problems.append("the companion never logged that it disabled itself on a dedicated server")
+            if ready is None:
+                problems.append("the wrong-package boot never reached its ready line, so it proves nothing")
+            if loaded is not None:
+                problems.append(f"the server plugin loaded: {loaded[1].strip()[:200]}")
+            if during:
+                problems.append(f"the wrong package identified {during} time(s); it must never identify")
+    return checks.CheckResult(
+        NEGATIVE_CHECK,
+        "pass" if not problems else "fail",
+        timer.elapsed_ms,
+        {
+            "installed": COMPANION_DIR.as_posix(),
+            "package": parked[0].name if len(parked) == 1 else None,
+            "companionDisabled": disabled[1].strip()[:300] if disabled else None,
+            "identifyFramesDuringNegative": during,
+            "problems": problems,
+        },
+        {"file": log_name, "line": disabled[0]} if disabled else {"file": log_name},
+    )
+
+
+def _drop_chainloader_cache(data_dir: Path) -> None:
+    """Best effort: on a shared install the cache belongs to the image's user.
+
+    It is keyed by assembly path, so a stale entry never stands in for the companion,
+    which lives in a folder of its own.
+    """
+    try:
+        (data_dir / CHAINLOADER_CACHE).unlink(missing_ok=True)
+    except PermissionError:
+        pass
+
+
+def _watch_wrong_package(
+    log_file: Path, timeout: float, alive: Any, identified: Any
+) -> tuple[tuple[int, str] | None, tuple[int, str] | None, tuple[int, str] | None]:
+    """Follow the wrong-package boot to its ready line and a grace beyond it, or to a load or identify."""
+    deadline = time.monotonic() + timeout
+    settle_at: float | None = None
+    while True:
+        disabled = checks.find_line(log_file, COMPANION_DISABLED_LINE)
+        loaded = checks.find_line(log_file, PLUGIN_LOADED_LINE)
+        ready = checks.find_line(log_file, WORLD_LOADED_LINE)
+        now = time.monotonic()
+        if ready and settle_at is None:
+            settle_at = now + NEGATIVE_GRACE
+            # The grace is watched in full even when the ready line came late in the budget.
+            deadline = max(deadline, settle_at)
+        if loaded or identified() or not alive() or now >= deadline or (settle_at is not None and now >= settle_at):
+            return disabled, loaded, ready
+        time.sleep(1)
+
+
 def _rehash(data_dir: Path, ledger_inputs: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
     intact: list[str] = []
     changed: list[str] = []
@@ -449,9 +648,11 @@ def _rehash(data_dir: Path, ledger_inputs: list[dict[str, Any]]) -> tuple[list[s
 HOOKS = GameHooks(
     ready_line=READY_LINE,
     check_ids=CHECK_IDS,
+    negative_check_ids=(NEGATIVE_CHECK,),
     unsupported_checks=UNSUPPORTED_CHECKS,
     before_boot=before_boot,
     after_protocol=after_protocol,
     after_shutdown=after_shutdown,
+    negative=negative,
     scan_runtime_identity=scan_runtime_identity,
 )

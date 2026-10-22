@@ -39,18 +39,14 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     private static readonly TimeSpan MainLoopStallLimit = TimeSpan.FromSeconds(8);
     private static volatile string? notReadyReason = "Valheim server networking has not started yet.";
     private static long lastMainLoopTicks = DateTime.UtcNow.Ticks;
-    private static float nextReadinessRefresh;
 
-    /// <summary>Called from the plugin's Update, at most once a second: publishes readiness.</summary>
+    /// <summary>
+    /// Called from the plugin's Update every frame: publishes readiness. Not throttled, so a
+    /// reachability check right after the game logs that its world is loaded already sees it.
+    /// </summary>
     public static void RefreshReadiness()
     {
         Interlocked.Exchange(ref lastMainLoopTicks, DateTime.UtcNow.Ticks);
-        if (Time.realtimeSinceStartup < nextReadinessRefresh)
-        {
-            return;
-        }
-
-        nextReadinessRefresh = Time.realtimeSinceStartup + 1f;
         notReadyReason = ZNet.instance is null || !ZNet.instance.IsServer()
             ? "Valheim server networking has not started yet."
             : ZoneSystem.instance is null || !ZoneSystem.instance.LocationsGenerated

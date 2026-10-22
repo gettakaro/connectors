@@ -37,6 +37,23 @@ on:
         required: false
         default: true
         type: boolean
+      runtime_depot_cache:
+        description: >-
+          The verify leg caches the pinned Steam depots itself, and the build leg does not install
+          the server first; for a server too large to download twice in one run
+        required: false
+        default: false
+        type: boolean
+      runtime_negative:
+        description: Also run the game's opt-in negative checks (`verify --negative`)
+        required: false
+        default: false
+        type: boolean
+      startup_timeout:
+        description: Seconds the server gets to reach its ready line in the verify leg
+        required: false
+        default: 600
+        type: number
 
 jobs:
   plan:
@@ -149,7 +166,7 @@ jobs:
       # A server the hosted runner cannot hold (tens of gigabytes of Steam depots) is not
       # installed here; that connector builds against references tracked in the repository.
       - name: Install the pinned inputs
-        if: inputs.runtime
+        if: inputs.runtime && !inputs.runtime_depot_cache
         env:
           IN_CONNECTOR: ${{ inputs.connector }}
         run: |
@@ -283,6 +300,17 @@ jobs:
           path: ~/.cache/takaro-maint
           key: ${{ inputs.connector }}-${{ steps.target.outputs.fp16 }}
 
+      # Separate from the build leg's cache so its small entry is not replaced by gigabytes,
+      # and saved even when a check failed: the depots were verified against their manifests
+      # either way, and the next run should not download them again.
+      - name: Restore the pinned Steam depots
+        id: depots
+        if: inputs.runtime_depot_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/takaro-maint/steam
+          key: ${{ inputs.connector }}-depots-${{ steps.target.outputs.fp16 }}
+
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist-${{ inputs.connector }}-${{ matrix.target.id }}
@@ -294,6 +322,8 @@ jobs:
         shell: bash
         env:
           IN_CONNECTOR: ${{ inputs.connector }}
+          IN_STARTUP_TIMEOUT: ${{ inputs.startup_timeout }}
+          IN_NEGATIVE: ${{ inputs.runtime_negative && '--negative' || '' }}
         run: |
           mkdir -p reports
           maintenance/bin/takaro-maint verify \
@@ -303,8 +333,16 @@ jobs:
             --out reports \
             --run-id "gha-${{ github.run_id }}-${{ github.run_attempt }}" \
             --label "tm.ci=github" \
-            --startup-timeout 600 \
+            --startup-timeout "$IN_STARTUP_TIMEOUT" \
+            ${IN_NEGATIVE:+"$IN_NEGATIVE"} \
             --cleanup-orphans | tee reports/verify.json
+
+      - name: Save the pinned Steam depots
+        if: always() && inputs.runtime_depot_cache && steps.depots.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/takaro-maint/steam
+          key: ${{ inputs.connector }}-depots-${{ steps.target.outputs.fp16 }}
 
       - name: Job summary
         if: always()
