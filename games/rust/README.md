@@ -20,26 +20,19 @@ You need:
 - Access to the server's **plugin folder** (`carbon/plugins/` on Carbon, `oxide/plugins/` on Oxide).
 - A **Takaro account** with a game server created of type **Generic**, and its **registration
   token** (Takaro shows it when you create the game server).
+- Outbound access from the server to `wss://connect.takaro.io/`. Nothing needs to be
+  port-forwarded.
 
 ### 2. Download the plugin
 
-Download the latest release: https://takaro.io/connectors/rust
+From the latest `rust-vX.Y.Z` release at <https://github.com/gettakaro/connectors/releases> (also
+linked from <https://takaro.io/connectors/rust>), download **`TakaroConnector.cs`**. The same file
+is also published under its target name, for example
+`takaro-rust-plugin-carbon-26139947-<version>.cs`, which says which Rust build and which Carbon it was
+built for, next to a `SHA256SUMS` file to check the download with. Do not use the `rust-dev`
+pre-release; that is an untested rolling build.
 
-From the latest `rust-vX.Y.Z` release on the releases page
-
-> https://github.com/gettakaro/connectors/releases
-
-download either name — they are the same bytes:
-
-- **`takaro-rust-plugin-carbon-26139947-<version>.cs`** — the build's own name, which says exactly
-  which Rust build and which Carbon it was verified against.
-- **`TakaroConnector.cs`** — the same file under the name the framework loads. Direct link pattern:
-  `https://github.com/gettakaro/connectors/releases/download/rust-v<version>/TakaroConnector.cs`
-
-`SHA256SUMS` is published beside them if you want to check the download.
-
-Use a release newer than `rust-v0.1.0` (older ones turn every timed ban into a permanent one). Do not use the `rust-dev` pre-release; that is an untested rolling
-build. Or copy the file straight out of the repository: `games/rust/mod/TakaroConnector.cs`.
+Use a release newer than `rust-v0.1.0` (0.0.4 to 0.1.0 turn every timed ban into a permanent one).
 
 There is nothing to compile — Carbon and Oxide compile `.cs` plugins at runtime.
 
