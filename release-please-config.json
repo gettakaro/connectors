@@ -90,7 +90,8 @@
       "component": "dune",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "mod/src/common.h" }
+        { "type": "generic", "path": "mod/src/common.h" },
+        { "type": "generic", "path": "sidecar/src/version.ts" }
       ]
     },
     "games/vein": {

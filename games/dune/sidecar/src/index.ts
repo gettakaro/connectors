@@ -30,6 +30,7 @@ import { logger } from './logger.js';
 import { MAP_DIMENSIONS } from './dune/mapDimensions.js';
 import { buildManifest } from './takaro/capabilities.js';
 import { TakaroWsClient } from './takaro/client.js';
+import { GameBuild } from './takaro/gameProfile.js';
 import { parseTakaroProtocol, resolveConfigFile, TakaroSettingsSource } from './takaro/settings.js';
 import type { WsMessage } from './takaro/protocol.js';
 
@@ -79,13 +80,16 @@ async function main(): Promise<void> {
       : `Takaro settings: environment only (${configHint().file} not found; it is picked up if it appears)`,
   );
   config.serverName = initial.serverName;
+  const gameBuild = new GameBuild();
+  if (config.logFile) gameBuild.scanFile(config.logFile);
+  logger.info(`Game build: ${gameBuild.version() ?? `unknown (${config.logFile ? 'no version line in the map-server log yet' : 'DUNE_LOG_FILE not set'})`}`);
   const takaro = new TakaroWsClient(
     initial.wsUrl,
     { identityToken: initial.identityToken, registrationToken: initial.registrationToken, serverName: initial.serverName },
     {
       baseReconnectMs: config.reconnectBaseMs,
       maxReconnectMs: config.reconnectMaxMs,
-      ...(config.takaroProtocol === 1 ? { manifest: () => buildManifest(MAP_DIMENSIONS) } : {}),
+      ...(config.takaroProtocol === 1 ? { manifest: () => buildManifest(MAP_DIMENSIONS, gameBuild.version()) } : {}),
     },
   );
   takaro.setConfigHint(configHint());
@@ -204,7 +208,14 @@ async function main(): Promise<void> {
     ? new LogTailer({
         file: config.logFile,
         intervalMs: config.pollIntervalMs,
-        onLine: forwardLog,
+        onLine: (line) => {
+          // A map restart rotates the log; its boot lines carry the (possibly updated) game build.
+          if (gameBuild.observe(line)) {
+            logger.info(`Game build changed to ${gameBuild.version()}`);
+            takaro.sendCapabilities();
+          }
+          forwardLog(line);
+        },
         onTick: forwardLog.flush,
         onError: (err) => logger.debug(`Log tail: ${err.message}`),
       })
