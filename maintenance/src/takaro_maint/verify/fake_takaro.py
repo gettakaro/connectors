@@ -31,12 +31,19 @@ class FakeTakaro:
     game_server_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     #: Serve ``wss://`` with this context; ``None`` is plain ``ws://``.
     ssl_context: ssl.SSLContext | None = None
+    #: The highest protocol version this fake picks from an identify's ``protocolVersions``.
+    #: 0 answers every identify the protocol 0 way, as Takaro did before protocol 1.
+    protocol: int = 0
 
     _server: Server | None = field(default=None, init=False)
     _connection: ServerConnection | None = field(default=None, init=False)
     _pending: dict[str, asyncio.Future[Any]] = field(default_factory=dict, init=False)
     identified: dict[str, Any] | None = field(default=None, init=False)
     identify_count: int = field(default=0, init=False)
+    #: The protocol version the last identify was answered with.
+    negotiated_protocol: int = field(default=0, init=False)
+    #: The protocol 1 ``capabilities`` replacements the connector sent, newest last.
+    capability_updates: list[dict[str, Any]] = field(default_factory=list, init=False)
     app_pings: int = field(default=0, init=False)
     events: list[dict[str, Any]] = field(default_factory=list, init=False)
 
@@ -95,24 +102,46 @@ class FakeTakaro:
         if kind == "identify":
             self.identified = frame.get("payload", {})
             self.identify_count += 1
-            await self._send(
-                connection,
-                {
-                    "type": "identifyResponse",
-                    "payload": {"gameServerId": self.game_server_id, "status": "authenticated"},
-                },
+            offered = (self.identified or {}).get("protocolVersions")
+            picked = (
+                max((v for v in offered if isinstance(v, int) and v <= self.protocol), default=0)
+                if (isinstance(offered, list))
+                else 0
             )
+            self.negotiated_protocol = picked
+            payload: dict[str, Any] = {"gameServerId": self.game_server_id, "status": "authenticated"}
+            if picked:
+                payload["protocolVersion"] = picked
+            await self._send(connection, {"type": "identifyResponse", "payload": payload})
             return
         if kind in ("response", "error"):
             future = self._pending.pop(str(frame.get("requestId")), None)
             if future is not None and not future.done():
                 if kind == "error":
                     future.set_exception(RuntimeError(json.dumps(frame.get("payload"))))
+                elif frame.get("error") is not None:
+                    # Protocol 1 (and some protocol 0 connectors) answer a failed request as a
+                    # ``response`` carrying ``error`` rather than ``payload``.
+                    future.set_exception(RuntimeError(json.dumps(frame.get("error"))))
                 else:
                     future.set_result(frame.get("payload"))
             return
         if kind == "gameEvent":
-            self.events.append(frame.get("payload", {}))
+            payload = frame.get("payload", {})
+            self.events.append(payload)
+            # Protocol 1 keeps an event in the connector's outbox until Takaro acknowledges it.
+            if self.negotiated_protocol >= 1 and isinstance(payload, dict) and "seq" in payload:
+                await self._send(
+                    connection,
+                    {"type": "eventAck", "payload": {"streamId": payload.get("streamId"), "upTo": payload["seq"]}},
+                )
+            return
+        if kind == "capabilities":
+            body = frame.get("payload")
+            self.capability_updates.append(body if isinstance(body, dict) else {})
+            await self._send(
+                connection, {"type": "capabilitiesResponse", "payload": None, "requestId": frame.get("requestId")}
+            )
             return
         # The application heartbeat some connectors send; real Takaro answers it like this,
         # and a connector that confirms delivery by a later pong depends on the answer.

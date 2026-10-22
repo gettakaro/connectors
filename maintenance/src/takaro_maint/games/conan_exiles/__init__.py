@@ -31,6 +31,10 @@ BUILD_SCRIPT = "games/conan-exiles/scripts/build-release.sh"
 #: (Linux, Windows).
 NATIVE_FOLDER = "TakaroConanNative"
 NATIVE_BINARIES = ("libtakaro-conan-native.so", "winmm.dll")
+#: Where the Linux component's ``installDir`` puts the preloaded library, inside the install.
+NATIVE_LIBRARY = f"{NATIVE_FOLDER}/{NATIVE_FOLDER}/{NATIVE_BINARIES[0]}"
+#: The shutdown countdown a verification run asks for (the library's default is 60 s).
+SHUTDOWN_SECONDS = 5
 
 LAUNCHER = "ConanSandboxServer.sh"
 SERVER_BINARY = "ConanSandbox/Binaries/Linux/ConanSandboxServer-Linux-Shipping"
@@ -160,9 +164,19 @@ class ConanExilesAdapter(BaseAdapter):
 
     # -- runtime --------------------------------------------------------------
     def runtime_env(self, resolved: dict[str, Any], takaro: dict[str, str]) -> dict[str, str]:
-        """The image's own environment; the server reads its settings from its own Saved/ tree."""
+        """The image's own environment plus the preloaded native connector.
+
+        The library reads its Takaro settings from ``takaro.json`` in the server's own
+        ``Saved/`` tree (``verify.before_boot`` writes it), so no token is in the environment.
+        The launcher shell inherits ``LD_PRELOAD`` too; the library stays inert in any process
+        that is not the server binary. The shutdown countdown is shortened: nobody is online
+        to read it, and the server's own unload already takes minutes.
+        """
         del takaro
-        return {str(k): str(v) for k, v in resolved["runtime"]["container"].get("env", {}).items()}
+        environment = {str(k): str(v) for k, v in resolved["runtime"]["container"].get("env", {}).items()}
+        environment["LD_PRELOAD"] = f"{CONTAINER_ROOT}/{NATIVE_LIBRARY}"
+        environment["TAKARO_CONAN_SHUTDOWN_SECONDS"] = str(SHUTDOWN_SECONDS)
+        return environment
 
     def container_mounts(self, resolved: dict[str, Any], data_dir: Path) -> list[str]:
         """One mount: the whole install, where the launcher and the server's Saved/ tree live."""
@@ -182,7 +196,7 @@ class ConanExilesAdapter(BaseAdapter):
         return ["--memory", MEMORY, "--user", f"{os.getuid()}:{os.getgid()}"]
 
     def container_command(self, resolved: dict[str, Any], data_dir: Path) -> list[str]:
-        """The launcher, with the rig's game and query ports. No RCON: the verifier does not use it."""
+        """The launcher, with the rig's game and query ports. No RCON: the connector does not use it."""
         del resolved, data_dir
         return [
             f"{CONTAINER_ROOT}/{LAUNCHER}",
