@@ -448,8 +448,9 @@ tested commit, target fingerprint, artifact hashes and runtime identity) is uplo
 | Credentials | none; the fake Takaro's tokens and TLS CA are generated per run and never reach a docker command line or a kept log |
 
 Still manual, because they need a real game client (see [README.md](README.md)): join and
-leave events, chat in both directions, whispers, giving items, teleport, kick and ban of a
-connected player, death and kill events, and player positions.
+leave events, chat in both directions, whispers, player location and inventory, giving
+items, teleport, kick and ban of a connected player, death and kill events, and the module
+and shop flows that act on a player in the game.
 
 Where a release goes depends on the trigger (`scripts/release-params.sh`): a PR gets a
 disposable `pr-<n>-enshrouded` pre-release plus a sticky PR comment, a push to main refreshes
