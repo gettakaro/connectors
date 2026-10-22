@@ -59,6 +59,8 @@ export interface AdapterOptions {
   sleep?: (ms: number) => Promise<void>;
   execRunner?: ExecRunner;
   execTimeoutMs?: number;
+  /** Told about every kick read back from Postgres, so presence reports that leave at once instead of holding it. */
+  onKicked?: (gameId: string) => void;
   now?: () => number;
 }
 
@@ -471,10 +473,19 @@ export class DuneAdapter {
   private async kickRow(row: DunePlayerRow, id: string, reason?: string): Promise<Record<string, unknown>> {
     if (reason) logger.info(`Kicking ${row.characterName ?? row.flsId}: ${reason}`);
     await this.options.gm.send(gmCommands.kickPlayer(this.gmId(row, id)), this.now());
+    // Only a row actually read as gone tells presence; a failed read still verifies the kick, as before.
+    let readGone = false;
     const verified = await this.pollUntil(async () => {
-      const fresh = await this.options.pg.findPlayer(row.flsId).catch(() => undefined);
-      return !fresh || !isOnline(fresh);
+      let fresh: DunePlayerRow | undefined;
+      try {
+        fresh = await this.options.pg.findPlayer(row.flsId);
+      } catch {
+        return true;
+      }
+      readGone = !fresh || !isOnline(fresh);
+      return readGone;
     });
+    if (verified && readGone) this.options.onKicked?.(row.flsId);
     return verified
       ? { verified: true }
       : { verified: false, reason: 'kick published but the player was still online at the end of the verify window' };
