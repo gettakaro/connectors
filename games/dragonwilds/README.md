@@ -10,28 +10,43 @@ vanilla game client. The library must be preloaded on the game binary's launch l
 
 You need a Dragonwilds **Linux dedicated server** (Steam app 4019830) whose launch command you can
 change, with its `RSDragonwildsServer-Linux-Shipping.sym` file next to the server binary (SteamCMD
-downloads it; `app_update 4019830 validate` restores it). Create a Takaro **Generic** game server and
-copy its registration token. Client and server must run the same game version.
+downloads it; `app_update 4019830 validate` restores it). Set the server's `OwnerId` to the owner's
+EOS Player ID (shown at the bottom of the game client's Settings); without it the server never loads a
+world and its log says `[OwnerId] ... empty`. Create a Takaro **Generic** game server and copy its
+registration token. Client and server must run the same game version.
 
-The latest release is tested live against Dragonwilds public build 25808123 with a real game
-client. It also ships plugins for the older builds 25465077, 25501739 and 25630937.
+Look up your server's Steam build: it is the `"buildid"` value in
+`steamapps/appmanifest_4019830.acf` inside the server's install directory. Each release ships one
+plugin archive per supported build. The latest release supports builds 25991736 (the current public
+build), 25808123, 25630937, 25501739 and 25465077.
 
 ### 2. Download and copy
 
-Download `takaro-dragonwilds-plugin.tar.gz` and `SHA256SUMS` from the latest release at
-<https://takaro.io/connectors/dragonwilds>. Do not use the "Source code" archives. Check and unpack:
+Download the latest release: https://takaro.io/connectors/dragonwilds
+
+From the latest `dragonwilds-vX.Y.Z` release on the releases page
+
+> https://github.com/gettakaro/connectors/releases
+
+download `SHA256SUMS` and the plugin archive for your build,
+`takaro-dragonwilds-plugin-linux-<build>-<version>.tar.gz`, for example
+`takaro-dragonwilds-plugin-linux-25991736-0.5.0.tar.gz`. `takaro-dragonwilds-plugin.tar.gz` is a
+copy of the archive for the current public build. Do not use the "Source code" archives, the
+`dragonwilds-dev` pre-release or a `pr-<number>-dragonwilds` build; those are untested rolling
+builds. Check and unpack:
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
-tar -xzf takaro-dragonwilds-plugin.tar.gz
+tar -xzf takaro-dragonwilds-plugin-linux-<build>-<version>.tar.gz
+(cd TakaroDragonwilds && sha256sum -c SHA256SUMS)
 mkdir -p data/dragonwilds-plugin data/dragonwilds-state
 cp TakaroDragonwilds/libtakaro-dragonwilds.so data/dragonwilds-plugin/
 cp TakaroDragonwilds/env.example .env   # Docker only: the game server settings
 ```
 
 Keep the library **outside the Steam tree**: SteamCMD `validate` deletes files it does not know. The
-archive also holds `docker-compose.example.yml`, `INSTALL.md` (upgrade and rollback), the
-`scripts/drain-legacy.py` upgrade tool and the licenses.
+archive also holds `takaro-target.json` (the build it was made for), `docker-compose.example.yml`,
+`INSTALL.md` (upgrade and rollback), the `scripts/drain-legacy.py` upgrade tool and the licenses.
 
 ### 3. Configure
 
@@ -108,31 +123,28 @@ or the server name, the console shows a `[Takaro]` banner naming the file to fix
 `data/dragonwilds-plugin/takaro.cfg`). Details: `plugin.log` in the plugin data directory
 (`<server>/RSDragonwilds/Binaries/Linux/takaro/`).
 
-### 6. Upgrade from the 0.2.x sidecar
+### 6. Upgrade
 
-The old sidecar and the native connector must never run with the same Takaro identity at once. Close
-new joins with a firewall rule, wait until nobody is online, then drain and import the sidecar's state:
+**From the 0.2.x sidecar:** the old sidecar and the native connector must never run with the same
+Takaro identity at once, so the move needs a short maintenance window. Follow
+[INSTALL.md](INSTALL.md) ("Upgrade from the 0.2.x sidecar"; it is also in the archive); it drains
+the sidecar with `scripts/drain-legacy.py`, imports its state and explains rollback.
 
-```bash
-install -d -m 700 ./dragonwilds-migration
-python3 TakaroDragonwilds/scripts/drain-legacy.py --evidence-dir ./dragonwilds-migration \
-  --fence-proof ./fence-proof.json --fence-check ./fence-check \
-  --game-container dragonwilds --sidecar-container dragonwilds-takaro --game-port 7777 \
-  --legacy-state-dir ./data/dragonwilds-sidecar --native-state-dir ./data/dragonwilds-state
-```
-
-It stops the sidecar and the game only when every event is delivered, removes the sidecar container,
-and copies the cursor, player lists and timed bans into the native state directory. Then delete the
-sidecar service from your Compose file, replace the plugin, add the settings above, and start the game.
-`INSTALL.md` explains the fence files, a manual import and rollback.
-
-**After a game update** you normally do nothing: the plugin re-reads the new `.sym` file on start. To
-upgrade the connector, stop the server, replace only `libtakaro-dragonwilds.so`, and start again.
+**After a game update** you normally do nothing: the plugin re-reads the new `.sym` file on start.
+When a release adds an archive for your new build, switch to that one. To upgrade the connector,
+stop the server, replace only `libtakaro-dragonwilds.so`, and start again.
 Your `takaro.cfg` next to it, `.env` and the state directory are never touched.
 
 ## What works, what doesn't
 
 ✅ = works, ⚠️ = works with a caveat or not yet verified, ❌ = unsupported.
+
+Verified live with a real game client on **2026-10-17** against Steam build **25991736**: connection,
+player list, messages, console commands, give item, teleport, kick, ban and unban, shutdown, the
+join, leave, chat, death and kill events, the teleports module and game chat to Discord. Game
+name, version and icon were verified on **2026-10-21** against a Takaro that speaks protocol 1.
+Every other ✅ row was verified live on **2026-10-02** against build **25501739**, the first build of
+the native connector.
 
 | What | | Notes |
 |---|---|---|
