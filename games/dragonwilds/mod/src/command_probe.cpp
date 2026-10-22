@@ -5,6 +5,7 @@
 #include "common.h"
 #include "gamethread.h"
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <thread>
@@ -13,6 +14,28 @@ namespace CommandProbe {
 namespace {
 Config g_cfg;
 Pending g_pending;
+// Every reply worker counts here, so a burst can never start more than this many threads.
+std::atomic<int> g_workers{0};
+const int kMaxWorkers = 16;
+
+// Starts fn on a detached worker within the cap; false when the cap is hit or the start fails.
+template <typename F>
+bool StartWorker(F fn) {
+    if (g_workers.fetch_add(1) >= kMaxWorkers) {
+        g_workers.fetch_sub(1);
+        return false;
+    }
+    try {
+        std::thread([fn] {
+            fn();
+            g_workers.fetch_sub(1);
+        }).detach();
+        return true;
+    } catch (...) {
+        g_workers.fetch_sub(1);
+        return false;
+    }
+}
 
 // Runs on a worker: never answer from inside the hooked ProcessEvent.
 void Answer(uint64_t id, Outcome o, const std::string& puid, const char* via) {
@@ -48,28 +71,34 @@ bool OnServerChat(const std::string& msg, const std::string& senderPuid) {
                       msg.c_str());
         return false;
     }
+    // From here on the line is Takaro's: whatever fails below, it never reaches public chat.
     uint64_t id = g_pending.Begin(NowMs(), g_cfg.deadlineMs);
     std::string puid = senderPuid;
     if (!id) {
-        // Recognised Takaro input never fails open into public chat, even when we are saturated.
         PluginLog("probe: taken but in-flight table full; suppressed, answering busy");
-        std::thread([puid] { Answer(0, Outcome::Unavailable, puid, "busy"); }).detach();
+        if (!StartWorker([puid] { Answer(0, Outcome::Unavailable, puid, "busy"); }))
+            PluginLog("probe: saturated; suppressed without a reply");
         return true;
     }
     StubAnswer a = Stub(g_cfg, c.mode);
     PluginLog("probe: #%llu TAKEN prefix=%c mode=%s sender=%s; original Server_SendChatMessage skipped",
               (unsigned long long)id, c.prefix, c.mode.c_str(), puid.c_str());
     uint32_t deadline = g_cfg.deadlineMs;
-    std::thread([id, a, puid] {
+    bool stub = StartWorker([id, a, puid] {
         std::this_thread::sleep_for(std::chrono::milliseconds(a.delayMs));
-        if (g_pending.Settle(id)) Answer(id, a.outcome, puid, "stub");
+        if (g_pending.Settle(id, NowMs(), false)) Answer(id, a.outcome, puid, "stub");
         else PluginLog("probe: #%llu late stub answer (%s) dropped; not replayed", (unsigned long long)id,
                        OutcomeName(a.outcome));
-    }).detach();
-    std::thread([id, deadline, puid] {
+    });
+    bool timer = StartWorker([id, deadline, puid] {
         std::this_thread::sleep_for(std::chrono::milliseconds(deadline));
-        if (g_pending.Settle(id)) Answer(id, Outcome::Timeout, puid, "deadline");
-    }).detach();
+        if (g_pending.Settle(id, NowMs(), true)) Answer(id, Outcome::Timeout, puid, "deadline");
+    });
+    if (!stub || !timer) {
+        // Without both workers nobody may answer; settle it here so no late reply ever appears.
+        g_pending.Settle(id, 0, true);
+        PluginLog("probe: #%llu suppressed without a reply (no worker available)", (unsigned long long)id);
+    }
     return true;
 }
 

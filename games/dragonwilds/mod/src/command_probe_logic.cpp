@@ -17,7 +17,8 @@ Classified Classify(const Config& cfg, const std::string& msg, const std::string
         mode = rest.substr(sp + 1);
     }
     if (nonce != cfg.nonce) { c.reason = "nonce mismatch"; return c; }
-    if (!mode.empty() && mode != "ok" && mode != "deny" && mode != "error" && mode != "timeout") {
+    bool hasMode = sp != std::string::npos;
+    if (hasMode && mode != "ok" && mode != "deny" && mode != "error" && mode != "timeout") {
         c.reason = "unknown mode";
         return c;
     }
@@ -63,10 +64,11 @@ uint64_t Pending::Begin(uint64_t nowMs, uint32_t deadlineMs) {
     return 0;
 }
 
-bool Pending::Settle(uint64_t id) {
+bool Pending::Settle(uint64_t id, uint64_t nowMs, bool byDeadline) {
     std::lock_guard<std::mutex> g(mu_);
     for (auto& s : slots_) {
         if (s.id != id || !id) continue;
+        if (!byDeadline && nowMs > s.deadline) return false;  // the deadline owns it now
         s.id = 0;
         return true;
     }

@@ -46,6 +46,7 @@ int main() {
     CHECK(Classify(c, "!takaro_probe_abcd1234", kPuid).match == Match::None);
     CHECK(Classify(c, " @takaro_probe_abcd1234", kPuid).match == Match::None);
     CHECK(Classify(c, "@takaro_probe_abcd1234 rm -rf", kPuid).reason == "unknown mode");
+    CHECK(Classify(c, "@takaro_probe_abcd1234 ", kPuid).reason == "unknown mode");
     CHECK(Classify(c, "@takaro_probe_abcd1234", "11111111111111111111111111111111").reason ==
           "sender is not the probe player");
     CHECK(Classify(c, "@takaro_probe_abcd1234", "").match == Match::None);
@@ -65,9 +66,14 @@ int main() {
     Pending p;
     uint64_t a = p.Begin(1000, 2000);
     CHECK(a != 0 && p.InFlight() == 1);
-    CHECK(p.Settle(a));
-    CHECK(!p.Settle(a));
-    CHECK(!p.Settle(0));
+    CHECK(p.Settle(a, 1150, false));
+    CHECK(!p.Settle(a, 1150, false));
+    CHECK(!p.Settle(a, 3000, true));
+    CHECK(!p.Settle(0, 0, true));
+    // A stub answer after the deadline never wins, even if its worker runs first.
+    uint64_t late = p.Begin(1000, 2000);
+    CHECK(!p.Settle(late, 3001, false));
+    CHECK(p.Settle(late, 3001, true));
     uint64_t ids[8];
     for (auto& id : ids) id = p.Begin(1000, 2000);
     CHECK(ids[7] != 0 && p.Begin(1000, 2000) == 0);

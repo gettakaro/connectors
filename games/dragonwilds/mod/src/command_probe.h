@@ -58,8 +58,9 @@ StubAnswer Stub(const Config& cfg, const std::string& mode);
 class Pending {
 public:
     uint64_t Begin(uint64_t nowMs, uint32_t deadlineMs);
-    // true when this call settled the id (the caller then answers the player privately).
-    bool Settle(uint64_t id);
+    // true when this call settled the id (the caller then answers the player privately). A stub
+    // answer arriving after the deadline never settles; only the deadline itself does then.
+    bool Settle(uint64_t id, uint64_t nowMs, bool byDeadline);
     size_t InFlight();
 
 private:
