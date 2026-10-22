@@ -264,6 +264,23 @@ this release's mod) with a real game client connected.
 | Discord chat bridge | ⚠️ | Both directions work: game chat reaches Discord, and a message posted in Discord shows up in game. Takaro also forwards the game's copy of a Discord message back to Discord once (Takaro-side echo). |
 | Shop & economy | ✅ | Buying in game (`/shop`), ordering through the Takaro API, currency grants and balance checks all work. Purchases go straight into the player's inventory. |
 
+### PrismaCore-compatible console commands
+
+Verified end to end on **2026-10-22** against a real dedicated server (**V 3.3.0 b18**) with a
+real game client, through Takaro's console command action. The commands keep PrismaCore's names
+and output, so tools written for PrismaCore (StaffCommands among them) work unchanged. Running
+PrismaCore next to this mod is not supported; the mod logs one warning at game start when it finds it.
+
+| What | | Notes |
+|---|---|---|
+| `resetlevel` / `rl <player> <level>` | ✅ | The level changes in the player's character window at once, without a relog, and is still there after a death and a relog. |
+| `resetskillpoints` / `rs <player> <count>` | ✅ | "Points available" in the skills window changes at once and is still there after a relog. |
+| `isbloodmoon` | ✅ | Prints `false` before dusk on the blood moon day, `true` during a forced blood moon, `false` again the morning after. |
+| Argument and offline-player errors | ✅ | Every line of the PrismaCore output contract, verbatim; a player who is not online gets the offline line, an unknown id gets the game's own `... is not a valid entity id, player name or user id.` |
+| Player ids | ✅ | Names, `EOS_` and `Steam_` ids proven live; entity ids, `XBL_` and `PSN_` ids are covered by unit tests. |
+| Player registry | ✅ | The mod remembers every player in `takaro.db` in the world's save folder, with their last position while online. Checked over 30 minutes of position sampling, 10 restarts in a row and 3 hard kills during writes: nothing durable was lost and the database opened cleanly every time. Players the game already knew before this version are picked up from its own player list. |
+| PrismaCore warning | ✅ | Logged exactly once when a PrismaCore mod is loaded, never otherwise. |
+
 ### Known issues
 
 - **Chat bridge echoes.** Takaro stores its own outgoing messages as chat, so the Discord bridge
