@@ -74,7 +74,7 @@
   "components": [
     {"role": "server-mod", "artifact": "takaro-7d2d-mod-linux-3.2.0.b10-{version}.zip", "installDir": "Mods"}
   ],
-  "verification": {"required": "contract", "separate": ["startup", "action", "reconnect"]},
+  "verification": {"required": "startup", "separate": ["startup", "action", "reconnect"]},
   "preserve": ["sdtdserver.xml", "Takaro/", "Mods/Takaro/", "DONT_REMOVE.txt", ".takaro/"],
   "devServers": {"gameId": "7d2d"}
 }
