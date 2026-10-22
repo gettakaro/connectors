@@ -204,8 +204,16 @@ mod/src/
   30 s is closed and retried.
 - Identify carries the Capability Manifest, derived from `RequestRouter.SupportedActions` (the
   cases of `Dispatch`) plus `events.<type>` for every event the mod emits. The harness fails when
-  the manifest and the answered actions disagree. `map` is not declared (the mod cannot yet answer
-  v1's tiled map requests); `getMapInfo`/`getMapTile` remain for v0 connections.
+  the manifest and the answered actions disagree. `getMapInfo` is v0 only.
+- `map` is declared when the server renders map tiles (`EnableMapRendering`) or already has a tile
+  cache under `<save>/map/`: one tiled Dimension `world`, +x right, +z (north) up, tile size and
+  zoom count from the renderer's `mapinfo.json` (128 px, 5 zooms by default). The frame is the
+  square `[-h, h]²`, `h` the smallest power-of-two multiple of the game's zoom-0 tile that holds the
+  world (Navezgane: ±4096, Takaro zooms 2-6), so each Takaro tile is exactly one game tile:
+  game zoom = `zoom - minZoom`, x = `x - 2^(zoom-1)`, y = `2^(zoom-1) - 1 - y` (`MapFrame`).
+  v1 `getMapTile {dimension, zoom, x, y}` answers `{mimeType: "image/png", data}`; an unrendered
+  tile is `not_found` (Takaro shows it transparent). v0 `getMapTile {x, y, z}` still answers the
+  bare base64 tile at the game's own index.
 - `game` is `7d2d`. `migration.native { from: "7d2d" }` is the promise that the mod meets the
   parity contract of Takaro's built-in integration (gettakaro/connectors#419,
   gettakaro/takaro#4349); do not declare it for a change that weakens that parity.

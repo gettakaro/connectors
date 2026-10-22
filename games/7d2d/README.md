@@ -121,6 +121,17 @@ Takaro (unless you are migrating an existing game server, see below).
 Saving is enough: the mod checks the file every few seconds and connects as soon as it has a
 token. No restart needed. Emptying the token disconnects the server.
 
+**Map (optional).** For the world map in Takaro, turn on the game's own map rendering in
+`serverconfig.xml` and restart the server:
+
+```xml
+<property name="EnableMapRendering" value="true"/>
+```
+
+The server then draws map tiles while players explore, and the mod offers them to Takaro. The
+web dashboard (`WebDashboardEnabled`) is not needed. With rendering off and no tiles saved, the mod
+does not declare a map and Takaro shows none.
+
 ### 5. Check that it worked
 
 In the server console / server log:
@@ -258,8 +269,7 @@ this release's mod) with a real game client connected.
 | Player death event | ✅ | Includes the position where the player died. |
 | Entity kill event | ✅ | Proven with real kills; reports the creature's in-game name (for example "Boe") and the weapon ("Steel Club", "Hunting Knife"). |
 | Log events | ⚠️ | The mod sends them, but Takaro does not store server log lines as events, so they cannot be searched or used in modules. |
-| Map info | ⚠️ | The mod answers, but Takaro has no map view for this connector type yet. |
-| Map tiles | ❌ | The mod does not declare the map capability yet, so Takaro does not ask for tiles on protocol version 1 (the legacy native 7DTD integration has a map; this one does not). |
+| World map | ✅ | Needs `EnableMapRendering=true` (see "Configure"). Takaro shows the tiles the server has rendered, north up, with players at their position; areas nobody has explored yet stay empty. |
 | Locations / points of interest | ⚠️ | The mod collects them (368 found) and declares `locations.list`, which Takaro can now request on protocol version 1. Not yet proven live. |
 | Discord chat bridge | ⚠️ | Both directions work: game chat reaches Discord, and a message posted in Discord shows up in game. Takaro also forwards the game's copy of a Discord message back to Discord once (Takaro-side echo). |
 | Shop & economy | ✅ | Buying in game (`/shop`), ordering through the Takaro API, currency grants and balance checks all work. Purchases go straight into the player's inventory. |
@@ -271,8 +281,9 @@ this release's mod) with a real game client connected.
   side — the mod only reports chat from real players.
 - **Locations are not proven live.** The mod builds the catalogue and declares `locations.list`,
   but the request over protocol version 1 has only been checked against Takaro's expected shape.
-- **No map.** The mod does not declare the map capability yet, so Takaro does not request the map
-  on protocol version 1.
+- **The map shows explored areas only, and lags a little.** The server draws a tile when a player
+  first loads that area. Takaro keeps tiles for up to 10 minutes, so a freshly explored area can
+  take that long to appear or fill in.
 - **Events from an outage arrive late, stamped with the delivery time.** Takaro records the moment
   it received an event, so after an outage the events from it show the reconnect time, not when they
   happened.

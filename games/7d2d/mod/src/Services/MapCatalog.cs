@@ -8,8 +8,8 @@ namespace Takaro.Services
     /// <summary>
     /// Pure helpers over the 7 Days to Die web-map tile cache.
     ///
-    /// The dedicated server only writes map tiles when the web dashboard is
-    /// enabled (<c>WebDashboardEnabled</c> in serverconfig.xml). The tiles live
+    /// The dedicated server only writes map tiles when map rendering is
+    /// enabled (<c>EnableMapRendering</c> in serverconfig.xml). The tiles live
     /// under <c>&lt;save&gt;/map/&lt;zoom&gt;/&lt;x&gt;/&lt;y&gt;.png</c>, one
     /// directory level per zoom. Nothing here touches game APIs, so it is fully
     /// covered by the contract harness.
@@ -134,6 +134,204 @@ namespace Takaro.Services
             {
                 return null;
             }
+        }
+
+        /// <summary>Pixel edge of a game tile when mapinfo.json is missing (the game's default).</summary>
+        public const int DefaultTilePixels = 128;
+
+        /// <summary>Highest game zoom when mapinfo.json is missing (the game's default of 5 levels).</summary>
+        public const int DefaultGameMaxZoom = 4;
+
+        /// <summary>
+        /// Reads the renderer's layout from <c>mapinfo.json</c>
+        /// (<c>{"blockSize":128,"maxZoom":4}</c>, written by the game's MapRenderer).
+        /// Falls back to the game defaults when the file is missing or unreadable.
+        /// </summary>
+        public static void ReadTileLayout(string mapRoot, out int tilePixels, out int gameMaxZoom)
+        {
+            tilePixels = DefaultTilePixels;
+            gameMaxZoom = DefaultGameMaxZoom;
+            if (string.IsNullOrEmpty(mapRoot))
+                return;
+
+            try
+            {
+                string path = Path.Combine(mapRoot, "mapinfo.json");
+                if (!File.Exists(path))
+                    return;
+                var info = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(path));
+                var blockSize = info["blockSize"];
+                var maxZoom = info["maxZoom"];
+                if (blockSize != null && blockSize.Type == Newtonsoft.Json.Linq.JTokenType.Integer)
+                    tilePixels = (int)blockSize;
+                if (maxZoom != null && maxZoom.Type == Newtonsoft.Json.Linq.JTokenType.Integer)
+                    gameMaxZoom = (int)maxZoom;
+            }
+            catch (Exception)
+            {
+                // A damaged mapinfo.json keeps the defaults the game itself would use.
+            }
+
+            if (tilePixels < 1)
+                tilePixels = DefaultTilePixels;
+            if (gameMaxZoom < 0)
+                gameMaxZoom = DefaultGameMaxZoom;
+        }
+    }
+
+    /// <summary>
+    /// The protocol v1 <c>map</c> frame over the 7D2D tile cache. The game cuts
+    /// tiles at signed indices around the world origin: at game zoom
+    /// <c>g</c> tile (x, y) covers blocks <c>[x*s, (x+1)*s)</c> along x and
+    /// <c>[y*s, (y+1)*s)</c> along z (north), with <c>s = tilePixels *
+    /// 2^(gameMaxZoom - g)</c>; the PNG is north-up. Takaro wants the standard
+    /// XYZ pyramid over a square frame (zoom <c>z</c> = 2^z x 2^z tiles,
+    /// first row at the top). The frame here is the square <c>[-half, half]²</c>
+    /// with <c>half</c> a power-of-two multiple of the game's zoom-0 tile, so
+    /// every Takaro tile is exactly one game tile: the zoom shifts by
+    /// <see cref="ZoomOffset"/>, x by <c>2^(z-1)</c>, and y is flipped.
+    /// </summary>
+    public sealed class MapFrame
+    {
+        /// <summary>The only Dimension; positions carry none, so Takaro uses it.</summary>
+        public const string DimensionId = "world";
+
+        public int TilePixels { get; private set; }
+        public int GameMaxZoom { get; private set; }
+
+        /// <summary>Takaro zoom of game zoom 0; at least 1, so the frame centre is a tile edge.</summary>
+        public int ZoomOffset { get; private set; }
+
+        /// <summary>Half the frame edge in blocks.</summary>
+        public long HalfSize { get; private set; }
+
+        public int MinZoom => ZoomOffset;
+        public int MaxZoom => ZoomOffset + GameMaxZoom;
+
+        /// <param name="worldHalfExtent">Largest |x| or |z| of the world, in blocks; 0 when unknown.</param>
+        public static MapFrame ForWorld(int tilePixels, int gameMaxZoom, int worldHalfExtent)
+        {
+            long gameZoomZeroEdge = (long)tilePixels << gameMaxZoom;
+            long half = gameZoomZeroEdge;
+            int offset = 1;
+            while (half < worldHalfExtent && offset < 20 - gameMaxZoom)
+            {
+                half *= 2;
+                offset++;
+            }
+
+            return new MapFrame
+            {
+                TilePixels = tilePixels,
+                GameMaxZoom = gameMaxZoom,
+                ZoomOffset = offset,
+                HalfSize = half,
+            };
+        }
+
+        /// <summary>
+        /// Translates a Takaro tile request to the game's tile index. False when
+        /// the tile lies outside the declared pyramid.
+        /// </summary>
+        public bool TryToGameTile(
+            int zoom,
+            int x,
+            int y,
+            out int gameZoom,
+            out int gameX,
+            out int gameY
+        )
+        {
+            gameZoom = 0;
+            gameX = 0;
+            gameY = 0;
+            if (zoom < MinZoom || zoom > MaxZoom)
+                return false;
+
+            long tilesPerSide = 1L << zoom;
+            if (x < 0 || y < 0 || x >= tilesPerSide || y >= tilesPerSide)
+                return false;
+
+            long centre = tilesPerSide / 2;
+            gameZoom = zoom - ZoomOffset;
+            gameX = (int)(x - centre);
+            gameY = (int)(centre - 1 - y);
+            return true;
+        }
+
+        /// <summary>The <c>map</c> Capability: one tiled Dimension, +x right, +z (north) up.</summary>
+        public Dictionary<string, object> BuildCapability(string worldName)
+        {
+            string name = string.IsNullOrWhiteSpace(worldName) ? "World" : worldName.Trim();
+            if (name.Length > 64)
+                name = name.Substring(0, 64);
+
+            return new Dictionary<string, object>
+            {
+                { "name", "map" },
+                {
+                    "parameters",
+                    new Dictionary<string, object>
+                    {
+                        {
+                            "dimensions",
+                            new List<Dictionary<string, object>>
+                            {
+                                new Dictionary<string, object>
+                                {
+                                    { "id", DimensionId },
+                                    { "name", name },
+                                    {
+                                        "axes",
+                                        new Dictionary<string, object>
+                                        {
+                                            {
+                                                "horizontal",
+                                                new Dictionary<string, object>
+                                                {
+                                                    { "field", "x" },
+                                                    { "direction", "right" },
+                                                }
+                                            },
+                                            {
+                                                "vertical",
+                                                new Dictionary<string, object>
+                                                {
+                                                    { "field", "z" },
+                                                    { "direction", "up" },
+                                                }
+                                            },
+                                        }
+                                    },
+                                    {
+                                        "bounds",
+                                        new Dictionary<string, object>
+                                        {
+                                            { "horizontal", Range() },
+                                            { "vertical", Range() },
+                                        }
+                                    },
+                                    {
+                                        "source",
+                                        new Dictionary<string, object>
+                                        {
+                                            { "type", "tiled" },
+                                            { "tileSize", TilePixels },
+                                            { "minZoom", MinZoom },
+                                            { "maxZoom", MaxZoom },
+                                        }
+                                    },
+                                },
+                            }
+                        },
+                    }
+                },
+            };
+        }
+
+        private Dictionary<string, object> Range()
+        {
+            return new Dictionary<string, object> { { "min", -HalfSize }, { "max", HalfSize } };
         }
     }
 }
