@@ -12,6 +12,7 @@ export type GameServerAction =
   | 'getMapInfo'
   | 'getMapTile'
   | 'getMapImage'
+  | 'getGameIcon'
   | 'giveItem'
   | 'sendMessage'
   | 'teleportPlayer'
@@ -34,6 +35,7 @@ export const ALL_GAME_SERVER_ACTIONS = [
   'getMapInfo',
   'getMapTile',
   'getMapImage',
+  'getGameIcon',
   'giveItem',
   'sendMessage',
   'teleportPlayer',
@@ -86,6 +88,8 @@ export interface IdentifyPayload {
   identityToken: string;
   registrationToken: string;
   name: string;
+  game?: string;
+  connector?: { name: string; version: string };
   /** Offered protocol versions; absent means a version 0 identify. */
   protocolVersions?: number[];
   capabilities?: unknown[];
