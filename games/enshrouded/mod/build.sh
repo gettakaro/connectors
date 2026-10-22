@@ -10,7 +10,7 @@ DEFS=()
 if [ -n "${DEBUG_CORRUPT_SIG:-}" ]; then OUT=build-debug; DEFS=(-DTAKARO_DEBUG_CORRUPT_SIG="\"$DEBUG_CORRUPT_SIG\""); fi
 # TAKARO_COMMAND_PROBE=1 builds the #202 research probe into build-probe/ (../research/command-probe; never released)
 PROBE_SRC=()
-if [ -n "${TAKARO_COMMAND_PROBE:-}" ]; then
+if [ "${TAKARO_COMMAND_PROBE:-}" = 1 ]; then
   OUT=build-probe; DEFS+=(-DTAKARO_COMMAND_PROBE -I../research/command-probe); PROBE_SRC=(../research/command-probe/probe_core.cpp)
 fi
 mkdir -p "$OUT/obj"

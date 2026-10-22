@@ -18,10 +18,18 @@ std::string LowerAscii(std::string s) {
 // Takaro would see and match against its prefix.
 bool IsSpace(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r'; }
 
-uint64_t U64(const JsonValue* v) {
-    if (!v || !v->isNum() || v->num < 0) return 0;
-    return (uint64_t)strtoull(v->str.c_str(), nullptr, 10);
+// A non-negative JSON integer (digits only, no overflow); false for anything else.
+bool U64(const JsonValue* v, uint64_t& out) {
+    if (!v || !v->isNum() || v->str.empty() || v->str.size() > 19) return false;
+    out = 0;
+    for (char c : v->str) {
+        if (c < '0' || c > '9') return false;
+        out = out * 10 + (uint64_t)(c - '0');
+    }
+    return true;
 }
+
+const uint64_t kMaxAgeLimitSeconds = 7 * 24 * 3600;
 
 }  // namespace
 
@@ -37,8 +45,16 @@ bool ParseCatalog(const std::string& text, Catalog& out, std::string& err) {
     if (auto* v = root.get("revision"); v && v->isStr()) c.revision = v->str;
     if (auto* v = root.get("prefix"); v && v->isStr()) c.prefix = v->str;
     if (auto* v = root.get("nonce"); v && v->isStr()) c.nonce = LowerAscii(v->str);
-    c.issuedAtMs = U64(root.get("issuedAtMs"));
-    c.maxAgeMs = U64(root.get("maxAgeSeconds")) * 1000;
+    uint64_t maxAge = 0;
+    if (!U64(root.get("issuedAtMs"), c.issuedAtMs) || c.issuedAtMs == 0) {
+        err = "issuedAtMs must be a positive integer (Unix ms)";
+        return false;
+    }
+    if (!U64(root.get("maxAgeSeconds"), maxAge) || maxAge == 0 || maxAge > kMaxAgeLimitSeconds) {
+        err = "maxAgeSeconds must be an integer 1.." + std::to_string(kMaxAgeLimitSeconds);
+        return false;
+    }
+    c.maxAgeMs = maxAge * 1000;
     if (auto* v = root.get("available"); v && v->type == JsonValue::Bool) c.available = v->b;
     if (auto* v = root.get("failDuringSend"); v && v->type == JsonValue::Bool) c.failDuringSend = v->b;
     if (c.prefix.empty() || c.prefix.size() > 8) {
@@ -123,7 +139,7 @@ Decision Decide(const std::string& text, const Catalog* cat, uint64_t nowMs, con
         d.reason = "sender not verified (" + sender.reason + ")";
         return d;
     }
-    if (cat->maxAgeMs && (nowMs < cat->issuedAtMs || nowMs - cat->issuedAtMs > cat->maxAgeMs)) {
+    if (nowMs < cat->issuedAtMs || nowMs - cat->issuedAtMs > cat->maxAgeMs) {
         d.reason = "command list is out of date";
         return d;
     }
