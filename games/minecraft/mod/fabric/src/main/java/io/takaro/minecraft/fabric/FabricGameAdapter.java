@@ -205,7 +205,10 @@ public class FabricGameAdapter implements GameAdapter {
     public void banPlayer(String gameId, String reason, String expiresAt) {
         UUID uuid = UUID.fromString(gameId);
         ServerPlayer onlinePlayer = server.getPlayerList().getPlayer(uuid);
-        String playerName = onlinePlayer != null ? onlinePlayer.getGameProfile().name() : "";
+        // An offline player's name comes from the server's user cache, so the ban list names them.
+        String playerName = onlinePlayer != null
+                ? onlinePlayer.getGameProfile().name()
+                : server.services().nameToIdCache().get(uuid).map(NameAndId::name).orElse("");
         var nameAndId = new NameAndId(uuid, playerName);
         Date expiry = null;
         if (expiresAt != null) {
