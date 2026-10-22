@@ -86,9 +86,10 @@ client-owned.
 
 ## Experiments
 
-All experiments ran in one session on the gamer PC's Windows rig with the real client. Chat was
-typed with `pcctl` in the client. Evidence is in `.runner-reports/205/e2e/` (screenshots in
-`shots/`, logs in `logs/`, raw Takaro API responses at the top level).
+All experiments ran in one session on the Windows dedicated server with the real client, typing
+in the client's chat through an input-automation tool. The evidence file names below refer to the
+run's evidence folder, which is kept with the test run and not in this repository: screenshots in
+`shots/`, logs in `logs/`, raw Takaro API responses at the top level.
 
 ### Inspection: the chat path on build 25792439
 
@@ -133,7 +134,7 @@ typed with `pcctl` in the client. Evidence is in `.runner-reports/205/e2e/` (scr
 | `feature:catalog-revision` | r1 → r2 → r3 → r4 live, r4 written twice, without `fan` | passed: each revision loaded within 1 s without a restart; the identical rewrite did not reload (`catalogLoads` 4 for 4 distinct texts); removed `.tk fan` became normal public chat | `shots/16-catalog-r4-fan-removed.png`, `events-window.json` |
 | `feature:reconnect` | Takaro kick, then rejoin, `.tk whoami` | passed: same identity after reconnect | `shots/19-kicked.png`, `shots/20-reconnect-whoami.png` |
 | `feature:server-restart` | Takaro shutdown action, restart with the fixed library, `.tk ping` | passed: new boot id, catalog r4 read from disk, command works | `shots/21-restart-ping.png`, `logs/native-boot2-probe.log` |
-| `feature:two-clients` | | blocked: one Steam account and one client on the rig, so isolation from a second player was not observed | |
+| `feature:two-clients` | | blocked: one Steam account and one client, so isolation from a second player was not observed | |
 | `feature:existing-takaro-commands` | `@ping` | passed: Takaro's chat-based command still answers `Pong!` (public, as today) | `shots/18-takaro-at-ping.png` |
 
 Counts (from `logs/events-health-boot1.json`): 13 claimed, 11 sent to the stub, 2 offline,
@@ -210,7 +211,7 @@ Accepted as probe limits (production work must solve them):
    backend contract lands.
 3. **conan-exiles: second-client isolation check for targeted chat.**
    Add a second client account to the live runbook and prove that a vetoed command and a
-   targeted `sendMessage` reach only the caller (also closes the old ACT-13 gap).
+   targeted `sendMessage` reach only the caller.
 4. **docs: Conan players cannot use `/` for Takaro commands.**
    Document that the vanilla client consumes every `/` line, so a Conan domain needs a non-slash
    command prefix (`@` default works). Takaro should warn when a Conan server sits in a domain
