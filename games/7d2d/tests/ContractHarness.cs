@@ -2695,9 +2695,14 @@ public static class ContractHarness
         Equal(2, navezgane.MinZoom, "game zoom 0 is Takaro zoom 2 on a +-4096 frame");
         Equal(6, navezgane.MaxZoom, "game zoom 4 is Takaro zoom 6 on a +-4096 frame");
 
-        MapFrame small = MapFrame.ForWorld(128, 4, 0);
-        Equal(2048L, small.HalfSize, "an unknown extent uses the smallest frame");
+        MapFrame small = MapFrame.ForWorld(128, 4, 2000);
+        Equal(2048L, small.HalfSize, "a small world uses the smallest frame");
         Equal(1, small.MinZoom, "the smallest frame still centres on a tile edge");
+        Equal(
+            8192L,
+            MapFrame.ForWorld(128, 4, 0).HalfSize,
+            "an unknown extent assumes the largest world, so nothing is cropped"
+        );
         MapFrame rwg10k = MapFrame.ForWorld(128, 4, 5120);
         Equal(8192L, rwg10k.HalfSize, "a 10240 world fits the +-8192 frame");
         Equal(3, rwg10k.MinZoom, "a +-8192 frame starts at Takaro zoom 3");
@@ -2912,6 +2917,18 @@ public static class ContractHarness
             True(
                 ReadHandlers.CurrentMapCapability() == null,
                 "a tile size Takaro would refuse is never declared"
+            );
+
+            File.WriteAllText(
+                Path.Combine(mirror.MapRoot, "mapinfo.json"),
+                "{\"blockSize\":256,\"maxZoom\":99999999999}"
+            );
+            int halfPixels;
+            int halfZoom;
+            MapCatalog.ReadTileLayout(mirror.MapRoot, out halfPixels, out halfZoom);
+            True(
+                halfPixels == 128 && halfZoom == 4,
+                "a mapinfo.json with one unreadable field keeps both defaults"
             );
 
             File.WriteAllText(Path.Combine(mirror.MapRoot, "mapinfo.json"), "not json");

@@ -162,20 +162,23 @@ namespace Takaro.Services
                 var info = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(path));
                 var blockSize = info["blockSize"];
                 var maxZoom = info["maxZoom"];
+                int pixels = tilePixels;
+                int zoom = gameMaxZoom;
                 if (blockSize != null && blockSize.Type == Newtonsoft.Json.Linq.JTokenType.Integer)
-                    tilePixels = (int)blockSize;
+                    pixels = (int)blockSize;
                 if (maxZoom != null && maxZoom.Type == Newtonsoft.Json.Linq.JTokenType.Integer)
-                    gameMaxZoom = (int)maxZoom;
+                    zoom = (int)maxZoom;
+                // Both or neither: a half-read layout would not match the tiles on disk.
+                if (pixels >= 1 && zoom >= 0)
+                {
+                    tilePixels = pixels;
+                    gameMaxZoom = zoom;
+                }
             }
             catch (Exception)
             {
                 // A damaged mapinfo.json keeps the defaults the game itself would use.
             }
-
-            if (tilePixels < 1)
-                tilePixels = DefaultTilePixels;
-            if (gameMaxZoom < 0)
-                gameMaxZoom = DefaultGameMaxZoom;
         }
     }
 
@@ -208,9 +211,15 @@ namespace Takaro.Services
         public int MinZoom => ZoomOffset;
         public int MaxZoom => ZoomOffset + GameMaxZoom;
 
+        /// <summary>Half of the largest world the game generates (10240), used when the extent is unknown.</summary>
+        public const int LargestWorldHalfExtent = 5120;
+
         /// <param name="worldHalfExtent">Largest |x| or |z| of the world, in blocks; 0 when unknown.</param>
         public static MapFrame ForWorld(int tilePixels, int gameMaxZoom, int worldHalfExtent)
         {
+            if (worldHalfExtent <= 0)
+                worldHalfExtent = LargestWorldHalfExtent;
+
             long gameZoomZeroEdge = (long)tilePixels << gameMaxZoom;
             long half = gameZoomZeroEdge;
             int offset = 1;
