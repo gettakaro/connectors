@@ -94,7 +94,7 @@ def test_every_rust_verification_body_has_pass_and_failure_paths(
     assert asyncio.run(hooks._check_stop(failed_run, failed)).status == "fail"
     asyncio.run(hooks.after_protocol(failed_run, failed, lambda: False))
     asyncio.run(hooks.after_shutdown(failed_run, failed, failed_run.ws_url, []))
-    assert {check for check, _ in failed_run.skips} == {*hooks.CHECK_IDS, "stop"}
+    assert {check for check, _ in failed_run.skips} == set(hooks.CHECK_IDS) - {hooks.NEGATIVE_CHECK}
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "games" / "rust"
@@ -711,6 +711,9 @@ def test_verify_hooks_patterns_identity_and_container_shape(tmp_path: Path) -> N
         f"{REPO_ROOT}/games/rust/start.sh:/takaro/start.sh:ro",
     ]
     assert adapter.container_command(resolved, data) == ["/bin/bash", "/takaro/start.sh"]
+    # World generation sits at the runner's 3 GB default; the game's own limit comes last,
+    # which is the one docker applies.
+    assert adapter.container_options(resolved, data) == ["--memory", "8g"]
     environment = adapter.runtime_env(
         {"runtime": {"container": {"env": {"RUST_SERVER_PORT": "28015"}}}},
         {"TAKARO_WS_URL": "ws://host.docker.internal:27128/"},
@@ -1002,7 +1005,9 @@ def test_rust_workflow_delegates_to_connector_release() -> None:
 
     assert "uses: ./.github/workflows/connector-release.yml" in workflow
     assert "connector: rust" in workflow
-    assert "runtime: false" in workflow
+    assert "runtime: true" in workflow
+    assert "runtime_depot_cache: true" in workflow
+    assert "runtime_negative: true" in workflow
     assert "compile-check.sh" in workflow
     assert "setup-environment.sh" in workflow
     assert "rust-refs-${{ steps.target.outputs.fp16 }}" in workflow
@@ -1025,7 +1030,11 @@ def test_a_bare_verify_run_selects_only_the_checks_this_target_proves() -> None:
     record = json.loads((REPO_ROOT / f"catalog/{GAME}/targets/{TARGET}.json").read_text(encoding="utf-8"))
 
     declared = game_hooks(GAME)
-    selection = [check for check in check_ids(GAME) if check not in declared.unsupported_checks]
+    selection = [
+        check
+        for check in check_ids(GAME)
+        if check not in declared.unsupported_checks and check not in declared.negative_check_ids
+    ]
     # Same rows as the record names, in the ladder's own order rather than the record's.
     assert set(selection) == {"build", *record["verification"]["separate"]}
     assert selection == [check for check in check_ids(GAME) if check in selection]
@@ -1034,8 +1043,9 @@ def test_a_bare_verify_run_selects_only_the_checks_this_target_proves() -> None:
         assert unreachable in check_ids(GAME), unreachable
         assert unreachable not in selection, unreachable
         assert declared.unsupported_checks[unreachable], unreachable
-    # Everything the hooks add, and the base checks Rust does pass, are in.
-    assert set(hooks.CHECK_IDS) <= set(selection)
+    # Everything the hooks add, and the base checks Rust does pass, are in; the negative
+    # boot is opt-in.
+    assert set(hooks.CHECK_IDS) - {hooks.NEGATIVE_CHECK} <= set(selection)
     assert {"startup", "identify", "heartbeat", "players", "console"} <= set(selection)
 
 
@@ -1296,3 +1306,58 @@ def test_the_entity_spot_check_is_a_name_the_old_derivation_could_not_produce() 
 
     assert result.status == "fail"
     assert any("Heavy Scientist" in problem for problem in result.detail["problems"])
+
+
+class _NegativeRun(FakeRun):
+    """A run whose negative boot writes the log lines the test hands it."""
+
+    def __init__(self, tmp_path: Path, lines: list[str]) -> None:
+        super().__init__(tmp_path)
+        self.extra_logs: list[Path] = []
+        self.lines = lines
+        self.plugin = self.data_dir / hooks.PLUGIN_FILE
+        self.plugin.parent.mkdir(parents=True)
+        self.plugin.write_text("// the real plugin\n", encoding="utf-8")
+        self.deployed_when_booted: str | None = None
+
+    def boot(self, ws_url: str, **kwargs: Any) -> Any:
+        container = super().boot(ws_url, **kwargs)
+        self.deployed_when_booted = self.plugin.read_text(encoding="utf-8")
+        container.log_file.write_text("".join(f"{line}\n" for line in self.lines), encoding="utf-8")
+        return container
+
+
+def test_the_broken_compile_negative_passes_only_when_carbon_refuses_the_plugin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(hooks, "COMPILE_BUDGET", 0.5)
+    refused = _NegativeRun(
+        tmp_path / "refused",
+        ["Server startup complete", "Failed compiling 'TakaroConnector.cs':", "  1. error CS1029: #error: 'x'"],
+    )
+    asyncio.run(hooks.negative(refused, CannedSocket({}), refused.ws_url, {}))
+    (result,) = refused.results
+    assert result.id == hooks.NEGATIVE_CHECK
+    assert result.status == "pass", result.detail
+    assert refused.deployed_when_booted is not None
+    assert refused.deployed_when_booted.startswith(hooks.BROKEN_DIRECTIVE + "\n// the real plugin")
+    assert refused.plugin.read_text(encoding="utf-8") == "// the real plugin\n"
+    assert refused.extra_logs and refused.extra_logs[0].name == "server-negative.log"
+
+    loaded = _NegativeRun(tmp_path / "loaded", ["Loaded plugin TakaroConnector v1.2.3 by Takaro [42ms]"])
+    asyncio.run(hooks.negative(loaded, CannedSocket({}), loaded.ws_url, {}))
+    assert loaded.results[0].status == "fail"
+    assert loaded.plugin.read_text(encoding="utf-8") == "// the real plugin\n"
+
+    silent = _NegativeRun(tmp_path / "silent", ["Server startup complete"])
+    asyncio.run(hooks.negative(silent, CannedSocket({}, identify_count=0), silent.ws_url, {}))
+    assert silent.results[0].status == "fail"
+    assert "never logged a failed compile" in " ".join(silent.results[0].detail["problems"])
+
+
+def test_the_broken_compile_negative_is_opt_in() -> None:
+    from takaro_maint.verify.runner import game_hooks
+
+    declared = game_hooks(GAME)
+    assert declared.negative is hooks.negative
+    assert declared.negative_check_ids == (hooks.NEGATIVE_CHECK,)

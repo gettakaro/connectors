@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -29,10 +30,14 @@ from ... import paths
 from ...install.ledger import artifacts_of, read_ledger
 from ...verify import checks, checks_lifecycle
 from ...verify.hooks import GameHooks
+from . import PLUGIN_FILE
 
 PLUGIN_ROLE = "plugin"
 
-CHECK_IDS = ("carbon-compile", "items", "entities", "action", "reconnect", "stop")
+#: Opt-in (``--negative``): the plugin with a compile error in it must not load.
+NEGATIVE_CHECK = "negative-broken-compile"
+
+CHECK_IDS = ("carbon-compile", "items", "entities", "action", "reconnect", "stop", NEGATIVE_CHECK)
 
 #: "Server startup complete" is the last line of a successful boot; everything before it
 #: can appear on a boot that then dies.
@@ -68,6 +73,10 @@ SELF_UPDATE_LINE = re.compile(
 SAVED_LINE = re.compile(r"^Saving complete")
 QUIT_LINE = re.compile(r"\[Raknet\] Server Shutting Down \(quit\)|^Quitting")
 UNLOADED_LINE = re.compile(r"Unloaded plugin TakaroConnector")
+
+#: What the negative boot prepends to the deployed source: one directive that no compiler
+#: accepts, so the rest of the file -- and what it would do if it loaded -- is unchanged.
+BROKEN_DIRECTIVE = "#error takaro-verify: this plugin must not compile"
 
 COMPILE_BUDGET = 180.0
 ACTION_BUDGET = 30.0
@@ -339,6 +348,87 @@ async def _check_stop(run: Any, fake: Any) -> checks.CheckResult:
     )
 
 
+async def negative(run: Any, fake: Any, ws_url: str, manifest: dict[str, Any]) -> None:
+    del manifest
+    if not run.wanted(NEGATIVE_CHECK):
+        run.skip(NEGATIVE_CHECK, "not selected by --checks")
+        return
+    run.record(await _check_negative_broken_compile(run, fake, ws_url))
+
+
+async def _check_negative_broken_compile(run: Any, fake: Any, ws_url: str) -> checks.CheckResult:
+    """A plugin Carbon cannot compile has to fail, never pass as a connector that loaded.
+
+    Rust has no sibling target whose artifact a server refuses -- every target's plugin is the
+    same source -- so the wrong artifact here is this one with a compile error in it. The
+    server boots again on the same data directory with that file deployed; the row passes
+    only when Carbon logs the failed compile, never logs the plugin as loaded, and no identify
+    frame arrives. The real plugin is put back byte-for-byte afterwards.
+    """
+    plugin = run.data_dir / PLUGIN_FILE
+    with checks._Timer() as timer:
+        problems: list[str] = []
+        failed: tuple[int, str] | None = None
+        loaded: tuple[int, str] | None = None
+        during = 0
+        log_name = "server-negative.log"
+        if not plugin.is_file():
+            problems.append(f"{PLUGIN_FILE} is not deployed; there is nothing to break")
+        else:
+            original = plugin.read_bytes()
+            plugin.write_bytes(BROKEN_DIRECTIVE.encode() + b"\n" + original)
+            try:
+                before = fake.identify_count
+                container = run.boot(ws_url, suffix="-negative", log_name=log_name)
+                run.extra_logs.append(container.log_file)
+                failed, loaded = await asyncio.to_thread(
+                    _watch_compile,
+                    container.log_file,
+                    run.startup_timeout + COMPILE_BUDGET,
+                    container.alive,
+                    lambda: fake.identify_count > before,
+                )
+                during = fake.identify_count - before
+                container.remove()
+            finally:
+                plugin.write_bytes(original)
+            if failed is None:
+                problems.append("Carbon never logged a failed compile of the broken plugin")
+            if loaded is not None:
+                problems.append(f"the broken plugin loaded: {loaded[1].strip()[:200]}")
+            if during:
+                problems.append(f"the broken plugin identified {during} time(s); it must never connect")
+    return checks.CheckResult(
+        NEGATIVE_CHECK,
+        "pass" if not problems else "fail",
+        timer.elapsed_ms,
+        {
+            "injected": BROKEN_DIRECTIVE,
+            "compileFailure": failed[1].strip()[:300] if failed else None,
+            "identifyFramesDuringNegative": during,
+            "problems": problems,
+        },
+        {"file": log_name, "line": failed[0]} if failed else {"file": log_name},
+    )
+
+
+def _watch_compile(
+    log_file: Path, timeout: float, alive: Any, identified: Any
+) -> tuple[tuple[int, str] | None, tuple[int, str] | None]:
+    """Wait for the compile failure, a load or an identify, whichever comes first.
+
+    A Rust server does not exit when a plugin fails to compile, so the container's death is
+    not an answer; it only cuts the wait short.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        failed = checks.find_line(log_file, COMPILE_FAILED)
+        loaded = checks.find_line(log_file, LOADED_LINE)
+        if failed or loaded or identified() or not alive() or time.monotonic() >= deadline:
+            return failed, loaded
+        time.sleep(1)
+
+
 def _where(run: Any, line: int | None) -> dict[str, Any]:
     """The report's ``log`` pointer, which carries a line number only when there is one."""
     where: dict[str, Any] = {"file": run.server_log.name}
@@ -351,9 +441,11 @@ def _where(run: Any, line: int | None) -> dict[str, Any]:
 HOOKS = GameHooks(
     ready_line=READY_LINE,
     check_ids=CHECK_IDS,
+    negative_check_ids=(NEGATIVE_CHECK,),
     unsupported_checks=UNSUPPORTED_CHECKS,
     before_boot=before_boot,
     after_protocol=after_protocol,
     after_shutdown=after_shutdown,
+    negative=negative,
     scan_runtime_identity=scan_runtime_identity,
 )

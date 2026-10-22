@@ -146,7 +146,12 @@ jobs:
       tag: ${{ needs.params.outputs.tag }}
       publish: ${{ needs.params.outputs.publish }}
       pr_number: ${{ github.event.pull_request.number }}
-      # The Rust dedicated server is a 5.9 GB Steam depot set with an 8 GB RAM
-      # footprint: a hosted runner cannot install or boot it, so the release claims
-      # build verification only. Runtime CI for this connector is tracked separately.
-      runtime: false
+      # The pinned Rust server and Carbon boot on the hosted runner against the local fake
+      # Takaro (`takaro-maint verify --game rust`, see games/rust/DEVELOPMENT.md). The
+      # 6.1 GB depot set is cached by the verify leg alone, never installed twice; the
+      # --negative boot proves a plugin Carbon cannot compile fails the run. World
+      # generation alone takes minutes on a hosted runner, hence the longer budget.
+      runtime: true
+      runtime_depot_cache: true
+      runtime_negative: true
+      startup_timeout: 1200

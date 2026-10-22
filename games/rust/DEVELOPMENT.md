@@ -153,12 +153,11 @@ never installs, updates or downloads anything; if `/rust` is empty it says so an
 `dev-servers/compose/rust.yml` uses the same image (`${RUST_IMAGE}`, resolved into
 `dev-servers/_data/.targets/rust.env` by `install.sh`) and the same two mounts.
 
-**Memory.** The `verify` runner boots every game with the same 3 GB limit and offers no per-game
-hook, so the adapter ships none. A verification world (size 1000, ten slots) does pass inside it —
-twice, measured — but it does so sitting *at* the ceiling: sampled peak 2.999 GiB of 3, surviving on
-page-cache reclaim. Verifying a bigger world here needs a per-game memory limit in the runner first.
-A server anybody plays on wants considerably more, which is why the rig's compose file sets no limit
-at all.
+**Memory.** The `verify` runner boots every game with 3 GB; the adapter's `container_options` raises
+Rust's to 8 GB. A verification world (size 1000, ten slots) sat *at* the 3 GB ceiling through world
+generation (2.97-2.999 GiB sampled), living off page-cache reclaim, and on a busy host docker
+OOM-killed it (exit 137) during `Processing World`, before the server came up. A server anybody
+plays on wants considerably more, which is why the rig's compose file sets no limit at all.
 
 ## Dev environment
 
@@ -276,7 +275,12 @@ compile/load (`carbon-compile`: Carbon compiled the deployed source, loaded the 
 manifest names, wrote no compile error and did not self-update), `startup` (including input
 integrity across the boot), `identify`, `heartbeat` (`testReachability`), `players` on an empty
 server, `items` and `entities` (both catalogues, human display names spot-checked), `console`,
-`action` (a broadcast), `reconnect` and `stop`.
+`action` (a broadcast), `reconnect` and `stop`. With `--negative` it also runs
+`negative-broken-compile`: the same data directory boots again with `#error` prepended to the
+deployed plugin, and the row passes only when Carbon logs the failed compile, never logs the plugin as
+loaded, and no identify frame arrives. The real plugin is put back byte-for-byte afterwards. Rust has
+no sibling target whose artifact a server would refuse, so a compile failure is this game's
+"wrong artifact".
 
 `stop` replaces the base `shutdown` check, which gates on the container's exit code. **Rust's exit
 code is not a shutdown signal**: the Unity player segfaults inside its own teardown on some runs
