@@ -36,6 +36,7 @@
   <ItemGroup>
     <Reference Include="0Harmony">
       <HintPath>..\_data\7dtd-binaries\0Harmony.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Assembly-CSharp">
       <HintPath>..\_data\7dtd-binaries\Assembly-CSharp.dll</HintPath>
@@ -44,9 +45,6 @@
     <Reference Include="Assembly-CSharp-firstpass">
       <HintPath>..\_data\7dtd-binaries\Assembly-CSharp-firstpass.dll</HintPath>
       <Private>False</Private>
-    </Reference>
-    <Reference Include="com.rlabrecque.steamworks.net">
-      <HintPath>..\_data\7dtd-binaries\com.rlabrecque.steamworks.net.dll</HintPath>
     </Reference>
     <Reference Include="LogLibrary">
       <HintPath>..\_data\7dtd-binaries\LogLibrary.dll</HintPath>
@@ -58,12 +56,15 @@
     </Reference>
     <Reference Include="LiteDB">
       <HintPath>..\_data\7dtd-binaries\LiteDB.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="System.Buffers">
       <HintPath>..\_data\7dtd-binaries\System.Buffers.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Newtonsoft.Json">
       <HintPath>..\_data\7dtd-binaries\Newtonsoft.Json.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="System">
       <HintPath>..\_data\7dtd-binaries\System.dll</HintPath>
@@ -86,6 +87,7 @@
     </Reference>
     <Reference Include="websocket-sharp">
       <HintPath>..\_data\7dtd-binaries\websocket-sharp.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="System.Runtime.Serialization" />
   </ItemGroup>
