@@ -190,9 +190,51 @@ build`) on every pull request **and on a release** — they are this connector's
 and delegates the release itself to `connector-release.yml`, which builds every catalog target and
 publishes one set with checksums, a compat record and the legacy aliases.
 
-It passes `runtime: false`. A Terraria run is two containers — the pinned TShock image and a Node
-sidecar that joins its network namespace — which the harness does on a rig; runtime CI for this
-connector is deferred, so the release claims `contract` verification rather than `runtime`.
+### Runtime CI
+
+It passes `runtime: true` with `startup_timeout: 900`. Every PR that changes Terraria's build
+inputs (`scripts/pr-build-scope.sh`), every push to `main` and every release run the `verify` leg
+of `connector-release.yml`; `publish` needs it to pass. The required check is
+`Terraria Connector / release / verify (tshock-v6.2.1)`, one per catalog target. It runs the same
+commands a maintainer runs locally:
+
+```sh
+maintenance/bin/takaro-maint build  --game terraria --target tshock-v6.2.1 --version 0.0.0-local \
+  --out dist --toolchain container
+maintenance/bin/takaro-maint verify --game terraria --target tshock-v6.2.1 --artifacts dist \
+  --out reports --startup-timeout 900 --cleanup-orphans
+```
+
+- **Runner:** `ubuntu-latest` (Linux x86_64) with Docker, nothing else. The server runs in the
+  pinned `ghcr.io/pryaxis/tshock` image (by digest) and the bridge in the pinned Node image (by
+  digest, 512 MB limit) with `--network container:<server>`. A run needs about 2 GB of free disk
+  and RUNTIME_MINUTES on a cold runner, most of it the first boot generating the small world.
+- **Inputs:** TShock and Terraria's dedicated server are free; no account, licence key or secret
+  is involved. The pinned TShock release zip is cached under `terraria-<fp16>` by the build leg;
+  the two images are pulled by digest.
+- **Isolation:** every run generates a new `takaro-verify` world in a temporary data directory,
+  publishes no host ports, and talks to a local fake Takaro with throwaway tokens. The REST
+  token and the bridge's `TakaroConfig.txt` are written mode 0600 and never printed. Both
+  containers carry the run's `tm.run` label and are removed on success, failure or cancellation.
+- **Report:** `reports/<target>/report.json` names the source revision, the target fingerprint,
+  the artifact hashes, the image digest and the Terraria and TShock versions that actually
+  booted, with one row per check, plus `server.log`, `bridge.log`, `docker.log` and
+  `fake-takaro.log`, uploaded as `verify-terraria-<target>`.
+- **What it proves:** the plugin loads and the bridge identifies (`handshake`), the item
+  catalogue (`items`), the declared empty entity list (`entities`), `sendMessage` reaching the
+  server (`action`), the bridge driving the plugin's `/takarounban` and parsing its marker
+  (`cooperation`), the assemblies the plugin compiled against are the ones running (`references`),
+  and the bridge coming back after Takaro drops the socket (`reconnect`).
+- **Incompatible combinations:** a plugin built against other TShock assemblies fails
+  `references`; a bridge and plugin that no longer agree on the command marker fail
+  `cooperation`; an artifact built for another target fails `build`. There is one catalog target,
+  so there is no sibling target for `--negative` to boot.
+- **Not covered, still manual:** the fake Takaro speaks protocol version 0, so the version 1
+  handshake, Capability Manifest, Game Profile and map image stay covered by the bridge's unit
+  tests and the live runs. Everything a connected player drives needs a real Terraria client:
+  `player-connected`/`player-disconnected`, `chat-message`, `player-death`, `entity-killed`,
+  `sendMessage` reaching a player, `giveItem`, `teleportPlayer`, `getPlayerLocation`,
+  `getPlayerInventory`, `kickPlayer`, `banPlayer`/`unbanPlayer`/`listBans` with a player.
 
 ## Verification
 
@@ -211,7 +253,8 @@ connector is deferred, so the release claims `contract` verification rather than
   TShock's REST API is on the bridge's own `127.0.0.1:7878`. It can only be asked for once the
   server container exists, which is why it is a hook and not part of the run's own argv.
 
-The checks it adds are `handshake`, `items`, `entities`, `action`, `references` and `reconnect`.
+The checks it adds are `handshake`, `items`, `entities`, `action`, `cooperation`, `references`
+and `reconnect`.
 A Terraria report reaches **`startup`** and never claims `protocol`: `identify` and
 `connector-load` look for lines in the *server* log that this connector does not write (it writes
 them in its own log — `handshake` asserts both), `catalog-entities` would assert a registry
