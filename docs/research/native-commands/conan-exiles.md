@@ -28,10 +28,10 @@ current server build. So this research answers the same question for the current
 
 | Component | Exact build |
 | --- | --- |
-| Conan Exiles Dedicated Server | Steam app 443030 build 25792439 (catalog target `windows-25792439`), Windows, Shipping exe, RCON off |
+| Conan Exiles Dedicated Server | Steam app 443030 build 25792439, both catalog targets: `windows-25792439` (Shipping exe) and `linux-25792439` (Linux server in a container, `LD_PRELOAD`); RCON off |
 | Client | Conan Exiles Enhanced (Steam app 440900) revision #379,176/0, vanilla, no mods, one Steam account |
-| Connector | `takaro-conan-exiles` 3.4.0 (`games/conan-exiles/version.txt`), protocol 1, with the probe from this branch: commit `33447bf` (`winmm.dll` sha256 `a9cdf798…`) for boot 1, then `d830257` (sha256 `bb8399ef…`) for boot 2 after the defect fix below |
-| Takaro | Staging, one GENERIC game server reporting `game: conan-exiles`, `gameVersion: 25792439`, `connectorVersion: 3.4.0` (`gameserverGetOne.json`); command prefix `@`; modules `utils` and a chat-bridge fork with Discord |
+| Connector | `takaro-conan-exiles` 3.4.0 (`games/conan-exiles/version.txt`), protocol 1, with the probe from this branch. Windows: commit `33447bf` (`winmm.dll` sha256 `a9cdf798…`) for boot 1, then `d830257` (sha256 `bb8399ef…`) for boot 2 after the defect fix below. Linux: `f31d625` code (`libtakaro-conan-native.so` sha256 `c265f3b1…`) |
+| Takaro | Staging, one GENERIC game server per target reporting `game: conan-exiles`, `gameVersion: 25792439`, `connectorVersion: 3.4.0` (`gameserverGetOne.json`); command prefix `@`; modules `utils` and a chat-bridge fork with Discord |
 | Stub | `games/conan-exiles/research/command-probe/stub.py`, Python 3.12 on the server host |
 
 ## Go/no-go
@@ -86,7 +86,7 @@ client-owned.
 
 ## Experiments
 
-All experiments ran in one session on the Windows dedicated server with the real client, typing
+The table below is the Windows run; the Linux run follows it. Both used the real client, typing
 in the client's chat through an input-automation tool. The evidence file names below refer to the
 run's evidence folder, which is kept with the test run and not in this repository: screenshots in
 `shots/`, logs in `logs/`, raw Takaro API responses at the top level.
@@ -141,11 +141,36 @@ Counts (from `logs/events-health-boot1.json`): 13 claimed, 11 sent to the stub, 
 1 timeout, 14 private replies, 0 failed, 0 unidentified, 2 namespaced lines passed through.
 The server chat log of boot 1 has the 7 public lines and none of the 13 claimed ones.
 
+### Linux (`linux-25792439`)
+
+The same set, repeated on the Linux server with the same client (Direct Connect), with its own
+staging game server and catalog revisions `L1` → `L2`. Evidence is in the run's `linux/` folder.
+Every row matched Windows:
+- `.tk ping`, forged `whoami`, quoted arguments, alias, fanout, permission denial and `help` were
+  claimed and answered privately (110-150 ms).
+- `/tk ping` and `/whoami` stayed in the client.
+- `.tk nope 1` and `.tk fan` after its removal went public.
+- `slow` timed out privately and its late reply was dropped once.
+- With the stub offline, two commands failed privately and were not replayed after recovery.
+- After a Takaro kick and rejoin, the identity was the same.
+
+Probe counters: 12 claimed, 0 in Takaro events, the server chat log or Discord
+(`linux/logs/events-health.json`, `linux/events-window.json`, `linux/server-chat-log.txt`,
+`linux/discord-hook-executed.json`). Caps Lock was on during most of this run, so lines arrived
+in upper case (`.TK PING`). That shows the probe matches the prefix and triggers case-insensitively.
+
+The first Linux boot never reached the client. The engine stopped map loading with "Loading is
+stuck, flush will never finish" (`AsyncLoading2.cpp`) about two minutes after `MatchStarting`,
+on a host under heavy memory pressure. The second boot of the same library loaded the map in
+108 s and ran the whole set. The probe adds one hook subscription and nothing on the loading
+path. The same code ran three Windows boots without it. So this is treated as environmental,
+and kept as evidence (`linux/logs/first-boot-loading-stuck-ConanSandbox.log`).
+
 ### Regression smoke (Takaro staging, real client)
 
-`player-connected` (`events-window.json`, `events-after-restart.json`), `chat-message` (same),
+On both targets: `player-connected` (`events-window.json`, `events-after-restart.json`, `linux/events-window.json`), `chat-message` (same),
 `testReachability` (`testReachability.json`, `testReachability-after-restart.json`),
-`getPlayers` (`getPlayers.json`, `getPlayers-after-restart.json`) and `sendMessage`
+`getPlayers` (`getPlayers.json`, `getPlayers-after-restart.json`, `linux/getPlayers.json`) and `sendMessage`
 (`sendMessage.json`, `sendMessage-after-restart.json`, `shots/17-sendMessage.png`,
 `shots/23-after-restart-smoke.png`) all passed with the probe on. Discord: each public player
 line produced one GameToDiscord post, and claimed commands produced none
@@ -169,8 +194,6 @@ reading it as the text `undefined` (host test).
   (`@ping`, quoted args). The probe does not depend on the prefix character.
 - A real Takaro command catalog, permission engine or invocation. The stub stands in for all of
   them. A stub receipt is not a Takaro execution.
-- Linux. The hook, veto and targeted send are the same code on both platforms, but this live run
-  was Windows only.
 
 ## Review notes and known probe limits
 
