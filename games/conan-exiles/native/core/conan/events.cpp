@@ -1,6 +1,7 @@
 #include "conan/events.h"
 
 #include "common.h"
+#include "conan/command_probe.h"
 #include "conan/events_payload.h"
 #include "conan/hook_dispatch.h"
 #include "conan/identity.h"
@@ -517,15 +518,20 @@ bool OnChat(const Call& c, void*) {
     if (!data) return true;
     if (rd<uint8_t>((uintptr_t)data + ChatRpc::kGenerated)) return true;  // system lines, not a player
     PlayerId id;
-    if (!IdentityOf(c.obj, id)) {
+    const bool identified = IdentityOf(c.obj, id);
+    std::string channel = UER::ReadFString((uintptr_t)data + ChatRpc::kChannel, 64);
+    std::string message = UER::ReadFString((uintptr_t)data + ChatRpc::kMessage, 4096);
+    // Research probe (#205), off unless configured: a claimed command is vetoed and sends no event.
+    if (cmdprobe::Enabled() && cmdprobe::Offer(id, identified, channel, message)) return false;
+    if (!identified) {
         Sh().st.unknownChat++;
         return true;
     }
     Captured e;
     e.kind = Kind::Chat;
     e.a = id;
-    e.s1 = UER::ReadFString((uintptr_t)data + ChatRpc::kChannel, 64);
-    e.s2 = UER::ReadFString((uintptr_t)data + ChatRpc::kMessage, 4096);
+    e.s1 = std::move(channel);
+    e.s2 = std::move(message);
     Push(std::move(e));
     return true;
 }
@@ -851,6 +857,7 @@ void StartEvents(const EventsOptions& o) {
         s.o = o;
     }
     if (o.hooks) SubscribeAll();
+    if (o.hooks) cmdprobe::Start();
     s.worker = std::thread(WorkerLoop);
     LogTailOptions lo;
     lo.path = ServerLogPath(o.savedDir);
@@ -876,6 +883,7 @@ void StopEvents() {
     s.cv.notify_all();
     if (s.worker.joinable()) s.worker.join();
     if (s.logtail) s.logtail->Stop();
+    cmdprobe::Stop();
 }
 
 std::string EventsHealthJson() {
@@ -883,6 +891,7 @@ std::string EventsHealthJson() {
     auto n = [](const std::atomic<uint64_t>& a) { return (double)a.load(std::memory_order_relaxed); };
     return takaro::ObjBuilder()
         .B("namesReady", g_namesReady.load())
+        .Raw("commandProbe", cmdprobe::HealthJson())
         .Raw("emitted", takaro::ObjBuilder()
                             .N("player-connected", n(st.connected))
                             .N("player-disconnected", n(st.disconnected))
