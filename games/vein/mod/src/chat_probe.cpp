@@ -20,7 +20,7 @@ std::atomic<bool> g_enabled{false};
 std::atomic<bool> g_stubUp{true};
 std::atomic<uint64_t> g_seq{0};
 std::atomic<uint64_t> g_consumed{0}, g_envelopes{0}, g_failedPrivate{0}, g_received{0}, g_notified{0},
-    g_queueDropped{0};
+    g_notifyFailed{0}, g_queueDropped{0}, g_noIdentity{0};
 
 Mutex g_lock;
 std::deque<Trace> g_traces;
@@ -33,7 +33,7 @@ struct Item {
 std::deque<Item> g_queue;
 pthread_cond_t g_cv = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t g_qm = PTHREAD_MUTEX_INITIALIZER;
-std::function<void(const std::string&, const std::string&)> g_notifier;
+std::function<bool(const std::string&, const std::string&)> g_notifier;
 
 uint64_t MonoNs() {
     timespec ts{};
@@ -53,9 +53,11 @@ std::string Trim(const std::string& s) {
 // One worker step: the stub consumer. Takes the envelope (receipt) or sends the private failure.
 void Handle(const Item& it) {
     if (it.notify) {
-        if (g_notifier) g_notifier(it.env.gameId, "Takaro command unavailable (probe stub is down). Nothing was sent.");
-        g_notified++;
-        PluginLog("chat-probe: %s failed privately for %s (stub down)", it.env.trigger.c_str(), it.env.gameId.c_str());
+        bool ok = g_notifier &&
+                  g_notifier(it.env.gameId, "Takaro command unavailable (probe stub is down). Nothing was sent.");
+        (ok ? g_notified : g_notifyFailed)++;
+        PluginLog("chat-probe: %s failed privately for %s (stub down, notice %s)", it.env.trigger.c_str(),
+                  it.env.gameId.c_str(), ok ? "delivered" : "NOT delivered");
         return;
     }
     {
@@ -88,15 +90,16 @@ void* Worker(void*) {
     return nullptr;
 }
 
-void Push(Item it) {
+bool Push(Item it) {
     pthread_mutex_lock(&g_qm);
-    if (g_queue.size() >= kMaxQueue) {
-        g_queueDropped++;
-    } else {
+    bool ok = g_queue.size() < kMaxQueue;
+    if (ok) {
         g_queue.push_back(std::move(it));
         pthread_cond_signal(&g_cv);
     }
     pthread_mutex_unlock(&g_qm);
+    if (!ok) g_queueDropped++;
+    return ok;
 }
 
 }  // namespace
@@ -106,7 +109,12 @@ void Init() {
     g_stubUp = ConfigValue("TAKARO_CHAT_PROBE_STUB", "up") != "down";
     if (!g_enabled) return;
     pthread_t t;
-    if (pthread_create(&t, nullptr, Worker, nullptr) == 0) pthread_detach(t);
+    if (pthread_create(&t, nullptr, Worker, nullptr) != 0) {
+        g_enabled = false;  // never consume a trigger nobody can receive
+        PluginLog("chat-probe: worker thread failed to start; probe DISABLED");
+        return;
+    }
+    pthread_detach(t);
     PluginLog("chat-probe: ENABLED (research #204), stub %s, owned triggers %s %s", g_stubUp ? "up" : "down",
               kOwnedTriggers[0], kOwnedTriggers[1]);
 }
@@ -115,7 +123,6 @@ bool Enabled() { return g_enabled.load(std::memory_order_relaxed); }
 bool StubAvailable() { return g_stubUp.load(std::memory_order_relaxed); }
 
 bool MatchOwned(const std::string& msg, std::string& trigger, std::string& args) {
-    if (msg.size() > kMaxMessage) return false;
     std::string t = Trim(msg);
     size_t sp = 0;
     while (sp < t.size() && !IsSpace(t[sp])) sp++;
@@ -128,6 +135,17 @@ bool MatchOwned(const std::string& msg, std::string& trigger, std::string& args)
         return true;
     }
     return false;
+}
+
+Decision Decide(const std::string& function, bool haveIdentity, const std::string& msg, std::string& trigger,
+                std::string& args) {
+    if (function != "Server_Say" || !MatchOwned(msg, trigger, args)) return Decision::kPassThrough;
+    return haveIdentity ? Decision::kConsume : Decision::kConsumeNoIdentity;
+}
+
+void ConsumeWithoutIdentity() {
+    g_consumed++;
+    g_noIdentity++;
 }
 
 void RecordTrace(Trace t) {
@@ -154,16 +172,15 @@ std::string Consume(const std::string& gameId, const std::string& playerName, in
         // No envelope, nothing queued for later: only the private notice.
         g_failedPrivate++;
         it.notify = true;
-        Push(std::move(it));
-        return "failed-private";
+        return Push(std::move(it)) ? "failed-private" : "dropped";
     }
     it.env.dedupeId = BootId() + ":" + std::to_string(it.env.seq);
+    if (!Push(std::move(it))) return "dropped";
     g_envelopes++;
-    Push(std::move(it));
     return "envelope";
 }
 
-void SetPrivateNotifier(std::function<void(const std::string&, const std::string&)> fn) { g_notifier = std::move(fn); }
+void SetPrivateNotifier(std::function<bool(const std::string&, const std::string&)> fn) { g_notifier = std::move(fn); }
 
 std::string Json() {
     std::string o = "{\"enabled\":" + std::string(Enabled() ? "true" : "false") +
@@ -174,6 +191,8 @@ std::string Json() {
                     ",\"stubReceived\":" + std::to_string(g_received.load()) +
                     ",\"failedPrivate\":" + std::to_string(g_failedPrivate.load()) +
                     ",\"privateNotices\":" + std::to_string(g_notified.load()) +
+                    ",\"privateNoticesFailed\":" + std::to_string(g_notifyFailed.load()) +
+                    ",\"consumedWithoutIdentity\":" + std::to_string(g_noIdentity.load()) +
                     ",\"queueDropped\":" + std::to_string(g_queueDropped.load()) + "}";
     Guard g(g_lock);
     o += ",\"traces\":[";

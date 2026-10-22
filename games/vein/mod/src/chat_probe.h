@@ -27,11 +27,17 @@ void Init();
 bool Enabled();
 bool StubAvailable();
 
-// Pure: true when `msg` (trimmed) starts with an owned trigger as a whole word. `args` is the rest,
-// trimmed, capped at kMaxArgs bytes. Messages longer than kMaxMessage never match.
+// Pure: true when `msg` (trimmed) starts with an owned trigger as a whole word, whatever its length.
+// `args` is the rest, trimmed, capped at kMaxArgs bytes. Traces keep at most kMaxMessage bytes.
 static const size_t kMaxMessage = 512;
 static const size_t kMaxArgs = 256;
 bool MatchOwned(const std::string& msg, std::string& trigger, std::string& args);
+
+// Pure: what the detour does with one chat RPC. Only an inbound Server_Say with an owned trigger is
+// consumed; without a resolvable sender it is still consumed (kept private) but gets no envelope.
+enum class Decision { kPassThrough, kConsume, kConsumeNoIdentity };
+Decision Decide(const std::string& function, bool haveIdentity, const std::string& msg, std::string& trigger,
+                std::string& args);
 
 struct Trace {
     uint64_t seq = 0;
@@ -57,12 +63,16 @@ struct Envelope {
 
 // Called from the ProcessEvent detour (game thread) for a matched inbound trigger. Bounded work
 // only: builds the envelope and pushes it onto the worker queue, or, when the stub is down, queues
-// a private notification. Returns "envelope" or "failed-private".
+// a private notification. Returns "envelope", "failed-private" or "dropped" (queue full).
 std::string Consume(const std::string& gameId, const std::string& playerName, int segment,
                     const std::string& trigger, const std::string& rawArgs);
 
-// The worker uses this to send a private message to one player. Set once at init.
-void SetPrivateNotifier(std::function<void(const std::string& gameId, const std::string& text)> fn);
+// A consumed trigger whose sender could not be identified: counted, nothing else.
+void ConsumeWithoutIdentity();
+
+// The worker uses this to send a private message to one player; returns whether it was delivered.
+// Set once at init.
+void SetPrivateNotifier(std::function<bool(const std::string& gameId, const std::string& text)> fn);
 
 std::string Json();
 

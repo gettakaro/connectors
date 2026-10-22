@@ -30,7 +30,7 @@ under load are not yet exercised). Production work should start from the follow-
 | Date | 2026-10-22, 16:41Z to 17:18Z |
 | Game server | VEIN Linux dedicated server, Steam app 2131400, **Steam build 25969514**, game version **0.025h3** (`gameVersion` in `/health`), Unreal Engine **5.6.1** (`LogInit: Engine Version: 5.6.1-0+UE5`), binary `VeinServer-Linux-Test` |
 | Client | One vanilla Windows VEIN client (Steam app 1857950, `Vein-Win64-Test`, window title `VEIN 64 PCD3D_SM6 Test`), server browser shows **0.025h3** |
-| Connector | vein **0.7.0** (`games/vein/version.txt`), origin/main `3859fd8`, plus the probe commit on branch `agent/feature-204-vein-command-research`. Probe library sha256 `c579abd55855356a7f14f6c0b2e257855e157599042de41169ebc68f4fb3fb4f` |
+| Connector | vein **0.7.0** (`games/vein/version.txt`), origin/main `3859fd8`, plus probe commit `45fd95b` (live runs; library sha256 `c579abd55855356a7f14f6c0b2e257855e157599042de41169ebc68f4fb3fb4f`). A later commit on this branch hardens edge paths found in review (unidentified sender, full queue, worker start failure, notice delivery, oversized messages); those paths are covered by unit tests only and were not re-run live |
 | Takaro | staging, one GENERIC game server (protocol v1) |
 
 Rescope against the issue text: the issue was written for build **25035268 / v0.024h8** and predicts
@@ -55,11 +55,14 @@ rerun the probe after every game update.
   detour builds one envelope (`dedupeId = <bootId>:<seq>`, SteamID64, name, trigger, raw args) and
   pushes it onto a bounded queue (32). A probe worker thread (the "stub") takes it. Nothing is sent to
   Takaro and no `chat-message` event is emitted.
+- A trigger from a sender whose SteamID64 cannot be resolved is still consumed (never broadcast) but
+  creates no envelope (`consumedWithoutIdentity`). A full queue drops the item and counts it
+  (`queueDropped`); if the worker thread cannot start, the probe disables itself.
 - `TAKARO_CHAT_PROBE_STUB=down` simulates an unavailable backend: the trigger is still consumed, no
   envelope is created or queued, and the worker sends the sender a private notification
   (`AVeinPlayerController::Client_SendNotification`, through the existing game-thread job queue).
 - `GET /debug/chat-probe` (debug-gated loopback diagnostics) returns the traces, envelopes and
-  counters. Unit tests: `TestChatProbeMatch`, `TestChatProbeStub` in `mod/tests/unit_test.cpp`.
+  counters. Unit tests: `TestChatProbeMatch`, `TestChatProbeDecision`, `TestChatProbeStub` in `mod/tests/unit_test.cpp`.
 
 The test server was switched with a compose override that only adds `TAKARO_CHAT_PROBE=1` (and
 `TAKARO_CHAT_PROBE_STUB`). Messages were typed in the real client's chat box; raw evidence for every
@@ -171,7 +174,11 @@ From the depot DWARF (`VeinServer-Linux-Test.debug`, build 25969514):
   are cooked Blueprint assets.
 - `FChatCommandList { TArray<TSubclassOf<UChatCommand>> }` and the chatbox widget functions
   `RefreshChatCommands`, `GetChatCommandListVisibility`, `GetActiveChatCommandVisibility` build the
-  list and prefix matching **on the client**.
+  list and prefix matching **on the client**. `UChatboxUserWidget` itself holds `ChatCommandList`,
+  `ActiveChatCommand`, `SelectedChatType: TSubclassOf<UChatCommand>`,
+  `LastTypedCommand: TSoftObjectPtr<UChatCommand>` and `bShowCommandList`.
+- `AVeinGameStateBase` holds no command list: only `DefaultChatCommand: TSubclassOf<UChatCommand>`
+  and an `OnChat` dynamic multicast delegate. So the server has no replicated list it could extend.
 
 Collision behaviour: a Takaro trigger that equals a native prefix (`/me`, `/g`, …) never reaches the
 server with its prefix, because the client strips it and sends the native class instead. Such
@@ -228,12 +235,13 @@ Raw evidence was kept with the test run (not committed); file names for referenc
 | `feature:consume-owned-trigger` | `21-…`, `14-local-A4-owned-bang.png`, `15-local-A5-owned-slash.png`, `20-takaro-eventsearch-chat.json`, `30-reconnect-R1-R2.png` |
 | `feature:fail-privately` | `40-stubdown-S1-t1.png` … `t5`, `42-…`, `43-plugin-log-stubdown.txt`, `44-vein-log-chat-stubdown.txt` |
 | `feature:bounded-perf` | `01-baseline-perf-0.7.0-idle.json`, `26-perf-probe-on-5msgs.json`, `50-perf-probe-off-5msgs.json` |
-| `feature:native-inventory-autocomplete` | `10-native-command-list-slash.png`, DWARF dump of `UChatCommand` |
+| `feature:native-inventory-autocomplete` | `10-native-command-list-slash.png`, DWARF dumps of `UChatCommand`, `UChatboxUserWidget`, `AVeinGameStateBase` |
 | `feature:probe-off-default` | `51-probe-off-D1-D2.png`, `52-vein-log-chat-probe-off.txt`, `53-probe-off-endpoint.json` |
 | regression smoke | `57-mcp-smoke-actions.json` (testReachability, getPlayers, sendMessage), `55-smoke-sendMessage-M1.png`, events in `20-…` and `56-…` |
 
-Commands run (all exit 0): `./games/vein/mod/build.sh --tests` (unit suite 534 checks plus the
-timeout, transport, native-bridge and native-behaviour suites).
+Commands run (all exit 0): `./games/vein/mod/build.sh --tests` on `45fd95b` (unit suite plus the
+timeout, transport, native-bridge and native-behaviour suites); after the review fixes
+`./games/vein/mod/tests/run.sh` (542 checks) and `./games/vein/mod/build.sh`.
 
 ## Side findings
 
