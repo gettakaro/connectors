@@ -1326,14 +1326,30 @@ static void TestChatProbeMatch() {
     CHECK(!ChatProbe::MatchOwned("hello !tkprobe204", trig, args), "not the first word");
     CHECK(!ChatProbe::MatchOwned("/help", trig, args), "native-looking command");
     CHECK(!ChatProbe::MatchOwned("", trig, args), "empty");
-    CHECK(!ChatProbe::MatchOwned("!tkprobe204 " + std::string(600, 'x'), trig, args), "oversized message");
-    CHECK(ChatProbe::MatchOwned("!tkprobe204 " + std::string(400, 'x'), trig, args), "long args");
+    CHECK(ChatProbe::MatchOwned("!tkprobe204 " + std::string(600, 'x'), trig, args), "oversized message still owned");
     CHECK(args.size() == ChatProbe::kMaxArgs, "args capped, got %zu", args.size());
+}
+
+// The detour's decision: only an inbound Server_Say with an owned trigger is ever consumed, and an
+// unidentified sender's trigger is kept private instead of falling through to the broadcast.
+static void TestChatProbeDecision() {
+    using D = ChatProbe::Decision;
+    std::string trig, args;
+    CHECK(ChatProbe::Decide("Server_Say", true, "!tkprobe204 a", trig, args) == D::kConsume, "owned inbound");
+    CHECK(ChatProbe::Decide("Server_Say", false, "!tkprobe204 a", trig, args) == D::kConsumeNoIdentity,
+          "owned inbound, no identity");
+    CHECK(ChatProbe::Decide("Server_Say", true, "hello", trig, args) == D::kPassThrough, "ordinary chat");
+    CHECK(ChatProbe::Decide("Server_Say", true, "/tk204unknown", trig, args) == D::kPassThrough, "unknown slash");
+    CHECK(ChatProbe::Decide("NetMulticast_SendChat", true, "!tkprobe204 a", trig, args) == D::kPassThrough,
+          "the outbound multicast is never consumed");
 }
 
 static void TestChatProbeStub() {
     std::vector<std::pair<std::string, std::string>> notices;
-    ChatProbe::SetPrivateNotifier([&](const std::string& g, const std::string& t) { notices.push_back({g, t}); });
+    ChatProbe::SetPrivateNotifier([&](const std::string& g, const std::string& t) {
+        notices.push_back({g, t});
+        return true;
+    });
     ChatProbe::TestEnable(true, true);
     EQ(ChatProbe::Consume("76561198000000001", "P", 1, "!tkprobe204", "x"), "envelope");
     ChatProbe::TestDrain();
@@ -1350,6 +1366,17 @@ static void TestChatProbeStub() {
     CHECK(j.find("\"envelopes\":1") != std::string::npos, "no new envelope while down: %s", j.c_str());
     CHECK(j.find("\"failedPrivate\":1") != std::string::npos, "failed privately: %s", j.c_str());
     CHECK(notices.size() == 1 && notices[0].first == "76561198000000001", "one private notice to the sender");
+    CHECK(j.find("\"privateNotices\":1") != std::string::npos, "delivered notice counted: %s", j.c_str());
+
+    // A full queue drops the item and says so; nothing is reported as an envelope.
+    ChatProbe::TestEnable(true, true);
+    std::string last;
+    for (size_t i = 0; i < 40; i++) last = ChatProbe::Consume("76561198000000001", "P", 1, "!tkprobe204", "");
+    EQ(last, "dropped");
+    j = ChatProbe::Json();
+    CHECK(j.find("\"queueDropped\":8") != std::string::npos, "8 of 40 dropped: %s", j.c_str());
+    CHECK(j.find("\"envelopes\":33") != std::string::npos, "only queued items count as envelopes: %s", j.c_str());
+    ChatProbe::TestDrain();
     ChatProbe::TestEnable(false, true);
 }
 
@@ -1372,6 +1399,7 @@ int main() {
     TestSteamIdShape();
     TestChatLineParser();
     TestChatProbeMatch();
+    TestChatProbeDecision();
     TestChatProbeStub();
     TestCharacterSelectParser();
     TestJoinLineParser();

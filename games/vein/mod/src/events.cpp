@@ -1109,10 +1109,15 @@ bool ProbeChat(void* self, void* func, void* params, const char* fnName) {
     t.senderGameId = id.gameId;
     t.senderName = id.name.empty() ? id.platformName : id.name;
     std::string trigger, args;
-    bool owned = strcmp(fnName, "Server_Say") == 0 && id.valid() && ChatProbe::MatchOwned(cp.msg, trigger, args);
-    t.consumed = owned;
+    ChatProbe::Decision d = ChatProbe::Decide(fnName, id.valid(), cp.msg, trigger, args);
+    t.consumed = d != ChatProbe::Decision::kPassThrough;
     ChatProbe::RecordTrace(t);
-    if (!owned) return false;
+    if (!t.consumed) return false;
+    if (d == ChatProbe::Decision::kConsumeNoIdentity) {
+        ChatProbe::ConsumeWithoutIdentity();
+        PluginLog("chat-probe: consumed %s from an unidentified sender (no envelope)", trigger.c_str());
+        return true;
+    }
     std::string outcome = ChatProbe::Consume(id.gameId, t.senderName, t.segment, trigger, args);
     PluginLog("chat-probe: consumed %s from %s before the original (%s)", trigger.c_str(), id.gameId.c_str(),
               outcome.c_str());
@@ -2571,7 +2576,7 @@ void Events::SetRawLogSink(std::function<void(std::string)> sink, bool customJoi
 void Events::Init() {
     auto& st = PluginState::Get();
     ChatProbe::Init();  // #204 research probe; a no-op unless TAKARO_CHAT_PROBE=1
-    ChatProbe::SetPrivateNotifier([](const std::string& gameId, const std::string& text) {
+    ChatProbe::SetPrivateNotifier([](const std::string& gameId, const std::string& text) -> bool {
         JsonValue body;
         body.type = JsonValue::Object;
         JsonValue v;
@@ -2582,7 +2587,7 @@ void Events::Init() {
         body.obj.push_back({"recipientGameId", v});
         v.str = "Takaro";
         body.obj.push_back({"senderName", v});
-        Actions::Message(body);
+        return Actions::Message(body).status == 200;
     });
     for (const char* cap : {"logEvents", "joinLeaveEvents", "connectEvents", "chatEvents", "deathEvents",
                             "killEvents", "playerConnected", "playerDisconnected", "chatMessage",
