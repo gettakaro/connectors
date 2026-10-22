@@ -37,7 +37,16 @@ PLUGIN_ROLE = "plugin"
 #: Opt-in (``--negative``): the plugin with a compile error in it must not load.
 NEGATIVE_CHECK = "negative-broken-compile"
 
-CHECK_IDS = ("carbon-compile", "items", "entities", "action", "reconnect", "stop", NEGATIVE_CHECK)
+CHECK_IDS = (
+    "carbon-compile",
+    "items",
+    "entities",
+    "console-command",
+    "action",
+    "reconnect",
+    "stop",
+    NEGATIVE_CHECK,
+)
 
 #: "Server startup complete" is the last line of a successful boot; everything before it
 #: can appear on a boot that then dies.
@@ -50,6 +59,10 @@ UNSUPPORTED_CHECKS = {
     "catalog-items": ("spot-checks a Minecraft item id; `items` spot-checks a Rust one"),
     "catalog-entities": ("spot-checks a Minecraft entity id; `entities` spot-checks a Rust one"),
     "shutdown": ("asserts an exit code this Unity teardown does not give; `stop` asserts the shutdown"),
+    "console": (
+        "looks for the command text in the server log, which the connector deliberately does not write;"
+        " `console-command` asserts the redacted line and the server's own output reaching Takaro"
+    ),
 }
 
 LOADED_LINE = re.compile(r"Loaded plugin TakaroConnector v(?P<version>[^ ]+) by Takaro \[(?P<ms>[0-9]+)ms\]")
@@ -73,6 +86,9 @@ SELF_UPDATE_LINE = re.compile(
 SAVED_LINE = re.compile(r"^Saving complete")
 QUIT_LINE = re.compile(r"\[Raknet\] Server Shutting Down \(quit\)|^Quitting")
 UNLOADED_LINE = re.compile(r"Unloaded plugin TakaroConnector")
+#: The connector logs a console command's verb and argument count, never its text: an operator
+#: can type a password or a player's details into one.
+CONSOLE_LINE = re.compile(r"\[Takaro\] console: say \(1 args\)")
 
 #: What the negative boot prepends to the deployed source: one directive that no compiler
 #: accepts, so the rest of the file -- and what it would do if it loaded -- is unchanged.
@@ -209,6 +225,7 @@ async def after_protocol(run: Any, fake: Any, alive: Any) -> None:
             "entities",
             lambda: checks.check_catalog(fake, "listEntities", "entities", ENTITY_SPOT, _prefab_name_problems),
         ),
+        ("console-command", lambda: _check_console_command(run, fake, alive)),
         ("action", lambda: _check_action(run, fake, alive)),
         ("reconnect", lambda: checks_lifecycle.check_reconnect(run, fake, alive)),
     ):
@@ -254,6 +271,62 @@ async def _check_carbon_compile(run: Any, alive: Any) -> checks.CheckResult:
         },
         {"file": run.server_log.name, "line": loaded[0]} if loaded else {"file": run.server_log.name},
     )
+
+
+async def _check_console_command(run: Any, fake: Any, alive: Any) -> checks.CheckResult:
+    """A console command runs on the server, and what the server printed reaches Takaro.
+
+    The base ``console`` check greps the server log for the command's text, which this
+    connector redacts on purpose. What is asserted instead: the request succeeded, the
+    connector logged that it ran a one-argument ``say``, and Rust's own output of that ``say``
+    -- the marker -- came back to Takaro as a ``log`` game event. The last is the stronger
+    proof: only a command the server really executed prints it.
+    """
+    marker = f"takaro-verify-{run.options.run_id}-console"
+    with checks._Timer() as timer:
+        problems: list[str] = []
+        result: Any = None
+        baseline = len(fake.events)
+        try:
+            result = await fake.request("executeConsoleCommand", {"command": f"say {marker}"})
+        except Exception as exc:  # noqa: BLE001 - reported as a check failure
+            problems.append(f"executeConsoleCommand failed: {exc}")
+        if not isinstance(result, dict) or result.get("success") is not True:
+            problems.append(f"executeConsoleCommand returned {result!r}, expected success true")
+        found = await asyncio.to_thread(checks.wait_for_line, run.server_log, CONSOLE_LINE, ACTION_BUDGET, alive)
+        if not found:
+            problems.append("the connector never logged 'console: say (1 args)'")
+        echoed = await _wait_for_log_event(fake, baseline, marker, ACTION_BUDGET, alive)
+        if echoed is None:
+            problems.append(f"no 'log' game event carried the server's output '{marker}'")
+    return checks.CheckResult(
+        "console-command",
+        "pass" if not problems else "fail",
+        timer.elapsed_ms,
+        {
+            "command": f"say {marker}",
+            "result": result,
+            "connectorLine": found[1].strip() if found else None,
+            "logEvent": echoed,
+            "problems": problems,
+        },
+        {"file": run.server_log.name, "line": found[0]} if found else {"file": run.server_log.name},
+    )
+
+
+async def _wait_for_log_event(
+    fake: Any, baseline: int, marker: str, timeout: float, alive: Any
+) -> dict[str, Any] | None:
+    """The first ``log`` game event after ``baseline`` whose message carries ``marker``."""
+    deadline = time.monotonic() + timeout
+    while True:
+        for event in list(fake.events)[baseline:]:
+            data = event.get("data") if isinstance(event, dict) else None
+            if event.get("type") == "log" and isinstance(data, dict) and marker in str(data.get("msg", "")):
+                return dict(event)
+        if not alive() or time.monotonic() >= deadline:
+            return None
+        await asyncio.sleep(0.5)
 
 
 async def _check_action(run: Any, fake: Any, alive: Any) -> checks.CheckResult:
