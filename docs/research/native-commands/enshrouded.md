@@ -46,19 +46,20 @@ events, hook executions) and the client screen as the game-side check.
 | --- | --- | --- | --- |
 | 1 | Preserve disassembly of `addMessage`, the player-chat call site and the normal return path | go | passed (static, 1273043) |
 | 2 | Argument widths, error-result size and success value, returned pointer, caller-observed side effects | go | passed (static); the suppressed return survived 22 live suppressions, a reconnect, a graceful shutdown and a restart |
-| 3 | Two real clients: ordinary, `/`, `!`, `@`, leading space, quoted, Unicode, max length; server text and sender echo | partial | one client: passed for ordinary, `/`, `!`, `@`, leading space, quoted and maximum length. Unicode: blocked (the gamer PC's input tool cannot type non-ASCII). Peer view: blocked (no second account) |
-| 4 | Suppress one magic probe trigger before broadcast; sender and peer see nothing; chat, reconnect and shutdown stay healthy | go (sender) | sender and Takaro: passed (live). Peer: blocked (no second client); statically no broadcast record exists (finding 2), not observed |
+| 3 | Two real clients: ordinary, `/`, `!`, `@`, leading space, quoted, Unicode, max length; server text and sender echo | partial | one client: passed for ordinary, `/`, `!`, `@`, leading space, quoted and maximum length. Unicode: not run (the test input tool sends ASCII only). Peer view: not testable with one client (row 4a) |
+| 4 | Suppress one magic probe trigger before broadcast; sender and peer see nothing; chat, reconnect and shutdown stay healthy | go (sender) | sender, Takaro and Discord: passed (live) |
+| 4a | Peer isolation: a second player sees neither the suppressed command nor the sender's private reply | not tested | not testable with one client. The test setup has one game account; statically the server creates no broadcast record for a suppressed message (finding 2) and the private reply is marked delivered to every other machine, but neither was observed from a second client |
 | 5 | Bind the sender to SteamID64 through handle, slot, login state, entity and machine; reject stale, out-of-range, ambiguous and non-player senders | go | accept path: passed (live, two handle generations, account cross-check). Reject branches: the decision's handling is unit-tested; the memory checks that produce them are code-reviewed only (not reachable with one client, not host-testable) |
 | 6 | Unavailable before send, failure during send, restart, stale catalog, duplicate trigger/alias, disabled, reserved `link`, permission denial, unknown command | go | passed (live, each case) |
-| 7 | Recognised command stays private, fails privately at once when unavailable, never replays after reconnect, no duplicate invocation | go | passed (live, sender side); private relative to a peer: blocked (no second client) |
+| 7 | Recognised command stays private, fails privately at once when unavailable, never replays after reconnect, no duplicate invocation | go | passed (live, sender side); private relative to a peer: not testable with one client (row 4a) |
 | 8 | Production recommendation (catalog revision, prefix and aliases, reserved names, identity, invocation id, deadline, receipt, private failure, capability disable) | done | [Recommendation](#recommendation-for-production) |
 | 9 | `/verify` report-only after each probe phase, `/verify` at the end | done | [Verification](#verification) |
 
 **Overall: go** for server-side recognition, suppression and private reply on Enshrouded 1.0,
 with no client mod, as far as the sender, Takaro and Discord are concerned. What a second player
-sees is unobserved: statically the server builds no broadcast record for a suppressed message and
-marks the private reply as delivered to every other machine, but that needs a second Steam
-account to confirm. Unicode input is also still open.
+sees is not testable with one client and was not tested (row 4a): statically the server builds no
+broadcast record for a suppressed message and marks the private reply as delivered to every other
+machine. Unicode input was not run because the test input tool sends ASCII only.
 
 ## Static findings (game build 1273043)
 
@@ -164,7 +165,7 @@ Takaro's stored events were read back through the API after each phase.
 | Leading space | ` @tkprobe e1-leading` | `20 40 74…` (space kept) | public line | stored **trimmed**: `@tkprobe e1-leading` |
 | Quoted | `"@tkprobe e1-quoted"` | `22 40 …22` | public line | stored with quotes |
 | Maximum length | 1030 characters | **256 bytes** (the client caps input) | public line | stored, 256 bytes |
-| Unicode | `ü`, `✓` | — | — | blocked: the PC input tool sends only ASCII (tried plain typing and Alt+numpad) |
+| Unicode | `ü`, `✓` | — | — | not run: the test input tool sends only ASCII (tried plain typing and Alt+numpad) |
 | Magic trigger (nonce) | `@tkp<nonce> s1` | suppressed | **no chat line**; only the private reply `[probe] tkp…: submitted (id …-9)` | no `chat-message`, no Discord post |
 | Catalog command | `@tkprobe s2 args` | suppressed, args `s2 args` | private `submitted` | nothing stored |
 | Disabled | `@off` | suppressed | private `command disabled` | nothing |
@@ -280,10 +281,10 @@ Enshrouded:
    and invocation/receipt contract. Reuse the probe's decision core and sender chain, replace the
    stub file and the local receipt with the protocol messages, and keep refusing on unverified
    builds.
-2. **test(enshrouded): prove peer isolation of suppressed commands and private replies** —
-   With two Steam accounts on one server, check that a peer sees neither a suppressed command nor
-   the sender's private reply, and that ordinary chat still reaches both. Also type Unicode input
-   (`ü`, `✓`, CJK) from a real keyboard and record the server bytes.
+2. **test(enshrouded): peer isolation and Unicode input for private commands** —
+   In a setup with two game clients on one server, check that a peer sees neither a suppressed
+   command nor the sender's private reply while ordinary chat reaches both. Also record the server
+   bytes of Unicode chat input (`ü`, `✓`, CJK) typed on a real keyboard.
 3. **fix(enshrouded): attribute chat-message to SteamID64 through the session record, not the
    persona name** — Today `chat-message` resolves the player by persona name, which can collide.
    Use the handle → slot → session account → machine → SteamID64 chain from finding 3, and send
@@ -309,5 +310,5 @@ Enshrouded:
   probe log lines were lost when a write failed (fixed: they are re-queued), and a catalog that is
   unreadable at the very first poll leaves the probe off, because no claims are known yet. That is
   the probe's design; production must instead persist the last applied catalog across restarts
-  (recommendation 2), so a server never starts without its claim set. Peer isolation remains the
-  open live cell.
+  (recommendation 2), so a server never starts without its claim set. Peer isolation is not testable
+  with one client (row 4a).
