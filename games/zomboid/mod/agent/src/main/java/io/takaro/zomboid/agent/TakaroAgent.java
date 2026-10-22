@@ -1,6 +1,7 @@
 package io.takaro.zomboid.agent;
 
 import io.takaro.zomboid.agent.hooks.Bridge;
+import io.takaro.zomboid.agent.research.CommandProbeRuntime;
 import io.takaro.zomboid.core.TakaroConfig;
 import io.takaro.zomboid.core.TakaroConnector;
 
@@ -72,6 +73,9 @@ public final class TakaroAgent {
                 config.copyFrom(ready.config);
                 LocalAccounts.setScope(config.getIdentityToken());
                 connector.connect();
+                if (CommandProbeRuntime.enabled()) {
+                    CommandProbeRuntime.start(queue);
+                }
                 if (config.isProtocolV1Enabled()) {
                     adapter.startMap();
                 }
