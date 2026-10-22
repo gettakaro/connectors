@@ -50,9 +50,10 @@ MEMORY = "14g"
 # What the server prints about itself in its first hundred lines:
 #   "LogInit: Build: ++exiles+release-CL-373655"
 #   "LogInit: Engine Version: 5.6.1-373655+++exiles+release"
+# (25639945 was cut from a branch and says "exiles+release-beta-CL-378132".)
 # The first names the game build, the second the engine; neither carries the other, so
 # both are parsed and `verify.scan_runtime_identity` merges them.
-_BUILD_BANNER = re.compile(r"LogInit: Build: \+\+(?P<cl>exiles\+release-CL-\d+)")
+_BUILD_BANNER = re.compile(r"LogInit: Build: \+\+(?P<cl>exiles\+release(?:-[a-z]+)?-CL-\d+)")
 _ENGINE_BANNER = re.compile(r"LogInit: Engine Version: (?P<engine>\d+\.\d+\.\d+)-\d+\+\+\+exiles\+release")
 
 

@@ -852,6 +852,11 @@ def test_the_runtime_identity_comes_from_the_two_server_banners(tmp_path: Path) 
         "loaderVersion": "5.6.1",
     }
     assert adapter.parse_runtime_identity("LogInit: Display: Starting Game.") is None
+    assert adapter.parse_runtime_identity("LogInit: Build: ++exiles+release-beta-CL-378132") == {
+        "gameVersion": "exiles+release-beta-CL-378132",
+        "loader": "unreal",
+        "loaderVersion": None,
+    }, "the branch label 25639945 carries"
 
     log = tmp_path / "server.log"
     log.write_text(f"noise\n{BANNER_BUILD}\n{BANNER_ENGINE}\nmore noise\n", encoding="utf-8")
