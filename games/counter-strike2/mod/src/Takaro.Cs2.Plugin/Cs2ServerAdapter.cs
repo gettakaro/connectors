@@ -9,11 +9,35 @@ public sealed partial class Cs2ServerAdapter : ICs2TakaroAdapter
 {
     private readonly ConnectorConfig config;
     private readonly CommandAllowlist commandAllowlist;
+    private Cs2MapAssets? mapAssets;
 
     public Cs2ServerAdapter(ConnectorConfig config)
     {
         this.config = config;
         commandAllowlist = config.CreateCommandAllowlist();
+    }
+
+    public void SetMapAssets(Cs2MapAssets assets) => mapAssets = assets;
+
+    public async Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default)
+    {
+        var map = await RunOnServerAsync(() => Server.MapName, cancellationToken);
+        return await Task.Run(() => mapAssets?.ListLocations(map) ??
+            TakaroActionResult.Fail("map_unavailable", "Map assets have not been configured."), cancellationToken);
+    }
+
+    public async Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default)
+    {
+        var map = await RunOnServerAsync(() => Server.MapName, cancellationToken);
+        return await Task.Run(() => mapAssets?.GetInfo(map) ??
+            TakaroActionResult.Ok(new { enabled = false, mapBlockSize = 0, maxZoom = 0, mapSizeX = 0, mapSizeY = 0, mapSizeZ = 0 }), cancellationToken);
+    }
+
+    public async Task<TakaroActionResult> GetMapTileAsync(int x, int y, int zoom, CancellationToken cancellationToken = default)
+    {
+        var map = await RunOnServerAsync(() => Server.MapName, cancellationToken);
+        return await Task.Run(() => mapAssets?.GetTile(map, x, y, zoom) ??
+            TakaroActionResult.Fail("map_unavailable", "Map assets have not been configured."), cancellationToken);
     }
 
     public async Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default)

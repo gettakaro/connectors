@@ -14,6 +14,9 @@ public interface ICs2TakaroAdapter
     Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> GiveItemAsync(string identifier, string code, int amount, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ListItemsAsync(CancellationToken cancellationToken = default);
+    Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default);
+    Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default);
+    Task<TakaroActionResult> GetMapTileAsync(int x, int y, int zoom, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> KickPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, string? expiresAt, CancellationToken cancellationToken = default);
@@ -62,8 +65,9 @@ public sealed class TakaroRequestDispatcher
                 "giveItem" => await adapter.GiveItemAsync(RequiredIdentifier(request.Args), RequiredItemCode(request.Args), OptionalPositiveInt(request.Args, "amount") ?? OptionalPositiveInt(request.Args, "quantity") ?? 1, cancellationToken),
                 "listItems" => await adapter.ListItemsAsync(cancellationToken),
                 "listEntities" => TakaroActionResult.Ok(new[] { new { code = "chicken", name = "Chicken", type = "neutral" } }),
-                "listLocations" => TakaroActionResult.Fail("unsupported_action", "CS2 does not expose a map-wide catalog of named locations with coordinates through CounterStrikeSharp."),
-                "getMapInfo" => TakaroActionResult.Ok(new { enabled = false, mapBlockSize = 0, maxZoom = 0, mapSizeX = 0, mapSizeY = 0, mapSizeZ = 0 }),
+                "listLocations" => await adapter.ListLocationsAsync(cancellationToken),
+                "getMapInfo" => await adapter.GetMapInfoAsync(cancellationToken),
+                "getMapTile" => await adapter.GetMapTileAsync(RequiredMapInt(request.Args, "x"), RequiredMapInt(request.Args, "y"), RequiredMapZoom(request.Args), cancellationToken),
                 "sendMessage" => await adapter.SendMessageAsync(RequiredString(request.Args, "message"), OptionalRecipient(request.Args), OptionalSender(request.Args), cancellationToken),
                 "executeConsoleCommand" => await adapter.ExecuteConsoleCommandAsync(RequiredString(request.Args, "command"), cancellationToken),
                 "teleportPlayer" => await adapter.TeleportPlayerAsync(RequiredIdentifier(request.Args), RequiredPosition(request.Args), cancellationToken),
@@ -123,6 +127,20 @@ public sealed class TakaroRequestDispatcher
         if (!value.TryGetInt32(out var amount) || amount < 1 || amount > 10)
             throw new ArgumentException($"Expected {key} from 1 to 10.");
         return amount;
+    }
+
+    private static int RequiredMapZoom(JsonElement args) =>
+        args.ValueKind == JsonValueKind.Object && args.TryGetProperty("z", out _)
+            ? RequiredMapInt(args, "z") : RequiredMapInt(args, "zoom");
+
+    private static int RequiredMapInt(JsonElement args, string key)
+    {
+        if (args.ValueKind != JsonValueKind.Object || !args.TryGetProperty(key, out var value))
+            throw new ArgumentException($"Expected integer map argument '{key}'.");
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)) return number;
+        if (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out number)) return number;
+        throw new ArgumentException($"Expected integer map argument '{key}'.");
     }
 
     private static bool TryObject(JsonElement args, string key, out JsonElement value)

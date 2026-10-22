@@ -71,6 +71,9 @@ public sealed class WebSocketPeerTests
         public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default) => Ok();
         public Task<TakaroActionResult> GiveItemAsync(string identifier, string code, int amount, CancellationToken cancellationToken = default) => Ok();
         public Task<TakaroActionResult> ListItemsAsync(CancellationToken cancellationToken = default) => Ok();
+        public Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default) => Ok();
+        public Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default) => Ok();
+        public Task<TakaroActionResult> GetMapTileAsync(int x, int y, int zoom, CancellationToken cancellationToken = default) => Ok();
         public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default) => Ok();
         public Task<TakaroActionResult> KickPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) => Ok();
         public Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, string? expiresAt, CancellationToken cancellationToken = default) => Ok();
