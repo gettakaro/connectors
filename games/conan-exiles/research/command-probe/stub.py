@@ -14,8 +14,10 @@ Usage:
   stub.py catalog DIR --revision r1 [--prefix /tk] [--without TRIGGER ...]
   stub.py run DIR [--admins STEAM64,...]
 
-Every invocation is appended to DIR/receipts.jsonl. Invocation files present when `run` starts
-belong to no live caller: they are moved to inbox-stale/ and never answered (no replay).
+Every invocation is appended to DIR/receipts.jsonl. Invocation files older than 5 s when `run`
+starts belong to no live caller (the connector gave up on them): they are moved to inbox-stale/
+and never answered (no replay). Each invocation is answered on its own thread, so a slow command
+never stops the heartbeat.
 """
 
 import argparse
@@ -23,6 +25,7 @@ import json
 import os
 import shutil
 import sys
+import threading
 import time
 
 # trigger -> aliases, backends (one reply line each: Takaro runs every installed command that
@@ -57,12 +60,14 @@ def cmd_catalog(args):
     print(f"catalog {args.revision}: {len(cmds)} commands, prefix {args.prefix}")
 
 
-def answer(inv, admins, revision):
+def answer(inv, admins, catalog):
     trigger = inv.get("trigger", "")
     player = inv.get("player") or {}
     game_id = player.get("gameId", "")
+    revision = catalog.get("revision")
+    published = [c.get("trigger") for c in catalog.get("commands", [])]
     spec = COMMANDS.get(trigger)
-    if spec is None:
+    if spec is None or trigger not in published:
         return [f"{trigger} is no longer in the catalog."]
     if spec["admin"] and game_id not in admins:
         return [f"You do not have permission to run {trigger}."]
@@ -85,7 +90,7 @@ def answer(inv, admins, revision):
             time.sleep(7)
             out.append("slow command finished (late)")
         elif backend == "help":
-            names = ", ".join(sorted(COMMANDS))
+            names = ", ".join(sorted(published))
             out.append(f"Commands (catalog {revision}): {names}")
     return out
 
@@ -99,15 +104,20 @@ def cmd_run(args):
         os.makedirs(p, exist_ok=True)
     receipts = open(os.path.join(d, "receipts.jsonl"), "a", encoding="utf-8")
 
+    lock = threading.Lock()
+
     def log(kind, **kw):
         rec = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "kind": kind, **kw}
-        receipts.write(json.dumps(rec) + "\n")
-        receipts.flush()
-        print(json.dumps(rec), flush=True)
+        with lock:
+            receipts.write(json.dumps(rec) + "\n")
+            receipts.flush()
+            print(json.dumps(rec), flush=True)
 
+    started = time.time()
     for name in sorted(os.listdir(inbox)):
-        if name.endswith(".json"):
-            shutil.move(os.path.join(inbox, name), os.path.join(stale, name))
+        path = os.path.join(inbox, name)
+        if name.endswith(".json") and started - os.path.getmtime(path) > 5:
+            shutil.move(path, os.path.join(stale, name))
             log("not-replayed", id=name[:-5])
     log("stub-started", admins=sorted(admins))
     last_hb = 0.0
@@ -128,13 +138,17 @@ def cmd_run(args):
             os.remove(path)
             try:
                 with open(os.path.join(d, "catalog.json"), encoding="utf-8") as f:
-                    revision = json.load(f).get("revision")
+                    catalog = json.load(f)
             except (OSError, ValueError):
-                revision = None
+                catalog = {}
             log("invocation", invocation=inv)
-            replies = answer(inv, admins, revision)
-            write_atomic(os.path.join(outbox, inv["id"] + ".json"), json.dumps({"replies": replies}))
-            log("replied", id=inv["id"], replies=replies)
+
+            def reply(inv=inv, catalog=catalog):
+                replies = answer(inv, admins, catalog)
+                write_atomic(os.path.join(outbox, inv["id"] + ".json"), json.dumps({"replies": replies}))
+                log("replied", id=inv["id"], replies=replies)
+
+            threading.Thread(target=reply, daemon=True).start()
         time.sleep(0.05)
 
 

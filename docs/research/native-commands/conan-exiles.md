@@ -171,6 +171,31 @@ reading it as the text `undefined` (host test).
 - Linux. The hook, veto and targeted send are the same code on both platforms, but this live run
   was Windows only.
 
+## Review notes and known probe limits
+
+An independent review of the branch raised these. Fixed after the live run, with no effect on
+the results above, because no command arrived during a `slow` answer and the connector itself
+stopped claiming a removed trigger:
+
+- The stub answered on its loop thread, so `slow` paused the heartbeat for 7 s. It now answers
+  each invocation on its own thread.
+- The stub's `help` and dispatch ignored triggers removed from the published catalog. They now
+  answer only published triggers.
+- On start, the stub moved every inbox file aside, including one written in the 3 s before the
+  old heartbeat went stale. It now moves only files older than 5 s.
+- The chat hook read the channel and text before the identity check even with the probe off.
+  It now reads them only when the probe is on, so the probe-off path is the same as on main.
+
+Accepted as probe limits (production work must solve them):
+
+- When 64 offers are queued, a further known command is still claimed (it must never go
+  public) but gets no private reply. A reply cannot be sent from the game thread.
+- Private failure replies run on the same worker that checks reply deadlines. A slow
+  `SendChat` can delay another command's timeout message.
+- Host tests cover parsing, classification, the payload and off-by-default. The enabled
+  veto, the queue, deadlines and the file hand-off were proven live only.
+- A reply file written more than 60 s after its timeout stays in `outbox/`.
+
 ## Proposed follow-up issues (not filed)
 
 1. **Takaro: command catalog and invocation contract for connectors.**
