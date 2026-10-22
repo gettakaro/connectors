@@ -33,10 +33,16 @@ under load are not yet exercised). Production work should start from the follow-
 | Connector | vein **0.7.0** (`games/vein/version.txt`), origin/main `3859fd8`, plus probe commit `45fd95b` (live runs; library sha256 `c579abd55855356a7f14f6c0b2e257855e157599042de41169ebc68f4fb3fb4f`). A later commit on this branch hardens edge paths found in review (unidentified sender, full queue, worker start failure, notice delivery, oversized messages); those paths are covered by unit tests only and were not re-run live |
 | Takaro | staging, one GENERIC game server (protocol v1) |
 
+Second run on the catalog default target (`linux-25708939`): server Steam build **25708939** and client
+build 25708540, both from VEIN's `0.025h2` Steam rollback branch (`gameVersion 0.025h2`), with the
+final probe library (commit `0f68b27`, sha256 `2e04c672…`). It repeated Q1 and Q3 in Local and Global,
+plus the regression smoke: identical RPC signatures and order, and every owned trigger consumed with
+one envelope and no broadcast, log line or Takaro event. Q2 restart and Q4 were run on 0.025h3 only.
+
 Rescope against the issue text: the issue was written for build **25035268 / v0.024h8** and predicts
 `Server_Say(FString, EChatSegment, TSubclassOf<UChatCommand>)`. On 0.025h3 the RPCs carry **no
 `EChatSegment` parameter** (Q1). The connector is already the native in-process generation the issue
-describes (no sidecar), so no architecture rescope was needed. Conclusions below apply to 0.025h3 only;
+describes (no sidecar), so no architecture rescope was needed. Conclusions below apply to 0.025h2 and 0.025h3;
 rerun the probe after every game update.
 
 ## How the probe works
@@ -237,6 +243,7 @@ Raw evidence was kept with the test run (not committed); file names for referenc
 | `feature:bounded-perf` | `01-baseline-perf-0.7.0-idle.json`, `26-perf-probe-on-5msgs.json`, `50-perf-probe-off-5msgs.json` |
 | `feature:native-inventory-autocomplete` | `10-native-command-list-slash.png`, DWARF dumps of `UChatCommand`, `UChatboxUserWidget`, `AVeinGameStateBase` |
 | `feature:probe-off-default` | `51-probe-off-D1-D2.png`, `52-vein-log-chat-probe-off.txt`, `53-probe-off-endpoint.json` |
+| target `linux-25708939` (0.025h2) | `90-h2-health-probe-on.json`, `93-h2-probe-local.json`, `95-h2-probe-global.json`, `96-h2-vein-log-chat.txt`, `97-h2-plugin-log-chat.txt`, `99-h2-mcp-smoke-and-events.json`, `92-h2-local-H1-H5.png`, `94-h2-global-G1-G2.png`, `98-h2-smoke-sendMessage-M2.png` |
 | regression smoke | `57-mcp-smoke-actions.json` (testReachability, getPlayers, sendMessage), `55-smoke-sendMessage-M1.png`, events in `20-…` and `56-…` |
 
 Commands run (all exit 0): `./games/vein/mod/build.sh --tests` on `45fd95b` (unit suite plus the
