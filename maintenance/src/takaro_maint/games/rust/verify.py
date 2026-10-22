@@ -95,6 +95,8 @@ CONSOLE_LINE = re.compile(r"\[Takaro\] console: say \(1 args\)")
 BROKEN_DIRECTIVE = "#error takaro-verify: this plugin must not compile"
 
 COMPILE_BUDGET = 180.0
+#: How long the broken boot is still watched after its ready line, for a late load or identify.
+NEGATIVE_GRACE = 15.0
 ACTION_BUDGET = 30.0
 QUIT_BUDGET = 120.0
 
@@ -488,16 +490,23 @@ async def _check_negative_broken_compile(run: Any, fake: Any, ws_url: str) -> ch
 def _watch_compile(
     log_file: Path, timeout: float, alive: Any, identified: Any
 ) -> tuple[tuple[int, str] | None, tuple[int, str] | None]:
-    """Wait for the compile failure, a load or an identify, whichever comes first.
+    """Watch the broken boot until it can no longer load the plugin, or until it does.
 
-    A Rust server does not exit when a plugin fails to compile, so the container's death is
-    not an answer; it only cuts the wait short.
+    A compile error alone does not end the watch: the server keeps booting, and a load or an
+    identify after the error is exactly what this check exists to catch. So once the error is
+    seen the boot is followed to its ready line, and :data:`NEGATIVE_GRACE` beyond it. A load
+    or an identify ends the watch at once, and so does the container's death -- a Rust
+    server does not exit over a plugin, so that only cuts the wait short.
     """
     deadline = time.monotonic() + timeout
+    settle_at: float | None = None
     while True:
         failed = checks.find_line(log_file, COMPILE_FAILED)
         loaded = checks.find_line(log_file, LOADED_LINE)
-        if failed or loaded or identified() or not alive() or time.monotonic() >= deadline:
+        now = time.monotonic()
+        if failed and settle_at is None and checks.find_line(log_file, READY_LINE):
+            settle_at = now + NEGATIVE_GRACE
+        if loaded or identified() or not alive() or now >= deadline or (settle_at is not None and now >= settle_at):
             return failed, loaded
         time.sleep(1)
 
