@@ -256,7 +256,9 @@ published, under a throwaway offline-mode name (`tmverify<nonce>`). Mineflayer s
 1.21.11 and 26.1.x itself. Newer targets (26.2, 26.3) are reached through
 [ViaProxy](https://github.com/ViaVersion/ViaProxy), pinned by URL and sha256 in `client.json`,
 which runs in the same namespace on the target's own pinned image: the player logs in as 26.1
-and ViaProxy translates to the target. `gameplay-join`'s detail and `coverage.gameplay` say
+and ViaProxy translates to the target. The player stands still and sends no movement except
+the position that answers a teleport: through ViaProxy to 26.3 an idle client's routine move
+packets are rejected by the server. `gameplay-join`'s detail and `coverage.gameplay` say
 which way the player came in, and `viaproxy.log` and `gameplay-client.log` are kept next to
 `server.log`. Both containers carry the run's `tm.run`/`tm.ttl` labels and are removed with
 the server.

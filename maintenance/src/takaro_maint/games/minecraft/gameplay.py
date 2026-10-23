@@ -183,13 +183,22 @@ class Player:
                     if isinstance(event, dict):
                         self.events.append(event)
 
-    async def send(self, op: str, **fields: Any) -> None:
+    async def send(self, op: str, **fields: Any) -> bool:
+        """Whether the command reached the player; one that has already left cannot be told."""
         assert self.process.stdin is not None
-        self.process.stdin.write((json.dumps({"op": op, **fields}) + "\n").encode())
-        await self.process.stdin.drain()
+        try:
+            self.process.stdin.write((json.dumps({"op": op, **fields}) + "\n").encode())
+            await self.process.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError):
+            return False
+        return True
 
     def gone(self) -> bool:
         return self.process.returncode is not None or any(e.get("event") in ("end", "kicked") for e in self.events)
+
+    def why_gone(self) -> str:
+        last = next((e for e in reversed(self.events) if e.get("event") in ("kicked", "end")), None)
+        return f"the player is no longer on the server ({last or f'exit {self.process.returncode}'})"
 
     async def wait_for(
         self, predicate: Callable[[dict[str, Any]], bool], timeout: float, *, since: int = 0
@@ -276,6 +285,7 @@ class Gameplay:
         self.player: Player | None = None
         self.game_id: str | None = None
         self.spawn: dict[str, Any] | None = None
+        self.join_mark = 0
         self.client_log = run.out / "gameplay-client.log"
         self.client_name = f"{run.container_name}-client"
 
@@ -329,7 +339,7 @@ class Gameplay:
             "--entrypoint",
             "java",
             self.run.resolved["containerRef"],
-            "-Xmx512m",
+            "-Xmx640m",
             "-jar",
             "/viaproxy/ViaProxy.jar",
             "cli",
@@ -405,7 +415,7 @@ class Gameplay:
             problems: list[str] = []
             detail: dict[str, Any] = {"client": self.client_identity(), "manualCoverage": list(MANUAL_COVERAGE)}
             # Before the player exists, so its player-connected event cannot slip past the mark.
-            mark = len(self.fake.events)
+            mark = self.join_mark = len(self.fake.events)
             try:
                 pinned = self.pinned
                 kit = await asyncio.to_thread(install_client, pinned)
@@ -441,8 +451,10 @@ class Gameplay:
                         problems.append(f"no player-connected event named {self.username} within {EVENT_BUDGET:.0f} s")
                     else:
                         detail["playerConnected"] = connected
-                        self.game_id = _player_of(connected).get("gameId")
-                        if spawn.get("uuid") and self.game_id != spawn.get("uuid"):
+                        self.game_id = _player_of(connected).get("gameId") or None
+                        if not self.game_id:
+                            problems.append("the player-connected event carries no gameId")
+                        elif self.game_id != spawn.get("uuid"):
                             problems.append(
                                 f"the event's gameId {self.game_id} is not the client's uuid {spawn['uuid']}"
                             )
@@ -451,7 +463,7 @@ class Gameplay:
                     listed = [p for p in players or [] if isinstance(p, dict) and p.get("name") == self.username]
                     if not listed:
                         problems.append(f"getPlayers does not list {self.username}")
-                    elif self.game_id and listed[0].get("gameId") != self.game_id:
+                    elif listed[0].get("gameId") != self.game_id:
                         problems.append("getPlayers lists the player under another gameId than its event")
         return _result("gameplay-join", timer, detail, problems)
 
@@ -516,7 +528,7 @@ class Gameplay:
             problems: list[str] = []
             items = await _request(self.fake, "getPlayerInventory", {"gameId": self.game_id}, problems)
             rows = [item for item in items or [] if isinstance(item, dict) and item.get("code") == code]
-            total = sum(int(row.get("amount") or 0) for row in rows)
+            total = sum(_int(row.get("amount")) for row in rows)
             if total != amount:
                 problems.append(f"getPlayerInventory reports {total} {code}, expected the {amount} given")
             for row in rows:
@@ -558,10 +570,14 @@ class Gameplay:
         assert self.player is not None and self.game_id is not None
         with checks._Timer() as timer:
             problems: list[str] = []
-            mark = len(self.fake.events)
+            left_early = self.player.gone()
+            # A player that was already dropped left before this row began.
+            mark = self.join_mark if left_early else len(self.fake.events)
+            if left_early:
+                problems.append(self.player.why_gone())
             await self.player.send("quit")
             code = await self.player.close(QUIT_BUDGET)
-            if code != 0:
+            if code != 0 and not left_early:
                 problems.append(f"the client exited {code}, expected 0 after a requested quit")
             event = await wait_game_event(
                 self.fake,
@@ -592,7 +608,14 @@ class Gameplay:
 def _count(inventory: dict[str, Any] | None, name: str) -> int:
     if not inventory:
         return 0
-    return sum(int(item.get("count") or 0) for item in inventory.get("items", []) if item.get("name") == name)
+    return sum(_int(item.get("count")) for item in inventory.get("items", []) if item.get("name") == name)
+
+
+def _int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _near(position: Any, target: dict[str, float], tolerance: float, axes: tuple[str, ...] = ("x", "y", "z")) -> bool:
@@ -602,6 +625,17 @@ def _near(position: Any, target: dict[str, float], tolerance: float, axes: tuple
         return all(abs(float(position[axis]) - target[axis]) <= tolerance for axis in axes)
     except (KeyError, TypeError, ValueError):
         return False
+
+
+async def _guarded(check_id: str, row: Callable[[], Any]) -> checks.CheckResult:
+    """A row that raised is a failed row with the reason, never a run without a report."""
+    started = time.monotonic()
+    try:
+        result: checks.CheckResult = await row()
+    except Exception as exc:  # noqa: BLE001 - anything a row did not expect is its failure
+        elapsed = int((time.monotonic() - started) * 1000)
+        return checks.CheckResult(check_id, "fail", elapsed, {"problems": [f"{type(exc).__name__}: {exc}"]})
+    return result
 
 
 async def run_gameplay(run: Any, fake: Any) -> None:
@@ -615,7 +649,7 @@ async def run_gameplay(run: Any, fake: Any) -> None:
     session = Gameplay(run, fake)
     try:
         # Joining is the precondition of every other row, so it runs whenever any of them does.
-        joined = await session.join()
+        joined = await _guarded("gameplay-join", session.join)
         if "gameplay-join" in selected or joined.status == "fail":
             run.record(joined)
         rows: tuple[tuple[str, Callable[[], Any]], ...] = (
@@ -632,7 +666,9 @@ async def run_gameplay(run: Any, fake: Any) -> None:
                 run.skip(check_id, "gameplay-join failed; no player on the server")
             elif check_id == "gameplay-inventory" and not run.wanted("gameplay-give-item"):
                 run.skip(check_id, "needs gameplay-give-item, which was not selected")
+            elif session.player is not None and session.player.gone() and check_id != "gameplay-leave":
+                run.record(checks.CheckResult(check_id, "fail", 0, {"problems": [session.player.why_gone()]}))
             else:
-                run.record(await row())
+                run.record(await _guarded(check_id, row))
     finally:
         await session.stop()

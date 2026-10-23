@@ -41,7 +41,9 @@ class ScriptedPlayer:
         else:
             self.events.append({"event": "kicked", "reason": "outdated server"})
 
-    async def send(self, op: str, **fields: Any) -> None:
+    async def send(self, op: str, **fields: Any) -> bool:
+        if self.gone():
+            return False
         if op == "inventory":
             items = [{"name": name, "count": count} for name, count in self.inventory.items()]
             self.events.append({"event": "inventory", "items": items})
@@ -51,9 +53,18 @@ class ScriptedPlayer:
         elif op == "quit":
             self.process.returncode = 0
             self.connector.left()
+        return True
+
+    def kick(self, reason: str) -> None:
+        self.events.append({"event": "kicked", "reason": reason})
+        self.process.returncode = 1
+        self.connector.left()
+
+    def why_gone(self) -> str:
+        return f"the player is no longer on the server ({self.events[-1]})"
 
     def gone(self) -> bool:
-        return self.process.returncode is not None
+        return self.process.returncode is not None or any(e.get("event") == "kicked" for e in self.events)
 
     async def wait_for(self, predicate: Any, timeout: float, *, since: int = 0) -> dict[str, Any] | None:
         del timeout
@@ -101,6 +112,12 @@ class ScriptedConnector:
             self.player.events.append({"event": "message", "text": args["message"]})
             return {}
         if action == "giveItem":
+            if "kick-on-give" in self.broken:
+                self.player.inventory["diamond"] = args["amount"]
+                self.player.kick("multiplayer.disconnect.invalid_player_movement")
+                return {}
+            if "raise-on-give" in self.broken:
+                raise ConnectionResetError("Connection lost")
             if "give" not in self.broken:
                 name = args["item"].removeprefix("minecraft:")
                 self.player.inventory[name] = self.player.inventory.get(name, 0) + args["amount"]
@@ -280,3 +297,75 @@ def test_the_coverage_names_what_was_played_how_and_what_stays_manual() -> None:
     uncovered = report.gameplay_coverage(_rows("fail"), "minecraft")
     assert uncovered.startswith("not covered - gameplay-chat, gameplay-give-item")
     assert report.gameplay_coverage(_rows(), "valheim") == report.NO_GAMEPLAY
+
+
+def test_a_player_kicked_mid_run_fails_the_rest_and_the_run_still_reports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = play(tmp_path, monkeypatch, broken={"kick-on-give"})
+    found = statuses(run)
+    assert found["gameplay-join"] == found["gameplay-chat"] == "pass"
+    assert {found[check_id] for check_id in gameplay.CHECK_IDS[2:]} == {"fail"}
+    teleport = next(result for result in run.results if result.id == "gameplay-teleport")
+    assert "invalid_player_movement" in teleport.detail["problems"][0]
+
+
+def test_a_request_that_raises_fails_its_row_and_the_rest_go_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = play(tmp_path, monkeypatch, broken={"raise-on-give"})
+    give = next(result for result in run.results if result.id == "gameplay-give-item")
+    assert give.status == "fail"
+    assert give.detail["problems"][0] == "giveItem failed: Connection lost"
+    assert statuses(run)["gameplay-leave"] == "pass"
+
+
+def test_an_exception_a_row_did_not_expect_becomes_its_failure() -> None:
+    async def row() -> Any:
+        raise ConnectionResetError("Connection lost")
+
+    result = asyncio.run(gameplay._guarded("gameplay-leave", row))
+    assert (result.id, result.status) == ("gameplay-leave", "fail")
+    assert result.detail["problems"] == ["ConnectionResetError: Connection lost"]
+
+
+# A stand-in for client.mjs speaking the same line protocol, so the real Player class is
+# exercised against a real process: its pipes, its JSON parsing, its exit and a dead stdin.
+ECHO_CLIENT = """
+import json, sys
+print(json.dumps({"event": "spawn", "uuid": "u", "position": {"x": 0, "y": 0, "z": 0}}), flush=True)
+print("not json", flush=True)
+print("diagnostics", file=sys.stderr, flush=True)
+for line in sys.stdin:
+    op = json.loads(line)["op"]
+    if op == "inventory":
+        print(json.dumps({"event": "inventory", "items": [{"name": "diamond", "count": 3}]}), flush=True)
+    elif op == "quit":
+        print(json.dumps({"event": "end", "reason": "quit"}), flush=True)
+        sys.exit(0)
+"""
+
+
+def test_the_player_speaks_the_line_protocol_over_real_pipes(tmp_path: Path) -> None:
+    import subprocess
+    import sys
+
+    async def scenario() -> tuple[Any, ...]:
+        process = await asyncio.create_subprocess_exec(
+            sys.executable, "-c", ECHO_CLIENT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        player = gameplay.Player(process=process, log_path=tmp_path / "client.log")
+        player.start_reading()
+        spawn = await player.wait_for(lambda event: event.get("event") == "spawn", 10)
+        inventory = await player.ask("inventory", "inventory")
+        quit_sent = await player.send("quit")
+        code = await player.close(10)
+        after_exit = await player.send("chat", text="too late")
+        return spawn, inventory, quit_sent, code, after_exit, player.gone()
+
+    spawn, inventory, quit_sent, code, after_exit, gone = asyncio.run(scenario())
+    assert spawn is not None and spawn["uuid"] == "u"
+    assert gameplay._count(inventory, "diamond") == 3
+    assert (quit_sent, code, after_exit, gone) == (True, 0, False, True)
+    log = (tmp_path / "client.log").read_text()
+    assert "out not json" in log and "err diagnostics" in log
