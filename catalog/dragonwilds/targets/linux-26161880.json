@@ -10,7 +10,9 @@
     "since": "2026-10-23",
     "evidence": [
       "games/dragonwilds/README.md (What works, what doesn't)",
-      "games/dragonwilds/mod/tests/ (plugin unit and native connector tests, every build)"
+      "games/dragonwilds/mod/tests/ (plugin unit and native connector tests, every build)",
+      "takaro-maint install of this target on the dev rig 2026-10-23: declared sha256 verified, server ++dominion+hotfix-CL-254097 boots with the plugin (113/113 symbols from a cold .sym scan, game thread ticking via the UDomGameEngine::Tick hook, PreLogin ban hooks bound)",
+      "connector-runner e2e 2026-10-23 (gettakaro/connectors#617, staging domain): real PC client (Steam build 26162923) through hosted Takaro MCP on this target - player-connected 7dc1727b-005e-47e5-a4c1-5ea4e9abbd21, chat-message 79ad40ee-83bc-4af8-b53a-92aa7f6c8ede, command-executed 1c95736d-4c31-4c04-9957-df4b01a01545 (@ping, Pong rendered in game), player-death 382f17a6-9216-4243-9b45-5b6f8925eb79, entity-killed c5713193-6c4a-4472-a41f-65c28c074731 (real kill, Kebbit, weapon Bronze Sword), player-disconnected 92748779-ddbd-4c51-aa35-1ed0b976c3bf (kick), 5bf6c2e3-5011-4dbd-84ed-b182c5a77221 (leave, one per leave over three cycles with the reconcile fix) and a5b04ed8-0e6a-41eb-baf8-756d7e61076e (reconcile after shutdown); testReachability, getPlayers, sendMessage, executeConsoleCommand, giveItem, teleportPlayer, kickPlayer, banPlayer (rejoin refused at PreLogin), unbanPlayer, shutdown and Discord both ways passed"
     ],
     "notes": "Steam pin of the public branch head observed 2026-10-23 (build published 2026-10-23, manifest dated 2026-10-23): tool app 4019830, Linux depot 3501791, build 26161880. The plugin resolves every engine address from this build's own `.sym` at load time, so the target needs no source change. `verification.required` is `contract` until this pin is proven at runtime: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
   },
