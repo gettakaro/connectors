@@ -395,14 +395,14 @@ Response DoTeleport(const std::string& id, double x, double y, double z) {
     return {200, "{\"success\":true}"};
 }
 
-Response DoGive(const std::string& id, const std::string& code, double amount, uint8_t level = 0) {
+Response DoGive(const std::string& id, const std::string& code, double amount, uint8_t level = 0, int rarity = -1) {
     std::string steam, name, err, detail;
     if (!PluginState::Get().FindOnline(id, steam, name)) return Err(404, "player not online");
     if (!ItemTablesUsable()) return Err(503, "giveItem unavailable: " + ItemTablesReason());
     const ItemDef* item = FindItemByCode(code);
     if (!item) return Err(400, "unknown item code '" + code + "' (see GET /items)");
     if (!(amount >= 1) || amount > 100000) return Err(400, "amount must be >= 1");
-    if (!WorldGiveItem(name, *item, (uint32_t)amount, err, detail, level)) return Err(503, err + (detail.empty() ? "" : " (" + detail + ")"));
+    if (!WorldGiveItem(name, *item, (uint32_t)amount, err, detail, level, rarity)) return Err(503, err + (detail.empty() ? "" : " (" + detail + ")"));
     return {200, "{\"success\":true,\"code\":" + JsonStr(item->code) + ",\"detail\":" + JsonStr(detail) + "}"};
 }
 
@@ -560,11 +560,17 @@ bool RunCommand(const std::string& line, std::string& out) {
             out += "\n" + i.get("amount")->str + " x " + i.get("code")->str + " [" + i.get("inventory")->str + "]";
         return true;
     }
-    if (cmd == "give" && a.size() >= 3 && a.size() <= 5) {
+    if (cmd == "give" && a.size() >= 3 && a.size() <= 6) {
         double n = 1, lvl = 0;
-        if ((a.size() >= 4 && !Num(a[3], n)) || (a.size() == 5 && (!Num(a[4], lvl) || lvl < 1 || lvl > 255)))
-            return out = "usage: give <player> <itemCode> [amount] [level]", false;
-        Response r = DoGive(a[1], a[2], n, (uint8_t)lvl);
+        int rar = -1;
+        static const char* kRar[] = {"common", "uncommon", "rare", "epic", "legendary"};
+        if (a.size() == 6)
+            for (int k = 0; k < 5; k++)
+                if (_stricmp(a[5].c_str(), kRar[k]) == 0) rar = k;
+        if ((a.size() >= 4 && !Num(a[3], n)) || (a.size() >= 5 && (!Num(a[4], lvl) || lvl < 1 || lvl > 255)) ||
+            (a.size() == 6 && rar < 0))
+            return out = "usage: give <player> <itemCode> [amount] [level] [common|uncommon|rare|epic|legendary]", false;
+        Response r = DoGive(a[1], a[2], n, (uint8_t)lvl, rar);
         if (r.status != 200) return out = ErrText(r), false;
         out = "gave " + std::to_string((long long)n) + " x " + a[2];
         return true;
