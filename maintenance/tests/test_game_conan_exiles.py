@@ -1217,6 +1217,27 @@ def test_map_arrives_as_a_manifest_replacement_once_the_world_loads(quick: None)
     assert result.status == "fail" and "no `map` capability" in result.detail["problems"][0]
 
 
+def test_a_refused_build_ends_the_waits_at_once(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A pinned library that refused the build never answers differently, so no budget is waited out."""
+    for name in ("WORLD_BUDGET", "STOP_BUDGET"):
+        monkeypatch.setattr(hooks, name, 3600.0)
+    monkeypatch.setattr(hooks, "RETRY_SECONDS", 0.01)
+    refusal = RuntimeError('{"code": "game_error", "message": "getPlayers refused: unsupported server build (x)"}')
+    stub = StubTakaro({"getPlayers": [_Seq(refusal), _Seq([])]})
+    answer, errors = asyncio.run(hooks._request_until(stub, "getPlayers", {}, 3600.0, lambda a: True))
+    assert answer is None and len(errors) == 1
+
+    result = asyncio.run(hooks._check_map(StubTakaro(), lambda: True))
+    assert result.status == "fail" and result.duration_ms < 1000
+
+    budgets: list[float] = []
+    run = _hook_run(tmp_path, wanted=("stop",))
+    run.container = SimpleNamespace(wait_for_exit=lambda timeout: budgets.append(timeout) or -1)
+    result = asyncio.run(hooks._check_stop(run, StubTakaro({"shutdown": refusal})))
+    assert result.status == "fail" and budgets == [hooks.REFUSED_STOP_BUDGET]
+    assert result.detail["budgetSeconds"] == hooks.REFUSED_STOP_BUDGET
+
+
 def test_reconnect_needs_a_second_identify_and_a_usable_socket(tmp_path: Path, quick: None) -> None:
     run = _hook_run(tmp_path / "ok")
     _native_log(

@@ -113,6 +113,10 @@ RETRY_SECONDS = 5.0
 RECONNECT_BUDGET = 90.0
 # The server needs about three minutes to unload after `exit`, at full CPU on four cores.
 STOP_BUDGET = 600.0
+#: How long a refused shutdown is given anyway, in case the server goes down by itself.
+REFUSED_STOP_BUDGET = 30.0
+#: Every answer from a library that refused the build carries this, and no later answer differs.
+REFUSED_BUILD = "unsupported server build"
 
 MIN_ITEMS = 1000
 #: The share of rows that may carry their code as their name; observed about 1.2 %.
@@ -219,6 +223,8 @@ async def _request_until(
             if text not in errors:
                 errors.append(text)
             answer = None
+            if REFUSED_BUILD in text:
+                return answer, errors
         else:
             if accept(answer):
                 return answer, errors
@@ -239,7 +245,7 @@ async def after_protocol(run: Any, fake: Any, alive: Any) -> None:
         ("native-console", lambda: _check_console(fake)),
         ("action", lambda: _check_action(run, fake)),
         ("game-icon", lambda: _check_game_icon(fake)),
-        ("map", lambda: _check_map(fake)),
+        ("map", lambda: _check_map(fake, lambda: checks.find_line(native_log(run), NO_HOOK_LINE) is not None)),
         ("reconnect", lambda: _check_reconnect(run, fake, alive)),
     ):
         if run.wanted(check_id):
@@ -552,8 +558,11 @@ async def _check_game_icon(fake: Any) -> checks.CheckResult:
     )
 
 
-async def _check_map(fake: Any) -> checks.CheckResult:
-    """The loaded map reaches Takaro: the library reads the live GameState and replaces its manifest."""
+async def _check_map(fake: Any, refused: Any = lambda: False) -> checks.CheckResult:
+    """The loaded map reaches Takaro: the library reads the live GameState and replaces its manifest.
+
+    ``refused`` says the library refused the build, which then never declares a map.
+    """
     with checks._Timer() as timer:
         problems: list[str] = []
         deadline = time.monotonic() + WORLD_BUDGET
@@ -561,7 +570,7 @@ async def _check_map(fake: Any) -> checks.CheckResult:
         while time.monotonic() < deadline:
             parameters = (_capability(latest_capabilities(fake), "map") or {}).get("parameters") or {}
             dimensions = parameters.get("dimensions")
-            if dimensions:
+            if dimensions or refused():
                 break
             await asyncio.sleep(RETRY_SECONDS)
         if not isinstance(dimensions, list) or not dimensions:
@@ -650,9 +659,10 @@ async def _check_stop(run: Any, fake: Any) -> checks.CheckResult:
             answer = await fake.request("shutdown", {}, timeout=REQUEST_TIMEOUT)
         except Exception as exc:  # noqa: BLE001 - reported as a check failure
             problems.append(f"shutdown failed: {exc}")
-        code = await asyncio.to_thread(run.container.wait_for_exit, STOP_BUDGET)
+        budget = REFUSED_STOP_BUDGET if problems else STOP_BUDGET
+        code = await asyncio.to_thread(run.container.wait_for_exit, budget)
         if code != 0:
-            problems.append(f"the server container exited {code} within {STOP_BUDGET:.0f} s, expected 0")
+            problems.append(f"the server container exited {code} within {budget:.0f} s, expected 0")
         stopped = checks.find_line(native_log(run), STOPPED_LINE)
         if not stopped:
             problems.append(f"{NATIVE_LOG.name} never logged 'Takaro Conan native stopped'")
@@ -664,7 +674,7 @@ async def _check_stop(run: Any, fake: Any) -> checks.CheckResult:
             "answer": answer,
             "exitCode": code,
             "countdownSeconds": SHUTDOWN_SECONDS,
-            "budgetSeconds": STOP_BUDGET,
+            "budgetSeconds": budget,
             "problems": problems,
         },
         {"file": NATIVE_LOG.name, "line": stopped[0]} if stopped else {"file": NATIVE_LOG.name},
