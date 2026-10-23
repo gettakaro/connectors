@@ -224,17 +224,34 @@ void PluginState::OnLogLine(int level, const std::string& line) {
         return;
     }
 
-    // [session] Add remote machine index 2 (id: 2778328608).   -- follows the auth of the account that gets machine 2
+    // [session] Unable to find machine for peer 1(1).   -- printed right before that peer's "Add remote machine index M"
+    if (StartsWith(line, "[session] Unable to find machine for peer ")) {
+        size_t a = strlen("[session] Unable to find machine for peer ");
+        size_t b = line.find('.', a);
+        if (b != std::string::npos) machinePeer_ = line.substr(a, b - a);
+        return;
+    }
+
+    // [session] Add remote machine index 2 (id: 2778328608).   -- for machinePeer_, else for the last Steam auth
     if (StartsWith(line, "[session] Add remote machine index ")) {
         size_t a = strlen("[session] Add remote machine index ");
         size_t b = line.find(' ', a);
-        if (b != std::string::npos && !lastAuthSteam_.empty()) {
-            for (auto it = players_.rbegin(); it != players_.rend(); ++it)
-                if (it->steamId == lastAuthSteam_ && !it->online && !it->removed) {
-                    it->authMachine = line.substr(a, b - a);
+        if (b != std::string::npos) {
+            std::string machine = line.substr(a, b - a);
+            bool bound = false;
+            for (auto& r : players_)
+                if (!machinePeer_.empty() && r.peerId == machinePeer_ && !r.online && !r.removed) {
+                    r.authMachine = machine;
+                    bound = true;
                     break;
                 }
+            for (auto it = players_.rbegin(); !bound && !lastAuthSteam_.empty() && it != players_.rend(); ++it)
+                if (it->steamId == lastAuthSteam_ && !it->online && !it->removed) {
+                    it->authMachine = machine;
+                    bound = true;
+                }
         }
+        machinePeer_.clear();
         lastAuthSteam_.clear();
         return;
     }

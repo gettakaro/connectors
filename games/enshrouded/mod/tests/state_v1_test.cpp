@@ -66,5 +66,43 @@ int main(){
  L("[online] Removed peer 5(1)");
  assert(!st.FindOnline("Torkham", sid, name));
  assert(st.FindOnline("Some random guy", sid, name) && sid == "76561198308427421");
+ const char* gone[][2] = {{"Mad", "1(1)"}, {"Conditions", "2(1)"}, {"gambit5555", "0(1)"}, {"Some random guy", "4(3)"}};
+ for (auto& g : gone) {
+  L((std::string("[server] Remove Player '") + g[0] + "'").c_str());
+  L((std::string("[online] Removed peer ") + g[1]).c_str());
+ }
+
+ // Live log 2026-10-22 22:36: two accounts pass Steam auth in the same millisecond, then the game gives the second
+ // one machine 1 and the first one machine 2. The "Unable to find machine for peer" line names each machine's peer.
+ L("[online] Added peer 0(1) (steamid:76561198041959712)");
+ L("[online] Client '76561198041959712' authenticated by steam");
+ L("[session] Unable to find machine for peer 0(1).");
+ L("[session] Add remote machine index 1 (id: 3415138574).");
+ L("[online] Disconnecting peer 0(1)");
+ L("[online] Removed peer 0(1)");
+ L("[online] Added peer 0(2) (steamid:76561198041959712)");
+ L("[online] Added peer 1(1) (steamid:76561198046178228)");
+ L("[online] Client '76561198041959712' authenticated by steam");
+ L("[online] Client '76561198046178228' authenticated by steam");
+ L("[session] Unable to find machine for peer 1(1).");
+ L("[session] Unable to find machine for peer 1(1).");
+ L("[session] Add remote machine index 1 (id: 1034529246).");
+ L("[session] Remote player added. Player handle: 0(1)");
+ L("[session] Unable to find machine for peer 0(2).");
+ L("[session] Unable to find machine for peer 0(2).");
+ L("[session] Add remote machine index 2 (id: 4250479017).");
+ L("[session] Remote player added. Player handle: 1(2)");
+ L("[server] Machine '2': Player '1(2)' logged in");
+ L("[server] Player 'Mad' logged in with Permissions:");
+ L("\t - CanKickBan");
+ L("[x] other");
+ L("[server] Machine '1': Player '0(1)' logged in");
+ L("[server] Player 'Torkham' logged in with Permissions:");
+ L("\t - CanEditWorld");
+ L("[x] other");
+ assert(st.FindOnline("Mad", sid, name) && sid == "76561198041959712");
+ assert(st.FindOnline("Torkham", sid, name) && sid == "76561198046178228");
+ assert(st.OnlineMachine("76561198041959712", m) && m == "2");
+ assert(st.OnlineMachine("76561198046178228", m) && m == "1");
  std::cout << "state_v1_test: ok\n";
 }
