@@ -574,7 +574,11 @@ async def _check_map(fake: Any, refused: Any = lambda: False) -> checks.CheckRes
                 break
             await asyncio.sleep(RETRY_SECONDS)
         if not isinstance(dimensions, list) or not dimensions:
-            problems.append(f"no `map` capability with a dimension within {WORLD_BUDGET:.0f} s of the boot")
+            problems.append(
+                "no `map` capability: the library refused the build"
+                if refused()
+                else f"no `map` capability with a dimension within {WORLD_BUDGET:.0f} s of the boot"
+            )
         replacements = len(getattr(fake, "capability_updates", []))
     return checks.CheckResult(
         "map",

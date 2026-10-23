@@ -1229,6 +1229,7 @@ def test_a_refused_build_ends_the_waits_at_once(monkeypatch: pytest.MonkeyPatch,
 
     result = asyncio.run(hooks._check_map(StubTakaro(), lambda: True))
     assert result.status == "fail" and result.duration_ms < 1000
+    assert result.detail["problems"] == ["no `map` capability: the library refused the build"]
 
     budgets: list[float] = []
     run = _hook_run(tmp_path, wanted=("stop",))
