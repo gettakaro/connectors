@@ -77,7 +77,9 @@ an installation. `plugin.log` lines are redacted (`*Password`, `*Token`, `Ticket
   `ban-intent.json` first and verified against both lists after a crash.
 - Online reconcile: at identify and every 30 s, players Takaro was told are online but the game no
   longer lists get a `player-disconnected` (server crash with players connected). A connect admitted
-  within the last 30 s is never undone by a reconcile read taken before it.
+  within the last 30 s is never undone by a reconcile read taken before it. A player the game listed
+  on the previous pass of this process left while the leave hooks were watching, so the reconcile
+  waits one more pass for their event instead of sending a second `player-disconnected`.
 
 ### Actions
 
