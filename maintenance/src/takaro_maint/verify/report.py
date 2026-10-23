@@ -50,6 +50,20 @@ GAME_PROTOCOL_CHECKS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+#: The rows a game's harness drives a real player through. Passing all of them on top of
+#: ``protocol`` is what ``gameplay`` means; a game without an entry never reaches it.
+GAME_GAMEPLAY_CHECKS: dict[str, tuple[str, ...]] = {
+    "minecraft": (
+        "gameplay-join",
+        "gameplay-chat",
+        "gameplay-give-item",
+        "gameplay-inventory",
+        "gameplay-teleport",
+        "gameplay-leave",
+    ),
+}
+NO_GAMEPLAY = "not covered - this harness drives no player for this game; see the target's recorded client evidence"
+
 
 def level_for(checks: list[dict[str, Any]], game: str | None = None) -> str:
     """The highest class whose checks all passed; ``none`` when not even ``build`` did.
@@ -69,7 +83,32 @@ def level_for(checks: list[dict[str, Any]], game: str | None = None) -> str:
             reached = level
         else:
             break
+    gameplay = GAME_GAMEPLAY_CHECKS.get(game or "", ())
+    if reached == "protocol" and gameplay and all(status.get(check_id) == "pass" for check_id in gameplay):
+        reached = "gameplay"
     return reached
+
+
+def gameplay_coverage(checks: list[dict[str, Any]], game: str) -> str:
+    """What this run proved about real play, and what a real client still has to show."""
+    rows = GAME_GAMEPLAY_CHECKS.get(game)
+    if not rows:
+        return NO_GAMEPLAY
+    by_id = {check["id"]: check for check in checks}
+    join = by_id.get("gameplay-join", {}).get("detail", {})
+    manual = "; ".join(join.get("manualCoverage") or ()) or "none recorded"
+    unproven = [check_id for check_id in rows if by_id.get(check_id, {}).get("status") != "pass"]
+    if unproven:
+        return f"not covered - {', '.join(unproven)} did not pass; manual: {manual}"
+    client = join.get("client") or {}
+    proxy = client.get("viaProxy")
+    route = (
+        f"logged in as {client.get('loginVersion')} through ViaProxy {proxy.get('version')}"
+        if isinstance(proxy, dict)
+        else f"native {client.get('loginVersion')} protocol"
+    )
+    behaviours = ", ".join(check_id.removeprefix("gameplay-") for check_id in rows)
+    return f"covered - {behaviours} by a headless {client.get('library')} player ({route}); manual: {manual}"
 
 
 def outcome_for(checks: list[dict[str, Any]]) -> str:
@@ -121,7 +160,7 @@ def build_report(
     takaro: str = "local",
 ) -> dict[str, Any]:
     repo, revision, dirty = repo_identity(repo_root, watched_paths(target.game))
-    coverage: dict[str, Any] = {"gameplay": "not covered - recorded client evidence pending (#174)"}
+    coverage: dict[str, Any] = {"gameplay": gameplay_coverage(checks, target.game)}
     if target.game == "ark":
         # The ARK runner can be repaired without rebuilding the already shipped native
         # and sidecar bytes. Keep their build-manifest source distinct from this tool.

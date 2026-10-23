@@ -444,7 +444,7 @@ def test_a_report_from_a_dirty_tree_is_refused_for_stable_and_recorded_with_allo
     assert record["source"]["dirty"] is True
 
 
-def test_a_gameplay_requirement_cannot_be_satisfied(run: Any, inputs: Inputs, tmp_path: Path) -> None:
+def test_a_gameplay_requirement_is_not_met_by_a_protocol_report(run: Any, inputs: Inputs, tmp_path: Path) -> None:
     record_path = inputs.root / "catalog" / CONNECTOR / "targets" / "fabric-26.2.json"
     record = json.loads(record_path.read_text())
     record["verification"]["required"] = "gameplay"
