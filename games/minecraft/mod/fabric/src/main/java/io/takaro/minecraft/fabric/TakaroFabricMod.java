@@ -61,7 +61,7 @@ public class TakaroFabricMod implements DedicatedServerModInitializer {
             EventEmitter emitter = adapter.getEventEmitter();
             if (emitter == null) return;
             emitter.emitChatMessage(
-                    sender.getGameProfile().name(), // THROWAWAY: deliberately wrong gameId, reverted next commit
+                    sender.getUUID().toString(),
                     sender.getGameProfile().name(),
                     "global",
                     message.signedContent()
