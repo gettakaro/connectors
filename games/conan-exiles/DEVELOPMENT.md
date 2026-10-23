@@ -283,7 +283,8 @@ run alone and negotiates protocol 1. Nothing is published on a host port and nob
 
 A library that does not recognise the build still loads, connects and refuses every action, so
 `native-load`, `native-identify` and every action row fail on it: that is the failure this lane
-exists to catch. Each run writes `reports/<target>/report.json` (source revision, target
+exists to catch. The refusal is permanent, so the checks stop waiting as soon as they see it
+(a refused stop is given 30 s rather than 600 s). Each run writes `reports/<target>/report.json` (source revision, target
 fingerprint, artifact hashes, image digest, the server's own build and engine banner, per-check
 outcomes) plus `server.log`, `ConanSandbox.log`, `TakaroConanNative.log`, `fake-takaro.log`
 (tokens redacted) and `docker.log`. The container and the install are removed on success, failure
