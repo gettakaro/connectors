@@ -50,6 +50,7 @@ CANDIDATE_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{CANDIDATE}.json"
 MAINTAINED_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{MAINTAINED}.json"
 PREVIOUS_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{PREVIOUS}.json"
 OLDEST_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{OLDEST}.json"
+ALL_PATHS = [TARGET_PATH, RECENT_PATH, CANDIDATE_PATH, MAINTAINED_PATH, PREVIOUS_PATH, OLDEST_PATH]
 GAME_PATH = REPO_ROOT / "catalog" / GAME / "game.json"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "dragonwilds.yml"
 
@@ -115,7 +116,7 @@ def test_the_newest_build_is_the_one_default() -> None:
     assert record(OLDEST_PATH)["default"] is False
 
 
-@pytest.mark.parametrize("path", [TARGET_PATH, RECENT_PATH, CANDIDATE_PATH, MAINTAINED_PATH, PREVIOUS_PATH, OLDEST_PATH])
+@pytest.mark.parametrize("path", ALL_PATHS)
 def test_every_target_ships_the_plugin_alone(path: Path) -> None:
     document = record(path)
 
@@ -126,7 +127,7 @@ def test_every_target_ships_the_plugin_alone(path: Path) -> None:
     assert not [entry for entry in document["preserve"] if "Sidecar" in entry]
 
 
-@pytest.mark.parametrize("path", [TARGET_PATH, RECENT_PATH, CANDIDATE_PATH, MAINTAINED_PATH, PREVIOUS_PATH, OLDEST_PATH])
+@pytest.mark.parametrize("path", ALL_PATHS)
 def test_an_install_keeps_the_plugin_data_directory(path: Path) -> None:
     # The plugin keeps bans.json (and, without TAKARO_STATE_DIR, its event cursor, outbox and
     # timed bans) next to the server binary. A game update installs a fresh depot tree, so this
@@ -134,7 +135,7 @@ def test_an_install_keeps_the_plugin_data_directory(path: Path) -> None:
     assert "RSDragonwilds/Binaries/Linux/takaro/" in record(path)["preserve"]
 
 
-@pytest.mark.parametrize("path", [TARGET_PATH, RECENT_PATH, CANDIDATE_PATH, MAINTAINED_PATH, PREVIOUS_PATH, OLDEST_PATH])
+@pytest.mark.parametrize("path", ALL_PATHS)
 def test_the_target_claims_contract_verification_and_a_steam_install(path: Path) -> None:
     document = record(path)
 
