@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import time
+from datetime import UTC, datetime
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
@@ -80,9 +81,12 @@ BUILD_LINE = re.compile(r"Game Version \(SVN\): (?P<build>\d+)")
 SHUTDOWN_LINE = re.compile(r"\[app\] Trigger gameflow shutdown, exit: Ctrl_C")
 SAVED_LINE = re.compile(r"\[server\] Saved")
 #: Where the server writes its world. Enshrouded 1.0 saves into ``savegame/world0.ksd``
-#: without printing :data:`SAVED_LINE`, so a file there written after the shutdown request
-#: is the other proof of a save.
+#: without printing :data:`SAVED_LINE`, so a world file there written between the shutdown
+#: request and the respawn is the other proof of a save.
 SAVEGAME_DIR = Path("savegame")
+WORLD_FILES = "*.ksd"
+#: supervisord's own timestamp on a spawn line; the target pins ``TZ=Etc/UTC``.
+SPAWN_STAMP = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d),(\d{3}) INFO spawned: 'enshrouded-server'", re.M)
 RESPAWN_LINE = re.compile(r"spawned: 'enshrouded-server'")
 # Any line that would mean the image updated the game underneath the pinned hooks.
 DRIFT_LINE = re.compile(r"steamcmd|app_update|needs to be updated", re.IGNORECASE)
@@ -776,36 +780,49 @@ async def _check_event(run: Any, fake: Any, note: str) -> checks.CheckResult:
     )
 
 
-def _saves_since(data_dir: Path, since: float) -> list[str]:
-    """The world files written at or after ``since``; subfolders hold backups, not saves."""
+def _saves_between(data_dir: Path, since: float, until: float | None) -> list[str]:
+    """The world files last written in ``[since, until]``; subfolders hold backups, not saves."""
     folder = data_dir / SAVEGAME_DIR
     if not folder.is_dir():
         return []
-    return sorted(p.name for p in folder.iterdir() if p.is_file() and p.stat().st_mtime >= since)
+    return sorted(
+        p.name
+        for p in folder.glob(WORLD_FILES)
+        if p.is_file() and since <= p.stat().st_mtime and (until is None or p.stat().st_mtime <= until)
+    )
 
 
-def _spawns(log: Path) -> int:
+def _respawned_at(log: Path) -> float | None:
+    """When supervisord spawned the server the second time, or None while it has not."""
     if not log.is_file():
-        return 0
-    return len(RESPAWN_LINE.findall(log.read_text(encoding="utf-8", errors="replace")))
+        return None
+    stamps = SPAWN_STAMP.findall(log.read_text(encoding="utf-8", errors="replace"))
+    if len(stamps) < 2:
+        return None
+    second, millis = stamps[1]
+    moment = datetime.strptime(second, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
+    return moment.timestamp() + int(millis) / 1000
 
 
 async def _wait_for_save(run: Any, since: float | None, alive: Any) -> dict[str, Any] | None:
     """The save the shutdown made: its log line, or a world file written before the respawn.
 
-    Only a file written before supervisord spawns the server again counts, so a save the
-    next boot makes is never taken for the one the shutdown made.
+    Only a file last written before supervisord's respawn line counts, by that line's own
+    timestamp rather than by when this looks, so a save the next boot makes is never taken
+    for the one the shutdown made, and a save the shutdown made is still found when the
+    respawn happened while an earlier check was running.
     """
     deadline = time.monotonic() + STOP_BUDGET
     while True:
         line = checks.find_line(run.server_log, SAVED_LINE)
         if line:
             return {"by": "log", "line": line[0]}
-        if since is not None and _spawns(run.server_log) < 2:
-            written = _saves_since(run.data_dir, since)
+        respawned = _respawned_at(run.server_log)
+        if since is not None:
+            written = _saves_between(run.data_dir, since, respawned)
             if written:
                 return {"by": "file", "files": written}
-        if time.monotonic() >= deadline or not alive() or _spawns(run.server_log) >= 2:
+        if respawned is not None or time.monotonic() >= deadline or not alive():
             return None
         await asyncio.sleep(1.0)
 
