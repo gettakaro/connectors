@@ -107,6 +107,15 @@ uint32_t JobFunction(const char* jobName) {
 }
 
 uint32_t Fn(const char* name, std::string& how) {
+#ifdef TAKARO_DEBUG_CORRUPT_SIG
+    // Debug builds only (build.sh DEBUG_CORRUPT_SIG=<name>): a build with a gamedata section
+    // resolves here and never reaches the built-in patterns, so the corruption has to apply here too.
+    if (std::strcmp(name, TAKARO_DEBUG_CORRUPT_SIG) == 0) {
+        PluginLog("DEBUG: signature '%s' deliberately corrupted", name);
+        how = "gamedata function deliberately corrupted (debug build)";
+        return 0;
+    }
+#endif
     const JsonValue* fns = Section("functions");
     const JsonValue* f = fns ? fns->get(name) : nullptr;
     if (!f || f->type != JsonValue::Object) {
