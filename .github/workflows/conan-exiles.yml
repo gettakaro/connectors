@@ -142,7 +142,13 @@ jobs:
       tag: ${{ needs.params.outputs.tag }}
       publish: ${{ needs.params.outputs.publish }}
       pr_number: ${{ github.event.pull_request.number }}
-      # The Conan Exiles server is a 4.3 GB Steam depot needing ~10 GB RAM: a hosted
-      # runner cannot boot it, so the release claims contract verification (the native
-      # library's own tests above) and runtime onboarding is tracked separately.
-      runtime: false
+      # Every Linux target's exact server boots on the hosted runner with the built native
+      # library preloaded, against the local fake Takaro over wss and protocol 1
+      # (`takaro-maint verify --game conan-exiles`, see games/conan-exiles/DEVELOPMENT.md).
+      # A Linux runner cannot host the Windows server, so those targets keep their contract
+      # verification. Each build's depot is 4.3 GB and the three builds together outgrow the
+      # repository's Actions cache, so the verify leg downloads its depot uncached.
+      runtime: true
+      runtime_platform: linux
+      runtime_large_server: true
+      startup_timeout: 900
