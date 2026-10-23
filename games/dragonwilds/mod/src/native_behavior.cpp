@@ -1323,9 +1323,13 @@ std::vector<MappedEvent> Engine::ReconcileOnline(const std::string& liveJson, co
         // anything admitted in the last 30 s waits for the next pass.
         auto recent = view_->locationWindowUntilMs.find(id);
         if (recent != view_->locationWindowUntilMs.end() && recent->second - 60000 + 30000 > WallMs()) continue;
+        // Live on the previous pass of this process: the leave hooks own this disconnect and their
+        // event may still be on its way through the ring, so give it one more pass before reporting.
+        if (lastLiveIds_.count(id)) continue;
         Json row = {{"seq", 0}, {"bootId", bootId}, {"type", "player-disconnected"}, {"data", {{"player", p}}}, {"ts", IsoNowUtc()}};
         out.push_back(MapEvent(row.dump()));
     }
+    lastLiveIds_ = std::move(liveIds);
     return out;
 }
 
