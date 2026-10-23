@@ -275,12 +275,12 @@ container, the bearer token on stdin. It reports:
 | `plugin-health` | the compatibility claim: `/health` `status: ok`, `gameBuild` equal to the target's revision, no capability `degraded`, the plugin version this run built, and the container's Proton equal to the target's |
 | `native-identify` | the game process identified over TLS with both tokens, `plugin.log` says `native: identified with Takaro`, `/health` `diagnostics.native.state == identified`, its application ping got a pong and it answered Takaro's empty RFC 6455 ping (Enshrouded's `identify` and `heartbeat`) |
 | `native-players` | `testReachability` connectable with a **null** reason, `getPlayers` empty |
-| `native-catalog` | `listItems`/`listEntities`/`listLocations` non-empty, every entry with a `code` and a readable `name`; item and entity names distinct per code, location codes unique |
+| `native-catalog` | `listItems`/`listEntities`/`listLocations` non-empty, every entry with a `code` and a readable `name`; item and labelled entity names are the game's own English names and may repeat where the game repeats them, location names are the in-game map's and every location code is unique |
 | `native-console` | `executeConsoleCommand version` answers with the game build |
 | `action` | `sendMessage` resolves end to end (nobody is online, so this proves the path, not delivery) |
 | `reconnect` | the fake closes with 1001, the plugin logs it, reconnects by itself, identifies again and answers |
 | `event` | a plugin log event reaches Takaro as a `gameEvent` |
-| `stop` | the server saves, supervisord respawns it, the container stops 0, no update path ran and every pinned file still hashes the same |
+| `stop` | the server saves (`[server] Saved`, or on 1.0 a `savegame/` world file written before the respawn), supervisord respawns it, the container stops 0, no update path ran and every pinned file still hashes the same |
 | `negative-degraded-hooks` | with `--negative`: a build with one corrupted signature identifies on its own, is reported `degraded`, **fails** the claim and names the capability in the reachability reason, while the server stays alive |
 
 A full run with `--negative` passed every selected check on 2026-09-29 against the pinned
@@ -468,7 +468,7 @@ tested commit, target fingerprint, artifact hashes and runtime identity) is uplo
 |---|---|
 | Runner | GitHub-hosted `ubuntu-latest`, x86_64 (4 vCPU, 16 GB RAM, ~86 GB free disk) |
 | Needs | Docker, ~17 GB of disk (the 8 GB depot download plus the install's copy), ~4 GB of RAM for the server |
-| Time | ~2 min to download the depots, ~25 s to HostOnline, ~15 min for the whole leg; the job is cut off at 60 min, each boot at 600 s |
+| Time | ~2 min to download the depots, ~20 s to HostOnline, ~4 min for the verify step and ~18 min for the whole workflow; the job is cut off at 60 min, each boot at 600 s |
 | Cache | none for the depots (`runtime_large_server`): 8 GB would evict most of the repository's 10 GB Actions cache, and Steam serves it about as fast |
 | Credentials | none; the fake Takaro's tokens and TLS CA are generated per run and never reach a docker command line or a kept log |
 
