@@ -72,10 +72,11 @@ docker run --rm \
       sed "s/@VERSION@/${VERSION}/g" scripts/templates/plugin-README.txt > "$PKG/README.txt"
       cp INSTALL.md "$PKG/INSTALL.md"
       cp mod/third_party/README.md "$PKG/THIRD-PARTY.md"
-      # The license of every piece the DLL links: MinHook from this tree, and the parts of
+      # The license of every piece the DLL links: MinHook and zstd from this tree, and the parts of
       # the pinned zig toolchain that end up in a Windows DLL (compiler-rt, libc++, libc++abi,
       # libunwind, the mingw-w64 runtime).
       cp mod/third_party/minhook/LICENSE.txt "$PKG/licenses/MinHook-LICENSE.txt"
+      cp mod/third_party/zstd/LICENSE "$PKG/licenses/zstd-LICENSE.txt"
       cp /opt/zig/LICENSE "$PKG/licenses/zig-LICENSE.txt"
       cp /opt/zig/lib/libcxx/LICENSE.TXT "$PKG/licenses/libcxx-LICENSE.txt"
       cp /opt/zig/lib/libcxxabi/LICENSE.TXT "$PKG/licenses/libcxxabi-LICENSE.txt"

@@ -16,7 +16,6 @@
 #include "plugin_api.h"
 #include "state.h"
 
-#include <bcrypt.h>
 
 #include <atomic>
 #include <mutex>
@@ -50,22 +49,6 @@ std::string EnvUtf8(const char* name) {
     return s;
 }
 
-std::string NewIdentity() {
-    unsigned char b[16] = {0};
-    if (BCryptGenRandom(nullptr, b, sizeof b, BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) {
-        // Not expected; time, counter and pid still make a collision within one domain unlikely.
-        LARGE_INTEGER qpc;
-        QueryPerformanceCounter(&qpc);
-        unsigned long long seed = (unsigned long long)qpc.QuadPart ^ ((unsigned long long)GetCurrentProcessId() << 32) ^
-                                  GetTickCount64();
-        for (auto& c : b) {
-            seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
-            c = (unsigned char)(seed >> 56);
-        }
-    }
-    return native::UuidFromBytes(b);
-}
-
 // Wine maps Z: to the Linux root; a panel user knows the Linux path.
 std::string DisplayPath(const std::string& p) {
     if (p.size() > 2 && (p[0] == 'Z' || p[0] == 'z') && p[1] == ':' && p[2] == '\\') {
@@ -75,14 +58,6 @@ std::string DisplayPath(const std::string& p) {
         return out;
     }
     return p;
-}
-
-std::string HostServerName(const std::string& base) {
-    std::string text, err;
-    bool exists = false;
-    if (!native::ReadWholeFile(native::JoinPath(base, "enshrouded_server.json"), text, exists, err) || !exists) return "";
-    native::SettingsFile f = native::ParseSettingsFile(true, text);
-    return f.String("name");
 }
 
 // One write per message, so engine output on the same stream never splits it.
@@ -136,7 +111,7 @@ void BannerBlocked(const native::LiveResolution& live, const std::string& blocke
                                  "and save it. The connector connects within a few seconds, no restart needed."});
     else if (live.s.identityToken.empty())
         ConsoleOnce("no-identity", {"identityToken not set, the server is not connected to Takaro.",
-                                    "Set \"identityToken\" in " + path + " to any unique value (a UUID)",
+                                    "Set \"identityToken\" in " + path + " to your server's name in Takaro",
                                     "and save it. The connector connects within a few seconds, no restart needed."});
     else
         ConsoleOnce("blocked:" + blocker, {"Not connecting to Takaro: " + blocker + ".",
@@ -157,8 +132,13 @@ void OnIdentifyRejected(const std::string& summary, int status) {
             "this Takaro domain already has it (" + summary + ")."};
         if (live.name == native::Source::Env) {
             lines.push_back("Change the TAKARO_SERVER_NAME environment variable and restart the server.");
-        } else {
+        } else if (live.name == native::Source::File) {
             lines.push_back("Set a different \"name\" in " + path);
+            lines.push_back("and save it. The connector reconnects within a few seconds, no restart needed.");
+        } else if (live.identity == native::Source::Env) {
+            lines.push_back("Change the TAKARO_IDENTITY_TOKEN environment variable and restart the server.");
+        } else {
+            lines.push_back("Set a different \"identityToken\" in " + path);
             lines.push_back("and save it. The connector reconnects within a few seconds, no restart needed.");
         }
         ConsoleOnce("name-taken", lines);
@@ -275,9 +255,7 @@ void NativeStart() {
 
     native::ConfigWatcher::Options wo;
     wo.path = g_userPath;
-    wo.hostName = HostServerName(base);
     wo.env = env;
-    wo.newIdentity = NewIdentity;
     wo.log = [](const std::string& line) { PluginLog("native: %s", line.c_str()); };
     if (std::string ms = EnvUtf8("TAKARO_CONFIG_POLL_MS"); !ms.empty() && atoi(ms.c_str()) >= 200) {
         wo.pollMs = atoi(ms.c_str());

@@ -8,7 +8,10 @@
 namespace scan {
 
 bool Init();  // parse the main module's headers; false if something is badly off
+bool InitAt(uintptr_t imageBase);  // the same for an image mapped elsewhere (offline tests)
 uintptr_t Base();
+// Base that absolute pointers in the image are relative to (== Base() in a loaded process).
+uint64_t PointerBase();
 uint32_t TimeDateStamp();
 
 // Exact NUL-terminated C string located in a read-only data section. Returns RVA or 0.
@@ -37,6 +40,8 @@ std::vector<uint32_t> FindIndirectCalls(uint32_t slotRva);
 // 8-aligned RVAs in readable data sections that hold the absolute address of `targetRva`.
 std::vector<uint32_t> FindPointerRefs(uint32_t targetRva, size_t maxHits = 8);
 uint64_t ReadU64(uint32_t rva);
+// [begin, end) of every .pdata chunk whose primary function is `root` (unordered).
+std::vector<std::pair<uint32_t, uint32_t>> FunctionChunks(uint32_t root);
 
 inline void* Ptr(uint32_t rva) { return (void*)(Base() + rva); }
 

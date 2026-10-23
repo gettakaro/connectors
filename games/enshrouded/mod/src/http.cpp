@@ -395,14 +395,14 @@ Response DoTeleport(const std::string& id, double x, double y, double z) {
     return {200, "{\"success\":true}"};
 }
 
-Response DoGive(const std::string& id, const std::string& code, double amount) {
+Response DoGive(const std::string& id, const std::string& code, double amount, uint8_t level = 0) {
     std::string steam, name, err, detail;
     if (!PluginState::Get().FindOnline(id, steam, name)) return Err(404, "player not online");
     if (!ItemTablesUsable()) return Err(503, "giveItem unavailable: " + ItemTablesReason());
     const ItemDef* item = FindItemByCode(code);
     if (!item) return Err(400, "unknown item code '" + code + "' (see GET /items)");
     if (!(amount >= 1) || amount > 100000) return Err(400, "amount must be >= 1");
-    if (!WorldGiveItem(name, *item, (uint32_t)amount, err, detail)) return Err(503, err + (detail.empty() ? "" : " (" + detail + ")"));
+    if (!WorldGiveItem(name, *item, (uint32_t)amount, err, detail, level)) return Err(503, err + (detail.empty() ? "" : " (" + detail + ")"));
     return {200, "{\"success\":true,\"code\":" + JsonStr(item->code) + ",\"detail\":" + JsonStr(detail) + "}"};
 }
 
@@ -468,8 +468,8 @@ bool RunCommand(const std::string& line, std::string& out) {
     auto& st = PluginState::Get();
     if (cmd == "help") {
         out = "commands: help | version | players | say <text> | whisper <player> <text> | location <player> | "
-              "teleport <player> <x> <y> <z> | tp <player> <toPlayer> | inventory <player> | give <player> <itemCode> [amount] | "
-              "item <search> | kick <player> | save-and-shutdown. <player> = SteamID64 or exact name.";
+              "teleport <player> <x> <y> <z> | tp <player> <toPlayer> | inventory <player> | give <player> <itemCode> [amount] [level] | "
+              "item <search> | kick <player> | levels | level <player> | save-and-shutdown. <player> = SteamID64 or exact name.";
         return true;
     }
     if (cmd == "version") {
@@ -482,6 +482,26 @@ bool RunCommand(const std::string& line, std::string& out) {
         out = std::to_string(v.arr.size()) + " online";
         for (auto& p : v.arr)
             out += "\n" + (p.get("name") ? p.get("name")->str : "?") + " (" + (p.get("steamId") ? p.get("steamId")->str : "?") + ")";
+        return true;
+    }
+    if (cmd == "levels" || (cmd == "level" && a.size() == 2)) {
+        JsonValue v;
+        JsonParse(st.PlayersJson(), v);
+        auto str = [](const JsonValue& p, const char* k) { return p.get(k) ? p.get(k)->str : std::string("?"); };
+        std::string want, wantName;
+        if (a.size() == 2 && !st.FindOnline(a[1], want, wantName)) return out = "player not online: " + a[1], false;
+        std::string rows;
+        int n = 0;
+        for (auto& p : v.arr) {
+            std::string nm = str(p, "name"), id = str(p, "steamId");
+            if (!want.empty() && want != id) continue;
+            n++;
+            rows += "\n" + nm + " (" + id + "): " +
+                    (p.get("level") ? "level " + str(p, "level") + ", experience " + str(p, "experience") + "/" +
+                                          str(p, "experienceRequired")
+                                    : std::string("level not read yet"));
+        }
+        out = std::to_string(n) + " online" + rows;
         return true;
     }
     if ((cmd == "say" || cmd == "broadcast") && a.size() >= 2) {
@@ -540,10 +560,11 @@ bool RunCommand(const std::string& line, std::string& out) {
             out += "\n" + i.get("amount")->str + " x " + i.get("code")->str + " [" + i.get("inventory")->str + "]";
         return true;
     }
-    if (cmd == "give" && (a.size() == 3 || a.size() == 4)) {
-        double n = 1;
-        if (a.size() == 4 && !Num(a[3], n)) return out = "usage: give <player> <itemCode> [amount]", false;
-        Response r = DoGive(a[1], a[2], n);
+    if (cmd == "give" && a.size() >= 3 && a.size() <= 5) {
+        double n = 1, lvl = 0;
+        if ((a.size() >= 4 && !Num(a[3], n)) || (a.size() == 5 && (!Num(a[4], lvl) || lvl < 1 || lvl > 255)))
+            return out = "usage: give <player> <itemCode> [amount] [level]", false;
+        Response r = DoGive(a[1], a[2], n, (uint8_t)lvl);
         if (r.status != 200) return out = ErrText(r), false;
         out = "gave " + std::to_string((long long)n) + " x " + a[2];
         return true;
@@ -552,11 +573,13 @@ bool RunCommand(const std::string& line, std::string& out) {
         std::string q = a[1];
         for (auto& c : q) c = (char)tolower((unsigned char)c);
         int n = 0;
-        for (size_t i = 0; i < kItemCount && n < 25; i++) {
-            std::string c = kItems[i].code;
+        size_t count;
+        const ItemDef* items = ItemTable(count);
+        for (size_t i = 0; i < count && n < 25; i++) {
+            std::string c = items[i].code;
             for (auto& ch : c) ch = (char)tolower((unsigned char)ch);
             if (c.find(q) == std::string::npos) continue;
-            out += std::string(n ? "\n" : "") + kItems[i].code + " (" + kItems[i].category + ", max " + std::to_string(kItems[i].maxStack) + ")";
+            out += std::string(n ? "\n" : "") + items[i].code + " (" + items[i].category + ", max " + std::to_string(items[i].maxStack) + ")";
             n++;
         }
         if (!n) out = "no item matches '" + a[1] + "'";
@@ -772,8 +795,9 @@ Response Route(const Request& r) {
         }
     }
     if (get && parts.size() == 1 && p0 == "bans") return BansJson();
-    if (get && parts.size() == 1 && (p0 == "items" || p0 == "entities") && !ItemTablesUsable())
-        return Err(503, "catalog unavailable: " + ItemTablesReason());
+    if (get && parts.size() == 1 && p0 == "items" && !ItemTablesUsable()) return Err(503, "catalog unavailable: " + ItemTablesReason());
+    if (get && parts.size() == 1 && p0 == "entities" && !EntityTablesUsable())
+        return Err(503, "catalog unavailable: " + EntityTablesReason());
     if (get && parts.size() == 1 && p0 == "items") return {200, ItemsJson()};
     if (get && parts.size() == 1 && p0 == "entities") return {200, EntitiesJson()};
     if (get && parts.size() == 1 && p0 == "locations") return {200, LocationsJson()};

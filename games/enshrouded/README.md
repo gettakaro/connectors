@@ -8,11 +8,13 @@ It supports **Enshrouded 1.0** (game build **1267041**, hotfix 1.0.0.1, Steam bu
 natively on a Windows dedicated server and under **GE-Proton11-9** in
 `mornedhels/enshrouded-server:dev-proton` (the older GE-Proton10-30 image cannot start the 1.0 server:
 `No SteamUtils011`). Everything that changes between game builds lives in one data file,
-`takaro/enshrouded-gamedata.json`. **The item and creature catalogue and `giveItem` are compiled for 1.0
-and are switched off (degraded) on any other game build, including the earlier build 1024233, which is
-no longer a supported target.** A build the data file does not know keeps the hooks that still match;
-the rest switch themselves off (see "A game update can switch a feature off" below). **Keep the server on
-a build the connector supports.**
+`takaro/enshrouded-gamedata.json`. **The item catalogue and `giveItem` follow the game build: on a build
+other than 1267041 the plugin rebuilds the item table once from the server's own `enshrouded_server.kfc`
+and saves it as `takaro/enshrouded-items.json` for that build. The creature catalogue is compiled for
+1.0 and reports degraded on other builds. The earlier build 1024233 is no longer a supported target.** On a build the data file does not know yet, the plugin works the new
+section out itself from stable anchors in the game code, saves it to that file and uses it; anything it
+cannot work out reports itself degraded (see "A game update can switch a feature off" below) while the
+rest keeps running. **Keep the server on a build the connector supports.**
 
 ## What works, what doesn't
 
@@ -24,7 +26,8 @@ Takaro. Rows marked *(1.0 ✓)* were re-checked on 1.0; the others were verified
 | What | | Notes |
 |---|---|---|
 | Connection & heartbeat *(1.0 ✓)* | ✅ | The game server holds an encrypted connection to Takaro and shows as reachable while it runs. |
-| Player list *(1.0 ✓)* | ✅ | `gameId` is the SteamID64. Names are Steam persona names, not in-game character names (the server never exposes those). |
+| Player list *(1.0 ✓)* | ✅ | `gameId` is the SteamID64. On 1.0 the name is the in-game character name, read from the game once the character has loaded (the Steam name until then); lookups accept either. |
+| Character level *(1.0 ✓)* | ✅ | Level, experience and experience needed for each online player, read from the game. Takaro has no level field, so modules read them with the console commands `levels` and `level <player>` (e.g. `Mad (7656…): level 3, experience 120/450`). |
 | Single player lookup | ✅ | Also answers for a player who is offline but has been seen before. |
 | Player location *(1.0 ✓)* | ✅ | Matches the in-game position and follows teleports. |
 | Player inventory *(1.0 ✓)* | ✅ | Matches the in-game backpack. |
@@ -32,8 +35,8 @@ Takaro. Rows marked *(1.0 ✓)* were re-checked on 1.0; the others were verified
 | Item catalogue *(1.0 ✓)* | ✅ | On 1.0, 4,005 of 4,262 items sync with their in-game English names, e.g. "Spectral Ward" (1024233: 3,317). Items the game never names and abilities are left out; giving an item by its code works for every item. |
 | Entity catalogue | ⚠️ | On 1.0, 477 creature and NPC templates sync (1024233: 397). Bosses, NPCs and fish have their in-game names (e.g. "Armored Fell Thunderbrute", "Oswald Anders"). The game shows no name for other creatures, so they get a readable name built from the internal code, e.g. "Rat". |
 | Locations / points of interest | ⚠️ | The connector serves 1,031 locations. Takaro may show them as markers on the map; this was not checked. |
-| Run a console command *(1.0 ✓)* | ✅ | Enshrouded has no console; the connector provides its own set: `help`, `players`, `say`, `whisper`, `location`, `teleport`/`tp`, `inventory`, `give`, `item`, `kick`, `save-and-shutdown`. Unknown commands are refused with a hint. |
-| Broadcast a message *(1.0 ✓)* | ✅ | Everyone sees it in chat, under the character name of an online player: Enshrouded has no "server" sender. |
+| Run a console command *(1.0 ✓)* | ✅ | Enshrouded has no console; the connector provides its own set: `help`, `players`, `levels`, `level`, `say`, `whisper`, `location`, `teleport`/`tp`, `inventory`, `give`, `item`, `kick`, `save-and-shutdown`. `give <player> <itemCode> [amount] [level]` sets the item level (1-255) when given. Unknown commands are refused with a hint. |
+| Broadcast a message *(1.0 ✓)* | ✅ | Everyone sees it in chat as a plain notice, styled like the game's own join messages (on 1.0; on 1024233 it appears under the character name of an online player). Player join events carry the character name too. |
 | Whisper a player | ⚠️ | Reaches the player; that nobody else sees it was not checked (one test account). |
 | Teleport a player *(1.0 ✓)* | ✅ | Takaro rounds to whole coordinates. On 1024233 the game nudges the player to the nearest free spot; on 1.0 that search snaps the player back, so the player lands exactly on the coordinates: pick a spot above ground. |
 | Kick a player *(1.0 ✓)* | ✅ | The player must be online. Works for Admins-group players too. |
@@ -79,9 +82,15 @@ Download the latest release: https://takaro.io/connectors/enshrouded
 - An **Enshrouded dedicated server** you can stop, start and copy files to, on a game build the
   plugin's game data knows: **1267041 (Enshrouded 1.0 hotfix 1.0.0.1)**. Tested natively on
   Windows and under Proton in the Linux Docker image `mornedhels/enshrouded-server:dev-proton`.
-  On another build the plugin logs `gamedata: no section for build <n>` and uses its older heuristics;
-  features whose code moved report themselves degraded. Adding a section to
+  On another build the plugin derives a section from the running game, logs
+  `gamedata: derived build <n> (... values) and saved it to ...`, and adds it to
+  `takaro/enshrouded-gamedata.json` with the note `derived automatically`. If a value cannot be
+  derived it logs `gamedata: deriving build <n> failed: <value>` and uses its older heuristics;
+  features whose code moved then report themselves degraded, and a hand-written section in
   `takaro/enshrouded-gamedata.json` (see DEVELOPMENT.md) brings them back without a new DLL.
+  The item table follows the same way: the plugin logs `[items] <n> items rebuilt from
+  enshrouded_server.kfc (...) for game build <n>` once and reads `takaro/enshrouded-items.json` on
+  the next starts of that build.
 - A **Takaro** game server of type **Generic**, and its **registration token**.
 
 ### 2. Download
@@ -104,21 +113,16 @@ Stop the game server first: a running server holds `dbghelp.dll` open. The zip h
 `TakaroEnshrouded/`; copy its **`dbghelp.dll` next to `enshrouded_server.exe`** and start the server.
 
 The connector keeps its whole configuration in one file, **`takaro/plugin.json` next to
-`enshrouded_server.exe`**. It creates the file at the first start, with a unique `identityToken`, and
-the console says so. Open it, paste the registration token of your Takaro Generic game server into
-`registrationToken` and save: the connector connects within a few seconds while the server keeps running. To have
-it connect at the first start instead, create the file yourself before starting:
+`enshrouded_server.exe`**, with two settings. It creates the file at the first start and the console
+says so. Open it, paste the registration token of your Takaro Generic game server into
+`registrationToken`, put your server's name into `identityToken` and save: the connector connects
+within a few seconds while the server keeps running. To have it connect at the first start instead,
+create the file yourself before starting:
 
 ```json
 {
-  "registrationToken": "<your registration token>",
-  "identityToken": "",
-  "name": "",
-  "url": "wss://connect.takaro.io/",
-  "protocol": 1,
-  "token": "",
-  "mapDir": "",
-  "caFile": ""
+  "registrationToken": "paste-your-token-here",
+  "identityToken": "name-your-server"
 }
 ```
 
@@ -132,14 +136,12 @@ it connect at the first start instead, create the file yourself before starting:
 
 | Key | What to put there |
 |---|---|
-| `registrationToken` | The registration token of your Takaro Generic game server. Required. |
-| `identityToken` | Leave it empty: the connector writes a unique identity there. Keep it once set; it is what Takaro knows this server by. |
-| `name` | The server name shown in Takaro. Left empty, it is your server's name plus the start of the identity, because Takaro needs a different name for every game server. |
-| `url` | Leave `wss://connect.takaro.io/`. |
-| `protocol` | Leave `1`: the connector offers Takaro protocol 1 (the map) and falls back to 0 on a Takaro without it. `0` speaks protocol 0 only. |
-| `token` | Optional: a long random secret (e.g. `openssl rand -hex 32`) to read the plugin's diagnostics at `http://127.0.0.1:18890/health`. Needs a restart. |
-| `mapDir` | Optional: the folder of a protocol 0 map tile pack. Empty: `takaro/map`. Needs a restart. |
-| `caFile` | Optional: a CA file, only for a Takaro behind your own certificate authority. Empty: the system's trust. Needs a restart. |
+| `registrationToken` | The registration token of your Takaro Generic game server. |
+| `identityToken` | Your server's name. Takaro creates the game server under this name and recognizes it by it from then on, so pick a name no other game server in your Takaro uses and keep it. |
+
+The Takaro address (`wss://connect.takaro.io/`) is built in. Optional settings for special setups
+(`protocol`, `mapDir`, `caFile`, `token`) can be added by hand; see INSTALL.md. A `plugin.json` from an
+earlier version, with `name`, `url` and other lines, keeps working as it is.
 
 A change to `registrationToken`, `identityToken`, `name`, `url` or `protocol` applies within a few
 seconds: it reconnects, an emptied token disconnects. `token`, `mapDir` and `caFile` need a restart.
@@ -187,7 +189,8 @@ that name.
 Stop the server, replace only `dbghelp.dll` with the new one, start it again. Your config in
 `takaro/plugin.json` and the connector's state in `takaro/connector-state/` stay as they are.
 `takaro/enshrouded-gamedata.json` is yours too: a newer plugin uses its own embedded copy for any build
-your file has no section for, so delete the file to pick up the new defaults for every build.
+your file has no section for, so delete the file to pick up the new defaults for every build (any
+derived sections are then derived again on the next start).
 
 **From 0.5.0 (plugin + sidecar):** 0.6.0 replaces the sidecar. Stop and remove the sidecar before the
 new DLL starts, so only one of them connects with the server's identity; move the tokens from
