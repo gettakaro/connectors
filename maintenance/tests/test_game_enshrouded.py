@@ -1401,7 +1401,11 @@ def _stop_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, log: str) -> Any:
     return run
 
 
-SHUTDOWN_ONLY = "spawned: 'enshrouded-server'\n[app] Trigger gameflow shutdown, exit: Ctrl_C\n"
+SPAWN = "2026-10-23 00:24:46,650 INFO spawned: 'enshrouded-server' with pid 70\n"
+RESPAWN = "2026-10-23 00:25:09,645 INFO spawned: 'enshrouded-server' with pid 235\n"
+#: The respawn line's moment, 2026-10-23 00:25:09.645 UTC.
+RESPAWNED_AT = 1792715109.645
+SHUTDOWN_ONLY = SPAWN + "[app] Trigger gameflow shutdown, exit: Ctrl_C\n"
 
 
 def test_stop_takes_a_world_file_written_after_the_request_as_the_save(
@@ -1433,10 +1437,37 @@ def test_stop_refuses_a_world_file_older_than_the_request(tmp_path: Path, monkey
 
 
 def test_stop_refuses_a_world_file_the_respawned_server_wrote(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A file that only appears once supervisord spawned the server again is the next boot's."""
-    run = _stop_run(tmp_path, monkeypatch, SHUTDOWN_ONLY + "spawned: 'enshrouded-server'\n")
+    """A file last written after supervisord's respawn line is the next boot's, not the shutdown's."""
+    run = _stop_run(tmp_path, monkeypatch, SHUTDOWN_ONLY + RESPAWN)
     (run.data_dir / "savegame").mkdir()
-    (run.data_dir / "savegame" / "world0.ksd").write_bytes(b"world")
+    world = run.data_dir / "savegame" / "world0.ksd"
+    world.write_bytes(b"world")
+    os.utime(world, (RESPAWNED_AT + 5, RESPAWNED_AT + 5))
+
+    result = asyncio.run(hooks._check_stop(run, [], RESPAWNED_AT - 30))
+
+    assert result.detail["stages"]["saved"] is False
+
+
+def test_stop_finds_the_save_when_the_respawn_happened_before_it_looked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The event check runs first, so the respawn line is often already there when stop starts."""
+    run = _stop_run(tmp_path, monkeypatch, SHUTDOWN_ONLY + RESPAWN)
+    (run.data_dir / "savegame").mkdir()
+    world = run.data_dir / "savegame" / "world0.ksd"
+    world.write_bytes(b"world")
+    os.utime(world, (RESPAWNED_AT - 2, RESPAWNED_AT - 2))
+
+    result = asyncio.run(hooks._check_stop(run, [], RESPAWNED_AT - 30))
+
+    assert result.detail["save"] == {"by": "file", "files": ["world0.ksd"]}
+
+
+def test_stop_takes_only_world_files_as_the_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    run = _stop_run(tmp_path, monkeypatch, SHUTDOWN_ONLY)
+    (run.data_dir / "savegame").mkdir()
+    (run.data_dir / "savegame" / "world0.tmp").write_bytes(b"partial")
 
     result = asyncio.run(hooks._check_stop(run, [], 0.0))
 
