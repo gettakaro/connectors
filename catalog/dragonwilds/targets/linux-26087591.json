@@ -4,7 +4,7 @@
   "game": "dragonwilds",
   "platform": "linux",
   "revision": "26087591",
-  "default": true,
+  "default": false,
   "support": {
     "status": "candidate",
     "since": "2026-10-23",
@@ -14,7 +14,7 @@
       "takaro-maint install of this target on the dev rig 2026-10-23: declared sha256 verified, server ++dominion+hotfix-CL-252835 boots with the plugin (113/113 symbols from a cold .sym scan, game thread ticking via the UDomGameEngine::Tick hook, PreLogin ban hooks bound)",
       "connector-runner e2e 2026-10-23 (gettakaro/connectors#615, staging domain): real PC client (CL-252835) through hosted Takaro MCP on this target - player-connected a9c6e973-8c12-42ed-9b48-580e084ca1e0, chat-message 157ff153-827c-4a68-b7de-1518a799da99, command-executed f53623c7-690a-491f-8014-9c83ba7d9d28 (@ping, Pong rendered in game), player-disconnected f7acbb09-ee66-475c-9ced-ec446263da61 (kick) and 86b1fa31-e0a0-4660-8dfd-2bc50f5180bc (leave), player-death fc0f7ec1-0911-4ccb-ba70-347b56f6d671, entity-killed c0b8ffbb-e7c2-4733-8ff2-c7460f036b17 (real kill, weapon Bronze Sword); testReachability, getPlayers, sendMessage, executeConsoleCommand, giveItem, teleportPlayer, kickPlayer, banPlayer (rejoin refused at PreLogin), unbanPlayer, shutdown and Discord both ways passed"
     ],
-    "notes": "Steam pin of the public branch head observed 2026-10-23 (build published 2026-10-23, manifest dated 2026-10-20): tool app 4019830, Linux depot 3501791, build 26087591. The plugin resolves every engine address from this build's own `.sym` at load time, so the target needs no source change. `verification.required` is `contract` until this pin is proven at runtime: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
+    "notes": "Steam pin of the public branch head observed 2026-10-23 (build published 2026-10-23, manifest dated 2026-10-20): tool app 4019830, Linux depot 3501791, build 26087591. Superseded as the default by linux-26161880; kept so a server still on this build gets a matching plugin. The plugin resolves every engine address from this build's own `.sym` at load time, so the target needs no source change. `verification.required` is `contract` until this pin is proven at runtime: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.4 GB Steam depot) that a hosted runner does not install, so runtime levels are separate rather than claimed here."
   },
   "inputs": {
     "server": {
