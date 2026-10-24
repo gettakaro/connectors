@@ -313,6 +313,10 @@ int main() {
                   Json({{"player", takaroPlayer}, {"position", {{"x", 1}, {"y", 2}, {"z", 3}, {"dimension", "overworld"}}},
                         {"attacker", {{"gameId", B}, {"name", "Bob"}, {"epicOnlineServicesId", B}, {"platformId", "epic:" + B}}}}),
               "player-death with attacker and position");
+        Json self = {{"gameId", A}, {"characterName", "Limon"}};
+        Json envDeath = h.Event({{"seq", 81}, {"type", "player-death"}, {"data", {{"player", pluginPlayer}, {"attacker", self}, {"killerEntity", "Heat"}}}});
+        Check(!envDeath.contains("attacker"), "self attacker dropped from player-death");
+        Check(envDeath.value("msg", "") == "Limon was killed by Heat", "self death keeps the environment cause in msg");
         Check(h.Event({{"seq", 9}, {"type", "log"}, {"data", {{"line", "LogDominion: saved"}, {"level", "info"}}}}) == Json({{"msg", "LogDominion: saved"}}),
               "log line key");
         Check(!h.engine->MapEvent(Json{{"seq", 10}, {"type", "player-sync"}, {"data", Json::object()}}.dump()).valid, "unknown type dropped");

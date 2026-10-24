@@ -672,6 +672,18 @@ def whitelist(cert, key, state):
         assert data['entity'] == 'Goblin' and data['weapon'] == 'Rune Sword', data
         assert set(data['player']) == {'gameId', 'name', 'epicOnlineServicesId', 'platformId'}, data
         print('production bridge entity-killed leaves with exactly player/entity/weapon: pass', flush=True)
+        victim = '0123456789abcdef0123456789abcdef'
+        run.command('emit-death:' + victim, 'EMITTED')
+        death = run.game_event(lambda v: v['payload']['type'] == 'player-death', what='self player-death')
+        data = death['payload']['data']
+        assert 'attacker' not in data and data['player']['gameId'] == victim, data
+        print('production bridge drops a self-attacker from player-death: pass', flush=True)
+        other = 'fedcba9876543210fedcba9876543210'
+        run.command('emit-death:' + other, 'EMITTED')
+        death = run.game_event(lambda v: v['payload']['type'] == 'player-death' and 'attacker' in v['payload']['data'],
+                               what='pvp player-death')
+        assert death['payload']['data']['attacker']['gameId'] == other, death
+        print('production bridge keeps a real player attacker on player-death: pass', flush=True)
     finally:
         run.close()
 

@@ -269,6 +269,9 @@ Json MapEvent(const Json& e) {
         if (d.contains("attacker") && d["attacker"].is_object()) {
             try { out["attacker"] = Player(d["attacker"]); } catch (...) {}
         }
+        // A player is never their own killer: environment deaths name the victim as instigator.
+        if (out.contains("attacker") && Str(out["attacker"], "gameId") == Str(out["player"], "gameId"))
+            out.erase("attacker");
         if (d.contains("position")) out["position"] = d["position"];
         if (!out.contains("attacker")) {
             std::string who = Str(out["player"], "name");

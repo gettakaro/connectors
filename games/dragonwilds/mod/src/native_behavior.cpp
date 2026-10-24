@@ -352,6 +352,9 @@ Json MapEventData(const std::string& type, const Json& raw) {
         if (!a.empty()) {
             try { out["attacker"] = Player(a); } catch (...) {}
         }
+        // A player is never their own killer: environment deaths name the victim as instigator.
+        if (out.contains("attacker") && Str(out["attacker"], "gameId") == Str(out["player"], "gameId"))
+            out.erase("attacker");
         if (d.contains("position") && d["position"].is_object()) out["position"] = Position(d["position"]);
         // EventPlayerDeath only has a player `attacker`; a creature killer goes into the base `msg`.
         std::string killer = Str(d, "killerEntity");
