@@ -90,7 +90,7 @@ there is nothing to install — run `npm ci --omit=dev` only if you delete `node
 
 Create an application REST token for a TShock user that holds the **`takaro.admin`** permission.
 A user in the `superadmin` group already has it through TShock's wildcard. Without
-`takaro.admin`, teleport fails, player location reports `0,0,0` and inventory comes back empty —
+`takaro.admin`, teleport fails, player locations go missing and inventory comes back empty —
 all silently, without an error. Grant **`tshock.broadcast`** too if you are not using
 `superadmin`: with it, a message from Takaro is also written to the server console, which is
 where you would look for it. Without it the message still reaches the players.
