@@ -1,4 +1,5 @@
 import { HAGGA_BASIN } from './mapDimensions.js';
+import { PLACE_NAMES } from './placeNames.js';
 import type { TakaroLocation } from './types.js';
 
 /**
@@ -14,9 +15,9 @@ import type { TakaroLocation } from './types.js';
  *   LOCTABLE("/Game/.../ST_Localization_UI.ST_Localization_UI", "UI/EnemyCampDisplayName/ScavengerCamp")
  *   LOCTABLE("...ST_Localization_NPCs_World", "NPCS_AND_WORLD/WORLD_MAP_LOCATION_Survival_VermiliusGap_Cave15")
  *
- * The dedicated server ships no English string table to resolve it with, so the name is spelled out from the key:
- * `Scavenger Camp`, `Cave 15 (Vermilius Gap)`, `Sister Mesa`. A key that does not spell out to plain words is dropped
- * rather than shown as an asset id.
+ * The name is the English string of that key (`PLACE_NAMES`, from the server's own string tables): `Zein Grotto`,
+ * `Scavenger Camp`, `Wreck of the Mithra`. A key the table lacks (a newer build) is spelled out from the key instead,
+ * `Cave 15 (Vermilius Gap)`; a key that does not spell out to plain words is dropped rather than shown as an asset id.
  *
  * World partitions are not locations: a partition is a running map process and has no position.
  */
@@ -56,6 +57,9 @@ function words(token: string): string {
  */
 export function nameForKey(key: string): { name: string; unique: boolean } | null {
   const last = key.split('/').pop() ?? '';
+  const kind = /^UI\/EnemyCampDisplayName\//.test(key) || /^Map_Legend_Entry_/.test(last);
+  const known = PLACE_NAMES[key]?.trim();
+  if (known) return { name: known, unique: !kind };
   let name: string | null = null;
   let unique = true;
 
@@ -95,16 +99,30 @@ export function dimensionForMarkerMap(mapName: string | null, partitionMaps: rea
   return (match ?? map).toLowerCase();
 }
 
+/**
+ * Markers of one kind of place closer than this (Unreal units, 25 m) are one place marked twice. Real camps of one
+ * kind stand at least ~55 m apart; the only closer pair seen on Hagga Basin is two Scavenger Camp markers 19 m apart.
+ */
+export const SAME_PLACE_RADIUS = 2500;
+
 export function markerLocations(rows: readonly MarkerRow[], partitionMaps: readonly string[] = []): TakaroLocation[] {
   const groups = new Map<string, { name: string; dimension: string; points: MarkerRow[] }>();
-  for (const row of rows) {
+  const sorted = [...rows].sort((a, b) => a.id - b.id);
+  for (const row of sorted) {
     if (!row.displayName || ![row.x, row.y, row.z].every(Number.isFinite)) continue;
     const key = localisationKey(row.displayName);
     const named = nameForKey(key);
     if (!named) continue;
     const dimension = dimensionForMarkerMap(row.mapName, partitionMaps);
-    // Several markers of one named place (a cave's entrances) collapse into one location at their centre.
-    const groupKey = named.unique ? `${dimension}|${key}` : `${dimension}|${key}|${row.id}`;
+    // Several markers of one named place (a cave's entrances) collapse into one location at their centre. Each
+    // marker of a kind of place (`Scavenger Camp`) is its own camp, unless it sits on top of an earlier one.
+    let groupKey = `${dimension}|${key}`;
+    if (!named.unique) {
+      const near = [...groups.entries()].find(
+        ([k, g]) => k.startsWith(`${groupKey}|`) && g.points.some((p) => Math.hypot(p.x - row.x, p.y - row.y) < SAME_PLACE_RADIUS),
+      );
+      groupKey = near ? near[0] : `${groupKey}|${row.id}`;
+    }
     const group = groups.get(groupKey) ?? { name: named.name, dimension, points: [] };
     group.points.push(row);
     groups.set(groupKey, group);

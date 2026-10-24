@@ -165,7 +165,7 @@ the `.so` with one for the same server build, and start it again.
 | Give an item | ✅ | Delivered without requiring a relog. |
 | Item catalogue | ✅ | Generated during installation with display names. |
 | Entity catalogue | ✅ | Full creature list requires the plugin. |
-| Locations and points of interest | ✅ | The named places on the in-game world map (camps, caves, outposts, trainers) with their position, synced by the map's Resync Locations. |
+| Locations and points of interest | ✅ | The named places on the in-game world map (camps, caves, outposts, trainers) with their English names and position, synced by the map's Resync Locations. |
 | Console commands | ✅ | Unknown commands return a clear failure. |
 | Broadcast messages | ⚠️ | On-screen panel is named; chat sender appears as `[]`. |
 | Private messages | ✅ | Delivered to one player. |

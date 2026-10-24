@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ActionError, MAX_SHUTDOWN_NOTICE_SECONDS, parseArgv, playerId } from '../dune/adapter.js';
+import { nameForKey } from '../dune/locations.js';
+import { PLACE_NAMES } from '../dune/placeNames.js';
 import { DunePluginClient } from '../dune/pluginClient.js';
 import type { TakaroItem, TakaroLocation, TakaroPlayer } from '../dune/types.js';
 import { MockBattlegroup, mockPlayer } from '../testing/mockBattlegroup.js';
@@ -161,10 +163,12 @@ describe('reads', () => {
       // A kind of place: two camps stay two locations.
       { id: 20, displayName: loc('ST_Localization_UI', 'UI/EnemyCampDisplayName/ScavengerCamp'), mapName: 'HaggaBasin', x: 55382, y: 321230, z: 2328 },
       { id: 21, displayName: loc('ST_Localization_UI', 'UI/EnemyCampDisplayName/ScavengerCamp'), mapName: 'HaggaBasin', x: 129074, y: 331161, z: 1088 },
+      // ...but a second marker 19 m from a camp is that camp marked twice.
+      { id: 22, displayName: loc('ST_Localization_UI', 'UI/EnemyCampDisplayName/ScavengerCamp'), mapName: 'HaggaBasin', x: 129074, y: 333061, z: 1100 },
       { id: 30, displayName: loc('ST_Localization_NPCs_World', 'NPCS_AND_WORLD/NPC_NAMED_SISTER_MESA_DISPLAYNAME'), mapName: 'HaggaBasin', x: -41931, y: -230974, z: 27096 },
       { id: 31, displayName: loc('ST_Localization_NPCs_World', 'NPCS_AND_WORLD/WORLD_MAP_LOCATION_MITHRA'), mapName: 'HaggaBasin', x: -95412, y: 136537, z: 2099 },
       { id: 32, displayName: loc('ST_Localization_UI', 'UI/UI/Map_Legend_Entry_HouseRepresentative_Dyvetz'), mapName: 'HaggaBasin', x: 260395, y: -2541, z: 9775 },
-      // Another map: its own dimension, spelled like player positions there.
+      // Another map, and a key the shipped string table lacks: its own dimension, the name spelled out from the key.
       { id: 40, displayName: loc('ST_Localization_NPCs_World', 'NPCS_AND_WORLD/WORLD_MAP_LOCATION_DeepDesert_Outpost2'), mapName: 'DeepDesert', x: 1000, y: 2000, z: 300 },
       // Not a name a player reads: dropped.
       { id: 50, displayName: 'BP_SomeMarker_C', mapName: 'HaggaBasin', x: 1, y: 2, z: 3 },
@@ -172,15 +176,27 @@ describe('reads', () => {
     ];
     const locations = (await h.adapter.handleAction('listLocations', {})) as TakaroLocation[];
     expect(locations).toEqual([
-      { code: 'marker:10', name: 'Cave 15 (Vermilius Gap)', position: { x: 179783, y: 121265, z: 12236, dimension: 'survival_1' } },
       { code: 'marker:40', name: 'Deep Desert Outpost 2', position: { x: 1000, y: 2000, z: 300, dimension: 'deepdesert_1' } },
-      { code: 'marker:32', name: 'House Representative Dyvetz', position: { x: 260395, y: -2541, z: 9775, dimension: 'survival_1' } },
-      { code: 'marker:31', name: 'Mithra', position: { x: -95412, y: 136537, z: 2099, dimension: 'survival_1' } },
+      { code: 'marker:32', name: 'House Dyvetz Representative', position: { x: 260395, y: -2541, z: 9775, dimension: 'survival_1' } },
       { code: 'marker:20', name: 'Scavenger Camp', position: { x: 55382, y: 321230, z: 2328, dimension: 'survival_1' } },
-      { code: 'marker:21', name: 'Scavenger Camp', position: { x: 129074, y: 331161, z: 1088, dimension: 'survival_1' } },
+      { code: 'marker:21', name: 'Scavenger Camp', position: { x: 129074, y: 332111, z: 1094, dimension: 'survival_1' } },
       { code: 'marker:30', name: 'Sister Mesa', position: { x: -41931, y: -230974, z: 27096, dimension: 'survival_1' } },
+      { code: 'marker:31', name: 'Wreck of the Mithra', position: { x: -95412, y: 136537, z: 2099, dimension: 'survival_1' } },
+      { code: 'marker:10', name: 'Zein Grotto', position: { x: 179783, y: 121265, z: 12236, dimension: 'survival_1' } },
     ]);
     for (const l of locations) expect(l.position).not.toEqual({ x: 0, y: 0, z: 0, dimension: l.position.dimension });
+  });
+
+  it('place names are the English strings of the keys, never key spellings', () => {
+    expect(nameForKey('NPCS_AND_WORLD/WORLD_MAP_LOCATION_Survival_HaggaRift_PinnacleStation')).toEqual({ name: 'Pinnacle Station', unique: true });
+    // The source string carries a trailing space.
+    expect(nameForKey('NPCS_AND_WORLD/WORLD_MAP_LOCATION_Survival_HaggaRift_Cave5')).toEqual({ name: 'Solitary', unique: true });
+    expect(nameForKey('UI/EnemyCampDisplayName/MaasKharet')).toEqual({ name: 'Maas Kharet Camp', unique: false });
+    expect(Object.keys(PLACE_NAMES).length).toBeGreaterThan(300);
+    for (const name of Object.values(PLACE_NAMES)) {
+      expect(name.trim()).not.toBe('');
+      expect(name).not.toMatch(/_|LOCTABLE|^BP_|WORLD_MAP_LOCATION/);
+    }
   });
 
   it('listLocations answers [] when the world has no named markers', async () => {
