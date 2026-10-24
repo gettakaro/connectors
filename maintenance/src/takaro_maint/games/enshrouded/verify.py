@@ -486,7 +486,7 @@ _DEV_TOKENS = frozenset(
 _BARE_TIER = re.compile(r"^[Tt]\d$")
 
 
-def _looks_like_a_dev_name(name: str, code: str) -> bool:
+def _looks_like_a_dev_name(name: str, code: str, *, client_named: bool = False) -> bool:
     """A template code handed back rather than a name, by the mod's own rules.
 
     Item, entity and location names are all derived from the codes, because the dedicated
@@ -500,7 +500,8 @@ def _looks_like_a_dev_name(name: str, code: str) -> bool:
     words = name.split()
     if words and words[0].isdigit():
         return True
-    if any(word[:1].islower() for word in words):
+    # A code-derived name capitalises every word; the client's own names do not ("Pillars of Creation").
+    if not client_named and any(word[:1].islower() for word in words):
         return True
     if name == code.replace("_", " "):
         return True
@@ -554,12 +555,26 @@ async def _check_catalog(run: Any, fake: Any) -> checks.CheckResult:
                     f"{action}: {len(same)} of {len(entries)} names are the code itself, "
                     f"e.g. {', '.join(str(e['code']) for e in same[:3])}"
                 )
-            offenders = [e for e in entries if _looks_like_a_dev_name(str(e["name"]), str(e["code"]))]
+            # Locations carry the in-game map's own names (mod/src/locationlabels.cpp); many places
+            # share one ("Flame Shrine"), so there every code has to be unique instead.
+            locations = action == "listLocations"
+            offenders = [
+                e for e in entries if _looks_like_a_dev_name(str(e["name"]), str(e["code"]), client_named=locations)
+            ]
             if offenders:
                 problems.append(
                     f"{action}: {len(offenders)} of {len(entries)} names are dev codes rather than "
                     f"display names, e.g. " + ", ".join(f"{e['code']} -> {e['name']}" for e in offenders[:3])
                 )
+            if locations:
+                codes = [str(e["code"]) for e in entries]
+                repeated = sorted({c for c in codes if codes.count(c) > 1})
+                if repeated:
+                    problems.append(
+                        f"{action}: {len(repeated)} codes are held by more than one place, so Takaro merges "
+                        f"their markers, e.g. {', '.join(repeated[:3])}"
+                    )
+                continue
             shared = _shared_names(entries)
             if shared:
                 examples = "; ".join(f"{name} <- {', '.join(codes)}" for name, codes in shared[:3])
@@ -572,9 +587,9 @@ async def _check_catalog(run: Any, fake: Any) -> checks.CheckResult:
             "counts": counts,
             "firstNames": samples,
             "note": (
-                "Enshrouded's `catalog-items`/`catalog-entities`; item, entity and location names "
-                "are derived from the template codes because the dedicated server ships no "
-                "localisation, and every distinct code gets a distinct name"
+                "Enshrouded's `catalog-items`/`catalog-entities`; item and entity names are the "
+                "client's or derived from the template codes, and every distinct code gets a "
+                "distinct name; locations carry the in-game map's names, one unique code per place"
             ),
             "problems": problems,
         },

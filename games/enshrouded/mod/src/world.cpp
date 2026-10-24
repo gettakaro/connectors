@@ -798,7 +798,7 @@ void WorldInitCapabilities() {
         st.SetCapability(c, "degraded", "initializing");
     st.SetCapability("listItems", "ok", "static items table (" + std::to_string(kItemCount) + " ItemInfo)");
     st.SetCapability("listEntities", "ok", "static actor templates (" + std::to_string(kEntityCount) + ")");
-    st.SetCapability("listLocations", "ok", "static map markers/spawn points (" + std::to_string(kLocationCount) + ")");
+    st.SetCapability("listLocations", "ok", "in-game map places (" + std::to_string(LocationRows(kLocations, kLocationCount).size()) + " of " + std::to_string(kLocationCount) + " placements)");
     st.SetCapability("executeCommand", "ok", "plugin-defined command set (see /command help)");
 }
 

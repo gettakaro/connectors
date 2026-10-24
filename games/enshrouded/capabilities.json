@@ -45,7 +45,7 @@
     },
     "listLocations": {
       "status": "proven",
-      "note": "699 of the 1031 map-marker and spawn-point placements: the ones the in-game map shows, named with the client's En_Us map label (tools/gen_location_labels.py); a code several placements share gets a per-placement suffix @<x>_<z>, because Takaro keys locations by code"
+      "note": "692 of the 1031 map-marker and spawn-point placements: the ones the in-game map shows, named with the client's En_Us map label (tools/gen_location_labels.py); a code several placements share gets a per-placement suffix @<x>_<z>, because Takaro keys locations by code"
     },
     "executeConsoleCommand": {
       "status": "proven",

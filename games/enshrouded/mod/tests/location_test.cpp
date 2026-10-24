@@ -41,6 +41,7 @@ int main() {
     Check(LocationLabelByCode("Prop_OpenWorld_SavePoint") == nullptr, "save points are not map places");
     Check(LocationLabelByCode("8kMapLabel_general_PlaceholderMapMarker_empty") == nullptr, "placeholder dropped");
     Check(LocationLabelByCode(nullptr) == nullptr, "null code");
+    Check(LocationLabelByCode("Teleport_Platform_Tower_Gameplay") == nullptr, "spire-top platform left to the spire label");
 
     std::vector<LocationRow> rows = LocationRows(kLocations, kLocationCount);
     std::set<std::string> codes;
