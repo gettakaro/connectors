@@ -17,6 +17,15 @@ export interface MockPlayer extends DunePlayerRow {
   inventory?: DuneInventoryRow[];
 }
 
+export interface MockMarker {
+  id: number;
+  displayName: string | null;
+  mapName: string | null;
+  x: number;
+  y: number;
+  z: number;
+}
+
 export interface RecordedPublish {
   exchange: string;
   routingKey: string;
@@ -37,6 +46,10 @@ export class MockBattlegroup {
   columns: Record<string, string[]> = Object.fromEntries(Object.entries(OPTIONAL_COLUMNS).map(([t, c]) => [t, [...c]]));
   /** Partition readiness for `testReachability`. */
   partitions = { expected: 1, readyAlive: 1 };
+  /** `world_partition.map` of every partition, as the real rig names them. */
+  partitionMaps = ['Survival_1', 'SH_Arrakeen', 'DeepDesert_1', 'Overmap'];
+  /** `StaticLocation` rows of `markers` joined to `map_names` (the shape `locations()` selects). */
+  markers: MockMarker[] = [];
   /** Every SQL statement the connector issued, for assertions about parameterisation. */
   readonly queries: { sql: string; params: unknown[] }[] = [];
   /** Set to make the next query throw (dependency-loss tests). */
@@ -109,10 +122,12 @@ export class MockBattlegroup {
           inventory_type: i.inventoryType ?? 0,
         }));
     }
-    if (sql.includes('FROM "dune"."world_partition" wp')) {
-      return [{ partition_id: 1, name: 'Hagga Basin', map: 'survival_1' }];
+    if (sql.includes('SELECT DISTINCT wp.map FROM "dune"."world_partition" wp')) {
+      return this.partitionMaps.map((map) => ({ map }));
     }
-    if (sql.includes('"markers"')) return [];
+    if (sql.includes('FROM "dune"."markers" m')) {
+      return this.markers.map((m) => ({ id: m.id, display_name: m.displayName, map_name: m.mapName, x: m.x, y: m.y, z: m.z }));
+    }
     if (sql.includes('"player_state" ps')) {
       const onlineOnly = sql.includes("online_status::text = 'Online'");
       const needle = typeof params[0] === 'string' ? params[0].toLowerCase() : null;
