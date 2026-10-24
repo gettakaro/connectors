@@ -18,8 +18,9 @@ The issue cites dedicated-server revision `1024233` and `ChatSystem::addMessage`
 - `main` targets Enshrouded 1.0 (game build `1267041`, Steam build 25967645, catalog target
   `proton-1267041`).
 - The public branch has since moved to the 1.0 hotfix, game build `1273043` (Steam build
-  26083076). Steam clients only join a server on the same build, and the support target for it
-  is open in #582.
+  26083076). Steam clients only join a server on the same build (checked: a 1273043 client lists a
+  1269579 server as "Version Mismatch" and cannot join), the 1267041 depot manifest is no longer
+  served anonymously by Steam, and the support target for 1273043 is open in #582.
 
 So every static and live result below is for **game build 1273043**. `1024233` was not
 re-examined. In 1.0, `addMessage` lives at RVA `0x90b330` with a different prologue, and its
