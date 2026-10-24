@@ -1287,7 +1287,9 @@ def test_places_may_share_a_map_name_but_never_a_code() -> None:
     assert "1 codes are held by more than one place" in " ".join(result.detail["problems"])
 
 
-@pytest.mark.parametrize("name", ["Open_World Save Point", "Teleport Platform Gameplay", "Hollow Hall Placeholder noUI"])
+@pytest.mark.parametrize(
+    "name", ["Open_World Save Point", "Teleport Platform Gameplay", "Hollow Hall Placeholder noUI"]
+)
 def test_a_location_name_that_is_still_a_dev_code_fails(name: str) -> None:
     answers = _derived_answers()
     answers["listLocations"] = [{"code": "Teleport_Platform_Gameplay", "name": name}]
