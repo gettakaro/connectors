@@ -280,9 +280,12 @@ missing value is 0.
   `Takaro/map/<revision>.jpg` (revision = sha256 of the zip). Once it is ready, a `capabilities`
   replacement declares one `image` Dimension, `knox-county` (x right, y down, bounds = the
   pyramid bounds, 0..19968 x 0..16128), and Takaro pulls it with `getMapImage` chunks and cuts
-  its own tile pyramid. Positions carry no `dimension`, so they belong to that first Dimension.
+  its own tile pyramid. On protocol 1, positions (`getPlayerLocation`, `listLocations`,
+  `player-death`) name that Dimension in `dimension`, so Takaro stores players and locations
+  under it; before the map is ready, and on protocol 0, they carry none.
   The floor `z` is not part of the plane. Map mods are only drawn if their folder ships a
-  `pyramid.zip`.
+  `pyramid.zip`. Grey areas of the image (the vanilla map's north-west, across the river) are
+  squares with no map cells (no `.lotheader`), filled with `PyramidMap.BACKGROUND_RGB`.
 
 ## Takaro coverage
 
