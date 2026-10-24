@@ -250,5 +250,10 @@ internal static class Program
         var v1Location = Map.PlayerLocationPayload(-251f, 9f, -91f, 1);
         Check((string)v1Location["dimension"] == Map.MapDimensionId && (float)v1Location["y"] == 9f,
             "getPlayerLocation v1: names the declared Dimension");
+
+        var v0Unknown = Map.UnknownPlayerLocation(0);
+        Check(v0Unknown != null && (float)v0Unknown["x"] == 0f && (float)v0Unknown["y"] == 0f && (float)v0Unknown["z"] == 0f
+            && v0Unknown["dimension"] == null, "getPlayerLocation v0, unknown player: (0, 0, 0) as before");
+        Check(Map.UnknownPlayerLocation(1) == null, "getPlayerLocation v1, unknown player: null, no fake position");
     }
 }

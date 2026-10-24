@@ -441,6 +441,14 @@ namespace Oxide.Plugins
             return payload;
         }
 
+        /// <summary>The getPlayerLocation answer when the player is not on the server and no
+        /// position is cached. v1 answers null so Takaro keeps the last real position; v0 keeps
+        /// its historic (0, 0, 0).</summary>
+        internal static JObject UnknownPlayerLocation(int protocol)
+        {
+            return protocol >= 1 ? null : PlayerLocationPayload(0, 0, 0, protocol);
+        }
+
         internal static float MapV1Min(MapRaster raster) { return Math.Min(raster.MinX, raster.MinZ) - MapOceanPad; }
         internal static float MapV1Side(MapRaster raster) { return raster.WorldSize + 2 * MapOceanPad; }
 
@@ -1792,7 +1800,7 @@ namespace Oxide.Plugins
             if (_lastPosition.TryGetValue(gameId, out var cached))
                 return PlayerLocationPayload(cached.x, cached.y, cached.z, protocol);
 
-            return PlayerLocationPayload(0, 0, 0, protocol);
+            return UnknownPlayerLocation(protocol);
         }
 
         private JToken HandleGetPlayerInventory(JObject args)

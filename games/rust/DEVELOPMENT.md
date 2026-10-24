@@ -254,6 +254,8 @@ from zoom 0 (the whole square) to the first zoom with at most one metre per pixe
 takes `{dimension, zoom, x, y}` and answers `{mimeType: "image/png", data}`; a map that is not
 rendered yet answers `not_found`. `getPlayerLocation` names the same Dimension
 (`dimension: "world"`), so Takaro files player positions under the id the map and the locations use.
+A player who is not on the server and has no cached position answers `null` on v1, so Takaro keeps
+the last real position; v0 keeps answering `0, 0, 0`.
 The capability goes out in a `capabilities` replacement as soon as
 the raster is ready, so a boot or reload declares it a few seconds after identify.
 
