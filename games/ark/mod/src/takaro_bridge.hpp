@@ -177,6 +177,7 @@ class Bridge {
               known_),
         adapter_(gate_, bans_, known_) {
     if (!config_.state_dir.empty()) cursor_path_ = config_.state_dir + "/event-cursor.json";
+    if (auto dimension = map_dimension(config_.map_name)) adapter_.set_map_dimension(dimension->get("id")->as_string());
     adapter_.set_delivery_waiter([this](uint64_t seq, std::chrono::milliseconds timeout) {
       const auto deadline = std::chrono::steady_clock::now() + timeout;
       while (persisted_.load() < seq && std::chrono::steady_clock::now() < deadline)
@@ -335,6 +336,7 @@ class Bridge {
     conn_.close_now();
     identified_ = false;
     protocol_version_ = 0;
+    adapter_.set_protocol_version(0);
     ++epoch_;
     pings_.clear();
     in_flight_.clear();
@@ -566,6 +568,7 @@ class Bridge {
       int version = 0;
       if (const auto* v = payload.get("protocolVersion"); v && v->is_number() && v->as_number() == 1) version = 1;
       protocol_version_ = version;
+      adapter_.set_protocol_version(version);
       attempts_ = 0;
       identified_ = true;
       next_pump_ = std::chrono::steady_clock::now();

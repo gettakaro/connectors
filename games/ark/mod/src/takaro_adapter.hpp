@@ -8,6 +8,7 @@
 #include "takaro_store.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <functional>
 #include <mutex>
@@ -348,6 +349,11 @@ class Adapter {
   Adapter(gate::Server& gate, BanManager& bans, KnownPlayers& known) : gate_(gate), bans_(bans), known_(known) {}
 
   // Blocks until the event stream has delivered up to `seq` or the timeout passes.
+  // The declared map Dimension id (empty when the loaded map has none) and the negotiated
+  // Generic protocol version. On version 1 player positions and teleports use that id.
+  void set_map_dimension(std::string id) { map_dimension_ = std::move(id); }
+  void set_protocol_version(int version) { protocol_version_ = version; }
+
   using DeliveryWaiter = std::function<bool(uint64_t, std::chrono::milliseconds)>;
   void set_delivery_waiter(DeliveryWaiter waiter) { wait_delivered_ = std::move(waiter); }
 
@@ -375,7 +381,10 @@ class Adapter {
       const auto position = gate_.location(player_id(args));
       if (!position || !std::isfinite(position->x) || !std::isfinite(position->y) || !std::isfinite(position->z))
         withhold("native player location is unavailable");
-      return json::obj({{"x", json::num(position->x)}, {"y", json::num(position->y)}, {"z", json::num(position->z)}});
+      json::Value out = json::obj({{"x", json::num(position->x)}, {"y", json::num(position->y)}, {"z", json::num(position->z)}});
+      // Name the map's Dimension so Takaro files the position under the id the map and locations use.
+      if (protocol_version_.load() >= 1 && !map_dimension_.empty()) out.set("dimension", json::str(map_dimension_));
+      return out;
     }
     if (action == "getPlayerInventory") {
       const auto items = gate_.inventory(player_id(args));
@@ -415,6 +424,8 @@ class Adapter {
   BanManager& bans_;
   KnownPlayers& known_;
   DeliveryWaiter wait_delivered_;
+  std::string map_dimension_;
+  std::atomic<int> protocol_version_{0};
 
   json::Value test_reachability() {
     const auto h = gate_.health();
@@ -491,7 +502,11 @@ class Adapter {
       if (!(target->is_string() && target->as_string().empty()))
         withhold("teleportPlayer target lookup is unavailable");
     }
-    if (args.get("dimension")) withhold("teleportPlayer dimension is unavailable");
+    if (const json::Value* dimension = args.get("dimension")) {
+      // The one declared Dimension is the loaded map; any other is unavailable.
+      if (!(dimension->is_string() && !map_dimension_.empty() && dimension->as_string() == map_dimension_))
+        withhold("teleportPlayer dimension is unavailable");
+    }
     auto action = std::make_shared<gate::Action>();
     action->kind = gate::Action::Kind::teleport;
     action->x = static_cast<float>(finite_number(args.get("x"), "teleportPlayer x", 1e8));
