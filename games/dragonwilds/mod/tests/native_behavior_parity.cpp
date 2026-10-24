@@ -310,7 +310,7 @@ int main() {
         Check(!h.Event({{"seq", 7}, {"type", "player-death"}, {"data", {{"player", pluginPlayer}}}}).contains("msg"), "no msg without killer");
         Json attacker = {{"gameId", B}, {"characterName", "Bob"}};
         Check(h.Event({{"seq", 8}, {"type", "player-death"}, {"data", {{"player", pluginPlayer}, {"position", {{"x", 1}, {"y", 2}, {"z", 3}}}, {"attacker", attacker}}}}) ==
-                  Json({{"player", takaroPlayer}, {"position", {{"x", 1}, {"y", 2}, {"z", 3}}},
+                  Json({{"player", takaroPlayer}, {"position", {{"x", 1}, {"y", 2}, {"z", 3}, {"dimension", "overworld"}}},
                         {"attacker", {{"gameId", B}, {"name", "Bob"}, {"epicOnlineServicesId", B}, {"platformId", "epic:" + B}}}}),
               "player-death with attacker and position");
         Check(h.Event({{"seq", 9}, {"type", "log"}, {"data", {{"line", "LogDominion: saved"}, {"level", "info"}}}}) == Json({{"msg", "LogDominion: saved"}}),
@@ -340,12 +340,13 @@ int main() {
         Check(h.Ok("getPlayer", {{"gameId", A}}) == wantOffline, "last-known record survives a restart");
         playersOnline = true;
 
-        Check(h.Ok("getPlayerLocation", {{"player", {{"gameId", A}}}}) == Json({{"x", 10.5}, {"y", 20}, {"z", -3}}), "location DTO");
+        Check(h.Ok("getPlayerLocation", {{"player", {{"gameId", A}}}}) == Json({{"x", 10.5}, {"y", 20}, {"z", -3}, {"dimension", "overworld"}}),
+              "location DTO in the map Dimension");
         locationDown = true;
         h.Err("getPlayerLocation", {{"gameId", A}});
         auto joinEvent = h.engine->MapEvent(Json{{"seq", 0}, {"type", "player-connected"}, {"data", {{"player", {{"gameId", A}}}}}}.dump());
         Check(static_cast<bool>(h.store->AdmitSynthetic(joinEvent.frame)) && static_cast<bool>(h.engine->ObserveAdmitted(joinEvent)), "admit join");
-        Check(h.Ok("getPlayerLocation", {{"gameId", A}}) == Json({{"x", 10.5}, {"y", 20}, {"z", -3}}),
+        Check(h.Ok("getPlayerLocation", {{"gameId", A}}) == Json({{"x", 10.5}, {"y", 20}, {"z", -3}, {"dimension", "overworld"}}),
               "last real position answered inside the connect window");
         h.Err("getPlayerLocation", {{"gameId", B}});
         locationDown = false;
@@ -359,7 +360,7 @@ int main() {
                                                    Json{{"code", "AI_Merchant"}, {"name", "Merchant"}, {"type", "friendly"}}}),
               "listEntities");
         Check(h.Ok("listLocations") == Json::array({Json{{"code", "lodestone_ashenfall"}, {"name", "Ashenfall Lodestone"},
-                                                         {"position", {{"x", 0}, {"y", 100}, {"z", 0}}}, {"radius", 50}}}),
+                                                         {"position", {{"x", 0}, {"y", 100}, {"z", 0}, {"dimension", "overworld"}}}, {"radius", 50}}}),
               "listLocations");
 
         // ---- executeConsoleCommand: CommandOutput, never an error frame for a refused command (F1) ----
@@ -512,7 +513,7 @@ int main() {
             Check(static_cast<bool>(h.store->AdmitSynthetic(gone[0].frame)) && static_cast<bool>(h.engine->ObserveAdmitted(gone[0])), "admit");
             Check(Parse(h.engine->Snapshot()->onlinePlayersJson).empty(), "online set empty after reconcile");
             locationDown = true;
-            Check(h.Ok("getPlayerLocation", {{"gameId", A}}) == Json({{"x", 0}, {"y", 0}, {"z", 0}}),
+            Check(h.Ok("getPlayerLocation", {{"gameId", A}}) == Json({{"x", 0}, {"y", 0}, {"z", 0}, {"dimension", "overworld"}}),
                   "location lookup for the just-disconnected player answers the origin");
             locationDown = false;
         }
@@ -642,7 +643,18 @@ int main() {
                                      "server.shutdown", "events.chat-message", "events.entity-killed", "events.log"})
                 Check(std::find(names.begin(), names.end(), name) != names.end(), std::string("manifest declares ") + name);
             Check(std::find(names.begin(), names.end(), "testReachability") == names.end(), "testReachability is not a capability");
-            Check(std::find(names.begin(), names.end(), "map") == names.end(), "no map capability without map tiles");
+            // The map: one Dimension, an operator-uploaded picture, the survey calibration.
+            Check(std::count(names.begin(), names.end(), "map") == 1, "map capability declared once");
+            const Json map = *std::find_if(manifest.begin(), manifest.end(), [](const Json& c) { return c["name"] == "map"; });
+            const Json dims = map["parameters"]["dimensions"];
+            Check(dims.is_array() && dims.size() == 1, "one map Dimension");
+            Check(dims[0]["id"] == "overworld" && dims[0]["source"] == Json({{"type", "none"}}), "Dimension id and none source");
+            Check(dims[0]["axes"] == Json({{"horizontal", {{"field", "x"}, {"direction", "right"}}},
+                                           {"vertical", {{"field", "y"}, {"direction", "down"}}}}),
+                  "axes: x right, y down (north up)");
+            Check(dims[0]["bounds"] == Json({{"horizontal", {{"min", -20000}, {"max", 600100}}},
+                                             {"vertical", {{"min", -160000}, {"max", 480050}}}}),
+                  "bounds: the full-world survey");
             // Game Profile: display name, the running version only when it is valid, and the compiled-in icon.
             Check(manifest.back()["name"] == "game.profile", "game.profile is declared");
             const Json profile = manifest.back()["parameters"];

@@ -93,6 +93,8 @@ def protocol_v1(cert, key, state):
         names = [c['name'] for c in offered['capabilities']]
         assert len(names) == len(set(names)) and 'testReachability' not in names, names
         assert {'players.location', 'moderation.ban', 'events.player-connected', 'events.chat-message'} <= set(names), names
+        dims = offered['capabilities'][names.index('map')]['parameters']['dimensions']
+        assert [d['id'] for d in dims] == ['overworld'] and dims[0]['source'] == {'type': 'none'}, dims
         # Game Profile: the game and connector identity, game.profile with the running version and icon.
         release = re.search(r'#define TAKARO_PLUGIN_VERSION "([^"]+)" // x-release-please-version',
                             COMMON_H.read_text()).group(1)

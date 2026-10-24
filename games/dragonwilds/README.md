@@ -160,8 +160,7 @@ Your `takaro.cfg` next to it, `.env` and the state directory are never touched.
 | Player death event | ✅ | Names the creature that killed the player. |
 | Entity kill event | ✅ | Creature name and held weapon. |
 | Log events | ✅ | Passwords removed; rate-limited to stay under Takaro's limit. |
-| Map info | ❌ | Takaro has no map info for Generic game servers. |
-| Map tiles | ❌ | Takaro has no map tiles for Generic game servers. |
+| World map and player positions | ⚠️ | Needs Takaro protocol 1 (not yet on takaro.io). The connector gives Takaro the world's map frame and puts players on it. The server has no map picture, so you upload one once in the dashboard (see DEVELOPMENT.md). |
 | Game name, version and icon | ⚠️ | Needs Takaro protocol 1 (not yet on takaro.io). Takaro shows the server as RuneScape: Dragonwilds with the running game version (for example `1.0.1.1`), the game icon and the connector version. |
 | Modules: chat commands | ✅ |  |
 | Modules: hooks | ✅ |  |
