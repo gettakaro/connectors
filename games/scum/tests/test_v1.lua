@@ -106,6 +106,22 @@ t.test("version 1: getPlayerLocation carries the dimension; no position answers 
   t.ok(raw:find('"payload":null', 1, true), "explicit null payload")
 end)
 
+t.test("version 1: an event position names the map dimension; version 0 keeps x, y, z only", function()
+  local function death_position(version)
+    local app, native, tk = F.app()
+    if version == 1 then connect_v1(tk, native) else tk.connect() end
+    t.eq(app.client.version, version)
+    app.events:player_death({ player = { steamId = STEAM, name = "A" }, position = { x = 426071, y = 181139, z = 17063 } })
+    app.events:player_connected({ steamId = "76561198000000002", name = "B" })
+    tk.pump()
+    local evs = native.frames("gameEvent")
+    t.deep(evs[#evs].msg.payload.data.position, nil, "events without a position get none")
+    return evs[#evs - 1].msg.payload.data.position
+  end
+  t.deep(death_position(1), { x = 426071, y = 181139, z = 17063, dimension = "the_island" })
+  t.deep(death_position(0), { x = 426071, y = 181139, z = 17063 })
+end)
+
 t.test("version 1: failures become { code, message } errors; a refused console command stays a CommandOutput", function()
   local _, native, tk = F.app({ script = {
     kick_player = { ok = false, reason = "player is offline" },

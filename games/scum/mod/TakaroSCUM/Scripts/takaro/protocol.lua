@@ -269,7 +269,7 @@ function Client:flush_events()
     local text = ev.text
     if self.version == 1 then
       text = json.encode({ type = "gameEvent",
-        payload = { type = ev.type, data = ev.data, streamId = self.streamId, seq = ev.seq } })
+        payload = { type = ev.type, data = v1.event_data(ev.data), streamId = self.streamId, seq = ev.seq } })
     end
     local status, outbox = self.transport.send(text, "event", self.epoch)
     if status ~= "accepted" then
