@@ -46,7 +46,7 @@ export class MockBattlegroup {
   columns: Record<string, string[]> = Object.fromEntries(Object.entries(OPTIONAL_COLUMNS).map(([t, c]) => [t, [...c]]));
   /** Partition readiness for `testReachability`. */
   partitions = { expected: 1, readyAlive: 1 };
-  /** `world_partition.map` of every partition, as the real rig names them. */
+  /** `world_partition.map` of every partition, as a live battlegroup names them. */
   partitionMaps = ['Survival_1', 'SH_Arrakeen', 'DeepDesert_1', 'Overmap'];
   /** `StaticLocation` rows of `markers` joined to `map_names` (the shape `locations()` selects). */
   markers: MockMarker[] = [];
