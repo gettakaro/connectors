@@ -50,7 +50,7 @@ t.test("main.lua starts the app, connects, identifies and answers through the UE
   t.deep(native.frames("response")[1].msg.payload,
     { connectable = false, reason = "SCUM world is not loaded (no ConZGameMode)" })
   local logs = table.concat(native.logs, "\n")
-  t.ok(logs:find("TakaroSCUM 0.1.0 starting", 1, true))
+  t.ok(logs:find("TakaroSCUM %d+%.%d+%.%d+[%w.+-]* starting"))
   t.eq(logs:find(F.REG_TOKEN, 1, true), nil)
   os.execute("rm -rf '" .. dir .. "'")
 end)
