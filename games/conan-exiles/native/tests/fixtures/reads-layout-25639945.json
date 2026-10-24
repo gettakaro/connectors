@@ -501,6 +501,74 @@
      ]
     }
    ]
+  },
+  {
+   "name": "KismetSystemLibrary",
+   "kind": "Class",
+   "super": "BlueprintFunctionLibrary",
+   "superChain": [
+    "BlueprintFunctionLibrary",
+    "Object"
+   ],
+   "size": 40,
+   "path": "/Script/Engine.KismetSystemLibrary",
+   "properties": [],
+   "functions": [
+    {
+     "name": "MakeSoftObjectPath",
+     "parmsSize": 48,
+     "params": [
+      {
+       "name": "PathString",
+       "type": "StrProperty",
+       "offset": 0,
+       "size": 16
+      },
+      {
+       "name": "ReturnValue",
+       "type": "StructProperty",
+       "offset": 16,
+       "size": 32
+      }
+     ]
+    },
+    {
+     "name": "Conv_SoftObjPathToSoftObjRef",
+     "parmsSize": 72,
+     "params": [
+      {
+       "name": "SoftObjectPath",
+       "type": "StructProperty",
+       "offset": 0,
+       "size": 32
+      },
+      {
+       "name": "ReturnValue",
+       "type": "SoftObjectProperty",
+       "offset": 32,
+       "size": 40
+      }
+     ]
+    },
+    {
+     "name": "LoadAsset_Blocking",
+     "parmsSize": 48,
+     "params": [
+      {
+       "name": "Asset",
+       "type": "SoftObjectProperty",
+       "offset": 0,
+       "size": 40
+      },
+      {
+       "name": "ReturnValue",
+       "type": "ObjectProperty",
+       "offset": 40,
+       "size": 8
+      }
+     ]
+    }
+   ]
   }
  ]
 }

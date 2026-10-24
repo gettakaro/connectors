@@ -300,6 +300,16 @@ struct Server {
     bool textLies = false;     // Conv_TextToString disagrees with the worker decode
     int gameJobs = 0;
     int textCalls = 0;
+    // MapMarkers_ConanSandbox as on a server nobody has joined yet: not loaded until
+    // KismetSystemLibrary.LoadAsset_Blocking asks for it (or the "player join" in a test).
+    bool markersOnJoin = false;
+    bool loadReturnsNull = false;  // LoadAsset_Blocking fails
+    bool gameThreadStalled = false;  // no game-thread job runs
+    int assetLoads = 0;
+    std::string lastLoadPath;
+    std::vector<std::string> paths;  // MakeSoftObjectPath ids
+    uintptr_t markerTable = 0;
+    std::function<uintptr_t()> loadMarkers;
 
     uintptr_t Item(uintptr_t inv, int32_t templateId, int32_t stack, float dur, float maxDur,
                    const char* cls = "GameItem") {
@@ -376,6 +386,7 @@ struct Server {
         std::string err = w.LoadFixture("tests/fixtures/reads-layout-25639945.json");
         if (!err.empty()) return err;
         w.Obj(w.classes["KismetTextLibrary"], "Default__KismetTextLibrary", 0, 0x40, 0x10);
+        w.Obj(w.classes["KismetSystemLibrary"], "Default__KismetSystemLibrary", 0, 0x40, 0x10);
         uintptr_t level = w.Package("/Game/Maps/ConanSandbox/ConanSandbox");
         uintptr_t world = w.Obj(w.metaClass, "ConanSandbox", level, 0x40);
         uintptr_t persistent = w.Obj(w.metaClass, "PersistentLevel", world, 0x40);
@@ -489,7 +500,8 @@ struct Server {
                      {"Test_Dummy", spawnRow("", "BP_Dummy_C")}});
         int32_t mName = Off(w, "MapMarkerTableRow", "Name"), mRegion = Off(w, "MapMarkerTableRow", "Region"),
                 mLoc = Off(w, "MapMarkerTableRow", "Location"), mRad = Off(w, "MapMarkerTableRow", "DiscoveryRadius");
-        auto marker = [&](const std::string& name, const std::string& region, double x, double y, double z, float r) {
+        auto marker = [this, mName, mRegion, mLoc, mRad](const std::string& name, const std::string& region, double x,
+                                                        double y, double z, float r) {
             uintptr_t row = w.Alloc(112);
             w.FText(row + mName, name);
             w.FNameAt(row + mRegion, region);
@@ -498,10 +510,16 @@ struct Server {
             w.W<float>(row + mRad, r);
             return row;
         };
-        w.DataTable("/Game/Systems/Map/MapMarkers_ConanSandbox.MapMarkers_ConanSandbox", "MapMarkerTableRow",
+        loadMarkers = [this, marker] {
+            if (!markerTable)
+                markerTable = w.DataTable(
+                    "/Game/Systems/Map/MapMarkers_ConanSandbox.MapMarkers_ConanSandbox", "MapMarkerTableRow",
                     {{"0", marker("Slithering Beach", "ExiledLands", 215176.56, 117179.09, -19697.14, 5000)},
                      {"1", marker("Skulker's End", "ExiledLands", -128702.31, 216849.72, -20861.46, 7000)},
                      {"300", marker("The Gate of Arcadia", "IsleOfSiptah", 1, 2, 3, 4000)}});
+            return markerTable;
+        };
+        if (!markersOnJoin) loadMarkers();
         return "";
     }
 
@@ -509,6 +527,7 @@ struct Server {
     GameCalls Calls() {
         GameCalls g;
         g.run = [this](std::function<void()> fn, int) {
+            if (gameThreadStalled) return false;  // the job was never picked up
             gameJobs++;
             fn();
             return true;
@@ -530,6 +549,28 @@ struct Server {
                           : p[0] == ItemStat::kMaxDurability ? engineStats[obj].second.second
                                                              : 0;
                 memcpy(p + 4, &v, 4);
+            } else if (name == "MakeSoftObjectPath") {
+                // PathString FString in our (host) memory -> a path id in the 32-byte FSoftObjectPath
+                const char16_t* d;
+                int32_t n;
+                memcpy(&d, p, 8);
+                memcpy(&n, p + 8, 4);
+                std::string path;
+                for (int32_t i = 0; d && i + 1 < n; i++) path.push_back((char)d[i]);
+                paths.push_back(path);
+                uint64_t id = paths.size();
+                memcpy(p + 16, &id, 8);
+            } else if (name == "Conv_SoftObjPathToSoftObjRef") {
+                memcpy(p + 32 + 8, p, 32);  // FSoftObjectPtr: weak pointer + tag, then the path
+            } else if (name == "LoadAsset_Blocking") {
+                assetLoads++;
+                uint64_t id;
+                memcpy(&id, p + 8, 8);
+                lastLoadPath = id >= 1 && id <= paths.size() ? paths[id - 1] : "?";
+                uintptr_t obj = 0;
+                if (!loadReturnsNull && lastLoadPath == "/Game/Systems/Map/MapMarkers_ConanSandbox.MapMarkers_ConanSandbox")
+                    obj = loadMarkers();
+                memcpy(p + 40, &obj, 8);
             } else if (name == "Conv_TextToString") {
                 textCalls++;
                 // Find which FText was copied in (by its ITextData pointer).
@@ -576,6 +617,7 @@ static ReadService* NewService(Server& s, HostAndImage& mem) {
     o.game = s.Calls();
     o.warmupThread = false;
     o.listWaitMs = 10;
+    o.refreshAfterJoinMs = 0;
     return new ReadService(o);
 }
 
@@ -816,6 +858,86 @@ static void TestSelfCheckFallbacks() {
           "%s", h.c_str());
 }
 
+static void TestMarkersWithoutPlayer() {
+    // Nobody has joined: the game has not loaded MapMarkers_ConanSandbox, so the warm-up loads it
+    // through KismetSystemLibrary and listLocations answers without a player.
+    Server s;
+    s.markersOnJoin = true;
+    std::string err = s.Build();
+    CHECK(err.empty(), "%s", err.c_str());
+    if (!err.empty()) return;
+    HostAndImage mem(s.w.mem);
+    std::unique_ptr<ReadService> rs(NewService(s, mem));
+    std::string status;
+    bool done = rs->WarmupStep(status);
+    CHECK(s.assetLoads == 1 && s.lastLoadPath == "/Game/Systems/Map/MapMarkers_ConanSandbox.MapMarkers_ConanSandbox",
+          "one LoadAsset_Blocking of the marker table: %d %s", s.assetLoads, s.lastLoadPath.c_str());
+    CHECK(!done && status.find("locations ok (table loaded without a player)") != std::string::npos &&
+              status.find("rebuild after the first join pending") != std::string::npos,
+          "locations built from our own load; the rebuild waits for a join: %s", status.c_str());
+    auto r = rs->Execute("listLocations", J("{}"));
+    EQ(Dump(r),
+       "[{\"code\":\"marker:0\",\"name\":\"Slithering Beach\",\"position\":{\"x\":215176.56,\"y\":117179.09,\"z\":-19697.14},"
+       "\"radius\":5000},{\"code\":\"marker:1\",\"name\":\"Skulker's End\",\"position\":{\"x\":-128702.31,\"y\":216849.72,"
+       "\"z\":-20861.46},\"radius\":7000}]");
+    CHECK(!rs->WarmupStep(status) && s.assetLoads == 1, "no second load once the table is built: %d", s.assetLoads);
+    // A player joins (the fake server always has two online): the next step rebuilds everything once.
+    r = rs->Execute("getPlayers", J("{}"));
+    CHECK(r.ok, "%s", Dump(r).c_str());
+    CHECK(rs->WarmupStep(status) && status.find("pending") == std::string::npos, "rebuilt after the join: %s",
+          status.c_str());
+    CHECK(Dump(rs->Execute("listLocations", J("{}"))).find("Skulker's End") != std::string::npos, "locations kept");
+
+    // The engine refuses the load: a structured "not loaded yet" answer, at most three tries.
+    Server f;
+    f.markersOnJoin = true;
+    f.loadReturnsNull = true;
+    err = f.Build();
+    if (!err.empty()) return;
+    HostAndImage fmem(f.w.mem);
+    ReadOptions o;
+    o.mem = &fmem;
+    o.objObjects = f.w.objObjects;
+    o.nameBlocks = f.w.nameBlocks;
+    o.game = f.Calls();
+    o.warmupThread = false;
+    o.listWaitMs = 10;
+    ReadService frs(o);
+    CHECK(!frs.WarmupStep(status) && f.assetLoads == 1, "%d %s", f.assetLoads, status.c_str());
+    r = frs.Execute("listLocations", J("{}"));
+    CHECK(!r.ok && r.error.find("MapMarkers_ConanSandbox is not loaded yet") != std::string::npos, "%s", r.error.c_str());
+    CHECK(f.assetLoads == 1, "the next try waits 30 s: %d", f.assetLoads);
+
+    // A stalled game thread never starts the load: nothing is called, and the try is not counted.
+    Server st;
+    st.markersOnJoin = true;
+    err = st.Build();
+    if (!err.empty()) return;
+    HostAndImage smem(st.w.mem);
+    std::unique_ptr<ReadService> srs(NewService(st, smem));
+    st.gameThreadStalled = true;
+    CHECK(!srs->WarmupStep(status) && st.assetLoads == 0 && status.find("is not loaded yet") != std::string::npos,
+          "%d %s", st.assetLoads, status.c_str());
+    std::string h = srs->HealthJson();
+    CHECK(h.find("\"locations\":0") != std::string::npos, "%s", h.c_str());
+
+    // A reflected FSoftObjectPath of size 0 (a changed engine layout): refused before any call.
+    Server bad;
+    bad.markersOnJoin = true;
+    err = bad.Build();
+    if (!err.empty()) return;
+    {
+        UE::Reflection r(bad.w.mem, bad.w.objObjects, bad.w.nameBlocks);
+        uintptr_t fn = r.Function(bad.w.classes["KismetSystemLibrary"], "MakeSoftObjectPath").fn;
+        for (uintptr_t prop = bad.w.R<uintptr_t>(fn + 0x50); prop; prop = bad.w.R<uintptr_t>(prop + 0x18))
+            if (r.FNameIs(prop + 0x20, "ReturnValue")) bad.w.W<int32_t>(prop + 0x30, 0);
+    }
+    HostAndImage bmem(bad.w.mem);
+    std::unique_ptr<ReadService> brs(NewService(bad, bmem));
+    CHECK(!brs->WarmupStep(status) && bad.assetLoads == 0 && status.find("is not loaded yet") != std::string::npos,
+          "malformed parameter size refused: %d %s", bad.assetLoads, status.c_str());
+}
+
 static void TestNotLoaded() {
     // An engine that has not loaded the world: every read answers a structured error, no crash.
     World w;
@@ -850,6 +972,7 @@ int main() {
     TestHelpers();
     TestReads();
     TestSelfCheckFallbacks();
+    TestMarkersWithoutPlayer();
     TestNotLoaded();
     printf("reads tests: %d/%d checks passed\n", g_ran - g_failed, g_ran);
     return g_failed ? 1 : 0;

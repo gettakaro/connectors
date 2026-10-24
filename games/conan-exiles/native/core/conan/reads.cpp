@@ -25,7 +25,15 @@ const std::vector<std::string> kScanNames = {
     "GameStateBase", "PlayerState", "Actor", "Controller", "SceneComponent", "ConanPlayerController",
     "BasePlayerChar_C", "BaseBPChar_C", "ItemInventory", "GameItem", "ShortcutRefItem", "DataTable", "KismetTextLibrary",
     "Default__KismetTextLibrary", "ItemTable", "ItemNameToTemplateID", "SpawnDataTable", "MapMarkers_ConanSandbox",
+    "KismetSystemLibrary", "Default__KismetSystemLibrary",
 };
+const char* const kMarkerTablePath = "/Game/Systems/Map/MapMarkers_ConanSandbox.MapMarkers_ConanSandbox";
+// Own loads of the marker table: at most 3 that the engine answered, 30 s apart; a load the game
+// thread did not pick up in time (it can stall for seconds while the world finishes loading) is
+// not counted and is tried again after 5 s.
+constexpr int kMaxMarkerLoads = 3;
+constexpr uint64_t kMarkerLoadGapMs = 30000, kMarkerRetryMs = 5000;
+constexpr int kMarkerJobTimeoutMs = 10000;
 
 ActionResult Fail(const std::string& error, const char* code = "") {
     ActionResult r;
@@ -256,6 +264,76 @@ bool ReadService::SlowStats(uintptr_t item, InvItem& e) {
     return true;
 }
 
+bool ReadService::LoadMarkerTable(std::string& error, bool& pickedUp) {
+    pickedUp = true;
+    const UE::Reflection& r = *r_;
+    uintptr_t sys = r.Type("KismetSystemLibrary"), cdo = 0;
+    for (uintptr_t c : r.Named("Default__KismetSystemLibrary"))
+        if (r.Alive(c) && r.mem().Rd<uintptr_t>(c + UE::Layout::kObjClass) == sys) cdo = c;
+    UE::FuncInfo make = r.Function(sys, "MakeSoftObjectPath"), toRef = r.Function(sys, "Conv_SoftObjPathToSoftObjRef"),
+                 load = r.Function(sys, "LoadAsset_Blocking");
+    if (!sys || !cdo || !make.ok() || !toRef.ok() || !load.ok()) {
+        pickedUp = false;  // not indexed yet: try again without using up an attempt
+        error = "KismetSystemLibrary asset functions not found by reflection";
+        return false;
+    }
+    UE::PropInfo pathIn = r.Param(make.fn, "PathString"), pathOut = r.Param(make.fn, "ReturnValue"),
+                 refIn = r.Param(toRef.fn, "SoftObjectPath"), refOut = r.Param(toRef.fn, "ReturnValue"),
+                 assetIn = r.Param(load.fn, "Asset"), objOut = r.Param(load.fn, "ReturnValue");
+    // Types and sizes are checked here, so the bytes copied from one call into the next are
+    // exactly one FSoftObjectPath and one FSoftObjectPtr.
+    auto fits = [](const UE::PropInfo& p, const UE::FuncInfo& f, const char* type, int32_t size) {
+        return p.ok() && p.type == type && p.size > 0 && (size < 0 || p.size == size) &&
+               p.offset + p.size <= f.parmsSize && f.parmsSize <= 512;
+    };
+    if (!fits(pathIn, make, "StrProperty", 16) || !fits(pathOut, make, "StructProperty", -1) ||
+        !fits(refIn, toRef, "StructProperty", pathOut.size) || !fits(refOut, toRef, "SoftObjectProperty", -1) ||
+        !fits(assetIn, load, "SoftObjectProperty", refOut.size) || !fits(objOut, load, "ObjectProperty", 8)) {
+        error = "KismetSystemLibrary asset function parameters do not match";
+        return false;
+    }
+    std::u16string path(kMarkerTablePath, kMarkerTablePath + strlen(kMarkerTablePath));
+    path.push_back(u'\0');
+    uintptr_t table = 0;
+    uint64_t ns = 0;
+    bool ran = o_.game.run && o_.game.call && o_.game.run(
+        [&] {
+            const uint64_t t0 = NowNs();
+            alignas(16) uint8_t a[512], b[512], c[512];
+            memset(a, 0, sizeof a);
+            memset(b, 0, sizeof b);
+            memset(c, 0, sizeof c);
+            // FString {data, num incl. NUL, max}: the engine copies it and never frees our buffer.
+            const char16_t* data = path.data();
+            int32_t n = (int32_t)path.size();
+            memcpy(a + pathIn.offset, &data, 8);
+            memcpy(a + pathIn.offset + 8, &n, 4);
+            memcpy(a + pathIn.offset + 12, &n, 4);
+            o_.game.call(cdo, make.fn, a);
+            memcpy(b + refIn.offset, a + pathOut.offset, (size_t)pathOut.size);
+            o_.game.call(cdo, toRef.fn, b);
+            memcpy(c + assetIn.offset, b + refOut.offset, (size_t)refOut.size);
+            o_.game.call(cdo, load.fn, c);
+            memcpy(&table, c + objOut.offset, 8);
+            ns = NowNs() - t0;
+        },
+        kMarkerJobTimeoutMs);
+    if (!ran) {
+        pickedUp = false;
+        error = "the game thread did not pick up the load within " + std::to_string(kMarkerJobTimeoutMs / 1000) + " s";
+        return false;
+    }
+    gameThreadJobs_++;
+    gameThreadNs_ += ns;
+    NativeLog("reads: loaded %s on the game thread without a player (%.1f ms) -> %s", kMarkerTablePath, ns / 1e6,
+              table ? "ok" : "null");
+    if (!table) {
+        error = "LoadAsset_Blocking returned no table";
+        return false;
+    }
+    return true;
+}
+
 // ---------------------------------------------------------------- startup self-checks
 // ExactPing (PlayerState+824) against GetPingInMilliseconds, and RelativeLocation /
 // ComponentToWorld against K2_GetActorLocation, read inside one game-thread job so both sides see
@@ -430,25 +508,61 @@ bool ReadService::WarmupStep(std::string& status) {
     const uint64_t reads0 = o_.mem->ReadCount();
     bool changed = false;
     std::string itemsErr, entErr, locErr;
+    // Builds all three catalogues again, so texts that were not loaded during the early build
+    // (start-up) are picked up; keeps the old catalogue when a table is gone.
+    auto rebuild = [&] {
+        auto fresh = std::make_shared<Catalogue>();
+        std::string e1, e2, e3;
+        if (!fresh->BuildItems(*r_, slow, e1) || !fresh->BuildEntities(*r_, slow, e2) ||
+            !fresh->BuildLocations(*r_, slow, Region(), e3))
+            return false;
+        cat = fresh;
+        changed = true;
+        return true;
+    };
+    // Locations first: they are cheap, and Takaro asks for them right after connecting.
+    bool locationsNew = false;
+    if (!cat->HaveLocations()) {
+        locationsNew = cat->BuildLocations(*r_, slow, Region(), locErr);
+        // The game loads MapMarkers_ConanSandbox only once a player has joined: look for it again
+        // with a fresh index scan, at most every 30 s.
+        if (!locationsNew && NowMs() - lastScanMs_ >= 30000) {
+            lastScanMs_ = NowMs();
+            if (r_->Scan(kScanNames) > 0) locationsNew = cat->BuildLocations(*r_, slow, Region(), locErr);
+        }
+        // Without a player, load it ourselves once the world is up, so Takaro's location sync
+        // right after connecting gets an answer.
+        if (!locationsNew && markerLoads_ < kMaxMarkerLoads && NowMs() >= nextMarkerLoadMs_) {
+            std::string loadErr;
+            bool picked = true;
+            bool loaded = LoadMarkerTable(loadErr, picked);
+            if (picked) markerLoads_++;
+            nextMarkerLoadMs_ = NowMs() + (picked ? kMarkerLoadGapMs : kMarkerRetryMs);
+            if (!loaded) NativeLog("reads: marker table load %d failed: %s", markerLoads_ + (picked ? 0 : 1), loadErr.c_str());
+            else if (r_->Scan(kScanNames) > 0 && cat->BuildLocations(*r_, slow, Region(), locErr)) {
+                locationsNew = true;
+                markersForced_ = true;
+                refreshAfterJoin_ = true;  // nobody has joined yet: rebuild everything after the first join
+            }
+        }
+        if (locationsNew) {
+            changed = true;
+            {
+                std::lock_guard<std::mutex> l(catMu_);
+                locationsJson_ = cat->LocationsJson();
+            }
+            catCv_.notify_all();
+        }
+    }
     if (!cat->HaveItems()) changed |= cat->BuildItems(*r_, slow, itemsErr);
     if (!cat->HaveEntities()) changed |= cat->BuildEntities(*r_, slow, entErr);
-    if (!cat->HaveLocations()) {
-        changed |= cat->BuildLocations(*r_, slow, Region(), locErr);
-        // MapMarkers_ConanSandbox is loaded only once a player has joined: look for it again
-        // with a fresh index scan, at most every 30 s.
-        if (!cat->HaveLocations() && NowMs() - lastScanMs_ >= 30000) {
-            lastScanMs_ = NowMs();
-            if (r_->Scan(kScanNames) > 0) changed |= cat->BuildLocations(*r_, slow, Region(), locErr);
-        }
-        if (cat->HaveLocations() && cat->HaveItems() && cat->HaveEntities()) {
-            // A player has joined and the world is fully up: build items and entities once more,
-            // so texts that were not loaded during the early build (start-up) are picked up.
-            auto fresh = std::make_shared<Catalogue>();
-            std::string e1, e2, e3;
-            if (fresh->BuildItems(*r_, slow, e1) && fresh->BuildEntities(*r_, slow, e2) &&
-                fresh->BuildLocations(*r_, slow, Region(), e3))
-                cat = fresh;
-        }
+    // The game loaded the marker table (a player has joined) and the world is fully up.
+    if (locationsNew && !markersForced_ && cat->HaveItems() && cat->HaveEntities()) rebuild();
+    if (refreshAfterJoin_ && firstPlayerMs_ && NowMs() - firstPlayerMs_ >= (uint64_t)o_.refreshAfterJoinMs &&
+        NowMs() >= nextRefreshMs_) {
+        // A table that is gone (our own marker load can be collected) is tried again in 60 s, five times.
+        if (rebuild() || ++refreshTries_ >= 5) refreshAfterJoin_ = false;
+        else nextRefreshMs_ = NowMs() + 60000;
     }
     if (changed) {
         const CatalogueStats& s = cat->Stats();
@@ -482,10 +596,12 @@ bool ReadService::WarmupStep(std::string& status) {
         locationsJson_ = slowCat->HaveLocations() ? slowCat->LocationsJson() : "";
         cat = slowCat;
     }
-    bool done = cat->HaveItems() && cat->HaveEntities() && cat->HaveLocations() && textCheck_ != Check::Pending;
+    bool done = cat->HaveItems() && cat->HaveEntities() && cat->HaveLocations() && textCheck_ != Check::Pending &&
+                !refreshAfterJoin_;
     status = std::string("items ") + (cat->HaveItems() ? "ok" : itemsErr) + ", entities " +
-             (cat->HaveEntities() ? "ok" : entErr) + ", locations " + (cat->HaveLocations() ? "ok" : locErr) +
-             ", text check " + CheckName(textCheck_);
+             (cat->HaveEntities() ? "ok" : entErr) + ", locations " +
+             (cat->HaveLocations() ? (markersForced_ ? "ok (table loaded without a player)" : "ok") : locErr) +
+             ", text check " + CheckName(textCheck_) + (refreshAfterJoin_ ? ", rebuild after the first join pending" : "");
     {
         std::lock_guard<std::mutex> l(catMu_);
         catalogueStatus_ = status;
@@ -531,6 +647,7 @@ bool ReadService::Snapshot(std::vector<PlayerRecord>& out, std::string& error) {
     lastSnapshotNs_ = NowNs() - t0;
     snapshotReads_ = o_.mem->ReadCount() - reads0;
     if (!ok) return false;
+    if (!out.empty() && !firstPlayerMs_) firstPlayerMs_ = NowMs();
     for (auto& p : out) {
         RunPlayerChecks(p);
         if (pingCheck_ == Check::Failed) SlowPing(p.ps, p.ping);
@@ -595,19 +712,14 @@ ActionResult ReadService::Execute(const std::string& action, const JsonValue& ar
 
 ActionResult ReadService::ExecuteImpl(const std::string& action, const JsonValue& args) {
     if (action == "listItems" || action == "listEntities" || action == "listLocations") {
-        {
-            std::lock_guard<std::mutex> g(mu_);
-            calls_++;
-        }
+        // No mu_ here: a list action must not wait behind a catalogue build in progress.
+        calls_++;
         if (!o_.warmupThread) {
             std::string status;
             WarmupStep(status);
         }
         ActionResult r = ListResult(action);
-        if (!r.ok) {
-            std::lock_guard<std::mutex> g(mu_);
-            errors_++;
-        }
+        if (!r.ok) errors_++;
         return r;
     }
     std::lock_guard<std::mutex> g(mu_);
@@ -797,8 +909,8 @@ std::string ReadService::HealthJson() {
         .S("statsCheck", CheckName(statsCheck_))
         .S("textCheck", CheckName(textCheck_))
         .S("checks", checkDetail_)
-        .N("calls", (double)calls_)
-        .N("errors", (double)errors_)
+        .N("calls", (double)calls_.load())
+        .N("errors", (double)errors_.load())
         .N("gameThreadJobs", (double)gameThreadJobs_)
         .N("gameThreadMs", gameThreadNs_ / 1e6)
         .N("lastSnapshotUs", lastSnapshotNs_ / 1e3)

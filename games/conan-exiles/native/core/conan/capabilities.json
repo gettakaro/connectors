@@ -58,11 +58,11 @@
       "reason": "/Game/Systems/SpawnTable/SpawnDataTable rows: code = row name (also ConanCharacter.SourceSpawnTable on live NPCs), localised name, NPC class only in metadata. Built once per process."
     },
     "listLocations": {
-      "status": "not-requested",
+      "status": "live-supported",
       "implementation": "native",
       "responseShape": "Takaro location DTO array",
-      "verification": "Live 2026-10-03: 255 Exiled Lands markers built in-process; the player stood 82 m from marker 'The Broken Highway' on the paved road (client). Takaro never requests listLocations: 0 requests in more than 24 h of native log, and the Takaro API has no locations endpoint or sync job (El-Limon evidence native-stage2/hardtest-linux)",
-      "reason": "/Game/Systems/Map/MapMarkers_ConanSandbox named places of the loaded map with world coordinates and discovery radius; retried until the table is loaded; declared on protocol 1 as locations.list, which enables Takaro's location markers on the map."
+      "verification": "Live 2026-10-24, Linux and Windows: with no player online, Takaro's automatic location sync right after connecting stored 255 Exiled Lands places (dimension exiled_lands) on a freshly registered server; the connector loaded the marker table itself (one game-thread job of 3 to 31 ms). Live 2026-10-03: the player stood 82 m from marker 'The Broken Highway' on the paved road (client)",
+      "reason": "/Game/Systems/Map/MapMarkers_ConanSandbox named places of the loaded map with world coordinates and discovery radius. The game loads that table only when a player joins, so without a player the connector loads it once the world is up: KismetSystemLibrary LoadAsset_Blocking(Conv_SoftObjPathToSoftObjRef(MakeSoftObjectPath(path))) in one game-thread job. Declared on protocol 1 as locations.list, which enables Takaro's location markers on the map."
     },
     "executeConsoleCommand": {
       "status": "live-supported",
