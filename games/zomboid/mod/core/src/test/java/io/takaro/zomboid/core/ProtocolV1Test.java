@@ -198,6 +198,48 @@ class ProtocolV1Test {
     }
 
     @Test
+    void v1PositionsCarryTheSingleMapDimension() throws Exception {
+        adapter.dimensions = List.of(DIM);
+        adapter.location = new PlayerLocation(10893.5, 9938.2, 0.0, null);
+        adapter.locations = List.of(new GameLocation("Home", "Home", 100, 200, 0, null, null, 10.0, 10.0, 0.0));
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        request("getPlayerLocation", "r1", "{\"gameId\":\"p\"}");
+        request("listLocations", "r2", "{}");
+        client.emitPlayerDeath(new PlayerInfo("p", "P", null, null, null, "steam:1", null, 0),
+                null, 1, 2, 0, null);
+        Thread.sleep(200);
+        JsonObject location = response("r1").getAsJsonObject("payload");
+        assertEquals("knox-county", location.get("dimension").getAsString());
+        assertEquals(10893.5, location.get("x").getAsDouble());
+        JsonObject home = response("r2").getAsJsonArray("payload").get(0).getAsJsonObject();
+        assertEquals("knox-county", home.getAsJsonObject("position").get("dimension").getAsString());
+        JsonObject death = events().get(0).getAsJsonObject("payload").getAsJsonObject("data");
+        assertEquals("knox-county", death.getAsJsonObject("position").get("dimension").getAsString());
+    }
+
+    @Test
+    void positionsStayWithoutDimensionOnVersion0OrWithoutAMap() throws Exception {
+        adapter.location = new PlayerLocation(1, 2, 0, null);
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        request("getPlayerLocation", "r1", "{\"gameId\":\"p\"}");
+        Thread.sleep(200);
+        assertFalse(response("r1").getAsJsonObject("payload").has("dimension"));
+
+        adapter.dimensions = List.of(DIM);
+        client = newClient();
+        client.onOpen(null);
+        identify(0);
+        sent.clear();
+        request("getPlayerLocation", "r2", "{\"gameId\":\"p\"}");
+        Thread.sleep(200);
+        assertFalse(response("r2").getAsJsonObject("payload").has("dimension"));
+    }
+
+    @Test
     void v1ActionFailureMapsToAnErrorCode() throws Exception {
         client.onOpen(null);
         identify(1);
@@ -359,6 +401,14 @@ class ProtocolV1Test {
         return JsonParser.parseString(sent.get(i)).getAsJsonObject();
     }
 
+    private JsonObject response(String requestId) {
+        for (String raw : sent) {
+            JsonObject f = JsonParser.parseString(raw).getAsJsonObject();
+            if (f.has("requestId") && requestId.equals(f.get("requestId").getAsString())) return f;
+        }
+        throw new AssertionError("no response to " + requestId + " in " + sent);
+    }
+
     private List<JsonObject> events() {
         List<JsonObject> out = new ArrayList<>();
         for (String raw : sent) {
@@ -376,6 +426,8 @@ class ProtocolV1Test {
 
     private static class FakeAdapter implements GameAdapter {
         List<MapDimension> dimensions = List.of();
+        PlayerLocation location;
+        List<GameLocation> locations = List.of();
         RuntimeException failGiveWith;
         String gameVersion = "42.20.4";
 
@@ -387,11 +439,11 @@ class ProtocolV1Test {
         @Override public void setEventEmitter(EventEmitter emitter) { }
         @Override public PlayerInfo getPlayer(String gameId) { return null; }
         @Override public List<PlayerInfo> getPlayers() { return List.of(); }
-        @Override public PlayerLocation getPlayerLocation(String gameId) { return null; }
+        @Override public PlayerLocation getPlayerLocation(String gameId) { return location; }
         @Override public List<InventoryItem> getPlayerInventory(String gameId) { return List.of(); }
         @Override public List<GameItem> listItems() { return List.of(); }
         @Override public List<GameEntity> listEntities() { return List.of(); }
-        @Override public List<GameLocation> listLocations() { return List.of(); }
+        @Override public List<GameLocation> listLocations() { return locations; }
         @Override public void giveItem(String gameId, String itemCode, int amount, String quality) {
             if (failGiveWith != null) throw failGiveWith;
         }
