@@ -156,12 +156,12 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
   `<player>` is a SteamID64 or the exact name. Unknown commands return `success:false` with a hint. There is no
   time-of-day command (not reverse engineered).
 
-### GET lists (static data from the server's kfc, build 1024233; regenerate with `tools/gen_gamedata.py`)
+### GET lists (static data from the server's kfc: items and entities from build 1267041, locations from 1273043; regenerate with `tools/gen_gamedata.py`)
 - `GET /bans`: see Moderation.
 - `GET /items` returns 3609 `[{code, name, description:"<category>, <rarity>", itemId, maxStackSize}]`. Localized names
   do not ship with the dedicated server, so `name` is the code with spaces.
 - `GET /entities` returns 979 actor templates `[{code, name, type: hostile|friendly|neutral, description}]`.
-- `GET /locations` returns the 692 map markers and spawn points the in-game map shows `[{code, name, kind, spawnType?, position:{x,y,z}}]`,
+- `GET /locations` returns the 808 map markers and spawn points the in-game map shows `[{code, name, kind, spawnType?, position:{x,y,z}}]`,
   named with the client's En_Us map label; a code several placements share gets `@<x>_<z>` (metres) appended.
 
 ### Events added in v0.4

@@ -10,16 +10,17 @@ name, naming component; see gen_item_labels.py).
 Only places a player can find on the in-game map are kept:
   - a marker the client names, unless its code says the game hides it (`noUI`: quest search areas
     and placeholders that never show an icon);
-  - a fast travel platform (Teleport_Platform_Gameplay, _FallenCrypt_Gameplay), which the client
-    draws as a Fast Travel Point but does not name. The platform on top of an Ancient Spire
-    (Teleport_Platform_Tower_Gameplay) is left out: the spire's own region label sits within a
-    metre of it.
+  - a fast travel platform (1.0: Teleport_Platform_SavePoint_Gameplay, _SavePoint_FallenCrypt_Gameplay;
+    before 1.0 without `SavePoint_`), which the client draws as a Fast Travel Point but does not name.
+    The platform on top of an Ancient Spire (Teleport_Platform_SavePoint_Tower_Gameplay) and the
+    Ancient Lands teleporters are left out: a named marker sits within a few metres of each.
 Everything else (respawn save points, boss braziers, the spire beacons that sit on top of an
 already-named Ancient Spire, trigger zones) is left out: it has no name a player would recognise.
 
     gen_location_labels.py <templates-en.tsv> <locations.json> [build note]
 
-locations.json is the server placement table gen_gamedata.py bakes into gamedata.cpp.
+locations.json is the server placement table (tools/eml-locations, tools/locations_json.py) that
+gen_gamedata.py bakes into gamedata.cpp.
 """
 import json
 import os
@@ -31,7 +32,7 @@ OUT = os.path.normpath(os.path.join(HERE, '..', 'src', 'locationlabels.cpp'))
 
 # Unnamed in the client but drawn on its map. The name is the game's own term (En_Us "Fast Travel
 # Point Unlocked!").
-UNNAMED = [(re.compile(r'^Teleport_Platform_(FallenCrypt_)?Gameplay$'), 'Fast Travel Point')]
+UNNAMED = [(re.compile(r'^Teleport_Platform_(SavePoint_)?(FallenCrypt_)?Gameplay$'), 'Fast Travel Point')]
 
 
 def c(s):

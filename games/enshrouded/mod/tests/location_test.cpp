@@ -41,7 +41,15 @@ int main() {
     Check(LocationLabelByCode("Prop_OpenWorld_SavePoint") == nullptr, "save points are not map places");
     Check(LocationLabelByCode("8kMapLabel_general_PlaceholderMapMarker_empty") == nullptr, "placeholder dropped");
     Check(LocationLabelByCode(nullptr) == nullptr, "null code");
-    Check(LocationLabelByCode("Teleport_Platform_Tower_Gameplay") == nullptr, "spire-top platform left to the spire label");
+    Check(LocationLabelByCode("Teleport_Platform_SavePoint_Tower_Gameplay") == nullptr,
+          "spire-top platform left to the spire label");
+    Check(LocationLabelByCode("Teleporter_AncientLands_SavePoint_ACTIVE_GameplayONLY") == nullptr,
+          "Ancient Lands teleporter left to its named marker");
+    // Places 1.0 added (the Ancient Lands sky islands, the Sky Ports) under their in-game names.
+    Check(std::string(LocationLabelByCode("8kMapLabel_ancientLands_island_05_town_01_citadel")) == "The Ancient Citadel",
+          "The Ancient Citadel");
+    Check(std::string(LocationLabelByCode("8kMapLabel_grassland_town_13_airshipHarbor")) == "Springlands Sky Port",
+          "Springlands Sky Port");
 
     std::vector<LocationRow> rows = LocationRows(kLocations, kLocationCount);
     std::set<std::string> codes;
@@ -58,19 +66,21 @@ int main() {
         byBase[r.def->code]++;
     }
     // Every fast travel platform is its own marker.
-    Check(byBase["Teleport_Platform_Gameplay"] == 52, "52 fast travel platforms on the surface");
+    Check(byBase["Teleport_Platform_SavePoint_Gameplay"] == 69, "69 fast travel platforms on the surface");
     int fastTravel = 0;
     for (const LocationRow& r : rows)
-        if (std::strcmp(r.def->code, "Teleport_Platform_Gameplay") == 0) {
+        if (std::strcmp(r.def->code, "Teleport_Platform_SavePoint_Gameplay") == 0) {
             fastTravel++;
             Check(std::string(r.name) == "Fast Travel Point", "fast travel name");
-            Check(r.code.rfind("Teleport_Platform_Gameplay@", 0) == 0, "fast travel code " + r.code);
+            Check(r.code.rfind("Teleport_Platform_SavePoint_Gameplay@", 0) == 0, "fast travel code " + r.code);
         }
-    Check(fastTravel == 52, "fast travel rows");
+    Check(fastTravel == 69, "fast travel rows");
+    Check(kLocationCount == 1285, "1285 placements in the 1273043 table");
+    Check(rows.size() == 808, "808 places listed");
     // Nothing from the Hollow Halls interiors in the north-west corner.
     for (const LocationRow& r : rows)
         Check(!(r.def->x < 2400 && r.def->z > 8400), "no dungeon-interior placement: " + r.code);
-    Check(byBase["Teleport_Platform_FallenCrypt_Gameplay"] == 4, "4 crypt fast travel platforms on the surface");
+    Check(byBase["Teleport_Platform_SavePoint_FallenCrypt_Gameplay"] == 8, "8 crypt fast travel platforms on the surface");
 
     // A code used once keeps its code.
     bool twin = false;
@@ -78,14 +88,14 @@ int main() {
     Check(twin, "single-use code kept as it is");
 
     // Two placements of one code in the same square metre still get two codes.
-    LocationDef same[] = {{"Teleport_Platform_Gameplay", "mapMarker", "", 10.2, 0, 20.4},
-                          {"Teleport_Platform_Gameplay", "mapMarker", "", 9.8, 0, 19.6},
+    LocationDef same[] = {{"Teleport_Platform_SavePoint_Gameplay", "spawnPoint", "SavePoint", 10.2, 0, 20.4},
+                          {"Teleport_Platform_SavePoint_Gameplay", "spawnPoint", "SavePoint", 9.8, 0, 19.6},
                           {"Prop_OpenWorld_SavePoint", "spawnPoint", "SavePoint", 3000, 0, 3000},
-                          {"Teleport_Platform_Gameplay", "mapMarker", "", 860, 200, 9934}};
+                          {"Teleport_Platform_SavePoint_Gameplay", "spawnPoint", "SavePoint", 860, 200, 9934}};
     std::vector<LocationRow> two = LocationRows(same, 4);
     Check(two.size() == 2, "unnamed and interior placements dropped from a synthetic table");
-    Check(two.size() == 2 && two[0].code == "Teleport_Platform_Gameplay@10_20" &&
-              two[1].code == "Teleport_Platform_Gameplay@10_20_2",
+    Check(two.size() == 2 && two[0].code == "Teleport_Platform_SavePoint_Gameplay@10_20" &&
+              two[1].code == "Teleport_Platform_SavePoint_Gameplay@10_20_2",
           "same-metre placements numbered");
 
     std::printf("location_test: %zu of %zu placements listed, %d checks, %d failures\n", rows.size(), kLocationCount,

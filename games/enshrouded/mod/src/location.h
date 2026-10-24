@@ -1,8 +1,8 @@
 // The places listLocations answers with, as a player finds them on the in-game map.
 //
 // kLocations (gamedata.cpp) is every map-marker and spawn-point placement in the server's world
-// data, 1031 rows. Many of them share one code: the 53 fast travel platforms are all
-// Teleport_Platform_Gameplay, the 47 Flame Shrines a handful of codes. Takaro keys a location by
+// data, 1285 rows on game build 1273043. Many of them share one code: the 70 fast travel
+// platforms are all Teleport_Platform_SavePoint_Gameplay, the Flame Shrines a handful of codes. Takaro keys a location by
 // its code, so rows that share one would collapse into a single marker; LocationRows gives each
 // placement of a shared code its own code, `<code>@<x>_<z>` (metres, rounded), which stays the
 // same as long as the placement does. A code used once is kept as it is.
