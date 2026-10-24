@@ -859,6 +859,7 @@ void PrepareNextAction() {
         else {
             try {
                 prepared = behavior->PrepareAction(id, action, args, atEpoch);
+                prepared.protocolVersion = protocolVersion.load();
                 resolveBan = NativeBehavior::Engine::NeedsBanResolution(prepared);
                 if (!resolveBan) {
                     auto ready = behavior->BeforeExecute(prepared);

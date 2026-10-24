@@ -411,7 +411,11 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p){
             id=ResolveId(p,a);Actions::Result raw=Actions::PlayerLocation(id);
             if(raw.status<400){Json position=Position(Parse(raw.body));out.payloadJson=position.dump();out.effects.push_back({Effect::Kind::RememberLocation,Json{{"gameId",id},{"position",position}}.dump()});}
             else {auto it=p.view->locationWindowUntilMs.find(id);if(it==p.view->locationWindowUntilMs.end()||it->second<WallMs())call(raw);
-                auto pos=p.view->lastLocationsJson.find(id);out.payloadJson=pos==p.view->lastLocationsJson.end()?Position(Json{{"x",0},{"y",0},{"z",0}}).dump():pos->second;}
+                // With no cached position, version 1 answers null ("no position"), which Takaro accepts
+                // without storing a sample. Version 0 keeps the (0,0,0) placeholder.
+                auto pos=p.view->lastLocationsJson.find(id);
+                if(pos!=p.view->lastLocationsJson.end())out.payloadJson=pos->second;
+                else out.payloadJson=p.protocolVersion==1?"null":Position(Json{{"x",0},{"y",0},{"z",0}}).dump();}
         }
         else if(action=="getPlayerInventory")out.payloadJson=Inventory(call(Actions::PlayerInventory(ResolveId(p,a)))).dump();
         else if(action=="giveItem"){

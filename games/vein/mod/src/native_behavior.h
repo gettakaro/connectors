@@ -15,6 +15,8 @@ struct PreparedAction {
     std::string requestId, action, argsJson;
     uint64_t epoch = 0;
     uint64_t revision = 0;
+    // Protocol Version Takaro chose for the connection the request arrived on (0 or 1).
+    int protocolVersion = 0;
     bool internalExpiry = false;
     std::string expiryPlayer;
     // Resolved by the action worker before the bridge durably journals a ban.
