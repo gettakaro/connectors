@@ -2,6 +2,7 @@
 
 #include "entity.h"
 #include "hooks.h"
+#include "location.h"
 #include "names.h"
 #include "profile.h"
 #include "scan.h"
@@ -793,7 +794,7 @@ void WorldInitCapabilities() {
         st.SetCapability(c, "degraded", "initializing");
     st.SetCapability("listItems", "ok", "static items table (" + std::to_string(kItemCount) + " ItemInfo)");
     st.SetCapability("listEntities", "ok", "static actor templates (" + std::to_string(kEntityCount) + ")");
-    st.SetCapability("listLocations", "ok", "static map markers/spawn points (" + std::to_string(kLocationCount) + ")");
+    st.SetCapability("listLocations", "ok", "in-game map places (" + std::to_string(LocationRows(kLocations, kLocationCount).size()) + " of " + std::to_string(kLocationCount) + " placements)");
     st.SetCapability("executeCommand", "ok", "plugin-defined command set (see /command help)");
 }
 
@@ -1533,19 +1534,16 @@ const std::string& LocationsJson() {
     static SrwLock l;
     Guard g(l);
     if (s.empty()) {
-        std::vector<const char*> codes;
-        codes.reserve(kLocationCount);
-        for (size_t i = 0; i < kLocationCount; i++) codes.push_back(kLocations[i].code);
-        std::vector<std::string> names;
-        DistinctNames(NameKind::Location, codes.data(), codes.size(), names);
         s = "[";
         char b[160];
-        for (size_t i = 0; i < kLocationCount; i++) {
-            auto& x = kLocations[i];
+        bool first = true;
+        for (const LocationRow& row : LocationRows(kLocations, kLocationCount)) {
+            auto& x = *row.def;
             snprintf(b, sizeof b, "\"position\":{\"x\":%.2f,\"y\":%.2f,\"z\":%.2f}", x.x, x.y, x.z);
-            s += std::string(i ? "," : "") + "{\"code\":" + JsonStr(x.code) + ",\"name\":" + JsonStr(names[i]) +
-                 ",\"kind\":" +
-                 JsonStr(x.kind) + (x.spawnType[0] ? ",\"spawnType\":" + JsonStr(x.spawnType) : std::string()) + "," + b + "}";
+            s += std::string(first ? "" : ",") + "{\"code\":" + JsonStr(row.code) + ",\"name\":" + JsonStr(row.name) +
+                 ",\"kind\":" + JsonStr(x.kind) + (x.spawnType[0] ? ",\"spawnType\":" + JsonStr(x.spawnType) : std::string()) +
+                 "," + b + "}";
+            first = false;
         }
         s += "]";
     }
