@@ -456,7 +456,6 @@ const LocationLabel kLocationLabels[] = {
   {"MapMarker_Tower_tallTrees_FastTravel","Blackmire"},
   {"Teleport_Platform_FallenCrypt_Gameplay","Fast Travel Point"},
   {"Teleport_Platform_Gameplay","Fast Travel Point"},
-  {"Teleport_Platform_Tower_Gameplay","Fast Travel Point"},
   {"_NPC_ALCHEMIST_hint13_gemstationTutorial_areaHint_InnerFognest","Heart of the Lair"},
   {"_NPC_BARBER_HINT17_MapLabel_emilyPlushy_searchArea","Lost Plushy"},
   {"_NPC_BLACKSMITH_HINT04_MapLabel_Forge","Forge Location"},
