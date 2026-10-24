@@ -8,6 +8,11 @@ OUT=build
 DEFS=()
 # DEBUG_CORRUPT_SIG=<signature name> builds a debug DLL into build-debug/ with that signature deliberately corrupted
 if [ -n "${DEBUG_CORRUPT_SIG:-}" ]; then OUT=build-debug; DEFS=(-DTAKARO_DEBUG_CORRUPT_SIG="\"$DEBUG_CORRUPT_SIG\""); fi
+# TAKARO_COMMAND_PROBE=1 builds the #202 research probe into build-probe/ (../research/command-probe; never released)
+PROBE_SRC=()
+if [ "${TAKARO_COMMAND_PROBE:-}" = 1 ]; then
+  OUT=build-probe; DEFS+=(-DTAKARO_COMMAND_PROBE -I../research/command-probe); PROBE_SRC=(../research/command-probe/probe_core.cpp)
+fi
 mkdir -p "$OUT/obj"
 # embed the per-build game data; src/profile.cpp writes it as the default takaro/enshrouded-gamedata.json
 { printf 'R"GD('; cat gamedata/enshrouded-gamedata.json; printf ')GD"\n'; } > "$OUT/gamedata_default.inc"
@@ -16,6 +21,6 @@ for f in $MH/src/hook.c $MH/src/buffer.c $MH/src/trampoline.c $MH/src/hde/hde64.
   "$ZIG" cc -target $TARGET -O2 -I$MH/include -c "$f" -o "$OUT/obj/$(basename "$f" .c).o"
 done
 "$ZIG" c++ -target $TARGET -O2 -std=c++17 "${DEFS[@]}" -Wall -Wno-unused-function -I$MH/include -Isrc -I"$OUT" \
-  -shared -s -o "$OUT/dbghelp.dll" src/*.cpp src/native/*.cpp "$OUT"/obj/*.o -lws2_32 -lwinhttp -lcrypt32 -lbcrypt
+  -shared -s -o "$OUT/dbghelp.dll" src/*.cpp src/native/*.cpp "${PROBE_SRC[@]}" "$OUT"/obj/*.o -lws2_32 -lwinhttp -lcrypt32 -lbcrypt
 rm -f "$OUT"/*.lib "$OUT"/*.pdb
 echo "built $OUT/dbghelp.dll ($(stat -c %s "$OUT/dbghelp.dll") bytes)"
