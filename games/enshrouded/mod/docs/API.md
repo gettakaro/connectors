@@ -161,7 +161,8 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
 - `GET /items` returns 3609 `[{code, name, description:"<category>, <rarity>", itemId, maxStackSize}]`. Localized names
   do not ship with the dedicated server, so `name` is the code with spaces.
 - `GET /entities` returns 979 actor templates `[{code, name, type: hostile|friendly|neutral, description}]`.
-- `GET /locations` returns 1031 map markers and spawn points `[{code, name, kind, spawnType?, position:{x,y,z}}]`.
+- `GET /locations` returns the 699 map markers and spawn points the in-game map shows `[{code, name, kind, spawnType?, position:{x,y,z}}]`,
+  named with the client's En_Us map label; a code several placements share gets `@<x>_<z>` (metres) appended.
 
 ### Events added in v0.4
 - `chat-message`: `{msg, channel:"global", chatType, senderName, player?}`. From a detour of `ChatSystem::addMessage`,
