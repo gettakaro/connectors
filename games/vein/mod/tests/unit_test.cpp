@@ -900,6 +900,18 @@ static void TestGiveVerification() {
 // The bug this pins down (Takaro 2026-09-17): every entity-killed carried the class name of the
 // death event's DamageCauser, so a wolf that a zombie ate arrived as `weapon: "BP_Zombie_C"` and a
 // real melee kill as `weapon: "MeleeEquippedItem"`. Neither is a weapon.
+static void TestLocationRefusal() {
+    using ActionsUtil::LocationRefusal;
+    // A spawned character with a readable transform has a position.
+    EQ(LocationRefusal(true, true, true, "BP_VeinPlayerCharacter_C"), std::string(""));
+    // The character-creation pawn is a real pawn with a real transform, but it stands in a lobby
+    // scene off the map: it must not be reported as the player's position.
+    CHECK(LocationRefusal(true, false, true, "BP_CharacterCreationPawn_C").find("character screen") != std::string::npos, "creation pawn refused");
+    CHECK(LocationRefusal(true, false, true, "BP_CharacterCreationPawn_C").find("BP_CharacterCreationPawn_C") != std::string::npos, "reason names the pawn");
+    EQ(LocationRefusal(false, false, false, ""), std::string("player has no pawn yet"));
+    EQ(LocationRefusal(true, true, false, "BP_VeinPlayerCharacter_C"), std::string("pawn has no readable root component"));
+}
+
 static void TestKillWeaponName() {
     using ActionsUtil::KillWeaponName;
     // The real case: the causer is the swung AMeleeEquippedItem and its UItem resolved to a name.
@@ -1428,6 +1440,7 @@ int main() {
     TestPlayerInventoryClassGuard();
     TestCharacterIdFormatting();
     TestKillWeaponName();
+    TestLocationRefusal();
     TestConfigFileParse();
     TestConfigFileLookup();
     TestConfigResolve();

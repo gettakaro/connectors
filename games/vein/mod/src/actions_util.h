@@ -189,4 +189,9 @@ bool IsPlayerInventoryClass(const std::string& className);
 // `selected character <id>` log line carries. An all-zero GUID is "no character" and returns "".
 std::string GuidDigits(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
 
+// Why `getPlayerLocation` has no position to report, or "" when it has one. Only a spawned
+// character stands in the world: the character-creation pawn sits in a lobby scene far outside
+// the map, and reporting it puts the player off the map and draws a false path on it.
+std::string LocationRefusal(bool hasPawn, bool spawned, bool hasLoc, const std::string& pawnClass);
+
 }  // namespace ActionsUtil
