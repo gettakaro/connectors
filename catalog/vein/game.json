@@ -38,7 +38,7 @@
     }
   },
   "legacyAssetAliases": {
-    "takaro-vein-plugin.tar.gz": "linux-25708939/plugin"
+    "takaro-vein-plugin.tar.gz": "linux-25969514/plugin"
   },
   "devServers": {
     "composeFile": "vein.yml"
