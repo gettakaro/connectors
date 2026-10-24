@@ -4,9 +4,9 @@
   "game": "vein",
   "platform": "linux",
   "revision": "25969514",
-  "default": false,
+  "default": true,
   "support": {
-    "status": "candidate",
+    "status": "maintained",
     "since": "2026-10-16",
     "evidence": [
       "VEIN public build 25969514 (0.025h3 Build 13293) pinned from Steam app metadata: depot 2131402 manifest 249441576548896915; server binary and .sym hashes recorded from the depot and matched on the dev rig after a fresh install (issue #523)",
