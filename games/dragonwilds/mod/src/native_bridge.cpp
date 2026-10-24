@@ -1,6 +1,7 @@
 #include "native_bridge.h"
 #include "native_transport.h"
 #include "game_profile.h"
+#include "native_map.h"
 #include "native_behavior.h"
 #include "native_persistence.h"
 
@@ -1372,9 +1373,9 @@ std::string GateAction(const std::string& action, const std::string& encodedArgs
             Json raw = Json::parse(r.body);
             if (raw.contains("x") && raw.contains("y") && raw.contains("z") &&
                 raw["x"].is_number() && raw["y"].is_number() && raw["z"].is_number())
-                return Json({{"x", raw["x"]}, {"y", raw["y"]}, {"z", raw["z"]}}).dump();
+                return Json({{"x", raw["x"]}, {"y", raw["y"]}, {"z", raw["z"]}, {"dimension", NativeMap::kDimensionId}}).dump();
         }
-        if (HasLocationWindow(id)) return R"({"x":0,"y":0,"z":0})";
+        if (HasLocationWindow(id)) return Json({{"x", 0}, {"y", 0}, {"z", 0}, {"dimension", NativeMap::kDimensionId}}).dump();
         throw std::runtime_error("getPlayerLocation: " + r.body);
     }
     throw std::runtime_error("native gate action unavailable: " + action);
