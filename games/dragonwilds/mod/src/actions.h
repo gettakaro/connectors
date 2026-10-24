@@ -54,4 +54,7 @@ bool KickBanned(const std::string& gameId);
 // proven without a human swinging a sword.
 Result KillNearest(const JsonValue& body);
 
+// Research probe (#203) only; game thread. Never used by the connector surface.
+bool ProbeWhisper(const std::string& gameId, const std::string& text, std::string& err);
+
 }  // namespace Actions
