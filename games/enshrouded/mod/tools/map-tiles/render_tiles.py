@@ -15,9 +15,10 @@ Output (Takaro / takaro-player-map tiling, 128 px tiles, 1 m per pixel at maxZoo
   <out>/pack-<UTC time>/ with map.json, outside.png and <z>/<x>/<y>.png (x east, y north from the origin),
   switched live through <out>/current only once complete (pack.py); older packs are pruned.
 
-This is our own rendering of the game's height data (ramp colours from the game, hillshade and
-contours computed here), not a copy of the in-game map screen. The pack is derived from Keen Games'
-assets: fine on a dev rig, do not redistribute it without permission.
+This is our own rendering of the game's height data (parchment colours like the explored in-game map,
+or the game's ramp with --style ramp; hillshade and contours computed here), not a copy of the in-game
+map screen. The pack is derived from Keen Games' assets: fine on a dev rig, do not redistribute it
+without permission.
 
 Usage: render_tiles.py <raw-dir> [<out-dir>] [--image map.jpg [--image-size 8192]] [--preview preview.png]
   --image writes one north-up image of the whole world for the dashboard's "upload map" (protocol 1,
@@ -113,7 +114,15 @@ def upsample_base(base, r0, r1):
     return (top * (1 - fy) + bot * fy) * HEIGHT_SCALE
 
 
-def render(base, ramp, detail, band=512):
+# The in-game world map draws explored land on light parchment with brown contour lines; the game's
+# baseGradient ramp is the dark, desaturated look of land not yet explored. "parchment" (the default)
+# follows the explored look so the dashboard map reads at a glance; "ramp" keeps the game's ramp.
+PARCHMENT_LOW = np.array([166, 152, 122], np.float32)   # valley floor
+PARCHMENT_HIGH = np.array([236, 228, 204], np.float32)  # peaks and snow
+OUTSIDE = np.array([58, 50, 56], np.float32)            # below the playable land: the world's edge
+
+
+def render(base, ramp, detail, band=512, style="parchment"):
     # stretch the ramp over the land's height range (the sea floor sits at the bottom of the R16 range)
     hmin = float(np.percentile(base, 2)) * HEIGHT_SCALE
     hmax = float(np.percentile(base, 99.9)) * HEIGHT_SCALE
@@ -122,12 +131,19 @@ def render(base, ramp, detail, band=512):
         a0, a1 = max(0, r0 - 1), min(WORLD, r0 + band + 1)  # one-row halo for gradients
         h = upsample_base(base, a0, a1)
         d = detail[a0:a1].astype(np.float32) - 128.0
-        # colour from the game's own height ramp
-        t = np.clip((h - hmin) / (hmax - hmin), 0, 1) ** 0.6 * (len(ramp) - 1)
-        i0 = np.floor(t).astype(int)
-        i1 = np.minimum(i0 + 1, len(ramp) - 1)
-        f = (t - i0)[..., None]
-        col = ramp[i0] * (1 - f) + ramp[i1] * f
+        u = np.clip((h - hmin) / (hmax - hmin), 0, 1)
+        if style == "ramp":
+            # colour from the game's own height ramp
+            t = u ** 0.6 * (len(ramp) - 1)
+            i0 = np.floor(t).astype(int)
+            i1 = np.minimum(i0 + 1, len(ramp) - 1)
+            f = (t - i0)[..., None]
+            col = ramp[i0] * (1 - f) + ramp[i1] * f
+        else:
+            t = (u ** 0.8)[..., None]
+            col = PARCHMENT_LOW * (1 - t) + PARCHMENT_HIGH * t
+            edge_fade = np.clip(u / 0.03, 0, 1)[..., None]  # the sea floor around the land fades to dark
+            col = OUTSIDE * (1 - edge_fade) + col * edge_fade
         # hillshade from the 1 m relief layer (light from the north-west) plus the coarse slope
         surf = h + d * 0.5
         gy, gx = np.gradient(surf)
@@ -198,13 +214,15 @@ def main():
     ap.add_argument("--image", help="write the whole world as one image for Takaro's map upload (.jpg/.png/.webp)")
     ap.add_argument("--image-size", type=int, default=8192, help="side of --image in pixels (Takaro allows up to 8192)")
     ap.add_argument("--preview", help="also write a 2048 px overview PNG here")
+    ap.add_argument("--style", choices=["parchment", "ramp"], default="parchment",
+                    help="parchment: light like the explored in-game map (default); ramp: the game's dark height ramp")
     a = ap.parse_args()
     if not a.out_dir and not a.image and not a.preview:
         ap.error("nothing to write: give <out-dir>, --image or --preview")
     if not 1 <= a.image_size <= 8192:
         ap.error("--image-size must be 1..8192")
     base, ramp, detail = load(a.raw_dir)
-    img = render(base, ramp, detail)
+    img = render(base, ramp, detail, style=a.style)
     if a.preview:
         Image.fromarray(img).resize((2048, 2048), Image.BOX).save(a.preview)
     if a.image:
