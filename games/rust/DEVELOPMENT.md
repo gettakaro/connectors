@@ -252,7 +252,9 @@ On protocol v1 the same raster is declared as the `map` capability: one Dimensio
 right and z up, bounds = the world square plus the 512 m ocean pad, a `tiled` source of 128 px tiles
 from zoom 0 (the whole square) to the first zoom with at most one metre per pixel. `getMapTile`
 takes `{dimension, zoom, x, y}` and answers `{mimeType: "image/png", data}`; a map that is not
-rendered yet answers `not_found`. The capability goes out in a `capabilities` replacement as soon as
+rendered yet answers `not_found`. `getPlayerLocation` names the same Dimension
+(`dimension: "world"`), so Takaro files player positions under the id the map and the locations use.
+The capability goes out in a `capabilities` replacement as soon as
 the raster is ready, so a boot or reload declares it a few seconds after identify.
 
 ### Protocol (v0 and v1)
