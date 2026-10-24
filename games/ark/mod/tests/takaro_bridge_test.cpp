@@ -499,6 +499,7 @@ void test_events_cursor_and_outage_replay() {
   }));
   auto location = takaro.request("loc", "getPlayerLocation", json::obj({{"gameId", json::str(kId)}}));
   CHECK(location && location->get("payload")->get("x")->as_number() == 11);
+  CHECK(location && !location->get("payload")->get("dimension"));  // v0: x, y, z only
   bridge.stop();
 }
 
@@ -720,6 +721,17 @@ void test_protocol_v1() {
         connected->get("payload")->get("seq")->as_number() == 1);
   CHECK(connected && connected->get("payload")->get("data")->get("player")->get("ip")->as_string() == "198.51.100.7" &&
         connected->get("payload")->get("data")->get("player")->get("ping")->as_number() == 35);
+  // Positions name the declared Dimension; teleports accept it and refuse any other.
+  gate.record_position(kId, -113926.75f, 234912.75f, -14334.5f);
+  auto location = takaro.request("v1-loc", "getPlayerLocation", json::obj({{"gameId", json::str(kId)}}), 2000ms);
+  CHECK(location && location->get("payload")->get("dimension")->as_string() == "TheIsland" &&
+        location->get("payload")->get("y")->as_number() == 234912.75);
+  auto tp = takaro.request("v1-tp", "teleportPlayer", json::obj({{"gameId", json::str(kId)}, {"x", json::num(1)},
+      {"y", json::num(2)}, {"z", json::num(3)}, {"dimension", json::str("TheIsland")}}), 2000ms);
+  CHECK(tp && tp->get("payload") && tp->get("payload")->is_object());
+  auto tp_other = takaro.request("v1-tp-other", "teleportPlayer", json::obj({{"gameId", json::str(kId)}, {"x", json::num(1)},
+      {"y", json::num(2)}, {"z", json::num(3)}, {"dimension", json::str("Ragnarok")}}), 2000ms);
+  CHECK(tp_other && tp_other->get("error")->get("code")->as_string() == "unsupported");
   std::this_thread::sleep_for(1500ms);
   CHECK(bridge.persisted_cursor() == 0);
   takaro.acks = true;
