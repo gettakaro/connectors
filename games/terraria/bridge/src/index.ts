@@ -8,7 +8,7 @@ import { logger } from './logger.js';
 import { LogTailer } from './logs/logTailer.js';
 import { buildManifest } from './takaro/capabilities.js';
 import { TakaroWsClient } from './takaro/client.js';
-import { MapImageError, MapImageStore } from './takaro/mapImage.js';
+import { MapImageError, MapImageStore, locationForProtocol } from './takaro/mapImage.js';
 import { logConnectionState } from './takaro/connectionLog.js';
 import { identifyErrorStatus, identifyErrorSummary, identifyErrorText } from './takaro/identifyError.js';
 import type { GameEventType, RequestPayload, WsMessage } from './takaro/protocol.js';
@@ -302,7 +302,12 @@ async function handleTakaroRequest(
       return;
     }
     const result = await adapter.handleAction(action, message.payload?.args);
-    takaro.sendResponse(requestId, result);
+    takaro.sendResponse(
+      requestId,
+      action === 'getPlayerLocation'
+        ? locationForProtocol(result as Parameters<typeof locationForProtocol>[0], takaro.getProtocolVersion())
+        : result,
+    );
   } catch (err) {
     const messageText = err instanceof Error ? err.message : String(err);
     takaro.sendError(requestId, messageText, err instanceof MapImageError ? err.code : 'game_error');
