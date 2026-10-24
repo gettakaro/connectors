@@ -44,8 +44,8 @@
       "note": "397 creature/NPC templates (colliders, weak spots, traps, projectiles, props and dev templates left out). 78 carry the client's name (bosses via their health bar, NPCs, fish); the client names no regular creature, so the other 319 get a readable name from the code ('Rat', 'Scavenger Ranger'). Takaro's sync never deletes, so an older build's rows stay"
     },
     "listLocations": {
-      "status": "partial",
-      "note": "1031 locations served by the native connector; Takaro app-api never calls listLocations, so not observable end to end"
+      "status": "proven",
+      "note": "699 of the 1031 map-marker and spawn-point placements: the ones the in-game map shows, named with the client's En_Us map label (tools/gen_location_labels.py); a code several placements share gets a per-placement suffix @<x>_<z>, because Takaro keys locations by code"
     },
     "executeConsoleCommand": {
       "status": "proven",

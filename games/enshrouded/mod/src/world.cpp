@@ -2,6 +2,7 @@
 
 #include "entity.h"
 #include "hooks.h"
+#include "location.h"
 #include "names.h"
 #include "profile.h"
 #include "scan.h"
@@ -1533,19 +1534,16 @@ const std::string& LocationsJson() {
     static SrwLock l;
     Guard g(l);
     if (s.empty()) {
-        std::vector<const char*> codes;
-        codes.reserve(kLocationCount);
-        for (size_t i = 0; i < kLocationCount; i++) codes.push_back(kLocations[i].code);
-        std::vector<std::string> names;
-        DistinctNames(NameKind::Location, codes.data(), codes.size(), names);
         s = "[";
         char b[160];
-        for (size_t i = 0; i < kLocationCount; i++) {
-            auto& x = kLocations[i];
+        bool first = true;
+        for (const LocationRow& row : LocationRows(kLocations, kLocationCount)) {
+            auto& x = *row.def;
             snprintf(b, sizeof b, "\"position\":{\"x\":%.2f,\"y\":%.2f,\"z\":%.2f}", x.x, x.y, x.z);
-            s += std::string(i ? "," : "") + "{\"code\":" + JsonStr(x.code) + ",\"name\":" + JsonStr(names[i]) +
-                 ",\"kind\":" +
-                 JsonStr(x.kind) + (x.spawnType[0] ? ",\"spawnType\":" + JsonStr(x.spawnType) : std::string()) + "," + b + "}";
+            s += std::string(first ? "" : ",") + "{\"code\":" + JsonStr(row.code) + ",\"name\":" + JsonStr(row.name) +
+                 ",\"kind\":" + JsonStr(x.kind) + (x.spawnType[0] ? ",\"spawnType\":" + JsonStr(x.spawnType) : std::string()) +
+                 "," + b + "}";
+            first = false;
         }
         s += "]";
     }
