@@ -1001,6 +1001,7 @@ void WorldHooksInit() {
         g_charTable = (uint32_t)profile::L("characterTable", 0);
         if (cn && g_charComp && g_charTable) {
             g_charName = (CharNameFn)scan::Ptr(cn);
+            st.SetCharacterNamesAvailable(true);
             RecordResolve("characterName", cn, "gamedata; component 0x" + std::string(Hx(g_charComp)).substr(2) + " table +" + Hx(g_charTable), false);
         } else {
             RecordResolve("characterName", cn, "unresolved: " + h3, false);

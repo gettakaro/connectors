@@ -149,8 +149,17 @@ void PluginState::FinalizeLoginLocked() {
             break;
         }
     }
+    p.loginMs = NowMs();
+    p.connectPending = true;
+    if (!charNamesAvailable_ || !p.characterName.empty()) EmitConnectedLocked(p);
+}
+
+void PluginState::EmitConnectedLocked(PlayerRecord& p) {
+    if (!p.connectPending) return;
+    p.connectPending = false;
     PushEvent("player-connected", "{\"player\":" + PlayerJsonLocked(p) + "}");
-    PluginLog("player-connected name=%s peer=%s group=%s", p.name.c_str(), p.peerId.c_str(), p.group.c_str());
+    PluginLog("player-connected name=%s character=%s peer=%s group=%s", p.name.c_str(), p.characterName.c_str(),
+              p.peerId.c_str(), p.group.c_str());
 }
 
 void PluginState::OnLogLine(int level, const std::string& line) {
@@ -259,6 +268,7 @@ void PluginState::OnLogLine(int level, const std::string& line) {
         std::string name = line.substr(24, line.size() - 25);
         for (auto it = players_.begin(); it != players_.end(); ++it) {
             if (it->online && it->name == name) {
+                EmitConnectedLocked(*it);
                 PushEvent("player-disconnected", "{\"player\":" + PlayerJsonLocked(*it, false) + "}");
                 PluginLog("player-disconnected name=%s (Remove Player)", name.c_str());
                 it->online = false;
@@ -276,6 +286,7 @@ void PluginState::OnLogLine(int level, const std::string& line) {
         for (auto it = players_.begin(); it != players_.end(); ++it) {
             if (it->peerId == peer) {
                 if (it->online) {
+                    EmitConnectedLocked(*it);
                     PushEvent("player-disconnected", "{\"player\":" + PlayerJsonLocked(*it, false) + "}");
                     PluginLog("player-disconnected name=%s (Removed peer)", it->name.c_str());
                 }
@@ -294,6 +305,27 @@ void PluginState::OnLogLine(int level, const std::string& line) {
 void PluginState::Housekeep() {
     Guard g(lock_);
     if (collectingPerms_ && NowMs() - lastPermLineMs_ > 750) FinalizeLoginLocked();
+    // held player-connected events go out here, on the plugin thread, never from the game-thread name refresh
+    for (auto& p : players_) {
+        if (!p.online || !p.connectPending) continue;
+        if (!p.characterName.empty()) {
+            EmitConnectedLocked(p);
+        } else if (NowMs() - p.loginMs >= connectNameWaitMs_) {
+            PluginLog("character name for %s not readable after %llu ms; reporting the Steam name", p.name.c_str(),
+                      (unsigned long long)connectNameWaitMs_);
+            EmitConnectedLocked(p);
+        }
+    }
+}
+
+void PluginState::SetCharacterNamesAvailable(bool on) {
+    Guard g(lock_);
+    charNamesAvailable_ = on;
+}
+
+void PluginState::SetConnectNameWaitMs(uint64_t ms) {
+    Guard g(lock_);
+    connectNameWaitMs_ = ms;
 }
 
 std::string PluginState::PlayerJsonLocked(const PlayerRecord& p, bool online) const {
@@ -313,8 +345,9 @@ std::string PluginState::PlayersJson() const {
     bool first = true;
     for (size_t i = 0; i < players_.size(); i++) {
         auto& p = players_[i];
-        // a player is listed once logged in and its permission block has been finalized
-        if (!p.online || (collectingPerms_ && loginIdx_ == (int)i)) continue;
+        // listed once logged in, its permission block finalized and its player-connected sent, so getPlayers
+        // never shows a name before the event does
+        if (!p.online || p.connectPending || (collectingPerms_ && loginIdx_ == (int)i)) continue;
         if (!first) o += ",";
         first = false;
         o += PlayerJsonLocked(p);
