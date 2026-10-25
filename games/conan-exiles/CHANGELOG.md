@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.4.0...conan-exiles-v3.5.0) (2026-10-25)
+
+
+### Features
+
+* **conan-exiles:** game profile and connector identity ([#550](https://github.com/gettakaro/connectors/issues/550)) ([ed4e866](https://github.com/gettakaro/connectors/commit/ed4e8666b4eed5279da69dcded797270341953d3))
+
 ## [3.4.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.3.0...conan-exiles-v3.4.0) (2026-10-18)
 
 
