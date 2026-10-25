@@ -2,7 +2,7 @@
   "game": "Enshrouded",
   "connector": "Takaro Enshrouded native connector (dbghelp.dll)",
   "architecture": "in-process native plugin (dbghelp.dll proxy loaded by enshrouded_server.exe under Wine/Proton) that hooks the game and holds the Takaro Generic Connector WebSocket itself (WinHTTP, TLS); loopback HTTP 127.0.0.1:18890 serves diagnostics only",
-  "runtime": "enshrouded_server.exe game build 1267041 (Enshrouded 1.0 hotfix 1.0.0.1, Steam build 25967645) natively on Windows Server, via mod/gamedata/enshrouded-gamedata.json; build 1024233 under GE-Proton10-30 via the built-in heuristics",
+  "runtime": "enshrouded_server.exe game build 1273043 (Enshrouded 1.0, Steam build 26083076) under GE-Proton11-9 and game build 1267041 (hotfix 1.0.0.1, Steam build 25967645) natively on Windows Server, via mod/gamedata/enshrouded-gamedata.json; build 1024233 under GE-Proton10-30 via the built-in heuristics",
   "takaroConnection": "outbound_websocket",
   "updated": "2026-10-15",
   "oracle": "Takaro MCP (takaro-mcp 127.0.0.1:3000/mcp)",
@@ -174,6 +174,35 @@
       "status": "proven",
       "note": "the game process owns the Takaro socket; no other process or container"
     }
+  },
+  "verified1273043": {
+    "date": "2026-10-21",
+    "how": "live Steam client (build 1273043) on the Windows gamer PC against the server under GE-Proton11-9 + Takaro MCP (staging)",
+    "proven": [
+      "player-connected",
+      "player-disconnected (leave, kick, ban, shutdown)",
+      "chat-message (with player)",
+      "command-executed (player command from chat)",
+      "getPlayers",
+      "getPlayerLocation",
+      "getPlayerInventory",
+      "sendMessage broadcast, whisper and senderNameOverride as notices",
+      "executeConsoleCommand",
+      "giveItem (stack)",
+      "teleportPlayer",
+      "kickPlayer",
+      "banPlayer (rejoin refused)",
+      "unbanPlayer (rejoin ok)",
+      "listBans",
+      "shutdown (save, restart, re-identify)",
+      "player-death (fall, shroud, creature with killer name)",
+      "entity-killed (melee, item name)",
+      "chatBridge Discord<->game"
+    ],
+    "notTested": [
+      "whisper exclusion (one player)",
+      "timed ban expiry on 1273043"
+    ]
   },
   "verified1267041": {
     "date": "2026-10-15",

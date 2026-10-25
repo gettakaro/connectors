@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "id": "proton-1273043",
+  "game": "enshrouded",
+  "platform": "proton",
+  "revision": "1273043",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-10-21",
+    "evidence": [],
+    "notes": "Enshrouded 1.0 public Steam build 26083076 (game build 1273043, 2026-10-20); per-build plugin data re-derived against this exe, real game and client verification recorded in the PR."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 2278520,
+      "branch": "public",
+      "buildid": 26083076,
+      "os": "windows",
+      "arch": "64",
+      "depots": {
+        "1004": {
+          "manifest": "7604377918839582995",
+          "size": 67863136,
+          "files": 8
+        },
+        "2278521": {
+          "manifest": "6075892735519937045",
+          "size": 8047215683,
+          "files": 17
+        }
+      },
+      "files": {
+        "enshrouded_server.exe": {
+          "sha256": "d7baa768eb00aa895d9f5a1cd8747ccf66858c7b542f50983092b2e3261588ee",
+          "size": 22730240
+        },
+        "enshrouded_server.kfc": {
+          "sha256": "77e8c9a4526c6fe27c94d4438432d7db12e504d295fb9a5d6d06f94b424bc767",
+          "size": 4259840
+        },
+        "steam_api64.dll": {
+          "sha256": "e6d9bafb9a41e42fba7b21553db49f8719027af3f0deb23ff86cfc44d60e776d",
+          "size": 319128
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "mornedhels/enshrouded-server",
+      "tag": "dev-proton",
+      "digest": "sha256:d122801bb54498f41a6c0d8b27f336ec4c9266ffd5e4660611cb7c20c162318f",
+      "env": {
+        "WINEDLLOVERRIDES": "dbghelp=n,b",
+        "SERVER_ENABLE_TEXT_CHAT": "true",
+        "SERVER_SLOT_COUNT": "4",
+        "TZ": "Etc/UTC",
+        "TAKARO_PINNED_PROTON": "GE-Proton11-9"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/enshrouded/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22-bookworm-slim",
+      "digest": "sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9"
+    },
+    "deps": {
+      "zig": {
+        "coordinate": "ziglang:zig-linux-x86_64:0.13.0",
+        "sha256": "d45312e61ebcc48032b77bc4cf7fd6915c11fa16e4aad116b66c9468211230ea",
+        "resolvedCoordinate": "https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "server-plugin",
+      "artifact": "takaro-enshrouded-plugin-proton-1273043-{version}.zip",
+      "installDir": "takaro/plugin"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup",
+      "plugin-health",
+      "native-identify",
+      "native-players",
+      "native-catalog",
+      "native-console",
+      "action",
+      "reconnect",
+      "event",
+      "stop",
+      "negative-degraded-hooks"
+    ]
+  },
+  "preserve": [
+    "enshrouded_server.json",
+    "savegame/",
+    "logs/",
+    "backups/",
+    "steamapps/compatdata/",
+    "takaro/",
+    ".takaro/"
+  ],
+  "notes": "Enshrouded 1.0 public Steam build 26083076 (game build 1273043). Runtime image: upstream publishes 1.0-capable Proton only as the floating tag mornedhels/enshrouded-server:dev-proton (GE-Proton11-9, pushed 2026-10-15); the digest is what pins it. GE-Proton10-30 (1.7.2-proton) cannot start the 1.0 server (No SteamUtils011). Move to the first numbered upstream release that bundles a 1.0-capable Proton."
+}
