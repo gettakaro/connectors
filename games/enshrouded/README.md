@@ -2,7 +2,7 @@
 
 Connects an Enshrouded dedicated server to Takaro with one file: `dbghelp.dll`, placed next to
 `enshrouded_server.exe`. The DLL hooks the game and talks to Takaro itself, so it is the only thing the
-server needs; players join as usual.
+server needs. Players do not install anything: they join with the normal game client.
 
 It supports **Enshrouded 1.0** (game build **1273043**, Steam build 26083076; the earlier hotfix 1267041, Steam build
 25967645, is still known to the data file): tested
@@ -14,6 +14,13 @@ and are switched off (degraded) on any other game build, including the earlier b
 no longer a supported target.** A build the data file does not know keeps the hooks that still match;
 the rest switch themselves off (see "A game update can switch a feature off" below). **Keep the server on
 a build the connector supports.**
+
+**Steam's current build needs a release newer than 0.8.1.** Since 2026-10-20 Steam serves game build
+**1273043** (Steam build 26083076), and SteamCMD installs only the current build. Release 0.8.1 loads on
+1273043 but switches nearly everything off: its log reports players, chat, messages, kick, ban, unban,
+teleport, inventory, give item, the item and creature catalogues and all game events as `degraded`; only
+the console commands, the ban list, locations and shutdown stay `ok`. Install a release whose plugin zip
+is named `proton-1273043` before you install or update the game to it.
 
 ## What works, what doesn't
 
@@ -50,8 +57,8 @@ a real game client and Takaro. Rows marked *(1.0 ✓)* were re-checked on 1.0; t
 | Player death event *(1.0 ✓)* | ✅ | Falls and creature kills, with the position; the creature that killed the player is named in the message the same way as in the entity catalogue, e.g. "Limon was killed by Rat". |
 | Entity kill event *(1.0 ✓)* | ⚠️ | Real kills reach Takaro, once each, with the weapon's in-game name (melee and bow tested). The creature is named the same way as in the entity catalogue, e.g. "Rat". Kills with magic are not tested yet. Destroyed props are not reported. |
 | Log events | ⚠️ | Sent, but Takaro does not store server log lines as events. |
-| Map | ⚠️ | Needs Takaro protocol 1 (proven on Takaro staging, not yet on takaro.io). The connector tells Takaro the size and orientation of the world ("Embervale", 10,240 m square, north up). The server has no map picture of its own, so you upload one image once on the game server's map page in Takaro (see INSTALL.md, "Map"); player dots then sit at the right spot on it. Without an upload Takaro shows a grid with the player dots. |
-| Map on an older Takaro | ⚠️ | An older Takaro is today's takaro.io. A Takaro without protocol 1 shows a map only from a tile pack in `takaro/map/` that you render yourself (see INSTALL.md). |
+| Map | ⚠️ | Needs Takaro protocol 1 (proven on Takaro staging, not yet on takaro.io). The connector tells Takaro the size and orientation of the world ("Embervale", 10,240 m square, north up). The server has no map picture of its own, so you upload one image once on the game server's map page in Takaro (see [INSTALL.md](INSTALL.md), "Map"); player dots then sit at the right spot on it. Without an upload Takaro shows a grid with the player dots. |
+| Map on an older Takaro | ⚠️ | An older Takaro is today's takaro.io. A Takaro without protocol 1 shows a map only from a tile pack in `takaro/map/` that you render yourself (see [INSTALL.md](INSTALL.md)). |
 | Modules: chat commands | ✅ | In-game `@` commands reach the module and answer in chat. |
 | Modules: hooks | ✅ | Chat and join hooks fire and run their code. |
 | Modules: cronjobs | ✅ | Scheduled and triggered runs message the server. |
@@ -84,13 +91,15 @@ Download the latest release: https://takaro.io/connectors/enshrouded
   plugin's game data knows: **1273043 (Enshrouded 1.0, Steam build 26083076)** or 1267041 (hotfix 1.0.0.1). Tested natively on
   Windows and under Proton in the Linux Docker image `mornedhels/enshrouded-server:dev-proton`.
   On another build the plugin logs `gamedata: no section for build <n>` and uses its older heuristics;
-  features whose code moved report themselves degraded. Adding a section to
-  `takaro/enshrouded-gamedata.json` (see DEVELOPMENT.md) brings them back without a new DLL.
+  features whose code moved report themselves degraded (see the warning at the top of this page).
+- The **game files already in place**. Neither this connector nor the Docker example below installs or
+  updates the game, and SteamCMD downloads only Steam's current build.
 - A **Takaro** game server of type **Generic**, and its **registration token**.
 
 ### 2. Download
 
-From the latest `enshrouded-vX.Y.Z` release at https://github.com/gettakaro/connectors/releases download
+From https://takaro.io/connectors/enshrouded, or from the latest `enshrouded-vX.Y.Z` release on
+https://github.com/gettakaro/connectors/releases, download
 **`takaro-enshrouded-plugin-proton-1273043-<version>.zip`** and **`SHA256SUMS`**, and check the zip. The
 name carries the build the release target was first pinned to; the same `dbghelp.dll` runs on every
 build in its game data file, including Enshrouded 1.0 on Windows:
@@ -159,7 +168,9 @@ Under **Wine/Proton** the server must prefer this DLL over its own: set
 [`.env.example`](.env.example) from this folder, and [`server/enshrouded-updater`](server/enshrouded-updater)
 next to them (keep it executable). The compose file pins the image by digest, sets
 `WINEDLLOVERRIDES`, passes the Takaro settings from `.env` as environment variables, and bind-mounts
-the DLL read-only from `data/enshrouded/server/takaro/plugin/dbghelp.dll`:
+the DLL read-only from `data/enshrouded/server/takaro/plugin/dbghelp.dll`. It never installs the game:
+copy the files of your Enshrouded dedicated server (the folder with `enshrouded_server.exe`) into
+`data/enshrouded/server` first. With an empty folder the container starts but no game server runs.
 
 ```bash
 mkdir -p data/enshrouded/server/takaro/plugin
@@ -174,7 +185,9 @@ server some other way, turn automatic game updates off there too.
 
 ### 4. Check that it worked
 
-The server console (and `<server folder>/takaro/plugin.log`) shows, within about 20 seconds of the start:
+The server console (`docker compose -f docker-compose.example.yml logs` with Docker) and
+`<server folder>/takaro/plugin.log` show, within about 20 seconds of the start (about a minute on the first
+start of a new Docker container, while Proton sets itself up):
 
 ```
 [Takaro] connecting to wss://connect.takaro.io/ as "<name>"
@@ -186,19 +199,21 @@ edit: `registrationToken not set` means the token is missing, `Takaro refused th
 wrong, `Takaro refused the server name` means another game server in your Takaro domain already has
 that name.
 
+`takaro/plugin.log` also names the game build (`game build: 1267041|…`) and, in its `capabilities:`
+line, every feature as `ok` or `degraded`. A `degraded` feature does not work on this build.
+
 ### 5. Upgrading
 
-Stop the server, replace only `dbghelp.dll` with the new one, start it again. Your config in
-`takaro/plugin.json` and the connector's state in `takaro/connector-state/` stay as they are.
+Stop the server, replace only `dbghelp.dll` with the new one, start it again. With the Docker example
+that is `data/enshrouded/server/takaro/plugin/dbghelp.dll`, not the empty file Docker leaves next to
+`enshrouded_server.exe`. Your config in `takaro/plugin.json` and the connector's state in
+`takaro/connector-state/` stay as they are.
 `takaro/enshrouded-gamedata.json` is yours too: a newer plugin uses its own embedded copy for any build
 your file has no section for, so delete the file to pick up the new defaults for every build.
 
-**From 0.5.0 (plugin + sidecar):** 0.6.0 replaces the sidecar. Stop and remove the sidecar before the
-new DLL starts, so only one of them connects with the server's identity; move the tokens from
-the sidecar's settings into `takaro/plugin.json` (or the game server's environment), and copy the
-sidecar's `event-cursor.json` and `online-players.json` into `takaro/connector-state/` so every event is
-sent exactly once. [INSTALL.md](INSTALL.md) (also inside the zip) has the exact steps and the rollback to
-0.5.0.
+**From 0.5.0 (plugin + sidecar):** 0.6.0 and later replace the sidecar, and the switch needs a few extra
+steps so every event is sent exactly once. Follow "Upgrade from 0.5.0" in [INSTALL.md](INSTALL.md) (also
+inside the zip), which also has the rollback to 0.5.0.
 
 ---
 
