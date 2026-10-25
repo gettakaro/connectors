@@ -9,6 +9,10 @@ struct PlayerRecord {
     std::string steamId;  // SteamID64 as decimal string; used as gameId
     std::string name;     // Steam persona name as printed by the server (matches the game's player slot)
     std::string characterName;  // in-game character name, read from the game once the player's entity exists
+    int level = -1;             // character level and experience (ecs::NetworkPlayerAttributes), -1 until read
+    int experience = -1;
+    int experienceRequired = -1;
+    int levelLogged = -1;       // last level written to plugin.log (logged from Housekeep, off the game thread)
     std::string peerId;   // e.g. "0(1)"
     std::string machine;  // machine index as printed in "Machine 'M'"
     std::string authMachine;  // machine index the game gave this peer ("Add remote machine index M"), when certain
@@ -55,6 +59,9 @@ public:
     void SetMachineIsPeerIndexPlusOne(bool on);
     // Character name of the online player whose Steam persona name is `persona` (reported to Takaro as "name").
     void SetCharacterName(const std::string& persona, const std::string& character);
+    // Character level of the online player whose Steam persona name is `persona`. Called from the game thread: it
+    // only stores the values; Housekeep logs level changes.
+    void SetLevel(const std::string& persona, int level, int experience, int experienceRequired);
     // The game build exposes character names: player-connected then waits (up to connectNameWaitMs) for the
     // character name, so Takaro never sees the Steam persona first and records a rename on every join.
     void SetCharacterNamesAvailable(bool on);

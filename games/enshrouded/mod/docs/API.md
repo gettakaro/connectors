@@ -70,6 +70,7 @@ Returns the players who are online, meaning logged in with their permission bloc
   "connectedAt":"2026-09-13T18:22:37.101Z","online":true}]
 ```
 - `group` is the `userGroups[].name` from `enshrouded_server.json` whose `canKickBan`, `canAccessInventories`, `canEditWorld`, `canEditBase` and `canExtendBase` flags exactly match the logged permissions. It is `"unknown"` when no group matches.
+- `level`, `experience` and `experienceRequired` (character level, from `ecs::NetworkPlayerAttributes`) appear once the plugin has read them, on builds whose gamedata has the `attributes*` layout. They stay in the plugin; the Takaro player record does not carry them.
 
 ### GET /players/{gameId}
 Returns the same object, or `404 {"error":"player not online"}`.
@@ -152,7 +153,7 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
   With nobody online, a broadcast succeeds without delivering anything.
 - **command** (Enshrouded has no server console; this is a plugin-defined set): `help`, `version`, `players`,
   `say <text>`, `whisper <player> <text>`, `location <player>`, `teleport <player> <x> <y> <z>`, `tp <player> <toPlayer>`,
-  `inventory <player>`, `give <player> <itemCode> [amount] [level]` (level 1-255; omitted, or a level the item cannot have, = the item's default level), `item <search>`, `kick <player>`, `save-and-shutdown`.
+  `inventory <player>`, `give <player> <itemCode> [amount] [level]` (level 1-255; omitted, or a level the item cannot have, = the item's default level), `item <search>`, `kick <player>`, `levels`, `level <player>` (character level and experience; needs the gamedata `attributes*` layout), `save-and-shutdown`.
   `<player>` is a SteamID64 or the exact name. Unknown commands return `success:false` with a hint. There is no
   time-of-day command (not reverse engineered).
 
