@@ -31,6 +31,10 @@ BUILD_SCRIPT = "games/conan-exiles/scripts/build-release.sh"
 #: (Linux, Windows).
 NATIVE_FOLDER = "TakaroConanNative"
 NATIVE_BINARIES = ("libtakaro-conan-native.so", "winmm.dll")
+#: Where the Linux component's ``installDir`` puts the preloaded library, inside the install.
+NATIVE_LIBRARY = f"{NATIVE_FOLDER}/{NATIVE_FOLDER}/{NATIVE_BINARIES[0]}"
+#: The shutdown countdown a verification run asks for (the library's default is 60 s).
+SHUTDOWN_SECONDS = 5
 
 LAUNCHER = "ConanSandboxServer.sh"
 SERVER_BINARY = "ConanSandbox/Binaries/Linux/ConanSandboxServer-Linux-Shipping"
@@ -46,9 +50,10 @@ MEMORY = "14g"
 # What the server prints about itself in its first hundred lines:
 #   "LogInit: Build: ++exiles+release-CL-373655"
 #   "LogInit: Engine Version: 5.6.1-373655+++exiles+release"
+# (25639945 was cut from a branch and says "exiles+release-beta-CL-378132".)
 # The first names the game build, the second the engine; neither carries the other, so
 # both are parsed and `verify.scan_runtime_identity` merges them.
-_BUILD_BANNER = re.compile(r"LogInit: Build: \+\+(?P<cl>exiles\+release-CL-\d+)")
+_BUILD_BANNER = re.compile(r"LogInit: Build: \+\+(?P<cl>exiles\+release(?:-[a-z]+)?-CL-\d+)")
 _ENGINE_BANNER = re.compile(r"LogInit: Engine Version: (?P<engine>\d+\.\d+\.\d+)-\d+\+\+\+exiles\+release")
 
 
@@ -160,9 +165,19 @@ class ConanExilesAdapter(BaseAdapter):
 
     # -- runtime --------------------------------------------------------------
     def runtime_env(self, resolved: dict[str, Any], takaro: dict[str, str]) -> dict[str, str]:
-        """The image's own environment; the server reads its settings from its own Saved/ tree."""
+        """The image's own environment plus the preloaded native connector.
+
+        The library reads its Takaro settings from ``takaro.json`` in the server's own
+        ``Saved/`` tree (``verify.before_boot`` writes it), so no token is in the environment.
+        The launcher shell inherits ``LD_PRELOAD`` too; the library stays inert in any process
+        that is not the server binary. The shutdown countdown is shortened: nobody is online
+        to read it, and the server's own unload already takes minutes.
+        """
         del takaro
-        return {str(k): str(v) for k, v in resolved["runtime"]["container"].get("env", {}).items()}
+        environment = {str(k): str(v) for k, v in resolved["runtime"]["container"].get("env", {}).items()}
+        environment["LD_PRELOAD"] = f"{CONTAINER_ROOT}/{NATIVE_LIBRARY}"
+        environment["TAKARO_CONAN_SHUTDOWN_SECONDS"] = str(SHUTDOWN_SECONDS)
+        return environment
 
     def container_mounts(self, resolved: dict[str, Any], data_dir: Path) -> list[str]:
         """One mount: the whole install, where the launcher and the server's Saved/ tree live."""
@@ -182,7 +197,7 @@ class ConanExilesAdapter(BaseAdapter):
         return ["--memory", MEMORY, "--user", f"{os.getuid()}:{os.getgid()}"]
 
     def container_command(self, resolved: dict[str, Any], data_dir: Path) -> list[str]:
-        """The launcher, with the rig's game and query ports. No RCON: the verifier does not use it."""
+        """The launcher, with the rig's game and query ports. No RCON: the connector does not use it."""
         del resolved, data_dir
         return [
             f"{CONTAINER_ROOT}/{LAUNCHER}",

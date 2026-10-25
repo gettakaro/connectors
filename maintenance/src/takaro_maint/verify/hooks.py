@@ -44,6 +44,12 @@ class GameHooks:
     #: throwaway CA, and ``run.takaro_ca_file`` is the certificate the connector must trust.
     takaro_tls: bool = False
 
+    #: The highest Takaro protocol version the fake Takaro negotiates with this connector.
+    takaro_protocol: int = 0
+
+    #: What this run cannot prove and only a real client does; the report lists it as manual.
+    manual_coverage: tuple[str, ...] = ()
+
     #: Base check id -> why it cannot pass on this game, and which check stands in for it.
     #: A run that names no ``--checks`` excludes these rather than failing them.
     unsupported_checks: Mapping[str, str] = field(default_factory=dict)

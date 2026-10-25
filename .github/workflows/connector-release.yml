@@ -37,6 +37,25 @@ on:
         required: false
         default: true
         type: boolean
+      runtime_platform:
+        description: >-
+          Verify only the targets of this catalog platform (e.g. linux); empty verifies every target.
+          The others ship with the contract verification their catalog record requires
+        required: false
+        default: ''
+        type: string
+      startup_timeout:
+        description: Seconds the server gets to reach its ready line in the verify leg
+        required: false
+        default: 600
+        type: number
+      runtime_large_server:
+        description: >-
+          The pinned server is larger than the repository's whole Actions cache: the build leg does
+          not install it, and the verify leg downloads it once, uncached, with a longer job budget
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   plan:
@@ -45,6 +64,7 @@ jobs:
       contents: read
     outputs:
       targets: ${{ steps.targets.outputs.targets }}
+      runtime_targets: ${{ steps.runtime_targets.outputs.targets }}
       build: ${{ steps.scope.outputs.build }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -104,6 +124,20 @@ jobs:
             --status candidate,maintained \
             --format gha >> "$GITHUB_OUTPUT"
 
+      # The targets the verify leg boots: all of them, or one platform's when the runner cannot
+      # host the others' server (a Windows dedicated server on a Linux runner).
+      - name: Resolve the runtime matrix
+        id: runtime_targets
+        env:
+          IN_CONNECTOR: ${{ inputs.connector }}
+          IN_PLATFORM: ${{ inputs.runtime_platform }}
+        run: |
+          maintenance/bin/takaro-maint targets list \
+            --game "$IN_CONNECTOR" \
+            --status candidate,maintained \
+            ${IN_PLATFORM:+--platform "$IN_PLATFORM"} \
+            --format gha >> "$GITHUB_OUTPUT"
+
   build:
     needs: plan
     if: needs.plan.outputs.build == 'true'
@@ -149,7 +183,7 @@ jobs:
       # A server the hosted runner cannot hold (tens of gigabytes of Steam depots) is not
       # installed here; that connector builds against references tracked in the repository.
       - name: Install the pinned inputs
-        if: inputs.runtime
+        if: inputs.runtime && !inputs.runtime_large_server
         env:
           IN_CONNECTOR: ${{ inputs.connector }}
         run: |
@@ -247,13 +281,14 @@ jobs:
     needs: [plan, build]
     if: inputs.runtime
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # A large server spends most of its budget downloading and copying its depots.
+    timeout-minutes: ${{ inputs.runtime_large_server && 60 || 40 }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        target: ${{ fromJson(needs.plan.outputs.targets) }}
+        target: ${{ fromJson(needs.plan.outputs.runtime_targets) }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -294,6 +329,7 @@ jobs:
         shell: bash
         env:
           IN_CONNECTOR: ${{ inputs.connector }}
+          IN_STARTUP_TIMEOUT: ${{ inputs.startup_timeout }}
         run: |
           mkdir -p reports
           maintenance/bin/takaro-maint verify \
@@ -303,7 +339,7 @@ jobs:
             --out reports \
             --run-id "gha-${{ github.run_id }}-${{ github.run_attempt }}" \
             --label "tm.ci=github" \
-            --startup-timeout 600 \
+            --startup-timeout "$IN_STARTUP_TIMEOUT" \
             --cleanup-orphans | tee reports/verify.json
 
       - name: Job summary

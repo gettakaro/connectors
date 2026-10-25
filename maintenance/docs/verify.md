@@ -91,7 +91,9 @@ The table above is the base ladder, and it was written for the Minecraft connect
 contributes to a run through exactly one object: `HOOKS = GameHooks(...)` at the end of its
 `games/<game>/verify.py`. `GameHooks` is a frozen dataclass whose every field is declared
 and defaulted -- the ready line, the `check_ids` this game adds to the ladder,
-`unsupported_checks`, the opt-in `negative_check_ids` and `hosted_check_ids`, and the
+`unsupported_checks`, `manual_coverage`, `takaro_tls` and `takaro_protocol` (the highest
+protocol version the fake Takaro negotiates; 0 answers every identify the protocol 0 way), the
+opt-in `negative_check_ids` and `hosted_check_ids`, and the
 callables `before_boot`, `after_boot`, `after_protocol`,
 `after_shutdown`, `negative`, `run_hosted` and `scan_runtime_identity`. A game that ships
 no hooks module verifies with the base checks alone; a module that ships hooks but never
@@ -188,6 +190,7 @@ from the start rather than being scrubbed later.
 | `level`, `outcome` | As above. |
 | `logs[]` | Every retained log file with its sha256. |
 | `coverage.gameplay` | Always `not covered - recorded client evidence pending (#174)`. |
+| `coverage.manual` | The behaviours this game's run cannot prove and only a real client does (`GameHooks.manual_coverage`); absent when the game declares none. |
 
 A failure names its target three times over: the report path is `<out>/<target>/report.json`,
 stdout's `reports[].target` carries the id, and the CI leg's name contains it.

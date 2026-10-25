@@ -130,6 +130,7 @@
       "required": ["gameplay"],
       "properties": {
         "gameplay": {"type": "string", "minLength": 1},
+        "manual": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "verificationRunner": {
           "type": "object",
           "additionalProperties": false,
