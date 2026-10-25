@@ -30,6 +30,7 @@ const uint32_t kCurrentTransform = 0x027ac564;  // keen::WorldTransform, 56 B
 const uint32_t kTeleport = 0x23384d40;          // 80 B, server_only
 const uint32_t kInventorySetup = 0xc24df82a;    // 84 B
 const uint32_t kInventory = 0xb19528a9;         // ItemStack[] (12 B each)
+const uint32_t kInventoryLink = 0xb21ce15d;     // {EntityId entityId, u8 category}: storage of an item (backpack slots)
 const uint32_t kItemState = 0x3a2fac75;         // PIDE entity: itemId @8, rarity @16, level @17
 const uint32_t kImpactHierarchy = 0xcd3947e0;   // impact/projectile entity: weaponPideId @8 (16 B)
 const uint32_t kPlayerInput = 0xfb4f945a;       // 1320 B
@@ -1163,10 +1164,39 @@ bool WorldInventoryJson(const std::string& name, std::string& json, std::string&
                 if (!su.ptr || su.size < 0x50) return "!player entity has no InventorySetup";
                 std::string o = "[";
                 bool first = true;
-                for (int k = 0; k < 16; k++) {
-                    uint32_t inv = *(uint32_t*)((uint8_t*)su.ptr + 4 * k);
-                    uint8_t cat = *(uint8_t*)((uint8_t*)su.ptr + 0x40 + k);
-                    if (!inv) continue;
+                // the player's inventories, plus storage linked from carried items (a backpack's slots hang off the
+                // backpack item: InventorySetup or InventoryLink on its PIDE entity)
+                std::vector<std::pair<uint32_t, uint8_t>> invs;
+                auto has = [&](uint32_t e) {
+                    for (auto& x : invs)
+                        if (x.first == e) return true;
+                    return false;
+                };
+                auto addLinks = [&](uint32_t owner) {
+                    CompRef ls = Read(world, kInventorySetup, owner);
+                    if (ls.ptr && ls.size >= 0x50)
+                        for (int k = 0; k < 16; k++) {
+                            uint32_t e = *(uint32_t*)((uint8_t*)ls.ptr + 4 * k);
+                            if (e && !has(e)) invs.push_back({e, *(uint8_t*)((uint8_t*)ls.ptr + 0x40 + k)});
+                        }
+                    CompRef ln = Read(world, kInventoryLink, owner);
+                    if (ln.ptr && ln.size >= 5) {
+                        uint32_t e = *(uint32_t*)ln.ptr;
+                        if (e && !has(e)) invs.push_back({e, *((uint8_t*)ln.ptr + 4)});
+                    }
+                };
+                addLinks(eid);
+                for (size_t n = 0; n < invs.size() && invs.size() < 64; n++) {
+                    CompRef r = Read(world, kInventory, invs[n].first);
+                    if (!r.ptr || r.size < 12) continue;
+                    for (size_t j = 0; j < (size_t)(r.size / 12); j++) {
+                        uint32_t pide = ((const uint32_t*)((uint8_t*)r.ptr + j * 12))[2];
+                        if (pide && pide != eid) addLinks(pide);
+                    }
+                }
+                for (auto& iv : invs) {
+                    uint32_t inv = iv.first;
+                    uint8_t cat = iv.second;
                     CompRef r = Read(world, kInventory, inv);
                     if (!r.ptr || r.size < 12) continue;
                     size_t stacks = (size_t)(r.size / 12);
