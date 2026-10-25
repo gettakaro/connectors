@@ -1860,7 +1860,10 @@ namespace Oxide.Plugins
                 var prefab = GameManager.server.FindPrefab(path);
                 if (prefab == null) continue;
 
-                if (prefab.GetComponent<BaseNpc>() == null && prefab.GetComponent<NPCPlayer>() == null) continue;
+                // Animals moved to BaseNPC2 (bear, wolf2, chicken, ...); BaseNpc is left with
+                // the unused shark only, so both are listed, plus the swimming SimpleShark.
+                if (prefab.GetComponent<BaseNpc>() == null && prefab.GetComponent<Rust.Ai.Gen2.BaseNPC2>() == null
+                    && prefab.GetComponent<NPCPlayer>() == null && prefab.GetComponent<SimpleShark>() == null) continue;
 
                 var shortName = prefab.name;
                 if (string.IsNullOrEmpty(shortName) || !seen.Add(shortName)) continue;
@@ -1945,6 +1948,25 @@ namespace Oxide.Plugins
                     { "simpleshark", "Shark" },
                     { "shark_unused", "Shark (Unused)" },
                     { "zombie", "Zombie" },
+                    { "bull", "Bull" },
+                    { "calf", "Calf" },
+                    { "calfmale", "Calf (Male)" },
+                    { "cow", "Cow" },
+                    { "lamb", "Lamb" },
+                    { "sheep", "Sheep" },
+                    { "crab_single", "Crab" },
+                    { "crabs", "Crabs" },
+                    { "crocodile", "Crocodile" },
+                    { "frog", "Frog" },
+                    { "jellyfish", "Jellyfish" },
+                    { "panther", "Panther" },
+                    { "tiger", "Tiger" },
+                    { "rabbit", "Rabbit" },
+                    { "squirrel", "Squirrel" },
+                    { "seaturtle", "Sea Turtle" },
+                    { "scientist2", "Scientist" },
+                    { "scientist2.heavy", "Heavy Scientist" },
+                    { "scientist2.shotgun", "Scientist (Shotgun)" },
                     { "scarecrow", "Scarecrow" },
                     { "scarecrow_dungeon", "Scarecrow (Dungeon)" },
                     { "scarecrow_dungeonnoroam", "Scarecrow (Dungeon, Stationary)" },
