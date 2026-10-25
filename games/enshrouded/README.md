@@ -27,6 +27,7 @@ a real game client and Takaro. Rows marked *(1.0 ✓)* were re-checked on 1.0; t
 | What | | Notes |
 |---|---|---|
 | Connection & heartbeat *(1.0 ✓)* | ✅ | The game server holds an encrypted connection to Takaro and shows as reachable while it runs. |
+| Game profile | ✅ | Needs Takaro protocol 1. Takaro shows the server as Enshrouded with the game's icon and the running game build (for example 1273043), and records the connector as `takaro-enshrouded` with its version. |
 | Player list *(1.0 ✓)* | ✅ | `gameId` is the SteamID64. On 1.0 the name is the in-game character name. |
 | Single player lookup | ✅ | Also answers for a player who is offline but has been seen before. |
 | Player location *(1.0 ✓)* | ✅ | Matches the in-game position and follows teleports. |

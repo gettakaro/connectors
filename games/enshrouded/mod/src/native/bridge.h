@@ -36,6 +36,7 @@ namespace native {
 struct BridgeOptions {
     NativeConfig config;
     GameApi* game = nullptr;
+    std::string gameVersion;  // the running game build for game.profile; "" = unknown (omitted)
     ITransport* transport = nullptr;
     Store* store = nullptr;
     std::function<int64_t()> steadyMs;  // monotonic

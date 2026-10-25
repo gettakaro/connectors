@@ -4,7 +4,7 @@
   "architecture": "in-process native plugin (dbghelp.dll proxy loaded by enshrouded_server.exe under Wine/Proton) that hooks the game and holds the Takaro Generic Connector WebSocket itself (WinHTTP, TLS); loopback HTTP 127.0.0.1:18890 serves diagnostics only",
   "runtime": "enshrouded_server.exe game build 1273043 (Enshrouded 1.0, Steam build 26083076) under GE-Proton11-9 and game build 1267041 (hotfix 1.0.0.1, Steam build 25967645) natively on Windows Server, via mod/gamedata/enshrouded-gamedata.json; build 1024233 under GE-Proton10-30 via the built-in heuristics",
   "takaroConnection": "outbound_websocket",
-  "updated": "2026-10-15",
+  "updated": "2026-10-19",
   "oracle": "Takaro MCP (takaro-mcp 127.0.0.1:3000/mcp)",
   "statusDefinitions": {
     "proven": "observed end-to-end via MCP plus game-side check",
@@ -85,6 +85,10 @@
     "getMapTile": {
       "status": "proven",
       "note": "protocol 0 only: base64 PNG from takaro/map/<pack named by takaro/map/current>/<z>/<x>/<y>.png (rendered by the operator from their own client's map data); outside the world answers outside.png; zoom >4 refused. Live on staging 2026-10-11 (v0). Protocol 1 declares a source-none Dimension, so Takaro never sends getMapTile there"
+    },
+    "getGameIcon": {
+      "status": "proven",
+      "note": "protocol 1 only (Takaro sends it only when game.profile declares an icon): the 256x256 PNG games/enshrouded/assets/icon-256.png, compiled into dbghelp.dll (mod/tools/gen_game_icon.py), answered whole as base64 with its revision. The manifest's game.profile declares name Enshrouded, version = the running game build (the kfc build number, omitted when unknown) and icon {revision = first 12 hex of the PNG's sha256, size}; identify names game enshrouded and connector takaro-enshrouded with TAKARO_PLUGIN_VERSION on both protocol versions. Live on staging 2026-10-25 (game build 1273043): gameName, gameVersion, connector name and version, protocol 1 and iconRevision stored; the icon is served back as WebP"
     }
   },
   "events": {
