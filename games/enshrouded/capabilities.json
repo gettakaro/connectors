@@ -88,7 +88,7 @@
     },
     "getGameIcon": {
       "status": "proven",
-      "note": "protocol 1 only (Takaro sends it only when game.profile declares an icon): the 256x256 PNG games/enshrouded/assets/icon-256.png, compiled into dbghelp.dll (mod/tools/gen_game_icon.py), answered whole as base64 with its revision. The manifest's game.profile declares name Enshrouded, version = the running game build (the kfc build number, omitted when unknown) and icon {revision = first 12 hex of the PNG's sha256, size}; identify names game enshrouded and connector takaro-enshrouded with TAKARO_PLUGIN_VERSION on both protocol versions. Live on staging 2026-10-19 (game build 1269579): gameName, gameVersion, connector name and version, protocol 1 and iconRevision stored; the icon is served back as WebP"
+      "note": "protocol 1 only (Takaro sends it only when game.profile declares an icon): the 256x256 PNG games/enshrouded/assets/icon-256.png, compiled into dbghelp.dll (mod/tools/gen_game_icon.py), answered whole as base64 with its revision. The manifest's game.profile declares name Enshrouded, version = the running game build (the kfc build number, omitted when unknown) and icon {revision = first 12 hex of the PNG's sha256, size}; identify names game enshrouded and connector takaro-enshrouded with TAKARO_PLUGIN_VERSION on both protocol versions. Live on staging 2026-10-25 (game build 1273043): gameName, gameVersion, connector name and version, protocol 1 and iconRevision stored; the icon is served back as WebP"
     }
   },
   "events": {
