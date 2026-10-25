@@ -64,10 +64,48 @@ def test_the_verify_job_holds_no_secrets_and_no_hosted_mode() -> None:
 
     assert "secrets." not in verify
     assert "--takaro hosted" not in verify
-    assert "--negative" not in verify
+    # A negative boot runs only for a game that opts in: Minecraft's needs the sibling
+    # target's artifact, which a leg that downloads its own target's dist never has.
+    assert verify.count("--negative") == 1
+    assert "IN_NEGATIVE: ${{ inputs.runtime_negative && '--negative' || '' }}" in verify
     assert verify.count("permissions:") == 1
     assert "contents: read" in verify
     assert "contents: write" not in verify
+
+
+def test_the_opt_in_runtime_inputs_default_to_the_minecraft_shape() -> None:
+    """A game that does not ask for them gets the leg it always had."""
+    text = WORKFLOW.read_text()
+
+    for name, default in (("runtime_depot_cache", "false"), ("runtime_negative", "false"), ("startup_timeout", "600")):
+        declared = re.search(rf"\n      {name}:\n(?P<body>(?:        .*\n)+)", text)
+        assert declared, name
+        assert f"default: {default}" in declared.group("body"), name
+
+    assert "if: inputs.runtime && !inputs.runtime_depot_cache" in step(job("build"), "Install the pinned inputs")
+    verify = job("verify")
+    assert "IN_STARTUP_TIMEOUT: ${{ inputs.startup_timeout }}" in verify
+    assert '--startup-timeout "$IN_STARTUP_TIMEOUT"' in verify
+    restore, save = step(verify, "Restore the pinned Steam depots"), step(verify, "Save the pinned Steam depots")
+    key = "key: ${{ inputs.connector }}-depots-${{ steps.target.outputs.fp16 }}"
+    assert key in restore and key in save
+    assert "if: always() && inputs.runtime_depot_cache" in save
+    assert verify.index("Restore the pinned Steam depots") < verify.index("takaro-maint verify")
+    assert verify.index("takaro-maint verify") < verify.index("Save the pinned Steam depots")
+
+
+def test_a_server_too_large_to_cache_is_installed_once_by_the_verify_leg() -> None:
+    """`runtime_large_server`: no build-leg install, no cache, a longer budget."""
+    text = WORKFLOW.read_text()
+
+    declared = re.search(r"\n      runtime_large_server:\n(?P<body>(?:        .*\n)+)", text)
+    assert declared and "default: false" in declared.group("body")
+    install = step(job("build"), "Install the pinned inputs")
+    assert "if: inputs.runtime && !inputs.runtime_depot_cache && !inputs.runtime_large_server" in install
+    verify = job("verify")
+    assert "timeout-minutes: ${{ inputs.runtime_large_server && 60 || 40 }}" in verify
+    # Nothing that size is ever handed to the Actions cache.
+    assert "runtime_large_server" not in step(verify, "Save the pinned Steam depots")
 
 
 def test_the_verify_job_keeps_its_report_even_when_it_fails() -> None:

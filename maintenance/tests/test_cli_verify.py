@@ -535,6 +535,81 @@ def test_a_failing_check_exits_eight_and_still_writes_a_report(
     assert (docker_stub / "removed").is_file()
 
 
+def _verify_without_identify(
+    run: Any, wired: Any, tmp_path: Path, checks: str = "build,startup,heartbeat,players"
+) -> tuple[int, Any, dict[str, Any]]:
+    """A run that leaves the `identify` check out, as a game that cannot pass it does."""
+    artifacts = artifacts_for(run, wired, tmp_path)
+    out = tmp_path / "reports"
+    code, payload, _ = run(
+        "verify",
+        "--game",
+        "minecraft",
+        "--artifacts",
+        str(artifacts),
+        "--out",
+        str(out),
+        "--checks",
+        checks,
+        "--run-id",
+        "t1",
+        "--startup-timeout",
+        "60",
+        repo=wired.root,
+    )
+    report = json.loads((out / "fabric-26.2" / "report.json").read_text())
+    return code, payload, {check["id"]: check for check in report["checks"]}
+
+
+def test_the_protocol_checks_wait_for_a_connector_that_dials_out_after_the_ready_line(
+    run: Any, wired: Any, tmp_path: Path, docker_stub: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_FAIL", "late-connect")
+
+    code, payload, checks = _verify_without_identify(run, wired, tmp_path)
+
+    assert code == 0, payload
+    assert checks["identify"]["status"] == "skip"
+    assert checks["heartbeat"]["status"] == "pass"
+    assert checks["players"]["status"] == "pass"
+
+
+def test_a_connector_that_never_connects_fails_the_protocol_checks_rather_than_the_run(
+    run: Any, wired: Any, tmp_path: Path, docker_stub: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from takaro_maint.verify import checks_lifecycle
+
+    monkeypatch.setenv("STUB_FAIL", "no-connect")
+    monkeypatch.setattr(checks_lifecycle, "IDENTIFY_BUDGET", 1.0)
+
+    code, payload, checks = _verify_without_identify(run, wired, tmp_path)
+
+    assert code == 8, payload
+    assert checks["heartbeat"]["status"] == "fail"
+    assert any("no websocket ping could be sent" in problem for problem in checks["heartbeat"]["detail"]["problems"])
+    assert (docker_stub / "removed").is_file()
+
+
+def test_a_run_without_protocol_checks_does_not_wait_for_the_connector(
+    run: Any, wired: Any, tmp_path: Path, docker_stub: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from takaro_maint.verify import checks_lifecycle
+
+    monkeypatch.setenv("STUB_FAIL", "no-connect")
+    waited: list[int] = []
+
+    async def identify_within(fake: Any, minimum: int, timeout: float, alive: Any = None) -> None:
+        waited.append(minimum)
+
+    monkeypatch.setattr(checks_lifecycle, "identify_within", identify_within)
+
+    code, payload, checks = _verify_without_identify(run, wired, tmp_path, checks="build,startup")
+
+    assert code == 0, payload
+    assert checks["startup"]["status"] == "pass"
+    assert waited == []
+
+
 def test_a_failed_startup_skips_the_rest_of_the_ladder(
     run: Any, wired: Any, tmp_path: Path, docker_stub: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
