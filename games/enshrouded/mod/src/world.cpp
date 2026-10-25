@@ -2,6 +2,7 @@
 
 #include "entity.h"
 #include "hooks.h"
+#include "items_kfc.h"
 #include "names.h"
 #include "profile.h"
 #include "scan.h"
@@ -58,6 +59,7 @@ struct Layout {
     // which slot field the chat handle is (1024233: the player handle @0; 1.0: the machine handle @4), and where the
     // session manager keeps the sender's account (1.0 passes it to queueMessage; 0 = not needed)
     uint32_t chatHandleSlotField = 0;
+    uint32_t chatNoticeType = 0;  // 1.0: 4 = free-text notice without a sender name
     // Teleport.searchBestSpawnPosition: 1024233 placed with it; 1.0 resolves the search to the current spot (the
     // player snaps back), and the game's own teleports leave it off
     uint32_t teleportSearchBest = 1;
@@ -98,6 +100,8 @@ using CharNameFn = uint8_t*(__fastcall*)(uint8_t* out, uint64_t table, uint64_t 
 CharNameFn g_charName = nullptr;
 uint32_t g_charComp = 0, g_charTable = 0;
 uint64_t g_charLastMs = 0;
+// 1.0: ecs::NetworkPlayerAttributes of a player entity holds level / experience / experienceRequired as u16
+uint32_t g_attrComp = 0, g_attrLevel = 0, g_attrXp = 0, g_attrXpReq = 0;
 
 GetCompFn g_getRead = nullptr;
 AddCompFn g_addComp = nullptr;
@@ -152,7 +156,7 @@ uint64_t __fastcall UpdDetour(uint64_t server, uint64_t b, uint64_t c, uint64_t 
     PerfScope perf(kPerfUpdatePlayers);
     InterlockedIncrement64(&g_updTicks);
     InterlockedExchange64(&g_server, (LONG64)server);
-    if (g_charName && NowMs() - g_charLastMs >= 2000) {
+    if ((g_charName || g_attrComp) && NowMs() - g_charLastMs >= 2000) {
         g_charLastMs = NowMs();
         RefreshCharacterNames(server);
     }
@@ -263,6 +267,16 @@ void RefreshCharacterNames(uint64_t server) {
         if (persona.empty()) continue;
         std::string ch = CharacterNameOf(server, eid);
         if (!ch.empty()) PluginState::Get().SetCharacterName(persona, ch);
+        if (g_attrComp) {
+            CompRef a = Read(World(server), g_attrComp, eid);
+            uint32_t need = (g_attrLevel > g_attrXp ? g_attrLevel : g_attrXp) + 2;
+            if (g_attrXpReq + 2 > need) need = g_attrXpReq + 2;
+            if (a.ptr && a.size >= need) {
+                const uint8_t* b = (const uint8_t*)a.ptr;
+                PluginState::Get().SetLevel(persona, *(const uint16_t*)(b + g_attrLevel), *(const uint16_t*)(b + g_attrXp),
+                                            *(const uint16_t*)(b + g_attrXpReq));
+            }
+        }
     }
 }
 
@@ -290,6 +304,7 @@ struct Give {
     uint32_t eid = 0, itemId = 0, version = 0, consumedAtDone = 0;
     uint16_t count = 0;  // informational: the game ignores AdminInventoryCreateAction.count
     bool fullStack = false;
+    uint8_t level = 0;  // 0 = the game's default
     int injections = 0;
 };
 SrwLock g_giveLock;
@@ -320,6 +335,7 @@ void GiveTryInject() {
     memcpy(a + 4, &g_give.version, 4);
     memcpy(a + 8, &g_give.count, 2);
     memset(a + 10, 0, 10);  // hasItemRarity, rarity, level, createForAllPlayers, createFullStack, fill..., cleanup, flame
+    a[12] = g_give.level;              // level
     a[14] = g_give.fullStack ? 1 : 0;  // createFullStack: AdminInventoryCreate (0x153ef0) creates maxStackSize, else 1
     g_give.injections++;
     InterlockedExchange(&g_bypassEid, (LONG)g_give.eid);
@@ -398,7 +414,7 @@ std::string GuidStr(const uint8_t* g) {
 
 // Entity template code for a raw 16-byte GUID; tries RFC byte order and the mixed-endian (bytes_le) layout.
 const EntityDef* EntityByGuid(const uint8_t* raw, const char** form) {
-    if (!ItemTablesUsable()) return nullptr;
+    if (!EntityTablesUsable()) return nullptr;
     uint8_t le[16];
     le[0] = raw[3], le[1] = raw[2], le[2] = raw[1], le[3] = raw[0], le[4] = raw[5], le[5] = raw[4], le[6] = raw[7],
     le[7] = raw[6];
@@ -535,9 +551,12 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                     KillWeaponItem(World(server), e, pide, itemId);
                     const ItemDef* wd = nullptr;
                     const char* label = itemId ? ItemLabelById(itemId) : nullptr;
-                    if (itemId && !label)  // only then is the code needed (derived-name fallback)
-                        for (size_t q = 0; ItemTablesUsable() && q < kItemCount && !wd; q++)
-                            if (kItems[q].itemId == itemId) wd = &kItems[q];
+                    if (itemId && !label) {  // only then is the code needed (derived-name fallback)
+                        size_t n;
+                        const ItemDef* items = ItemTable(n);
+                        for (size_t q = 0; q < n && !wd; q++)
+                            if (items[q].itemId == itemId) wd = &items[q];
+                    }
                     KillWeapon kw = ResolveKillWeapon(itemId, wd ? wd->code : nullptr, category);
                     const char* catName = WeaponCategoryName(category);
                     // `entity` is what Takaro shows: the client's name, else the code-derived one;
@@ -677,6 +696,7 @@ void LoadProfileLayout() {
     L.chatRecMask = u("chatRecMask", L.chatRecMask);
     L.chatRecSizeAdd = u("chatRecSizeAdd", L.chatRecSizeAdd);
     L.chatHandleSlotField = u("chatHandleSlotField", L.chatHandleSlotField);
+    L.chatNoticeType = u("chatNoticeType", 0);
     L.teleportSearchBest = u("teleportSearchBest", L.teleportSearchBest);
     L.sessMgr = u("sessionMgr", L.sessMgr);
     L.sessVer = u("sessionVersion", L.sessVer);
@@ -996,10 +1016,21 @@ void WorldHooksInit() {
         g_charTable = (uint32_t)profile::L("characterTable", 0);
         if (cn && g_charComp && g_charTable) {
             g_charName = (CharNameFn)scan::Ptr(cn);
+            PluginState::Get().SetWaitForCharacterNames(true);
             RecordResolve("characterName", cn, "gamedata; component 0x" + std::string(Hx(g_charComp)).substr(2) + " table +" + Hx(g_charTable), false);
         } else {
             RecordResolve("characterName", cn, "unresolved: " + h3, false);
         }
+        g_attrComp = (uint32_t)profile::L("attributesComponent", 0);
+        g_attrLevel = (uint32_t)profile::L("attributesLevel", 0);
+        g_attrXp = (uint32_t)profile::L("attributesExperience", 0);
+        g_attrXpReq = (uint32_t)profile::L("attributesExperienceRequired", 0);
+        if (!g_attrLevel || !g_attrXp || !g_attrXpReq) g_attrComp = 0;
+        RecordResolve("characterLevel", 0,
+                      g_attrComp ? "gamedata; component 0x" + std::string(Hx(g_attrComp)).substr(2) + " level +" + Hx(g_attrLevel) +
+                                       " experience +" + Hx(g_attrXp) + " required +" + Hx(g_attrXpReq)
+                                 : std::string("unresolved: gamedata has no attributes* layout"),
+                      false);
     }
     st.SetCapability("killEvents", g_combatOk ? "ok" : "degraded",
                      g_combatOk ? std::string("combat_experience_source detour (killing-blow HitEvent)") +
@@ -1141,8 +1172,10 @@ bool WorldInventoryJson(const std::string& name, std::string& json, std::string&
                         const uint32_t* st = (const uint32_t*)((uint8_t*)r.ptr + j * 12);
                         if (!st[0] || !st[1]) continue;
                         const ItemDef* d = nullptr;
-                        for (size_t q = 0; ItemTablesUsable() && q < kItemCount && !d; q++)
-                            if (kItems[q].itemId == st[0]) d = &kItems[q];
+                        size_t n;
+                        const ItemDef* items = ItemTable(n);
+                        for (size_t q = 0; q < n && !d; q++)
+                            if (items[q].itemId == st[0]) d = &items[q];
                         char idHex[16];
                         snprintf(idHex, sizeof idHex, "0x%08x", st[0]);
                         std::string code = d ? d->code : idHex;
@@ -1176,7 +1209,8 @@ bool WorldInventoryJson(const std::string& name, std::string& json, std::string&
     return true;
 }
 
-bool WorldGiveItem(const std::string& name, const ItemDef& item, uint32_t amount, std::string& err, std::string& detail) {
+bool WorldGiveItem(const std::string& name, const ItemDef& item, uint32_t amount, std::string& err, std::string& detail,
+                   uint8_t level) {
     if (!g_giveOk) {
         err = "giveItem unavailable (inventory_actions/isAdminEntity unresolved)";
         return false;
@@ -1222,6 +1256,7 @@ bool WorldGiveItem(const std::string& name, const ItemDef& item, uint32_t amount
             g_give.itemId = item.itemId;
             g_give.count = count;
             g_give.fullStack = full;
+            g_give.level = level;
             InterlockedExchange(&g_giveState, kGiveActive);
         }
         uint64_t t0 = NowMs();
@@ -1284,9 +1319,12 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                 if (target >= (int)L.chatMachines) return "!recipient machine index out of range";
                 if (target >= 0 && !*(uint8_t*)(chat + L.chatActive + (uint64_t)target * L.chatMStride))
                     return "!recipient machine is not an active chat recipient";
-                // The client only renders free text for chat type 0 with a valid player handle, shown as
-                // "<character name>: text" (live-tested: handle 0 and types 1-3 are dropped or become canned notices).
-                // So the message is carried by the recipient's own handle (whisper) or the first logged-in player.
+                // The client renders free text for chat type 0 as "<character name>: text", and on 1.0 for type 4
+                // (the type of the join/leave notices) with no localization key as a plain notice without a name.
+                // Both need a valid player handle (live-tested: handle 0 is dropped; types 1-3 become canned
+                // notices), so the message is carried by the recipient's own handle (whisper) or the first
+                // logged-in player. Messages without an explicit sender use the notice type when gamedata has one.
+                uint8_t msgType = type == 0 && senderHandle == 0 && L.chatNoticeType ? (uint8_t)L.chatNoticeType : type;
                 uint32_t handle = senderHandle;
                 for (int i = 0; i < 16 && !handle; i++) {
                     uint64_t s = Slot(server, i);
@@ -1302,7 +1340,7 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                 StringView sv{text.data(), text.size()};
                 Opt64 o1{}, o2{};
                 uint8_t e[16] = {0};
-                g_origAddMsg(e, chat, type, &sv, 0, 0, handle, L.chatArg8Value ? account : (uint64_t)&o1, &o2);
+                g_origAddMsg(e, chat, msgType, &sv, 0, 0, handle, L.chatArg8Value ? account : (uint64_t)&o1, &o2);
                 if (e[0]) return "!addMessage error " + std::to_string(e[0]);
                 uint64_t rec = *(uint64_t*)(chat + L.chatTail);
                 if (*(uint64_t*)(chat + L.chatCount) != countBefore + 1 || !rec) return "!message was not queued";
@@ -1321,7 +1359,7 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                         excluded++;
                     }
                 }
-                PluginLog("message: queued type=%u handle=0x%x account=%s len=%zu target=%d excluded=%d", type, handle,
+                PluginLog("message: queued type=%u handle=0x%x account=%s len=%zu target=%d excluded=%d", msgType, handle,
                           account ? "set" : "none", text.size(), target, excluded);
                 return "ok";
             },
@@ -1456,34 +1494,58 @@ bool WorldNearbyJson(const std::string& name, double radius, std::string& json, 
 
 // ------------------------------------------------------------------------------------------------
 static const char kTablesGameBuild[] = "1267041";
-static std::atomic<bool> g_tablesUsable{true};
-static std::string g_tablesReason;
+static std::atomic<bool> g_itemsUsable{false};
+static std::atomic<bool> g_entitiesUsable{false};
+static std::string g_itemsReason = "initializing", g_entitiesReason = "initializing";
+static const ItemDef* g_items = kItems;
+static size_t g_itemCount = kItemCount;
 
 void SetItemTablesBuild(const std::string& gameBuild, bool haveGamedataSection) {
     (void)haveGamedataSection;  // a valid hook profile does not validate item ids
-    bool ok = gameBuild == kTablesGameBuild;
-    if (!ok) {
-        g_tablesReason = std::string("item and entity tables are for game build ") + kTablesGameBuild + ", this server is build " +
-                         gameBuild + "; use the plugin release for that build";
-        auto& st = PluginState::Get();
-        for (auto* c : {"listItems", "listEntities", "giveItem"}) st.SetCapability(c, "degraded", g_tablesReason);
+    auto& st = PluginState::Get();
+    if (gameBuild == kTablesGameBuild) {
+        g_itemsUsable = g_entitiesUsable = true;
+        return;
     }
-    g_tablesUsable = ok;
+    // Another game build: the item table is rebuilt from this server's enshrouded_server.kfc once per build.
+    std::string source, err;
+    const ItemDef* items = nullptr;
+    size_t count = 0;
+    if (items_kfc::Load(gameBuild, items, count, source, err)) {
+        g_items = items;
+        g_itemCount = count;
+        g_itemsUsable = true;
+        st.SetCapability("listItems", "ok", source + " (" + std::to_string(count) + " ItemInfo)");
+    } else {
+        g_itemsReason = "item table is for game build " + std::string(kTablesGameBuild) + ", this server is build " + gameBuild +
+                        "; rebuilding it from enshrouded_server.kfc failed: " + err;
+        for (auto* c : {"listItems", "giveItem"}) st.SetCapability(c, "degraded", g_itemsReason);
+    }
+    g_entitiesReason = std::string("entity table is for game build ") + kTablesGameBuild + ", this server is build " + gameBuild +
+                       "; use the plugin release for that build";
+    st.SetCapability("listEntities", "degraded", g_entitiesReason);
 }
-bool ItemTablesUsable() { return g_tablesUsable; }
-std::string ItemTablesReason() { return g_tablesReason; }
+bool ItemTablesUsable() { return g_itemsUsable; }
+std::string ItemTablesReason() { return g_itemsReason; }
+bool EntityTablesUsable() { return g_entitiesUsable; }
+std::string EntityTablesReason() { return g_entitiesReason; }
+const ItemDef* ItemTable(size_t& count) {
+    count = g_itemsUsable ? g_itemCount : 0;
+    return g_items;
+}
 
 const ItemDef* FindItemByCode(const std::string& code) {
-    if (!g_tablesUsable) return nullptr;
-    for (size_t i = 0; i < kItemCount; i++)
-        if (code == kItems[i].code) return &kItems[i];
-    for (size_t i = 0; i < kItemCount; i++)
-        if (_stricmp(code.c_str(), kItems[i].code) == 0) return &kItems[i];
+    size_t n;
+    const ItemDef* items = ItemTable(n);
+    for (size_t i = 0; i < n; i++)
+        if (code == items[i].code) return &items[i];
+    for (size_t i = 0; i < n; i++)
+        if (_stricmp(code.c_str(), items[i].code) == 0) return &items[i];
     char* end = nullptr;
     unsigned long long v = strtoull(code.c_str(), &end, 0);
     if (end && *end == 0 && !code.empty())
-        for (size_t i = 0; i < kItemCount; i++)
-            if (kItems[i].itemId == v) return &kItems[i];
+        for (size_t i = 0; i < n; i++)
+            if (items[i].itemId == v) return &items[i];
     return nullptr;
 }
 
@@ -1495,14 +1557,16 @@ const std::string& ItemsJson() {
         // Only what the game client names: an item without an En_Us name is never shown to a
         // player (character-creator parts, placement tools, cut content), and an Ability_ row
         // is a skill, not an item. giveItem still takes any code (FindItemByCode).
+        size_t n;
+        const ItemDef* items = ItemTable(n);
         s = "[";
         bool first = true;
-        for (size_t i = 0; i < kItemCount; i++) {
-            const char* name = ItemLabelById(kItems[i].itemId);
-            if (!IsCatalogueItem(kItems[i].code, name)) continue;
-            s += std::string(first ? "" : ",") + "{\"code\":" + JsonStr(kItems[i].code) + ",\"name\":" + JsonStr(name) +
-                 ",\"description\":" + JsonStr(std::string(kItems[i].category) + ", " + kItems[i].rarity) +
-                 ",\"itemId\":" + std::to_string(kItems[i].itemId) + ",\"maxStackSize\":" + std::to_string(kItems[i].maxStack) + "}";
+        for (size_t i = 0; i < n; i++) {
+            const char* name = ItemLabelById(items[i].itemId);
+            if (!IsCatalogueItem(items[i].code, name)) continue;
+            s += std::string(first ? "" : ",") + "{\"code\":" + JsonStr(items[i].code) + ",\"name\":" + JsonStr(name) +
+                 ",\"description\":" + JsonStr(std::string(items[i].category) + ", " + items[i].rarity) +
+                 ",\"itemId\":" + std::to_string(items[i].itemId) + ",\"maxStackSize\":" + std::to_string(items[i].maxStack) + "}";
             first = false;
         }
         s += "]";

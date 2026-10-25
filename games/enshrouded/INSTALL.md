@@ -16,28 +16,22 @@ server. On a server still on build 1024233 the new DLL turns the item/creature c
    `TakaroEnshrouded/SHA256SUMS` (`cd TakaroEnshrouded && sha256sum -c SHA256SUMS`). Keep
    `THIRD-PARTY.md` and `licenses/` with your installation record.
 3. Stop the game server. Copy `dbghelp.dll` next to `enshrouded_server.exe`.
-4. The configuration is one file, `takaro/plugin.json` next to `enshrouded_server.exe`. The
-   connector creates it at the first start (all keys, an empty `registrationToken` and a unique
-   `identityToken`); you can also create it before:
+4. The configuration is one file, `takaro/plugin.json` next to `enshrouded_server.exe`, with two
+   settings. The connector creates it at the first start with placeholders; you can also create it
+   before:
 
    ```json
    {
-     "registrationToken": "<your registration token>",
-     "identityToken": "",
-     "name": "",
-     "url": "wss://connect.takaro.io/",
-     "protocol": 1,
-     "token": "",
-     "mapDir": "",
-     "caFile": ""
+     "registrationToken": "paste-your-token-here",
+     "identityToken": "name-your-server"
    }
    ```
 
-   Paste the registration token into `registrationToken` and save. An empty `identityToken` gets a
-   unique one written in (the file keeps its owner and permissions); an empty `name` means the
-   server's own name plus the start of the identity (Takaro needs a different name for every game
-   server in a domain). Optionally set `token` (a long random secret) for the diagnostics endpoint.
-   Keep the file readable only by the account the server runs as: it holds a secret. The
+   Paste the registration token into `registrationToken`, put your server's name into
+   `identityToken` and save. Takaro creates the game server under that name and recognizes it by it
+   from then on, so pick a name no other game server in the domain uses, and keep it. The Takaro
+   address is built in. Keep the file readable only by the account the server runs as: it holds a
+   secret. The
    environment variables `TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`,
    `TAKARO_SERVER_NAME`, `TAKARO_WS_URL`, `TAKARO_CA_FILE` and `TAKARO_PLUGIN_TOKEN` override the
    file when they are set (a changed variable needs a restart). `caFile`/`TAKARO_CA_FILE` is only
@@ -59,8 +53,7 @@ server. On a server still on build 1024233 the new DLL turns the item/creature c
    block of `*` lines names the problem and the file to edit. `plugin.log` names where each setting
    came from (`native: config registrationToken from plugin.json`), never its value.
 
-`url`, `registrationToken`, `identityToken`, `name` and `protocol` in `takaro/plugin.json` apply without a
-restart: the connector reads the file every 5 seconds and, when one of them changed, reconnects at
+`registrationToken`, `identityToken` and `protocol` in `takaro/plugin.json` apply without a restart: the connector reads the file every 5 seconds and, when one of them changed, reconnects at
 once; an emptied token disconnects. A half-saved or broken file is ignored (the console says so)
 until it parses again. The other
 keys (`caFile`, `token`, `mapDir`) are read at startup.

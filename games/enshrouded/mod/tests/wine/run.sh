@@ -175,14 +175,13 @@ health /health wine-plugin-token >"$RESULTS/health-unconfigured.txt"
 wait $HOST || true
 check "unconfigured-health-says-why" grep -q '"native":{"enabled":false,"reason":"not connected: no registration token' "$RESULTS/health-unconfigured.txt"
 
-# ---- 4. plugin.json, the one config file: created at load, token pasted while running, emptied, restart ------
-log "live config: plugin.json created with a UUID, token pasted while running, emptied token disconnects"
+# ---- 4. plugin.json, the one config file: created at load, token and name filled in while running, restart ---
+log "live config: plugin.json created with two placeholders, token and server name saved while running, emptied token disconnects"
 reset_state
-printf '{"name": "Wine World"}\n' | docker exec -u enshrouded -i "$RT" sh -c 'cat > /opt/enshrouded/server/native-test/enshrouded_server.json'
 start_fake accept
 LIVE_ENV=(-e TAKARO_IDENTITY_TOKEN= -e TAKARO_REGISTRATION_TOKEN= -e TAKARO_SERVER_NAME= -e TAKARO_CONFIG_POLL_MS=1000)
 PJ=/opt/enshrouded/server/native-test/takaro/plugin.json
-set_token() { docker exec -u enshrouded "$RT" sed -i "s/\"registrationToken\": \"[^\"]*\"/\"registrationToken\": \"$1\"/" "$PJ"; }
+set_key() { docker exec -u enshrouded "$RT" sed -i "s/\"$1\": \"[^\"]*\"/\"$1\": \"$2\"/" "$PJ"; }
 # shellcheck disable=SC2317,SC2329  # invoked through check
 wait_for() {  # wait_for <seconds> <grep args...>
   local s=$1; shift
@@ -192,16 +191,16 @@ run_host 45 "$RESULTS/host-live.txt" "${LIVE_ENV[@]}" &
 HOST=$!
 check "live-no-token-banner" wait_for 20 'registrationToken not set, the server is not connected to Takaro' "$RESULTS/host-live.txt"
 check "live-banner-names-file" grep -q 'into /opt/enshrouded/server/native-test/takaro/plugin.json' "$RESULTS/host-live.txt"
-GEN_ID=$(docker exec "$RT" sed -n 's/.*"identityToken": "\([^"]*\)".*/\1/p' "$PJ")
-check "live-file-created-with-uuid" bash -c "echo '$GEN_ID' | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'"
-check "live-file-has-unique-name" docker exec "$RT" grep -q "\"name\": \"Wine World (${GEN_ID:0:8})\"" "$PJ"
+docker exec "$RT" cat "$PJ" >"$RESULTS/plugin-json-created.txt"
+check "live-file-has-two-placeholders" bash -c "[ \"\$(cat '$RESULTS/plugin-json-created.txt')\" = \"\$(printf '{\n  \"registrationToken\": \"paste-your-token-here\",\n  \"identityToken\": \"name-your-server\"\n}')\" ]"
 check "live-no-identify-without-token" bash -c "! docker logs '$FAKE' 2>&1 | grep -q '\"ev\": \"identify\"'"
-set_token wine-wrong-token
+set_key identityToken "Wine World"
+set_key registrationToken wine-wrong-token
 check "live-wrong-token-refused" wait_for 20 'Takaro refused this server' "$RESULTS/host-live.txt"
-set_token wine-registration
-check "live-fixed-token-connects" wait_for 20 "connected to Takaro as \"Wine World (${GEN_ID:0:8})\"" "$RESULTS/host-live.txt"
-check "live-identify-carried-generated-identity" bash -c "docker logs '$FAKE' 2>&1 | grep '\"ok\": true' | grep -q '$GEN_ID'"
-set_token ""
+set_key registrationToken wine-registration
+check "live-fixed-token-connects" wait_for 20 'connected to Takaro as "Wine World"' "$RESULTS/host-live.txt"
+check "live-identify-carried-server-name" bash -c "docker logs '$FAKE' 2>&1 | grep '\"ok\": true' | grep -q 'Wine World'"
+set_key registrationToken ""
 # shellcheck disable=SC2317,SC2329  # invoked through check
 banner_twice() { for _ in $(seq 1 20); do [ "$(grep -c 'registrationToken not set' "$RESULTS/host-live.txt")" -ge 2 ] && return 0; sleep 1; done; return 1; }
 check "live-emptied-token-disconnects" banner_twice
@@ -210,19 +209,22 @@ wait $HOST || true
 cp "$SRV/takaro/plugin.log" "$RESULTS/plugin-live.log" 2>/dev/null || true
 check "live-log-no-tokens" bash -c "! grep -q -e wine-registration -e wine-wrong-token '$RESULTS/plugin-live.log' '$RESULTS/host-live.txt'"
 check "live-no-saved-copy" bash -c "! docker exec '$RT' test -e /opt/enshrouded/server/native-test/takaro/connector-state/saved-settings.json"
+check "live-file-only-two-keys" bash -c "! docker exec '$RT' grep -q -e '\"name\"' -e '\"url\"' -e '\"token\"' '$PJ'"
 # A restart (an upgrade replaces only dbghelp.dll): the same identity from the same file.
-set_token wine-registration
+set_key registrationToken wine-registration
 docker logs "$FAKE" >"$RESULTS/fake-live-1.txt" 2>&1
 run_host 15 "$RESULTS/host-live-restart.txt" "${LIVE_ENV[@]}"
 docker logs "$FAKE" >"$RESULTS/fake-live.txt" 2>&1
-check "live-restart-reconnects" grep -q 'connected to Takaro as' "$RESULTS/host-live-restart.txt"
-check "live-restart-same-identity" bash -c "[ \$(grep '\"ok\": true' '$RESULTS/fake-live.txt' | grep -c '$GEN_ID') -gt \$(grep '\"ok\": true' '$RESULTS/fake-live-1.txt' | grep -c '$GEN_ID') ]"
-# An operator's file with an empty identityToken and mode 0600: the identity is written in place, the mode stays.
-printf '{\n  "registrationToken": "wine-registration",\n  "identityToken": "",\n  "url": "wss://fake-takaro:8443/"\n}\n' |
+check "live-restart-reconnects" grep -q 'connected to Takaro as "Wine World"' "$RESULTS/host-live-restart.txt"
+check "live-restart-same-identity" bash -c "[ \$(grep '\"ok\": true' '$RESULTS/fake-live.txt' | grep -c 'Wine World') -gt \$(grep '\"ok\": true' '$RESULTS/fake-live-1.txt' | grep -c 'Wine World') ]"
+# An operator's file from an earlier version (name, url, token) and mode 0600: read as it is, never rewritten.
+printf '{\n  "registrationToken": "wine-registration",\n  "identityToken": "wine-older",\n  "name": "Wine Older",\n  "url": "wss://fake-takaro:8443/",\n  "token": ""\n}\n' |
   docker exec -u enshrouded -i "$RT" sh -c "cat > $PJ && chmod 600 $PJ"
-run_host 10 "$RESULTS/host-live-writeback.txt" "${LIVE_ENV[@]}"
-check "live-identity-written-back" bash -c "docker exec '$RT' grep -Eq '\"identityToken\": \"[0-9a-f-]{36}\"' '$PJ'"
-check "live-write-back-keeps-mode" bash -c "[ \"\$(docker exec '$RT' stat -c '%a %U' '$PJ')\" = '600 enshrouded' ]"
+docker exec "$RT" cat "$PJ" >"$RESULTS/plugin-json-older.txt"
+run_host 10 "$RESULTS/host-live-older.txt" "${LIVE_ENV[@]}"
+check "live-older-file-connects" grep -q 'connected to Takaro as "Wine Older"' "$RESULTS/host-live-older.txt"
+check "live-older-file-untouched" bash -c "docker exec '$RT' cat '$PJ' | cmp -s - '$RESULTS/plugin-json-older.txt'"
+check "live-older-file-keeps-mode" bash -c "[ \"\$(docker exec '$RT' stat -c '%a %U' '$PJ')\" = '600 enshrouded' ]"
 
 log "results in $RESULTS"
 if [ ${#FAILED[@]} -eq 0 ]; then log "ALL PASSED"; exit 0; fi

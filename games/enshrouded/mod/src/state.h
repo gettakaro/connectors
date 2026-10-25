@@ -8,14 +8,20 @@ struct PlayerRecord {
     std::string steamId;  // SteamID64 as decimal string; used as gameId
     std::string name;     // Steam persona name as printed by the server (matches the game's player slot)
     std::string characterName;  // in-game character name, read from the game once the player's entity exists
+    int level = -1;             // character level and experience (NetworkPlayerAttributes), -1 until read
+    int experience = -1;
+    int experienceRequired = -1;
     std::string peerId;   // e.g. "0(1)"
     std::string machine;  // machine index as printed in "Machine 'M'"
+    std::string authMachine;  // machine index from the "Add remote machine index M" the game logged for this peer
     std::string handle;   // player handle as printed, e.g. "0(0)"
     std::string group;    // user group name matched from permissions, or "unknown"
     std::vector<std::string> permissions;
     std::string connectedAt;  // ISO time of login
     bool online = false;      // true once logged in
     bool removed = false;     // "Remove Player" seen, waiting for "Removed peer"
+    bool connectPending = false;  // player-connected held back until the character name is known
+    uint64_t connectDueMs = 0;    // ...or until this time
 };
 
 struct EventRecord {
@@ -50,6 +56,10 @@ public:
     void SetMachineIsPeerIndexPlusOne(bool on);
     // Character name of the online player whose Steam persona name is `persona` (reported to Takaro as "name").
     void SetCharacterName(const std::string& persona, const std::string& character);
+    void SetLevel(const std::string& persona, int level, int experience, int experienceRequired);
+    // With character names available, player-connected waits (up to 20 s) for the character name, so Takaro sees
+    // the same name on join as in chat.
+    void SetWaitForCharacterNames(bool on);
     bool OnlineMachine(const std::string& gameId, std::string& machine) const;
     std::vector<std::pair<std::string, std::string>> OnlineMachines() const;  // (steamId, machine)
 
@@ -65,6 +75,7 @@ public:
 private:
     PluginState() = default;
     void FinalizeLoginLocked();
+    void EmitConnectLocked(PlayerRecord& p);
     std::string PlayerJsonLocked(const PlayerRecord& p, bool online = true) const;
     void LoadGroupsLocked();
 
@@ -76,8 +87,11 @@ private:
     // player tracking
     std::vector<PlayerRecord> players_;  // pending (not online) + online
     std::string lastLoginMachine_, lastLoginHandle_;
+    std::string lastAuthSteam_;  // account of the last "Client '<id>' authenticated by steam"
+    std::string machinePeer_;    // peer of the last "Unable to find machine for peer N(G)." (the next machine is its)
     bool machineIsPeerIndexPlusOne_ = false;  // 1.0: Machine 'M' is peer N(..) with M = N + 1
     bool collectingPerms_ = false;
+    bool waitCharacterNames_ = false;
     int loginIdx_ = -1;
     uint64_t lastPermLineMs_ = 0;
 
