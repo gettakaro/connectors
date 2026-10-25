@@ -150,7 +150,17 @@ and `world.cpp` (written for 1024233).
    En_Us names. 1.0 changed the container magic to `KFC4`; kfc-parser 0.1.2 refuses it, but accepting
    `0x3443464B` next to `KFC3` in `crates/kfc-base/src/container/header.rs` is the only change needed.
 2. Write the generator inputs (`items/entities/locations.json`, see `tools/gen_gamedata.py` for the path), then `tools/gen_gamedata.py`,
-   `tools/gen_item_labels.py <export> <note>` and `tools/gen_entity_labels.py <export> research/entities.json <note>`.
+   `tools/gen_item_labels.py <export> <note>`, `tools/gen_entity_labels.py <export> research/entities.json <note>` and
+   `tools/gen_location_labels.py <export>/templates-en.tsv research/locations.json <note>`.
+3. `locations.json` comes from the **server** with `tools/eml-locations` (copy it into `<server>/mods/`):
+   map-marker, spawn-point and location placements from `SceneEntityChunkResource`. 1.0 stores a
+   position as two u16 per axis, metres plus 1/65536 metre. emm runs out of Lua reference slots on
+   the whole world in one run, so run it once per chunk range (`FIRST`/`LAST` at the top of the mod),
+   then `tools/locations_json.py <export> <note> > research/locations.json`. The En_Us label of a map
+   marker lives in one client `.dat`; the export only reads `enshrouded.kfc`, `.kfc_resources`, the
+   exe and that `.dat`, so the other `.dat` files can be empty placeholders of the right size.
+   `gen_gamedata.py` rewrites the item, entity and location tables together, so run it only with
+   all three inputs from the builds their `// source:` lines name.
 
 ### Moving to a new game build
 
@@ -265,7 +275,7 @@ container, the bearer token on stdin. It reports:
 | `plugin-health` | the compatibility claim: `/health` `status: ok`, `gameBuild == 1024233`, no capability `degraded`, the plugin version this run built, and the container's Proton equal to the target's |
 | `native-identify` | the game process identified over TLS with both tokens, `plugin.log` says `native: identified with Takaro`, `/health` `diagnostics.native.state == identified`, its application ping got a pong and it answered Takaro's empty RFC 6455 ping (Enshrouded's `identify` and `heartbeat`) |
 | `native-players` | `testReachability` connectable with a **null** reason, `getPlayers` empty |
-| `native-catalog` | `listItems`/`listEntities`/`listLocations` non-empty, every entry with a `code` and a readable, distinct `name` |
+| `native-catalog` | `listItems`/`listEntities`/`listLocations` non-empty, every entry with a `code` and a readable `name`; item and entity names distinct per code, location codes unique |
 | `native-console` | `executeConsoleCommand version` answers with the game build |
 | `action` | `sendMessage` resolves end to end (nobody is online, so this proves the path, not delivery) |
 | `reconnect` | the fake closes with 1001, the plugin logs it, reconnects by itself, identifies again and answers |
@@ -396,7 +406,7 @@ fetches a revision twice, so a changed icon always has to change its bytes.
 - **Kick/ban need the player online**; unban needs the player to have been seen online once (account-hash cache). The game stores no ban reason and no expiry: the connector keeps both (`timed-bans.json`) and lifts a timed ban itself at expiry.
 - **Whisper isolation is unproven**: whispers reach the recipient, but exclusion of other players was not verified (only one player account; accepted limitation).
 - **Admins cannot be kicked/banned by the game itself**: Enshrouded ignores kick/ban for players whose group has `canKickBan`. Plugin >= 0.4.2 lifts that check for each Takaro kick/ban; older plugins return success while nothing happens.
-- **listLocations** is implemented (1031 locations) but Takaro never calls it, so it is not observable end-to-end.
+- **listLocations** answers with the 808 placements the in-game map shows (game build 1273043), under their in-game map names. A code several placements share (69 fast travel platforms are all `Teleport_Platform_SavePoint_Gameplay`) gets `@<x>_<z>` appended, because Takaro keys locations by code.
 - **Log events are not stored** by Takaro as searchable events; they only surface via rate-limit records.
 - **Signatures are pinned to game build 1024233 (Steam build 23178631).** Every hook is anchored on code shape and self-checked at load; on a game update a mismatching capability reports `degraded` in `/health` (and reachability reason) while everything else keeps working and the server keeps running. Re-derive signatures after updates — see "Moving to a new game build" above.
 - **Catalogue names are the server's own codes with spaces**, not localised display names: no localisation ships with the dedicated server, so `Block_Roof_T5_Granite_Ornamented` becomes `Block Roof T5 Granite Ornamented`. `verify`'s `native-catalog` check enforces `name != code` and no underscores; it cannot enforce what the server does not have.

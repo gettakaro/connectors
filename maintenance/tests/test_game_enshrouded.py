@@ -1219,7 +1219,7 @@ def _derived_answers() -> dict[str, Any]:
         ],
         "listLocations": [
             {"code": "8kMapLabel_deepforest_Town_07_Whitewind", "name": "Whitewind"},
-            {"code": "Prop_OpenWorld_SavePoint", "name": "Open World Save Point"},
+            {"code": "8kMapLabel_steppes_areaName_02_TwinPeaks", "name": "Pillars of Creation"},
         ],
     }
 
@@ -1262,12 +1262,39 @@ def test_the_catalog_check_fails_on_a_formatted_dev_code() -> None:
 def test_every_predicate_the_corpus_test_asserts_is_asserted_on_the_live_answer(name: str) -> None:
     """The C++ test proves the shipped table; this proves the server did not regress past it."""
     answers = _derived_answers()
-    answers["listLocations"] = [{"code": "Some_Template_Code", "name": name}]
+    answers["listEntities"] = [{"code": "Some_Template_Code", "name": name}]
 
     result = _catalog(answers)
 
     assert result.status == "fail", name
-    assert "listLocations" in " ".join(result.detail["problems"])
+    assert "listEntities" in " ".join(result.detail["problems"])
+
+
+def test_places_may_share_a_map_name_but_never_a_code() -> None:
+    """Takaro keys a location by its code: two places with one code become one marker."""
+    answers = _derived_answers()
+    answers["listLocations"] = [
+        {"code": "Teleport_Platform_Gameplay@3507_1962", "name": "Fast Travel Point"},
+        {"code": "Teleport_Platform_Gameplay@5307_2712", "name": "Fast Travel Point"},
+        {"code": "8kMapLabel_general_PassageTo_coldHeights", "name": "Passage to the Albaneve Summits"},
+    ]
+    assert _catalog(answers).status == "pass"
+
+    answers["listLocations"].append({"code": "Teleport_Platform_Gameplay@5307_2712", "name": "Fast Travel Point"})
+    result = _catalog(answers)
+
+    assert result.status == "fail"
+    assert "1 codes are held by more than one place" in " ".join(result.detail["problems"])
+
+
+@pytest.mark.parametrize(
+    "name", ["Open_World Save Point", "Teleport Platform Gameplay", "Hollow Hall Placeholder noUI"]
+)
+def test_a_location_name_that_is_still_a_dev_code_fails(name: str) -> None:
+    answers = _derived_answers()
+    answers["listLocations"] = [{"code": "Teleport_Platform_Gameplay", "name": name}]
+
+    assert _catalog(answers).status == "fail", name
 
 
 def test_an_item_name_that_is_still_a_dev_code_is_named() -> None:
@@ -1314,7 +1341,7 @@ def test_the_item_noise_words_the_plugin_drops_are_refused_in_the_answer(word: s
     assert "listItems" in " ".join(result.detail["problems"])
 
 
-@pytest.mark.parametrize("action", ["listItems", "listEntities", "listLocations"])
+@pytest.mark.parametrize("action", ["listItems", "listEntities"])
 def test_one_name_held_by_two_codes_fails_for_every_action(action: str) -> None:
     """DistinctNames promises one name per code; a collision means that promise broke."""
     answers = _derived_answers()
