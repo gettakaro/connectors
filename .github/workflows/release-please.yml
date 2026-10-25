@@ -58,6 +58,9 @@ jobs:
       scum_released: ${{ steps.rp.outputs['games/scum--release_created'] }}
       scum_tag: ${{ steps.rp.outputs['games/scum--tag_name'] }}
       scum_version: ${{ steps.rp.outputs['games/scum--version'] }}
+      counter_strike2_released: ${{ steps.rp.outputs['games/counter-strike2--release_created'] }}
+      counter_strike2_tag: ${{ steps.rp.outputs['games/counter-strike2--tag_name'] }}
+      counter_strike2_version: ${{ steps.rp.outputs['games/counter-strike2--version'] }}
       tf2_released: ${{ steps.rp.outputs['games/tf2--release_created'] }}
       tf2_tag: ${{ steps.rp.outputs['games/tf2--tag_name'] }}
       tf2_version: ${{ steps.rp.outputs['games/tf2--version'] }}
@@ -237,6 +240,17 @@ jobs:
       version: ${{ needs.release-please.outputs.scum_version }}
       tag: ${{ needs.release-please.outputs.scum_tag }}
 
+  release-counter-strike2:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.counter_strike2_released == 'true' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/counter-strike2.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.release-please.outputs.counter_strike2_version }}
+      tag: ${{ needs.release-please.outputs.counter_strike2_tag }}
   release-tf2:
     needs: release-please
     if: ${{ needs.release-please.outputs.tf2_released == 'true' }}
@@ -270,6 +284,7 @@ jobs:
       - release-dragonwilds
       - release-vein
       - release-scum
+      - release-counter-strike2
       - release-tf2
     if: |
       always() && (
@@ -285,6 +300,7 @@ jobs:
         (needs.release-dragonwilds.result == 'success' && needs.release-please.outputs.dragonwilds_released == 'true') ||
         (needs.release-vein.result == 'success' && needs.release-please.outputs.vein_released == 'true') ||
         (needs.release-scum.result == 'success' && needs.release-please.outputs.scum_released == 'true') ||
+        (needs.release-counter-strike2.result == 'success' && needs.release-please.outputs.counter_strike2_released == 'true') ||
         (needs.release-tf2.result == 'success' && needs.release-please.outputs.tf2_released == 'true')
       )
     runs-on: ubuntu-latest
@@ -316,7 +332,8 @@ jobs:
              || needs.release-please.outputs.dragonwilds_tag
              || needs.release-please.outputs.vein_tag
              || needs.release-please.outputs.scum_tag
-             || needs.release-please.outputs.tf2_tag }}
+              || needs.release-please.outputs.counter_strike2_tag
+              || needs.release-please.outputs.tf2_tag }}
         run: |
           gh api repos/gettakaro/static-sites/dispatches \
             -f event_type=connector-released \
