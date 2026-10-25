@@ -15,12 +15,12 @@ no longer a supported target.** A build the data file does not know keeps the ho
 the rest switch themselves off (see "A game update can switch a feature off" below). **Keep the server on
 a build the connector supports.**
 
-**Steam's current build is not supported yet.** Since 2026-10-20 Steam serves game build **1273043**
-(Steam build 26083076), and SteamCMD installs only the current build. Release 0.8.1 loads on 1273043
-but switches nearly everything off: on 2026-10-22 its log reported players, chat, messages, kick, ban,
-unban, teleport, inventory, give item, the item and creature catalogues and all game events as
-`degraded`; only the console commands, the ban list, locations and shutdown stayed `ok`. Wait for a
-release that names 1273043 before you install or update the game to it.
+**Steam's current build needs a release newer than 0.8.1.** Since 2026-10-20 Steam serves game build
+**1273043** (Steam build 26083076), and SteamCMD installs only the current build. Release 0.8.1 loads on
+1273043 but switches nearly everything off: its log reports players, chat, messages, kick, ban, unban,
+teleport, inventory, give item, the item and creature catalogues and all game events as `degraded`; only
+the console commands, the ban list, locations and shutdown stay `ok`. Install a release whose plugin zip
+is named `proton-1273043` before you install or update the game to it.
 
 ## What works, what doesn't
 
