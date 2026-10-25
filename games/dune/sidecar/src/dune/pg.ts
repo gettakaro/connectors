@@ -1,6 +1,7 @@
 import { logger } from '../logger.js';
 import { num, str } from './identity.js';
 import type { DuneInventoryRow, DunePlayerRow, DuneReachability, Position, TakaroLocation } from './types.js';
+import { markerLocations, type MarkerRow } from './locations.js';
 
 /**
  * The only thing `pg.ts` needs from a driver. Tests inject `testing/mockBattlegroup`'s fake instead of `pg.Pool`, and
@@ -46,13 +47,12 @@ export const OPTIONAL_COLUMNS = {
   inventories: ['inventory_type', 'actor_id'],
   items: ['template_id', 'stack_size', 'quality_level', 'position_index', 'inventory_id'],
   /**
-   * The shipped `markers` table is `(marker_hash_id, dimension_index, marker_type, position Vector, payload jsonb,
-   * map_name_id)` — it has **no name and no transform**, only a dev-style `marker_type` and a numeric hash id. The
-   * legacy `name`/`transform` probe below therefore comes back false on a stock build and `listLocations` answers
-   * with the world partitions alone, which is the honest outcome: a marker we cannot give a player-facing name is
-   * not something to ship (memory: catalogue-human-names).
+   * The shipped `markers` table is `(marker_hash_id, map_name_id, dimension_index, marker_type, position Vector,
+   * payload_type, payload jsonb, ...)`. `listLocations` reads the `StaticLocation` rows, whose payload carries the
+   * in-game `DisplayName`, and names their map through `map_names` (see locations.ts).
    */
-  markers: ['id', 'name', 'transform', 'map', 'marker_type', 'position', 'map_name_id'],
+  markers: ['marker_hash_id', 'map_name_id', 'position', 'payload_type', 'payload'],
+  map_names: ['map_name_id', 'map_name'],
 } as const;
 
 export type TableName = keyof typeof OPTIONAL_COLUMNS;
@@ -383,42 +383,38 @@ export class DunePg {
   }
 
   /**
-   * `listLocations`: the running map partitions plus the world's static markers. Takaro never calls this action in
-   * practice, so it is a best-effort read that answers `[]` rather than failing when neither table is present.
+   * `listLocations`: the named places on the world map, from the `StaticLocation` markers (see locations.ts). World
+   * partitions are not reported: a partition is a running map process with no position. Answers `[]` when the build
+   * has no markers table.
    */
   async locations(): Promise<TakaroLocation[]> {
-    const out: TakaroLocation[] = [];
-    if (this.has('world_partition', 'partition_id')) {
-      const label = this.has('world_partition', 'label') ? `NULLIF(wp.label, '')` : 'NULL';
-      const map = this.has('world_partition', 'map') ? `NULLIF(wp.map, '')` : 'NULL';
-      const { rows } = await this.db.query<Record<string, unknown>>(
-        `SELECT wp.partition_id::int8 AS partition_id, COALESCE(${label}, ${map}, 'partition') AS name, COALESCE(${map}, '') AS map
-           FROM ${this.t('world_partition')} wp ORDER BY wp.partition_id LIMIT 200`,
-      );
-      for (const r of rows) {
-        const id = num(r.partition_id);
-        if (id === null) continue;
-        out.push({ code: `partition:${id}`, name: `${str(r.name) ?? 'partition'} (${str(r.map) ?? 'map'})`, position: { x: 0, y: 0, z: 0 } });
-      }
+    if (!['marker_hash_id', 'position', 'payload_type', 'payload'].every((c) => this.has('markers', c))) return [];
+    const joinMaps = this.has('markers', 'map_name_id') && this.has('map_names', 'map_name_id') && this.has('map_names', 'map_name');
+    const { rows } = await this.db.query<Record<string, unknown>>(
+      `SELECT m.marker_hash_id::int8 AS id,
+              m.payload->>'DisplayName' AS display_name,
+              ${joinMaps ? 'mn.map_name' : 'NULL::text'} AS map_name,
+              (m.position).x::float8 AS x, (m.position).y::float8 AS y, (m.position).z::float8 AS z
+         FROM ${this.t('markers')} m
+         ${joinMaps ? `LEFT JOIN ${this.t('map_names')} mn ON mn.map_name_id = m.map_name_id` : ''}
+        WHERE m.payload_type::text = 'StaticLocation' AND m.position IS NOT NULL
+        ORDER BY m.marker_hash_id LIMIT 2000`,
+    );
+    let partitionMaps: string[] = [];
+    if (this.has('world_partition', 'map')) {
+      const res = await this.db.query<{ map: string | null }>(`SELECT DISTINCT wp.map FROM ${this.t('world_partition')} wp WHERE wp.map IS NOT NULL`);
+      partitionMaps = res.rows.map((r) => r.map ?? '').filter(Boolean);
     }
-    if (this.has('markers', 'transform') && this.has('markers', 'name')) {
-      const { rows } = await this.db.query<Record<string, unknown>>(
-        `SELECT m.id::int8 AS id, COALESCE(m.name, '') AS name,
-                ((m.transform).location).x::float8 AS x,
-                ((m.transform).location).y::float8 AS y,
-                ((m.transform).location).z::float8 AS z
-           FROM ${this.t('markers')} m WHERE m.transform IS NOT NULL ORDER BY m.id LIMIT 500`,
-      );
-      for (const r of rows) {
-        const x = num(r.x);
-        const y = num(r.y);
-        const z = num(r.z);
-        if (x === null || y === null || z === null) continue;
-        const name = str(r.name);
-        out.push({ code: `marker:${num(r.id) ?? name ?? out.length}`, name: name ?? `Marker ${num(r.id) ?? ''}`.trim(), position: { x, y, z } });
-      }
+    const markers: MarkerRow[] = [];
+    for (const r of rows) {
+      const id = num(r.id);
+      const x = num(r.x);
+      const y = num(r.y);
+      const z = num(r.z);
+      if (id === null || x === null || y === null || z === null) continue;
+      markers.push({ id, displayName: str(r.display_name), mapName: str(r.map_name), x, y, z });
     }
-    return out;
+    return markerLocations(markers, partitionMaps);
   }
 
   async close(): Promise<void> {
