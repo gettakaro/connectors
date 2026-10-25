@@ -16,6 +16,8 @@ struct PlayerRecord {
     std::string connectedAt;  // ISO time of login
     bool online = false;      // true once logged in
     bool removed = false;     // "Remove Player" seen, waiting for "Removed peer"
+    bool connectPending = false;  // logged in; player-connected waits for the character name (bounded)
+    uint64_t loginMs = 0;
 };
 
 struct EventRecord {
@@ -50,6 +52,10 @@ public:
     void SetMachineIsPeerIndexPlusOne(bool on);
     // Character name of the online player whose Steam persona name is `persona` (reported to Takaro as "name").
     void SetCharacterName(const std::string& persona, const std::string& character);
+    // The game build exposes character names: player-connected then waits (up to connectNameWaitMs) for the
+    // character name, so Takaro never sees the Steam persona first and records a rename on every join.
+    void SetCharacterNamesAvailable(bool on);
+    void SetConnectNameWaitMs(uint64_t ms);
     bool OnlineMachine(const std::string& gameId, std::string& machine) const;
     std::vector<std::pair<std::string, std::string>> OnlineMachines() const;  // (steamId, machine)
 
@@ -65,6 +71,7 @@ public:
 private:
     PluginState() = default;
     void FinalizeLoginLocked();
+    void EmitConnectedLocked(PlayerRecord& p);
     std::string PlayerJsonLocked(const PlayerRecord& p, bool online = true) const;
     void LoadGroupsLocked();
 
@@ -80,6 +87,8 @@ private:
     bool collectingPerms_ = false;
     int loginIdx_ = -1;
     uint64_t lastPermLineMs_ = 0;
+    bool charNamesAvailable_ = false;
+    uint64_t connectNameWaitMs_ = 5000;
 
     struct Group {
         std::string name;

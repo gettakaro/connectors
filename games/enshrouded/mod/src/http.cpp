@@ -369,7 +369,10 @@ Response BansJson() {
                 auto* x = b.get(key);
                 return x && (x->isStr() || x->isNum()) ? x->str : std::string();
             };
-            std::string name = field("displayName");
+            // the character name first, as getPlayers and the events report it: Takaro's ban sync renames the player
+            // to the entry name, so the Steam name here would flip the player's name on every sync
+            std::string name = field("characterName");
+            if (name.empty()) name = field("displayName");
             std::string steam = a->str;  // the JSON may hold the account hash; map back to the SteamID when cached
             {
                 Guard g(g_accLock);
