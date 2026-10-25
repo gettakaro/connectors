@@ -81,6 +81,7 @@ stdout is one JSON document:
 | `console` | `executeConsoleCommand` with `say takaro-verify-<run id>` is echoed in the server log. | 60 s |
 | `reconnect` | Takaro closes the socket with code 1001; the connector identifies again, and the new socket answers a ping and `testReachability`. The log shows the close and a second `Identified successfully`. | 20 s to re-identify |
 | `shutdown` | A `shutdown` request stops the container with exit code 0. | 120 s |
+| `gameplay-join` … `gameplay-leave` | Minecraft only: a headless player joins, chats, is given an item, is teleported and leaves. See [Gameplay](#gameplay-a-headless-player-on-every-target). | 30 s per event, 120 s to spawn |
 | `restart` | The same data directory boots a second time, the install ledger is byte-identical, the pinned inputs are intact, and the second server shuts down cleanly too. Skipped when `shutdown` failed — there is no clean data directory to reboot. | 180 s to identify |
 | `negative-wrong-target` | Only with `--negative`. See below. | `--startup-timeout` |
 | `hosted-registration` | Only with `--takaro hosted`. See below. | 60 s |
@@ -116,6 +117,11 @@ and its membership is fixed: `protocol` means `connector-load`, `identify`, `hea
 **not** belong to a level — a connector that cannot reconnect still reached the protocol —
 but they do gate `outcome`, and so the exit code. A failed lifecycle row gives
 `level: "protocol"`, `outcome: "fail"` and exit 8.
+
+`gameplay` sits above `protocol`: a game whose harness drives a player (Minecraft) reaches it
+when the protocol level is reached and every `gameplay-*` row passed. A failed gameplay row
+leaves `level: "protocol"` and still fails `outcome`, so the server-side result and the
+player-dependent result stay apart in every report.
 
 A skipped check is never a pass. A run in which everything was skipped reports `fail`.
 
@@ -187,7 +193,7 @@ from the start rather than being scrubbed later.
 | `checks[]` | `{id, status, durationMs, detail, log}` per row, in run order. |
 | `level`, `outcome` | As above. |
 | `logs[]` | Every retained log file with its sha256. |
-| `coverage.gameplay` | Always `not covered - recorded client evidence pending (#174)`. |
+| `coverage.gameplay` | `covered - join, chat, give-item, inventory, teleport, leave by a headless mineflayer@… player (native … protocol \| logged in as … through ViaProxy …); manual: …` when every gameplay row passed, `not covered - <rows> did not pass; manual: …` when one did not, and a fixed `not covered` line for a game whose harness drives no player. |
 
 A failure names its target three times over: the report path is `<out>/<target>/report.json`,
 stdout's `reports[].target` carries the id, and the CI leg's name contains it.
@@ -216,10 +222,70 @@ command with `--startup-timeout 600 --cleanup-orphans`, writes a check table int
 summary, and uploads `verify-<connector>-<target>` (report plus logs) even when it failed.
 `publish` needs every leg to succeed.
 
-## What this does not prove
+The required check for a connector is its workflow's `release / verify (<target>)` legs (for
+Minecraft: the `Minecraft Connector` workflow). They run on every pull request that changes
+the connector's build inputs (`scripts/pr-build-scope.sh`), on every push to `main`, and on
+every release, and a leg fails on any failed row, gameplay rows included. A leg of a game
+that ships a headless player also restores and saves `~/.cache/takaro-maint/<game>-client`,
+keyed on the files under `maintenance/src/takaro_maint/games/<game>/client/`.
 
-This harness exercises startup and the Generic Connector Protocol. It does not play the
-game. Join and leave, chat, inventory, item grants and teleportation need a real client and
-recorded evidence, which is tracked separately (#174), and every report says so in
-`coverage.gameplay`. No document in this repository should read as if this command had
-verified them.
+## Gameplay: a headless player on every target
+
+For Minecraft the run does not stop at an empty server. After `console`, and before
+`reconnect` and `shutdown`, a player joins the booted target and the fake Takaro drives it
+the way real Takaro would. Every row checks what the player itself saw against what the
+connector reported and emitted:
+
+| id | Passes when |
+|---|---|
+| `gameplay-join` | The player spawns; a `player-connected` event names it with a `gameId` equal to the uuid the client was given; `getPlayers` lists it under that `gameId`. |
+| `gameplay-chat` | A chat line the player sends arrives as a `chat-message` event with that exact text and that player; a `sendMessage` to the player arrives in its chat. |
+| `gameplay-give-item` | After `giveItem minecraft:diamond ×3` the client's own inventory holds exactly three more diamonds. |
+| `gameplay-inventory` | `getPlayerInventory` then reports `minecraft:diamond` ×3 under a display name. |
+| `gameplay-teleport` | After `teleportPlayer` to a point beside and above spawn, the server forces the client to that point (±0.6), and `getPlayerLocation` reports its x and z (±1, the player is falling) and a y no higher than the target. |
+| `gameplay-leave` | The player quits and exits 0; a `player-disconnected` event carries its `gameId`; `getPlayers` no longer lists it. |
+
+A player that never spawns fails `gameplay-join` and skips the rest. `--checks` can select
+single rows; joining runs whenever any gameplay row does.
+
+**The client.** [Mineflayer](https://github.com/PrismarineJS/mineflayer), pinned with its
+whole dependency tree by `maintenance/src/takaro_maint/games/minecraft/client/package-lock.json`,
+runs `client.mjs` in a pinned Node image (`client.json`). It joins through the server
+container's own network namespace (`--network container:<server>`), so no host port is ever
+published, under a throwaway offline-mode name (`tmverify<nonce>`). Mineflayer speaks
+1.21.11 and 26.1.x itself. Newer targets (26.2, 26.3) are reached through
+[ViaProxy](https://github.com/ViaVersion/ViaProxy), pinned by URL and sha256 in `client.json`,
+which runs in the same namespace on the target's own pinned image: the player logs in as 26.1
+and ViaProxy translates to the target. The player stands still and sends no movement except
+the position that answers a teleport: through ViaProxy to 26.3 an idle client's routine move
+packets are rejected by the server. `gameplay-join`'s detail and `coverage.gameplay` say
+which way the player came in, and `viaproxy.log` and `gameplay-client.log` are kept next to
+`server.log`. Both containers carry the run's `tm.run`/`tm.ttl` labels and are removed with
+the server.
+
+**Prerequisites.** Docker on Linux x86-64 (the CI runner is `ubuntu-latest`), network access to
+the npm registry and GitHub releases on the first run (afterwards `~/.cache/takaro-maint/minecraft-client`
+holds `node_modules` per lockfile hash and the ViaProxy blob), about 3 GB of memory for the
+server plus 768 MB each for the player and ViaProxy, and about 1 GB of disk for the client
+cache. No account, licence or credential is needed: the server runs offline-mode, and Mineflayer
+and ViaProxy are MIT and GPL-3.0 tools used unmodified at test time only. The gameplay rows
+add about a minute per target.
+
+**Reproduce locally** (any Linux host with Docker and uv):
+
+```
+maintenance/bin/takaro-maint build  --game minecraft --target fabric-26.2 --version 0.0.0-local --out dist --toolchain container
+maintenance/bin/takaro-maint verify --game minecraft --target fabric-26.2 --artifacts dist --out reports \
+    --checks build,startup,connector-load,identify,gameplay-join,gameplay-chat,gameplay-give-item,gameplay-inventory,gameplay-teleport,gameplay-leave
+```
+
+**What a real client still has to show.** Every report lists it under `manual:` in
+`coverage.gameplay`, and the gameplay rows replace recorded client evidence only for what
+they cover:
+
+- online-mode (Microsoft account) login; CI servers run offline-mode;
+- the vanilla client itself: rendering, UI and typed slash commands;
+- a native 26.2+ client protocol, where the report names ViaProxy;
+- `player-death` and `entity-killed` events.
+
+Other games' harnesses drive no player, and their reports say so in `coverage.gameplay`.
