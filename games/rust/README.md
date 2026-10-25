@@ -107,7 +107,7 @@ In the server console / Carbon or Oxide log, the plugin prints lines prefixed wi
 [Takaro] Connecting to wss://connect.takaro.io/
 Loaded plugin TakaroConnector v<version> by Takaro [1667ms]
 [Takaro] WebSocket connected
-[Takaro] Identified successfully, server ID: <id>
+[Takaro] Identified successfully, server ID: <id> (protocol 1)
 ```
 
 And in Takaro, the game server shows as **online**.
@@ -144,6 +144,8 @@ implemented or not supported.
 |---|---|---|
 | Plugin compiles and loads | ✅ | Carbon compiles the `.cs` at load, and reloads it by itself when the file changes. |
 | Connection & identify | ✅ | Connects outbound over WebSocket and identifies to Takaro. |
+| Protocol v1 | ✅ | Speaks Takaro's Generic Game Protocol v1: declares what it supports, numbers its events and resends any Takaro has not confirmed after a reconnect. Falls back to protocol 0 on a Takaro that does not offer v1. Proven only on Takaro staging; not yet verified on takaro.io. |
+| Game profile | ✅ | Takaro shows the server as Rust, with the Rust icon, the running game build and the plugin's name and version. Proven only on Takaro staging; not yet verified on takaro.io. |
 | Heartbeat / reachability | ✅ | Answers Takaro's reachability check. |
 | Server restart / reconnect | ✅ | Reconnects on its own after the server comes back, and identifies again. |
 | Config file, token change without restart | ✅ | Proven 2026-10-10 on Carbon: created on first load, a pasted or corrected token connects within 5 s, an upgrade keeps token and identity. |
