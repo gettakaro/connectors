@@ -3,6 +3,7 @@
 #include "common.h"
 
 #include <deque>
+#include <set>
 
 struct PlayerRecord {
     std::string steamId;  // SteamID64 as decimal string; used as gameId
@@ -10,6 +11,8 @@ struct PlayerRecord {
     std::string characterName;  // in-game character name, read from the game once the player's entity exists
     std::string peerId;   // e.g. "0(1)"
     std::string machine;  // machine index as printed in "Machine 'M'"
+    std::string authMachine;  // machine index the game gave this peer ("Add remote machine index M"), when certain
+    bool steamAuthed = false;  // "Client '<id>' authenticated by steam" seen and no machine bound yet
     std::string handle;   // player handle as printed, e.g. "0(0)"
     std::string group;    // user group name matched from permissions, or "unknown"
     std::vector<std::string> permissions;
@@ -72,6 +75,7 @@ private:
     PluginState() = default;
     void FinalizeLoginLocked();
     void EmitConnectedLocked(PlayerRecord& p);
+    void BindMachineLocked(size_t idx, const std::string& machine);
     std::string PlayerJsonLocked(const PlayerRecord& p, bool online = true) const;
     void LoadGroupsLocked();
 
@@ -83,6 +87,8 @@ private:
     // player tracking
     std::vector<PlayerRecord> players_;  // pending (not online) + online
     std::string lastLoginMachine_, lastLoginHandle_;
+    std::set<std::string> unboundMachines_;  // machines the game added without a certain peer
+    std::string machinePeer_;  // peer of the last "Unable to find machine for peer N(G)." (the next machine is its)
     bool machineIsPeerIndexPlusOne_ = false;  // 1.0: Machine 'M' is peer N(..) with M = N + 1
     bool collectingPerms_ = false;
     int loginIdx_ = -1;
