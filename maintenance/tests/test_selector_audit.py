@@ -184,6 +184,11 @@ ALLOWLIST: tuple[Allow, ...] = (
         r"production_build",
         "the input pins sha256 and size; the tag is an address, not an identity (games/rust/DEVELOPMENT.md)",
     ),
+    Allow(
+        "catalog/rust/targets/carbon-26139947.json",
+        r"production_build",
+        "the input pins sha256 and size; the tag is an address, not an identity (games/rust/DEVELOPMENT.md)",
+    ),
 )
 
 
