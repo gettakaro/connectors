@@ -113,6 +113,7 @@
     <Compile Include="src\WebSocket\ActionHandlers.cs" />
     <Compile Include="src\WebSocket\GiveItemHandler.cs" />
     <Compile Include="src\WebSocket\GameEventPublisher.cs" />
+    <Compile Include="src\WebSocket\GameProfile.cs" />
     <Compile Include="src\WebSocket\ReadHandlers.cs" />
     <Compile Include="src\WebSocket\RequestRouter.cs" />
     <Compile Include="src\WebSocket\TransportSession.cs" />
@@ -125,6 +126,9 @@
     <Compile Include="src\CommandResult.cs" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="..\assets\icon-256.png">
+      <LogicalName>Takaro.icon-256.png</LogicalName>
+    </EmbeddedResource>
     <None Include="ModInfo.xml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <SubType>Designer</SubType>
