@@ -1,6 +1,6 @@
 # Takaro VEIN Connector
 
-The Linux dedicated server loads one native `libtakaro-vein.so` connector. It connects directly to Takaro; players install nothing and keep the vanilla VEIN client. The library must be preloaded on the game binary's launch line. Windows and Workshop installation are not supported.
+A native connector for the VEIN Linux dedicated server, built against the server's own Unreal Engine binary. Everything runs inside the game server: you copy two files into the game's binaries folder and the server loads the connector itself, with no separate program, RCON or startup-line change. It connects directly to Takaro. Players do not install anything and keep the normal VEIN client. Windows dedicated servers and Workshop installation are not supported.
 
 ## Install
 
@@ -12,7 +12,7 @@ In the Takaro dashboard, add a game server of type **Generic** and copy the **re
 
 ### 2. Put two files next to the game
 
-Download `takaro-vein-plugin.tar.gz` from the newest `vein-v…` [release](https://github.com/gettakaro/connectors/releases?q=vein-v&expanded=true) and extract it (on Windows, 7-Zip opens `.tar.gz`).
+Download `takaro-vein-plugin.tar.gz` from the latest VEIN connector release at <https://takaro.io/connectors/vein> (the same file is on the newest `vein-v…` release at <https://github.com/gettakaro/connectors/releases?q=vein-v&expanded=true>; skip the `vein-dev` and `pr-…` pre-releases). Optionally check it against the release's `SHA256SUMS` (`sha256sum -c SHA256SUMS --ignore-missing`). Extract it (on Windows, 7-Zip opens `.tar.gz`); you get a `TakaroVein` folder.
 
 1. Stop the server.
 2. With your panel's file manager or SFTP, upload `libtakaro-vein.so` and `libsteam.so` from the `TakaroVein` folder into the game's `Vein/Binaries/Linux` folder, the one that holds `VeinServer-Linux-Test`:
@@ -40,7 +40,7 @@ If your host does not let you upload `.so` files into the game folder, ask their
 
 ### 3. Check it works
 
-The server console shows `[Takaro]` lines; `connected to Takaro as "…"` means it works, and Takaro lists the server as reachable. Install the **utils** module on the server in Takaro and type `@ping` in game chat: Takaro answers `Pong!`. A block of `*` lines tells you what to fix: `TAKARO_REGISTRATION_TOKEN not set` means the token is missing, `Takaro refused this server` means it is wrong; both name the file to edit. `no trusted CA bundle found` means the server has no CA certificates (install the `ca-certificates` package or set `TAKARO_CA_FILE`); no `[Takaro]` line at all means the connector was not loaded (check file names and folder). The connector's own log is `Vein/Binaries/Linux/takaro/plugin.log`.
+The server console shows `[Takaro]` lines; `connected to Takaro as "…"` means it works, and Takaro lists the server as reachable. Until you set `TAKARO_ADMIN_STEAMIDS`, Takaro's reachability check says `adminGrant=degraded`; that is expected and harmless. Install the **utils** module on the server in Takaro and type `@ping` in game chat: Takaro answers `Pong!`. A block of `*` lines tells you what to fix: `TAKARO_REGISTRATION_TOKEN not set` means the token is missing, `Takaro refused this server` means it is wrong; both name the file to edit. `no trusted CA bundle found` means the server has no CA certificates (install the `ca-certificates` package or set `TAKARO_CA_FILE`); no `[Takaro]` line at all means the connector was not loaded (check file names and folder). The connector's own log is `Vein/Binaries/Linux/takaro/plugin.log`.
 
 ### Update the connector
 
@@ -52,7 +52,7 @@ Admins who control the start command can preload the connector instead, from any
 
 ## What works, what doesn't
 
-Verified on the native connector (v0.3.0) with a real game client and Takaro on VEIN 0.025 Hotfix 1 (server build 25581145), 2026-09-29. ✅ = works, ⚠️ = works with a caveat, ❌ = unsupported.
+Verified on the native connector (v0.3.0) with a real game client and Takaro on VEIN 0.025 Hotfix 1 (server build 25581145), 2026-09-29. The two-file install was proven with a real client on VEIN 0.025h2 (server build 25708939) on 2026-10-10, and re-checked from release v0.7.0 on server build 25969514 (0.025h3) on 2026-10-22: the connector loads, connects and answers Takaro (no game client in that run). ✅ = works, ⚠️ = works with a caveat, ❌ = unsupported.
 
 | What | | Notes |
 |---|---|---|
@@ -82,7 +82,7 @@ Verified on the native connector (v0.3.0) with a real game client and Takaro on 
 | Log events | ⚠️ | Forwarded with secrets redacted, but Takaro does not store log events. |
 | Map info | ⚠️ | Needs Takaro protocol 1 (proven on Takaro staging, not yet on takaro.io). The connector declares the 12 km map area to Takaro, so player dots land in the right place. |
 | Map tiles | ⚠️ | Needs Takaro protocol 1 (not yet on takaro.io). The server files carry no map picture. Upload the in-game map once in the Takaro dashboard ([INSTALL.md](INSTALL.md#world-map)). |
-| Game name, build and icon | ⚠️ | Needs Takaro protocol 1 (not yet on takaro.io). Takaro shows the server as VEIN with the running game version (for example `0.025h3`), the VEIN icon and the connector version. |
+| Game name, build and icon | ⚠️ | Needs connector v0.8.0 or later and Takaro protocol 1 (not yet on takaro.io). Takaro shows the server as VEIN with the running game version (for example `0.025h3`), the VEIN icon and the connector version. |
 | Modules: chat commands | ✅ | In-game commands reach the module and answer in chat. |
 | Modules: hooks | ✅ | Chat and join hooks fire and run their code. |
 | Modules: cronjobs | ✅ | Scheduled module runs fire and can message the server. |
@@ -109,7 +109,7 @@ Verified on the native connector (v0.3.0) with a real game client and Takaro on 
 
 ### Known issues
 
-- The three-file install relies on the game's `libsteam_api.so` looking for an optional `libsteam.so` while Steam starts. If a game or Steam update stops doing that, no `[Takaro]` line appears; please report it, and use `LD_PRELOAD` meanwhile.
+- The two-file install relies on the game's `libsteam_api.so` looking for an optional `libsteam.so` while Steam starts. If a game or Steam update stops doing that, no `[Takaro]` line appears; please report it, and use `LD_PRELOAD` meanwhile.
 - Upgrading from the old sidecar release (v0.2.x) needs a short maintenance window; follow the [upgrade instructions](INSTALL.md).
 - A broadcast shows as a chat line prefixed with the server name; a whisper as an on-screen notification.
 - Local and global chat cannot be told apart — proximity chat also reports as global.
