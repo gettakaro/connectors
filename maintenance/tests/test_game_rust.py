@@ -56,6 +56,7 @@ def test_every_rust_verification_body_has_pass_and_failure_paths(
     fake = CannedSocket({"sendMessage": {"success": True}, "shutdown": {}}, identify_count=1)
     loaded = "Loaded plugin TakaroConnector v1.2.3 by Takaro [42ms]"
     monkeypatch.setattr(hooks, "_deployed_version", lambda run: "1.2.3")
+    monkeypatch.setattr(hooks, "ACTION_BUDGET", 0.2)
     monkeypatch.setattr(hooks.checks, "wait_for_line", lambda *args, **kwargs: (1, loaded))
     monkeypatch.setattr(hooks.checks, "find_line", lambda *args, **kwargs: None)
 
@@ -94,7 +95,7 @@ def test_every_rust_verification_body_has_pass_and_failure_paths(
     assert asyncio.run(hooks._check_stop(failed_run, failed)).status == "fail"
     asyncio.run(hooks.after_protocol(failed_run, failed, lambda: False))
     asyncio.run(hooks.after_shutdown(failed_run, failed, failed_run.ws_url, []))
-    assert {check for check, _ in failed_run.skips} == {*hooks.CHECK_IDS, "stop"}
+    assert {check for check, _ in failed_run.skips} == set(hooks.CHECK_IDS) - {hooks.NEGATIVE_CHECK}
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "games" / "rust"
@@ -711,6 +712,9 @@ def test_verify_hooks_patterns_identity_and_container_shape(tmp_path: Path) -> N
         f"{REPO_ROOT}/games/rust/start.sh:/takaro/start.sh:ro",
     ]
     assert adapter.container_command(resolved, data) == ["/bin/bash", "/takaro/start.sh"]
+    # World generation sits at the runner's 3 GB default; the game's own limit comes last,
+    # which is the one docker applies.
+    assert adapter.container_options(resolved, data) == ["--memory", "8g"]
     environment = adapter.runtime_env(
         {"runtime": {"container": {"env": {"RUST_SERVER_PORT": "28015"}}}},
         {"TAKARO_WS_URL": "ws://host.docker.internal:27128/"},
@@ -898,6 +902,12 @@ def git(repo: Path, *args: str) -> str:
 
 
 def test_compat_record_carries_the_steam_and_carbon_pins(run: Any, repo: Path, tmp_path: Path) -> None:
+    # The real record requires the runtime leg's report; this test is about the pins, so it
+    # assembles a contract-level copy. The refusal without a report is asserted below.
+    record = read_target(repo)
+    assert record["verification"]["required"] == "startup"
+    record["verification"]["required"] = "contract"
+    write_target(repo, record)
     git(repo, "init", "-q", "-b", "main")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "fixture")
@@ -1002,7 +1012,9 @@ def test_rust_workflow_delegates_to_connector_release() -> None:
 
     assert "uses: ./.github/workflows/connector-release.yml" in workflow
     assert "connector: rust" in workflow
-    assert "runtime: false" in workflow
+    assert "runtime: true" in workflow
+    assert "runtime_depot_cache: true" in workflow
+    assert "runtime_negative: true" in workflow
     assert "compile-check.sh" in workflow
     assert "setup-environment.sh" in workflow
     assert "rust-refs-${{ steps.target.outputs.fp16 }}" in workflow
@@ -1025,18 +1037,23 @@ def test_a_bare_verify_run_selects_only_the_checks_this_target_proves() -> None:
     record = json.loads((REPO_ROOT / f"catalog/{GAME}/targets/{TARGET}.json").read_text(encoding="utf-8"))
 
     declared = game_hooks(GAME)
-    selection = [check for check in check_ids(GAME) if check not in declared.unsupported_checks]
+    selection = [
+        check
+        for check in check_ids(GAME)
+        if check not in declared.unsupported_checks and check not in declared.negative_check_ids
+    ]
     # Same rows as the record names, in the ladder's own order rather than the record's.
     assert set(selection) == {"build", *record["verification"]["separate"]}
     assert selection == [check for check in check_ids(GAME) if check in selection]
 
-    for unreachable in ("connector-load", "catalog-items", "catalog-entities", "shutdown"):
+    for unreachable in ("connector-load", "catalog-items", "catalog-entities", "shutdown", "console"):
         assert unreachable in check_ids(GAME), unreachable
         assert unreachable not in selection, unreachable
         assert declared.unsupported_checks[unreachable], unreachable
-    # Everything the hooks add, and the base checks Rust does pass, are in.
-    assert set(hooks.CHECK_IDS) <= set(selection)
-    assert {"startup", "identify", "heartbeat", "players", "console"} <= set(selection)
+    # Everything the hooks add, and the base checks Rust does pass, are in; the negative
+    # boot is opt-in.
+    assert set(hooks.CHECK_IDS) - {hooks.NEGATIVE_CHECK} <= set(selection)
+    assert {"startup", "identify", "heartbeat", "players"} <= set(selection)
 
 
 def test_a_failed_carbon_repair_leaves_the_install_and_its_ledger_intact(
@@ -1296,3 +1313,167 @@ def test_the_entity_spot_check_is_a_name_the_old_derivation_could_not_produce() 
 
     assert result.status == "fail"
     assert any("Heavy Scientist" in problem for problem in result.detail["problems"])
+
+
+class _NegativeRun(FakeRun):
+    """A run whose negative boot writes the log lines the test hands it."""
+
+    def __init__(self, tmp_path: Path, lines: list[str]) -> None:
+        super().__init__(tmp_path)
+        self.extra_logs: list[Path] = []
+        self.lines = lines
+        self.plugin = self.data_dir / hooks.PLUGIN_FILE
+        self.plugin.parent.mkdir(parents=True)
+        self.plugin.write_text("// the real plugin\n", encoding="utf-8")
+        self.deployed_when_booted: str | None = None
+
+    def boot(self, ws_url: str, **kwargs: Any) -> Any:
+        container = super().boot(ws_url, **kwargs)
+        self.deployed_when_booted = self.plugin.read_text(encoding="utf-8")
+        container.log_file.write_text("".join(f"{line}\n" for line in self.lines), encoding="utf-8")
+        return container
+
+
+def test_the_broken_compile_negative_passes_only_when_carbon_refuses_the_plugin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(hooks, "COMPILE_BUDGET", 0.5)
+    monkeypatch.setattr(hooks, "NEGATIVE_GRACE", 0.0)
+    refused = _NegativeRun(
+        tmp_path / "refused",
+        ["Failed compiling 'TakaroConnector.cs':", "  1. error CS1029: #error: 'x'", "Server startup complete"],
+    )
+    asyncio.run(hooks.negative(refused, CannedSocket({}), refused.ws_url, {}))
+    (result,) = refused.results
+    assert result.id == hooks.NEGATIVE_CHECK
+    assert result.status == "pass", result.detail
+    assert refused.deployed_when_booted is not None
+    assert refused.deployed_when_booted.startswith(hooks.BROKEN_DIRECTIVE + "\n// the real plugin")
+    assert refused.plugin.read_text(encoding="utf-8") == "// the real plugin\n"
+    assert refused.extra_logs and refused.extra_logs[0].name == "server-negative.log"
+
+    loaded = _NegativeRun(tmp_path / "loaded", ["Loaded plugin TakaroConnector v1.2.3 by Takaro [42ms]"])
+    asyncio.run(hooks.negative(loaded, CannedSocket({}), loaded.ws_url, {}))
+    assert loaded.results[0].status == "fail"
+    assert loaded.plugin.read_text(encoding="utf-8") == "// the real plugin\n"
+
+    silent = _NegativeRun(tmp_path / "silent", ["Server startup complete"])
+    result = asyncio.run(hooks._check_negative_broken_compile(silent, CannedSocket({}), silent.ws_url))
+    assert result.status == "fail"
+    assert "never logged a failed compile" in " ".join(result.detail["problems"])
+
+
+def test_the_broken_compile_negative_is_opt_in() -> None:
+    from takaro_maint.verify.runner import game_hooks
+
+    declared = game_hooks(GAME)
+    assert declared.negative is hooks.negative
+    assert declared.negative_check_ids == (hooks.NEGATIVE_CHECK,)
+
+
+def test_the_console_check_needs_the_redacted_line_and_the_servers_own_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The connector never logs a console command's text, so the server's output is the proof."""
+    monkeypatch.setattr(hooks, "ACTION_BUDGET", 0.2)
+    run = FakeRun(tmp_path)
+    marker = f"takaro-verify-{run.options.run_id}-console"
+    run.server_log.write_text("[TakaroConnector] [Takaro] console: say (1 args)\n", encoding="utf-8")
+
+    def echoed(action: str, params: Any) -> dict[str, Any]:
+        fake.events.append({"type": "log", "data": {"msg": params["command"].removeprefix("say ")}})
+        return {"success": True, "rawResult": "", "errorMessage": ""}
+
+    fake = CannedSocket({"executeConsoleCommand": echoed})
+    result = asyncio.run(hooks._check_console_command(run, fake, lambda: True))
+    assert result.status == "pass", result.detail
+    assert result.detail["logEvent"]["data"]["msg"] == marker
+    assert marker not in run.server_log.read_text(encoding="utf-8")
+
+    assert asyncio.run(hooks._wait_for_log_event(fake, 1, marker, 0.1, lambda: True)) is None
+    silent = CannedSocket({"executeConsoleCommand": {"success": True}})
+    failed = asyncio.run(hooks._check_console_command(run, silent, lambda: True))
+    assert failed.status == "fail"
+    assert "no 'log' game event" in " ".join(failed.detail["problems"])
+
+    unlogged = FakeRun(tmp_path / "unlogged")
+    fake = CannedSocket({"executeConsoleCommand": echoed})
+    missing = asyncio.run(hooks._check_console_command(unlogged, fake, lambda: True))
+    assert missing.status == "fail"
+    assert "console: say (1 args)" in " ".join(missing.detail["problems"])
+
+
+def test_a_rust_release_without_a_runtime_report_is_refused(run: Any, repo: Path, tmp_path: Path) -> None:
+    """The record requires `startup`, so a set the verify leg never produced cannot ship."""
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "fixture")
+    commit = git(repo, "rev-parse", "HEAD")
+    resolved = resolve(run, repo)
+    directory = tmp_path / "dist" / TARGET
+    _plugin_source(directory / ARTIFACT)
+    row = artifact_row("plugin", TARGET, resolved["fingerprint"], directory / ARTIFACT)
+    write_meta(directory, row, connector=GAME, version=VERSION, revision=commit)
+    write_manifest(
+        directory,
+        connector=GAME,
+        version=VERSION,
+        revision=commit,
+        dirty=False,
+        toolchain=resolved["build"]["toolchain"],
+        mode="container",
+        artifacts=[row],
+    )
+
+    code, payload, _ = run(
+        "release", "assemble",
+        "--connector", GAME,
+        "--version", VERSION,
+        "--channel", "pr",
+        "--tag", f"pr-1-{GAME}",
+        "--dist", str(tmp_path / "dist"),
+        "--out", str(tmp_path / "assembled"),
+        "--repo", "o/r",
+        repo=repo,
+    )  # fmt: skip
+
+    assert code == 8
+    assert payload["required"] == "startup"
+    assert "evidence missing" in payload["error"]
+
+
+def test_the_broken_compile_watch_outlasts_the_compile_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A load or an identify after the error still fails the row: the error does not end the watch."""
+    import threading
+    import time
+
+    monkeypatch.setattr(hooks, "NEGATIVE_GRACE", 5.0)
+    log = tmp_path / "server-negative.log"
+    log.write_text("Failed compiling 'TakaroConnector.cs':\nServer startup complete\n", encoding="utf-8")
+
+    def late_load() -> None:
+        time.sleep(1.5)
+        with log.open("a", encoding="utf-8") as handle:
+            handle.write("Loaded plugin TakaroConnector v1.2.3 by Takaro [42ms]\n")
+
+    writer = threading.Thread(target=late_load)
+    writer.start()
+    failed, loaded = hooks._watch_compile(log, 30.0, lambda: True, lambda: False)
+    writer.join()
+    assert failed is not None
+    assert loaded is not None, "a load after the compile error must be seen"
+
+    identified = {"late": False}
+    quiet = tmp_path / "quiet.log"
+    quiet.write_text("Failed compiling 'TakaroConnector.cs':\nServer startup complete\n", encoding="utf-8")
+    threading.Timer(1.5, lambda: identified.update(late=True)).start()
+    started = time.monotonic()
+    failed, loaded = hooks._watch_compile(quiet, 30.0, lambda: True, lambda: identified["late"])
+    assert failed is not None and loaded is None
+    assert identified["late"] and time.monotonic() - started < 5.0, "an identify ends the watch at once"
+
+    still_booting = tmp_path / "booting.log"
+    still_booting.write_text("Failed compiling 'TakaroConnector.cs':\n", encoding="utf-8")
+    started = time.monotonic()
+    hooks._watch_compile(still_booting, 2.5, lambda: True, lambda: False)
+    assert time.monotonic() - started >= 2.0, "no ready line yet: the watch runs to its budget"
