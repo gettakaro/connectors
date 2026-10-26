@@ -940,6 +940,11 @@ DWORD WINAPI ListenThread(LPVOID) {
 
 }  // namespace
 
+#ifdef TAKARO_COMMAND_PROBE
+// research/command-probe (#202): read-only access to the SteamID64 -> accountIdHash cache
+bool ProbeCachedAccount(const std::string& steamId, uint64_t& hash) { return CachedAccount(steamId, hash); }
+#endif
+
 void AccountsHousekeep() {
     for (auto& sm : PluginState::Get().OnlineMachines()) {
         uint64_t h;
