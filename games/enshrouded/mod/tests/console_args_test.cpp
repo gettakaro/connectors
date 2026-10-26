@@ -126,6 +126,34 @@ int main() {
         Check(r.ok && r.p.players[0].steamId == "76561198000000001" && r.p.rest[0].text == "it's",
               "whisper text may hold an unclosed quote");
     }
+    // ---- unclosed quote is caught before the arity check (RunCommand), the same for every command ----
+    {
+        const std::string want = "unclosed quote; write names with spaces as \"Character 1\"";
+        // the quote swallows the item code: one argument, so `give` would fail its arity check first
+        auto give = Tokenize("\"Character 1 Material_T1_Stone_Flint 1");
+        Check(give.size() == 1 && UnclosedQuoteError(give) == want, "give: unclosed quote reported");
+        Check(UnclosedQuoteError(Tokenize("\"Character 1")) == want, "level: unclosed quote reported");
+        Check(UnclosedQuoteError(Tokenize("'Character 1 10 20 30")) == want, "teleport: unclosed single quote reported");
+        Check(UnclosedQuoteError(Tokenize("\"Character 1\" Wood 5")).empty(), "closed quotes pass");
+        Check(UnclosedQuoteError(Tokenize("bob Wood")).empty(), "no quotes pass");
+        Check(UnclosedQuoteError(Tokenize("")).empty(), "no arguments pass");
+        // say: the whole line is the message; whisper: everything after the player
+        Check(UnclosedQuoteError(Tokenize("\"hello there"), 0).empty(), "say text may open a quote");
+        Check(UnclosedQuoteError(Tokenize("bob it's \"fine"), 1).empty(), "whisper text may open a quote");
+        Check(UnclosedQuoteError(Tokenize("\"Character 1 hello"), 1) == want, "whisper: unclosed quote in the player refused");
+        // ResolveArgs gives the same text when called without the pre-check
+        auto r = Run("\"Character 1", kOne, online);
+        Check(r.err == want, "ResolveArgs uses the same message: " + r.err);
+    }
+    // ---- console output names a player by character name, the persona until it is known ----
+    {
+        Check(DisplayName(online[0]) == "Character 1", "display name is the character name");
+        Check(DisplayName({"76561198000000009", "Limon", ""}) == "Limon", "display name falls back to the persona");
+        auto r = Run("SteamAlice", kOne, online);
+        Check(r.ok && DisplayName(r.p.players[0]) == "Character 1", "found by persona, named by character");
+        r = Run("Bob Bob", kOne, {{"76561198000000002", "bob", "Bob"}, {"76561198000000004", "Bob", "Bob Bob"}});
+        Check(r.ok && DisplayName(r.p.players[0]) == "Bob Bob", "multi-word character name shown whole");
+    }
     // ---- several players share a name ----
     {
         auto twins = online;

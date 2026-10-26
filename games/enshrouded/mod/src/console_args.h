@@ -56,4 +56,12 @@ struct Parsed {
 bool ResolveArgs(const std::vector<Arg>& args, const std::vector<Form>& forms, const std::vector<Player>& online,
                  Parsed& out, std::string& err);
 
+// The refusal for a quote left open before args[textFrom], where a player, item code or number goes;
+// empty when every quote there is closed. From args[textFrom] on the words are a message (say, whisper)
+// that may hold a lone quote. Checked before a command's arity, so every command reports it the same way.
+std::string UnclosedQuoteError(const std::vector<Arg>& args, size_t textFrom = (size_t)-1);
+
+// How console output names a player: the in-game character name, the Steam persona until it is known.
+std::string DisplayName(const Player& p);
+
 }  // namespace console

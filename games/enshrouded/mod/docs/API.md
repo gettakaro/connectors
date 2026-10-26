@@ -161,7 +161,8 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
   `<player>` is a SteamID64 or the name (persona or character name, case-insensitive). A name with spaces is given
   quoted (`level "Character 1"`, single quotes too; `\"` escapes a quote) or bare (`level Character 1`): bare words are
   matched against the online players, and a line that fits more than one way, or a name several online players share,
-  is refused with a hint instead of guessed. Unknown commands return `success:false` with a hint. There is no
+  is refused with a hint instead of guessed. A quote left open is refused by every command (only the message of `say`
+  and `whisper` may hold one). Replies name a player by character name (the persona until it is known). Unknown commands return `success:false` with a hint. There is no
   time-of-day command (not reverse engineered).
 
 ### GET lists (static data from the server's kfc: items and entities from build 1267041, locations from 1273043; regenerate with `tools/gen_gamedata.py`)

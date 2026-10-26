@@ -27,12 +27,19 @@ bool SpanName(const std::vector<Arg>& a, size_t from, size_t to, std::string& ou
     return true;
 }
 
-std::string Describe(const Player& p) {
-    std::string n = p.characterName.empty() ? p.name : p.characterName;
-    return n + " (" + p.steamId + ")";
-}
+std::string Describe(const Player& p) { return DisplayName(p) + " (" + p.steamId + ")"; }
+
+const char kUnclosed[] = "unclosed quote; write names with spaces as \"Character 1\"";
 
 }  // namespace
+
+std::string DisplayName(const Player& p) { return p.characterName.empty() ? p.name : p.characterName; }
+
+std::string UnclosedQuoteError(const std::vector<Arg>& args, size_t textFrom) {
+    for (size_t i = 0; i < args.size() && i < textFrom; i++)
+        if (args[i].unclosed) return kUnclosed;
+    return "";
+}
 
 std::vector<Arg> Tokenize(const std::string& s) {
     std::vector<Arg> out;
@@ -160,7 +167,7 @@ bool ResolveArgs(const std::vector<Arg>& args, const std::vector<Form>& forms, c
     } else if (!clash.empty()) {
         err = clash;
     } else if (unclosed) {
-        err = "unclosed quote; write names with spaces as \"Character 1\"";
+        err = kUnclosed;
     } else if (misses.size() == 1) {
         err = "player not online:";
         for (size_t i = 0; i < misses[0].size(); i++) err += (i ? ", " : " ") + misses[0][i];

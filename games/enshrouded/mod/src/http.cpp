@@ -452,6 +452,15 @@ bool RunCommand(const std::string& line, std::string& out) {
     std::vector<Arg> args(words.begin() + 1, words.end());
     auto& st = PluginState::Get();
     console::Parsed pa;
+    // an open quote is reported before any arity check; only say's and whisper's message may hold one
+    static const char* const kTakesArgs[] = {"level", "location", "teleport", "tp", "inventory", "give", "item", "kick", "whisper"};
+    size_t textFrom = cmd == "say" || cmd == "broadcast" ? 0 : cmd == "whisper" ? 1 : (size_t)-1;
+    bool takesArgs = textFrom != (size_t)-1;
+    for (auto* c : kTakesArgs) takesArgs |= cmd == c;
+    if (takesArgs) {
+        std::string err = console::UnclosedQuoteError(args, textFrom);
+        if (!err.empty()) return out = err, false;
+    }
     // resolves the player argument(s); on failure `out` holds the reason, or the usage when the shape is wrong
     auto resolve = [&](const std::vector<Form>& forms, const char* usage) {
         std::string err;
@@ -525,7 +534,7 @@ bool RunCommand(const std::string& line, std::string& out) {
         std::string text = line.substr(pa.rest[0].begin);  // the message as typed, quotes included
         text.erase(text.find_last_not_of(" \t\r\n") + 1);
         if (!WorldSendMessage(text, machine, 0, 0, err)) return out = err, false;
-        out = "whispered to " + name + ": " + text;
+        out = "whispered to " + console::DisplayName(pa.players[0]) + ": " + text;
         return true;
     }
     if (cmd == "location" && !args.empty()) {
@@ -535,8 +544,8 @@ bool RunCommand(const std::string& line, std::string& out) {
         Vec3 v;
         if (!WorldGetLocation(name, v, err)) return out = err, false;
         char b[160];
-        snprintf(b, sizeof b, "%s is at x=%.2f y=%.2f z=%.2f", name.c_str(), v.x, v.y, v.z);
-        out = b;
+        snprintf(b, sizeof b, " is at x=%.2f y=%.2f z=%.2f", v.x, v.y, v.z);
+        out = console::DisplayName(pa.players[0]) + b;
         return true;
     }
     if ((cmd == "teleport" || cmd == "tp") && args.size() >= 2) {
@@ -566,7 +575,7 @@ bool RunCommand(const std::string& line, std::string& out) {
         if (!WorldInventoryJson(name, json, err)) return out = err, false;
         JsonValue v;
         JsonParse(json, v);
-        out = name + ": " + std::to_string(v.arr.size()) + " stacks";
+        out = console::DisplayName(pa.players[0]) + ": " + std::to_string(v.arr.size()) + " stacks";
         for (auto& i : v.arr)
             out += "\n" + i.get("amount")->str + " x " + i.get("code")->str + " [" + i.get("inventory")->str + "]";
         return true;
@@ -609,7 +618,7 @@ bool RunCommand(const std::string& line, std::string& out) {
         uint64_t hash = 0;
         if (!ResolveAccount(steam, hash, how)) return out = "account hash unknown", false;
         if (!AccountAction(hash, 0, err)) return out = err, false;
-        out = "kicked " + name;
+        out = "kicked " + console::DisplayName(pa.players[0]);
         return true;
     }
     if (cmd == "save-and-shutdown") {

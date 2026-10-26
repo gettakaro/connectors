@@ -8,7 +8,8 @@
 #                      the listEntities and listItems filters
 #   location_test: listLocations rows (location.cpp, locationlabels.cpp): unique codes, in-game map names
 #   console_args_test: console command arguments (console_args.cpp): quoted and bare player names with spaces,
-#                      SteamID64, refusal of unknown, shared and ambiguous names and of unclosed quotes
+#                      SteamID64, refusal of unknown, shared and ambiguous names and of unclosed quotes,
+#                      reply display names
 #   moderation_test: canKickBan admin-protection bypass helpers; set ENSHROUDED_EXE=<path to enshrouded_server.exe>
 #                    to also check the anchors against the pinned binary.
 #   native_test: the direct Takaro connector (src/native/): parity with the former sidecar (tests/fixtures,
