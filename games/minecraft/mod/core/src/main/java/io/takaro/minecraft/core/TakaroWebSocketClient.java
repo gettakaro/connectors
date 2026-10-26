@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.takaro.minecraft.core.map.WorldMap;
 import io.takaro.minecraft.core.model.*;
+import io.takaro.minecraft.core.target.RuntimeIdentity;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 
@@ -203,7 +204,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         protocol = 0;
         adapter.logInfo("WebSocket closed (code=" + code + ", reason=" + reason + ", remote=" + remote + ")");
 
-        if (!closed && (code == 1008 || code == 4001 || code == 4003)) {
+        if (!closed && (code == 1008 || code == 4001 || code == 4003) && !isTransientRefusal(reason)) {
             shouldReconnect = false;
             TakaroConnector.logBanner(adapter,
                     "Takaro refused the connection (" + (reason == null || reason.isEmpty() ? "code " + code : reason) + ").",
@@ -214,6 +215,18 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         if (shouldReconnect && config.isReconnectEnabled()) {
             scheduleReconnect();
         }
+    }
+
+    /**
+     * Takaro closes with 1008 after any failed identify and puts the error code in the reason.
+     * A fault on Takaro's side passes, so those keep the backoff instead of waiting for a token edit.
+     */
+    static boolean isTransientRefusal(String reason) {
+        if (reason == null) return false;
+        return switch (reason.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "internal", "timeout", "unavailable", "rate_limited" -> true;
+            default -> false;
+        };
     }
 
     @Override
@@ -325,29 +338,24 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     // --- Private helpers ---
 
     private void sendGameEvent(String eventType, JsonObject data) {
-        if (config.isMapEnabled()) {
-            // v1 is on offer: keep every event until Takaro acks it, and send it once identified.
-            JsonObject payload = outbox.add(eventType, data);
-            if (isV1() && isOpen()) {
-                sendEventPayload(payload);
-                return;
-            }
-            if (protocol == 0 && isOpen() && identified) {
-                // Takaro chose v0: plain events, nothing to ack.
-                outbox.ack(outbox.streamId(), payload.get("seq").getAsLong());
-                JsonObject plain = new JsonObject();
-                plain.addProperty("type", eventType);
-                plain.add("data", data);
-                sendEventPayload(plain);
-            }
+        // v1 is always on offer: keep every event until Takaro acks it, and send it once identified.
+        JsonObject payload = outbox.add(eventType, data);
+        if (isV1() && isOpen()) {
+            sendEventPayload(payload);
             return;
         }
-        if (!isOpen()) return;
+        if (protocol == 0 && isOpen() && identified) {
+            sendPlainEvent(payload);
+        }
+    }
 
-        JsonObject payload = new JsonObject();
-        payload.addProperty("type", eventType);
-        payload.add("data", data);
-        sendEventPayload(payload);
+    /** Takaro chose v0: a plain event without stream fields, and nothing to wait an ack for. */
+    private void sendPlainEvent(JsonObject payload) {
+        outbox.ack(outbox.streamId(), payload.get("seq").getAsLong());
+        JsonObject plain = new JsonObject();
+        plain.add("type", payload.get("type"));
+        plain.add("data", payload.get("data"));
+        sendEventPayload(plain);
     }
 
     private void sendEventPayload(JsonObject payload) {
@@ -384,6 +392,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         for (String event : EVENT_TYPES) {
             caps.add(capability("events." + event));
         }
+        JsonObject profile = capability("game.profile");
+        profile.add("parameters", GameProfile.parameters(runningGameVersion()));
+        caps.add(profile);
         if (worldMap != null) {
             JsonObject map = capability("map");
             JsonObject parameters = new JsonObject();
@@ -392,6 +403,17 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             caps.add(map);
         }
         return caps;
+    }
+
+    /** The game build the server reports, or null when the platform cannot say. */
+    private String runningGameVersion() {
+        try {
+            RuntimeIdentity identity = adapter.getRuntimeIdentity();
+            return identity != null ? identity.gameVersion() : null;
+        } catch (RuntimeException e) {
+            adapter.logWarning("Could not read the game version: " + e);
+            return null;
+        }
     }
 
     private static JsonObject capability(String name) {
@@ -409,13 +431,16 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         String registration = config.getRegistrationToken();
         payload.addProperty("identityToken", identity != null ? identity : "");
         payload.addProperty("registrationToken", registration != null ? registration : "");
-        if (config.isMapEnabled()) {
-            JsonArray versions = new JsonArray();
-            versions.add(0);
-            versions.add(1);
-            payload.add("protocolVersions", versions);
-            payload.add("capabilities", capabilities());
+        payload.addProperty("game", GameProfile.GAME);
+        JsonObject connector = GameProfile.connectorJson();
+        if (connector != null) {
+            payload.add("connector", connector);
         }
+        JsonArray versions = new JsonArray();
+        versions.add(0);
+        versions.add(1);
+        payload.add("protocolVersions", versions);
+        payload.add("capabilities", capabilities());
 
         JsonObject msg = new JsonObject();
         msg.addProperty("type", "identify");
@@ -473,14 +498,16 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         String serverId = server != null && hasValue(server, "id") ? optString(server, "id", "")
                 : optString(payload, "gameServerId", null);
         adapter.logInfo("Identified successfully" + (serverId != null ? ", server ID: " + serverId : "")
-                + (config.isMapEnabled() ? ", protocol v" + protocol : ""));
-        if (isV1()) {
-            List<JsonObject> backlog = outbox.unacked();
-            if (!backlog.isEmpty()) {
-                adapter.logInfo("Resending " + backlog.size() + " events Takaro has not acknowledged");
-            }
-            for (JsonObject event : backlog) {
+                + ", protocol v" + protocol);
+        List<JsonObject> backlog = outbox.unacked();
+        if (!backlog.isEmpty()) {
+            adapter.logInfo("Resending " + backlog.size() + " events Takaro has not acknowledged");
+        }
+        for (JsonObject event : backlog) {
+            if (isV1()) {
                 sendEventPayload(event);
+            } else {
+                sendPlainEvent(event);
             }
         }
     }
@@ -568,6 +595,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             case "shutdown":
                 handleOnMainThread(requestId, () -> { adapter.shutdownServer(); return null; });
                 break;
+            case "getGameIcon":
+                handleGetGameIcon(requestId);
+                break;
             default:
                 sendError(requestId, "unsupported", "Action not implemented: " + action);
                 break;
@@ -602,6 +632,19 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                 sendError(requestId, "game_error", "map tile failed: " + e.getMessage());
             }
         });
+    }
+
+    /** The whole declared icon in one response; Takaro checks the bytes against the declared size. */
+    private void handleGetGameIcon(String requestId) {
+        GameProfile.Icon icon = GameProfile.icon();
+        if (icon == null) {
+            sendError(requestId, "game_error", "the game icon could not be read from the connector jar");
+            return;
+        }
+        JsonObject payload = new JsonObject();
+        payload.addProperty("revision", icon.revision());
+        payload.addProperty("data", Base64.getEncoder().encodeToString(icon.png()));
+        sendResponse(requestId, payload, null);
     }
 
     private void handleOnMainThread(String requestId, java.util.function.Supplier<JsonElement> handler) {
