@@ -82,7 +82,7 @@
       "ue4ss": {
         "coordinate": "UE4SS-RE:RE-UE4SS:v3.0.1-1181-g83330635",
         "sha256": "b9a166a756605b21058a64cde93bcaab1a855dba3553e5c7e6ce0fa8fdfad7b9",
-        "resolvedCoordinate": "https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental-latest/UE4SS_v3.0.1-1181-g83330635.zip"
+        "resolvedCoordinate": "https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental/UE4SS_v3.0.1-1181-g83330635.zip"
       }
     }
   },
