@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.5.1](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.5.0...conan-exiles-v3.5.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **conan:** sync locations without a player online ([#631](https://github.com/gettakaro/connectors/issues/631)) ([df997d5](https://github.com/gettakaro/connectors/commit/df997d5cc430c066c9b101715d4fd1f116bbdcbd))
+
+
+### Documentation
+
+* **conan-exiles:** link the downloads page and close install gaps in the README ([#585](https://github.com/gettakaro/connectors/issues/585)) ([12acd65](https://github.com/gettakaro/connectors/commit/12acd651548a1adbc83a4d60850fa6888349d223))
+* **conan-exiles:** research silent namespaced Takaro commands via the native chat hook ([#600](https://github.com/gettakaro/connectors/issues/600)) ([5e357a7](https://github.com/gettakaro/connectors/commit/5e357a7d202e7f571bad8eccab775f5dd5968f4e))
+
 ## [3.5.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.4.0...conan-exiles-v3.5.0) (2026-10-25)
 
 
