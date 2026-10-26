@@ -120,7 +120,7 @@ the `takaro.admin` TShock permission.
 
 A REST user in the `superadmin` group already satisfies this through TShock's wildcard permission,
 which is the common setup and needs no extra configuration. For a more narrowly scoped user, grant
-`takaro.admin` explicitly: without it `teleportPlayer` fails, `getPlayerLocation` reports `0,0,0`,
+`takaro.admin` explicitly: without it `teleportPlayer` fails, `getPlayerLocation` has no position (null on protocol 1, `0,0,0` on protocol 0),
 and `getPlayerInventory` returns an empty list, all rather than failing loudly.
 
 `sendMessage` runs TShock's own `/broadcast`, so the message reaches the server console as well
