@@ -412,6 +412,8 @@ struct Conn {
     bool left = false;
     // A banned player is kicked on sight and never reported: no join, and no leave for the kick.
     bool refused = false;
+    // Consecutive safety-net passes that did not find this connection's player state.
+    int reapMisses = 0;
 };
 
 Mutex g_connLock;
@@ -804,11 +806,43 @@ void ReapGoneConnections() {
     if (announced.empty() || !g_clsPlayerState) return;
     std::vector<void*> states;
     if (!Reflect::GetObjectsOfClass(g_clsPlayerState, states, true)) return;
+    auto isLiveState = [&states](void* s) { return std::find(states.begin(), states.end(), s) != states.end(); };
+    std::vector<void*> controllers;
+    bool haveControllers = false;
     for (auto& a : announced) {
-        bool alive = false;
-        for (void* s : states)
-            if (s == a.second) { alive = true; break; }
-        if (!alive) OnLeave(a.first, "player state gone");
+        if (isLiveState(a.second)) {
+            Guard g(g_connLock);
+            if (Conn* c = FindConn(a.first)) c->reapMisses = 0;
+            continue;
+        }
+        // Once (2026-10-26) the state captured at join was missing from the live array while the
+        // player was still in the world: they had just picked a character on the first join after
+        // a restart. If the controller is still live and still carries a player state with the same
+        // SteamID64, keep the connection and follow that state. The controller is only read when it
+        // is in the live object array.
+        if (!haveControllers && g_clsPlayerController)
+            haveControllers = Reflect::GetObjectsOfClass(g_clsPlayerController, controllers, true);
+        if (haveControllers && std::find(controllers.begin(), controllers.end(), a.first) != controllers.end()) {
+            void* now = PlayerStateOf(a.first);
+            std::string gameId = now ? SteamIdFromPlayerState(now) : std::string();
+            Guard g(g_connLock);
+            Conn* c = FindConn(a.first);
+            if (c && !c->left && !gameId.empty() && gameId == c->id.gameId) {
+                if (now != c->playerState)
+                    PluginLog("events: %s has a new player state; still connected", gameId.c_str());
+                c->playerState = now;
+                c->reapMisses = 0;
+                continue;
+            }
+        }
+        // Anything else needs two passes in a row before it counts as a leave; the Logout and
+        // OnNetCleanup hooks report real disconnects first, this is only the safety net.
+        {
+            Guard g(g_connLock);
+            Conn* c = FindConn(a.first);
+            if (c && ++c->reapMisses < 2) continue;
+        }
+        OnLeave(a.first, "player state gone");
     }
 }
 
