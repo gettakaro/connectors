@@ -29,11 +29,22 @@ namespace Takaro.Services
         private int _mapSizeX;
         private int _mapSizeY;
         private int _mapSizeZ;
+        private int _mapHalfExtent;
+        private volatile bool _mapRenderingEnabled;
+        private volatile string _worldName;
 
         public string MapRoot => _mapRoot;
         public int MapSizeX => _mapSizeX;
         public int MapSizeY => _mapSizeY;
         public int MapSizeZ => _mapSizeZ;
+
+        /// <summary>Largest |x| or |z| of the world in blocks; 0 when unknown.</summary>
+        public int MapHalfExtent => _mapHalfExtent;
+
+        /// <summary>The server renders map tiles (serverconfig EnableMapRendering).</summary>
+        public bool MapRenderingEnabled => _mapRenderingEnabled;
+
+        public string WorldName => _worldName;
 
         public static StateMirror Instance
         {
@@ -289,6 +300,10 @@ namespace Takaro.Services
                     _mapSizeX = Math.Abs(max.x - min.x);
                     _mapSizeY = Math.Abs(max.y - min.y);
                     _mapSizeZ = Math.Abs(max.z - min.z);
+                    _mapHalfExtent = Math.Max(
+                        Math.Max(Math.Abs(min.x), Math.Abs(max.x)),
+                        Math.Max(Math.Abs(min.z), Math.Abs(max.z))
+                    );
                 }
             }
             catch (Exception ex)
@@ -296,8 +311,19 @@ namespace Takaro.Services
                 LogService.Instance.Warn($"Could not resolve world extent: {ex.Message}");
             }
 
+            try
+            {
+                _mapRenderingEnabled = GamePrefs.GetBool(EnumGamePrefs.EnableMapRendering);
+                _worldName = GamePrefs.GetString(EnumGamePrefs.GameWorld);
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Warn($"Could not read map rendering settings: {ex.Message}");
+            }
+
             LogService.Instance.Info(
-                $"World map captured (extent {_mapSizeX}x{_mapSizeY}x{_mapSizeZ}, tiles '{_mapRoot}')"
+                $"World map captured (extent {_mapSizeX}x{_mapSizeY}x{_mapSizeZ}, tiles '{_mapRoot}', "
+                    + $"rendering {(_mapRenderingEnabled ? "on" : "off")})"
             );
         }
 

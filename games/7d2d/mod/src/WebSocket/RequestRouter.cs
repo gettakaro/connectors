@@ -88,8 +88,8 @@ namespace Takaro.WebSocket
     }
 
     /// <summary>
-    /// getMapTile arguments. Takaro sends {x, y, z}; "zoom" is accepted as an
-    /// alias so a spec rename cannot silently degrade to zoom 0.
+    /// Protocol v0 getMapTile arguments. Takaro sends {x, y, z}; "zoom" is
+    /// accepted as an alias so a spec rename cannot silently degrade to zoom 0.
     /// </summary>
     public class TakaroMapTileArgs
     {
@@ -102,6 +102,15 @@ namespace Takaro.WebSocket
             get { return Z; }
             set { Z = value; }
         }
+    }
+
+    /// <summary>Protocol v1 getMapTile arguments: a tile of the declared pyramid.</summary>
+    public class TakaroMapTileV1Args
+    {
+        public string Dimension { get; set; }
+        public int? Zoom { get; set; }
+        public int? X { get; set; }
+        public int? Y { get; set; }
     }
 
     public class TakaroBanPlayerArgs
@@ -304,6 +313,11 @@ namespace Takaro.WebSocket
                         break;
                     case "getMapTile":
                     {
+                        if (WebSocketTransport.Instance.ProtocolVersion >= 1)
+                        {
+                            RouteMapTileV1(requestId, args);
+                            break;
+                        }
                         TakaroMapTileArgs tileArgs = WebSocketArgs<TakaroMapTileArgs>.Parse(args);
                         if (tileArgs == null)
                         {
@@ -384,6 +398,33 @@ namespace Takaro.WebSocket
                 Log.Exception(ex);
                 SendError(requestId, ex.Message, ProtocolErrorCodes.Internal);
             }
+        }
+
+        private static void RouteMapTileV1(string requestId, object args)
+        {
+            TakaroMapTileV1Args tile = WebSocketArgs<TakaroMapTileV1Args>.Parse(args);
+            if (
+                tile == null
+                || string.IsNullOrEmpty(tile.Dimension)
+                || tile.Zoom == null
+                || tile.X == null
+                || tile.Y == null
+            )
+            {
+                SendError(
+                    requestId,
+                    "getMapTile takes { dimension, zoom, x, y }",
+                    ProtocolErrorCodes.InvalidArgs
+                );
+                return;
+            }
+            ReadHandlers.GetMapTileV1(
+                requestId,
+                tile.Dimension,
+                tile.Zoom.Value,
+                tile.X.Value,
+                tile.Y.Value
+            );
         }
 
         private static bool TryGetPlayerGameId(string requestId, object args, out string gameId)

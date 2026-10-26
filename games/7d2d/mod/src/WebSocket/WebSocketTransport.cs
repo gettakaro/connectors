@@ -206,6 +206,9 @@ namespace Takaro.WebSocket
             );
         }
 
+        /// <summary>The protocol version Takaro selected; 0 before identify.</summary>
+        public int ProtocolVersion => Math.Max(0, _session.ProtocolVersion);
+
         public void SendErrorResponse(
             string requestId,
             string errorMessage,
