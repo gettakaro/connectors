@@ -57,4 +57,6 @@ bool IsCatalogueEntity(const char* code);
 // order, each with exactly the name an entity-killed event for it carries (ResolveEntityName).
 // Names repeat where the templates are the same creature (five Balthazar templates, one per
 // upgrade; a Thunderbrute and the one a summoning stone calls up; nine looks of a Scavenger Scalper).
+// Codes never repeat: Takaro keys entities by code, so a code shared by several templates is
+// listed once (see CatalogueEntities in entity.cpp for which template's name it gets).
 void CatalogueEntities(std::vector<const EntityDef*>& rows, std::vector<std::string>& names);

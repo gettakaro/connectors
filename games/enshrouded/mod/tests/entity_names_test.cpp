@@ -14,6 +14,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -161,6 +162,23 @@ int main() {
         // listEntities and entity-killed name a template the same way
         Check(n == ResolveEntityName(rows[i]).name, "catalogue name = kill name for " + code);
     }
+    // listEntities codes are unique: Takaro keys entities by code and keeps only one row per code.
+    {
+        std::set<std::string> codes;
+        for (auto* r : rows) Check(codes.insert(r->code).second, std::string("listEntities code listed once: ") + r->code);
+        // two templates carry this code (Hollow Reaper and Hollow Titan models); the code is an Elite_Melee01 Reaper
+        size_t hits = 0;
+        for (size_t i = 0; i < rows.size(); i++)
+            if (std::strcmp(rows[i]->code, "Enemy_Skeleton_Elite_Melee01_Dungeon_Hound") == 0) {
+                hits++;
+                Check(names[i] == "Hollow Reaper", "shared code listed as Hollow Reaper, not " + names[i]);
+            }
+        Check(hits == 1, "shared code listed exactly once");
+        size_t shared = 0;
+        for (size_t i = 0; i < kEntityCount; i++)
+            shared += std::strcmp(kEntities[i].code, "Enemy_Skeleton_Elite_Melee01_Dungeon_Hound") == 0 ? 1 : 0;
+        Check(shared == 2, "the game table still has both templates of the shared code (kills name each)");
+    }
     // Every template, listed or not, gets a name in a kill that is not built from its code.
     for (size_t i = 0; i < kEntityCount; i++) {
         EntityName n = ResolveEntityName(&kEntities[i]);
@@ -169,6 +187,7 @@ int main() {
 
     // Items: only what the client names, never an ability, never markup.
     size_t items = 0, unnamed = 0, abilities = 0, swatches = 0;
+    std::set<std::string> itemCodes;  // Takaro keys items by code too
     for (size_t i = 0; i < kItemCount; i++) {
         const char* label = ItemLabelById(kItems[i].itemId);
         if (!label) unnamed++;
@@ -176,6 +195,7 @@ int main() {
         if (label && std::strncmp(kItems[i].code, "Icon_", 5) == 0) swatches++;
         if (!IsCatalogueItem(kItems[i].code, label)) continue;
         items++;
+        Check(itemCodes.insert(kItems[i].code).second, std::string("listItems code listed once: ") + kItems[i].code);
         Check(!std::strchr(label, '<') && std::strcmp(label, kItems[i].code) != 0,
               std::string("item name ") + kItems[i].code + " -> " + label);
     }

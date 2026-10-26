@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <map>
 #include <vector>
 
 const EntityLabel* EntityLabelByGuid(const uint8_t* guid) {
@@ -58,8 +59,33 @@ bool IsCatalogueEntity(const char* code) {
 void CatalogueEntities(std::vector<const EntityDef*>& rows, std::vector<std::string>& names) {
     rows.clear();
     names.clear();
+    std::vector<size_t> named;
+    std::map<std::string, std::vector<size_t>> byCode;  // code -> its named catalogue templates
     for (size_t i = 0; i < kEntityCount; i++) {
         if (!IsCatalogueEntity(kEntities[i].code) || !EntityLabelByGuid(kEntities[i].guid)) continue;
+        named.push_back(i);
+        byCode[kEntities[i].code].push_back(i);
+    }
+    // Takaro keys entities by code, so a code the game gives several templates is listed once:
+    // under the name the nearest shorter code names it (Enemy_Skeleton_Elite_Melee01_Dungeon_Hound
+    // is the Hollow Reaper of Enemy_Skeleton_Elite_Melee01_Dungeon, not the Hollow Titan model
+    // one of its two templates wears), else the first in table order. A kill still names each
+    // template by its own label.
+    auto keep = [&](const std::vector<size_t>& same) {
+        std::string prefix = kEntities[same[0]].code;
+        for (size_t cut; (cut = prefix.rfind('_')) != std::string::npos && cut > 0;) {
+            prefix.resize(cut);
+            auto it = byCode.find(prefix);
+            if (it == byCode.end()) continue;
+            const char* shorter = EntityLabelByGuid(kEntities[it->second[0]].guid)->name;
+            for (size_t i : same)
+                if (std::strcmp(EntityLabelByGuid(kEntities[i].guid)->name, shorter) == 0) return i;
+        }
+        return same[0];
+    };
+    for (size_t i : named) {
+        const std::vector<size_t>& same = byCode[kEntities[i].code];
+        if (same.size() > 1 && keep(same) != i) continue;
         rows.push_back(&kEntities[i]);
         names.push_back(ResolveEntityName(&kEntities[i]).name);
     }
