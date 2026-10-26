@@ -1,7 +1,6 @@
 #include "entity.h"
 
 #include "gamedata.h"
-#include "names.h"
 
 #include <algorithm>
 #include <cctype>
@@ -17,14 +16,12 @@ const EntityLabel* EntityLabelByGuid(const uint8_t* guid) {
     return it != end && std::memcmp(it->guid, guid, 16) == 0 ? it : nullptr;
 }
 
-EntityName ResolveEntityName(const uint8_t* guid, const char* code, const std::string& raw) {
-    if (const EntityLabel* l = EntityLabelByGuid(guid)) return {l->name, l->source};
-    if (code && *code) {
-        std::string derived = DisplayName(code, NameKind::Entity);
-        if (!derived.empty()) return {derived, "code"};
-        return {code, "raw"};
-    }
-    return {raw.empty() ? std::string("Unknown") : raw, "raw"};
+EntityName ResolveEntityName(const EntityDef* def) {
+    if (!def) return {"Unknown", "unknown"};
+    if (const EntityLabel* l = EntityLabelByGuid(def->guid)) return {l->name, l->source};
+    for (size_t i = 0; i < kFactionLabelCount; i++)
+        if (def->faction && std::strcmp(def->faction, kFactionLabels[i].faction) == 0) return {kFactionLabels[i].name, "faction"};
+    return {"Unknown", "unknown"};
 }
 
 namespace {
@@ -62,8 +59,8 @@ void CatalogueEntities(std::vector<const EntityDef*>& rows, std::vector<std::str
     rows.clear();
     names.clear();
     for (size_t i = 0; i < kEntityCount; i++) {
-        if (!IsCatalogueEntity(kEntities[i].code)) continue;
+        if (!IsCatalogueEntity(kEntities[i].code) || !EntityLabelByGuid(kEntities[i].guid)) continue;
         rows.push_back(&kEntities[i]);
-        names.push_back(ResolveEntityName(kEntities[i].guid, kEntities[i].code).name);
+        names.push_back(ResolveEntityName(&kEntities[i]).name);
     }
 }

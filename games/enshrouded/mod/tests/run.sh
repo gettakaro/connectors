@@ -4,7 +4,7 @@
 #   state_login_test: login -> Steam account binding by named peer and Steam auth (1273043), unresolved when unsure
 #   names_test: item/entity/location display names (names.cpp), vectors plus the whole gamedata table
 #   weapon_test: entity-killed weapon names (weapon.cpp, itemlabels.cpp): item labels, category fallback, Unarmed
-#   entity_names_test: entity names (entity.cpp, entitylabels.cpp): client names, sibling and code fallbacks,
+#   entity_names_test: entity names (entity.cpp, entitylabels.cpp): client, Logic Spawner, item and variant names,
 #                      the listEntities and listItems filters
 #   location_test: listLocations rows (location.cpp, locationlabels.cpp): unique codes, in-game map names
 #   moderation_test: canKickBan admin-protection bypass helpers; set ENSHROUDED_EXE=<path to enshrouded_server.exe>

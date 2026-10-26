@@ -37,11 +37,11 @@
     },
     "listItems": {
       "status": "proven",
-      "note": "3317 of 3609 items, named with the game client's En_Us names ('Spectral Ward', 'Rattlesnake Bow'); the 280 items the client never names and 12 Ability_ rows are left out (giveItem still takes any code). Takaro's sync never deletes, so a gameserver synced by an older build keeps those rows with their old names"
+      "note": "3968 of 4262 items (game build 1273043), named with the game client's En_Us names ('Spectral Ward', 'Rattlesnake Bow'); the 244 items the client never names, 13 Ability_ rows and 37 Icon_ character-creator swatches ('Red Eyes') are left out (giveItem still takes any code). Takaro's sync never deletes, so a gameserver synced by an older build keeps those rows with their old names"
     },
     "listEntities": {
       "status": "partial",
-      "note": "397 creature/NPC templates (colliders, weak spots, traps, projectiles, props and dev templates left out). 78 carry the client's name (bosses via their health bar, NPCs, fish); the client names no regular creature, so the other 319 get a readable name from the code ('Rat', 'Scavenger Ranger'). Takaro's sync never deletes, so an older build's rows stay"
+      "note": "434 creature/NPC templates of game build 1273043, each with the game client's En_Us name (tools/gen_entity_labels.py): bosses by their health bar, NPCs, regular creatures by the Logic Spawner entry ('Rat', 'Scavenger Scab'), animals and fish by their item, variants by the named template sharing their model, code or arsenal. No name is built from the code: the 43 creature templates the client names nowhere are left out, and a kill of one is named by its faction ('Fell', 'Hollow') or 'Unknown'. Colliders, weak spots, traps, projectiles, props and dev templates are left out. Takaro's sync never deletes, so an older build's rows stay"
     },
     "listLocations": {
       "status": "proven",

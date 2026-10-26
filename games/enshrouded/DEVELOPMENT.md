@@ -150,7 +150,9 @@ and `world.cpp` (written for 1024233).
    En_Us names. 1.0 changed the container magic to `KFC4`; kfc-parser 0.1.2 refuses it, but accepting
    `0x3443464B` next to `KFC3` in `crates/kfc-base/src/container/header.rs` is the only change needed.
 2. Write the generator inputs (`items/entities/locations.json`, see `tools/gen_gamedata.py` for the path), then `tools/gen_gamedata.py`,
-   `tools/gen_item_labels.py <export> <note>`, `tools/gen_entity_labels.py <export> research/entities.json <note>` and
+   `tools/gen_item_labels.py <export> <note>`, `tools/gen_entity_labels.py <export> <note> [--audit <tsv>]` (names
+   `src/gamedata.cpp`'s templates from the client export: own name, Logic Spawner entry, item, then the named
+   templates sharing model, code or arsenal; `--audit` lists every template with its name and source) and
    `tools/gen_location_labels.py <export>/templates-en.tsv research/locations.json <note>`.
 3. `locations.json` comes from the **server** with `tools/eml-locations` (copy it into `<server>/mods/`):
    map-marker, spawn-point and location placements from `SceneEntityChunkResource`. 1.0 stores a
