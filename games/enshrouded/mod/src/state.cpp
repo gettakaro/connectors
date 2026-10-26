@@ -41,6 +41,45 @@ std::string PluginState::CapabilityDetailsJson() const {
     return o + "}";
 }
 
+// A hook that is installed but has not been called yet says "waiting for ..." in its detail (hooks.cpp, world.cpp).
+static bool WaitingForGame(const std::pair<std::string, std::string>& cap) {
+    return cap.first == "degraded" && cap.second.find("waiting for") != std::string::npos;
+}
+
+std::string PluginState::StartingCapabilitiesJson() const {
+    Guard g(lock_);
+    std::string o = "[";
+    for (auto& kv : caps_)
+        if (WaitingForGame(kv.second)) o += (o.size() > 1 ? "," : "") + JsonStr(kv.first);
+    return o + "]";
+}
+
+void PluginState::SetGameSupport(const std::string& build, bool gamedataSection, bool itemTables,
+                                 const std::string& knownBuilds) {
+    Guard g(lock_);
+    support_ = {true, gamedataSection, itemTables, build, knownBuilds};
+}
+
+std::string PluginState::GameSupportNotice() const {
+    Guard g(lock_);
+    if (!support_.set || (support_.gamedataSection && support_.itemTables)) return "";
+    std::string o = "game build " + support_.build + " is not supported by plugin " TAKARO_PLUGIN_VERSION ": ";
+    if (!support_.gamedataSection)
+        o += "no gamedata section for this build (this plugin has " +
+             (support_.knownBuilds.empty() ? std::string("none") : support_.knownBuilds) + ")";
+    if (!support_.itemTables)
+        o += std::string(support_.gamedataSection ? "" : "; ") + "the item and entity tables are for another build";
+    std::string off;
+    for (auto& kv : caps_) {
+        if (kv.second.first != "degraded") continue;
+        // still starting up is not "off"
+        if (WaitingForGame(kv.second) || kv.second.second.find("initializing") != std::string::npos) continue;
+        off += (off.empty() ? "" : ", ") + kv.first;
+    }
+    return o + "; capabilities off: " + (off.empty() ? std::string("none") : off) +
+           "; update the plugin to a release that supports this game build";
+}
+
 void PluginState::PushEvent(const std::string& type, const std::string& dataJson) {
     // caller may or may not hold lock_; use a separate small critical path
     EventRecord e{0, type, dataJson, IsoNowUtc()};
@@ -535,6 +574,14 @@ bool PluginState::FindOnline(const std::string& idOrName, std::string& steamId, 
     name = hit->name;
     if (json) *json = PlayerJsonLocked(*hit);
     return true;
+}
+
+std::vector<console::Player> PluginState::OnlinePlayers() const {
+    Guard g(lock_);
+    std::vector<console::Player> out;
+    for (auto& p : players_)
+        if (p.online) out.push_back({p.steamId, p.name, p.characterName});
+    return out;
 }
 
 bool PluginState::PlayerJsonByName(const std::string& name, std::string& json) const {

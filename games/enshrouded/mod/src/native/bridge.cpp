@@ -123,6 +123,7 @@ bool Bridge::Start() {
     }
     reconcilePending_ = true;
     int64_t now = o_.steadyMs();
+    startMs_ = now;
     nextPoll_ = nextHealth_ = nextBanCheck_ = now;
     nextReconcile_ = now + o_.reconcileIntervalMs;
     FlushState(now, true);
@@ -229,8 +230,11 @@ void Bridge::Loop() {
         int64_t now = o_.steadyMs();
         CheckDeadlines(now);
         if (now >= nextHealth_) {
-            RefreshHealth(now);
-            nextHealth_ = now + o_.healthIntervalMs;
+            if (open_ && identifyHeld_)
+                ReleaseIdentify(now);
+            else
+                RefreshHealth(now);
+            nextHealth_ = now + (identifyHeld_ ? std::min<int64_t>(1000, o_.healthIntervalMs) : o_.healthIntervalMs);
         }
         if (now >= nextPoll_) {
             PollEvents(now);
@@ -291,13 +295,21 @@ void Bridge::HandleNotice(Notice& n) {
             pendingIds_.clear();
             recentIds_.clear();
             recentIdSet_.clear();
+            identifyHeld_ = false;
+            {
+                int64_t now = o_.steadyMs();
+                RefreshHealth(now);
+                if (!starting_.empty() && now < startMs_ + o_.startupHoldMs) {
+                    identifyHeld_ = true;
+                    PluginLog("native: Takaro WebSocket open (epoch %llu); identify waits for the game world to run "
+                              "(starting: %s; at most %llds more)",
+                              (unsigned long long)n.epoch, starting_.c_str(),
+                              (long long)((startMs_ + o_.startupHoldMs - now) / 1000));
+                    break;
+                }
+            }
             PluginLog("native: Takaro WebSocket open (epoch %llu), sending identify", (unsigned long long)n.epoch);
-            auto st = o_.transport->Queue({FrameKind::Control,
-                                           Text(CreateIdentify(o_.config.identityToken, o_.config.registrationToken,
-                                                               o_.config.serverName,
-                                                               o_.config.protocolV1 ? CapabilityManifestJson(o_.gameVersion) : "")),
-                                           n.epoch, 0});
-            if (st != QueueStatus::Accepted) o_.transport->RequestClose(n.epoch, "identify not queued");
+            SendIdentify(n.epoch);
             break;
         }
         case NoticeType::Frame:
@@ -314,6 +326,7 @@ void Bridge::HandleNotice(Notice& n) {
             if (n.epoch != epoch_) break;
             open_ = false;
             identified_ = false;
+            identifyHeld_ = false;
             protocol_ = 0;
             gameServerId_.clear();
             PluginLog("native: Takaro WebSocket closed (epoch %llu): %s", (unsigned long long)n.epoch,
@@ -345,6 +358,30 @@ void Bridge::HandleNotice(Notice& n) {
             lastError_ = Redact(n.text);
             break;
     }
+}
+
+void Bridge::SendIdentify(uint64_t epoch) {
+    auto st = o_.transport->Queue({FrameKind::Control,
+                                   Text(CreateIdentify(o_.config.identityToken, o_.config.registrationToken,
+                                                       o_.config.serverName,
+                                                       o_.config.protocolV1 ? CapabilityManifestJson(o_.gameVersion) : "")),
+                                   epoch, 0});
+    if (st != QueueStatus::Accepted) o_.transport->RequestClose(epoch, "identify not queued");
+}
+
+// Called about once a second while identify is held: identify as soon as nothing is starting any more, or when the
+// hold runs out (then testReachability names what is still not running, which by then is a real problem).
+void Bridge::ReleaseIdentify(int64_t now) {
+    RefreshHealth(now);
+    bool expired = now >= startMs_ + o_.startupHoldMs;
+    if (!starting_.empty() && !expired) return;
+    identifyHeld_ = false;
+    if (starting_.empty())
+        PluginLog("native: the game world runs; sending identify (epoch %llu)", (unsigned long long)epoch_);
+    else
+        PluginLog("native: still starting after %llds (%s); sending identify anyway (epoch %llu)",
+                  (long long)(o_.startupHoldMs / 1000), starting_.c_str(), (unsigned long long)epoch_);
+    SendIdentify(epoch_);
 }
 
 void Bridge::HandleFrame(uint64_t epoch, const std::string& text) {
@@ -581,7 +618,12 @@ std::shared_ptr<const ActionView> Bridge::View() {
         view_ = v;
         viewDirty_ = false;
     }
-    return view_;
+    if (!tailActive_) return view_;
+    // the tail changes the online list without marking the view dirty; this copy only happens while degraded
+    auto v = std::make_shared<ActionView>(*view_);
+    v->tailOwnsPlayers = true;
+    v->tailOnline = o_.store->Online();
+    return v;
 }
 
 void Bridge::Complete(const std::shared_ptr<Job>& job) {
@@ -973,7 +1015,8 @@ void Bridge::Reconcile(bool immediate, int64_t now) {
         return;
     }
     auto& online = o_.store->Online();
-    if (online.empty()) {
+    // the log tail owns joins and leaves while it runs; the plugin's player list is not trustworthy then
+    if (online.empty() || tailActive_) {
         reconcilePending_ = false;
         missingStrikes_.clear();
         return;
@@ -1017,6 +1060,11 @@ void Bridge::RefreshHealth(int64_t now) {
     bool ok = r.status == 200 && ParseJson(r.body, h) && h.type == JsonValue::Object;
     healthKnown_ = ok;
     pluginStatus_ = ok ? Str(h.get("status")).value_or("") : "unreachable";
+    starting_.clear();
+    const JsonValue* starting = ok ? h.get("starting") : nullptr;
+    if (starting && starting->type == JsonValue::Array)
+        for (auto& c : starting->arr)
+            if (c.type == JsonValue::String) starting_ += (starting_.empty() ? "" : ", ") + c.str;
     bool want = ShouldTailLog(o_.config.logTail, ok ? &h : nullptr);
     if (want && !tailActive_) {
         PluginLog("native: enabling log-tail fallback for connect/disconnect (%s)", tailer_.File().c_str());
@@ -1167,7 +1215,7 @@ void Bridge::Publish() {
         std::lock_guard<std::mutex> g(mu_);
         overflows = noticeOverflows_;
     }
-    std::string state = !open_ ? "connecting" : identified_ ? "identified" : "open";
+    std::string state = !open_ ? "connecting" : identified_ ? "identified" : identifyHeld_ ? "waiting-for-game" : "open";
     std::string h = ObjBuilder()
                         .B("enabled", true)
                         .S("state", state)
@@ -1175,6 +1223,7 @@ void Bridge::Publish() {
                         .B("identified", identified_)
                         .N("protocol", protocol_)
                         .S("gameServerId", gameServerId_)
+                        .S("starting", starting_)
                         .S("lastError", lastError_)
                         .S("lastIdentifyError", lastIdentifyError_)
                         .Raw("config", ConfigSummaryJson(o_.config))

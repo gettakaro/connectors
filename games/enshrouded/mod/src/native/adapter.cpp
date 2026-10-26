@@ -93,6 +93,11 @@ public:
     JsonValue Dispatch(const std::string& action, const JsonValue& args) {
         if (action == "testReachability") return TestReachability();
         if (action == "getPlayers") {
+            if (view_.tailOwnsPlayers) {
+                JsonValue list = JArr();
+                list.arr = view_.tailOnline;
+                return list;
+            }
             JsonValue players = plugin_.Players();
             JsonValue list = JArr();
             if (players.type == JsonValue::Array)
@@ -320,6 +325,9 @@ private:
             caps += (caps.empty() ? "" : ", ") + kv.first + "=" + JsString(&kv.second);
         }
         std::string capText = caps.empty() ? "" : "capabilities not ok: " + caps;
+        // an unsupported game build names itself first: that, not each capability, is what the owner has to fix
+        const JsonValue* support = health.get("gameSupport");
+        if (support && support->type == JsonValue::String && !support->str.empty()) capText = support->str;
         JsonValue r = JObj();
         if (status == "ok") {
             Put(r, "connectable", JBool(true));
