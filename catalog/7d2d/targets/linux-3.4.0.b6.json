@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-3.4.0.b6",
+  "game": "7d2d",
+  "platform": "linux",
+  "revision": "3.4.0.b6",
+  "default": false,
+  "support": {
+    "status": "candidate",
+    "since": "2026-10-26",
+    "evidence": [
+      "Dev rig takaro-dev-7d2d runs the exact pinned server (Assembly-CSharp.dll sha256 ad146019... matches this record); console reports V 3.4.0 (b6), and the V 3.4.0 (b6) Windows client joins it",
+      "Builds with 0 errors against this target's reference assemblies and passes the contract harness (1240 assertions) and storage harness (67 assertions), unchanged sources",
+      "Real Windows client through Takaro on 2026-10-26: events player-connected, chat-message, command-executed (@ping), player-death (a real fall), entity-killed (steel club vs zombieBoe) and player-disconnected; actions testReachability, getPlayers, sendMessage, executeConsoleCommand, giveItem, getPlayerInventory, teleportPlayer with location read-back, kickPlayer, a timed ban with a refused rejoin, listBans, unban with a rejoin, and shutdown, each with client evidence",
+      "Discord on 2026-10-26 through chatBridgeNoEcho: in-game chat and connect/disconnect posts reached Discord (POST 200); a discord-message ran DiscordToGame and the line showed in the client chat"
+    ],
+    "notes": "Exact Steam pin of V 3.4.0 (b6), Steam build 26167630. In-process Generic connector proven end to end on this build with a real client; the default stays on V 3.3.0 b18 until this target is promoted."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 294420,
+      "branch": "public",
+      "buildid": 26167630,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "294422": {
+          "manifest": "691152299146393406",
+          "size": 17803446093,
+          "files": 17713
+        }
+      },
+      "files": {
+        "7DaysToDieServer.x86_64": {
+          "sha256": "2f4534b3534d61c843a7f20cbd5df7c2deef9fb0211d60ea362cda7bdecdeabc",
+          "size": 14800
+        },
+        "7DaysToDieServer_Data/Managed/Assembly-CSharp-firstpass.dll": {
+          "sha256": "3990ca701ea3e1a45037a2ce1393e577f8a8c356bb6de7f1d712301502a4c5bb",
+          "size": 264704
+        },
+        "7DaysToDieServer_Data/Managed/Assembly-CSharp.dll": {
+          "sha256": "ad146019f4f488ba6c395df0a33bcdf0fdabcec91a0b15fd65475e3047f8a5db",
+          "size": 11752448
+        },
+        "Mods/0_TFP_Harmony/0Harmony.dll": {
+          "sha256": "c349e1a3fd13fa5a9facc9805a5e160161b14489f46f6bdd38202b8e124f78df",
+          "size": 290304
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "vinanrra/7dtd-server",
+      "tag": "v0.9.3",
+      "digest": "sha256:75d1193fb2470687ee8748f27482524c170f6cbca110e15f48db8d8ff48f15ca",
+      "env": {
+        "START_MODE": "1",
+        "TimeZone": "Etc/UTC"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/7d2d/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "mono",
+      "tag": "6.12.0.182-slim",
+      "digest": "sha256:eb9a8d42dc58090cdb0d39b36422d9560f33e9d2cce22f4c888da263cee46c45"
+    },
+    "references": [
+      "regex:^7DaysToDieServer_Data/Managed/.*\\.dll$",
+      "regex:^Mods/0_TFP_Harmony/.*\\.dll$"
+    ],
+    "deps": {
+      "websocket-sharp": {
+        "coordinate": "github:sta/websocket-sharp:f7904e6afb934cfff9eda1f29ee6c1291b14c4bc",
+        "sha256": "2ee957294a8f3517bb0995e4d395d94b16a908441ad74e74643cb660d9b27ae4",
+        "resolvedCoordinate": "https://github.com/sta/websocket-sharp/archive/f7904e6afb934cfff9eda1f29ee6c1291b14c4bc.tar.gz"
+      },
+      "LiteDB": {
+        "coordinate": "nuget:LiteDB:5.0.21",
+        "sha256": "938a4f5f9d6a28383de8ccfcbdb8897e78432399215232cf38dbf147e03ec167",
+        "resolvedCoordinate": "https://globalcdn.nuget.org/packages/litedb.5.0.21.nupkg"
+      },
+      "System.Buffers": {
+        "coordinate": "nuget:System.Buffers:4.5.1",
+        "sha256": "c30b3dd2c7e2f4cee4b823d692fd42118309b42ab1f5007f923d329a5b0d6b12",
+        "resolvedCoordinate": "https://globalcdn.nuget.org/packages/system.buffers.4.5.1.nupkg"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "server-mod",
+      "artifact": "takaro-7d2d-mod-linux-3.4.0.b6-{version}.zip",
+      "installDir": "Mods"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup",
+      "action",
+      "reconnect"
+    ]
+  },
+  "preserve": [
+    "sdtdserver.xml",
+    "Takaro/",
+    "Mods/Takaro/",
+    "DONT_REMOVE.txt",
+    ".takaro/"
+  ],
+  "devServers": {
+    "gameId": "7d2d"
+  }
+}

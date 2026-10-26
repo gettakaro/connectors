@@ -7,11 +7,12 @@ It is built once per exact server build, and each zip names the build it is for:
 
 | Server build | Steam build (app 294420, branch `public`) | Zip | Status |
 |---|---|---|---|
+| **V 3.4.0 b6** | 26167630 | `takaro-7d2d-mod-linux-3.4.0.b6-<version>.zip` | candidate, proven live on 2026-10-26 |
 | **V 3.3.0 b18** | 25661908 | `takaro-7d2d-mod-linux-3.3.0.b18-<version>.zip` | maintained (default), proven live on 2026-10-06 |
 | **V 3.2.0 b10** | 24994542 | `takaro-7d2d-mod-linux-3.2.0.b10-<version>.zip` | candidate, proven live on 2026-10-01 |
 
 Use the zip that matches your server: V 3.3.0 changed the game's player-data and item APIs, so
-the V 3.2.0 build cannot read inventories or set weapon mod quality on V 3.3.0. The connector may
+the V 3.2.0 build cannot read inventories or set weapon mod quality on V 3.3.0 or later. The connector may
 load on another build, but nothing here says it works there.
 
 Moving an existing game server from Takaro's built-in 7 Days to Die integration? Install as below,
@@ -37,6 +38,7 @@ You need:
 From the latest `7d2d-vX.Y.Z` release, on https://takaro.io/connectors/7d2d or on the releases page
 (https://github.com/gettakaro/connectors/releases), download the zip for your server build:
 
+- V 3.4.0 b6: **`takaro-7d2d-mod-linux-3.4.0.b6-<version>.zip`**
 - V 3.3.0 b18: **`takaro-7d2d-mod-linux-3.3.0.b18-<version>.zip`**
 - V 3.2.0 b10: **`takaro-7d2d-mod-linux-3.2.0.b10-<version>.zip`**
 
@@ -188,6 +190,12 @@ the right quality and amount), give item, teleport, kick, timed ban and unban (t
 refused, then joins again), server messages, console commands, `@ping`, shutdown and the Discord
 chat bridge from game to Discord all work. On 2026-10-08 a Discord post reached the V 3.3.0 b18
 server chat with no client connected. The rows not listed here are from the V 3.2.0 b10 run.
+
+Re-proven on **2026-10-26** on **V 3.4.0 b6** (Steam build 26167630) with a real V 3.4.0 (b6) game
+client and no source change: player join, chat, `@ping`, death, zombie kill and disconnect reach
+Takaro; player list, give item, inventory, teleport and location, kick, timed ban (the client is
+refused) and unban (the client joins again), server messages, console commands, shutdown and the
+Discord chat bridge in both directions work.
 
 | What | | Notes |
 |---|---|---|

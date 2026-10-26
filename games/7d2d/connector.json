@@ -8,6 +8,13 @@
   ],
   "assets": [
     {
+      "pattern": "takaro-7d2d-mod-linux-3.4.0.b6-*.zip",
+      "label": "Mod (V 3.4.0 b6)",
+      "requires": "7 Days to Die V 3.4.0 b6",
+      "hint": "Unzip so the Takaro folder lands directly inside <server>/Mods/.",
+      "required": true
+    },
+    {
       "pattern": "takaro-7d2d-mod-linux-3.3.0.b18-*.zip",
       "label": "Mod (V 3.3.0 b18)",
       "requires": "7 Days to Die V 3.3.0 b18",
