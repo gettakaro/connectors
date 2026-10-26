@@ -42,6 +42,10 @@ the game side of the plugin and the Takaro side:
 - `capabilities` values are `"ok"`, `"degraded"` or `"unimplemented"`.
 - A capability is `degraded` when its signature did not resolve or its hook failed. The reason is in `capabilityDetails`. The server keeps running either way.
 - `gameBuild` is the numeric build from the header of `enshrouded_server.kfc`.
+- `starting`: the `degraded` capabilities whose hook is installed but has not been called yet
+  (`capabilityDetails` says "waiting for ..."), e.g. `gameThread`, `kick` or `teleport` while the world loads. `[]`
+  once the world runs. The native connector holds its Takaro `identify` while this list is not empty (at most 5
+  minutes after start), because Takaro records the reachability reason only when a server turns reachable.
 - Current capability names:
   - `logEvents`, `players`, `gameThread`, `kick`, `ban`, `unban`, `listBans`, `shutdown`,
     `playerLocation`, `playerInventory`, `teleport`, `giveItem`, `sendMessage`, `chatEvents`, `deathEvents`, `killEvents`,
@@ -54,7 +58,8 @@ the game side of the plugin and the Takaro side:
 - `diagnostics.perf`: microseconds of plugin work per entry into the hooked game calls (`tick`, `updatePlayers`,
   `moderation` queue drains and the `logSink` hook): `entries`, `entriesPerSec`, `jobs`, `jobsPerSec`, `avgUs`,
   `p99Us` (last 2048 entries), `maxUs`, over `windowS` seconds since start or the last reset.
-- `diagnostics.native`: the Takaro connection (`enabled`, `reason` when off, `state`, `epoch`, `identified`, the
+- `diagnostics.native`: the Takaro connection (`enabled`, `reason` when off, `state` (`waiting-for-game` while
+  identify waits for `starting`), `starting`, `epoch`, `identified`, the
   transport's queues and heartbeat, request counters, event outbox cursors and counts, timed bans, log-tail state,
   state-file errors). Token values never appear.
 - `capabilityDetails` and `diagnostics` are informational. Do not code against their exact shape.
@@ -158,14 +163,19 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
 - **command** (Enshrouded has no server console; this is a plugin-defined set): `help`, `version`, `players`,
   `say <text>`, `whisper <player> <text>`, `location <player>`, `teleport <player> <x> <y> <z>`, `tp <player> <toPlayer>`,
   `inventory <player>`, `give <player> <itemCode> [amount] [level]` (level 1-255; omitted, or a level the item cannot have, = the item's default level), `item <search>`, `kick <player>`, `levels`, `level <player>` (character level and experience; needs the gamedata `attributes*` layout), `save-and-shutdown`.
-  `<player>` is a SteamID64 or the exact name. Unknown commands return `success:false` with a hint. There is no
+  `<player>` is a SteamID64 or the name (persona or character name, case-insensitive). A name with spaces is given
+  quoted (`level "Character 1"`, single quotes too; `\"` escapes a quote) or bare (`level Character 1`): bare words are
+  matched against the online players, and a line that fits more than one way, or a name several online players share,
+  is refused with a hint instead of guessed. A quote left open is refused by every command (only the message of `say`
+  and `whisper` may hold one). Replies name a player by character name (the persona until it is known). Unknown commands return `success:false` with a hint. There is no
   time-of-day command (not reverse engineered).
 
 ### GET lists (static data from the server's kfc: items and entities from build 1267041, locations from 1273043; regenerate with `tools/gen_gamedata.py`)
 - `GET /bans`: see Moderation.
 - `GET /items` returns 3609 `[{code, name, description:"<category>, <rarity>", itemId, maxStackSize}]`. Localized names
   do not ship with the dedicated server, so `name` is the code with spaces.
-- `GET /entities` returns 979 actor templates `[{code, name, type: hostile|friendly|neutral, description}]`.
+- `GET /entities` returns 979 actor templates `[{code, name, type: hostile|friendly|neutral, description}]`. Each code
+  appears once: a code the game gives several templates is listed under the name its nearest shorter code has.
 - `GET /locations` returns the 808 map markers and spawn points the in-game map shows `[{code, name, kind, spawnType?, position:{x,y,z}}]`,
   named with the client's En_Us map label; a code several placements share gets `@<x>_<z>` (metres) appended.
 

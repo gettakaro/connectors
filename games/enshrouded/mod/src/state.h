@@ -1,6 +1,7 @@
 // Plugin state: event ring buffer, player registry, capability status, log-line correlation.
 #pragma once
 #include "common.h"
+#include "console_args.h"
 
 #include <deque>
 #include <set>
@@ -42,6 +43,14 @@ public:
     void SetCapability(const std::string& name, const std::string& status, const std::string& detail = "");
     std::string CapabilitiesJson() const;
     std::string CapabilityDetailsJson() const;
+    // JSON array of the capabilities that are only waiting for the game to start running (hook installed, its
+    // first call not seen yet, e.g. the game thread before the world has loaded). Empty once the world runs.
+    std::string StartingCapabilitiesJson() const;
+    // Game build support, set once at startup. `knownBuilds` lists the builds this plugin has gamedata for.
+    void SetGameSupport(const std::string& build, bool gamedataSection, bool itemTables, const std::string& knownBuilds);
+    // Empty when the running game build is supported; otherwise one line for owners: the build, why it is not
+    // supported, the capabilities that are off right now, and what to do.
+    std::string GameSupportNotice() const;
 
     void PushEvent(const std::string& type, const std::string& dataJson);
     std::string EventsJson(uint64_t since, size_t limit) const;
@@ -73,6 +82,8 @@ public:
     void EmitEvent(const std::string& type, const std::string& dataJson);
     // Online player lookup by SteamID64 or (case-insensitive) name: fills steamId, name and player JSON.
     bool FindOnline(const std::string& idOrName, std::string& steamId, std::string& name, std::string* json = nullptr) const;
+    // Online players for console argument matching (console_args.h).
+    std::vector<console::Player> OnlinePlayers() const;
     // Online player JSON by exact name (the Steam persona the server prints); false if none or ambiguous.
     bool PlayerJsonByName(const std::string& name, std::string& json) const;
 
@@ -88,6 +99,10 @@ private:
 
     mutable SrwLock lock_;
     std::map<std::string, std::pair<std::string, std::string>> caps_;
+    struct GameSupport {
+        bool set = false, gamedataSection = true, itemTables = true;
+        std::string build, knownBuilds;
+    } support_;
     std::deque<EventRecord> events_;
     uint64_t seq_ = 0;
 

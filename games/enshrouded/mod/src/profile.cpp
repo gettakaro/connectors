@@ -1,6 +1,7 @@
 #include "profile.h"
 
 #include "common.h"
+#include "gamedata_file.h"
 #include "scan.h"
 
 #include <cstdio>
@@ -17,25 +18,6 @@ const char kEmbedded[] =
 JsonValue g_root;
 const JsonValue* g_build = nullptr;
 std::string g_source = "none";
-
-bool ReadFile(const std::string& path, std::string& out) {
-    FILE* f = fopen(path.c_str(), "rb");
-    if (!f) return false;
-    char buf[8192];
-    size_t n;
-    out.clear();
-    while ((n = fread(buf, 1, sizeof buf, f)) > 0) out.append(buf, n);
-    fclose(f);
-    return true;
-}
-
-bool WriteFile(const std::string& path, const std::string& text) {
-    FILE* f = fopen(path.c_str(), "wb");
-    if (!f) return false;
-    bool ok = fwrite(text.data(), 1, text.size(), f) == text.size();
-    fclose(f);
-    return ok;
-}
 
 uint64_t ToU64(const JsonValue* v, uint64_t def) {
     if (!v) return def;
@@ -58,23 +40,11 @@ bool SelectBuild(const JsonValue& root, const std::string& build) {
 }  // namespace
 
 void Load(const std::string& gameBuild) {
-    std::string dir = PluginBaseDir() + "\\takaro";
-    std::string path = dir + "\\enshrouded-gamedata.json";
-    std::string text;
-    CreateDirectoryA(dir.c_str(), nullptr);
-    JsonValue embedded;
-    bool embeddedOk = JsonParse(kEmbedded, embedded);
-    if (ReadFile(path, text)) {
-        std::string body = text.rfind("\xEF\xBB\xBF", 0) == 0 ? text.substr(3) : text;
-        if (JsonParse(body, g_root) && SelectBuild(g_root, gameBuild)) {
-            g_source = "file " + path;
-        } else if (embeddedOk && (g_root = embedded, SelectBuild(g_root, gameBuild))) {
-            g_source = "embedded (file " + path + " has no valid section for this build)";
-        }
-    } else {
-        if (WriteFile(path, kEmbedded)) PluginLog("gamedata: wrote default %s", path.c_str());
-        if (embeddedOk && (g_root = embedded, SelectBuild(g_root, gameBuild))) g_source = "embedded";
-    }
+    std::string path = PluginBaseDir() + "\\takaro\\enshrouded-gamedata.json";
+    // upgrades sections an earlier plugin wrote, keeps edited ones, leaves a broken file alone (gamedata_file.h)
+    gamedata_file::Result r = gamedata_file::Apply(path, kEmbedded, [](const std::string& l) { PluginLog("%s", l.c_str()); });
+    g_root = std::move(r.root);
+    if (SelectBuild(g_root, gameBuild)) g_source = r.fromFile ? "file " + path : "embedded";
     if (g_build) {
         const JsonValue* note = g_build->get("note");
         PluginLog("gamedata: build %s from %s (%s)", gameBuild.c_str(), g_source.c_str(),
@@ -87,6 +57,14 @@ void Load(const std::string& gameBuild) {
 
 bool Active() { return g_build != nullptr; }
 std::string Source() { return g_source; }
+
+std::string KnownBuilds() {
+    const JsonValue* builds = g_root.get("builds");
+    std::string o;
+    if (builds && builds->type == JsonValue::Object)
+        for (auto& kv : builds->obj) o += (o.empty() ? "" : ", ") + kv.first;
+    return o;
+}
 
 uint32_t JobFunction(const char* jobName) {
     uint32_t s = scan::FindCString(jobName);

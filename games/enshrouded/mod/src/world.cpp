@@ -21,6 +21,17 @@
 #include <deque>
 #include <memory>
 
+#ifdef TAKARO_COMMAND_PROBE
+#include "probe_core.h"
+
+#include <fstream>
+#include <mutex>
+#include <sstream>
+#include <thread>
+
+bool ProbeCachedAccount(const std::string& steamId, uint64_t& hash);  // http.cpp: SteamID64 -> accountIdHash cache
+#endif
+
 // ------------------------------------------------------------------------------------------------
 // Constants that are reflection type hashes (keen qualifiedHash of the type name); they only change if the type is
 // renamed. Offsets that are build-specific are derived from matched code in WorldHooksInit (see Layout).
@@ -373,9 +384,22 @@ uint64_t __fastcall IsAdminDetour(uint64_t eid, uint64_t table) {
     return g_origIsAdmin(eid, table);
 }
 
+#ifdef TAKARO_COMMAND_PROBE
+#include "probe_glue.inc"  // research/command-probe (#202); not in release builds
+#endif
+
 // ---- chat receive ----
 uint8_t* __fastcall AddMsgDetour(uint8_t* err, uint64_t chat, uint64_t type, StringView* text, uint64_t l1, uint64_t l2,
                                  uint64_t handle, uint64_t o1, Opt64* o2) {
+#ifdef TAKARO_COMMAND_PROBE
+    // a suppressed message leaves exactly what addMessage's success path leaves: err {u8 0; u32 0 @4}, returns err
+    if ((uintptr_t)__builtin_return_address(0) == g_recvRet && text && text->ptr && text->len > 0 && text->len <= 0x400 &&
+        cprobe::OnPlayerChat((uint8_t)type, text, (uint32_t)handle, o1)) {
+        err[0] = 0;
+        *(uint32_t*)(err + 4) = 0;
+        return err;
+    }
+#endif
     if ((uintptr_t)__builtin_return_address(0) == g_recvRet && text && text->ptr && text->len > 0 && text->len <= 0x400) {
         InterlockedIncrement64(&g_chatSeen);
         std::string msg(text->ptr, (size_t)text->len);
@@ -558,10 +582,9 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                             if (kItems[q].itemId == itemId) wd = &kItems[q];
                     KillWeapon kw = ResolveKillWeapon(itemId, wd ? wd->code : nullptr, category);
                     const char* catName = WeaponCategoryName(category);
-                    // `entity` is what Takaro shows: the client's name, else the code-derived one;
-                    // the template code stays in `entityCode`.
-                    EntityName en = victimDef ? ResolveEntityName(victimDef->guid, victimDef->code)
-                                              : ResolveEntityName(nullptr, nullptr, code);
+                    // `entity` is what Takaro shows: the in-game name (entity.h); the template code
+                    // stays in `entityCode`.
+                    EntityName en = ResolveEntityName(victimDef);
                     std::string dataJson = "{\"entity\":" + JsonStr(en.name) + ",\"entityCode\":" + JsonStr(code) +
                                            ",\"entityNameSource\":" + JsonStr(en.source) + ",\"weapon\":" + JsonStr(kw.name) +
                                            ",\"weaponSource\":" + JsonStr(kw.source) + ",\"weaponItemId\":" +
@@ -622,7 +645,7 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                             const char* f = "none";
                             const EntityDef* ed = EntityByGuid(guid, &f);
                             std::string raw = ed ? ed->code : "entity#" + std::to_string(killer);
-                            EntityName en = ed ? ResolveEntityName(ed->guid, ed->code) : ResolveEntityName(nullptr, nullptr, raw);
+                            EntityName en = ResolveEntityName(ed);
                             // killerEntity stays the template code; the death message uses the name
                             dataJson += ",\"killerEntity\":" + JsonStr(raw) + ",\"killerEntityName\":" + JsonStr(en.name);
                         }
@@ -933,6 +956,9 @@ void WorldHooksInit() {
             char b[128];
             snprintf(b, sizeof b, "gamedata; hook installed; receive ret=0x%x chat=+0x%x", ret, L.chatOff);
             RecordResolve("chatAddMessage", addMsg, b, true);
+#ifdef TAKARO_COMMAND_PROBE
+            cprobe::Start();
+#endif
         }
     } else if (addMsg) {
         // receive call site: `mov byte [rbp+50h],0; mov byte [rbp+40h],0; call addMessage` inside processIncomingMessages,
@@ -1493,15 +1519,18 @@ bool WorldNearbyJson(const std::string& name, double radius, std::string& json, 
 
 // ------------------------------------------------------------------------------------------------
 // 1267041 is the build the tables were exported on. 1273043 (Steam 26083076) is a hotfix whose exported ItemInfo
-// (id, code, stack size) and TemplateResource (guid, name) entries match these tables one for one.
+// (id, code, stack size) and TemplateResource (guid, name) entries match these tables one for one. A later build
+// whose exports still match declares it in its gamedata section with "itemTables": "1267041" (checked offline
+// against the build's enshrouded_server.kfc), so the catalogue needs no plugin release; valid hooks alone never
+// vouch for item ids.
 static const char kTablesGameBuild[] = "1267041";
 static const char kTablesGameBuildHotfix[] = "1273043";
 static std::atomic<bool> g_tablesUsable{true};
 static std::string g_tablesReason;
 
 void SetItemTablesBuild(const std::string& gameBuild, bool haveGamedataSection) {
-    (void)haveGamedataSection;  // a valid hook profile does not validate item ids
-    bool ok = gameBuild == kTablesGameBuild || gameBuild == kTablesGameBuildHotfix;
+    bool ok = gameBuild == kTablesGameBuild || gameBuild == kTablesGameBuildHotfix ||
+              (haveGamedataSection && profile::LStr("itemTables", "") == kTablesGameBuild);
     if (!ok) {
         g_tablesReason = std::string("item and entity tables are for game build ") + kTablesGameBuild + ", this server is build " +
                          gameBuild + "; use the plugin release for that build";
@@ -1534,7 +1563,8 @@ const std::string& ItemsJson() {
     if (s.empty()) {
         // Only what the game client names: an item without an En_Us name is never shown to a
         // player (character-creator parts, placement tools, cut content), and an Ability_ row
-        // is a skill, not an item. giveItem still takes any code (FindItemByCode).
+        // is a skill and an Icon_ row a character-creator swatch, not items. giveItem still takes
+        // any code (FindItemByCode).
         s = "[";
         bool first = true;
         for (size_t i = 0; i < kItemCount; i++) {
