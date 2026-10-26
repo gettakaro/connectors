@@ -653,6 +653,11 @@ void LogTailFallback() {
     std::this_thread::sleep_for(std::chrono::milliseconds(700));
     r.tr.Drain();
     CHECK(r.Events("player-disconnected").empty());
+    // getPlayers answers from the tail's list, not the plugin's empty one
+    JsonValue players = r.Call("getPlayers", "{}");
+    const JsonValue* list = players.get("payload");
+    CHECK(list && list->type == JsonValue::Array && list->arr.size() == 1 &&
+          list->arr[0].get("gameId")->str == LIMON && list->arr[0].get("name")->str == "Limon");
     // the hook recovers: the tail switches off
     {
         std::lock_guard<std::mutex> g(r.fake.mu);

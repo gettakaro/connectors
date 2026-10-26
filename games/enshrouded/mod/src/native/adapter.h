@@ -29,6 +29,8 @@ struct ActionView {
     std::map<std::string, TimedBan> timedBans;
     std::string mapDir;         // map tile pack directory (maptiles.h)
     std::string banStoreError;  // non-empty: the timed-ban store is unreadable; timed bans and listBans refuse
+    bool tailOwnsPlayers = false;         // log-tail fallback active: the plugin's player list is not trustworthy
+    std::vector<JsonValue> tailOnline;    // the players the log tail reported online (Takaro-shaped)
 };
 
 struct BanChange {

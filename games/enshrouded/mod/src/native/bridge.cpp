@@ -616,7 +616,12 @@ std::shared_ptr<const ActionView> Bridge::View() {
         view_ = v;
         viewDirty_ = false;
     }
-    return view_;
+    if (!tailActive_) return view_;
+    // the tail changes the online list without marking the view dirty; this copy only happens while degraded
+    auto v = std::make_shared<ActionView>(*view_);
+    v->tailOwnsPlayers = true;
+    v->tailOnline = o_.store->Online();
+    return v;
 }
 
 void Bridge::Complete(const std::shared_ptr<Job>& job) {

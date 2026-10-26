@@ -92,6 +92,11 @@ public:
     JsonValue Dispatch(const std::string& action, const JsonValue& args) {
         if (action == "testReachability") return TestReachability();
         if (action == "getPlayers") {
+            if (view_.tailOwnsPlayers) {
+                JsonValue list = JArr();
+                list.arr = view_.tailOnline;
+                return list;
+            }
             JsonValue players = plugin_.Players();
             JsonValue list = JArr();
             if (players.type == JsonValue::Array)
