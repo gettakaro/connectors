@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.0](https://github.com/gettakaro/connectors/compare/scum-v0.1.0...scum-v0.2.0) (2026-10-26)
+
+
+### Features
+
+* **scum:** report Game Profile (game, connector, build, icon) ([#556](https://github.com/gettakaro/connectors/issues/556)) ([3a9ac5e](https://github.com/gettakaro/connectors/commit/3a9ac5eec2b98c2f6db611b5e1155474850b8520))
+
+
+### Bug Fixes
+
+* **scum:** download the pinned UE4SS from its durable experimental release ([#645](https://github.com/gettakaro/connectors/issues/645)) ([84b250f](https://github.com/gettakaro/connectors/commit/84b250f56171f325ea6e2fc420fffec9b5a89074))
+* **scum:** name the map dimension in event positions on protocol v1 ([#628](https://github.com/gettakaro/connectors/issues/628)) ([0e30598](https://github.com/gettakaro/connectors/commit/0e305987a146cd23c5096d7523273bea3b9a288d))
+
+
+### Tests
+
+* **scum:** match the startup log line for any release version ([#619](https://github.com/gettakaro/connectors/issues/619)) ([b52cdf2](https://github.com/gettakaro/connectors/commit/b52cdf2bc9d1c07176cd9577ef567523c6b971c2))
+
 ## 0.1.0 (2026-10-15)
 
 
