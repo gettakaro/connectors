@@ -1,6 +1,7 @@
 #include "conan/events.h"
 
 #include "common.h"
+#include "conan/command_probe.h"
 #include "conan/events_payload.h"
 #include "conan/hook_dispatch.h"
 #include "conan/identity.h"
@@ -517,7 +518,13 @@ bool OnChat(const Call& c, void*) {
     if (!data) return true;
     if (rd<uint8_t>((uintptr_t)data + ChatRpc::kGenerated)) return true;  // system lines, not a player
     PlayerId id;
-    if (!IdentityOf(c.obj, id)) {
+    const bool identified = IdentityOf(c.obj, id);
+    // Research probe (#205), off unless configured: a claimed command is vetoed and sends no event.
+    if (cmdprobe::Enabled() &&
+        cmdprobe::Offer(id, identified, UER::ReadFString((uintptr_t)data + ChatRpc::kChannel, 64),
+                        UER::ReadFString((uintptr_t)data + ChatRpc::kMessage, 4096)))
+        return false;
+    if (!identified) {
         Sh().st.unknownChat++;
         return true;
     }
@@ -851,6 +858,7 @@ void StartEvents(const EventsOptions& o) {
         s.o = o;
     }
     if (o.hooks) SubscribeAll();
+    if (o.hooks) cmdprobe::Start();
     s.worker = std::thread(WorkerLoop);
     LogTailOptions lo;
     lo.path = ServerLogPath(o.savedDir);
@@ -876,13 +884,14 @@ void StopEvents() {
     s.cv.notify_all();
     if (s.worker.joinable()) s.worker.join();
     if (s.logtail) s.logtail->Stop();
+    cmdprobe::Stop();
 }
 
 std::string EventsHealthJson() {
     Stats& st = Sh().st;
     auto n = [](const std::atomic<uint64_t>& a) { return (double)a.load(std::memory_order_relaxed); };
-    return takaro::ObjBuilder()
-        .B("namesReady", g_namesReady.load())
+    takaro::ObjBuilder b;
+    b.B("namesReady", g_namesReady.load())
         .Raw("emitted", takaro::ObjBuilder()
                             .N("player-connected", n(st.connected))
                             .N("player-disconnected", n(st.disconnected))
@@ -907,8 +916,9 @@ std::string EventsHealthJson() {
         .N("textConversions", n(st.textConversions))
         .N("deathHandlerMaxUs", n(st.deathHandlerMaxNs) / 1000.0)
         .Raw("hooks", HookDispatch::HealthJson())
-        .Raw("logtail", Sh().logtail ? Sh().logtail->HealthJson() : "null")
-        .Done();
+        .Raw("logtail", Sh().logtail ? Sh().logtail->HealthJson() : "null");
+    if (cmdprobe::Enabled()) b.Raw("commandProbe", cmdprobe::HealthJson());
+    return b.Done();
 }
 
 }  // namespace conan
