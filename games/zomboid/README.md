@@ -1,8 +1,8 @@
 # Takaro Project Zomboid Connector
 
-A server-side-only Java agent (version **1.0.0**) that connects a Project Zomboid Build 42
-dedicated server to Takaro. Tested against a **42.20.4 b0bbce05d5** dedicated server; players
-do not install anything and there is no Workshop item.
+A server-side-only Java agent that connects a Project Zomboid Build 42 dedicated server to
+Takaro. Current releases are built for and tested against **42.21.0 (4a0e9546ec)**, the current
+`public` branch; players do not install anything and there is no Workshop item.
 
 ## Install
 
@@ -22,17 +22,17 @@ You need:
 
 ### 2. Download the connector
 
-Download **`takaro-zomboid-agent-linux-42.21.0-<version>.jar`** from the latest
-`zomboid-vX.Y.Z` release on the releases page:
-
-> https://github.com/gettakaro/connectors/releases
-
-Direct link pattern:
-`https://github.com/gettakaro/connectors/releases/download/zomboid-v<version>/takaro-zomboid-agent-linux-42.21.0-<version>.jar`
+Download **`takaro-zomboid-agent-linux-42.21.0-<version>.jar`** from the
+[Project Zomboid downloads page](https://takaro.io/connectors/zomboid), or from the latest
+`zomboid-vX.Y.Z` release (not a pre-release) on the
+[GitHub releases page](https://github.com/gettakaro/connectors/releases).
 
 `TakaroConnector-<version>.jar` beside it is the same file under its old name. It is one
-self-contained jar; there is nothing to unzip. Do not use the `zomboid-dev` pre-release; that is
-an untested rolling build.
+self-contained jar; there is nothing to unzip. Do not use the `zomboid-dev` or `pr-…`
+pre-releases; those are untested builds.
+
+To check the download, fetch `SHA256SUMS` from the same release and run
+`sha256sum -c --ignore-missing SHA256SUMS` in the download folder.
 
 **Supported server build:** Project Zomboid 42.21.0, Steam build 25485538 (the current `public`
 branch). The connector checks the server jar when it starts and refuses to hook another build
@@ -109,7 +109,7 @@ without a restart. `logEvents` and `debugCatalog` (extra diagnostics in the log)
 ### 6. Check that it worked
 
 The connector writes its own log to `Takaro/takaro-agent.log` and mirrors it to the server
-console. In order, you should see:
+console. Every line starts with `[Takaro]`. In order, you should see:
 
 ```
 premain: Takaro Project Zomboid connector (M2)
@@ -118,14 +118,23 @@ config: loaded /home/steam/Zomboid/Takaro/TakaroConfig.txt
 premain: hooks installed
 first tick reached — starting Takaro connector
 Connecting to Takaro at wss://connect.takaro.io/
-Identified successfully
+Identified successfully, server ID: <id>, protocol 1
 ```
+
+(`protocol 0` instead on a Takaro without protocol version 1.)
+
+The server launcher starts the JVM more than once, so the first one or two `premain` blocks
+can show `target-check: {"result":"no-game-jar", ...}`. That is expected; the block that counts
+is the last one, just before `first tick reached`. On the very first start, `config: loaded`
+reads `config: … not present yet`, and after `first tick reached` the connector logs
+`config: created … with a new identityToken` and the missing-token message described below.
 
 In Takaro, the game server shows as **online**.
 
 If the token is missing or Takaro rejects it, the console shows a block of `*` lines that names
-the file to edit. Fix the token there and save; no restart needed. Emptying the token
-disconnects the server from Takaro.
+the file to edit (`registrationToken not set, …` or
+`Takaro rejected identify: invalid_args Invalid registrationToken provided.`). Fix the token
+there and save; no restart needed. Emptying the token disconnects the server from Takaro.
 
 If the `target-check` line says `"result":"refuse"`, your server is a different Project Zomboid
 build from the one this jar was built for and no hooks were installed. Use the release built for
@@ -136,6 +145,10 @@ your build, or set `TAKARO_TARGET_POLICY=warn` to run it anyway (the hooks may b
 **Stop the server first.** Replace only `Takaro/TakaroConnector.jar` with the new jar (renamed to
 `TakaroConnector.jar`) and start the server again. Your `Takaro/TakaroConfig.txt` is never
 touched. Never swap the jar under a running server.
+
+When you update Project Zomboid itself, update the connector too: each release is built for
+one game build (it is in the file name), and a jar built for another build logs
+`"result":"refuse"` and stays inactive (see step 6).
 
 ## What works, what doesn't
 
@@ -177,7 +190,7 @@ timed-ban expiry, shutdown and the zombie-kill event.
 | Entity kill event | ✅ | Proven with a real zombie kill; the weapon used is included. A bare-handed kill reports no weapon. Rate-limited to about 20 per second so a horde cannot flood Takaro. |
 | Log events | ⚠️ | Server log lines are forwarded, but **off by default** — set `logEvents=true` (or `TAKARO_LOG_EVENTS=true`) to turn them on. |
 | Map | ⚠️ | Needs Takaro protocol v1 (not yet on takaro.io). Takaro shows your server's own world map (the picture the in-game map draws, read from the game install) with player dots. Ground floor only; areas added by map mods show as grey. |
-| Game name, icon and version | ✅ | Takaro shows the server as Project Zomboid with its icon, the running game build and the connector version (needs Takaro protocol v1). |
+| Game name, icon and version | ✅ | Takaro shows the server as Project Zomboid with its icon, the running game build and the connector version (needs Takaro protocol v1). Not in release 1.4.0; it comes with the next release. |
 | Discord chat bridge | ⚠️ | Not verified in a live test. The underlying chat in both directions works, so it is expected to, but it was not proven. |
 | Shop & economy | ⚠️ | Not verified in a live test. The pieces it needs — item catalogue, give an item, player inventory — are all proven, but the shop itself was not exercised. |
 
