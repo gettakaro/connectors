@@ -92,7 +92,7 @@ Tested on Enshrouded 1.0, game build 1273043, on 2026-10-26.
 | Player list and lookup | ✅ | Character name and Steam ID; lookup works offline too. |
 | Player location | ✅ | |
 | Player inventory | ✅ | |
-| Give an item | ✅ | Split into stacks of at most 64. |
+| Give an item | ✅ | Split into stacks of at most 64. A quality of 1-255 sets the item level. |
 | Item catalogue | ✅ | In-game names. |
 | Entity catalogue | ✅ | In-game names, e.g. Rat, Hollow Wretch, Emily Fray. Creatures the game never names are left out. |
 | Locations | ✅ | In-game map names, e.g. Rookmore, Braelyn Bridge. |
