@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.5.0...minecraft-v0.6.0) (2026-10-26)
+
+
+### Features
+
+* **minecraft:** report the game profile and connector identity to Takaro ([#554](https://github.com/gettakaro/connectors/issues/554)) ([6a647bf](https://github.com/gettakaro/connectors/commit/6a647bfb203dcb1d92fb54a5364cf3a754664e1f))
+
+
+### Bug Fixes
+
+* **minecraft:** report failed gives and teleports, lift expired timed bans ([#644](https://github.com/gettakaro/connectors/issues/644)) ([a81ee40](https://github.com/gettakaro/connectors/commit/a81ee4074ccc5d4d938fd98bfbd4c6a922fd22a9))
+
+
+### Documentation
+
+* **minecraft:** re-verify the README on Fabric, Paper and NeoForge ([#593](https://github.com/gettakaro/connectors/issues/593)) ([5ec7e21](https://github.com/gettakaro/connectors/commit/5ec7e215253cf1b8063441451ccf964ad6f55637))
+
 ## [0.5.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.4.0...minecraft-v0.5.0) (2026-10-18)
 
 
