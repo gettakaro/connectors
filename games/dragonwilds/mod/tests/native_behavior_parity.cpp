@@ -517,6 +517,27 @@ int main() {
             locationDown = false;
         }
 
+        // ---- a live leave is the hooks' to report: reconcile waits one pass for their event -------------
+        {
+            auto join = h.engine->MapEvent(Json{{"seq", 0}, {"type", "player-connected"}, {"data", {{"player", {{"gameId", A}, {"name", "Limon"}}}}}}.dump());
+            Check(static_cast<bool>(h.store->AdmitSynthetic(join.frame)) && static_cast<bool>(h.engine->ObserveAdmitted(join)), "join admitted");
+            h.Open();  // past the 30 s join grace, which would otherwise hide what this block checks
+            Check(h.engine->ReconcileOnline(PlayersJson().dump(), "boot").empty(), "live: nothing sent");
+            Check(h.engine->ReconcileOnline("[]", "boot").empty(), "left since the last pass: the hook's event is still due");
+            auto leave = h.engine->MapEvent(Json{{"seq", 0}, {"type", "player-disconnected"}, {"data", {{"player", {{"gameId", A}, {"name", "Limon"}}}}}}.dump());
+            Check(static_cast<bool>(h.store->AdmitSynthetic(leave.frame)) && static_cast<bool>(h.engine->ObserveAdmitted(leave)), "hook leave admitted");
+            Check(h.engine->ReconcileOnline("[]", "boot").empty(), "hook reported the leave: no second player-disconnected");
+
+            Check(static_cast<bool>(h.store->AdmitSynthetic(join.frame)) && static_cast<bool>(h.engine->ObserveAdmitted(join)), "rejoin admitted");
+            h.Open();
+            Check(h.engine->ReconcileOnline(PlayersJson().dump(), "boot").empty(), "live again");
+            Check(h.engine->ReconcileOnline("[]", "boot").empty(), "first pass after the leave waits");
+            auto missed = h.engine->ReconcileOnline("[]", "boot");
+            Check(missed.size() == 1 && missed[0].type == "player-disconnected" && missed[0].playerId == A,
+                  "a leave the hooks never reported is reconciled on the next pass");
+            Check(static_cast<bool>(h.store->AdmitSynthetic(missed[0].frame)) && static_cast<bool>(h.engine->ObserveAdmitted(missed[0])), "admit");
+        }
+
         // ---- log redaction, noise and grammar (log-noise-ue.test.ts, logTail.test.ts) -------------
         {
             NativeLog::Parser log;
