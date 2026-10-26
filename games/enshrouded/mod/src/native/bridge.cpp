@@ -962,7 +962,8 @@ void Bridge::Reconcile(bool immediate, int64_t now) {
         return;
     }
     auto& online = o_.store->Online();
-    if (online.empty()) {
+    // the log tail owns joins and leaves while it runs; the plugin's player list is not trustworthy then
+    if (online.empty() || tailActive_) {
         reconcilePending_ = false;
         missingStrikes_.clear();
         return;

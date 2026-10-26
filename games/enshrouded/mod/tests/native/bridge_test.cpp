@@ -645,6 +645,14 @@ void LogTailFallback() {
     auto ev = r.Events("player-connected");
     CHECK_EQ(ev.size(), (size_t)1);  // the ring's connect was suppressed while the tail owns joins
     CHECK(!ev.empty() && ev[0].get("payload")->get("data")->get("player")->get("name")->str == "Limon");
+    // the plugin's player list is empty while degraded; reconciliation must not drop the tail's join
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.players = t::J("[]");
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+    r.tr.Drain();
+    CHECK(r.Events("player-disconnected").empty());
     // the hook recovers: the tail switches off
     {
         std::lock_guard<std::mutex> g(r.fake.mu);
