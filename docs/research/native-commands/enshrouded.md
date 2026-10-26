@@ -20,7 +20,7 @@ The issue cites dedicated-server revision `1024233` and `ChatSystem::addMessage`
 - The public branch has since moved to the 1.0 hotfix, game build `1273043` (Steam build
   26083076). Steam clients only join a server on the same build (checked: a 1273043 client lists a
   1269579 server as "Version Mismatch" and cannot join), the 1267041 depot manifest is no longer
-  served anonymously by Steam, and the support target for 1273043 is open in #582.
+  served anonymously by Steam, and the support target for 1273043 landed in #582.
 
 So every static and live result below is for **game build 1273043**. `1024233` was not
 re-examined. In 1.0, `addMessage` lives at RVA `0x90b330` with a different prologue, and its
@@ -218,8 +218,7 @@ What this shows:
   `rejected`. Nothing is sent to Takaro, and a stub receipt is not Takaro execution.
 - **Reply:** a type-4 notice queued on the server thread for the sender's machine only.
 - **Safety gates:** compiled only with `TAKARO_COMMAND_PROBE=1`; armed only on game build
-  `1273043` with the 1.0 chat and session layout, which needs that build's game data (#582, or a
-  `1273043` section in `takaro/enshrouded-gamedata.json`); inert without the catalog file.
+  `1273043` with the 1.0 chat and session layout, which needs that build's game data (shipped since #582); inert without the catalog file.
   Server-thread work is memory reads and queueing: catalog parsing, the account-cache snapshot,
   `plugin.log` and the probe log all run on the probe thread, and the shared lock is held only to
   swap pointers and queues. A catalog file that exists but cannot be read or parsed keeps the
