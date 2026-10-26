@@ -869,6 +869,24 @@ void HandleChat(void* self, void* params) {
     PluginLog("events: chat-message from %s: %s", id.gameId.c_str(), msg.c_str());
 }
 
+// World position of an actor, or of the actor that owns a component (game thread only).
+bool ActorPosition(void* obj, double& x, double& y, double& z) {
+    if (!ValidObject(obj)) return false;
+    void* actor = obj;
+    if (PropOffOf(obj, "RootComponent") < 0) {
+        void* outer = Reflect::ObjOuter(obj);
+        if (!outer || outer == obj || !ValidObject(outer)) return false;
+        actor = outer;
+    }
+    void* root = nullptr;
+    if (!ReadAt(actor, PropOffOf(actor, "RootComponent"), root) || !ValidObject(root)) return false;
+    double v[3];
+    if (!ReadAt(root, PropOffOf(root, "RelativeLocation"), v)) return false;
+    if (v[0] == 0.0 && v[1] == 0.0 && v[2] == 0.0) return false;
+    x = v[0]; y = v[1]; z = v[2];
+    return true;
+}
+
 void HandleDeathTelemetry(void* self, void* func, void* params) {
     // The single parameter is an FDominionDamageEvent; its offset in the params block is the
     // parameter property's own offset (0 in practice, but read it reflectively anyway).
@@ -879,9 +897,14 @@ void HandleDeathTelemetry(void* self, void* func, void* params) {
     if (base < 0) base = 0;
     void* dmg = (char*)params + base;
 
+    Ident victim;
+    void* st = PlayerStateOf(self);
+    if (st) IdentFromPlayerState(st, victim);
+    if (!victim.valid()) return;
+
     double x = 0, y = 0, z = 0;
     bool havePos = false;
-    std::string killerEntity;
+    std::string killerEntity, instClass, srcClass;
     Ident attacker;
     if (g_damageStruct) {
         int32_t locOff = PropOff(g_damageStruct, "VictimLocation");
@@ -892,17 +915,32 @@ void HandleDeathTelemetry(void* self, void* func, void* params) {
         }
         int32_t instOff = PropOff(g_damageStruct, "Instigator");
         void* inst = nullptr;
+        bool selfInflicted = false;
         if (instOff >= 0 && ReadAt(dmg, instOff, inst) && ValidObject(inst)) {
-            void* st = PlayerStateOf(inst);
-            if (st) IdentFromPlayerState(st, attacker);
-            if (!attacker.valid()) killerEntity = CreatureDisplayName(inst);
+            instClass = SafeClassName(inst);
+            void* ist = PlayerStateOf(inst);
+            if (ist) IdentFromPlayerState(ist, attacker);
+            // Environment damage (heat, drowning, ...) names the victim's own pawn as instigator.
+            // That is not a killer: no attacker, and the cause comes from the damage source below.
+            if (inst == self || (attacker.valid() && attacker.gameId == victim.gameId)) {
+                attacker = Ident{};
+                selfInflicted = true;
+            }
+            if (!attacker.valid() && !selfInflicted) killerEntity = CreatureDisplayName(inst);
+        }
+        int32_t srcOff = PropOff(g_damageStruct, "Source");
+        void* src = nullptr;
+        if (srcOff >= 0 && ReadAt(dmg, srcOff, src) && ValidObject(src)) {
+            srcClass = SafeClassName(src);
+            if (selfInflicted && killerEntity.empty() && src != self && src != inst && !PlayerStateOf(src))
+                killerEntity = CreatureDisplayName(src);
         }
     }
-    Ident victim;
-    void* st = PlayerStateOf(self);
-    if (st) IdentFromPlayerState(st, victim);
-    if (!victim.valid()) return;
+    if (!instClass.empty() || !srcClass.empty())
+        PluginLog("events: death damage instigator=%s source=%s", instClass.c_str(), srcClass.c_str());
     if (havePos && !MemReadable(dmg, 8)) havePos = false;
+    // Fall damage and kill volumes leave VictimLocation zero: take the victim's own position.
+    if (!havePos) havePos = ActorPosition(self, x, y, z);
     EmitDeath(victim, x, y, z, havePos, attacker, killerEntity, "telemetry");
 }
 

@@ -1,6 +1,7 @@
 #include "native_bridge.h"
 #include "native_transport.h"
 #include "game_profile.h"
+#include "native_map.h"
 #include "native_behavior.h"
 #include "native_persistence.h"
 
@@ -268,6 +269,9 @@ Json MapEvent(const Json& e) {
         if (d.contains("attacker") && d["attacker"].is_object()) {
             try { out["attacker"] = Player(d["attacker"]); } catch (...) {}
         }
+        // A player is never their own killer: environment deaths name the victim as instigator.
+        if (out.contains("attacker") && Str(out["attacker"], "gameId") == Str(out["player"], "gameId"))
+            out.erase("attacker");
         if (d.contains("position")) out["position"] = d["position"];
         if (!out.contains("attacker")) {
             std::string who = Str(out["player"], "name");
@@ -1372,9 +1376,9 @@ std::string GateAction(const std::string& action, const std::string& encodedArgs
             Json raw = Json::parse(r.body);
             if (raw.contains("x") && raw.contains("y") && raw.contains("z") &&
                 raw["x"].is_number() && raw["y"].is_number() && raw["z"].is_number())
-                return Json({{"x", raw["x"]}, {"y", raw["y"]}, {"z", raw["z"]}}).dump();
+                return Json({{"x", raw["x"]}, {"y", raw["y"]}, {"z", raw["z"]}, {"dimension", NativeMap::kDimensionId}}).dump();
         }
-        if (HasLocationWindow(id)) return R"({"x":0,"y":0,"z":0})";
+        if (HasLocationWindow(id)) return Json({{"x", 0}, {"y", 0}, {"z", 0}, {"dimension", NativeMap::kDimensionId}}).dump();
         throw std::runtime_error("getPlayerLocation: " + r.body);
     }
     throw std::runtime_error("native gate action unavailable: " + action);

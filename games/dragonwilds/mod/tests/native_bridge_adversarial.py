@@ -603,11 +603,11 @@ def location_window(cert, key):
         assert 'location unavailable' in run.response('before-window')['error']
         run.command('window:' + player, 'WINDOW')
         run.request('recent-window', 'getPlayerLocation', {'player': {'gameId': player}})
-        assert run.response('recent-window')['payload'] == {'x': 0, 'y': 0, 'z': 0}
+        assert run.response('recent-window')['payload'] == {'x': 0, 'y': 0, 'z': 0, 'dimension': 'overworld'}
         run.request('other-player', 'getPlayerLocation', {'gameId': 'aa11bb22cc33dd44ee55ff6600112233'})
         assert 'location unavailable' in run.response('other-player')['error']
         run.request('real-position', 'getPlayerLocation', {'platformId': 'epic:00000000000000000000000000000003'})
-        assert run.response('real-position')['payload'] == {'x': 1, 'y': 2, 'z': 3}
+        assert run.response('real-position')['payload'] == {'x': 1, 'y': 2, 'z': 3, 'dimension': 'overworld'}
         print('bridge recent join location fallback is scoped to player: pass', flush=True)
     finally:
         run.close()

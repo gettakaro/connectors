@@ -1,5 +1,6 @@
 #include "native_behavior.h"
 #include "game_profile.h"
+#include "native_map.h"
 #include "native_log.h"
 #include "actions.h"
 #include "common.h"
@@ -164,7 +165,8 @@ Json Position(const Json& raw) {
     Json p = Object(raw);
     if (!HasNum(p, "x") || !HasNum(p, "y") || !HasNum(p, "z")) throw std::runtime_error("invalid position");
     Json o = {{"x", Num(p, "x")}, {"y", Num(p, "y")}, {"z", Num(p, "z")}};
-    if (!Str(p, "dimension").empty()) o["dimension"] = Str(p, "dimension");
+    // Dragonwilds has one world; Takaro matches positions to the map Dimension by this id.
+    o["dimension"] = Str(p, "dimension").empty() ? std::string(NativeMap::kDimensionId) : Str(p, "dimension");
     return o;
 }
 // Flat {gameId}/{steamId}/{platformId}/{epicOnlineServicesId}, or nested {player:{...}} /
@@ -350,6 +352,9 @@ Json MapEventData(const std::string& type, const Json& raw) {
         if (!a.empty()) {
             try { out["attacker"] = Player(a); } catch (...) {}
         }
+        // A player is never their own killer: environment deaths name the victim as instigator.
+        if (out.contains("attacker") && Str(out["attacker"], "gameId") == Str(out["player"], "gameId"))
+            out.erase("attacker");
         if (d.contains("position") && d["position"].is_object()) out["position"] = Position(d["position"]);
         // EventPlayerDeath only has a player `attacker`; a creature killer goes into the base `msg`.
         std::string killer = Str(d, "killerEntity");
@@ -726,7 +731,8 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p) {
                 auto it = p.view->locationWindowUntilMs.find(Lower(id));
                 if (it == p.view->locationWindowUntilMs.end() || it->second < WallMs()) call(raw);
                 auto pos = p.view->lastLocationsJson.find(Lower(id));
-                out.payloadJson = pos == p.view->lastLocationsJson.end() ? R"({"x":0,"y":0,"z":0})" : pos->second;
+                out.payloadJson = pos == p.view->lastLocationsJson.end() ? Position(Json{{"x", 0}, {"y", 0}, {"z", 0}}).dump()
+                                                                         : Position(Parse(pos->second)).dump();
             }
         } else if (action == "getPlayerInventory") {
             Json mapped = Json::array();
@@ -1367,6 +1373,7 @@ std::string CapabilityManifestJson(const std::string& gameVersion) {
                              "events.player-disconnected", "events.chat-message", "events.player-death",
                              "events.entity-killed", "events.log"})
         manifest.push_back(Json{{"name", name}});
+    manifest.push_back(Parse(NativeMap::CapabilityJson()));
     manifest.push_back(Parse(GameProfile::CapabilityJson(gameVersion)));
     return manifest.dump();
 }
