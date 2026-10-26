@@ -94,6 +94,20 @@ def test_the_opt_in_runtime_inputs_default_to_the_minecraft_shape() -> None:
     assert verify.index("takaro-maint verify") < verify.index("Save the pinned Steam depots")
 
 
+def test_a_server_too_large_to_cache_is_installed_once_by_the_verify_leg() -> None:
+    """`runtime_large_server`: no build-leg install, no cache, a longer budget."""
+    text = WORKFLOW.read_text()
+
+    declared = re.search(r"\n      runtime_large_server:\n(?P<body>(?:        .*\n)+)", text)
+    assert declared and "default: false" in declared.group("body")
+    install = step(job("build"), "Install the pinned inputs")
+    assert "if: inputs.runtime && !inputs.runtime_depot_cache && !inputs.runtime_large_server" in install
+    verify = job("verify")
+    assert "timeout-minutes: ${{ inputs.runtime_large_server && 60 || 40 }}" in verify
+    # Nothing that size is ever handed to the Actions cache.
+    assert "runtime_large_server" not in step(verify, "Save the pinned Steam depots")
+
+
 def test_the_verify_job_keeps_its_report_even_when_it_fails() -> None:
     verify = job("verify")
 
