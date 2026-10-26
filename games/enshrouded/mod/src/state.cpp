@@ -393,6 +393,10 @@ void PluginState::Housekeep() {
     if (collectingPerms_ && NowMs() - lastPermLineMs_ > 750) FinalizeLoginLocked();
     // held player-connected events go out here, on the plugin thread, never from the game-thread name refresh
     for (auto& p : players_) {
+        if (p.online && p.level >= 0 && p.level != p.levelLogged) {
+            p.levelLogged = p.level;
+            PluginLog("character level: steam=%s persona=%s level=%d", p.steamId.c_str(), p.name.c_str(), p.level);
+        }
         if (!p.online || !p.connectPending) continue;
         if (!p.characterName.empty()) {
             EmitConnectedLocked(p);
@@ -420,7 +424,10 @@ std::string PluginState::PlayerJsonLocked(const PlayerRecord& p, bool online) co
     for (size_t i = 0; i < p.permissions.size(); i++) perms += (i ? "," : "") + JsonStr(p.permissions[i]);
     perms += "]";
     const std::string& shown = p.characterName.empty() ? p.name : p.characterName;
-    return "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(shown) + ",\"steamId\":" + JsonStr(id) +
+    std::string level = p.level < 0 ? "" : ",\"level\":" + std::to_string(p.level) + ",\"experience\":" +
+                                               std::to_string(p.experience) + ",\"experienceRequired\":" +
+                                               std::to_string(p.experienceRequired);
+    return "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(shown) + ",\"steamId\":" + JsonStr(id) + level +
            ",\"peerId\":" + JsonStr(p.peerId) + ",\"group\":" + JsonStr(p.group) + ",\"permissions\":" + perms +
            ",\"connectedAt\":" + JsonStr(p.connectedAt) + ",\"online\":" + (online ? "true" : "false") + "}";
 }
@@ -457,6 +464,16 @@ void PluginState::SetCharacterName(const std::string& persona, const std::string
         if (p.online && p.name == persona && p.characterName != character) {
             p.characterName = character;
             PluginLog("character name: steam=%s persona=%s character=%s", p.steamId.c_str(), persona.c_str(), character.c_str());
+        }
+}
+
+void PluginState::SetLevel(const std::string& persona, int level, int experience, int experienceRequired) {
+    Guard g(lock_);
+    for (auto& p : players_)
+        if (p.online && p.name == persona) {
+            p.level = level;
+            p.experience = experience;
+            p.experienceRequired = experienceRequired;
         }
 }
 

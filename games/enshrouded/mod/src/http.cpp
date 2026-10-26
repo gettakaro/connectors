@@ -472,7 +472,7 @@ bool RunCommand(const std::string& line, std::string& out) {
     if (cmd == "help") {
         out = "commands: help | version | players | say <text> | whisper <player> <text> | location <player> | "
               "teleport <player> <x> <y> <z> | tp <player> <toPlayer> | inventory <player> | give <player> <itemCode> [amount] [level] | "
-              "item <search> | kick <player> | save-and-shutdown. <player> = SteamID64 or exact name.";
+              "item <search> | kick <player> | levels | level <player> | save-and-shutdown. <player> = SteamID64 or exact name.";
         return true;
     }
     if (cmd == "version") {
@@ -485,6 +485,26 @@ bool RunCommand(const std::string& line, std::string& out) {
         out = std::to_string(v.arr.size()) + " online";
         for (auto& p : v.arr)
             out += "\n" + (p.get("name") ? p.get("name")->str : "?") + " (" + (p.get("steamId") ? p.get("steamId")->str : "?") + ")";
+        return true;
+    }
+    if (cmd == "levels" || (cmd == "level" && a.size() == 2)) {
+        JsonValue v;
+        JsonParse(st.PlayersJson(), v);
+        auto str = [](const JsonValue& p, const char* k) { return p.get(k) ? p.get(k)->str : std::string("?"); };
+        std::string want, wantName;
+        if (a.size() == 2 && !st.FindOnline(a[1], want, wantName)) return out = "player not online: " + a[1], false;
+        std::string rows;
+        int n = 0;
+        for (auto& p : v.arr) {
+            std::string id = str(p, "steamId");
+            if (!want.empty() && want != id) continue;
+            n++;
+            rows += "\n" + str(p, "name") + " (" + id + "): " +
+                    (p.get("level") ? "level " + str(p, "level") + ", experience " + str(p, "experience") + "/" +
+                                          str(p, "experienceRequired")
+                                    : std::string("level not read yet"));
+        }
+        out = std::to_string(n) + " online" + rows;
         return true;
     }
     if ((cmd == "say" || cmd == "broadcast") && a.size() >= 2) {

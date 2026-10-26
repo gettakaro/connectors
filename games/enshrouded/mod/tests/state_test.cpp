@@ -71,5 +71,14 @@ int main(){
  L("[online] Removed peer 6(7)");
  { std::string e=st.EventsJson(0,5000); size_t qc=e.rfind("\"type\":\"player-connected\""), qd=e.rfind("\"type\":\"player-disconnected\"");
    assert(connects()==c0+3 && qc<qd && e.find("Erin",qc)!=std::string::npos); }
+ // character level: stored from the game thread, listed in getPlayers JSON, absent until read
+ st.SetConnectNameWaitMs(0);
+ login("7(8)","76561190000000007","8","Finn");
+ st.Housekeep();
+ assert(st.PlayersJson().find("\"level\"")==std::string::npos);
+ st.SetLevel("Finn",12,340,900);
+ { std::string j=st.PlayersJson(); assert(j.find("\"level\":12,\"experience\":340,\"experienceRequired\":900")!=std::string::npos); }
+ st.SetLevel("Nobody",5,1,2);  // not online: ignored
+ assert(count2(st.PlayersJson(),"\"level\":")==1);
  std::cout<<"PASS\n";
 }
