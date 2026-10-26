@@ -1,5 +1,6 @@
 import { logger } from '../logger.js';
 import { schemaFallbackForAction, unsupportedActionError } from '../takaro/coverage.js';
+import { gameIconResponse, normalizeGameVersion } from '../takaro/gameProfile.js';
 import type { GameServerAction } from '../takaro/protocol.js';
 import type { CommandResult, TShockBan, TShockPlayer, TShockStatus } from '../tshock/client.js';
 import { listTerrariaItems, resolveTerrariaItemCode, type TerrariaItemCatalogEntry } from './itemCatalog.js';
@@ -27,11 +28,19 @@ export interface AdapterOptions {
 
 export class TerrariaAdapter {
   private players = new Map<string, TShockPlayer>();
+  private gameVersionValue: string | null = null;
 
   constructor(
     private readonly tshock: TShockApi,
     private options: AdapterOptions,
+    /** Called when TShock reports a different game build than before. */
+    private readonly onGameVersion: (version: string) => void = () => undefined,
   ) {}
+
+  /** The game build TShock last reported, or null before the first successful status read. */
+  gameVersion(): string | null {
+    return this.gameVersionValue;
+  }
 
   updateOptions(options: AdapterOptions): void {
     this.options = options;
@@ -50,6 +59,8 @@ export class TerrariaAdapter {
     switch (action) {
       case 'testReachability':
         return this.testReachability();
+      case 'getGameIcon':
+        return gameIconResponse();
       case 'getPlayers':
         return this.listPlayersForTakaro();
       case 'getPlayer':
@@ -108,10 +119,18 @@ export class TerrariaAdapter {
     }
   }
 
+  private recordGameVersion(status: TShockStatus): void {
+    const version = normalizeGameVersion(status?.serverversion);
+    if (!version || version === this.gameVersionValue) return;
+    this.gameVersionValue = version;
+    this.onGameVersion(version);
+  }
+
   private async testReachability(): Promise<{ connectable: boolean; reason: string | null }> {
     try {
       const token = await this.tshock.testToken();
       const status = await this.tshock.status();
+      this.recordGameVersion(status);
       return {
         connectable: token.success && typeof status === 'object',
         reason: token.success ? null : token.rawResult,

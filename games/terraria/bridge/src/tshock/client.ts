@@ -3,6 +3,8 @@ import { terrariaIdentity } from '../terraria/identity.js';
 
 export interface TShockStatus {
   name?: string;
+  /** The Terraria build, for example "v1.4.5.8". */
+  serverversion?: string;
   port?: number;
   playercount?: number;
   players?: unknown;

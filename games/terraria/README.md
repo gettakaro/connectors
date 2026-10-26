@@ -255,6 +255,7 @@ client-adjacent proof below is still the one recorded on 6.1.0 and has not been 
 | Entity kill event | ✅ | Reaches Takaro with the NPC and a weapon. Needs the plugin. The weapon is the killer's held item at that moment, not the thing that actually dealt the damage — see known issues. |
 | Log events | ⚠️ | The bridge ships TShock log lines, but it must filter its own REST traffic out (`logExcludePatterns`) or it floods Takaro's rate limiter. Not verified in a live test. |
 | Map | ⚠️ | Needs Takaro protocol v1 (not yet on takaro.io; proven only on Takaro staging). The plugin renders the world into `mapDir` with the game's map colours and the bridge serves it as Takaro's map image. On protocol 0 the map stays disabled. |
+| Game profile | ✅ | Takaro shows the server as Terraria with its icon, the Terraria build and the connector version. Needs Takaro protocol v1 for the name, build and icon. |
 | Discord chat bridge | ⚠️ | Nothing connector-side blocks it, but it was never tried in a live test. |
 | Shop & economy | ⚠️ | Item delivery goes through `giveItem`, which is implemented, but buying and currency were never tried in a live test. |
 

@@ -8,6 +8,7 @@ import { logger } from './logger.js';
 import { LogTailer } from './logs/logTailer.js';
 import { buildManifest } from './takaro/capabilities.js';
 import { TakaroWsClient } from './takaro/client.js';
+import { CONNECTOR_IDENTITY, GAME_DISPLAY_NAME, gameIconResponse } from './takaro/gameProfile.js';
 import { MapImageError, MapImageStore } from './takaro/mapImage.js';
 import { logConnectionState } from './takaro/connectionLog.js';
 import { identifyErrorStatus, identifyErrorSummary, identifyErrorText } from './takaro/identifyError.js';
@@ -45,6 +46,9 @@ async function main(): Promise<void> {
     commandAllowlistPrefixes: config.commandAllowlistPrefixes,
     enableShutdown: config.enableShutdown,
     serverChatName: config.serverChatName,
+  }, (version) => {
+    // A new build after identify (TShock restarted on an upgrade) replaces the manifest.
+    if (takaro.sendCapabilities()) logger.info(`Terraria ${version} reported by TShock; game profile updated`);
   });
   const mapImage = new MapImageStore(config.mapDir);
   await mapImage.refresh();
@@ -54,7 +58,7 @@ async function main(): Promise<void> {
     name: config.serverName,
   }, undefined, undefined, {
     offerV1: config.protocolVersion === 1,
-    manifest: () => buildManifest(mapImage.current()),
+    manifest: () => buildManifest(mapImage.current(), adapter.gameVersion()),
   });
 
   // Reachability from the startup probe only. It seeds /health for the window before the
@@ -112,7 +116,7 @@ async function main(): Promise<void> {
     logger.error(`Takaro rejected the capability manifest: ${JSON.stringify(error)}`);
   });
   takaro.on('capabilitiesAccepted', () => {
-    logger.info(`Takaro accepted the capability manifest (map revision ${mapImage.current()?.revision ?? 'none'})`);
+    logger.info(`Takaro accepted the capability manifest (game ${adapter.gameVersion() ?? 'version unknown'}, map revision ${mapImage.current()?.revision ?? 'none'})`);
   });
   takaro.on('identifyError', (payload) => {
     // Only the summary: Takaro's error object can carry its own request, auth header included.
@@ -141,7 +145,7 @@ async function main(): Promise<void> {
   logConnectionState(takaro);
   takaro.on('identified', () => {
     const map = mapImage.current();
-    logger.info(`Takaro protocol version ${takaro.getProtocolVersion()}${takaro.getProtocolVersion() === 1 ? `, map ${map ? `revision ${map.revision} (${map.width}x${map.height})` : 'not rendered yet'}` : ''}`);
+    logger.info(`Takaro protocol version ${takaro.getProtocolVersion()}, ${CONNECTOR_IDENTITY.connector.name} ${CONNECTOR_IDENTITY.connector.version}${takaro.getProtocolVersion() === 1 ? `, game profile ${GAME_DISPLAY_NAME} ${adapter.gameVersion() ?? '(version unknown)'} icon ${gameIconResponse().revision}, map ${map ? `revision ${map.revision} (${map.width}x${map.height})` : 'not rendered yet'}` : ''}`);
     presence.reset();
     poller.reset();
     poller.start();
