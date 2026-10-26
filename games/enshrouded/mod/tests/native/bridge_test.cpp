@@ -860,6 +860,33 @@ void ProtocolV1UnknownBuild() {
     CHECK(profile && !profile->get("parameters")->get("version") && profile->get("parameters")->get("icon"));
 }
 
+void UnsupportedGameBuildReason() {
+    t::Group("bridge-unsupported-game-build");
+    Rig r("unsupported-build");
+    r.Start();
+    r.Connect();
+    const std::string notice =
+        "game build 9999999 is not supported by plugin 0.8.1: no gamedata section for this build (this plugin has 1267041, "
+        "1273043); the item and entity tables are for another build; capabilities off: giveItem, listItems; update the "
+        "plugin to a release that supports this game build";
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.health = t::J(R"({"status":"ok","gameBuild":"9999999","capabilities":{"giveItem":"degraded","listItems":"degraded","players":"ok"},"gameSupport":")" +
+                             notice + "\"}");
+    }
+    JsonValue resp = r.Call("testReachability", "{}");
+    const JsonValue* p = resp.get("payload");
+    CHECK_MSG(p && p->get("connectable") && p->get("connectable")->b && p->get("reason") && p->get("reason")->str == notice,
+              JsonDump(resp));
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);  // a supported build sends "" and keeps the capability list
+        r.fake.health = t::J(R"({"status":"ok","capabilities":{"kick":"degraded"},"gameSupport":""})");
+    }
+    resp = r.Call("testReachability", "{}");
+    p = resp.get("payload");
+    CHECK_MSG(p && p->get("reason") && p->get("reason")->str == "capabilities not ok: kick=degraded", JsonDump(resp));
+}
+
 void ProtocolV1Responses() {
     t::Group("bridge-v1-responses");
     Rig r("v1-responses");
@@ -1049,6 +1076,7 @@ void RunBridgeTests() {
     CorruptOutbox();
     ProtocolV1Identify();
     ProtocolV1UnknownBuild();
+    UnsupportedGameBuildReason();
     ProtocolV1Responses();
     ProtocolV1Events();
     ProtocolV1Fallbacks();

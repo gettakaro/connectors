@@ -294,6 +294,9 @@ private:
             caps += (caps.empty() ? "" : ", ") + kv.first + "=" + JsString(&kv.second);
         }
         std::string capText = caps.empty() ? "" : "capabilities not ok: " + caps;
+        // an unsupported game build names itself first: that, not each capability, is what the owner has to fix
+        const JsonValue* support = health.get("gameSupport");
+        if (support && support->type == JsonValue::String && !support->str.empty()) capText = support->str;
         JsonValue r = JObj();
         if (status == "ok") {
             Put(r, "connectable", JBool(true));

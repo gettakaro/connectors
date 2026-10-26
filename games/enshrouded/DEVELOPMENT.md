@@ -166,7 +166,10 @@ and `world.cpp` (written for 1024233).
 
 0. Add a `builds.<new build>` section to `mod/gamedata/enshrouded-gamedata.json` (diff the new exe
    against the previous one: string anchors, the ECS job table and the reflection field descriptors
-   `{name*, len, type*, offset}` give most values), and regenerate the static tables above.
+   `{name*, len, type*, offset}` give most values), and regenerate the static tables above. When the
+   new build's `tkeen::ItemInfo` and TemplateResource exports still match the compiled tables, set
+   `layout.itemTables` to the build they were exported on (`"1267041"`): that switches the catalogue and
+   `giveItem` back on without a plugin release.
 1. `takaro-maint steam pin --game enshrouded --metadata` to see what moved, then
    `--record-files … --write` to re-pin the record (id and `revision` follow the new game
    build, so the target is a new file).
@@ -224,6 +227,12 @@ cd sidecar && npm ci && npm run typecheck && npm test
 `DEBUG_CORRUPT_SIG=<signature name> ./mod/build.sh` builds a debug DLL into `mod/build-debug/` with one
 signature corrupted, to exercise the degrade self-check. That is exactly what
 `takaro-maint verify --negative` builds, so the compatibility claim is falsifiable.
+
+`DEBUG_GAME_BUILD=<n> ./mod/build.sh` builds a debug DLL into `mod/build-debug/` that treats the server as
+game build `<n>`: no gamedata section, the item tables off, and the signature fallbacks run against the real
+binary, exactly as on a game build the plugin does not know. `plugin.log` then has one
+`DEGRADED: game build <n> is not supported by plugin ...` line, `/health` carries the same text in
+`gameSupport`, and it is the testReachability `reason` and part of the `version` and `help` console output.
 
 ## Deploy
 

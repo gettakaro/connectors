@@ -42,6 +42,11 @@ public:
     void SetCapability(const std::string& name, const std::string& status, const std::string& detail = "");
     std::string CapabilitiesJson() const;
     std::string CapabilityDetailsJson() const;
+    // Game build support, set once at startup. `knownBuilds` lists the builds this plugin has gamedata for.
+    void SetGameSupport(const std::string& build, bool gamedataSection, bool itemTables, const std::string& knownBuilds);
+    // Empty when the running game build is supported; otherwise one line for owners: the build, why it is not
+    // supported, the capabilities that are off right now, and what to do.
+    std::string GameSupportNotice() const;
 
     void PushEvent(const std::string& type, const std::string& dataJson);
     std::string EventsJson(uint64_t since, size_t limit) const;
@@ -88,6 +93,10 @@ private:
 
     mutable SrwLock lock_;
     std::map<std::string, std::pair<std::string, std::string>> caps_;
+    struct GameSupport {
+        bool set = false, gamedataSection = true, itemTables = true;
+        std::string build, knownBuilds;
+    } support_;
     std::deque<EventRecord> events_;
     uint64_t seq_ = 0;
 

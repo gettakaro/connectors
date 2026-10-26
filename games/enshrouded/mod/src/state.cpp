@@ -41,6 +41,32 @@ std::string PluginState::CapabilityDetailsJson() const {
     return o + "}";
 }
 
+void PluginState::SetGameSupport(const std::string& build, bool gamedataSection, bool itemTables,
+                                 const std::string& knownBuilds) {
+    Guard g(lock_);
+    support_ = {true, gamedataSection, itemTables, build, knownBuilds};
+}
+
+std::string PluginState::GameSupportNotice() const {
+    Guard g(lock_);
+    if (!support_.set || (support_.gamedataSection && support_.itemTables)) return "";
+    std::string o = "game build " + support_.build + " is not supported by plugin " TAKARO_PLUGIN_VERSION ": ";
+    if (!support_.gamedataSection)
+        o += "no gamedata section for this build (this plugin has " +
+             (support_.knownBuilds.empty() ? std::string("none") : support_.knownBuilds) + ")";
+    if (!support_.itemTables)
+        o += std::string(support_.gamedataSection ? "" : "; ") + "the item and entity tables are for another build";
+    std::string off;
+    for (auto& kv : caps_) {
+        if (kv.second.first != "degraded") continue;
+        const std::string& d = kv.second.second;  // still starting up is not "off"
+        if (d.find("initializing") != std::string::npos || d.find("waiting for") != std::string::npos) continue;
+        off += (off.empty() ? "" : ", ") + kv.first;
+    }
+    return o + "; capabilities off: " + (off.empty() ? std::string("none") : off) +
+           "; update the plugin to a release that supports this game build";
+}
+
 void PluginState::PushEvent(const std::string& type, const std::string& dataJson) {
     // caller may or may not hold lock_; use a separate small critical path
     EventRecord e{0, type, dataJson, IsoNowUtc()};
