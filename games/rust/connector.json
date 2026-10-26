@@ -4,7 +4,7 @@
   "assetMode": "all",
   "requirements": [
     "Carbon or Oxide/uMod",
-    "Ability to set environment variables on the server process",
+    "Access to the server's plugin and config folders",
     "Takaro registration token"
   ],
   "assets": [
