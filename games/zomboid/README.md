@@ -133,8 +133,8 @@ In Takaro, the game server shows as **online**.
 
 If the token is missing or Takaro rejects it, the console shows a block of `*` lines that names
 the file to edit (`registrationToken not set, …` or
-`Takaro rejected identify: Invalid registrationToken provided …`). Fix the token there and
-save; no restart needed. Emptying the token disconnects the server from Takaro.
+`Takaro rejected identify: invalid_args Invalid registrationToken provided.`). Fix the token
+there and save; no restart needed. Emptying the token disconnects the server from Takaro.
 
 If the `target-check` line says `"result":"refuse"`, your server is a different Project Zomboid
 build from the one this jar was built for and no hooks were installed. Use the release built for
