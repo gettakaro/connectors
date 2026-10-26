@@ -98,7 +98,9 @@ using LogSink = std::function<void(const std::string&)>;
 
 // Port of the sidecar's mapEvent. nullopt means the event cannot be sent
 // safely and is skipped (logged), so one bad record never blocks the ring.
-inline std::optional<json::Value> map_event(const gate::Event& e, KnownPlayers& known) {
+// `dimension` (protocol v1 with a declared map) is named in event positions.
+inline std::optional<json::Value> map_event(const gate::Event& e, KnownPlayers& known,
+                                            const std::string& dimension = {}) {
   auto name_of = [&](const std::string& id, const std::string& name) {
     return !name.empty() && name != id ? name : known.name(id);
   };
@@ -144,9 +146,12 @@ inline std::optional<json::Value> map_event(const gate::Event& e, KnownPlayers& 
   if (e.type == "player-death" && valid_steam64(e.attacker_id) && e.attacker_id != e.id)
     data.set("attacker", player_json(e.attacker_id, known.name(e.attacker_id)));
   if (e.type == "player-death" && e.position && std::isfinite(e.position->x) && std::isfinite(e.position->y) &&
-      std::isfinite(e.position->z))
-    data.set("position", json::obj({{"x", json::num(e.position->x)}, {"y", json::num(e.position->y)},
-                                    {"z", json::num(e.position->z)}}));
+      std::isfinite(e.position->z)) {
+    json::Value position = json::obj({{"x", json::num(e.position->x)}, {"y", json::num(e.position->y)},
+                                      {"z", json::num(e.position->z)}});
+    if (!dimension.empty()) position.set("dimension", json::str(dimension));
+    data.set("position", std::move(position));
+  }
   if (e.type == "entity-killed") {
     if (js_trim(e.entity_code).empty() || js_trim(e.entity_name).empty()) return std::nullopt;
     data.set("entity", json::str(js_trim(e.entity_code)));
@@ -185,6 +190,8 @@ class Bridge {
         adapter_(gate_, bans_, known_) {
     if (!config_.state_dir.empty()) cursor_path_ = config_.state_dir + "/event-cursor.json";
     adapter_.set_game_icon(config_.game_icon);
+    if (auto dimension = map_dimension(config_.map_name)) map_dimension_id_ = dimension->get("id")->as_string();
+    adapter_.set_map_dimension(map_dimension_id_);
     adapter_.set_delivery_waiter([this](uint64_t seq, std::chrono::milliseconds timeout) {
       const auto deadline = std::chrono::steady_clock::now() + timeout;
       while (persisted_.load() < seq && std::chrono::steady_clock::now() < deadline)
@@ -248,6 +255,7 @@ class Bridge {
   KnownPlayers known_;
   BanManager bans_;
   Adapter adapter_;
+  std::string map_dimension_id_;  // the declared map Dimension, empty when the map has none
   std::string cursor_path_;
 
   std::atomic<bool> running_{false};
@@ -351,6 +359,7 @@ class Bridge {
     conn_.close_now();
     identified_ = false;
     protocol_version_ = 0;
+    adapter_.set_protocol_version(0);
     ++epoch_;
     pings_.clear();
     in_flight_.clear();
@@ -539,7 +548,7 @@ class Bridge {
     }
     bool sent = false;
     for (const auto& event : page.events) {
-      const auto data = map_event(event, known_);
+      const auto data = map_event(event, known_, protocol_version_.load() >= 1 ? map_dimension_id_ : std::string());
       if (!data) {
         log("takaro-event-skipped seq=" + std::to_string(event.seq) + " type=" + event.type);
         scan_ = event.seq;
@@ -596,6 +605,7 @@ class Bridge {
       int version = 0;
       if (const auto* v = payload.get("protocolVersion"); v && v->is_number() && v->as_number() == 1) version = 1;
       protocol_version_ = version;
+      adapter_.set_protocol_version(version);
       attempts_ = 0;
       identified_ = true;
       next_pump_ = std::chrono::steady_clock::now();
