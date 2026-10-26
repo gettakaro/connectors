@@ -10,6 +10,8 @@
 
 #ifdef TAKARO_DEBUG_CORRUPT_SIG
 #define TAKARO_PLUGIN_VERSION "0.4.2-debug-corrupt-" TAKARO_DEBUG_CORRUPT_SIG
+#elif defined(TAKARO_DEBUG_GAME_BUILD)
+#define TAKARO_PLUGIN_VERSION "0.0.0-debug-game-build-" TAKARO_DEBUG_GAME_BUILD
 #else
 #define TAKARO_PLUGIN_VERSION "0.8.1" // x-release-please-version
 #endif

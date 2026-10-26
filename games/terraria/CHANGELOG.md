@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.7.0](https://github.com/gettakaro/connectors/compare/terraria-v0.6.0...terraria-v0.7.0) (2026-10-26)
+
+
+### Features
+
+* **terraria:** report the game profile and connector identity to Takaro ([#555](https://github.com/gettakaro/connectors/issues/555)) ([7731664](https://github.com/gettakaro/connectors/commit/77316643eae1e5ecaac2bf7604ae125d8de9df39))
+
+
+### Bug Fixes
+
+* **terraria:** name the map Dimension and drop the fake (0, 0) in getPlayerLocation ([#623](https://github.com/gettakaro/connectors/issues/623)) ([6925629](https://github.com/gettakaro/connectors/commit/69256294597e09153cfb45b0e5d9c451fba2a0fc))
+* **terraria:** report a leave from TShock's disconnect line ([#643](https://github.com/gettakaro/connectors/issues/643)) ([49220c9](https://github.com/gettakaro/connectors/commit/49220c96933a5b25334a04320c48f4388c6dfe6f))
+
+
+### Documentation
+
+* **terraria:** re-verify the README on TShock 6.2.1, keep timed bans timed and credit kills correctly ([#596](https://github.com/gettakaro/connectors/issues/596)) ([6c6d64d](https://github.com/gettakaro/connectors/commit/6c6d64d3236b8b2312ed3c825a24a5490c168483))
+
+
+### Continuous Integration
+
+* **terraria:** boot the pinned TShock server with the built plugin and bridge in the verify leg ([#611](https://github.com/gettakaro/connectors/issues/611)) ([a52152a](https://github.com/gettakaro/connectors/commit/a52152a78ad79836f1f4c06b351f504f728be810))
+
 ## [0.6.0](https://github.com/gettakaro/connectors/compare/terraria-v0.5.0...terraria-v0.6.0) (2026-10-18)
 
 

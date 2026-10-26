@@ -14,7 +14,10 @@ const char* ItemLabelById(uint32_t itemId) {
 
 bool IsCatalogueItem(const char* code, const char* label) {
     if (!label || !*label) return false;
-    return !(code && std::strncmp(code, "Ability_", 8) == 0);
+    if (!code) return true;
+    // Ability_: a skill the game models as an item. Icon_: a character-creator swatch ("Red Eyes",
+    // "Copper Hair"), which no player can hold.
+    return std::strncmp(code, "Ability_", 8) != 0 && std::strncmp(code, "Icon_", 5) != 0;
 }
 
 const char* WeaponCategoryName(uint32_t categoryId) {

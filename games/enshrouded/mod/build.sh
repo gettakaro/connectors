@@ -8,6 +8,8 @@ OUT=build
 DEFS=()
 # DEBUG_CORRUPT_SIG=<signature name> builds a debug DLL into build-debug/ with that signature deliberately corrupted
 if [ -n "${DEBUG_CORRUPT_SIG:-}" ]; then OUT=build-debug; DEFS=(-DTAKARO_DEBUG_CORRUPT_SIG="\"$DEBUG_CORRUPT_SIG\""); fi
+# DEBUG_GAME_BUILD=<n> builds a debug DLL into build-debug/ that treats the server as game build <n> (unsupported-build test)
+if [ -n "${DEBUG_GAME_BUILD:-}" ]; then OUT=build-debug; DEFS+=(-DTAKARO_DEBUG_GAME_BUILD="\"$DEBUG_GAME_BUILD\""); fi
 # TAKARO_COMMAND_PROBE=1 builds the #202 research probe into build-probe/ (../research/command-probe; never released)
 PROBE_SRC=()
 if [ "${TAKARO_COMMAND_PROBE:-}" = 1 ]; then
