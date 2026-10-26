@@ -432,6 +432,23 @@ namespace Oxide.Plugins
         // drawn with x to the right and z up, over the world square plus its ocean pad.
         internal const string MapDimensionId = "world";
 
+        /// <summary>A getPlayerLocation payload. On protocol v1 it names the one Dimension, so
+        /// Takaro files the position under the same id the map and the locations declare.</summary>
+        internal static JObject PlayerLocationPayload(float x, float y, float z, int protocol)
+        {
+            var payload = new JObject { ["x"] = x, ["y"] = y, ["z"] = z };
+            if (protocol >= 1) payload["dimension"] = MapDimensionId;
+            return payload;
+        }
+
+        /// <summary>The getPlayerLocation answer when the player is not on the server and no
+        /// position is cached. v1 answers null so Takaro keeps the last real position; v0 keeps
+        /// its historic (0, 0, 0).</summary>
+        internal static JObject UnknownPlayerLocation(int protocol)
+        {
+            return protocol >= 1 ? null : PlayerLocationPayload(0, 0, 0, protocol);
+        }
+
         internal static float MapV1Min(MapRaster raster) { return Math.Min(raster.MinX, raster.MinZ) - MapOceanPad; }
         internal static float MapV1Side(MapRaster raster) { return raster.WorldSize + 2 * MapOceanPad; }
 
@@ -1705,7 +1722,7 @@ namespace Oxide.Plugins
             {
                 case "getPlayer": return HandleGetPlayer(args);
                 case "getPlayers": return HandleGetPlayers();
-                case "getPlayerLocation": return HandleGetPlayerLocation(args);
+                case "getPlayerLocation": return HandleGetPlayerLocation(args, protocol);
                 case "getPlayerInventory": return HandleGetPlayerInventory(args);
                 case "listItems": return HandleListItems();
                 case "listEntities": return HandleListEntities();
@@ -1768,7 +1785,7 @@ namespace Oxide.Plugins
             return arr;
         }
 
-        private JToken HandleGetPlayerLocation(JObject args)
+        private JToken HandleGetPlayerLocation(JObject args, int protocol)
         {
             var gameId = GameIdFrom(args);
             var player = FindPlayerByGameId(gameId);
@@ -1777,25 +1794,13 @@ namespace Oxide.Plugins
             {
                 var pos = player.transform.position;
                 _lastPosition[gameId] = pos;
-                return new JObject
-                {
-                    ["x"] = pos.x,
-                    ["y"] = pos.y,
-                    ["z"] = pos.z
-                };
+                return PlayerLocationPayload(pos.x, pos.y, pos.z, protocol);
             }
 
             if (_lastPosition.TryGetValue(gameId, out var cached))
-            {
-                return new JObject
-                {
-                    ["x"] = cached.x,
-                    ["y"] = cached.y,
-                    ["z"] = cached.z
-                };
-            }
+                return PlayerLocationPayload(cached.x, cached.y, cached.z, protocol);
 
-            return new JObject { ["x"] = 0, ["y"] = 0, ["z"] = 0 };
+            return UnknownPlayerLocation(protocol);
         }
 
         private JToken HandleGetPlayerInventory(JObject args)

@@ -243,5 +243,17 @@ internal static class Program
         Check(Pixel(northEast, 0, 0) == (255, 0, 0), "v1 tiles: tile (1,0) is north-east (red near the centre)");
         var whole = Map.RenderMapTileV1Rgb(quad, 0, 0, 0);
         Check(Pixel(whole, 0, 0) == (BgR, BgG, BgB) && Pixel(whole, 64, 64) != (BgR, BgG, BgB), "v1 tiles: zoom 0 is the whole map, sea round the edge");
+
+        var v0Location = Map.PlayerLocationPayload(-251f, 9f, -91f, 0);
+        Check(v0Location["dimension"] == null && (float)v0Location["x"] == -251f && (float)v0Location["z"] == -91f,
+            "getPlayerLocation v0: x, y, z only");
+        var v1Location = Map.PlayerLocationPayload(-251f, 9f, -91f, 1);
+        Check((string)v1Location["dimension"] == Map.MapDimensionId && (float)v1Location["y"] == 9f,
+            "getPlayerLocation v1: names the declared Dimension");
+
+        var v0Unknown = Map.UnknownPlayerLocation(0);
+        Check(v0Unknown != null && (float)v0Unknown["x"] == 0f && (float)v0Unknown["y"] == 0f && (float)v0Unknown["z"] == 0f
+            && v0Unknown["dimension"] == null, "getPlayerLocation v0, unknown player: (0, 0, 0) as before");
+        Check(Map.UnknownPlayerLocation(1) == null, "getPlayerLocation v1, unknown player: null, no fake position");
     }
 }
