@@ -59,12 +59,12 @@ Verified on the native connector (v0.3.0) with a real game client and Takaro on 
 | Connection & heartbeat | ✅ | The plugin holds the Takaro connection itself; the server shows as reachable while the game runs. |
 | Player list | ✅ | Name, ping and spawned state; `gameId` is the SteamID64. |
 | Single player lookup | ✅ | Same data for one player; offline players answer with a last-known record. |
-| Player location | ✅ | The live position, following walking and teleports. |
+| Player location | ✅ | The live position in the `champlain-valley` map dimension, following walking and teleports. None while the player is still on the character screen. |
 | Player inventory | ✅ | Matches the in-game bag; unavailable (404) without a character pawn, including before respawn. |
 | Give an item | ✅ | The item appears in the bag without a relog. |
 | Item catalogue | ✅ | Every loaded item class, with the in-game display names. |
 | Entity catalogue | ⚠️ | Creature types sync, but Takaro never deletes rows from older builds. |
-| Locations / points of interest | ⚠️ | Served by the connector, but Takaro never asks for them. |
+| Locations / points of interest | ✅ | The game's named places (291 on Champlain Valley) sync to the Takaro map with their in-game names. |
 | Run a console command | ✅ | The connector's own set: `help`, `players`, `say`, `give`, `tp`, `ban`, `save`, … |
 | Broadcast a message | ✅ | Everyone sees it, as a chat line prefixed with the server name. |
 | Whisper a player | ✅ | Reaches the one player, as an on-screen notification. |

@@ -147,6 +147,15 @@ int main(){
     {NativePersistence::Store afterCrash;Check(afterCrash.Load(),"reload before legacy online mirror");NativeBehavior::Engine derived(afterCrash);Check(derived.Load(),"rebuild derived online after crash");Check(Parse(derived.Snapshot()->onlinePlayersJson).size()==1,"admitted join survives crash before mirror");}
     Check(engine.ObserveAdmitted(join),"observe join opens enrichment window");
     Check(run("getPlayerLocation",Json{{"gameId",id}})==Json{{"x",1},{"y",2},{"z",3},{"dimension",NativeMap::kDimensionId}},"cached location during join window");
+    {
+        const std::string fresh="76561198000000009";
+        auto freshJoin=engine.MapEvent(Json{{"seq",2},{"type","player-connected"},{"data",{{"player",{{"gameId",fresh},{"name","F"}}}}}}.dump());
+        Check(store.AdmitSynthetic(freshJoin.frame)&&engine.ObserveAdmitted(freshJoin),"fresh join opens enrichment window");
+        auto locate=[&](int version){auto p=engine.PrepareAction("fresh","getPlayerLocation",Json{{"gameId",fresh}}.dump(),1);p.protocolVersion=version;
+            auto o=NativeBehavior::Engine::ExecuteAction(p);Check(o.errorText.empty(),"uncached join-window location: "+o.errorText);return Parse(o.payloadJson);};
+        Check(locate(1).is_null(),"v1: no cached position in the join window answers null, never a fake (0,0,0)");
+        Check(locate(0)==Json{{"x",0},{"y",0},{"z",0},{"dimension",NativeMap::kDimensionId}},"v0: no cached position keeps the (0,0,0) placeholder");
+    }
     noPawn=false;
     auto inv=run("getPlayerInventory",Json{{"gameId",id}});Check(inv.size()==2&&inv[0]["amount"]==2&&inv[0]["name"]=="Meal","inventory aggregation");
     Check(run("giveItem",Json{{"gameId",id},{"item","MRE"},{"quality",nullptr}}).empty()&&lastGiveCode=="MRE"&&lastGiveAmount==1,

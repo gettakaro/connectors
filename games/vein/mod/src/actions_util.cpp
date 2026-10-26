@@ -329,3 +329,12 @@ std::string ActionsUtil::KillWeaponName(const std::string& causerClass, const st
         if (lower.find(n) != std::string::npos) return HumaniseCode(causerClass);
     return "";
 }
+
+std::string ActionsUtil::LocationRefusal(bool hasPawn, bool spawned, bool hasLoc, const std::string& pawnClass) {
+    if (!hasPawn) return "player has no pawn yet";
+    if (!spawned)
+        return "player is on the character screen (pawn is " + (pawnClass.empty() ? "unknown" : pawnClass) +
+               "), so there is no position in the world";
+    if (!hasLoc) return "pawn has no readable root component";
+    return "";
+}
