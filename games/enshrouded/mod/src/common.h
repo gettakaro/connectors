@@ -61,3 +61,9 @@ struct JsonValue {
 };
 // Returns false on malformed input.
 bool JsonParse(const std::string& text, JsonValue& out);
+
+// Item level for give (console `give ... [level]`, POST /give `quality`): an integer 1-255, written as a number or a
+// numeric string. Empty text, JSON null or an absent field give 0 = the item's default level. Returns false on anything
+// else (not numeric, fractional, out of range, wrong JSON type).
+bool ParseItemLevel(const std::string& text, uint8_t& level);
+bool ParseItemLevel(const JsonValue* v, uint8_t& level);
