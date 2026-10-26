@@ -39,6 +39,10 @@ in-process (`PluginCall`). Threads:
 - **bridge** (`bridge.cpp`): owns all protocol state and the state files. Drains transport notices 512 at a time.
   Requests: `requestId` <= 128 bytes, JSON nesting <= 64, duplicates and overload (128 pending) answered with an
   error. Outbound priority: control > bridge errors > responses > events.
+  Identify waits while the plugin's `/health` `starting` list is not empty (hooks installed, the world not
+  running yet; at most 5 minutes after start, `plugin.log`: `identify waits for the game world to run`). Takaro
+  records a server's status, with the reachability reason, only when the server turns reachable, so an identify
+  during world load would leave a start-up "degraded" reason on the server until its next status change.
 - **action workers** (4, `adapter.cpp`): the sidecar's `adapter.ts`/`mapping.ts` ported line for line. They may wait
   on the game's queues (bounded, see hooks.h); a request still running after 30 s is answered with an error and its
   late result is dropped, but its state changes (a ban) are recorded. Queued game jobs that never started are

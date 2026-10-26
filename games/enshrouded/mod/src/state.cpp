@@ -41,6 +41,19 @@ std::string PluginState::CapabilityDetailsJson() const {
     return o + "}";
 }
 
+// A hook that is installed but has not been called yet says "waiting for ..." in its detail (hooks.cpp, world.cpp).
+static bool WaitingForGame(const std::pair<std::string, std::string>& cap) {
+    return cap.first == "degraded" && cap.second.find("waiting for") != std::string::npos;
+}
+
+std::string PluginState::StartingCapabilitiesJson() const {
+    Guard g(lock_);
+    std::string o = "[";
+    for (auto& kv : caps_)
+        if (WaitingForGame(kv.second)) o += (o.size() > 1 ? "," : "") + JsonStr(kv.first);
+    return o + "]";
+}
+
 void PluginState::SetGameSupport(const std::string& build, bool gamedataSection, bool itemTables,
                                  const std::string& knownBuilds) {
     Guard g(lock_);
@@ -59,8 +72,8 @@ std::string PluginState::GameSupportNotice() const {
     std::string off;
     for (auto& kv : caps_) {
         if (kv.second.first != "degraded") continue;
-        const std::string& d = kv.second.second;  // still starting up is not "off"
-        if (d.find("initializing") != std::string::npos || d.find("waiting for") != std::string::npos) continue;
+        // still starting up is not "off"
+        if (WaitingForGame(kv.second) || kv.second.second.find("initializing") != std::string::npos) continue;
         off += (off.empty() ? "" : ", ") + kv.first;
     }
     return o + "; capabilities off: " + (off.empty() ? std::string("none") : off) +

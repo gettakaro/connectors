@@ -14,6 +14,9 @@ int main() {
     st.SetCapability("listItems", "degraded", "item and entity tables are for game build 1267041");
     st.SetCapability("shutdown", "ok", "game console control handler");
     st.SetCapability("teleport", "degraded", "initializing");
+    // /health "starting": hooks installed whose first call has not come yet (the world is not running); never a
+    // capability that failed to resolve, and not "initializing" (HooksInit ends before the connector starts)
+    assert(st.StartingCapabilitiesJson() == "[\"gameThread\",\"kick\"]");
 
     st.SetGameSupport("1273043", true, true, "1267041, 1273043");
     assert(st.GameSupportNotice().empty());  // supported build: nothing to say
@@ -33,6 +36,10 @@ int main() {
     std::cout << n << "\n";
     assert(n.find("no gamedata section") == std::string::npos);
     assert(n.find(": the item and entity tables are for another build; capabilities off: giveItem, listItems;") != std::string::npos);
+
+    st.SetCapability("gameThread", "ok", "session update tick hooked");
+    st.SetCapability("kick", "ok", "handleAccountAction via moderation system hook");
+    assert(st.StartingCapabilitiesJson() == "[]");
 
     st.SetGameSupport("9999999", false, true, "");
     assert(st.GameSupportNotice().find("(this plugin has none)") != std::string::npos);

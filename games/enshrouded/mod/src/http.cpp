@@ -622,6 +622,7 @@ Response Route(const Request& r) {
         return {200, "{\"status\":\"ok\",\"version\":\"" TAKARO_PLUGIN_VERSION "\",\"bootId\":" + JsonStr(BootId()) + ",\"gameBuild\":" +
                          JsonStr(GameBuild()) + ",\"capabilities\":" + st.CapabilitiesJson() +
                          ",\"capabilityDetails\":" + st.CapabilityDetailsJson() +
+                         ",\"starting\":" + st.StartingCapabilitiesJson() +
                          ",\"gameSupport\":" + JsonStr(st.GameSupportNotice()) + ",\"diagnostics\":" + diag + "}"};
     }
     if (p0 == "debug" && parts.size() == 2 && parts[1] == "perf" && get) {

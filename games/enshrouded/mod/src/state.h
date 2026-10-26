@@ -42,6 +42,9 @@ public:
     void SetCapability(const std::string& name, const std::string& status, const std::string& detail = "");
     std::string CapabilitiesJson() const;
     std::string CapabilityDetailsJson() const;
+    // JSON array of the capabilities that are only waiting for the game to start running (hook installed, its
+    // first call not seen yet, e.g. the game thread before the world has loaded). Empty once the world runs.
+    std::string StartingCapabilitiesJson() const;
     // Game build support, set once at startup. `knownBuilds` lists the builds this plugin has gamedata for.
     void SetGameSupport(const std::string& build, bool gamedataSection, bool itemTables, const std::string& knownBuilds);
     // Empty when the running game build is supported; otherwise one line for owners: the build, why it is not

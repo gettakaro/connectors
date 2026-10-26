@@ -2,6 +2,7 @@
 # Host-side tests with a tiny windows.h shim. Needs docker.
 #   state_test: log-line correlator (state.cpp)
 #   game_support_test: the unsupported-game-build notice (plugin.log, /health gameSupport, reachability, console)
+#     and the /health "starting" list (hooks waiting for the game world)
 #   state_login_test: login -> Steam account binding by named peer and Steam auth (1273043), unresolved when unsure
 #   names_test: item/entity/location display names (names.cpp), vectors plus the whole gamedata table
 #   weapon_test: entity-killed weapon names (weapon.cpp, itemlabels.cpp): item labels, category fallback, Unarmed

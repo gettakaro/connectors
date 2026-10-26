@@ -887,6 +887,67 @@ void UnsupportedGameBuildReason() {
     CHECK_MSG(p && p->get("reason") && p->get("reason")->str == "capabilities not ok: kick=degraded", JsonDump(resp));
 }
 
+// Boot: the hooks are installed but the game world does not run yet. Identify waits, so Takaro's first
+// reachability answer (the one it records as the server's status) is the real one, not the start-up state.
+void IdentifyWaitsForGameWorld() {
+    t::Group("bridge-identify-waits-for-game");
+    const char* starting =
+        R"({"status":"ok","capabilities":{"players":"ok","gameThread":"degraded","kick":"degraded","teleport":"degraded"},)"
+        R"("starting":["gameThread","kick","teleport"],"gameSupport":""})";
+    const char* running =
+        R"({"status":"ok","capabilities":{"players":"ok","gameThread":"ok","kick":"ok","teleport":"ok"},"starting":[],"gameSupport":""})";
+    auto identifies = [](Rig& r) {
+        r.tr.Drain();
+        return r.tr.WireFrames("identify").size();
+    };
+    {
+        Rig r("identify-waits");
+        {
+            std::lock_guard<std::mutex> g(r.fake.mu);
+            r.fake.health = t::J(starting);
+        }
+        r.Start();
+        uint64_t e = r.tr.Open();
+        CHECK(t::WaitFor([&] { return r.Health().get("state")->str == "waiting-for-game"; }));
+        CHECK_EQ(r.Health().get("starting")->str, std::string("gameThread, kick, teleport"));
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+        CHECK_EQ(identifies(r), (size_t)0);
+        {
+            std::lock_guard<std::mutex> g(r.fake.mu);
+            r.fake.health = t::J(running);
+        }
+        CHECK(t::WaitFor([&] { return identifies(r) == 1; }, 3000));
+        r.tr.Inject(R"({"type":"identifyResponse","payload":{"gameServerId":"gs-1"}})");
+        CHECK(t::WaitFor([&] { return r.tr.identifiedEpoch == e; }));
+        JsonValue resp = r.Call("testReachability", "{}");
+        const JsonValue* p = resp.get("payload");
+        CHECK_MSG(p && p->get("connectable")->b && p->get("reason") && p->get("reason")->type == JsonValue::Null, JsonDump(resp));
+        // a reconnect once the world runs identifies at once
+        r.tr.Close();
+        r.tr.Open();
+        CHECK(t::WaitFor([&] { return identifies(r) == 2; }, 1000));
+    }
+    {
+        // a hook that never runs is a real problem: after the hold, identify anyway and say so in the reason
+        Rig r("identify-hold-expires");
+        r.o.startupHoldMs = 300;
+        {
+            std::lock_guard<std::mutex> g(r.fake.mu);
+            r.fake.health = t::J(starting);
+        }
+        r.Start();
+        uint64_t e = r.tr.Open();
+        CHECK(t::WaitFor([&] { return identifies(r) == 1; }, 3000));
+        r.tr.Inject(R"({"type":"identifyResponse","payload":{"gameServerId":"gs-1"}})");
+        CHECK(t::WaitFor([&] { return r.tr.identifiedEpoch == e; }));
+        JsonValue resp = r.Call("testReachability", "{}");
+        const JsonValue* p = resp.get("payload");
+        CHECK_MSG(p && p->get("reason") &&
+                      p->get("reason")->str == "capabilities not ok: gameThread=degraded, kick=degraded, teleport=degraded",
+                  JsonDump(resp));
+    }
+}
+
 void ProtocolV1Responses() {
     t::Group("bridge-v1-responses");
     Rig r("v1-responses");
@@ -1077,6 +1138,7 @@ void RunBridgeTests() {
     ProtocolV1Identify();
     ProtocolV1UnknownBuild();
     UnsupportedGameBuildReason();
+    IdentifyWaitsForGameWorld();
     ProtocolV1Responses();
     ProtocolV1Events();
     ProtocolV1Fallbacks();
