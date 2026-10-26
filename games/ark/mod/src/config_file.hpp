@@ -61,16 +61,21 @@ inline File parse(const std::string& path, const std::string& input) {
   return file;
 }
 
+// A file shipped next to libtakaro-ark-native.so.
+inline std::string plugin_file(const std::string& name) {
+  Dl_info info{};
+  if (dladdr(reinterpret_cast<void*>(&plugin_file), &info) && info.dli_fname) {
+    std::string lib(info.dli_fname);
+    const size_t slash = lib.rfind('/');
+    if (slash != std::string::npos) return lib.substr(0, slash + 1) + name;
+  }
+  return name;
+}
+
 inline std::string default_path() {
   const char* forced = std::getenv("TAKARO_CONFIG_FILE");
   if (forced && *forced) return forced;
-  Dl_info info{};
-  if (dladdr(reinterpret_cast<void*>(&default_path), &info) && info.dli_fname) {
-    std::string lib(info.dli_fname);
-    const size_t slash = lib.rfind('/');
-    if (slash != std::string::npos) return lib.substr(0, slash + 1) + "takaro.cfg";
-  }
-  return "takaro.cfg";
+  return plugin_file("takaro.cfg");
 }
 
 inline File load(const std::string& path) {

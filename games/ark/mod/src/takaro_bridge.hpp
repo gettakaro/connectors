@@ -51,12 +51,19 @@ struct Config {
   std::chrono::milliseconds pump_interval{250};
   std::chrono::milliseconds reconcile_interval{1000};
   size_t workers = 4;
+  // The first identify waits for the loaded world (bounded): Takaro fetches the declared
+  // icon right after identify and gives up within about a minute while testReachability
+  // still answers "starting", and ARK takes minutes to load.
+  std::chrono::milliseconds identify_ready_wait{std::chrono::minutes(15)};
   // Generic protocol versions offered in identify; Takaro picks the highest shared one.
   // A Takaro that predates versioning ignores the field and speaks version 0.
   std::vector<int> protocol_versions{0, 1};
   // The loaded map (from the server command line). Only maps with a verified
   // world<->lat/long calibration get a declared map Dimension.
   std::string map_name;
+  // game.profile: the running game build ("" = omitted) and the shipped icon (null = none).
+  std::string game_version;
+  std::shared_ptr<const GameIcon> game_icon;
 };
 
 // TheIsland: lat = 50 + y/8000, lon = 50 + x/8000 (verified against the client GPS),
@@ -177,6 +184,7 @@ class Bridge {
               known_),
         adapter_(gate_, bans_, known_) {
     if (!config_.state_dir.empty()) cursor_path_ = config_.state_dir + "/event-cursor.json";
+    adapter_.set_game_icon(config_.game_icon);
     adapter_.set_delivery_waiter([this](uint64_t seq, std::chrono::milliseconds timeout) {
       const auto deadline = std::chrono::steady_clock::now() + timeout;
       while (persisted_.load() < seq && std::chrono::steady_clock::now() < deadline)
@@ -308,6 +316,8 @@ class Bridge {
     payload.set("identityToken", json::str(config_.identity_token));
     if (!config_.registration_token.empty()) payload.set("registrationToken", json::str(config_.registration_token));
     if (!config_.server_name.empty()) payload.set("name", json::str(config_.server_name));
+    payload.set("game", json::str(kGameSlug));
+    payload.set("connector", json::obj({{"name", json::str(kConnectorName)}, {"version", json::str(kConnectorVersion)}}));
     if (std::find(config_.protocol_versions.begin(), config_.protocol_versions.end(), 1) !=
         config_.protocol_versions.end()) {
       json::Value versions = json::Value::array();
@@ -315,6 +325,7 @@ class Bridge {
       payload.set("protocolVersions", std::move(versions));
       json::Value manifest = json::Value::array();
       for (const auto& name : capability_manifest()) manifest.push(json::obj({{"name", json::str(name)}}));
+      manifest.push(game_profile_capability(config_.game_version, config_.game_icon.get()));
       if (auto dimension = map_dimension(config_.map_name)) {
         json::Value dimensions = json::Value::array();
         dimensions.push(std::move(*dimension));
@@ -323,6 +334,11 @@ class Bridge {
       payload.set("capabilities", std::move(manifest));
     }
     return json::dump(json::obj({{"type", json::str("identify")}, {"payload", payload}}));
+  }
+
+  std::string last_error() const {
+    std::lock_guard<std::mutex> lock(status_mutex_);
+    return last_error_;
   }
 
   void set_error(const std::string& error) {
@@ -358,11 +374,25 @@ class Bridge {
     sigaddset(&block, SIGPIPE);
     pthread_sigmask(SIG_BLOCK, &block, nullptr);
     auto next_attempt = std::chrono::steady_clock::now();
+    const auto ready_deadline = next_attempt + config_.identify_ready_wait;
+    bool waited_for_game = false;
     const auto url = ws::parse_url(config_.url);
     if (!url) { log("takaro-ws-invalid-url"); set_error("invalid TAKARO_WS_URL"); }
     while (running_.load()) {
       const auto now = std::chrono::steady_clock::now();
       if (!conn_.is_open()) {
+        if (!waited_for_game) {
+          if (!gate_.health().ready && now < ready_deadline) {
+            if (connections_.load() == 0 && last_error().empty()) {
+              log("takaro-identify-waiting-for-game");
+              set_error("waiting for the game to finish loading");
+            }
+            idle_wait(std::min(now + std::chrono::milliseconds(500), ready_deadline));
+            continue;
+          }
+          waited_for_game = true;
+          if (!gate_.health().ready) log("takaro-identify-game-not-ready; connecting anyway");
+        }
         if (!url || now < next_attempt) { idle_wait(next_attempt); continue; }
         std::string error;
         ws::Connection::Options options;
