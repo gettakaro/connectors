@@ -5,6 +5,7 @@
 #include "native/mapping.h"
 #include "native/maptiles.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 
@@ -237,6 +238,7 @@ public:
         if (action == "getGameIcon") return GameIconPayload();
         if (action == "getMapTile") return JStr(MapTileBase64(view_.mapDir, args));
         if (action == "shutdown") {
+            ReadPositionsBeforeShutdown();
             plugin_.Post("/shutdown", "{}");
             return JObj();
         }
@@ -244,6 +246,30 @@ public:
     }
 
 private:
+    // Where everyone stands right before the game saves and removes them: the player-disconnected events of the
+    // shutdown are placed there. Best effort, at most ~3 s of the request's time.
+    void ReadPositionsBeforeShutdown() {
+        auto start = std::chrono::steady_clock::now();
+        JsonValue players;
+        try {
+            players = plugin_.Players();
+        } catch (const std::exception&) {
+            return;
+        }
+        if (players.type != JsonValue::Array) return;
+        for (auto& p : players.arr) {
+            if (std::chrono::steady_clock::now() - start > std::chrono::seconds(3)) break;
+            const JsonValue* id = p.get("gameId");
+            if (!id || id->type != JsonValue::String || id->str.empty()) continue;
+            try {
+                JsonValue pos = plugin_.Request("GET", "/players/" + EncodeUriComponent(id->str) + "/location");
+                out_.positions[id->str] = MapPosition(&pos);
+            } catch (const std::exception&) {
+                // no position for this one; the last sampled one stays
+            }
+        }
+    }
+
     JsonValue Ban(const JsonValue& args) {
         std::string pid = ResolvePluginId(PlayerId(args));
         auto reason = Str(args.get("reason"));

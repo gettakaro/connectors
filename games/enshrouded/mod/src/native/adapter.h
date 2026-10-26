@@ -42,6 +42,7 @@ struct ActionOutcome {
     std::string error;  // response error text when !ok
     std::string errorCode = "internal";  // protocol 1 error code when !ok (ProtocolErrorCode)
     std::vector<JsonValue> seenPlayers;
+    std::map<std::string, JsonValue> positions;  // gameId -> {x, y, z} read during the action (shutdown)
     BanChange ban;
 };
 

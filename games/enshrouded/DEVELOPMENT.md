@@ -48,13 +48,21 @@ Events: the bridge reads the plugin ring (`/events`, 512 at a time), maps and fi
 `NOISY_LOG` filter, `ENSHROUDED_LOG_EVENTS`), and appends them to a durable outbox (at most 5000 events / 32 MiB;
 when full, the oldest `log` events go first, counted as losses). An event leaves the outbox only when the pong of a
 **later** ping arrives on the same connection; after a reconnect everything unconfirmed is sent again (at least
-once). Kept from the sidecar: the 60 s location fallback after a connect/disconnect, online reconciliation at start,
-on a new plugin bootId and every 30 s (two misses in a row), and the log-tail fallback while `logEvents`/`players`
-are degraded.
+once). Kept from the sidecar: online reconciliation at start, on a new plugin bootId and every 30 s (two misses in a
+row), and the log-tail fallback while `logEvents`/`players` are degraded.
+
+Positions: Takaro places a connect/disconnect with its own `getPlayerLocation` right after the event, when the game
+no longer knows a player who left. For 60 s after such an event the bridge answers that request with the player's
+last real position: from Takaro's own location polls, from a read every 10 s of each online player's position (one
+game-thread read each, skipped while Takaro's polls keep it fresh) and from a read of everyone right before a Takaro
+`shutdown`. Positions are kept in `last-positions.json`, so the disconnect reconciled after a crash is placed where
+the player was. Without a known position there is no answer from the window (protocol 1: `null`); a connect starts a
+new session and forgets the old position. The event itself carries no `position`.
 
 State lives in `<server dir>\takaro\connector-state\` (`TAKARO_STATE_DIR`): `event-outbox.json` (scan and
 confirmed cursors per bootId, pending events), `online-players.json` (the sidecar's format; `TAKARO_ONLINE_FILE`),
-`known-players.json`, `timed-bans.json`, `ban-intent.json`. Writes are tmp file, `FlushFileBuffers`, then
+`known-players.json`, `last-positions.json` (disposable: unreadable = start empty), `timed-bans.json`,
+`ban-intent.json`. Writes are tmp file, `FlushFileBuffers`, then
 `MoveFileExW(REPLACE_EXISTING|WRITE_THROUGH)`. A file that exists but does not parse fences its area (never
 overwritten, never read as empty) and turns `connectorState` degraded. On the first start the sidecar's
 `event-cursor.json` (`TAKARO_CURSOR_FILE`) is imported once.
