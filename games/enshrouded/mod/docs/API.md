@@ -152,7 +152,7 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
   With nobody online, a broadcast succeeds without delivering anything.
 - **command** (Enshrouded has no server console; this is a plugin-defined set): `help`, `version`, `players`,
   `say <text>`, `whisper <player> <text>`, `location <player>`, `teleport <player> <x> <y> <z>`, `tp <player> <toPlayer>`,
-  `inventory <player>`, `give <player> <itemCode> [amount] [level]` (level 1-255; omitted = the item's default level), `item <search>`, `kick <player>`, `save-and-shutdown`.
+  `inventory <player>`, `give <player> <itemCode> [amount] [level]` (level 1-255; omitted, or a level the item cannot have, = the item's default level), `item <search>`, `kick <player>`, `save-and-shutdown`.
   `<player>` is a SteamID64 or the exact name. Unknown commands return `success:false` with a hint. There is no
   time-of-day command (not reverse engineered).
 
