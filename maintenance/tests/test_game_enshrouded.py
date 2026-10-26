@@ -1474,22 +1474,29 @@ def test_stop_takes_only_world_files_as_the_save(tmp_path: Path, monkeypatch: py
     assert result.detail["stages"]["saved"] is False
 
 
-def test_wait_for_save_takes_the_log_line_then_a_world_file_and_gives_up_after_the_respawn(
+def test_wait_for_save_takes_the_log_line_or_a_world_file_written_before_the_respawn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     run = _stop_run(tmp_path, monkeypatch, SHUTDOWN_ONLY)
     assert asyncio.run(hooks._wait_for_save(run, 0.0, lambda: True)) is None
 
     (run.data_dir / "savegame").mkdir()
-    (run.data_dir / "savegame" / "world0.ksd").write_bytes(b"world")
+    world = run.data_dir / "savegame" / "world0.ksd"
+    world.write_bytes(b"world")
     assert asyncio.run(hooks._wait_for_save(run, 0.0, lambda: True)) == {"by": "file", "files": ["world0.ksd"]}
     assert asyncio.run(hooks._wait_for_save(run, None, lambda: True)) is None
 
-    run.server_log.write_text(SHUTDOWN_ONLY + "spawned: 'enshrouded-server'\n", encoding="utf-8")
-    assert asyncio.run(hooks._wait_for_save(run, 0.0, lambda: True)) is None
+    run.server_log.write_text(SHUTDOWN_ONLY + RESPAWN, encoding="utf-8")
+    os.utime(world, (RESPAWNED_AT - 2, RESPAWNED_AT - 2))
+    assert asyncio.run(hooks._wait_for_save(run, RESPAWNED_AT - 30, lambda: True)) == {
+        "by": "file",
+        "files": ["world0.ksd"],
+    }
+    os.utime(world, (RESPAWNED_AT + 5, RESPAWNED_AT + 5))
+    assert asyncio.run(hooks._wait_for_save(run, RESPAWNED_AT - 30, lambda: True)) is None
 
     run.server_log.write_text(SHUTDOWN_ONLY + "[server] Saved\n", encoding="utf-8")
-    assert asyncio.run(hooks._wait_for_save(run, 0.0, lambda: True)) == {"by": "log", "line": 3}
+    assert asyncio.run(hooks._wait_for_save(run, None, lambda: True)) == {"by": "log", "line": 3}
 
 
 def test_stop_still_takes_the_saved_line_older_builds_print(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
