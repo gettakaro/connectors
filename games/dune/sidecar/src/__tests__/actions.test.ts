@@ -192,11 +192,43 @@ describe('mutations read the effect back', () => {
     expect(shown.some((i) => i.code === 'wy1ll')).toBe(false);
   });
 
-  it('giveItem answers verified:false with the real reason instead of claiming success', async () => {
+  it('giveItem fails when the item never appears, so Takaro never records a give that did not happen', async () => {
     const h = await harness();
-    const result = (await h.adapter.handleAction('giveItem', { gameId: FLS, item: 'WaterFlask', amount: 1 })) as Record<string, unknown>;
-    expect(result.verified).toBe(false);
-    expect(String(result.reason)).toMatch(/persists inventories periodically/);
+    await expect(h.adapter.handleAction('giveItem', { gameId: FLS, item: 'WaterFlask', amount: 1 })).rejects.toThrow(
+      /giveItem not confirmed: WaterFlask x1 .*backpack may be full/,
+    );
+    // The grant was still sent: the error must not pretend nothing happened.
+    expect(h.gmSent().at(-1)).toMatchObject({ ServerCommand: 'AddItemToInventory', ItemName: 'WaterFlask' });
+  });
+
+  it('giveItem refuses a new item for a full backpack without sending the grant', async () => {
+    // MEASURED on the live rig (35/35 backpack): AddItemToInventory for an item the backpack did not hold ran
+    // ("Now running ServerCommand") and the item never appeared anywhere. Quest items at positions past the slot
+    // count do not take a slot.
+    const h = await harness();
+    const player = h.battlegroup.players[0];
+    player.backpackSlots = 3;
+    player.inventory = [
+      { templateId: 'PowerPack2', stackSize: 2, positionIndex: 0, inventoryType: 0 },
+      { templateId: 'Stone', stackSize: 7, positionIndex: 1, inventoryType: 0 },
+      { templateId: 'Ammo', stackSize: 600, positionIndex: 2, inventoryType: 0 },
+      { templateId: 'sftnj', stackSize: 1, positionIndex: 3, inventoryType: 0 },
+    ];
+    const sentBefore = h.gmSent().length;
+    await expect(h.adapter.handleAction('giveItem', { gameId: FLS, item: 'WormTooth', amount: 1 })).rejects.toThrow(
+      /backpack is full \(3\/3 slots\) and holds no WormTooth/,
+    );
+    expect(h.gmSent().length).toBe(sentBefore);
+
+    // An item the full backpack already holds may stack, so it is sent and verified by the read-back.
+    setTimeout(() => (player.inventory![1].stackSize = 12), 10);
+    const stacked = (await h.adapter.handleAction('giveItem', { gameId: FLS, item: 'Stone', amount: 5 })) as Record<string, unknown>;
+    expect(stacked).toMatchObject({ verified: true, count: 12 });
+
+    // A free slot (one quest item past the count does not count) lets a new item through.
+    player.inventory!.splice(2, 1);
+    setTimeout(() => player.inventory!.push({ templateId: 'WormTooth', stackSize: 1, positionIndex: 2, inventoryType: 0 }), 10);
+    expect(await h.adapter.handleAction('giveItem', { gameId: FLS, item: 'WormTooth', amount: 1 })).toMatchObject({ verified: true });
   });
 
   it('teleportPlayer tolerates dimension:null and says so when it cannot verify', async () => {
@@ -220,6 +252,44 @@ describe('mutations read the effect back', () => {
     const result = (await stubborn.adapter.handleAction('kickPlayer', { gameId: FLS })) as Record<string, unknown>;
     expect(result.verified).toBe(false);
     expect(String(result.reason)).toMatch(/still online/);
+  });
+
+  it('kickPlayer reports only a kick read back from Postgres to presence', async () => {
+    const reported: string[] = [];
+    const h = await harness({ onKicked: (gameId) => reported.push(gameId) });
+    setTimeout(() => h.battlegroup.setOnline(FLS, false), 10);
+    await h.adapter.handleAction('kickPlayer', { gameId: FLS });
+    expect(reported).toEqual([FLS]);
+
+    const stubbornReported: string[] = [];
+    const stubborn = await harness({ onKicked: (gameId) => stubbornReported.push(gameId) });
+    await stubborn.adapter.handleAction('kickPlayer', { gameId: FLS });
+    expect(stubbornReported).toEqual([]);
+  });
+
+  it('a kick whose read-back failed is not reported to presence', async () => {
+    const reported: string[] = [];
+    const h = await harness({ onKicked: (gameId) => reported.push(gameId) });
+    const lookUp = h.pg.findPlayer.bind(h.pg);
+    let calls = 0;
+    // The first lookup finds the row to kick; every read-back after the publish fails.
+    h.pg.findPlayer = async (id) => {
+      if (calls++ === 0) return lookUp(id);
+      throw new Error('connection terminated');
+    };
+    await h.adapter.handleAction('kickPlayer', { gameId: FLS });
+    expect(reported).toEqual([]);
+  });
+
+  it('a ban-enforcement kick on sight is reported to presence too', async () => {
+    const reported: string[] = [];
+    const h = await harness({ onKicked: (gameId) => reported.push(gameId) });
+    await h.adapter.handleAction('banPlayer', { gameId: FLS, reason: 'banned', expiresAt: null });
+    expect(reported).toEqual([]);
+    h.battlegroup.setOnline(FLS, true);
+    setTimeout(() => h.battlegroup.setOnline(FLS, false), 10);
+    expect(await h.bans.enforce([{ gameId: FLS, name: 'Tester' }])).toEqual([FLS]);
+    expect(reported).toEqual([FLS]);
   });
 
   it('sendMessage whispers to a recipient and broadcasts without one', async () => {

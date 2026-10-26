@@ -59,6 +59,8 @@ export interface AdapterOptions {
   sleep?: (ms: number) => Promise<void>;
   execRunner?: ExecRunner;
   execTimeoutMs?: number;
+  /** Told about every kick read back from Postgres, so presence reports that leave at once instead of holding it. */
+  onKicked?: (gameId: string) => void;
   now?: () => number;
 }
 
@@ -331,10 +333,10 @@ export class DuneAdapter {
   /**
    * `AddItemToInventory`, then read the inventory back.
    *
-   * The read-back has a real caveat: `dune.items` is written by the server's periodic `SavePlayer`, not synchronously
-   * on the grant, so a successful grant can be invisible in the DB for a while. `verified:false` here therefore means
-   * "not observed within DUNE_VERIFY_WINDOW_MS" — not "did not happen" — and the payload says so instead of claiming
-   * either outcome.
+   * The game drops a grant into a full backpack without any error, so a grant that needs a new backpack slot is
+   * refused up front when every slot is taken. When the item still does not appear in the database within
+   * DUNE_VERIFY_WINDOW_MS the action fails, so Takaro (a shop order, a module) never records a give that did not
+   * happen. The error says the item may still arrive if the save was slow.
    */
   async giveItem(args: Args): Promise<Record<string, unknown>> {
     const id = playerId(args);
@@ -347,6 +349,7 @@ export class DuneAdapter {
     // `quality` arrives as a string, a number or an explicit JSON null. Dune's grant command has no quality field at
     // all, so it is accepted and ignored rather than rejected.
     const before = await this.countItemEverywhere(row.flsId, item);
+    await this.refuseIfBackpackFull(row.flsId, item);
     await this.options.gm.send(
       gmCommands.addItemToInventory({ playerId: this.gmId(row, id), itemName: item, quantity: Math.trunc(amount) }),
       this.now(),
@@ -356,18 +359,32 @@ export class DuneAdapter {
       after = await this.countItemEverywhere(row.flsId, item);
       return after.total > before.total;
     });
-    return {
-      verified,
-      item,
-      amount: Math.trunc(amount),
-      ...(verified ? { inventoryTypes: after.types, count: after.total } : {}),
-      ...(verified
-        ? {}
-        : {
-            reason:
-              'the grant was published and accepted by the broker, but the item did not appear in the database within the verify window; Dune persists inventories periodically, so re-check with getPlayerInventory',
-          }),
-    };
+    if (!verified) {
+      fail(
+        `giveItem not confirmed: ${item} x${Math.trunc(amount)} was sent to the game but did not appear in the player's `
+          + 'inventory. The backpack may be full, or the save may be slow; check getPlayerInventory before giving again',
+      );
+    }
+    return { verified, item, amount: Math.trunc(amount), inventoryTypes: after.types, count: after.total };
+  }
+
+  /**
+   * Refuses a grant that needs a new backpack slot when every slot is taken. Only backpack positions inside the slot
+   * count are counted: quest items sit at positions past it and do not take a slot. A grant of an item the backpack
+   * already holds may still stack, so it is sent and the read-back decides.
+   */
+  private async refuseIfBackpackFull(flsId: string, item: string): Promise<void> {
+    const slots = await this.options.pg.backpackSlots(flsId).catch(() => null);
+    if (slots === null) return;
+    const rows = await this.options.pg.inventory(flsId, { allTypes: true }).catch(() => null);
+    if (!rows) return;
+    const backpack = rows.filter(
+      (r) => r.inventoryType === 0 && typeof r.positionIndex === 'number' && r.positionIndex >= 0 && r.positionIndex < slots,
+    );
+    const stacks = backpack.some((r) => r.templateId.toLowerCase() === item.toLowerCase());
+    if (backpack.length >= slots && !stacks) {
+      fail(`giveItem refused: the player's backpack is full (${backpack.length}/${slots} slots) and holds no ${item} to stack onto`);
+    }
   }
 
   /** `TeleportToExact`. `dimension` is always null/absent for a single-map battlegroup and is accepted and ignored. */
@@ -471,10 +488,19 @@ export class DuneAdapter {
   private async kickRow(row: DunePlayerRow, id: string, reason?: string): Promise<Record<string, unknown>> {
     if (reason) logger.info(`Kicking ${row.characterName ?? row.flsId}: ${reason}`);
     await this.options.gm.send(gmCommands.kickPlayer(this.gmId(row, id)), this.now());
+    // Only a row actually read as gone tells presence; a failed read still verifies the kick, as before.
+    let readGone = false;
     const verified = await this.pollUntil(async () => {
-      const fresh = await this.options.pg.findPlayer(row.flsId).catch(() => undefined);
-      return !fresh || !isOnline(fresh);
+      let fresh: DunePlayerRow | undefined;
+      try {
+        fresh = await this.options.pg.findPlayer(row.flsId);
+      } catch {
+        return true;
+      }
+      readGone = !fresh || !isOnline(fresh);
+      return readGone;
     });
+    if (verified && readGone) this.options.onKicked?.(row.flsId);
     return verified
       ? { verified: true }
       : { verified: false, reason: 'kick published but the player was still online at the end of the verify window' };

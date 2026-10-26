@@ -226,4 +226,105 @@ describe('handing an edge over to the plugin source', () => {
     expect(gone).toHaveLength(1);
     expect((gone[0].data.player as { name: string }).name).toBe('Chani');
   });
+
+});
+
+describe('a kick this connector made', () => {
+  // Live rig 2026-10-22: ban enforcement kicked a rejoining banned player, the unban and the next rejoin
+  // followed within 45 s, and Takaro was told about neither the leave nor the return.
+  it('is reported as a leave at once, and a rejoin inside the grace window as a new arrival', async () => {
+    const h = harness({ transferGraceMs: 45_000 });
+    h.set([TESTER]);
+    await h.tick();
+    h.events.length = 0;
+
+    h.poller.kickedOut(TESTER.flsId!);
+    expect(h.events.map((e) => e.type)).toEqual(['player-disconnected']);
+    h.advance(5_000);
+    h.set([]);
+    await h.tick();
+    expect(h.poller.pendingLeaves()).toEqual([]);
+
+    h.advance(25_000);
+    h.set([TESTER]);
+    await h.tick();
+    h.advance(60_000);
+    await h.tick();
+    expect(h.events.map((e) => e.type)).toEqual(['player-disconnected', 'player-connected']);
+  });
+
+  it('reports a rejoin that lands before the next poll', async () => {
+    const h = harness({ transferGraceMs: 45_000 });
+    h.set([TESTER]);
+    await h.tick();
+    h.events.length = 0;
+
+    h.poller.kickedOut(TESTER.flsId!);
+    h.advance(1_000);
+    await h.tick();
+    expect(h.events.map((e) => e.type)).toEqual(['player-disconnected', 'player-connected']);
+  });
+
+  it('ignores a roster read that started before the kick', async () => {
+    const events: string[] = [];
+    let poller!: PresencePoller;
+    let duringRead: (() => void) | null = null;
+    poller = new PresencePoller({
+      roster: async () => {
+        duringRead?.();
+        return [TESTER];
+      },
+      emit: (type) => events.push(type),
+      transferGraceMs: 45_000,
+      now: () => 1_000_000,
+    });
+    await poller.pollOnce();
+    duringRead = () => poller.kickedOut(TESTER.flsId!);
+    await poller.pollOnce();
+    expect(events).toEqual(['player-connected', 'player-disconnected']);
+    expect(poller.onlinePlayers()).toEqual([]);
+  });
+
+  it('releases a player already held for a map transfer, without a second disconnect at the deadline', async () => {
+    const h = harness({ transferGraceMs: 45_000 });
+    h.set([TESTER]);
+    await h.tick();
+    h.events.length = 0;
+    h.set([]);
+    await h.tick();
+    expect(h.poller.pendingLeaves()).toEqual([TESTER.flsId]);
+
+    h.poller.kickedOut(TESTER.flsId!);
+    h.advance(60_000);
+    await h.tick();
+    expect(h.events.map((e) => e.type)).toEqual(['player-disconnected']);
+  });
+
+  it('leaves nothing behind: the next map transfer is still held', async () => {
+    const h = harness({ transferGraceMs: 45_000 });
+    h.set([TESTER]);
+    await h.tick();
+    h.poller.kickedOut(TESTER.flsId!);
+    h.advance(1_000);
+    await h.tick();
+    h.events.length = 0;
+
+    h.advance(1_000);
+    h.set([]);
+    await h.tick();
+    h.advance(10_000);
+    h.set([{ ...TESTER, map: 'Deep Desert', partitionId: 31 }]);
+    await h.tick();
+    expect(h.events).toEqual([]);
+  });
+
+  it('does nothing for a player presence does not track', async () => {
+    const h = harness({ transferGraceMs: 45_000 });
+    h.poller.kickedOut(TESTER.flsId!);
+    expect(h.events).toEqual([]);
+    h.advance(1_000);
+    h.set([TESTER]);
+    await h.tick();
+    expect(h.events.map((e) => e.type)).toEqual(['player-connected']);
+  });
 });

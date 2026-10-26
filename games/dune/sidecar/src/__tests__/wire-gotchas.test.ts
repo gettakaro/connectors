@@ -199,6 +199,7 @@ describe('executeConsoleCommand', () => {
     expect(h.battlegroup.publishes.at(-1)!.exchange).toBe('chat.whispers');
     expect((await run('broadcast Maintenance | back in 5')).success).toBe(true);
     expect(h.gmSent().at(-1)).toMatchObject({ BroadcastType: 'Generic' });
+    setTimeout(() => h.battlegroup.players[0].inventory!.push({ templateId: 'WaterFlask', stackSize: 3, inventoryType: 0 }), 10);
     expect((await run(`give ${FLS} WaterFlask 3`)).success).toBe(true);
     expect(h.gmSent().at(-1)).toMatchObject({ ServerCommand: 'AddItemToInventory', Quantity: 3 });
     expect((await run(`tp ${FLS} 1 2 3`)).success).toBe(true);

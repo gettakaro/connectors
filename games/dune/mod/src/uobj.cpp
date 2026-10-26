@@ -4,15 +4,20 @@
 #include "reflect.h"
 #include "resolve.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstring>
 
 namespace {
 Mutex g_cacheLock;
-// (UClass*, property name) -> offset. A miss is cached as -1 too: a name that is not on the class is
-// a permanent fact for that class, and re-walking a 500-property chain on every kill would be paid
-// on the game thread.
+// (UClass*, property name) -> offset. A hit is cached for good. A miss is cached only for
+// kMissRetry, so re-walking a 500-property chain on every kill is not paid on the game thread, yet a
+// miss is not permanent: a lookup made while the class's property chain was not readable yet (seen
+// on a map server whose boot-time warm-up resolved 0 of 15 engine properties, Actor.RootComponent
+// included) must not disable identity, location and kill attribution until the next restart.
 std::map<std::pair<const void*, std::string>, int32_t> g_propCache;
+std::map<std::pair<const void*, std::string>, std::chrono::steady_clock::time_point> g_missAt;
+constexpr std::chrono::seconds kMissRetry{30};
 uint64_t g_misses = 0;
 }  // namespace
 
@@ -133,10 +138,13 @@ bool U::IsA(const void* obj, const char* className) {
 int32_t U::PropOffset(void* cls, const char* name) {
     if (!cls || !name || !*name) return -1;
     std::pair<const void*, std::string> key{cls, name};
+    const auto now = std::chrono::steady_clock::now();
     {
         Guard g(g_cacheLock);
         auto it = g_propCache.find(key);
         if (it != g_propCache.end()) return it->second;
+        auto miss = g_missAt.find(key);
+        if (miss != g_missAt.end() && now - miss->second < kMissRetry) return -1;
     }
     int32_t found = -1;
     void* c = cls;
@@ -150,8 +158,13 @@ int32_t U::PropOffset(void* cls, const char* name) {
         c = Reflect::SuperStruct(c);
     }
     Guard g(g_cacheLock);
-    g_propCache[key] = found;
-    if (found < 0) g_misses++;
+    if (found >= 0) {
+        g_propCache[key] = found;
+        g_missAt.erase(key);
+    } else {
+        if (g_missAt.emplace(key, now).second) g_misses++;
+        else g_missAt[key] = now;
+    }
     return found;
 }
 
@@ -197,6 +210,6 @@ uint8_t U::StructMinAlignment(const void* strct) {
 
 void U::CacheStats(uint64_t& entries, uint64_t& misses) {
     Guard g(g_cacheLock);
-    entries = g_propCache.size();
+    entries = g_propCache.size() + g_missAt.size();
     misses = g_misses;
 }

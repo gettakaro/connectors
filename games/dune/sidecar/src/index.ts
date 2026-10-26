@@ -173,6 +173,7 @@ async function main(): Promise<void> {
     shutdownCmd: config.shutdownCmd,
     shutdownNoticeSeconds: config.shutdownNoticeSeconds,
     execTimeoutMs: config.execTimeoutMs,
+    onKicked: (gameId) => presence.kickedOut(gameId),
   });
 
   const onlineStore = new FileOnlineStore(config.onlineFile);
