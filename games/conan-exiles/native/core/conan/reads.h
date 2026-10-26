@@ -42,6 +42,7 @@ struct ReadOptions {
     bool warmupThread = true;  // build the catalogues in the background after start
     int warmupRetryMs = 3000;
     int listWaitMs = 8000;  // a list action waits this long for a catalogue still building
+    int refreshAfterJoinMs = 60000;  // after our own marker table load: rebuild this long after the first join
 };
 
 enum class Check { Pending, Passed, Failed };
@@ -88,6 +89,11 @@ private:
     bool SlowPing(uintptr_t ps, float& out);
     bool SlowLocation(uintptr_t pawn, double out[3]);
     bool SlowStats(uintptr_t item, InvItem& e);
+    // Loads MapMarkers_ConanSandbox on the game thread (the game itself loads it only when a
+    // player joins): KismetSystemLibrary LoadAsset_Blocking(Conv_SoftObjPathToSoftObjRef(
+    // MakeSoftObjectPath(path))). True when the engine returned the table; `pickedUp` is false
+    // when the game thread did not start the job in time (nothing was called).
+    bool LoadMarkerTable(std::string& error, bool& pickedUp);
     std::string PlayerJson(const PlayerRecord& p);
     std::string Region();
     takaro::ActionResult ListResult(const std::string& action);
@@ -107,6 +113,13 @@ private:
     // UFunctions for the self-checks and the fallbacks
     UE::FuncInfo fnPing_, fnLocation_, fnIntStat_, fnFloatStat_, fnTextToString_;
     uintptr_t textLibCdo_ = 0;
+    // The marker table load without a player (LoadMarkerTable)
+    int markerLoads_ = 0;
+    uint64_t nextMarkerLoadMs_ = 0, nextRefreshMs_ = 0;
+    int refreshTries_ = 0;
+    bool markersForced_ = false;     // the locations came from our own load, not the game's
+    bool refreshAfterJoin_ = false;  // rebuild every catalogue once a player has joined
+    std::atomic<uint64_t> firstPlayerMs_{0};  // when a snapshot first saw an online player
     int32_t textRetOffset_ = -1, intStatRet_ = -1, floatStatRet_ = -1, locationRet_ = -1, pingRet_ = -1;
 
     std::shared_ptr<const Catalogue> catalogue_;  // replaced as a whole, read without the lock
@@ -128,7 +141,8 @@ private:
         double loc[3] = {0, 0, 0};
     };
     std::map<std::string, Known> known_;  // Steam64 -> last seen
-    uint64_t calls_ = 0, errors_ = 0, gameThreadJobs_ = 0, gameThreadNs_ = 0, lastSnapshotNs_ = 0;
+    std::atomic<uint64_t> calls_{0}, errors_{0};
+    uint64_t gameThreadJobs_ = 0, gameThreadNs_ = 0, lastSnapshotNs_ = 0;
     uint64_t snapshotReads_ = 0;
 
     std::thread warm_;

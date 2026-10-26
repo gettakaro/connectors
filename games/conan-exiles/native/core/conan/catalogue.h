@@ -5,7 +5,8 @@
 //   items      /Game/Items/ItemTable (every DLC table is merged into it at load); codes from
 //              /Game/Systems/Survival/Gathering/Gathering_v2/ItemNameToTemplateID
 //   entities   /Game/Systems/SpawnTable/SpawnDataTable
-//   locations  /Game/Systems/Map/MapMarkers_ConanSandbox (loads about a minute after the rest)
+//   locations  /Game/Systems/Map/MapMarkers_ConanSandbox (the game loads it when a player joins;
+//              without one, ReadService loads it itself)
 //
 // Display names are the localised FText strings the client shows, never class or row names.
 #pragma once

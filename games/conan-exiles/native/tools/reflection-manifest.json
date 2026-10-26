@@ -364,7 +364,7 @@
       "kind": "class",
       "name": "KismetSystemLibrary",
       "layout": "runtime",
-      "usedBy": "mutations: console, frame count",
+      "usedBy": "mutations: console, frame count; reads: marker table load",
       "baseline": {
         "size": 40
       }
@@ -997,6 +997,78 @@
             "ReturnValue",
             "Int64Property",
             0,
+            8
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "KismetSystemLibrary",
+      "name": "MakeSoftObjectPath",
+      "layout": "runtime",
+      "usedBy": "reads: MapMarkers_ConanSandbox load without a player (listLocations)",
+      "baseline": {
+        "parmsSize": 48,
+        "params": [
+          [
+            "PathString",
+            "StrProperty",
+            0,
+            16
+          ],
+          [
+            "ReturnValue",
+            "StructProperty",
+            16,
+            32
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "KismetSystemLibrary",
+      "name": "Conv_SoftObjPathToSoftObjRef",
+      "layout": "runtime",
+      "usedBy": "reads: MapMarkers_ConanSandbox load without a player (listLocations)",
+      "baseline": {
+        "parmsSize": 72,
+        "params": [
+          [
+            "SoftObjectPath",
+            "StructProperty",
+            0,
+            32
+          ],
+          [
+            "ReturnValue",
+            "SoftObjectProperty",
+            32,
+            40
+          ]
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "owner": "KismetSystemLibrary",
+      "name": "LoadAsset_Blocking",
+      "layout": "runtime",
+      "usedBy": "reads: MapMarkers_ConanSandbox load without a player (listLocations)",
+      "baseline": {
+        "parmsSize": 48,
+        "params": [
+          [
+            "Asset",
+            "SoftObjectProperty",
+            0,
+            40
+          ],
+          [
+            "ReturnValue",
+            "ObjectProperty",
+            40,
             8
           ]
         ]

@@ -115,7 +115,7 @@ Windows 2026-10-09).
 | Give an item | ✅ | ✅ | Weapons and tools arrive at full durability. |
 | Item catalogue | ✅ | ✅ | 7521 items with in-game names. |
 | Entity catalogue | ⚠️ | ⚠️ | In-game names; the client shows none to compare with. |
-| Locations / points of interest | ⚠️ | ⚠️ | 255 named places of the Exiled Lands, offered for Takaro's map markers; Takaro has not asked for them in a test yet. |
+| Locations / points of interest | ✅ | ✅ | 255 named places of the Exiled Lands as Takaro map markers, also when nobody is online. |
 | Run a console command | ✅ | ✅ | Unknown commands fail while a player is online (with nobody online the engine console gives no answer, and the result says so); `exit`/`quit` are refused. |
 | Broadcast a message | ✅ | ✅ | |
 | Whisper a player | ✅ | ✅ | |
