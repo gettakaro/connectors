@@ -236,26 +236,12 @@ namespace Takaro
             }
             else
             {
-                foreach (EntityPlayer candidate in GameManager.Instance.World.Players.dict.Values)
+                if (!TryFindPlayerByName(data.MainName, out victimEntity))
                 {
-                    if (
-                        candidate == null
-                        || !string.Equals(
-                            candidate.PlayerDisplayName,
-                            data.MainName,
-                            StringComparison.Ordinal
-                        )
-                    )
-                        continue;
-
-                    if (victimEntity != null)
-                    {
-                        LogService.Instance.Warn(
-                            $"Skipped ambiguous player-death event for '{data.MainName}'"
-                        );
-                        return ModEvents.EModEventResult.Continue;
-                    }
-                    victimEntity = candidate;
+                    LogService.Instance.Warn(
+                        $"Skipped ambiguous player-death event for '{data.MainName}'"
+                    );
+                    return ModEvents.EModEventResult.Continue;
                 }
 
                 if (victimEntity != null)
@@ -286,8 +272,53 @@ namespace Takaro
                 return ModEvents.EModEventResult.Continue;
             }
 
-            GameEventPublisher.SendPlayerDeath(victim, null, deathPosition);
+            GameEventPublisher.SendPlayerDeath(
+                victim,
+                DeathAttacker(data.SecondaryName, victimEntity),
+                deathPosition
+            );
             return ModEvents.EModEventResult.Continue;
+        }
+
+        // The game fills SecondaryName only when the killer is a player (from the persistent
+        // player list), so zombie, animal and fall deaths keep no attacker. Takaro's attacker
+        // is a player as well; an ambiguous name or a self-kill sends none rather than a guess.
+        private static TakaroPlayer DeathAttacker(string killerName, EntityPlayer victimEntity)
+        {
+            if (string.IsNullOrEmpty(killerName))
+                return null;
+            if (
+                !TryFindPlayerByName(killerName, out EntityPlayer killerEntity)
+                || killerEntity == null
+            )
+                return null;
+            if (victimEntity != null && killerEntity.entityId == victimEntity.entityId)
+                return null;
+            return Shared.TransformClientInfoToTakaroPlayerIdentity(
+                ConnectionManager.Instance.Clients.ForEntityId(killerEntity.entityId)
+            );
+        }
+
+        // False when two online players share the display name; true with null when none has it.
+        private static bool TryFindPlayerByName(string name, out EntityPlayer player)
+        {
+            player = null;
+            foreach (EntityPlayer candidate in GameManager.Instance.World.Players.dict.Values)
+            {
+                if (
+                    candidate == null
+                    || !string.Equals(candidate.PlayerDisplayName, name, StringComparison.Ordinal)
+                )
+                    continue;
+
+                if (player != null)
+                {
+                    player = null;
+                    return false;
+                }
+                player = candidate;
+            }
+            return true;
         }
 
         private static void PlayerSpawnedInWorld(ref ModEvents.SPlayerSpawnedInWorldData data)

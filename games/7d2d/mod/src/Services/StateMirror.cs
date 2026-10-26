@@ -586,7 +586,8 @@ namespace Takaro.Services
         /// <summary>
         /// Player-facing name for an entity class ("zombieBoe" -> "Boe"), falling
         /// back to the class name when the game has no localisation for it.
-        /// Shared by the entity catalogue and entity-killed so they agree.
+        /// Used by the entity catalogue only: entity-killed keeps the class name
+        /// for parity with the legacy integration (see Shared.EntityKillName).
         /// </summary>
         public static string EntityDisplayName(string entityClassName)
         {
