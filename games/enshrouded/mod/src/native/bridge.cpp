@@ -243,6 +243,7 @@ void Bridge::Loop() {
         }
         if (reconcilePending_ || now >= nextReconcile_) Reconcile(reconcilePending_, now);
         if (now >= nextBanCheck_) CheckTimedBans(now);
+        if (now >= nextSample_) SamplePositions(now);
         DeliverEvents(now);
         FlushState(now, false);
         if (now >= nextPublish_) {
@@ -334,7 +335,8 @@ void Bridge::HandleNotice(Notice& n) {
             for (auto it = inflight_.begin(); it != inflight_.end();) {
                 auto& job = it->second;
                 int expected = kQueued;
-                if (!job->expiry && job->epoch == n.epoch && job->state.compare_exchange_strong(expected, kCancelled)) {
+                if (!job->expiry && !job->sample && job->epoch == n.epoch &&
+                    job->state.compare_exchange_strong(expected, kCancelled)) {
                     if (!job->intentId.empty()) {
                         auto& intents = o_.store->BanIntents();
                         intents.erase(std::remove_if(intents.begin(), intents.end(),
@@ -497,7 +499,7 @@ void Bridge::HandleRequest(uint64_t epoch, const JsonValue& msg) {
         return;
     }
     size_t userJobs = 0;
-    for (auto& kv : inflight_) userJobs += !kv.second->expiry;
+    for (auto& kv : inflight_) userJobs += !kv.second->expiry && !kv.second->sample;
     if (userJobs >= kMaxPendingActions) {
         overloads_++;
         remember();
@@ -629,6 +631,13 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
     int64_t now = o_.steadyMs();
     ActionOutcome& out = job->outcome;
     int64_t wall = o_.wallMs();
+    if (job->sample) {
+        std::string gid = Str(job->args.get("gameId")).value_or("");
+        sampleInFlight_.erase(gid);
+        if (out.ok) RememberPosition(gid, out.payload, now);
+        return;
+    }
+    for (auto& kv : out.positions) RememberPosition(kv.first, kv.second, now);
 
     // State changes first: they happened in the game whether or not anyone still waits for the answer.
     for (auto& p : out.seenPlayers)
@@ -702,7 +711,11 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
     std::string error = out.error;
     if (job->action == "getPlayerLocation") {
         if (ok) {
-            RememberPosition(job->args, payload);
+            try {
+                RememberPosition(PlayerId(job->args), payload, now);
+            } catch (const std::exception&) {
+                // no identifier: nothing to remember
+            }
         } else {
             JsonValue fb;
             if (EventLocationFallback(job->args, now, fb)) {
@@ -731,7 +744,7 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
 void Bridge::CheckDeadlines(int64_t now) {
     for (auto it = inflight_.begin(); it != inflight_.end();) {
         auto job = it->second;
-        if (job->expiry || job->responded || now <= job->deadlineMs) {
+        if (job->expiry || job->sample || job->responded || now <= job->deadlineMs) {
             ++it;
             continue;
         }
@@ -768,20 +781,56 @@ void Bridge::CheckDeadlines(int64_t now) {
     }
 }
 
-void Bridge::RememberPosition(const JsonValue& args, const JsonValue& payload) {
-    const JsonValue* x = payload.get("x");
-    const JsonValue* y = payload.get("y");
-    const JsonValue* z = payload.get("z");
-    if (!x || !y || !z || x->type != JsonValue::Number || y->type != JsonValue::Number || z->type != JsonValue::Number)
+void Bridge::RememberPosition(const std::string& gameId, const JsonValue& position, int64_t now) {
+    const JsonValue* x = position.get("x");
+    const JsonValue* y = position.get("y");
+    const JsonValue* z = position.get("z");
+    if (gameId.empty() || !x || !y || !z || x->type != JsonValue::Number || y->type != JsonValue::Number ||
+        z->type != JsonValue::Number)
         return;
-    try {
-        JsonValue pos = JObj();
-        Put(pos, "x", *x);
-        Put(pos, "y", *y);
-        Put(pos, "z", *z);
-        lastPositions_[PlayerId(args)] = pos;
-    } catch (const std::exception&) {
-        // no identifier: nothing to remember
+    JsonValue pos = JObj();
+    Put(pos, "x", *x);
+    Put(pos, "y", *y);
+    Put(pos, "z", *z);
+    Put(pos, "at", JNum((double)o_.wallMs()));
+    auto& positions = o_.store->Positions();
+    positions[gameId] = pos;
+    positionAt_[gameId] = now;
+    while (positions.size() > kMaxPositions) {
+        auto oldest = std::min_element(positions.begin(), positions.end(), [](const auto& a, const auto& b) {
+            return Num(a.second.get("at")).value_or(0) < Num(b.second.get("at")).value_or(0);
+        });
+        positionAt_.erase(oldest->first);
+        positions.erase(oldest);
+    }
+    positionsDirty_ = true;
+}
+
+// One game-thread read per online player whose position is older than positionSampleMs, on an action worker.
+void Bridge::SamplePositions(int64_t now) {
+    nextSample_ = now + std::max<int64_t>(1000, o_.positionSampleMs / 2);
+    if (o_.positionSampleMs <= 0 || !healthKnown_) return;
+    for (auto& player : o_.store->Online()) {
+        const std::string* gid = GameIdOf(player);
+        if (!gid || sampleInFlight_.count(*gid)) continue;
+        auto at = positionAt_.find(*gid);
+        if (at != positionAt_.end() && now - at->second < o_.positionSampleMs) continue;
+        auto job = std::make_shared<Job>();
+        job->id = nextJobId_++;
+        job->sample = true;
+        job->action = "getPlayerLocation";
+        job->args = JObj();
+        Put(job->args, "gameId", JStr(*gid));
+        job->deadlineMs = now + 60000;
+        job->view = View();
+        job->enqueuedMs = now;
+        sampleInFlight_.insert(*gid);
+        inflight_[job->id] = job;
+        {
+            std::lock_guard<std::mutex> g(mu_);
+            jobQueue_.push_back(job);
+        }
+        jobCv_.notify_one();
     }
 }
 
@@ -807,15 +856,11 @@ bool Bridge::EventLocationFallback(const JsonValue& args, int64_t nowMs, JsonVal
         windows_.erase(it);
         return false;
     }
-    auto pos = lastPositions_.find(id);
-    if (pos != lastPositions_.end()) {
-        out = pos->second;
-    } else {
-        out = JObj();
-        Put(out, "x", JNum(0));
-        Put(out, "y", JNum(0));
-        Put(out, "z", JNum(0));
-    }
+    // Only a position the player really had; without one Takaro gets the plugin's own answer (protocol 1: null).
+    auto pos = o_.store->Positions().find(id);
+    if (pos == o_.store->Positions().end()) return false;
+    out = JObj();
+    for (auto* k : {"x", "y", "z"}) Put(out, k, *pos->second.get(k));
     return true;
 }
 
@@ -914,6 +959,9 @@ void Bridge::ObserveConnection(const std::string& type, const JsonValue& data, i
                                 }),
                  online.end());
     if (type == "player-connected") {
+        // a new session: the position of the last one must never answer for this one
+        if (o_.store->Positions().erase(*gid)) positionsDirty_ = true;
+        positionAt_.erase(*gid);
         online.push_back(player);
         if (o_.store->Remember(player, o_.wallMs())) knownDirty_ = viewDirty_ = true;
     }
@@ -1116,6 +1164,10 @@ void Bridge::FlushState(int64_t now, bool force) {
         outboxDirty_ = !o_.store->SaveOutbox() && o_.store->OutboxUsable();
     }
     if (onlineDirty_) onlineDirty_ = !o_.store->SaveOnline() && !o_.store->Fenced("online");
+    if (positionsDirty_ && (force || now - lastPositionsSave_ >= 5000)) {
+        lastPositionsSave_ = now;
+        positionsDirty_ = !o_.store->SavePositions() && !o_.store->Fenced("positions");
+    }
     if (knownDirty_ && (force || now - lastKnownSave_ >= 5000)) {
         lastKnownSave_ = now;
         knownDirty_ = !o_.store->SaveKnown() && !o_.store->Fenced("known");
@@ -1155,7 +1207,7 @@ void Bridge::Publish() {
     errors += "}";
     size_t userJobs = 0, running = 0;
     for (auto& kv : inflight_) {
-        userJobs += !kv.second->expiry;
+        userJobs += !kv.second->expiry && !kv.second->sample;
         running += kv.second->state == kRunning;
     }
     uint64_t overflows;
@@ -1214,6 +1266,7 @@ void Bridge::Publish() {
                                            .Done())
                         .N("onlinePlayers", (double)o_.store->Online().size())
                         .N("knownPlayers", (double)o_.store->Known().size())
+                        .N("knownPositions", (double)o_.store->Positions().size())
                         .N("reconciledDisconnects", (double)reconciled_)
                         .Raw("timedBans", ObjBuilder()
                                               .N("active", (double)o_.store->TimedBans().size())

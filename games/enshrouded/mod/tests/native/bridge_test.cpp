@@ -573,9 +573,10 @@ void ReconcileAndLocationFallback() {
     auto ev = r.Events("player-disconnected");
     CHECK(!ev.empty() && t::JsonTextEq(JsonDump(*ev[0].get("payload")->get("data")), "{\"player\":" + limon + "}"));
     CHECK(t::WaitFor([&] { return File(r.StateDir() + "/online-players.json") == "[]"; }));
-    // Takaro asks for the location right after the event: answered from the fallback window
+    // Takaro asks for the location right after the event: no position is known, so none is invented (protocol 0
+    // passes the plugin's error on; Takaro stores the event either way)
     JsonValue resp = r.Call("getPlayerLocation", std::string("{\"gameId\":\"") + LIMON + "\"}");
-    CHECK(resp.get("payload") && t::JsonTextEq(JsonDump(*resp.get("payload")), R"({"x":0,"y":0,"z":0})"));
+    CHECK_MSG(resp.get("error") && !resp.get("payload"), JsonDump(resp));
     // other players have no window
     resp = r.Call("getPlayerLocation", "{\"gameId\":\"nobody\"}");
     CHECK(resp.get("error") && resp.get("error")->str == "Enshrouded plugin HTTP 404 for /players/nobody/location: player not found");
@@ -614,10 +615,95 @@ void WindowRules() {
     b.NoteConnectionEvent("chat-message", player, 0);
     CHECK(!b.EventLocationFallback(args, 0, fb));
     b.NoteConnectionEvent("player-disconnected", player, 1000);
-    CHECK(b.EventLocationFallback(args, 1000 + Bridge::kLocationFallbackMs, fb) && t::JsonTextEq(JsonDump(fb), R"({"x":0,"y":0,"z":0})"));
+    CHECK(!b.EventLocationFallback(args, 1000, fb));  // a window, but no real position: never 0,0,0
+    r.store->Positions()[LIMON] = t::J(R"({"x":1.5,"y":2,"z":-3,"at":1})");
+    CHECK(b.EventLocationFallback(args, 1000 + Bridge::kLocationFallbackMs, fb) && t::JsonTextEq(JsonDump(fb), R"({"x":1.5,"y":2,"z":-3})"));
     CHECK(!b.EventLocationFallback(args, 2000 + Bridge::kLocationFallbackMs, fb));
     CHECK(!b.EventLocationFallback(t::J("{\"gameId\":\"someone-else\"}"), 0, fb));
     CHECK(!b.EventLocationFallback(t::J("{}"), 0, fb));
+}
+
+// A crash with Limon online: the position sampled before it, persisted, places the reconciled disconnect.
+void CrashKeepsLastPosition() {
+    t::Group("bridge-crash-last-position");
+    Rig r("crash-position");
+    std::string err;
+    EnsureDirectory(r.StateDir(), err);
+    std::string limon = std::string("{\"gameId\":\"") + LIMON + "\",\"name\":\"Limon\",\"steamId\":\"" + LIMON +
+                        "\",\"platformId\":\"steam:" + LIMON + "\"}";
+    t::WriteFile(r.StateDir() + "/online-players.json", "[" + limon + "]");
+    t::WriteFile(r.StateDir() + "/last-positions.json",
+                 std::string("{\"") + LIMON + "\":{\"x\":3607.96,\"y\":867.27,\"z\":1336.6,\"at\":1}}");
+    r.fake.players = t::J("[]");
+    r.Start();
+    r.Connect();
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return r.Events("player-disconnected").size() == 1;
+    }));
+    // the event itself stays exactly the DTO fields: Takaro drops events with keys it does not know
+    auto ev = r.Events("player-disconnected");
+    CHECK(!ev.empty() && t::JsonTextEq(JsonDump(*ev[0].get("payload")->get("data")), "{\"player\":" + limon + "}"));
+    JsonValue resp = r.Call("getPlayerLocation", std::string("{\"gameId\":\"") + LIMON + "\"}");
+    CHECK_MSG(resp.get("payload") && t::JsonTextEq(JsonDump(*resp.get("payload")), R"({"x":3607.96,"y":867.27,"z":1336.6})"),
+              JsonDump(resp));
+}
+
+// While Limon is online the bridge reads his position itself (Takaro never asks here), keeps it on disk, and
+// answers Takaro's location request after the disconnect with it. A new session forgets the old position.
+void SampledPositionPlacesDisconnect() {
+    t::Group("bridge-sampled-position");
+    Rig r("sampled-position");
+    r.o.positionSampleMs = 100;
+    r.Start();
+    r.Connect();
+    std::string who = std::string("{\"player\":{\"gameId\":\"") + LIMON + "\",\"name\":\"Limon\",\"steamId\":\"" + LIMON + "\"}}";
+    r.fake.PushEvent("player-connected", who);
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/last-positions.json").find("10.5") != std::string::npos; }, 8000));
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);  // he walks on
+        r.fake.locations = t::J(std::string("{\"") + LIMON + "\":{\"x\":44,\"y\":5,\"z\":6}}");
+    }
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/last-positions.json").find("44") != std::string::npos; }, 8000));
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);  // ... and leaves: the game no longer knows him
+        r.fake.players.arr.erase(r.fake.players.arr.begin());
+    }
+    r.fake.PushEvent("player-disconnected", who);
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return r.Events("player-disconnected").size() == 1;
+    }));
+    JsonValue resp = r.Call("getPlayerLocation", std::string("{\"gameId\":\"") + LIMON + "\"}");
+    CHECK_MSG(resp.get("payload") && t::JsonTextEq(JsonDump(*resp.get("payload")), R"({"x":44,"y":5,"z":6})"), JsonDump(resp));
+    r.fake.PushEvent("player-connected", who);
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/last-positions.json").find("44") == std::string::npos; }, 8000));
+}
+
+// Takaro's shutdown reads everyone's position first, so the disconnects of the shutdown are placed exactly.
+void ShutdownReadsPositions() {
+    t::Group("bridge-shutdown-positions");
+    Rig r("shutdown-positions");
+    r.o.positionSampleMs = 0;  // only the shutdown read
+    r.Start();
+    r.Connect();
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.locations = t::J(std::string("{\"") + LIMON + "\":{\"x\":7,\"y\":8,\"z\":9}}");
+    }
+    r.Call("shutdown", "{}");
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/last-positions.json").find("\"x\":7") != std::string::npos; }));
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.players = t::J("[]");
+    }
+    r.fake.PushEvent("player-disconnected", std::string("{\"player\":{\"gameId\":\"") + LIMON + "\",\"name\":\"Limon\",\"steamId\":\"" + LIMON + "\"}}");
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return r.Events("player-disconnected").size() == 1;
+    }));
+    JsonValue resp = r.Call("getPlayerLocation", std::string("{\"gameId\":\"") + LIMON + "\"}");
+    CHECK_MSG(resp.get("payload") && t::JsonTextEq(JsonDump(*resp.get("payload")), R"({"x":7,"y":8,"z":9})"), JsonDump(resp));
 }
 
 void LogTailFallback() {
@@ -1139,6 +1225,9 @@ void RunBridgeTests() {
     CorruptBanStore();
     BanIntentRecovery();
     ReconcileAndLocationFallback();
+    CrashKeepsLastPosition();
+    SampledPositionPlacesDisconnect();
+    ShutdownReadsPositions();
     LocationAfterLeave();
     WindowRules();
     LogTailFallback();
