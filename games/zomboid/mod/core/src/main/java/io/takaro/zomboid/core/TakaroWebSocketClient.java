@@ -225,8 +225,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         position.addProperty("x", x);
         position.addProperty("y", y);
         position.addProperty("z", z);
-        if (dimension != null) {
-            position.addProperty("dimension", dimension);
+        String dim = positionDimension(dimension);
+        if (dim != null) {
+            position.addProperty("dimension", dim);
         }
         data.add("position", position);
         sendGameEvent("player-death", data);
@@ -352,6 +353,17 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             adapter.logWarning("Map unavailable: " + e.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * The dimension a position goes out with. Project Zomboid has one world, so on protocol 1 a
+     * position the game left without a dimension is in the single declared map dimension; without
+     * it Takaro stores the player and the location with dimension null. Protocol 0 is unchanged.
+     */
+    private String positionDimension(String dimension) {
+        if (dimension != null || protocolVersion < 1) return dimension;
+        List<io.takaro.zomboid.core.model.MapDimension> dims = mapDimensions();
+        return dims.size() == 1 ? dims.get(0).id() : null;
     }
 
     private String gameVersion() {
@@ -783,7 +795,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         obj.addProperty("x", loc.x());
         obj.addProperty("y", loc.y());
         obj.addProperty("z", loc.z());
-        if (loc.dimension() != null) obj.addProperty("dimension", loc.dimension());
+        String dimension = positionDimension(loc.dimension());
+        if (dimension != null) obj.addProperty("dimension", dimension);
         return obj;
     }
 
@@ -863,7 +876,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             position.addProperty("x", loc.x());
             position.addProperty("y", loc.y());
             position.addProperty("z", loc.z());
-            if (loc.dimension() != null) position.addProperty("dimension", loc.dimension());
+            String dimension = positionDimension(loc.dimension());
+            if (dimension != null) position.addProperty("dimension", dimension);
             obj.add("position", position);
             if (loc.radius() != null) obj.addProperty("radius", loc.radius());
             if (loc.sizeX() != null) obj.addProperty("sizeX", loc.sizeX());
