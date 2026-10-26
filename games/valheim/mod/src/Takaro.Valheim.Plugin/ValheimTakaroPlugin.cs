@@ -41,11 +41,14 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
         }
 
         // Read by ConnectorConfigStore rather than bound through BepInEx, so BepInEx never rewrites it.
+        // The takaro.cfg 4.2.x kept in the plugin folder is carried over once, then renamed.
         configStore = new ConnectorConfigStore(
             Path.Combine(Paths.ConfigPath, ConnectorConfigFiles.FileName),
             message => Logger.LogInfo(message),
             message => Logger.LogWarning(message),
-            hostServerName: ValheimRuntimePolicy.ServerNameArgument(Environment.GetCommandLineArgs()));
+            hostServerName: ValheimRuntimePolicy.ServerNameArgument(Environment.GetCommandLineArgs()),
+            legacyUserFilePath: Path.Combine(
+                Path.GetDirectoryName(Info.Location) ?? Paths.PluginPath, LegacyConfigMigration.LegacyUserFileName));
         if (!configStore.Load(out var config, out var error) || config is null)
         {
             Logger.LogWarning($"Takaro Valheim connector disabled: {error}. Fix it in {configStore.FilePath} and restart the server.");

@@ -62,18 +62,24 @@ public static class ConnectorConfigFiles
     /// <summary>A new config file: every key with a short comment, an empty token and the given identity and name.</summary>
     public static string NewFile(string identity, string serverName)
     {
+        var values = new Dictionary<string, string>(Defaults.ToDictionary(e => e.Key, e => e.Value), StringComparer.Ordinal)
+        {
+            [IdentityTokenKey] = identity,
+            [ServerNameKey] = serverName
+        };
+        return NewFile(values);
+    }
+
+    /// <summary>A new config file: every key with a short comment and the given value (the default when missing).</summary>
+    public static string NewFile(IReadOnlyDictionary<string, string> values)
+    {
         var text = new StringBuilder()
             .Append("## Takaro Valheim connector settings. Saving this file applies the token, identity,\n")
             .Append("## serverName and takaroWsUrl within a few seconds; other settings need a server restart.\n\n")
             .Append('[').Append(Section).Append("]\n");
         foreach (var entry in Defaults)
         {
-            var value = entry.Key switch
-            {
-                IdentityTokenKey => identity,
-                ServerNameKey => serverName,
-                _ => entry.Value
-            };
+            var value = values.TryGetValue(entry.Key, out var set) ? set : entry.Value;
             text.Append("\n## ").Append(Comments[entry.Key]).Append('\n').Append(Line(entry.Key, value)).Append('\n');
         }
 

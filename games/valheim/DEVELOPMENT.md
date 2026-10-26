@@ -360,6 +360,14 @@ reads it; the plugin does not bind settings through `Config.Bind`, so BepInEx ne
   to a second game server with a name the domain already has. A 409 rejection gets its own banner.
 - A file that cannot be written: the identity stays in memory for this run and the write is
   retried on the next check.
+- Upgrade from an older version (`LegacyConfigMigration`): a file that starts with the 4.2.x
+  header (`## Written by the Takaro Valheim connector: ...`) or BepInEx's 4.1 header is rewritten
+  once into the current format with the settings that version used. For 4.2.x that is
+  `BepInEx/plugins/TakaroValheim/takaro.cfg` over the saved file over the default, as 4.2.x
+  resolved them (the saved file holds only the two tokens; its other keys are written-out
+  defaults); `takaro.cfg` is then renamed to `takaro.cfg.migrated`. `serverName = Valheim Server`
+  becomes the unique name 4.2.x announced. A 4.1 file with a token but no `identityToken` keeps
+  `serverName` as its identity, as 4.1 identified. A file in the current format is never migrated.
 
 Keys and defaults: `registrationToken`, `serverName` (see above), `identityToken`,
 `takaroWsUrl` (`wss://connect.takaro.io/`), `logLevel` (`Information`), `enableLogEvents`
