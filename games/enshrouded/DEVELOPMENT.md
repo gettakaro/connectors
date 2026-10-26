@@ -137,7 +137,16 @@ section per game build (the number the plugin log prints as `game build:`):
 
 `build.sh` embeds the file; the plugin writes it to `takaro/enshrouded-gamedata.json` next to the
 server on first start and reads that copy from then on, so an operator can add a section without a
-new DLL. A section whose entry fails its `verify` bytes disables only that capability (reported
+new DLL. On every start `src/gamedata_file.cpp` reconciles that copy with the embedded one, per
+build section: a section the file lacks is added; a section byte-for-byte (after sorting keys)
+equal to one an earlier plugin embedded is replaced by the embedded one; any other section is the
+operator's and is kept, only gaining the groups and entries (a function, callsite or layout value)
+it lacks. Sections only the file has are kept; a file that is not valid JSON is left alone and the
+embedded data is used. A changed file is first copied to `enshrouded-gamedata.json.bak-<hash>`,
+then rewritten in place (same inode, so it keeps the owner and mode the operator gave it, which a
+rename under Wine would not). `plugin.log` has one `gamedata:` line per outcome. Whenever a
+section in `mod/gamedata/enshrouded-gamedata.json` changes, add its new hash to `kShipped` in
+`src/gamedata_file.cpp`; `mod/tests/run.sh` fails and prints the line to add until it is there. A section whose entry fails its `verify` bytes disables only that capability (reported
 `degraded`). A build with no section falls back to the built-in signature heuristics in `hooks.cpp`
 and `world.cpp` (written for 1024233).
 
@@ -166,7 +175,8 @@ and `world.cpp` (written for 1024233).
 
 0. Add a `builds.<new build>` section to `mod/gamedata/enshrouded-gamedata.json` (diff the new exe
    against the previous one: string anchors, the ECS job table and the reflection field descriptors
-   `{name*, len, type*, offset}` give most values), and regenerate the static tables above.
+   `{name*, len, type*, offset}` give most values) and its hash to `kShipped` in
+   `src/gamedata_file.cpp`, and regenerate the static tables above.
 1. `takaro-maint steam pin --game enshrouded --metadata` to see what moved, then
    `--record-files … --write` to re-pin the record (id and `revision` follow the new game
    build, so the target is a new file).
