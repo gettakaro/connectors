@@ -45,8 +45,41 @@ public class TakaroNeoForgeMod {
 
     @SubscribeEvent
     public void onServerStopping(ServerStoppingEvent event) {
+        emitDisconnectForOnlinePlayers(event.getServer());
         if (connector != null) {
             connector.shutdown();
+        }
+    }
+
+    /**
+     * PlayerLoggedOutEvent fires for players still online only after ServerStoppingEvent has
+     * closed the connection, so Takaro would keep them marked online. Emit player-disconnected
+     * for each of them before the connector shuts down.
+     */
+    private void emitDisconnectForOnlinePlayers(MinecraftServer server) {
+        if (adapter == null || server == null) return;
+        EventEmitter emitter = adapter.getEventEmitter();
+        if (emitter == null) return;
+        if (server.getPlayerList() == null) return;
+        int emitted = 0;
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            if (player == null) continue;
+            try {
+                String gameId = player.getUUID().toString();
+                adapter.getPlayerLocation(gameId); // warm cache before player is removed from list
+                emitter.emitPlayerDisconnected(gameId, player.getName().getString());
+                emitted++;
+            } catch (Exception e) {
+                LOGGER.warn("Failed to emit player-disconnected on shutdown: {}", e.getMessage());
+            }
+        }
+        if (emitted > 0) {
+            // give the frames time to reach Takaro before the socket is torn down
+            try {
+                Thread.sleep(750);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 

@@ -45,8 +45,38 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
 
     @Override
     public void onDisable() {
+        emitDisconnectForOnlinePlayers();
         if (connector != null) {
             connector.shutdown();
+        }
+    }
+
+    /**
+     * Paper disables plugins before it kicks the players still online at shutdown, so the quit
+     * listener never reaches Takaro and Takaro would keep them marked online. Emit
+     * player-disconnected for each of them before the connector shuts down.
+     */
+    private void emitDisconnectForOnlinePlayers() {
+        EventEmitter emitter = eventEmitter;
+        if (emitter == null) return;
+        int emitted = 0;
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            try {
+                String gameId = player.getUniqueId().toString();
+                getPlayerLocation(gameId); // warm cache before player is removed from list
+                emitter.emitPlayerDisconnected(gameId, player.getName());
+                emitted++;
+            } catch (Exception e) {
+                getLogger().warning("Failed to emit player-disconnected on shutdown: " + e.getMessage());
+            }
+        }
+        if (emitted > 0) {
+            // give the frames time to reach Takaro before the socket is torn down
+            try {
+                Thread.sleep(750);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 
@@ -257,6 +287,11 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
             if (target instanceof com.destroystokyo.paper.profile.PlayerProfile profile) {
                 uuid = profile.getId() != null ? profile.getId().toString() : "";
                 name = profile.getName() != null ? profile.getName() : "";
+                // A ban placed while the player was offline stores the profile without a name.
+                if (name.isEmpty() && profile.getId() != null) {
+                    String known = Bukkit.getOfflinePlayer(profile.getId()).getName();
+                    name = known != null ? known : "";
+                }
             }
             String expiresAt = entry.getExpiration() != null ? entry.getExpiration().toInstant().toString() : null;
             bans.add(new io.takaro.minecraft.core.model.BanEntry(uuid, name, entry.getReason(), expiresAt));
