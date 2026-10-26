@@ -118,7 +118,7 @@ takaro.reconnect.delay=5000
 takaro.reconnect.max_delay=300000
 takaro.reconnect.backoff_multiplier=1.5
 takaro.debug=false
-# World map in Takaro. Needs Takaro protocol v1, not yet on takaro.io.
+# World map in Takaro. Needs a Takaro that speaks protocol v1.
 takaro.map=false
 ```
 
@@ -137,13 +137,12 @@ takaro:
     max_delay: 300000
     backoff_multiplier: 1.5
   debug: false
-  # World map in Takaro. Needs Takaro protocol v1, not yet on takaro.io.
+  # World map in Takaro. Needs a Takaro that speaks protocol v1.
   map: false
 ```
 
 `map` (in the Fabric file: `settings.map`; or `TAKARO_MAP=true`) turns on the world map in Takaro.
-It needs Takaro protocol v1, which takaro.io does not have yet, so leave it `false` there. Changing
-it reconnects to Takaro, no restart needed.
+It needs a Takaro that speaks protocol v1. Changing it reconnects to Takaro, no restart needed.
 
 ### 5. Check that it worked
 
@@ -166,7 +165,7 @@ A few seconds after you save the token, these lines follow (Paper prefixes them 
 /srv/mc/config/takaro.json changed; reconnecting with the new settings
 Takaro target-check: {"target":"fabric-26.2", ... "result":"ok","reasons":[]}
 Connecting to Takaro at wss://connect.takaro.io/
-Identified successfully, server ID: <your server id>
+Identified successfully, server ID: <your server id>, protocol v1
 ```
 
 In Takaro, the game server now shows as **online**.
@@ -199,8 +198,8 @@ Verified end to end on **2026-10-22** against Takaro with a real Minecraft clien
 - **Paper**: Minecraft **1.21.11**, Paper build 132, Java 21.
 - **NeoForge**: Minecraft **1.21.11**, NeoForge 21.11.45, Java 21.
 
-The Fabric 26.1.2 and 26.3 files are built and checked the same way but were not played on in this
-run. ✅ = works, ⚠️ = works with a caveat, ❌ = does not work, – = not tested on that platform.
+On **2026-10-26** the Fabric **26.3** file (Fabric API 0.165.0+26.3, Java 25) was played on as well,
+with the same results. The Fabric 26.1.2 file is built and checked the same way but was not played on. ✅ = works, ⚠️ = works with a caveat, ❌ = does not work, – = not tested on that platform.
 
 | What | Fabric | Paper | NeoForge | Notes |
 |---|---|---|---|---|
@@ -231,7 +230,7 @@ run. ✅ = works, ⚠️ = works with a caveat, ❌ = does not work, – = not t
 | Entity kill event | ✅ | ✅ | ✅ | Includes the entity and the weapon, as game ids (`minecraft:husk`, `minecraft:diamond_sword`). |
 | Log events | ❌ | ❌ | ❌ | The connector never sends server log lines to Takaro. |
 | Game profile | ✅ | ✅ | ✅ | The server shows up in Takaro as Minecraft, with the Minecraft icon, the running game version (for example `26.2`) and the connector name and version. Needs a Takaro with protocol v1; an older Takaro ignores it. |
-| Map | ⚠️ | – | – | Off by default. With `map` on and a Takaro that speaks protocol v1, Takaro shows a tiled world map of all three dimensions. takaro.io does not speak v1 yet, so leave it off there. |
+| Map | ⚠️ | – | – | Off by default. With `map` on and a Takaro that speaks protocol v1, Takaro shows a tiled world map of all three dimensions. |
 | Modules (chat commands) | ✅ | – | – | Tested with the teleports module: `@settp home` and `@tp home` from in-game chat. |
 | Discord chat bridge | ✅ | – | – | Both ways: game chat reaches Discord, and Discord messages show in game chat (tested with a simulated Discord message, which takes the same path as a real one). Use the `chatBridgeNoEcho` module; the plain chat bridge echoes Takaro's own messages back. |
 | Shop & economy | ✅ | – | – | Granting currency, ordering, and instant delivery into the inventory work; an order without enough currency is refused. |
@@ -248,8 +247,7 @@ above, which work on all three platforms.
 - **Item quality is ignored.** Everything the shop or Takaro hands out arrives in default
   condition; there is no durability or quality control.
 - **Console command output is not returned.** Check the effect in game instead.
-- **Map needs protocol v1.** `map=true` only works with a Takaro that speaks protocol v1, which
-  takaro.io does not yet.
+- **Map needs protocol v1.** `map=true` only works with a Takaro that speaks protocol v1.
 - **No locations, no log events.** Minecraft has no named-location list for the connector to
   report, and server log lines are not forwarded.
 
