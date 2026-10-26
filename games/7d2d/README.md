@@ -56,26 +56,13 @@ Stop the server, then unzip so that the `Takaro` folder ends up directly inside 
 <server>/Mods/Takaro/
     ModInfo.xml
     Takaro.dll
-    0Harmony.dll
-    LiteDB.dll
-    Mono.Cecil.dll
-    Mono.Cecil.Mdb.dll
-    Mono.Cecil.Pdb.dll
-    Mono.Cecil.Rocks.dll
-    MonoMod.Backports.dll
-    MonoMod.Core.dll
-    MonoMod.ILHelpers.dll
-    MonoMod.Iced.dll
-    MonoMod.RuntimeDetour.dll
-    MonoMod.Utils.dll
-    Newtonsoft.Json.dll
-    System.Buffers.dll
-    System.ValueTuple.dll
-    com.rlabrecque.steamworks.net.dll
-    websocket-sharp.dll
 ```
 
-All of those files are needed — copy the folder as-is, do not cherry-pick the DLLs.
+Harmony comes with the game (`Mods/0_TFP_Harmony`), so the mod ships nothing else.
+
+Upgrading from a release whose zip also held `0Harmony.dll`, `MonoMod.*.dll`, `LiteDB.dll` and
+other DLLs: delete the old `Mods/Takaro` folder before you unzip, so none of those copies stay
+behind. Your settings are not in that folder and are kept.
 
 Examples:
 
