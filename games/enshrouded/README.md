@@ -78,33 +78,32 @@ taken). The `capabilities:` line in `plugin.log` lists every feature as `ok` or 
 ### 6. Upgrading
 
 Stop the server, replace only `dbghelp.dll`, start it again. With Docker that is
-`data/enshrouded/server/takaro/plugin/dbghelp.dll`. `takaro/plugin.json` is kept. Also delete
-`takaro/enshrouded-gamedata.json` so the new release's game data is used (needed for character
-levels). From 0.5.0 (plugin + sidecar): follow [INSTALL.md](INSTALL.md).
+`data/enshrouded/server/takaro/plugin/dbghelp.dll`. `takaro/plugin.json` is kept, and
+`takaro/enshrouded-gamedata.json` is updated by the new release itself. From 0.5.0 (plugin + sidecar): follow [INSTALL.md](INSTALL.md).
 
 ## What works, what doesn't
 
-Tested on Enshrouded 1.0, game build 1273043, on 2026-10-25.
+Tested on Enshrouded 1.0, game build 1273043, on 2026-10-26.
 
 | Feature | Status | Note |
 |---|---|---|
-| Connection, restart, reconnect | ✅ | Also survives network drops and Takaro outages. |
+| Connection, restart, reconnect | ✅ | Also survives network drops and Takaro outages. After a restart the server shows online once the world has loaded. |
 | Game name, build and icon | ✅ | |
 | Player list and lookup | ✅ | Character name and Steam ID; lookup works offline too. |
 | Player location | ✅ | |
 | Player inventory | ✅ | |
 | Give an item | ✅ | Split into stacks of at most 64. |
-| Item catalogue | ✅ | In-game names; a few non-items such as eye colours. |
-| Entity catalogue | ⚠️ | Common creatures get names built from internal codes. |
+| Item catalogue | ✅ | In-game names. |
+| Entity catalogue | ✅ | In-game names, e.g. Rat, Hollow Wretch, Emily Fray. Creatures the game never names are left out. |
 | Locations | ✅ | In-game map names, e.g. Rookmore, Braelyn Bridge. |
-| Run a console command | ✅ | Connector's own commands; `help` lists them, including `levels`. |
+| Run a console command | ✅ | Connector's own commands; `help` lists them, including `levels`. Names with spaces work, e.g. `level "Character 1"`. |
 | Broadcast and whisper | ⚠️ | Whisper not tested with two players. |
 | Teleport a player | ✅ | Lands exactly on the coordinates; pick a spot above ground. |
 | Kick, ban, unban, ban list | ✅ | Kick and ban need the player online. |
 | Timed bans | ✅ | Lifted by the connector when they expire. |
 | Shut the server down | ✅ | Saves first. |
-| Join, leave, chat, death events | ✅ | |
-| Entity kill event | ⚠️ | Common creatures named from internal codes. |
+| Join, leave, chat, death events | ✅ | A player who leaves, or is online when the server stops or crashes, is placed at their last position. |
+| Entity kill event | ✅ | In-game creature and weapon names. |
 | Log events | ⚠️ | Sent, but Takaro does not store them. |
 | World map | ⚠️ | Needs protocol 1 and an uploaded image; see [INSTALL.md](INSTALL.md#map). |
 | Modules: commands, hooks, cronjobs, teleports | ✅ | |
@@ -114,6 +113,7 @@ Tested on Enshrouded 1.0, game build 1273043, on 2026-10-25.
 
 ## Known issues
 
-- A game update can switch features off; `plugin.log` marks them `degraded`.
+- After a game update most features stay off until a connector release supports the new build. The server
+  keeps running; `plugin.log`, Takaro's reachability check and the `version` command say so in one
+  `DEGRADED:` line. Turn automatic game updates off.
 - Use the `chatBridgeNoEcho` module; the stock `chatBridge` echoes server messages to Discord.
-- The console `location` command fails for place names with spaces.
