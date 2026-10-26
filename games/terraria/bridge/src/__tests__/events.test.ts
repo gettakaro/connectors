@@ -72,6 +72,19 @@ test('accepts both TShock leave phrasings and trailing join detail', () => {
   });
 });
 
+test('reports a leave from the TShock 6.2 disconnect line, not from its broadcast echo', () => {
+  const codexTest = { player: { gameId: 'CodexTest', name: 'CodexTest', platformId: 'terraria:CodexTest' } };
+  assert.equal(parseLogLine('2026-10-26 03:34:37 - Utils: INFO: Broadcast: CodexTest has left.')?.type, 'log');
+  assert.deepEqual(parseLogLine('2026-10-26 03:34:37 - TShock: INFO: CodexTest disconnected.'), {
+    type: 'player-disconnected',
+    data: codexTest,
+  });
+  assert.deepEqual(parseLogLine('2026-10-26 03:35:33 - HandlerCollection`1: INFO: CodexTest disconnected.'), {
+    type: 'player-disconnected',
+    data: codexTest,
+  });
+});
+
 test('treats generic colon-separated log lines as logs rather than chat', () => {
   assert.deepEqual(parseLogLine('Error: Something went wrong: details here'), {
     type: 'log',

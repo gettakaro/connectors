@@ -9,6 +9,11 @@ const CHAT = /^Broadcast: <([^>]+)> (.+)$/;
 const JOINED = /^(?:\[Server API] )?(.+?) has joined\.(?:\s.*)?$/i;
 /** TShock emits both `Name left.` and `Name has left.` depending on the disconnect path. */
 const LEFT = /^(?:\[Server API] )?(.+?) (?:has )?left\.(?:\s.*)?$/i;
+/**
+ * TShock 6.2 logs a leave only as `Broadcast: Name has left.` (skipped below, like the join echo)
+ * plus `Name disconnected.`, so the second line is the one that reports a leave at once.
+ */
+const DISCONNECTED = /^(.+?) disconnected\.$/;
 
 interface PrefixedLine {
   message: string;
@@ -65,7 +70,7 @@ function parsePlayerEvent({ message, timestamp }: PrefixedLine): GameEvent | nul
     return { type: 'player-connected', data: { player: logPlayer(joined[1]) } };
   }
 
-  const left = message.match(LEFT);
+  const left = message.match(LEFT) ?? message.match(DISCONNECTED);
   if (left) {
     return { type: 'player-disconnected', data: { player: logPlayer(left[1]) } };
   }
