@@ -39,7 +39,7 @@ a real game client and Takaro. Rows marked *(1.0 ✓)* were re-checked on 1.0; t
 | Single player lookup | ✅ | Also answers for a player who is offline but has been seen before. |
 | Player location *(1.0 ✓)* | ✅ | Matches the in-game position and follows teleports. |
 | Player inventory *(1.0 ✓)* | ✅ | Matches the in-game backpack. |
-| Give an item *(1.0 ✓)* | ✅ | The item arrives in the backpack. The game ignores the count, so the connector splits it into stacks of at most 64. |
+| Give an item *(1.0 ✓)* | ✅ | The item arrives in the backpack. The game ignores the count, so the connector splits it into stacks of at most 64. A quality of 1-255 sets the item level, also for shop listings and modules. Without a quality the game picks the level. For a level the item cannot have, the game uses the item's own level. Any other quality is refused. |
 | Item catalogue *(1.0 ✓)* | ✅ | On 1.0, 4,005 of 4,262 items sync with their in-game English names, e.g. "Spectral Ward" (1024233: 3,317). Items the game never names and abilities are left out; giving an item by its code works for every item. |
 | Entity catalogue | ⚠️ | On 1.0, 477 creature and NPC templates sync (1024233: 397). Bosses, NPCs and fish have their in-game names (e.g. "Armored Fell Thunderbrute", "Oswald Anders"). The game shows no name for other creatures, so they get a readable name built from the internal code, e.g. "Rat". |
 | Locations / points of interest *(1.0 ✓)* | ✅ | 808 places sync as map markers under their in-game map names, e.g. "Pillars of Creation", "Saline Springs", "The Ancient Citadel", every Flame Shrine and Fast Travel Point. Spots the in-game map shows no name for (respawn points, hidden quest areas) are left out. |

@@ -564,10 +564,11 @@ bool RunCommand(const std::string& line, std::string& out) {
         return true;
     }
     if (cmd == "give" && a.size() >= 3 && a.size() <= 5) {
-        double n = 1, lvl = 0;
-        if ((a.size() >= 4 && !Num(a[3], n)) || (a.size() == 5 && (!Num(a[4], lvl) || lvl < 1 || lvl > 255 || lvl != (int)lvl)))
+        double n = 1;
+        uint8_t lvl = 0;
+        if ((a.size() >= 4 && !Num(a[3], n)) || (a.size() == 5 && !ParseItemLevel(a[4], lvl)))
             return out = "usage: give <player> <itemCode> [amount] [level 1-255]", false;
-        Response r = DoGive(a[1], a[2], n, (uint8_t)lvl);
+        Response r = DoGive(a[1], a[2], n, lvl);
         if (r.status != 200) return out = ErrText(r), false;
         out = "gave " + std::to_string((long long)n) + " x " + a[2];
         return true;
@@ -763,7 +764,14 @@ Response Route(const Request& r) {
         }
         if (p0 == "give" && parts.size() == 1) {
             if (!Body(r, v, {"gameId", "code"}, {"amount"}, e)) return e;
-            return DoGive(v.get("gameId")->str, v.get("code")->str, v.get("amount")->num);
+            uint8_t level = 0;
+            const JsonValue* q = v.get("quality");
+            if (!ParseItemLevel(q, level)) {
+                std::string got = q->isStr() ? "'" + q->str + "'" : q->isNum() ? q->str
+                                  : q->type == JsonValue::Bool ? (q->b ? "true" : "false") : "a JSON object or array";
+                return Err(400, "quality must be an item level 1-255 (got " + got + ")");
+            }
+            return DoGive(v.get("gameId")->str, v.get("code")->str, v.get("amount")->num, level);
         }
         if ((p0 == "kick" || p0 == "ban" || p0 == "unban") && parts.size() == 1) {
             if (!Body(r, v, {"gameId"}, {}, e)) return e;

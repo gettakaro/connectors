@@ -126,7 +126,7 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
 | Endpoint | Body (required in bold) | Response |
 |---|---|---|
 | POST /teleport | **gameId**, **x**, **y**, **z** (metres, y up) | `{success:true}` once the Teleport component is added |
-| POST /give | **gameId**, **code** (item code, case-insensitive, or numeric itemId), **amount**, quality? (ignored) | `{success:true, code, detail}` after the game consumed every create action |
+| POST /give | **gameId**, **code** (item code, case-insensitive, or numeric itemId), **amount**, quality? (item level 1-255, number or numeric string) | `{success:true, code, detail}` after the game consumed every create action |
 | POST /message | **text**, recipientGameId?, type? (debug, default 0), senderHandle? (debug) | `{success:true}` |
 | POST /command | **command** | `{success, output}` |
 | POST /kick, /ban, /unban, /shutdown | see Moderation | |
@@ -142,7 +142,11 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
   own admin create path then creates the item (stacking, unique item entities, replication). The game ignores the
   action's `count`: each action creates 1, or a full stack with `createFullStack`. `amount` is therefore split into
   full-stack actions plus single-item actions (max 64 actions per request; ~15 ms each). Non-admin players get items
-  without being granted anything else. Note for Admin-group players: their client's own admin version counters may
+  without being granted anything else. `quality` (Takaro's giveItem quality, also sent by shop orders and modules)
+  sets the action's `level`, the same as the console's `give ... [level]`. Absent, `null` or `""` leaves the level to
+  the game, as before. Anything that is not an integer 1-255 is refused with `400` before anything is given. For a level
+  the item cannot have, the game uses the item's own level instead (e.g. Scrappy Sword with level 8 arrives at 5), and
+  the request still succeeds. Note for Admin-group players: their client's own admin version counters may
   differ after a give; the plugin never enables the gate for them outside a pending give.
 - **message**: calls `ChatSystem::addMessage` on the server thread. Type 0 with a valid player handle is rendered as
   `<character name>: <text>`; handle 0 is dropped and types 1-3 become canned notices (e.g. "set a ping"). Enshrouded
