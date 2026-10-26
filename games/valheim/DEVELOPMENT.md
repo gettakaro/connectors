@@ -296,9 +296,9 @@ through a bounded `Update()`-drained action scheduler (`QueuedMainThreadActionSc
 names, per connection (missing means 0, so an older Takaro keeps working unchanged).
 
 - The manifest declares exactly the `live-supported` actions of `capabilities.json`
-  (testReachability is always allowed) and an `events.<type>` entry per event. getPlayer and
-  listLocations are not declared, so a version 1 Takaro never sends them; on version 0 they
-  work as before.
+  (testReachability is always allowed) and an `events.<type>` entry per event. getPlayer is not
+  declared, so a version 1 Takaro never sends it. listLocations is declared as `locations.list`
+  although the registry keeps it `schema-fallback` until hosted takaro.io is checked, like the map.
 - The world map is declared as the `map` capability (`WorldMapFrame`): one tiled Dimension
   `valheim` (the `dimension` every position reports), bounds = the world square ±10,500 m, +X
   right and +Z (north) up, 256 px tiles, zoom 0 to 4 (about 5 m per pixel at zoom 4). Version 1
@@ -408,7 +408,7 @@ Ownership values are `server-owned`, `upstream-blocked` or `unsupported`.
 | `executeConsoleCommand` | `live-supported` | Runs only exact or prefix-allowlisted commands. |
 | `listItems` | `live-supported` | Lists item prefabs visible to the server, with English display names. |
 | `listEntities` | `live-supported` | Lists non-player character prefabs visible to the server, with English display names. |
-| `listLocations` | `schema-fallback` | The official raw Generic Connector action/schema live-returned 11,293 nested `ILocationDTO` objects, but the standard Takaro route at `0c63cf1c` throws `NotImplementedError` before requesting them. |
+| `listLocations` | `schema-fallback` | The notable places only (`NotableLocations`): Sacrificial Stones, the boss altars and The Queen's Infested Citadel, Haldor, Hildir's Camp and the Bog Witch's Camp, one entry per placed `ZoneSystem` instance with its English name, ground position, dimension `valheim` and code `<prefab>@<x>_<z>`; the other ~11,000 instances (runestones, camps, ruins) are left out. `[]` only after `LocationsGenerated`. Declared on protocol version 1 as `locations.list` and proven there on Takaro staging (dashboard Resync Locations); version 0 Takaro throws `NotImplementedError` before asking, and hosted takaro.io is not yet verified. |
 | `getMapInfo` | `schema-fallback` | `enabled:true` once the world-map raster is ready, with `maxZoom` 4, `mapBlockSize` 128 (metres per tile at `maxZoom`) and a 21,000 m extent on every `mapSize*` axis. Answered off the Unity main thread. |
 | `getMapTile` | `schema-fallback` | Base64 128 px PNG for `{x, y, z}` (`zoom` accepted), rendered off the main thread from the raster that `ValheimWorldMap` samples from `WorldGenerator` on the main thread (4 ms per frame, cached in `BepInEx/cache` per seed). Tiles outside the world answer `tile_out_of_range`; before the raster is ready, `map_not_ready`. |
 | `teleportPlayer` | `live-supported` | Routes Valheim's built-in `RPC_TeleportTo` to the server-known character ZDO, and returns `character_unavailable` when that identity is missing. |
@@ -477,8 +477,9 @@ error.
 Historical dedicated-server evidence from 2026-06-21/22 and the 2026-07-10 turn runs covers
 vanilla-client player location, built-in teleport, moderation, delayed shutdown, player
 connect/disconnect persistence, and an official raw `listLocations` response containing
-11,293 nested locations; the standard Takaro `listLocations` route remained unavailable, so
-that action is `schema-fallback`, not `live-supported`. `getMapInfo` and `getMapTile` were
+11,293 nested locations (since narrowed to the notable places). The standard Takaro route works
+only on protocol version 1, proven on Takaro staging, so that action is `schema-fallback`, not
+`live-supported`. `getMapInfo` and `getMapTile` were
 live-proven on 2026-10-11 on Takaro staging only; hosted takaro.io has not been checked and has
 shown no map tiles for Generic servers, so both are `schema-fallback` too.
 

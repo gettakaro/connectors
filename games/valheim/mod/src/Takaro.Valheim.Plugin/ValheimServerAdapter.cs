@@ -371,7 +371,8 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     public Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default)
     {
         var zoneSystem = ZoneSystem.instance;
-        if (zoneSystem is null)
+        // Until generation finishes the list is partial; [] would read as a world without places.
+        if (zoneSystem is null || !zoneSystem.LocationsGenerated)
         {
             return Task.FromResult(RuntimeArrayActionPolicy.FromSource<object>(
                 sourceAvailable: false,
@@ -379,21 +380,15 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
                 sourceName: "Valheim zone system"));
         }
 
-        var locations = zoneSystem.GetLocationList()
-            .Select(instance => LocationFactory.Create(
-                code: FirstNonEmpty(instance.m_location.m_prefabName, instance.m_location.m_name),
-                rawName: instance.m_location.m_name,
-                x: instance.m_position.x,
-                y: instance.m_position.y,
-                z: instance.m_position.z))
-            .GroupBy(location => $"{location.Code}|{location.Position.X}|{location.Position.Y}|{location.Position.Z}", StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First())
-            .OrderBy(location => location.Code, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(location => location.Position.X)
-            .ThenBy(location => location.Position.Z)
-            .ToArray();
+        var locations = NotableLocations.Select(zoneSystem.GetLocationList()
+            .Select(instance => new ValheimLocationInstance(
+                instance.m_location.m_prefabName,
+                instance.m_position.x,
+                instance.m_position.y,
+                instance.m_position.z)));
 
-        logger.LogInfo($"Takaro Valheim listLocations returned {locations.Length} location(s).");
+        logger.LogInfo($"Takaro Valheim listLocations returned {locations.Length} notable location(s): "
+            + string.Join(", ", locations.GroupBy(location => location.Name).Select(group => $"{group.Key} x{group.Count()}")) + ".");
         return Task.FromResult(RuntimeArrayActionPolicy.FromSource(true, locations, "Valheim location registry"));
     }
 
