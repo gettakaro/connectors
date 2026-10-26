@@ -684,6 +684,11 @@ def test_every_enshrouded_verification_body_has_pass_and_failure_paths(
     passed = asyncio.run(hooks._check_identify(run, fake, container.alive))
     assert passed.status == "pass", passed.detail["problems"]
     assert "config" not in passed.detail["native"], "the report keeps state, never configuration"
+    # /health may trail the identified log line while the world loads: the check polls until it catches up
+    lagging = iter([{"diagnostics": {"native": {"state": "waiting-for-game", "identified": False}}}])
+    monkeypatch.setattr(hooks, "plugin_health", lambda *args: next(lagging, identified))
+    assert asyncio.run(hooks._check_identify(run, fake, container.alive)).status == "pass"
+    monkeypatch.setattr(hooks, "plugin_health", lambda *args: identified)
     assert asyncio.run(hooks._check_players(run, fake)).status == "pass"
     assert asyncio.run(hooks._check_catalog(run, fake)).status == "pass"
     assert asyncio.run(hooks._check_console(run, fake)).status == "pass"
@@ -726,6 +731,7 @@ def test_every_enshrouded_verification_body_has_pass_and_failure_paths(
     failed.ping_error = TimeoutError("no pong")
     monkeypatch.setattr(hooks, "plugin_health", lambda *args: {"diagnostics": {"native": {"state": "connecting"}}})
     monkeypatch.setattr(hooks, "APP_PING_BUDGET", 0.0)
+    monkeypatch.setattr(hooks, "HEALTH_IDENTIFIED_BUDGET", 0.0)
     monkeypatch.setattr(hooks.checks, "wait_for_line", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         hooks.checks_lifecycle, "identify_within", lambda *args, **kwargs: asyncio.sleep(0, result=None)
