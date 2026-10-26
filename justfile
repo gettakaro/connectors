@@ -135,7 +135,7 @@ sevend2d-test-contract target='linux-3.3.0.b18':
 
 # Run the 7D2D source-level regression suite
 sevend2d-test-regressions:
-    python3 -m unittest tests/test_7d2d_connector_regressions.py
+    python3 -m unittest tests/test_7d2d_connector_regressions.py tests/test_7d2d_prismacore_regressions.py
 
 # Read what Steam serves on the pinned branch now and compare it with the catalog
 sevend2d-pin *args:

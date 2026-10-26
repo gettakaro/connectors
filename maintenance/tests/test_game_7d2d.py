@@ -75,7 +75,7 @@ def test_every_7d2d_verification_body_has_pass_and_failure_paths(
     assert asyncio.run(hooks._check_stop(failed_run, failed, [{"path": "missing"}])).status == "fail"
     asyncio.run(hooks.after_protocol(failed_run, failed, lambda: False))
     asyncio.run(hooks.after_shutdown(failed_run, failed, failed_run.ws_url, []))
-    assert {check for check, _ in failed_run.skips} == {"handshake", "action", "reconnect", "stop"}
+    assert {check for check, _ in failed_run.skips} == {"handshake", "action", "reconnect", "stop", "prismacore"}
 
 
 @pytest.fixture
@@ -722,7 +722,7 @@ def test_the_check_ids_add_the_7d2d_lifecycle_checks() -> None:
 
     ids = check_ids(GAME)
 
-    assert {"handshake", "action", "reconnect", "stop"} <= set(ids)
+    assert {"handshake", "action", "reconnect", "stop", "prismacore"} <= set(ids)
 
 
 # -- the release record ------------------------------------------------------------------
