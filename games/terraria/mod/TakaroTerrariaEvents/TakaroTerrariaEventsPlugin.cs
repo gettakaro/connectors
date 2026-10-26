@@ -197,7 +197,7 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
     {
         if (args.Parameters.Count < 1)
         {
-            args.Player.SendErrorMessage("Usage: /takaroban <player> [reason]");
+            args.Player.SendErrorMessage("Usage: /takaroban <player> [until=<unix seconds>] [reason]");
             return;
         }
 
@@ -216,8 +216,31 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         }
 
         var target = matches[0];
-        var reason = args.Parameters.Count > 1
-            ? string.Join(" ", args.Parameters.GetRange(1, args.Parameters.Count - 1))
+
+        // An optional `until=<unix seconds>` before the reason makes the ban timed; TShock then
+        // lets the player back in once it has passed. Without it the ban is permanent.
+        var reasonStart = 1;
+        var expires = DateTime.MaxValue;
+        if (args.Parameters.Count > 1 && args.Parameters[1].StartsWith("until=", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!long.TryParse(args.Parameters[1].Substring("until=".Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out var unixSeconds)
+                || unixSeconds < 0 || unixSeconds > 253402300799)
+            {
+                var failure = JsonSerializer.Serialize(new
+                {
+                    success = false,
+                    reason = $"'{args.Parameters[1]}' is not until=<unix seconds>."
+                });
+                args.Player.SendInfoMessage($"TAKARO_BAN {failure}");
+                return;
+            }
+
+            expires = DateTimeOffset.FromUnixTimeSeconds(unixSeconds).UtcDateTime;
+            reasonStart = 2;
+        }
+
+        var reason = args.Parameters.Count > reasonStart
+            ? string.Join(" ", args.Parameters.GetRange(reasonStart, args.Parameters.Count - reasonStart))
             : "Banned by Takaro";
 
         var identifiers = BanIdentifiersFor(target);
@@ -240,7 +263,7 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
                 // Tag the ban with the player name so TakaroUnban can find it later: a
                 // banned player is offline by definition, so the UUID cannot be re-derived
                 // from a live TSPlayer at unban time.
-                TShock.Bans.InsertBan(identifier, $"{reason} {BanNameTag(target.Name)}", "takaro", DateTime.UtcNow, DateTime.MaxValue);
+                TShock.Bans.InsertBan(identifier, $"{reason} {BanNameTag(target.Name)}", "takaro", DateTime.UtcNow, expires);
                 applied.Add(identifier);
             }
             catch (Exception ex)
@@ -796,11 +819,17 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             return;
         }
 
+        // A critter or monster that died to a town NPC, a trap, lava or a despawn has no killer,
+        // and Takaro can only file an entity kill under a player.
         var killer = ResolveKiller(npc);
+        if (killer is null)
+        {
+            return;
+        }
 
         Emit("entity-killed", new
         {
-            player = killer is null ? null : PlayerDto(killer, killer.Name),
+            player = PlayerDto(killer, killer.Name),
             entity = new
             {
                 gameId = $"npc:{npc.whoAmI}",
@@ -830,18 +859,15 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
     //     NOT -1 when unset: Terraria initialises it to 255 (Main.maxPlayers), a
     //     sentinel that is still inside TShock.Players' bounds, so a naive index
     //     check treats the "nobody" value as a real slot.
-    //  3. npc.target / npc.oldTarget - who the NPC was aggroed on. Weaker still,
-    //     since aggro can point at a player who dealt no damage at all, but it is
-    //     better than nothing for AI types that never set an interaction.
     //
-    // Returns null when nothing resolves, which surfaces as no player on the event.
+    // Who the NPC was aggroed on (npc.target) and "the only player online" are not
+    // used: both credited players with kills made by town NPCs, traps and lava.
+    //
+    // Returns null when no player damaged the NPC.
     private static TSPlayer? ResolveKiller(NPC npc)
     {
         return SoleInteractingPlayer(npc)
-            ?? ActivePlayerByIndex(npc.lastInteraction)
-            ?? ActivePlayerByIndex(npc.target)
-            ?? ActivePlayerByIndex(npc.oldTarget)
-            ?? SoleActiveTSPlayer();
+            ?? ActivePlayerByIndex(npc.lastInteraction);
     }
 
     // Returns the only player flagged in npc.playerInteraction, or null when zero
@@ -948,32 +974,6 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
 
         var player = TShock.Players[index];
         return player is not null && player.Active ? player : null;
-    }
-
-    // Last-resort killer guess. Only answers when exactly one player is online, in
-    // which case the kill must be theirs. With two or more connected, picking the
-    // first active slot is just a guess that is usually wrong on a busy server, and
-    // attributing a kill to the wrong player is worse than attributing it to nobody
-    // - so we return null and let the event report no killer.
-    private static TSPlayer? SoleActiveTSPlayer()
-    {
-        TSPlayer? found = null;
-        foreach (var player in TShock.Players)
-        {
-            if (player is null || !player.Active)
-            {
-                continue;
-            }
-
-            if (found is not null)
-            {
-                return null;
-            }
-
-            found = player;
-        }
-
-        return found;
     }
 
     private static object PlayerDto(TSPlayer? player, string fallbackName)

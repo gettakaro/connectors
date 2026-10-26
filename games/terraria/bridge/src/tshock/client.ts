@@ -27,6 +27,8 @@ export interface TShockBan {
   name?: string;
   ip?: string;
   reason?: string;
+  /** .NET ticks; DateTime.MaxValue (3155378975999999999) for a permanent ban. */
+  end_date_ticks?: number | string;
 }
 
 export interface CommandResult {
