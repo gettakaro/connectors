@@ -4,6 +4,23 @@ All notable changes to the Takaro Project Zomboid connector are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.0](https://github.com/gettakaro/connectors/compare/zomboid-v1.4.0...zomboid-v1.5.0) (2026-10-26)
+
+
+### Features
+
+* **zomboid:** report the game profile, connector identity and game icon ([#557](https://github.com/gettakaro/connectors/issues/557)) ([58f0c9e](https://github.com/gettakaro/connectors/commit/58f0c9e22fad87d0dfed6695cc76fc10506aa88b))
+
+
+### Bug Fixes
+
+* **zomboid:** name the map Dimension in player positions on protocol v1 ([#625](https://github.com/gettakaro/connectors/issues/625)) ([b10820e](https://github.com/gettakaro/connectors/commit/b10820ef224b5fad16d0235c836456995bb3047a))
+
+
+### Documentation
+
+* **zomboid:** match the install steps to a clean install of the latest release ([#588](https://github.com/gettakaro/connectors/issues/588)) ([427e99f](https://github.com/gettakaro/connectors/commit/427e99f85c0a4a9dfafeae5fb8562e17e03aaff6))
+
 ## [1.4.0](https://github.com/gettakaro/connectors/compare/zomboid-v1.3.0...zomboid-v1.4.0) (2026-10-18)
 
 
