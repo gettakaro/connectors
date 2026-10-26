@@ -169,7 +169,8 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
 - `GET /bans`: see Moderation.
 - `GET /items` returns 3609 `[{code, name, description:"<category>, <rarity>", itemId, maxStackSize}]`. Localized names
   do not ship with the dedicated server, so `name` is the code with spaces.
-- `GET /entities` returns 979 actor templates `[{code, name, type: hostile|friendly|neutral, description}]`.
+- `GET /entities` returns 979 actor templates `[{code, name, type: hostile|friendly|neutral, description}]`. Each code
+  appears once: a code the game gives several templates is listed under the name its nearest shorter code has.
 - `GET /locations` returns the 808 map markers and spawn points the in-game map shows `[{code, name, kind, spawnType?, position:{x,y,z}}]`,
   named with the client's En_Us map label; a code several placements share gets `@<x>_<z>` (metres) appended.
 
