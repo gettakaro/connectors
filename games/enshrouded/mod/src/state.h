@@ -1,6 +1,7 @@
 // Plugin state: event ring buffer, player registry, capability status, log-line correlation.
 #pragma once
 #include "common.h"
+#include "console_args.h"
 
 #include <deque>
 #include <set>
@@ -73,6 +74,8 @@ public:
     void EmitEvent(const std::string& type, const std::string& dataJson);
     // Online player lookup by SteamID64 or (case-insensitive) name: fills steamId, name and player JSON.
     bool FindOnline(const std::string& idOrName, std::string& steamId, std::string& name, std::string* json = nullptr) const;
+    // Online players for console argument matching (console_args.h).
+    std::vector<console::Player> OnlinePlayers() const;
     // Online player JSON by exact name (the Steam persona the server prints); false if none or ambiguous.
     bool PlayerJsonByName(const std::string& name, std::string& json) const;
 

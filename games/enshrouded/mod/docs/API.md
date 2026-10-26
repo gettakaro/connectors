@@ -158,7 +158,10 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
 - **command** (Enshrouded has no server console; this is a plugin-defined set): `help`, `version`, `players`,
   `say <text>`, `whisper <player> <text>`, `location <player>`, `teleport <player> <x> <y> <z>`, `tp <player> <toPlayer>`,
   `inventory <player>`, `give <player> <itemCode> [amount] [level]` (level 1-255; omitted, or a level the item cannot have, = the item's default level), `item <search>`, `kick <player>`, `levels`, `level <player>` (character level and experience; needs the gamedata `attributes*` layout), `save-and-shutdown`.
-  `<player>` is a SteamID64 or the exact name. Unknown commands return `success:false` with a hint. There is no
+  `<player>` is a SteamID64 or the name (persona or character name, case-insensitive). A name with spaces is given
+  quoted (`level "Character 1"`, single quotes too; `\"` escapes a quote) or bare (`level Character 1`): bare words are
+  matched against the online players, and a line that fits more than one way, or a name several online players share,
+  is refused with a hint instead of guessed. Unknown commands return `success:false` with a hint. There is no
   time-of-day command (not reverse engineered).
 
 ### GET lists (static data from the server's kfc: items and entities from build 1267041, locations from 1273043; regenerate with `tools/gen_gamedata.py`)
