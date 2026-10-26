@@ -9,7 +9,8 @@
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "catalogue": "node scripts/gen-catalogue.mjs"
+    "catalogue": "node scripts/gen-catalogue.mjs",
+    "icon": "node scripts/gen-game-icon.mjs"
   },
   "license": "ISC",
   "dependencies": {

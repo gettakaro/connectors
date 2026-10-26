@@ -130,6 +130,20 @@ no `docker load` seam), and `takaro-maint verify` (a world is only joinable with
 no hosted runner holds 15 GB of images) — which is why the workflow passes `runtime: false` and the target declares
 `verification.required: contract`. Runtime proof is produced on the dev-servers rig against this exact pin.
 
+## Game profile
+
+Identify always carries `game: "dune"` and `connector: { name: "takaro-dune", version }`; the version is
+`sidecar/src/version.ts`, which release-please keeps equal to `version.txt` (a unit test checks it). On protocol 1
+the manifest adds `game.profile` with the display name, the icon (`assets/icon-256.png`, revision = first 12 hex of
+its sha256) and the game build when known, and the sidecar answers `getGameIcon` with the whole PNG.
+
+- The icon is embedded as `sidecar/src/takaro/gameIcon.generated.ts` because `Dockerfile.dev` only sees `sidecar/`.
+  After changing the PNG run `npm run icon` (a test fails while the two differ).
+- The game build is the `LogNetVersion: … DuneSandbox <build>, NetCL: …` line the map server logs at boot. The
+  sidecar reads the head of `DUNE_LOG_FILE` at start and follows the tail, so a map restart on a new build sends a
+  `capabilities` replacement. Without `DUNE_LOG_FILE` the version is omitted. The Postgres database name
+  is not the build: it carries a content version that lags it (build 1.5.3.7 ran on `dune_sb_1_5_3_0`).
+
 ## The item catalogue
 
 `sidecar/data/items.json` in this repository is a **placeholder** of 15 hand-written rows. The full ~2200-row

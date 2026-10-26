@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CONNECTOR_IDENTITY } from '../takaro/gameProfile.js';
 import { createErrorResponse, createGameEvent, createIdentify, createResponse, normalizeArgs, parseTakaroRequest } from '../takaro/protocol.js';
 
 describe('protocol', () => {
@@ -22,8 +23,12 @@ describe('protocol', () => {
   });
 
   it('builds frames', () => {
-    expect(createIdentify({ identityToken: 'id', registrationToken: 'reg', serverName: 'S' })).toEqual({ type: 'identify', payload: { identityToken: 'id', registrationToken: 'reg', name: 'S' } });
-    expect(createIdentify({ identityToken: 'id', registrationToken: '' })).toEqual({ type: 'identify', payload: { identityToken: 'id' } });
+    const identity = { game: 'dune', connector: CONNECTOR_IDENTITY };
+    expect(createIdentify({ identityToken: 'id', registrationToken: 'reg', serverName: 'S' })).toEqual({
+      type: 'identify',
+      payload: { identityToken: 'id', registrationToken: 'reg', name: 'S', ...identity },
+    });
+    expect(createIdentify({ identityToken: 'id', registrationToken: '' })).toEqual({ type: 'identify', payload: { identityToken: 'id', ...identity } });
     // getPlayer for an unknown player answers an explicit JSON null; `{}` fails Takaro's IGamePlayer validation (F7).
     expect(createResponse('r', null)).toEqual({ type: 'response', requestId: 'r', payload: null });
     expect(createResponse('r', undefined)).toEqual({ type: 'response', requestId: 'r', payload: {} });

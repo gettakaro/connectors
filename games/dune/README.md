@@ -180,6 +180,7 @@ the `.so` with one for the same server build, and start it again.
 | Entity kill events | ✅ | Plugin reports entity and weapon display name. |
 | Log events | ⚠️ | Secrets are redacted; at most 50 lines per 30 s are forwarded; Takaro does not retain logs. |
 | Map | ⚠️ | Hagga Basin, calibrated by the connector; you upload the image (see Map in Takaro). Needs Takaro protocol v1 (not yet on takaro.io). |
+| Game profile | ⚠️ | Takaro shows Dune: Awakening with its icon, the game build (read from the map-server log, so it needs `DUNE_LOG_FILE`) and the connector version. Needs Takaro protocol v1. |
 | Module chat commands | ✅ | Commands run and answer in game chat. |
 | Module hooks and cronjobs | ✅ | Hooks and scheduled jobs run normally. |
 | Module teleports | ✅ | Teleport commands move the player. |
