@@ -144,6 +144,9 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn("PlayerDisplayName", game_message)
         self.assertIn("Clients.ForEntityId", game_message)
         self.assertNotIn("|| data.ClientInfo == null", game_message)
+        # PvP deaths carry the killer; the game names it only when it is a player.
+        self.assertIn("DeathAttacker(data.SecondaryName, victimEntity)", game_message)
+        self.assertNotIn("SendPlayerDeath(victim, null,", game_message)
 
         self.assertIn(
             "data.KilledEntitiy.entityType == EntityType.Player", entity_killed
