@@ -221,7 +221,8 @@ public sealed class CompanionClientState
     {
         envelope = null;
         if (messageType != CompanionMessageTypes.InventorySnapshot
-            && messageType != CompanionMessageTypes.KillVerdict)
+            && messageType != CompanionMessageTypes.KillVerdict
+            && messageType != CompanionMessageTypes.CommandProbeInvoke)
         {
             return false;
         }

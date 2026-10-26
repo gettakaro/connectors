@@ -117,7 +117,8 @@ public sealed class CompanionRateLimiter
         || messageType == CompanionMessageTypes.HelloNack
         || messageType == CompanionMessageTypes.Heartbeat
         || messageType == CompanionMessageTypes.InventorySnapshot
-        || messageType == CompanionMessageTypes.KillVerdict;
+        || messageType == CompanionMessageTypes.KillVerdict
+        || messageType == CompanionMessageTypes.CommandProbeInvoke;
 
     private sealed class Bucket
     {
