@@ -576,6 +576,14 @@ bool PluginState::FindOnline(const std::string& idOrName, std::string& steamId, 
     return true;
 }
 
+std::vector<console::Player> PluginState::OnlinePlayers() const {
+    Guard g(lock_);
+    std::vector<console::Player> out;
+    for (auto& p : players_)
+        if (p.online) out.push_back({p.steamId, p.name, p.characterName});
+    return out;
+}
+
 bool PluginState::PlayerJsonByName(const std::string& name, std::string& json) const {
     Guard g(lock_);
     int n = 0;

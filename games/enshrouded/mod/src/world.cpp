@@ -558,10 +558,9 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                             if (kItems[q].itemId == itemId) wd = &kItems[q];
                     KillWeapon kw = ResolveKillWeapon(itemId, wd ? wd->code : nullptr, category);
                     const char* catName = WeaponCategoryName(category);
-                    // `entity` is what Takaro shows: the client's name, else the code-derived one;
-                    // the template code stays in `entityCode`.
-                    EntityName en = victimDef ? ResolveEntityName(victimDef->guid, victimDef->code)
-                                              : ResolveEntityName(nullptr, nullptr, code);
+                    // `entity` is what Takaro shows: the in-game name (entity.h); the template code
+                    // stays in `entityCode`.
+                    EntityName en = ResolveEntityName(victimDef);
                     std::string dataJson = "{\"entity\":" + JsonStr(en.name) + ",\"entityCode\":" + JsonStr(code) +
                                            ",\"entityNameSource\":" + JsonStr(en.source) + ",\"weapon\":" + JsonStr(kw.name) +
                                            ",\"weaponSource\":" + JsonStr(kw.source) + ",\"weaponItemId\":" +
@@ -622,7 +621,7 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                             const char* f = "none";
                             const EntityDef* ed = EntityByGuid(guid, &f);
                             std::string raw = ed ? ed->code : "entity#" + std::to_string(killer);
-                            EntityName en = ed ? ResolveEntityName(ed->guid, ed->code) : ResolveEntityName(nullptr, nullptr, raw);
+                            EntityName en = ResolveEntityName(ed);
                             // killerEntity stays the template code; the death message uses the name
                             dataJson += ",\"killerEntity\":" + JsonStr(raw) + ",\"killerEntityName\":" + JsonStr(en.name);
                         }
@@ -1537,7 +1536,8 @@ const std::string& ItemsJson() {
     if (s.empty()) {
         // Only what the game client names: an item without an En_Us name is never shown to a
         // player (character-creator parts, placement tools, cut content), and an Ability_ row
-        // is a skill, not an item. giveItem still takes any code (FindItemByCode).
+        // is a skill and an Icon_ row a character-creator swatch, not items. giveItem still takes
+        // any code (FindItemByCode).
         s = "[";
         bool first = true;
         for (size_t i = 0; i < kItemCount; i++) {

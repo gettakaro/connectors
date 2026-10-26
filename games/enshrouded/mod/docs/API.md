@@ -163,14 +163,19 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
 - **command** (Enshrouded has no server console; this is a plugin-defined set): `help`, `version`, `players`,
   `say <text>`, `whisper <player> <text>`, `location <player>`, `teleport <player> <x> <y> <z>`, `tp <player> <toPlayer>`,
   `inventory <player>`, `give <player> <itemCode> [amount] [level]` (level 1-255; omitted, or a level the item cannot have, = the item's default level), `item <search>`, `kick <player>`, `levels`, `level <player>` (character level and experience; needs the gamedata `attributes*` layout), `save-and-shutdown`.
-  `<player>` is a SteamID64 or the exact name. Unknown commands return `success:false` with a hint. There is no
+  `<player>` is a SteamID64 or the name (persona or character name, case-insensitive). A name with spaces is given
+  quoted (`level "Character 1"`, single quotes too; `\"` escapes a quote) or bare (`level Character 1`): bare words are
+  matched against the online players, and a line that fits more than one way, or a name several online players share,
+  is refused with a hint instead of guessed. A quote left open is refused by every command (only the message of `say`
+  and `whisper` may hold one). Replies name a player by character name (the persona until it is known). Unknown commands return `success:false` with a hint. There is no
   time-of-day command (not reverse engineered).
 
 ### GET lists (static data from the server's kfc: items and entities from build 1267041, locations from 1273043; regenerate with `tools/gen_gamedata.py`)
 - `GET /bans`: see Moderation.
 - `GET /items` returns 3609 `[{code, name, description:"<category>, <rarity>", itemId, maxStackSize}]`. Localized names
   do not ship with the dedicated server, so `name` is the code with spaces.
-- `GET /entities` returns 979 actor templates `[{code, name, type: hostile|friendly|neutral, description}]`.
+- `GET /entities` returns 979 actor templates `[{code, name, type: hostile|friendly|neutral, description}]`. Each code
+  appears once: a code the game gives several templates is listed under the name its nearest shorter code has.
 - `GET /locations` returns the 808 map markers and spawn points the in-game map shows `[{code, name, kind, spawnType?, position:{x,y,z}}]`,
   named with the client's En_Us map label; a code several placements share gets `@<x>_<z>` (metres) appended.
 

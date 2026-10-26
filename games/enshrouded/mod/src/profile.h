@@ -6,8 +6,9 @@
 
 namespace profile {
 
-// Loads takaro/enshrouded-gamedata.json (written from the embedded copy when missing) and selects the section for
-// `gameBuild`. Call after scan::Init().
+// Loads takaro/enshrouded-gamedata.json (written from the embedded copy when missing; sections an earlier plugin wrote
+// are upgraded to the embedded ones, edited sections kept, see gamedata_file.h) and selects the section for `gameBuild`.
+// Call after scan::Init().
 void Load(const std::string& gameBuild);
 // True when a section for the running build was found: callers use it instead of the built-in heuristics.
 bool Active();

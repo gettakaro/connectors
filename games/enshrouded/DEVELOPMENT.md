@@ -141,7 +141,16 @@ section per game build (the number the plugin log prints as `game build:`):
 
 `build.sh` embeds the file; the plugin writes it to `takaro/enshrouded-gamedata.json` next to the
 server on first start and reads that copy from then on, so an operator can add a section without a
-new DLL. A section whose entry fails its `verify` bytes disables only that capability (reported
+new DLL. On every start `src/gamedata_file.cpp` reconciles that copy with the embedded one, per
+build section: a section the file lacks is added; a section byte-for-byte (after sorting keys)
+equal to one an earlier plugin embedded is replaced by the embedded one; any other section is the
+operator's and is kept, only gaining the groups and entries (a function, callsite or layout value)
+it lacks. Sections only the file has are kept; a file that is not valid JSON is left alone and the
+embedded data is used. A changed file is first copied to `enshrouded-gamedata.json.bak-<hash>`,
+then rewritten in place (same inode, so it keeps the owner and mode the operator gave it, which a
+rename under Wine would not). `plugin.log` has one `gamedata:` line per outcome. Whenever a
+section in `mod/gamedata/enshrouded-gamedata.json` changes, add its new hash to `kShipped` in
+`src/gamedata_file.cpp`; `mod/tests/run.sh` fails and prints the line to add until it is there. A section whose entry fails its `verify` bytes disables only that capability (reported
 `degraded`). A build with no section falls back to the built-in signature heuristics in `hooks.cpp`
 and `world.cpp` (written for 1024233).
 
@@ -154,7 +163,9 @@ and `world.cpp` (written for 1024233).
    En_Us names. 1.0 changed the container magic to `KFC4`; kfc-parser 0.1.2 refuses it, but accepting
    `0x3443464B` next to `KFC3` in `crates/kfc-base/src/container/header.rs` is the only change needed.
 2. Write the generator inputs (`items/entities/locations.json`, see `tools/gen_gamedata.py` for the path), then `tools/gen_gamedata.py`,
-   `tools/gen_item_labels.py <export> <note>`, `tools/gen_entity_labels.py <export> research/entities.json <note>` and
+   `tools/gen_item_labels.py <export> <note>`, `tools/gen_entity_labels.py <export> <note> [--audit <tsv>]` (names
+   `src/gamedata.cpp`'s templates from the client export: own name, Logic Spawner entry, item, then the named
+   templates sharing model, code or arsenal; `--audit` lists every template with its name and source) and
    `tools/gen_location_labels.py <export>/templates-en.tsv research/locations.json <note>`.
 3. `locations.json` comes from the **server** with `tools/eml-locations` (copy it into `<server>/mods/`):
    map-marker, spawn-point and location placements from `SceneEntityChunkResource`. 1.0 stores a
@@ -170,7 +181,8 @@ and `world.cpp` (written for 1024233).
 
 0. Add a `builds.<new build>` section to `mod/gamedata/enshrouded-gamedata.json` (diff the new exe
    against the previous one: string anchors, the ECS job table and the reflection field descriptors
-   `{name*, len, type*, offset}` give most values), and regenerate the static tables above. When the
+   `{name*, len, type*, offset}` give most values) and its hash to `kShipped` in
+   `src/gamedata_file.cpp`, and regenerate the static tables above. When the
    new build's `tkeen::ItemInfo` and TemplateResource exports still match the compiled tables, set
    `layout.itemTables` to the build they were exported on (`"1267041"`): that switches the catalogue and
    `giveItem` back on without a plugin release.
