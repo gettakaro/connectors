@@ -869,6 +869,24 @@ void HandleChat(void* self, void* params) {
     PluginLog("events: chat-message from %s: %s", id.gameId.c_str(), msg.c_str());
 }
 
+// World position of an actor, or of the actor that owns a component (game thread only).
+bool ActorPosition(void* obj, double& x, double& y, double& z) {
+    if (!ValidObject(obj)) return false;
+    void* actor = obj;
+    if (PropOffOf(obj, "RootComponent") < 0) {
+        void* outer = Reflect::ObjOuter(obj);
+        if (!outer || outer == obj || !ValidObject(outer)) return false;
+        actor = outer;
+    }
+    void* root = nullptr;
+    if (!ReadAt(actor, PropOffOf(actor, "RootComponent"), root) || !ValidObject(root)) return false;
+    double v[3];
+    if (!ReadAt(root, PropOffOf(root, "RelativeLocation"), v)) return false;
+    if (v[0] == 0.0 && v[1] == 0.0 && v[2] == 0.0) return false;
+    x = v[0]; y = v[1]; z = v[2];
+    return true;
+}
+
 void HandleDeathTelemetry(void* self, void* func, void* params) {
     // The single parameter is an FDominionDamageEvent; its offset in the params block is the
     // parameter property's own offset (0 in practice, but read it reflectively anyway).
@@ -921,6 +939,8 @@ void HandleDeathTelemetry(void* self, void* func, void* params) {
     if (!instClass.empty() || !srcClass.empty())
         PluginLog("events: death damage instigator=%s source=%s", instClass.c_str(), srcClass.c_str());
     if (havePos && !MemReadable(dmg, 8)) havePos = false;
+    // Fall damage and kill volumes leave VictimLocation zero: take the victim's own position.
+    if (!havePos) havePos = ActorPosition(self, x, y, z);
     EmitDeath(victim, x, y, z, havePos, attacker, killerEntity, "telemetry");
 }
 
