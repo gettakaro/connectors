@@ -45,6 +45,10 @@ struct BridgeOptions {
     int64_t reconcileIntervalMs = 30000;
     int64_t healthIntervalMs = 15000;
     int64_t banCheckIntervalMs = 5000;
+    // Reads the position of every online player this often (one game-thread read each, skipped while Takaro's own
+    // getPlayerLocation polls keep it fresh), so a player-disconnected is placed where the player really was.
+    // 0 = off.
+    int64_t positionSampleMs = 10000;
     // While the plugin's /health lists capabilities in "starting" (hooks installed, the game world not running yet),
     // identify waits, at most this long after Start: Takaro records a server's status (with the reachability reason)
     // only when it turns reachable, so identifying before the world runs would pin a start-up "degraded" reason.
@@ -67,6 +71,7 @@ public:
     static constexpr size_t kMaxPendingActions = 128;
     static constexpr size_t kMaxRequestIdBytes = 128;
     static constexpr int64_t kLocationFallbackMs = 60000;
+    static constexpr size_t kMaxPositions = 256;
 
     explicit Bridge(BridgeOptions o);
     ~Bridge();
@@ -91,6 +96,7 @@ private:
         uint64_t epoch = 0;
         int64_t deadlineMs = 0;
         bool expiry = false;  // internal timed-ban expiry
+        bool sample = false;  // internal position read (getPlayerLocation of an online player, no response)
         std::string expiryGameId;
         std::string intentId;
         std::shared_ptr<const ActionView> view;
@@ -127,7 +133,8 @@ private:
     void FlushState(int64_t now, bool force);
     void Publish();
     std::shared_ptr<const ActionView> View();
-    void RememberPosition(const JsonValue& args, const JsonValue& payload);
+    void RememberPosition(const std::string& gameId, const JsonValue& position, int64_t now);
+    void SamplePositions(int64_t now);
     std::string Redact(std::string text) const;
     void ApplyPendingSettings();
 
@@ -161,7 +168,10 @@ private:
     std::shared_ptr<const ActionView> view_;
     bool viewDirty_ = true;
     std::map<std::string, int64_t> windows_;
-    std::map<std::string, JsonValue> lastPositions_;
+    std::map<std::string, int64_t> positionAt_;  // steady ms of each player's last position (store Positions())
+    std::set<std::string> sampleInFlight_;
+    bool positionsDirty_ = false;
+    int64_t lastPositionsSave_ = 0, nextSample_ = 0;
     std::map<std::string, int> missingStrikes_;
     bool reconcilePending_ = true;
     std::set<std::string> expiryInFlight_;
