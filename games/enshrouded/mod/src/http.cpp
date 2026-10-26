@@ -514,7 +514,7 @@ bool RunCommand(const std::string& line, std::string& out) {
                                           str(p, "experienceRequired")
                                     : std::string("level not read yet"));
         }
-        out = std::to_string(n) + " online" + rows;
+        out = want.empty() || rows.empty() ? std::to_string(n) + " online" + rows : rows.substr(1);
         return true;
     }
     if ((cmd == "say" || cmd == "broadcast") && !args.empty()) {
