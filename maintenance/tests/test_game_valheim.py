@@ -60,6 +60,8 @@ def test_every_valheim_verification_body_has_pass_and_failure_paths(
             "executeConsoleCommand": {"success": True},
             "testReachability": {"connectable": True},
             "shutdown": {},
+            hooks.UNKNOWN_ACTION: {"error": f"Valheim connector does not support action '{hooks.UNKNOWN_ACTION}' yet."},
+            "getPlayer": {"gameId": "", "name": "", "error": "Valheim connector does not support getPlayer."},
         },
         identify_count=1,
     )
@@ -81,6 +83,7 @@ def test_every_valheim_verification_body_has_pass_and_failure_paths(
         == "pass"
     )
     assert asyncio.run(hooks._check_action(run, fake)).status == "pass"
+    assert asyncio.run(hooks._check_unsupported(run, fake)).status == "pass"
     assert asyncio.run(hooks._check_reconnect(run, fake, lambda: True)).status == "pass"
     assert asyncio.run(hooks._check_stop(run, fake, [])).status == "pass"
     asyncio.run(hooks.after_protocol(run, fake, lambda: True))
@@ -112,11 +115,13 @@ def test_every_valheim_verification_body_has_pass_and_failure_paths(
         == "fail"
     )
     assert asyncio.run(hooks._check_action(failed_run, failed)).status == "fail"
+    assert asyncio.run(hooks._check_unsupported(failed_run, failed)).status == "fail"
     assert asyncio.run(hooks._check_reconnect(failed_run, failed, lambda: False)).status == "fail"
     assert asyncio.run(hooks._check_stop(failed_run, failed, [{"path": "missing"}])).status == "fail"
     asyncio.run(hooks.after_protocol(failed_run, failed, lambda: False))
     asyncio.run(hooks.after_shutdown(failed_run, failed, failed_run.ws_url, []))
-    assert {check for check, _ in failed_run.skips} == {*hooks.CHECK_IDS, "stop"}
+    asyncio.run(hooks.negative(failed_run, failed, failed_run.ws_url, {}))
+    assert {check for check, _ in failed_run.skips} == set(hooks.CHECK_IDS)
 
 
 BUILD_SCRIPT = "games/valheim/scripts/build-release.sh"
@@ -899,7 +904,7 @@ def test_verify_hooks_render_config_and_use_the_valheim_lines(tmp_path: Path) ->
     )
 
     assert written == tmp_path / "BepInEx" / "config" / "com.takaro.valheim.cfg"
-    assert oct(written.stat().st_mode)[-3:] == "600"
+    assert oct(written.stat().st_mode)[-3:] == ("600" if os.getuid() == 1000 else "640")
     body = written.read_text()
     assert "companion" not in body.lower()
     assert "takaroWsUrl = ws://host.docker.internal:27148/" in body
@@ -938,10 +943,186 @@ def test_the_runtime_identity_comes_from_the_valheim_banner() -> None:
     assert adapter.parse_runtime_identity("world version 34") is None
 
 
+def test_the_image_user_shares_the_install_only_when_the_caller_is_someone_else(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from takaro_maint.games import valheim
+
+    install = tmp_path / "install"
+    (install / "BepInEx" / "config").mkdir(parents=True)
+    pinned = install / "valheim_server.x86_64"
+    pinned.write_bytes(b"server")
+    pinned.chmod(0o755)
+    (install / "BepInEx").chmod(0o755)
+
+    # The caller is the image's user: nothing is opened up and no group is added.
+    monkeypatch.setattr(valheim, "IMAGE_UID", os.getuid())
+    valheim.share_with_image(install)
+    assert oct(pinned.stat().st_mode)[-3:] == "755"
+    assert adapter_for(GAME).container_options({}, install) == []
+
+    # Someone else: the image's user joins the caller's group, which can write the install.
+    monkeypatch.setattr(valheim, "IMAGE_UID", os.getuid() + 1)
+    valheim.share_with_image(install)
+    assert oct(pinned.stat().st_mode)[-3:] == "775"
+    assert oct((install / "BepInEx").stat().st_mode)[-3:] == "775"
+    assert adapter_for(GAME).container_options({}, install) == ["--group-add", str(os.getgid())]
+
+
 def test_the_check_ids_add_the_valheim_lifecycle_checks() -> None:
     from takaro_maint.verify.runner import check_ids
 
-    assert {"handshake", "items", "entities", "action", "reconnect", "stop"} <= set(check_ids(GAME))
+    assert {"handshake", "items", "entities", "action", "unsupported", "reconnect", "stop"} <= set(check_ids(GAME))
+
+
+@pytest.mark.parametrize(
+    ("answers", "problem"),
+    [
+        # A made-up player for an action the connector does not offer.
+        ({"getPlayer": {"gameId": "76561198000000000", "name": "someone", "error": "x"}}, "returned a player"),
+        # Silence instead of an error: Takaro would wait for the request to expire.
+        ({hooks.UNKNOWN_ACTION: TimeoutError("no response")}, "was not answered"),
+        # An empty success is not a refusal.
+        ({hooks.UNKNOWN_ACTION: {}}, "expected an error"),
+        # A refusal that leaves the connector unreachable.
+        ({"testReachability": {"connectable": False, "reason": "gone"}}, "after the refused actions"),
+    ],
+)
+def test_the_unsupported_check_fails_on_anything_but_a_clean_refusal(
+    tmp_path: Path, answers: dict[str, Any], problem: str
+) -> None:
+    canned: dict[str, Any] = {
+        hooks.UNKNOWN_ACTION: {"error": f"Valheim connector does not support action '{hooks.UNKNOWN_ACTION}' yet."},
+        "getPlayer": {"gameId": "", "name": "", "error": "unsupported"},
+        "testReachability": {"connectable": True},
+        **answers,
+    }
+
+    result = asyncio.run(hooks._check_unsupported(FakeRun(tmp_path), CannedSocket(canned)))
+
+    assert result.status == "fail"
+    assert any(problem in line for line in result.detail["problems"]), result.detail["problems"]
+
+
+class WrongPackageRun(FakeRun):
+    """A run whose negative boot writes the given log lines and may identify."""
+
+    def __init__(self, tmp_path: Path, lines: list[str], *, identifies: bool = False) -> None:
+        super().__init__(tmp_path)
+        self.lines = lines
+        self.identifies = identifies
+        self.extra_logs: list[Path] = []
+        self.socket = CannedSocket({}, identify_count=1)
+        self.seen_plugins: list[str] = []
+        plugin = self.data_dir / hooks.PLUGIN_DIR
+        plugin.mkdir(parents=True)
+        (plugin / "Takaro.Valheim.Plugin.dll").write_bytes(b"the real plugin")
+        parked = self.data_dir / hooks.PARKED_COMPANION
+        parked.mkdir()
+        with zipfile.ZipFile(parked / COMPANION_ZIP, "w") as archive:
+            archive.writestr("TakaroValheimInventoryCompanion/Takaro.Valheim.Companion.dll", b"companion")
+
+    def boot(self, ws_url: str, **kwargs: Any) -> Any:
+        container = super().boot(ws_url, **kwargs)
+        self.seen_plugins = sorted(path.name for path in (self.data_dir / "BepInEx" / "plugins").iterdir())
+        container.log_file.write_text("\n".join(self.lines) + "\n", encoding="utf-8")
+        if self.identifies:
+            self.socket.identify_count += 1
+        return container
+
+
+DISABLED = (
+    "[Warning:Takaro Valheim Inventory Companion] Takaro Valheim Inventory Companion only runs in the graphical "
+    "Valheim client; dedicated server process detected, mod disabled."
+)
+COMPANION_LOADED = (
+    "[Info   :   BepInEx] Loading [Takaro Valheim Inventory Companion 4.2.0] (com.takaro.valheim.companion)"
+)
+READY = "10/22/2026 21:56:26: Loading: Done. Total seconds sinze ZNet start: 115.3, Genloc duration: 93470.01 ms"
+
+
+def test_the_wrong_package_negative_passes_only_when_nothing_connects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(hooks, "NEGATIVE_GRACE", 0.0)
+    refused = WrongPackageRun(tmp_path / "refused", [COMPANION_LOADED, DISABLED, READY])
+
+    asyncio.run(hooks.negative(refused, refused.socket, refused.ws_url, {}))
+
+    (result,) = refused.results
+    assert result.status == "pass", result.detail
+    # The boot saw the companion where the plugin belongs, and nothing else.
+    assert refused.seen_plugins == ["TakaroValheimInventoryCompanion"]
+    # The real plugin is back and the companion is gone again.
+    plugins = refused.data_dir / "BepInEx" / "plugins"
+    assert sorted(path.name for path in plugins.iterdir()) == ["TakaroValheim"]
+    assert (plugins / "TakaroValheim" / "Takaro.Valheim.Plugin.dll").read_bytes() == b"the real plugin"
+    assert refused.extra_logs and refused.extra_logs[0].name == "server-negative.log"
+
+    connected = WrongPackageRun(tmp_path / "connected", [DISABLED, READY], identifies=True)
+    result = asyncio.run(hooks._check_negative_wrong_package(connected, connected.socket, connected.ws_url))
+    assert result.status == "fail"
+    assert any("identified 1 time" in line for line in result.detail["problems"])
+
+    loaded = WrongPackageRun(
+        tmp_path / "loaded",
+        [DISABLED, "[Info   :   BepInEx] Loading [Takaro Valheim 4.2.0] (com.takaro.valheim)", READY],
+    )
+    result = asyncio.run(hooks._check_negative_wrong_package(loaded, loaded.socket, loaded.ws_url))
+    assert result.status == "fail"
+    assert any("server plugin loaded" in line for line in result.detail["problems"])
+
+    # A boot that never got as far as loading the world proves nothing either way.
+    silent = WrongPackageRun(tmp_path / "silent", [DISABLED])
+    result = asyncio.run(hooks._check_negative_wrong_package(silent, silent.socket, silent.ws_url))
+    assert result.status == "fail"
+    assert any("never reached its ready line" in line for line in result.detail["problems"])
+
+
+def test_the_wrong_package_grace_is_watched_in_full_after_a_late_ready_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ready line at the end of the startup budget still gets the whole grace."""
+    monkeypatch.setattr(hooks, "NEGATIVE_GRACE", 1.5)
+    monkeypatch.setattr(hooks.time, "sleep", lambda seconds: None)
+    clock = iter(range(1000))
+    monkeypatch.setattr(hooks.time, "monotonic", lambda: float(next(clock)))
+    log = tmp_path / "server-negative.log"
+    log.write_text(DISABLED + "\n" + READY + "\n", encoding="utf-8")
+    polls: list[int] = []
+
+    def identified() -> bool:
+        polls.append(1)
+        return len(polls) > 2
+
+    disabled, loaded, ready = hooks._watch_wrong_package(log, 0.5, lambda: True, identified)
+
+    # Without the extension the watch would have ended at the 0.5 s budget, before the late identify.
+    assert len(polls) == 3
+    assert disabled and ready and loaded is None
+
+
+def test_the_wrong_package_negative_is_opt_in() -> None:
+    from takaro_maint.verify.runner import game_hooks
+
+    declared = game_hooks(GAME)
+    assert declared.negative is hooks.negative
+    assert declared.negative_check_ids == (hooks.NEGATIVE_CHECK,)
+    # The companion's own load line is not the server plugin's.
+    assert not hooks.PLUGIN_LOADED_LINE.search(COMPANION_LOADED)
+    assert hooks.LOADED_LINE.search("[Info   :   BepInEx] Loading [Takaro Valheim 4.2.0] (com.takaro.valheim)")
+    # The negative boot loads the saved world, which says so instead of generating it again.
+    assert hooks.WORLD_LOADED_LINE.search("10/22/2026 22:14:19: ZoneSystem.Load => Loaded 12,276 locations")
+    assert hooks.WORLD_LOADED_LINE.search(READY)
+
+
+def test_the_valheim_workflow_runs_the_runtime_leg_with_the_negative_boot() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/valheim.yml").read_text()
+
+    assert "runtime: true" in workflow
+    assert "runtime_depot_cache: true" in workflow
+    assert "runtime_negative: true" in workflow
+    assert "runtime: false" not in workflow
 
 
 # --------------------------------------------------------------------------- the release record
