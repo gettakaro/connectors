@@ -2,6 +2,7 @@ package io.takaro.minecraft.neoforge;
 
 import io.takaro.minecraft.core.EventEmitter;
 import io.takaro.minecraft.core.GameAdapter;
+import io.takaro.minecraft.core.PlayerNotOnlineException;
 import io.takaro.minecraft.core.map.RegionRenderer;
 import io.takaro.minecraft.core.map.WorldMap;
 import io.takaro.minecraft.core.model.*;
@@ -156,10 +157,11 @@ public class NeoForgeGameAdapter implements GameAdapter {
     @Override
     public void giveItem(String gameId, String itemCode, int amount, String quality) {
         ServerPlayer player = server.getPlayerList().getPlayer(UUID.fromString(gameId));
-        if (player == null) return;
-        var itemHolder = BuiltInRegistries.ITEM.get(Identifier.parse(itemCode));
-        if (itemHolder.isEmpty() || itemHolder.get().value() == Items.AIR) return;
-        ItemStack stack = new ItemStack(itemHolder.get(), amount);
+        if (player == null) throw new PlayerNotOnlineException(gameId);
+        Identifier id = Identifier.tryParse(itemCode);
+        var item = id == null ? Items.AIR : BuiltInRegistries.ITEM.getValue(id);
+        if (item == Items.AIR) throw new IllegalArgumentException("unknown item: " + itemCode);
+        ItemStack stack = new ItemStack(item, amount);
         player.getInventory().add(stack);
     }
 
@@ -190,7 +192,8 @@ public class NeoForgeGameAdapter implements GameAdapter {
     @Override
     public void teleportPlayer(String gameId, double x, double y, double z, String dimension) {
         ServerPlayer player = server.getPlayerList().getPlayer(UUID.fromString(gameId));
-        if (player == null) return;
+        if (player == null) throw new PlayerNotOnlineException(gameId);
+        if (player.isDeadOrDying()) throw new IllegalStateException("player " + gameId + " is dead");
         ServerLevel level = dimension != null ? getLevelForDimension(dimension) : (ServerLevel) player.level();
         if (level == null) level = (ServerLevel) player.level();
         player.teleportTo(level, x, y, z, Set.of(), player.getYRot(), player.getXRot(), false);
@@ -230,6 +233,21 @@ public class NeoForgeGameAdapter implements GameAdapter {
         UUID uuid = UUID.fromString(gameId);
         var nameAndId = new NameAndId(uuid, "");
         server.getPlayerList().getBans().remove(nameAndId);
+    }
+
+    /**
+     * Vanilla keeps an expired ban in the list until something reads that one entry, and its
+     * login check trips over it: the first join after a timed ban ends is dropped with
+     * "Internal server error". Lift timed bans ourselves as soon as they run out.
+     */
+    public void liftExpiredBans() {
+        if (server.getPlayerList() == null) return;
+        var bans = server.getPlayerList().getBans();
+        if (bans.isEmpty()) return;
+        Date now = new Date();
+        for (var entry : List.copyOf(bans.getEntries())) {
+            if (entry.getExpires() != null && entry.getExpires().before(now)) bans.remove(entry);
+        }
     }
 
     @Override

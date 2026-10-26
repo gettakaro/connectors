@@ -7,6 +7,7 @@ import io.takaro.minecraft.core.TakaroConnector;
 import io.takaro.minecraft.core.model.PlayerInfo;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
@@ -26,6 +27,7 @@ public class TakaroFabricMod implements DedicatedServerModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("Takaro");
     private volatile TakaroConnector connector;
     private volatile FabricGameAdapter adapter;
+    private int ticks;
 
     @Override
     public void onInitializeServer() {
@@ -35,6 +37,10 @@ public class TakaroFabricMod implements DedicatedServerModInitializer {
             if (connector != null) {
                 connector.shutdown();
             }
+        });
+
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            if (adapter != null && ++ticks % 20 == 0) adapter.liftExpiredBans();
         });
 
         // Register game event callbacks
