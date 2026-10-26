@@ -79,7 +79,7 @@ a real game client and Takaro. Rows marked *(1.0 ✓)* were re-checked on 1.0; t
 | Survives a network drop to Takaro *(1.0 ✓)* | ✅ | Notices a dead link within 20 seconds and reconnects by itself, without restarting the game. |
 | Events while Takaro is unreachable | ✅ | Kept on disk and delivered once the connection is back (tested with a 30-minute outage). A lost confirmation can cause one duplicate event after a reconnect. |
 | Timed bans expire on their own | ✅ | Lifted within seconds of the end time. |
-| A game update can switch a feature off | ✅ | On a game build the plugin has no data for, most features switch off (including the player list, chat, `giveItem` and the item catalogue) while the server keeps running. `plugin.log` says so in one `DEGRADED:` line at startup, and Takaro's reachability reason, the `version` and the `help` console commands give the same text: the game build, which features are off and why. Fix: update the plugin to a release that supports that build. |
+| A game update can switch a feature off | ✅ | A feature whose game code moved reports itself as degraded, Takaro's reachability reason names it, and everything else keeps working. |
 
 ## Install
 
