@@ -25,8 +25,15 @@ from ... import net, output
 from ...verify import checks, checks_lifecycle
 from ...verify.hooks import GameHooks
 from ...verify.runner import docker_command
+from . import checks_prismacore
 
-CHECK_IDS = ("handshake", "action", "reconnect", "stop")
+#: Command families, one module each (``checks_<family>.py``): its check ids, what it puts
+#: on disk before the boot, and its checks, run after the lifecycle checks below.
+FAMILIES = (checks_prismacore,)
+
+CHECK_IDS = ("handshake", "action", "reconnect", "stop") + tuple(
+    check_id for family in FAMILIES for check_id in family.CHECK_IDS
+)
 
 READY_LINE = re.compile(r"INF StartGame done")
 
@@ -86,6 +93,8 @@ def render_config(data_dir: Path, takaro_env: dict[str, str]) -> Path:
 def before_boot(run: Any, takaro_env: dict[str, str]) -> None:
     render_config(run.data_dir, takaro_env)
     output.info(f"wrote {CONFIG_RELATIVE.as_posix()} for this run (mode 0600)")
+    for family in FAMILIES:
+        family.before_boot(run)
 
 
 def scan_runtime_identity(adapter: Any, log_file: Path) -> dict[str, Any]:
@@ -118,6 +127,8 @@ async def after_protocol(run: Any, fake: Any, alive: Any) -> None:
         run.record(await _check_reconnect(run, fake, alive))
     else:
         run.skip("reconnect", "not selected by --checks")
+    for family in FAMILIES:
+        await family.run_checks(run, fake, alive)
 
 
 async def _check_handshake(run: Any, fake: Any, alive: Any) -> checks.CheckResult:

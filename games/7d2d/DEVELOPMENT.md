@@ -84,8 +84,9 @@ manifest row, so the mod in `Mods/Takaro` is the one the ledger records.
 
 ## Architecture
 
-The mod mirrors game state into an in-memory LiteDB database so that Takaro
-read requests never touch the game simulation:
+The mod mirrors game state into a LiteDB database (a file in the world's save
+directory, see [Storage](#storage)) so that Takaro read requests never touch the
+game simulation:
 
 - Game events (join, disconnect, player data saves) and a ~3s position sampler
   update the mirror from the game main thread; DB writes happen on a dedicated
@@ -104,6 +105,88 @@ Manifest, game identifier, Connector Migration support) and how events are
 numbered and acknowledged. A new action must be added to
 `RequestRouter.SupportedActions` and to `ProtocolHandshake.ActionCapabilities`
 (and the harness fixture) so the manifest keeps matching what the mod answers.
+
+## Storage
+
+The database is one LiteDB 5.0.21 file per world: `<save dir>/takaro.db` (plus its write-ahead
+log `takaro-log.db`), where `<save dir>` is `GameIO.GetSaveGameDir()`, for example
+`Saves/Navezgane/MyGame/`. It belongs to that world: a backup or a copy of the save carries it,
+and a different world starts its own. `Database.Open` runs as the first `DbWriter` operation at
+`GameStartDone` (the save directory is unknown before); the sampler starts right after, and every
+write queued later finds the file open.
+
+Every collection has one lifecycle, declared in `Persistence/StorageLifecycle.cs`:
+
+| Collection | Lifecycle | At boot | Kept current by |
+|---|---|---|---|
+| `items`, `entities`, `locations` | rebuilt at boot | dropped | `SeedOnGameStart` |
+| `bans` | rebuilt at boot | dropped | seed, Takaro ban/unban, 60 s resync |
+| `inventories` | rebuilt at boot | dropped | join, `SavePlayerData` |
+| `players` | durable | every player marked offline | join/spawn, leave, the ~3 s sampler, `players.xml` backfill |
+| `waypoints` | durable | kept | reserved for the waypoint commands |
+| `settings` | durable | `schemaVersion` written | the connector |
+
+A new collection is added to that table (code and here) before it is used; a collection the file
+holds but the table does not know is logged and left alone.
+
+**The player registry is the `players` collection** — there is no second store. A player is
+written on every spawn (join, respawn, teleport), marked offline with `LastSeenUtc` on leave, and
+the sampler updates the position of online players every ~3 s, so an offline player's record holds
+where they were last seen. At boot `Online` is reset for everyone (a crash leaves stale flags), and
+players the game itself remembers in `players.xml` but the registry does not (players from before
+the registry existed, or after a fresh database) are added; registered players are never
+overwritten by that backfill.
+
+**Why the file is opened as two streams.** LiteDB 5 opened by filename fails under Mono with
+`ReadFull must read PAGE_SIZE bytes` (seen in #66). The cause is Mono's `FileStream`: it only
+bypasses its buffer for writes *larger* than the buffer, and LiteDB writes each 8192-byte page with
+one 8192-byte `Write` on a stream with an 8192-byte buffer. The last page of every commit therefore
+stays in the writer stream's memory, and a checkpoint, which reads the log back through a second
+stream, finds the file one page short. `tests/StorageHarness.cs` reproduces it on every run. The
+mod opens the database on two `WriteThroughFileStream`s (`new LiteDatabase(data, null, log)`):
+LiteDB then shares one stream per file between its reader and writer, and every write reaches the
+operating system before LiteDB's `Write` returns, so a process killed right after a commit loses
+nothing. `Flush` (LiteDB calls it at checkpoints) also asks the OS to write to disk. LiteDB stays
+on 5.0.21.
+
+If LiteDB cannot read the file, it is moved aside (`takaro.db.unreadable-<UTC>`) and a new one is
+started; if the file cannot be opened at all (another server holds it, it is opened with
+`FileShare.Read`), the mod runs on an in-memory database and logs that the registry will not
+persist. Both are logged as errors.
+
+## Console commands
+
+The mod carries PrismaCore-compatible console commands (`resetlevel`/`rl`,
+`resetskillpoints`/`rs`, `isbloodmoon`), so tools written against PrismaCore — StaffCommands among
+them — work unchanged. Running PrismaCore next to the connector is unsupported (same command names,
+and each ships its own `LiteDB` assembly at a different major version); the mod logs one warning at
+game start when a PrismaCore mod is loaded. Every new command follows these conventions:
+
+- **Names:** PrismaCore's plain names and aliases, no `pc-` prefix. The primary name is first in
+  `getCommands()`.
+- **One file per command family:** `mod/src/Commands/<Family>Commands.cs` holds the game-facing
+  classes, each deriving from `PrismaCoreCommand`; `mod/src/Commands/Contract/<Family>Contract.cs`
+  holds the game-free part (names, argument rules and every output line, verbatim). The project
+  compiles `Commands/**`, and the contract harness compiles `Commands/Contract/*.cs`, so a new
+  family adds files and edits neither.
+- **Output contract:** errors start with `ERR: ` and are PrismaCore's exact text; arguments are
+  validated before a player is resolved; a player that cannot be found prints the game's own line
+  (`"<id>" is not a valid entity id, player name or user id.`), which StaffCommands matches on.
+- **Players:** resolve them with `PlayerTarget.Resolve` (`Services/PlayerIdResolver.cs` is the
+  game-free decision). It accepts entity ids, names and `EOS_`/`Steam_`/`XBL_`/`PSN_` ids; online
+  players go through the game's own `ConsoleHelper.ParseParamPartialNameOrId`, everyone else
+  through the player registry. A command that needs the live entity checks `IsOnline` and prints
+  its offline line otherwise.
+- **Threads:** game state is touched only in `Run`, on the main thread. SdtdConsole already runs
+  commands there (console, telnet, web dashboard, Takaro's `executeConsoleCommand`);
+  `PrismaCoreCommand` marshals any other caller through `MainThreadDispatcher` and waits for it.
+  No command starts a thread, uses `Task.Run`, or sleeps; a state change that clients must see is
+  pushed with the game's own net packages in the same call (rl/rs send `NetPackagePlayerStats`).
+- **Tests:** a contract-harness family in `tests/ContractHarness.<Family>.cs` (a `Family<Name>()`
+  method; the harness finds it by name) for the pure logic, and a `takaro-maint verify` family in
+  `maintenance/src/takaro_maint/games/seven_days/checks_<family>.py` (listed in `FAMILIES` in
+  `verify.py`) that runs the commands through `executeConsoleCommand` and compares their output
+  verbatim.
 
 ## Configuration
 

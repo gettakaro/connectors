@@ -98,6 +98,22 @@ namespace Takaro.Services
             return record != null && record.Online ? record : null;
         }
 
+        /// <summary>
+        /// The whole player registry, online and offline, as the DbWriter last published it.
+        /// Console commands read it on the main thread to resolve offline players, so it is a
+        /// snapshot rather than a database read: the main thread never waits for the lock the
+        /// DbWriter holds through seeding and checkpoints.
+        /// </summary>
+        public IReadOnlyList<PlayerRecord> GetRegisteredPlayers() => _registry;
+
+        private volatile IReadOnlyList<PlayerRecord> _registry = new PlayerRecord[0];
+
+        // DbWriter thread only: after every write that adds, renames or re-ids a player.
+        private void PublishRegistry()
+        {
+            _registry = new List<PlayerRecord>(Database.Instance.Players.FindAll()).AsReadOnly();
+        }
+
         public PlayerRecord GetPlayerLocationRecord(string gameId)
         {
             PlayerRecord record;
@@ -269,8 +285,9 @@ namespace Takaro.Services
             SeedLocations();
             SeedWorldMap();
             RefreshBans();
+            SeedRegistryFromGame();
             LogService.Instance.Info(
-                "State mirror seeding enqueued (items, entities, locations, bans)"
+                "State mirror seeding enqueued (items, entities, locations, bans, player registry)"
             );
         }
 
@@ -327,6 +344,64 @@ namespace Takaro.Services
             );
         }
 
+        /// <summary>
+        /// Adds the players the game itself remembers (players.xml) to the registry when the
+        /// registry does not know them yet: players from before the registry existed, or
+        /// from a database that had to be started over. Registered players are never
+        /// overwritten; join, leave, spawn and the sampler keep them current.
+        /// </summary>
+        private void SeedRegistryFromGame()
+        {
+            PersistentPlayerList playerList = GameManager.Instance.GetPersistentPlayerList();
+            if (playerList?.Players == null)
+                return;
+
+            var candidates = new List<PlayerRecord>();
+            foreach (PersistentPlayerData data in playerList.Players.Values)
+            {
+                string primaryId = data?.PrimaryId?.CombinedString;
+                if (primaryId == null || !primaryId.StartsWith("EOS_"))
+                    continue;
+
+                string gameId = primaryId.Substring("EOS_".Length);
+                string nativeId = data.NativeId?.CombinedString;
+                var record = new PlayerRecord
+                {
+                    GameId = gameId,
+                    EpicOnlineServicesId = gameId,
+                    Name = data.PlayerName?.playerName?.Text,
+                    PlatformId = nativeId,
+                    EntityId = data.EntityId,
+                    X = data.Position.x,
+                    Y = data.Position.y,
+                    Z = data.Position.z,
+                    LastSeenUtc = data.LastLogin.ToUniversalTime(),
+                };
+                if (nativeId != null && nativeId.StartsWith("Steam_"))
+                    record.SteamId = nativeId.Substring("Steam_".Length);
+                else if (nativeId != null && nativeId.StartsWith("XBL_"))
+                    record.XboxLiveId = nativeId.Substring("XBL_".Length);
+                candidates.Add(record);
+            }
+
+            DbWriter.Instance.Enqueue(() =>
+            {
+                int added = 0;
+                foreach (PlayerRecord record in candidates)
+                {
+                    if (Database.Instance.Players.FindById(record.GameId) != null)
+                        continue;
+                    Database.Instance.Players.Insert(record);
+                    added++;
+                }
+                if (added > 0)
+                    LogService.Instance.Info(
+                        $"Player registry: added {added} player(s) the game remembers from players.xml"
+                    );
+                PublishRegistry();
+            });
+        }
+
         public void UpsertPlayerOnline(ClientInfo cInfo)
         {
             if (cInfo?.CrossplatformId == null)
@@ -348,7 +423,11 @@ namespace Takaro.Services
                 record.Z = position.z;
             }
 
-            DbWriter.Instance.Enqueue(() => Database.Instance.Players.Upsert(record));
+            DbWriter.Instance.Enqueue(() =>
+            {
+                Database.Instance.Players.Upsert(record);
+                PublishRegistry();
+            });
         }
 
         public void MarkOffline(ClientInfo cInfo)

@@ -4,6 +4,10 @@ using LiteDB;
 
 namespace Takaro.Persistence
 {
+    /// <summary>
+    /// One registered player. The players collection is durable: it is the connector's
+    /// player registry, and offline players are resolved through it.
+    /// </summary>
     public class PlayerRecord
     {
         [BsonId]
@@ -15,6 +19,9 @@ namespace Takaro.Persistence
         public string SteamId { get; set; }
         public string XboxLiveId { get; set; }
         public string EpicOnlineServicesId { get; set; }
+
+        // The native platform id as the game prints it ("Steam_…", "XBL_…", "PSN_…").
+        public string PlatformId { get; set; }
         public int EntityId { get; set; }
         public bool Online { get; set; }
         public float X { get; set; }
@@ -103,5 +110,14 @@ namespace Takaro.Persistence
         public float Y { get; set; }
         public float Z { get; set; }
         public int Ping { get; set; }
+    }
+
+    public class SettingRecord
+    {
+        [BsonId]
+        public string Key { get; set; }
+
+        public string Value { get; set; }
+        public DateTime UpdatedUtc { get; set; }
     }
 }

@@ -148,6 +148,7 @@ namespace Takaro
 
             if (cInfo.PlatformId != null && cInfo.PlatformId.CombinedString != null)
             {
+                record.PlatformId = cInfo.PlatformId.CombinedString;
                 if (cInfo.PlatformId.CombinedString.StartsWith("Steam_"))
                     record.SteamId = cInfo.PlatformId.CombinedString.Replace("Steam_", "");
                 else if (cInfo.PlatformId.CombinedString.StartsWith("XBL_"))
