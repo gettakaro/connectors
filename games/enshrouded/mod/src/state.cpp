@@ -154,6 +154,14 @@ void PluginState::FinalizeLoginLocked() {
     if (!charNamesAvailable_ || !p.characterName.empty()) EmitConnectedLocked(p);
 }
 
+void PluginState::BindMachineLocked(size_t idx, const std::string& machine) {
+    // one machine, one account: a peer that held this machine before (a flapping connection) loses it
+    for (size_t i = 0; i < players_.size(); i++)
+        if (i != idx && !players_[i].online && players_[i].authMachine == machine) players_[i].authMachine.clear();
+    players_[idx].authMachine = machine;
+    players_[idx].steamAuthed = false;
+}
+
 void PluginState::EmitConnectedLocked(PlayerRecord& p) {
     if (!p.connectPending) return;
     p.connectPending = false;
@@ -209,6 +217,70 @@ void PluginState::OnLogLine(int level, const std::string& line) {
         return;
     }
 
+    // [online] Client '7656...' authenticated by steam
+    if (StartsWith(line, "[online] Client '")) {
+        size_t a = strlen("[online] Client '");
+        size_t b = line.find("' authenticated by steam", a);
+        if (b == std::string::npos) return;
+        std::string id = line.substr(a, b - a);
+        for (auto it = players_.rbegin(); it != players_.rend(); ++it)
+            if (it->steamId == id && !it->online && !it->removed) {
+                if (it->authMachine.empty()) it->steamAuthed = true;
+                break;
+            }
+        return;
+    }
+
+    // [session] Unable to find machine for peer 1(1).   -- printed right before that peer's "Add remote machine index M"
+    if (StartsWith(line, "[session] Unable to find machine for peer ")) {
+        size_t a = strlen("[session] Unable to find machine for peer ");
+        size_t b = line.find('.', a);
+        if (b != std::string::npos) machinePeer_ = line.substr(a, b - a);
+        return;
+    }
+
+    // [session] Add remote machine index 2 (id: 2778328608).
+    // The machine is for the peer named just before; without that line, for the one peer that passed Steam auth and
+    // has no machine yet. Anything else is not certain: the machine stays unbound and its login is not guessed.
+    if (StartsWith(line, "[session] Add remote machine index ")) {
+        size_t a = strlen("[session] Add remote machine index ");
+        size_t b = line.find(' ', a);
+        std::string peer = machinePeer_;
+        machinePeer_.clear();
+        if (b == std::string::npos || b == a) return;
+        std::string machine = line.substr(a, b - a);
+        int idx = -1, authed = 0;
+        for (size_t i = 0; i < players_.size(); i++) {
+            const PlayerRecord& r = players_[i];
+            if (r.online || r.removed) continue;
+            if (!peer.empty()) {
+                if (r.peerId == peer) idx = (int)i;
+            } else if (r.steamAuthed && r.authMachine.empty()) {
+                idx = (int)i;
+                authed++;
+            }
+        }
+        if (peer.empty() && authed != 1) idx = -1;
+        if (idx >= 0) {
+            BindMachineLocked((size_t)idx, machine);
+            unboundMachines_.erase(machine);
+        } else if (peer.empty() && authed == 0) {
+            return;  // no Steam auth to go by (older logs): the login falls back to the machine number from the peer id
+        } else {
+            for (auto& r : players_)  // whoever held this machine before no longer does
+                if (!r.online && r.authMachine == machine) r.authMachine.clear();
+            unboundMachines_.insert(machine);
+            if (!peer.empty())
+                PluginLog("machine %s is for peer %s, which has no pending steam account - its login stays unresolved",
+                          machine.c_str(), peer.c_str());
+            else
+                PluginLog("machine %s: %d steam-authenticated peers wait for a machine and the game named none - its "
+                          "login stays unresolved",
+                          machine.c_str(), authed);
+        }
+        return;
+    }
+
     // [server] Machine '1': Player '0(0)' logged in
     if (StartsWith(line, "[server] Machine '")) {
         size_t a = strlen("[server] Machine '");
@@ -230,24 +302,38 @@ void PluginState::OnLogLine(int level, const std::string& line) {
     if (StartsWith(line, "[server] Player '") && line.size() > strlen(kLoginSuffix) + 17 &&
         line.compare(line.size() - strlen(kLoginSuffix), strlen(kLoginSuffix), kLoginSuffix) == 0) {
         std::string name = line.substr(17, line.size() - strlen(kLoginSuffix) - 17);
+        const std::string& mach = lastLoginMachine_;
+        auto pending = [&](const PlayerRecord& r) { return !r.online && !r.removed; };
         int idx = -1;
-        for (size_t i = 0; i < players_.size(); i++)  // exact machine match first
-            if (!players_[i].online && !players_[i].removed && !lastLoginMachine_.empty() &&
-                (machineIsPeerIndexPlusOne_ ? PeerIndexPlusOne(players_[i].peerId) : ParenPart(players_[i].peerId)) ==
-                    lastLoginMachine_) {
-                idx = (int)i;
-                break;
-            }
-        if (idx < 0)
-            for (size_t i = 0; i < players_.size(); i++)  // oldest pending peer
-                if (!players_[i].online && !players_[i].removed) {
-                    idx = (int)i;
-                    break;
-                }
+        for (size_t i = 0; i < players_.size() && idx < 0 && !mach.empty(); i++)  // the peer the game gave this machine
+            if (pending(players_[i]) && players_[i].authMachine == mach) idx = (int)i;
+        // the game logged this machine but could not say for whom: never guess, a wrong guess swaps Steam accounts
+        bool unbound = !mach.empty() && unboundMachines_.count(mach);
+        int candidates = 0, single = -1;
+        for (size_t i = 0; i < players_.size() && idx < 0 && !unbound; i++) {
+            const PlayerRecord& r = players_[i];
+            if (!pending(r) || !r.authMachine.empty()) continue;  // a peer bound to another machine is not this one
+            candidates++;
+            single = (int)i;
+            if (!mach.empty() &&
+                (machineIsPeerIndexPlusOne_ ? PeerIndexPlusOne(r.peerId) : ParenPart(r.peerId)) == mach)
+                idx = (int)i;  // machine number from the peer id
+        }
+        if (idx < 0 && !unbound && candidates == 1) idx = single;  // the only steam peer still waiting
+        if (!mach.empty()) unboundMachines_.erase(mach);
         if (idx < 0) {
-            PluginLog("login for '%s' without a pending steam peer - not tracked", name.c_str());
+            if (unbound || candidates > 1)
+                PluginLog("login for '%s' on machine '%s' matches no single steam peer - identity left unresolved, "
+                          "not tracked",
+                          name.c_str(), mach.c_str());
+            else
+                PluginLog("login for '%s' without a pending steam peer - not tracked", name.c_str());
+            lastLoginMachine_.clear();
+            lastLoginHandle_.clear();
             return;
         }
+        for (size_t i = 0; i < players_.size(); i++)  // this machine is taken now
+            if ((int)i != idx && !players_[i].online && players_[i].authMachine == mach) players_[i].authMachine.clear();
         PlayerRecord& p = players_[idx];
         p.name = name;
         p.machine = lastLoginMachine_;
