@@ -93,6 +93,7 @@ DRIFT_LINE = re.compile(r"steamcmd|app_update|needs to be updated", re.IGNORECAS
 
 # What the plugin's native connector writes into <server>/takaro/plugin.log.
 IDENTIFIED_LINE = re.compile(r"native: identified with Takaro")
+HEALTH_IDENTIFIED_BUDGET = 15.0  # seconds /health may trail the identified log line
 CLOSED_LINE = re.compile(r"native: Takaro WebSocket closed \(epoch \d+\): server closed the connection \(code 1001\b")
 
 # What the plugin writes into <server>/takaro/plugin.log.
@@ -401,17 +402,30 @@ async def _check_identify(run: Any, fake: Any, alive: Any) -> checks.CheckResult
         line = await asyncio.to_thread(checks.wait_for_line, log_file, IDENTIFIED_LINE, 30, alive)
         if not line:
             problems.append(f"{log_file.name} never showed 'native: identified with Takaro'")
-        try:
-            health = await asyncio.to_thread(plugin_health, run.container.name, plugin_token(run.takaro_env("")))
-        except Exception as exc:  # noqa: BLE001 - reported as a check failure
-            problems.append(f"the plugin's /health could not be read: {exc}")
-        else:
-            native = native_diagnostics(health)
-            if native.get("identified") is not True or native.get("state") != "identified":
-                problems.append(
-                    f"/health diagnostics.native reports state={native.get('state')!r} "
-                    f"identified={native.get('identified')!r}"
-                )
+        # identify waits for the game world, so it lands while the server is busy loading and /health can
+        # lag the log line by a few seconds: poll it instead of reading it once
+        health_error: str | None = None
+        deadline = time.monotonic() + HEALTH_IDENTIFIED_BUDGET
+        while True:
+            try:
+                health = await asyncio.to_thread(plugin_health, run.container.name, plugin_token(run.takaro_env("")))
+            except Exception as exc:  # noqa: BLE001 - reported as a check failure
+                health_error = f"the plugin's /health could not be read: {exc}"
+            else:
+                health_error = None
+                native = native_diagnostics(health)
+                if native.get("identified") is True and native.get("state") == "identified":
+                    break
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(1)
+        if health_error:
+            problems.append(health_error)
+        elif native.get("identified") is not True or native.get("state") != "identified":
+            problems.append(
+                f"/health diagnostics.native reports state={native.get('state')!r} "
+                f"identified={native.get('identified')!r}"
+            )
         deadline = time.monotonic() + APP_PING_BUDGET
         while getattr(fake, "app_pings", 0) < 1 and time.monotonic() < deadline:
             await asyncio.sleep(0.5)
