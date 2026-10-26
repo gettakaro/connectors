@@ -25,6 +25,7 @@ namespace Takaro
             LogService.Instance.Info("Initializing mod");
 
             ConfigManager.Instance.LoadConfig();
+            ConfigureGameProfile(mod);
 
             // Register event handlers
             ModEvents.GameStartDone.RegisterHandler(GameStartDone);
@@ -40,6 +41,62 @@ namespace Takaro
             Log.LogCallbacksExtended += HandleNativeLogMessage;
 
             LogService.Instance.Info("Mod initialized successfully");
+        }
+
+        /// <summary>
+        /// The connector version is the deployed ModInfo.xml's, which the release build
+        /// stamps; the icon ships inside this assembly so it cannot drift from the
+        /// revision computed here.
+        /// </summary>
+        private static void ConfigureGameProfile(Mod mod)
+        {
+            string connectorVersion = null;
+            try
+            {
+                connectorVersion = GameProfile.ReadModInfoVersion(
+                    File.ReadAllText(Path.Combine(mod.Path, "ModInfo.xml"))
+                );
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Warn($"Could not read ModInfo.xml: {ex.Message}");
+            }
+            if (connectorVersion == null)
+                connectorVersion = mod.VersionString;
+
+            byte[] icon = null;
+            try
+            {
+                using (
+                    Stream stream = typeof(API).Assembly.GetManifestResourceStream(
+                        GameProfile.IconResourceName
+                    )
+                )
+                {
+                    if (stream != null)
+                    {
+                        var buffer = new MemoryStream();
+                        stream.CopyTo(buffer);
+                        icon = buffer.ToArray();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Warn($"Could not load the game icon: {ex.Message}");
+            }
+
+            GameProfile.Configure(
+                connectorVersion,
+                Constants.cVersionInformation?.LongString,
+                icon
+            );
+            LogService.Instance.Info(
+                $"Game profile: connector {GameProfile.ConnectorName} "
+                    + $"{GameProfile.ConnectorVersion ?? "(version not semver: " + connectorVersion + ")"}, "
+                    + $"game build {GameProfile.GameVersion ?? "unknown"}, "
+                    + $"icon {GameProfile.IconRevision ?? "unavailable"}"
+            );
         }
 
         private static void GameStartDone(ref ModEvents.SGameStartDoneData data)

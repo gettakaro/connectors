@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -18,13 +19,16 @@ public static class ContractHarness
     {
         try
         {
-            if (args.Length != 2)
+            if (args.Length != 3)
                 throw new ArgumentException(
-                    "Expected the Generic Connector fixture path and the legacy parity fixture path"
+                    "Expected the Generic Connector fixture path, the legacy parity fixture path "
+                        + "and the 7d2d project directory"
                 );
 
             JObject fixture = JObject.Parse(File.ReadAllText(args[0]));
             JObject legacy = JObject.Parse(File.ReadAllText(args[1]));
+            string projectDir = args[2];
+            ConfigureFixtureGameProfile(fixture);
             AssertBanExpiryConversion();
             AssertConsoleCommandOutcomeClassification();
             AssertResponseSerialization(fixture);
@@ -68,6 +72,9 @@ public static class ContractHarness
             AssertMapCatalog();
             AssertMapRouting();
             AssertConfigFiles();
+            AssertShippedGameProfile(fixture, projectDir);
+            AssertGameProfileLimits(fixture);
+            AssertGetGameIcon(fixture, projectDir);
             Console.WriteLine("Contract harness passed: " + _assertions + " assertions");
             return 0;
         }
@@ -490,7 +497,7 @@ public static class ContractHarness
         JObject payload = (JObject)frame["payload"];
         var keys = payload.Properties().Select(p => p.Name).OrderBy(n => n).ToArray();
         Equal(
-            "capabilities,game,identityToken,protocolVersions,registrationToken",
+            "capabilities,connector,game,identityToken,protocolVersions,registrationToken",
             string.Join(",", keys),
             "identify payload carries exactly the contract keys"
         );
@@ -522,7 +529,7 @@ public static class ContractHarness
                 "capability name " + name + " satisfies Takaro's pattern"
             );
             True(names.Add(name), "capability " + name + " is declared once");
-            if (name != "migration.native")
+            if (name != "migration.native" && name != GameProfile.Capability)
                 True(capability["parameters"] == null, name + " declares no parameters");
         }
 
@@ -547,6 +554,249 @@ public static class ContractHarness
         );
     }
 
+    // A header-only PNG: enough for the declaration, which never decodes the image.
+    private static byte[] FixtureIcon()
+    {
+        var png = new List<byte> { 137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13 };
+        var chunk = new List<byte>(Encoding.ASCII.GetBytes("IHDR"));
+        chunk.AddRange(new byte[] { 0, 0, 1, 0, 0, 0, 1, 0, 8, 2, 0, 0, 0 });
+        png.AddRange(chunk);
+        png.AddRange(BigEndian(Crc32(chunk.ToArray())));
+        return png.ToArray();
+    }
+
+    private static void ConfigureFixtureGameProfile(JObject fixture)
+    {
+        JObject profile = (JObject)ProtocolV1(fixture)["gameProfile"];
+        GameProfile.Configure(
+            (string)profile["connectorVersion"],
+            (string)profile["gameVersion"],
+            FixtureIcon()
+        );
+    }
+
+    private static JObject IdentifyPayload()
+    {
+        return (JObject)
+            SerializeFrame(WebSocketMessage.CreateIdentify("registration", "identity"))["payload"];
+    }
+
+    private static JObject ProfileParameters(JObject identifyPayload)
+    {
+        return (JObject)
+            ((JArray)identifyPayload["capabilities"]).Single(c =>
+                (string)c["name"] == GameProfile.Capability
+            )["parameters"];
+    }
+
+    // The shipped sources: the version release-please stamps into ModInfo.xml is the one
+    // the connector reports, and the committed icon is one Takaro accepts.
+    private static void AssertShippedGameProfile(JObject fixture, string projectDir)
+    {
+        JObject limits = (JObject)ProtocolV1(fixture)["gameProfile"];
+        string releaseVersion = File.ReadAllText(Path.Combine(projectDir, "version.txt")).Trim();
+        string modInfoVersion = GameProfile.ReadModInfoVersion(
+            File.ReadAllText(Path.Combine(projectDir, "mod", "ModInfo.xml"))
+        );
+        Equal(releaseVersion, modInfoVersion, "ModInfo.xml carries the release version");
+        True(GameProfile.IsStrictSemver(releaseVersion), "the release version is strict semver");
+
+        byte[] icon = File.ReadAllBytes(Path.Combine(projectDir, "assets", "icon-256.png"));
+        True(icon.Length <= (int)limits["iconMaxBytes"], "the icon is at most 128 KiB");
+        True(GameProfile.IsServableIcon(icon), "the icon is a 256 x 256 PNG");
+        AssertWellFormedPng(icon);
+
+        GameProfile.Configure(modInfoVersion, "V 3.3.0 (b18)", icon);
+        JObject payload = IdentifyPayload();
+        TokenEqual(
+            new JObject
+            {
+                ["name"] = (string)limits["connectorName"],
+                ["version"] = releaseVersion,
+            },
+            payload["connector"],
+            "identify reports takaro-7d2d at the release version"
+        );
+        JObject parameters = ProfileParameters(payload);
+        Equal((string)limits["displayName"], (string)parameters["name"], "profile name");
+        Equal("V 3.3.0 (b18)", (string)parameters["version"], "profile game build");
+        Equal(icon.Length, (int)parameters["icon"]["size"], "icon size is the shipped byte count");
+        string sha;
+        using (var hash = System.Security.Cryptography.SHA256.Create())
+            sha = string.Concat(hash.ComputeHash(icon).Select(b => b.ToString("x2")));
+        Equal(
+            sha.Substring(0, 12),
+            (string)parameters["icon"]["revision"],
+            "icon revision is the first 12 hex characters of the shipped icon's sha256"
+        );
+        ConfigureFixtureGameProfile(fixture);
+    }
+
+    private static void AssertWellFormedPng(byte[] png)
+    {
+        int offset = 8;
+        bool sawData = false;
+        string last = null;
+        while (offset + 12 <= png.Length)
+        {
+            int length = ReadBigEndian(png, offset);
+            True(length >= 0 && offset + 12 + length <= png.Length, "PNG chunk fits the file");
+            string type = Encoding.ASCII.GetString(png, offset + 4, 4);
+            byte[] body = png.Skip(offset + 4).Take(4 + length).ToArray();
+            Equal(
+                ReadBigEndian(png, offset + 8 + length),
+                ReadBigEndian(BigEndian(Crc32(body)), 0),
+                "PNG chunk " + type + " CRC"
+            );
+            sawData |= type == "IDAT";
+            last = type;
+            offset += 12 + length;
+        }
+        True(sawData, "PNG carries image data");
+        Equal("IEND", last, "PNG ends with IEND");
+        Equal(png.Length, offset, "PNG has no trailing bytes");
+    }
+
+    private static void AssertGameProfileLimits(JObject fixture)
+    {
+        JObject limits = (JObject)ProtocolV1(fixture)["gameProfile"];
+        byte[] icon = FixtureIcon();
+
+        foreach (string version in new[] { "1.4.0", "2.0.0-beta.1", "0.8.1+abc1234", "10.20.30" })
+            True(GameProfile.IsStrictSemver(version), version + " is strict semver");
+        foreach (
+            string version in new[] { null, "", "1.4", "v1.4.0", "01.4.0", "1.4.0-", "1.4.0 " }
+        )
+            True(!GameProfile.IsStrictSemver(version), "'" + version + "' is not strict semver");
+        True(
+            !GameProfile.IsStrictSemver("1.0.0-" + new string('a', 60)),
+            "a version over 64 characters is refused"
+        );
+
+        GameProfile.Configure("0.5", "V 3.3.0 (b18)", icon);
+        True(
+            IdentifyPayload()["connector"] == null,
+            "a non-semver mod version leaves the connector identity out"
+        );
+
+        Equal(
+            "V 3.3.0 (b18)",
+            GameProfile.NormalizeGameVersion("  V 3.3.0 (b18)\n"),
+            "game build is trimmed"
+        );
+        Equal("Vab", GameProfile.NormalizeGameVersion("V\u0007a\u200Eb"), "non-printables dropped");
+        string longBuild = GameProfile.NormalizeGameVersion(new string('9', 40));
+        Equal((int)limits["versionMaxLength"], longBuild.Length, "game build is cut to 32");
+        GameProfile.Configure("1.2.3", " \t ", icon);
+        True(
+            ProfileParameters(IdentifyPayload())["version"] == null,
+            "an unknown game build is omitted"
+        );
+
+        byte[] small = FixtureIcon();
+        small[19] = 128;
+        small[23] = 128;
+        GameProfile.Configure("1.2.3", "V 3.3.0 (b18)", small);
+        True(GameProfile.Icon == null, "a 128 x 128 PNG is not declared");
+        True(
+            ProfileParameters(IdentifyPayload())["icon"] == null,
+            "the profile declares no icon it cannot serve"
+        );
+        byte[] notPng = (byte[])icon.Clone();
+        notPng[1] = (byte)'X';
+        GameProfile.Configure("1.2.3", null, notPng);
+        True(GameProfile.Icon == null, "a file without the PNG signature is not declared");
+        byte[] huge = new byte[(int)limits["iconMaxBytes"] + 1];
+        Array.Copy(icon, huge, icon.Length);
+        GameProfile.Configure("1.2.3", null, huge);
+        True(GameProfile.Icon == null, "an icon over 128 KiB is not declared");
+
+        GameProfile.Configure("1.2.3", null, icon);
+        JObject parameters = ProfileParameters(IdentifyPayload());
+        Equal(
+            "name,icon",
+            string.Join(",", parameters.Properties().Select(p => p.Name)),
+            "profile carries exactly name and icon when the build is unknown"
+        );
+        True(
+            ((string)parameters["name"]).Length <= (int)limits["nameMaxLength"],
+            "display name fits Takaro's limit"
+        );
+        ConfigureFixtureGameProfile(fixture);
+    }
+
+    private static void AssertGetGameIcon(JObject fixture, string projectDir)
+    {
+        byte[] icon = File.ReadAllBytes(Path.Combine(projectDir, "assets", "icon-256.png"));
+        GameProfile.Configure("1.2.3", "V 3.3.0 (b18)", icon);
+        JObject declared = (JObject)ProfileParameters(IdentifyPayload())["icon"];
+
+        WebSocketTransport.Instance.ProtocolVersion = 1;
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        WebSocketTransport.Instance.ErrorCodes.Clear();
+        RequestRouter.Route(
+            "{\"type\":\"request\",\"requestId\":\"icon-1\","
+                + "\"payload\":{\"action\":\"getGameIcon\",\"args\":\"{}\"}}"
+        );
+        JObject response = SerializeFrame(WebSocketTransport.Instance.TerminalMessages.Single());
+        Equal("response", (string)response["type"], "getGameIcon answers with a response");
+        Equal("icon-1", (string)response["requestId"], "getGameIcon keeps the request id");
+        JObject payload = (JObject)response["payload"];
+        Equal(
+            "data,revision",
+            string.Join(",", payload.Properties().Select(p => p.Name).OrderBy(n => n)),
+            "getGameIcon carries exactly revision and data"
+        );
+        Equal(
+            (string)declared["revision"],
+            (string)payload["revision"],
+            "getGameIcon serves the declared revision"
+        );
+        byte[] served = Convert.FromBase64String((string)payload["data"]);
+        Equal((int)declared["size"], served.Length, "served bytes are exactly the declared size");
+        True(served.SequenceEqual(icon), "getGameIcon serves the whole shipped PNG");
+
+        GameProfile.Configure("1.2.3", "V 3.3.0 (b18)", null);
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        WebSocketTransport.Instance.ErrorCodes.Clear();
+        RequestRouter.Route(
+            "{\"type\":\"request\",\"requestId\":\"icon-2\","
+                + "\"payload\":{\"action\":\"getGameIcon\",\"args\":\"{}\"}}"
+        );
+        Equal(
+            ProtocolErrorCodes.GameError,
+            WebSocketTransport.Instance.ErrorCodes.SingleOrDefault(),
+            "an unreadable icon answers game_error"
+        );
+        WebSocketTransport.Instance.ProtocolVersion = 0;
+        ConfigureFixtureGameProfile(fixture);
+    }
+
+    private static int ReadBigEndian(byte[] bytes, int offset)
+    {
+        return (bytes[offset] << 24)
+            | (bytes[offset + 1] << 16)
+            | (bytes[offset + 2] << 8)
+            | bytes[offset + 3];
+    }
+
+    private static byte[] BigEndian(uint value)
+    {
+        return new[] { (byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value };
+    }
+
+    private static uint Crc32(byte[] data)
+    {
+        uint crc = 0xFFFFFFFF;
+        foreach (byte b in data)
+        {
+            crc ^= b;
+            for (int k = 0; k < 8; k++)
+                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320 : crc >> 1;
+        }
+        return ~crc;
+    }
+
     private static void AssertManifestMatchesAnsweredActions(JObject fixture)
     {
         JObject table = (JObject)ProtocolV1(fixture)["actionCapabilities"];
@@ -563,7 +813,11 @@ public static class ContractHarness
             ProtocolHandshake
                 .BuildCapabilityManifest(RequestRouter.SupportedActions)
                 .Select(c => (string)c["name"])
-                .Where(n => !n.StartsWith("events.") && n != "migration.native")
+                .Where(n =>
+                    !n.StartsWith("events.")
+                    && n != "migration.native"
+                    && n != GameProfile.Capability
+                )
         );
         True(
             declared.SetEquals(expectedCapabilities),

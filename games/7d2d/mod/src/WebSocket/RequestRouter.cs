@@ -159,6 +159,7 @@ namespace Takaro.WebSocket
             "unbanPlayer",
             "teleportPlayer",
             "shutdown",
+            "getGameIcon",
         };
 
         public static void Route(string message)
@@ -363,6 +364,9 @@ namespace Takaro.WebSocket
                         break;
                     case "shutdown":
                         await ActionHandlers.Shutdown(requestId);
+                        break;
+                    case "getGameIcon":
+                        ReadHandlers.GetGameIcon(requestId);
                         break;
                     default:
                         LogService.Instance.Warn($"Unknown message type: {action}");

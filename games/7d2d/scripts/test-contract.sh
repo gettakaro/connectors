@@ -29,6 +29,7 @@ docker compose --project-directory "${PROJECT_ROOT}" run --rm --no-deps \
       -r:/usr/lib/mono/msbuild/Current/bin/Newtonsoft.Json.dll \
       /app/mod/src/WebSocket/WebSocketMessage.cs \
       /app/mod/src/WebSocket/ProtocolHandshake.cs \
+      /app/mod/src/WebSocket/GameProfile.cs \
       /app/mod/src/WebSocket/GameEventPublisher.cs \
       /app/mod/src/WebSocket/RequestRouter.cs \
       /app/mod/src/WebSocket/ReadHandlers.cs \
@@ -47,5 +48,5 @@ docker compose --project-directory "${PROJECT_ROOT}" run --rm --no-deps \
       /app/mod/src/Config/ConfigFiles.cs \
       /app/tests/ContractHarness.cs
     MONO_PATH=/usr/lib/mono/msbuild/Current/bin \
-      mono "$test_dir/contract-harness.exe" /tmp/generic-protocol.json /tmp/legacy-parity.json
+      mono "$test_dir/contract-harness.exe" /tmp/generic-protocol.json /tmp/legacy-parity.json /app
   '
