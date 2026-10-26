@@ -662,8 +662,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                 adapter.logWarning("Action failed: " + error.getMessage());
                 Throwable cause = error instanceof java.util.concurrent.CompletionException && error.getCause() != null
                         ? error.getCause() : error;
-                sendError(requestId, cause instanceof IllegalArgumentException ? "invalid_args" : "game_error",
-                        cause.getMessage());
+                sendError(requestId, errorCode(cause), cause.getMessage());
             } else if (result != null) {
                 sendResponse(requestId, result, null);
             } else if (isV1()) {
@@ -672,6 +671,12 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                 sendResponse(requestId, new JsonObject(), null);
             }
         });
+    }
+
+    private static String errorCode(Throwable cause) {
+        if (cause instanceof PlayerNotOnlineException) return "not_found";
+        if (cause instanceof IllegalArgumentException) return "invalid_args";
+        return "game_error";
     }
 
     // --- Action handlers ---
@@ -734,9 +739,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         String itemCode = optString(args, "item", null);
         int amount = optInt(args, "amount", 1);
         String quality = optString(args, "quality", "");
-        if (gameId != null && itemCode != null) {
-            adapter.giveItem(gameId, itemCode, amount, quality);
-        }
+        if (gameId == null) throw new IllegalArgumentException("giveItem needs player.gameId");
+        if (itemCode == null) throw new IllegalArgumentException("giveItem needs item");
+        adapter.giveItem(gameId, itemCode, amount, quality);
     }
 
     private JsonElement handleListItems() {
@@ -818,9 +823,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         double y = optDouble(args, "y", 0);
         double z = optDouble(args, "z", 0);
         String dimension = optString(args, "dimension", null);
-        if (gameId != null) {
-            adapter.teleportPlayer(gameId, x, y, z, dimension);
-        }
+        if (gameId == null) throw new IllegalArgumentException("teleportPlayer needs player.gameId");
+        adapter.teleportPlayer(gameId, x, y, z, dimension);
     }
 
     private void handleKickPlayer(JsonObject args) {

@@ -24,7 +24,9 @@ public interface GameAdapter {
     List<GameEntity> listEntities();
     List<GameLocation> listLocations();
 
-    // Player actions
+    // Player actions. giveItem and teleportPlayer throw PlayerNotOnlineException when the player is
+    // not in the world and IllegalArgumentException for an item the game does not know, so Takaro
+    // never records a delivery or a teleport that did not happen.
     void giveItem(String gameId, String itemCode, int amount, String quality);
     void sendMessage(String message, String recipientGameId);
     CommandResult executeConsoleCommand(String command);

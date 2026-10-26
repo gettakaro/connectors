@@ -230,6 +230,44 @@ class ProtocolV1Test {
     }
 
     @Test
+    void aGiveOrTeleportThatChangedNothingIsAnError() throws Exception {
+        TakaroConnectorTest.TestAdapter adapter = new TakaroConnectorTest.TestAdapter() {
+            @Override
+            public void giveItem(String gameId, String itemCode, int amount, String quality) {
+                if (!"online".equals(gameId)) throw new PlayerNotOnlineException(gameId);
+                throw new IllegalArgumentException("unknown item: " + itemCode);
+            }
+
+            @Override
+            public void teleportPlayer(String gameId, double x, double y, double z, String dimension) {
+                throw new PlayerNotOnlineException(gameId);
+            }
+        };
+        TakaroConfig config = new TakaroConfig();
+        TakaroWebSocketClient client = new TakaroWebSocketClient(new URI("ws://localhost:9999"), adapter, config) {
+            @Override
+            public void send(String text) { sent.add(text); }
+
+            @Override
+            public boolean isOpen() { return open; }
+        };
+        client.onOpen(null);
+        client.onMessage(identifyResponse(1));
+
+        client.onMessage(request("g1", "giveItem", "{\"player\":{\"gameId\":\"online\"},\"item\":\"minecraft:nope\",\"amount\":1}"));
+        assertEquals("invalid_args", awaitResponse("g1").getAsJsonObject("error").get("code").getAsString());
+
+        client.onMessage(request("g2", "giveItem", "{\"player\":{\"gameId\":\"gone\"},\"item\":\"minecraft:stone\",\"amount\":1}"));
+        assertEquals("not_found", awaitResponse("g2").getAsJsonObject("error").get("code").getAsString());
+
+        client.onMessage(request("g3", "giveItem", "{\"item\":\"minecraft:stone\",\"amount\":1}"));
+        assertEquals("invalid_args", awaitResponse("g3").getAsJsonObject("error").get("code").getAsString());
+
+        client.onMessage(request("t1", "teleportPlayer", "{\"player\":{\"gameId\":\"gone\"},\"x\":1,\"y\":2,\"z\":3}"));
+        assertEquals("not_found", awaitResponse("t1").getAsJsonObject("error").get("code").getAsString());
+    }
+
+    @Test
     void aV1IdentifyErrorIsNotTakenForSuccess() throws Exception {
         TakaroConnectorTest.TestAdapter adapter = new TakaroConnectorTest.TestAdapter();
         TakaroConfig config = new TakaroConfig();

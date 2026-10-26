@@ -2,6 +2,7 @@ package io.takaro.minecraft.paper;
 
 import io.takaro.minecraft.core.EventEmitter;
 import io.takaro.minecraft.core.GameAdapter;
+import io.takaro.minecraft.core.PlayerNotOnlineException;
 import io.takaro.minecraft.core.config.ConfigFile;
 import io.takaro.minecraft.core.map.RegionRenderer;
 import io.takaro.minecraft.core.map.WorldMap;
@@ -204,9 +205,9 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
     @Override
     public void giveItem(String gameId, String itemCode, int amount, String quality) {
         Player player = Bukkit.getPlayer(UUID.fromString(gameId));
-        if (player == null) return;
+        if (player == null) throw new PlayerNotOnlineException(gameId);
         Material mat = Material.matchMaterial(itemCode);
-        if (mat == null) return;
+        if (mat == null || !mat.isItem()) throw new IllegalArgumentException("unknown item: " + itemCode);
         player.getInventory().addItem(new ItemStack(mat, amount));
     }
 
@@ -235,7 +236,8 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
     @Override
     public void teleportPlayer(String gameId, double x, double y, double z, String dimension) {
         Player player = Bukkit.getPlayer(UUID.fromString(gameId));
-        if (player == null) return;
+        if (player == null) throw new PlayerNotOnlineException(gameId);
+        if (player.isDead()) throw new IllegalStateException("player " + gameId + " is dead");
         org.bukkit.World world = dimension != null ? getWorldForDimension(dimension) : player.getWorld();
         if (world == null) world = player.getWorld();
         player.teleport(new Location(world, x, y, z));

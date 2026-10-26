@@ -17,6 +17,7 @@ import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -28,6 +29,7 @@ public class TakaroNeoForgeMod {
     private static final Logger LOGGER = LogManager.getLogger("Takaro");
     private volatile TakaroConnector connector;
     private volatile NeoForgeGameAdapter adapter;
+    private int ticks;
 
     public TakaroNeoForgeMod() {
         NeoForge.EVENT_BUS.register(this);
@@ -158,5 +160,10 @@ public class TakaroNeoForgeMod {
                     weaponCode
             );
         }
+    }
+
+    @SubscribeEvent
+    public void onServerTick(ServerTickEvent.Post event) {
+        if (adapter != null && ++ticks % 20 == 0) adapter.liftExpiredBans();
     }
 }
