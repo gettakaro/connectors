@@ -888,6 +888,25 @@ static void TestMarkersWithoutPlayer() {
           status.c_str());
     CHECK(Dump(rs->Execute("listLocations", J("{}"))).find("Skulker's End") != std::string::npos, "locations kept");
 
+    // Live on 25792439: our own load is collected, and the game loads its own copy of the table on join
+    // as a new object that the index has not seen. The rebuild after the join scans the index again.
+    Server g;
+    g.markersOnJoin = true;
+    err = g.Build();
+    if (!err.empty()) return;
+    HostAndImage gmem(g.w.mem);
+    std::unique_ptr<ReadService> grs(NewService(g, gmem));
+    CHECK(!grs->WarmupStep(status) && g.assetLoads == 1, "%d %s", g.assetLoads, status.c_str());
+    g.w.Kill(g.markerTable);  // garbage collected
+    g.markerTable = 0;
+    g.loadMarkers();  // the player's join loads the game's own copy
+    r = grs->Execute("getPlayers", J("{}"));
+    CHECK(r.ok, "%s", Dump(r).c_str());
+    CHECK(grs->WarmupStep(status) && status.find("pending") == std::string::npos,
+          "rebuilt after the join from the game's own table: %s", status.c_str());
+    CHECK(Dump(grs->Execute("listLocations", J("{}"))).find("Skulker's End") != std::string::npos,
+          "locations from the game's table");
+
     // The engine refuses the load: a structured "not loaded yet" answer, at most three tries.
     Server f;
     f.markersOnJoin = true;

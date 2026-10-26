@@ -510,12 +510,14 @@ bool ReadService::WarmupStep(std::string& status) {
     std::string itemsErr, entErr, locErr;
     // Builds all three catalogues again, so texts that were not loaded during the early build
     // (start-up) are picked up; keeps the old catalogue when a table is gone.
-    auto rebuild = [&] {
+    auto rebuild = [&](std::string* why = nullptr) {
         auto fresh = std::make_shared<Catalogue>();
         std::string e1, e2, e3;
         if (!fresh->BuildItems(*r_, slow, e1) || !fresh->BuildEntities(*r_, slow, e2) ||
-            !fresh->BuildLocations(*r_, slow, Region(), e3))
+            !fresh->BuildLocations(*r_, slow, Region(), e3)) {
+            if (why) *why = !e1.empty() ? e1 : !e2.empty() ? e2 : e3;
             return false;
+        }
         cat = fresh;
         changed = true;
         return true;
@@ -560,9 +562,25 @@ bool ReadService::WarmupStep(std::string& status) {
     if (locationsNew && !markersForced_ && cat->HaveItems() && cat->HaveEntities()) rebuild();
     if (refreshAfterJoin_ && firstPlayerMs_ && NowMs() - firstPlayerMs_ >= (uint64_t)o_.refreshAfterJoinMs &&
         NowMs() >= nextRefreshMs_) {
-        // A table that is gone (our own marker load can be collected) is tried again in 60 s, five times.
-        if (rebuild() || ++refreshTries_ >= 5) refreshAfterJoin_ = false;
-        else nextRefreshMs_ = NowMs() + 60000;
+        // Our own marker table load can be collected, and the game loads its own copy on join as a
+        // new object, so a failed rebuild scans the object index again before it tries once more.
+        // A table that is still missing is tried again in 60 s, five times.
+        std::string why;
+        bool ok = rebuild(&why);
+        if (!ok && r_->Scan(kScanNames) > 0) {
+            std::string why2;
+            ok = rebuild(&why2);
+            if (!ok) why = why2;
+        }
+        if (ok) {
+            NativeLog("reads: catalogue rebuilt after the first join");
+            refreshAfterJoin_ = false;
+        } else {
+            NativeLog("reads: catalogue rebuild after the first join failed (try %d of 5): %s", refreshTries_ + 1,
+                      why.c_str());
+            if (++refreshTries_ >= 5) refreshAfterJoin_ = false;
+            else nextRefreshMs_ = NowMs() + 60000;
+        }
     }
     if (changed) {
         const CatalogueStats& s = cat->Stats();
