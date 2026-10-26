@@ -425,28 +425,6 @@ Response DoMessage(const JsonValue& v) {
     return {200, "{\"success\":true}"};
 }
 
-std::vector<std::string> Tokens(const std::string& s) {
-    std::vector<std::string> out;
-    size_t i = 0;
-    while (i < s.size()) {
-        while (i < s.size() && isspace((unsigned char)s[i])) i++;
-        if (i >= s.size()) break;
-        std::string tok;
-        if (s[i] == '"') {
-            size_t e = s.find('"', i + 1);
-            tok = s.substr(i + 1, e == std::string::npos ? std::string::npos : e - i - 1);
-            i = e == std::string::npos ? s.size() : e + 1;
-        } else {
-            size_t e = i;
-            while (e < s.size() && !isspace((unsigned char)s[e])) e++;
-            tok = s.substr(i, e - i);
-            i = e;
-        }
-        out.push_back(tok);
-    }
-    return out;
-}
-
 std::string ErrText(const Response& r) {
     JsonValue v;
     if (JsonParse(r.body, v) && v.get("error") && v.get("error")->isStr()) return v.get("error")->str;
@@ -460,19 +438,48 @@ bool Num(const std::string& s, double& out) {
 }
 
 // Plugin-defined console: Enshrouded's dedicated server has no command console of its own.
+// A <player> is a SteamID64 or a name, quoted or bare; console_args.h resolves names with spaces.
 bool RunCommand(const std::string& line, std::string& out) {
-    auto a = Tokens(line);
-    if (a.empty()) {
+    using console::Arg;
+    using console::Form;
+    auto words = console::Tokenize(line);
+    if (words.empty()) {
         out = "empty command; try 'help'";
         return false;
     }
-    std::string cmd = a[0];
+    std::string cmd = words[0].text;
     for (auto& c : cmd) c = (char)tolower((unsigned char)c);
+    std::vector<Arg> args(words.begin() + 1, words.end());
     auto& st = PluginState::Get();
+    console::Parsed pa;
+    // an open quote is reported before any arity check; only say's and whisper's message may hold one
+    static const char* const kTakesArgs[] = {"level", "location", "teleport", "tp", "inventory", "give", "item", "kick", "whisper"};
+    size_t textFrom = cmd == "say" || cmd == "broadcast" ? 0 : cmd == "whisper" ? 1 : (size_t)-1;
+    bool takesArgs = textFrom != (size_t)-1;
+    for (auto* c : kTakesArgs) takesArgs |= cmd == c;
+    if (takesArgs) {
+        std::string err = console::UnclosedQuoteError(args, textFrom);
+        if (!err.empty()) return out = err, false;
+    }
+    // resolves the player argument(s); on failure `out` holds the reason, or the usage when the shape is wrong
+    auto resolve = [&](const std::vector<Form>& forms, const char* usage) {
+        std::string err;
+        if (console::ResolveArgs(args, forms, st.OnlinePlayers(), pa, err)) return true;
+        out = err.empty() ? std::string("usage: ") + usage : err;
+        return false;
+    };
+    auto numbers = [](const std::vector<Arg>& r) {
+        double d;
+        for (auto& x : r)
+            if (!Num(x.text, d)) return false;
+        return true;
+    };
+    const size_t any = (size_t)-1;
     if (cmd == "help") {
         out = "commands: help | version | players | say <text> | whisper <player> <text> | location <player> | "
               "teleport <player> <x> <y> <z> | tp <player> <toPlayer> | inventory <player> | give <player> <itemCode> [amount] [level] | "
-              "item <search> | kick <player> | levels | level <player> | save-and-shutdown. <player> = SteamID64 or exact name.";
+              "item <search> | kick <player> | levels | level <player> | save-and-shutdown. <player> = SteamID64 or name; "
+              "a name with spaces may be quoted: level \"Character 1\".";
         return true;
     }
     if (cmd == "version") {
@@ -487,12 +494,15 @@ bool RunCommand(const std::string& line, std::string& out) {
             out += "\n" + (p.get("name") ? p.get("name")->str : "?") + " (" + (p.get("steamId") ? p.get("steamId")->str : "?") + ")";
         return true;
     }
-    if (cmd == "levels" || (cmd == "level" && a.size() == 2)) {
+    if (cmd == "levels" || (cmd == "level" && !args.empty())) {
+        std::string want;
+        if (cmd == "level") {
+            if (!resolve({{1, 0, 0}}, "level <player>")) return false;
+            want = pa.players[0].steamId;
+        }
         JsonValue v;
         JsonParse(st.PlayersJson(), v);
         auto str = [](const JsonValue& p, const char* k) { return p.get(k) ? p.get(k)->str : std::string("?"); };
-        std::string want, wantName;
-        if (a.size() == 2 && !st.FindOnline(a[1], want, wantName)) return out = "player not online: " + a[1], false;
         std::string rows;
         int n = 0;
         for (auto& p : v.arr) {
@@ -504,77 +514,91 @@ bool RunCommand(const std::string& line, std::string& out) {
                                           str(p, "experienceRequired")
                                     : std::string("level not read yet"));
         }
-        out = std::to_string(n) + " online" + rows;
+        out = want.empty() || rows.empty() ? std::to_string(n) + " online" + rows : rows.substr(1);
         return true;
     }
-    if ((cmd == "say" || cmd == "broadcast") && a.size() >= 2) {
-        std::string text = line.substr(line.find(a[0]) + a[0].size());
-        text.erase(0, text.find_first_not_of(" \t"));
+    if ((cmd == "say" || cmd == "broadcast") && !args.empty()) {
+        std::string text = line.substr(args[0].begin);
         std::string err;
         if (!WorldSendMessage(text, "", 0, 0, err)) return out = err, false;
         out = "sent: " + text;
         return true;
     }
-    if (cmd == "whisper" && a.size() >= 3) {
+    if (cmd == "whisper" && args.size() >= 2) {
+        Form f{1, 1, any};
+        f.freeText = true;
+        if (!resolve({f}, "whisper <player> <text>")) return false;
         std::string steam, name, machine, err;
-        if (!st.FindOnline(a[1], steam, name) || !st.OnlineMachine(steam, machine)) return out = "player not online: " + a[1], false;
-        std::string text;
-        for (size_t i = 2; i < a.size(); i++) text += (i > 2 ? " " : "") + a[i];
+        if (!st.FindOnline(pa.players[0].steamId, steam, name) || !st.OnlineMachine(steam, machine))
+            return out = "player not online: " + pa.players[0].steamId, false;
+        std::string text = line.substr(pa.rest[0].begin);  // the message as typed, quotes included
+        text.erase(text.find_last_not_of(" \t\r\n") + 1);
         if (!WorldSendMessage(text, machine, 0, 0, err)) return out = err, false;
-        out = "whispered to " + name + ": " + text;
+        out = "whispered to " + console::DisplayName(pa.players[0]) + ": " + text;
         return true;
     }
-    if (cmd == "location" && a.size() == 2) {
+    if (cmd == "location" && !args.empty()) {
+        if (!resolve({{1, 0, 0}}, "location <player>")) return false;
         std::string steam, name, err;
-        if (!st.FindOnline(a[1], steam, name)) return out = "player not online: " + a[1], false;
+        if (!st.FindOnline(pa.players[0].steamId, steam, name)) return out = "player not online: " + pa.players[0].steamId, false;
         Vec3 v;
         if (!WorldGetLocation(name, v, err)) return out = err, false;
         char b[160];
-        snprintf(b, sizeof b, "%s is at x=%.2f y=%.2f z=%.2f", name.c_str(), v.x, v.y, v.z);
-        out = b;
+        snprintf(b, sizeof b, " is at x=%.2f y=%.2f z=%.2f", v.x, v.y, v.z);
+        out = console::DisplayName(pa.players[0]) + b;
         return true;
     }
-    if ((cmd == "teleport" || cmd == "tp") && (a.size() == 5 || a.size() == 3)) {
+    if ((cmd == "teleport" || cmd == "tp") && args.size() >= 2) {
+        // form 0: <player> <x> <y> <z>; form 1: <player> <toPlayer>
+        if (!resolve({{1, 3, 3, numbers}, {2, 0, 0}}, "teleport <player> <x> <y> <z> | tp <player> <toPlayer>")) return false;
         double x, y, z;
-        if (a.size() == 3) {
+        if (pa.form == 1) {
             std::string steam, name, err;
-            if (!st.FindOnline(a[2], steam, name)) return out = "target player not online: " + a[2], false;
+            if (!st.FindOnline(pa.players[1].steamId, steam, name)) return out = "target player not online: " + pa.players[1].steamId, false;
             Vec3 v;
             if (!WorldGetLocation(name, v, err)) return out = err, false;
             x = v.x, y = v.y, z = v.z;
-        } else if (!Num(a[2], x) || !Num(a[3], y) || !Num(a[4], z)) {
-            return out = "usage: teleport <player> <x> <y> <z>", false;
+        } else {
+            Num(pa.rest[0].text, x), Num(pa.rest[1].text, y), Num(pa.rest[2].text, z);
         }
-        Response r = DoTeleport(a[1], x, y, z);
+        Response r = DoTeleport(pa.players[0].steamId, x, y, z);
         if (r.status != 200) return out = ErrText(r), false;
         char b[160];
         snprintf(b, sizeof b, "teleport queued to x=%.2f y=%.2f z=%.2f", x, y, z);
         out = b;
         return true;
     }
-    if (cmd == "inventory" && a.size() == 2) {
+    if (cmd == "inventory" && !args.empty()) {
+        if (!resolve({{1, 0, 0}}, "inventory <player>")) return false;
         std::string steam, name, err, json;
-        if (!st.FindOnline(a[1], steam, name)) return out = "player not online: " + a[1], false;
+        if (!st.FindOnline(pa.players[0].steamId, steam, name)) return out = "player not online: " + pa.players[0].steamId, false;
         if (!WorldInventoryJson(name, json, err)) return out = err, false;
         JsonValue v;
         JsonParse(json, v);
-        out = name + ": " + std::to_string(v.arr.size()) + " stacks";
+        out = console::DisplayName(pa.players[0]) + ": " + std::to_string(v.arr.size()) + " stacks";
         for (auto& i : v.arr)
             out += "\n" + i.get("amount")->str + " x " + i.get("code")->str + " [" + i.get("inventory")->str + "]";
         return true;
     }
-    if (cmd == "give" && a.size() >= 3 && a.size() <= 5) {
+    if (cmd == "give" && args.size() >= 2) {
+        // an item code is one word; amount and level are numbers, so a trailing word can only be part of the name
+        auto giveRest = [](const std::vector<Arg>& r) {
+            double d;
+            uint8_t l;
+            return (r.size() < 2 || Num(r[1].text, d)) && (r.size() < 3 || ParseItemLevel(r[2].text, l));
+        };
+        if (!resolve({{1, 1, 3, giveRest}}, "give <player> <itemCode> [amount] [level 1-255]")) return false;
         double n = 1;
         uint8_t lvl = 0;
-        if ((a.size() >= 4 && !Num(a[3], n)) || (a.size() == 5 && !ParseItemLevel(a[4], lvl)))
-            return out = "usage: give <player> <itemCode> [amount] [level 1-255]", false;
-        Response r = DoGive(a[1], a[2], n, lvl);
+        if (pa.rest.size() >= 2) Num(pa.rest[1].text, n);
+        if (pa.rest.size() == 3) ParseItemLevel(pa.rest[2].text, lvl);
+        Response r = DoGive(pa.players[0].steamId, pa.rest[0].text, n, lvl);
         if (r.status != 200) return out = ErrText(r), false;
-        out = "gave " + std::to_string((long long)n) + " x " + a[2];
+        out = "gave " + std::to_string((long long)n) + " x " + pa.rest[0].text;
         return true;
     }
-    if (cmd == "item" && a.size() == 2) {
-        std::string q = a[1];
+    if (cmd == "item" && args.size() == 1) {
+        std::string q = args[0].text;
         for (auto& c : q) c = (char)tolower((unsigned char)c);
         int n = 0;
         for (size_t i = 0; i < kItemCount && n < 25; i++) {
@@ -584,16 +608,17 @@ bool RunCommand(const std::string& line, std::string& out) {
             out += std::string(n ? "\n" : "") + kItems[i].code + " (" + kItems[i].category + ", max " + std::to_string(kItems[i].maxStack) + ")";
             n++;
         }
-        if (!n) out = "no item matches '" + a[1] + "'";
+        if (!n) out = "no item matches '" + args[0].text + "'";
         return n > 0;
     }
-    if (cmd == "kick" && a.size() == 2) {
+    if (cmd == "kick" && !args.empty()) {
+        if (!resolve({{1, 0, 0}}, "kick <player>")) return false;
         std::string steam, name, err, how;
-        if (!st.FindOnline(a[1], steam, name)) return out = "player not online: " + a[1], false;
+        if (!st.FindOnline(pa.players[0].steamId, steam, name)) return out = "player not online: " + pa.players[0].steamId, false;
         uint64_t hash = 0;
         if (!ResolveAccount(steam, hash, how)) return out = "account hash unknown", false;
         if (!AccountAction(hash, 0, err)) return out = err, false;
-        out = "kicked " + name;
+        out = "kicked " + console::DisplayName(pa.players[0]);
         return true;
     }
     if (cmd == "save-and-shutdown") {
@@ -602,7 +627,7 @@ bool RunCommand(const std::string& line, std::string& out) {
         out = "graceful shutdown started (save + quit)";
         return true;
     }
-    out = "unknown command or wrong arguments: '" + a[0] + "'; try 'help'";
+    out = "unknown command or wrong arguments: '" + words[0].text + "'; try 'help'";
     return false;
 }
 
