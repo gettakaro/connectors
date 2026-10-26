@@ -15,6 +15,20 @@ export interface MapImageMeta {
 export const MAP_DIMENSION_ID = 'world';
 export const MAX_CHUNK_BYTES = 1024 * 1024;
 
+/**
+ * A getPlayerLocation answer for the negotiated protocol. On version 1 it names the one
+ * Dimension the map declares, so Takaro files player positions under the same id, and a
+ * player without a position (just left, unknown) answers null instead of a fake (0, 0).
+ * Version 0 keeps its old answer, (0, 0, 0) when there is no position.
+ */
+export function locationForProtocol(
+  location: { x: number; y: number; z: number } | null,
+  protocolVersion: number,
+): { x: number; y: number; z: number; dimension?: string } | null {
+  if (protocolVersion !== 1) return location ?? { x: 0, y: 0, z: 0 };
+  return location ? { ...location, dimension: MAP_DIMENSION_ID } : null;
+}
+
 /** The protocol v1 `map` capability for the rendered world, or null while there is none. */
 export function mapCapability(meta: MapImageMeta | null): { name: 'map'; parameters: unknown } | null {
   if (!meta) return null;

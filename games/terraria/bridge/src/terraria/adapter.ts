@@ -158,20 +158,20 @@ export class TerrariaAdapter {
     return this.players.get(identifier) || this.players.get(identifier.toLowerCase()) || null;
   }
 
-  private async getPlayerLocation(args: Record<string, unknown>): Promise<{ x: number; y: number; z: number }> {
+  /** The player's position in world pixels, or null when the plugin reports none (offline, unknown, no plugin). */
+  private async getPlayerLocation(args: Record<string, unknown>): Promise<{ x: number; y: number; z: number } | null> {
     const result = await this.tshock.rawCommand(`/takaropos ${quote(identifierName(args))}`);
     const marker = result.rawResult.match(/TAKARO_POSITION\s+({[^}]+})/);
-    if (!result.success || !marker) return { x: 0, y: 0, z: 0 };
+    if (!result.success || !marker) return null;
 
     try {
       const parsed = JSON.parse(marker[1]) as { x?: unknown; y?: unknown; z?: unknown };
-      return {
-        x: finiteNumber(parsed.x) ?? 0,
-        y: finiteNumber(parsed.y) ?? 0,
-        z: finiteNumber(parsed.z) ?? 0,
-      };
+      const x = finiteNumber(parsed.x);
+      const y = finiteNumber(parsed.y);
+      if (x === undefined || y === undefined) return null;
+      return { x, y, z: finiteNumber(parsed.z) ?? 0 };
     } catch {
-      return { x: 0, y: 0, z: 0 };
+      return null;
     }
   }
 

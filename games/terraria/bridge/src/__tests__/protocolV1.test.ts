@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { WebSocketServer, WebSocket } from 'ws';
 import { buildManifest } from '../takaro/capabilities.js';
 import { TakaroWsClient } from '../takaro/client.js';
-import { MAP_DIMENSION_ID, MapImageError, MapImageStore, mapCapability, parseMeta } from '../takaro/mapImage.js';
+import { MAP_DIMENSION_ID, MapImageError, MapImageStore, locationForProtocol, mapCapability, parseMeta } from '../takaro/mapImage.js';
 import type { WsMessage } from '../takaro/protocol.js';
 
 function writeMap(dir: string, revision: string, bytes: Buffer): void {
@@ -242,3 +242,20 @@ async function waitFor(predicate: () => boolean, timeoutMs = 3000): Promise<void
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 }
+
+test('getPlayerLocation names the map Dimension on version 1 and stays plain on version 0', () => {
+  const location = { x: 33600, y: 4422, z: 0 };
+  const declared = mapCapability({
+    revision: 'r', file: 'map-r.png', mimeType: 'image/png', size: 1, width: 1, height: 1,
+    bounds: { x: { min: 0, max: 16 }, y: { min: 0, max: 16 } },
+  })!.parameters as { dimensions: Array<{ id: string }> };
+
+  assert.deepEqual(locationForProtocol(location, 1), { ...location, dimension: declared.dimensions[0].id });
+  assert.deepEqual(locationForProtocol(location, 0), location);
+  assert.equal('dimension' in locationForProtocol(location, 0)!, false);
+});
+
+test('a player without a position answers null on version 1, not a fake (0, 0)', () => {
+  assert.equal(locationForProtocol(null, 1), null);
+  assert.deepEqual(locationForProtocol(null, 0), { x: 0, y: 0, z: 0 });
+});

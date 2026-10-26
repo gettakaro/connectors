@@ -121,6 +121,21 @@ test('reads plugin-backed player location from TShock raw command output', async
   assert.deepEqual(tshock.rawCommands, ['/takaropos "Guide"']);
 });
 
+test('a player the plugin cannot find has no location', async () => {
+  const tshock = new FakeTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return { success: true, rawResult: 'Invalid player!' };
+  };
+  const adapter = new TerrariaAdapter(tshock, {
+    commandAllowlistExact: [],
+    commandAllowlistPrefixes: [],
+    enableShutdown: false,
+  });
+
+  assert.equal(await adapter.handleAction('getPlayerLocation', { player: { name: 'Gone' } }), null);
+});
+
 function inventoryAdapter(rawResult: string, success = true) {
   const tshock = new FakeTShock();
   tshock.rawCommand = async (command: string) => {
