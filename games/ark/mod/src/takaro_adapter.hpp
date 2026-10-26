@@ -3,6 +3,7 @@
 // ban manager). Runs on bridge worker threads only. A failure throws Withhold:
 // Takaro's Generic void actions treat any response frame as success, so a failed
 // action leaves its request unanswered and Takaro's bounded timeout rejects it.
+#include "game_profile.hpp"
 #include "gate_state.hpp"
 #include "json.hpp"
 #include "takaro_store.hpp"
@@ -354,6 +355,9 @@ class Adapter {
   // Called after the response for `shutdown` is written to the socket.
   using AfterWrite = std::function<void()>;
 
+  // The icon declared in game.profile (null = none declared, getGameIcon is refused).
+  void set_game_icon(std::shared_ptr<const GameIcon> icon) { icon_ = std::move(icon); }
+
   json::Value handle(const std::string& action, const json::Value& args, AfterWrite* after_write = nullptr) {
     if (action == "testReachability") return test_reachability();
     if (action == "getPlayers") {
@@ -407,6 +411,10 @@ class Adapter {
     if (action == "executeConsoleCommand") return console(args);
     if (action == "sendMessage") return send_message(args);
     if (action == "shutdown") return shutdown(args, after_write);
+    if (action == "getGameIcon") {
+      if (!icon_) withhold("getGameIcon is unavailable on this build (no icon declared)");
+      return game_icon_response(*icon_);
+    }
     withhold("action '" + action.substr(0, 64) + "' is unavailable on this build");
   }
 
@@ -415,6 +423,7 @@ class Adapter {
   BanManager& bans_;
   KnownPlayers& known_;
   DeliveryWaiter wait_delivered_;
+  std::shared_ptr<const GameIcon> icon_;
 
   json::Value test_reachability() {
     const auto h = gate_.health();

@@ -57,6 +57,7 @@ cp "$project_root/_data/build/libtakaro-ark-native.so" "$stage/TakaroArkNative/"
 sed "s/@EXPECTED_SHA256@/${ARK_SERVER_EXE_SHA256}/g" \
   "$script_dir/launch-exact.sh.in" > "$stage/TakaroArkNative/launch.sh"
 cp "$project_root/mod/takaro.cfg.example" "$stage/TakaroArkNative/takaro.cfg.example"
+cp "$project_root/assets/icon-256.png" "$stage/TakaroArkNative/icon-256.png"
 cat > "$stage/TakaroArkNative/README.txt" <<EOF
 Takaro ARK native ${version}; exact ShooterGameServer build ${ARK_REVISION} only.
 Copy takaro.cfg.example to takaro.cfg in this folder and set TAKARO_REGISTRATION_TOKEN.

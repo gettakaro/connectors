@@ -9,7 +9,8 @@ Proven live on staging Takaro with a real client on the pinned build (see the ac
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| Connect to Takaro, reachability | ✅ | Reports not reachable while the game is still starting |
+| Connect to Takaro, reachability | ✅ | Connects once the world has loaded (at most 15 minutes after start) |
+| Game profile | ⚠️ | Needs Takaro protocol v1. Shows "ARK: Survival Evolved", game build 361.7, the connector version and the game icon |
 | Player list, player identity | ✅ | Steam ID, in-game name |
 | Join / leave events | ✅ | |
 | Chat events | ✅ | Global chat |
