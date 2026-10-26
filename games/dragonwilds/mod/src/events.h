@@ -22,6 +22,9 @@ void Housekeep();
 std::string DiagnosticsJson();
 // True when the PreLogin hook is installed, i.e. a ban refuses a rejoin on the running server.
 bool BanEnforcementLive();
+// True once the player's join was announced (character in world) and until the leave. A player
+// still loading has a placeholder name and inventory, so Takaro must not see them yet.
+bool InWorld(const std::string& gameId);
 // Complete raw lines from the background log tailer. The sink only enqueues owned data; its
 // consumer must redact before persisting or forwarding. With a sink set, the tailer no longer
 // emits `log` ring events itself.

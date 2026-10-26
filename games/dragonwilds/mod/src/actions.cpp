@@ -360,7 +360,8 @@ std::string PlayerJson(const PlayerInfo& p) {
     if (!p.steamId.empty()) o += ",\"steamId\":" + JsonStr(p.steamId);
     if (!p.xboxLiveId.empty()) o += ",\"xboxLiveId\":" + JsonStr(p.xboxLiveId);
     o += ",\"ping\":" + std::to_string(p.ping) + ",\"spawned\":" + (p.spawned ? "true" : "false") +
-         ",\"online\":true,\"connectedAt\":" + JsonStr(FirstSeen(p.gameId)) + "}";
+         ",\"online\":true,\"inWorld\":" + (Events::InWorld(p.gameId) ? "true" : "false") +
+         ",\"connectedAt\":" + JsonStr(FirstSeen(p.gameId)) + "}";
     return o;
 }
 
