@@ -172,7 +172,7 @@ Tested on Valheim 1.0.16 with BepInExPack 5.4.2351 and a vanilla game client, 20
 | Give an item | ✅ | Dropped at the player's feet; picked up automatically. |
 | Item catalogue | ✅ | English in-game names, filled when Takaro syncs. |
 | Entity catalogue | ✅ | English in-game names, filled when Takaro syncs. |
-| Locations / points of interest | ❌ | Found by the plugin, but Takaro's route is not implemented. |
+| Locations / points of interest | ⚠️ | The Sacrificial Stones, boss altars, Haldor, Hildir and the Bog Witch, with their English names, on the map after Resync Locations. Proven on Takaro staging; not yet verified on takaro.io. |
 | Run a console command | ⚠️ | Only allowlisted commands run; default allows just `help`. |
 | Broadcast a message | ✅ | Shown in normal chat with the sender name. |
 | Whisper a player | ✅ | Shown in that player's normal chat only. |

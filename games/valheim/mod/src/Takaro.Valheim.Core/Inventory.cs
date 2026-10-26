@@ -24,23 +24,6 @@ public sealed record TakaroEntity(
     [property: JsonPropertyName("code")] string Code,
     [property: JsonPropertyName("name")] string Name);
 
-public static class LocationFactory
-{
-    public static TakaroLocation Create(string code, string? rawName, double x, double y, double z) =>
-        new(DisplayName(rawName, code), new TakaroPosition(x, y, z, "valheim"), code);
-
-    private static string DisplayName(string? rawName, string fallback)
-    {
-        if (string.IsNullOrWhiteSpace(rawName))
-        {
-            return fallback;
-        }
-
-        var displayName = rawName!.Trim().Trim('$');
-        return string.IsNullOrWhiteSpace(displayName) ? fallback : displayName;
-    }
-}
-
 public sealed class ConsoleCommandPolicy
 {
     public static ConsoleCommandPolicy Default { get; } = new(new[] { "help" }, Array.Empty<string>());

@@ -86,8 +86,9 @@ public sealed class PluginScaffoldContractTests
         var method = SliceMethod(source, "public Task<TakaroActionResult> ListLocationsAsync", "public Task<TakaroActionResult> TeleportPlayerAsync");
 
         StringAssert.Contains(method, "GetLocationList()");
-        StringAssert.Contains(method, "LocationFactory.Create");
-        StringAssert.Contains(method, "m_location.m_name");
+        StringAssert.Contains(method, "NotableLocations.Select");
+        StringAssert.Contains(method, "m_location.m_prefabName");
+        StringAssert.Contains(method, "LocationsGenerated");
         StringAssert.Contains(method, "m_position");
     }
 
