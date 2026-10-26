@@ -13,7 +13,7 @@
 #elif defined(TAKARO_DEBUG_GAME_BUILD)
 #define TAKARO_PLUGIN_VERSION "0.0.0-debug-game-build-" TAKARO_DEBUG_GAME_BUILD
 #else
-#define TAKARO_PLUGIN_VERSION "0.8.1" // x-release-please-version
+#define TAKARO_PLUGIN_VERSION "0.9.0" // x-release-please-version
 #endif
 
 // Random per-process id (hex), so clients can tell a server restart from a cursor that merely lags.
