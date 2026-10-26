@@ -143,6 +143,21 @@ npm run build
 then re-installs with `npm ci --omit=dev`, because the release archive ships its production
 `node_modules` — lock-pinned, so a deploy is file-only and an operator installs nothing.
 
+`prebuild`, `pretest` and `predev` run `scripts/generate-build-info.mjs`, which writes the
+gitignored `src/generated/buildInfo.ts` from `../version.txt` (the connector version identify
+reports, kept by release-please) and `../assets/icon-256.png` (the Game Profile icon, embedded).
+Run `npm test` or `npm run build` once before type-checking in an editor.
+
+### Game Profile
+
+Identify always sends `game: "terraria"` and `connector: { name: "takaro-terraria", version }`.
+On protocol 1 the manifest also declares `game.profile`: the name `Terraria`, the Terraria build
+from TShock's `/v2/server/status` `serverversion` (omitted until TShock has answered once; a
+later change replaces the manifest) and the icon, whose revision is the first 12 hex characters
+of the PNG's sha256 and whose size is its byte length, both computed from the embedded bytes.
+`getGameIcon` answers the whole PNG. A new icon is a new file in `assets/`: its revision changes
+with it, so Takaro fetches it again.
+
 ### Package
 
 Use `takaro-maint build` (above). `scripts/build-bridge-release.sh <version> <out-dir>` is kept as
@@ -283,6 +298,7 @@ in [README.md](README.md) for what has actually been verified.
 | `listLocations` | Not applicable | Terraria has no named-location concept for Takaro to list. |
 | `getMapInfo` | Not applicable | Returns a disabled map DTO. TShock exposes no map metadata. |
 | `getMapTile` | Not applicable | The version 0 tile layout is not built; the map is served whole through `getMapImage`. |
+| `getGameIcon` | Supported, protocol v1 only | The embedded `assets/icon-256.png`, declared through the `game.profile` capability. |
 | `getMapImage` | Supported, protocol v1 only | The plugin's rendered world image from `mapDir`, declared as the v1 map capability. Proven only on Takaro staging; takaro.io does not speak protocol v1 yet. |
 
 ### Events
