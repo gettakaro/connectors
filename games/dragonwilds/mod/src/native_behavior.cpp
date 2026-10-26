@@ -685,6 +685,8 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p) {
             Json mapped = Json::array();
             for (auto& r : rows) {
                 if (Object(r).value("online", true) == false) continue;
+                // Still loading: the name and inventory are placeholders until the join is announced.
+                if (Object(r).value("inWorld", true) == false) continue;
                 Json x;
                 try { x = Player(r); } catch (...) { continue; }
                 mapped.push_back(x);

@@ -1366,7 +1366,11 @@ std::string GateAction(const std::string& action, const std::string& encodedArgs
         if (r.status != 200) throw std::runtime_error("getPlayers: " + r.body);
         Json rows = Json::parse(r.body);
         Json mapped = Json::array();
-        for (const Json& row : rows) if (!row.contains("online") || row["online"] != false) mapped.push_back(Player(row));
+        for (const Json& row : rows) {
+            if (row.contains("online") && row["online"] == false) continue;
+            if (row.contains("inWorld") && row["inWorld"] == false) continue;  // still loading
+            mapped.push_back(Player(row));
+        }
         return mapped.dump();
     }
     if (action == "getPlayerLocation") {

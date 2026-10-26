@@ -40,6 +40,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <strings.h>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -1858,6 +1859,13 @@ size_t AnnouncedConnections() {
     return n;
 }
 }  // namespace
+
+bool Events::InWorld(const std::string& gameId) {
+    Guard g(g_connLock);
+    for (auto& c : g_conns)
+        if (c.announced && !c.left && !c.refused && strcasecmp(c.id.gameId.c_str(), gameId.c_str()) == 0) return true;
+    return false;
+}
 
 void Events::Housekeep() {
     std::function<void()> report;

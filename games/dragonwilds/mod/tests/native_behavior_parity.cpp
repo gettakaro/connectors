@@ -71,7 +71,9 @@ Json PlayersJson() {
     return Json::array({Json{{"gameId", A}, {"name", "Hendrik"}, {"characterName", "Limon"}, {"steamId", STEAM},
                              {"epicOnlineServicesId", A}, {"platformId", "epic:" + A}, {"ping", 24}, {"online", true}},
                         Json{{"gameId", B}, {"name", "Guest"}, {"online", true}},
-                        Json{{"gameId", "ffffffffffffffffffffffffffffffff"}, {"name", "Offline"}, {"online", false}}});
+                        Json{{"gameId", "ffffffffffffffffffffffffffffffff"}, {"name", "Offline"}, {"online", false}},
+                        // Still loading: placeholder name and inventory until the join is announced.
+                        Json{{"gameId", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}, {"name", "Loading"}, {"online", true}, {"inWorld", false}}});
 }
 Actions::Result Ok(const char* key, const JsonValue& body) {
     last[key] = ToJson(body);
@@ -324,7 +326,7 @@ int main() {
         // ---- actions (actions.test.ts) ---------------------------------------------------------------
         Json reach = h.Ok("testReachability");
         Check(reach["connectable"] == true, "testReachability connectable");
-        Check(h.Ok("getPlayers") == Json::array({LIMON, GUEST}), "getPlayers online only: " + h.Ok("getPlayers").dump());
+        Check(h.Ok("getPlayers") == Json::array({LIMON, GUEST}), "getPlayers online and in world only: " + h.Ok("getPlayers").dump());
         for (const Json& args : {Json{{"gameId", A}}, Json{{"player", {{"gameId", A}}}}, Json{{"gameId", "epic:" + A}},
                                  Json{{"steamId", STEAM}},
                                  Json{{"player", {{"gameId", A}, {"id", "pog-row"}, {"inventory", Json::array()}, {"dimension", nullptr}}}}})
