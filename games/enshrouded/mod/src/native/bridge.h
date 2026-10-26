@@ -45,6 +45,10 @@ struct BridgeOptions {
     int64_t reconcileIntervalMs = 30000;
     int64_t healthIntervalMs = 15000;
     int64_t banCheckIntervalMs = 5000;
+    // While the plugin's /health lists capabilities in "starting" (hooks installed, the game world not running yet),
+    // identify waits, at most this long after Start: Takaro records a server's status (with the reachability reason)
+    // only when it turns reachable, so identifying before the world runs would pin a start-up "degraded" reason.
+    int64_t startupHoldMs = 300000;
     // Called on the bridge thread; they must not block.
     std::function<void(const LiveSettings& accepted)> onIdentified;
     // summary: "<name>: <message> (HTTP <status>)" built from the error's name, message and status only
@@ -102,6 +106,8 @@ private:
     void HandleNotice(Notice& n);
     void HandleFrame(uint64_t epoch, const std::string& text);
     void HandleRequest(uint64_t epoch, const JsonValue& msg);
+    void SendIdentify(uint64_t epoch);
+    void ReleaseIdentify(int64_t now);
     void Complete(const std::shared_ptr<Job>& job);
     void CheckDeadlines(int64_t now);
     void SendResponse(uint64_t epoch, FrameKind kind, const std::string& frame);
@@ -163,6 +169,9 @@ private:
     bool tailActive_ = false;
     bool healthKnown_ = false;
     std::string pluginStatus_;
+    std::string starting_;  // capabilities the plugin reports as starting, comma-separated ("" = the game runs)
+    int64_t startMs_ = 0;
+    bool identifyHeld_ = false;  // the socket is open, identify waits for the game (startupHoldMs)
     bool outboxDirty_ = false, onlineDirty_ = false, knownDirty_ = false;
     int64_t lastOutboxSave_ = 0, lastKnownSave_ = 0;
     int64_t nextPoll_ = 0, nextReconcile_ = 0, nextHealth_ = 0, nextBanCheck_ = 0, nextPublish_ = 0;

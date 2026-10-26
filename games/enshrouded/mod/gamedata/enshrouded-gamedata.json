@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "about": "Per-build game data for the Takaro Enshrouded plugin. After a game update add a section for the new build (the plugin log prints 'game build: <n>'). Every value is an RVA or offset in hex. A function is resolved from 'rva' (checked against 'verify' bytes when given), else from a unique 'pattern', else from 'job' (the ECS job name table). A build without a section falls back to the built-in signature heuristics. Edit takaro/enshrouded-gamedata.json next to the server to override this embedded copy: a section you edited is kept by newer plugins (they only add keys it lacks), sections you did not edit are upgraded automatically.",
+  "about": "Per-build game data for the Takaro Enshrouded plugin. After a game update add a section for the new build (the plugin log prints 'game build: <n>'). Every value is an RVA or offset in hex. A function is resolved from 'rva' (checked against 'verify' bytes when given), else from a unique 'pattern', else from 'job' (the ECS job name table). A build without a section falls back to the built-in signature heuristics. layout.itemTables names the build whose item and entity tables this build still matches (checked against the build's kfc exports); without it listItems, listEntities and giveItem stay off on a new build. Edit takaro/enshrouded-gamedata.json next to the server to override this embedded copy: a section you edited is kept by newer plugins (they only add keys it lacks), sections you did not edit are upgraded automatically.",
   "builds": {
     "1267041": {
       "note": "Enshrouded 1.0 hotfix 1.0.0.1 (release_1.0, 2026-10-15), Steam build 25967645",
@@ -108,6 +108,7 @@
         "loginMachine": "peerIndexPlusOne",
         "characterComponent": "0xe699564",
         "characterTable": "0x58",
+        "itemTables": "1267041",
         "attributesComponent": "0x0bbc95fb",
         "attributesLevel": "0xb8",
         "attributesExperience": "0xa8",

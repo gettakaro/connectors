@@ -475,15 +475,17 @@ bool RunCommand(const std::string& line, std::string& out) {
         return true;
     };
     const size_t any = (size_t)-1;
+    std::string notice = st.GameSupportNotice();
     if (cmd == "help") {
-        out = "commands: help | version | players | say <text> | whisper <player> <text> | location <player> | "
+        out = (notice.empty() ? "" : "DEGRADED: " + notice + "\n") + "commands: help | version | players | say <text> | whisper <player> <text> | location <player> | "
               "teleport <player> <x> <y> <z> | tp <player> <toPlayer> | inventory <player> | give <player> <itemCode> [amount] [level] | "
               "item <search> | kick <player> | levels | level <player> | save-and-shutdown. <player> = SteamID64 or name; "
               "a name with spaces may be quoted: level \"Character 1\".";
         return true;
     }
     if (cmd == "version") {
-        out = "takaro enshrouded plugin " TAKARO_PLUGIN_VERSION ", game build " + GameBuild();
+        out = "takaro enshrouded plugin " TAKARO_PLUGIN_VERSION ", game build " + GameBuild() +
+              (notice.empty() ? std::string(" (supported)") : "\nDEGRADED: " + notice);
         return true;
     }
     if (cmd == "players") {
@@ -644,7 +646,9 @@ Response Route(const Request& r) {
         diag += ",\"perf\":" + PerfJson() + ",\"native\":" + NativeHealthJson() + "}";
         return {200, "{\"status\":\"ok\",\"version\":\"" TAKARO_PLUGIN_VERSION "\",\"bootId\":" + JsonStr(BootId()) + ",\"gameBuild\":" +
                          JsonStr(GameBuild()) + ",\"capabilities\":" + st.CapabilitiesJson() +
-                         ",\"capabilityDetails\":" + st.CapabilityDetailsJson() + ",\"diagnostics\":" + diag + "}"};
+                         ",\"capabilityDetails\":" + st.CapabilityDetailsJson() +
+                         ",\"starting\":" + st.StartingCapabilitiesJson() +
+                         ",\"gameSupport\":" + JsonStr(st.GameSupportNotice()) + ",\"diagnostics\":" + diag + "}"};
     }
     if (p0 == "debug" && parts.size() == 2 && parts[1] == "perf" && get) {
         return {200, PerfJson(QueryParam(r.query, "reset") == "1")};

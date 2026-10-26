@@ -145,8 +145,8 @@ void HandEditedKept() {
     t::WriteFile(path, gamedata_file::Pretty(f));
     Logs.clear();
     auto r = gamedata_file::Apply(path, g_embedded, Sink);
-    CHECK(Logged("build 1273043: kept your edited section, merged 4 missing key(s) from this plugin: "
-                 "layout.attributesComponent, layout.attributesLevel, layout.attributesExperience, "
+    CHECK(Logged("build 1273043: kept your edited section, merged 5 missing key(s) from this plugin: "
+                 "layout.itemTables, layout.attributesComponent, layout.attributesLevel, layout.attributesExperience, "
                  "layout.attributesExperienceRequired"));
     JsonValue disk = FileRoot(path);
     const JsonValue* s = disk.get("builds")->get("1273043");

@@ -39,6 +39,10 @@ in-process (`PluginCall`). Threads:
 - **bridge** (`bridge.cpp`): owns all protocol state and the state files. Drains transport notices 512 at a time.
   Requests: `requestId` <= 128 bytes, JSON nesting <= 64, duplicates and overload (128 pending) answered with an
   error. Outbound priority: control > bridge errors > responses > events.
+  Identify waits while the plugin's `/health` `starting` list is not empty (hooks installed, the world not
+  running yet; at most 5 minutes after start, `plugin.log`: `identify waits for the game world to run`). Takaro
+  records a server's status, with the reachability reason, only when the server turns reachable, so an identify
+  during world load would leave a start-up "degraded" reason on the server until its next status change.
 - **action workers** (4, `adapter.cpp`): the sidecar's `adapter.ts`/`mapping.ts` ported line for line. They may wait
   on the game's queues (bounded, see hooks.h); a request still running after 30 s is answered with an error and its
   late result is dropped, but its state changes (a ban) are recorded. Queued game jobs that never started are
@@ -178,7 +182,10 @@ and `world.cpp` (written for 1024233).
 0. Add a `builds.<new build>` section to `mod/gamedata/enshrouded-gamedata.json` (diff the new exe
    against the previous one: string anchors, the ECS job table and the reflection field descriptors
    `{name*, len, type*, offset}` give most values) and its hash to `kShipped` in
-   `src/gamedata_file.cpp`, and regenerate the static tables above.
+   `src/gamedata_file.cpp`, and regenerate the static tables above. When the
+   new build's `tkeen::ItemInfo` and TemplateResource exports still match the compiled tables, set
+   `layout.itemTables` to the build they were exported on (`"1267041"`): that switches the catalogue and
+   `giveItem` back on without a plugin release.
 1. `takaro-maint steam pin --game enshrouded --metadata` to see what moved, then
    `--record-files … --write` to re-pin the record (id and `revision` follow the new game
    build, so the target is a new file).
@@ -236,6 +243,12 @@ cd sidecar && npm ci && npm run typecheck && npm test
 `DEBUG_CORRUPT_SIG=<signature name> ./mod/build.sh` builds a debug DLL into `mod/build-debug/` with one
 signature corrupted, to exercise the degrade self-check. That is exactly what
 `takaro-maint verify --negative` builds, so the compatibility claim is falsifiable.
+
+`DEBUG_GAME_BUILD=<n> ./mod/build.sh` builds a debug DLL into `mod/build-debug/` that treats the server as
+game build `<n>`: no gamedata section, the item tables off, and the signature fallbacks run against the real
+binary, exactly as on a game build the plugin does not know. `plugin.log` then has one
+`DEGRADED: game build <n> is not supported by plugin ...` line, `/health` carries the same text in
+`gameSupport`, and it is the testReachability `reason` and part of the `version` and `help` console output.
 
 ## Deploy
 

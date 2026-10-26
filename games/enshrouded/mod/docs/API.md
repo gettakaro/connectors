@@ -42,6 +42,10 @@ the game side of the plugin and the Takaro side:
 - `capabilities` values are `"ok"`, `"degraded"` or `"unimplemented"`.
 - A capability is `degraded` when its signature did not resolve or its hook failed. The reason is in `capabilityDetails`. The server keeps running either way.
 - `gameBuild` is the numeric build from the header of `enshrouded_server.kfc`.
+- `starting`: the `degraded` capabilities whose hook is installed but has not been called yet
+  (`capabilityDetails` says "waiting for ..."), e.g. `gameThread`, `kick` or `teleport` while the world loads. `[]`
+  once the world runs. The native connector holds its Takaro `identify` while this list is not empty (at most 5
+  minutes after start), because Takaro records the reachability reason only when a server turns reachable.
 - Current capability names:
   - `logEvents`, `players`, `gameThread`, `kick`, `ban`, `unban`, `listBans`, `shutdown`,
     `playerLocation`, `playerInventory`, `teleport`, `giveItem`, `sendMessage`, `chatEvents`, `deathEvents`, `killEvents`,
@@ -54,7 +58,8 @@ the game side of the plugin and the Takaro side:
 - `diagnostics.perf`: microseconds of plugin work per entry into the hooked game calls (`tick`, `updatePlayers`,
   `moderation` queue drains and the `logSink` hook): `entries`, `entriesPerSec`, `jobs`, `jobsPerSec`, `avgUs`,
   `p99Us` (last 2048 entries), `maxUs`, over `windowS` seconds since start or the last reset.
-- `diagnostics.native`: the Takaro connection (`enabled`, `reason` when off, `state`, `epoch`, `identified`, the
+- `diagnostics.native`: the Takaro connection (`enabled`, `reason` when off, `state` (`waiting-for-game` while
+  identify waits for `starting`), `starting`, `epoch`, `identified`, the
   transport's queues and heartbeat, request counters, event outbox cursors and counts, timed bans, log-tail state,
   state-file errors). Token values never appear.
 - `capabilityDetails` and `diagnostics` are informational. Do not code against their exact shape.

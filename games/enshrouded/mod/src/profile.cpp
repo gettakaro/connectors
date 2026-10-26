@@ -58,6 +58,14 @@ void Load(const std::string& gameBuild) {
 bool Active() { return g_build != nullptr; }
 std::string Source() { return g_source; }
 
+std::string KnownBuilds() {
+    const JsonValue* builds = g_root.get("builds");
+    std::string o;
+    if (builds && builds->type == JsonValue::Object)
+        for (auto& kv : builds->obj) o += (o.empty() ? "" : ", ") + kv.first;
+    return o;
+}
+
 uint32_t JobFunction(const char* jobName) {
     uint32_t s = scan::FindCString(jobName);
     if (!s) return 0;

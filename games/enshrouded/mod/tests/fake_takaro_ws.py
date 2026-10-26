@@ -227,7 +227,8 @@ async def scenario_native():
 
     r = await c1.request("testReachability", "{}")
     p = r.get("payload") or {}
-    record("request-testReachability", p.get("connectable") is True and "capabilities not ok" in (p.get("reason") or ""), payload=p)
+    # no game under Wine: the build is unknown, so the reason is the unsupported-build notice
+    record("request-testReachability", p.get("connectable") is True and "is not supported by plugin" in (p.get("reason") or ""), payload=p)
     r = await c1.request("getPlayers", [])
     record("request-getPlayers", r.get("payload") == [], payload=r.get("payload"))
     r = await c1.request("flyToMoon", None)
