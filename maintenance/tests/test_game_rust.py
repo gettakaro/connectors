@@ -1270,7 +1270,7 @@ def test_the_curated_table_covers_the_recorded_server_corpus() -> None:
 
     result = _entities([{"code": code, "name": table[code]} for code in codes])
 
-    assert len(codes) == 67
+    assert len(codes) == 86
     assert result.status == "pass", result.detail["problems"]
 
 
