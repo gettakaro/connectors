@@ -114,8 +114,8 @@ jobs:
       tag: ${{ needs.params.outputs.tag }}
       publish: ${{ needs.params.outputs.publish }}
       pr_number: ${{ github.event.pull_request.number }}
-      # A Terraria run is two containers: the pinned TShock image and a Node sidecar that
-      # joins its network namespace and drives it over the REST API. The harness does that
-      # on a rig; runtime CI for this connector is deferred and the release claims contract
-      # verification, which the bridge-test job above produces.
-      runtime: false
+      # The verify leg boots the pinned TShock image with the built plugin, starts the built
+      # bridge as a second container in its network namespace, and runs `takaro-maint verify
+      # --game terraria` against a local fake Takaro. The first boot generates a small world
+      # and took about a minute on a hosted runner, well inside the leg's 600 s budget.
+      runtime: true
