@@ -1,29 +1,29 @@
 # Takaro Dune: Awakening Connector
 
-Server-side support for a self-hosted Dune: Awakening battlegroup. Players install nothing. The
-sidecar is required; the plugin is optional.
+Connects a self-hosted Dune: Awakening battlegroup to Takaro. A sidecar (a small Node.js service
+next to the battlegroup) is required; a native plugin for the map server is optional and adds live
+positions and kill events. Players do not install anything.
 
 ## Install
 
-### Requirements
+### 1. Requirements
 
-- A self-hosted Dune battlegroup with a Funcom self-hosting token.
-- Docker Compose or Node.js 22 on a host that can reach Postgres and the game RabbitMQ.
-- A Takaro game server using the Generic connector and its registration token.
+- A self-hosted Dune battlegroup (Linux) with a Funcom self-hosting token, on a supported build:
+  26081962, 26051014, 25936522, 25789279 or 25689360.
+- Docker Compose, or Node.js 22, on a host that can reach the battlegroup's Postgres and game RabbitMQ.
+- A Takaro game server of type **Generic** and its registration token.
 - About 16 GB of free memory for one map server; the CPU must support AVX2.
 
-### Download
+### 2. Download
 
-Open the latest `dune-vX.Y.Z` release on
-<https://github.com/gettakaro/connectors/releases> and download:
+From <https://takaro.io/connectors/dune> or the latest `dune-v*` release on
+<https://github.com/gettakaro/connectors/releases>, download the archives whose `<build>` matches
+your server, and check them against `SHA256SUMS`:
 
-- `takaro-dune-sidecar-linux-<build>-<version>.tar.gz` — required.
-- `takaro-dune-plugin-linux-<build>-<version>.tar.gz` — optional.
+- `takaro-dune-sidecar-linux-<build>-<version>.tar.gz` (required)
+- `takaro-dune-plugin-linux-<build>-<version>.tar.gz` (optional)
 
-Choose archives whose `<build>` matches your self-hosted server. Check them against
-`SHA256SUMS`. Do not download the GitHub-generated “Source code” archives.
-
-### Configure the map server
+### 3. Configure the map server
 
 Add both arguments to every map server process:
 
@@ -32,8 +32,7 @@ Add both arguments to every map server process:
 -ini:engine:[FuncomLiveServices]:ServerCommandsAuthToken=<a-long-random-secret>
 ```
 
-Add the commands below to
-`DuneSandbox/Saved/Config/LinuxServer/UserGame.ini`, then restart the map server:
+Add these lines to `DuneSandbox/Saved/Config/LinuxServer/UserGame.ini`, then restart the map server:
 
 ```ini
 [AdminSetting.Global]
@@ -41,11 +40,11 @@ Add the commands below to
 +Allowed_GM_Commands=ServiceBroadcast
 ```
 
-### Install the sidecar
+### 4. Install the sidecar
 
 Unpack the sidecar archive and rename its folder to `sidecar`. Move `docker-compose.example.yml`
-and `.env.example` out of it to beside it, and rename `.env.example` to `.env`. Keep `.env`
-outside `sidecar/`: an upgrade replaces that folder.
+and `.env.example` out of it, next to it, and rename `.env.example` to `.env` (an upgrade replaces
+`sidecar/`, so `.env` must live outside it):
 
 ```text
 dune-connector/
@@ -58,52 +57,45 @@ Set these values in `.env`:
 
 | Setting | Value |
 |---|---|
-| `TAKARO_REGISTRATION_TOKEN` | Registration token from the Takaro game server. Can be pasted later, see below. |
-| `TAKARO_IDENTITY_TOKEN` | Leave empty. The sidecar generates one and keeps it in `/data`. |
-| `TAKARO_SERVER_NAME` | Optional. Takaro server names must be unique; empty uses `Dune (<identity>)`. |
-| `TAKARO_SENDER_NAME` | The same value as Takaro's `serverChatName`. |
-| `DUNE_PG_URL` | Read-only Postgres URL, including the build-specific database name. |
-| `DUNE_RMQ_URL` | AMQPS URL for the game RabbitMQ, not the admin RabbitMQ. |
-| `DUNE_RMQ_TLS_INSECURE` | `true` when using Funcom's self-signed broker certificate. |
-| `DUNE_GM_AUTH_TOKEN` | The exact `ServerCommandsAuthToken` configured above. |
-| `DUNE_GM_PUBLISHER` | `amqp`, `docker-exec`, or `kubectl-exec` as described below. |
+| `TAKARO_REGISTRATION_TOKEN` | Registration token of the Takaro game server. |
+| `TAKARO_IDENTITY_TOKEN` | Leave empty; the sidecar creates one and keeps it in `/data`. |
+| `TAKARO_SERVER_NAME` | Optional; must be unique in Takaro. Empty uses `Dune (<identity>)`. |
+| `TAKARO_SENDER_NAME` | The same value as Takaro's `serverChatName` setting. |
+| `DUNE_PG_URL` | Read-only Postgres URL. The database name differs per build; list them with `\l`. |
+| `DUNE_RMQ_URL` | AMQPS URL of the game RabbitMQ (not the admin RabbitMQ). |
+| `DUNE_RMQ_TLS_INSECURE` | `true` with Funcom's self-signed broker certificate. |
+| `DUNE_GM_AUTH_TOKEN` | The same secret as `ServerCommandsAuthToken` in step 3. |
+| `DUNE_GM_PUBLISHER` | `amqp`, `docker-exec` or `kubectl-exec`, see below. |
+| `DUNE_LOG_FILE` | Optional: map-server log path, for log events and the game version in Takaro. |
 
-Choose the publisher that matches the battlegroup:
+Pick the publisher that matches your battlegroup:
 
 - `amqp`: enable RabbitMQ's `internal` authentication backend and create an `fls` user.
 - `docker-exec`: set `DUNE_RMQ_CONTAINER` and mount the Docker socket.
-- `kubectl-exec`: set `DUNE_K8S_NAMESPACE` and `DUNE_K8S_POD` for stock Funcom k3s.
+- `kubectl-exec`: set `DUNE_K8S_NAMESPACE` and `DUNE_K8S_POD` (stock Funcom k3s).
 
-Start the sidecar:
+Start it:
 
 ```bash
 docker compose -f docker-compose.example.yml --env-file .env up -d --build
 ```
 
-Without a registration token the log shows a `TAKARO_REGISTRATION_TOKEN not set` banner and the
-sidecar stays offline. Paste the token into `.env` and save it: the sidecar connects within a
-few seconds, no restart needed. The same applies to `TAKARO_IDENTITY_TOKEN`, `TAKARO_WS_URL` and
-`TAKARO_SERVER_NAME`; other `.env` changes need `docker compose ... up -d` again.
+Without Docker, run `npm ci --omit=dev`, `npm run catalogue` and `node dist/index.js` inside
+`sidecar/`, with the `DUNE_*` values in the environment (the `TAKARO_*` values are read from `../.env`).
 
-For a plain Node.js installation, run this inside the unpacked sidecar instead:
+The token, identity, name and URL apply within a few seconds of saving `.env`; other changes need
+`docker compose ... up -d` again.
 
-```bash
-npm ci --omit=dev
-npm run catalogue
-node dist/index.js
-```
+### 5. Check that it worked
 
-Set the `DUNE_*` values in the environment. The Takaro values are also read from `../.env`
-(beside `sidecar/`), and saving that file applies them without a restart. `TAKARO_PROTOCOL` is
-read from it too, at start only.
+The sidecar log shows `Identified with Takaro`, the server is online in Takaro, and
+`http://127.0.0.1:18891/health` reports `ok`. Without a token the log shows a
+`TAKARO_REGISTRATION_TOKEN not set` banner.
 
-The installation is ready when the log contains `Identified with Takaro`, the game server is
-online in Takaro, and `http://127.0.0.1:18891/health` reports `ok`.
+### 6. Optional: plugin
 
-### Optional plugin
-
-The plugin adds live positions, entity kills, and detailed death attribution. Stop the map
-server, unpack `libtakaro-dune.so` outside the game directory, and start only the map process with:
+The plugin adds live player positions, entity kill events and detailed death causes. Stop the map
+server, unpack `libtakaro-dune.so` outside the game directory and start only the map process with it:
 
 ```bash
 LD_PRELOAD=/opt/takaro/libtakaro-dune.so \
@@ -111,85 +103,59 @@ TAKARO_PLUGIN_TOKEN=<shared-secret> \
 ./DuneSandbox/Binaries/Linux/DuneSandboxServer-Linux-Shipping ...
 ```
 
-Set the same secret as `DUNE_PLUGIN_TOKEN` and set
-`DUNE_PLUGIN_URL=http://127.0.0.1:18890` for the sidecar. The sidecar must share the map
-container's network namespace or run on its host. Never apply `LD_PRELOAD` to the complete
-battlegroup.
+In `.env`, set `DUNE_PLUGIN_TOKEN` to the same secret and `DUNE_PLUGIN_URL=http://127.0.0.1:18890`.
+The sidecar must run on the map server's host or share its container network. Never preload the
+library into the whole battlegroup.
 
-### Optional shutdown hook
+### 7. Optional: shutdown and map
 
-Dune's shutdown command displays a countdown but does not stop the map process. Set
-`DUNE_SHUTDOWN_CMD` to an operator-owned stop script if Takaro should complete shutdowns. Without
-the hook, the connector reports shutdown as unavailable.
-
-### Map in Takaro
-
-The sidecar declares the Hagga Basin map to Takaro: map id `survival_1`, `x` to the right, `y`
-down, and the playable square from -457200 to 355600 on both axes (Unreal centimetres). It reads
-these numbers from the server's own level data. The dedicated server contains no map image, so you
-upload one yourself: open the game server in the Takaro dashboard, go to the map, and upload the
-image for **Hagga Basin**. Takaro uses the calibration from the connector and does not ask for one.
-
-The image must be square and show exactly the playable square:
-
-- the top-left pixel is the north-west corner (`x = -457200`, `y = -457200`);
-- the bottom-right pixel is the south-east corner (`x = 355600`, `y = 355600`).
-
-The game's own minimap texture `T_Survival_WorldMap_MiniMap_D` (4096 x 4096) has exactly this
-frame. Export it as PNG from your own game client install (`DuneSandbox/Content/Paks`, for example
-with FModel) and upload it unchanged. A screenshot of the in-game map works too, if you crop it to
-the same square. Do not share the exported image: it is Funcom's artwork.
-
-Players on other maps (Deep Desert, social hubs) carry their own map id, for example
-`deepdesert_1`, so they never show up on the Hagga Basin image. Those maps are not declared yet.
-The map needs Takaro protocol version 1. Set `TAKARO_PROTOCOL=0` in `.env` to stay on version 0;
-this needs a restart (`docker compose ... up -d`, or restart `node dist/index.js`).
+- **Shutdown:** Dune's own shutdown only shows a countdown. Set `DUNE_SHUTDOWN_CMD` to a script that
+  stops your map server, or Takaro's shutdown stays unavailable.
+- **Map:** in the Takaro dashboard, open the game server's map and upload an image for
+  **Hagga Basin**. Use the game's minimap texture `T_Survival_WorldMap_MiniMap_D` (4096 x 4096),
+  exported as PNG from your own game client (`DuneSandbox/Content/Paks`, for example with FModel),
+  uncropped. Do not enter any bounds.
 
 ### Upgrade
 
-Unpack the new sidecar archive somewhere else, replace only the `sidecar` folder with it, then
-run the start command again. Keep `.env` and the sidecar `/data` volume; `/data` holds the
-identity and connector-managed bans, so the server keeps its identity. To upgrade the plugin, stop the map server, replace
-the `.so` with one for the same server build, and start it again.
+Replace only the `sidecar` folder with the new one and run the start command again. Keep `.env` and
+the `/data` volume (identity and bans). For the plugin, stop the map server, replace the `.so` with
+the one for your build and start it again.
 
 ## What works, what doesn't
 
-✅ supported · ⚠️ supported with a caveat · ❌ unavailable
+Tested on server build 26081962 (game 1.5.15.2) on 2026-10-26.
 
-| Feature | Status | Notes |
-|---|---:|---|
-| Connection and heartbeat | ✅ | Server remains online while the sidecar runs. |
-| Player list and lookup | ✅ | Includes names, identifiers, state, and position. |
-| Player location | ✅ | Live with plugin; last saved position without it. |
-| Player inventory | ✅ | Includes backpack and equipped gear. |
-| Give an item | ✅ | Delivered without requiring a relog. |
-| Item catalogue | ✅ | Generated during installation with display names. |
-| Entity catalogue | ✅ | Full creature list requires the plugin. |
-| Locations and points of interest | ⚠️ | Available, but Generic Takaro servers do not request them. |
+| Feature | Status | Note |
+|---|---|---|
+| Connection and reconnect | ✅ | Recovers after network, server or sidecar restarts. |
+| Player list and lookup | ✅ | Name, Funcom and Steam IDs, position. |
+| Player location | ✅ | Live with the plugin; last saved position without it. |
+| Player inventory | ✅ | Backpack and equipped gear. |
+| Give item | ✅ | No relog needed; refused when the backpack is full. |
+| Item and entity catalogue | ✅ | In-game names; the full creature list needs the plugin. |
+| Locations | ⚠️ | Map regions only, without positions. |
 | Console commands | ✅ | Unknown commands return a clear failure. |
-| Broadcast messages | ⚠️ | On-screen panel is named; chat sender appears as `[]`. |
-| Private messages | ✅ | Delivered to one player. |
-| Teleport player | ✅ | Position is re-read after moving. |
-| Kick player | ✅ | Player can reconnect afterward. |
-| Timed and permanent bans | ✅ | Connector enforces bans when players join. |
-| Unban and ban list | ✅ | Expired bans are excluded automatically. |
-| Server shutdown | ⚠️ | Requires an operator-provided stop hook. |
-| Player joined and left events | ✅ | Includes quit, kick, and crash departures. |
-| Player chat events | ✅ | Connector messages are not echoed back. |
-| Player death events | ✅ | Includes environment, fall, and NPC causes. |
-| Entity kill events | ✅ | Plugin reports entity and weapon display name. |
-| Log events | ⚠️ | Secrets are redacted; at most 50 lines per 30 s are forwarded; Takaro does not retain logs. |
-| Map | ⚠️ | Hagga Basin, calibrated by the connector; you upload the image (see Map in Takaro). Needs Takaro protocol v1 (not yet on takaro.io). |
-| Game profile | ⚠️ | Takaro shows Dune: Awakening with its icon, the game build (read from the map-server log, so it needs `DUNE_LOG_FILE`) and the connector version. Needs Takaro protocol v1. |
-| Module chat commands | ✅ | Commands run and answer in game chat. |
-| Module hooks and cronjobs | ✅ | Hooks and scheduled jobs run normally. |
-| Module teleports | ✅ | Teleport commands move the player. |
-| Welcome messages and starter kits | ✅ | Delivered when the player joins. |
-| Shop purchases and claims | ✅ | Supports bundles and offline orders. |
-| Economy balances and commands | ✅ | Supports balances, debits, and leaderboards. |
-| Game chat to Discord | ✅ | Player chat reaches the linked channel. |
-| Discord to game chat | ✅ | Human messages render; bot posts are ignored. |
-| Discord hooks and notices | ✅ | Hooks, cronjobs, joins, and leaves are posted. |
-| Events during Takaro outages | ✅ | Queued and delivered once after reconnecting. |
-| Automatic reconnect | ✅ | Recovers after network, server, or sidecar restarts. |
-| Game update degradation | ✅ | Unsupported plugin features degrade without stopping others. |
+| Broadcast message | ⚠️ | Sender shows as `[]` in chat; also an on-screen panel. |
+| Whisper | ✅ | |
+| Teleport | ✅ | |
+| Kick | ✅ | Player can rejoin right away. |
+| Ban, unban, ban list | ✅ | Timed and permanent; enforced when the player joins. |
+| Shutdown | ⚠️ | Needs `DUNE_SHUTDOWN_CMD`. |
+| Join and leave events | ✅ | Includes kicks and crashes. |
+| Chat events | ✅ | |
+| Death events | ✅ | Environment, fall and NPC causes. |
+| Entity kill events | ✅ | Needs the plugin. |
+| Log events | ⚠️ | Needs `DUNE_LOG_FILE`; Takaro does not store them. |
+| Map | ⚠️ | Needs Takaro protocol 1 and an uploaded map image. |
+| Game name, version and icon | ⚠️ | Needs Takaro protocol 1 and `DUNE_LOG_FILE`. |
+| Modules (commands, hooks, cronjobs, teleports) | ✅ | |
+| Shop and economy | ✅ | Bundles and offline orders included. |
+| Discord chat both ways | ✅ | Use the `chatBridgeNoEcho` module. |
+| Events during a Takaro outage | ✅ | Queued and delivered after reconnecting. |
+| Whisper hidden from other players | ⚠️ | Not tested with two players. |
+
+## Known issues
+
+- Only Hagga Basin is on the Takaro map; Deep Desert and social hubs are not.
+- After a game update, plugin features that no longer match degrade; the rest keeps working.
