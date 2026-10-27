@@ -5,6 +5,7 @@
 #include "native/mapping.h"
 #include "native/maptiles.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 
@@ -92,6 +93,11 @@ public:
     JsonValue Dispatch(const std::string& action, const JsonValue& args) {
         if (action == "testReachability") return TestReachability();
         if (action == "getPlayers") {
+            if (view_.tailOwnsPlayers) {
+                JsonValue list = JArr();
+                list.arr = view_.tailOnline;
+                return list;
+            }
             JsonValue players = plugin_.Players();
             JsonValue list = JArr();
             if (players.type == JsonValue::Array)
@@ -237,6 +243,7 @@ public:
         if (action == "getGameIcon") return GameIconPayload();
         if (action == "getMapTile") return JStr(MapTileBase64(view_.mapDir, args));
         if (action == "shutdown") {
+            ReadPositionsBeforeShutdown();
             plugin_.Post("/shutdown", "{}");
             return JObj();
         }
@@ -244,6 +251,30 @@ public:
     }
 
 private:
+    // Where everyone stands right before the game saves and removes them: the player-disconnected events of the
+    // shutdown are placed there. Best effort, at most ~3 s of the request's time.
+    void ReadPositionsBeforeShutdown() {
+        auto start = std::chrono::steady_clock::now();
+        JsonValue players;
+        try {
+            players = plugin_.Players();
+        } catch (const std::exception&) {
+            return;
+        }
+        if (players.type != JsonValue::Array) return;
+        for (auto& p : players.arr) {
+            if (std::chrono::steady_clock::now() - start > std::chrono::seconds(3)) break;
+            const JsonValue* id = p.get("gameId");
+            if (!id || id->type != JsonValue::String || id->str.empty()) continue;
+            try {
+                JsonValue pos = plugin_.Request("GET", "/players/" + EncodeUriComponent(id->str) + "/location");
+                out_.positions[id->str] = MapPosition(&pos);
+            } catch (const std::exception&) {
+                // no position for this one; the last sampled one stays
+            }
+        }
+    }
+
     JsonValue Ban(const JsonValue& args) {
         std::string pid = ResolvePluginId(PlayerId(args));
         auto reason = Str(args.get("reason"));
@@ -294,6 +325,9 @@ private:
             caps += (caps.empty() ? "" : ", ") + kv.first + "=" + JsString(&kv.second);
         }
         std::string capText = caps.empty() ? "" : "capabilities not ok: " + caps;
+        // an unsupported game build names itself first: that, not each capability, is what the owner has to fix
+        const JsonValue* support = health.get("gameSupport");
+        if (support && support->type == JsonValue::String && !support->str.empty()) capText = support->str;
         JsonValue r = JObj();
         if (status == "ok") {
             Put(r, "connectable", JBool(true));

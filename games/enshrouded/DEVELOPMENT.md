@@ -39,6 +39,10 @@ in-process (`PluginCall`). Threads:
 - **bridge** (`bridge.cpp`): owns all protocol state and the state files. Drains transport notices 512 at a time.
   Requests: `requestId` <= 128 bytes, JSON nesting <= 64, duplicates and overload (128 pending) answered with an
   error. Outbound priority: control > bridge errors > responses > events.
+  Identify waits while the plugin's `/health` `starting` list is not empty (hooks installed, the world not
+  running yet; at most 5 minutes after start, `plugin.log`: `identify waits for the game world to run`). Takaro
+  records a server's status, with the reachability reason, only when the server turns reachable, so an identify
+  during world load would leave a start-up "degraded" reason on the server until its next status change.
 - **action workers** (4, `adapter.cpp`): the sidecar's `adapter.ts`/`mapping.ts` ported line for line. They may wait
   on the game's queues (bounded, see hooks.h); a request still running after 30 s is answered with an error and its
   late result is dropped, but its state changes (a ban) are recorded. Queued game jobs that never started are
@@ -48,13 +52,21 @@ Events: the bridge reads the plugin ring (`/events`, 512 at a time), maps and fi
 `NOISY_LOG` filter, `ENSHROUDED_LOG_EVENTS`), and appends them to a durable outbox (at most 5000 events / 32 MiB;
 when full, the oldest `log` events go first, counted as losses). An event leaves the outbox only when the pong of a
 **later** ping arrives on the same connection; after a reconnect everything unconfirmed is sent again (at least
-once). Kept from the sidecar: the 60 s location fallback after a connect/disconnect, online reconciliation at start,
-on a new plugin bootId and every 30 s (two misses in a row), and the log-tail fallback while `logEvents`/`players`
-are degraded.
+once). Kept from the sidecar: online reconciliation at start, on a new plugin bootId and every 30 s (two misses in a
+row), and the log-tail fallback while `logEvents`/`players` are degraded.
+
+Positions: Takaro places a connect/disconnect with its own `getPlayerLocation` right after the event, when the game
+no longer knows a player who left. For 60 s after such an event the bridge answers that request with the player's
+last real position: from Takaro's own location polls, from a read every 10 s of each online player's position (one
+game-thread read each, skipped while Takaro's polls keep it fresh) and from a read of everyone right before a Takaro
+`shutdown`. Positions are kept in `last-positions.json`, so the disconnect reconciled after a crash is placed where
+the player was. Without a known position there is no answer from the window (protocol 1: `null`); a connect starts a
+new session and forgets the old position. The event itself carries no `position`.
 
 State lives in `<server dir>\takaro\connector-state\` (`TAKARO_STATE_DIR`): `event-outbox.json` (scan and
 confirmed cursors per bootId, pending events), `online-players.json` (the sidecar's format; `TAKARO_ONLINE_FILE`),
-`known-players.json`, `timed-bans.json`, `ban-intent.json`. Writes are tmp file, `FlushFileBuffers`, then
+`known-players.json`, `last-positions.json` (disposable: unreadable = start empty), `timed-bans.json`,
+`ban-intent.json`. Writes are tmp file, `FlushFileBuffers`, then
 `MoveFileExW(REPLACE_EXISTING|WRITE_THROUGH)`. A file that exists but does not parse fences its area (never
 overwritten, never read as empty) and turns `connectorState` degraded. On the first start the sidecar's
 `event-cursor.json` (`TAKARO_CURSOR_FILE`) is imported once.
@@ -137,7 +149,16 @@ section per game build (the number the plugin log prints as `game build:`):
 
 `build.sh` embeds the file; the plugin writes it to `takaro/enshrouded-gamedata.json` next to the
 server on first start and reads that copy from then on, so an operator can add a section without a
-new DLL. A section whose entry fails its `verify` bytes disables only that capability (reported
+new DLL. On every start `src/gamedata_file.cpp` reconciles that copy with the embedded one, per
+build section: a section the file lacks is added; a section byte-for-byte (after sorting keys)
+equal to one an earlier plugin embedded is replaced by the embedded one; any other section is the
+operator's and is kept, only gaining the groups and entries (a function, callsite or layout value)
+it lacks. Sections only the file has are kept; a file that is not valid JSON is left alone and the
+embedded data is used. A changed file is first copied to `enshrouded-gamedata.json.bak-<hash>`,
+then rewritten in place (same inode, so it keeps the owner and mode the operator gave it, which a
+rename under Wine would not). `plugin.log` has one `gamedata:` line per outcome. Whenever a
+section in `mod/gamedata/enshrouded-gamedata.json` changes, add its new hash to `kShipped` in
+`src/gamedata_file.cpp`; `mod/tests/run.sh` fails and prints the line to add until it is there. A section whose entry fails its `verify` bytes disables only that capability (reported
 `degraded`). A build with no section falls back to the built-in signature heuristics in `hooks.cpp`
 and `world.cpp` (written for 1024233).
 
@@ -150,7 +171,9 @@ and `world.cpp` (written for 1024233).
    En_Us names. 1.0 changed the container magic to `KFC4`; kfc-parser 0.1.2 refuses it, but accepting
    `0x3443464B` next to `KFC3` in `crates/kfc-base/src/container/header.rs` is the only change needed.
 2. Write the generator inputs (`items/entities/locations.json`, see `tools/gen_gamedata.py` for the path), then `tools/gen_gamedata.py`,
-   `tools/gen_item_labels.py <export> <note>`, `tools/gen_entity_labels.py <export> research/entities.json <note>` and
+   `tools/gen_item_labels.py <export> <note>`, `tools/gen_entity_labels.py <export> <note> [--audit <tsv>]` (names
+   `src/gamedata.cpp`'s templates from the client export: own name, Logic Spawner entry, item, then the named
+   templates sharing model, code or arsenal; `--audit` lists every template with its name and source) and
    `tools/gen_location_labels.py <export>/templates-en.tsv research/locations.json <note>`.
 3. `locations.json` comes from the **server** with `tools/eml-locations` (copy it into `<server>/mods/`):
    map-marker, spawn-point and location placements from `SceneEntityChunkResource`. 1.0 stores a
@@ -166,7 +189,11 @@ and `world.cpp` (written for 1024233).
 
 0. Add a `builds.<new build>` section to `mod/gamedata/enshrouded-gamedata.json` (diff the new exe
    against the previous one: string anchors, the ECS job table and the reflection field descriptors
-   `{name*, len, type*, offset}` give most values), and regenerate the static tables above.
+   `{name*, len, type*, offset}` give most values) and its hash to `kShipped` in
+   `src/gamedata_file.cpp`, and regenerate the static tables above. When the
+   new build's `tkeen::ItemInfo` and TemplateResource exports still match the compiled tables, set
+   `layout.itemTables` to the build they were exported on (`"1267041"`): that switches the catalogue and
+   `giveItem` back on without a plugin release.
 1. `takaro-maint steam pin --game enshrouded --metadata` to see what moved, then
    `--record-files … --write` to re-pin the record (id and `revision` follow the new game
    build, so the target is a new file).
@@ -225,6 +252,12 @@ cd sidecar && npm ci && npm run typecheck && npm test
 signature corrupted, to exercise the degrade self-check. That is exactly what
 `takaro-maint verify --negative` builds, so the compatibility claim is falsifiable.
 
+`DEBUG_GAME_BUILD=<n> ./mod/build.sh` builds a debug DLL into `mod/build-debug/` that treats the server as
+game build `<n>`: no gamedata section, the item tables off, and the signature fallbacks run against the real
+binary, exactly as on a game build the plugin does not know. `plugin.log` then has one
+`DEGRADED: game build <n> is not supported by plugin ...` line, `/health` carries the same text in
+`gameSupport`, and it is the testReachability `reason` and part of the `version` and `help` console output.
+
 ## Deploy
 
 ```bash
@@ -272,15 +305,15 @@ container, the bearer token on stdin. It reports:
 
 | Check | What it proves |
 |---|---|
-| `plugin-health` | the compatibility claim: `/health` `status: ok`, `gameBuild == 1024233`, no capability `degraded`, the plugin version this run built, and the container's Proton equal to the target's |
+| `plugin-health` | the compatibility claim: `/health` `status: ok`, `gameBuild` equal to the target's revision, no capability `degraded`, the plugin version this run built, and the container's Proton equal to the target's |
 | `native-identify` | the game process identified over TLS with both tokens, `plugin.log` says `native: identified with Takaro`, `/health` `diagnostics.native.state == identified`, its application ping got a pong and it answered Takaro's empty RFC 6455 ping (Enshrouded's `identify` and `heartbeat`) |
 | `native-players` | `testReachability` connectable with a **null** reason, `getPlayers` empty |
-| `native-catalog` | `listItems`/`listEntities`/`listLocations` non-empty, every entry with a `code` and a readable `name`; item and entity names distinct per code, location codes unique |
+| `native-catalog` | `listItems`/`listEntities`/`listLocations` non-empty, every entry with a `code` and a readable `name`; item and labelled entity names are the game's own English names and may repeat where the game repeats them, location names are the in-game map's and every location code is unique |
 | `native-console` | `executeConsoleCommand version` answers with the game build |
 | `action` | `sendMessage` resolves end to end (nobody is online, so this proves the path, not delivery) |
 | `reconnect` | the fake closes with 1001, the plugin logs it, reconnects by itself, identifies again and answers |
 | `event` | a plugin log event reaches Takaro as a `gameEvent` |
-| `stop` | the server saves, supervisord respawns it, the container stops 0, no update path ran and every pinned file still hashes the same |
+| `stop` | the server saves (`[server] Saved`, or on 1.0 a `savegame/` world file written before the respawn), supervisord respawns it, the container stops 0, no update path ran and every pinned file still hashes the same |
 | `negative-degraded-hooks` | with `--negative`: a build with one corrupted signature identifies on its own, is reported `degraded`, **fails** the claim and names the capability in the reachability reason, while the server stays alive |
 
 A full run with `--negative` passed every selected check on 2026-09-29 against the pinned
@@ -438,10 +471,44 @@ builds it twice and compares the bytes, and publishes:
   with both depot manifests, the image digest, the fingerprint, and
   `verification.required: "contract"` with `executed: null`
 
-`runtime: false`: the server is a Windows binary under Proton on top of an 8.8 GB depot set,
-which a hosted runner cannot boot, so CI claims contract verification only and the runtime
-proof comes from `takaro-maint verify --game enshrouded` run locally against the exact
-target. Onboarding that to CI is tracked separately.
+### Runtime CI
+
+Before anything is published, the `verify` leg of `connector-release.yml` (one job per
+`candidate`/`maintained` target, check name `Enshrouded Connector / release / verify
+(<target>)`) runs the same command a maintainer runs locally:
+
+```bash
+maintenance/bin/takaro-maint verify --game enshrouded --target <target> \
+  --artifacts dist --out reports --negative --startup-timeout 600 --cleanup-orphans
+```
+
+It downloads the target's exact Steam depots anonymously (no Steam account, no licence key:
+the dedicated server is free), boots `enshrouded_server.exe` under the target's pinned
+Proton image with the built `dbghelp.dll` and the updater override, and runs every check in
+the table under [Verify](#verify) against a local fake Takaro on a throwaway world in a
+throwaway data directory. It then boots a build with the `addComponent` signature corrupted
+and requires `plugin-health` to reject it while the server stays up. The release fails if
+any check fails: a degraded capability, a different game build, the wrong Proton, a plugin
+that never identifies or does not reconnect.
+
+Its trigger is the workflow's own: every PR or push to `main` that touches
+`games/enshrouded/**`, `catalog/enshrouded/**`, `maintenance/**`, `scripts/**` or either
+workflow, and every release. The report (`reports/verify.json`, server and plugin logs, the
+tested commit, target fingerprint, artifact hashes and runtime identity) is uploaded as
+`verify-enshrouded-<target>` and its table is written to the job summary.
+
+| | |
+|---|---|
+| Runner | GitHub-hosted `ubuntu-latest`, x86_64 (4 vCPU, 16 GB RAM, ~86 GB free disk) |
+| Needs | Docker, ~17 GB of disk (the 8 GB depot download plus the install's copy), ~4 GB of RAM for the server |
+| Time | ~2 min to download the depots, ~20 s to HostOnline, ~4 min for the verify step and ~18 min for the whole workflow; the job is cut off at 60 min, each boot at 600 s |
+| Cache | none for the depots (`runtime_large_server`): 8 GB would evict most of the repository's 10 GB Actions cache, and Steam serves it about as fast |
+| Credentials | none; the fake Takaro's tokens and TLS CA are generated per run and never reach a docker command line or a kept log |
+
+Still manual, because they need a real game client (see [README.md](README.md)): join and
+leave events, chat in both directions, whispers, player location and inventory, giving
+items, teleport, kick and ban of a connected player, death and kill events, and the module
+and shop flows that act on a player in the game.
 
 Where a release goes depends on the trigger (`scripts/release-params.sh`): a PR gets a
 disposable `pr-<n>-enshrouded` pre-release plus a sticky PR comment, a push to main refreshes

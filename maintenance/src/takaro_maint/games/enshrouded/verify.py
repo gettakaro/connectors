@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import time
+from datetime import UTC, datetime
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
@@ -79,12 +80,20 @@ UNSUPPORTED_CHECKS = {
 BUILD_LINE = re.compile(r"Game Version \(SVN\): (?P<build>\d+)")
 SHUTDOWN_LINE = re.compile(r"\[app\] Trigger gameflow shutdown, exit: Ctrl_C")
 SAVED_LINE = re.compile(r"\[server\] Saved")
+#: Where the server writes its world. Enshrouded 1.0 saves into ``savegame/world0.ksd``
+#: without printing :data:`SAVED_LINE`, so a world file there written between the shutdown
+#: request and the respawn is the other proof of a save.
+SAVEGAME_DIR = Path("savegame")
+WORLD_FILES = "*.ksd"
+#: supervisord's own timestamp on a spawn line; the target pins ``TZ=Etc/UTC``.
+SPAWN_STAMP = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d),(\d{3}) INFO spawned: 'enshrouded-server'", re.M)
 RESPAWN_LINE = re.compile(r"spawned: 'enshrouded-server'")
 # Any line that would mean the image updated the game underneath the pinned hooks.
 DRIFT_LINE = re.compile(r"steamcmd|app_update|needs to be updated", re.IGNORECASE)
 
 # What the plugin's native connector writes into <server>/takaro/plugin.log.
 IDENTIFIED_LINE = re.compile(r"native: identified with Takaro")
+HEALTH_IDENTIFIED_BUDGET = 15.0  # seconds /health may trail the identified log line
 CLOSED_LINE = re.compile(r"native: Takaro WebSocket closed \(epoch \d+\): server closed the connection \(code 1001\b")
 
 # What the plugin writes into <server>/takaro/plugin.log.
@@ -393,17 +402,30 @@ async def _check_identify(run: Any, fake: Any, alive: Any) -> checks.CheckResult
         line = await asyncio.to_thread(checks.wait_for_line, log_file, IDENTIFIED_LINE, 30, alive)
         if not line:
             problems.append(f"{log_file.name} never showed 'native: identified with Takaro'")
-        try:
-            health = await asyncio.to_thread(plugin_health, run.container.name, plugin_token(run.takaro_env("")))
-        except Exception as exc:  # noqa: BLE001 - reported as a check failure
-            problems.append(f"the plugin's /health could not be read: {exc}")
-        else:
-            native = native_diagnostics(health)
-            if native.get("identified") is not True or native.get("state") != "identified":
-                problems.append(
-                    f"/health diagnostics.native reports state={native.get('state')!r} "
-                    f"identified={native.get('identified')!r}"
-                )
+        # identify waits for the game world, so it lands while the server is busy loading and /health can
+        # lag the log line by a few seconds: poll it instead of reading it once
+        health_error: str | None = None
+        deadline = time.monotonic() + HEALTH_IDENTIFIED_BUDGET
+        while True:
+            try:
+                health = await asyncio.to_thread(plugin_health, run.container.name, plugin_token(run.takaro_env("")))
+            except Exception as exc:  # noqa: BLE001 - reported as a check failure
+                health_error = f"the plugin's /health could not be read: {exc}"
+            else:
+                health_error = None
+                native = native_diagnostics(health)
+                if native.get("identified") is True and native.get("state") == "identified":
+                    break
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(1)
+        if health_error:
+            problems.append(health_error)
+        elif native.get("identified") is not True or native.get("state") != "identified":
+            problems.append(
+                f"/health diagnostics.native reports state={native.get('state')!r} "
+                f"identified={native.get('identified')!r}"
+            )
         deadline = time.monotonic() + APP_PING_BUDGET
         while getattr(fake, "app_pings", 0) < 1 and time.monotonic() < deadline:
             await asyncio.sleep(0.5)
@@ -494,6 +516,10 @@ def _looks_like_a_dev_name(name: str, code: str, *, client_named: bool = False) 
     if its output is actually readable, so every predicate the C++ corpus test asserts over
     the shipped table is asserted here over the live answer too -- otherwise a mod that
     regressed to opening underscores would still pass this check.
+
+    ``client_named`` is for the lists the plugin names from the game client's own English
+    text (items and labelled entities on 1.0, and map locations): the game writes "Crestflame boots" and
+    "Champion of the Shroud", so a lowercase word is not a sign of a code there.
     """
     if not name or name[0] == " " or "_" in name:
         return True
@@ -524,6 +550,12 @@ def _shared_names(entries: list[Any]) -> list[tuple[str, list[str]]]:
     return sorted(((n, c) for n, c in by_name.items() if len(c) > 1), key=lambda pair: (-len(pair[1]), pair[0]))
 
 
+#: Every catalogue list is named from the game client's own English text on 1.0, which spells
+#: words in lowercase. Items and labelled entities may repeat a name where the game does
+#: (``mod/src/entity.h``: a catalogue entity carries exactly the name its kill event does);
+#: map locations share names too, but each place keeps a unique code.
+
+
 async def _check_catalog(run: Any, fake: Any) -> checks.CheckResult:
     """Enshrouded's ``catalog-items``/``catalog-entities``, read out of the server's own kfc."""
     del run
@@ -531,6 +563,7 @@ async def _check_catalog(run: Any, fake: Any) -> checks.CheckResult:
         problems: list[str] = []
         samples: dict[str, list[str]] = {}
         counts: dict[str, int] = {}
+        repeated: dict[str, int] = {}
         for action in ("listItems", "listEntities", "listLocations"):
             entries: Any = None
             try:
@@ -555,30 +588,26 @@ async def _check_catalog(run: Any, fake: Any) -> checks.CheckResult:
                     f"{action}: {len(same)} of {len(entries)} names are the code itself, "
                     f"e.g. {', '.join(str(e['code']) for e in same[:3])}"
                 )
-            # Locations carry the in-game map's own names (mod/src/locationlabels.cpp); many places
-            # share one ("Flame Shrine"), so there every code has to be unique instead.
-            locations = action == "listLocations"
             offenders = [
-                e for e in entries if _looks_like_a_dev_name(str(e["name"]), str(e["code"]), client_named=locations)
+                e for e in entries if _looks_like_a_dev_name(str(e["name"]), str(e["code"]), client_named=True)
             ]
             if offenders:
                 problems.append(
                     f"{action}: {len(offenders)} of {len(entries)} names are dev codes rather than "
                     f"display names, e.g. " + ", ".join(f"{e['code']} -> {e['name']}" for e in offenders[:3])
                 )
-            if locations:
+            # Locations carry the in-game map's own names (mod/src/locationlabels.cpp); many places
+            # share one ("Flame Shrine"), so there every code has to be unique instead.
+            if action == "listLocations":
                 codes = [str(e["code"]) for e in entries]
-                repeated = sorted({c for c in codes if codes.count(c) > 1})
-                if repeated:
+                held_twice = sorted({c for c in codes if codes.count(c) > 1})
+                if held_twice:
                     problems.append(
-                        f"{action}: {len(repeated)} codes are held by more than one place, so Takaro merges "
-                        f"their markers, e.g. {', '.join(repeated[:3])}"
+                        f"{action}: {len(held_twice)} codes are held by more than one place, so Takaro merges "
+                        f"their markers, e.g. {', '.join(held_twice[:3])}"
                     )
                 continue
-            shared = _shared_names(entries)
-            if shared:
-                examples = "; ".join(f"{name} <- {', '.join(codes)}" for name, codes in shared[:3])
-                problems.append(f"{action}: {len(shared)} names are shared by more than one code, e.g. {examples}")
+            repeated[action] = len(_shared_names(entries))
     return checks.CheckResult(
         "native-catalog",
         "pass" if not problems else "fail",
@@ -586,10 +615,13 @@ async def _check_catalog(run: Any, fake: Any) -> checks.CheckResult:
         {
             "counts": counts,
             "firstNames": samples,
+            "repeatedGameNames": repeated,
             "note": (
-                "Enshrouded's `catalog-items`/`catalog-entities`; item and entity names are the "
-                "client's or derived from the template codes, and every distinct code gets a "
-                "distinct name; locations carry the in-game map's names, one unique code per place"
+                "Enshrouded's `catalog-items`/`catalog-entities`; item names and labelled entity "
+                "names are the game client's English names, compiled into the plugin because the "
+                "dedicated server ships no localisation, and may repeat where the game repeats "
+                "them; every other item and entity name is derived from its template code; "
+                "locations carry the in-game map's names, one unique code per place"
             ),
             "problems": problems,
         },
@@ -715,6 +747,7 @@ async def after_shutdown(run: Any, fake: Any, ws_url: str, ledger_inputs: list[d
     """
     del ws_url
     note = "shutdown requested"
+    requested_at = time.time()
     if run.wanted("event") or run.wanted("stop"):
         try:
             await fake.request("shutdown", {}, timeout=30)
@@ -725,7 +758,7 @@ async def after_shutdown(run: Any, fake: Any, ws_url: str, ledger_inputs: list[d
     else:
         run.skip("event", "not selected by --checks")
     if run.wanted("stop"):
-        run.record(await _check_stop(run, ledger_inputs))
+        run.record(await _check_stop(run, ledger_inputs, requested_at))
     else:
         run.skip("stop", "not selected by --checks")
 
@@ -766,7 +799,56 @@ async def _check_event(run: Any, fake: Any, note: str) -> checks.CheckResult:
     )
 
 
-async def _check_stop(run: Any, ledger_inputs: list[dict[str, Any]]) -> checks.CheckResult:
+def _saves_between(data_dir: Path, since: float, until: float | None) -> list[str]:
+    """The world files last written in ``[since, until]``; subfolders hold backups, not saves."""
+    folder = data_dir / SAVEGAME_DIR
+    if not folder.is_dir():
+        return []
+    return sorted(
+        p.name
+        for p in folder.glob(WORLD_FILES)
+        if p.is_file() and since <= p.stat().st_mtime and (until is None or p.stat().st_mtime <= until)
+    )
+
+
+def _respawned_at(log: Path) -> float | None:
+    """When supervisord spawned the server the second time, or None while it has not."""
+    if not log.is_file():
+        return None
+    stamps = SPAWN_STAMP.findall(log.read_text(encoding="utf-8", errors="replace"))
+    if len(stamps) < 2:
+        return None
+    second, millis = stamps[1]
+    moment = datetime.strptime(second, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
+    return moment.timestamp() + int(millis) / 1000
+
+
+async def _wait_for_save(run: Any, since: float | None, alive: Any) -> dict[str, Any] | None:
+    """The save the shutdown made: its log line, or a world file written before the respawn.
+
+    Only a file last written before supervisord's respawn line counts, by that line's own
+    timestamp rather than by when this looks, so a save the next boot makes is never taken
+    for the one the shutdown made, and a save the shutdown made is still found when the
+    respawn happened while an earlier check was running.
+    """
+    deadline = time.monotonic() + STOP_BUDGET
+    while True:
+        line = checks.find_line(run.server_log, SAVED_LINE)
+        if line:
+            return {"by": "log", "line": line[0]}
+        respawned = _respawned_at(run.server_log)
+        if since is not None:
+            written = _saves_between(run.data_dir, since, respawned)
+            if written:
+                return {"by": "file", "files": written}
+        if respawned is not None or time.monotonic() >= deadline or not alive():
+            return None
+        await asyncio.sleep(1.0)
+
+
+async def _check_stop(
+    run: Any, ledger_inputs: list[dict[str, Any]], requested_at: float | None = None
+) -> checks.CheckResult:
     """The server saves, supervisord respawns it, the container stops, the bytes are unchanged.
 
     ``autorestart=true`` is the image's contract, so a game exit is a respawn rather than a
@@ -778,11 +860,17 @@ async def _check_stop(run: Any, ledger_inputs: list[dict[str, Any]]) -> checks.C
         container = run.container
         alive = container.alive if container is not None else (lambda: False)
         stages: dict[str, bool] = {}
-        for name, pattern in (("shutdown", SHUTDOWN_LINE), ("saved", SAVED_LINE)):
-            found = checks.wait_for_line(run.server_log, pattern, STOP_BUDGET, alive)
-            stages[name] = bool(found)
-            if not found:
-                problems.append(f"the server log never showed the '{name}' line within {STOP_BUDGET:.0f} s")
+        found = checks.wait_for_line(run.server_log, SHUTDOWN_LINE, STOP_BUDGET, alive)
+        stages["shutdown"] = bool(found)
+        if not found:
+            problems.append(f"the server log never showed the 'shutdown' line within {STOP_BUDGET:.0f} s")
+        saved = await _wait_for_save(run, requested_at, alive)
+        stages["saved"] = saved is not None
+        if saved is None:
+            problems.append(
+                f"the server neither logged '[server] Saved' nor wrote {SAVEGAME_DIR.as_posix()}/ "
+                f"before it was respawned, within {STOP_BUDGET:.0f} s"
+            )
         # The image spawns the server once at boot, so the *first* spawn line proves nothing
         # about a respawn. supervisord's `autorestart=true` is the contract under test, and
         # what shows it is a second one after the save.
@@ -824,6 +912,7 @@ async def _check_stop(run: Any, ledger_inputs: list[dict[str, Any]]) -> checks.C
             "exitCode": code,
             "respawned": stages.get("respawned", False),
             "stages": stages,
+            "save": saved,
             "noUpdatePathInBoot": drift is None,
             "inputsIntactAfterStop": not changed,
             "intact": intact,

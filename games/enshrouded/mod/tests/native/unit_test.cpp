@@ -53,6 +53,50 @@ void JsonUtilTests() {
     CHECK_EQ(EncodeUriComponent("a b/c?d=é"), std::string("a%20b%2Fc%3Fd%3D%C3%A9"));
 }
 
+// POST /give `quality` and console `give ... [level]` share ParseItemLevel (common.cpp).
+void ItemLevelTests() {
+    t::Group("give-item-level");
+    uint8_t lvl = 99;
+    auto body = [](const char* json) { return t::J(json); };
+    // absent, null and empty mean the item's default level (0)
+    JsonValue b = body(R"({"gameId":"1","code":"Torch","amount":1})");
+    CHECK(ParseItemLevel(b.get("quality"), lvl) && lvl == 0);
+    b = body(R"({"quality":null})");
+    lvl = 99;
+    CHECK(ParseItemLevel(b.get("quality"), lvl) && lvl == 0);
+    b = body(R"({"quality":""})");
+    lvl = 99;
+    CHECK(ParseItemLevel(b.get("quality"), lvl) && lvl == 0);
+    b = body(R"({"quality":"  "})");
+    CHECK(ParseItemLevel(b.get("quality"), lvl) && lvl == 0);
+    // a string (what the native adapter forwards) or a number, 1-255
+    b = body(R"({"quality":"5"})");
+    CHECK(ParseItemLevel(b.get("quality"), lvl) && lvl == 5);
+    b = body(R"({"quality":" 7 "})");
+    CHECK(ParseItemLevel(b.get("quality"), lvl) && lvl == 7);
+    b = body(R"({"quality":4})");
+    CHECK(ParseItemLevel(b.get("quality"), lvl) && lvl == 4);
+    b = body(R"({"quality":1})");
+    CHECK(ParseItemLevel(b.get("quality"), lvl) && lvl == 1);
+    b = body(R"({"quality":"255"})");
+    CHECK(ParseItemLevel(b.get("quality"), lvl) && lvl == 255);
+    b = body(R"({"quality":3.0})");
+    CHECK(ParseItemLevel(b.get("quality"), lvl) && lvl == 3);
+    // invalid: the same rule the console applies (integer 1-255)
+    for (const char* bad : {R"({"quality":"legendary"})", R"({"quality":"0"})", R"({"quality":0})", R"({"quality":256})",
+                            R"({"quality":"256"})", R"({"quality":-1})", R"({"quality":"2.5"})", R"({"quality":2.5})",
+                            R"({"quality":"5x"})", R"({"quality":"nan"})", R"({"quality":true})", R"({"quality":[5]})",
+                            R"({"quality":{"level":5}})"}) {
+        b = body(bad);
+        CHECK_MSG(!ParseItemLevel(b.get("quality"), lvl), bad);
+    }
+    // console tokens
+    CHECK(ParseItemLevel(std::string("12"), lvl) && lvl == 12);
+    CHECK(!ParseItemLevel(std::string("0"), lvl));
+    CHECK(!ParseItemLevel(std::string("300"), lvl));
+    CHECK(!ParseItemLevel(std::string("abc"), lvl));
+}
+
 void IsoTests() {
     t::Group("iso-dates");
     int64_t ms = 0;
@@ -471,6 +515,7 @@ void RunUnitTests() {
     ProtocolV1Tests();
     IdentityTests();
     JsonUtilTests();
+    ItemLevelTests();
     IsoTests();
     HeartbeatTests();
     QueueTests();

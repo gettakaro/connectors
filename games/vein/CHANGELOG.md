@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.8.0](https://github.com/gettakaro/connectors/compare/vein-v0.7.0...vein-v0.8.0) (2026-10-26)
+
+
+### Features
+
+* **vein:** report the game profile and connector identity to Takaro ([#559](https://github.com/gettakaro/connectors/issues/559)) ([4b6ef44](https://github.com/gettakaro/connectors/commit/4b6ef44e3d6f4cc443a22d5a7ce9f6c528a5f1ba))
+
+
+### Bug Fixes
+
+* **vein:** keep a player connected when the game swaps their player state ([#642](https://github.com/gettakaro/connectors/issues/642)) ([730740a](https://github.com/gettakaro/connectors/commit/730740ac35ae0851cec2b0face84d024db558aa1))
+* **vein:** report no player location while on the character screen ([#626](https://github.com/gettakaro/connectors/issues/626)) ([0811a7d](https://github.com/gettakaro/connectors/commit/0811a7d89a6d32b713cce1db539bce3dab1ccb9f))
+
+
+### Miscellaneous Chores
+
+* **vein:** research native and silent chat commands (off-by-default probe) ([#599](https://github.com/gettakaro/connectors/issues/599)) ([44954c9](https://github.com/gettakaro/connectors/commit/44954c9b146748dbb41f44891135df6552b00bdf))
+
+
+### Documentation
+
+* **vein:** describe the two-file install everywhere and refresh the README checks ([#590](https://github.com/gettakaro/connectors/issues/590)) ([cdbdfe0](https://github.com/gettakaro/connectors/commit/cdbdfe0fee9fad3d9df261fce396c3f4a306988a))
+
 ## [0.7.0](https://github.com/gettakaro/connectors/compare/vein-v0.6.0...vein-v0.7.0) (2026-10-18)
 
 

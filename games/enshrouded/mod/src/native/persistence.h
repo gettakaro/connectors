@@ -20,7 +20,7 @@ namespace native {
 using EnvFn = std::function<std::string(const char*)>;
 
 struct StatePaths {
-    std::string dir, outbox, online, known, timedBans, banIntent, legacyCursor;
+    std::string dir, outbox, online, known, positions, timedBans, banIntent, legacyCursor;
 };
 // Default dir <baseDir>\takaro\connector-state; TAKARO_STATE_DIR moves it. TAKARO_ONLINE_FILE
 // points the online-players store (same format as the sidecar's) elsewhere; TAKARO_CURSOR_FILE
@@ -85,6 +85,10 @@ public:
     // Records a player seen; true when that changes what is on disk beyond lastSeen (new player, new name...).
     bool Remember(const JsonValue& player, int64_t nowMs);
     bool SaveKnown();
+    // Last real position per player gameId ({x, y, z}), kept while the player is online so the player-disconnected
+    // after a crash can still be placed. Disposable: an unreadable file starts empty and is overwritten.
+    std::map<std::string, JsonValue>& Positions() { return positions_; }
+    bool SavePositions();
 
     // ---- timed bans + ban-intent journal ----
     std::map<std::string, TimedBan>& TimedBans() { return timedBans_; }
@@ -107,6 +111,7 @@ private:
     OutboxState outbox_;
     std::vector<JsonValue> online_, known_, banIntents_;
     std::map<std::string, TimedBan> timedBans_;
+    std::map<std::string, JsonValue> positions_;
     std::map<std::string, std::string> errors_;
     std::map<std::string, bool> fenced_;
     uint64_t writes_ = 0;

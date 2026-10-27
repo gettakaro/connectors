@@ -10,8 +10,10 @@
 
 #ifdef TAKARO_DEBUG_CORRUPT_SIG
 #define TAKARO_PLUGIN_VERSION "0.4.2-debug-corrupt-" TAKARO_DEBUG_CORRUPT_SIG
+#elif defined(TAKARO_DEBUG_GAME_BUILD)
+#define TAKARO_PLUGIN_VERSION "0.0.0-debug-game-build-" TAKARO_DEBUG_GAME_BUILD
 #else
-#define TAKARO_PLUGIN_VERSION "0.8.1" // x-release-please-version
+#define TAKARO_PLUGIN_VERSION "0.9.0" // x-release-please-version
 #endif
 
 // Random per-process id (hex), so clients can tell a server restart from a cursor that merely lags.
@@ -61,3 +63,9 @@ struct JsonValue {
 };
 // Returns false on malformed input.
 bool JsonParse(const std::string& text, JsonValue& out);
+
+// Item level for give (console `give ... [level]`, POST /give `quality`): an integer 1-255, written as a number or a
+// numeric string. Empty text, JSON null or an absent field give 0 = the item's default level. Returns false on anything
+// else (not numeric, fractional, out of range, wrong JSON type).
+bool ParseItemLevel(const std::string& text, uint8_t& level);
+bool ParseItemLevel(const JsonValue* v, uint8_t& level);

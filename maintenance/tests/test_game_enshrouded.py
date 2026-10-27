@@ -684,13 +684,20 @@ def test_every_enshrouded_verification_body_has_pass_and_failure_paths(
     passed = asyncio.run(hooks._check_identify(run, fake, container.alive))
     assert passed.status == "pass", passed.detail["problems"]
     assert "config" not in passed.detail["native"], "the report keeps state, never configuration"
+    # /health may trail the identified log line while the world loads: the check polls until it catches up
+    lagging = iter([{"diagnostics": {"native": {"state": "waiting-for-game", "identified": False}}}])
+    monkeypatch.setattr(hooks, "plugin_health", lambda *args: next(lagging, identified))
+    assert asyncio.run(hooks._check_identify(run, fake, container.alive)).status == "pass"
+    monkeypatch.setattr(hooks, "plugin_health", lambda *args: identified)
     assert asyncio.run(hooks._check_players(run, fake)).status == "pass"
     assert asyncio.run(hooks._check_catalog(run, fake)).status == "pass"
     assert asyncio.run(hooks._check_console(run, fake)).status == "pass"
     assert asyncio.run(hooks._check_action(run, fake)).status == "pass"
     assert asyncio.run(hooks._check_reconnect(run, fake, container.alive)).status == "pass"
     assert asyncio.run(hooks._check_event(run, fake, "shutdown requested")).status == "pass"
-    assert asyncio.run(hooks._check_stop(run, [])).status == "pass"
+    (run.data_dir / "savegame").mkdir()
+    (run.data_dir / "savegame" / "world0.ksd").write_bytes(b"world")
+    assert asyncio.run(hooks._check_stop(run, [], 0.0)).status == "pass"
     asyncio.run(hooks.after_protocol(run, fake, container.alive))
     asyncio.run(hooks.after_shutdown(run, fake, run.ws_url, []))
 
@@ -724,6 +731,7 @@ def test_every_enshrouded_verification_body_has_pass_and_failure_paths(
     failed.ping_error = TimeoutError("no pong")
     monkeypatch.setattr(hooks, "plugin_health", lambda *args: {"diagnostics": {"native": {"state": "connecting"}}})
     monkeypatch.setattr(hooks, "APP_PING_BUDGET", 0.0)
+    monkeypatch.setattr(hooks, "HEALTH_IDENTIFIED_BUDGET", 0.0)
     monkeypatch.setattr(hooks.checks, "wait_for_line", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         hooks.checks_lifecycle, "identify_within", lambda *args, **kwargs: asyncio.sleep(0, result=None)
@@ -1035,7 +1043,11 @@ def test_every_container_selector_is_pinned_and_never_schedules_updates() -> Non
 
     workflow = (REPO_ROOT / ".github/workflows/enshrouded.yml").read_text(encoding="utf-8")
     assert "uses: ./.github/workflows/connector-release.yml" in workflow
-    assert "runtime: false" in workflow
+    # The verify leg boots the exact server and the corrupted-signature build; the 8 GB depot
+    # set is downloaded there on each run rather than cached.
+    for line in ("runtime: true", "runtime_large_server: true", "runtime_negative: true"):
+        assert line in workflow, line
+    assert "runtime: false" not in workflow
     assert "ziglang.org" not in workflow, "the release pipeline installs no toolchain of its own"
 
 
@@ -1254,7 +1266,6 @@ def test_the_catalog_check_fails_on_a_formatted_dev_code() -> None:
         "Baby T1 Goat",
         "Placement Helper Pet Cat",
         "Skeleton_Heavy",
-        "8k Map Label deepforest Whitewind",
         "01 Huntress Camp",
         "Arrow Bone UNUSED",
     ],
@@ -1342,20 +1353,32 @@ def test_the_item_noise_words_the_plugin_drops_are_refused_in_the_answer(word: s
 
 
 @pytest.mark.parametrize("action", ["listItems", "listEntities"])
-def test_one_name_held_by_two_codes_fails_for_every_action(action: str) -> None:
-    """DistinctNames promises one name per code; a collision means that promise broke."""
+def test_the_game_s_own_names_may_repeat_and_use_lowercase_words(action: str) -> None:
+    """On 1.0 items and labelled entities carry the client's English names, as the game spells them."""
     answers = _derived_answers()
     answers[action] = [
-        {"code": "Enemy_Scavenger_Melee01_Night_Patrol_Guard", "name": "Scavenger Melee Night Patrol Guard"},
-        {"code": "Enemy_Scavenger_Melee02_Night_Patrol_Guard", "name": "Scavenger Melee Night Patrol Guard"},
+        {"code": "Prop_Decoration_Book_01", "name": "Book I"},
+        {"code": "Prop_Decoration_Book_02", "name": "Book I"},
+        {"code": "Armor_T6_Crestflame_Legs", "name": "Crestflame boots"},
+        {"code": "Enemy_Boss_Vorgoth_Phase1_Humanoid", "name": "Vorgoth, Champion of the Shroud"},
+        {"code": "_Food_T2_dish_grain_HazelnutSkewer", "name": "Meat and Hazelnut Skewer"},
     ]
 
     result = _catalog(answers)
 
+    assert result.status == "pass", result.detail["problems"]
+    assert result.detail["repeatedGameNames"][action] == 1
+
+
+@pytest.mark.parametrize("action", ["listItems", "listEntities"])
+def test_a_game_named_list_still_refuses_a_code_handed_back(action: str) -> None:
+    answers = _derived_answers()
+    answers[action] = [{"code": "Weapon_T4_2H_GreatSwordEpic_01", "name": "Weapon T4 2H GreatSwordEpic 01"}]
+
+    result = _catalog(answers)
+
     assert result.status == "fail"
-    problems = " ".join(result.detail["problems"])
-    assert f"{action}: 1 names are shared by more than one code" in problems
-    assert "Scavenger Melee Night Patrol Guard <- Enemy_Scavenger_Melee01_Night_Patrol_Guard" in problems
+    assert "dev codes rather than display names" in " ".join(result.detail["problems"])
 
 
 def test_two_rows_carrying_the_same_code_may_share_one_name() -> None:
@@ -1369,3 +1392,122 @@ def test_two_rows_carrying_the_same_code_may_share_one_name() -> None:
     result = _catalog(answers)
 
     assert result.status == "pass", result.detail["problems"]
+
+
+# ------------------------------------------------------- the stop check's save, directly
+
+
+def _stop_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, log: str) -> Any:
+    run = FakeRun(tmp_path)
+    run.server_log.write_text(log, encoding="utf-8")
+    monkeypatch.setattr(hooks, "STOP_BUDGET", 0.0)
+    monkeypatch.setattr(hooks.checks_lifecycle, "wait_for_count", lambda *args, **kwargs: 2)
+    monkeypatch.setattr(hooks.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 0, "", ""))
+    monkeypatch.setattr(run.container, "wait_for_exit", lambda *args: 0)
+    return run
+
+
+SPAWN = "2026-10-23 00:24:46,650 INFO spawned: 'enshrouded-server' with pid 70\n"
+RESPAWN = "2026-10-23 00:25:09,645 INFO spawned: 'enshrouded-server' with pid 235\n"
+#: The respawn line's moment, 2026-10-23 00:25:09.645 UTC.
+RESPAWNED_AT = 1792715109.645
+SHUTDOWN_ONLY = SPAWN + "[app] Trigger gameflow shutdown, exit: Ctrl_C\n"
+
+
+def test_stop_takes_a_world_file_written_after_the_request_as_the_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Enshrouded 1.0 writes savegame/world0.ksd on shutdown and prints no '[server] Saved'."""
+    run = _stop_run(tmp_path, monkeypatch, SHUTDOWN_ONLY)
+    (run.data_dir / "savegame").mkdir()
+    (run.data_dir / "savegame" / "world0.ksd").write_bytes(b"world")
+
+    result = asyncio.run(hooks._check_stop(run, [], 0.0))
+
+    assert result.detail["stages"]["saved"] is True
+    assert result.detail["save"] == {"by": "file", "files": ["world0.ksd"]}
+
+
+def test_stop_refuses_a_world_file_older_than_the_request(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    run = _stop_run(tmp_path, monkeypatch, SHUTDOWN_ONLY)
+    (run.data_dir / "savegame").mkdir()
+    world = run.data_dir / "savegame" / "world0.ksd"
+    world.write_bytes(b"world")
+    os.utime(world, (1_000_000_000, 1_000_000_000))
+
+    result = asyncio.run(hooks._check_stop(run, [], 2_000_000_000.0))
+
+    assert result.status == "fail"
+    assert result.detail["stages"]["saved"] is False
+    assert "neither logged '[server] Saved' nor wrote savegame/" in " ".join(result.detail["problems"])
+
+
+def test_stop_refuses_a_world_file_the_respawned_server_wrote(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A file last written after supervisord's respawn line is the next boot's, not the shutdown's."""
+    run = _stop_run(tmp_path, monkeypatch, SHUTDOWN_ONLY + RESPAWN)
+    (run.data_dir / "savegame").mkdir()
+    world = run.data_dir / "savegame" / "world0.ksd"
+    world.write_bytes(b"world")
+    os.utime(world, (RESPAWNED_AT + 5, RESPAWNED_AT + 5))
+
+    result = asyncio.run(hooks._check_stop(run, [], RESPAWNED_AT - 30))
+
+    assert result.detail["stages"]["saved"] is False
+
+
+def test_stop_finds_the_save_when_the_respawn_happened_before_it_looked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The event check runs first, so the respawn line is often already there when stop starts."""
+    run = _stop_run(tmp_path, monkeypatch, SHUTDOWN_ONLY + RESPAWN)
+    (run.data_dir / "savegame").mkdir()
+    world = run.data_dir / "savegame" / "world0.ksd"
+    world.write_bytes(b"world")
+    os.utime(world, (RESPAWNED_AT - 2, RESPAWNED_AT - 2))
+
+    result = asyncio.run(hooks._check_stop(run, [], RESPAWNED_AT - 30))
+
+    assert result.detail["save"] == {"by": "file", "files": ["world0.ksd"]}
+
+
+def test_stop_takes_only_world_files_as_the_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    run = _stop_run(tmp_path, monkeypatch, SHUTDOWN_ONLY)
+    (run.data_dir / "savegame").mkdir()
+    (run.data_dir / "savegame" / "world0.tmp").write_bytes(b"partial")
+
+    result = asyncio.run(hooks._check_stop(run, [], 0.0))
+
+    assert result.detail["stages"]["saved"] is False
+
+
+def test_wait_for_save_takes_the_log_line_or_a_world_file_written_before_the_respawn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = _stop_run(tmp_path, monkeypatch, SHUTDOWN_ONLY)
+    assert asyncio.run(hooks._wait_for_save(run, 0.0, lambda: True)) is None
+
+    (run.data_dir / "savegame").mkdir()
+    world = run.data_dir / "savegame" / "world0.ksd"
+    world.write_bytes(b"world")
+    assert asyncio.run(hooks._wait_for_save(run, 0.0, lambda: True)) == {"by": "file", "files": ["world0.ksd"]}
+    assert asyncio.run(hooks._wait_for_save(run, None, lambda: True)) is None
+
+    run.server_log.write_text(SHUTDOWN_ONLY + RESPAWN, encoding="utf-8")
+    os.utime(world, (RESPAWNED_AT - 2, RESPAWNED_AT - 2))
+    assert asyncio.run(hooks._wait_for_save(run, RESPAWNED_AT - 30, lambda: True)) == {
+        "by": "file",
+        "files": ["world0.ksd"],
+    }
+    os.utime(world, (RESPAWNED_AT + 5, RESPAWNED_AT + 5))
+    assert asyncio.run(hooks._wait_for_save(run, RESPAWNED_AT - 30, lambda: True)) is None
+
+    run.server_log.write_text(SHUTDOWN_ONLY + "[server] Saved\n", encoding="utf-8")
+    assert asyncio.run(hooks._wait_for_save(run, None, lambda: True)) == {"by": "log", "line": 3}
+
+
+def test_stop_still_takes_the_saved_line_older_builds_print(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    run = _stop_run(tmp_path, monkeypatch, SHUTDOWN_ONLY + "[server] Saved\n")
+
+    result = asyncio.run(hooks._check_stop(run, [], None))
+
+    assert result.detail["save"]["by"] == "log"

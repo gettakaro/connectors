@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.4.0](https://github.com/gettakaro/connectors/compare/rust-v0.3.0...rust-v0.4.0) (2026-10-26)
+
+
+### Features
+
+* **rust:** speak protocol v1 and report the game profile, connector identity and game icon ([#560](https://github.com/gettakaro/connectors/issues/560)) ([ac71cb1](https://github.com/gettakaro/connectors/commit/ac71cb198d759babf8723766d24cc3f70438133e))
+
+
+### Bug Fixes
+
+* **rust:** list the animals in listEntities again ([#635](https://github.com/gettakaro/connectors/issues/635)) ([0973db3](https://github.com/gettakaro/connectors/commit/0973db3b4a9b26582e8e8cdaee33bb90d68cc630))
+* **rust:** name the map Dimension and drop the fake (0, 0, 0) in getPlayerLocation on v1 ([#622](https://github.com/gettakaro/connectors/issues/622)) ([57aed47](https://github.com/gettakaro/connectors/commit/57aed47dd3ad71afeec38f363393ba1332f3cd50))
+* **rust:** target the 2026-10-22 Rust update build 26139947 ([#629](https://github.com/gettakaro/connectors/issues/629)) ([1918a20](https://github.com/gettakaro/connectors/commit/1918a20435535e11b834a788da5e007ddffe5d7a))
+
+
+### Documentation
+
+* **rust:** fix the download step and the downloads-page requirements ([#583](https://github.com/gettakaro/connectors/issues/583)) ([20c45ec](https://github.com/gettakaro/connectors/commit/20c45ec5e3c4565f98518e877d168002b25e2a58))
+
+
+### Continuous Integration
+
+* **rust:** boot the pinned server and Carbon in the release workflow's verify leg ([#598](https://github.com/gettakaro/connectors/issues/598)) ([19415d5](https://github.com/gettakaro/connectors/commit/19415d5f8eebdba8e17a666d9dbdb541df2cf28b))
+
 ## [0.3.0](https://github.com/gettakaro/connectors/compare/rust-v0.2.0...rust-v0.3.0) (2026-10-18)
 
 

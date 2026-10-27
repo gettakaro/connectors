@@ -1,5 +1,28 @@
 # Changelog
 
+## [4.4.0](https://github.com/gettakaro/connectors/compare/valheim-v4.3.0...valheim-v4.4.0) (2026-10-26)
+
+
+### Features
+
+* **valheim:** list the notable places as map locations ([#632](https://github.com/gettakaro/connectors/issues/632)) ([e991f64](https://github.com/gettakaro/connectors/commit/e991f648844718da1498e4f4267e9a595c32e9b9))
+
+
+### Bug Fixes
+
+* **valheim:** keep the settings of an older version on upgrade ([#649](https://github.com/gettakaro/connectors/issues/649)) ([4869d71](https://github.com/gettakaro/connectors/commit/4869d71aa476a718303cd30503dd8a8ebde939bc))
+
+
+### Documentation
+
+* **valheim:** re-verify the README on Valheim 1.0.20 and add an upgrade guide ([#594](https://github.com/gettakaro/connectors/issues/594)) ([b024327](https://github.com/gettakaro/connectors/commit/b02432706aa3d560702e83f76d92b321986896c2))
+* **valheim:** research native /takaro commands in the client companion ([#597](https://github.com/gettakaro/connectors/issues/597)) ([b7a003a](https://github.com/gettakaro/connectors/commit/b7a003a0403872ef14bd7249dfa92b816678bea9))
+
+
+### Continuous Integration
+
+* **valheim:** boot the pinned server with the built plugin in the release workflow's verify leg ([#609](https://github.com/gettakaro/connectors/issues/609)) ([c30ead8](https://github.com/gettakaro/connectors/commit/c30ead8f6587bbb67e497bafa571c32bccce2f93))
+
 ## [4.3.0](https://github.com/gettakaro/connectors/compare/valheim-v4.2.0...valheim-v4.3.0) (2026-10-21)
 
 
