@@ -17,8 +17,8 @@ registration token. Client and server must run the same game version.
 
 Look up your server's Steam build: it is the `"buildid"` value in
 `steamapps/appmanifest_4019830.acf` inside the server's install directory. Each release ships one
-plugin archive per supported build. The latest release supports builds 25991736 (the current public
-build), 25808123, 25630937, 25501739 and 25465077.
+plugin archive per supported build. The latest release supports builds 26161880 (the current public
+build), 26087591, 25991736, 25808123, 25630937, 25501739 and 25465077.
 
 ### 2. Download and copy
 
@@ -30,7 +30,7 @@ From the latest `dragonwilds-vX.Y.Z` release on the releases page
 
 download `SHA256SUMS` and the plugin archive for your build,
 `takaro-dragonwilds-plugin-linux-<build>-<version>.tar.gz`, for example
-`takaro-dragonwilds-plugin-linux-25991736-0.5.0.tar.gz`. `takaro-dragonwilds-plugin.tar.gz` is a
+`takaro-dragonwilds-plugin-linux-26161880-<version>.tar.gz`. `takaro-dragonwilds-plugin.tar.gz` is a
 copy of the archive for the current public build. Do not use the "Source code" archives, the
 `dragonwilds-dev` pre-release or a `pr-<number>-dragonwilds` build; those are untested rolling
 builds. Check and unpack:
