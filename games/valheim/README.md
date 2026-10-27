@@ -32,7 +32,7 @@ The exact server builds this connector is maintained for:
 Download **`takaro-valheim-plugin.zip`** from the downloads page,
 <https://takaro.io/connectors/valheim>, or from the latest `valheim-v4.x.x` release at
 <https://github.com/gettakaro/connectors/releases>. The release also has the same zip under its
-target name, for example `takaro-valheim-plugin-linux-1.0.20-4.3.0.zip`, and a `SHA256SUMS`
+target name, for example `takaro-valheim-plugin-linux-1.0.20-<version>.zip`, and a `SHA256SUMS`
 file to check the download with. Do not use the `valheim-dev` pre-release.
 
 These steps are for 4.3.0 and later (4.2.x kept its settings in a `takaro.cfg` inside the plugin
