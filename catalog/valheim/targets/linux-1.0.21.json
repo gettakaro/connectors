@@ -8,7 +8,9 @@
   "support": {
     "status": "candidate",
     "since": "2026-10-29",
-    "evidence": [],
+    "evidence": [
+      "connector-runner e2e 2026-10-28 (gettakaro/connectors#674): real vanilla Valheim PC client (Steam, Version 1.0.21 n-41) on this exact pin (server files sha256-checked against inputs.server.files, BepInExPack 5.4.2351), plugin built from this branch through hosted Takaro MCP - player-connected a4cc6b53-370c-4e5b-8f23-d849d51c3d79, chat-message c951b98c-995d-41b8-865f-51b957d195c2, command-executed @ping ff19525b-24eb-4dff-a8f2-5235b70615bb, player-death f1966c4d-2504-4a73-98dc-acd60ab7f9e7, entity-killed cebed3ce-02fb-43b8-af72-26716e75e2d6 (Boar with Club), player-disconnected 1a3c0193-9700-48c5-a015-fe250c1e14f4; testReachability, getPlayers, sendMessage (with senderNameOverride), executeConsoleCommand (allowlisted help, denial of a non-allowlisted command, allowlisted kick), teleportPlayer, giveItem, kickPlayer, banPlayer/listBans/unbanPlayer (banned rejoin refused, rejoin after unban) and shutdown seen in the client; Discord chat bridge game-to-Discord and Discord-to-game relays and connect/disconnect posts"
+    ],
     "notes": "Exact Steam pin of the public head at declaration time (buildid 26266951, Valheim 1.0.21 network version 41, updated 2026-10-28). Repins the previous 1.0.20/25909431 target after Valve moved the public branch (#674); depot 896661 manifest 6965848522742639928. The connector is a dedicated-server plugin. An optional graphical-client inventory mod (role client-companion) exists; deploy only parks its zip in takaro-companion/. Player-driven events (chat, deaths, kills), server chat and the optional inventory mod need a connected game client and are NOT covered by takaro-maint verify, which boots a dedicated server with no client. Runtime CI onboarding is a separate issue."
   },
   "inputs": {
