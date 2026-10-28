@@ -3,7 +3,7 @@
 A BepInEx plugin that runs inside a Valheim dedicated server and connects it to Takaro. Players
 do not install anything: they join with plain, unmodified Valheim. Only reading a player's
 inventory needs an optional mod on that player's game
-([step 7](#7-optional-inventory-mod-for-players)). Built against **Valheim 1.0.20** with
+([step 7](#7-optional-inventory-mod-for-players)). Built against **Valheim 1.0.21** with
 **BepInExPack Valheim 5.4.2351**.
 
 ## Install
@@ -24,7 +24,7 @@ The exact server builds this connector is maintained for:
 <!-- takaro-maint:targets:begin -->
 | Target | Game version | Platform | Loader / API | Java | Support | Verified level |
 | --- | --- | --- | --- | --- | --- | --- |
-| `linux-1.0.20` | 1.0.20 | linux | — | None | candidate | contract |
+| `linux-1.0.21` | 1.0.21 | linux | — | None | candidate | contract |
 <!-- takaro-maint:targets:end -->
 
 ### 2. Download
@@ -32,7 +32,7 @@ The exact server builds this connector is maintained for:
 Download **`takaro-valheim-plugin.zip`** from the downloads page,
 <https://takaro.io/connectors/valheim>, or from the latest `valheim-v4.x.x` release at
 <https://github.com/gettakaro/connectors/releases>. The release also has the same zip under its
-target name, for example `takaro-valheim-plugin-linux-1.0.20-<version>.zip`, and a `SHA256SUMS`
+target name, for example `takaro-valheim-plugin-linux-1.0.21-<version>.zip`, and a `SHA256SUMS`
 file to check the download with. Do not use the `valheim-dev` pre-release.
 
 These steps are for 4.3.0 and later (4.2.x kept its settings in a `takaro.cfg` inside the plugin
