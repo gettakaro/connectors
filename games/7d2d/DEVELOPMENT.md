@@ -204,7 +204,14 @@ counts once the text has been stable for 1 s, and a half-saved file (invalid XML
 until it changes again. A change to the URL, a token, the identity or `Enabled` drops the
 socket and reconnects at once, so a pasted or corrected token needs no restart. Without a
 registration token the mod does not connect (emptying it disconnects); it logs a banner naming
-the file instead. `src/Config/ConfigFiles.cs` has no game types and is covered by the
+the file instead. `<Chat><ServerChatName>` is the sender name for chat the
+connector sends when Takaro passes no `senderNameOverride`; it applies on the next read, without a
+reconnect. `src/Services/ServerChatName.cs` (no game types, covered by the contract harness)
+resolves the name (override, then `ServerChatName`, trimmed, empty means unset) and renders
+`<name>: <message>`; `src/Services/ServerChat.cs` sends it with `EMessageSender.None` and sender
+entity id -1, because the client prints no label for that sender. With no name it keeps
+`EMessageSender.Server` and the plain text, so the client shows "Server". Any server chat the
+connector sends goes through `ServerChat`. `src/Config/ConfigFiles.cs` has no game types and is covered by the
 contract harness.
 
 The mod writes its own log to `<server>/Takaro/logs/<M-D-YYYY>.log`. On the dev
