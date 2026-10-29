@@ -148,7 +148,10 @@ protocolVersion=1
 ```
 
 - `serverName` is the name in Takaro and must be unique among your Takaro game servers.
-- `TAKARO_REGISTRATION_TOKEN`, `TSHOCK_TOKEN`, `TSHOCK_USERNAME` and `TSHOCK_PASSWORD` in the
+- `serverChatName` is the sender players see on messages from Takaro when Takaro sends no chat
+  name of its own; the chat name set in Takaro wins. Needs the plugin from the same release and a
+  REST user with `takaro.admin`.
+- `TAKARO_REGISTRATION_TOKEN`, `TAKARO_SERVER_CHAT_NAME`, `TSHOCK_TOKEN`, `TSHOCK_USERNAME` and `TSHOCK_PASSWORD` in the
   bridge's environment override the file and are never written to it.
 - `logFiles` is the TShock log **folder**, not one file; the bridge follows TShock's new log file
   on every start. Chat, joins, leaves, deaths and kills come from there.
@@ -206,7 +209,7 @@ Checked on TShock 6.2.1 (Terraria 1.4.5.8), 2026-10-22. ✅ works, ⚠️ works 
 | Entity list | ❌ | Terraria has no list of creatures; Takaro gets an empty list. |
 | Locations | ❌ | Terraria has no named locations; Takaro gets an empty list. |
 | World map | ⚠️ | The whole world, drawn by the plugin. Not checked on takaro.io yet. |
-| Send a message | ✅ | A broadcast to everyone or a whisper to one player. |
+| Send a message | ✅ | A broadcast (`<chat name>: message`) or a whisper (`<From <chat name>> message`); the chat name comes from Takaro. |
 | Console commands | ✅ | Only allowlisted commands (by default `help`, `say …`, `time …`). |
 | Kick | ✅ | The player sees the reason. |
 | Ban and unban | ✅ | Timed and permanent; a banned player sees the reason and time left. Unbanned players can rejoin at once. |

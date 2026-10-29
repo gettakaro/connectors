@@ -62,6 +62,14 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         {
             HelpText = "Renders the world map image Takaro shows, in the background."
         });
+        Commands.ChatCommands.Add(new Command(AdminPermission, TakaroSay, "takarosay")
+        {
+            HelpText = "Shows Takaro's chat text to every player, without a sender label of its own."
+        });
+        Commands.ChatCommands.Add(new Command(AdminPermission, TakaroTell, "takarotell")
+        {
+            HelpText = "Shows Takaro's chat text to one player, without a sender label of its own."
+        });
         ServerApi.Hooks.GamePostInitialize.Register(this, OnWorldLoaded);
         // The leading text is the line `takaro-maint verify` waits for; the version
         // behind it is what build-mod.sh stamped in, so a log says which build loaded.
@@ -84,6 +92,8 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaroban"));
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takarounban"));
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaromap"));
+            Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takarosay"));
+            Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takarotell"));
             ServerApi.Hooks.GamePostInitialize.Deregister(this, OnWorldLoaded);
             _mapTimer?.Dispose();
         }
@@ -119,6 +129,50 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         args.Player.SendInfoMessage(MapRenderer.Start("command")
             ? "TAKARO_MAP render started"
             : "TAKARO_MAP render already running");
+    }
+
+    // The bridge renders the sender name into the text. TShock's /broadcast and /w would put
+    // "(Server Broadcast)" or "<From <REST user>>" in front of it, so these send the text as is,
+    // in the colours of a broadcast and a whisper. TShock.Utils.Broadcast is not used: it logs
+    // "Broadcast: <text>", the line the bridge reads player chat from.
+    private static void TakaroSay(CommandArgs args)
+    {
+        if (args.Parameters.Count != 1)
+        {
+            args.Player.SendErrorMessage("Usage: /takarosay <text>");
+            return;
+        }
+
+        var text = args.Parameters[0];
+        var rgb = TShock.Config.Settings.BroadcastRGB;
+        TSPlayer.All.SendMessage(text, (byte)rgb[0], (byte)rgb[1], (byte)rgb[2]);
+        TShock.Log.ConsoleInfo($"TAKARO_CHAT to all: {text}");
+        args.Player.SendSuccessMessage("TAKARO_CHAT sent");
+    }
+
+    private static void TakaroTell(CommandArgs args)
+    {
+        if (args.Parameters.Count != 2)
+        {
+            args.Player.SendErrorMessage("Usage: /takarotell <player> <text>");
+            return;
+        }
+
+        var matches = TSPlayer.FindByNameOrID(args.Parameters[0]);
+        if (matches.Count != 1)
+        {
+            args.Player.SendErrorMessage(matches.Count == 0
+                ? $"No player found matching '{args.Parameters[0]}'."
+                : $"Multiple players found matching '{args.Parameters[0]}'.");
+            return;
+        }
+
+        var target = matches[0];
+        var text = args.Parameters[1];
+        // Color.MediumPurple, the colour of TShock's /w.
+        target.SendMessage(text, 147, 112, 219);
+        TShock.Log.ConsoleInfo($"TAKARO_CHAT to {target.Name}: {text}");
+        args.Player.SendSuccessMessage("TAKARO_CHAT sent");
     }
 
     private static void TakaroTeleport(CommandArgs args)

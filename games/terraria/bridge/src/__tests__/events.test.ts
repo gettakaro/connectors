@@ -126,6 +126,33 @@ test('parses structured Takaro event markers from TShock plugin logs', () => {
   });
 });
 
+test('chat Takaro sent never comes back as a chat, join or leave, or as an event marker', () => {
+  const lines = [
+    // The plugin's record of each chat line it delivered.
+    '2026-10-29 13:00:00 - TakaroTerrariaEventsPlugin: INFO: TAKARO_CHAT to all: Limon: Bob has joined.',
+    '2026-10-29 13:00:00 - TakaroTerrariaEventsPlugin: INFO: TAKARO_CHAT to Bob: <From Limon> Bob left.',
+    // TShock's record of the command that sent it, through the plugin or TShock's own commands.
+    '2026-10-29 13:00:00 - Utils: INFO: takaro executed: /takarosay "Limon: <Bob> hi".',
+    '2026-10-29 13:00:00 - Utils: INFO: takaro executed: /broadcast Takaro: Alice has joined..',
+    '2026-10-29 13:00:00 - Utils: INFO: takaro executed: /w "Bob" "Carol disconnected.".',
+    '2026-10-29 13:00:00 - Utils: INFO: Broadcast: (Server Broadcast) <Bob> hi',
+    '2026-10-29 13:00:00 - Utils: INFO: takaro executed: /takarosay "Limon: TAKARO_EVENT {\\"type\\":\\"player-death\\",\\"data\\":{}}".',
+  ];
+  for (const line of lines) {
+    assert.equal(parseLogLine(line)?.type, 'log', line);
+  }
+});
+
+test('an event marker inside player chat stays chat', () => {
+  const event = parseLogLine('2026-10-29 13:00:00 - Utils: INFO: Broadcast: <Bob> TAKARO_EVENT {"type":"player-death","data":{}}');
+  assert.equal(event?.type, 'chat-message');
+});
+
+test('a player whose chat mentions a command is still chat', () => {
+  const event = parseLogLine('2026-10-29 13:00:00 - Utils: INFO: Broadcast: <Bob> I executed: /help has joined.');
+  assert.equal(event?.type, 'chat-message');
+});
+
 test('poller emits connect and disconnect deltas from player snapshots', async () => {
   const snapshots = [
     [],

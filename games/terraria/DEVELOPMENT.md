@@ -113,6 +113,8 @@ how a zip carries its target identity (`takaro-maint artifact validate` reads it
 /takarogive <player> <item> <amount>
 /takaroban <player> <reason>
 /takarounban <player>
+/takarosay <text>
+/takarotell <player> <text>
 ```
 
 These are server-side TShock commands intended for connector automation, and all of them require
@@ -123,10 +125,23 @@ which is the common setup and needs no extra configuration. For a more narrowly 
 `takaro.admin` explicitly: without it `teleportPlayer` fails, `getPlayerLocation` has no position (null on protocol 1, `0,0,0` on protocol 0),
 and `getPlayerInventory` returns an empty list, all rather than failing loudly.
 
-`sendMessage` runs TShock's own `/broadcast`, so the message reaches the server console as well
-as the players — that command needs `tshock.broadcast`. When the REST user does not hold it the
-bridge falls back to `/v2/server/broadcast`, which reaches the players but logs nothing, so chat
-delivery never depends on the permission.
+`sendMessage` shows a sender name when one resolves: `opts.senderNameOverride` (Takaro's
+per-server chat name), else `serverChatName` (`TAKARO_SERVER_CHAT_NAME`), each trimmed, blank
+meaning unset (`bridge/src/terraria/serverChat.ts`, the one place that resolves and renders it).
+Terraria has no sender field for a line that does not come from a player slot, so the name is in
+the text: `<name>: <message>` for everyone through `/takarosay`, `<From <name>> <message>` for one
+player through `/takarotell`. Those plugin commands send the text as is, in the broadcast and
+whisper colours, because TShock's `/broadcast` and `/w` put `(Server Broadcast)` or
+`<From <REST user>>` in front of it. They log `TAKARO_CHAT to <all|player>: <text>` and never the
+`Broadcast: <...>` line player chat is read from, and the log parser ignores `TAKARO_CHAT` lines
+and TShock's `<user> executed: <command>` lines, so Takaro's own text never comes back as chat,
+a join or a leave. A plugin older than the bridge answers `Invalid command entered`; the bridge then
+sends `<name>: <message>` through `/broadcast` or `/w`.
+
+With no name, `sendMessage` runs TShock's own `/broadcast` (or `/w` for one player), so the message
+reaches the server console as well as the players — that command needs `tshock.broadcast`. When
+the REST user does not hold it the bridge falls back to `/v2/server/broadcast`, which reaches the
+players but logs nothing, so chat delivery never depends on the permission.
 
 ## Bridge
 
@@ -186,7 +201,8 @@ which an upgrade replaces whole. Nothing ships it.
   name is taken). Only `name: message (http N)` of Takaro's error is logged, which can carry
   Takaro's own request headers and token.
 - Environment variables override the file per field and are never written
-  (`TAKARO_REGISTRATION_TOKEN`, `TSHOCK_TOKEN`, `TSHOCK_USERNAME`, `TSHOCK_PASSWORD`). The dev rig
+  (`TAKARO_REGISTRATION_TOKEN`, `TAKARO_SERVER_CHAT_NAME`, `TSHOCK_TOKEN`, `TSHOCK_USERNAME`,
+  `TSHOCK_PASSWORD`). The dev rig
   and `takaro-maint verify` pass `BRIDGE_CONFIG` with an explicit `identityToken`.
 
 ### Local endpoints
@@ -330,7 +346,7 @@ in [README.md](README.md) for what has actually been verified.
 | `getPlayer` | Supported | From TShock REST. |
 | `getPlayerLocation` | Supported | Plugin command `/takaropos`. |
 | `getPlayerInventory` | Supported | Plugin command `/takaroinv`. |
-| `sendMessage` | Supported | `/v2/server/broadcast`. Global and per-recipient. |
+| `sendMessage` | Supported | Global and per-recipient. With a sender name, plugin commands `/takarosay` and `/takarotell`; without, `/broadcast` (fallback `/v2/server/broadcast`) and `/w`. |
 | `executeConsoleCommand` | Supported | Allowlisted by exact match and prefix. |
 | `giveItem` | Supported | `/give`, with name-to-item-code resolution. |
 | `teleportPlayer` | Supported | Plugin command `/takarotp`. |
