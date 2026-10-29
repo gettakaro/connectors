@@ -97,6 +97,13 @@ const char* BroadcastPathSymbol(BroadcastPath p);
 // sender at all.
 std::string RenderMessage(const std::string& senderName, const std::string& text);
 
+// The sender name of a message from Takaro, the same for every send path: `override`
+// (opts.senderNameOverride, which Takaro fills from the server's chat name), else `configured`
+// (TAKARO_SENDER_NAME, else TAKARO_SERVER_CHAT_NAME), else `serverName` (TAKARO_SERVER_NAME), else
+// "Server". Each is trimmed; one that is empty or only whitespace counts as unset.
+std::string ResolveSenderName(const std::string& override, const std::string& configured,
+                              const std::string& serverName);
+
 // ---- lane L3b: admin grant list -------------------------------------------------------------
 // Parses TAKARO_ADMIN_STEAMIDS / TAKARO_SUPERADMIN_STEAMIDS: a list of SteamID64s separated by
 // commas, semicolons or whitespace. `steam:<id>` is accepted and stripped, surrounding quotes and

@@ -1026,6 +1026,23 @@ static void TestMessagePrefixing() {
     EQ(RenderMessage("Sérver", "ü"), std::string("[Sérver] ü"));      // UTF-8 passes through untouched
 }
 
+// Takaro's chat name (opts.senderNameOverride) wins, then the connector's config, then the server
+// name, then "Server"; empty or whitespace is unset. Global and directed messages render alike.
+static void TestSenderNameResolution() {
+    using ActionsUtil::RenderMessage;
+    using ActionsUtil::ResolveSenderName;
+    EQ(ResolveSenderName("Takaro Chat", "Config Bot", "My Server"), std::string("Takaro Chat"));
+    EQ(ResolveSenderName("  Takaro Chat  ", "Config Bot", "My Server"), std::string("Takaro Chat"));
+    EQ(ResolveSenderName("", "Config Bot", "My Server"), std::string("Config Bot"));
+    EQ(ResolveSenderName(" \t ", " Config Bot ", "My Server"), std::string("Config Bot"));
+    EQ(ResolveSenderName("", "   ", "My Server"), std::string("My Server"));
+    EQ(ResolveSenderName("", "", ""), std::string("Server"));
+    EQ(ResolveSenderName("  ", "\t", " \n "), std::string("Server"));
+    EQ(RenderMessage(ResolveSenderName("Takaro Chat", "Config Bot", ""), "hello"), std::string("[Takaro Chat] hello"));
+    EQ(RenderMessage(ResolveSenderName("", "Config Bot", ""), "psst"), std::string("[Config Bot] psst"));
+    EQ(RenderMessage(ResolveSenderName("", "", ""), "hello"), std::string("[Server] hello"));
+}
+
 
 // ---- lane L3c: readable item names ---------------------------------------------------------
 
@@ -1432,6 +1449,7 @@ int main() {
     TestItemSearchMatchesDisplayName();
     TestBroadcastPathChoice();
     TestMessagePrefixing();
+    TestSenderNameResolution();
     TestChatChannelMapping();
     TestTeleportVerification();
     TestGiveVerification();

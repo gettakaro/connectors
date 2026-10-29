@@ -227,6 +227,9 @@ int main(){
     Check(run("executeConsoleCommand",Json{{"command","save"}})["rawResult"]=="saved","command output");
     Check(run("sendMessage",Json{{"message","hi"},{"opts",{{"senderNameOverride","Captain"},{"recipient",{{"gameId",id}}}}}}).empty()&&lastSender=="Captain"&&lastRecipient==id,"sender/recipient");
     Check(run("sendMessage",Json{{"message","hi"},{"opts",nullptr}}).empty()&&lastSender=="Bot","sender fallback/null opts");
+    Check(run("sendMessage",Json{{"message","hi"},{"opts",{{"senderNameOverride","  Captain  "}}}}).empty()&&lastSender=="Captain","sender override trimmed");
+    Check(run("sendMessage",Json{{"message","hi"},{"opts",{{"senderNameOverride"," \t "},{"recipient",{{"gameId",id}}}}}}).empty()&&lastSender=="Bot"&&lastRecipient==id,"whitespace sender override falls back to config");
+    Check(run("sendMessage",Json{{"message","hi"},{"opts",{{"senderNameOverride",nullptr}}}}).empty()&&lastSender=="Bot","null sender override falls back to config");
     Check(run("teleportPlayer",Json{{"gameId",id},{"x",1},{"y",2},{"z",3},{"dimension",nullptr}}).empty(),"teleport");
     auto notFinite=engine.PrepareAction("nan","teleportPlayer",Json{{"gameId",id},{"x","NaN"},{"y",2},{"z",3}}.dump(),1);
     Check(!NativeBehavior::Engine::ExecuteAction(notFinite).errorText.empty(),"nonfinite numeric argument rejected");
