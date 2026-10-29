@@ -4,6 +4,7 @@
 #include "native/json_util.h"
 #include "native/mapping.h"
 #include "native/maptiles.h"
+#include "native/server_chat.h"
 
 #include <chrono>
 #include <cstdio>
@@ -184,8 +185,7 @@ public:
             auto message = Str(args.get("message"));
             if (!message) Fail("sendMessage requires 'message'");
             const JsonValue& opts = AsRecord(args.get("opts"));
-            auto sender = Str(opts.get("senderNameOverride"));
-            std::string text = sender ? *sender + ": " + *message : *message;
+            std::string text = RenderServerChat(ResolveServerChatName(opts, view_.serverChatName), *message);
             const JsonValue& recipient = AsRecord(opts.get("recipient"));
             auto rid = Str(recipient.get("gameId"));
             if (!rid) rid = Str(recipient.get("steamId"));

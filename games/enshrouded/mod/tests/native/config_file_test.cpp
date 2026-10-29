@@ -257,6 +257,38 @@ void IdentifyErrors() {
     CHECK_MSG(s.find("eyJ") == std::string::npos && s.find("<redacted>") != std::string::npos, s);
 }
 
+// plugin.json "serverChatName" (TAKARO_SERVER_CHAT_NAME wins): created empty, applied while running, and never
+// a connection change.
+void ServerChatNameSetting() {
+    t::Group("config-server-chat-name");
+    Install in("cfg-chat-name");
+    LiveResolution r = in.Start();
+    CHECK(Parsed(in.path).obj.get("serverChatName"));
+    CHECK_EQ(r.serverChatName, std::string());
+    CHECK(r.chatName == Source::Default);
+    in.SetKey("registrationToken", "reg-AAAA");
+    CHECK(in.Settle());
+    LiveSettings conn = in.w->Active().s;
+
+    in.SetKey("serverChatName", "  Embervale  ");
+    CHECK(in.Settle());
+    CHECK_EQ(in.w->Active().serverChatName, std::string("Embervale"));
+    CHECK(in.w->Active().chatName == Source::File);
+    CHECK(in.w->Active().s == conn);
+    in.SetKey("serverChatName", "   ");  // whitespace only: unset
+    CHECK(in.Settle());
+    CHECK_EQ(in.w->Active().serverChatName, std::string());
+    CHECK(in.w->Active().chatName == Source::Default);
+
+    in.SetKey("serverChatName", "Embervale");
+    in.env["TAKARO_SERVER_CHAT_NAME"] = "From Env";
+    LiveResolution r2 = in.Start();
+    CHECK_EQ(r2.serverChatName, std::string("From Env"));
+    CHECK(r2.chatName == Source::Env);
+    in.env["TAKARO_SERVER_CHAT_NAME"] = " ";
+    CHECK_EQ(in.Start().serverChatName, std::string("Embervale"));
+}
+
 }  // namespace
 
 void RunConfigFileTests() {
@@ -265,4 +297,5 @@ void RunConfigFileTests() {
     HalfSavedAndSettle();
     EnvironmentPrecedence();
     IdentifyErrors();
+    ServerChatNameSetting();
 }

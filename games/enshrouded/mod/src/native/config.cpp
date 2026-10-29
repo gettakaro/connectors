@@ -94,12 +94,14 @@ void ApplyLive(NativeConfig& c, const LiveResolution& r) {
     c.identityToken = r.s.identityToken;
     c.registrationToken = r.s.registrationToken;
     c.serverName = r.s.serverName;
+    c.serverChatName = r.serverChatName;
     c.protocolV1 = r.s.protocolV1;
     std::vector<std::pair<std::string, std::string>> live = {{"url", SourceName(r.url)},
                                                              {"identityToken", SourceName(r.identity)},
                                                              {"registrationToken", SourceName(r.registration)},
                                                              {"name", SourceName(r.name)},
-                                                             {"protocol", SourceName(r.protocol)}};
+                                                             {"protocol", SourceName(r.protocol)},
+                                                             {"serverChatName", SourceName(r.chatName)}};
     for (auto& kv : live) {
         bool replaced = false;
         for (auto& s : c.sources)
@@ -121,6 +123,7 @@ std::string ConfigSummaryJson(const NativeConfig& c) {
     return ObjBuilder()
         .S("url", c.url)
         .S("serverName", c.serverName)
+        .S("serverChatName", c.serverChatName)
         .S("caFile", c.caFile)
         .S("mapDir", c.mapDir)
         .N("protocol", c.protocolV1 ? 1 : 0)

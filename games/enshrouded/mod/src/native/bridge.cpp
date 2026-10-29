@@ -106,6 +106,7 @@ Bridge::Bridge(BridgeOptions o) : o_(std::move(o)), tailer_(o_.config.logFile) {
                 .count();
         };
     if (!o_.newStreamId) o_.newStreamId = RandomStreamId;
+    serverChatName_ = o_.config.serverChatName;
 }
 
 Bridge::~Bridge() { Stop(); }
@@ -174,6 +175,11 @@ void Bridge::Reconfigure(const LiveSettings& s, bool connect) {
         pendingConnect_ = connect;
     }
     cv_.notify_one();
+}
+
+void Bridge::SetServerChatName(const std::string& name) {
+    std::lock_guard<std::mutex> g(mu_);
+    serverChatName_ = name;
 }
 
 void Bridge::ApplyPendingSettings() {
@@ -602,6 +608,12 @@ void Bridge::SendResponse(uint64_t epoch, FrameKind kind, const std::string& fra
 // ------------------------------------------------------------------------------------------------ actions
 
 std::shared_ptr<const ActionView> Bridge::View() {
+    std::string chatName;
+    {
+        std::lock_guard<std::mutex> g(mu_);
+        chatName = serverChatName_;
+    }
+    if (view_ && view_->serverChatName != chatName) viewDirty_ = true;
     if (viewDirty_ || !view_) {
         auto v = std::make_shared<ActionView>();
         for (auto& k : o_.store->Known()) {
@@ -615,6 +627,7 @@ std::shared_ptr<const ActionView> Bridge::View() {
         v->timedBans = o_.store->TimedBans();
         v->banStoreError = o_.store->BanStoreError();
         v->mapDir = o_.config.mapDir;
+        v->serverChatName = chatName;
         view_ = v;
         viewDirty_ = false;
     }
@@ -1214,6 +1227,7 @@ void Bridge::Publish() {
     {
         std::lock_guard<std::mutex> g(mu_);
         overflows = noticeOverflows_;
+        o_.config.serverChatName = serverChatName_;  // health shows the name the next action uses
     }
     std::string state = !open_ ? "connecting" : identified_ ? "identified" : identifyHeld_ ? "waiting-for-game" : "open";
     std::string h = ObjBuilder()
