@@ -304,10 +304,12 @@ claim safehouses. Full per-capability evidence lives in the campaign docs under
 unset. The config value is re-read on every message, so a hot-reloaded file applies at once.
 
 - **A name resolves:** `Pz.sendGeneralChat` sends a General chat message whose author field is the
-  name, so the client prints it as the sender (`[General][<name>]: <message>`), globally or to the
-  one recipient's connection. Server chat cannot do this: its client-side settings hide the author.
-  The message goes to `GeneralChat` directly, past `ChatServer.sendMessage`, so the chat-message
-  hook never sees it (no echo).
+  name, so the client prints it as the sender (`[<name>]: <message>`; `[General]` in front when the
+  player shows chat titles), globally or to the one recipient's connection. Server chat cannot do
+  this: its client-side settings hide the author. It goes to each member's connection with
+  `GeneralChat.sendMessageToPlayer`: `sendMessageToChatMembers` drops a message whose author is not
+  an online player, and `ChatServer.sendMessage` would run the chat-message hook (an echo) and,
+  with the game's own Discord bot on, post it there too.
 - **General chat turned off on the server, or no name:** server chat as before, with the text
   `<name>: <message>` from `ServerChatName.render`; without a name the PZ server name
   (`GameServer.serverName`), else `"Server"`, stands in, exactly as earlier releases did.

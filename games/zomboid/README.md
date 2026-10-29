@@ -97,7 +97,7 @@ debugCatalog=false
 
 **Server chat name (optional).** Messages from Takaro (module replies, the Discord bridge,
 broadcasts) show the chat name set for your server in Takaro as their sender, as a General chat
-line `[General][Your Name]: message`, to everyone or, for a whisper, to that one player. On a
+line `[Your Name]: message`, to everyone or, for a whisper, to that one player. On a
 Takaro version that does not pass that name to the connector yet, put it after `serverChatName=`
 instead; the name set in Takaro wins over it, and a change applies to the next message without a
 restart. With neither (or with General chat turned off on the server) messages arrive as server
