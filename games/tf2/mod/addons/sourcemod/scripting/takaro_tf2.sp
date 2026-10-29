@@ -42,6 +42,11 @@ ConVar g_CvarShutdownEnabled;
 ConVar g_CvarProtocol;
 ConVar g_CvarServerChatName;
 
+// A say waiting for the game to deliver it (see ConfirmsPlayerChat); saidAt < 0 means none.
+char g_PendingChatText[MAXPLAYERS + 1][512];
+bool g_PendingChatTeam[MAXPLAYERS + 1];
+float g_PendingChatAt[MAXPLAYERS + 1] = {-1.0, ...};
+
 WebSocket g_WebSocket = null;
 StringMap g_PlayerSteamIds = null;
 StringMap g_PlayerNames = null;
@@ -108,6 +113,7 @@ public void OnPluginStart()
 
   AddCommandListener(Command_Say, "say");
   AddCommandListener(Command_TeamSay, "say_team");
+  HookUserMessage(GetUserMessageId("SayText2"), UserMsg_SayText2);
   HookEvent("player_death", Event_PlayerDeath, EventHookMode_Post);
   HookEvent("object_destroyed", Event_ObjectDestroyed, EventHookMode_Post);
   HookEvent("teamplay_round_start", Event_RoundStart, EventHookMode_PostNoCopy);
@@ -204,6 +210,8 @@ void EmitPlayerConnected(int client)
 
 public void OnClientDisconnect(int client)
 {
+  g_PendingChatAt[client] = -1.0;
+
   char key[16];
   ClientKey(client, key, sizeof(key));
 
@@ -255,6 +263,60 @@ Action HandleChatCommand(int client, bool teamOnly)
     return Plugin_Continue;
   }
 
+  // Bots get no SayText2 when no human can read them; report their chat as before.
+  if (IsFakeClient(client)) {
+    EmitChatMessage(client, teamOnly, text);
+    return Plugin_Continue;
+  }
+
+  // Report the chat only once the game delivers it: a rate-limited or plugin-blocked say never does.
+  strcopy(g_PendingChatText[client], sizeof(g_PendingChatText[]), text);
+  g_PendingChatTeam[client] = teamOnly;
+  g_PendingChatAt[client] = GetEngineTime();
+  return Plugin_Continue;
+}
+
+public Action UserMsg_SayText2(UserMsg msgId, BfRead msg, const int[] players, int playersNum, bool reliable, bool init)
+{
+  int author = msg.ReadByte();
+  if (author <= 0 || author > MaxClients || g_PendingChatAt[author] < 0.0) {
+    return Plugin_Continue;
+  }
+
+  msg.ReadByte();
+  char format[64];
+  msg.ReadString(format, sizeof(format));
+  if (!ConfirmsPlayerChat(format, g_PendingChatAt[author], GetEngineTime())) {
+    return Plugin_Continue;
+  }
+
+  // One SayText2 goes to each recipient; the first one confirms, the rest find nothing pending.
+  // No events from inside a user message hook: emit on the next frame.
+  DataPack pack = new DataPack();
+  pack.WriteCell(GetClientUserId(author));
+  pack.WriteCell(g_PendingChatTeam[author]);
+  pack.WriteString(g_PendingChatText[author]);
+  g_PendingChatAt[author] = -1.0;
+  RequestFrame(Frame_EmitDeliveredChat, pack);
+  return Plugin_Continue;
+}
+
+void Frame_EmitDeliveredChat(DataPack pack)
+{
+  pack.Reset();
+  int client = GetClientOfUserId(pack.ReadCell());
+  bool teamOnly = pack.ReadCell();
+  char text[512];
+  pack.ReadString(text, sizeof(text));
+  delete pack;
+
+  if (IsTakaroClient(client)) {
+    EmitChatMessage(client, teamOnly, text);
+  }
+}
+
+void EmitChatMessage(int client, bool teamOnly, const char[] text)
+{
   JSONObject player = BuildPlayerObject(client);
   JSONObject data = new JSONObject();
   data.Set("player", player);
@@ -267,8 +329,6 @@ Action HandleChatCommand(int client, bool teamOnly)
   EmitGameEvent("chat-message", data);
   delete data;
   delete player;
-
-  return Plugin_Continue;
 }
 
 void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)

@@ -82,6 +82,14 @@ public void OnPluginStart()
   ExpectRendered("override name renders", "Admin", "MyServer", "hello", "\x04[Admin]\x01 hello");
   ExpectRendered("percent signs are kept", "", "100% Fun", "50% off", "\x04[100% Fun]\x01 50% off");
 
+  // Player chat counts once the game sends its SayText2 shortly after the say.
+  ExpectBool("all chat confirms", ConfirmsPlayerChat("TF_Chat_All", 10.0, 10.0), true);
+  ExpectBool("team chat a frame later confirms", ConfirmsPlayerChat("TF_Chat_Team", 10.0, 10.02), true);
+  ExpectBool("dead chat confirms", ConfirmsPlayerChat("TF_Chat_AllDead", 10.0, 10.5), true);
+  ExpectBool("engine notice does not confirm", ConfirmsPlayerChat("#TF_Name_Change", 10.0, 10.0), false);
+  ExpectBool("late SayText2 does not confirm", ConfirmsPlayerChat("TF_Chat_All", 10.0, 11.5), false);
+  ExpectBool("nothing pending does not confirm", ConfirmsPlayerChat("TF_Chat_All", -1.0, 10.0), false);
+
   if (g_Failed == 0) {
     Report("takaro_tf2_chat_test: PASS %d", g_Passed);
   } else {

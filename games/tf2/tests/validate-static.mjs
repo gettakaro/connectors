@@ -125,6 +125,11 @@ assert(plugin.includes('data.SetString("msg", text)'), "chat-message events must
 assert(!plugin.includes('data.SetString("message", text)'), "chat-message events must not include payload.message because EventChatMessage only accepts msg");
 assert(!plugin.includes('data.SetBool("teamOnly"'), "chat-message events must not include payload.teamOnly because EventChatMessage only accepts channel/player/recipient/msg");
 assert(plugin.includes('data.SetString("channel"'), "chat-message events must include data.channel");
+assert(plugin.includes('HookUserMessage(GetUserMessageId("SayText2"), UserMsg_SayText2)') && plugin.includes("ConfirmsPlayerChat(format"), "player chat-message events must wait for the game's SayText2, so rate-limited or blocked chat is not reported");
+{
+  const handler = plugin.slice(plugin.indexOf("Action HandleChatCommand("), plugin.indexOf("public Action UserMsg_SayText2("));
+  assert((handler.match(/EmitChatMessage\(/g) || []).length === 1 && handler.includes("if (IsFakeClient(client)) {\n    EmitChatMessage("), "the say listener emits directly only for bots");
+}
 assert(plugin.includes("IsCommandAllowed"), "plugin must enforce a command allowlist");
 assert(plugin.includes("takaro_tf2_shutdown_enabled") && plugin.includes("ServerCommand(\"quit\")"), "shutdown must be cvar-gated");
 assert(plugin.includes("GetClientAuthId(client, AuthId_SteamID64"), "plugin must use SteamID64 identity mapping");
