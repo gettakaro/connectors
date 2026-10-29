@@ -517,6 +517,7 @@ bool Engine::SuppressRingConnection(const std::string& type) const{
 }
 NativePersistence::Result Engine::ObserveAdmitted(const MappedEvent& e){
     if(!e.valid)return {false,e.error};if(e.type!="player-connected"&&e.type!="player-disconnected")return {true,{}};
+    onlineMisses_.erase(StripPlatform(e.playerId)); // a join or leave starts the miss count over
     auto v=std::make_shared<View>(*view_);
     v->onlinePlayersJson=store_.Current().derivedOnlineJson;
     v->knownPlayersJson=store_.Current().derivedKnownJson;
@@ -727,7 +728,9 @@ NativePersistence::Result Engine::ReconcileBanIntents(const std::string& verific
     }
     return {true,{}};
 }
-std::vector<MappedEvent> Engine::ReconcileOnline(const std::string& liveJson,const std::string& bootId){std::vector<MappedEvent> out;Json live=Array(Parse(liveJson));for(auto& p:Array(Parse(view_->onlinePlayersJson))){std::string id=Str(Object(p),"gameId");bool found=false;for(auto& q:live)if(Str(Object(q),"gameId")==id){found=true;break;}if(!found){Json row={{"seq",0},{"bootId",bootId},{"type","player-disconnected"},{"data",{{"player",p}}},{"ts",IsoNowUtc()}};out.push_back(MapEvent(row.dump()));}}return out;}
+// A player missing from one live sample is not proof of a leave (a stray disconnect right after a
+// join was seen in testing), so a disconnect is synthesized only on the second miss in a row.
+std::vector<MappedEvent> Engine::ReconcileOnline(const std::string& liveJson,const std::string& bootId){std::vector<MappedEvent> out;std::map<std::string,int> misses;Json live=Array(Parse(liveJson));for(auto& p:Array(Parse(view_->onlinePlayersJson))){std::string id=Str(Object(p),"gameId");bool found=false;for(auto& q:live)if(Str(Object(q),"gameId")==id){found=true;break;}if(found)continue;auto seen=onlineMisses_.find(id);int n=misses[id]=(seen==onlineMisses_.end()?0:seen->second)+1;if(n<2)continue;Json row={{"seq",0},{"bootId",bootId},{"type","player-disconnected"},{"data",{{"player",p}}},{"ts",IsoNowUtc()}};out.push_back(MapEvent(row.dump()));}onlineMisses_.swap(misses);return out;}
 std::vector<MappedEvent> Engine::OnRawLogLine(const std::string& line){std::vector<MappedEvent> out;for(auto& p:log_->parser.Feed(line)){Json row={{"seq",0},{"type",p.type},{"data",Parse(p.dataJson)},{"ts",IsoNowUtc()}};out.push_back(MapEvent(row.dump()));}return out;}
 bool Engine::CustomLogJoin() const{return log_->parser.CustomJoin();}
 bool Engine::CustomLogChat() const{return log_->parser.CustomChat();}

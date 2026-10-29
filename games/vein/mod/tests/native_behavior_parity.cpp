@@ -155,6 +155,16 @@ int main(){
             auto o=NativeBehavior::Engine::ExecuteAction(p);Check(o.errorText.empty(),"uncached join-window location: "+o.errorText);return Parse(o.payloadJson);};
         Check(locate(1).is_null(),"v1: no cached position in the join window answers null, never a fake (0,0,0)");
         Check(locate(0)==Json{{"x",0},{"y",0},{"z",0},{"dimension",NativeMap::kDimensionId}},"v0: no cached position keeps the (0,0,0) placeholder");
+        const std::string withBoth=Json::array({Json{{"gameId",id}},Json{{"gameId",fresh}}}).dump();
+        const std::string withoutFresh=Json::array({Json{{"gameId",id}}}).dump();
+        Check(engine.ReconcileOnline(withoutFresh,"boot").empty(),"one reconciliation miss is not a leave");
+        Check(engine.ReconcileOnline(withBoth,"boot").empty(),"seen live again: the miss is forgotten");
+        Check(engine.ReconcileOnline(withoutFresh,"boot").empty(),"a new single miss is still not a leave");
+        auto gone=engine.ReconcileOnline(withoutFresh,"boot");
+        Check(gone.size()==1&&gone[0].valid&&gone[0].type=="player-disconnected"&&gone[0].playerId==fresh,"second miss in a row synthesizes the disconnect");
+        auto rejoin=engine.MapEvent(Json{{"seq",3},{"type","player-connected"},{"data",{{"player",{{"gameId",fresh},{"name","F"}}}}}}.dump());
+        Check(store.AdmitSynthetic(rejoin.frame)&&engine.ObserveAdmitted(rejoin),"rejoin admitted");
+        Check(engine.ReconcileOnline(withoutFresh,"boot").empty(),"a join starts the miss count over");
     }
     noPawn=false;
     auto inv=run("getPlayerInventory",Json{{"gameId",id}});Check(inv.size()==2&&inv[0]["amount"]==2&&inv[0]["name"]=="Meal","inventory aggregation");
