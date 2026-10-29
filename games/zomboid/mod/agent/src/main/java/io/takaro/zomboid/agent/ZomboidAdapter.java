@@ -220,9 +220,11 @@ public final class ZomboidAdapter implements GameAdapter {
     public void sendMessage(String message, String senderName, String recipientGameId) {
         String recipient = recipientGameId == null || recipientGameId.isEmpty() ? null : recipientGameId;
         if (senderName != null && Pz.sendGeneralChat(senderName, message, recipient)) {
+            logDebug("sendMessage: General chat from " + senderName);
             return;
         }
         String text = ServerChatName.render(senderName, getServerName(), message);
+        logDebug("sendMessage: server chat \"" + text + "\"");
         if (recipient == null) {
             Pz.sendMessageGlobal(text);
         } else if (!Pz.sendMessageTo(recipient, text)) {
