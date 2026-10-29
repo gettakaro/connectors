@@ -116,6 +116,8 @@
     <Compile Include="src\Services\PrismaCoreConflict.cs" />
     <Compile Include="src\Services\MapCatalog.cs" />
     <Compile Include="src\Services\ServerMessageEchoGuard.cs" />
+    <Compile Include="src\Services\ServerChat.cs" />
+    <Compile Include="src\Services\ServerChatName.cs" />
     <Compile Include="src\Services\PositionSampler.cs" />
     <Compile Include="src\Services\StateMirror.cs" />
     <Compile Include="src\WebSocket\ActionHandlers.cs" />

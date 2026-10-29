@@ -88,6 +88,10 @@ it yourself before the first start with this content:
 
   IdentityToken identifies this server in Takaro; the mod fills it in when it
   is empty. Keep it if you move or reinstall the server.
+
+  ServerChatName is the sender players see on messages from Takaro, instead
+  of "Server". The chat name set in Takaro wins over it; leave both empty
+  for "Server".
 -->
 <Takaro>
   <WebSocket>
@@ -97,6 +101,9 @@ it yourself before the first start with this content:
     <Enabled>true</Enabled>
     <ReconnectIntervalSeconds>30</ReconnectIntervalSeconds>
   </WebSocket>
+  <Chat>
+    <ServerChatName></ServerChatName>
+  </Chat>
 </Takaro>
 ```
 
@@ -106,6 +113,14 @@ server in Takaro (unless you are migrating an existing game server, see [MIGRATI
 
 Saving is enough: the connector checks the file every few seconds and connects as soon as it has a
 token. No restart needed. Emptying the token disconnects the server.
+
+**Server chat name (optional).** Messages from Takaro (module replies, the Discord bridge,
+broadcasts) show **Server** as the sender. To show a name of your own, set the server's chat name
+in Takaro. On a Takaro version that does not pass that name to the connector yet, put it in
+`<ServerChatName>` instead; a file from an older connector version has no `<Chat>` section, so add
+it as above. The chat name set in Takaro wins over `ServerChatName`. The change applies within a
+few seconds, without a restart. Players then see `Your Name: message` in global chat and
+`From Your Name: message` in a whisper.
 
 **Map (optional).** For the world map in Takaro, turn on the game's own map rendering in
 `serverconfig.xml` and restart the server:

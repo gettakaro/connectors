@@ -107,7 +107,9 @@ Action requests (main-thread dispatched, `mod/src/WebSocket/ActionHandlers.cs`):
 - **`giveItem`** — Live-supported; combined direct and exact-current-build proof
   covers the Takaro-owned first-party world drop, exact vanilla pickup
   quantity, correlated readback, and full-inventory refusal on V3.0.1
-- **`sendMessage`** — Live-supported; global and recipient branches are visible in the vanilla client
+- **`sendMessage`** — Live-supported; global and recipient branches are visible in the vanilla client.
+  The sender is `opts.senderNameOverride`, else Config.xml `ServerChatName`, else the game's "Server"
+  (`ServerChatName.cs` resolves and renders, `ServerChat.cs` sends)
 - **`executeConsoleCommand`** — Live-supported; valid output remains successful,
   while unknown commands and V3 invalid-argument output preserve `rawResult`
   and return a bounded failure
@@ -175,6 +177,8 @@ mod/src/
 │   ├── ProtocolDiagnostics.cs   # bounded Takaro error diagnostics
 │   ├── PlayerLocationReadWindow.cs # bounded post-disconnect location access
 │   ├── ServerMessageEchoGuard.cs # bounded one-shot native chat echo guard
+│   ├── ServerChatName.cs       # game-free chat sender name resolution and rendering
+│   ├── ServerChat.cs           # sends server chat (global, whisper) with that name
 │   ├── PlayerIdResolver.cs     # game-free player-id resolution and the game's failure lines
 │   ├── PrismaCoreConflict.cs   # one warning when a PrismaCore mod is loaded
 │   ├── StateMirror.cs          # Mirror reads (WS thread) + snapshot writes (main thread)

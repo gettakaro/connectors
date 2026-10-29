@@ -110,10 +110,18 @@ class SourceRegressionTests(unittest.TestCase):
         send_message = actions.split(
             "public static async Task SendChatMessage", 1
         )[1].split("public static async Task ExecuteCommand", 1)[0]
-        self.assertIn("ServerMessageEchoGuard.Instance.Record(renderedMessage)", send_message)
+        self.assertIn("ServerChat.SendGlobal(", send_message)
+        self.assertIn("ServerChat.SendWhisper(", send_message)
+        self.assertNotIn("ChatMessageServer", send_message)
+
+        server_chat = self.source("src/Services/ServerChat.cs")
+        send_global = server_chat.split("public static void SendGlobal", 1)[1].split(
+            "public static void SendWhisper", 1
+        )[0]
+        self.assertIn("ServerMessageEchoGuard.Instance.Record(rendered)", send_global)
         self.assertLess(
-            send_message.index("ServerMessageEchoGuard.Instance.Record(renderedMessage)"),
-            send_message.index("GameManager.Instance.ChatMessageServer"),
+            send_global.index("ServerMessageEchoGuard.Instance.Record(rendered)"),
+            send_global.index("GameManager.Instance.ChatMessageServer"),
         )
 
     def test_lifecycle_events_use_stable_v3_server_owned_hooks(self):

@@ -14,6 +14,7 @@ namespace Takaro.Config
         public string IdentityToken = "";
         public bool Enabled = true;
         public int ReconnectIntervalSeconds = ConfigFiles.DefaultReconnectIntervalSeconds;
+        public string ServerChatName = "";
 
         public bool SameConnection(ConfigValues other)
         {
@@ -44,7 +45,11 @@ namespace Takaro.Config
             + "  seconds, no restart needed.\n"
             + "\n"
             + "  IdentityToken identifies this server in Takaro; the mod fills it in when it\n"
-            + "  is empty. Keep it if you move or reinstall the server.\n";
+            + "  is empty. Keep it if you move or reinstall the server.\n"
+            + "\n"
+            + "  ServerChatName is the sender players see on messages from Takaro, instead\n"
+            + "  of \"Server\". The chat name set in Takaro wins over it; leave both empty\n"
+            + "  for \"Server\".\n";
 
         /// <summary>
         /// Reads the config, creating it when it is missing and writing a new
@@ -101,6 +106,9 @@ namespace Takaro.Config
             var doc = new XmlDocument();
             doc.Load(path);
             var values = new ConfigValues();
+            XmlNode chat = doc.DocumentElement?.SelectSingleNode("Chat");
+            if (chat != null)
+                values.ServerChatName = Text(chat, "ServerChatName");
             XmlNode webSocket = doc.DocumentElement?.SelectSingleNode("WebSocket");
             if (webSocket == null)
                 return values;
@@ -134,6 +142,9 @@ namespace Takaro.Config
                 + Element("Enabled", values.Enabled ? "true" : "false")
                 + Element("ReconnectIntervalSeconds", values.ReconnectIntervalSeconds.ToString())
                 + "  </WebSocket>\n"
+                + "  <Chat>\n"
+                + Element("ServerChatName", values.ServerChatName)
+                + "  </Chat>\n"
                 + "</Takaro>\n";
         }
 
