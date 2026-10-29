@@ -250,7 +250,11 @@ int main() {
         Check(sender(nullptr, nullptr, "ServerName", nullptr) == "ServerName", "server name fallback");
         Check(sender(nullptr, nullptr, nullptr, nullptr) == "Dragonwilds", "default server name");
         Check(sender("", nullptr, nullptr, {{"senderNameOverride", ""}}) == "Dragonwilds", "empty values fall through");
+        Check(sender("Sender", nullptr, "ServerName", {{"senderNameOverride", " \t "}}) == "Sender",
+              "whitespace override falls through");
+        Check(sender("  ", "Alias", "ServerName", nullptr) == "Alias", "whitespace sender name falls through to the alias");
         unsetenv("TAKARO_SENDER_NAME");
+        unsetenv("TAKARO_SERVER_CHAT_NAME");
         unsetenv("TAKARO_SERVER_NAME");
         h.Open();
 
