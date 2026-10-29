@@ -11,6 +11,7 @@ M.DEFAULTS = {
   IDENTITY_TOKEN = "",
   REGISTRATION_TOKEN = "",
   SERVER_NAME = "SCUM server",
+  SERVER_CHAT_NAME = "",
   ENABLE_DESTRUCTIVE_COMMANDS = "false",
   COMMAND_ALLOWLIST = "",
   LOG_FRAMES = "false",
@@ -30,6 +31,8 @@ REGISTRATION_TOKEN=
 IDENTITY_TOKEN=
 # Name shown in Takaro.
 SERVER_NAME=SCUM server
+# Sender name in front of messages from Takaro ("Name: message"). The chat name set in Takaro wins; empty = no name.
+SERVER_CHAT_NAME=
 # Allow Takaro to shut the server down (shutdown action). true/false.
 ENABLE_DESTRUCTIVE_COMMANDS=false
 # Comma-separated console commands Takaro may run (first word, without '#'), e.g. announce,listplayers
@@ -83,6 +86,7 @@ function M.build(raw)
     identityToken = v.IDENTITY_TOKEN,
     registrationToken = v.REGISTRATION_TOKEN,
     serverName = v.SERVER_NAME ~= "" and v.SERVER_NAME or M.DEFAULTS.SERVER_NAME,
+    serverChatName = v.SERVER_CHAT_NAME,
     destructive = bool(v.ENABLE_DESTRUCTIVE_COMMANDS),
     allowlist = M.allowlist_set(v.COMMAND_ALLOWLIST),
     logFrames = bool(v.LOG_FRAMES),
@@ -112,9 +116,9 @@ function M.describe(cfg)
   for k in pairs(cfg.allowlist) do allow[#allow + 1] = k end
   table.sort(allow)
   return string.format(
-    "url=%s serverName=%q registrationToken=%s identityToken=%s destructive=%s allowlist=[%s] logFrames=%s caFile=%s "
-      .. "protocol=%s",
-    cfg.url, cfg.serverName, cfg.registrationToken ~= "" and "set" or "MISSING",
+    "url=%s serverName=%q serverChatName=%q registrationToken=%s identityToken=%s destructive=%s allowlist=[%s] "
+      .. "logFrames=%s caFile=%s protocol=%s",
+    cfg.url, cfg.serverName, cfg.serverChatName, cfg.registrationToken ~= "" and "set" or "MISSING",
     cfg.identityToken ~= "" and "set" or "generated", tostring(cfg.destructive), table.concat(allow, ","),
     tostring(cfg.logFrames), cfg.caFile ~= "" and "set" or "system", cfg.protocol == 0 and "0" or "[0,1]")
 end
