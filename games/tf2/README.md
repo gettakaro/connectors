@@ -31,7 +31,7 @@ Tested on 2026-10-18 to 2026-10-20 with a real Steam client on TF2 server versio
 | Shut down the server | ⚠️ | Off by default; turn it on with `takaro_tf2_shutdown_enabled 1`. |
 | World map | ❌ | TF2 has no map tiles. |
 | Player joined / left | ✅ | |
-| Chat messages | ✅ | All chat as "global", team chat as "team". |
+| Chat messages | ✅ | All chat as "global", team chat as "team". Only lines players actually see: chat TF2 or a plugin blocks (spam limit, gag) is not reported. |
 | Player death | ✅ | With the killer and the position. |
 | Building destroyed | ✅ | Sentry gun, dispenser and teleporter kills, with the weapon. |
 | Server log lines | ⚠️ | Sent; Takaro does not store them, but module hooks can react to them. |

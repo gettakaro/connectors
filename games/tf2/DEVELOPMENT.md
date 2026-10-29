@@ -97,6 +97,11 @@ item (code = item definition index) to `takaro_tf2_item_catalog.inc`.
   `opts.senderNameOverride`, then `takaro_tf2_server_chat_name`, then `Takaro` (`ResolveServerChatName`).
   The output goes through `PrintToChat`/`PrintToChatAll`, which never reaches the `say` listeners, so it
   cannot echo back as `chat-message`.
+- `chat-message` is emitted only for chat the game delivers: the `say`/`say_team` listener records the
+  line, and the event follows once the game sends that player's `SayText2` (within a second, so chat
+  plugins that re-send it a frame later still count). Chat dropped by TF2's rate limit
+  (`sv_chat_bucket_size_tier*`, `sv_chat_seconds_per_msg_tier`), antiflood or a gag is not reported.
+  Bot chat is reported straight from the listener.
 - `sendMessage` with `opts.recipient` reaches only that player and answers `not_found` when the
   player is not online; Takaro may send the args as a JSON string, so both forms are read.
 - `getPlayerInventory` lists the equipped weapons; `giveItem` answers a structured unsupported error.
