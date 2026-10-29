@@ -5,6 +5,7 @@
 #include <websocket>
 
 #include "takaro_tf2_item_catalog.inc"
+#include "takaro_tf2_chat.inc"
 
 #pragma semicolon 1
 #pragma newdecls required
@@ -39,6 +40,7 @@ ConVar g_CvarCommandAllowlistExact;
 ConVar g_CvarCommandAllowlistPrefixes;
 ConVar g_CvarShutdownEnabled;
 ConVar g_CvarProtocol;
+ConVar g_CvarServerChatName;
 
 WebSocket g_WebSocket = null;
 StringMap g_PlayerSteamIds = null;
@@ -89,6 +91,7 @@ public void OnPluginStart()
   g_CvarCommandAllowlistPrefixes = CreateConVar("takaro_tf2_command_allowlist_prefixes", "", "Semicolon-separated command prefixes allowed for executeConsoleCommand.");
   g_CvarShutdownEnabled = CreateConVar("takaro_tf2_shutdown_enabled", "0", "Allow Takaro shutdown to execute the quit command.");
   g_CvarProtocol = CreateConVar("takaro_tf2_protocol", "1", "Highest Takaro Generic Protocol version to offer (0 or 1).", _, true, 0.0, true, 1.0);
+  g_CvarServerChatName = CreateConVar("takaro_tf2_server_chat_name", "", "Sender name for Takaro messages when Takaro sends none. Empty keeps [Takaro].");
 
   AutoExecConfig(true, "takaro_tf2");
 
@@ -690,10 +693,14 @@ void HandleSendMessage(const char[] requestId, const JSON request)
     return;
   }
 
-  char senderName[64];
-  if (!ExtractSenderNameOverride(request, senderName, sizeof(senderName))) {
-    strcopy(senderName, sizeof(senderName), "Takaro");
-  }
+  char senderNameOverride[MAX_SERVER_CHAT_NAME_LENGTH];
+  ExtractSenderNameOverride(request, senderNameOverride, sizeof(senderNameOverride));
+  char configuredName[MAX_SERVER_CHAT_NAME_LENGTH];
+  g_CvarServerChatName.GetString(configuredName, sizeof(configuredName));
+  char senderName[MAX_SERVER_CHAT_NAME_LENGTH];
+  ResolveServerChatName(senderNameOverride, configuredName, senderName, sizeof(senderName));
+  char line[640];
+  FormatServerChatMessage(senderName, message, line, sizeof(line));
 
   int recipient = ResolveRecipientFromRequest(request);
   if (recipient < 0) {
@@ -702,9 +709,9 @@ void HandleSendMessage(const char[] requestId, const JSON request)
     return;
   }
   if (recipient > 0) {
-    PrintToChat(recipient, "\x04[%s]\x01 %s", senderName, message);
+    PrintToChat(recipient, "%s", line);
   } else {
-    PrintToChatAll("\x04[%s]\x01 %s", senderName, message);
+    PrintToChatAll("%s", line);
   }
 
   RespondNull(requestId);

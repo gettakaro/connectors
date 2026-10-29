@@ -12,11 +12,13 @@ and SourceMod 1.13 are installed by the operator.
 | Path | What it is |
 |---|---|
 | `mod/addons/sourcemod/scripting/takaro_tf2.sp` | The plugin: Takaro protocol (v0 and v1 with event acks), game adapter, cvars. |
+| `mod/addons/sourcemod/scripting/takaro_tf2_chat.inc` | Server chat name resolution and the one renderer for Takaro chat lines. |
 | `mod/addons/sourcemod/scripting/takaro_tf2_item_catalog.inc` | Generated weapon catalog for `listItems` (item definition index, in-game name). |
 | `mod/cfg/sourcemod/takaro_tf2.cfg` | The config template shipped in the zip (no secrets). |
 | `scripts/build-release.sh` | Release build for one catalog target. |
 | `scripts/generate-tf2-item-catalog.mjs` | Regenerates the item catalog from the TF2 item schema. |
 | `scripts/run-live-smoke.sh` | Boots a local srcds against the fake Takaro in `tests/live-harness.mjs`. |
+| `tests/takaro_tf2_chat_test.sp` | Unit tests for `takaro_tf2_chat.inc`, run as a plugin on a SourceMod server. |
 | `tests/validate-static.mjs` | Source-level contract checks (actions, events, cvars, wire shapes, `capabilities.json`). |
 | `capabilities.json` | What each Takaro action and event does on TF2. |
 
@@ -47,6 +49,12 @@ the tracked `#define PLUGIN_VERSION` line current.
 ```bash
 node games/tf2/tests/validate-static.mjs
 ```
+
+The build also compiles `tests/takaro_tf2_chat_test.sp` (never shipped) to
+`_data/build/stage-<fp16>/out/takaro_tf2_chat_test.smx`. Copy it into any SourceMod server's
+`addons/sourcemod/plugins/` and run `sm plugins load takaro_tf2_chat_test`: it prints
+`takaro_tf2_chat_test: PASS <n>` (or one `FAIL` line per broken case) to the server console and the
+SourceMod log, then unloads itself.
 
 `run-live-smoke.sh` needs a local TF2 dedicated server with MetaMod:Source 1.12 and SourceMod 1.13
 installed, and the `ws` npm package for the fake Takaro:
@@ -85,6 +93,10 @@ item (code = item definition index) to `takaro_tf2_item_catalog.inc`.
 - `executeConsoleCommand` runs only commands in `takaro_tf2_command_allowlist_exact` or starting
   with a prefix in `takaro_tf2_command_allowlist_prefixes`. `shutdown` (and the `server.shutdown`
   capability on protocol v1) exists only when `takaro_tf2_shutdown_enabled` is `1`.
+- `sendMessage` renders `[<sender>] <message>` through `FormatServerChatMessage`; the sender is
+  `opts.senderNameOverride`, then `takaro_tf2_server_chat_name`, then `Takaro` (`ResolveServerChatName`).
+  The output goes through `PrintToChat`/`PrintToChatAll`, which never reaches the `say` listeners, so it
+  cannot echo back as `chat-message`.
 - `sendMessage` with `opts.recipient` reaches only that player and answers `not_found` when the
   player is not online; Takaro may send the args as a JSON string, so both forms are read.
 - `getPlayerInventory` lists the equipped weapons; `giveItem` answers a structured unsupported error.
