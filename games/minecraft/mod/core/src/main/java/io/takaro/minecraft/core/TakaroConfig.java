@@ -21,6 +21,7 @@ public class TakaroConfig {
     private volatile boolean debugEnabled = false;
     private volatile String targetPolicy = "enforce";
     private volatile boolean mapEnabled = false;
+    private volatile String serverChatName = "";
 
     public String getWsUrl() { return wsUrl; }
     public void setWsUrl(String wsUrl) { this.wsUrl = wsUrl; }
@@ -57,6 +58,15 @@ public class TakaroConfig {
     public boolean isMapEnabled() { return mapEnabled; }
     public void setMapEnabled(boolean mapEnabled) { this.mapEnabled = mapEnabled; }
 
+    /**
+     * The sender name for Takaro's messages when Takaro sends none of its own. Empty means no
+     * sender. A change applies to the next message, without a reconnect.
+     */
+    public String getServerChatName() { return serverChatName; }
+    public void setServerChatName(String serverChatName) {
+        this.serverChatName = serverChatName == null ? "" : serverChatName;
+    }
+
     public void applyEnvOverrides() {
         applyEnvOverrides(System::getenv);
     }
@@ -87,6 +97,10 @@ public class TakaroConfig {
         if (mapEnv != null && !mapEnv.isEmpty()) {
             this.mapEnabled = "true".equalsIgnoreCase(mapEnv) || "1".equals(mapEnv);
         }
+        String chatNameEnv = env.apply("TAKARO_SERVER_CHAT_NAME");
+        if (chatNameEnv != null && !chatNameEnv.isEmpty()) {
+            this.serverChatName = chatNameEnv;
+        }
     }
 
     /** True when switching from this config to {@code other} needs a new connection. */
@@ -104,7 +118,8 @@ public class TakaroConfig {
                 && reconnectDelay == other.reconnectDelay
                 && maxReconnectDelay == other.maxReconnectDelay
                 && backoffMultiplier == other.backoffMultiplier
-                && debugEnabled == other.debugEnabled;
+                && debugEnabled == other.debugEnabled
+                && Objects.equals(serverChatName, other.serverChatName);
     }
 
     public void copyFrom(TakaroConfig other) {
@@ -118,5 +133,6 @@ public class TakaroConfig {
         debugEnabled = other.debugEnabled;
         targetPolicy = other.targetPolicy;
         mapEnabled = other.mapEnabled;
+        serverChatName = other.serverChatName;
     }
 }

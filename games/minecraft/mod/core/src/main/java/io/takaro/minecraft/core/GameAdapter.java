@@ -28,7 +28,8 @@ public interface GameAdapter {
     // not in the world and IllegalArgumentException for an item the game does not know, so Takaro
     // never records a delivery or a teleport that did not happen.
     void giveItem(String gameId, String itemCode, int amount, String quality);
-    void sendMessage(String message, String recipientGameId);
+    // Render the line with ChatLine's translation key and style; recipientGameId null = everyone.
+    void sendMessage(ChatLine line, String recipientGameId);
     CommandResult executeConsoleCommand(String command);
     void teleportPlayer(String gameId, double x, double y, double z, String dimension);
     void kickPlayer(String gameId, String reason);

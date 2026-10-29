@@ -806,14 +806,17 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     private void handleSendMessage(JsonObject args) {
         String message = optString(args, "message", "");
         String recipientGameId = null;
+        String senderOverride = null;
         JsonObject opts = optObject(args, "opts");
         if (opts != null) {
             JsonObject recipient = optObject(opts, "recipient");
             if (recipient != null) {
                 recipientGameId = optString(recipient, "gameId", null);
             }
+            senderOverride = optString(opts, "senderNameOverride", null);
         }
-        adapter.sendMessage(message, recipientGameId);
+        adapter.sendMessage(ServerChat.line(message, recipientGameId, senderOverride, config.getServerChatName()),
+                recipientGameId);
     }
 
     private void handleTeleportPlayer(JsonObject args) {

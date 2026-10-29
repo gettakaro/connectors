@@ -183,6 +183,7 @@ Environment variables override file-based config when set:
 | `TAKARO_REGISTRATION_TOKEN` | Registration token from the Takaro dashboard |
 | `TAKARO_DEBUG` | Enable debug logging (`true` or `1`) — shows raw WebSocket messages |
 | `TAKARO_TARGET_POLICY` | `enforce` (default), `warn` or `off` — the build-target check |
+| `TAKARO_SERVER_CHAT_NAME` | Sender name on Takaro's messages when Takaro sends no `senderNameOverride` |
 
 In Docker Compose, these are passed to containers automatically from your `.env` file. Each
 container gets a hardcoded `TAKARO_IDENTITY_TOKEN` (e.g. `takaro-paper-dev`).

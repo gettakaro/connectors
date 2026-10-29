@@ -18,11 +18,12 @@ class ActionRoutingTest {
     private RecordingAdapter adapter;
     private TakaroWebSocketClient client;
     private List<String> sentMessages;
+    private TakaroConfig config;
 
     @BeforeEach
     void setUp() throws Exception {
         adapter = new RecordingAdapter();
-        TakaroConfig config = new TakaroConfig();
+        config = new TakaroConfig();
         config.setDebugEnabled(false);
 
         // Create client with a dummy URI - we won't actually connect
@@ -120,6 +121,64 @@ class ActionRoutingTest {
 
         assertEquals("hi", adapter.lastMessage);
         assertEquals("player-1", adapter.lastRecipient);
+    }
+
+    @Test
+    void sendMessageWithoutAnyNameKeepsTheBareText() {
+        sendRequest("sendMessage", "req-name-0", "{\"message\":\"hello\",\"opts\":{}}");
+        waitForResponse();
+
+        assertFalse(adapter.lastLine.hasSender());
+        assertEquals("hello", adapter.lastLine.plainText());
+    }
+
+    @Test
+    void sendMessageUsesTheOverrideOverTheConfiguredName() {
+        config.setServerChatName("Config Name");
+        sendRequest("sendMessage", "req-name-1",
+                "{\"message\":\"hi\",\"opts\":{\"senderNameOverride\":\"  Herald  \"}}");
+        waitForResponse();
+
+        assertEquals("Herald", adapter.lastLine.sender());
+        assertEquals("[Herald] hi", adapter.lastLine.plainText());
+        assertEquals(ChatLine.GLOBAL_KEY, adapter.lastLine.translationKey());
+    }
+
+    @Test
+    void sendMessageFallsBackToTheConfiguredNameForABlankOverride() {
+        config.setServerChatName("Config Name");
+        sendRequest("sendMessage", "req-name-2",
+                "{\"message\":\"hi\",\"opts\":{\"senderNameOverride\":\"   \",\"recipient\":{\"gameId\":\"player-1\"}}}");
+        waitForResponse();
+
+        assertEquals("player-1", adapter.lastRecipient);
+        assertEquals("Config Name whispers to you: hi", adapter.lastLine.plainText());
+        assertTrue(adapter.lastLine.whisper());
+    }
+
+    @Test
+    void aChangedChatNameAppliesToTheNextMessage() {
+        sendRequest("sendMessage", "req-name-3", "{\"message\":\"one\"}");
+        waitForResponse();
+        assertFalse(adapter.lastLine.hasSender());
+
+        TakaroConfig next = new TakaroConfig();
+        next.copyFrom(config);
+        next.setServerChatName("Renamed");
+        client.settings().copyFrom(next);
+        sendRequest("sendMessage", "req-name-4", "{\"message\":\"two\"}");
+        waitForResponse();
+        assertEquals("[Renamed] two", adapter.lastLine.plainText());
+    }
+
+    @Test
+    void sendMessageWithASenderEmitsNoChatEvent() {
+        config.setServerChatName("Herald");
+        sendRequest("sendMessage", "req-name-5", "{\"message\":\"hi\"}");
+        waitForResponse();
+
+        assertEquals(1, sentMessages.size());
+        assertEquals("response", parseResponse(sentMessages.get(0)).get("type").getAsString());
     }
 
     @Test
@@ -357,6 +416,7 @@ class ActionRoutingTest {
         PlayerInfo knownPlayer = null;
         String lastCommand = null;
         String lastMessage = null;
+        ChatLine lastLine = null;
         String lastRecipient = null;
         String lastKickedId = null;
         String lastKickReason = null;
@@ -396,8 +456,9 @@ class ActionRoutingTest {
         }
 
         @Override
-        public void sendMessage(String message, String recipientGameId) {
-            lastMessage = message;
+        public void sendMessage(ChatLine line, String recipientGameId) {
+            lastLine = line;
+            lastMessage = line.message();
             lastRecipient = recipientGameId;
         }
 
