@@ -7,7 +7,8 @@ Notes for working on the mod itself. Server operators only need
 
 Everything here is built against one catalog target at a time. The default is
 [`catalog/7d2d/targets/linux-3.3.0.b18.json`](../../catalog/7d2d/targets/linux-3.3.0.b18.json)
-(V 3.3.0 b18); [`linux-3.4.0.b6.json`](../../catalog/7d2d/targets/linux-3.4.0.b6.json) and
+(V 3.3.0 b18); [`linux-3.4.0.b9.json`](../../catalog/7d2d/targets/linux-3.4.0.b9.json),
+[`linux-3.4.0.b6.json`](../../catalog/7d2d/targets/linux-3.4.0.b6.json) and
 [`linux-3.2.0.b10.json`](../../catalog/7d2d/targets/linux-3.2.0.b10.json) are also built. A target records the Steam app, branch, build id and depot manifest of its build, the sha256 of the
 assemblies the mod compiles against, the Mono image the build runs in, the pinned third-party
 dependencies and the server image the rig boots. No script here hard-codes any of it —
