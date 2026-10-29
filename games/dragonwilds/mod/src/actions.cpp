@@ -1072,6 +1072,16 @@ void* ShutdownThread(void*) {
 
 }  // namespace
 
+// Research probe (#203) only: one private line to one online player. Game thread.
+bool Actions::ProbeWhisper(const std::string& gameId, const std::string& text, std::string& err) {
+    PlayerInfo p;
+    if (!FindPlayerById(gameId, p)) {
+        err = "player not online";
+        return false;
+    }
+    return SendChatTo(p, text, "", err);
+}
+
 // ================================================================================================
 // lifecycle
 

@@ -22,6 +22,7 @@
 #include "config_file.h"
 
 #include "actions.h"
+#include "command_probe.h"
 
 #include "eos.h"
 #include "gamethread.h"
@@ -45,6 +46,7 @@
 #include <functional>
 #include <memory>
 #include <set>
+#include <thread>
 
 using namespace UE;
 
@@ -812,7 +814,7 @@ inline size_t FnHash(void* p) {
 }
 
 // Raw FNames of the UFunctions we care about (filled on the game thread once).
-FName g_fnChat, g_fnDeath, g_fnAiKilled, g_fnPlayerEvent, g_fnBpOnDeath, g_fnOnDeathEvent;
+FName g_fnChat, g_fnClientChat, g_fnDeath, g_fnAiKilled, g_fnPlayerEvent, g_fnBpOnDeath, g_fnOnDeathEvent;
 bool g_fnNamesReady = false;
 
 void* g_chatDataStruct = nullptr;   // FChatMessageData
@@ -850,17 +852,46 @@ void EmitDeath(const Ident& id, double x, double y, double z, bool havePos, cons
     PluginLog("events: player-death %s via %s (killer '%s')", id.gameId.c_str(), source, killerEntity.c_str());
 }
 
-void HandleChat(void* self, void* params) {
-    if (g_msgBodyOff < 0 || !params) return;
+// Research probe (#203) only: the reflected parameter table of the chat RPC and the chat structs,
+// captured once from the live process. Never assumes an offset.
+std::atomic<bool> g_probeParamsLogged{false};
+void ProbeLogChatLayout(void* func) {
+    if (g_probeParamsLogged.exchange(true)) return;
+    std::vector<void*> props;
+    WalkProps(func, props, 16);
+    std::string o = "[";
+    for (size_t i = 0; i < props.size(); i++) {
+        if (i) o += ",";
+        o += "{\"name\":" + JsonStr(FieldName(props[i])) + ",\"type\":" + JsonStr(Reflect::PropertyTypeName(props[i])) +
+             ",\"offset\":" + std::to_string(Reflect::PropertyOffset(props[i])) + "}";
+    }
+    PluginLog("probe: Server_SendChatMessage params %s", (o + "]").c_str());
+    std::vector<Reflect::DebugSnapshot> snaps;
+    for (const char* n : {"ChatMessageData", "ChatPlayerFilterData", "ChatPlayerSenderData"})
+        snaps.push_back(Reflect::DumpStruct(n));
+    std::thread([snaps] {
+        for (auto& r : snaps) if (r) PluginLog("probe: struct %s", r().c_str());
+    }).detach();
+}
+
+// Returns true when the original Server_SendChatMessage must not run (research probe only).
+bool HandleChat(void* self, void* func, void* params) {
+    if (g_msgBodyOff < 0 || !params) return false;
+    if (CommandProbe::Enabled()) ProbeLogChatLayout(func);
     std::string msg = ReadFStringAt(params, g_msgBodyOff);
-    if (msg.empty()) return;
+    if (msg.empty()) return false;
     if (state::ConsumeInjectedMessage(msg)) {
         PluginLog("events: ignoring our own injected chat message");
-        return;
+        return false;
     }
     void* st = PlayerStateOf(self);
     Ident id;
     if (st) IdentFromPlayerState(st, id);
+    if (CommandProbe::Enabled()) {
+        PluginLog("probe: Server_SendChatMessage fired, sender %s (from the component owner): %s",
+                  id.gameId.c_str(), msg.c_str());
+        if (CommandProbe::OnServerChat(msg, id.gameId)) return true;  // private: no chat-message either
+    }
     PluginState::Get().EmitEventDeferred("chat-message", [msg, id] {
         std::string o = "{\"msg\":" + JsonStr(msg) + ",\"channel\":\"global\"";
         if (id.valid()) o += ",\"player\":" + PlayerJson(id);
@@ -868,6 +899,16 @@ void HandleChat(void* self, void* params) {
     });
     g_chat.emitted++;
     PluginLog("events: chat-message from %s: %s", id.gameId.c_str(), msg.c_str());
+    return false;
+}
+
+// Research probe (#203) only: every server-side Client_ReceiveChatMessage dispatch, i.e. the chat
+// fan-out to each connected client.
+void ProbeClientReceive(void* self, void* params) {
+    if (g_msgBodyOff < 0 || !params) return;
+    Ident id;
+    if (void* st = PlayerStateOf(self)) IdentFromPlayerState(st, id);
+    PluginLog("probe: Client_ReceiveChatMessage -> %s: %s", id.gameId.c_str(), ReadFStringAt(params, g_msgBodyOff).c_str());
 }
 
 // World position of an actor, or of the actor that owns a component (game thread only).
@@ -1350,7 +1391,8 @@ void DetourProcessEvent(void* self, void* func, void* params) {
     if (!orig) orig = g_processEvent;
 
     // Read what we need *before* the call: RPC parameter buffers do not survive it.
-    int what = 0;  // 1 chat, 2 death, 3 ai-killed, 4 BP_OnDeath, 5 OnDeathEvent
+    int what = 0;  // 1 chat, 2 death, 3 ai-killed, 4 BP_OnDeath, 5 OnDeathEvent, 6 probe chat fan-out
+    bool skipOriginal = false;
     bool cacheHit = false;
     try {
         if (g_fnNamesReady && func) {
@@ -1373,6 +1415,7 @@ void DetourProcessEvent(void* self, void* func, void* params) {
                     else if (fn == g_fnAiKilled) what = 3;
                     else if (fn == g_fnBpOnDeath) what = 4;
                     else if (fn == g_fnOnDeathEvent) what = 5;
+                    else if (g_fnClientChat.Comparison && fn == g_fnClientChat) what = 6;
                     if (free_) {  // remember the decision - including "not ours"
                         free_->kind = (uint8_t)what;
                         free_->func.store(func, std::memory_order_release);
@@ -1382,16 +1425,17 @@ void DetourProcessEvent(void* self, void* func, void* params) {
         }
         Perf::RecordFilter(Perf::NowNs() - tFilter0, what != 0, cacheHit);
         uint64_t tHandler0 = what ? Perf::NowNs() : 0;
-        if (what == 1) { g_chat.fired++; HandleChat(self, params); }
+        if (what == 1) { g_chat.fired++; skipOriginal = HandleChat(self, func, params); }
         else if (what == 2) { g_death.fired++; HandleDeathTelemetry(self, func, params); }
         else if (what == 3) { g_kill.fired++; HandleAiKilled(self, func, params); }
         else if (what == 4) { g_kill.fired++; HandleActorDeath(self, "BP_OnDeath"); }
         else if (what == 5) { g_kill.fired++; HandleActorDeath(OwnerOf(self), "OnDeathEvent"); }
+        else if (what == 6) ProbeClientReceive(self, params);
         if (tHandler0) Perf::RecordHandler(Perf::NowNs() - tHandler0);
     } catch (...) {
         PluginLog("events: ProcessEvent handler threw (what=%d)", what);
     }
-    if (orig) orig(self, func, params);
+    if (orig && !skipOriginal) orig(self, func, params);
 }
 
 // Hooks the ProcessEvent slot of one live object's vtable, once per distinct vtable.
@@ -1718,6 +1762,7 @@ void GameThreadInit() {
     g_eosVptr = ztv ? (void*)(uintptr_t)(ztv + 2 * sizeof(void*)) : nullptr;
 
     g_fnChat = Reflect::MakeName("Server_SendChatMessage");
+    if (CommandProbe::Enabled()) g_fnClientChat = Reflect::MakeName("Client_ReceiveChatMessage");
     g_fnDeath = Reflect::MakeName("Client_SendDeathEventTelemetry");
     g_fnAiKilled = Reflect::MakeName("OnAIKilled");
     g_fnPlayerEvent = Reflect::MakeName("Client_ReceivePlayerEvent");
@@ -1769,6 +1814,7 @@ void GameThreadInit() {
 // ---------------------------------------------------------------------------------------------
 
 void Events::Init() {
+    CommandProbe::Init();  // research #203; inert unless TAKARO_COMMAND_PROBE=1
     auto& st = PluginState::Get();
     for (const char* cap : {"logEvents", "joinLeaveEvents", "connectEvents", "chatEvents", "deathEvents", "killEvents"})
         st.SetCapability(cap, "degraded", "starting");
