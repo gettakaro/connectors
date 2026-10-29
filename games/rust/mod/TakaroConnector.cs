@@ -29,6 +29,7 @@ namespace Oxide.Plugins
         internal const string EnvRegistrationToken = "TAKARO_REGISTRATION_TOKEN";
         internal const string EnvIdentityToken = "TAKARO_IDENTITY_TOKEN";
         internal const string EnvDebug = "TAKARO_DEBUG";
+        internal const string EnvServerChatName = "TAKARO_SERVER_CHAT_NAME";
 
         internal sealed class ConnectorSettings
         {
@@ -36,6 +37,7 @@ namespace Oxide.Plugins
             public string RegistrationToken = "";
             public string IdentityToken = "";
             public bool Debug;
+            public string ServerChatName = "";
             public bool RegistrationFromEnv;
             public bool IdentityFromEnv;
 
@@ -55,10 +57,11 @@ namespace Oxide.Plugins
             public string IdentityToken;
             public string WsUrl;
             public bool? Debug;
+            public string ServerChatName;
 
             public bool HasAnyKey
             {
-                get { return RegistrationToken != null || IdentityToken != null || WsUrl != null || Debug != null; }
+                get { return RegistrationToken != null || IdentityToken != null || WsUrl != null || Debug != null || ServerChatName != null; }
             }
         }
 
@@ -71,6 +74,7 @@ namespace Oxide.Plugins
                 RegistrationToken = StringField(json, "RegistrationToken"),
                 IdentityToken = StringField(json, "IdentityToken"),
                 WsUrl = StringField(json, "WebSocketUrl"),
+                ServerChatName = StringField(json, "ServerChatName"),
             };
             var debug = json["Debug"];
             if (debug != null && debug.Type == JTokenType.Boolean)
@@ -96,6 +100,7 @@ namespace Oxide.Plugins
                 ["IdentityToken"] = values.IdentityToken ?? "",
                 ["WebSocketUrl"] = string.IsNullOrEmpty(values.WsUrl) ? DefaultWsUrl : values.WsUrl,
                 ["Debug"] = values.Debug ?? false,
+                ["ServerChatName"] = values.ServerChatName ?? "",
             };
             return json.ToString(Formatting.Indented) + "\n";
         }
@@ -128,6 +133,7 @@ namespace Oxide.Plugins
                 IdentityToken = newIdentity(),
                 WsUrl = DefaultWsUrl,
                 Debug = false,
+                ServerChatName = "",
             };
         }
 
@@ -164,6 +170,10 @@ namespace Oxide.Plugins
             settings.Debug = !string.IsNullOrEmpty(envDebug)
                 ? envDebug.ToLower() == "true"
                 : file.Debug ?? false;
+
+            // Not a connection setting: a change applies to the next message, no reconnect.
+            var envChatName = env(EnvServerChatName)?.Trim();
+            settings.ServerChatName = !string.IsNullOrEmpty(envChatName) ? envChatName : file.ServerChatName ?? "";
             return settings;
         }
         // Takaro's identify errors can carry its own internal request, x-takaro-token JWT and
@@ -198,6 +208,41 @@ namespace Oxide.Plugins
         {
             return System.Text.RegularExpressions.Regex.Replace(text ?? "",
                 @"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", "<redacted token>");
+        }
+
+        // The sender players see on chat from Takaro: senderNameOverride (newer Takaro fills it
+        // from the server's serverChatName setting), else the ServerChatName setting, else
+        // null for no sender at all. Blank values count as unset.
+        internal static string ResolveServerChatName(string senderNameOverride, string configuredName)
+        {
+            var name = senderNameOverride?.Trim();
+            if (!string.IsNullOrEmpty(name)) return name;
+            name = configuredName?.Trim();
+            return string.IsNullOrEmpty(name) ? null : name;
+        }
+
+        internal const string ServerChatNameColor = "#eee";
+
+        // The client command that shows a server chat line, for a broadcast and a whisper alike.
+        // With a sender it is chat.add2 on the Server channel, which the client draws as
+        // "Name: text" with the name in its own colour, the grey Rust uses for SERVER. Without
+        // one it is chat.add, exactly what the plugin always sent: the text alone.
+        internal static object[] ServerChatCommand(string senderName, string message, out string command)
+        {
+            if (senderName == null)
+            {
+                command = "chat.add";
+                return new object[] { 2, 0, message };
+            }
+            command = "chat.add2";
+            return new object[] { 2, 0, message, EscapeChatName(senderName), ServerChatNameColor, 1f };
+        }
+
+        // Rust's EscapeRichText: a zero-width space keeps < and > in a name from being read
+        // as rich-text tags, so a name can neither restyle nor hide the message.
+        internal static string EscapeChatName(string name)
+        {
+            return name.Replace("<", "<\u200b").Replace(">", "\u200b>").Replace("\\", "\\\u200b");
         }
         // takaro:config-end
 
@@ -2322,25 +2367,30 @@ namespace Oxide.Plugins
 
         private void HandleSendMessage(JObject args)
         {
-            var message = args.Value<string>("message") ?? "";
-            string recipientGameId = null;
-
             var opts = args["opts"] as JObject;
             var recipient = opts?["recipient"] as JObject;
-            recipientGameId = recipient?.Value<string>("gameId");
+            var recipientGameId = recipient?.Value<string>("gameId");
+            var senderName = ResolveServerChatName(opts?["senderNameOverride"]?.Type == JTokenType.String
+                ? opts.Value<string>("senderNameOverride") : null, _settings.ServerChatName);
+            var text = args.Value<string>("message") ?? "";
+            // A client command, not chat said on the server: OnPlayerChat never runs for it,
+            // so it cannot come back to Takaro as a chat-message event, name or not.
+            string command;
+            var commandArgs = ServerChatCommand(senderName, text, out command);
 
             if (!string.IsNullOrEmpty(recipientGameId))
             {
                 var player = FindPlayerByGameId(recipientGameId);
-                player?.ChatMessage(message);
+                if (player != null && player.net?.connection != null)
+                    player.SendConsoleCommand(command, commandArgs);
             }
             else
             {
                 // Same reasoning as the console audit line above: a broadcast leaves no
                 // trace in Rust's own console, so nothing on the server would ever show
                 // that Takaro said something to everybody.
-                LogInfo($"broadcast: {message}");
-                ConsoleNetwork.BroadcastToAllClients("chat.add", 2, 0, message);
+                LogInfo(senderName == null ? $"broadcast: {text}" : $"broadcast as {senderName}: {text}");
+                ConsoleNetwork.BroadcastToAllClients(command, commandArgs);
             }
         }
 
