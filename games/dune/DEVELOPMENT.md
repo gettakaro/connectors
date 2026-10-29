@@ -164,7 +164,9 @@ tested; the tests use fixtures under `src/testing/fixtures/` and never read the 
 - **Presence is three-state** (`Offline` / `LoggingOut` / `Online`), and a map transfer must not look like a
   disconnect — hence `DUNE_TRANSFER_GRACE_SECONDS`.
 - **The chat sender is not ours to choose.** Dune renders it from the AMQP `user_id` of a real player account, so a
-  server-sent chat line always shows `[]`. The named path is the on-screen `ServiceBroadcast` panel.
+  server-sent chat line always shows `[]`. So the sender name goes in the text (`[] Name: message`, global and
+  whisper), resolved in `src/dune/chatSender.ts`: `senderNameOverride` → `TAKARO_SENDER_NAME` /
+  `TAKARO_SERVER_CHAT_NAME` → no name. The on-screen `ServiceBroadcast` panel is titled with the same name.
 - **Takaro modules send explicit JSON `null`** for optional arguments; every handler must tolerate it (`null-args`
   matrix test).
 - **Nothing halts the map process** from inside the battlegroup, so `shutdown` needs an operator hook.

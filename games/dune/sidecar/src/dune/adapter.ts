@@ -2,6 +2,7 @@ import { logger } from '../logger.js';
 import { asRecord } from '../takaro/protocol.js';
 import { BanManager, expiryOf } from './bans.js';
 import { Catalogue, NON_CARRYABLE_CODE_RE } from './catalogue.js';
+import { broadcastTitle, renderChatText, resolveSenderName } from './chatSender.js';
 import { runConsoleCommand, type CommandContext, type CommandResult } from './commands.js';
 import type { GlobalMessageMode } from './config.js';
 import * as gmCommands from './gm.js';
@@ -92,8 +93,9 @@ export class DuneAdapter {
     return this.options.now?.() ?? Date.now();
   }
 
-  senderName(override?: string | null): string {
-    return override || this.options.senderName || this.options.serverName || 'Server';
+  /** The resolved chat sender name, or null for none (see `chatSender.ts`). */
+  senderName(override?: unknown): string | null {
+    return resolveSenderName(override, this.options.senderName);
   }
 
   /** What this deployment can actually do right now; mirrored onto `/health` and used by `testReachability`. */
@@ -553,12 +555,14 @@ export class DuneAdapter {
     const opts = asRecord(args.opts);
     const recipient = asRecord(opts.recipient);
     const recipientId = str(recipient.gameId) ?? str(recipient.steamId) ?? str(recipient.platformId) ?? str(args.recipientGameId);
-    const sender = this.senderName(str(opts.senderNameOverride));
+    const sender = this.senderName(opts.senderNameOverride);
+    const text = renderChatText(sender, message);
+    const spoofName = sender ?? undefined;
 
     if (recipientId) {
       const row = await this.requireRow(recipientId);
       if (!this.options.rmq) fail('sendMessage needs the game RabbitMQ connection (DUNE_RMQ_URL)');
-      const result = await this.options.rmq.whisper(whisperKey(row), message, row.characterName ?? undefined);
+      const result = await this.options.rmq.whisper(whisperKey(row), text, row.characterName ?? undefined, spoofName);
       return { delivered: result.ok, channel: 'whisper', routingKey: result.routingKey, sender };
     }
 
@@ -567,7 +571,7 @@ export class DuneAdapter {
     let delivered = false;
     if (mode === 'chat' || mode === 'both') {
       if (!this.options.rmq) fail('sendMessage needs the game RabbitMQ connection (DUNE_RMQ_URL)');
-      const result = await this.options.rmq.broadcastChat(message);
+      const result = await this.options.rmq.broadcastChat(text, undefined, spoofName);
       out.chat = result.ok;
       // The routing keys are the whole story for `chat.map`: it is a DIRECT exchange, so a publish on a key nobody
       // bound is discarded in silence. Reporting them makes `delivered:true` checkable instead of a claim.
@@ -579,13 +583,13 @@ export class DuneAdapter {
         // reporting a success nobody saw, fan the line out as a whisper to each online player, and — in `both`
         // mode — let the `ServiceBroadcast` below carry it too.
         out.chatRefused = result.reason ?? 'broadcast exchange unavailable';
-        const fanout = await this.whisperFanout(message);
+        const fanout = await this.whisperFanout(text, spoofName);
         out.fanout = fanout;
         delivered ||= fanout.delivered > 0;
       }
     }
     if (mode === 'broadcast' || mode === 'both') {
-      await this.options.gm.send(gmCommands.serviceBroadcast({ title: sender, body: message }), this.now());
+      await this.options.gm.send(gmCommands.serviceBroadcast({ title: broadcastTitle(sender), body: message }), this.now());
       out.broadcast = true;
       delivered = true;
     }
@@ -599,7 +603,7 @@ export class DuneAdapter {
    * delivery, which a discarded `chat.map` publish is not. Failures are counted, not thrown: one unreachable player
    * must not sink the announcement for everyone else.
    */
-  private async whisperFanout(message: string): Promise<{ delivered: number; attempted: number; failed: number }> {
+  private async whisperFanout(message: string, senderName?: string): Promise<{ delivered: number; attempted: number; failed: number }> {
     const rmq = this.options.rmq;
     if (!rmq) return { delivered: 0, attempted: 0, failed: 0 };
     let rows: DunePlayerRow[] = [];
@@ -614,7 +618,7 @@ export class DuneAdapter {
     for (const row of rows) {
       if (!row.flsId) continue;
       try {
-        const result = await rmq.whisper(whisperKey(row), message, row.characterName ?? undefined);
+        const result = await rmq.whisper(whisperKey(row), message, row.characterName ?? undefined, senderName);
         if (result.ok) delivered += 1;
         else failed += 1;
       } catch (err) {

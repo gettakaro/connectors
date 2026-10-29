@@ -346,7 +346,7 @@ export class DuneRmq {
    * `403 ACCESS_REFUSED ... queue '<FLS>_queue'`. The binding the client makes is permanent for the session, so the
    * correct route is simply to publish on the funcom id and bind nothing.
    */
-  async whisper(routingKeyId: string, msg: string, userNameTo?: string): Promise<{ ok: boolean; routingKey: string; queue: string }> {
+  async whisper(routingKeyId: string, msg: string, userNameTo?: string, senderName?: string): Promise<{ ok: boolean; routingKey: string; queue: string }> {
     const channel = await this.ensureChannel();
     const routingKey = routingKeyId;
     const queue = `${routingKeyId}_queue`;
@@ -354,7 +354,7 @@ export class DuneRmq {
     const payload = buildChatPayload(
       {
         msg,
-        senderName: this.options.senderName,
+        senderName: senderName ?? this.options.senderName,
         senderFuncomId: this.options.announcerFuncomId,
         channel: this.options.wire.whisperChannelType,
         userNameTo,
@@ -426,7 +426,7 @@ export class DuneRmq {
    * `DUNE_GLOBAL_MESSAGE_MODE`. Answering `{ok:true}` for bytes nobody will ever route is the kind of claim this
    * campaign does not make.
    */
-  async broadcastChat(msg: string, routingKey?: string): Promise<{ ok: boolean; reason?: string; routingKeys?: string[] }> {
+  async broadcastChat(msg: string, routingKey?: string, senderName?: string): Promise<{ ok: boolean; reason?: string; routingKeys?: string[] }> {
     if (!(await this.exchangeExists(this.options.mapExchange))) {
       return { ok: false, reason: `exchange '${this.options.mapExchange}' is not declared on the broker` };
     }
@@ -448,7 +448,7 @@ export class DuneRmq {
       const payload = buildChatPayload(
         {
           msg,
-          senderName: this.options.senderName,
+          senderName: senderName ?? this.options.senderName,
           senderFuncomId: this.options.announcerFuncomId,
           channel: 'Map',
           messageId: id,

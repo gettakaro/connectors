@@ -49,6 +49,8 @@ export interface HarnessOptions {
   sleep?: (ms: number) => Promise<void>;
   execRunner?: ExecRunner;
   globalMessageMode?: 'chat' | 'broadcast' | 'both';
+  /** Configured chat sender name (`TAKARO_SENDER_NAME`); unset by default, as in production. */
+  senderName?: string;
   /**
    * Exchanges the fake broker has declared. Pass a set without `chat.map` to reproduce a battlegroup whose map
    * process has not joined the broker (the state the rig was in at first boot) — `chat.map` is declared by the map
@@ -134,7 +136,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
         })
       : null,
     knownStore: new MemoryKnownPlayerStore(),
-    senderName: 'Takaro',
+    senderName: options.senderName ?? '',
     serverName: 'Takaro Dev Dune',
     gmPlayerIdKind: 'fls',
     globalMessageMode: options.globalMessageMode ?? 'chat',

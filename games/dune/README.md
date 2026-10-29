@@ -61,7 +61,7 @@ Set these values in `.env`:
 | `TAKARO_REGISTRATION_TOKEN` | Registration token from the Takaro game server. Can be pasted later, see below. |
 | `TAKARO_IDENTITY_TOKEN` | Leave empty. The sidecar generates one and keeps it in `/data`. |
 | `TAKARO_SERVER_NAME` | Optional. Takaro server names must be unique; empty uses `Dune (<identity>)`. |
-| `TAKARO_SENDER_NAME` | The same value as Takaro's `serverChatName`. |
+| `TAKARO_SENDER_NAME` | Optional chat sender name (alias `TAKARO_SERVER_CHAT_NAME`). Takaro's `serverChatName` wins when Takaro sends it; set the same value for Takaro builds that do not. |
 | `DUNE_PG_URL` | Read-only Postgres URL, including the build-specific database name. |
 | `DUNE_RMQ_URL` | AMQPS URL for the game RabbitMQ, not the admin RabbitMQ. |
 | `DUNE_RMQ_TLS_INSECURE` | `true` when using Funcom's self-signed broker certificate. |
@@ -167,7 +167,7 @@ the `.so` with one for the same server build, and start it again.
 | Entity catalogue | ✅ | Full creature list requires the plugin. |
 | Locations and points of interest | ⚠️ | Available, but Generic Takaro servers do not request them. |
 | Console commands | ✅ | Unknown commands return a clear failure. |
-| Broadcast messages | ⚠️ | On-screen panel is named; chat sender appears as `[]`. |
+| Broadcast messages | ⚠️ | Chat shows `[] Name: message`: the game has no sender field, so the name is in the text. The on-screen panel is titled with the name. |
 | Private messages | ✅ | Delivered to one player. |
 | Teleport player | ✅ | Position is re-read after moving. |
 | Kick player | ✅ | Player can reconnect afterward. |
