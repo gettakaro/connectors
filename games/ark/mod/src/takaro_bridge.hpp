@@ -64,6 +64,8 @@ struct Config {
   // game.profile: the running game build ("" = omitted) and the shipped icon (null = none).
   std::string game_version;
   std::shared_ptr<const GameIcon> game_icon;
+  // TAKARO_SERVER_CHAT_NAME: sender name for messages when Takaro sends none.
+  std::string server_chat_name;
 };
 
 // TheIsland: lat = 50 + y/8000, lon = 50 + x/8000 (verified against the client GPS),
@@ -190,6 +192,7 @@ class Bridge {
         adapter_(gate_, bans_, known_) {
     if (!config_.state_dir.empty()) cursor_path_ = config_.state_dir + "/event-cursor.json";
     adapter_.set_game_icon(config_.game_icon);
+    adapter_.set_server_chat_name(config_.server_chat_name);
     if (auto dimension = map_dimension(config_.map_name)) map_dimension_id_ = dimension->get("id")->as_string();
     adapter_.set_map_dimension(map_dimension_id_);
     adapter_.set_delivery_waiter([this](uint64_t seq, std::chrono::milliseconds timeout) {

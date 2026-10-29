@@ -2,6 +2,7 @@
 // thread; the in-process Takaro bridge (its own threads, outbound WSS) only reads
 // copied snapshots and queues actions. No sidecar and no listening socket.
 #include "action_bindings.hpp"
+#include "chat_bindings.hpp"
 #include "console_bindings.hpp"
 #include "catalog_bindings.hpp"
 #include "moderation_bindings.hpp"
@@ -551,6 +552,18 @@ bool send_queued_rpc(void* controller, const std::u32string& text) {
     return false;
 }
 
+// Every Takaro chat line: with a sender name through ClientChatMessage, which the
+// client shows as "<name>: <text>"; without one through the unchanged server line.
+bool send_chat_line(void* controller, const gate::Action& action) {
+  if (action.sender.empty()) return send_queued_rpc(controller, action.text);
+  if (!ark_chat::send_named(controller, action.sender, action.text)) {
+    enqueue("outbound-named-chat-rejected");
+    return false;
+  }
+  enqueue("outbound-named-chat-sent");
+  return true;
+}
+
 // Item grants can split across stacks. Compare the sum for the exact native
 // class path, never the number of rows or the native "any item" boolean.
 int64_t inventory_quantity(const std::vector<ark_inventory::Item>& items,
@@ -929,13 +942,13 @@ void tick_hook(void* loop) {
             // Resolve at dispatch time. Never fall back to broadcast when the
             // intended recipient has disconnected or respawned.
             void* controller = resolve_live_controller(action->player_id);
-            success = controller && send_queued_rpc(controller, action->text);
+            success = controller && send_chat_line(controller, *action);
           } else {
             success = true;
             const auto ids = g_gate->player_ids();
             for (const auto& id : ids) {
               void* controller = resolve_live_controller(id);
-              if (!send_queued_rpc(controller, action->text)) success = false;
+              if (!send_chat_line(controller, *action)) success = false;
             }
           }
         } else if (action->kind == gate::Action::Kind::console) {
@@ -1131,6 +1144,8 @@ bool preflight_bindings() {
          memcmp(reinterpret_cast<const void*>(kTeleport), teleport_prologue,
                 sizeof(teleport_prologue)) == 0 &&
          memcmp(reinterpret_cast<const void*>(kClientChatRpc), rpc_prologue, sizeof(rpc_prologue)) == 0 &&
+         memcmp(reinterpret_cast<const void*>(ark_chat::Api{}.client_chat_message), ark_chat::Api::prologue,
+                sizeof(ark_chat::Api::prologue)) == 0 &&
          ark_shutdown_request::signature_matches();
 }
 
@@ -1348,6 +1363,7 @@ std::optional<takaro::Config> load_bridge_config() {
   config.registration_token = ark_config::get(file, "TAKARO_REGISTRATION_TOKEN");
   config.identity_token = ark_config::get(file, "TAKARO_IDENTITY_TOKEN");
   config.server_name = ark_config::get(file, "TAKARO_SERVER_NAME");
+  config.server_chat_name = ark_config::get(file, "TAKARO_SERVER_CHAT_NAME");
   config.ca_file = ark_config::get(file, "TAKARO_CA_FILE");
   config.ban_file = ark_config::get(file, "TAKARO_BAN_METADATA_FILE");
   config.wire_debug = ark_config::get(file, "TAKARO_WIRE_DEBUG") == "1";

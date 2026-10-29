@@ -211,7 +211,11 @@ class FakeGame {
   std::mutex mutex;
   std::shared_ptr<gate::Action> last_shutdown;
   std::u32string last_message;
+  std::u32string last_message_sender;
+  std::string last_message_recipient;
   std::u32string last_text() { std::lock_guard<std::mutex> lock(mutex); return last_message; }
+  std::u32string last_sender() { std::lock_guard<std::mutex> lock(mutex); return last_message_sender; }
+  std::string last_recipient() { std::lock_guard<std::mutex> lock(mutex); return last_message_recipient; }
   std::atomic<int> executed{0};
   std::atomic<bool> stall{false};
 
@@ -249,7 +253,13 @@ class FakeGame {
           }
           case gate::Action::Kind::shutdown: { std::lock_guard<std::mutex> lock(mutex); last_shutdown = action; break; }
           case gate::Action::Kind::console: action->output = "handled"; break;
-          case gate::Action::Kind::message: { std::lock_guard<std::mutex> lock(mutex); last_message = action->text; break; }
+          case gate::Action::Kind::message: {
+            std::lock_guard<std::mutex> lock(mutex);
+            last_message = action->text;
+            last_message_sender = action->sender;
+            last_message_recipient = action->player_id;
+            break;
+          }
           default: break;
         }
         gate::Server::complete(action, success);
@@ -360,10 +370,11 @@ void test_identify_and_wire() {
   auto broadcast = takaro.request("msg-all", "sendMessage", json::obj({{"message", json::str("hello")},
       {"opts", json::obj({{"recipient", json::Value::null()}})}}));
   CHECK(broadcast && broadcast->get("payload")->is_object());
+  CHECK(game.last_text() == U"hello" && game.last_sender().empty());
   auto named = takaro.request("msg-named", "sendMessage", json::obj({{"message", json::str("hi all")},
       {"opts", json::obj({{"senderNameOverride", json::str("Bot")}})}}));
   CHECK(named);
-  CHECK(game.last_text() == U"Bot: hi all");
+  CHECK(game.last_text() == U"hi all" && game.last_sender() == U"Bot");
 
   // Explicit JSON nulls from modules are absent values.
   gate.record_login(kId, "Limon");
@@ -898,6 +909,84 @@ void test_identify_waits_for_game() {
   bounded.stop();
 }
 
+
+// Sender name: opts.senderNameOverride, else TAKARO_SERVER_CHAT_NAME, else none (ARK's
+// server line, unchanged). The name travels as the native sender, never inside the text.
+void test_server_chat_name() {
+  using takaro::server_chat_sender;
+  const json::Value bot = json::str("  Bot  "), blank = json::str(" \t "), empty = json::str(""), number = json::num(7);
+  CHECK(server_chat_sender(&bot, "Config") == "Bot");        // override wins, trimmed
+  CHECK(server_chat_sender(nullptr, " Config ") == "Config"); // config fallback, trimmed
+  CHECK(server_chat_sender(&blank, "Config") == "Config");    // whitespace override is unset
+  CHECK(server_chat_sender(&empty, "Config") == "Config");    // empty override is unset
+  CHECK(server_chat_sender(&number, "Config") == "Config");   // non-text override is unset
+  CHECK(server_chat_sender(nullptr, "  ").empty());           // whitespace config is unset
+  CHECK(server_chat_sender(nullptr, "").empty());
+  // Long names are cut to the 128 code points the native line takes, never refused.
+  std::string long_name;
+  for (int i = 0; i < 200; ++i) long_name += "\xC3\xA9";  // U+00E9
+  const json::Value long_override = json::str(long_name);
+  const std::string cut = server_chat_sender(&long_override, "");
+  CHECK(cut.size() == 256 && long_name.rfind(cut, 0) == 0);
+
+  constexpr const char* kId = "76561198000000001";
+  FakeTakaro takaro;
+  gate::Server gate("boot-chat-name");
+  FakeGame game(gate);
+  auto config = config_for(takaro, temp_dir());
+  config.server_chat_name = " Config Name ";
+  takaro::Bridge bridge(config, gate, [](const std::string&) {});
+  bridge.start();
+  CHECK(eventually([&] { return bridge.identified(); }));
+  gate.record_login(kId, "Limon");
+  CHECK(eventually([&] { return !takaro.messages().empty(); }));
+
+  auto send = [&](const std::string& id, json::Value opts) {
+    return takaro.request(id, "sendMessage", json::obj({{"message", json::str("hi all")}, {"opts", std::move(opts)}}));
+  };
+  // Config fallback, global and directed.
+  CHECK(send("cfg-global", json::Value::object()));
+  CHECK(game.last_text() == U"hi all" && game.last_sender() == U"Config Name" && game.last_recipient().empty());
+  CHECK(send("cfg-direct", json::obj({{"recipient", json::obj({{"gameId", json::str(kId)}})}})));
+  CHECK(game.last_text() == U"hi all" && game.last_sender() == U"Config Name" && game.last_recipient() == kId);
+  // The override wins over the config value, global and directed.
+  CHECK(send("ovr-global", json::obj({{"senderNameOverride", json::str("Takaro Bot")}})));
+  CHECK(game.last_text() == U"hi all" && game.last_sender() == U"Takaro Bot");
+  CHECK(send("ovr-direct", json::obj({{"senderNameOverride", json::str("Takaro Bot")},
+                                      {"recipient", json::obj({{"gameId", json::str(kId)}})}})));
+  CHECK(game.last_sender() == U"Takaro Bot" && game.last_recipient() == kId);
+  // A blank override falls back to the config value.
+  CHECK(send("blank", json::obj({{"senderNameOverride", json::str("   ")}})));
+  CHECK(game.last_sender() == U"Config Name");
+  // A name longer than the native limit still delivers the message.
+  CHECK(send("long", json::obj({{"senderNameOverride", json::str(std::string(300, 'n'))}})));
+  CHECK(game.last_text() == U"hi all" && game.last_sender() == std::u32string(128, U'n'));
+  // Kick notices use the same sender.
+  CHECK(takaro.request("kick", "kickPlayer", json::obj({{"gameId", json::str(kId)}, {"reason", json::str("afk")}})));
+  CHECK(game.last_text() == U"Kick reason: afk" && game.last_sender() == U"Config Name");
+
+  // No name anywhere: the message renders exactly as before.
+  FakeTakaro plain;
+  gate::Server gate2("boot-chat-plain");
+  FakeGame game2(gate2);
+  takaro::Bridge bridge2(config_for(plain, temp_dir()), gate2, [](const std::string&) {});
+  bridge2.start();
+  CHECK(eventually([&] { return bridge2.identified(); }));
+  CHECK(plain.request("none", "sendMessage", json::obj({{"message", json::str("hi all")}})));
+  CHECK(game2.last_text() == U"hi all" && game2.last_sender().empty());
+
+  // Takaro's own lines never come back as chat-message events.
+  std::this_thread::sleep_for(300ms);
+  for (auto* t : {&takaro, &plain})
+    for (const auto& m : t->messages()) {
+      const json::Value* payload = m.get("payload");
+      CHECK(!(is_type(m, "gameEvent") && payload && payload->get("type") &&
+              payload->get("type")->is_string() && payload->get("type")->as_string() == "chat-message"));
+    }
+  bridge.stop();
+  bridge2.stop();
+}
+
 int main() {
   test_redaction_and_codec();
   test_identify_and_wire();
@@ -909,6 +998,7 @@ int main() {
   test_protocol_v1();
   test_game_profile();
   test_identify_waits_for_game();
+  test_server_chat_name();
   if (failures) { std::cerr << failures << " check(s) failed\n"; return 1; }
   std::cout << "takaro_bridge_test passed\n";
   return 0;

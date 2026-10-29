@@ -14,7 +14,7 @@ Proven live on staging Takaro with a real client on the pinned build (see the ac
 | Player list, player identity | ✅ | Steam ID, in-game name |
 | Join / leave events | ✅ | |
 | Chat events | ✅ | Global chat |
-| Send message (all / one player) | ✅ | A message to an offline player is refused, never broadcast |
+| Send message (all / one player) | ✅ | Shown with the server chat name as the sender (see below). A message to an offline player is refused, never broadcast |
 | Player death events | ✅ | With position; attacker only when the killer is a player |
 | Kill events (entity-killed) | ✅ | Creature and the held weapon (empty when unarmed) |
 | Log events | ✅ | World save and startup lines only |
@@ -67,3 +67,17 @@ The zip has no `takaro.cfg`, so your `TakaroArk/TakaroArkNative/takaro.cfg` stay
 `identity-token` in your `TAKARO_STATE_DIR`) and the ban data live outside the plugin folder and are not touched.
 
 To uninstall, stop the server, delete `TakaroArk/` and start `ShooterGameServer` directly again.
+
+## Server chat name
+
+Messages that Takaro sends to the game show a sender name in front of the text, in ARK's chat sender colour
+(`Takaro: Welcome!`), in global chat and in messages to one player. The name is, in this order:
+
+1. the name Takaro sends with the message: the server's **Server chat name** setting in Takaro, or a name a
+   module picks for one message;
+2. otherwise `TAKARO_SERVER_CHAT_NAME` in `takaro.cfg`, for Takaro releases that send no name (read when the
+   server starts);
+3. otherwise no name: the message shows as ARK's own `(SERVER): <message>` line, as in earlier releases.
+
+A blank name counts as no name. A change to the Takaro setting applies to the next message, no restart needed.
+These messages never come back to Takaro as player chat.
