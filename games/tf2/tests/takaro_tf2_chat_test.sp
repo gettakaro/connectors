@@ -78,8 +78,8 @@ public void OnPluginStart()
   // Every send path (global PrintToChatAll and private PrintToChat) prints this one line.
   ExpectRendered("no name renders as today", "", "", "hello", "\x04[Takaro]\x01 hello");
   ExpectRendered("whitespace everywhere renders as today", " ", " ", "hello", "\x04[Takaro]\x01 hello");
-  ExpectRendered("config name renders", "", "Harambe", "hello", "\x04[Harambe]\x01 hello");
-  ExpectRendered("override name renders", "Admin", "Harambe", "hello", "\x04[Admin]\x01 hello");
+  ExpectRendered("config name renders", "", "MyServer", "hello", "\x04[MyServer]\x01 hello");
+  ExpectRendered("override name renders", "Admin", "MyServer", "hello", "\x04[Admin]\x01 hello");
   ExpectRendered("percent signs are kept", "", "100% Fun", "50% off", "\x04[100% Fun]\x01 50% off");
 
   if (g_Failed == 0) {

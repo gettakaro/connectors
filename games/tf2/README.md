@@ -67,7 +67,7 @@ Tested on 2026-10-18 to 2026-10-20 with a real Steam client on TF2 server versio
    | `takaro_tf2_registration_token` | Your Takaro registration token. Required. |
    | `takaro_tf2_identity_token` | Any unique name for this server, for example `my-tf2-1`. Keep it unchanged afterwards. |
    | `takaro_tf2_server_name` | The name Takaro shows for this server. |
-   | `takaro_tf2_server_chat_name` | The sender name players see on Takaro messages, for example `Harambe`. Optional; see "Server chat name" below. |
+   | `takaro_tf2_server_chat_name` | The sender name players see on Takaro messages, for example `MyServer`. Optional; see "Server chat name" below. |
    | `takaro_tf2_ws_url` | Leave `wss://connect.takaro.io`. |
    | `takaro_tf2_command_allowlist_exact` | Console commands Takaro may run, separated by `;`. Default: `status`. |
    | `takaro_tf2_command_allowlist_prefixes` | Command prefixes Takaro may run, for example `sm_slay `. Default: none. |
