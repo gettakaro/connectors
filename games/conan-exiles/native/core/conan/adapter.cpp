@@ -31,7 +31,8 @@ std::string First(const std::vector<const JsonValue*>& records, std::initializer
 
 }  // namespace
 
-bool ParseSendMessage(const JsonValue& args, ChatRequest& out, std::string& error) {
+bool ParseSendMessage(const JsonValue& args, ChatRequest& out, std::string& error,
+                      const std::string& configuredSender) {
     out = ChatRequest();
     auto msg = Str(args.get("message"));
     if (!msg) msg = Str(args.get("text"));
@@ -53,7 +54,7 @@ bool ParseSendMessage(const JsonValue& args, ChatRequest& out, std::string& erro
     }
     out.recipient = NormalizeRecipient(recipient);
     std::string sender = Str(opts.get("senderNameOverride")).value_or(Str(args.get("senderNameOverride")).value_or(""));
-    out.sender = sender.empty() ? kDefaultSender : sender;
+    out.sender = ResolveSender(sender, configuredSender, &out.senderFrom);
     return true;
 }
 
@@ -143,7 +144,7 @@ ActionResult Adapter::Execute(const std::string& action, const JsonValue& args) 
     if (action == "sendMessage") {
         ChatRequest req;
         std::string error;
-        if (!ParseSendMessage(args, req, error)) return Fail(error);
+        if (!ParseSendMessage(args, req, error, o_.serverChatName ? o_.serverChatName() : "")) return Fail(error);
         ChatOutcome out = o_.chat(req);
         {
             std::lock_guard<std::mutex> g(mu_);

@@ -22,6 +22,8 @@ struct AdapterOptions {
     std::string version;          // library version
     // sendMessage backend; defaults to SendChat (the game thread). Host tests inject a fake.
     std::function<ChatOutcome(const ChatRequest&)> chat;
+    // takaro.json `serverChatName` as it is now (ConfigWatcher::ServerChatName). Any thread.
+    std::function<std::string()> serverChatName;
     // Read actions (lane L2a, conan/reads.h): returns false when it does not handle `action`.
     // Defaults to the production ReadService; host tests inject a fake.
     std::function<bool(const std::string& action, const JsonValue& args, takaro::ActionResult& out)> reads;
@@ -38,7 +40,9 @@ struct AdapterOptions {
 
 // sendMessage arguments as Takaro sends them: { message, opts: { recipient: { gameId }, senderNameOverride } }
 // plus the flat and nested player shapes modules use. Returns false with `error` when message is missing.
-bool ParseSendMessage(const JsonValue& args, ChatRequest& out, std::string& error);
+// The sender is ResolveSender(senderNameOverride, configuredSender) (conan/text.h).
+bool ParseSendMessage(const JsonValue& args, ChatRequest& out, std::string& error,
+                      const std::string& configuredSender = "");
 
 class Adapter : public takaro::Game {
 public:
