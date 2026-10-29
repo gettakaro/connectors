@@ -36,7 +36,12 @@ public interface GameAdapter {
 
     // Player actions
     void giveItem(String gameId, String itemCode, int amount, String quality);
-    void sendMessage(String message, String recipientGameId);
+    /**
+     * Sends chat as the server. {@code senderName} is the resolved {@link ServerChatName}, or
+     * {@code null} for the default rendering ({@link ServerChatName#render}); a {@code null}
+     * recipient means everyone.
+     */
+    void sendMessage(String message, String senderName, String recipientGameId);
     CommandResult executeConsoleCommand(String command);
     void teleportPlayer(String gameId, double x, double y, double z, String dimension);
     void kickPlayer(String gameId, String reason);

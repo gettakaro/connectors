@@ -19,6 +19,8 @@ import zombie.characters.IsoGameCharacter;
 import zombie.characters.IsoPlayer;
 import zombie.characters.Roles;
 import zombie.chat.ChatMessage;
+import zombie.chat.ChatUtility;
+import zombie.chat.defaultChats.GeneralChat;
 import zombie.core.Core;
 import zombie.core.GameVersion;
 import zombie.core.Translator;
@@ -35,6 +37,7 @@ import zombie.network.DBBannedSteamID;
 import zombie.network.GameServer;
 import zombie.network.ServerWorldDatabase;
 import zombie.network.chat.ChatServer;
+import zombie.network.chat.ChatType;
 import zombie.network.server.EventManager;
 import zombie.network.server.IEventController;
 import zombie.scripting.ScriptManager;
@@ -48,8 +51,9 @@ import zombie.scripting.objects.VehicleScript;
  * <p>Every method here links directly against the game classes (compiled
  * {@code compileOnly} against {@code projectzomboid.jar}); the only reflection
  * is {@link ServerWorldDatabase}'s package-private {@code conn} field, read to
- * list banned usernames for {@code listBans} completeness, and {@code Core}'s private
- * {@code buildVersion} for {@link #gameVersion}.
+ * list banned usernames for {@code listBans} completeness, {@code Core}'s private
+ * {@code buildVersion} for {@link #gameVersion}, and {@code ChatServer}'s private
+ * {@code generalChat} for {@link #sendGeneralChat}.
  *
  * <p>All methods that touch {@link GameServer} state MUST be called on the game
  * main thread. The call sequences for {@link #teleport} and {@link #giveItem}
@@ -220,20 +224,61 @@ public final class Pz {
 
     /** Targeted chat to a single player; returns false if the player/connection is gone. */
     public static boolean sendMessageTo(String username, String msg) {
-        IsoPlayer p = findPlayer(username);
-        if (p == null) {
-            return false;
-        }
-        UdpConnection conn = GameServer.getConnectionFromPlayer(p);
-        if (conn == null) {
-            return false;
-        }
+        UdpConnection conn = connectionOf(username);
         ChatServer cs = ChatServer.getInstance();
-        if (cs == null) {
+        if (conn == null || cs == null) {
             return false;
         }
         cs.sendMessageToServerChat(conn, msg);
         return true;
+    }
+
+    /**
+     * General chat with {@code author} in the message's sender field, which the client prints
+     * as {@code [General][author]: text}, the way it shows the game's own Discord relay. Server
+     * chat cannot carry a sender (its client-side settings hide the author). Goes straight to
+     * the chat, past {@code ChatServer.sendMessage}, so the chat-message hook never sees it.
+     * {@code username} null sends to everyone. Returns false when nothing was sent: general
+     * chat is off on this server, or the recipient is gone.
+     */
+    public static boolean sendGeneralChat(String author, String text, String username) {
+        if (!ChatUtility.chatStreamEnabled(ChatType.general)) {
+            return false;
+        }
+        GeneralChat chat = generalChat();
+        if (chat == null) {
+            return false;
+        }
+        UdpConnection conn = null;
+        if (username != null) {
+            conn = connectionOf(username);
+            if (conn == null) {
+                return false;
+            }
+        }
+        ChatMessage message = chat.createMessage(text);
+        message.setAuthor(author);
+        if (conn == null) {
+            chat.sendMessageToChatMembers(message);
+        } else {
+            chat.sendMessageToPlayer(conn, message);
+        }
+        return true;
+    }
+
+    private static UdpConnection connectionOf(String username) {
+        IsoPlayer p = findPlayer(username);
+        return p != null ? GameServer.getConnectionFromPlayer(p) : null;
+    }
+
+    private static GeneralChat generalChat() {
+        try {
+            Field f = ChatServer.class.getDeclaredField("generalChat");
+            f.setAccessible(true);
+            return (GeneralChat) f.get(null);
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     // --- console ---

@@ -447,7 +447,7 @@ class ProtocolV1Test {
         @Override public void giveItem(String gameId, String itemCode, int amount, String quality) {
             if (failGiveWith != null) throw failGiveWith;
         }
-        @Override public void sendMessage(String message, String recipientGameId) { }
+        @Override public void sendMessage(String message, String senderName, String recipientGameId) { }
         @Override public CommandResult executeConsoleCommand(String command) { return new CommandResult(true, "", null); }
         @Override public void teleportPlayer(String gameId, double x, double y, double z, String dimension) { }
         @Override public void kickPlayer(String gameId, String reason) { }

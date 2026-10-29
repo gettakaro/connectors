@@ -901,26 +901,14 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     private void handleSendMessage(JsonObject args) {
         String message = optString(args, "message", "");
         String recipientGameId = null;
-        String senderName = null;
+        String senderNameOverride = null;
         JsonObject opts = optObject(args, "opts");
         if (opts != null) {
             recipientGameId = optString(optObject(opts, "recipient"), "gameId", null);
-            senderName = optString(opts, "senderNameOverride", null);
+            senderNameOverride = optString(opts, "senderNameOverride", null);
         }
-        // PZ server chat shows no author for a plain message, so prefix a name:
-        // Takaro's senderNameOverride when provided, otherwise "Server".
-        if (senderName == null || senderName.isEmpty()) {
-            String configured = config.getServerChatName();
-            String serverName = adapter.getServerName();
-            if (configured != null && !configured.isEmpty()) {
-                senderName = configured;
-            } else if (serverName != null && !serverName.isEmpty()) {
-                senderName = serverName;
-            } else {
-                senderName = "Server";
-            }
-        }
-        adapter.sendMessage(senderName + ": " + message, recipientGameId);
+        String senderName = ServerChatName.resolve(senderNameOverride, config.getServerChatName());
+        adapter.sendMessage(message, senderName, recipientGameId);
     }
 
     private void handleTeleportPlayer(JsonObject args) {

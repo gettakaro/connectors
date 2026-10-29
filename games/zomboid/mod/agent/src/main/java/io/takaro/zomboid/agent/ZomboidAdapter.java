@@ -2,6 +2,7 @@ package io.takaro.zomboid.agent;
 
 import io.takaro.zomboid.core.EventEmitter;
 import io.takaro.zomboid.core.GameAdapter;
+import io.takaro.zomboid.core.ServerChatName;
 import io.takaro.zomboid.core.model.BanEntry;
 import io.takaro.zomboid.core.model.CommandResult;
 import io.takaro.zomboid.core.model.GameEntity;
@@ -216,11 +217,16 @@ public final class ZomboidAdapter implements GameAdapter {
     }
 
     @Override
-    public void sendMessage(String message, String recipientGameId) {
-        if (recipientGameId == null || recipientGameId.isEmpty()) {
-            Pz.sendMessageGlobal(message);
-        } else if (!Pz.sendMessageTo(recipientGameId, message)) {
-            throw new IllegalStateException("Recipient not online: " + recipientGameId);
+    public void sendMessage(String message, String senderName, String recipientGameId) {
+        String recipient = recipientGameId == null || recipientGameId.isEmpty() ? null : recipientGameId;
+        if (senderName != null && Pz.sendGeneralChat(senderName, message, recipient)) {
+            return;
+        }
+        String text = ServerChatName.render(senderName, getServerName(), message);
+        if (recipient == null) {
+            Pz.sendMessageGlobal(text);
+        } else if (!Pz.sendMessageTo(recipient, text)) {
+            throw new IllegalStateException("Recipient not online: " + recipient);
         }
     }
 

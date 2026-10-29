@@ -95,6 +95,14 @@ logEvents=false
 debugCatalog=false
 ```
 
+**Server chat name (optional).** Messages from Takaro (module replies, the Discord bridge,
+broadcasts) show the chat name set for your server in Takaro as their sender, as a General chat
+line `[General][Your Name]: message`, to everyone or, for a whisper, to that one player. On a
+Takaro version that does not pass that name to the connector yet, put it after `serverChatName=`
+instead; the name set in Takaro wins over it, and a change applies to the next message without a
+restart. With neither (or with General chat turned off on the server) messages arrive as server
+chat with the server's name in front, `Your Server: message`.
+
 Every key can also be given as an environment variable, which wins over the file and is never
 written into it: `TAKARO_WS_URL`, `TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`,
 `TAKARO_SERVER_CHAT_NAME`, `TAKARO_DEBUG`, `TAKARO_LOG_EVENTS`, `TAKARO_DEBUG_CATALOG`,
@@ -173,7 +181,7 @@ timed-ban expiry, shutdown and the zombie-kill event.
 | Entity catalogue | ✅ | 242 entities synced (zombies and vehicles), vehicles under their in-game names ("Dash Bulldriver", "Burnt Chevalier Cossette"). |
 | Locations / points of interest | ⚠️ | Build 42 has no named-location registry, so only player-claimed safehouses can be listed — on a world with no safehouses the list is empty. |
 | Chat messages from players | ✅ | Real player chat reaches Takaro with the player and channel attached. |
-| Broadcast a message | ✅ | Shown to everyone in the server chat. |
+| Broadcast a message | ✅ | Shown to everyone, with your Takaro chat name as the sender (see "Server chat name"). |
 | Whisper a player | ✅ | A message addressed to one player arrives in that player's chat. |
 | Give an item | ✅ | The item appears in the player's inventory without a relog. |
 | Teleport a player | ⚠️ | The player is moved to the requested position; it can take around 15 seconds before the new position is reported back. |
@@ -196,11 +204,6 @@ timed-ban expiry, shutdown and the zombie-kill event.
 
 ### Known issues
 
-- **Messages sent from the Takaro dashboard show the server name as the sender.** Takaro does
-  not attach your domain's **Server Chat Name** setting to admin messages, so they fall back to
-  the Project Zomboid server name. Messages sent by modules and commands use the right name. You
-  can force a name by setting `serverChatName=` in `TakaroConfig.txt`, but that duplicates the
-  Takaro setting, so it is left unset by default.
 - **No named locations.** Build 42 simply does not keep a registry of named places, so Takaro
   can only ever see safehouses players have claimed.
 - **One map, one floor.** The map is the vanilla Knox County picture that ships with the game,
