@@ -508,10 +508,20 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
     ///      then drops the remainder, so a request for 50 into room for 20 places 20 and
     ///      drops 30. That is a partially lost order.
     ///
-    /// So we do the placement ourselves: compute exact capacity, refuse unless the entire
-    /// amount fits, and only then write into the inventory and sync each touched slot.
-    /// Takaro turns a reported failure into a shop-order-delivery-failed event, which a
-    /// module can surface to the player, so refusing is visible and actionable.
+    /// So we plan the placement ourselves: compute exact capacity and refuse unless the
+    /// entire amount fits. Takaro turns a reported failure into a
+    /// shop-order-delivery-failed event, which a module can surface to the player, so
+    /// refusing is visible and actionable.
+    ///
+    /// How the planned stacks reach the player depends on who owns the inventory. With
+    /// server-side characters (SSC) the server does, so we write the slots and sync them.
+    /// Without SSC (TShock's default) the client owns its inventory and ignores PlayerSlot
+    /// packets for its own player (MessageBuffer case 5), so a slot write only changes the
+    /// server's copy: the player never sees the item and the next client sync erases it.
+    /// There we spawn each planned stack on the player, reserved for them, exactly like
+    /// TSPlayer.GiveItemByDrop; the client picks it up at once. The capacity check still
+    /// holds, so the whole order fits and nothing is left on the ground. A dead player
+    /// cannot pick anything up, so the give is refused until they respawn.
     /// </summary>
     private static void TakaroGive(CommandArgs args)
     {
@@ -570,6 +580,13 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
 
         var itemName = NonEmpty(template.Name) ?? itemId.ToString(CultureInfo.InvariantCulture);
 
+        var serverOwnsInventory = Main.ServerSideCharacter && !target.IsDisabledForSSC;
+        if (!serverOwnsInventory && (target.TPlayer?.dead ?? true))
+        {
+            EmitGiveFailure(args, $"{target.Name} is dead. Try again after they respawn.");
+            return;
+        }
+
         // Plan the entire placement before touching anything. BuildPlacementPlan returns
         // null when the full amount does not fit, so we either apply a complete plan or
         // mutate nothing at all.
@@ -594,7 +611,14 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
 
         try
         {
-            ApplyPlacementPlan(target, template, plan);
+            if (serverOwnsInventory)
+            {
+                ApplyPlacementPlan(target, template, plan);
+            }
+            else
+            {
+                HandPlacementPlanToClient(target, template, plan);
+            }
         }
         catch (Exception ex)
         {
@@ -606,7 +630,7 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         {
             success = true,
             delivered = amount,
-            method = "inventory",
+            method = serverOwnsInventory ? "inventory" : "pickup",
             item = itemName
         });
         args.Player.SendInfoMessage($"TAKARO_GIVE {json}");
@@ -782,6 +806,26 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
                 target.Index,
                 placement.Slot,
                 0f);
+        }
+    }
+
+    // Without SSC: one item per planned stack (each within max stack), spawned on the
+    // player and reserved for them, as TSPlayer.GiveItemByDrop does. Their client picks
+    // each up into the room the plan counted.
+    private static void HandPlacementPlanToClient(TSPlayer target, Item template, List<PlannedPlacement> plan)
+    {
+        foreach (var placement in plan)
+        {
+            var index = Item.NewItem(
+                new Terraria.DataStructures.EntitySource_DebugCommand(),
+                target.TPlayer.Center,
+                template.type,
+                placement.Amount,
+                template.prefix,
+                noBroadcast: true);
+            Main.item[index].playerIndexTheItemIsReservedFor = target.Index;
+            target.SendData(PacketTypes.ItemDrop, "", index, 1f);
+            target.SendData(PacketTypes.ItemOwner, null, index);
         }
     }
 

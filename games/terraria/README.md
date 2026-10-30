@@ -214,7 +214,7 @@ Checked on TShock 6.2.1 (Terraria 1.4.5.8), 2026-10-22. ✅ works, ⚠️ works 
 | Kick | ✅ | The player sees the reason. |
 | Ban and unban | ✅ | Timed and permanent; a banned player sees the reason and time left. Unbanned players can rejoin at once. |
 | Ban list | ✅ | Bans made in game show up after Takaro's ban sync. |
-| Give an item | ✅ | Straight into the inventory; refused when it does not fit, instead of dropping items. |
+| Give an item | ✅ | Straight into the inventory; refused when it does not fit, or while the player is dead. |
 | Shop | ✅ | A purchase lands straight in the inventory. |
 | Shut down the server | ✅ | Saves the world and stops. Off by default: set `enableShutdown=true`. |
 | Player joined / left | ✅ | Also on a kick. |
