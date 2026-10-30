@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/gettakaro/connectors/compare/enshrouded-v0.9.0...enshrouded-v0.10.0) (2026-10-30)
+
+
+### Features
+
+* **enshrouded:** show the configured server chat name on messages from Takaro ([#695](https://github.com/gettakaro/connectors/issues/695)) ([8100a6a](https://github.com/gettakaro/connectors/commit/8100a6aab9188040b152a03753656b203098829a))
+
 ## [0.9.0](https://github.com/gettakaro/connectors/compare/enshrouded-v0.8.1...enshrouded-v0.9.0) (2026-10-26)
 
 
