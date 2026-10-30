@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/gettakaro/connectors/compare/dune-v0.5.0...dune-v0.6.0) (2026-10-30)
+
+
+### Features
+
+* **dune:** show the configured server chat name on messages from Takaro ([#694](https://github.com/gettakaro/connectors/issues/694)) ([049e7f4](https://github.com/gettakaro/connectors/commit/049e7f464b9e1727f3637aef79fc8472af622e8c))
+* **dune:** support Steam build 26223037 ([#670](https://github.com/gettakaro/connectors/issues/670)) ([8d2817a](https://github.com/gettakaro/connectors/commit/8d2817a897e9ac248088d4857132cd207ba19a04))
+
 ## [0.5.0](https://github.com/gettakaro/connectors/compare/dune-v0.4.0...dune-v0.5.0) (2026-10-26)
 
 
