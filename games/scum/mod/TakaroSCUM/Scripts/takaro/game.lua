@@ -8,6 +8,7 @@
 local util = require("takaro.util")
 local json = require("takaro.json")
 local scumlog = require("takaro.scumlog")
+local chatname = require("takaro.chatname")
 
 local M = {}
 
@@ -339,8 +340,7 @@ function Game:send_message(params)
   local ms = self:static("_ms", M.UE.MiscStatics)
   local gm = self:game_mode()
   if not (ms and gm) then return { ok = false, reason = "chat statics not available" } end
-  local text = params.message
-  if params.senderName and params.senderName ~= "" then text = params.senderName .. ": " .. text end
+  local text = chatname.render(params.senderName, params.message)
   if params.recipientGameId then
     local pc = self:find_pc(params.recipientGameId)
     if not pc then return { ok = false, reason = "recipient is offline" } end

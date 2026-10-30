@@ -22,8 +22,8 @@ Tested on 2026-10-13/14 with a real game client on SCUM 1.3.4.2.161892 (Steam bu
 | Creature list | ⚠️ | Animals use in-game names; zombie and NPC names come from codes (e.g. "Zombie Civilian Skinny Male"). |
 | Locations / points of interest | ❌ | SCUM has no list of named places. |
 | World map with player positions | ✅ | Player dots on Takaro's map line up with the in-game map. The map picture needs a one-time upload (step 3). |
-| Send a message to everyone | ✅ | Shows in chat as an orange server line. |
-| Send a message to one player | ✅ | Arrives in that player's chat only. |
+| Send a message to everyone | ✅ | Shows in chat as an orange server line. With a server chat name (set in Takaro, or `SERVER_CHAT_NAME`) the line reads `Name: message`: SCUM server lines have no sender field. |
+| Send a message to one player | ✅ | Arrives in that player's chat only, with the same `Name: ` prefix. |
 | Run a console command | ⚠️ | Only commands you list. Listed admin commands need an admin (from `AdminUsers.ini`) online; `announce` and `listplayers` work with nobody online. The output shows in that admin's in-game chat, not in Takaro. |
 | Teleport a player | ✅ | The player is moved at once. |
 | Kick a player | ✅ | The player sees the reason in chat, then "You have been kicked off the server!". |
@@ -59,6 +59,7 @@ Tested on 2026-10-13/14 with a real game client on SCUM 1.3.4.2.161892 (Steam bu
 |---|---|
 | `REGISTRATION_TOKEN` | Your Takaro registration token. Required. |
 | `SERVER_NAME` | The name Takaro shows for this server. |
+| `SERVER_CHAT_NAME` | Optional. The sender name players see on messages from Takaro, as `Name: message`. The chat name set in Takaro wins over it; set it here only for a Takaro version that does not pass that name on. Empty = no name. |
 | `IDENTITY_TOKEN` | Leave empty. The connector makes one and keeps it in `TakaroIdentity.txt`; keep that file when you move or reinstall the server. |
 | `TAKARO_WS_URL` | Leave `wss://connect.takaro.io/`. |
 | `COMMAND_ALLOWLIST` | Commands Takaro may run, comma separated, without `#`, e.g. `announce,listplayers`. Empty = none. |
