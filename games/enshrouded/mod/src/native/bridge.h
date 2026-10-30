@@ -82,6 +82,8 @@ public:
     // New connection settings from any thread: the bridge thread applies them, then drops the connection
     // and reconnects at once (or stays idle when !connect).
     void Reconfigure(const LiveSettings& s, bool connect);
+    // A new server chat name from any thread; the next action uses it, the connection stays up.
+    void SetServerChatName(const std::string& name);
     std::string HealthJson() const;  // cached snapshot; safe from any thread, never waits on bridge work
 
     // test helpers (bridge-thread state; call only while the bridge is stopped or from its callbacks)
@@ -153,6 +155,7 @@ private:
     std::deque<std::shared_ptr<Job>> completions_;
     bool settingsPending_ = false, pendingConnect_ = false;
     LiveSettings pendingSettings_;
+    std::string serverChatName_;
 
     // bridge-thread state
     uint64_t epoch_ = 0;

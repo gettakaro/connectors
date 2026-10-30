@@ -191,6 +191,7 @@
       "getPlayerLocation",
       "getPlayerInventory",
       "sendMessage broadcast, whisper and senderNameOverride as notices",
+      "sendMessage sender name: senderNameOverride, else plugin.json serverChatName / TAKARO_SERVER_CHAT_NAME, rendered as '<name>: <text>' (no game sender field for notices)",
       "executeConsoleCommand",
       "giveItem (stack)",
       "teleportPlayer",

@@ -27,6 +27,7 @@ server. On a server still on build 1024233 the new DLL turns the item/creature c
      "name": "",
      "url": "wss://connect.takaro.io/",
      "protocol": 1,
+     "serverChatName": "",
      "token": "",
      "mapDir": "",
      "caFile": ""
@@ -39,7 +40,7 @@ server. On a server still on build 1024233 the new DLL turns the item/creature c
    server in a domain). Optionally set `token` (a long random secret) for the diagnostics endpoint.
    Keep the file readable only by the account the server runs as: it holds a secret. The
    environment variables `TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`,
-   `TAKARO_SERVER_NAME`, `TAKARO_WS_URL`, `TAKARO_CA_FILE` and `TAKARO_PLUGIN_TOKEN` override the
+   `TAKARO_SERVER_NAME`, `TAKARO_WS_URL`, `TAKARO_SERVER_CHAT_NAME`, `TAKARO_CA_FILE` and `TAKARO_PLUGIN_TOKEN` override the
    file when they are set (a changed variable needs a restart). `caFile`/`TAKARO_CA_FILE` is only
    for a Takaro behind your own certificate authority; certificate and host-name checks always stay
    on, and a CA file that cannot be read stops the connection instead of falling back.
@@ -62,8 +63,15 @@ server. On a server still on build 1024233 the new DLL turns the item/creature c
 `url`, `registrationToken`, `identityToken`, `name` and `protocol` in `takaro/plugin.json` apply without a
 restart: the connector reads the file every 5 seconds and, when one of them changed, reconnects at
 once; an emptied token disconnects. A half-saved or broken file is ignored (the console says so)
-until it parses again. The other
+until it parses again. `serverChatName` also applies within a few seconds, without a reconnect. The other
 keys (`caFile`, `token`, `mapDir`) are read at startup.
+
+**Server chat name (optional).** Players see messages from Takaro (module replies, the Discord bridge,
+broadcasts) as a notice that starts with the sender name, for example `Takaro: hello`. Takaro passes
+the chat name set for the server in Takaro, and that name wins. On a Takaro version that passes no
+name, put the name in `serverChatName` instead (a file from an older connector version has no such
+key; add it). With neither, the notice shows the text alone. The game has no sender field for a
+notice, so the name is written in front of the text, the same way in global chat and in a whisper.
 
 With `token` set, `curl -H "Authorization: Bearer <token>" http://127.0.0.1:18890/health` from the
 server's own network (inside the container for Docker) shows each capability's state and, under

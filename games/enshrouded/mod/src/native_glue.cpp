@@ -3,7 +3,8 @@
 //
 // takaro\plugin.json is the one config file: created at load when missing, re-read while the server runs
 // (ConfigWatcher, on its own thread). A saved registration token connects without a restart; a changed
-// token, URL, identity or name reconnects at once; an emptied token disconnects. What the operator must
+// token, URL, identity or name reconnects at once; an emptied token disconnects; a changed serverChatName
+// applies to the next message without reconnecting. What the operator must
 // fix is printed to the server console (stdout), where a panel shows it.
 #include "common.h"
 #include "hooks.h"
@@ -236,12 +237,16 @@ void WatchLoop(std::string base, native::NativeConfig cfg, native::EnvFn env) {
         native::ApplyLive(cfg, live);
         LogSources(cfg);
         std::string blocker = native::ConnectBlocker(live.s);
+        bool connectionChanged;
         {
             std::lock_guard<std::mutex> g(g_consoleMu);
+            connectionChanged = g_live.s != live.s;
             g_live = live;
-            g_consoleKey.clear();  // new settings: report their outcome afresh
+            if (connectionChanged) g_consoleKey.clear();  // new settings: report their outcome afresh
         }
         native::Bridge* bridge = g_bridge.load();
+        if (bridge) bridge->SetServerChatName(live.serverChatName);
+        if (!connectionChanged) continue;
         if (bridge) {
             bridge->Reconfigure(live.s, blocker.empty());
             if (blocker.empty()) ConsoleLine(DisplayPath(g_userPath) + " changed; connecting to " + live.s.url + " as \"" +

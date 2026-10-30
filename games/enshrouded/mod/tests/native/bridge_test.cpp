@@ -1047,6 +1047,46 @@ void IdentifyWaitsForGameWorld() {
     }
 }
 
+// sendMessage sender name: Takaro's senderNameOverride, else plugin.json serverChatName, else the plain text;
+// a new chat name applies to the next message without a reconnect.
+void ServerChatName() {
+    t::Group("bridge-server-chat-name");
+    Rig r("server-chat-name");
+    r.o.config.serverChatName = "Embervale";
+    r.Start();
+    r.Connect();
+    auto sent = [&](const std::string& args, std::string* recipient = nullptr) {
+        JsonValue resp = r.Call("sendMessage", args);
+        CHECK_MSG(!resp.get("error"), JsonDump(resp));
+        t::RecordedRequest req;
+        if (!r.fake.LastRequest("POST", "/message", req)) return std::string("<none>");
+        if (recipient) *recipient = Str(req.body.get("recipientGameId")).value_or("");
+        return Str(req.body.get("text")).value_or("");
+    };
+    CHECK_EQ(sent(R"({"message":"hello"})"), std::string("Embervale: hello"));
+    CHECK_EQ(sent(R"({"message":"hello","opts":{"senderNameOverride":"Takaro Bot"}})"), std::string("Takaro Bot: hello"));
+    CHECK_EQ(sent(R"({"message":"hello","opts":{"senderNameOverride":"  "}})"), std::string("Embervale: hello"));
+    std::string to;
+    CHECK_EQ(sent(std::string(R"({"message":"psst","opts":{"recipient":{"gameId":")") + LIMON + "\"}}}", &to),
+             std::string("Embervale: psst"));
+    CHECK(!to.empty());
+    to.clear();
+    CHECK_EQ(sent(std::string(R"({"message":"psst","opts":{"senderNameOverride":"Ward","recipient":{"gameId":")") + LIMON +
+                      "\"}}}",
+                  &to),
+             std::string("Ward: psst"));
+    CHECK(!to.empty());
+    r.bridge->SetServerChatName("Shroud");
+    CHECK_EQ(sent(R"({"message":"next"})"), std::string("Shroud: next"));
+    CHECK(t::WaitFor([&] {  // /health shows the live name, not the startup one
+        const JsonValue* c = r.Health().get("config");
+        return c && c->get("serverChatName") && c->get("serverChatName")->str == "Shroud";
+    }));
+    r.bridge->SetServerChatName("");
+    CHECK_EQ(sent(R"({"message":"plain"})"), std::string("plain"));
+    CHECK(r.tr.Retargets().empty());  // a chat name is not a connection setting
+}
+
 void ProtocolV1Responses() {
     t::Group("bridge-v1-responses");
     Rig r("v1-responses");
@@ -1242,6 +1282,7 @@ void RunBridgeTests() {
     UnsupportedGameBuildReason();
     IdentifyWaitsForGameWorld();
     ProtocolV1Responses();
+    ServerChatName();
     ProtocolV1Events();
     ProtocolV1Fallbacks();
 }

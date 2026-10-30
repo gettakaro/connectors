@@ -6,6 +6,7 @@
 #include "native/logtail.h"
 #include "native/mapping.h"
 #include "native/persistence.h"
+#include "native/server_chat.h"
 #include "native/transport.h"
 #include "testlib.h"
 
@@ -510,7 +511,23 @@ void GameProfileTests() {
 
 }  // namespace
 
+// The sender name on sendMessage: senderNameOverride wins, then the configured name; blank counts as unset.
+void ServerChatTests() {
+    t::Group("server-chat-name");
+    CHECK_EQ(ResolveServerChatName(t::J(R"({"senderNameOverride":"Ovr"})"), "Cfg"), std::string("Ovr"));
+    CHECK_EQ(ResolveServerChatName(t::J(R"({"senderNameOverride":"  Ovr "})"), "Cfg"), std::string("Ovr"));
+    CHECK_EQ(ResolveServerChatName(t::J(R"({})"), "Cfg"), std::string("Cfg"));
+    CHECK_EQ(ResolveServerChatName(t::J(R"({"senderNameOverride":""})"), "Cfg"), std::string("Cfg"));
+    CHECK_EQ(ResolveServerChatName(t::J(R"({"senderNameOverride":"   "})"), "Cfg"), std::string("Cfg"));
+    CHECK_EQ(ResolveServerChatName(t::J(R"({"senderNameOverride":null})"), " Cfg "), std::string("Cfg"));
+    CHECK_EQ(ResolveServerChatName(t::J(R"({})"), ""), std::string());
+    CHECK_EQ(ResolveServerChatName(t::J(R"({"senderNameOverride":" "})"), "  "), std::string());
+    CHECK_EQ(RenderServerChat("X", "hello"), std::string("X: hello"));
+    CHECK_EQ(RenderServerChat("", "hello"), std::string("hello"));
+}
+
 void RunUnitTests() {
+    ServerChatTests();
     GameProfileTests();
     ProtocolV1Tests();
     IdentityTests();
