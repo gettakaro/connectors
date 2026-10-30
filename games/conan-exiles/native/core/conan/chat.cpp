@@ -106,8 +106,9 @@ ChatOutcome SendChat(const ChatRequest& cmd) {
     if (!ran) return Fail("game thread did not respond");
     if (stale) return Fail("Conan server is not ready for chat: the world changed, try again");
 
-    NativeLog("sendMessage %s: online=%d delivered=%d game-thread=%.3f ms%s%s",
-              cmd.recipient.empty() ? "global" : "targeted", online, delivered, jobNs / 1e6,
+    NativeLog("sendMessage %s: sender=\"%s\" (%s) online=%d delivered=%d game-thread=%.3f ms%s%s",
+              cmd.recipient.empty() ? "global" : "targeted", cmd.sender.c_str(), cmd.senderFrom.c_str(), online,
+              delivered, jobNs / 1e6,
               delivered == 0 && !seen.empty() ? "; online gameId/name: " : "", delivered == 0 ? seen.c_str() : "");
     ChatOutcome o;
     o.online = online;

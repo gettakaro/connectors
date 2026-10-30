@@ -65,7 +65,8 @@ Windows: start the server as usual.
 The connector creates its config on the first start:
 `ConanSandbox/Saved/Config/Takaro/takaro.json`. Open it, set `registrationToken` to the token from
 Takaro and save. Saving is enough: it connects within a few seconds, no restart needed. Optional:
-`name` (the server name in Takaro).
+`name` (the server name in Takaro) and `serverChatName` (the sender players see on messages from
+Takaro instead of `Takaro`; the chat name set on the game server in Takaro wins over it).
 
 You can also create the file yourself before the first start, with this content:
 

@@ -10,6 +10,7 @@ struct ChatRequest {
     std::string message;
     std::string recipient;  // normalised: Steam64 or a character name; empty = everyone
     std::string sender;     // shown as the chat user name
+    std::string senderFrom = "default";  // "override" (Takaro), "config" (serverChatName) or "default", for the log
 };
 
 struct ChatOutcome {

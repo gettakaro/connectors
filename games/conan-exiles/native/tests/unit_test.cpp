@@ -998,6 +998,115 @@ static void TestGameProfile() {
     CHECK(!r.ok, "protocol 0 has no getGameIcon");
 }
 
+static void TestServerChatName() {
+    using namespace takaro;
+    // Resolution: the override wins, then the configured name, then Takaro; blank counts as unset.
+    EQ(ResolveSender(" Admin ", "Hub"), "Admin");
+    EQ(ResolveSender("", " Hub "), "Hub");
+    EQ(ResolveSender(" \t ", "Hub"), "Hub");
+    EQ(ResolveSender("", "  "), "Takaro");
+    EQ(ResolveSender("", ""), "Takaro");
+    std::string from;
+    ResolveSender("Admin", "Hub", &from);
+    EQ(from, "override");
+    ResolveSender(" ", "Hub", &from);
+    EQ(from, "config");
+    ResolveSender("", " ", &from);
+    EQ(from, "default");
+
+    ChatRequest req;
+    std::string err;
+    CHECK(ParseSendMessage(J("{\"message\":\"hi\"}"), req, err, "Hub") && req.sender == "Hub", "config fallback");
+    CHECK(ParseSendMessage(J("{\"message\":\"hi\",\"opts\":{\"senderNameOverride\":\"Admin\"}}"), req, err, "Hub") &&
+              req.sender == "Admin",
+          "override wins over config");
+    CHECK(ParseSendMessage(J("{\"message\":\"hi\",\"opts\":{\"senderNameOverride\":\"   \"}}"), req, err, "Hub") &&
+              req.sender == "Hub",
+          "blank override falls back: %s", req.sender.c_str());
+    CHECK(ParseSendMessage(J("{\"message\":\"hi\",\"opts\":{\"senderNameOverride\":null}}"), req, err, "") &&
+              req.sender == "Takaro",
+          "nothing set: Takaro as before");
+
+    // Every send path (global and directed) gets the same sender as the chat user name; the text is
+    // never prefixed. The configured name is read per message, so a change applies to the next one.
+    std::string configured = "Hub";
+    std::vector<ChatRequest> sent;
+    AdapterOptions ao;
+    ao.ready = true;
+    ao.serverChatName = [&] { return configured; };
+    ao.chat = [&](const ChatRequest& r) {
+        sent.push_back(r);
+        ChatOutcome o;
+        o.success = true;
+        return o;
+    };
+    Adapter a(ao);
+    CHECK(a.Execute("sendMessage", J("{\"message\":\"global\"}")).ok, "global");
+    CHECK(a.Execute("sendMessage", J("{\"message\":\"dm\",\"opts\":{\"recipient\":{\"gameId\":\"76561198000000001\"}}}"))
+              .ok,
+          "directed");
+    configured = "Hub 2";
+    CHECK(a.Execute("sendMessage", J("{\"message\":\"after\"}")).ok, "after change");
+    CHECK(a.Execute("sendMessage", J("{\"message\":\"o\",\"opts\":{\"senderNameOverride\":\"Admin\",\"recipient\":"
+                                     "{\"gameId\":\"76561198000000001\"}}}"))
+              .ok,
+          "override");
+    configured = "";
+    CHECK(a.Execute("sendMessage", J("{\"message\":\"plain\"}")).ok, "unset");
+    CHECK(sent.size() == 5, "%zu sends", sent.size());
+    if (sent.size() == 5) {
+        EQ(sent[0].sender, "Hub");
+        CHECK(sent[0].recipient.empty() && sent[0].message == "global", "global text unchanged");
+        EQ(sent[1].sender, "Hub");
+        CHECK(sent[1].recipient == "76561198000000001" && sent[1].message == "dm", "directed text unchanged");
+        EQ(sent[2].sender, "Hub 2");
+        EQ(sent[3].sender, "Admin");
+        EQ(sent[0].senderFrom, "config");
+        EQ(sent[3].senderFrom, "override");
+        EQ(sent[4].sender, "Takaro");
+        EQ(sent[4].senderFrom, "default");
+        EQ(sent[4].message, "plain");
+    }
+
+    // Config: the environment wins over takaro.json; blank is unset.
+    std::map<std::string, std::string> envs;
+    EnvFn env = [&](const char* n) { return envs.count(n) ? envs[n] : std::string(); };
+    Config c = LoadConfig("/nonexistent", env, "{\"serverChatName\": \" File Name \"}", true);
+    EQ(c.serverChatName, "File Name");
+    CHECK(c.warnings.empty(), "serverChatName is a known key (%zu warnings)", c.warnings.size());
+    CHECK(ConfigSummaryJson(c).find("\"serverChatName\":\"takaro.json serverChatName\"") != std::string::npos,
+          "source named: %s", ConfigSummaryJson(c).c_str());
+    c = LoadConfig("/nonexistent", env, "{\"serverChatName\": \"   \"}", true);
+    EQ(c.serverChatName, "");
+    envs["TAKARO_SERVER_CHAT_NAME"] = "Env Name";
+    c = LoadConfig("/nonexistent", env, "{\"serverChatName\": \"File Name\"}", true);
+    EQ(c.serverChatName, "Env Name");
+    envs.clear();
+
+    // Live: a saved serverChatName applies without a reconnect, and emptying it clears it.
+    char tmpl[] = "/tmp/conan-chatname-XXXXXX";
+    std::string root = mkdtemp(tmpl);
+    ConfigWatcher::Options o;
+    o.savedDir = root + "/Saved";
+    o.env = env;
+    o.pollMs = 10;
+    o.settleMs = 5;
+    CHECK(EnsureDirectory(o.savedDir + "/Config/Takaro", err), "%s", err.c_str());
+    const std::string file = o.savedDir + "/Config/Takaro/takaro.json";
+    const std::string base = "{\"registrationToken\": \"reg\", \"identityToken\": \"id-1\", \"name\": \"N\"";
+    CHECK(ReplaceUserFile(file, base + "}", 0600, err), "%s", err.c_str());
+    ConfigWatcher w(o);
+    c = w.Load();
+    CHECK(c.enabled && w.ServerChatName().empty(), "starts unset");
+    Config next;
+    CHECK(ReplaceUserFile(file, base + ", \"serverChatName\": \"Hub\"}", 0600, err), "%s", err.c_str());
+    CHECK(!w.Poll(100, next) && !w.Poll(105, next), "a chat name change does not reconnect");
+    EQ(w.ServerChatName(), "Hub");
+    CHECK(ReplaceUserFile(file, base + ", \"serverChatName\": \"\"}", 0600, err), "%s", err.c_str());
+    CHECK(!w.Poll(200, next) && !w.Poll(205, next), "no reconnect");
+    EQ(w.ServerChatName(), "");
+}
+
 int main() {
     TestProtocol();
     TestProtocolV1();
@@ -1010,6 +1119,7 @@ int main() {
     TestPins();
     TestMaps();
     TestAdapter();
+    TestServerChatName();
     TestCoverage();
     TestRecipient();
     TestText();

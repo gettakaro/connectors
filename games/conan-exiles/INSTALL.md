@@ -51,7 +51,7 @@ You also need a Takaro game server of type **Generic** and its **registration to
 
 `ConanSandbox/Saved/Config/Takaro/takaro.json` is the only config file. If it is missing, the
 connector creates it on the first start with a new `identityToken` and an empty token. Saving the
-file is enough: the connector applies a changed token, identity, name, URL or protocol within a few seconds,
+file is enough: the connector applies a changed token, identity, name, URL, protocol or chat name within a few seconds,
 no restart needed; an emptied token disconnects. You can also create it yourself before the first
 start:
 
@@ -72,10 +72,11 @@ start:
 | `name` | The server name Takaro shows. Empty: `Conan Exiles (<first 8 identity characters>)`. Names are unique per Takaro domain. |
 | `url` | `wss://connect.takaro.io/` |
 | `protocol` | `1` (default): offers Takaro protocol 1 (game map, event acks), falls back to 0 on an older Takaro. `0`: only if the console says Takaro refuses protocol 1. Env: `TAKARO_PROTOCOL`. |
+| `serverChatName` | Optional: the sender name players see on messages from Takaro (module replies, the Discord bridge, broadcasts). The chat name set on the game server in Takaro wins over it; with neither set the sender is `Takaro`. Applies to the next message after you save, no restart. Env: `TAKARO_SERVER_CHAT_NAME`. |
 | `caFile` | Optional, Linux: a PEM bundle (relative to `ConanSandbox/Saved`). Default: `ca-certificates.crt` next to the library. Windows uses the system certificate store. |
 
 Environment variables override the file: `TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN`,
-`TAKARO_WS_URL`, `TAKARO_SERVER_NAME`, `TAKARO_CA_FILE`. A changed environment variable needs a
+`TAKARO_WS_URL`, `TAKARO_SERVER_NAME`, `TAKARO_SERVER_CHAT_NAME`, `TAKARO_CA_FILE`. A changed environment variable needs a
 restart. `TAKARO_CONAN_NATIVE_DISABLE=1` turns the connector off without removing it.
 
 **Keep RCON off.** The connector does not use it. In `Game.ini`:

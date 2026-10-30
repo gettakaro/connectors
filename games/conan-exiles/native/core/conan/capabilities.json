@@ -76,7 +76,7 @@
       "implementation": "native",
       "responseShape": "{}",
       "verification": "Live 2026-10-03 on rig 349 (bridge stopped): MCP gameserverSendMessage global and directed (opts.recipient.gameId + senderNameOverride) -> native log delivered=1 each, both lines in the client chat (El-Limon evidence native-stage2/L1)",
-      "reason": "ClientReceiveChatMessage on each online ConanPlayerController through ProcessEvent on the game thread; global, or directed by Steam64 / character name."
+      "reason": "ClientReceiveChatMessage on each online ConanPlayerController through ProcessEvent on the game thread; global, or directed by Steam64 / character name. The chat user name is opts.senderNameOverride, then takaro.json serverChatName, then Takaro."
     },
     "teleportPlayer": {
       "status": "live-supported",

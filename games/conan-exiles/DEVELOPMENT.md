@@ -133,7 +133,7 @@ native/
 - **Config** (`core/takaro/config.*`, `core/takaro/config_watch.*`). One file:
   `ConanSandbox/Saved/Config/Takaro/takaro.json` (`TAKARO_CONAN_CONFIG` moves it). It is not in
   the zip and an upgrade never touches it. Per field: environment (`TAKARO_IDENTITY_TOKEN`,
-  `TAKARO_REGISTRATION_TOKEN`, `TAKARO_WS_URL`, `TAKARO_SERVER_NAME`, `TAKARO_CA_FILE`,
+  `TAKARO_REGISTRATION_TOKEN`, `TAKARO_WS_URL`, `TAKARO_SERVER_NAME`, `TAKARO_SERVER_CHAT_NAME`, `TAKARO_CA_FILE`,
   `TAKARO_STATE_DIR`, `TAKARO_PROTOCOL`; never written to disk), then the file, then the default.
   - A missing file is created at load from `kConfigTemplate` (unless the environment carries both
     tokens). When neither env nor file sets an identity, a new UUID v4 (and, with no name set,
@@ -144,8 +144,15 @@ native/
     1 s later matches, and ignores an unparseable one. A change of URL, token, identity or name
     calls `ITransport::Retarget`, which drops the socket (Linux: on the lws service thread, after the
     old socket's own CLOSED callback; Windows: under the transport lock, with a generation check for
-    a dial in flight) and redials at once. `caFile`, `stateDir` and the env-only tunables are read
-    at startup only.
+    a dial in flight) and redials at once. A changed `serverChatName` applies to the next
+    `sendMessage` without a reconnect (`ConfigWatcher::ServerChatName`). `caFile`, `stateDir` and
+    the env-only tunables are read at startup only.
+  - Chat sender (`ResolveSender`, `core/conan/text.h`): `opts.senderNameOverride` (Takaro fills it
+    from the server's chat name setting), then `serverChatName`, then `Takaro`, each trimmed. It is
+    the ChatRpcData userName of every global and directed line, so the text itself is never
+    prefixed. Player chat events come from `ServerSendChatMessage` (client to server), never from
+    the `ClientReceiveChatMessage` the connector calls, so its own lines cannot come back as
+    `chat-message`.
   - No token (also a token emptied while running), an unreadable or invalid file, a `ws://` URL or
     an identity that could not be written:
     the library still loads (hooks and all) but never dials, and prints a `****` banner to the
