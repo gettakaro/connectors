@@ -34,6 +34,8 @@ TAKARO_PROTOCOL=1
 
 `TAKARO_IDENTITY_TOKEN` identifies this server in Takaro; keep it when you move the server. `TAKARO_SERVER_NAME` is the name Takaro shows (a file the connector creates names it `My VEIN server (<first 8 characters of the identity>)`). `TAKARO_ADMIN_STEAMIDS` (optional, comma separated SteamID64s) get VEIN's in-game admin rights. `TAKARO_PROTOCOL`: leave `1` (offers Takaro protocol 1 for the map and falls back to 0 on an older Takaro); `0` speaks protocol 0 only. A saved change to the token, identity, name, URL or `TAKARO_PROTOCOL` reconnects within a few seconds; `TAKARO_ADMIN_STEAMIDS` and every other key need a restart.
 
+**Server chat name (optional).** Messages from Takaro (module replies, the Discord bridge, broadcasts) show as `[Name] message`; VEIN has no sender field for server messages, so the name is part of the line. `Name` is the chat name set for this server in Takaro, and a change there applies to the next message without a restart. On a Takaro version that does not pass that name to the connector, add `TAKARO_SERVER_CHAT_NAME=Your Name` to `takaro.cfg` and restart; the chat name set in Takaro wins over it. With neither, the name is `TAKARO_SERVER_NAME`, else `Server`. `TAKARO_SENDER_NAME`, the older key, still works and wins over `TAKARO_SERVER_CHAT_NAME`.
+
 This works with every panel and needs no startup-line or setting change: while Steam starts, the game looks for an optional `libsteam.so` in that folder, and the small loader with that name starts the connector next to it. Steam itself is unaffected. A SteamCMD update or validate leaves the files in place. To remove the connector, delete `libsteam.so`.
 
 If your host does not let you upload `.so` files into the game folder, ask their support to place the two files for you.
@@ -66,8 +68,8 @@ Verified on the native connector (v0.3.0) with a real game client and Takaro on 
 | Entity catalogue | ⚠️ | Creature types sync, but Takaro never deletes rows from older builds. |
 | Locations / points of interest | ✅ | The game's named places (291 on Champlain Valley) sync to the Takaro map with their in-game names. |
 | Run a console command | ✅ | The connector's own set: `help`, `players`, `say`, `give`, `tp`, `ban`, `save`, … |
-| Broadcast a message | ✅ | Everyone sees it, as a chat line prefixed with the server name. |
-| Whisper a player | ✅ | Reaches the one player, as an on-screen notification. |
+| Broadcast a message | ✅ | Everyone sees it as a chat line `[Name] message`, with the server's chat name from Takaro. |
+| Whisper a player | ✅ | Reaches the one player as an on-screen notification `[Name] message`. |
 | Teleport a player | ✅ | The player is moved to the requested position. |
 | Kick a player | ✅ | The player is dropped and can rejoin afterwards. |
 | Ban a player (timed and permanent) | ✅ | Works offline too; the connector lifts timed bans at expiry. |
@@ -111,7 +113,7 @@ Verified on the native connector (v0.3.0) with a real game client and Takaro on 
 
 - The two-file install relies on the game's `libsteam_api.so` looking for an optional `libsteam.so` while Steam starts. If a game or Steam update stops doing that, no `[Takaro]` line appears; please report it, and use `LD_PRELOAD` meanwhile.
 - Upgrading from the old sidecar release (v0.2.x) needs a short maintenance window; follow the [upgrade instructions](INSTALL.md).
-- A broadcast shows as a chat line prefixed with the server name; a whisper as an on-screen notification.
+- VEIN gives server messages no sender, so a message from Takaro carries its name as a `[Name]` prefix; a whisper shows as an on-screen notification.
 - Local and global chat cannot be told apart — proximity chat also reports as global.
 - `AdminSteamIDs` in `Game.ini` is ignored by the game. Use `TAKARO_ADMIN_STEAMIDS` instead.
 - The server log contains the join password and Steam tickets; the connector redacts them from Takaro.

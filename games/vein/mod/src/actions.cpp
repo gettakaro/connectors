@@ -2384,7 +2384,11 @@ Actions::Result Actions::Message(const JsonValue& body) {
     std::string text = textV->str;
     std::string recipient = BodyString(body, "recipientGameId");
     const JsonValue* snd = body.get("senderName");
-    std::string sender = snd && snd->isStr() ? snd->str : ConfigValue("TAKARO_SENDER_NAME", "Server");
+    std::string sender = snd && snd->isStr()
+                             ? snd->str
+                             : ActionsUtil::ResolveSenderName(
+                                   "", ConfigValue("TAKARO_SENDER_NAME", ConfigValue("TAKARO_SERVER_CHAT_NAME", "")),
+                                   ConfigValue("TAKARO_SERVER_NAME", ""));
 
     return OnGameThread("POST /message", [text, recipient, sender]() -> JobOut {
         if (recipient.empty()) {

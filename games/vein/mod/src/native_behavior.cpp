@@ -443,7 +443,7 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p){
                 }
                 Json body=Parse(r.body);if(r.status>=400&&r.status<500)out.payloadJson=Json{{"success",false},{"rawResult",""},{"errorMessage",Str(body,"error").empty()?r.body:Str(body,"error")}}.dump();else{body=call(r);bool success=body.is_object()?body.value("success",true):true;if(!ConsoleBanId(p).empty()&&!success)out.mutationVerified=false;std::string text=Str(Object(body),"output");out.payloadJson=Json{{"success",success},{"rawResult",text},{"errorMessage",success?Json(nullptr):Json(text.empty()?"Command failed":text)}}.dump();}}
         }else if(action=="sendMessage"){
-            std::string msg=Str(a,"message");if(msg.empty())throw std::runtime_error("sendMessage requires 'message'");Json opts=Object(a.value("opts",Json::object())),recipient=Object(opts.value("recipient",Json::object()));std::string sender=Str(opts,"senderNameOverride");if(sender.empty())sender=p.view->senderName;if(sender.empty())sender=p.view->serverName;if(sender.empty())sender="Server";std::string to=Str(recipient,"gameId");if(to.empty())to=Str(recipient,"steamId");if(to.empty())to=Str(recipient,"platformId");if(to.empty())to=Str(a,"recipientGameId");if(!to.empty())to=ResolveId(p,Json{{"gameId",to}});call(Actions::Message(NativeBody(Json{{"text",msg},{"recipientGameId",to},{"senderName",sender}})));out.payloadJson="{}";
+            std::string msg=Str(a,"message");if(msg.empty())throw std::runtime_error("sendMessage requires 'message'");Json opts=Object(a.value("opts",Json::object())),recipient=Object(opts.value("recipient",Json::object()));std::string sender=ActionsUtil::ResolveSenderName(Str(opts,"senderNameOverride"),p.view->senderName,p.view->serverName);std::string to=Str(recipient,"gameId");if(to.empty())to=Str(recipient,"steamId");if(to.empty())to=Str(recipient,"platformId");if(to.empty())to=Str(a,"recipientGameId");if(!to.empty())to=ResolveId(p,Json{{"gameId",to}});call(Actions::Message(NativeBody(Json{{"text",msg},{"recipientGameId",to},{"senderName",sender}})));out.payloadJson="{}";
         }else if(action=="teleportPlayer"){
             id=ResolveId(p,a);Json b={{"gameId",id}};std::string target=Str(a,"target");if(!target.empty())b["target"]=target;else{if(!HasNum(a,"x")||!HasNum(a,"y")||!HasNum(a,"z"))throw std::runtime_error("teleportPlayer requires numeric x, y, z");b["x"]=Num(a,"x");b["y"]=Num(a,"y");b["z"]=Num(a,"z");}if(HasNum(a,"yaw"))b["yaw"]=Num(a,"yaw");call(Actions::Teleport(NativeBody(b)));out.payloadJson="{}";
         }else if(action=="kickPlayer"){
@@ -517,6 +517,7 @@ bool Engine::SuppressRingConnection(const std::string& type) const{
 }
 NativePersistence::Result Engine::ObserveAdmitted(const MappedEvent& e){
     if(!e.valid)return {false,e.error};if(e.type!="player-connected"&&e.type!="player-disconnected")return {true,{}};
+    onlineMisses_.erase(StripPlatform(e.playerId)); // a join or leave starts the miss count over
     auto v=std::make_shared<View>(*view_);
     v->onlinePlayersJson=store_.Current().derivedOnlineJson;
     v->knownPlayersJson=store_.Current().derivedKnownJson;
@@ -727,7 +728,9 @@ NativePersistence::Result Engine::ReconcileBanIntents(const std::string& verific
     }
     return {true,{}};
 }
-std::vector<MappedEvent> Engine::ReconcileOnline(const std::string& liveJson,const std::string& bootId){std::vector<MappedEvent> out;Json live=Array(Parse(liveJson));for(auto& p:Array(Parse(view_->onlinePlayersJson))){std::string id=Str(Object(p),"gameId");bool found=false;for(auto& q:live)if(Str(Object(q),"gameId")==id){found=true;break;}if(!found){Json row={{"seq",0},{"bootId",bootId},{"type","player-disconnected"},{"data",{{"player",p}}},{"ts",IsoNowUtc()}};out.push_back(MapEvent(row.dump()));}}return out;}
+// A player missing from one live sample is not proof of a leave (a stray disconnect right after a
+// join was seen in testing), so a disconnect is synthesized only on the second miss in a row.
+std::vector<MappedEvent> Engine::ReconcileOnline(const std::string& liveJson,const std::string& bootId){std::vector<MappedEvent> out;std::map<std::string,int> misses;Json live=Array(Parse(liveJson));for(auto& p:Array(Parse(view_->onlinePlayersJson))){std::string id=Str(Object(p),"gameId");bool found=false;for(auto& q:live)if(Str(Object(q),"gameId")==id){found=true;break;}if(found)continue;auto seen=onlineMisses_.find(id);int n=misses[id]=(seen==onlineMisses_.end()?0:seen->second)+1;if(n<2)continue;Json row={{"seq",0},{"bootId",bootId},{"type","player-disconnected"},{"data",{{"player",p}}},{"ts",IsoNowUtc()}};out.push_back(MapEvent(row.dump()));}onlineMisses_.swap(misses);return out;}
 std::vector<MappedEvent> Engine::OnRawLogLine(const std::string& line){std::vector<MappedEvent> out;for(auto& p:log_->parser.Feed(line)){Json row={{"seq",0},{"type",p.type},{"data",Parse(p.dataJson)},{"ts",IsoNowUtc()}};out.push_back(MapEvent(row.dump()));}return out;}
 bool Engine::CustomLogJoin() const{return log_->parser.CustomJoin();}
 bool Engine::CustomLogChat() const{return log_->parser.CustomChat();}

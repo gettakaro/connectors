@@ -253,6 +253,17 @@ std::string RenderMessage(const std::string& senderName, const std::string& text
     return "[" + s + "] " + text;
 }
 
+std::string ResolveSenderName(const std::string& override, const std::string& configured,
+                              const std::string& serverName) {
+    for (const std::string* candidate : {&override, &configured, &serverName}) {
+        std::string s = *candidate;
+        while (!s.empty() && isspace((unsigned char)s.front())) s.erase(s.begin());
+        while (!s.empty() && isspace((unsigned char)s.back())) s.pop_back();
+        if (!s.empty()) return s;
+    }
+    return "Server";
+}
+
 }  // namespace ActionsUtil
 
 // ---- lane L3e -------------------------------------------------------------------------------
