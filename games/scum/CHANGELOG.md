@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/gettakaro/connectors/compare/scum-v0.2.0...scum-v0.3.0) (2026-10-30)
+
+
+### Features
+
+* **scum:** show the configured server chat name on messages from Takaro ([#698](https://github.com/gettakaro/connectors/issues/698)) ([27881a9](https://github.com/gettakaro/connectors/commit/27881a9c3f27e997c18c560ec3a5f5ad9e59c192))
+* **scum:** support Steam build 26280049 ([#704](https://github.com/gettakaro/connectors/issues/704)) ([975d2b6](https://github.com/gettakaro/connectors/commit/975d2b684d60564d72342034998470759958075c))
+
 ## [0.2.0](https://github.com/gettakaro/connectors/compare/scum-v0.1.0...scum-v0.2.0) (2026-10-26)
 
 
