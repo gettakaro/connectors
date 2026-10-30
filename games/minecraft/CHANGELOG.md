@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.6.0...minecraft-v0.7.0) (2026-10-30)
+
+
+### Features
+
+* **minecraft:** show the configured server chat name on Takaro messages ([#697](https://github.com/gettakaro/connectors/issues/697)) ([54289ec](https://github.com/gettakaro/connectors/commit/54289ec3f7c08c236a8351b617ae869f7af34c98))
+
 ## [0.6.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.5.0...minecraft-v0.6.0) (2026-10-26)
 
 
