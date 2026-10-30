@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.6.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.5.1...conan-exiles-v3.6.0) (2026-10-30)
+
+
+### Features
+
+* **conan-exiles:** use the configured server chat name as the chat sender ([#691](https://github.com/gettakaro/connectors/issues/691)) ([13f3d81](https://github.com/gettakaro/connectors/commit/13f3d819131fd505acd512a0c1554ab867644556))
+
 ## [3.5.1](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.5.0...conan-exiles-v3.5.1) (2026-10-26)
 
 
