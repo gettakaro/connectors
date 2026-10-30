@@ -4,6 +4,13 @@ All notable changes to the Takaro Project Zomboid connector are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.0](https://github.com/gettakaro/connectors/compare/zomboid-v1.5.0...zomboid-v1.6.0) (2026-10-30)
+
+
+### Features
+
+* **zomboid:** show the configured server chat name as the chat sender ([#702](https://github.com/gettakaro/connectors/issues/702)) ([f1dcea5](https://github.com/gettakaro/connectors/commit/f1dcea51f5319d621434a1c7cfad3b236d37e81b))
+
 ## [1.5.0](https://github.com/gettakaro/connectors/compare/zomboid-v1.4.0...zomboid-v1.5.0) (2026-10-26)
 
 
