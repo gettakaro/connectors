@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.6.0...dragonwilds-v0.7.0) (2026-10-30)
+
+
+### Features
+
+* **dragonwilds:** resolve the server chat name in one helper ([#693](https://github.com/gettakaro/connectors/issues/693)) ([399fce2](https://github.com/gettakaro/connectors/commit/399fce260f5a49e14a6fa3f0650b10eabba60c48))
+
+
+### Documentation
+
+* **dragonwilds:** list builds 26161880 and 26087591 from the 0.6.0 release ([#664](https://github.com/gettakaro/connectors/issues/664)) ([8f0f9e4](https://github.com/gettakaro/connectors/commit/8f0f9e44afa8036693c61c5437b44a44630c7ef8))
+
 ## [0.6.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.5.0...dragonwilds-v0.6.0) (2026-10-26)
 
 
