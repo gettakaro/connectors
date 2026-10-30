@@ -76,7 +76,8 @@ on its own; no restart and no plugin reload.
   "RegistrationToken": "your-registration-token-here",
   "IdentityToken": "3f2b0c1e-...",
   "WebSocketUrl": "wss://connect.takaro.io/",
-  "Debug": false
+  "Debug": false,
+  "ServerChatName": ""
 }
 ```
 
@@ -86,10 +87,20 @@ on its own; no restart and no plugin reload.
 | `IdentityToken` | This server's unique name in Takaro. Left empty, the plugin generates one and saves it in the file; do not change it afterwards, or Takaro sees a new server. |
 | `WebSocketUrl` | Takaro WebSocket endpoint. Leave as is. |
 | `Debug` | `true` logs every message sent and received. |
+| `ServerChatName` | The sender players see on messages from Takaro. Optional; see [Server chat name](#server-chat-name-optional). |
 
 **Environment variables** (Docker, systemd) still work and win over the file, field by field:
-`TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`, `TAKARO_WS_URL`, `TAKARO_DEBUG`. A server's
+`TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`, `TAKARO_WS_URL`, `TAKARO_DEBUG`,
+`TAKARO_SERVER_CHAT_NAME`. A server's
 environment is fixed when it starts, so changing one of those needs a server restart.
+
+**Server chat name (optional).** Messages from Takaro (module replies, the Discord bridge,
+broadcasts) show only their text in chat. To show a sender in front of them, set the server's chat
+name in Takaro. On a Takaro version that does not pass that name to the plugin yet, put it in
+`ServerChatName` instead; a file from an older plugin version has no such key, so add it. The chat
+name set in Takaro wins over `ServerChatName`. Neither needs a restart: a change in Takaro applies
+to the next message, an edited `ServerChatName` within 5 seconds. Players then see
+`Your Name: message`, with the name as the sender, in a broadcast and in a whisper alike.
 
 ### 5. Check that it worked
 
@@ -149,8 +160,8 @@ implemented or not supported.
 | Item catalogue | ✅ | Every item the server knows, with its display name (e.g. `rifle.ak` → "Assault Rifle"). |
 | Entity catalogue | ✅ | Animals and NPCs with display names (e.g. `scientistnpc_roam` → "Roaming Scientist"). |
 | Run a console command | ✅ | Returns the command's output. A command that fails in Rust comes back as failed, with Rust's error text. An unknown command comes back as a success with empty output. |
-| Broadcast a message | ✅ | Shows in every player's chat. |
-| Whisper a player | ✅ | Shows in that player's chat only. |
+| Broadcast a message | ✅ | Shows in every player's chat, after the server chat name when one is set. |
+| Whisper a player | ✅ | Shows in that player's chat only, after the server chat name when one is set. |
 | Give an item | ✅ | Goes straight into the player's inventory; if there is no room it drops at their feet. |
 | Teleport a player | ✅ | Moves the player to the exact coordinates given, with no ground snapping — pick a safe height. |
 | Kick | ✅ | Drops the player with the reason shown. |

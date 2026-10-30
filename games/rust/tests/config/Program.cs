@@ -114,6 +114,42 @@ internal static class Program
         var envPinned = Config.ResolveSettings(Config.ParseConfigText(File("reg-2", "id-1")), Env(Config.EnvRegistrationToken, "reg-1"), current);
         Check(envPinned.RegistrationToken == "reg-1", "running: a file edit never overrides an env token");
 
+        // Server chat name: a file key and an env var, applied without a reconnect.
+        Check(!Config.IsFreshConfig("{ \"ServerChatName\": \"My Server\" }"), "chat name: a file with only ServerChatName is kept");
+        Check(Config.ParseConfigText(freshText).ServerChatName == "", "chat name: a new file has an empty ServerChatName");
+        Check(Config.ResolveSettings(Config.ParseConfigText(File("reg-1", "id-1")), NoEnv, null).ServerChatName == "",
+            "chat name: a file from an older version (no key) means no name");
+        var named = Config.ResolveSettings(Config.ParseConfigText(File("reg-1", "id-1").Replace("\"Debug\"", "\"ServerChatName\": \"  My Server \",\n  \"Debug\"")), NoEnv, current);
+        Check(named.ServerChatName == "My Server", "chat name: the file value is trimmed (got '" + named.ServerChatName + "')");
+        Check(named.SameConnection(current), "chat name: a change applies without a reconnect");
+        var envNamed = Config.ResolveSettings(Config.ParseConfigText("{ \"ServerChatName\": \"File Name\" }"), Env(Config.EnvServerChatName, " Env Name "), null);
+        Check(envNamed.ServerChatName == "Env Name", "chat name: TAKARO_SERVER_CHAT_NAME wins over the file");
+        var envBlank = Config.ResolveSettings(Config.ParseConfigText("{ \"ServerChatName\": \"File Name\" }"), Env(Config.EnvServerChatName, "   "), null);
+        Check(envBlank.ServerChatName == "File Name", "chat name: a blank TAKARO_SERVER_CHAT_NAME counts as unset");
+
+        // Resolution order: Takaro's override, then the setting, then no name; blank is unset.
+        Check(Config.ResolveServerChatName("Override", "Config") == "Override", "chat name: senderNameOverride wins over the setting");
+        Check(Config.ResolveServerChatName(" Override ", null) == "Override", "chat name: the override is trimmed");
+        Check(Config.ResolveServerChatName(null, "Config") == "Config", "chat name: no override falls back to the setting");
+        Check(Config.ResolveServerChatName("", "Config") == "Config", "chat name: an empty override falls back to the setting");
+        Check(Config.ResolveServerChatName(" \t ", "Config") == "Config", "chat name: a whitespace override falls back to the setting");
+        Check(Config.ResolveServerChatName(null, null) == null, "chat name: neither means no name");
+        Check(Config.ResolveServerChatName("  ", "   ") == null, "chat name: whitespace everywhere means no name");
+
+        // Rendering: one command for a broadcast and a whisper alike.
+        string command;
+        var plain = Config.ServerChatCommand(null, "hello there", out command);
+        Check(command == "chat.add" && plain.Length == 3 && (int)plain[0] == 2 && (int)plain[1] == 0 && (string)plain[2] == "hello there",
+            "render: no name sends chat.add 2 0 <text>, as before");
+        var named2 = Config.ServerChatCommand("My Server", "hello", out command);
+        Check(command == "chat.add2", "render: a name sends chat.add2 (got '" + command + "')");
+        Check(named2.Length == 6 && (int)named2[0] == 2 && (int)named2[1] == 0 && (string)named2[2] == "hello" &&
+              (string)named2[3] == "My Server" && (string)named2[4] == Config.ServerChatNameColor && (float)named2[5] == 1f,
+            "render: chat.add2 on the Server channel, text, then the name as the sender");
+        var tagged = (string)Config.ServerChatCommand("<color=red>X</color>", "hi", out command)[3];
+        Check(!tagged.Contains("<color") && tagged.Replace("\u200b", "") == "<color=red>X</color>", "render: tags in a name are escaped (got '" + tagged + "')");
+        Check((string)Config.ServerChatCommand("A", "<b>bold</b>", out command)[2] == "<b>bold</b>", "render: the message itself is left as Takaro sent it");
+
         // Identify errors: never the raw object, never a JWT.
         const string jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl";
         var leaky = Newtonsoft.Json.Linq.JObject.Parse("{\"name\":\"Conflict\",\"message\":\"server exists\",\"status\":409," +

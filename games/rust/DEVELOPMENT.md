@@ -209,7 +209,7 @@ The plugin owns `<framework config dir>/TakaroConnector.json` (`Interface.Oxide.
 `carbon/configs/` on Carbon, `oxide/config/` on Oxide) and does its own reads and writes instead of
 the framework's `Config` object, because it needs the file's text to watch it:
 
-- **First load** (file absent, empty, or a JSON object with none of the four keys, e.g. `{}`; a file
+- **First load** (file absent, empty, or a JSON object with none of the five keys, e.g. `{}`; a file
   that exists but cannot be read is never recreated): the plugin writes it with an empty
   `RegistrationToken` and a new UUID `IdentityToken`. A file whose `IdentityToken` is empty or
   absent gets a UUID written into it (other keys untouched); an identity removed while running is
@@ -219,8 +219,18 @@ the framework's `Config` object, because it needs the file's text to watch it:
 - **While running**: a 1 s main-thread tick re-reads the file every 5 s and compares the whole text.
   A change to the URL, the registration token or the identity drops the socket and connects at once
   (backoff reset, auth-close `_shouldReconnect = false` cleared). `Debug` applies without a
-  reconnect. A missing, empty or unparseable file keeps the current settings; an absent token key
-  keeps the token in use, an absent `WebSocketUrl` / `Debug` falls back to the default.
+  reconnect, and so does `ServerChatName`. A missing, empty or unparseable file keeps the current
+  settings; an absent token key keeps the token in use, an absent `WebSocketUrl` / `Debug` /
+  `ServerChatName` falls back to the default.
+- **Server chat name**: `sendMessage` takes the sender from `opts.senderNameOverride`, else
+  `ServerChatName` (`TAKARO_SERVER_CHAT_NAME` wins over the file), else none; blank counts as unset.
+  `ResolveServerChatName` and `ServerChatCommand` in the config region do both, for broadcast and
+  whisper alike; `tests/config` covers them. With a name it sends the client command
+  `chat.add2 2 0 <text> <name> #eee 1`, which the client draws as `Name: text` on the Server channel
+  (the name escaped like Rust's own `EscapeRichText`); without one it sends `chat.add 2 0 <text>`
+  exactly as before. On the Global channel the client colours the name like a player's, so the
+  plugin does not use it. Neither command runs `OnPlayerChat`, so a sent message never comes back
+  as a `chat-message` event.
 - **Threads**: connections are only started on the main thread. Each connection carries a generation;
   a stale socket task, auth close or reconnect request (reconnects are queued for the tick, not started
   from the socket task) changes nothing. Identify and responses go out on the socket the request came
@@ -297,6 +307,7 @@ the PNG is not 256 x 256 or over 128 KiB, and when the `[Info]` version is not `
 | `TAKARO_REGISTRATION_TOKEN` | Server registration token | (required) |
 | `TAKARO_IDENTITY_TOKEN` | Unique server identity | `takaro-dev-rust` |
 | `TAKARO_DEBUG` | Enable debug logging | `false` |
+| `TAKARO_SERVER_CHAT_NAME` | Sender shown on messages from Takaro when Takaro sends none | (none) |
 | `RCON_PASSWORD` | RCON password (dev only) | (required, set in `dev-servers/.env`) |
 
 ### Edit loop
