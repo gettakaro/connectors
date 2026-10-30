@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.5.0](https://github.com/gettakaro/connectors/compare/valheim-v4.4.0...valheim-v4.5.0) (2026-10-30)
+
+
+### Features
+
+* **valheim:** add target for Steam build 26266951 (Valheim 1.0.21) ([#675](https://github.com/gettakaro/connectors/issues/675)) ([29b8a58](https://github.com/gettakaro/connectors/commit/29b8a582840ba2b852a8d95c6acf5e8015f4f420))
+
+
+### Documentation
+
+* **valheim:** use a version placeholder in the example zip name ([#663](https://github.com/gettakaro/connectors/issues/663)) ([c39b86b](https://github.com/gettakaro/connectors/commit/c39b86b822ef236f238b723d89cf275474e17027))
+
 ## [4.4.0](https://github.com/gettakaro/connectors/compare/valheim-v4.3.0...valheim-v4.4.0) (2026-10-26)
 
 
