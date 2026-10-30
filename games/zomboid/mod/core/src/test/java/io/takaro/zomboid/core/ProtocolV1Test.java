@@ -381,6 +381,39 @@ class ProtocolV1Test {
         throw new AssertionError("no " + name + " in the manifest");
     }
 
+    @Test
+    void takaroSideRefusalsAreTransient() {
+        for (String reason : List.of("internal", "timeout", "unavailable", "rate_limited", " Internal ")) {
+            assertTrue(TakaroWebSocketClient.isTransientRefusal(reason), reason);
+        }
+        for (String reason : Arrays.asList("invalid_args", "unauthorized", "", null)) {
+            assertFalse(TakaroWebSocketClient.isTransientRefusal(reason), String.valueOf(reason));
+        }
+    }
+
+    @Test
+    void anInternalIdentifyErrorKeepsTheBackoff() {
+        config.setReconnectDelay(60_000);
+        client.onOpen(null);
+        client.onMessage("{\"type\":\"identifyResponse\",\"error\":{\"code\":\"internal\","
+                + "\"message\":\"Internal error identifying game server.\"},\"requestId\":\"i\"}");
+        client.onClose(1008, "internal", true);
+        assertTrue(adapter.logs.stream().anyMatch(l -> l.startsWith("Reconnecting in")), adapter.logs.toString());
+        assertTrue(adapter.logs.stream().noneMatch(l -> l.contains("registrationToken")), adapter.logs.toString());
+        client.retire();
+    }
+
+    @Test
+    void aRejectedTokenWaitsForAConfigEdit() {
+        config.setReconnectDelay(60_000);
+        client.onOpen(null);
+        client.onMessage("{\"type\":\"identifyResponse\",\"error\":{\"code\":\"invalid_args\","
+                + "\"message\":\"Invalid registrationToken provided.\"},\"requestId\":\"i\"}");
+        client.onClose(1008, "invalid_args", true);
+        assertTrue(adapter.logs.stream().noneMatch(l -> l.startsWith("Reconnecting in")), adapter.logs.toString());
+        assertTrue(adapter.logs.stream().anyMatch(l -> l.contains("registrationToken")), adapter.logs.toString());
+    }
+
     private void identify(int version) {
         client.onMessage("{\"type\":\"identifyResponse\",\"payload\":{\"gameServerId\":\"gs\",\"protocolVersion\":"
                 + version + "},\"requestId\":\"i\"}");
@@ -433,8 +466,10 @@ class ProtocolV1Test {
 
         @Override public String getGameVersion() { return gameVersion; }
 
-        @Override public void logInfo(String msg) { }
-        @Override public void logWarning(String msg) { }
+        final List<String> logs = new CopyOnWriteArrayList<>();
+
+        @Override public void logInfo(String msg) { logs.add(msg); }
+        @Override public void logWarning(String msg) { logs.add(msg); }
         @Override public void runOnMainThread(Runnable task) { task.run(); }
         @Override public void setEventEmitter(EventEmitter emitter) { }
         @Override public PlayerInfo getPlayer(String gameId) { return null; }
@@ -447,7 +482,7 @@ class ProtocolV1Test {
         @Override public void giveItem(String gameId, String itemCode, int amount, String quality) {
             if (failGiveWith != null) throw failGiveWith;
         }
-        @Override public void sendMessage(String message, String recipientGameId) { }
+        @Override public void sendMessage(String message, String senderName, String recipientGameId) { }
         @Override public CommandResult executeConsoleCommand(String command) { return new CommandResult(true, "", null); }
         @Override public void teleportPlayer(String gameId, double x, double y, double z, String dimension) { }
         @Override public void kickPlayer(String gameId, String reason) { }

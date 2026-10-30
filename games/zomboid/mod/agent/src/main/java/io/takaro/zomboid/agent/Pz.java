@@ -19,6 +19,8 @@ import zombie.characters.IsoGameCharacter;
 import zombie.characters.IsoPlayer;
 import zombie.characters.Roles;
 import zombie.chat.ChatMessage;
+import zombie.chat.ChatUtility;
+import zombie.chat.defaultChats.GeneralChat;
 import zombie.core.Core;
 import zombie.core.GameVersion;
 import zombie.core.Translator;
@@ -35,6 +37,7 @@ import zombie.network.DBBannedSteamID;
 import zombie.network.GameServer;
 import zombie.network.ServerWorldDatabase;
 import zombie.network.chat.ChatServer;
+import zombie.network.chat.ChatType;
 import zombie.network.server.EventManager;
 import zombie.network.server.IEventController;
 import zombie.scripting.ScriptManager;
@@ -48,8 +51,9 @@ import zombie.scripting.objects.VehicleScript;
  * <p>Every method here links directly against the game classes (compiled
  * {@code compileOnly} against {@code projectzomboid.jar}); the only reflection
  * is {@link ServerWorldDatabase}'s package-private {@code conn} field, read to
- * list banned usernames for {@code listBans} completeness, and {@code Core}'s private
- * {@code buildVersion} for {@link #gameVersion}.
+ * list banned usernames for {@code listBans} completeness, {@code Core}'s private
+ * {@code buildVersion} for {@link #gameVersion}, and {@code ChatServer}'s private
+ * {@code generalChat} for {@link #sendGeneralChat}.
  *
  * <p>All methods that touch {@link GameServer} state MUST be called on the game
  * main thread. The call sequences for {@link #teleport} and {@link #giveItem}
@@ -220,20 +224,78 @@ public final class Pz {
 
     /** Targeted chat to a single player; returns false if the player/connection is gone. */
     public static boolean sendMessageTo(String username, String msg) {
-        IsoPlayer p = findPlayer(username);
-        if (p == null) {
-            return false;
-        }
-        UdpConnection conn = GameServer.getConnectionFromPlayer(p);
-        if (conn == null) {
-            return false;
-        }
+        UdpConnection conn = connectionOf(username);
         ChatServer cs = ChatServer.getInstance();
-        if (cs == null) {
+        if (conn == null || cs == null) {
             return false;
         }
         cs.sendMessageToServerChat(conn, msg);
         return true;
+    }
+
+    /**
+     * General chat with {@code author} in the message's sender field, which the client prints
+     * as {@code [author]: text}, the way it shows the game's own Discord relay. Server chat
+     * cannot carry a sender (its client-side settings hide the author). Goes straight to each
+     * member's connection: {@code ChatBase.sendMessageToChatMembers} drops a message whose author
+     * is not an online player, and {@code ChatServer.sendMessage} would run the chat-message hook
+     * (and, with the game's Discord bot on, post it there). {@code username} null sends to
+     * everyone. Returns false when nothing was sent: general chat is off on this server, or the
+     * recipient is gone or not in general chat.
+     */
+    public static boolean sendGeneralChat(String author, String text, String username) {
+        if (!ChatUtility.chatStreamEnabled(ChatType.general)) {
+            return false;
+        }
+        GeneralChat chat = generalChat();
+        if (chat == null) {
+            return false;
+        }
+        List<UdpConnection> targets = new ArrayList<>();
+        if (username != null) {
+            UdpConnection conn = connectionOf(username);
+            if (conn == null) {
+                return false;
+            }
+            targets.add(conn);
+        } else {
+            ArrayList<IsoPlayer> players = GameServer.getPlayers();
+            if (players != null) {
+                for (IsoPlayer p : players) {
+                    UdpConnection conn = p != null ? GameServer.getConnectionFromPlayer(p) : null;
+                    if (conn != null && !targets.contains(conn)) {
+                        targets.add(conn);
+                    }
+                }
+            }
+        }
+        ChatMessage message = chat.createMessage(text);
+        message.setAuthor(author);
+        int sent = 0;
+        for (UdpConnection conn : targets) {
+            try {
+                chat.sendMessageToPlayer(conn, message);
+                sent++;
+            } catch (RuntimeException notAMember) {
+                // the game throws when no player on this connection is in general chat
+            }
+        }
+        return username == null || sent > 0;
+    }
+
+    private static UdpConnection connectionOf(String username) {
+        IsoPlayer p = findPlayer(username);
+        return p != null ? GameServer.getConnectionFromPlayer(p) : null;
+    }
+
+    private static GeneralChat generalChat() {
+        try {
+            Field f = ChatServer.class.getDeclaredField("generalChat");
+            f.setAccessible(true);
+            return (GeneralChat) f.get(null);
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     // --- console ---

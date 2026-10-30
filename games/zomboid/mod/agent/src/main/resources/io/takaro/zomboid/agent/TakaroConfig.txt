@@ -4,7 +4,8 @@
 # registrationToken: the token Takaro shows when you add a Generic game server.
 # identityToken: how Takaro knows this server. The connector generates it; keep it
 #   when you move or reinstall the server.
-# serverChatName: sender name for messages without one (empty: the server name).
+# serverChatName: sender players see on messages from Takaro when Takaro sends no
+#   chat name of its own (empty: the server name).
 # protocol: 1 offers Takaro protocol v1 (map, events resent after a reconnect) and
 #   falls back to 0 on a Takaro without it; 0 turns v1 and the map off.
 # logEvents, debugCatalog: extra diagnostics in the log; these two need a restart.

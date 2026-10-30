@@ -298,16 +298,21 @@ claim safehouses. Full per-capability evidence lives in the campaign docs under
 
 ## Chat sender name
 
-Messages the connector sends to game chat are prefixed with a sender name, resolved: Takaro's
-`opts.senderNameOverride` on `sendMessage`, else the connector's `serverChatName` config, else
-the live PZ server name (`GameServer.serverName`), else `"Server"`.
+`ServerChatName` (core) resolves the sender for `sendMessage`: Takaro's `opts.senderNameOverride`
+(newer Takaro fills it from the server's **Server Chat Name** setting), else the connector's
+`serverChatName` config (`TAKARO_SERVER_CHAT_NAME`); both trimmed, empty or whitespace counts as
+unset. The config value is re-read on every message, so a hot-reloaded file applies at once.
 
-**Known issue:** Takaro does not currently attach the domain **Server Chat Name** setting to
-admin/dashboard messages — they arrive with empty `opts`, and the connector receives no settings
-on identify, so those messages fall back to the server name. The connector honors the name
-whenever Takaro sends it (module/command flows). Proper fix is Takaro attaching the name to
-admin messages; setting `serverChatName` on the connector is a stopgap that duplicates the
-Takaro setting, so it is left unset by default.
+- **A name resolves:** `Pz.sendGeneralChat` sends a General chat message whose author field is the
+  name, so the client prints it as the sender (`[<name>]: <message>`; `[General]` in front when the
+  player shows chat titles), globally or to the one recipient's connection. Server chat cannot do
+  this: its client-side settings hide the author. It goes to each member's connection with
+  `GeneralChat.sendMessageToPlayer`: `sendMessageToChatMembers` drops a message whose author is not
+  an online player, and `ChatServer.sendMessage` would run the chat-message hook (an echo) and,
+  with the game's own Discord bot on, post it there too.
+- **General chat turned off on the server, or no name:** server chat as before, with the text
+  `<name>: <message>` from `ServerChatName.render`; without a name the PZ server name
+  (`GameServer.serverName`), else `"Server"`, stands in, exactly as earlier releases did.
 
 ## Tooling
 

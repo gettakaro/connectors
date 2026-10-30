@@ -149,7 +149,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         }
         adapter.logInfo("WebSocket closed (code=" + code + ", reason=" + reason + ", remote=" + remote + ")");
 
-        if (code == 1008 || code == 4001 || code == 4003) {
+        if ((code == 1008 || code == 4001 || code == 4003) && !isTransientRefusal(reason)) {
             // A new token in the config file replaces this client, which reconnects.
             TakaroConnector.logBanner(adapter,
                     "Takaro refused the connection (code " + code + (reason != null && !reason.isEmpty() ? ", " + reason : "") + ").",
@@ -161,6 +161,18 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         if (shouldReconnect && config.isReconnectEnabled()) {
             scheduleReconnect();
         }
+    }
+
+    /**
+     * Takaro closes with 1008 after any failed identify and puts the error code in the reason.
+     * A fault on Takaro's side passes, so those keep the backoff instead of waiting for a token edit.
+     */
+    static boolean isTransientRefusal(String reason) {
+        if (reason == null) return false;
+        return switch (reason.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "internal", "timeout", "unavailable", "rate_limited" -> true;
+            default -> false;
+        };
     }
 
     @Override
@@ -429,8 +441,15 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         // Protocol 1 failure shape: a top-level error, after which Takaro closes with 1008.
         JsonObject v1Error = optObject(json, "error");
         if (v1Error != null) {
+            String errorCode = optString(v1Error, "code", "?");
+            if (isTransientRefusal(errorCode)) {
+                adapter.logWarning("Takaro could not identify the server right now: " + errorCode + " "
+                        + optString(v1Error, "message", "") + " Retrying with backoff.");
+                close();
+                return;
+            }
             TakaroConnector.logBanner(adapter,
-                    "Takaro rejected identify: " + optString(v1Error, "code", "?") + " "
+                    "Takaro rejected identify: " + errorCode + " "
                             + optString(v1Error, "message", "") + ".",
                     "Check registrationToken in " + config.getConfigFileHint() + ". Saving a corrected",
                     "token reconnects within a few seconds; set protocol=0 there to fall back to protocol 0.");
@@ -901,26 +920,14 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     private void handleSendMessage(JsonObject args) {
         String message = optString(args, "message", "");
         String recipientGameId = null;
-        String senderName = null;
+        String senderNameOverride = null;
         JsonObject opts = optObject(args, "opts");
         if (opts != null) {
             recipientGameId = optString(optObject(opts, "recipient"), "gameId", null);
-            senderName = optString(opts, "senderNameOverride", null);
+            senderNameOverride = optString(opts, "senderNameOverride", null);
         }
-        // PZ server chat shows no author for a plain message, so prefix a name:
-        // Takaro's senderNameOverride when provided, otherwise "Server".
-        if (senderName == null || senderName.isEmpty()) {
-            String configured = config.getServerChatName();
-            String serverName = adapter.getServerName();
-            if (configured != null && !configured.isEmpty()) {
-                senderName = configured;
-            } else if (serverName != null && !serverName.isEmpty()) {
-                senderName = serverName;
-            } else {
-                senderName = "Server";
-            }
-        }
-        adapter.sendMessage(senderName + ": " + message, recipientGameId);
+        String senderName = ServerChatName.resolve(senderNameOverride, config.getServerChatName());
+        adapter.sendMessage(message, senderName, recipientGameId);
     }
 
     private void handleTeleportPlayer(JsonObject args) {
