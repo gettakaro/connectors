@@ -54,14 +54,17 @@
     "shutdown is off by default; server.shutdown is declared only when takaro_tf2_shutdown_enabled is 1",
     "banPlayer and unbanPlayer require real SteamID64 identities; servers started with -insecure report SOURCE_* ids that cannot be banned",
     "entity-killed covers TF2 object_destroyed events (Engineer buildings), not every entity removal",
-    "giveItem is unsupported: a TF2 server cannot grant Steam items, so shop item delivery is unavailable"
+    "giveItem is unsupported: a TF2 server cannot grant Steam items, so shop item delivery is unavailable",
+    "sendMessage shows the server chat name as a green [<name>] prefix in the chat line: TF2 has no separate sender field for server messages"
   ],
   "sourceRefs": [
     "mod/addons/sourcemod/scripting/takaro_tf2.sp",
     "mod/addons/sourcemod/scripting/takaro_tf2_item_catalog.inc",
+    "mod/addons/sourcemod/scripting/takaro_tf2_chat.inc",
     "scripts/build-release.sh",
     "scripts/run-live-smoke.sh",
     "tests/live-harness.mjs",
+    "tests/takaro_tf2_chat_test.sp",
     "tests/validate-static.mjs"
   ]
 }

@@ -5,6 +5,7 @@
 #include <websocket>
 
 #include "takaro_tf2_item_catalog.inc"
+#include "takaro_tf2_chat.inc"
 
 #pragma semicolon 1
 #pragma newdecls required
@@ -39,6 +40,12 @@ ConVar g_CvarCommandAllowlistExact;
 ConVar g_CvarCommandAllowlistPrefixes;
 ConVar g_CvarShutdownEnabled;
 ConVar g_CvarProtocol;
+ConVar g_CvarServerChatName;
+
+// A say waiting for the game to deliver it (see ConfirmsPlayerChat); saidAt < 0 means none.
+char g_PendingChatText[MAXPLAYERS + 1][512];
+bool g_PendingChatTeam[MAXPLAYERS + 1];
+float g_PendingChatAt[MAXPLAYERS + 1] = {-1.0, ...};
 
 WebSocket g_WebSocket = null;
 StringMap g_PlayerSteamIds = null;
@@ -89,6 +96,7 @@ public void OnPluginStart()
   g_CvarCommandAllowlistPrefixes = CreateConVar("takaro_tf2_command_allowlist_prefixes", "", "Semicolon-separated command prefixes allowed for executeConsoleCommand.");
   g_CvarShutdownEnabled = CreateConVar("takaro_tf2_shutdown_enabled", "0", "Allow Takaro shutdown to execute the quit command.");
   g_CvarProtocol = CreateConVar("takaro_tf2_protocol", "1", "Highest Takaro Generic Protocol version to offer (0 or 1).", _, true, 0.0, true, 1.0);
+  g_CvarServerChatName = CreateConVar("takaro_tf2_server_chat_name", "", "Sender name for Takaro messages when Takaro sends none. Empty keeps [Takaro].");
 
   AutoExecConfig(true, "takaro_tf2");
 
@@ -105,6 +113,7 @@ public void OnPluginStart()
 
   AddCommandListener(Command_Say, "say");
   AddCommandListener(Command_TeamSay, "say_team");
+  HookUserMessage(GetUserMessageId("SayText2"), UserMsg_SayText2);
   HookEvent("player_death", Event_PlayerDeath, EventHookMode_Post);
   HookEvent("object_destroyed", Event_ObjectDestroyed, EventHookMode_Post);
   HookEvent("teamplay_round_start", Event_RoundStart, EventHookMode_PostNoCopy);
@@ -201,6 +210,8 @@ void EmitPlayerConnected(int client)
 
 public void OnClientDisconnect(int client)
 {
+  g_PendingChatAt[client] = -1.0;
+
   char key[16];
   ClientKey(client, key, sizeof(key));
 
@@ -252,6 +263,60 @@ Action HandleChatCommand(int client, bool teamOnly)
     return Plugin_Continue;
   }
 
+  // Bots get no SayText2 when no human can read them; report their chat as before.
+  if (IsFakeClient(client)) {
+    EmitChatMessage(client, teamOnly, text);
+    return Plugin_Continue;
+  }
+
+  // Report the chat only once the game delivers it: a rate-limited or plugin-blocked say never does.
+  strcopy(g_PendingChatText[client], sizeof(g_PendingChatText[]), text);
+  g_PendingChatTeam[client] = teamOnly;
+  g_PendingChatAt[client] = GetEngineTime();
+  return Plugin_Continue;
+}
+
+public Action UserMsg_SayText2(UserMsg msgId, BfRead msg, const int[] players, int playersNum, bool reliable, bool init)
+{
+  int author = msg.ReadByte();
+  if (author <= 0 || author > MaxClients || g_PendingChatAt[author] < 0.0) {
+    return Plugin_Continue;
+  }
+
+  msg.ReadByte();
+  char format[64];
+  msg.ReadString(format, sizeof(format));
+  if (!ConfirmsPlayerChat(format, g_PendingChatAt[author], GetEngineTime())) {
+    return Plugin_Continue;
+  }
+
+  // One SayText2 goes to each recipient; the first one confirms, the rest find nothing pending.
+  // No events from inside a user message hook: emit on the next frame.
+  DataPack pack = new DataPack();
+  pack.WriteCell(GetClientUserId(author));
+  pack.WriteCell(g_PendingChatTeam[author]);
+  pack.WriteString(g_PendingChatText[author]);
+  g_PendingChatAt[author] = -1.0;
+  RequestFrame(Frame_EmitDeliveredChat, pack);
+  return Plugin_Continue;
+}
+
+void Frame_EmitDeliveredChat(DataPack pack)
+{
+  pack.Reset();
+  int client = GetClientOfUserId(pack.ReadCell());
+  bool teamOnly = pack.ReadCell();
+  char text[512];
+  pack.ReadString(text, sizeof(text));
+  delete pack;
+
+  if (IsTakaroClient(client)) {
+    EmitChatMessage(client, teamOnly, text);
+  }
+}
+
+void EmitChatMessage(int client, bool teamOnly, const char[] text)
+{
   JSONObject player = BuildPlayerObject(client);
   JSONObject data = new JSONObject();
   data.Set("player", player);
@@ -264,8 +329,6 @@ Action HandleChatCommand(int client, bool teamOnly)
   EmitGameEvent("chat-message", data);
   delete data;
   delete player;
-
-  return Plugin_Continue;
 }
 
 void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
@@ -690,10 +753,14 @@ void HandleSendMessage(const char[] requestId, const JSON request)
     return;
   }
 
-  char senderName[64];
-  if (!ExtractSenderNameOverride(request, senderName, sizeof(senderName))) {
-    strcopy(senderName, sizeof(senderName), "Takaro");
-  }
+  char senderNameOverride[MAX_SERVER_CHAT_NAME_LENGTH];
+  ExtractSenderNameOverride(request, senderNameOverride, sizeof(senderNameOverride));
+  char configuredName[MAX_SERVER_CHAT_NAME_LENGTH];
+  g_CvarServerChatName.GetString(configuredName, sizeof(configuredName));
+  char senderName[MAX_SERVER_CHAT_NAME_LENGTH];
+  ResolveServerChatName(senderNameOverride, configuredName, senderName, sizeof(senderName));
+  char line[640];
+  FormatServerChatMessage(senderName, message, line, sizeof(line));
 
   int recipient = ResolveRecipientFromRequest(request);
   if (recipient < 0) {
@@ -702,9 +769,9 @@ void HandleSendMessage(const char[] requestId, const JSON request)
     return;
   }
   if (recipient > 0) {
-    PrintToChat(recipient, "\x04[%s]\x01 %s", senderName, message);
+    PrintToChat(recipient, "%s", line);
   } else {
-    PrintToChatAll("\x04[%s]\x01 %s", senderName, message);
+    PrintToChatAll("%s", line);
   }
 
   RespondNull(requestId);

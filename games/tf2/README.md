@@ -20,7 +20,7 @@ Tested on 2026-10-18 to 2026-10-20 with a real Steam client on TF2 server versio
 | Item list | ✅ | 318 TF2 weapons with their in-game names. |
 | Entity list | ✅ | Engineer buildings, the sapper and Halloween bosses. |
 | Locations | ✅ | Read from the running map: intelligence, team spawns and control points. |
-| Send a message | ✅ | To everyone or to one player, with Takaro's sender name. |
+| Send a message | ✅ | To everyone or to one player, as `[<sender>] <message>`. The sender is the server chat name (see below). |
 | Run a console command | ✅ | Only commands you allow in the config; others are refused. |
 | Kick a player | ✅ | |
 | Ban and unban | ✅ | The player is kicked and cannot rejoin; bans survive a server restart. Needs real SteamIDs (no `-insecure`). |
@@ -31,7 +31,7 @@ Tested on 2026-10-18 to 2026-10-20 with a real Steam client on TF2 server versio
 | Shut down the server | ⚠️ | Off by default; turn it on with `takaro_tf2_shutdown_enabled 1`. |
 | World map | ❌ | TF2 has no map tiles. |
 | Player joined / left | ✅ | |
-| Chat messages | ✅ | All chat as "global", team chat as "team". |
+| Chat messages | ✅ | All chat as "global", team chat as "team". Only lines players actually see: chat TF2 or a plugin blocks (spam limit, gag) is not reported. |
 | Player death | ✅ | With the killer and the position. |
 | Building destroyed | ✅ | Sentry gun, dispenser and teleporter kills, with the weapon. |
 | Server log lines | ⚠️ | Sent; Takaro does not store them, but module hooks can react to them. |
@@ -67,6 +67,7 @@ Tested on 2026-10-18 to 2026-10-20 with a real Steam client on TF2 server versio
    | `takaro_tf2_registration_token` | Your Takaro registration token. Required. |
    | `takaro_tf2_identity_token` | Any unique name for this server, for example `my-tf2-1`. Keep it unchanged afterwards. |
    | `takaro_tf2_server_name` | The name Takaro shows for this server. |
+   | `takaro_tf2_server_chat_name` | The sender name players see on Takaro messages, for example `MyServer`. Optional; see "Server chat name" below. |
    | `takaro_tf2_ws_url` | Leave `wss://connect.takaro.io`. |
    | `takaro_tf2_command_allowlist_exact` | Console commands Takaro may run, separated by `;`. Default: `status`. |
    | `takaro_tf2_command_allowlist_prefixes` | Command prefixes Takaro may run, for example `sm_slay `. Default: none. |
@@ -88,6 +89,21 @@ Stop the server and unzip the new release over `tf/`, but keep your own `cfg/sou
 let the unzip replace it; it holds your token). Bans made through Takaro are kept in
 `addons/sourcemod/data/takaro_tf2_bans.txt`, which the zip never contains. After a TF2 update the plugin
 usually keeps working; a connector release names each tested build.
+
+## Server chat name
+
+Messages Takaro sends show in chat as `[<sender>] <message>`, with the sender in green, both to everyone and
+to one player. TF2 has no separate sender field for server messages, so the name is part of the line. The
+sender is, in this order:
+
+1. the name Takaro sends with the message: the server's **Server chat name** setting in Takaro, or a module's
+   own sender name;
+2. `takaro_tf2_server_chat_name` from `takaro_tf2.cfg`, for Takaro releases that do not send the setting;
+3. `Takaro`.
+
+Blank or space-only values count as unset. A change to the Takaro setting applies to the next message; a
+change to the cfg value applies after `exec sourcemod/takaro_tf2` or a restart. Takaro's messages never come
+back to Takaro as chat events.
 
 ## Known issues
 
