@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/gettakaro/connectors/compare/rust-v0.4.0...rust-v0.5.0) (2026-10-30)
+
+
+### Features
+
+* **rust:** show the configured server chat name on messages from Takaro ([#696](https://github.com/gettakaro/connectors/issues/696)) ([2e7603c](https://github.com/gettakaro/connectors/commit/2e7603cb76270d3fde61d81507fae36ad38417ba))
+
 ## [0.4.0](https://github.com/gettakaro/connectors/compare/rust-v0.3.0...rust-v0.4.0) (2026-10-26)
 
 
