@@ -42,6 +42,7 @@ public final class JsonConfigFormat implements ConfigFormat {
         }
         config.setDebugEnabled(present(settings, "debug") && settings.get("debug").getAsBoolean());
         config.setMapEnabled(present(settings, "map") && settings.get("map").getAsBoolean());
+        config.setServerChatName(string(settings, "server_chat_name"));
         return config;
     }
 
@@ -63,7 +64,8 @@ public final class JsonConfigFormat implements ConfigFormat {
                 + "  },\n"
                 + "  \"settings\": {\n"
                 + "    \"debug\": false,\n"
-                + "    \"map\": false\n"
+                + "    \"map\": false,\n"
+                + "    \"server_chat_name\": \"\"\n"
                 + "  }\n"
                 + "}\n";
     }

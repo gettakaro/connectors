@@ -11,6 +11,8 @@ import io.takaro.minecraft.core.model.*;
 import io.takaro.minecraft.core.target.RuntimeIdentity;
 import io.papermc.paper.ServerBuildInfo;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.*;
 import org.bukkit.ban.ProfileBanList;
 import org.bukkit.entity.EntityType;
@@ -212,15 +214,25 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
     }
 
     @Override
-    public void sendMessage(String message, String recipientGameId) {
+    public void sendMessage(ChatLine line, String recipientGameId) {
+        Component component = render(line);
         if (recipientGameId != null) {
             Player player = Bukkit.getPlayer(UUID.fromString(recipientGameId));
             if (player != null) {
-                player.sendMessage(Component.text(message));
+                player.sendMessage(component);
             }
         } else {
-            Bukkit.broadcast(Component.text(message));
+            Bukkit.broadcast(component);
         }
+    }
+
+    private static Component render(ChatLine line) {
+        if (!line.hasSender()) {
+            return Component.text(line.message());
+        }
+        Component text = Component.translatable(line.translationKey(), line.plainText(),
+                Component.text(line.sender()), Component.text(line.message()));
+        return line.whisper() ? text.color(NamedTextColor.GRAY).decorate(TextDecoration.ITALIC) : text;
     }
 
     @Override

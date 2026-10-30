@@ -16,3 +16,5 @@ takaro:
   debug: false
   # World map in Takaro. Needs a Takaro that speaks protocol v1.
   map: false
+  # Sender name on Takaro's messages when Takaro sends none. Empty = no sender name.
+  server_chat_name: ""

@@ -102,7 +102,8 @@ is how Takaro knows this server, so keep it when you move or copy the server.
   },
   "settings": {
     "debug": false,
-    "map": false
+    "map": false,
+    "server_chat_name": ""
   }
 }
 ```
@@ -120,6 +121,8 @@ takaro.reconnect.backoff_multiplier=1.5
 takaro.debug=false
 # World map in Takaro. Needs a Takaro that speaks protocol v1.
 takaro.map=false
+# Sender name on Takaro's messages when Takaro sends none. Empty = no sender name.
+takaro.server_chat_name=
 ```
 
 **Paper** (`plugins/TakaroMinecraft/config.yml`):
@@ -139,10 +142,20 @@ takaro:
   debug: false
   # World map in Takaro. Needs a Takaro that speaks protocol v1.
   map: false
+  # Sender name on Takaro's messages when Takaro sends none. Empty = no sender name.
+  server_chat_name: ""
 ```
 
 `map` (in the Fabric file: `settings.map`; or `TAKARO_MAP=true`) turns on the world map in Takaro.
 It needs a Takaro that speaks protocol v1. Changing it reconnects to Takaro, no restart needed.
+
+`server_chat_name` (in the Fabric file: `settings.server_chat_name`; or `TAKARO_SERVER_CHAT_NAME`)
+is the sender players see on messages from Takaro. Takaro sends the chat name set for the game
+server in Takaro with every message, and that name always wins; this setting is for a Takaro that
+sends none. A message with a sender looks like the game's own server messages: `[Name] text` in
+global chat (like `/say`) and `Name whispers to you: text` in grey italics for a message to one
+player (like `/msg`). With no name anywhere, the message is the bare text, as before. A change
+applies to the next message, without a reconnect or restart.
 
 ### 5. Check that it worked
 
@@ -213,8 +226,8 @@ with the same results. The Fabric 26.1.2 file is built and checked the same way 
 | Entity catalogue | ✅ | ✅ | ✅ | Paper lists the 91 mob types; Fabric and NeoForge list every entity type (about 158, including things like Primed TNT). |
 | Locations / points of interest | ❌ | ❌ | ❌ | Not implemented: always an empty list. Minecraft has no fixed list of named locations. |
 | Chat messages from players | ✅ | ✅ | ✅ | Real player chat reaches Takaro with the player attached. |
-| Broadcast a message | ✅ | ✅ | ✅ | Shown to everyone in the server chat. |
-| Whisper a player | ✅ | ✅ | ✅ | Reaches the intended player. Only one player was online, so "nobody else sees it" was not checked. |
+| Broadcast a message | ✅ | ✅ | ✅ | Shown to everyone in the server chat, as `[Name] text` when a server chat name is set. |
+| Whisper a player | ✅ | ✅ | ✅ | Reaches the intended player, as `Name whispers to you: text` when a server chat name is set. Only one player was online, so "nobody else sees it" was not checked. |
 | Give an item | ⚠️ | ⚠️ | ⚠️ | Lands straight in the inventory. Item quality / durability is ignored: everything arrives in default condition. |
 | Teleport a player | ✅ | ✅ | ✅ | Goes to the exact coordinates. A spot in the air means the player falls (and can die), so pick a Y on solid ground. |
 | Run a console command | ⚠️ | ⚠️ | ⚠️ | The command runs and success comes back, but the command's own output text is always empty. |

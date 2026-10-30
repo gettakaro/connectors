@@ -7,6 +7,7 @@ import io.takaro.minecraft.core.map.RegionRenderer;
 import io.takaro.minecraft.core.map.WorldMap;
 import io.takaro.minecraft.core.model.*;
 import io.takaro.minecraft.core.target.RuntimeIdentity;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
@@ -166,8 +167,8 @@ public class NeoForgeGameAdapter implements GameAdapter {
     }
 
     @Override
-    public void sendMessage(String message, String recipientGameId) {
-        var component = net.minecraft.network.chat.Component.literal(message);
+    public void sendMessage(ChatLine line, String recipientGameId) {
+        var component = render(line);
         if (recipientGameId != null) {
             ServerPlayer player = server.getPlayerList().getPlayer(UUID.fromString(recipientGameId));
             if (player != null) {
@@ -176,6 +177,15 @@ public class NeoForgeGameAdapter implements GameAdapter {
         } else {
             server.getPlayerList().broadcastSystemMessage(component, false);
         }
+    }
+
+    private static net.minecraft.network.chat.Component render(ChatLine line) {
+        if (!line.hasSender()) {
+            return net.minecraft.network.chat.Component.literal(line.message());
+        }
+        var text = net.minecraft.network.chat.Component.translatableWithFallback(line.translationKey(),
+                line.plainText(), line.sender(), line.message());
+        return line.whisper() ? text.withStyle(ChatFormatting.GRAY, ChatFormatting.ITALIC) : text;
     }
 
     @Override

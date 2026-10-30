@@ -30,6 +30,7 @@ final class PaperYamlConfigFormat implements ConfigFormat {
         config.setBackoffMultiplier(yaml.getDouble("takaro.reconnect.backoff_multiplier", 1.5));
         config.setDebugEnabled(yaml.getBoolean("takaro.debug", false));
         config.setMapEnabled(yaml.getBoolean("takaro.map", false));
+        config.setServerChatName(yaml.getString("takaro.server_chat_name", ""));
         return config;
     }
 
