@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/gettakaro/connectors/compare/vein-v0.8.0...vein-v0.9.0) (2026-10-30)
+
+
+### Features
+
+* **vein:** show the server chat name as the sender of Takaro messages ([#701](https://github.com/gettakaro/connectors/issues/701)) ([5c574cd](https://github.com/gettakaro/connectors/commit/5c574cd4cc67107d1da23307b10b8041edeecdb6))
+
 ## [0.8.0](https://github.com/gettakaro/connectors/compare/vein-v0.7.0...vein-v0.8.0) (2026-10-26)
 
 
