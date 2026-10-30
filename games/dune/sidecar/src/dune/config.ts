@@ -52,7 +52,7 @@ export interface SidecarConfig {
   serverName: string;
   /** How often the `.env` file is re-read for changed Takaro settings. */
   configPollMs: number;
-  /** Sender name shown in game for our own chat messages (spoofed-username field). */
+  /** Configured chat sender name (`TAKARO_SENDER_NAME` / `TAKARO_SERVER_CHAT_NAME`); empty when unset. */
   senderName: string;
   reconnectBaseMs: number;
   reconnectMaxMs: number;
@@ -233,9 +233,8 @@ export function loadConfig(env: Env = process.env): SidecarConfig {
     // Replaced at start by the effective name from `takaro/settings.ts`.
     serverName: env.TAKARO_SERVER_NAME || '',
     configPollMs: Math.max(1000, int(env.TAKARO_CONFIG_POLL_MS, 5000)),
-    // `Takaro` rather than `Server`: this is what a player sees in front of every connector message, and "Server" is
-    // indistinguishable from the game's own notices. Overridable with `TAKARO_SENDER_NAME`.
-    senderName: (env.TAKARO_SENDER_NAME || env.TAKARO_SERVER_CHAT_NAME || 'Takaro').trim(),
+    // Empty = no name in front of chat lines; Takaro's per-message `senderNameOverride` wins over it (`chatSender.ts`).
+    senderName: env.TAKARO_SENDER_NAME?.trim() || env.TAKARO_SERVER_CHAT_NAME?.trim() || '',
     reconnectBaseMs: int(env.TAKARO_RECONNECT_BASE_MS, 2000),
     reconnectMaxMs: int(env.TAKARO_RECONNECT_MAX_MS, 60000),
 

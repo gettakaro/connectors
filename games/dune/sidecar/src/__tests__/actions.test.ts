@@ -299,7 +299,7 @@ describe('mutations read the effect back', () => {
       opts: { recipient: { gameId: FLS }, senderNameOverride: null },
     })) as Record<string, unknown>;
     // The whisper routing key is the FUNCOM id, not the FLS id — that is what the client binds its queue under.
-    expect(whisper).toMatchObject({ delivered: true, channel: 'whisper', routingKey: 'PLAYER#12345', sender: 'Takaro' });
+    expect(whisper).toMatchObject({ delivered: true, channel: 'whisper', routingKey: 'PLAYER#12345', sender: null });
 
     const global = (await h.adapter.handleAction('sendMessage', { message: 'everyone', opts: null })) as Record<string, unknown>;
     expect(global).toMatchObject({ channel: 'global', mode: 'chat', chat: true });

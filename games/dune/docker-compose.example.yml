@@ -56,9 +56,10 @@ services:
       TAKARO_REGISTRATION_TOKEN: ${TAKARO_REGISTRATION_TOKEN:-}
       TAKARO_IDENTITY_TOKEN: ${TAKARO_IDENTITY_TOKEN:-}
       TAKARO_SERVER_NAME: ${TAKARO_SERVER_NAME:-}
-      # Must match your Takaro game server's `serverChatName` setting, or Takaro's chat bridge
-      # echoes the connector's own messages back into the game.
-      TAKARO_SENDER_NAME: ${TAKARO_SENDER_NAME:-Server}
+      # Name shown in front of connector chat lines (`Name: message`). The `serverChatName` set in
+      # Takaro wins when Takaro sends it; set this to the same value for Takaro builds that do not.
+      # Empty: no name. TAKARO_SERVER_CHAT_NAME is accepted as an alias.
+      TAKARO_SENDER_NAME: ${TAKARO_SENDER_NAME:-}
       # 1 (empty) offers Takaro protocol version 1 and declares the Hagga Basin map; 0 keeps version 0. Needs `up -d`.
       TAKARO_PROTOCOL: ${TAKARO_PROTOCOL:-}
 
@@ -78,8 +79,8 @@ services:
       # DUNE_K8S_NAMESPACE: default
       # DUNE_K8S_POD: game-rmq-0
 
-      # Global messages: `chat` (a chat line, sender renders as `[]`), `broadcast` (an on-screen
-      # panel titled with TAKARO_SENDER_NAME), or `both`.
+      # Global messages: `chat` (a chat line, `[] Name: message`), `broadcast` (an on-screen
+      # panel titled with the sender name, `Takaro` without one), or `both`.
       DUNE_GLOBAL_MESSAGE_MODE: ${DUNE_GLOBAL_MESSAGE_MODE:-both}
 
       # OPTIONAL plugin. Only set these if you preloaded libtakaro-dune.so into the map process

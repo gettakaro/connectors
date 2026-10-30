@@ -119,7 +119,8 @@ async function main(): Promise<void> {
       mapRoutingKeys: config.mapChatRoutingKeys,
       ...(config.rmqManagementUrl ? { managementUrl: config.rmqManagementUrl } : {}),
       wire: config.chatWire,
-      senderName: config.senderName,
+      // The spoofed-username fields, which the client does not render; a resolved name replaces it per message.
+      senderName: config.senderName || 'Takaro',
       announcerFuncomId: config.announcerFuncomId,
       onChat,
     });

@@ -1,39 +1,112 @@
 import { describe, expect, it } from 'vitest';
+import { renderChatText, resolveSenderName } from '../dune/chatSender.js';
 import { loadConfig } from '../dune/config.js';
 import { MemoryCursorStore } from '../dune/cursorStore.js';
 import { EventPoller } from '../dune/eventPoller.js';
 import { mapPluginEvent } from '../dune/mapping.js';
-import { buildChatPayload, redactChat } from '../dune/rmq.js';
+import { buildChatPayload, parseChatMessage, redactChat } from '../dune/rmq.js';
+import { MockBattlegroup } from '../testing/mockBattlegroup.js';
 import type { PluginEventsResponse } from '../dune/types.js';
 import { harness } from './helpers.js';
 
 const FLS = '6FF6498F4074E3DE';
 
-describe('sender name', () => {
-  it('falls back TAKARO_SENDER_NAME → TAKARO_SERVER_NAME → "Takaro", and a per-message override wins', async () => {
-    const h = await harness();
-    expect(h.adapter.senderName()).toBe('Takaro');
-    expect(h.adapter.senderName('Shop')).toBe('Shop');
-    // An explicit JSON null override must not blank out the configured name.
-    expect(h.adapter.senderName(null)).toBe('Takaro');
+function chatOf(h: Awaited<ReturnType<typeof harness>>): Record<string, unknown> {
+  const body = JSON.parse(h.battlegroup.publishes.at(-1)!.body) as Record<string, string>;
+  return JSON.parse(body.Content) as Record<string, unknown>;
+}
+
+/** The chat line's text wherever the wire variant nests it. */
+function textOf(inner: Record<string, unknown>): string {
+  return JSON.stringify(inner.m_Message);
+}
+
+describe('server chat name resolution', () => {
+  it('senderNameOverride wins, then the configured name, then no name; empty or whitespace is unset', () => {
+    expect(resolveSenderName('Shop', 'Arrakis')).toBe('Shop');
+    expect(resolveSenderName('  Shop  ', 'Arrakis')).toBe('Shop');
+    expect(resolveSenderName(undefined, 'Arrakis')).toBe('Arrakis');
+    // Takaro modules send explicit JSON null for optional arguments.
+    expect(resolveSenderName(null, 'Arrakis')).toBe('Arrakis');
+    expect(resolveSenderName('', 'Arrakis')).toBe('Arrakis');
+    expect(resolveSenderName('   ', ' Arrakis ')).toBe('Arrakis');
+    expect(resolveSenderName(undefined, '')).toBeNull();
+    expect(resolveSenderName('  ', '   ')).toBeNull();
+    expect(resolveSenderName(42, undefined)).toBeNull();
   });
 
-  it('the configured sender name is what a player sees as the chat sender', async () => {
-    const h = await harness();
-    await h.adapter.handleAction('sendMessage', { message: 'hi', opts: { recipient: { gameId: FLS } } });
-    const body = JSON.parse(h.battlegroup.publishes.at(-1)!.body) as Record<string, string>;
-    const inner = JSON.parse(body.Content) as Record<string, unknown>;
-    expect(inner.m_bUseSpoofedUserName).toBe(true);
-    expect((inner.m_SpoofedUserNameFrom as Record<string, string>).m_UnlocalizedName).toBe('Takaro');
-    // The recipient's character name goes in m_UserNameTo, which the client renders on the whisper.
-    expect(inner.m_UserNameTo).toBe('Tester');
+  it('renders "<name>: <message>" with a name and the message unchanged without one', () => {
+    expect(renderChatText('Arrakis', 'hello')).toBe('Arrakis: hello');
+    expect(renderChatText(null, 'hello')).toBe('hello');
   });
 
-  it('a broadcast is titled with the sender name, not with a hard-coded string', async () => {
-    const h = await harness({ globalMessageMode: 'broadcast' });
+  it('the config value comes from TAKARO_SENDER_NAME or TAKARO_SERVER_CHAT_NAME, trimmed, and is empty by default', () => {
+    const base = { DUNE_PG_URL: 'postgres://x/y' };
+    expect(loadConfig(base).senderName).toBe('');
+    expect(loadConfig({ ...base, TAKARO_SENDER_NAME: ' Arrakis ' }).senderName).toBe('Arrakis');
+    expect(loadConfig({ ...base, TAKARO_SERVER_CHAT_NAME: 'Arrakis' }).senderName).toBe('Arrakis');
+    expect(loadConfig({ ...base, TAKARO_SENDER_NAME: '  ', TAKARO_SERVER_CHAT_NAME: 'Arrakis' }).senderName).toBe('Arrakis');
+  });
+});
+
+describe('server chat name on every send path', () => {
+  it('a global chat line carries the name in front of the text', async () => {
+    const h = await harness({ senderName: 'Arrakis' });
     await h.adapter.handleAction('sendMessage', { message: 'to everyone' });
-    const payload = h.gmSent().at(-1)!.BroadcastPayload as { LocalizedText: { Title: string; Body: string }[] };
-    expect(payload.LocalizedText[0]).toEqual({ Key: 'en', Title: 'Takaro', Body: 'to everyone' });
+    expect(textOf(chatOf(h))).toContain('Arrakis: to everyone');
+  });
+
+  it('a whisper carries the name in front of the text, and the recipient stays in m_UserNameTo', async () => {
+    const h = await harness({ senderName: 'Arrakis' });
+    const out = await h.adapter.handleAction('sendMessage', { message: 'hi', opts: { recipient: { gameId: FLS } } });
+    expect(out).toMatchObject({ channel: 'whisper', sender: 'Arrakis' });
+    const inner = chatOf(h);
+    expect(textOf(inner)).toContain('Arrakis: hi');
+    expect(inner.m_UserNameTo).toBe('Tester');
+    expect((inner.m_SpoofedUserNameFrom as Record<string, string>).m_UnlocalizedName).toBe('Arrakis');
+  });
+
+  it('senderNameOverride wins over the configured name on chat and whisper', async () => {
+    const h = await harness({ senderName: 'Arrakis' });
+    await h.adapter.handleAction('sendMessage', { message: 'deal', opts: { senderNameOverride: 'Shop' } });
+    expect(textOf(chatOf(h))).toContain('Shop: deal');
+    await h.adapter.handleAction('sendMessage', { message: 'psst', opts: { recipient: { gameId: FLS }, senderNameOverride: 'Shop' } });
+    expect(textOf(chatOf(h))).toContain('Shop: psst');
+    expect(textOf(chatOf(h))).not.toContain('Arrakis');
+  });
+
+  it('with no name the text is exactly the message, as before', async () => {
+    const h = await harness();
+    const out = await h.adapter.handleAction('sendMessage', { message: 'plain', opts: { senderNameOverride: '  ' } });
+    expect(out).toMatchObject({ sender: null });
+    const inner = chatOf(h);
+    expect(textOf(inner)).toContain('"plain"');
+    expect(textOf(inner)).not.toContain(': plain');
+    expect((inner.m_SpoofedUserNameFrom as Record<string, string>).m_UnlocalizedName).toBe('Takaro');
+  });
+
+  it('a broadcast panel is titled with the name and keeps the body plain; without a name it is titled Takaro', async () => {
+    const h = await harness({ globalMessageMode: 'broadcast', senderName: 'Arrakis' });
+    await h.adapter.handleAction('sendMessage', { message: 'to everyone' });
+    const titled = h.gmSent().at(-1)!.BroadcastPayload as { LocalizedText: { Title: string; Body: string }[] };
+    expect(titled.LocalizedText[0]).toEqual({ Key: 'en', Title: 'Arrakis', Body: 'to everyone' });
+
+    const plain = await harness({ globalMessageMode: 'broadcast' });
+    await plain.adapter.handleAction('sendMessage', { message: 'to everyone' });
+    const untitled = plain.gmSent().at(-1)!.BroadcastPayload as { LocalizedText: { Title: string; Body: string }[] };
+    expect(untitled.LocalizedText[0]).toEqual({ Key: 'en', Title: 'Takaro', Body: 'to everyone' });
+  });
+
+  it('our own named lines coming back on chat.intercept are not echoed as chat-message', async () => {
+    const h = await harness({ senderName: 'Arrakis' });
+    await h.adapter.handleAction('sendMessage', { message: 'loop?' });
+    const echoed = parseChatMessage({
+      content: Buffer.from(JSON.stringify(MockBattlegroup.chatBody(chatOf(h))), 'utf8'),
+      fields: { routingKey: 'chat.map' },
+      properties: { userId: 'fls' },
+    });
+    expect(echoed?.msg).toBe('Arrakis: loop?');
+    expect(h.rmq.isOwnMessage(echoed!)).toBe(true);
   });
 });
 
@@ -172,9 +245,7 @@ describe('the sender name is actually carried on the wire', () => {
     expect('m_UserNameFrom' in omitted).toBe(false);
   });
 
-  it('the default sender name is Takaro, not the indistinguishable "Server"', () => {
-    expect(loadConfig({ DUNE_PG_URL: 'postgres://x/y' }).senderName).toBe('Takaro');
-    expect(loadConfig({ DUNE_PG_URL: 'postgres://x/y', TAKARO_SENDER_NAME: 'Arrakis' }).senderName).toBe('Arrakis');
+  it('the sender-name field stays off by default and is a switch', () => {
     // Measured live 2026-09-21 (L6b-3): a real player-authored frame has NO sender-name field, and sending
     // `m_UserNameFrom` left the in-game prefix an empty `[]` exactly as omitting it does. So the default is now
     // "send nothing", and the switch survives only so a future game build can be retried without a rebuild.
