@@ -744,7 +744,7 @@ def test_the_plugin_source_keeps_its_release_markers() -> None:
     # because the arguments are whatever Takaro was asked to run.
     assert 'LogInfo($"console: {CommandSummary(command)}")' in source
     assert 'LogInfo($"console: {command}")' not in source
-    assert 'LogInfo($"broadcast: {message}")' in source
+    assert 'LogInfo(senderName == null ? $"broadcast: {text}" : $"broadcast as {senderName}: {text}")' in source
     # listEntities answers with display names, never the dev short name. What those names
     # come out as is `games/rust/tests/names/run.sh`, which compiles the region below and
     # runs it; all this file can say is that the region exists and is what is called.
