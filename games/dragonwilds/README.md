@@ -88,7 +88,7 @@ environment variable wins over `takaro.cfg` and needs a restart to change.
 | `TAKARO_SERVER_NAME` | no | Server name shown in Takaro; unique in your Takaro domain. |
 | `TAKARO_WS_URL` | no | Default `wss://connect.takaro.io/`. |
 | `TAKARO_PROTOCOL` | no | Set `0` to stay on Takaro protocol version 0 (read at start). By default the connector offers versions 0 and 1 and Takaro picks. |
-| `TAKARO_SENDER_NAME` | no | Sender name for broadcasts; default is the server name. |
+| `TAKARO_SENDER_NAME` | no | Sender name on messages from Takaro (alias `TAKARO_SERVER_CHAT_NAME`). The chat name set for the server in Takaro wins over it; with neither, the server name. See [Server chat name](#server-chat-name). |
 | `TAKARO_STATE_DIR` | Docker: yes | A persistent, writable directory, e.g. `/opt/takaro-state`. Default `<server>/RSDragonwilds/Binaries/Linux/takaro`. |
 | `DRAGONWILDS_LOG_FILE` | no | The server log; found from the binary by default. |
 | `DRAGONWILDS_LOG_TAIL` / `DRAGONWILDS_LOG_EVENTS` / `DRAGONWILDS_LOG_RATE` | no | `auto` / `filtered` / `40` (log lines per 30 s) by default. |
@@ -98,6 +98,18 @@ environment variable wins over `takaro.cfg` and needs a restart to change.
 | `TAKARO_SYM_PATH` | no | Only if the `.sym` file is not next to the binary. |
 
 Never commit or share a filled-in `takaro.cfg` or `.env`.
+
+#### Server chat name
+
+Messages from Takaro (module replies, the Discord bridge, broadcasts) start with the sender in
+brackets: `[Takaro] Welcome back`. To choose that name, set the server's chat name in Takaro; it
+applies from the next message, without a restart. On a Takaro version that does not pass that name
+to the connector yet, set `TAKARO_SENDER_NAME` instead (restart to change it). The chat name set in
+Takaro wins over `TAKARO_SENDER_NAME`; with neither, the sender is the server name.
+
+The game has no sender of its own for server messages: the chat window labels every message from
+Takaro, in global chat and in a message to one player, with the receiving player's own name, and
+the bracketed name in the text is the real sender.
 
 ### 4. Load the plugin into the server
 
@@ -158,7 +170,7 @@ the native connector.
 | Entity catalogue | ⚠️ | Only creatures the server has loaded so far. |
 | Locations / points of interest | ⚠️ | Lodestones only; Takaro does not use this list. |
 | Run a console command | ✅ | Connector command set; unknown commands are refused. |
-| Broadcast a message | ✅ | Shows under the receiving player's name. |
+| Broadcast a message | ✅ | Shows under the receiving player's name, as `[<chat name>] text`. |
 | Whisper a player | ✅ |  |
 | Teleport a player | ✅ | Module teleports included. |
 | Kick a player | ✅ |  |

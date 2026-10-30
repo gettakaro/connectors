@@ -3,6 +3,7 @@
 #include "native_map.h"
 #include "native_log.h"
 #include "actions.h"
+#include "chat_sender.h"
 #include "common.h"
 #include "gamethread.h"
 #include "reflect.h"
@@ -480,7 +481,7 @@ NativePersistence::Result Engine::Load() {
     auto timed = store_.ReadLegacy("timedBans", x);
     if (!timed) return timed;
     v->timedBansJson = x;
-    v->senderName = Trim(ConfigValue("TAKARO_SENDER_NAME", ConfigValue("TAKARO_SERVER_CHAT_NAME", "")));
+    v->senderName = ChatSender::Configured();
     v->serverName = ConfigValue("TAKARO_SERVER_NAME", "Dragonwilds");
     v->banRevision = state::BanRevision();
     std::string key, detail;
@@ -809,11 +810,8 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p) {
             std::string msg = Str(a, "message");
             if (msg.empty()) throw std::runtime_error("sendMessage requires 'message'");
             Json opts = Object(a.value("opts", Json::object())), recipient = Object(opts.value("recipient", Json::object()));
-            // Sender: per-message override, then TAKARO_SENDER_NAME, then the server name.
-            std::string sender = Str(opts, "senderNameOverride");
-            if (sender.empty()) sender = p.view->senderName;
-            if (sender.empty()) sender = p.view->serverName;
-            if (sender.empty()) sender = "Server";
+            std::string sender =
+                ChatSender::Resolve(Str(opts, "senderNameOverride"), p.view->senderName, p.view->serverName);
             std::string to;
             for (const char* k : {"gameId", "epicOnlineServicesId", "steamId", "platformId"})
                 if (to.empty()) to = Str(recipient, k);

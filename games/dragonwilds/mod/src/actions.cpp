@@ -7,6 +7,7 @@
 // every function address comes from sym.cpp. A missing symbol or property degrades one capability
 // with a reason; it never throws out of a handler and never takes the server down.
 #include "actions.h"
+#include "chat_sender.h"
 
 #include "eos.h"
 #include "events.h"
@@ -945,7 +946,7 @@ bool SendChatTo(const PlayerInfo& p, const std::string& text, const std::string&
         construct(p.controller, params.data() + senderOff);
         haveSender = true;
     }
-    std::string body = senderName.empty() ? text : ("[" + senderName + "] " + text);
+    std::string body = ChatSender::Render(senderName, text);
     FString bodyStr{};
     if (!MakeGameFString(body, bodyStr)) {
         err = "could not allocate the message body";
@@ -1517,7 +1518,8 @@ Actions::Result Actions::Message(const JsonValue& body) {
     const JsonValue* rcpt = body.get("recipientGameId");
     std::string recipient = rcpt && rcpt->isStr() ? rcpt->str : "";
     const JsonValue* snd = body.get("senderName");
-    std::string sender = snd && snd->isStr() ? snd->str : ConfigValue("TAKARO_SENDER_NAME", "Server");
+    std::string sender = ChatSender::Resolve(snd && snd->isStr() ? snd->str : "", ChatSender::Configured(),
+                                             ConfigValue("TAKARO_SERVER_NAME", "Dragonwilds"));
 
     return OnGameThread("POST /message", [text, recipient, sender]() -> JobOut {
         auto players = ReadPlayers();
