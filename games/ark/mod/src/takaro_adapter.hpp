@@ -125,6 +125,21 @@ inline std::string js_trim(const std::string& s) {
   return out;
 }
 
+// The sender name players see on Takaro's messages: opts.senderNameOverride (Takaro
+// fills it from the serverChatName setting), else TAKARO_SERVER_CHAT_NAME, else none,
+// which keeps ARK's own "(SERVER)" line. Blank values count as unset; longer names are
+// cut to the 128 code points the native chat line takes, so messages never fail on it.
+inline std::string server_chat_sender(const json::Value* override_name, const std::string& configured) {
+  std::string name;
+  if (override_name && override_name->is_string()) name = js_trim(override_name->as_string());
+  if (name.empty()) name = js_trim(configured);
+  const auto cps = code_points(name);
+  if (cps.size() <= 128) return name;
+  std::string cut;
+  for (size_t i = 0; i < 128; ++i) json::append_utf8(cut, cps[i]);
+  return js_trim(cut);
+}
+
 inline bool safe_integer(const json::Value* v) {
   return v && v->is_number() && std::floor(v->as_number()) == v->as_number() &&
          std::fabs(v->as_number()) <= 9007199254740991.0;
@@ -363,6 +378,8 @@ class Adapter {
 
   // The icon declared in game.profile (null = none declared, getGameIcon is refused).
   void set_game_icon(std::shared_ptr<const GameIcon> icon) { icon_ = std::move(icon); }
+  // TAKARO_SERVER_CHAT_NAME: the sender name when Takaro sends none.
+  void set_server_chat_name(std::string name) { server_chat_name_ = std::move(name); }
 
   json::Value handle(const std::string& action, const json::Value& args, AfterWrite* after_write = nullptr) {
     if (action == "testReachability") return test_reachability();
@@ -433,6 +450,7 @@ class Adapter {
   KnownPlayers& known_;
   DeliveryWaiter wait_delivered_;
   std::shared_ptr<const GameIcon> icon_;
+  std::string server_chat_name_;
   std::string map_dimension_;
   std::atomic<int> protocol_version_{0};
 
@@ -573,11 +591,12 @@ class Adapter {
     return out;
   }
 
-  bool send(const std::string& recipient, const std::string& text) {
+  bool send(const std::string& recipient, const std::string& text, const std::string& sender) {
     auto action = std::make_shared<gate::Action>();
     action->kind = gate::Action::Kind::message;
     action->player_id = recipient;
     if (!gate::utf8_to_utf32(text, action->text)) return false;
+    if (!sender.empty() && !gate::utf8_to_utf32(sender, action->sender)) return false;
     const auto outcome = run(gate_, action);
     return outcome.status == gate::Server::Submit::done && outcome.success;
   }
@@ -605,7 +624,7 @@ class Adapter {
       bans_.unban(id);
       return json::Value::object();
     }
-    if (!js_trim(reason).empty() && !send(id, "Kick reason: " + reason))
+    if (!js_trim(reason).empty() && !send(id, "Kick reason: " + reason, server_chat_sender(nullptr, server_chat_name_)))
       withhold("native kick reason notice was not delivered");
     auto action = std::make_shared<gate::Action>();
     action->kind = gate::Action::Kind::kick;
@@ -674,13 +693,9 @@ class Adapter {
     if (!message || !message->is_string() || js_trim(message->as_string()).empty())
       withhold("sendMessage requires a nonempty message");
     const std::string recipient = message_recipient(args);
-    // Takaro does not forward serverChatName to Generic connectors; modules may
-    // pass opts.senderNameOverride. ARK's direct chat line has no sender field.
-    std::string text = message->as_string();
-    if (const json::Value* sender = as_record(args.get("opts")).get("senderNameOverride");
-        sender && sender->is_string() && !js_trim(sender->as_string()).empty())
-      text = js_trim(sender->as_string()) + ": " + text;
-    if (!send(recipient, text))
+    const std::string sender =
+        server_chat_sender(as_record(args.get("opts")).get("senderNameOverride"), server_chat_name_);
+    if (!send(recipient, message->as_string(), sender))
       withhold(recipient.empty() ? "native chat broadcast was not acknowledged" : "native chat recipient was not acknowledged");
     return json::Value::object();
   }
