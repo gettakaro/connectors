@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.6.0...7d2d-v0.7.0) (2026-10-30)
+
+
+### Features
+
+* **7d2d:** show the configured server chat name instead of "Server" ([#671](https://github.com/gettakaro/connectors/issues/671)) ([ed75c42](https://github.com/gettakaro/connectors/commit/ed75c425385a211071775398ea3cf124fb37fba9))
+* **7d2d:** support V 3.4.0 b6 (Steam build 26167630) ([#662](https://github.com/gettakaro/connectors/issues/662)) ([10e7078](https://github.com/gettakaro/connectors/commit/10e70786d67f9c5751ae4ebf2300b7a5e61ed0e5))
+* **7d2d:** support V 3.4.0 b9 (Steam build 26237934) ([#676](https://github.com/gettakaro/connectors/issues/676)) ([f8517a2](https://github.com/gettakaro/connectors/commit/f8517a22f52e2a49de1897d68bc71e1b4cbf633e))
+
 ## [0.6.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.5.0...7d2d-v0.6.0) (2026-10-26)
 
 
