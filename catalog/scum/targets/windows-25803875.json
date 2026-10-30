@@ -4,7 +4,7 @@
   "game": "scum",
   "platform": "windows",
   "revision": "25803875",
-  "default": true,
+  "default": false,
   "support": {
     "status": "candidate",
     "since": "2026-10-14",
@@ -12,7 +12,7 @@
       "games/scum/README.md (What works, what doesn't: SCUM 1.3.4.2.161892, Steam build 25803875, live with a real Windows client through hosted Takaro, BattlEye off and on, 2026-10-13/14)",
       "games/scum/capabilities.json (one live-verification note per action and event, generated from Scripts/takaro/coverage.lua)"
     ],
-    "notes": "The connector is the UE4SS mod TakaroSCUM: Lua scripts that find the game's classes by reflection, plus main.dll, a UE4SS C++ mod that holds the Takaro WebSocket (WinHTTP). UE4SS runs with only the EngineTick and ProcessEvent hooks; its stock hook set crashes this server build on player join. The live tests ran an MSVC v143 build of main.dll; the release build cross-compiles the same sources with clang-cl against the pinned MSVC CRT and Windows SDK, and checks every UE4SS import against the pinned UE4SS.dll."
+    "notes": "Superseded as the default by windows-26280049; kept so a server still on SCUM 1.3.4.2 gets a matching mod. The connector is the UE4SS mod TakaroSCUM: Lua scripts that find the game's classes by reflection, plus main.dll, a UE4SS C++ mod that holds the Takaro WebSocket (WinHTTP). UE4SS runs with only the EngineTick and ProcessEvent hooks; its stock hook set crashes this server build on player join. The live tests ran an MSVC v143 build of main.dll; the release build cross-compiles the same sources with clang-cl against the pinned MSVC CRT and Windows SDK, and checks every UE4SS import against the pinned UE4SS.dll."
   },
   "inputs": {
     "server": {

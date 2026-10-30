@@ -31,7 +31,7 @@ LUA_PATH="mod/TakaroSCUM/Scripts/?.lua;;" lua5.4 scripts/gen-capabilities.lua > 
 ## Release build
 
 ```
-maintenance/bin/takaro-maint build --game scum --target windows-25803875 --version 0.1.0-dev --out dist --toolchain container
+maintenance/bin/takaro-maint build --game scum --target windows-26280049 --version 0.1.0-dev --out dist --toolchain container
 ```
 
 `build-release.sh` runs the Lua tests and compiles `main.dll` with clang-cl and lld-link in the pinned

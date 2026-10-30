@@ -5,7 +5,7 @@ Connects a SCUM dedicated server to Takaro. It is one mod folder that runs insid
 
 ## What works, what doesn't
 
-Tested on 2026-10-13/14 with a real game client on SCUM 1.3.4.2.161892 (Steam build 25803875, Windows dedicated server), with BattlEye off and on. ✅ = works, ⚠️ = works with a limit, ❌ = not supported, ❔ = not tested yet.
+Tested on 2026-10-13/14 with a real game client on SCUM 1.3.4.2.161892 (Steam build 25803875, Windows dedicated server), with BattlEye off and on. Rechecked on 2026-10-29 on SCUM 1.3.5.1.172191 (Steam build 26280049) with a real game client: connection, player list, messages, console commands, chat, joins and kicks, chat commands and the Discord chat bridge. ✅ = works, ⚠️ = works with a limit, ❌ = not supported, ❔ = not tested yet.
 
 | What | | Notes |
 |---|---|---|
