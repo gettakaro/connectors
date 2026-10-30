@@ -10,7 +10,7 @@
 #pragma semicolon 1
 #pragma newdecls required
 
-#define PLUGIN_VERSION "0.1.0" // x-release-please-version
+#define PLUGIN_VERSION "0.2.0" // x-release-please-version
 #define MAX_TOKEN_LENGTH 512
 #define MAX_WS_URL_LENGTH 256
 #define MAX_SERVER_NAME_LENGTH 128
