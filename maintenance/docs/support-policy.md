@@ -33,6 +33,7 @@ answer, and the record is the authority.
 |---|---|---|---|---|---|
 | 7 Days to Die | `linux-3.2.0.b10` | linux | 3.2.0.b10 | candidate | contract |
 | 7 Days to Die | `linux-3.3.0.b18` | linux | 3.3.0.b18 | candidate | contract |
+| 7 Days to Die | `linux-3.4.0.b6` | linux | 3.4.0.b6 | candidate | contract |
 | Conan Exiles | `linux-25639945` | linux | 25639945 | candidate | contract |
 | Conan Exiles | `linux-25738716` | linux | 25738716 | candidate | contract |
 | Conan Exiles | `linux-25792439` | linux | 25792439 | candidate | contract |
