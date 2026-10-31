@@ -5,6 +5,7 @@ import type { GameServerAction } from '../takaro/protocol.js';
 import type { CommandResult, TShockBan, TShockPlayer, TShockStatus } from '../tshock/client.js';
 import { terrariaIdentity } from './identity.js';
 import { listTerrariaItems, resolveTerrariaItemCode, type TerrariaItemCatalogEntry } from './itemCatalog.js';
+import { renderDirected, renderGlobal, resolveSenderName } from './serverChat.js';
 
 export type TakaroItem = Omit<TerrariaItemCatalogEntry, 'aliases'>;
 
@@ -350,14 +351,30 @@ export class TerrariaAdapter {
 
   private async sendMessage(args: Record<string, unknown>): Promise<CommandResult> {
     const message = requireString(args, ['message', 'text']);
+    // A recipient makes this a private reply (a module answering one player); only that player sees it.
     const recipient = recipientName(args);
-    if (recipient) {
-      // A recipient makes this a private reply (a module answering one player). A broadcast
-      // would show it to everyone; TShock's /w from the REST console reaches only that player.
-      return this.tshock.rawCommand(`/w ${quote(recipient)} ${quote(message)}`);
+    const sender = resolveSenderName(
+      optionalNestedString(args, ['senderNameOverride', 'senderName', 'from']),
+      this.options.serverChatName,
+    );
+    if (!sender) {
+      return recipient
+        ? this.tshock.rawCommand(`/w ${quote(recipient)} ${quote(message)}`)
+        : this.tshock.broadcast(message);
     }
-    const senderName = optionalNestedString(args, ['senderNameOverride', 'senderName', 'from']) || this.options.serverChatName;
-    return this.tshock.broadcast(senderName ? `${senderName}: ${message}` : message);
+
+    // TShock's /broadcast and /w label the line themselves ("(Server Broadcast)", "<From
+    // <REST user>>"), so the plugin delivers the rendered text with nothing in front of it.
+    const delivered = recipient
+      ? await this.tshock.rawCommand(`/takarotell ${quote(recipient)} ${quote(renderDirected(sender, message))}`)
+      : await this.tshock.rawCommand(`/takarosay ${quote(renderGlobal(sender, message))}`);
+    if (delivered.success || !PLUGIN_CHAT_UNAVAILABLE.test(delivered.rawResult)) return delivered;
+
+    // A plugin older than the bridge, or a REST user without takaro.admin: TShock's own
+    // commands still deliver, under their label.
+    return recipient
+      ? this.tshock.rawCommand(`/w ${quote(recipient)} ${quote(renderGlobal(sender, message))}`)
+      : this.tshock.broadcast(renderGlobal(sender, message));
   }
 
   private async shutdown(): Promise<CommandResult> {
@@ -367,6 +384,9 @@ export class TerrariaAdapter {
     return this.tshock.shutdown(true);
   }
 }
+
+/** The plugin's chat commands are missing (older plugin) or not allowed for the REST user. */
+const PLUGIN_CHAT_UNAVAILABLE = /invalid command entered|you do not have access to this command|you do not have permission/i;
 
 export function parseArgs(rawArgs: unknown): Record<string, unknown> {
   if (typeof rawArgs === 'string') {

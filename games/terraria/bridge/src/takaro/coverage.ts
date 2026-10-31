@@ -111,8 +111,8 @@ export const ACTION_COVERAGE: Record<GameServerAction, ActionCoverage> = {
   sendMessage: {
     status: 'live-supported',
     responseShape: '{ success: boolean, rawResult: string }',
-    liveVerification: 'fake and real /v2/server/broadcast smoke',
-    reason: 'TShock exposes a broadcast REST endpoint.',
+    liveVerification: 'fake TShock rawcmd in unit tests; live TShock 6.2.1 with a Terraria network client showed the sender name globally and in a whisper',
+    reason: 'Plugin commands /takarosay and /takarotell show the sender name in the text; TShock /broadcast and /w without one.',
   },
   teleportPlayer: {
     status: 'live-supported',

@@ -258,8 +258,14 @@ test('executes allowlisted commands, normalizes nested player arguments, and gat
   assert.equal((await adapter.handleAction('unbanPlayer', { player: { name: 'BadPlayer' } }) as { success: boolean }).success, true);
   assert.equal((await adapter.handleAction('shutdown', {}) as { success: false }).success, false);
 
-  assert.deepEqual(tshock.broadcasts, ['Takaro: hello', 'Discord Hendrik: hello']);
-  assert.deepEqual(tshock.rawCommands.slice(0, 4), ['/help', 'say hello', '/say hello', '/kick "Guide" "test"']);
+  assert.deepEqual(tshock.rawCommands.slice(0, 6), [
+    '/help',
+    'say hello',
+    '/say hello',
+    '/takarosay "Takaro: hello"',
+    '/takarosay "Discord Hendrik: hello"',
+    '/kick "Guide" "test"',
+  ]);
 });
 
 test('supports give item and plugin-backed teleport through guarded raw TShock commands', async () => {
@@ -553,7 +559,89 @@ test('a message with a recipient is whispered to that player, not broadcast', as
 
   assert.equal(result.success, true);
   assert.deepEqual(tshock.broadcasts, []);
-  assert.deepEqual(tshock.rawCommands, ['/w "Bob the Builder" "Teleport \\"home\\" set."']);
+  assert.deepEqual(tshock.rawCommands, ['/takarotell "Bob the Builder" "<From Takaro> Teleport \\"home\\" set."']);
+});
+
+function chatAdapter(serverChatName?: string, tshock = new FakeTShock()) {
+  return {
+    tshock,
+    adapter: new TerrariaAdapter(tshock, { commandAllowlistExact: [], commandAllowlistPrefixes: [], enableShutdown: false, serverChatName }),
+  };
+}
+
+test('sendMessage shows Takaro\'s chat name, else the configured one, else the plain message', async () => {
+  const send = async (serverChatName: string | undefined, opts: Record<string, unknown>) => {
+    const { adapter, tshock } = chatAdapter(serverChatName);
+    await adapter.handleAction('sendMessage', { message: 'hi', opts });
+    return [...tshock.rawCommands, ...tshock.broadcasts.map((text) => `broadcast ${text}`)];
+  };
+
+  // The override wins over the config value, trimmed.
+  assert.deepEqual(await send('Config', { senderNameOverride: '  Override ' }), ['/takarosay "Override: hi"']);
+  // No override, or a blank one: the config value.
+  assert.deepEqual(await send('Config', {}), ['/takarosay "Config: hi"']);
+  assert.deepEqual(await send('Config', { senderNameOverride: '   ' }), ['/takarosay "Config: hi"']);
+  assert.deepEqual(await send(' Config ', { senderNameOverride: '' }), ['/takarosay "Config: hi"']);
+  // Neither: exactly what the bridge sent before there was a name.
+  assert.deepEqual(await send(undefined, {}), ['broadcast hi']);
+  assert.deepEqual(await send('  ', { senderNameOverride: ' ' }), ['broadcast hi']);
+
+  const recipient = { gameId: 'terraria:Bob' };
+  assert.deepEqual(await send('Config', { recipient, senderNameOverride: 'Override' }), ['/takarotell "Bob" "<From Override> hi"']);
+  assert.deepEqual(await send('Config', { recipient }), ['/takarotell "Bob" "<From Config> hi"']);
+  assert.deepEqual(await send('', { recipient }), ['/w "Bob" "hi"']);
+});
+
+test('sendMessage falls back to TShock\'s /broadcast and /w when the plugin is older than the bridge', async () => {
+  const tshock = new FakeTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return command.startsWith('/takaro')
+      ? { success: false, rawResult: 'Invalid command entered. Type /help for a list of valid commands.' }
+      : { success: true, rawResult: '' };
+  };
+  const { adapter } = chatAdapter('Takaro', tshock);
+
+  assert.equal((await adapter.handleAction('sendMessage', { message: 'hi' }) as { success: boolean }).success, true);
+  assert.equal((await adapter.handleAction('sendMessage', { message: 'hi', opts: { recipient: { gameId: 'Bob' } } }) as { success: boolean }).success, true);
+  assert.deepEqual(tshock.broadcasts, ['Takaro: hi']);
+  assert.deepEqual(tshock.rawCommands, ['/takarosay "Takaro: hi"', '/takarotell "Bob" "<From Takaro> hi"', '/w "Bob" "Takaro: hi"']);
+});
+
+test('sendMessage falls back when the REST user may not run the plugin\'s commands', async () => {
+  const tshock = new FakeTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return command.startsWith('/takaro')
+      ? { success: false, rawResult: 'You do not have access to this command.' }
+      : { success: true, rawResult: '' };
+  };
+  const { adapter } = chatAdapter('Takaro', tshock);
+
+  assert.equal((await adapter.handleAction('sendMessage', { message: 'hi' }) as { success: boolean }).success, true);
+  assert.deepEqual(tshock.broadcasts, ['Takaro: hi']);
+
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return command.startsWith('/takaro')
+      ? { success: false, rawResult: 'You do not have permission to use this command.' }
+      : { success: true, rawResult: '' };
+  };
+  assert.equal((await adapter.handleAction('sendMessage', { message: 'hey' }) as { success: boolean }).success, true);
+  assert.deepEqual(tshock.broadcasts, ['Takaro: hi', 'Takaro: hey']);
+});
+
+test('a directed message to a player who is not online fails instead of falling back', async () => {
+  const tshock = new FakeTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return { success: false, rawResult: "No player found matching 'Bob'." };
+  };
+  const { adapter } = chatAdapter('Takaro', tshock);
+
+  const result = await adapter.handleAction('sendMessage', { message: 'hi', opts: { recipient: { gameId: 'Bob' } } }) as { success: boolean };
+  assert.equal(result.success, false);
+  assert.deepEqual(tshock.rawCommands, ['/takarotell "Bob" "<From Takaro> hi"']);
 });
 
 test('banPlayer passes a timed ban to the plugin as until=<unix seconds>', async () => {

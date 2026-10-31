@@ -69,7 +69,8 @@ export function buildConfig(values: Record<string, string>, env: NodeJS.ProcessE
     registrationToken: env.TAKARO_REGISTRATION_TOKEN || values.registrationToken || '',
     identityToken,
     serverName,
-    serverChatName: values.serverChatName || serverName,
+    // Empty means no name: Takaro's chat name (senderNameOverride) or the plain message.
+    serverChatName: env.TAKARO_SERVER_CHAT_NAME?.trim() || values.serverChatName?.trim() || '',
     takaroWsUrl: values.takaroWsUrl || DEFAULTS.takaroWsUrl,
     tshock: {
       baseUrl: (values.tshockBaseUrl || DEFAULTS.tshockBaseUrl).replace(/\/+$/, ''),
