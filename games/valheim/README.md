@@ -39,11 +39,37 @@ Start the server; it creates `BepInEx/config/com.takaro.valheim.cfg`. Paste your
 connects within a few seconds, no restart needed:
 
 ```ini
+## Takaro Valheim connector settings. Saving this file applies the token, identity,
+## serverName and takaroWsUrl within a few seconds; other settings need a server restart.
+
 [Takaro]
+
+## Takaro registration token: paste it here and save; the connector connects within a few seconds.
 registrationToken = your-registration-token-here
+
+## The server name shown in Takaro; must be unique in your Takaro domain. Empty: the server's own name plus the start of identityToken.
 serverName =
+
+## Identifies this server in Takaro. Filled in by the connector; keep it.
 identityToken =
+
+## Takaro connector WebSocket URL; keep the default.
 takaroWsUrl = wss://connect.takaro.io/
+
+## Connector log level.
+logLevel = Information
+
+## Forward connector log events to Takaro.
+enableLogEvents = true
+
+## Semicolon-separated exact console commands allowed for executeConsoleCommand.
+commandAllowlistExact = help
+
+## Semicolon-separated console command prefixes allowed for executeConsoleCommand.
+commandAllowlistPrefixes =
+
+## Name shown in game chat for Takaro messages (unless Takaro sends its own sender name).
+chatSenderName = Takaro
 ```
 
 Leave `identityToken` empty; the connector fills it in. Keep it once set.
