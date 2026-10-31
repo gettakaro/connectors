@@ -1,58 +1,40 @@
 # Takaro Rust Connector
 
-Connects a Rust dedicated server (Linux or Windows) to Takaro with one plugin file for
-**Carbon** or **Oxide/uMod**. Players do not install anything.
+One plugin file for **Carbon** or **Oxide/uMod** that connects a Rust dedicated server (Linux or
+Windows) to Takaro. Players do not install anything.
 
 ## Install
 
-### 1. Before you start
+You need: a Rust server with [Carbon](https://carbonmod.gg/) or
+[Oxide/uMod](https://umod.org/games/rust), and a Takaro game server of type **Generic** with its
+registration token. Nothing needs to be port-forwarded.
 
-- A Rust dedicated server you can stop, start and copy files to, with
-  [Carbon](https://carbonmod.gg/) or [Oxide/uMod](https://umod.org/games/rust) installed.
-- Access to the server's plugin folder (`carbon/plugins/` on Carbon, `oxide/plugins/` on Oxide).
-- Outbound access to `wss://connect.takaro.io/`. Nothing needs to be port-forwarded.
-- A Takaro game server of type **Generic** and its registration token.
+### 1. Download
 
-### 2. Download
+From https://takaro.io/connectors/rust, download **`TakaroConnector.cs`**. Do not use the
+`rust-dev` pre-release.
 
-Download the latest release from https://takaro.io/connectors/rust (or the latest `rust-v<version>`
-release on https://github.com/gettakaro/connectors/releases): **`TakaroConnector.cs`**. The same
-file is also published under its target name, for example
-`takaro-rust-plugin-carbon-26139947-<version>.cs`, which names the Rust build it was made for. Check
-it against `SHA256SUMS`. Do not use the `rust-dev` pre-release.
+### 2. Install
 
-There is nothing to compile: Carbon and Oxide compile `.cs` plugins at runtime.
-
-### 3. Install
-
-Save the file **as `TakaroConnector.cs`** (the name matters) in your plugin folder:
+Save it **as `TakaroConnector.cs`** (the name matters) in the plugin folder:
 
 ```text
-# Carbon
-<server>/carbon/plugins/TakaroConnector.cs
-
-# Oxide / uMod
-<server>/oxide/plugins/TakaroConnector.cs
+Carbon:  <server>/carbon/plugins/TakaroConnector.cs
+Oxide:   <server>/oxide/plugins/TakaroConnector.cs
 ```
 
-For example `/home/steam/rust/carbon/plugins/TakaroConnector.cs` on Linux or
-`C:\RustServer\oxide\plugins\TakaroConnector.cs` on Windows. The framework compiles and loads it
-right away; no restart is needed.
+The framework compiles and loads it right away; no restart needed.
 
-### 4. Configure
+### 3. Configure
 
-On its first load the plugin creates its config file:
+On first load the plugin creates its config file:
 
 ```text
-# Carbon
-<server>/carbon/configs/TakaroConnector.json
-
-# Oxide / uMod
-<server>/oxide/config/TakaroConnector.json
+Carbon:  <server>/carbon/configs/TakaroConnector.json
+Oxide:   <server>/oxide/config/TakaroConnector.json
 ```
 
-Paste the registration token into `RegistrationToken` and save. The plugin re-reads the file every
-5 seconds and connects; no restart and no plugin reload.
+Paste your registration token and save. The plugin picks it up within 5 seconds.
 
 ```json
 {
@@ -64,51 +46,20 @@ Paste the registration token into `RegistrationToken` and save. The plugin re-re
 }
 ```
 
-| Field | What it is |
+Do not change `IdentityToken`, or Takaro sees a new server.
+
+| Optional setting | What it does |
 |---|---|
-| `RegistrationToken` | Your Takaro registration token. Required. |
-| `IdentityToken` | This server's identity in Takaro, generated on first load. Do not change it, or Takaro sees a new server. |
-| `WebSocketUrl` | Leave as is. |
+| `ServerChatName` | Sender name on messages from Takaro, used when none is set for the server in Takaro. |
 | `Debug` | `true` logs every message sent and received. |
-| `ServerChatName` | Optional sender name on messages from Takaro (see below). |
 
-Environment variables `TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`, `TAKARO_WS_URL`, `TAKARO_DEBUG` and
-`TAKARO_SERVER_CHAT_NAME` win over the file, field by field; changing them needs a server restart.
+### 4. Check that it works
 
-**Server chat name (optional).** Messages from Takaro show as `Name: message`, in a broadcast and in a whisper. The sender is the chat name set for this server in Takaro; a change there applies to the next message, no restart needed. On a Takaro version that does not send that name, set `ServerChatName` instead (a file from an older plugin version has no such key, so add it; applies within 5 seconds); the name set in Takaro wins over it. With neither, only the text shows.
+The server console shows `[Takaro] Identified successfully, server ID: <id>` and the server shows
+as online in Takaro. Without a token, a banner names the file to fix; a wrong token shows
+`Takaro rejected identify: Invalid registrationToken provided.`
 
-### 5. Check that it works
-
-The server console shows lines prefixed with `[Takaro]`:
-
-```text
-[Takaro] Config: <server>/carbon/configs/TakaroConnector.json (registration token set)
-[Takaro] Connecting to wss://connect.takaro.io/
-Loaded plugin TakaroConnector v<version> by Takaro [1667ms]
-[Takaro] WebSocket connected
-[Takaro] Identified successfully, server ID: <id> (protocol 1)
-```
-
-and the game server shows as online in Takaro. A missing token shows a banner naming the file to
-fix:
-
-```text
-*************************************************************************
-  RegistrationToken not set, the server is not connected to Takaro.
-  Paste the registration token from Takaro into <server>/carbon/configs/TakaroConnector.json
-  and save it. The plugin connects within a few seconds, no restart needed.
-*************************************************************************
-```
-
-A wrong token shows `Takaro rejected identify: Invalid registrationToken provided.` Save a
-corrected token and it reconnects within a few seconds.
-
-### 6. Upgrade
-
-Replace `TakaroConnector.cs` in the plugin folder. Carbon and Oxide reload the plugin by
-themselves; no restart is needed. Keep `TakaroConnector.json`: the server keeps its token and
-identity. Coming from `rust-v0.1.0` or older: those releases made every timed ban permanent, so
-upgrade to get working timed bans.
+**Upgrading:** replace `TakaroConnector.cs` and keep `TakaroConnector.json`.
 
 ## What works, what doesn't
 
@@ -116,40 +67,36 @@ Checked on Rust build 26139947 with Carbon v2.0.262, 2026-10-22. ✅ works, ⚠�
 
 | What | | Notes |
 |---|---|---|
-| Connection | ✅ | Reconnects on its own after a server restart. |
-| Player list | ✅ | Steam id, IP and ping; sleeping players can be looked up. |
+| Connection | ✅ | Reconnects after a server restart. |
+| Player list | ✅ | Steam id, IP and ping. |
 | Player location | ✅ | |
-| Teleport | ✅ | To the exact coordinates with no ground snapping; pick a safe height. |
-| Player inventory | ⚠️ | Main inventory, hotbar and worn items; item quality is always empty. |
-| Item list | ✅ | Every item with its display name, for example "Assault Rifle". |
-| Entity list | ✅ | Animals and NPCs with display names. |
-| Locations | ⚠️ | Lists the map's monuments. Not checked. |
-| World map | ⚠️ | The server draws the game's own world map once per map. Not checked on takaro.io yet. |
-| Send a message | ✅ | Broadcasts and whispers, after the server chat name when one is set. |
-| Console commands | ⚠️ | Returns the output and Rust's errors, but an unknown command comes back as a success. |
-| Kick | ✅ | The reason is shown to the player. |
-| Ban and unban | ✅ | Timed bans end on time; permanent bans go into the server's own ban list. |
-| Ban list | ✅ | Timed bans with their end time. |
-| Give an item | ✅ | Into the inventory, or dropped at the player's feet when it is full. |
-| Shop | ✅ | Buying a listing delivers it into the inventory; balances and kill rewards. |
-| Shut down the server | ✅ | Saves and quits two seconds after answering Takaro. |
-| Player joined / left | ✅ | Left is also sent on kicks and bans. |
-| Chat messages | ✅ | With the chat channel. |
-| Player death | ✅ | With the position; the killer only when it was another player. |
-| Entity killed | ✅ | Animals and NPCs killed by a player, with the weapon. |
-| Server log lines | ⚠️ | Console lines are sent, minus Carbon's and the plugin's own; Takaro does not keep them. |
+| Teleport | ✅ | No ground snapping; pick a safe height. |
+| Player inventory | ⚠️ | Item quality is always empty. |
+| Item list | ✅ | |
+| Entity list | ✅ | |
+| Locations | ⚠️ | The map's monuments. Not checked. |
+| World map | ⚠️ | Drawn from the game's map. Not checked yet. |
+| Send a message | ✅ | Broadcasts and whispers. |
+| Console commands | ⚠️ | An unknown command comes back as a success. |
+| Kick | ✅ | |
+| Ban and unban | ✅ | Timed and permanent. |
+| Ban list | ✅ | |
+| Give an item | ✅ | Dropped at the player's feet when the inventory is full. |
+| Shop | ✅ | |
+| Shut down the server | ✅ | Saves first. |
+| Player joined / left | ✅ | |
+| Chat messages | ✅ | |
+| Player death | ✅ | Killer only when it was a player. |
+| Entity killed | ✅ | With the weapon. |
+| Server log lines | ⚠️ | Takaro does not keep them. |
 | Discord chat bridge | ✅ | Both ways. |
-| Modules | ✅ | Chat commands, welcome and scheduled messages. |
-| Game name, version and icon | ✅ | Takaro shows Rust with its icon and the running game build. Not checked on takaro.io yet. |
-| Oxide/uMod | ⚠️ | Written for the Oxide plugin API, but only run on Carbon. |
+| Modules | ✅ | |
+| Game name, version and icon | ✅ | Not checked yet. |
+| Oxide/uMod | ⚠️ | Written for Oxide, but only run on Carbon. |
 
 ## Known issues
 
-- The first start on a new map pauses the server while it draws the world map (a few seconds on a
-  small map, longer on big ones). Later starts reuse the drawing.
-- Inventory items always come back with an empty quality.
-- Unknown console commands look successful; Rust gives no error for them.
-- Only Rust build 26139947 with Carbon v2.0.262 is checked; other builds will likely load but are
-  not checked.
+- The first start on a new map pauses the server for a few seconds while it draws the world map.
+- Only Rust build 26139947 with Carbon v2.0.262 is checked; other builds likely work.
 
 Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).
