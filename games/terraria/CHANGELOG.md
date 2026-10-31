@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.8.0](https://github.com/gettakaro/connectors/compare/terraria-v0.7.0...terraria-v0.8.0) (2026-10-31)
+
+
+### Features
+
+* **terraria:** show the configured server chat name instead of "Server" ([#699](https://github.com/gettakaro/connectors/issues/699)) ([70b9631](https://github.com/gettakaro/connectors/commit/70b96310e9461960641fe7165d0ec5fb97af69eb))
+
+
+### Bug Fixes
+
+* **terraria:** deliver giveItem to players on servers without SSC ([#725](https://github.com/gettakaro/connectors/issues/725)) ([7bd314f](https://github.com/gettakaro/connectors/commit/7bd314f76704ccf4fe8e8aba891d5527c71a8507))
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+
 ## [0.7.0](https://github.com/gettakaro/connectors/compare/terraria-v0.6.0...terraria-v0.7.0) (2026-10-26)
 
 
