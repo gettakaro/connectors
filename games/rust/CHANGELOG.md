@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/gettakaro/connectors/compare/rust-v0.5.0...rust-v0.5.1) (2026-10-31)
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+
 ## [0.5.0](https://github.com/gettakaro/connectors/compare/rust-v0.4.0...rust-v0.5.0) (2026-10-30)
 
 
