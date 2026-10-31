@@ -14,6 +14,10 @@ game fails lint here rather than breaking the website later.
 
 ## What a README must contain
 
+Every README uses the one layout in [README-template.md](README-template.md): the same headings,
+the same install steps and the same rows in the same order for every game, with no test-run
+narrative. The points below are what that layout has to satisfy.
+
 ### 1. One H1, of the form `Takaro <Game> Connector`
 
 The first line is `# Takaro <Game> Connector`. The sync strips it and turns it into the page's
@@ -38,8 +42,8 @@ Include where files go, how the connector is configured, and how to tell that it
 ### 4. A `## What works, what doesn't` section
 
 A table of capabilities using the ✅ / ⚠️ / ❌ legend, stating plainly what has been verified
-against a live server and what has only been read off the source. Name the exact game build it was
-tested against, and date the claim. An honest ⚠️ is worth more than an optimistic ✅ — this table
+against a live server and what has only been read off the source. One line above the table names
+the game build it was checked on and the date; nowhere else in the README talks about testing. An honest ⚠️ is worth more than an optimistic ✅ — this table
 is the one place a server owner finds out what they are actually getting.
 
 ### 5. Links
