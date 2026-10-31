@@ -65,12 +65,49 @@ cd <server>/TakaroTerrariaBridge
 npm start
 ```
 
-It creates `<server>/TakaroConfig.txt` (next to the bridge folder, not inside it). Fill in both
-tokens and save; it connects within a few seconds, no restart needed:
+It creates `<server>/TakaroConfig.txt` (next to the bridge folder, not inside it). Fill in
+`registrationToken` and `tshockToken` and save; it connects within a few seconds, no restart needed:
 
-```ini
-registrationToken=your-registration-token-here
-tshockToken=<the REST token from config.json>
+```
+# Takaro Terraria bridge settings. The bridge reads this file every few seconds:
+# paste the registration token and save, no restart needed.
+# identityToken is this server's identity in Takaro; the bridge fills it in when empty.
+# An empty serverName means "Terraria Server (<first 8 characters of identityToken>)".
+# Relative paths (logFiles, mapDir) start at the folder holding this file: the server folder.
+
+# Takaro connection
+registrationToken=
+identityToken=
+serverName=
+serverChatName=Takaro
+takaroWsUrl=wss://connect.takaro.io/
+
+# TShock REST API (RestApiEnabled in tshock/config.json). Instead of a token you may set
+# tshockUsername= and tshockPassword=.
+tshockBaseUrl=http://127.0.0.1:7878
+tshockToken=
+
+# Local status server (GET /health, GET /coverage) and player poll interval. Restart to apply.
+httpPort=3020
+pollIntervalMs=10000
+
+# The TShock log DIRECTORY to tail (a directory follows TShock's log rotation), and the
+# lines never sent to Takaro (the bridge's own REST calls). Restart to apply.
+logFiles=tshock/logs
+logExcludePatterns=takaro-rest executed:,RestManager:
+
+# Console commands Takaro may run, by exact match and by prefix. Shutdown is off by default.
+commandAllowlistExact=help,/help
+commandAllowlistPrefixes=say,time
+enableShutdown=false
+
+# The world map: the plugin renders the loaded world into mapDir (<TShock folder>/takaro) and
+# the bridge shows it on Takaro's map. protocolVersion=1 speaks Takaro protocol 1 when Takaro
+# offers it (the map, events resent after a reconnect); 0 stays on version 0. Restart to apply.
+# The plugin renders the map at world load, every TAKARO_MAP_INTERVAL_MINUTES (environment of
+# the TShock server: default 30, 0 = off) and when an admin runs /takaromap.
+mapDir=tshock/takaro
+protocolVersion=1
 ```
 
 | Optional setting | What it does |
