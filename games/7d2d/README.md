@@ -1,61 +1,41 @@
 # Takaro 7D2D Connector
 
-A server-side mod that connects a 7 Days to Die dedicated server (Linux or Windows) to Takaro. It
-is built for exact server builds. Players do not install anything.
+The Takaro connector for 7 Days to Die (version **0.7.0**) is a server-side mod for Linux and <!-- x-release-please-version -->
+Windows dedicated servers. Players do not install anything.
 
 ## Install
 
-### 1. Before you start
+You need: a 7 Days to Die dedicated server on one of the builds below, and a Takaro game server of
+type **Generic** with its registration token. Moving from Takaro's built-in 7 Days to Die
+integration? Install as below, then follow [MIGRATION.md](MIGRATION.md).
 
-- A 7 Days to Die dedicated server (Linux or Windows) that you can stop, start and copy files to,
-  on build **V 3.4.0 b9**, **V 3.4.0 b6**, **V 3.3.0 b18** or **V 3.2.0 b10**.
-- Access to the server's `Mods/` folder (create it if it does not exist).
-- Outbound internet access from the server to `wss://connect.takaro.io/`. The connector dials out,
-  so there is no port to open.
-- A Takaro game server of type **Generic** and its **registration token**.
-- Moving an existing game server from Takaro's built-in 7 Days to Die integration? Install as
-  below, then follow [MIGRATION.md](MIGRATION.md).
+### 1. Download
 
-### 2. Download
+From https://takaro.io/connectors/7d2d, download the zip for your server build (the console shows
+it on startup, for example `Version: V 3.3.0 (b18)`):
 
-Download the latest release from https://takaro.io/connectors/7d2d (or from the releases page,
-https://github.com/gettakaro/connectors/releases). Take the zip for your server build:
+| Server build | Zip |
+|---|---|
+| V 3.4.0 b9 | `takaro-7d2d-mod-linux-3.4.0.b9-<version>.zip` |
+| V 3.4.0 b6 | `takaro-7d2d-mod-linux-3.4.0.b6-<version>.zip` |
+| V 3.3.0 b18 | `takaro-7d2d-mod-linux-3.3.0.b18-<version>.zip` |
+| V 3.2.0 b10 | `takaro-7d2d-mod-linux-3.2.0.b10-<version>.zip` |
 
-| Server build | Steam build (app 294420, branch `public`) | Zip |
-|---|---|---|
-| V 3.4.0 b9 | 26237934 | `takaro-7d2d-mod-linux-3.4.0.b9-<version>.zip` |
-| V 3.4.0 b6 | 26167630 | `takaro-7d2d-mod-linux-3.4.0.b6-<version>.zip` |
-| V 3.3.0 b18 (default) | 25661908 | `takaro-7d2d-mod-linux-3.3.0.b18-<version>.zip` |
-| V 3.2.0 b10 | 24994542 | `takaro-7d2d-mod-linux-3.2.0.b10-<version>.zip` |
+The same zip works on Linux and Windows. Do not use the `7d2d-dev` pre-release.
 
-The console shows your build on startup (`Version: V 3.3.0 (b18)`). Use the zip that matches:
-V 3.3.0 changed the game's player-data and item APIs, so the V 3.2.0 zip cannot read inventories or
-set weapon mod quality on V 3.3.0 or later. The mod may load on other builds, but it is not checked there.
-`takaro-7d2d-mod.zip` is the same as the V 3.2.0 b10 zip, kept for old links; do not use it on
-V 3.3.0 or later. Do not use the `7d2d-dev` pre-release. Check the download with `SHA256SUMS` from the same
-release (`sha256sum -c SHA256SUMS`).
+### 2. Install
 
-### 3. Install
+Stop the server and unzip so the `Takaro` folder sits directly inside `Mods/`:
 
-Stop the server, then unzip so that the `Takaro` folder ends up directly inside `Mods/`:
-
-```
-<server>/Mods/Takaro/
-    ModInfo.xml
-    Takaro.dll
+```text
+<server>/Mods/Takaro/ModInfo.xml
+<server>/Mods/Takaro/Takaro.dll
 ```
 
-Harmony comes with the game (`Mods/0_TFP_Harmony`), so the mod ships nothing else.
+### 3. Configure
 
-- Linux: `/home/steam/7dtd/Mods/Takaro/`
-- Windows: `C:\7DaysToDieServer\Mods\Takaro\`
-
-### 4. Configure
-
-The settings are in `<server>/Takaro/Config.xml`: a `Takaro` folder next to `Mods/`, in the folder
-the server starts in (for example `/home/steam/7dtd/Takaro/Config.xml` or
-`C:\7DaysToDieServer\Takaro\Config.xml`). The zip does not contain it. Start the server once and the
-connector creates it, or create it yourself before the first start:
+The config is `<server>/Takaro/Config.xml` (a `Takaro` folder next to `Mods/`, not inside it). The
+mod creates it on first start; you can also create it yourself:
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -87,68 +67,24 @@ connector creates it, or create it yourself before the first start:
 </Takaro>
 ```
 
-Paste your registration token between the `RegistrationToken` tags and save. Leave `<Url>` as it
-is and leave `IdentityToken` empty; the connector fills it in (unless you are migrating, see
-[MIGRATION.md](MIGRATION.md)). No restart is needed: the connector checks the file every few
-seconds and connects as soon as it has a token. Emptying the token disconnects the server.
+Paste your registration token between the `RegistrationToken` tags and save. Leave
+`IdentityToken` empty; the mod fills it in. The mod picks up changes within a few seconds, no
+restart needed.
 
-**Server chat name (optional).** Messages from Takaro show **Server** as the sender. To show your
-own name, set the server's chat name in Takaro. If your Takaro does not pass that name to the
-connector yet, put it in `<ServerChatName>` (a file from an older connector version has no `<Chat>`
-section; add it as above). The name set in Takaro wins. It applies within a few seconds; players
-see `Your Name: message` in global chat and `From Your Name: message` in a whisper.
+| Optional setting | What it does |
+|---|---|
+| `<ServerChatName>` | Sender name on messages from Takaro, used when none is set for the server in Takaro. |
+| `EnableMapRendering` in `serverconfig.xml` | Set to `true` and restart to get the world map in Takaro. |
 
-**Map (optional).** For the world map in Takaro, turn on the game's map rendering in
-`serverconfig.xml` and restart the server:
+### 4. Check that it works
 
-```xml
-<property name="EnableMapRendering" value="true"/>
-```
+The server log shows `[MODS] Loaded Mod: Takaro (<version>)`, the mod's log
+`<server>/Takaro/logs/<M-D-YYYY>.log` shows `Takaro accepted identify: game server <id>`, and the
+server shows as online in Takaro. Without a token the server log shows a banner naming the file to
+fix; a wrong token shows `Takaro rejected identify (error): Invalid registrationToken provided.`
 
-The web dashboard (`WebDashboardEnabled`) is not needed. With rendering off and no tiles saved,
-Takaro shows no map.
-
-### 5. Check that it works
-
-The server log shows:
-
-```
-[MODS] Loaded Mod: Takaro (<version>)
-```
-
-The connector's own log, `<server>/Takaro/logs/<M-D-YYYY>.log` (for example
-`Takaro/logs/10-22-2026.log`), shows:
-
-```
-Mod initialized successfully
-Takaro accepted identify: game server <id>, protocol version 1
-WebSocket connection confirmed (identify accepted); releasing 0 buffered outbound message(s)
-```
-
-(On an older Takaro the second line says `protocol version 0`; that is fine.) The game server shows
-as **online** in Takaro.
-
-Without a token, the server log shows a banner:
-
-```
-*************************************************************************
-  RegistrationToken not set, the server is not connected to Takaro.
-  Paste the registration token from Takaro into /home/steam/7dtd/Takaro/Config.xml
-  and save it. The mod connects within a few seconds, no restart needed.
-*************************************************************************
-```
-
-With a wrong token it says `Takaro rejected identify (error): Invalid registrationToken provided.`
-Fix the token in `<server>/Takaro/Config.xml` and save; the connector reconnects within a few
-seconds.
-
-### 6. Upgrade
-
-Stop the server, delete `<server>/Mods/Takaro/`, unzip the new version in its place and start the
-server. Deleting the folder also removes the extra DLLs (`0Harmony.dll`, `MonoMod.*.dll`,
-`LiteDB.dll`, …) that older releases shipped. `<server>/Takaro/Config.xml` and the player registry
-`takaro.db` in the world's save folder are never touched, so the token and the server's identity
-stay. Never swap `Takaro.dll` under a running server; it can crash the server.
+**Upgrading:** stop the server, delete `<server>/Mods/Takaro/` and unzip the new version. Your
+`Takaro/Config.xml` stays.
 
 ## What works, what doesn't
 
@@ -156,42 +92,39 @@ Checked on V 3.4.0 b9 (Steam build 26237934), 2026-10-29. ✅ works, ⚠️ work
 
 | What | | Notes |
 |---|---|---|
-| Connection | ✅ | Reconnects by itself within about a minute after an outage or a server restart; events from the outage are delivered afterwards. |
-| Player list | ✅ | Name, Steam id (or Xbox id), Epic (EOS) id, platform id, IP and ping. |
+| Connection | ✅ | Reconnects after an outage; missed events are sent afterwards. |
+| Player list | ✅ | Steam or Xbox id, Epic id, IP and ping. |
 | Player location | ✅ | Updated about every 30 seconds. |
-| Teleport | ⚠️ | The height is snapped to the ground, so the player lands on solid ground, not at the exact height asked for. |
+| Teleport | ⚠️ | Lands on the ground, not at the exact height. |
 | Player inventory | ✅ | |
-| Item list | ✅ | Player-facing names; internal entries without a name are left out but can still be given by code. A server set up with an older version keeps those old rows. |
-| Entity list | ✅ | With in-game names. |
-| Locations | ⚠️ | The connector collects the points of interest; not checked in Takaro yet. |
-| World map | ✅ | Needs `EnableMapRendering` (see Configure). North up, players at their position; unexplored areas stay empty. |
-| Send a message | ⚠️ | Broadcasts reach everyone. Whispers reach the player; whether others can see them is not checked. |
-| Console commands | ✅ | Returns output and success or failure, including the error for unknown commands. |
-| Kick | ✅ | The player sees the reason. |
-| Ban and unban | ⚠️ | Timed and permanent bans work on the game server, but Takaro records no ban or unban event for them. |
-| Ban list | ✅ | Matches the server's own ban list. |
-| Give an item | ✅ | Right amount and quality, stacked onto what the player carries; what does not fit lands at the player's feet. |
-| Shop | ✅ | Buying in game (`/shop`), orders, currency and balance; purchases go straight into the inventory. |
+| Item list | ✅ | |
+| Entity list | ✅ | |
+| Locations | ⚠️ | Points of interest. Not checked yet. |
+| World map | ✅ | Needs `EnableMapRendering`; explored areas only. |
+| Send a message | ✅ | Broadcasts and whispers. |
+| Console commands | ✅ | |
+| Kick | ✅ | |
+| Ban and unban | ⚠️ | Works, but Takaro records no ban event. |
+| Ban list | ✅ | |
+| Give an item | ✅ | Extra items drop at the player's feet. |
+| Shop | ✅ | |
 | Shut down the server | ✅ | |
 | Player joined / left | ✅ | |
 | Chat messages | ✅ | |
-| Player death | ✅ | With the position. |
-| Entity killed | ✅ | The creature's class name (for example `zombieBoe`) and the weapon's in-game name (`Steel Club`). |
-| Server log lines | ⚠️ | Sent, but Takaro does not store them, so modules cannot use them. |
-| Discord chat bridge | ⚠️ | Both directions work, but Takaro sends the game's copy of a Discord message back to Discord once. |
-| Modules | ✅ | Chat commands such as `@ping`. |
-| Moving from the built-in integration | ⚠️ | Known players keep their profile ([MIGRATION.md](MIGRATION.md)). A second profile with an empty Steam ID, made by an older connector version, must be deleted once; until then that player's events are ignored. |
-| PrismaCore commands | ✅ | `resetlevel` / `rl <player> <level>`, `resetskillpoints` / `rs <player> <count>` and `isbloodmoon` with PrismaCore's names and output, so tools such as StaffCommands work unchanged. Changes show at once and survive death and relog. |
-| PrismaCore player ids | ⚠️ | Names, entity ids, `EOS_` and `Steam_` ids work; `XBL_` and `PSN_` ids are not checked on a live server. Offline and unknown players get PrismaCore's own error lines. |
+| Player death | ✅ | |
+| Entity killed | ✅ | Shows the creature's class name, for example `zombieBoe`. |
+| Server log lines | ⚠️ | Takaro does not keep them. |
+| Discord chat bridge | ⚠️ | Both ways, but one message can echo back to Discord. |
+| Modules | ✅ | |
+| Moving from the built-in integration | ⚠️ | Players keep their profile; see [MIGRATION.md](MIGRATION.md). |
+| PrismaCore commands | ✅ | `resetlevel`, `resetskillpoints` and `isbloodmoon` work like PrismaCore's. |
 
 ## Known issues
 
-- Do not run PrismaCore next to this mod; the mod logs one warning at game start when it finds it.
-- The Discord bridge can loop the server's own message a few rounds before settling, because
-  Takaro stores its own outgoing messages as chat.
-- The map shows explored areas only. Takaro keeps tiles for up to 10 minutes, so a newly explored
-  area can take that long to appear.
-- After an outage, delayed events show the reconnect time, not when they happened. On an older
-  Takaro an event can also arrive twice.
+- Do not run PrismaCore next to this mod.
+- Newly explored map areas can take up to 10 minutes to appear.
+- A player with a second profile with an empty Steam id, made by an older version, has their
+  events ignored until that profile is deleted in Takaro.
+- Never replace `Takaro.dll` while the server runs; it can crash the server.
 
 Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).
