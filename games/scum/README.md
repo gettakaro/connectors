@@ -1,97 +1,131 @@
 # Takaro SCUM Connector
 
-Connects a SCUM dedicated server to Takaro. It is one mod folder that runs inside `SCUMServer.exe`. There is no extra program to run, and players install nothing.
-
-
-## What works, what doesn't
-
-Tested on 2026-10-13/14 with a real game client on SCUM 1.3.4.2.161892 (Steam build 25803875, Windows dedicated server), with BattlEye off and on. Rechecked on 2026-10-29 on SCUM 1.3.5.1.172191 (Steam build 26280049) with a real game client: connection, player list, messages, console commands, chat, joins and kicks, chat commands and the Discord chat bridge. ✅ = works, ⚠️ = works with a limit, ❌ = not supported, ❔ = not tested yet.
-
-| What | | Notes |
-|---|---|---|
-| Connection to Takaro | ✅ | Connects by itself and shows the server as reachable. |
-| Reconnect after a server restart | ✅ | Connects again after every restart. |
-| Reconnect after a network drop | ✅ | Reconnects on its own; game events from the outage are sent once it is back. |
-| BattlEye | ✅ | Works on a server with BattlEye on and players using BattlEye. |
-| Player list | ✅ | Name, ping and IP; the id is the SteamID64. |
-| Single player lookup | ✅ | Offline players answer with their last known data. |
-| Player location | ✅ | Live position; offline players give their last position. |
-| Player inventory | ✅ | Everything the player carries: worn clothes, item in hands, holster and backpack/pocket contents, with names, stack sizes (13 rounds = 13) and durability % as quality. Rounds loaded in a weapon or magazine are not listed. |
-| Give an item | ⚠️ | Usually goes into the player's pockets or backpack like a pickup, and stacks merge. Sometimes SCUM refuses the pickup (for example when the hands are busy); then the items drop at the player's feet and the first one goes into empty hands. |
-| Item list | ✅ | 2854 items with their in-game names. |
-| Creature list | ⚠️ | Animals use in-game names; zombie and NPC names come from codes (e.g. "Zombie Civilian Skinny Male"). |
-| Locations / points of interest | ❌ | SCUM has no list of named places. |
-| World map with player positions | ✅ | Player dots on Takaro's map line up with the in-game map. The map picture needs a one-time upload (step 3). |
-| Send a message to everyone | ✅ | Shows in chat as an orange server line. With a server chat name (set in Takaro, or `SERVER_CHAT_NAME`) the line reads `Name: message`: SCUM server lines have no sender field. |
-| Send a message to one player | ✅ | Arrives in that player's chat only, with the same `Name: ` prefix. |
-| Run a console command | ⚠️ | Only commands you list. Listed admin commands need an admin (from `AdminUsers.ini`) online; `announce` and `listplayers` work with nobody online. The output shows in that admin's in-game chat, not in Takaro. |
-| Teleport a player | ✅ | The player is moved at once. |
-| Kick a player | ✅ | The player sees the reason in chat, then "You have been kicked off the server!". |
-| Ban a player | ✅ | Also offline and timed. The player sees the reason, is kicked, and is refused within a second when rejoining, before the character loads. |
-| Unban a player | ✅ | Works at once, also for bans that were in `BannedUsers.ini` when the server started. |
-| Ban list | ✅ | Shows the server's bans with reasons and end times. |
-| Shut down the server | ✅ | Off by default; turn it on in the config. |
-| Player joined / left | ✅ | Arrives about one second after the join or leave. |
-| Chat messages | ✅ | Global chat as "global", local (nearby) chat as "friends", squad chat as "team"; `#` admin commands are not sent as chat. |
-| Player death | ⚠️ | Detected within a second, with position. Deaths by zombies, animals, falls or bleeding have no killer (Takaro's killer is a player). The killer's name for player kills is not tested yet (needs two players). |
-| Creature killed | ✅ | Player kills of zombies, animals and NPCs, with the creature and weapon names (tested with a katana and a DEagle pistol). |
-| Server log lines | ⚠️ | Admin log lines are sent; Takaro does not store them, but module hooks can react to them. |
-| Modules: commands, hooks, cronjobs | ✅ | `@ping`, `@balance`, `@shop`, `@topcurrency`, join messages, scheduled messages and hooks work. |
-| Modules: teleports (`@settp`, `@tp`) | ⚠️ | `@settp` works. `@tp` could not be tested (the Takaro test platform never ran it); a module teleport through the same path works. |
-| Discord chat bridge (both ways) | ✅ | Game chat goes to Discord and Discord messages show in game; no echo with `chatBridgeNoEcho`. |
-| Shop and economy | ✅ | Balance, shop list, buying in chat (`@shop 1 2 buy`), orders and claims work, also for orders bought while offline. Items land like Give an item (see above). |
+Connects a SCUM dedicated server on Windows to Takaro. It is one UE4SS mod that runs inside
+`SCUMServer.exe`; there is no extra program to run. Players do not install anything.
 
 ## Install
 
-### Before you start
+### 1. Before you start
 
-- A SCUM dedicated server on **Windows** (Steam app 3792580) where you can stop, start and upload files into `SCUM\Binaries\Win64`. Rented hosts: you need file access to that folder; if you don't have it, ask support to place the files.
-- A Takaro game server of type **Generic** and its **registration token** (Takaro shows it when you add the server).
+- A SCUM dedicated server on **Windows** (Steam app 3792580) that you can stop and start.
+- File access to its `SCUM\Binaries\Win64` folder (the one with `SCUMServer.exe`). On a rented
+  host without file access, ask support to place the files.
+- A Takaro game server of type **Generic** and its **registration token** (Takaro shows it when
+  you add the server).
 
-### 1. Install
+### 2. Download
 
-1. Download `takaro-scum-windows-<build>-<version>.zip` from the newest SCUM release on the [Takaro connectors releases page](https://github.com/gettakaro/connectors/releases) (`<build>` is the SCUM server's Steam build). It contains the UE4SS mod loader in the exact version the connector needs, already set up, plus the connector.
-2. Stop the server. If you already use UE4SS, rename your `SCUM\Binaries\Win64\ue4ss` folder and `dwmapi.dll` first.
-3. Unzip the file into `SCUM\Binaries\Win64` (the folder with `SCUMServer.exe`). You get `dwmapi.dll`, a `ue4ss` folder and `ue4ss\Mods\TakaroSCUM`.
-4. Copy `ue4ss\Mods\TakaroSCUM\TakaroConfig.txt.example` to `TakaroConfig.txt` in the same folder and fill it in:
+Download the latest release from https://takaro.io/connectors/scum (or the newest SCUM release on
+the [GitHub releases page](https://github.com/gettakaro/connectors/releases)). You need one file:
+
+- `takaro-scum-windows-<build>-<version>.zip`, where `<build>` is the SCUM server's Steam build.
+
+The zip holds the connector and the UE4SS mod loader in the exact version the connector needs,
+already set up. Each release has a `SHA256SUMS` file to check the download with.
+
+### 3. Install
+
+1. Stop the server.
+2. If you already use UE4SS, rename your `SCUM\Binaries\Win64\ue4ss` folder and `dwmapi.dll` first.
+3. Unzip the file into `SCUM\Binaries\Win64`. You get:
+
+```
+SCUM\Binaries\Win64\
+    SCUMServer.exe
+    dwmapi.dll
+    ue4ss\
+        UE4SS-settings.ini
+        Mods\TakaroSCUM\
+            TakaroConfig.txt.example
+```
+
+Do not change the `[Hooks]` values in `ue4ss\UE4SS-settings.ini`: with UE4SS's default hooks the
+server crashes when a player joins.
+
+### 4. Configure
+
+Copy `ue4ss\Mods\TakaroSCUM\TakaroConfig.txt.example` to `TakaroConfig.txt` in the same folder and
+fill it in:
 
 | Key | What to put there |
 |---|---|
 | `REGISTRATION_TOKEN` | Your Takaro registration token. Required. |
 | `SERVER_NAME` | The name Takaro shows for this server. |
-| `SERVER_CHAT_NAME` | Optional. The sender name players see on messages from Takaro, as `Name: message`. The chat name set in Takaro wins over it; set it here only for a Takaro version that does not pass that name on. Empty = no name. |
 | `IDENTITY_TOKEN` | Leave empty. The connector makes one and keeps it in `TakaroIdentity.txt`; keep that file when you move or reinstall the server. |
 | `TAKARO_WS_URL` | Leave `wss://connect.takaro.io/`. |
 | `COMMAND_ALLOWLIST` | Commands Takaro may run, comma separated, without `#`, e.g. `announce,listplayers`. Empty = none. |
 | `ENABLE_DESTRUCTIVE_COMMANDS` | `true` lets Takaro shut the server down. Default `false`. |
 | `LOG_FRAMES` | `true` logs all Takaro traffic for troubleshooting (tokens are hidden). Default `false`. |
-| `TAKARO_PROTOCOL` | Leave `1`. `0` only for a Takaro that refuses the connection with `no_shared_protocol_version`. |
+| `SERVER_CHAT_NAME` | Optional sender name on messages from Takaro (see below). Empty = no name. |
+| `TAKARO_PROTOCOL` | Leave `1`. Set `0` only if Takaro refuses the connection with `no_shared_protocol_version`. |
 
-5. Start the server. For console commands other than `announce` and `listplayers`, an admin from `AdminUsers.ini` must be online.
+Start the server. For console commands other than `announce` and `listplayers`, an admin from
+`AdminUsers.ini` must be online.
 
-Do not change the `[Hooks]` values in `ue4ss\UE4SS-settings.ini`: with UE4SS's default hooks the server crashes when a player joins.
-
-### 2. Check it works
-
-After the world has loaded (one to two minutes), `ue4ss\Mods\TakaroSCUM\takaro.log` shows `identified with Takaro as game server …` and Takaro lists the server as reachable. If not, `takaro.log` and `ue4ss\UE4SS.log` say why.
-
-### 3. Map picture (optional)
-
-Takaro's map shows your players on a grid out of the box. The server files contain no map picture and this
-connector ships none, so for the in-game map as background upload it once in Takaro: open the game server's map,
-pick **The Island** and upload the image. Leave the bounds empty; the connector already gives Takaro the exact ones.
-
-Which image: the game's own map texture from a SCUM **client** install, exported to PNG with an Unreal asset viewer
-such as FModel (the game's paks are encrypted; the viewer needs SCUM's AES key):
+**Map picture (optional).** Takaro's map shows your players on a grid out of the box. For the
+in-game map as background, upload the picture once in Takaro: open the game server's map, pick
+**The Island** and upload the image. Leave the bounds empty; the connector gives Takaro the exact
+ones. The server files contain no map picture and the connector ships none. Export it from a SCUM
+**client** install with an Unreal asset viewer such as FModel (the game's paks are encrypted; the
+viewer needs SCUM's AES key):
 
 | Texture (client paks) | Size |
 |---|---|
 | `SCUM/Content/ConZ_Files/UI/HUD/IslandMap` (in `pakchunk14-WindowsNoEditor.pak`) | 2048 × 2048 |
 
-The texture is stored **upside down**. Turn it by 180° before the upload (any image editor, or
-`magick IslandMap.png -rotate 180 island.png`), so it looks like the map in the game: sector D4 top left, Z0 bottom
-right. Do not crop it or add borders; a smaller copy of the same full image works too.
+The texture is stored upside down. Turn it by 180° before the upload (any image editor, or
+`magick IslandMap.png -rotate 180 island.png`), so sector D4 is top left and Z0 bottom right. Do
+not crop it or add borders; a smaller copy of the same full image works too.
 
-### 4. Update
+**Server chat name (optional).** SCUM server lines have no sender field, so a sender shows as `Name: message`. The sender is the chat name set for this server in Takaro; a change there applies to the next message, no restart needed. On a Takaro version that does not send that name, set `SERVER_CHAT_NAME` instead; the name set in Takaro wins over it.
 
-Stop the server, unzip the new release over `SCUM\Binaries\Win64` (it replaces `Scripts\` and `dlls\main.dll`), start it. Keep `TakaroConfig.txt` and `TakaroIdentity.txt`. After a SCUM update, wait for a connector release that names the new game version.
+### 5. Check that it works
+
+After the world has loaded (one to two minutes), `ue4ss\Mods\TakaroSCUM\takaro.log` shows:
+
+```
+identified with Takaro as game server …
+```
+
+The game server now shows as online in Takaro. If it does not, `takaro.log` and
+`ue4ss\UE4SS.log` say why.
+
+### 6. Upgrade
+
+Stop the server, unzip the new release over `SCUM\Binaries\Win64` (it replaces `Scripts\` and
+`dlls\main.dll`) and start it. Keep `TakaroConfig.txt` and `TakaroIdentity.txt`. After a SCUM
+update, wait for a connector release that names the new game build.
+
+## What works, what doesn't
+
+Checked on SCUM 1.3.5.1.172191 (Steam build 26280049), 2026-10-29. ✅ works, ⚠️ works with a limit, ❌ not supported.
+
+| What | | Notes |
+|---|---|---|
+| Connection | ✅ | Reconnects by itself after a server restart or network drop; events from the outage are sent afterwards. |
+| Player list | ✅ | Name, ping and IP; the id is the SteamID64. Offline players answer with their last known data. |
+| Player location | ✅ | Live position; offline players give their last position. |
+| Teleport | ✅ | The player is moved at once. |
+| Player inventory | ✅ | Clothes, item in hands, holster and backpack/pocket contents, with stack sizes and durability. Rounds loaded in a weapon or magazine are not listed. |
+| Item list | ✅ | All items, with their in-game names. |
+| Entity list | ⚠️ | Animals have in-game names; zombie and NPC names are built from codes (e.g. "Zombie Civilian Skinny Male"). |
+| Locations | ❌ | SCUM has no list of named places. |
+| World map | ✅ | Player dots line up with the in-game map. The map picture is a one-time upload (step 4). |
+| Send a message | ✅ | To everyone (an orange server line in chat) or to one player, as `Name: message` when a server chat name is set. |
+| Console commands | ⚠️ | Only commands you allow. Admin commands need an admin from `AdminUsers.ini` online, and their output shows in that admin's chat, not in Takaro. `announce` and `listplayers` work with nobody online. |
+| Kick | ✅ | The player sees the reason. |
+| Ban and unban | ✅ | Also offline and timed; a banned player is refused on rejoin. Unban also lifts bans that were in `BannedUsers.ini` at server start. |
+| Ban list | ✅ | The server's bans with reasons and end times. |
+| Give an item | ⚠️ | Usually lands in pockets or backpack and stacks merge. When SCUM refuses the pickup (e.g. hands busy), the items drop at the player's feet. |
+| Shop | ✅ | Buying, orders and claims work, also for orders bought while offline. Items land like Give an item. |
+| Shut down the server | ✅ | Off by default; set `ENABLE_DESTRUCTIVE_COMMANDS=true`. |
+| Player joined / left | ✅ | |
+| Chat messages | ✅ | Global, local (as "friends") and squad (as "team") chat; `#` admin commands are not sent. |
+| Player death | ⚠️ | With position. Deaths by zombies, animals, falls or bleeding have no killer. The killer's name for player kills is not checked. |
+| Entity killed | ✅ | Player kills of zombies, animals and NPCs, with creature and weapon names. |
+| Server log lines | ⚠️ | Admin log lines are sent; Takaro does not store them, but module hooks can react to them. |
+| Discord chat bridge | ✅ | Both ways; use `chatBridgeNoEcho` to avoid echoes. |
+| Modules | ⚠️ | Chat commands, join and scheduled messages, hooks and `@settp` work; `@tp` is not checked. |
+| BattlEye | ✅ | Works with BattlEye on. |
+
+Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).
