@@ -68,6 +68,62 @@ def _check_game(result: ValidationResult, catalog: Catalog) -> None:
         result.add("game-schema", not errors, "; ".join(errors) or "valid against game.schema.json", file)
 
 
+def _check_legacy_aliases(result: ValidationResult, catalog: Catalog) -> None:
+    """An asset name without the game build in it may only exist while it cannot be the wrong build.
+
+    The 7D2D generic zip was the V 3.2 build long after V 3.3 and V 3.4 targets shipped, and
+    admins on the newer builds installed it and silently lost inventory. So an alias must point
+    at a live target that is the only non-retired target on its platform; as soon as a second
+    build appears, the alias has to go.
+    """
+    for game_id, game in sorted(catalog.games.items()):
+        file = _relative(game.path)
+        active: dict[str, list[str]] = {}
+        known: dict[str, Target] = {}
+        for candidate in catalog.all_targets():
+            if candidate.game != game_id:
+                continue
+            known[candidate.id] = candidate
+            if candidate.status != "retired":
+                active.setdefault(candidate.platform, []).append(candidate.id)
+        for name, reference in sorted((game.record.get("legacyAssetAliases") or {}).items()):
+            target_id, _, role = str(reference).partition("/")
+            target = known.get(target_id)
+            if target is None:
+                result.add("legacy-alias-single-build", False, f"{name} points at unknown target {target_id}", file)
+                continue
+            roles = [c.get("role") for c in target.record.get("components", [])]
+            if role not in roles:
+                result.add(
+                    "legacy-alias-single-build",
+                    False,
+                    f"{name} points at {reference}, but {target_id} builds no '{role}' "
+                    f"(roles: {roles}); remove the alias",
+                    file,
+                )
+                continue
+            if target.status == "retired":
+                result.add(
+                    "legacy-alias-single-build",
+                    False,
+                    f"{name} points at retired target {target_id}; remove the alias",
+                    file,
+                )
+                continue
+            siblings = sorted(active.get(target.platform, []))
+            result.add(
+                "legacy-alias-single-build",
+                siblings == [target_id],
+                f"{name} -> {reference}; active {target.platform} targets: {siblings}"
+                + (
+                    ""
+                    if siblings == [target_id]
+                    else " - a name without the game build hides which one it is; remove the alias"
+                ),
+                file,
+            )
+
+
 def _check_target_schema(result: ValidationResult, target: Target) -> None:
     file = _relative(target.path)
     errors = schema.errors_for("target.schema.json", target.record)
@@ -462,6 +518,7 @@ def validate_catalog(catalog: Catalog, *, online: bool = False, cache: Path | No
     _guarded(result, "game-schema", "catalog", lambda: _check_game(result, catalog))
     _guarded(result, "single-default", "catalog", lambda: _check_single_default(result, catalog))
     _guarded(result, "default-platform", "catalog", lambda: _check_default_platform(result, catalog))
+    _guarded(result, "legacy-alias-single-build", "catalog", lambda: _check_legacy_aliases(result, catalog))
     per_target = (
         ("target-schema", _check_target_schema),
         ("id-matches-stem", _check_ids),

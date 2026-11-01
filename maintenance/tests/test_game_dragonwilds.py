@@ -159,7 +159,8 @@ def test_the_target_claims_contract_verification_and_a_steam_install(path: Path)
 def test_legacy_aliases_point_at_this_targets_roles() -> None:
     game = json.loads(GAME_PATH.read_text(encoding="utf-8"))
 
-    assert game["legacyAssetAliases"] == {"takaro-dragonwilds-plugin.tar.gz": f"{TARGET}/plugin"}
+    # Seven live builds: a name without the build would hide which one it is (#756).
+    assert game["legacyAssetAliases"] == {}
     assert list(game["componentRoles"]) == ["plugin"]
     assert game["devServers"] == {"composeFile": "dragonwilds.yml"}
 

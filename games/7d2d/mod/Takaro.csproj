@@ -123,6 +123,7 @@
     <Compile Include="src\WebSocket\ActionHandlers.cs" />
     <Compile Include="src\WebSocket\GiveItemHandler.cs" />
     <Compile Include="src\WebSocket\GameEventPublisher.cs" />
+    <Compile Include="src\WebSocket\BuildTarget.cs" />
     <Compile Include="src\WebSocket\GameProfile.cs" />
     <Compile Include="src\WebSocket\ReadHandlers.cs" />
     <Compile Include="src\WebSocket\RequestRouter.cs" />
@@ -145,4 +146,19 @@
     </None>
   </ItemGroup>
   <ItemGroup />
+  <!-- The game build this assembly is for (catalog revision, e.g. 3.4.0.b9), set by
+       scripts/build-mod.sh. BuildTarget reads it at startup to catch a zip installed on the
+       wrong server build. A build without it reports the match as unknown. -->
+  <Target Name="TakaroStampGameBuild" BeforeTargets="CoreCompile" Condition="'$(TakaroGameBuild)' != ''">
+    <ItemGroup>
+      <TakaroGameBuildAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>TakaroGameBuild</_Parameter1>
+        <_Parameter2>$(TakaroGameBuild)</_Parameter2>
+      </TakaroGameBuildAttribute>
+    </ItemGroup>
+    <WriteCodeFragment Language="C#" AssemblyAttributes="@(TakaroGameBuildAttribute)" OutputFile="$(IntermediateOutputPath)TakaroGameBuild.g.cs">
+      <Output TaskParameter="OutputFile" ItemName="Compile" />
+      <Output TaskParameter="OutputFile" ItemName="FileWrites" />
+    </WriteCodeFragment>
+  </Target>
 </Project>

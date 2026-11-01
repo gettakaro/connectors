@@ -36,7 +36,7 @@ docker compose run --rm --build \
     --user "$(id -u):$(id -g)" \
     -e HOME=/tmp \
     builder bash -c \
-    "msbuild mod/Takaro.sln /p:Configuration=Release /p:Deterministic=true /p:DebugType=none /p:SevenD2DApiDefines=${API_DEFINES} \
+    "msbuild mod/Takaro.sln /p:Configuration=Release /p:Deterministic=true /p:DebugType=none /p:SevenD2DApiDefines=${API_DEFINES} /p:TakaroGameBuild=${SEVEND2D_REVISION} \
      && mono /opt/ilrepack/ILRepack.exe /internalize /lib:_data/7dtd-binaries /out:bin/Mods/Takaro/Takaro.dll \
           bin/Mods/Takaro/Takaro.dll ${MERGED}"
 python3 "${SCRIPT_DIR}/normalize-assembly.py" ./_data/build/Mods/Takaro/Takaro.dll

@@ -72,7 +72,8 @@ worth stating plainly:
   many times the head is observed again.
 * **Release assets live only on GitHub Releases.** Stable releases stay; rolling releases are
   replaced atomically; PR builds are deleted when the pull request closes. Legacy asset aliases
-  are kept for two stable releases and then dropped by a catalog pull request.
+  are kept for two stable releases and then dropped by a catalog pull request, and sooner when a
+  second live build appears on their platform (`legacy-alias-single-build`).
 * **Workflow diagnostics are kept 14 days**, and that is the only run-level history there is.
 * **No credential is retained anywhere.** Credentials are read from the environment for the
   duration of a process and redacted from everything the command writes.
@@ -91,8 +92,8 @@ If a deployment needs an input to outlive upstream, it has to keep that copy its
 
 **Mechanics.** Set `support.status: "retired"` in a reviewed pull request. The record stays, so a
 report or compatibility record that cites it still resolves. The build project it names is removed
-later, once nothing builds it. Any `legacyAssetAliases` entry pointing at it is dropped once its
-successor has shipped in two stable releases. The full mechanics are
+later, once nothing builds it. Any `legacyAssetAliases` entry pointing at it must be dropped in the same
+pull request: `catalog validate` refuses an alias to a retired target. The full mechanics are
 [retiring a target](../../catalog/README.md#retiring-a-target).
 
 **What consumers see.** The compat record of an old release keeps its `status` as it was when that

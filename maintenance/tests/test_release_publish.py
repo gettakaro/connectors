@@ -242,7 +242,7 @@ def test_undraft_never_happens_when_verification_fails(
     assert fake.release_for(TAG)["draft"] is True
 
 
-def test_stable_appends_the_asset_table_once_and_keeps_release_notes(
+def test_stable_puts_the_asset_table_first_once_and_keeps_release_notes(
     run: Any, fake: FakeReleases, assembled: tuple[Path, dict[str, Any], Inputs]
 ) -> None:
     directory, _, built = assembled
@@ -255,7 +255,9 @@ def test_stable_appends_the_asset_table_once_and_keeps_release_notes(
     twice = fake.release_for(TAG)["body"]
 
     assert once == twice
-    assert once.startswith(notes)
+    # The download table leads (#756); release-please's notes follow unchanged.
+    assert once.startswith("<!-- takaro-maint:assets:begin -->")
+    assert once.rstrip().endswith(notes)
     assert once.count("<!-- takaro-maint:assets:begin -->") == 1
     assert built.targets["fabric-26.2"]["file"] in once
     assert "protocol (local)" in once

@@ -23,16 +23,19 @@ https://github.com/gettakaro/connectors/releases). Take the zip for your server 
 
 | Server build | Steam build (app 294420, branch `public`) | Zip |
 |---|---|---|
-| V 3.4.0 b9 | 26237934 | `takaro-7d2d-mod-linux-3.4.0.b9-<version>.zip` |
-| V 3.4.0 b6 | 26167630 | `takaro-7d2d-mod-linux-3.4.0.b6-<version>.zip` |
-| V 3.3.0 b18 (default) | 25661908 | `takaro-7d2d-mod-linux-3.3.0.b18-<version>.zip` |
-| V 3.2.0 b10 | 24994542 | `takaro-7d2d-mod-linux-3.2.0.b10-<version>.zip` |
+| V 3.4.0 b9 | 26237934 | `takaro-7d2d-mod-3.4.0.b9-<version>.zip` |
+| V 3.4.0 b6 | 26167630 | `takaro-7d2d-mod-3.4.0.b6-<version>.zip` |
+| V 3.3.0 b18 (default) | 25661908 | `takaro-7d2d-mod-3.3.0.b18-<version>.zip` |
+| V 3.2.0 b10 | 24994542 | `takaro-7d2d-mod-3.2.0.b10-<version>.zip` |
 
-The console shows your build on startup (`Version: V 3.3.0 (b18)`). Use the zip that matches:
-V 3.3.0 changed the game's player-data and item APIs, so the V 3.2.0 zip cannot read inventories or
-set weapon mod quality on V 3.3.0 or later. The mod may load on other builds, but it is not checked there.
-`takaro-7d2d-mod.zip` is the same as the V 3.2.0 b10 zip, kept for old links; do not use it on
-V 3.3.0 or later. Do not use the `7d2d-dev` pre-release. Check the download with `SHA256SUMS` from the same
+The console shows your build on startup (`Version: V 3.3.0 (b18)`). Use the zip that matches.
+The same zip works on Linux and Windows servers. V 3.3.0 changed the game's player-data and item
+APIs, so a V 3.2.0 zip on V 3.3.0 or later (or the other way round) cannot read inventories. The mod
+checks this on startup: on the wrong build it logs an error naming the zip you need, and
+`getPlayerInventory` fails with that message instead of returning an empty inventory. On another
+build of the same game version it logs a warning, because it is not checked there. Releases up to
+0.7.x also had a `takaro-7d2d-mod.zip`: that was the V 3.2.0 b10 build, so do not use it on V 3.3.0
+or later. Do not use the `7d2d-dev` pre-release. Check the download with `SHA256SUMS` from the same
 release (`sha256sum -c SHA256SUMS`).
 
 ### 3. Install

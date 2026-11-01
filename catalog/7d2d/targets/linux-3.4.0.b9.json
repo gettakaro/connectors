@@ -101,7 +101,7 @@
   "components": [
     {
       "role": "server-mod",
-      "artifact": "takaro-7d2d-mod-linux-3.4.0.b9-{version}.zip",
+      "artifact": "takaro-7d2d-mod-3.4.0.b9-{version}.zip",
       "installDir": "Mods"
     }
   ],

@@ -78,6 +78,14 @@ namespace Takaro.WebSocket
 
         public static void GetPlayerInventory(string requestId, string gameId)
         {
+            // An empty list here reads as "every item removed" to Takaro; fail instead.
+            string unsupported = StateMirror.Instance.InventoryUnsupportedReason;
+            if (unsupported != null)
+            {
+                SendError(requestId, unsupported);
+                return;
+            }
+
             PlayerRecord record = StateMirror.Instance.GetOnlinePlayer(gameId);
             if (record == null)
             {
