@@ -8,7 +8,7 @@ is built for exact server builds. Players do not install anything.
 ### 1. Before you start
 
 - A 7 Days to Die dedicated server (Linux or Windows) that you can stop, start and copy files to,
-  on build **V 3.4.0 b9**, **V 3.4.0 b6**, **V 3.3.0 b18** or **V 3.2.0 b10**.
+  on build **V 3.4.0 b10**, **V 3.4.0 b9**, **V 3.4.0 b6**, **V 3.3.0 b18** or **V 3.2.0 b10**.
 - Access to the server's `Mods/` folder (create it if it does not exist).
 - Outbound internet access from the server to `wss://connect.takaro.io/`. The connector dials out,
   so there is no port to open.
@@ -23,6 +23,7 @@ https://github.com/gettakaro/connectors/releases). Take the zip for your server 
 
 | Server build | Steam build (app 294420, branch `public`) | Zip |
 |---|---|---|
+| V 3.4.0 b10 | 26310339 | `takaro-7d2d-mod-3.4.0.b10-<version>.zip` |
 | V 3.4.0 b9 | 26237934 | `takaro-7d2d-mod-3.4.0.b9-<version>.zip` |
 | V 3.4.0 b6 | 26167630 | `takaro-7d2d-mod-3.4.0.b6-<version>.zip` |
 | V 3.3.0 b18 (default) | 25661908 | `takaro-7d2d-mod-3.3.0.b18-<version>.zip` |
@@ -30,8 +31,9 @@ https://github.com/gettakaro/connectors/releases). Take the zip for your server 
 
 The console shows your build on startup (`Version: V 3.3.0 (b18)`). Use the zip that matches.
 The same zip works on Linux and Windows servers. V 3.3.0 changed the game's player-data and item
-APIs, so a V 3.2.0 zip on V 3.3.0 or later (or the other way round) cannot read inventories. The mod
-checks this on startup: on the wrong build it logs an error naming the zip you need, and
+APIs, so a V 3.2.0 zip on V 3.3.0 or later (or the other way round) cannot read inventories or give
+items (`Field not found: int .ItemValue.type`). The mod checks this on startup: on the wrong build it
+logs an error naming the zip you need, and
 `getPlayerInventory` fails with that message instead of returning an empty inventory. On another
 build of the same game version it logs a warning, because it is not checked there. Releases up to
 0.7.x also had a `takaro-7d2d-mod.zip`: that was the V 3.2.0 b10 build, so do not use it on V 3.3.0
@@ -155,7 +157,7 @@ stay. Never swap `Takaro.dll` under a running server; it can crash the server.
 
 ## What works, what doesn't
 
-Checked on V 3.4.0 b9 (Steam build 26237934), 2026-10-29. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on V 3.4.0 b10 (Steam build 26310339), 2026-11-02. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
