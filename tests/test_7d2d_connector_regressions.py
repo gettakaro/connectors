@@ -315,7 +315,11 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn("GetPOIPrefabs", mirror)
         self.assertIn("boundingBoxPosition", mirror)
         self.assertIn("boundingBoxSize", mirror)
-        self.assertIn('PositionAnchor = "min-corner"', mirror)
+        self.assertIn('PositionAnchor = "centre"', mirror)
+        self.assertIn(
+            "X = instance.boundingBoxPosition.x + instance.boundingBoxSize.x / 2", mirror
+        )
+        self.assertIn('"{0}@{1},{2},{3}:r{4}"', mirror)
         self.assertIn("records.Sort", mirror)
 
     def test_world_read_handlers_use_only_deterministic_mirror_snapshots(self):
