@@ -46,7 +46,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -69,7 +69,7 @@ jobs:
               LUA=lua5.4 bash /tmp/scum/tests/run.sh'
 
   params:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:

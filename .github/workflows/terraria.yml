@@ -49,7 +49,7 @@ jobs:
   # The bridge's own protocol tests are this connector's contract evidence, so they run on
   # a release too, not only on a pull request.
   bridge-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     defaults:
@@ -80,7 +80,7 @@ jobs:
         run: npm run build
 
   params:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:

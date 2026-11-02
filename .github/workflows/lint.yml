@@ -7,7 +7,7 @@ on:
 
 jobs:
   shellcheck:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Shellcheck all tracked shell scripts
@@ -17,7 +17,7 @@ jobs:
           shellcheck -e SC1091 "${scripts[@]}"
 
   yaml:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -32,7 +32,7 @@ jobs:
           uvx yamllint@1.38.0 --no-warnings -f github "${files[@]}"
 
   actionlint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -49,7 +49,7 @@ jobs:
           "$RUNNER_TEMP/actionlint" -color
 
   compose:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -78,7 +78,7 @@ jobs:
           done
 
   release-config:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -120,7 +120,7 @@ jobs:
                <(jq -r 'keys[]' .release-please-manifest.json)
 
   release-scripts:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -138,7 +138,7 @@ jobs:
           bash maintenance/tests/test_dev_servers_deploy.sh
 
   connector-metadata:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Check every game ships valid connector.json + README
