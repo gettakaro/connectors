@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   release-please:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       ark_released: ${{ steps.rp.outputs['games/ark--release_created'] }}
       ark_tag: ${{ steps.rp.outputs['games/ark--tag_name'] }}
@@ -287,7 +287,7 @@ jobs:
         (needs.release-scum.result == 'success' && needs.release-please.outputs.scum_released == 'true') ||
         (needs.release-tf2.result == 'success' && needs.release-please.outputs.tf2_released == 'true')
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Generate token
         id: app-token

@@ -45,7 +45,7 @@ permissions:
 
 jobs:
   maintenance:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
       HAS_APP: ${{ secrets.TAKARO_CI_APP_ID != '' }}

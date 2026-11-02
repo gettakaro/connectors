@@ -46,7 +46,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -86,7 +86,7 @@ jobs:
   # to a fake Takaro: identify, heartbeat, requests, confirm-on-later-pong, reconnect with
   # resend, TLS rejection, token-gated diagnostics. No game runs (game capabilities degrade).
   native-wine:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -126,7 +126,7 @@ jobs:
           if-no-files-found: ignore
 
   params:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
