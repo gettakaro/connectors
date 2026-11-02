@@ -26,9 +26,9 @@
   "componentRoles": {
     "server-mod": {
       "description": "Server-side Takaro mod folder (Mods/Takaro) loaded by the dedicated server",
-      "artifactPattern": "takaro-7d2d-mod-{target}-{version}.zip"
+      "artifactPattern": "takaro-7d2d-mod-{revision}-{version}.zip"
     }
   },
-  "legacyAssetAliases": {"takaro-7d2d-mod.zip": "linux-3.2.0.b10/server-mod"},
+  "legacyAssetAliases": {},
   "devServers": {"composeFile": "7d2d.yml"}
 }

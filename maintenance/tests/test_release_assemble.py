@@ -26,9 +26,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 VERSION = "0.1.1"
 
 # The old, unversioned-per-target names Minecraft released under before the catalog. They stay
-# on the release for two stable versions (root README), one per platform's default target.
+# on the release for two stable versions (root README), and only for a platform with one live
+# target: Fabric has three, so its generic jar is gone (gettakaro/connectors#756).
 LEGACY_ALIASES = {
-    f"takaro-fabric-{VERSION}.jar": "fabric-26.2",
     f"takaro-neoforge-{VERSION}.jar": "neoforge-1.21.11",
     f"takaro-paper-{VERSION}.jar": "paper-1.21.11",
 }
@@ -702,7 +702,8 @@ def _set_aliases(inputs: Inputs, aliases: dict[str, str]) -> None:
 def test_each_platforms_default_target_ships_under_its_legacy_asset_name(
     assembled: tuple[Path, dict[str, Any], Inputs],
 ) -> None:
-    """Existing download links name the platform, not the server build; they keep resolving."""
+    """Old links keep resolving only where the platform has one build; Fabric has three, so no generic jar."""
+    assert not (assembled[0] / f"takaro-fabric-{VERSION}.jar").exists()
     out, payload, inputs = assembled
     record = json.loads((out / f"takaro-{CONNECTOR}-{VERSION}.compat.json").read_text())
 

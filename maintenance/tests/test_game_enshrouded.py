@@ -1187,10 +1187,9 @@ def test_compat_record_carries_the_one_role_and_the_steam_pin(run: Any, repo: Pa
 
     # The plugin's legacy name still resolves, to exactly the bytes of the target-named file.
     assert (out / "takaro-enshrouded-plugin.zip").read_bytes() == (out / PLUGIN_ZIP).read_bytes()
-    # The sidecar alias stays in the catalog for old links, but there is nothing to copy: it
-    # is recorded as skipped and no sidecar asset is published.
+    # The sidecar alias is gone from the catalog (#756): no sidecar asset is published.
     assert not (out / "takaro-enshrouded-sidecar.zip").exists()
-    assert "takaro-enshrouded-sidecar.zip" in payload["aliasesSkipped"]
+    assert payload["aliasesSkipped"] == []
     assert not [path.name for path in out.iterdir() if "sidecar" in path.name]
     assert (out / "SHA256SUMS").is_file()
 

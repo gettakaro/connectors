@@ -481,10 +481,9 @@ def test_the_catalog_rigs_take_their_images_from_the_resolved_target() -> None:
 
 #: Aliases kept on purpose for a component role a connector no longer ships, so the old
 #: asset name stays on record for a release. Anything else pointing at an unknown role is a typo.
-RETIRED_ALIASES = {
-    # The sidecar was dropped in enshrouded 0.6.0: the plugin connects to Takaro itself.
-    ("enshrouded", "takaro-enshrouded-sidecar.zip"): "proton-1273043/sidecar",
-}
+#: Empty since the catalog refuses an alias to a role its target does not build
+#: (legacy-alias-single-build, gettakaro/connectors#756).
+RETIRED_ALIASES: dict[tuple[str, str], str] = {}
 
 
 def test_every_catalog_game_registers_sources_roles_targets_and_declared_rigs() -> None:

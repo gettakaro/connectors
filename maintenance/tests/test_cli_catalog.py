@@ -472,3 +472,38 @@ def test_record_hash_rejects_a_field_it_cannot_download(run: Any, catalog_copy: 
     )
 
     assert code == 2
+
+
+def _set_aliases(root: Path, game: str, aliases: dict[str, str]) -> None:
+    path = root / "catalog" / game / "game.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["legacyAssetAliases"] = aliases
+    path.write_text(json.dumps(record), encoding="utf-8")
+
+
+def test_an_alias_is_refused_when_its_platform_has_several_live_builds(run: Any, catalog_copy: Path) -> None:
+    """gettakaro/connectors#756: the generic 7D2D zip was the V 3.2 build while V 3.3 and V 3.4 shipped."""
+    _set_aliases(catalog_copy, "7d2d", {"takaro-7d2d-mod.zip": "linux-3.2.0.b10/server-mod"})
+
+    code, payload, _ = run("catalog", "validate", repo=catalog_copy)
+
+    assert code == 2
+    assert "legacy-alias-single-build" in failures(payload)
+    assert any("remove the alias" in check["detail"] for check in payload["failures"])
+
+
+def test_an_alias_to_a_role_the_target_does_not_build_is_refused(run: Any, catalog_copy: Path) -> None:
+    _set_aliases(catalog_copy, "vein", {"takaro-vein-sidecar.zip": "linux-25969514/sidecar"})
+
+    code, payload, _ = run("catalog", "validate", repo=catalog_copy)
+
+    assert code == 2
+    assert "legacy-alias-single-build" in failures(payload)
+
+
+def test_an_alias_to_the_only_live_build_is_allowed(run: Any, catalog_copy: Path) -> None:
+    _set_aliases(catalog_copy, "vein", {"takaro-vein-plugin.tar.gz": "linux-25969514/plugin"})
+
+    code, payload, _ = run("catalog", "validate", repo=catalog_copy)
+
+    assert code == 0, payload["failures"]
