@@ -46,7 +46,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     defaults:
@@ -78,7 +78,7 @@ jobs:
         run: dotnet test mod/Takaro.Valheim.sln --no-restore -v minimal
 
   params:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:

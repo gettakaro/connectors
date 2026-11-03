@@ -1,16 +1,58 @@
 {
   "name": "RuneScape: Dragonwilds",
   "tagline": "Native connector for a RuneScape: Dragonwilds Linux dedicated server.",
-  "assetMode": "all",
+  "assetMode": "pick-one",
   "requirements": [
     "Takaro registration token",
     "Control of the Dragonwilds Linux dedicated server startup command"
   ],
   "assets": [
     {
-      "pattern": "takaro-dragonwilds-plugin.tar.gz",
-      "label": "Plugin",
-      "requires": "Dragonwilds Linux dedicated server",
+      "pattern": "takaro-dragonwilds-plugin-linux-26161880-*.tar.gz",
+      "label": "Plugin (build 26161880) (current public build)",
+      "requires": "Dragonwilds Linux dedicated server, Steam build 26161880",
+      "hint": "Load with LD_PRELOAD on the game binary's launch line only; the plugin creates takaro.cfg next to the .so; the archive includes licenses and upgrade instructions.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-dragonwilds-plugin-linux-26087591-*.tar.gz",
+      "label": "Plugin (build 26087591)",
+      "requires": "Dragonwilds Linux dedicated server, Steam build 26087591",
+      "hint": "Load with LD_PRELOAD on the game binary's launch line only; the plugin creates takaro.cfg next to the .so; the archive includes licenses and upgrade instructions.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-dragonwilds-plugin-linux-25991736-*.tar.gz",
+      "label": "Plugin (build 25991736)",
+      "requires": "Dragonwilds Linux dedicated server, Steam build 25991736",
+      "hint": "Load with LD_PRELOAD on the game binary's launch line only; the plugin creates takaro.cfg next to the .so; the archive includes licenses and upgrade instructions.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-dragonwilds-plugin-linux-25808123-*.tar.gz",
+      "label": "Plugin (build 25808123)",
+      "requires": "Dragonwilds Linux dedicated server, Steam build 25808123",
+      "hint": "Load with LD_PRELOAD on the game binary's launch line only; the plugin creates takaro.cfg next to the .so; the archive includes licenses and upgrade instructions.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-dragonwilds-plugin-linux-25630937-*.tar.gz",
+      "label": "Plugin (build 25630937)",
+      "requires": "Dragonwilds Linux dedicated server, Steam build 25630937",
+      "hint": "Load with LD_PRELOAD on the game binary's launch line only; the plugin creates takaro.cfg next to the .so; the archive includes licenses and upgrade instructions.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-dragonwilds-plugin-linux-25501739-*.tar.gz",
+      "label": "Plugin (build 25501739)",
+      "requires": "Dragonwilds Linux dedicated server, Steam build 25501739",
+      "hint": "Load with LD_PRELOAD on the game binary's launch line only; the plugin creates takaro.cfg next to the .so; the archive includes licenses and upgrade instructions.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-dragonwilds-plugin-linux-25465077-*.tar.gz",
+      "label": "Plugin (build 25465077)",
+      "requires": "Dragonwilds Linux dedicated server, Steam build 25465077",
       "hint": "Load with LD_PRELOAD on the game binary's launch line only; the plugin creates takaro.cfg next to the .so; the archive includes licenses and upgrade instructions.",
       "required": true
     }

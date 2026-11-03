@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using Takaro.Interfaces;
 using Takaro.Persistence;
+using Takaro.WebSocket;
 
 namespace Takaro.Services
 {
@@ -18,7 +19,26 @@ namespace Takaro.Services
         private static StateMirror _instance;
         private static readonly object _lock = new object();
         private volatile bool _isGameReady;
-        private volatile bool _inventoryCaptureUnsupported;
+        private volatile string _inventoryUnsupportedReason;
+
+        /// <summary>
+        /// Why getPlayerInventory cannot answer on this server, or null. Set at startup when the
+        /// mod is a build for the other game API (BuildTarget), or when capture first fails to
+        /// bind. getPlayerInventory then fails with this text instead of returning an empty
+        /// inventory, which Takaro would store as every item removed.
+        /// </summary>
+        public string InventoryUnsupportedReason
+        {
+            get
+            {
+                if (
+                    _inventoryUnsupportedReason == null
+                    && BuildTarget.Result == BuildTarget.Match.WrongApi
+                )
+                    _inventoryUnsupportedReason = BuildTarget.WrongBuildMessage();
+                return _inventoryUnsupportedReason;
+            }
+        }
 
         public bool IsGameReady => _isGameReady;
 
@@ -468,7 +488,7 @@ namespace Takaro.Services
 
         public void UpsertInventory(ClientInfo cInfo)
         {
-            if (_inventoryCaptureUnsupported)
+            if (InventoryUnsupportedReason != null)
                 return;
 
             // A game build that reshapes PlayerDataFile (V3.3.0 serialises the
@@ -484,9 +504,13 @@ namespace Takaro.Services
                     || ex is TypeLoadException
                 )
             {
-                _inventoryCaptureUnsupported = true;
-                LogService.Instance.Warn(
-                    $"Inventory capture is not supported on this game build ({ex.Message}); getPlayerInventory will be empty"
+                _inventoryUnsupportedReason =
+                    $"Inventory capture is not supported on this game build ({ex.Message}). This mod was built for "
+                    + $"7 Days to Die {BuildTarget.Display(BuildTarget.Built)} and the server runs "
+                    + $"{BuildTarget.Display(BuildTarget.Running)}; install the zip for your build from {BuildTarget.DownloadPage}.";
+                LogService.Instance.Error(
+                    _inventoryUnsupportedReason
+                        + " getPlayerInventory now fails until that is fixed."
                 );
             }
         }

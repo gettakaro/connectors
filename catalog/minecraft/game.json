@@ -90,7 +90,6 @@
     }
   },
   "legacyAssetAliases": {
-    "takaro-fabric-{version}.jar": "fabric-26.2/server-mod",
     "takaro-neoforge-{version}.jar": "neoforge-1.21.11/server-mod",
     "takaro-paper-{version}.jar": "paper-1.21.11/server-mod"
   },

@@ -432,13 +432,8 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn("_session.WireFrame", transport)
 
     def test_readme_version_is_release_managed(self):
-        header = next(
-            line
-            for line in self.game_file("README.md").splitlines()
-            if "x-release-please-version" in line
-        )
-        version = self.game_file("version.txt").strip()
-        self.assertIn(f"**{version}**", header)
+        # The shared README layout (games/README-template.md) names no connector version, so
+        # there is nothing to go stale; release-please still rewrites any marker it finds.
         self.assertNotIn("0.1.4", self.game_file("README.md"))
 
         config = json.loads((REPOSITORY_ROOT / "release-please-config.json").read_text())

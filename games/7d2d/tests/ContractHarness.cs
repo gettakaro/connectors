@@ -45,6 +45,8 @@ public static partial class ContractHarness
             AssertLegacyParityEntityKilled(legacy);
             AssertLegacyParityChatChannels(legacy);
             AssertProductionNotFoundReadSemantics();
+            AssertBuildTargetMatching();
+            AssertWrongBuildInventoryFailsLoudly();
             AssertNestedArgumentParsing();
             AssertRouterParsingAndCardinality(fixture);
             AssertControlFramesDoNotEnterRequestDispatch();
@@ -2382,6 +2384,103 @@ public static partial class ContractHarness
         );
     }
 
+    // gettakaro/connectors#756: a V 3.2 zip on a V 3.4 server answered getPlayerInventory
+    // with [] forever, and Takaro recorded every item of every player as removed.
+    private static void AssertBuildTargetMatching()
+    {
+        Equal("3.4.0.b9", BuildTarget.ParseRuntime("V 3.4.0 (b9)"), "runtime build parses");
+        Equal("3.2.0.b10", BuildTarget.ParseRuntime("V 3.2.0 (b10)"), "runtime build parses b10");
+        Equal(null, BuildTarget.ParseRuntime("Alpha 21"), "an unknown build string is null");
+        Equal(1, BuildTarget.ApiGeneration("3.2.0.b10"), "V 3.2 is the old player-data API");
+        Equal(2, BuildTarget.ApiGeneration("3.3.0.b18"), "V 3.3 is the new player-data API");
+        Equal(2, BuildTarget.ApiGeneration("4.0.0.b1"), "V 4 is the new player-data API");
+        Equal(BuildTarget.Match.Exact, BuildTarget.Compare("3.4.0.b9", "3.4.0.b9"), "same build");
+        Equal(
+            BuildTarget.Match.SameApi,
+            BuildTarget.Compare("3.4.0.b6", "3.4.0.b9"),
+            "other build, same API"
+        );
+        Equal(
+            BuildTarget.Match.WrongApi,
+            BuildTarget.Compare("3.2.0.b10", "3.4.0.b9"),
+            "V 3.2 build on V 3.4"
+        );
+        Equal(
+            BuildTarget.Match.WrongApi,
+            BuildTarget.Compare("3.3.0.b18", "3.2.0.b10"),
+            "V 3.3 build on V 3.2"
+        );
+        Equal(BuildTarget.Match.Unknown, BuildTarget.Compare(null, "3.4.0.b9"), "unstamped build");
+
+        BuildTarget.Configure("3.2.0.b10", "V 3.4.0 (b9)");
+        Equal(BuildTarget.Match.WrongApi, BuildTarget.Result, "configured mismatch");
+        Equal(
+            "0.7.1+3.2.0.b10",
+            BuildTarget.VersionWithBuild("0.7.1"),
+            "version carries the build"
+        );
+        True(
+            GameProfile.IsStrictSemver(BuildTarget.VersionWithBuild("0.7.1")),
+            "version with build is semver"
+        );
+        Equal(
+            "0.7.1+x",
+            BuildTarget.VersionWithBuild("0.7.1+x"),
+            "existing build metadata is kept"
+        );
+        string problem = BuildTarget.StartupProblem();
+        True(
+            problem.Contains("V 3.2.0 b10")
+                && problem.Contains("V 3.4.0 b9")
+                && problem.Contains("takaro-7d2d-mod-3.4.0.b9-"),
+            "the startup error names both builds and the zip to install"
+        );
+
+        BuildTarget.Configure("3.4.0.b6", "V 3.4.0 (b9)");
+        True(BuildTarget.StartupProblem().Contains("not checked"), "a same-API build only warns");
+        BuildTarget.Configure("3.4.0.b9", "V 3.4.0 (b9)");
+        Equal(null, BuildTarget.StartupProblem(), "the exact build is quiet");
+        BuildTarget.Configure(null, "V 3.4.0 (b9)");
+        Equal(
+            "0.7.1",
+            BuildTarget.VersionWithBuild("0.7.1"),
+            "an unstamped build keeps the plain version"
+        );
+        Equal(
+            null,
+            BuildTarget.ReadStamp(typeof(BuildTarget).Assembly),
+            "the harness assembly carries no stamp"
+        );
+    }
+
+    private static void AssertWrongBuildInventoryFailsLoudly()
+    {
+        StateMirror.Instance.InventoryUnsupportedReason = "Wrong Takaro mod build: test";
+        try
+        {
+            AssertSingleTerminalError(
+                () =>
+                    ReadHandlers.GetPlayerInventory(
+                        "fixture-wrong-build-inventory",
+                        "fixture-player"
+                    ),
+                "getPlayerInventory on the wrong build"
+            );
+            JObject serialized = JObject.Parse(
+                JsonConvert.SerializeObject(WebSocketTransport.Instance.TerminalMessages[0])
+            );
+            Equal(
+                "Wrong Takaro mod build: test",
+                (string)serialized["payload"]["error"],
+                "the inventory error carries the reason"
+            );
+        }
+        finally
+        {
+            StateMirror.Instance.InventoryUnsupportedReason = null;
+        }
+    }
+
     private static void AssertSingleTerminalError(Action invoke, string description)
     {
         HandlerProbe.Configure(JValue.CreateNull());
@@ -3704,6 +3803,8 @@ namespace Takaro.Services
         public static readonly StateMirror Instance = new StateMirror();
 
         public bool IsGameReady => true;
+
+        public string InventoryUnsupportedReason;
 
         public string MapRoot;
         public int MapSizeX;

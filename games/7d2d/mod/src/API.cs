@@ -87,15 +87,23 @@ namespace Takaro
                 LogService.Instance.Warn($"Could not load the game icon: {ex.Message}");
             }
 
+            string runningBuild = Constants.cVersionInformation?.LongString;
+            BuildTarget.Configure(BuildTarget.ReadStamp(typeof(API).Assembly), runningBuild);
             GameProfile.Configure(
-                connectorVersion,
-                Constants.cVersionInformation?.LongString,
+                BuildTarget.VersionWithBuild(connectorVersion),
+                runningBuild,
                 icon
             );
+            string buildProblem = BuildTarget.StartupProblem();
+            if (BuildTarget.Result == BuildTarget.Match.WrongApi)
+                LogService.Instance.Error(buildProblem);
+            else if (buildProblem != null)
+                LogService.Instance.Warn(buildProblem);
             LogService.Instance.Info(
                 $"Game profile: connector {GameProfile.ConnectorName} "
                     + $"{GameProfile.ConnectorVersion ?? "(version not semver: " + connectorVersion + ")"}, "
-                    + $"game build {GameProfile.GameVersion ?? "unknown"}, "
+                    + $"game build {GameProfile.GameVersion ?? "unknown"} "
+                    + $"(mod built for {BuildTarget.Display(BuildTarget.Built)}: {BuildTarget.Result}), "
                     + $"icon {GameProfile.IconRevision ?? "unavailable"}"
             );
         }

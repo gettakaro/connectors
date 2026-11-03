@@ -25,8 +25,10 @@ Download the latest release from https://takaro.io/connectors/dragonwilds (or fr
 There is one archive per server build: `takaro-dragonwilds-plugin-linux-<build>-<version>.tar.gz`.
 Your build is the `"buildid"` value in `steamapps/appmanifest_4019830.acf` in the server's install
 folder. The latest release supports builds 26161880 (the current public build), 26087591,
-25991736, 25808123, 25630937, 25501739 and 25465077. `takaro-dragonwilds-plugin.tar.gz` is a copy
-of the archive for the current public build. Download `SHA256SUMS` too, then check and unpack:
+25991736, 25808123, 25630937, 25501739 and 25465077. Take the archive whose name has your build in
+it. Releases up to 0.7.x also had a `takaro-dragonwilds-plugin.tar.gz`; that was the archive for the
+public build at the time, so do not use it on another build. Download `SHA256SUMS` too, then check
+and unpack:
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing

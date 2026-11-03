@@ -31,7 +31,6 @@
     }
   },
   "legacyAssetAliases": {
-    "takaro-enshrouded-plugin.zip": "proton-1273043/server-plugin",
-    "takaro-enshrouded-sidecar.zip": "proton-1273043/sidecar"
+    "takaro-enshrouded-plugin.zip": "proton-1273043/server-plugin"
   }
 }
