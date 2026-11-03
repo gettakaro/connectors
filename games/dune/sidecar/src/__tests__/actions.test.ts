@@ -201,6 +201,18 @@ describe('mutations read the effect back', () => {
     expect(h.gmSent().at(-1)).toMatchObject({ ServerCommand: 'AddItemToInventory', ItemName: 'WaterFlask' });
   });
 
+  it('giveItem fails a partial grant instead of reporting the whole amount as given', async () => {
+    // MEASURED on the live rig (Steam build 26332623, backpack over its slot count): a grant of 3 filled a 19/20
+    // stack to 20 and the other 2 never arrived. The read-back must count the whole amount, not any increase.
+    const h = await harness();
+    const player = h.battlegroup.players[0];
+    player.inventory = [{ templateId: 'HealthPack_Channeled', stackSize: 19, positionIndex: 0, inventoryType: 0 }];
+    setTimeout(() => (player.inventory![0].stackSize = 20), 10);
+    await expect(
+      h.adapter.handleAction('giveItem', { gameId: FLS, item: 'HealthPack_Channeled', amount: 3 }),
+    ).rejects.toThrow(/giveItem partial: only 1 of HealthPack_Channeled x3 arrived/);
+  });
+
   it('giveItem refuses a new item for a full backpack without sending the grant', async () => {
     // MEASURED on the live rig (35/35 backpack): AddItemToInventory for an item the backpack did not hold ran
     // ("Now running ServerCommand") and the item never appeared anywhere. Quest items at positions past the slot
@@ -416,6 +428,7 @@ describe('argument parsing', () => {
     const h = await harness();
     await expect(h.adapter.handleAction('giveItem', { gameId: FLS })).rejects.toThrow(/requires 'item'/);
     await expect(h.adapter.handleAction('giveItem', { gameId: FLS, item: 'x', amount: 0 })).rejects.toThrow(/positive/);
+    await expect(h.adapter.handleAction('giveItem', { gameId: FLS, item: 'x', amount: 0.5 })).rejects.toThrow(/positive whole number/);
   });
 
   it('an unknown action is an error, not a silent success', async () => {
