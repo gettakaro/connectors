@@ -714,15 +714,17 @@ namespace Takaro.Services
                         {
                             Code = code,
                             Name = localizedName,
-                            X = instance.boundingBoxPosition.x,
-                            Y = instance.boundingBoxPosition.y,
-                            Z = instance.boundingBoxPosition.z,
+                            // Takaro reads position as the centre of the area; the
+                            // code above keeps the min corner so codes stay stable.
+                            X = instance.boundingBoxPosition.x + instance.boundingBoxSize.x / 2,
+                            Y = instance.boundingBoxPosition.y + instance.boundingBoxSize.y / 2,
+                            Z = instance.boundingBoxPosition.z + instance.boundingBoxSize.z / 2,
                             SizeX = instance.boundingBoxSize.x,
                             SizeY = instance.boundingBoxSize.y,
                             SizeZ = instance.boundingBoxSize.z,
                             PrefabName = prefabName,
                             Rotation = instance.rotation,
-                            PositionAnchor = "min-corner",
+                            PositionAnchor = "centre",
                         }
                     );
                 }

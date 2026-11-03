@@ -1096,9 +1096,9 @@ public static partial class ContractHarness
             Code = "army_camp_01@100,50,200:r1",
             Position = new Takaro.TakaroPosition
             {
-                X = 100,
-                Y = 50,
-                Z = 200,
+                X = 130,
+                Y = 64,
+                Z = 226,
             },
             SizeX = 61,
             SizeY = 28,
@@ -2549,9 +2549,9 @@ public static partial class ContractHarness
             Name = "Fort Camo",
             Position = new Takaro.TakaroPosition
             {
-                X = 100,
-                Y = 50,
-                Z = 200,
+                X = 130,
+                Y = 64,
+                Z = 226,
             },
             SizeX = 61,
             SizeY = 28,
@@ -2560,7 +2560,7 @@ public static partial class ContractHarness
             {
                 { "prefab", "army_camp_01" },
                 { "rotation", 1 },
-                { "positionAnchor", "min-corner" },
+                { "positionAnchor", "centre" },
             },
         };
         JToken locationResponse = JToken.Parse(

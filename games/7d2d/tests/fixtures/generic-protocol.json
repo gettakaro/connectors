@@ -87,7 +87,7 @@
       "args": {},
       "argumentCases": [{"name": "object", "value": {}}, {"name": "json-string", "value": "{}"}, {"name": "empty", "value": ""}, {"name": "invalid", "value": "{"}],
       "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "listLocations", "args": "{}"}},
-      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"name": "Fort Camo", "code": "army_camp_01@100,50,200:r1", "position": {"x": 100, "y": 50, "z": 200}, "sizeX": 61, "sizeY": 28, "sizeZ": 53, "metadata": {"prefab": "army_camp_01", "rotation": 1, "positionAnchor": "min-corner"}}]}
+      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"name": "Fort Camo", "code": "army_camp_01@100,50,200:r1", "position": {"x": 130, "y": 64, "z": 226}, "sizeX": 61, "sizeY": 28, "sizeZ": 53, "metadata": {"prefab": "army_camp_01", "rotation": 1, "positionAnchor": "centre"}}]}
     },
     {
       "name": "sendMessage",
