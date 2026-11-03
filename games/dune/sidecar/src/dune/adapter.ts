@@ -347,27 +347,38 @@ export class DuneAdapter {
       str(args.item) ?? str(args.itemCode) ?? str(args.code) ?? str(asRecord(args.item).code) ?? fail("giveItem requires 'item'");
     const item = this.options.catalogue.resolveCode(code) ?? code;
     const amount = num(args.amount) ?? num(args.quantity) ?? 1;
-    if (amount <= 0) fail('giveItem amount must be positive');
+    const wanted = Math.trunc(amount);
+    if (wanted < 1) fail('giveItem amount must be a positive whole number');
     // `quality` arrives as a string, a number or an explicit JSON null. Dune's grant command has no quality field at
     // all, so it is accepted and ignored rather than rejected.
     const before = await this.countItemEverywhere(row.flsId, item);
     await this.refuseIfBackpackFull(row.flsId, item);
     await this.options.gm.send(
-      gmCommands.addItemToInventory({ playerId: this.gmId(row, id), itemName: item, quantity: Math.trunc(amount) }),
+      gmCommands.addItemToInventory({ playerId: this.gmId(row, id), itemName: item, quantity: wanted }),
       this.now(),
     );
     let after = before;
     const verified = await this.pollUntil(async () => {
       after = await this.countItemEverywhere(row.flsId, item);
-      return after.total > before.total;
+      return after.total - before.total >= wanted;
     });
+    const arrived = after.total - before.total;
+    if (!verified && arrived > 0) {
+      // MEASURED on the live rig (backpack over its slot count, one stack 19/20): a grant of 3 topped that stack up
+      // to 20 and the other 2 were dropped without an error. Reporting that as success would let a shop order or a
+      // module record items the player never got.
+      fail(
+        `giveItem partial: only ${arrived} of ${item} x${wanted} arrived in the player's inventory (the backpack is `
+          + 'probably full). Do not repeat the whole give; check getPlayerInventory first',
+      );
+    }
     if (!verified) {
       fail(
-        `giveItem not confirmed: ${item} x${Math.trunc(amount)} was sent to the game but did not appear in the player's `
+        `giveItem not confirmed: ${item} x${wanted} was sent to the game but did not appear in the player's `
           + 'inventory. The backpack may be full, or the save may be slow; check getPlayerInventory before giving again',
       );
     }
-    return { verified, item, amount: Math.trunc(amount), inventoryTypes: after.types, count: after.total };
+    return { verified, item, amount: wanted, inventoryTypes: after.types, count: after.total };
   }
 
   /**
