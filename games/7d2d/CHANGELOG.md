@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.8.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.7.0...7d2d-v0.8.0) (2026-11-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **7d2d:** name every asset after its game build and fail loudly on the wrong build ([#757](https://github.com/gettakaro/connectors/issues/757))
+
+### Features
+
+* **7d2d:** support V 3.4.0 b10 (Steam build 26310339) ([#763](https://github.com/gettakaro/connectors/issues/763)) ([ca0fa16](https://github.com/gettakaro/connectors/commit/ca0fa1605cebcb4ce32afaae581d20f58e5cb5f8))
+
+
+### Bug Fixes
+
+* **7d2d:** name every asset after its game build and fail loudly on the wrong build ([#757](https://github.com/gettakaro/connectors/issues/757)) ([a19350f](https://github.com/gettakaro/connectors/commit/a19350f07a3267351c4837ec06edf9a66397e7b8))
+* **7d2d:** send the POI centre as the location position ([#758](https://github.com/gettakaro/connectors/issues/758)) ([30a2ace](https://github.com/gettakaro/connectors/commit/30a2ace1665b16e582af11613a24aa462453c69d))
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+
 ## [0.7.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.6.0...7d2d-v0.7.0) (2026-10-30)
 
 
