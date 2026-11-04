@@ -4,12 +4,14 @@
   "game": "enshrouded",
   "platform": "proton",
   "revision": "1285601",
-  "default": true,
+  "default": false,
   "support": {
-    "status": "candidate",
-    "since": "2026-11-03",
-    "evidence": [],
-    "notes": "Enshrouded 1.0 public Steam build 26404334 (game build 1285601, 2026-11-03); per-build plugin data re-derived against this exe (12 functions at unchanged RVAs, 3 moved by +0x80/+0x90, all found by unique masked code patterns and checked against their verify prologues; both callsites and both ECS job entries unchanged); the server kfc ItemInfo and TemplateResource exports are identical to 1283531, so the compiled tables apply unchanged; real game and client verification recorded in the PR."
+    "status": "retired",
+    "since": "2026-11-04",
+    "evidence": [
+      "games/enshrouded/README.md (verified 2026-11-03 on game build 1285601 with a real client)"
+    ],
+    "notes": "Superseded by proton-1287369: Steam public moved on (build 26430253 on 2026-11-04), so this build is no longer on the public branch. Its plugin data section stays in mod/gamedata/enshrouded-gamedata.json and the compiled item table still applies, so everything keeps working on it."
   },
   "inputs": {
     "server": {

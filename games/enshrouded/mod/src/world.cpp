@@ -720,7 +720,7 @@ void LoadProfileLayout() {
     L.chatHandleSlotField = u("chatHandleSlotField", L.chatHandleSlotField);
     // Existing installs can keep an on-disk gamedata section without this key after upgrading.
     const std::string build = GameBuild();
-    L.chatNoticeType = u("chatNoticeType", (build == "1267041" || build == "1273043" || build == "1283531" || build == "1285601") ? 4 : 0);
+    L.chatNoticeType = u("chatNoticeType", (build == "1267041" || build == "1273043" || build == "1283531" || build == "1285601" || build == "1287369") ? 4 : 0);
     L.teleportSearchBest = u("teleportSearchBest", L.teleportSearchBest);
     L.sessMgr = u("sessionMgr", L.sessMgr);
     L.sessVer = u("sessionVersion", L.sessVer);
