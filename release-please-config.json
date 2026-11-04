@@ -131,6 +131,7 @@
     "games/empyrion": {
       "release-type": "simple",
       "component": "empyrion",
+      "release-as": "0.1.0",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         { "type": "generic", "path": "mod/src/TakaroMod.cs" },
