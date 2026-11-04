@@ -1,0 +1,131 @@
+name: Empyrion Connector
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'games/empyrion/**'
+      - 'catalog/empyrion/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/empyrion.yml'
+      - '.github/workflows/connector-release.yml'
+  pull_request:
+    paths:
+      - 'games/empyrion/**'
+      - 'catalog/empyrion/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/empyrion.yml'
+      - '.github/workflows/connector-release.yml'
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+  # Manual re-run to (re)attach assets to an existing release tag, for recovering a
+  # release that release-please published without them.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to embed in the built artifact (e.g. 0.1.0)
+        required: true
+        type: string
+      tag:
+        description: Existing release tag to upload the assets to (e.g. empyrion-v0.1.0)
+        required: true
+        type: string
+
+concurrency:
+  group: empyrion-${{ github.ref }}-${{ inputs.tag || 'ci' }}
+  # A push during a release run queues behind it; only ordinary CI runs are cancelled.
+  cancel-in-progress: ${{ inputs.tag == '' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The same commit the release job builds: a recovery run for an older tag is
+          # gated on that tag's sources and catalog, never on whatever main has become.
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
+
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.15"
+
+      - run: uv python install
+      - run: uv sync --frozen --project maintenance
+
+      - name: Resolve the target
+        id: target
+        run: |
+          maintenance/bin/takaro-maint targets resolve \
+            --game empyrion \
+            --format gha >> "$GITHUB_OUTPUT"
+
+      # Keyed on the fingerprint: a re-pinned target fetches its own assemblies rather than
+      # compiling against the previous target's.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            games/empyrion/_data/refs
+            ~/.cache/takaro-maint
+          key: empyrion-refs-${{ steps.target.outputs.fp16 }}
+
+      # The contract tests (fake Takaro and fake Empyrion: protocol v0 and v1, every action and
+      # event, the planet map renderer and the capabilities.json drift check), compiled in the
+      # pinned mono image against Mif.dll, ModApi.dll and Newtonsoft.Json.dll from the pinned
+      # depot manifest (a three-file filelist, never the 18 GB depot), each checked by sha256.
+      - name: Contract tests in the pinned mono image
+        env:
+          TARGET_ID: ${{ steps.target.outputs.target }}
+        run: games/empyrion/scripts/test.sh --target "$TARGET_ID"
+
+  params:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.params.outputs.version }}
+      tag: ${{ steps.params.outputs.tag }}
+      publish: ${{ steps.params.outputs.publish }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve release params
+        id: params
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          IN_TAG: ${{ inputs.tag }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEV_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/release-params.sh empyrion >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: [test, params]
+    uses: ./.github/workflows/connector-release.yml
+    secrets: inherit
+    with:
+      connector: empyrion
+      version: ${{ needs.params.outputs.version }}
+      tag: ${{ needs.params.outputs.tag }}
+      publish: ${{ needs.params.outputs.publish }}
+      pr_number: ${{ github.event.pull_request.number }}
+      # The Empyrion dedicated server is Windows-only (an 18 GB Steam depot) and no runtime image
+      # runs it here, so the release claims contract verification: the contract tests above and
+      # the reproducible csc build of TakaroEmpyrion.dll against the pinned server assemblies.
+      # Live proof comes from a real Windows (or Wine) server.
+      runtime: false

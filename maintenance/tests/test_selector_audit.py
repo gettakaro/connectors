@@ -34,6 +34,7 @@ TARGETED_BASELINE = (
     "conan-exiles",
     "dragonwilds",
     "dune",
+    "empyrion",
     "enshrouded",
     "minecraft",
     "rust",
