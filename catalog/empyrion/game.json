@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "empyrion",
+  "name": "Empyrion - Galactic Survival",
+  "connector": "empyrion",
+  "platforms": [
+    "windows"
+  ],
+  "sources": {
+    "steam": {
+      "provider": "steam",
+      "baseUrl": "https://store.steampowered.com",
+      "watch": {
+        "kind": "game",
+        "component": "empyrion",
+        "app": 530870,
+        "os": "windows",
+        "depots": [
+          "530871"
+        ],
+        "channels": {
+          "public": {
+            "branch": "public"
+          }
+        },
+        "knownBranches": [],
+        "readinessNote": "The connector is a native C# mod (TakaroEmpyrion.dll) loaded by the game's own mod loader in the dedicated server and in every playfield server, proven on game v1.19.6 build 5188 (Steam build 25490402). It uses only the public Mod API (ModApi.dll and Mif.dll), so a new build usually keeps working, but every new build needs a live retest before it is declared."
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "projectDir": "games/empyrion"
+  },
+  "componentRoles": {
+    "mod": {
+      "description": "The release zip unpacked into the server's Content/Mods: the TakaroEmpyrion folder (TakaroEmpyrion.dll, TakaroEmpyrion_Info.yaml and the config template), loaded by the game's mod loader in the dedicated server and its playfield servers. The mod holds the Takaro connection itself; no sidecar",
+      "artifactPattern": "takaro-empyrion-{target}-{version}.zip"
+    }
+  },
+  "legacyAssetAliases": {},
+  "devServers": {
+    "composeFile": "empyrion.yml"
+  }
+}

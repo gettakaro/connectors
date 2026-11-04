@@ -1,0 +1,36 @@
+# Takaro connector for Empyrion - Galactic Survival.
+# Copy this file to TakaroConfig.txt in the same folder and fill in REGISTRATION_TOKEN.
+
+# Your Takaro registration token (Takaro dashboard -> Game servers -> Add -> Generic).
+REGISTRATION_TOKEN=
+
+# Name shown in Takaro and used as the default chat sender name.
+SERVER_NAME=My Empyrion Server
+
+# A unique id for this server. Keep it the same forever, or Takaro creates a new server.
+# Leave empty to derive it from SERVER_NAME.
+IDENTITY_TOKEN=
+
+# Takaro connection URL. Leave as is unless Takaro tells you otherwise.
+TAKARO_WS_URL=wss://connect.takaro.io/
+
+# Name shown in chat for Takaro messages that do not set their own sender (default: SERVER_NAME).
+CHAT_SENDER_NAME=
+
+# Console commands Takaro may run (first word of the command), comma separated.
+CONSOLE_ALLOWLIST=help,plys,list,say,kick,ban,unban,mute,servers,instances,time,gents,difficulties
+
+# Allow Takaro to shut the server down (saveandexit). Off by default.
+ENABLE_DESTRUCTIVE_COMMANDS=false
+
+# Console output: the mod reads Tel_Enabled/Tel_Port/Tel_Pwd from your dedicated yaml automatically.
+# Set these only if your telnet settings live elsewhere.
+TELNET_PORT=
+TELNET_PASSWORD=
+
+# Takaro protocol. 1 (default) declares what this server supports and serves a map of every planet
+# whose terrain the server has generated. 0 falls back to the older protocol (no map).
+PROTOCOL_VERSION=1
+
+# Write every Takaro frame to Logs/takaro.log (tokens are redacted).
+DEBUG=false
