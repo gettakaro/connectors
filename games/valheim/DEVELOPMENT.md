@@ -220,14 +220,15 @@ maintenance/bin/takaro-maint verify --game valheim --target linux-1.0.21 --artif
   `player-connected`/`player-disconnected`, `chat-message`, `player-death`, `entity-killed`,
   `sendMessage` reaching a player, `giveItem`, `teleportPlayer`, `getPlayerLocation`,
   `kickPlayer`, `banPlayer`/`unbanPlayer`/`listBans` with a player, the map, and the optional
-  inventory companion in a graphical client (`getPlayerInventory` and its kill verdicts).
+  inventory companion in a graphical client (`getPlayerInventory`, `getPlayerProgression` and
+  its kill verdicts).
 
 ## Architecture
 
 Valheim has no RCON and no remote admin API, so the connector is a BepInEx plugin that
 runs **inside the dedicated server process** and dials out to `wss://connect.takaro.io/`.
 Players use plain vanilla Valheim; the only client mod is the optional inventory companion
-below, and nothing depends on it except `getPlayerInventory`.
+below, and nothing depends on it except `getPlayerInventory` and `getPlayerProgression`.
 
 - `mod/src/Takaro.Valheim.Core` — the game-independent protocol, configuration, models,
   policies and request dispatcher, plus the server-side companion session, inventory cache
@@ -268,6 +269,17 @@ channel (`TakaroCompanionV1`). Everything it sends is client-reported and untrus
   session for 30 s. `getPlayerInventory` returns those items (names localized to English on
   the server); without a fresh snapshot it returns `server_only_unsupported` (or
   `inventory_snapshot_stale`), which the runner suppresses for array actions — never `[]`.
+- **Skills.** With the `Skills` capability bit (4), negotiated so old companions and old
+  servers keep working, the companion reads `Player.GetSkills().GetSkillList()` every 2 s and
+  sends a `skills-snapshot` when it changes, or every 20 s anyway. The server maps each
+  `Skills.SkillType` name to a track through its own table (`ValheimSkillTracks`), so a client
+  cannot invent a key, and keeps the last reading until the companion session or the peer ends. `getPlayerProgression`
+  answers from that cache off the main thread: tracks, `[]` for a connected player without a
+  reading, `null` for anyone else. `level` is the floor of `m_level`, `progress` is
+  `GetLevelPercentage()` (the bar on the skills screen) and `experience` is `m_accumulator`. The
+  fractional part of `m_level` is not progress: only a death leaves one, and level-ups come from
+  the accumulator alone. Skills never leave the client in vanilla: they are not on the player
+  ZDO and no RPC carries them, so without the mod Takaro simply gets no tracks.
 - **Kill verdicts.** When a non-player creature the local client owns dies and the local
   player's name is marked on it (`ZDOVars.s_attackers + name`), the companion sends one
   `kill-verdict` {`creatureZdo`, `prefab`, `enemyToken`, `lastHitByLocalPlayer`,
@@ -460,6 +472,7 @@ Ownership values are `server-owned`, `upstream-blocked` or `unsupported`.
 | `executeConsoleCommand` | `live-supported` | Runs only exact or prefix-allowlisted commands. |
 | `listItems` | `live-supported` | Lists item prefabs visible to the server, with English display names. |
 | `listEntities` | `live-supported` | Lists non-player character prefabs visible to the server, with English display names. |
+| `getPlayerProgression` | `live-supported` | Ownership `client-reported`: needs the optional inventory companion on that player's game. Protocol version 1 only, declared as `players.progression` with source `client-reported`. One track per skill, no `character` track because Valheim has no character level. |
 | `listLocations` | `schema-fallback` | The notable places only (`NotableLocations`): Sacrificial Stones, the boss altars and The Queen's Infested Citadel, Haldor, Hildir's Camp and the Bog Witch's Camp, one entry per placed `ZoneSystem` instance with its English name, ground position, dimension `valheim` and code `<prefab>@<x>_<z>`; the other ~11,000 instances (runestones, camps, ruins) are left out. `[]` only after `LocationsGenerated`. Declared on protocol version 1 as `locations.list` and proven there on Takaro staging (dashboard Resync Locations); version 0 Takaro throws `NotImplementedError` before asking, and hosted takaro.io is not yet verified. |
 | `getMapInfo` | `schema-fallback` | `enabled:true` once the world-map raster is ready, with `maxZoom` 4, `mapBlockSize` 128 (metres per tile at `maxZoom`) and a 21,000 m extent on every `mapSize*` axis. Answered off the Unity main thread. |
 | `getMapTile` | `schema-fallback` | Base64 128 px PNG for `{x, y, z}` (`zoom` accepted), rendered off the main thread from the raster that `ValheimWorldMap` samples from `WorldGenerator` on the main thread (4 ms per frame, cached in `BepInEx/cache` per seed). Tiles outside the world answer `tile_out_of_range`; before the raster is ready, `map_not_ready`. |

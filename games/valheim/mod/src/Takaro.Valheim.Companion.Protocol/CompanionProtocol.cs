@@ -15,7 +15,8 @@ public static class CompanionProtocol
     // log line with silence. Version negotiation lives inside the envelope instead.
     public const string RpcName = "TakaroCompanionV1";
 
-    // Protocol 3 is the inventory-only companion: inventory snapshots plus kill verdicts.
+    // Protocol 3 is the client-data companion: inventory snapshots, kill verdicts and, as a
+    // negotiated capability so neither side has to upgrade first, skill snapshots.
     // Protocol 2 companions (chat, deaths, item grants) are refused, never kicked.
     public const int CurrentVersion = 3;
     public const int MinimumVersion = 3;
@@ -39,18 +40,26 @@ public static class CompanionProtocol
     public const int MaximumItemQuality = 1_000_000;
     public const int MaximumInventorySlot = MaximumInventoryStacks - 1;
     public const float MaximumDurability = 1_000_000_000f;
+    public const int MaximumSkills = 64;
+    public const float MaximumSkillLevel = 1_000_000f;
+    public const float MaximumSkillAccumulator = 1_000_000_000f;
+
+    public const CompanionCapability KnownCapabilities =
+        CompanionCapability.Inventory | CompanionCapability.Skills;
 }
 
 /// <summary>
-/// Capability bits. Protocol 3 knows only <see cref="Inventory"/>; the kill verdict is part
-/// of protocol 3 itself. A hello from an older server may carry legacy bits, which are
-/// tolerated in the hello only so the companion can answer it with a clear nack.
+/// Capability bits; the kill verdict is part of protocol 3 itself. A companion accepts the
+/// bits it shares with the hello, so an older server is never sent one it does not know, and an
+/// older companion simply leaves <see cref="Skills"/> out. A hello from an older server may
+/// carry legacy bits, tolerated in the hello only so the companion can answer with a clear nack.
 /// </summary>
 [Flags]
 public enum CompanionCapability
 {
     None = 0,
-    Inventory = 2
+    Inventory = 2,
+    Skills = 4
 }
 
 public static class CompanionAttackerKind

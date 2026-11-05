@@ -10,6 +10,7 @@ public interface IValheimTakaroAdapter
     Task<TakaroActionResult> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default);
+    Task<TakaroActionResult> GetPlayerProgressionAsync(string identifier, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, string? senderNameOverride, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ExecuteConsoleCommandAsync(string command, CancellationToken cancellationToken = default);
@@ -50,6 +51,9 @@ public static class TakaroActionNames
 
     // Protocol version 1 only, served by the connector itself from the game.profile icon.
     public const string GetGameIcon = "getGameIcon";
+
+    // Protocol version 1 only: Takaro polls it for each online player on every player sync.
+    public const string GetPlayerProgression = "getPlayerProgression";
 
     public static IReadOnlyList<string> All { get; } =
     [
@@ -126,6 +130,13 @@ public sealed class TakaroRequestDispatcher
             {
                 var (x, y, z) = RequiredTile(request.Args);
                 return await adapter.GetMapTileAsync(x, y, z, cancellationToken).ConfigureAwait(false);
+            }
+
+            // Polled for every player on every sync, so it reads the published cache and never
+            // queues for the game loop.
+            if (request.Action == TakaroActionNames.GetPlayerProgression)
+            {
+                return await adapter.GetPlayerProgressionAsync(RequiredIdentifier(request.Args), cancellationToken).ConfigureAwait(false);
             }
 
             return await mainThreadActions.ScheduleAsync(

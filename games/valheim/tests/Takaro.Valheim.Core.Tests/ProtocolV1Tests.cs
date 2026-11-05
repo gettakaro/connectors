@@ -27,7 +27,7 @@ public sealed class ProtocolV1Tests
         using var registry = JsonDocument.Parse(ReadValheimFile("capabilities.json"));
         var liveActions = registry.RootElement.GetProperty("actions").EnumerateObject()
             .Where(a => a.Value.GetString() == "live-supported"
-                && a.Name is not (TakaroActionNames.TestReachability or TakaroActionNames.GetGameIcon))
+                && a.Name is not (TakaroActionNames.TestReachability or TakaroActionNames.GetGameIcon or TakaroActionNames.GetPlayerProgression))
             .Select(a => a.Name)
             .OrderBy(a => a, StringComparer.Ordinal)
             .ToArray();

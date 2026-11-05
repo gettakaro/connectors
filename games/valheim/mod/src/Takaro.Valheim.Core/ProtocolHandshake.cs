@@ -76,6 +76,16 @@ public static class ProtocolHandshake
         [TakaroActionNames.ListLocations] = "locations.list",
     };
 
+    /// <summary>
+    /// Skills live in the character file on the game client, so the readings come from the
+    /// optional client mod and a player could spoof them. Takaro needs to know that.
+    /// </summary>
+    public static JsonObject CreateProgressionCapability() => new()
+    {
+        ["name"] = "players.progression",
+        ["parameters"] = new JsonObject { ["source"] = "client-reported" }
+    };
+
     public static JsonArray BuildCapabilityManifest(GameProfile? profile = null, bool includeMap = false)
     {
         var manifest = new JsonArray();
@@ -83,6 +93,8 @@ public static class ProtocolHandshake
         {
             manifest.Add(new JsonObject { ["name"] = capability });
         }
+
+        manifest.Add(CreateProgressionCapability());
 
         foreach (var eventType in GameEventTypes.All)
         {
@@ -105,6 +117,7 @@ public static class ProtocolHandshake
     /// <summary>Whether a version 1 connection may run the action; Takaro refuses the rest itself.</summary>
     public static bool IsDeclared(string action, GameProfile? profile = null, bool mapDeclared = false) =>
         action == TakaroActionNames.TestReachability
+        || action == TakaroActionNames.GetPlayerProgression
         || ActionCapabilities.ContainsKey(action)
         || VersionOneActionCapabilities.ContainsKey(action)
         || (action == TakaroActionNames.GetGameIcon && profile?.IconRevision is not null)
