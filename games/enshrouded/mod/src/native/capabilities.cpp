@@ -40,6 +40,12 @@ std::string CapabilityManifestJson(const std::string& gameVersion) {
     std::string out = "[";
     for (const char* name : kActionCapabilities) out += ObjBuilder().S("name", name).Done() + ",";
     for (const char* name : kEventCapabilities) out += ObjBuilder().S("name", name).Done() + ",";
+    // The character travels with the client: the player brings it to the server, so the level is the client's word.
+    out += ObjBuilder()
+               .S("name", "players.progression")
+               .Raw("parameters", ObjBuilder().S("source", "client-reported").Done())
+               .Done() +
+           ",";
     out += ObjBuilder()
                .S("name", "map")
                .Raw("parameters", ObjBuilder().Raw("dimensions", "[" + MapDimensionJson() + "]").Done())

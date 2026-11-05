@@ -147,6 +147,7 @@ Checked on game build 1287369 (Enshrouded 1.0), 2026-11-04. ✅ works, ⚠️ wo
 | Player location | ✅ | |
 | Teleport | ✅ | To whole coordinates, exactly; pick a spot above ground. |
 | Player inventory | ✅ | Matches the backpack. |
+| Player levels and skills | ⚠️ | Character level and experience, on the player profile and in level history; level changes trigger hooks. Characters live on the player's own PC, so Takaro marks the level client-reported, and switching to another character counts as a level change. Needs a game build with level data; on others no level is shown. Skills are not reported. |
 | Item list | ✅ | About 4,000 items with their English names; items the game never names are left out. |
 | Entity list | ⚠️ | Bosses, NPCs and fish have their in-game names; other creatures get a name built from the internal code, for example "Rat". |
 | Locations | ✅ | About 800 map places under their in-game names, including Flame Shrines and Fast Travel Points. |

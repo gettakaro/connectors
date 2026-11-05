@@ -75,7 +75,7 @@ Returns the players who are online, meaning logged in with their permission bloc
   "connectedAt":"2026-09-13T18:22:37.101Z","online":true}]
 ```
 - `group` is the `userGroups[].name` from `enshrouded_server.json` whose `canKickBan`, `canAccessInventories`, `canEditWorld`, `canEditBase` and `canExtendBase` flags exactly match the logged permissions. It is `"unknown"` when no group matches.
-- `level`, `experience` and `experienceRequired` (character level, from `ecs::NetworkPlayerAttributes`) appear once the plugin has read them, on builds whose gamedata has the `attributes*` layout. They stay in the plugin; the Takaro player record does not carry them.
+- `level`, `experience` and `experienceRequired` (character level, from `ecs::NetworkPlayerAttributes`) appear once the plugin has read them, on builds whose gamedata has the `attributes*` layout. The connector answers `getPlayerProgression` from them (a `character` track, `progress` = `experience` / `experienceRequired`); the Takaro player record itself does not carry them.
 
 ### GET /players/{gameId}
 Returns the same object, or `404 {"error":"player not online"}`.

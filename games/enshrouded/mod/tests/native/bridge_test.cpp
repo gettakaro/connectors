@@ -907,17 +907,20 @@ void ProtocolV1Identify() {
     const JsonValue& p = AsRecord(id.get("payload"));
     CHECK_EQ(JsonDump(*p.get("protocolVersions")), std::string("[0,1]"));
     const JsonValue* caps = p.get("capabilities");
-    CHECK(caps && caps->type == JsonValue::Array && caps->arr.size() == 24);
+    CHECK(caps && caps->type == JsonValue::Array && caps->arr.size() == 25);
     std::set<std::string> names;
     const JsonValue* map = nullptr;
     const JsonValue* profile = nullptr;
+    const JsonValue* progression = nullptr;
     for (auto& c : caps->arr) {
         std::string n = c.get("name")->str;
         CHECK_MSG(std::regex_match(n, std::regex("^[a-z][a-zA-Z0-9]*(\\.[a-z][a-zA-Z0-9-]*)*$")), n);
         CHECK_MSG(names.insert(n).second, "duplicate " + n);
         if (n == "map") map = &c;
         if (n == "game.profile") profile = &c;
+        if (n == "players.progression") progression = &c;
     }
+    CHECK(progression && t::JsonTextEq(JsonDump(*progression->get("parameters")), R"({"source":"client-reported"})"));
     for (const char* need : {"players.list", "players.location", "items.give", "moderation.listBans", "server.shutdown",
                              "locations.list", "events.chat-message", "events.entity-killed"})
         CHECK_MSG(names.count(need), need);
@@ -957,6 +960,60 @@ void ProtocolV1UnknownBuild() {
     for (auto& c : AsRecord(id.get("payload")).get("capabilities")->arr)
         if (c.get("name")->str == "game.profile") profile = &c;
     CHECK(profile && !profile->get("parameters")->get("version") && profile->get("parameters")->get("icon"));
+}
+
+void PlayerProgression() {
+    t::Group("bridge-player-progression");
+    Rig r("v1-progression");
+    r.Start();
+    OpenForIdentify(r);
+    IdentifyV1(r);
+    std::string limon = std::string("{\"gameId\":\"") + LIMON + "\"}";
+    auto setLevel = [&](const std::string& fields) {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.players = t::J(std::string(R"([{"gameId":")") + LIMON + R"(","steamId":")" + LIMON +
+                              R"(","name":"Limon","online":true)" + fields + "}]");
+    };
+    auto payload = [&](const std::string& args) {
+        JsonValue resp = r.Call("getPlayerProgression", args);
+        CHECK_MSG(!resp.get("error") && resp.get("payload"), JsonDump(resp));
+        return resp.get("payload") ? JsonDump(*resp.get("payload")) : std::string();
+    };
+    // the character track, with progress as the share of the experience this level needs
+    setLevel(R"(,"level":12,"experience":340,"experienceRequired":800)");
+    CHECK_MSG(t::JsonTextEq(payload(limon), R"([{"key":"character","name":"Level","level":12,"experience":340,"progress":0.425}])"),
+              payload(limon));
+    CHECK(t::JsonTextEq(payload(std::string("{\"gameId\":\"steam:") + LIMON + "\"}"),
+                        R"([{"key":"character","name":"Level","level":12,"experience":340,"progress":0.425}])"));
+    // nothing to divide by at the level cap; never past 1 if the game overshoots
+    setLevel(R"(,"level":25,"experience":0,"experienceRequired":0)");
+    CHECK_MSG(t::JsonTextEq(payload(limon), R"([{"key":"character","name":"Level","level":25,"experience":0}])"), payload(limon));
+    setLevel(R"(,"level":7,"experience":900,"experienceRequired":800)");
+    CHECK_MSG(t::JsonTextEq(payload(limon), R"([{"key":"character","name":"Level","level":7,"experience":900,"progress":1}])"),
+              payload(limon));
+    // online but not read yet, or read while the character is still loading: no tracks, never level 0
+    setLevel("");
+    CHECK_EQ(payload(limon), std::string("[]"));
+    setLevel(R"(,"level":0,"experience":0,"experienceRequired":0)");
+    CHECK_EQ(payload(limon), std::string("[]"));
+    // unknown player: null, not an error
+    CHECK_EQ(payload(R"({"gameId":"76561198000009999"})"), std::string("null"));
+}
+
+void PlayerProgressionOffline() {
+    t::Group("bridge-player-progression-offline");
+    Rig r("v1-progression-offline");
+    r.Start();
+    OpenForIdentify(r);
+    IdentifyV1(r);
+    std::string limon = std::string("{\"gameId\":\"") + LIMON + "\"}";
+    r.Call("getPlayers", "{}");  // seen once, so a known player from here on
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.players = t::J("[]");
+    }
+    JsonValue resp = r.Call("getPlayerProgression", limon);
+    CHECK_MSG(resp.get("payload") && JsonDump(*resp.get("payload")) == "[]", JsonDump(resp));
 }
 
 void UnsupportedGameBuildReason() {
@@ -1279,6 +1336,8 @@ void RunBridgeTests() {
     CorruptOutbox();
     ProtocolV1Identify();
     ProtocolV1UnknownBuild();
+    PlayerProgression();
+    PlayerProgressionOffline();
     UnsupportedGameBuildReason();
     IdentifyWaitsForGameWorld();
     ProtocolV1Responses();
