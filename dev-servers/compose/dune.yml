@@ -439,6 +439,8 @@ services:
       TAKARO_IDENTITY_TOKEN: "${TAKARO_IDENTITY_DUNE:-takaro-dev-dune}"
       TAKARO_REGISTRATION_TOKEN: "${TAKARO_REGISTRATION_TOKEN:?required}"
       TAKARO_SERVER_NAME: "${DUNE_WORLD_NAME:-Takaro Dev Dune}"
+      # Chat sender name for Takaro builds that send no senderNameOverride; empty = no name.
+      TAKARO_SENDER_NAME: "${DUNE_TAKARO_SENDER_NAME:-}"
       # Read-only. The connector performs no DB writes: online rows are overwritten by
       # the game, so every mutation goes through a GM command instead.
       DUNE_PG_URL: "postgres://dune:${DUNE_PG_PASSWORD:?required}@postgres:5432/${DUNE_DB_NAME:?run dev-servers/scripts/install.sh dune}"

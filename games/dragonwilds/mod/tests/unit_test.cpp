@@ -1,6 +1,7 @@
 // Host-side unit tests: the .sym parser (against a synthetic fixture), JSON, the event ring buffer
 // and password redaction. No game process involved.
 #include "mapsurvey.h"
+#include "chat_sender.h"
 #include "common.h"
 #include "config_file.h"
 #include "perf.h"
@@ -546,6 +547,33 @@ static void TestMapSurveyGrid() {
     CHECK(g.w == keep.w && g.h == keep.h, "a refused plan must leave the grid untouched");
 }
 
+// Chat sender: Takaro's override, then the configured name, then the server name; one renderer for
+// global and directed messages.
+static void TestChatSender() {
+    EQ(ChatSender::Resolve("Override", "Configured", "Server Name"), "Override");
+    EQ(ChatSender::Resolve("  Override \t", "Configured", "Server Name"), "Override");
+    EQ(ChatSender::Resolve("", "Configured", "Server Name"), "Configured");
+    EQ(ChatSender::Resolve(" \t\r\n", "Configured", "Server Name"), "Configured");
+    EQ(ChatSender::Resolve("", "  ", "Server Name"), "Server Name");
+    EQ(ChatSender::Resolve("", "", " "), "Server");
+
+    unsetenv("TAKARO_SENDER_NAME");
+    unsetenv("TAKARO_SERVER_CHAT_NAME");
+    EQ(ChatSender::Configured(), "");
+    setenv("TAKARO_SERVER_CHAT_NAME", " Chat Name ", 1);
+    EQ(ChatSender::Configured(), "Chat Name");
+    setenv("TAKARO_SENDER_NAME", "   ", 1);
+    EQ(ChatSender::Configured(), "Chat Name");
+    setenv("TAKARO_SENDER_NAME", "Sender", 1);
+    EQ(ChatSender::Configured(), "Sender");
+    unsetenv("TAKARO_SENDER_NAME");
+    unsetenv("TAKARO_SERVER_CHAT_NAME");
+
+    // SendChatTo renders global and directed messages with this, so both read the same.
+    EQ(ChatSender::Render("Takaro", "Welcome back"), "[Takaro] Welcome back");
+    EQ(ChatSender::Render("", "Welcome back"), "Welcome back");
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && strcmp(argv[1], "--exit-flush-child") == 0) return ExitFlushChild(argv[2]);
     TestSymParser();
@@ -561,6 +589,7 @@ int main(int argc, char** argv) {
     TestLogFlushAtExit();
     TestConfigResolve();
     TestMapSurveyGrid();
+    TestChatSender();
     printf("%s: %d checks, %d failed\n", g_failed ? "FAILED" : "PASSED", g_ran, g_failed);
     return g_failed ? 1 : 0;
 }

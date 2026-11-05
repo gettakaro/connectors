@@ -7,3 +7,6 @@ mod/build-debug/
 # the plugin's `<server>\takaro\plugin.log` literally and drops a file with backslashes in
 # its name into the working directory. Harmless, and not something to track.
 mod/srv\\takaro\\plugin.log
+
+# The #202 command probe build: `TAKARO_COMMAND_PROBE=1 ./mod/build.sh` (research only, never released).
+mod/build-probe/

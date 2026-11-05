@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import EventEmitter from 'node:events';
 import WebSocket from 'ws';
+import { CONNECTOR_IDENTITY } from './gameProfile.js';
 import type { GameEventType, IdentifyPayload, ProtocolErrorCode, RequestPayload, WsMessage } from './protocol.js';
 
 /** Version 1 event buffer: at least the 1,000 the protocol recommends. */
@@ -53,13 +54,15 @@ export class TakaroWsClient extends EventEmitter {
   }
 
   private identifyMessage(): IdentifyPayload {
-    if (!this.protocol.offerV1) return this.identifyPayload;
-    return { ...this.identifyPayload, protocolVersions: [0, 1], capabilities: this.protocol.manifest() };
+    // game and connector are accepted on version 0 too; the game profile needs version 1.
+    const payload: IdentifyPayload = { ...this.identifyPayload, ...CONNECTOR_IDENTITY };
+    if (!this.protocol.offerV1) return payload;
+    return { ...payload, protocolVersions: [0, 1], capabilities: this.protocol.manifest() };
   }
 
   /**
    * Replaces the Capability Manifest on a version 1 connection, for example when the map
-   * image gets a new revision. A version 0 connection has nothing to replace.
+   * image gets a new revision or TShock reports another game build. A version 0 connection has nothing to replace.
    */
   sendCapabilities(): boolean {
     if (!this.identified() || this.protocolVersion !== 1) return false;

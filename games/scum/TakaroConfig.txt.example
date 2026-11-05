@@ -7,6 +7,8 @@ REGISTRATION_TOKEN=
 IDENTITY_TOKEN=
 # Name shown in Takaro.
 SERVER_NAME=SCUM server
+# Sender name in front of messages from Takaro ("Name: message"). The chat name set in Takaro wins; empty = no name.
+SERVER_CHAT_NAME=
 # Allow Takaro to shut the server down (shutdown action). true/false.
 ENABLE_DESTRUCTIVE_COMMANDS=false
 # Comma-separated console commands Takaro may run (first word, without '#'), e.g. announce,listplayers

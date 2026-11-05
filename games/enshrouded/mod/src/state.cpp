@@ -41,6 +41,45 @@ std::string PluginState::CapabilityDetailsJson() const {
     return o + "}";
 }
 
+// A hook that is installed but has not been called yet says "waiting for ..." in its detail (hooks.cpp, world.cpp).
+static bool WaitingForGame(const std::pair<std::string, std::string>& cap) {
+    return cap.first == "degraded" && cap.second.find("waiting for") != std::string::npos;
+}
+
+std::string PluginState::StartingCapabilitiesJson() const {
+    Guard g(lock_);
+    std::string o = "[";
+    for (auto& kv : caps_)
+        if (WaitingForGame(kv.second)) o += (o.size() > 1 ? "," : "") + JsonStr(kv.first);
+    return o + "]";
+}
+
+void PluginState::SetGameSupport(const std::string& build, bool gamedataSection, bool itemTables,
+                                 const std::string& knownBuilds) {
+    Guard g(lock_);
+    support_ = {true, gamedataSection, itemTables, build, knownBuilds};
+}
+
+std::string PluginState::GameSupportNotice() const {
+    Guard g(lock_);
+    if (!support_.set || (support_.gamedataSection && support_.itemTables)) return "";
+    std::string o = "game build " + support_.build + " is not supported by plugin " TAKARO_PLUGIN_VERSION ": ";
+    if (!support_.gamedataSection)
+        o += "no gamedata section for this build (this plugin has " +
+             (support_.knownBuilds.empty() ? std::string("none") : support_.knownBuilds) + ")";
+    if (!support_.itemTables)
+        o += std::string(support_.gamedataSection ? "" : "; ") + "the item and entity tables are for another build";
+    std::string off;
+    for (auto& kv : caps_) {
+        if (kv.second.first != "degraded") continue;
+        // still starting up is not "off"
+        if (WaitingForGame(kv.second) || kv.second.second.find("initializing") != std::string::npos) continue;
+        off += (off.empty() ? "" : ", ") + kv.first;
+    }
+    return o + "; capabilities off: " + (off.empty() ? std::string("none") : off) +
+           "; update the plugin to a release that supports this game build";
+}
+
 void PluginState::PushEvent(const std::string& type, const std::string& dataJson) {
     // caller may or may not hold lock_; use a separate small critical path
     EventRecord e{0, type, dataJson, IsoNowUtc()};
@@ -149,8 +188,25 @@ void PluginState::FinalizeLoginLocked() {
             break;
         }
     }
+    p.loginMs = NowMs();
+    p.connectPending = true;
+    if (!charNamesAvailable_ || !p.characterName.empty()) EmitConnectedLocked(p);
+}
+
+void PluginState::BindMachineLocked(size_t idx, const std::string& machine) {
+    // one machine, one account: a peer that held this machine before (a flapping connection) loses it
+    for (size_t i = 0; i < players_.size(); i++)
+        if (i != idx && !players_[i].online && players_[i].authMachine == machine) players_[i].authMachine.clear();
+    players_[idx].authMachine = machine;
+    players_[idx].steamAuthed = false;
+}
+
+void PluginState::EmitConnectedLocked(PlayerRecord& p) {
+    if (!p.connectPending) return;
+    p.connectPending = false;
     PushEvent("player-connected", "{\"player\":" + PlayerJsonLocked(p) + "}");
-    PluginLog("player-connected name=%s peer=%s group=%s", p.name.c_str(), p.peerId.c_str(), p.group.c_str());
+    PluginLog("player-connected name=%s character=%s peer=%s group=%s", p.name.c_str(), p.characterName.c_str(),
+              p.peerId.c_str(), p.group.c_str());
 }
 
 void PluginState::OnLogLine(int level, const std::string& line) {
@@ -200,6 +256,70 @@ void PluginState::OnLogLine(int level, const std::string& line) {
         return;
     }
 
+    // [online] Client '7656...' authenticated by steam
+    if (StartsWith(line, "[online] Client '")) {
+        size_t a = strlen("[online] Client '");
+        size_t b = line.find("' authenticated by steam", a);
+        if (b == std::string::npos) return;
+        std::string id = line.substr(a, b - a);
+        for (auto it = players_.rbegin(); it != players_.rend(); ++it)
+            if (it->steamId == id && !it->online && !it->removed) {
+                if (it->authMachine.empty()) it->steamAuthed = true;
+                break;
+            }
+        return;
+    }
+
+    // [session] Unable to find machine for peer 1(1).   -- printed right before that peer's "Add remote machine index M"
+    if (StartsWith(line, "[session] Unable to find machine for peer ")) {
+        size_t a = strlen("[session] Unable to find machine for peer ");
+        size_t b = line.find('.', a);
+        if (b != std::string::npos) machinePeer_ = line.substr(a, b - a);
+        return;
+    }
+
+    // [session] Add remote machine index 2 (id: 2778328608).
+    // The machine is for the peer named just before; without that line, for the one peer that passed Steam auth and
+    // has no machine yet. Anything else is not certain: the machine stays unbound and its login is not guessed.
+    if (StartsWith(line, "[session] Add remote machine index ")) {
+        size_t a = strlen("[session] Add remote machine index ");
+        size_t b = line.find(' ', a);
+        std::string peer = machinePeer_;
+        machinePeer_.clear();
+        if (b == std::string::npos || b == a) return;
+        std::string machine = line.substr(a, b - a);
+        int idx = -1, authed = 0;
+        for (size_t i = 0; i < players_.size(); i++) {
+            const PlayerRecord& r = players_[i];
+            if (r.online || r.removed) continue;
+            if (!peer.empty()) {
+                if (r.peerId == peer) idx = (int)i;
+            } else if (r.steamAuthed && r.authMachine.empty()) {
+                idx = (int)i;
+                authed++;
+            }
+        }
+        if (peer.empty() && authed != 1) idx = -1;
+        if (idx >= 0) {
+            BindMachineLocked((size_t)idx, machine);
+            unboundMachines_.erase(machine);
+        } else if (peer.empty() && authed == 0) {
+            return;  // no Steam auth to go by (older logs): the login falls back to the machine number from the peer id
+        } else {
+            for (auto& r : players_)  // whoever held this machine before no longer does
+                if (!r.online && r.authMachine == machine) r.authMachine.clear();
+            unboundMachines_.insert(machine);
+            if (!peer.empty())
+                PluginLog("machine %s is for peer %s, which has no pending steam account - its login stays unresolved",
+                          machine.c_str(), peer.c_str());
+            else
+                PluginLog("machine %s: %d steam-authenticated peers wait for a machine and the game named none - its "
+                          "login stays unresolved",
+                          machine.c_str(), authed);
+        }
+        return;
+    }
+
     // [server] Machine '1': Player '0(0)' logged in
     if (StartsWith(line, "[server] Machine '")) {
         size_t a = strlen("[server] Machine '");
@@ -221,24 +341,38 @@ void PluginState::OnLogLine(int level, const std::string& line) {
     if (StartsWith(line, "[server] Player '") && line.size() > strlen(kLoginSuffix) + 17 &&
         line.compare(line.size() - strlen(kLoginSuffix), strlen(kLoginSuffix), kLoginSuffix) == 0) {
         std::string name = line.substr(17, line.size() - strlen(kLoginSuffix) - 17);
+        const std::string& mach = lastLoginMachine_;
+        auto pending = [&](const PlayerRecord& r) { return !r.online && !r.removed; };
         int idx = -1;
-        for (size_t i = 0; i < players_.size(); i++)  // exact machine match first
-            if (!players_[i].online && !players_[i].removed && !lastLoginMachine_.empty() &&
-                (machineIsPeerIndexPlusOne_ ? PeerIndexPlusOne(players_[i].peerId) : ParenPart(players_[i].peerId)) ==
-                    lastLoginMachine_) {
-                idx = (int)i;
-                break;
-            }
-        if (idx < 0)
-            for (size_t i = 0; i < players_.size(); i++)  // oldest pending peer
-                if (!players_[i].online && !players_[i].removed) {
-                    idx = (int)i;
-                    break;
-                }
+        for (size_t i = 0; i < players_.size() && idx < 0 && !mach.empty(); i++)  // the peer the game gave this machine
+            if (pending(players_[i]) && players_[i].authMachine == mach) idx = (int)i;
+        // the game logged this machine but could not say for whom: never guess, a wrong guess swaps Steam accounts
+        bool unbound = !mach.empty() && unboundMachines_.count(mach);
+        int candidates = 0, single = -1;
+        for (size_t i = 0; i < players_.size() && idx < 0 && !unbound; i++) {
+            const PlayerRecord& r = players_[i];
+            if (!pending(r) || !r.authMachine.empty()) continue;  // a peer bound to another machine is not this one
+            candidates++;
+            single = (int)i;
+            if (!mach.empty() &&
+                (machineIsPeerIndexPlusOne_ ? PeerIndexPlusOne(r.peerId) : ParenPart(r.peerId)) == mach)
+                idx = (int)i;  // machine number from the peer id
+        }
+        if (idx < 0 && !unbound && candidates == 1) idx = single;  // the only steam peer still waiting
+        if (!mach.empty()) unboundMachines_.erase(mach);
         if (idx < 0) {
-            PluginLog("login for '%s' without a pending steam peer - not tracked", name.c_str());
+            if (unbound || candidates > 1)
+                PluginLog("login for '%s' on machine '%s' matches no single steam peer - identity left unresolved, "
+                          "not tracked",
+                          name.c_str(), mach.c_str());
+            else
+                PluginLog("login for '%s' without a pending steam peer - not tracked", name.c_str());
+            lastLoginMachine_.clear();
+            lastLoginHandle_.clear();
             return;
         }
+        for (size_t i = 0; i < players_.size(); i++)  // this machine is taken now
+            if ((int)i != idx && !players_[i].online && players_[i].authMachine == mach) players_[i].authMachine.clear();
         PlayerRecord& p = players_[idx];
         p.name = name;
         p.machine = lastLoginMachine_;
@@ -259,6 +393,7 @@ void PluginState::OnLogLine(int level, const std::string& line) {
         std::string name = line.substr(24, line.size() - 25);
         for (auto it = players_.begin(); it != players_.end(); ++it) {
             if (it->online && it->name == name) {
+                EmitConnectedLocked(*it);
                 PushEvent("player-disconnected", "{\"player\":" + PlayerJsonLocked(*it, false) + "}");
                 PluginLog("player-disconnected name=%s (Remove Player)", name.c_str());
                 it->online = false;
@@ -276,6 +411,7 @@ void PluginState::OnLogLine(int level, const std::string& line) {
         for (auto it = players_.begin(); it != players_.end(); ++it) {
             if (it->peerId == peer) {
                 if (it->online) {
+                    EmitConnectedLocked(*it);
                     PushEvent("player-disconnected", "{\"player\":" + PlayerJsonLocked(*it, false) + "}");
                     PluginLog("player-disconnected name=%s (Removed peer)", it->name.c_str());
                 }
@@ -294,6 +430,31 @@ void PluginState::OnLogLine(int level, const std::string& line) {
 void PluginState::Housekeep() {
     Guard g(lock_);
     if (collectingPerms_ && NowMs() - lastPermLineMs_ > 750) FinalizeLoginLocked();
+    // held player-connected events go out here, on the plugin thread, never from the game-thread name refresh
+    for (auto& p : players_) {
+        if (p.online && p.level >= 0 && p.level != p.levelLogged) {
+            p.levelLogged = p.level;
+            PluginLog("character level: steam=%s persona=%s level=%d", p.steamId.c_str(), p.name.c_str(), p.level);
+        }
+        if (!p.online || !p.connectPending) continue;
+        if (!p.characterName.empty()) {
+            EmitConnectedLocked(p);
+        } else if (NowMs() - p.loginMs >= connectNameWaitMs_) {
+            PluginLog("character name for %s not readable after %llu ms; reporting the Steam name", p.name.c_str(),
+                      (unsigned long long)connectNameWaitMs_);
+            EmitConnectedLocked(p);
+        }
+    }
+}
+
+void PluginState::SetCharacterNamesAvailable(bool on) {
+    Guard g(lock_);
+    charNamesAvailable_ = on;
+}
+
+void PluginState::SetConnectNameWaitMs(uint64_t ms) {
+    Guard g(lock_);
+    connectNameWaitMs_ = ms;
 }
 
 std::string PluginState::PlayerJsonLocked(const PlayerRecord& p, bool online) const {
@@ -302,7 +463,10 @@ std::string PluginState::PlayerJsonLocked(const PlayerRecord& p, bool online) co
     for (size_t i = 0; i < p.permissions.size(); i++) perms += (i ? "," : "") + JsonStr(p.permissions[i]);
     perms += "]";
     const std::string& shown = p.characterName.empty() ? p.name : p.characterName;
-    return "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(shown) + ",\"steamId\":" + JsonStr(id) +
+    std::string level = p.level < 0 ? "" : ",\"level\":" + std::to_string(p.level) + ",\"experience\":" +
+                                               std::to_string(p.experience) + ",\"experienceRequired\":" +
+                                               std::to_string(p.experienceRequired);
+    return "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(shown) + ",\"steamId\":" + JsonStr(id) + level +
            ",\"peerId\":" + JsonStr(p.peerId) + ",\"group\":" + JsonStr(p.group) + ",\"permissions\":" + perms +
            ",\"connectedAt\":" + JsonStr(p.connectedAt) + ",\"online\":" + (online ? "true" : "false") + "}";
 }
@@ -313,8 +477,9 @@ std::string PluginState::PlayersJson() const {
     bool first = true;
     for (size_t i = 0; i < players_.size(); i++) {
         auto& p = players_[i];
-        // a player is listed once logged in and its permission block has been finalized
-        if (!p.online || (collectingPerms_ && loginIdx_ == (int)i)) continue;
+        // listed once logged in, its permission block finalized and its player-connected sent, so getPlayers
+        // never shows a name before the event does
+        if (!p.online || p.connectPending || (collectingPerms_ && loginIdx_ == (int)i)) continue;
         if (!first) o += ",";
         first = false;
         o += PlayerJsonLocked(p);
@@ -338,6 +503,16 @@ void PluginState::SetCharacterName(const std::string& persona, const std::string
         if (p.online && p.name == persona && p.characterName != character) {
             p.characterName = character;
             PluginLog("character name: steam=%s persona=%s character=%s", p.steamId.c_str(), persona.c_str(), character.c_str());
+        }
+}
+
+void PluginState::SetLevel(const std::string& persona, int level, int experience, int experienceRequired) {
+    Guard g(lock_);
+    for (auto& p : players_)
+        if (p.online && p.name == persona) {
+            p.level = level;
+            p.experience = experience;
+            p.experienceRequired = experienceRequired;
         }
 }
 
@@ -399,6 +574,14 @@ bool PluginState::FindOnline(const std::string& idOrName, std::string& steamId, 
     name = hit->name;
     if (json) *json = PlayerJsonLocked(*hit);
     return true;
+}
+
+std::vector<console::Player> PluginState::OnlinePlayers() const {
+    Guard g(lock_);
+    std::vector<console::Player> out;
+    for (auto& p : players_)
+        if (p.online) out.push_back({p.steamId, p.name, p.characterName});
+    return out;
 }
 
 bool PluginState::PlayerJsonByName(const std::string& name, std::string& json) const {

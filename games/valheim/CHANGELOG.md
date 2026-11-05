@@ -1,5 +1,55 @@
 # Changelog
 
+## [4.5.0](https://github.com/gettakaro/connectors/compare/valheim-v4.4.0...valheim-v4.5.0) (2026-10-30)
+
+
+### Features
+
+* **valheim:** add target for Steam build 26266951 (Valheim 1.0.21) ([#675](https://github.com/gettakaro/connectors/issues/675)) ([29b8a58](https://github.com/gettakaro/connectors/commit/29b8a582840ba2b852a8d95c6acf5e8015f4f420))
+
+
+### Documentation
+
+* **valheim:** use a version placeholder in the example zip name ([#663](https://github.com/gettakaro/connectors/issues/663)) ([c39b86b](https://github.com/gettakaro/connectors/commit/c39b86b822ef236f238b723d89cf275474e17027))
+
+## [4.4.0](https://github.com/gettakaro/connectors/compare/valheim-v4.3.0...valheim-v4.4.0) (2026-10-26)
+
+
+### Features
+
+* **valheim:** list the notable places as map locations ([#632](https://github.com/gettakaro/connectors/issues/632)) ([e991f64](https://github.com/gettakaro/connectors/commit/e991f648844718da1498e4f4267e9a595c32e9b9))
+
+
+### Bug Fixes
+
+* **valheim:** keep the settings of an older version on upgrade ([#649](https://github.com/gettakaro/connectors/issues/649)) ([4869d71](https://github.com/gettakaro/connectors/commit/4869d71aa476a718303cd30503dd8a8ebde939bc))
+
+
+### Documentation
+
+* **valheim:** re-verify the README on Valheim 1.0.20 and add an upgrade guide ([#594](https://github.com/gettakaro/connectors/issues/594)) ([b024327](https://github.com/gettakaro/connectors/commit/b02432706aa3d560702e83f76d92b321986896c2))
+* **valheim:** research native /takaro commands in the client companion ([#597](https://github.com/gettakaro/connectors/issues/597)) ([b7a003a](https://github.com/gettakaro/connectors/commit/b7a003a0403872ef14bd7249dfa92b816678bea9))
+
+
+### Continuous Integration
+
+* **valheim:** boot the pinned server with the built plugin in the release workflow's verify leg ([#609](https://github.com/gettakaro/connectors/issues/609)) ([c30ead8](https://github.com/gettakaro/connectors/commit/c30ead8f6587bbb67e497bafa571c32bccce2f93))
+
+## [4.3.0](https://github.com/gettakaro/connectors/compare/valheim-v4.2.0...valheim-v4.3.0) (2026-10-21)
+
+
+### Features
+
+* **valheim:** add target for Steam build 25909431 (Valheim 1.0.20) ([#526](https://github.com/gettakaro/connectors/issues/526)) ([cd6e46a](https://github.com/gettakaro/connectors/commit/cd6e46a3a321a2817426281c818f3bf3fc95488f))
+* **valheim:** protocol v1, Game Profile and the v1 world map ([#561](https://github.com/gettakaro/connectors/issues/561)) ([0785418](https://github.com/gettakaro/connectors/commit/0785418977cca501b9bb4d6f9b2bcc5ee40a3c9b))
+* **valheim:** serve a world map through getMapInfo and getMapTile ([#486](https://github.com/gettakaro/connectors/issues/486)) ([59955ee](https://github.com/gettakaro/connectors/commit/59955ee95097d810787d16dd4d0468fc274e13b0))
+
+
+### Bug Fixes
+
+* **valheim:** keep the config in one file the connector creates ([#459](https://github.com/gettakaro/connectors/issues/459)) ([70d73df](https://github.com/gettakaro/connectors/commit/70d73df9207d5af3f4054be531a77f75a0f736e0))
+* **valheim:** mark the staging-only map as not yet verified on takaro.io ([#507](https://github.com/gettakaro/connectors/issues/507)) ([e596500](https://github.com/gettakaro/connectors/commit/e596500de29f23c5a9a8ac0b97ee77d1d56e75ff))
+
 ## [4.2.0](https://github.com/gettakaro/connectors/compare/valheim-v4.1.1...valheim-v4.2.0) (2026-10-11)
 
 

@@ -64,7 +64,7 @@ on:
 
 jobs:
   plan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
@@ -131,7 +131,7 @@ jobs:
   build:
     needs: plan
     if: needs.plan.outputs.build == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     strategy:
@@ -234,7 +234,7 @@ jobs:
   # Modules that have not moved to the catalog yet keep their old build path.
   legacy:
     if: inputs.legacy_build != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -395,7 +395,7 @@ jobs:
       && (needs.legacy.result == 'success' || needs.legacy.result == 'skipped')
       && inputs.publish != 'none'
       && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       pull-requests: write

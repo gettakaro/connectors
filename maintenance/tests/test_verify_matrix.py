@@ -182,6 +182,7 @@ CONNECTOR_WORKFLOWS = (
     "7d2d",
     "conan-exiles",
     "dragonwilds",
+    "empyrion",
     "enshrouded",
     "minecraft",
     "rust",

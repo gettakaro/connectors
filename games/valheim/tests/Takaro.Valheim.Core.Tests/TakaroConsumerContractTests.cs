@@ -72,7 +72,7 @@ public sealed class TakaroConsumerContractTests
             ["executeConsoleCommand"] = """{"rawResult":"ok","success":true}""",
             ["listItems"] = """[{"code":"Wood","name":"Wood"}]""",
             ["listEntities"] = """[{"code":"Boar","name":"Boar"}]""",
-            ["listLocations"] = """[{"name":"StartTemple","position":{"x":0,"y":0,"z":0}}]""",
+            ["listLocations"] = """[{"name":"Sacrificial Stones","code":"StartTemple@0_0","position":{"x":0,"y":0,"z":0,"dimension":"valheim"}}]""",
             ["getMapInfo"] = """{"enabled":false,"mapBlockSize":0,"maxZoom":0,"mapSizeX":0,"mapSizeY":0,"mapSizeZ":0}""",
             ["getMapTile"] = """{}""",
             ["teleportPlayer"] = """{}""",

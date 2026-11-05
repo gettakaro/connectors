@@ -113,6 +113,8 @@ how a zip carries its target identity (`takaro-maint artifact validate` reads it
 /takarogive <player> <item> <amount>
 /takaroban <player> <reason>
 /takarounban <player>
+/takarosay <text>
+/takarotell <player> <text>
 ```
 
 These are server-side TShock commands intended for connector automation, and all of them require
@@ -120,13 +122,26 @@ the `takaro.admin` TShock permission.
 
 A REST user in the `superadmin` group already satisfies this through TShock's wildcard permission,
 which is the common setup and needs no extra configuration. For a more narrowly scoped user, grant
-`takaro.admin` explicitly: without it `teleportPlayer` fails, `getPlayerLocation` reports `0,0,0`,
+`takaro.admin` explicitly: without it `teleportPlayer` fails, `getPlayerLocation` has no position (null on protocol 1, `0,0,0` on protocol 0),
 and `getPlayerInventory` returns an empty list, all rather than failing loudly.
 
-`sendMessage` runs TShock's own `/broadcast`, so the message reaches the server console as well
-as the players — that command needs `tshock.broadcast`. When the REST user does not hold it the
-bridge falls back to `/v2/server/broadcast`, which reaches the players but logs nothing, so chat
-delivery never depends on the permission.
+`sendMessage` shows a sender name when one resolves: `opts.senderNameOverride` (Takaro's
+per-server chat name), else `serverChatName` (`TAKARO_SERVER_CHAT_NAME`), each trimmed, blank
+meaning unset (`bridge/src/terraria/serverChat.ts`, the one place that resolves and renders it).
+Terraria has no sender field for a line that does not come from a player slot, so the name is in
+the text: `<name>: <message>` for everyone through `/takarosay`, `<From <name>> <message>` for one
+player through `/takarotell`. Those plugin commands send the text as is, in the broadcast and
+whisper colours, because TShock's `/broadcast` and `/w` put `(Server Broadcast)` or
+`<From <REST user>>` in front of it. They log `TAKARO_CHAT to <all|player>: <text>` and never the
+`Broadcast: <...>` line player chat is read from, and the log parser ignores `TAKARO_CHAT` lines
+and TShock's `<user> executed: <command>` lines, so Takaro's own text never comes back as chat,
+a join or a leave. A plugin older than the bridge answers `Invalid command entered`; the bridge then
+sends `<name>: <message>` through `/broadcast` or `/w`.
+
+With no name, `sendMessage` runs TShock's own `/broadcast` (or `/w` for one player), so the message
+reaches the server console as well as the players — that command needs `tshock.broadcast`. When
+the REST user does not hold it the bridge falls back to `/v2/server/broadcast`, which reaches the
+players but logs nothing, so chat delivery never depends on the permission.
 
 ## Bridge
 
@@ -142,6 +157,21 @@ npm run build
 `scripts/build-bridge.sh [--target ...]` does the same inside the target's pinned Node image and
 then re-installs with `npm ci --omit=dev`, because the release archive ships its production
 `node_modules` — lock-pinned, so a deploy is file-only and an operator installs nothing.
+
+`prebuild`, `pretest` and `predev` run `scripts/generate-build-info.mjs`, which writes the
+gitignored `src/generated/buildInfo.ts` from `../version.txt` (the connector version identify
+reports, kept by release-please) and `../assets/icon-256.png` (the Game Profile icon, embedded).
+Run `npm test` or `npm run build` once before type-checking in an editor.
+
+### Game Profile
+
+Identify always sends `game: "terraria"` and `connector: { name: "takaro-terraria", version }`.
+On protocol 1 the manifest also declares `game.profile`: the name `Terraria`, the Terraria build
+from TShock's `/v2/server/status` `serverversion` (omitted until TShock has answered once; a
+later change replaces the manifest) and the icon, whose revision is the first 12 hex characters
+of the PNG's sha256 and whose size is its byte length, both computed from the embedded bytes.
+`getGameIcon` answers the whole PNG. A new icon is a new file in `assets/`: its revision changes
+with it, so Takaro fetches it again.
 
 ### Package
 
@@ -171,7 +201,8 @@ which an upgrade replaces whole. Nothing ships it.
   name is taken). Only `name: message (http N)` of Takaro's error is logged, which can carry
   Takaro's own request headers and token.
 - Environment variables override the file per field and are never written
-  (`TAKARO_REGISTRATION_TOKEN`, `TSHOCK_TOKEN`, `TSHOCK_USERNAME`, `TSHOCK_PASSWORD`). The dev rig
+  (`TAKARO_REGISTRATION_TOKEN`, `TAKARO_SERVER_CHAT_NAME`, `TSHOCK_TOKEN`, `TSHOCK_USERNAME`,
+  `TSHOCK_PASSWORD`). The dev rig
   and `takaro-maint verify` pass `BRIDGE_CONFIG` with an explicit `identityToken`.
 
 ### Local endpoints
@@ -190,9 +221,54 @@ build`) on every pull request **and on a release** — they are this connector's
 and delegates the release itself to `connector-release.yml`, which builds every catalog target and
 publishes one set with checksums, a compat record and the legacy aliases.
 
-It passes `runtime: false`. A Terraria run is two containers — the pinned TShock image and a Node
-sidecar that joins its network namespace — which the harness does on a rig; runtime CI for this
-connector is deferred, so the release claims `contract` verification rather than `runtime`.
+### Runtime CI
+
+It passes `runtime: true`; the verify leg gives the server 600 s to start (the first boot took
+about a minute on a hosted runner). Every PR that changes Terraria's build
+inputs (`scripts/pr-build-scope.sh`), every push to `main` and every release run the `verify` leg
+of `connector-release.yml`; `publish` needs it to pass. The required check is
+`release / verify (terraria, tshock-v6.2.1, tshock, v6.2.1, <fp16>, maintained)` in the
+`Terraria Connector` workflow, one per catalog target. It runs the same
+commands a maintainer runs locally:
+
+```sh
+maintenance/bin/takaro-maint build  --game terraria --target tshock-v6.2.1 --version 0.0.0-local \
+  --out dist --toolchain container
+maintenance/bin/takaro-maint verify --game terraria --target tshock-v6.2.1 --artifacts dist \
+  --out reports --startup-timeout 600 --cleanup-orphans
+```
+
+- **Runner:** `ubuntu-latest` (Linux x86_64) with Docker, nothing else. The server runs in the
+  pinned `ghcr.io/pryaxis/tshock` image (by digest) and the bridge in the pinned Node image (by
+  digest, 512 MB limit) with `--network container:<server>`. A run needs about 2 GB of free disk
+  and the verify job takes about 2 minutes (the first boot, which generates a small world, about
+  1 minute of it); the whole workflow takes about 4.
+- **Inputs:** TShock and Terraria's dedicated server are free; no account, licence key or secret
+  is involved. The pinned TShock release zip is cached under `terraria-<fp16>` by the build leg;
+  the two images are pulled by digest.
+- **Isolation:** every run generates a new `takaro-verify` world in a temporary data directory,
+  publishes no host ports, and talks to a local fake Takaro with throwaway tokens. The REST
+  token and the bridge's `TakaroConfig.txt` are written mode 0600 and never printed. Both
+  containers carry the run's `tm.run` label and are removed on success, failure or cancellation.
+- **Report:** `reports/<target>/report.json` names the source revision, the target fingerprint,
+  the artifact hashes, the image digest and the Terraria and TShock versions that actually
+  booted, with one row per check, plus `server.log`, `bridge.log`, `docker.log` and
+  `fake-takaro.log`, uploaded as `verify-terraria-<target>`.
+- **What it proves:** the plugin loads and the bridge identifies (`handshake`), the item
+  catalogue (`items`), the declared empty entity list (`entities`), `sendMessage` reaching the
+  server (`action`), the bridge driving the plugin's `/takarounban` and parsing its marker
+  (`cooperation`), the assemblies the plugin compiled against are the ones running (`references`),
+  and the bridge coming back after Takaro drops the socket (`reconnect`).
+- **Incompatible combinations:** a plugin built against other TShock assemblies fails
+  `references`; a bridge and plugin that no longer agree on the command marker fail
+  `cooperation`; an artifact built for another target fails `build`. There is one catalog target,
+  so there is no sibling target for `--negative` to boot.
+- **Not covered, still manual:** the fake Takaro speaks protocol version 0, so the version 1
+  handshake, Capability Manifest, Game Profile and map image stay covered by the bridge's unit
+  tests and the live runs. Everything a connected player drives needs a real Terraria client:
+  `player-connected`/`player-disconnected`, `chat-message`, `player-death`, `entity-killed`,
+  `sendMessage` reaching a player, `giveItem`, `teleportPlayer`, `getPlayerLocation`,
+  `getPlayerInventory`, `kickPlayer`, `banPlayer`/`unbanPlayer`/`listBans` with a player.
 
 ## Verification
 
@@ -211,7 +287,8 @@ connector is deferred, so the release claims `contract` verification rather than
   TShock's REST API is on the bridge's own `127.0.0.1:7878`. It can only be asked for once the
   server container exists, which is why it is a hook and not part of the run's own argv.
 
-The checks it adds are `handshake`, `items`, `entities`, `action`, `references` and `reconnect`.
+The checks it adds are `handshake`, `items`, `entities`, `action`, `cooperation`, `references`
+and `reconnect`.
 A Terraria report reaches **`startup`** and never claims `protocol`: `identify` and
 `connector-load` look for lines in the *server* log that this connector does not write (it writes
 them in its own log — `handshake` asserts both), `catalog-entities` would assert a registry
@@ -269,7 +346,7 @@ in [README.md](README.md) for what has actually been verified.
 | `getPlayer` | Supported | From TShock REST. |
 | `getPlayerLocation` | Supported | Plugin command `/takaropos`. |
 | `getPlayerInventory` | Supported | Plugin command `/takaroinv`. |
-| `sendMessage` | Supported | `/v2/server/broadcast`. Global and per-recipient. |
+| `sendMessage` | Supported | Global and per-recipient. With a sender name, plugin commands `/takarosay` and `/takarotell`; without, `/broadcast` (fallback `/v2/server/broadcast`) and `/w`. |
 | `executeConsoleCommand` | Supported | Allowlisted by exact match and prefix. |
 | `giveItem` | Supported | `/give`, with name-to-item-code resolution. |
 | `teleportPlayer` | Supported | Plugin command `/takarotp`. |
@@ -283,6 +360,7 @@ in [README.md](README.md) for what has actually been verified.
 | `listLocations` | Not applicable | Terraria has no named-location concept for Takaro to list. |
 | `getMapInfo` | Not applicable | Returns a disabled map DTO. TShock exposes no map metadata. |
 | `getMapTile` | Not applicable | The version 0 tile layout is not built; the map is served whole through `getMapImage`. |
+| `getGameIcon` | Supported, protocol v1 only | The embedded `assets/icon-256.png`, declared through the `game.profile` capability. |
 | `getMapImage` | Supported, protocol v1 only | The plugin's rendered world image from `mapDir`, declared as the v1 map capability. Proven only on Takaro staging; takaro.io does not speak protocol v1 yet. |
 
 ### Events
@@ -312,7 +390,12 @@ empty value to disable filtering, or a comma-separated list to replace the defau
 fires. Terraria records no damage source on NPC death, so this is a proxy rather than exact
 attribution: a projectile fired earlier can land after the player swaps weapons, and minion,
 sentry, or damage-over-time kills may credit an item that dealt none of the damage. It reports
-`unknown` when no killer or held item resolves.
+`unknown` when no held item resolves.
+
+The killer is the one player in the NPC's `playerInteraction` (everyone who damaged it), else its
+`lastInteraction`. An NPC no player damaged (killed by a town NPC, a trap, lava) sends no
+`entity-killed` at all: crediting its aggro target or the only player online handed players kills
+they never made.
 
 ## Items and inventory
 
@@ -374,6 +457,16 @@ produces a fresh UUID.
 Because a banned player is offline — so their UUID can no longer be read from a live `TSPlayer` —
 each ban is tagged `[takaro:<name>]` in its reason, and `/takarounban` searches the ban list by
 that tag. Without that tag an unban can only ever succeed for a player who is not actually banned.
+
+A timed ban reaches the plugin as `/takaroban <player> until=<unix seconds> <reason>` and is stored
+with that end date; TShock lets the player back in once it passes. Takaro does not lift a ban when
+it runs out, so the end date has to be in TShock. A date in or after the year 3000 (Takaro's
+"permanent") and a missing date give a permanent ban.
+
+`listBans` answers one `{ player, reason, expiresAt }` per player: the name comes from the
+`[takaro:<name>]` tag or from a `name:`/`acc:` ban, the tag is stripped from the reason, and
+expired rows and rows that name no player (an untagged `uuid:` or `ip:` ban) are left out. That is
+how a ban made in the game reaches Takaro's ban list on its ban sync.
 
 Without the plugin loaded, both actions fall back to the old REST name ban, so an operator running
 the bridge alone keeps prior behaviour rather than losing bans outright.

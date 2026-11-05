@@ -48,21 +48,23 @@ hammer the connector with read requests without touching the game simulation.
 2. The game main thread never does DB I/O. Event handlers and the sampler
    capture plain POCO snapshots and enqueue them; the `DbWriter` background
    thread performs all LiteDB writes.
-3. One shared **in-memory** `LiteDatabase` (LiteDB 5, `:memory:`): the
-   DbWriter thread writes, the WebSocket thread reads. All access holds
-   `Database.SyncRoot` — LiteDB's engine is not reliably safe under concurrent
-   reads and writes, and both sides run off the game thread so the lock never
-   blocks the game.
+3. One shared `LiteDatabase` (LiteDB 5.0.21), a file in the world's save
+   directory (`takaro.db`, opened on write-through streams; see
+   DEVELOPMENT.md, "Storage"): the DbWriter thread writes, the WebSocket
+   thread reads. All access holds `Database.SyncRoot` — LiteDB's engine is
+   not reliably safe under concurrent reads and writes, and both sides run off
+   the game thread so the lock never blocks the game. Console commands read
+   the player registry under the same lock on the main thread, briefly.
 
-**Mirror lifecycle:** the database is **in-memory and ephemeral** — rebuilt
-from game truth on every boot. Nothing in the mirror has value across
-restarts: ordinary player reads serve only online players, while items,
-entities, locations, and bans are reseeded at `GameStartDone`. The location
-read alone retains the last sample for a bounded 10 minutes after disconnect
-so Takaro can enrich the lifecycle event. (The memory backend also sidesteps
-LiteDB 5 disk-engine
-failures under Mono — "ReadFull must read PAGE_SIZE bytes" during
-WAL/checkpoint.) Seeding happens *before* the WebSocket connects, so requests
+**Mirror lifecycle:** every collection is either **rebuilt at boot** (items,
+entities, locations, bans, inventories: dropped when the database opens and
+reseeded from game truth at `GameStartDone`) or **durable** (players,
+waypoints, settings). The durable `players` collection is the player
+registry: everyone is marked offline at boot, and offline players keep their
+last sampled position, so console commands can resolve them. Ordinary player
+reads still serve only online players; the location read alone retains the
+last sample for a bounded 10 minutes after disconnect so Takaro can enrich the
+lifecycle event. Seeding happens *before* the WebSocket connects, so requests
 never observe a cold mirror.
 
 ### Per-endpoint data flow
@@ -105,7 +107,9 @@ Action requests (main-thread dispatched, `mod/src/WebSocket/ActionHandlers.cs`):
 - **`giveItem`** — Live-supported; combined direct and exact-current-build proof
   covers the Takaro-owned first-party world drop, exact vanilla pickup
   quantity, correlated readback, and full-inventory refusal on V3.0.1
-- **`sendMessage`** — Live-supported; global and recipient branches are visible in the vanilla client
+- **`sendMessage`** — Live-supported; global and recipient branches are visible in the vanilla client.
+  The sender is `opts.senderNameOverride`, else Config.xml `ServerChatName`, else the game's "Server"
+  (`ServerChatName.cs` resolves and renders, `ServerChat.cs` sends)
 - **`executeConsoleCommand`** — Live-supported; valid output remains successful,
   while unknown commands and V3 invalid-argument output preserve `rawResult`
   and return a bounded failure
@@ -150,12 +154,20 @@ mod/src/
 ├── CommandResult.cs            # IConsoleConnection → TaskCompletionSource bridge
 ├── ServiceRegistry.cs          # Ordered service init/destroy
 ├── Interfaces/IService.cs
-├── Commands/Debug.cs           # takaro-debug console command
+├── Commands/
+│   ├── Debug.cs                # takaro-debug console command
+│   ├── PrismaCoreCommand.cs    # base of the PrismaCore-compatible commands (main thread)
+│   ├── PlayerTarget.cs         # shared player-id resolver (online: game; offline: registry)
+│   ├── ProgressionCommands.cs  # resetlevel/rl, resetskillpoints/rs
+│   ├── BloodMoonCommands.cs    # isbloodmoon
+│   └── Contract/               # game-free output contracts + PrismaCore detection
 ├── Config/ConfigFiles.cs       # Config.xml read/create/write identity (no game types)
 ├── Config/ConfigManager.cs     # loads Takaro/Config.xml, watches it for changes
 ├── Persistence/
-│   ├── Database.cs             # In-memory LiteDB instance, collections, access lock
-│   └── Records.cs              # Player, inventory, ban, item, entity, location records
+│   ├── Database.cs             # The LiteDB file in the save dir, collections, access lock
+│   ├── StorageLifecycle.cs     # Every collection's boot lifecycle (rebuilt or durable)
+│   ├── WriteThroughFileStream.cs # The stream LiteDB writes through (Mono buffer fix)
+│   └── Records.cs              # Player, inventory, ban, item, entity, location, setting records
 ├── Services/
 │   ├── LogService.cs           # File + console logging
 │   ├── DbWriter.cs             # Background writer thread (all DB writes)
@@ -165,6 +177,10 @@ mod/src/
 │   ├── ProtocolDiagnostics.cs   # bounded Takaro error diagnostics
 │   ├── PlayerLocationReadWindow.cs # bounded post-disconnect location access
 │   ├── ServerMessageEchoGuard.cs # bounded one-shot native chat echo guard
+│   ├── ServerChatName.cs       # game-free chat sender name resolution and rendering
+│   ├── ServerChat.cs           # sends server chat (global, whisper) with that name
+│   ├── PlayerIdResolver.cs     # game-free player-id resolution and the game's failure lines
+│   ├── PrismaCoreConflict.cs   # one warning when a PrismaCore mod is loaded
 │   ├── StateMirror.cs          # Mirror reads (WS thread) + snapshot writes (main thread)
 │   └── PositionSampler.cs      # ~3s position/ping sampling + 60s ban resync
 └── WebSocket/
@@ -204,11 +220,26 @@ mod/src/
   30 s is closed and retried.
 - Identify carries the Capability Manifest, derived from `RequestRouter.SupportedActions` (the
   cases of `Dispatch`) plus `events.<type>` for every event the mod emits. The harness fails when
-  the manifest and the answered actions disagree. `map` is not declared (the mod cannot yet answer
-  v1's tiled map requests); `getMapInfo`/`getMapTile` remain for v0 connections.
+  the manifest and the answered actions disagree. `getMapInfo` is v0 only.
+- `map` is declared when the server renders map tiles (`EnableMapRendering`) or already has a tile
+  cache under `<save>/map/`: one tiled Dimension `world`, +x right, +z (north) up, tile size and
+  zoom count from the renderer's `mapinfo.json` (128 px, 5 zooms by default). The frame is the
+  square `[-h, h]²`, `h` the smallest power-of-two multiple of the game's zoom-0 tile that holds the
+  world (Navezgane: ±4096, Takaro zooms 2-6), so each Takaro tile is exactly one game tile:
+  game zoom = `zoom - minZoom`, x = `x - 2^(zoom-1)`, y = `2^(zoom-1) - 1 - y` (`MapFrame`).
+  v1 `getMapTile {dimension, zoom, x, y}` answers `{mimeType: "image/png", data}`; an unrendered
+  tile is `not_found` (Takaro shows it transparent). v0 `getMapTile {x, y, z}` still answers the
+  bare base64 tile at the game's own index.
 - `game` is `7d2d`. `migration.native { from: "7d2d" }` is the promise that the mod meets the
   parity contract of Takaro's built-in integration (gettakaro/connectors#419,
   gettakaro/takaro#4349); do not declare it for a change that weakens that parity.
+- Game Profile: identify carries `connector: { name: "takaro-7d2d", version }`, where `version` is
+  the deployed `ModInfo.xml` version (stamped by release-please and the release build; left out
+  if it is not strict semver). The manifest declares `game.profile` with `name: "7 Days to Die"`,
+  `version` from `Constants.cVersionInformation.LongString` (for example `V 3.3.0 (b18)`) and
+  `icon: { revision, size }` for `assets/icon-256.png`, which is embedded in `Takaro.dll`; the
+  revision is the first 12 hex characters of its sha256, computed at startup. `getGameIcon`
+  answers `{ revision, data }` with the whole PNG in base64, or `game_error` without an icon.
 - On v1, game events are sent as `{type, data, streamId, seq}`. `streamId` is new for every mod
   process; `seq` is assigned when the event enters `OutboundLedger`, so numbering equals write
   order. Events stay in flight until Takaro's cumulative `eventAck`; a pong no longer confirms

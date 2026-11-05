@@ -110,10 +110,18 @@ class SourceRegressionTests(unittest.TestCase):
         send_message = actions.split(
             "public static async Task SendChatMessage", 1
         )[1].split("public static async Task ExecuteCommand", 1)[0]
-        self.assertIn("ServerMessageEchoGuard.Instance.Record(renderedMessage)", send_message)
+        self.assertIn("ServerChat.SendGlobal(", send_message)
+        self.assertIn("ServerChat.SendWhisper(", send_message)
+        self.assertNotIn("ChatMessageServer", send_message)
+
+        server_chat = self.source("src/Services/ServerChat.cs")
+        send_global = server_chat.split("public static void SendGlobal", 1)[1].split(
+            "public static void SendWhisper", 1
+        )[0]
+        self.assertIn("ServerMessageEchoGuard.Instance.Record(rendered)", send_global)
         self.assertLess(
-            send_message.index("ServerMessageEchoGuard.Instance.Record(renderedMessage)"),
-            send_message.index("GameManager.Instance.ChatMessageServer"),
+            send_global.index("ServerMessageEchoGuard.Instance.Record(rendered)"),
+            send_global.index("GameManager.Instance.ChatMessageServer"),
         )
 
     def test_lifecycle_events_use_stable_v3_server_owned_hooks(self):
@@ -144,6 +152,9 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn("PlayerDisplayName", game_message)
         self.assertIn("Clients.ForEntityId", game_message)
         self.assertNotIn("|| data.ClientInfo == null", game_message)
+        # PvP deaths carry the killer; the game names it only when it is a player.
+        self.assertIn("DeathAttacker(data.SecondaryName, victimEntity)", game_message)
+        self.assertNotIn("SendPlayerDeath(victim, null,", game_message)
 
         self.assertIn(
             "data.KilledEntitiy.entityType == EntityType.Player", entity_killed
@@ -304,7 +315,11 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn("GetPOIPrefabs", mirror)
         self.assertIn("boundingBoxPosition", mirror)
         self.assertIn("boundingBoxSize", mirror)
-        self.assertIn('PositionAnchor = "min-corner"', mirror)
+        self.assertIn('PositionAnchor = "centre"', mirror)
+        self.assertIn(
+            "X = instance.boundingBoxPosition.x + instance.boundingBoxSize.x / 2", mirror
+        )
+        self.assertIn('"{0}@{1},{2},{3}:r{4}"', mirror)
         self.assertIn("records.Sort", mirror)
 
     def test_world_read_handlers_use_only_deterministic_mirror_snapshots(self):
@@ -417,13 +432,8 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn("_session.WireFrame", transport)
 
     def test_readme_version_is_release_managed(self):
-        header = next(
-            line
-            for line in self.game_file("README.md").splitlines()
-            if "x-release-please-version" in line
-        )
-        version = self.game_file("version.txt").strip()
-        self.assertIn(f"**{version}**", header)
+        # The shared README layout (games/README-template.md) names no connector version, so
+        # there is nothing to go stale; release-please still rewrites any marker it finds.
         self.assertNotIn("0.1.4", self.game_file("README.md"))
 
         config = json.loads((REPOSITORY_ROOT / "release-please-config.json").read_text())

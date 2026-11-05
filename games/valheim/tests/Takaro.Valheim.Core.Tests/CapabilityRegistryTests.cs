@@ -122,7 +122,7 @@ public sealed class CapabilityRegistryTests
             "client-reported",
             ownership.GetProperty("actions").GetProperty("getPlayerInventory").GetString());
         Assert.AreEqual(
-            "upstream-blocked",
+            "server-owned",
             ownership.GetProperty("actions").GetProperty("listLocations").GetString());
         Assert.AreEqual(
             "server-owned",
@@ -175,7 +175,7 @@ public sealed class CapabilityRegistryTests
     }
 
     [TestMethod]
-    public void ListLocationsSeparatesRawConnectorProofFromUnavailableStandardTakaroRoute()
+    public void ListLocationsDocumentsTheNotablePlacesAndWhereTheyAreProven()
     {
         using var document = ReadRegistry();
         var notes = document.RootElement.GetProperty("notes")
@@ -184,11 +184,12 @@ public sealed class CapabilityRegistryTests
             .ToArray();
         var developerDoc = ReadValheimFile("DEVELOPMENT.md");
 
-        Assert.IsTrue(notes.Any(note => note.Contains("raw Generic Connector action", StringComparison.Ordinal)));
-        Assert.IsTrue(notes.Any(note => note.Contains("standard Takaro route", StringComparison.Ordinal)));
+        Assert.IsTrue(notes.Any(note => note.StartsWith("listLocations returns the notable places", StringComparison.Ordinal)
+            && note.Contains("Takaro staging", StringComparison.Ordinal)
+            && note.Contains("hosted takaro.io is not yet verified", StringComparison.Ordinal)));
+        Assert.IsFalse(notes.Any(note => note.Contains("upstream support", StringComparison.Ordinal)));
         StringAssert.Contains(developerDoc, "| `listLocations` | `schema-fallback`");
-        StringAssert.Contains(developerDoc, "official raw Generic Connector action/schema");
-        StringAssert.Contains(developerDoc, "standard Takaro route");
+        StringAssert.Contains(developerDoc, "locations.list");
     }
 
     [TestMethod]

@@ -28,7 +28,7 @@ struct NativeError : std::runtime_error {
 // The protocol 1 error code for a failed action.
 std::string ProtocolErrorCode(const std::exception& e);
 
-extern const char* const kGameServerActions[19];
+extern const char* const kGameServerActions[20];
 extern const char* const kGameEventTypes[6];
 bool IsGameEventType(const std::string& type);
 
@@ -52,7 +52,8 @@ std::optional<MappedEvent> MapPluginEvent(const std::string& type, const JsonVal
 // ---- protocol.ts ----
 // Takaro sends args as [], {}, a JSON string ("{}", "[]", "{...}"), "" or null.
 JsonValue NormalizeArgs(const JsonValue* value);
-// capabilitiesJson non-empty: a protocol 1 identify offering versions [0, 1] with that Capability Manifest.
+// Always names the game and this connector (game, connector {name, version}). capabilitiesJson non-empty:
+// a protocol 1 identify offering versions [0, 1] with that Capability Manifest.
 std::string CreateIdentify(const std::string& identityToken, const std::string& registrationToken,
                            const std::string& serverName, const std::string& capabilitiesJson = "");
 std::string CreateResponse(const std::string& requestId, const JsonValue& payload);

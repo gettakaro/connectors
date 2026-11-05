@@ -130,6 +130,7 @@ __attribute__((constructor)) void Init() {
     conan::AdapterOptions ao;
     ao.version = TAKARO_CONAN_NATIVE_VERSION;
     ao.savedDir = saved;
+    ao.serverChatName = [watcher] { return watcher->ServerChatName(); };
     ao.mutationOptions.shutdownSeconds = atoi(EnvOr("TAKARO_CONAN_SHUTDOWN_SECONDS", "60").c_str());
     // Takaro and the clients' Discord notices see a logout for everyone the exit drops; 2 s for the
     // outbox to send them (the exit itself takes minutes on this server).

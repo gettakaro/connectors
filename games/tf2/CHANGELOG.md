@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/gettakaro/connectors/compare/tf2-v0.1.0...tf2-v0.2.0) (2026-10-30)
+
+
+### Features
+
+* **tf2:** show the configured server chat name instead of "Takaro" ([#700](https://github.com/gettakaro/connectors/issues/700)) ([df37626](https://github.com/gettakaro/connectors/commit/df3762694cc56211d8d38d27bf394003b2286e4a))
+
 ## 0.1.0 (2026-10-20)
 
 

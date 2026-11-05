@@ -61,6 +61,10 @@ build-release-valheim version out-dir='dist':
 build-release-tf2 version out-dir='dist' target='linux-25995664':
     ./games/tf2/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
 
+# Build the Empyrion connector release zip for one catalog target into <out-dir>
+build-release-empyrion version out-dir='dist' target='windows-25490402':
+    ./games/empyrion/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
+
 # === Terraria Plugin ===
 
 # Prepare TShock reference assemblies
@@ -135,7 +139,7 @@ sevend2d-test-contract target='linux-3.3.0.b18':
 
 # Run the 7D2D source-level regression suite
 sevend2d-test-regressions:
-    python3 -m unittest tests/test_7d2d_connector_regressions.py
+    python3 -m unittest tests/test_7d2d_connector_regressions.py tests/test_7d2d_prismacore_regressions.py
 
 # Read what Steam serves on the pinned branch now and compare it with the catalog
 sevend2d-pin *args:

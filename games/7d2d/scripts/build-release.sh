@@ -47,6 +47,16 @@ mkdir -p "${STAGE}"
 cp -r ./_data/build/Mods/Takaro "${STAGE}/Takaro"
 sed -i "s|<Version value=\"[^\"]*\" />|<Version value=\"${VERSION}\" />|" "${STAGE}/Takaro/ModInfo.xml"
 
+# The game ships Harmony, MonoMod, Newtonsoft.Json and the Steamworks wrapper, and
+# build-mod.sh merges our own libraries into Takaro.dll. Anything else in the folder is an
+# assembly the build copied by mistake, which would load next to the game's own copy.
+unexpected=$(cd "${STAGE}/Takaro" && find . -mindepth 1 ! -name ModInfo.xml ! -name Takaro.dll | sort)
+if [ -n "${unexpected}" ]; then
+    echo "error: the mod folder must hold only ModInfo.xml and Takaro.dll; also found:" >&2
+    echo "${unexpected}" >&2
+    exit 6
+fi
+
 # Packaged inside the toolchain image: the host has no zip, and the archive has to be
 # byte-identical wherever it is built.
 # The name is handed over as an environment entry and quoted inside the container, so the

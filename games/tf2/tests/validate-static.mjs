@@ -8,6 +8,7 @@ const scriptingRoot = join(projectRoot, "mod", "addons", "sourcemod", "scripting
 
 const pluginPath = join(scriptingRoot, "takaro_tf2.sp");
 const itemCatalogPath = join(scriptingRoot, "takaro_tf2_item_catalog.inc");
+const chatHelpers = readFileSync(join(scriptingRoot, "takaro_tf2_chat.inc"), "utf8");
 const configPath = join(projectRoot, "mod", "cfg", "sourcemod", "takaro_tf2.cfg");
 const readmePath = join(projectRoot, "README.md");
 const capabilitiesPath = join(projectRoot, "capabilities.json");
@@ -65,7 +66,8 @@ const cvars = [
   "takaro_tf2_reconnect_max_ms",
   "takaro_tf2_command_allowlist_exact",
   "takaro_tf2_command_allowlist_prefixes",
-  "takaro_tf2_shutdown_enabled"
+  "takaro_tf2_shutdown_enabled",
+  "takaro_tf2_server_chat_name"
 ];
 
 for (const cvar of cvars) {
@@ -123,6 +125,11 @@ assert(plugin.includes('data.SetString("msg", text)'), "chat-message events must
 assert(!plugin.includes('data.SetString("message", text)'), "chat-message events must not include payload.message because EventChatMessage only accepts msg");
 assert(!plugin.includes('data.SetBool("teamOnly"'), "chat-message events must not include payload.teamOnly because EventChatMessage only accepts channel/player/recipient/msg");
 assert(plugin.includes('data.SetString("channel"'), "chat-message events must include data.channel");
+assert(plugin.includes('HookUserMessage(GetUserMessageId("SayText2"), UserMsg_SayText2)') && plugin.includes("ConfirmsPlayerChat(format"), "player chat-message events must wait for the game's SayText2, so rate-limited or blocked chat is not reported");
+{
+  const handler = plugin.slice(plugin.indexOf("Action HandleChatCommand("), plugin.indexOf("public Action UserMsg_SayText2("));
+  assert((handler.match(/EmitChatMessage\(/g) || []).length === 1 && handler.includes("if (IsFakeClient(client)) {\n    EmitChatMessage("), "the say listener emits directly only for bots");
+}
 assert(plugin.includes("IsCommandAllowed"), "plugin must enforce a command allowlist");
 assert(plugin.includes("takaro_tf2_shutdown_enabled") && plugin.includes("ServerCommand(\"quit\")"), "shutdown must be cvar-gated");
 assert(plugin.includes("GetClientAuthId(client, AuthId_SteamID64"), "plugin must use SteamID64 identity mapping");
@@ -150,7 +157,15 @@ assert(plugin.includes("HandleGetMapInfo") && plugin.includes('info.SetBool("ena
 assert(plugin.includes('StrEqual(action, "getMapTile")') && plugin.includes("RespondString(requestId") && plugin.includes("iVBORw0KGgo"), "getMapTile must return a transparent placeholder tile instead of surfacing a Takaro 500");
 assert(plugin.includes("ResolveRecipientFromRequest") && plugin.includes("/args/opts/recipient/gameId"), "sendMessage must support opts.recipient targeting");
 assert(plugin.includes("if (recipient < 0) {") && plugin.includes("return client > 0 ? client : -1;"), "sendMessage to an offline recipient must be refused, never broadcast");
-assert(plugin.includes("ExtractSenderNameOverride") && plugin.includes("/args/opts/senderNameOverride") && plugin.includes('strcopy(senderName, sizeof(senderName), "Takaro")'), "sendMessage must support opts.senderNameOverride with a Takaro default prefix");
+assert(plugin.includes("ExtractSenderNameOverride") && plugin.includes("/args/opts/senderNameOverride"), "sendMessage must support opts.senderNameOverride");
+assert(plugin.includes('#include "takaro_tf2_chat.inc"'), "plugin must include the server chat name helpers");
+assert(chatHelpers.includes('#define TAKARO_CHAT_DEFAULT_SENDER "Takaro"'), "without a sender name, Takaro messages keep the [Takaro] prefix");
+{
+  const send = plugin.slice(plugin.indexOf("void HandleSendMessage("), plugin.indexOf("bool PtrTryGetArg("));
+  assert(send.includes("ResolveServerChatName(senderNameOverride, configuredName") && send.includes("FormatServerChatMessage("), "sendMessage must resolve and render the sender through takaro_tf2_chat.inc");
+  assert(send.includes('PrintToChat(recipient, "%s", line)') && send.includes('PrintToChatAll("%s", line)'), "global and private messages must print the same rendered line");
+  assert((plugin.match(/PrintToChat(All)?\(/g) || []).length === 2, "sendMessage is the only Takaro chat output; any new one must use FormatServerChatMessage");
+}
 assert(plugin.includes("g_PlayerPlatformIds.SetString(key, platformId)") && plugin.includes("g_PlayerPlatformIds.GetString"), "disconnect events must reuse the cached platformId emitted by getPlayers");
 assert(plugin.includes('ServerCommand("banid %d %s"'), "banPlayer must route through the Source engine banid command");
 assert(plugin.includes('ServerCommand("removeid %s"'), "unbanPlayer must route through the Source engine removeid command");

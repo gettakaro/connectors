@@ -8,6 +8,7 @@ on:
       - 'catalog/7d2d/**'
       - 'maintenance/**'
       - 'tests/test_7d2d_connector_regressions.py'
+      - 'tests/test_7d2d_prismacore_regressions.py'
       - 'scripts/**'
       - '.github/workflows/7d2d.yml'
       - '.github/workflows/connector-release.yml'
@@ -17,6 +18,7 @@ on:
       - 'catalog/7d2d/**'
       - 'maintenance/**'
       - 'tests/test_7d2d_connector_regressions.py'
+      - 'tests/test_7d2d_prismacore_regressions.py'
       - 'scripts/**'
       - '.github/workflows/7d2d.yml'
       - '.github/workflows/connector-release.yml'
@@ -51,7 +53,7 @@ concurrency:
 jobs:
   codestyle:
     if: ${{ !inputs.tag }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: games/7d2d/mod
@@ -65,7 +67,7 @@ jobs:
         run: dotnet csharpier --check . ../tests
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -117,10 +119,10 @@ jobs:
           done
 
       - name: Run source regressions
-        run: python3 -m unittest tests/test_7d2d_connector_regressions.py
+        run: python3 -m unittest tests/test_7d2d_connector_regressions.py tests/test_7d2d_prismacore_regressions.py
 
   params:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:

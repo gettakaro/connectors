@@ -70,7 +70,7 @@ class PingPongTest {
         @Override public List<GameEntity> listEntities() { return Collections.emptyList(); }
         @Override public List<GameLocation> listLocations() { return Collections.emptyList(); }
         @Override public void giveItem(String gameId, String itemCode, int amount, String quality) {}
-        @Override public void sendMessage(String message, String recipientGameId) {}
+        @Override public void sendMessage(String message, String senderName, String recipientGameId) {}
         @Override public CommandResult executeConsoleCommand(String command) { return new CommandResult(true, "", null); }
         @Override public void teleportPlayer(String gameId, double x, double y, double z, String dimension) {}
         @Override public void kickPlayer(String gameId, String reason) {}

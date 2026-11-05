@@ -2,6 +2,7 @@
 // thread; the in-process Takaro bridge (its own threads, outbound WSS) only reads
 // copied snapshots and queues actions. No sidecar and no listening socket.
 #include "action_bindings.hpp"
+#include "chat_bindings.hpp"
 #include "console_bindings.hpp"
 #include "catalog_bindings.hpp"
 #include "moderation_bindings.hpp"
@@ -46,6 +47,9 @@
 
 namespace {
 constexpr char kExpectedHash[] = "7e7ded49e0c658e74199801d79630bd33da407d3e468e039837bf61a9de7c520";
+// The game build of that one executable (its own log line "ARK Version: 361.7"); the
+// hash gate guarantees no other build ever runs this plugin.
+constexpr char kGameVersion[] = "361.7";
 constexpr uintptr_t kExecThunk = 0x154a600; // reflected ServerSendChatMessage, verified by derive_bindings.py
 constexpr uintptr_t kTick = 0x81fce0; // only call at 0x8206ae in the main loop, build-specific
 constexpr uintptr_t kLogout = 0xe72ab0; // ShooterGameMode Logout vtable +0xc18, before controller removal
@@ -548,6 +552,18 @@ bool send_queued_rpc(void* controller, const std::u32string& text) {
     return false;
 }
 
+// Every Takaro chat line: with a sender name through ClientChatMessage, which the
+// client shows as "<name>: <text>"; without one through the unchanged server line.
+bool send_chat_line(void* controller, const gate::Action& action) {
+  if (action.sender.empty()) return send_queued_rpc(controller, action.text);
+  if (!ark_chat::send_named(controller, action.sender, action.text)) {
+    enqueue("outbound-named-chat-rejected");
+    return false;
+  }
+  enqueue("outbound-named-chat-sent");
+  return true;
+}
+
 // Item grants can split across stacks. Compare the sum for the exact native
 // class path, never the number of rows or the native "any item" boolean.
 int64_t inventory_quantity(const std::vector<ark_inventory::Item>& items,
@@ -926,13 +942,13 @@ void tick_hook(void* loop) {
             // Resolve at dispatch time. Never fall back to broadcast when the
             // intended recipient has disconnected or respawned.
             void* controller = resolve_live_controller(action->player_id);
-            success = controller && send_queued_rpc(controller, action->text);
+            success = controller && send_chat_line(controller, *action);
           } else {
             success = true;
             const auto ids = g_gate->player_ids();
             for (const auto& id : ids) {
               void* controller = resolve_live_controller(id);
-              if (!send_queued_rpc(controller, action->text)) success = false;
+              if (!send_chat_line(controller, *action)) success = false;
             }
           }
         } else if (action->kind == gate::Action::Kind::console) {
@@ -1128,6 +1144,8 @@ bool preflight_bindings() {
          memcmp(reinterpret_cast<const void*>(kTeleport), teleport_prologue,
                 sizeof(teleport_prologue)) == 0 &&
          memcmp(reinterpret_cast<const void*>(kClientChatRpc), rpc_prologue, sizeof(rpc_prologue)) == 0 &&
+         memcmp(reinterpret_cast<const void*>(ark_chat::Api{}.client_chat_message), ark_chat::Api::prologue,
+                sizeof(ark_chat::Api::prologue)) == 0 &&
          ark_shutdown_request::signature_matches();
 }
 
@@ -1345,10 +1363,19 @@ std::optional<takaro::Config> load_bridge_config() {
   config.registration_token = ark_config::get(file, "TAKARO_REGISTRATION_TOKEN");
   config.identity_token = ark_config::get(file, "TAKARO_IDENTITY_TOKEN");
   config.server_name = ark_config::get(file, "TAKARO_SERVER_NAME");
+  config.server_chat_name = ark_config::get(file, "TAKARO_SERVER_CHAT_NAME");
   config.ca_file = ark_config::get(file, "TAKARO_CA_FILE");
   config.ban_file = ark_config::get(file, "TAKARO_BAN_METADATA_FILE");
   config.wire_debug = ark_config::get(file, "TAKARO_WIRE_DEBUG") == "1";
   config.map_name = server_map_name();
+  config.game_version = kGameVersion;
+  {
+    std::string icon_error;
+    config.game_icon = takaro::load_game_icon(ark_config::plugin_file("icon-256.png"), icon_error);
+    enqueue(config.game_icon ? ("takaro-game-icon revision=" + config.game_icon->revision + " size=" +
+                                std::to_string(config.game_icon->png.size())).c_str()
+                             : ("takaro-game-icon-omitted " + icon_error).c_str());
+  }
   config.state_dir = ark_config::get(file, "TAKARO_STATE_DIR");
   if (config.state_dir.empty()) {
     const std::string root = server_root();

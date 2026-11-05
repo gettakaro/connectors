@@ -3,11 +3,13 @@
 // ban manager). Runs on bridge worker threads only. A failure throws Withhold:
 // Takaro's Generic void actions treat any response frame as success, so a failed
 // action leaves its request unanswered and Takaro's bounded timeout rejects it.
+#include "game_profile.hpp"
 #include "gate_state.hpp"
 #include "json.hpp"
 #include "takaro_store.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <functional>
 #include <mutex>
@@ -121,6 +123,21 @@ inline std::string js_trim(const std::string& s) {
   std::string out;
   for (size_t i = b; i < e; ++i) json::append_utf8(out, cps[i]);
   return out;
+}
+
+// The sender name players see on Takaro's messages: opts.senderNameOverride (Takaro
+// fills it from the serverChatName setting), else TAKARO_SERVER_CHAT_NAME, else none,
+// which keeps ARK's own "(SERVER)" line. Blank values count as unset; longer names are
+// cut to the 128 code points the native chat line takes, so messages never fail on it.
+inline std::string server_chat_sender(const json::Value* override_name, const std::string& configured) {
+  std::string name;
+  if (override_name && override_name->is_string()) name = js_trim(override_name->as_string());
+  if (name.empty()) name = js_trim(configured);
+  const auto cps = code_points(name);
+  if (cps.size() <= 128) return name;
+  std::string cut;
+  for (size_t i = 0; i < 128; ++i) json::append_utf8(cut, cps[i]);
+  return js_trim(cut);
 }
 
 inline bool safe_integer(const json::Value* v) {
@@ -348,11 +365,21 @@ class Adapter {
   Adapter(gate::Server& gate, BanManager& bans, KnownPlayers& known) : gate_(gate), bans_(bans), known_(known) {}
 
   // Blocks until the event stream has delivered up to `seq` or the timeout passes.
+  // The declared map Dimension id (empty when the loaded map has none) and the negotiated
+  // Generic protocol version. On version 1 player positions and teleports use that id.
+  void set_map_dimension(std::string id) { map_dimension_ = std::move(id); }
+  void set_protocol_version(int version) { protocol_version_ = version; }
+
   using DeliveryWaiter = std::function<bool(uint64_t, std::chrono::milliseconds)>;
   void set_delivery_waiter(DeliveryWaiter waiter) { wait_delivered_ = std::move(waiter); }
 
   // Called after the response for `shutdown` is written to the socket.
   using AfterWrite = std::function<void()>;
+
+  // The icon declared in game.profile (null = none declared, getGameIcon is refused).
+  void set_game_icon(std::shared_ptr<const GameIcon> icon) { icon_ = std::move(icon); }
+  // TAKARO_SERVER_CHAT_NAME: the sender name when Takaro sends none.
+  void set_server_chat_name(std::string name) { server_chat_name_ = std::move(name); }
 
   json::Value handle(const std::string& action, const json::Value& args, AfterWrite* after_write = nullptr) {
     if (action == "testReachability") return test_reachability();
@@ -375,7 +402,10 @@ class Adapter {
       const auto position = gate_.location(player_id(args));
       if (!position || !std::isfinite(position->x) || !std::isfinite(position->y) || !std::isfinite(position->z))
         withhold("native player location is unavailable");
-      return json::obj({{"x", json::num(position->x)}, {"y", json::num(position->y)}, {"z", json::num(position->z)}});
+      json::Value out = json::obj({{"x", json::num(position->x)}, {"y", json::num(position->y)}, {"z", json::num(position->z)}});
+      // Name the map's Dimension so Takaro files the position under the id the map and locations use.
+      if (protocol_version_.load() >= 1 && !map_dimension_.empty()) out.set("dimension", json::str(map_dimension_));
+      return out;
     }
     if (action == "getPlayerInventory") {
       const auto items = gate_.inventory(player_id(args));
@@ -407,6 +437,10 @@ class Adapter {
     if (action == "executeConsoleCommand") return console(args);
     if (action == "sendMessage") return send_message(args);
     if (action == "shutdown") return shutdown(args, after_write);
+    if (action == "getGameIcon") {
+      if (!icon_) withhold("getGameIcon is unavailable on this build (no icon declared)");
+      return game_icon_response(*icon_);
+    }
     withhold("action '" + action.substr(0, 64) + "' is unavailable on this build");
   }
 
@@ -415,6 +449,10 @@ class Adapter {
   BanManager& bans_;
   KnownPlayers& known_;
   DeliveryWaiter wait_delivered_;
+  std::shared_ptr<const GameIcon> icon_;
+  std::string server_chat_name_;
+  std::string map_dimension_;
+  std::atomic<int> protocol_version_{0};
 
   json::Value test_reachability() {
     const auto h = gate_.health();
@@ -491,7 +529,11 @@ class Adapter {
       if (!(target->is_string() && target->as_string().empty()))
         withhold("teleportPlayer target lookup is unavailable");
     }
-    if (args.get("dimension")) withhold("teleportPlayer dimension is unavailable");
+    if (const json::Value* dimension = args.get("dimension")) {
+      // The one declared Dimension is the loaded map; any other is unavailable.
+      if (!(dimension->is_string() && !map_dimension_.empty() && dimension->as_string() == map_dimension_))
+        withhold("teleportPlayer dimension is unavailable");
+    }
     auto action = std::make_shared<gate::Action>();
     action->kind = gate::Action::Kind::teleport;
     action->x = static_cast<float>(finite_number(args.get("x"), "teleportPlayer x", 1e8));
@@ -549,11 +591,12 @@ class Adapter {
     return out;
   }
 
-  bool send(const std::string& recipient, const std::string& text) {
+  bool send(const std::string& recipient, const std::string& text, const std::string& sender) {
     auto action = std::make_shared<gate::Action>();
     action->kind = gate::Action::Kind::message;
     action->player_id = recipient;
     if (!gate::utf8_to_utf32(text, action->text)) return false;
+    if (!sender.empty() && !gate::utf8_to_utf32(sender, action->sender)) return false;
     const auto outcome = run(gate_, action);
     return outcome.status == gate::Server::Submit::done && outcome.success;
   }
@@ -581,7 +624,7 @@ class Adapter {
       bans_.unban(id);
       return json::Value::object();
     }
-    if (!js_trim(reason).empty() && !send(id, "Kick reason: " + reason))
+    if (!js_trim(reason).empty() && !send(id, "Kick reason: " + reason, server_chat_sender(nullptr, server_chat_name_)))
       withhold("native kick reason notice was not delivered");
     auto action = std::make_shared<gate::Action>();
     action->kind = gate::Action::Kind::kick;
@@ -650,13 +693,9 @@ class Adapter {
     if (!message || !message->is_string() || js_trim(message->as_string()).empty())
       withhold("sendMessage requires a nonempty message");
     const std::string recipient = message_recipient(args);
-    // Takaro does not forward serverChatName to Generic connectors; modules may
-    // pass opts.senderNameOverride. ARK's direct chat line has no sender field.
-    std::string text = message->as_string();
-    if (const json::Value* sender = as_record(args.get("opts")).get("senderNameOverride");
-        sender && sender->is_string() && !js_trim(sender->as_string()).empty())
-      text = js_trim(sender->as_string()) + ": " + text;
-    if (!send(recipient, text))
+    const std::string sender =
+        server_chat_sender(as_record(args.get("opts")).get("senderNameOverride"), server_chat_name_);
+    if (!send(recipient, message->as_string(), sender))
       withhold(recipient.empty() ? "native chat broadcast was not acknowledged" : "native chat recipient was not acknowledged");
     return json::Value::object();
   }

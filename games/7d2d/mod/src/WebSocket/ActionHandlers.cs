@@ -35,9 +35,6 @@ namespace Takaro.WebSocket
                 string senderNameOverride = args.Opts == null ? null : args.Opts.SenderNameOverride;
                 TakaroSendMessageRecipientArgs recipient =
                     args.Opts == null ? null : args.Opts.Recipient;
-                string renderedMessage = string.IsNullOrEmpty(senderNameOverride)
-                    ? args.Message
-                    : $"[{senderNameOverride}] {args.Message}";
 
                 // If a GameId is provided, send the message to that player as a whisper
                 if (recipient != null && recipient.GameId != null)
@@ -49,30 +46,11 @@ namespace Takaro.WebSocket
                         return;
                     }
 
-                    cInfo.SendPackage(
-                        NetPackageManager
-                            .GetPackage<NetPackageChat>()
-                            .Setup(
-                                EChatType.Whisper,
-                                -1,
-                                renderedMessage,
-                                null,
-                                EMessageSender.Server,
-                                GeneratedTextManager.BbCodeSupportMode.Supported
-                            )
-                    );
+                    ServerChat.SendWhisper(cInfo, args.Message, senderNameOverride);
                 }
                 else
                 {
-                    ServerMessageEchoGuard.Instance.Record(renderedMessage);
-                    GameManager.Instance.ChatMessageServer(
-                        null,
-                        EChatType.Global,
-                        -1,
-                        renderedMessage,
-                        null,
-                        EMessageSender.Server
-                    );
+                    ServerChat.SendGlobal(args.Message, senderNameOverride);
                 }
 
                 Send(WebSocketMessage.CreateResponse(requestId, null));

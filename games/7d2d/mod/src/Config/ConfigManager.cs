@@ -29,6 +29,9 @@ namespace Takaro.Config
         public int ReconnectIntervalSeconds { get; private set; } =
             ConfigFiles.DefaultReconnectIntervalSeconds;
 
+        /// <summary>Config.xml's chat sender name; empty when unset. Applied without a reconnect.</summary>
+        public string ServerChatName { get; private set; } = "";
+
         /// <summary>
         /// Raised on the watcher thread when a change to Config.xml alters the
         /// URL, a token or Enabled.
@@ -181,6 +184,13 @@ namespace Takaro.Config
                 IdentityToken = values.IdentityToken;
                 WebSocketEnabled = values.Enabled;
                 ReconnectIntervalSeconds = values.ReconnectIntervalSeconds;
+                if (values.ServerChatName != ServerChatName)
+                    LogService.Instance.Info(
+                        values.ServerChatName == ""
+                            ? "Server chat name not set in Config.xml"
+                            : $"Server chat name from Config.xml: {values.ServerChatName}"
+                    );
+                ServerChatName = values.ServerChatName;
 
                 // Our own write must not count as a change; after a failed
                 // write no stamp is kept, so the next check tries again.

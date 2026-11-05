@@ -9,14 +9,16 @@
 // is applied when the next read, settleMs later, returns the same text, so a save in progress is
 // never applied half-written; an unparseable text keeps the current settings. A save that empties
 // the identity gets the running one written back. It returns true when the connection settings
-// (URL, tokens, identity, name) or the hold state changed.
+// (URL, tokens, identity, name) or the hold state changed. A changed serverChatName applies at once
+// without a reconnect.
 //
-// After Load() every method is called from the bridge thread only.
+// After Load() every method is called from the bridge thread only, except ServerChatName().
 #pragma once
 #include "common.h"
 #include "takaro/config.h"
 
 #include <cstdint>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -51,6 +53,9 @@ public:
     void Refused(const Config& c, const std::string& why, bool nameTaken);
     void Connected(const Config& c);
 
+    // takaro.json / TAKARO_SERVER_CHAT_NAME as last applied ("" when unset). Any thread.
+    std::string ServerChatName() const;
+
     std::string HealthJson() const;
     const std::string& FilePath() const { return path_; }
 
@@ -61,10 +66,13 @@ private:
                    std::string writeError = "");
     void Banner(const std::string& key, const std::vector<std::string>& lines);
     void HoldBanner(const Config& c, bool force);
+    void SetActive(Config c);
 
     Options o_;
     std::string path_;
     Config active_;
+    mutable std::mutex chatNameMu_;
+    std::string chatName_;  // active_.serverChatName for other threads
     std::optional<std::string> appliedText_, candidateText_;
     std::string lastReadError_;
     int64_t nextPoll_ = 0;
