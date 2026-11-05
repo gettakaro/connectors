@@ -13,7 +13,7 @@ chat hook behaves exactly as on `main`.
 ## Rescope against current main
 
 The issue was written against game build 25110402 (ELF build-id `3b4ce30aed886594`), connector
-0.1.0 and the sidecar architecture. On `main` today:
+0.1.0 and the sidecar architecture. On `main` at the probe date (3859fd8):
 
 - The connector is the native plugin alone (0.5.0, Takaro protocol v1, no sidecar). The chat seam
   the issue names is unchanged: `chat-message` still comes from a ProcessEvent slot hook on the live
@@ -50,7 +50,7 @@ Everything else in the issue still applies.
 | Private unavailable (stub down) | Answered `unavailable` privately at once; original skipped; chat fine afterwards | **Go** |
 | Unknown and colliding prefix-shaped lines stay normal chat | `@takaro_probe_zz000000`, `/takaro_probe_zz000000`, `@takaro_probe_<nonce> rm` reached chat, Takaro and Discord unchanged; Takaro's own `@ping` still answered `Pong!` | **Go** |
 | Side effects: warnings, disconnects, moderation, rate limits | None in the server log or on the client during or after the suppressed lines | **Go** (only what is observable on a dedicated server) |
-| Second client sees nothing of a taken line | **Not run**: this needs a second client with its own EOS identity, and the test setup has one | **Not testable with one client** (server-side fan-out evidence only) |
+| Second client sees nothing of a taken line | **Not run**: needs a second unmodified client with its own EOS identity; only one account exists | **Blocked** (server-side fan-out evidence only; #788) |
 | Discovery: chat autocomplete for Takaro commands | `/takaro` typed in the vanilla chat box plus Tab shows no suggestion list; engine-console autocomplete is a different system and not reachable from chat | **No-go** without a client mod |
 
 Confidence: execution **high**, suppression **medium-high** (server-side proof plus one client;
@@ -122,7 +122,7 @@ responses are kept with the test run.
 | E8 | `@takaro_probe_<nonce>` with `STUB=down` (after a server restart) | yes / same | **skipped** | none | none | none | only `#1 unavailable: commands are offline, nothing was run` | pass |
 | E8b | `probe203 normal hello four` right after E8 | yes | ran | 1 | `7979dcc3…` | posted | shown | pass |
 | D1 | `/takaro` typed, then Tab | — | — | — | — | — | no suggestion list | no autocomplete |
-| E9 | second client watches E2–E6 | — | — | — | — | — | — | **not testable with one client** |
+| E9 | second client watches E2–E6 | — | — | — | — | — | — | **blocked** (one EOS identity) |
 
 The client never echoes a line locally: a taken line simply never appears on the sender's own
 screen, only the private answer does. There were no warnings, kicks or disconnects in the server
@@ -138,7 +138,10 @@ from the server.
   does besides fan-out (telemetry, moderation hooks). Nothing visible depended on it here.
 - No discovery surface: the vanilla client's chat box has no autocomplete. Players can only learn
   commands from a help command or the Discord/website.
-- Build-specific: every claim above is for `linux-25991736` only.
+- Build-specific: every claim above is for `linux-25991736` and connector 0.5.0 only. `main` has since
+  moved to 0.7.0 with `linux-26161880` as the current public build. A trial merge of that code built
+  and its unit tests passed, but the probe was not re-run live on the newer build.
+- Discord to game was not exercised; game to Discord was.
 
 ## Production recommendation
 
@@ -172,17 +175,17 @@ Go for a native, silent command path in the connector, gated on the parent contr
 - Live: experiments above, plus the regression smoke (`player-connected`, `chat-message`,
   `testReachability`, `getPlayers`, `sendMessage`) on the probe build.
 
-## Proposed follow-up issues
+## Follow-up issues
 
-1. **dragonwilds: silent native Takaro commands behind the catalog contract**
+1. **#787 dragonwilds: silent native Takaro commands behind the catalog contract**
    Implement the recommendation above once #195 defines catalog and invocation.
    Prefix + live-catalog ownership, owner-resolved sender, skip RPC, private bounded answer.
    Unknown and colliding input stays chat; unavailable answers privately.
-2. **dragonwilds: prove remote silence with a second client**
+2. **#788 dragonwilds: prove remote silence with a second client**
    Repeat E2–E6 with a second unmodified client on a distinct EOS identity.
    Record the second screen and server fan-out for each line.
-   Only possible on a setup with two game clients.
-3. **dragonwilds: native targeted chat via `FChatPlayerFilterData.ReceiverIds`**
+   Needs a second game account.
+3. **#789 dragonwilds: native targeted chat via `FChatPlayerFilterData.ReceiverIds`**
    Dump the runtime receiver list for global and private lines.
    If the game honours it, use it for private replies and `sendMessage` whispers.
    Would also fix the "renders under the receiver's name" caveat if the sender id is honoured.
