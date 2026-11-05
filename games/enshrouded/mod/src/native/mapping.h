@@ -28,7 +28,7 @@ struct NativeError : std::runtime_error {
 // The protocol 1 error code for a failed action.
 std::string ProtocolErrorCode(const std::exception& e);
 
-extern const char* const kGameServerActions[20];
+extern const char* const kGameServerActions[21];
 extern const char* const kGameEventTypes[6];
 bool IsGameEventType(const std::string& type);
 
@@ -36,6 +36,8 @@ bool IsGameEventType(const std::string& type);
 JsonValue MapPlayer(const JsonValue* raw);
 JsonValue MapPosition(const JsonValue* raw);
 JsonValue MapInventoryItem(const JsonValue* raw);
+// The Progression Tracks of a plugin player: the `character` track once the plugin has read a level, else none.
+JsonValue MapProgression(const JsonValue* raw);
 JsonValue MapItemDefinition(const JsonValue* raw);
 std::string MapEntityType(const JsonValue* raw);
 JsonValue MapEntity(const JsonValue* raw);

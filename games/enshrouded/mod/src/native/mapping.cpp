@@ -3,6 +3,7 @@
 #include "native/game_profile.h"
 #include "native/json_util.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -12,11 +13,11 @@
 
 namespace native {
 
-const char* const kGameServerActions[20] = {
+const char* const kGameServerActions[21] = {
     "getPlayer",    "getPlayers",   "getPlayerLocation", "getPlayerInventory", "giveItem",   "listItems",
     "listEntities", "listLocations", "executeConsoleCommand", "sendMessage", "teleportPlayer", "testReachability",
     "kickPlayer",   "banPlayer",    "unbanPlayer",       "listBans",           "shutdown",
-    "getMapInfo",   "getMapTile",   "getGameIcon"};
+    "getMapInfo",   "getMapTile",   "getGameIcon",       "getPlayerProgression"};
 const char* const kGameEventTypes[6] = {"log", "player-connected", "player-disconnected", "chat-message",
                                         "player-death", "entity-killed"};
 
@@ -105,6 +106,27 @@ JsonValue MapPosition(const JsonValue* raw) {
     Put(pos, "z", JNum(*z));
     if (auto d = Str(p.get("dimension"))) Put(pos, "dimension", JStr(*d));
     return pos;
+}
+
+JsonValue MapProgression(const JsonValue* raw) {
+    const JsonValue& p = AsRecord(raw);
+    JsonValue tracks = JArr();
+    auto level = Num(p.get("level"));
+    // Characters start at level 1: anything lower is a component that is not filled in yet, and reporting it would
+    // make the real level look like a level-up.
+    if (!level || *level < 1) return tracks;
+    JsonValue track = JObj();
+    Put(track, "key", JStr("character"));
+    Put(track, "name", JStr("Level"));
+    Put(track, "level", JNum(*level));
+    auto experience = Num(p.get("experience"));
+    auto required = Num(p.get("experienceRequired"));
+    if (experience && *experience >= 0) {
+        Put(track, "experience", JNum(*experience));
+        if (required && *required > 0) Put(track, "progress", JNum(std::min(1.0, *experience / *required)));
+    }
+    tracks.arr.push_back(track);
+    return tracks;
 }
 
 JsonValue MapInventoryItem(const JsonValue* raw) {
