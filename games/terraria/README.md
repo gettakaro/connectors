@@ -205,6 +205,7 @@ Checked on TShock 6.2.1 (Terraria 1.4.5.8), 2026-10-22. ✅ works, ⚠️ works 
 | Player location | ✅ | In world pixels (16 per tile). |
 | Teleport | ✅ | To world pixel coordinates; a player put in the air falls to the ground. |
 | Player inventory | ✅ | The items and amounts the player carries. |
+| Player levels and skills | ❌ | Terraria has no character levels, experience or skills. |
 | Item list | ⚠️ | All items; giving by name works, but some names read wrong (`Bandof Regeneration`). |
 | Entity list | ❌ | Terraria has no list of creatures; Takaro gets an empty list. |
 | Locations | ❌ | Terraria has no named locations; Takaro gets an empty list. |
