@@ -850,6 +850,16 @@ def test_a_zomboid_release_without_a_runtime_report_is_refused(run: Any, repo: P
     assert "evidence missing" in payload["error"]
 
 
+def test_zomboid_workflow_boots_the_server_in_the_verify_leg() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/zomboid.yml").read_text()
+
+    assert "uses: ./.github/workflows/connector-release.yml" in workflow
+    assert "connector: zomboid" in workflow
+    assert "runtime: true" in workflow
+    assert "runtime_depot_cache: true" in workflow
+    assert "startup_timeout: 900" in workflow
+
+
 # --------------------------------------------------------------------------- 22-23 the tracked scripts
 
 
