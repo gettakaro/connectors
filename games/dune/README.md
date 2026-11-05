@@ -110,6 +110,7 @@ Checked on server build 26081962, 2026-10-22. ✅ works, ⚠️ works with a lim
 | Player location | ✅ | Live with the plugin; last saved position without it. |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
+| Player levels and skills | ✅ | Character level and XP, plus the five specializations. |
 | Item list | ✅ | |
 | Entity list | ✅ | The full list needs the plugin. |
 | Locations | ⚠️ | Takaro does not use them for Generic servers. |

@@ -17,6 +17,7 @@ export const ACTION_CAPABILITY: Record<Exclude<GameServerAction, 'testReachabili
   getPlayer: 'players.get',
   getPlayerLocation: 'players.location',
   getPlayerInventory: 'players.inventory',
+  getPlayerProgression: 'players.progression',
   teleportPlayer: 'players.teleport',
   listItems: 'items.list',
   giveItem: 'items.give',
@@ -31,12 +32,20 @@ export const ACTION_CAPABILITY: Record<Exclude<GameServerAction, 'testReachabili
   shutdown: 'server.shutdown',
 };
 
+/** The character's level and specializations live in the server's own database, so a client cannot spoof them. */
+const CAPABILITY_PARAMETERS: Record<string, unknown> = {
+  'players.progression': { source: 'server' },
+};
+
 /**
  * The Capability Manifest sent with a version 1 identify (and as a `capabilities` replacement when the game build
  * changes). `gameVersion` is the running game build, null while unknown.
  */
 export function buildManifest(dimensions: readonly MapDimension[], gameVersion: string | null = null): Capability[] {
-  const manifest: Capability[] = Object.values(ACTION_CAPABILITY).map((name) => ({ name }));
+  const manifest: Capability[] = Object.values(ACTION_CAPABILITY).map((name) => ({
+    name,
+    ...(CAPABILITY_PARAMETERS[name] ? { parameters: CAPABILITY_PARAMETERS[name] } : {}),
+  }));
   for (const type of GAME_EVENT_TYPES) manifest.push({ name: `events.${type}` });
   if (dimensions.length) manifest.push({ name: 'map', parameters: { dimensions: dimensions.map((d) => ({ ...d })) } });
   manifest.push(gameProfileCapability(gameVersion));
