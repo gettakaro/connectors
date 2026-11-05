@@ -54,10 +54,17 @@ on:
         required: false
         default: 600
         type: number
+      runtime_large_server:
+        description: >-
+          The pinned server is larger than the repository's whole Actions cache: the build leg does
+          not install it, and the verify leg downloads it once, uncached, with a longer job budget
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   plan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
@@ -124,7 +131,7 @@ jobs:
   build:
     needs: plan
     if: needs.plan.outputs.build == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     strategy:
@@ -166,7 +173,7 @@ jobs:
       # A server the hosted runner cannot hold (tens of gigabytes of Steam depots) is not
       # installed here; that connector builds against references tracked in the repository.
       - name: Install the pinned inputs
-        if: inputs.runtime && !inputs.runtime_depot_cache
+        if: inputs.runtime && !inputs.runtime_depot_cache && !inputs.runtime_large_server
         env:
           IN_CONNECTOR: ${{ inputs.connector }}
         run: |
@@ -227,7 +234,7 @@ jobs:
   # Modules that have not moved to the catalog yet keep their old build path.
   legacy:
     if: inputs.legacy_build != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -263,8 +270,9 @@ jobs:
   verify:
     needs: [plan, build]
     if: inputs.runtime
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
+    runs-on: ubuntu-24.04
+    # A large server spends most of its budget downloading and copying its depots.
+    timeout-minutes: ${{ inputs.runtime_large_server && 60 || 40 }}
     permissions:
       contents: read
     strategy:
@@ -387,7 +395,7 @@ jobs:
       && (needs.legacy.result == 'success' || needs.legacy.result == 'skipped')
       && inputs.publish != 'none'
       && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       pull-requests: write
