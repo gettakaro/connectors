@@ -270,7 +270,7 @@ jobs:
   verify:
     needs: [plan, build]
     if: inputs.runtime
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # A large server spends most of its budget downloading and copying its depots.
     timeout-minutes: ${{ inputs.runtime_large_server && 60 || 40 }}
     permissions:
