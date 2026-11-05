@@ -66,7 +66,7 @@
       "args": {"gameId": "fixture-player"},
       "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": []}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responsePayload": null}],
       "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayerProgression", "args": "{\"gameId\":\"fixture-player\"}"}},
-      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"key": "character", "name": "Level", "level": 13, "experience": 48210, "progress": 0.42}, {"key": "perkMiner69r", "name": "Miner 69'r", "level": 2}]}
+      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"key": "character", "name": "Level", "level": 13, "experience": 48210, "progress": 0.42}, {"key": "perkminer69r", "name": "Miner 69'r", "level": 2}]}
     },
     {
       "name": "listItems",

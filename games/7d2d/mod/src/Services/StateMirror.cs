@@ -68,18 +68,10 @@ namespace Takaro.Services
 
         public string WorldName => _worldName;
 
-        private sealed class ProgressionSnapshot
-        {
-            public Progression Source;
-            public int Level;
-            public int ExpToNextLevel;
-            public List<TakaroProgressionTrack> Tracks;
-        }
-
         // Written on the game thread, read on the WebSocket thread. A reading lives as long as
-        // the server process: Takaro only asks for online players, whom the sampler keeps current.
-        private readonly ConcurrentDictionary<string, ProgressionSnapshot> _progression =
-            new ConcurrentDictionary<string, ProgressionSnapshot>();
+        // the server process: Takaro only asks for online players, whom every save keeps current.
+        private readonly ConcurrentDictionary<string, List<TakaroProgressionTrack>> _progression =
+            new ConcurrentDictionary<string, List<TakaroProgressionTrack>>();
         private bool _progressionFailureLogged;
 
         public static StateMirror Instance
@@ -172,12 +164,12 @@ namespace Takaro.Services
 
         /// <summary>
         /// The last progression seen for a player, an empty list for a known player not
-        /// sampled yet (Takaro keeps what it stored), or null for an unknown player.
+        /// saved yet (Takaro keeps what it stored), or null for an unknown player.
         /// </summary>
         public List<TakaroProgressionTrack> GetPlayerProgression(string gameId)
         {
-            if (_progression.TryGetValue(gameId, out ProgressionSnapshot snapshot))
-                return snapshot.Tracks;
+            if (_progression.TryGetValue(gameId, out List<TakaroProgressionTrack> tracks))
+                return tracks;
 
             lock (Database.Instance.SyncRoot)
             {
@@ -501,52 +493,39 @@ namespace Takaro.Services
         }
 
         /// <summary>
-        /// Caches a player's tracks when they changed. The client's stats package brings level
-        /// and experience on every update and replaces the whole Progression object when a
-        /// perk or crafting skill changed, so the usual sample is three comparisons.
+        /// Caches a player's tracks from the PlayerDataFile the client just pushed, at login and
+        /// on each of its saves. The live entity is no use here: the client only sends it new
+        /// values when its stats flag is set, so its experience goes stale between saves.
         /// </summary>
-        public void SampleProgression(string gameId, EntityPlayer player)
+        public void UpsertProgression(ClientInfo cInfo)
         {
-            Progression progression = player.Progression;
-            if (progression == null)
-                return;
-
-            if (
-                _progression.TryGetValue(gameId, out ProgressionSnapshot last)
-                && ReferenceEquals(last.Source, progression)
-                && last.Level == progression.Level
-                && last.ExpToNextLevel == progression.ExpToNextLevel
-            )
+            if (cInfo?.CrossplatformId == null || cInfo.latestPlayerData == null)
                 return;
 
             try
             {
-                _progression[gameId] = new ProgressionSnapshot
-                {
-                    Source = progression,
-                    Level = progression.Level,
-                    ExpToNextLevel = progression.ExpToNextLevel,
-                    Tracks = PlayerProgression.Build(
-                        progression.Level,
-                        PlayerProgression.TotalExperience(
-                            progression.Level,
-                            progression.ExpToNextLevel,
-                            level =>
-                                progression.getExpForLevel(
-                                    UnityEngine.Mathf.Clamp(
-                                        level + 1,
-                                        0,
-                                        Progression.ClampExpCostAtLevel
-                                    )
-                                )
-                        ),
-                        PlayerProgression.LevelProgress(
-                            progression.ExpToNextLevel,
-                            progression.GetExpForNextLevel()
-                        ),
-                        ReadProgressionTracks(progression)
+                byte[] blob = cInfo.latestPlayerData.progressionData.ToArray();
+                if (blob.Length == 0)
+                    return;
+
+                ProgressionBlob saved = ProgressionBlob.Parse(blob);
+                // Parameterless, so it only serves the level costs and touches no player.
+                var curve = new Progression();
+                Func<int, int> costOfLevel = level =>
+                    curve.getExpForLevel(
+                        UnityEngine.Mathf.Clamp(level + 1, 0, Progression.ClampExpCostAtLevel)
+                    );
+
+                _progression[Shared.GameIdFromClientInfo(cInfo)] = PlayerProgression.Build(
+                    saved.Level,
+                    PlayerProgression.TotalExperience(
+                        saved.Level,
+                        saved.ExpToNextLevel,
+                        costOfLevel
                     ),
-                };
+                    PlayerProgression.LevelProgress(saved.ExpToNextLevel, costOfLevel(saved.Level)),
+                    ProgressionTracks(saved)
+                );
             }
             catch (Exception ex)
             {
@@ -564,29 +543,31 @@ namespace Takaro.Services
         /// a first perk point would be a silent baseline. Skills are left out because the game
         /// reports them at their maximum, books because they are collected, not levelled.
         /// </summary>
-        private static IEnumerable<TakaroProgressionTrack> ReadProgressionTracks(
-            Progression progression
-        )
+        private static IEnumerable<TakaroProgressionTrack> ProgressionTracks(ProgressionBlob saved)
         {
-            return progression
-                .GetDict()
-                .Values.Select(value => new { value, kind = value.ProgressionClass })
-                .Where(p =>
-                    p.kind != null
-                    && !p.kind.Hidden
-                    && p.kind.MaxLevel > 0
-                    && (p.kind.IsAttribute || p.kind.IsPerk || p.kind.IsCrafting)
+            var known = new List<KeyValuePair<ProgressionClass, int>>();
+            foreach (KeyValuePair<string, int> value in saved.Values)
+            {
+                if (
+                    Progression.ProgressionClasses.TryGetValue(value.Key, out ProgressionClass kind)
+                    && !kind.Hidden
+                    && kind.MaxLevel > 0
+                    && (kind.IsAttribute || kind.IsPerk || kind.IsCrafting)
                 )
-                .OrderBy(p => p.kind.IsAttribute ? 0 : p.kind.IsPerk ? 1 : 2)
-                .ThenBy(p => p.value.Name, StringComparer.Ordinal)
+                    known.Add(new KeyValuePair<ProgressionClass, int>(kind, value.Value));
+            }
+
+            return known
+                .OrderBy(p => p.Key.IsAttribute ? 0 : p.Key.IsPerk ? 1 : 2)
+                .ThenBy(p => p.Key.Name, StringComparer.Ordinal)
                 .Select(p => new TakaroProgressionTrack
                 {
-                    Key = p.value.Name,
+                    Key = p.Key.Name,
                     Name = Shared.LocalizedOrNull(
-                        p.kind.NameKey,
-                        Localization.Get(p.kind.NameKey, true)
+                        p.Key.NameKey,
+                        Localization.Get(p.Key.NameKey, true)
                     ),
-                    Level = p.value.Level,
+                    Level = p.Value,
                 });
         }
 

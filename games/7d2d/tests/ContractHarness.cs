@@ -3882,7 +3882,7 @@ namespace Takaro.Services
                 {
                     new Takaro.Services.TakaroProgressionTrack
                     {
-                        Key = "perkMiner69r",
+                        Key = "perkminer69r",
                         Name = "Miner 69'r",
                         Level = 2,
                     },

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 
@@ -22,6 +23,45 @@ namespace Takaro.Services
 
         [JsonProperty("progress", NullValueHandling = NullValueHandling.Ignore)]
         public double? Progress { get; set; }
+    }
+
+    /// <summary>
+    /// The progression a client saved, read from PlayerDataFile.progressionData. The game's own
+    /// Progression.Read writes into the entity it is given, which must not happen to a live
+    /// player, so the format is read here: version, level, experience to the next level, skill
+    /// points, then each value as version, name, level and cost.
+    /// </summary>
+    public sealed class ProgressionBlob
+    {
+        public int Level;
+        public int ExpToNextLevel;
+        public readonly List<KeyValuePair<string, int>> Values =
+            new List<KeyValuePair<string, int>>();
+
+        public static ProgressionBlob Parse(byte[] blob)
+        {
+            using (var reader = new BinaryReader(new MemoryStream(blob)))
+            {
+                reader.ReadByte();
+                var saved = new ProgressionBlob
+                {
+                    Level = reader.ReadUInt16(),
+                    ExpToNextLevel = reader.ReadInt32(),
+                };
+                reader.ReadUInt16();
+
+                int count = reader.ReadInt32();
+                for (int i = 0; i < count; i++)
+                {
+                    reader.ReadByte();
+                    string name = reader.ReadString();
+                    int level = reader.ReadByte();
+                    reader.ReadInt32();
+                    saved.Values.Add(new KeyValuePair<string, int>(name, level));
+                }
+                return saved;
+            }
+        }
     }
 
     /// <summary>

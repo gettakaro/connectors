@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -29,7 +31,7 @@ public static partial class ContractHarness
             13,
             48210,
             0.42,
-            new[] { Track("attPerception", 3), Track("perkMiner69r", 0), Track("craftingArmor", 12) }
+            new[] { Track("attperception", 3), Track("perkminer69r", 0), Track("craftingarmor", 12) }
         );
         Equal("character", tracks[0].Key, "the character level comes first");
         Equal(13, tracks[0].Level, "character level");
@@ -79,6 +81,61 @@ public static partial class ContractHarness
             PlayerProgression.Build(1, 0, 0, new[] { longName })[1].Name.Length,
             "a long name is cut to what Takaro accepts"
         );
+    }
+
+    // The layout Progression.Write and ProgressionValue.Write produce on V 3.4.
+    private static byte[] SavedProgression(int level, int expToNext, params object[][] values)
+    {
+        using (var stream = new MemoryStream())
+        using (var writer = new BinaryWriter(stream))
+        {
+            writer.Write((byte)3);
+            writer.Write((ushort)level);
+            writer.Write(expToNext);
+            writer.Write((ushort)4);
+            writer.Write(values.Length);
+            foreach (object[] value in values)
+            {
+                writer.Write((byte)1);
+                writer.Write((string)value[0]);
+                writer.Write((byte)(int)value[1]);
+                writer.Write(0);
+            }
+            writer.Write(0);
+            writer.Flush();
+            return stream.ToArray();
+        }
+    }
+
+    private static void FamilyProgressionBlob()
+    {
+        ProgressionBlob saved = ProgressionBlob.Parse(
+            SavedProgression(
+                7,
+                1234,
+                new object[] { "attperception", 3 },
+                new object[] { "perkminer69r", 0 },
+                new object[] { "craftingarmor", 75 }
+            )
+        );
+        Equal(7, saved.Level, "saved level");
+        Equal(1234, saved.ExpToNextLevel, "saved experience to the next level");
+        Equal(3, saved.Values.Count, "every saved value is read");
+        Equal("craftingarmor", saved.Values[2].Key, "value name");
+        Equal(75, saved.Values[2].Value, "value level");
+
+        byte[] cut = SavedProgression(7, 1234, new object[] { "attperception", 3 });
+        Array.Resize(ref cut, 14);
+        bool failed = false;
+        try
+        {
+            ProgressionBlob.Parse(cut);
+        }
+        catch (EndOfStreamException)
+        {
+            failed = true;
+        }
+        True(failed, "a cut-off blob fails, so the previous reading stays");
     }
 
     private static void FamilyProgressionExperience()
