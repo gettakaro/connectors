@@ -193,6 +193,7 @@ Checked on Fabric 26.2, Paper 1.21.11 and NeoForge 1.21.11, 2026-10-22, and Fabr
 | Player location | ✅ | Rounded to whole blocks. |
 | Teleport | ✅ | To the exact coordinates; pick a Y on solid ground or the player falls. |
 | Player inventory | ✅ | Changes are reported as they happen. |
+| Player levels and skills | ⚠️ | The XP level above the hotbar as the `character` track, with the XP bar as progress and the game's total points as experience. Dying resets it, as in game. Checked on Fabric only. |
 | Item list | ✅ | About 1,500 items with their in-game names. |
 | Item icons | ⚠️ | Modded items on Fabric and NeoForge show their own picture, read from the mod jars on the server (the first frame for an animated texture, one flat face for a block). Vanilla items use Takaro's Minecraft icon pack, because a server has no vanilla art. Models with their own 3D shape and no flat texture get no picture. Paper custom items are not covered. |
 | Entity list | ✅ | Paper lists the mob types; Fabric and NeoForge list every entity type, including things like Primed TNT. |

@@ -407,6 +407,11 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         JsonObject profile = capability("game.profile");
         profile.add("parameters", GameProfile.parameters(runningGameVersion()));
         caps.add(profile);
+        JsonObject progression = capability("players.progression");
+        JsonObject progressionParameters = new JsonObject();
+        progressionParameters.addProperty("source", "server");
+        progression.add("parameters", progressionParameters);
+        caps.add(progression);
         if (worldMap != null) {
             JsonObject map = capability("map");
             JsonObject parameters = new JsonObject();
@@ -559,6 +564,12 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         }
         if (action.equals("getItemIcons") && isV1()) {
             handleGetItemIcons(requestId, args);
+            return;
+        }
+
+        if (action.equals("getPlayerProgression") && isV1()) {
+            JsonArray tracks = adapter.progression().tracks(optString(args, "gameId", ""));
+            sendResponse(requestId, tracks != null ? tracks : com.google.gson.JsonNull.INSTANCE, null);
             return;
         }
 
