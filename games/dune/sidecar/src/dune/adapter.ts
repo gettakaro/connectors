@@ -9,13 +9,13 @@ import * as gmCommands from './gm.js';
 import { GmClient, GmCommandError, defaultExecRunner, type ExecRunner } from './gm.js';
 import { gmPlayerId, mapPlayer, num, str, stripPlatform, type PlayerIdKind } from './identity.js';
 import type { KnownPlayerStore } from './knownStore.js';
-import { aggregateInventory, mapInventoryRow } from './mapping.js';
+import { aggregateInventory, mapInventoryRow, mapProgression } from './mapping.js';
 import { dimensionForMap } from './mapDimensions.js';
 import { DunePg, isOnline } from './pg.js';
 import { DunePluginClient } from './pluginClient.js';
 import type { PluginJoin } from './pluginJoin.js';
 import { DuneRmq } from './rmq.js';
-import type { DunePlayerRow, Position, TakaroBan, TakaroEntity, TakaroItem, TakaroPlayer } from './types.js';
+import type { DunePlayerRow, Position, TakaroBan, TakaroEntity, TakaroItem, TakaroPlayer, TakaroProgressionTrack } from './types.js';
 
 export class ActionError extends Error {}
 
@@ -142,6 +142,8 @@ export class DuneAdapter {
         return this.getPlayerLocation(playerId(args));
       case 'getPlayerInventory':
         return this.getPlayerInventory(playerId(args));
+      case 'getPlayerProgression':
+        return this.getPlayerProgression(playerId(args));
       case 'giveItem':
         return this.giveItem(args);
       case 'listItems':
@@ -299,6 +301,13 @@ export class DuneAdapter {
       logger.debug(`getPlayerInventory: withheld ${rows.length - carried.length} non-carryable row(s) (emotes) for ${row.flsId}`);
     }
     return aggregateInventory(carried.map((r) => mapInventoryRow(r, (code) => this.options.catalogue.displayName(code))));
+  }
+
+  /** `null` for a player the game does not know, `[]` for a known one with nothing to report. */
+  async getPlayerProgression(id: string): Promise<TakaroProgressionTrack[] | null> {
+    const row = await this.findRow(id);
+    if (!row) return null;
+    return mapProgression(await this.options.pg.progression(row));
   }
 
   async listEntities(): Promise<TakaroEntity[]> {
