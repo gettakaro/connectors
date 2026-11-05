@@ -52,6 +52,7 @@ Checked on <game version / server build>, <YYYY-MM-DD>. ✅ works, ⚠️ works 
 | Player location | | |
 | Teleport | | |
 | Player inventory | | |
+| Player levels and skills | | |
 | Item list | | |
 | Entity list | | |
 | Locations | | |
