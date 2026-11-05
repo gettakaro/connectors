@@ -5,7 +5,7 @@ player slash input for Takaro commands on the server, answer only the player who
 privately when Takaro cannot run it, and leave every other slash input exactly as the game
 handles it?
 
-Probe date: 2026-10-22. Nothing in this document changes the connector's default behaviour.
+Probe dates: 2026-10-22 and 2026-11-05. Nothing in this document changes the connector's default behaviour.
 The probe code is in [`games/zomboid/research/command-probe/`](../../../games/zomboid/research/command-probe/README.md)
 and the agent binds its hook only when `TAKARO_COMMAND_PROBE_URL` is set.
 
@@ -23,7 +23,7 @@ are the same names and shapes the issue cites.
 | --- | --- |
 | Dedicated server | Project Zomboid 42.21.0 `4a0e9546ec`, Steam build 25485538, catalog target `linux-42.21.0`; `projectzomboid.jar` sha256 `e1a69eb7…3a33` (class file v69, Zulu 25.0.1 runtime) |
 | Client | Project Zomboid 42.21.0 `4a0e9546ec` (Steam, Windows), account `takarotester`, role `user` (no capabilities, non-admin) |
-| Connector | `takaro-zomboid` 1.4.0 (main at `3859fd8`) plus this branch's probe, built as `1.4.0-probe201.1` with `scripts/build-release.sh --target linux-42.21.0`, registered on Takaro staging as GENERIC `game: zomboid` |
+| Connector | `takaro-zomboid` 1.4.0 (main at `3859fd8`) plus this branch's probe, built as `1.4.0-probe201.1` and `1.4.0-probe201.2`; then `takaro-zomboid` 1.6.0 plus the probe, built as `1.6.0-probe201.3`. All with `scripts/build-release.sh --target linux-42.21.0`, registered on Takaro staging as GENERIC `game: zomboid` |
 | Probe backend | `stub.py` from this branch (not a Takaro protocol) |
 
 ## Go/no-go
@@ -31,23 +31,28 @@ are the same names and shapes the issue cites.
 | # | Question (issue acceptance criterion) | Answer | Experiment result |
 | --- | --- | --- | --- |
 | 1 | Exact descriptors and control flow for receive, dispatch, reply, logging and native registry | Recorded below | passed (bytecode) |
-| 2 | A non-admin's slash command reaches the candidate handler; identity available | **go** | passed (server side, real client) |
-| 3 | A claimed command gets one targeted reply: no public echo, no vanilla unknown error, no duplicate, no native/RCON run, no replay | **go** (server side) | passed (server side); what the sender and an observer see is blocked, see below |
-| 4 | A recognized command fails privately while the backend is offline | **go** | passed (server side) |
-| 5 | Unknown and unowned input behaves as in the uninstrumented game | **go** | passed (server side + uninstrumented client baseline) |
+| 2 | A non-admin's slash command reaches the candidate handler; identity available | **go** | passed (real client) |
+| 3 | A claimed command gets one targeted reply: no public echo, no vanilla unknown error, no duplicate, no native/RCON run, no replay | **go** | passed (real client); a second player's view is not tested, see below |
+| 4 | A recognized command fails privately while the backend is offline | **go** | passed (real client) |
+| 5 | Unknown and unowned input behaves as in the uninstrumented game | **go** | passed (real client, with and without the probe) |
 | 6 | Case collisions, malformed args, denial, timeout, catalog replacement, add/change/remove | **go** | passed (live + unit tests) |
 | 7 | Backend multi-install fanout survives the game adapter | **go** | passed (live) |
 | 8 | Selective interception or native registration | **Selective interception.** Native registration: **no-go** | decided from bytecode |
 | 9 | Production boundary (authorization, identity, idempotency, outcomes, timeouts, private delivery, help) | Defined below | n/a |
 
-"Server side" means the evidence is the agent log, the probe's receipts, the stub's receipts and
-Takaro's event store; all of it came from input typed in a real client. During both probed sessions the client's
-window showed a frozen or white image on the test PC while the game itself kept running: it
-joined, spawned, sent chat and commands, and received replies. So there is no screenshot of the
-probed replies on the client. The uninstrumented baseline from the same client, earlier the
-same evening, shows the same reply path (`sendMessageToServerChat(connection, …)`) arriving in
-the client's chat. The issue's
-two-client observer check was not possible: only one client account exists on the test server.
+Every result comes from input typed in a real client, cross-checked against the agent log, the
+probe's receipts, the stub's receipts and Takaro's event store. The `probe201.3` session also
+captured what the sender sees: each claimed command shows as one private system line, the
+slash input itself is never printed to chat, and unclaimed input shows the game's own reply
+(`live3-13-back.png`).
+
+The two earlier probed sessions have no client screenshots. The client window stayed white on
+the test PC because OpenGL had no display attached, while the game kept running. Software
+OpenGL fixed the window for the third session; the connector and the probe were not involved.
+
+The issue's two-client observer check is not tested: the test server has one client account.
+That a reply reaches only the caller rests on the code path, which writes to the caller's
+connection alone, and on Takaro's event store showing no chat event for any slash input.
 
 ## Source findings (42.21.0 bytecode)
 
@@ -162,17 +167,18 @@ split-screen connection (`UdpConnection.players[]` holds up to 4) the sender can
 apart, so production should resolve identity per connection (username of player 0) and treat a
 connection with more than one local player as ambiguous.
 
-### E2 Claimed command, one private reply: passed (server side)
+### E2 Claimed command, one private reply: passed
 
 `/tprobe hello "two words"` → `CLAIMED`, stub got exactly one invocation with
 `args=["hello","two words"]`, one reply `[install-a] tprobe ran for takarotester …` sent to that
 connection only. No `Unknown command` (vanilla dispatch skipped), no native command (the name is
 not native and dispatch never ran), no RCON. Takaro stored no `chat-message` event and the
 Discord chat bridge posted nothing for any of the 16 inputs (`takaro-events-during-probe.json`;
-the same window has the `player-connected` event and its Discord post). Client-side screenshot:
-blocked (render freeze).
+the same window has the `player-connected` event and its Discord post). The sender's view is
+captured on `probe201.3`: one blue system line, no echo of the slash input
+(`live3-01-ok-fanout.png`).
 
-### E3 Offline backend: passed (server side)
+### E3 Offline backend: passed
 
 Stub switched to `offline` (catalog and invoke answer 503). The probe logged
 `backend OFFLINE (catalog revision 2 kept)`; `/tprobe off` was claimed and answered "Takaro is
@@ -183,8 +189,9 @@ unavailable right now. Your command was not run."; the stub received nothing. Ba
 
 With the probe on: `/nosuchcmd401 a b`, `/players` (native, no rights), `/tdeny` after it left the
 catalog and `/nosuchcmd401 off` were `passed to game`; the stub saw none of them. The game read
-the restored buffer and dispatched normally (same path as E0). A client-side comparison
-screenshot of these replies under the probe is blocked with the client.
+the restored buffer and dispatched normally (same path as E0). Under the probe the client shows
+the same replies as the baseline: `Unknown command nosuchcmd401 a b` and
+`Player "takarotester" has not right to execute "players" command` (`live3-04-native.png`).
 
 ### E5 Collisions, malformed, denial, timeout, catalog changes: passed
 
@@ -225,6 +232,34 @@ privately, and `ok` ran again. The agent log shows `/changepwd` with no argument
 session a plain chat line produced a Takaro `chat-message` event and a Discord chat-bridge post,
 and the 9 slash inputs produced neither (`round3-takaro-mcp.json`). `getPlayers`,
 `testReachability` and a whisper `sendMessage` answered through Takaro with the player online.
+
+The last session ran `1.6.0-probe201.3`, the same probe on the 1.6.0 connector, with client
+captures after each step (`live3-*.png`, `probe3-live-agent-log.txt`, `probe3-timeline.txt`).
+
+| Input | Stub mode | Agent | Client shows |
+| --- | --- | --- | --- |
+| `probe201 plain chat line` | ok | not a command | `[takarotester]: probe201 plain chat line` |
+| `/tprobe hello "two words"` | ok | claimed | one line with both installations' results |
+| `/TPrObE x` | ok | claimed | one line with both installations' results |
+| `/nosuchcmd401 a b` | ok | passed to game | `Unknown command nosuchcmd401 a b` |
+| `/players` | ok | passed to game | `Player "takarotester" has not right to execute "players" command` |
+| `/tprobe denyme` | deny | claimed | `You may not run tprobe.` |
+| `/tprobe "open` | ok | claimed | `Takaro could not read that command: a quote is not closed.` |
+| `/changepwd old new` | ok | passed to game | `Wrong password for user takarotester` |
+| `/tprobe slow` | slow | claimed | `Takaro did not answer. Your command may or may not have run.` after 3 s |
+| `/tprobe drop` | drop | claimed | `Takaro did not answer. Your command may or may not have run.` |
+| `/tprobe off` | offline | claimed | `Takaro is unavailable right now. Your command was not run.` |
+| `/nosuchcmd401 off` | offline | passed to game | `Unknown command nosuchcmd401 off` |
+| `/tnew` | ok | claimed | one line |
+| `/tprobe back` | ok | claimed | one line with both installations' results |
+
+The catalog in this session also held `players`, `rollcall` and `all`; the probe refused all three
+when it applied the catalog. The stub received seven invocations: the malformed and offline
+inputs never reached it, and the timed-out and dropped calls were not retried. The 13 slash inputs
+produced no player `chat-message` event and no Discord chat-bridge post; the plain line produced
+one of each. Takaro's `sendMessage` reached the client as `[Takaro]: …` for both a whisper and a
+global line, and so did a synthetic `discord-message` hook trigger, with no echo back to Discord
+(`round4-takaro-mcp.json`, `live3-15-discord-to-game.png`).
 
 ## Production boundary
 
