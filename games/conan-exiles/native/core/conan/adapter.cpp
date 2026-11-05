@@ -166,6 +166,11 @@ ActionResult Adapter::Execute(const std::string& action, const JsonValue& args, 
         icon.payload = GameIconPayload();
         return icon;
     }
+    if (action == "getPlayerProgression" && protocolVersion < 1) {  // version 1 only
+        ActionResult none;
+        none.error = "getPlayerProgression needs protocol version 1";
+        return none;
+    }
     ActionResult r = Execute(action, args);
     if (protocolVersion < 1) return r;
     if (!r.ok && r.code.empty()) {
@@ -189,6 +194,7 @@ std::string Adapter::CapabilityName(const std::string& action) {
         {"getPlayer", "players.get"},
         {"getPlayerLocation", "players.location"},
         {"getPlayerInventory", "players.inventory"},
+        {"getPlayerProgression", "players.progression"},
         {"teleportPlayer", "players.teleport"},
         {"listItems", "items.list"},
         {"giveItem", "items.give"},
@@ -217,7 +223,12 @@ std::string Adapter::CapabilityManifest() {
     for (const Coverage* c : ActionCoverages()) {
         std::string name = CapabilityName(c->name), status = c->status;
         if (name.empty() || std::string(c->implementation) != "native") continue;
-        if (status == "live-supported" || status == "not-requested") add(ObjBuilder().S("name", name).Done());
+        if (status != "live-supported" && status != "not-requested") continue;
+        ObjBuilder entry;
+        entry.S("name", name);
+        // The server owns level and experience: characters live in its save, not on the client.
+        if (name == "players.progression") entry.Raw("parameters", ObjBuilder().S("source", "server").Done());
+        add(entry.Done());
     }
     for (const Coverage* c : EventCoverages())
         if (std::string(c->status) == "live-supported") add(ObjBuilder().S("name", std::string("events.") + c->name).Done());

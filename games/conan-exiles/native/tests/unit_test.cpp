@@ -887,7 +887,7 @@ static void TestProtocolV1() {
     for (auto& n : names) joined += n + " ";
     EQ(joined,
        "game.profile players.get players.list players.location players.inventory items.give items.list entities.list "
-       "locations.list console.execute chat.send players.teleport moderation.kick moderation.ban moderation.unban "
+       "locations.list console.execute chat.send players.progression players.teleport moderation.kick moderation.ban moderation.unban "
        "moderation.listBans server.shutdown events.player-connected events.player-disconnected events.chat-message "
        "events.player-death events.entity-killed events.log ");
     region = "ExiledLands";

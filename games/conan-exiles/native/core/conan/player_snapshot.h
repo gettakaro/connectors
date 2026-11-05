@@ -36,6 +36,14 @@ struct PlayerLayout {
     int32_t itemList = -1;           // ItemInventory.ItemList (TArray<GameItem*>)
     int32_t templateId = -1;         // GameItem.TemplateId
     int32_t ownerInventory = -1;     // GameItem.m_OwnerInventory
+    // Progression. Resolved on its own so a build that renames one of these loses the levels, not
+    // every read: `progression` stays false and getPlayerProgression answers no tracks.
+    bool progression = false;
+    int32_t pawnStatHolder = -1;     // ConanCharacter.m_StatHolder
+    int32_t intStatNodes = -1;       // StatHolder.m_IntStatArray + StatArrayInt32.IntStatArray (TArray<StatNodeInt32>)
+    int32_t pawnProgression = -1;    // BasePlayerChar_C.BP_ProgressionSystem
+    int32_t experiencePoints = -1;   // BP_ProgressionSystem_C.ExperiencePoints (double)
+    int32_t levelStart = -1, levelEnd = -1;  // BP_ProgressionSystem_C.LevelStart/LevelEnd: XP bounds of the level
     // pinned to build 25639945, not reflected
     // PlayerState float (GetPingInMilliseconds), 8 bytes before SavedNetworkAddress on both servers:
     // 824 under clang (Linux), 840 under MSVC (Windows, SavedNetworkAddress at 848; live 2026-10-03).
@@ -58,6 +66,8 @@ struct PlayerLayout {
 
     // Resolves every reflected offset; false with the missing names in `error`.
     bool Resolve(const UE::Reflection& r, std::string& error);
+    // Resolves the optional progression offsets; the missing names in `missing` when it fails.
+    bool ResolveProgression(const UE::Reflection& r, std::string& missing);
 };
 
 struct PlayerRecord {
@@ -83,6 +93,22 @@ struct InvItem {
     uintptr_t item = 0;
 };
 
+// One read of a character's advancement, straight from the server's own objects.
+struct ProgressionRead {
+    int32_t level = 0;
+    double experience = 0;
+    int32_t levelStart = 0, levelEnd = 0;
+    std::vector<std::pair<int, int32_t>> stats;  // ECharIntStatID -> value
+};
+
+namespace CharStat {
+constexpr int kLevel = 4;  // ECharIntStatID
+constexpr int kHealth = 14, kStamina = 15, kEncumbrance = 16, kMight = 17, kAthleticism = 19, kLeadership = 27;
+}  // namespace CharStat
+
+// The Takaro track array of one reading.
+std::string ProgressionTracksJson(const ProgressionRead& p);
+
 namespace ItemStat {
 constexpr int kStackSize = 1;              // EItemIntStatID
 constexpr int kMaxDurability = 7, kDurability = 8;  // EItemFloatStatID
@@ -105,6 +131,10 @@ public:
     // Decoded int/float stats of one item: {id -> value}.
     bool Stats(uintptr_t item, std::vector<std::pair<int, int32_t>>& ints,
                std::vector<std::pair<int, float>>& floats) const;
+
+    // Level, experience and attributes of a character. False with `error` when the objects are not
+    // there yet or the stat list stayed torn. Touches nothing on the game thread.
+    bool Progression(uintptr_t pawn, ProgressionRead& out, std::string& error) const;
 
     // The id string behind PlayerState.UniqueID ("" when unreadable).
     std::string UniqueIdString(uintptr_t ps) const;
