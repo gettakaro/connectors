@@ -1485,6 +1485,117 @@
       "kind": "fieldclass",
       "name": "SoftClassProperty",
       "usedBy": "core type checks (PropertyOffset / Offset / ResolveFunc)"
+    },
+    {
+      "kind": "class",
+      "name": "StatHolder",
+      "layout": "runtime",
+      "usedBy": "player_snapshot progression",
+      "baseline": {
+        "size": 1216
+      }
+    },
+    {
+      "kind": "class",
+      "name": "StatArrayInt32",
+      "layout": "runtime",
+      "usedBy": "player_snapshot progression",
+      "baseline": {
+        "size": 312
+      }
+    },
+    {
+      "kind": "class",
+      "name": "BP_ProgressionSystem_C",
+      "layout": "runtime",
+      "usedBy": "player_snapshot progression",
+      "baseline": {
+        "size": 600
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ConanCharacter",
+      "name": "m_StatHolder",
+      "layout": "runtime",
+      "usedBy": "player_snapshot progression",
+      "baseline": {
+        "type": "ObjectProperty",
+        "size": 8,
+        "offset": 5608
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "StatHolder",
+      "name": "m_IntStatArray",
+      "layout": "runtime",
+      "usedBy": "player_snapshot progression",
+      "baseline": {
+        "type": "StructProperty",
+        "size": 312,
+        "offset": 344
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "StatArrayInt32",
+      "name": "IntStatArray",
+      "layout": "runtime",
+      "usedBy": "player_snapshot progression",
+      "baseline": {
+        "type": "ArrayProperty",
+        "size": 16,
+        "offset": 296
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "BP_ProgressionSystem_C",
+      "name": "ExperiencePoints",
+      "layout": "runtime",
+      "usedBy": "player_snapshot progression",
+      "baseline": {
+        "type": "DoubleProperty",
+        "size": 8,
+        "offset": 392
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "BP_ProgressionSystem_C",
+      "name": "LevelStart",
+      "layout": "runtime",
+      "usedBy": "player_snapshot progression",
+      "baseline": {
+        "type": "IntProperty",
+        "size": 4,
+        "offset": 460
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "BP_ProgressionSystem_C",
+      "name": "LevelEnd",
+      "layout": "runtime",
+      "usedBy": "player_snapshot progression",
+      "baseline": {
+        "type": "IntProperty",
+        "size": 4,
+        "offset": 456
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "BasePlayerChar_C",
+      "name": "BP_ProgressionSystem",
+      "layout": "runtime",
+      "usedBy": "player_snapshot progression",
+      "baseline": {
+        "type": "ObjectProperty",
+        "size": 8,
+        "offset": 10328
+      }
     }
   ],
   "baselineFrom": {
