@@ -1,8 +1,11 @@
 import { logger } from '../logger.js';
 import { schemaFallbackForAction, unsupportedActionError } from '../takaro/coverage.js';
+import { gameIconResponse, normalizeGameVersion } from '../takaro/gameProfile.js';
 import type { GameServerAction } from '../takaro/protocol.js';
 import type { CommandResult, TShockBan, TShockPlayer, TShockStatus } from '../tshock/client.js';
+import { terrariaIdentity } from './identity.js';
 import { listTerrariaItems, resolveTerrariaItemCode, type TerrariaItemCatalogEntry } from './itemCatalog.js';
+import { renderDirected, renderGlobal, resolveSenderName } from './serverChat.js';
 
 export type TakaroItem = Omit<TerrariaItemCatalogEntry, 'aliases'>;
 
@@ -27,11 +30,19 @@ export interface AdapterOptions {
 
 export class TerrariaAdapter {
   private players = new Map<string, TShockPlayer>();
+  private gameVersionValue: string | null = null;
 
   constructor(
     private readonly tshock: TShockApi,
     private options: AdapterOptions,
+    /** Called when TShock reports a different game build than before. */
+    private readonly onGameVersion: (version: string) => void = () => undefined,
   ) {}
+
+  /** The game build TShock last reported, or null before the first successful status read. */
+  gameVersion(): string | null {
+    return this.gameVersionValue;
+  }
 
   updateOptions(options: AdapterOptions): void {
     this.options = options;
@@ -50,6 +61,8 @@ export class TerrariaAdapter {
     switch (action) {
       case 'testReachability':
         return this.testReachability();
+      case 'getGameIcon':
+        return gameIconResponse();
       case 'getPlayers':
         return this.listPlayersForTakaro();
       case 'getPlayer':
@@ -69,7 +82,7 @@ export class TerrariaAdapter {
       case 'unbanPlayer':
         return this.unbanPlayer(args);
       case 'listBans':
-        return this.tshock.listBans();
+        return this.listBansForTakaro();
       case 'listItems':
         return listTerrariaItems();
       case 'giveItem':
@@ -108,10 +121,18 @@ export class TerrariaAdapter {
     }
   }
 
+  private recordGameVersion(status: TShockStatus): void {
+    const version = normalizeGameVersion(status?.serverversion);
+    if (!version || version === this.gameVersionValue) return;
+    this.gameVersionValue = version;
+    this.onGameVersion(version);
+  }
+
   private async testReachability(): Promise<{ connectable: boolean; reason: string | null }> {
     try {
       const token = await this.tshock.testToken();
       const status = await this.tshock.status();
+      this.recordGameVersion(status);
       return {
         connectable: token.success && typeof status === 'object',
         reason: token.success ? null : token.rawResult,
@@ -139,20 +160,20 @@ export class TerrariaAdapter {
     return this.players.get(identifier) || this.players.get(identifier.toLowerCase()) || null;
   }
 
-  private async getPlayerLocation(args: Record<string, unknown>): Promise<{ x: number; y: number; z: number }> {
+  /** The player's position in world pixels, or null when the plugin reports none (offline, unknown, no plugin). */
+  private async getPlayerLocation(args: Record<string, unknown>): Promise<{ x: number; y: number; z: number } | null> {
     const result = await this.tshock.rawCommand(`/takaropos ${quote(identifierName(args))}`);
     const marker = result.rawResult.match(/TAKARO_POSITION\s+({[^}]+})/);
-    if (!result.success || !marker) return { x: 0, y: 0, z: 0 };
+    if (!result.success || !marker) return null;
 
     try {
       const parsed = JSON.parse(marker[1]) as { x?: unknown; y?: unknown; z?: unknown };
-      return {
-        x: finiteNumber(parsed.x) ?? 0,
-        y: finiteNumber(parsed.y) ?? 0,
-        z: finiteNumber(parsed.z) ?? 0,
-      };
+      const x = finiteNumber(parsed.x);
+      const y = finiteNumber(parsed.y);
+      if (x === undefined || y === undefined) return null;
+      return { x, y, z: finiteNumber(parsed.z) ?? 0 };
     } catch {
-      return { x: 0, y: 0, z: 0 };
+      return null;
     }
   }
 
@@ -245,10 +266,13 @@ export class TerrariaAdapter {
   private async banPlayer(args: Record<string, unknown>): Promise<CommandResult | { error: string }> {
     const player = identifierName(args);
     const reason = optionalString(args, ['reason', 'message']) || 'Banned by Takaro';
+    // Takaro never lifts a ban itself when it runs out, so the expiry has to reach TShock.
+    const expiresAt = banExpiry(args.expiresAt);
+    const until = expiresAt ? ` until=${Math.floor(expiresAt.getTime() / 1000)}` : '';
 
     let result: CommandResult;
     try {
-      result = await this.tshock.rawCommand(`/takaroban ${quote(player)} ${reason}`);
+      result = await this.tshock.rawCommand(`/takaroban ${quote(player)}${until} ${reason}`);
     } catch (err) {
       return { error: `Failed to ban ${player}: ${errorMessage(err)}` };
     }
@@ -290,6 +314,33 @@ export class TerrariaAdapter {
     return { success: true, rawResult: count > 0 ? `Unbanned ${player} (${count} ban(s) lifted)` : `No active ban for ${player}` };
   }
 
+  /**
+   * TShock's ban rows in the shape Takaro syncs: one entry per player, `{ player, reason, expiresAt }`.
+   *
+   * A Takaro ban is stored as one row per identifier (uuid:, ip:) tagged `[takaro:<name>]`, so
+   * the player comes from that tag; name: and acc: bans name the player themselves. Rows that
+   * name no player (an untagged uuid: or ip: ban) and rows that have run out are left out, since
+   * Takaro can attach neither to a player.
+   */
+  private async listBansForTakaro(): Promise<TakaroBan[]> {
+    const now = Date.now();
+    const byPlayer = new Map<string, TakaroBan>();
+    for (const row of await this.tshock.listBans()) {
+      const name = banPlayerName(row);
+      if (!name) continue;
+      const expires = ticksToDate(row.end_date_ticks);
+      if (expires && expires.getTime() <= now) continue;
+
+      const expiresAt = expires && expires.getUTCFullYear() < PERMANENT_BAN_YEAR ? expires.toISOString() : null;
+      const reason = (row.reason ?? '').replace(TAKARO_BAN_TAG, '').trim();
+      const known = byPlayer.get(name.toLowerCase());
+      // Several rows for one player: the one that lasts longest wins, and permanent beats timed.
+      if (known && (known.expiresAt === null || (expiresAt !== null && expiresAt <= known.expiresAt))) continue;
+      byPlayer.set(name.toLowerCase(), { player: { ...terrariaIdentity(name), name }, reason, expiresAt });
+    }
+    return [...byPlayer.values()];
+  }
+
   private async executeConsoleCommand(args: Record<string, unknown>): Promise<CommandResult> {
     const command = requireString(args, ['command', 'rawCommand']);
     if (!isAllowlisted(command, this.options)) {
@@ -300,14 +351,30 @@ export class TerrariaAdapter {
 
   private async sendMessage(args: Record<string, unknown>): Promise<CommandResult> {
     const message = requireString(args, ['message', 'text']);
+    // A recipient makes this a private reply (a module answering one player); only that player sees it.
     const recipient = recipientName(args);
-    if (recipient) {
-      // A recipient makes this a private reply (a module answering one player). A broadcast
-      // would show it to everyone; TShock's /w from the REST console reaches only that player.
-      return this.tshock.rawCommand(`/w ${quote(recipient)} ${quote(message)}`);
+    const sender = resolveSenderName(
+      optionalNestedString(args, ['senderNameOverride', 'senderName', 'from']),
+      this.options.serverChatName,
+    );
+    if (!sender) {
+      return recipient
+        ? this.tshock.rawCommand(`/w ${quote(recipient)} ${quote(message)}`)
+        : this.tshock.broadcast(message);
     }
-    const senderName = optionalNestedString(args, ['senderNameOverride', 'senderName', 'from']) || this.options.serverChatName;
-    return this.tshock.broadcast(senderName ? `${senderName}: ${message}` : message);
+
+    // TShock's /broadcast and /w label the line themselves ("(Server Broadcast)", "<From
+    // <REST user>>"), so the plugin delivers the rendered text with nothing in front of it.
+    const delivered = recipient
+      ? await this.tshock.rawCommand(`/takarotell ${quote(recipient)} ${quote(renderDirected(sender, message))}`)
+      : await this.tshock.rawCommand(`/takarosay ${quote(renderGlobal(sender, message))}`);
+    if (delivered.success || !PLUGIN_CHAT_UNAVAILABLE.test(delivered.rawResult)) return delivered;
+
+    // A plugin older than the bridge, or a REST user without takaro.admin: TShock's own
+    // commands still deliver, under their label.
+    return recipient
+      ? this.tshock.rawCommand(`/w ${quote(recipient)} ${quote(renderGlobal(sender, message))}`)
+      : this.tshock.broadcast(renderGlobal(sender, message));
   }
 
   private async shutdown(): Promise<CommandResult> {
@@ -317,6 +384,9 @@ export class TerrariaAdapter {
     return this.tshock.shutdown(true);
   }
 }
+
+/** The plugin's chat commands are missing (older plugin) or not allowed for the REST user. */
+const PLUGIN_CHAT_UNAVAILABLE = /invalid command entered|you do not have access to this command|you do not have permission/i;
 
 export function parseArgs(rawArgs: unknown): Record<string, unknown> {
   if (typeof rawArgs === 'string') {
@@ -464,6 +534,46 @@ function finiteNumber(value: unknown): number | undefined {
 function reasonSuffix(args: Record<string, unknown>): string {
   const reason = optionalString(args, ['reason', 'message']);
   return reason ? ` ${quote(reason)}` : '';
+}
+
+interface TakaroBan {
+  player: { gameId: string; name: string; platformId: string };
+  reason: string;
+  expiresAt: string | null;
+}
+
+const TICKS_AT_UNIX_EPOCH = 621355968000000000n;
+// Takaro sends a permanent ban as a far-future date (3021), and TShock stores one as year 9999.
+const PERMANENT_BAN_YEAR = 3000;
+const TAKARO_BAN_TAG = /\s*\[takaro:([^\]]+)\]/;
+
+/** The ban's end as a Date, or undefined when Takaro sent none, it is already past or it means "permanent". */
+function banExpiry(value: unknown): Date | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || date.getTime() <= Date.now()) return undefined;
+  return date.getUTCFullYear() < PERMANENT_BAN_YEAR ? date : undefined;
+}
+
+function ticksToDate(ticks: unknown): Date | undefined {
+  if (typeof ticks !== 'number' && typeof ticks !== 'string') return undefined;
+  let value: bigint;
+  try {
+    value = BigInt(typeof ticks === 'number' ? Math.trunc(ticks) : ticks.trim());
+  } catch {
+    return undefined;
+  }
+  return new Date(Number((value - TICKS_AT_UNIX_EPOCH) / 10000n));
+}
+
+function banPlayerName(row: TShockBan): string | null {
+  const tag = TAKARO_BAN_TAG.exec(row.reason ?? '');
+  if (tag?.[1]?.trim()) return tag[1].trim();
+  const identifier = (row.identifier ?? row.name ?? '').trim();
+  const prefixed = /^(?:name|acc):(.+)$/i.exec(identifier);
+  if (prefixed?.[1]?.trim()) return prefixed[1].trim();
+  // Bans from before TShock's typed identifiers are a bare name.
+  return identifier && !identifier.includes(':') ? identifier : null;
 }
 
 function quote(value: string): string {

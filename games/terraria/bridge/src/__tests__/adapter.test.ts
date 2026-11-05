@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { TerrariaAdapter, type TShockApi } from '../terraria/adapter.js';
+import type { TShockBan } from '../tshock/client.js';
 
 class FakeTShock implements TShockApi {
   rawCommands: string[] = [];
   broadcasts: string[] = [];
-  bans = [{ name: 'BadPlayer', ip: '10.0.0.1', reason: 'test' }];
+  bans: TShockBan[] = [{ name: 'BadPlayer', ip: '10.0.0.1', reason: 'test' }];
 
   async testToken() {
     return { success: true, rawResult: 'ok' };
@@ -119,6 +120,21 @@ test('reads plugin-backed player location from TShock raw command output', async
     z: 0,
   });
   assert.deepEqual(tshock.rawCommands, ['/takaropos "Guide"']);
+});
+
+test('a player the plugin cannot find has no location', async () => {
+  const tshock = new FakeTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return { success: true, rawResult: 'Invalid player!' };
+  };
+  const adapter = new TerrariaAdapter(tshock, {
+    commandAllowlistExact: [],
+    commandAllowlistPrefixes: [],
+    enableShutdown: false,
+  });
+
+  assert.equal(await adapter.handleAction('getPlayerLocation', { player: { name: 'Gone' } }), null);
 });
 
 function inventoryAdapter(rawResult: string, success = true) {
@@ -242,8 +258,14 @@ test('executes allowlisted commands, normalizes nested player arguments, and gat
   assert.equal((await adapter.handleAction('unbanPlayer', { player: { name: 'BadPlayer' } }) as { success: boolean }).success, true);
   assert.equal((await adapter.handleAction('shutdown', {}) as { success: false }).success, false);
 
-  assert.deepEqual(tshock.broadcasts, ['Takaro: hello', 'Discord Hendrik: hello']);
-  assert.deepEqual(tshock.rawCommands.slice(0, 4), ['/help', 'say hello', '/say hello', '/kick "Guide" "test"']);
+  assert.deepEqual(tshock.rawCommands.slice(0, 6), [
+    '/help',
+    'say hello',
+    '/say hello',
+    '/takarosay "Takaro: hello"',
+    '/takarosay "Discord Hendrik: hello"',
+    '/kick "Guide" "test"',
+  ]);
 });
 
 test('supports give item and plugin-backed teleport through guarded raw TShock commands', async () => {
@@ -537,5 +559,138 @@ test('a message with a recipient is whispered to that player, not broadcast', as
 
   assert.equal(result.success, true);
   assert.deepEqual(tshock.broadcasts, []);
-  assert.deepEqual(tshock.rawCommands, ['/w "Bob the Builder" "Teleport \\"home\\" set."']);
+  assert.deepEqual(tshock.rawCommands, ['/takarotell "Bob the Builder" "<From Takaro> Teleport \\"home\\" set."']);
+});
+
+function chatAdapter(serverChatName?: string, tshock = new FakeTShock()) {
+  return {
+    tshock,
+    adapter: new TerrariaAdapter(tshock, { commandAllowlistExact: [], commandAllowlistPrefixes: [], enableShutdown: false, serverChatName }),
+  };
+}
+
+test('sendMessage shows Takaro\'s chat name, else the configured one, else the plain message', async () => {
+  const send = async (serverChatName: string | undefined, opts: Record<string, unknown>) => {
+    const { adapter, tshock } = chatAdapter(serverChatName);
+    await adapter.handleAction('sendMessage', { message: 'hi', opts });
+    return [...tshock.rawCommands, ...tshock.broadcasts.map((text) => `broadcast ${text}`)];
+  };
+
+  // The override wins over the config value, trimmed.
+  assert.deepEqual(await send('Config', { senderNameOverride: '  Override ' }), ['/takarosay "Override: hi"']);
+  // No override, or a blank one: the config value.
+  assert.deepEqual(await send('Config', {}), ['/takarosay "Config: hi"']);
+  assert.deepEqual(await send('Config', { senderNameOverride: '   ' }), ['/takarosay "Config: hi"']);
+  assert.deepEqual(await send(' Config ', { senderNameOverride: '' }), ['/takarosay "Config: hi"']);
+  // Neither: exactly what the bridge sent before there was a name.
+  assert.deepEqual(await send(undefined, {}), ['broadcast hi']);
+  assert.deepEqual(await send('  ', { senderNameOverride: ' ' }), ['broadcast hi']);
+
+  const recipient = { gameId: 'terraria:Bob' };
+  assert.deepEqual(await send('Config', { recipient, senderNameOverride: 'Override' }), ['/takarotell "Bob" "<From Override> hi"']);
+  assert.deepEqual(await send('Config', { recipient }), ['/takarotell "Bob" "<From Config> hi"']);
+  assert.deepEqual(await send('', { recipient }), ['/w "Bob" "hi"']);
+});
+
+test('sendMessage falls back to TShock\'s /broadcast and /w when the plugin is older than the bridge', async () => {
+  const tshock = new FakeTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return command.startsWith('/takaro')
+      ? { success: false, rawResult: 'Invalid command entered. Type /help for a list of valid commands.' }
+      : { success: true, rawResult: '' };
+  };
+  const { adapter } = chatAdapter('Takaro', tshock);
+
+  assert.equal((await adapter.handleAction('sendMessage', { message: 'hi' }) as { success: boolean }).success, true);
+  assert.equal((await adapter.handleAction('sendMessage', { message: 'hi', opts: { recipient: { gameId: 'Bob' } } }) as { success: boolean }).success, true);
+  assert.deepEqual(tshock.broadcasts, ['Takaro: hi']);
+  assert.deepEqual(tshock.rawCommands, ['/takarosay "Takaro: hi"', '/takarotell "Bob" "<From Takaro> hi"', '/w "Bob" "Takaro: hi"']);
+});
+
+test('sendMessage falls back when the REST user may not run the plugin\'s commands', async () => {
+  const tshock = new FakeTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return command.startsWith('/takaro')
+      ? { success: false, rawResult: 'You do not have access to this command.' }
+      : { success: true, rawResult: '' };
+  };
+  const { adapter } = chatAdapter('Takaro', tshock);
+
+  assert.equal((await adapter.handleAction('sendMessage', { message: 'hi' }) as { success: boolean }).success, true);
+  assert.deepEqual(tshock.broadcasts, ['Takaro: hi']);
+
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return command.startsWith('/takaro')
+      ? { success: false, rawResult: 'You do not have permission to use this command.' }
+      : { success: true, rawResult: '' };
+  };
+  assert.equal((await adapter.handleAction('sendMessage', { message: 'hey' }) as { success: boolean }).success, true);
+  assert.deepEqual(tshock.broadcasts, ['Takaro: hi', 'Takaro: hey']);
+});
+
+test('a directed message to a player who is not online fails instead of falling back', async () => {
+  const tshock = new FakeTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return { success: false, rawResult: "No player found matching 'Bob'." };
+  };
+  const { adapter } = chatAdapter('Takaro', tshock);
+
+  const result = await adapter.handleAction('sendMessage', { message: 'hi', opts: { recipient: { gameId: 'Bob' } } }) as { success: boolean };
+  assert.equal(result.success, false);
+  assert.deepEqual(tshock.rawCommands, ['/takarotell "Bob" "<From Takaro> hi"']);
+});
+
+test('banPlayer passes a timed ban to the plugin as until=<unix seconds>', async () => {
+  // Takaro never lifts a ban when it runs out, so without the expiry a timed ban is permanent.
+  const tshock = new PluginBanTShock();
+  const adapter = new TerrariaAdapter(tshock, { commandAllowlistExact: ['help'], commandAllowlistPrefixes: ['say'], enableShutdown: false });
+  const expiresAt = new Date(Date.now() + 3_600_000);
+
+  await adapter.handleAction('banPlayer', { player: { name: 'Bad Player' }, reason: 'one hour', expiresAt: expiresAt.toISOString() });
+
+  assert.equal(tshock.rawCommands.at(-1), `/takaroban "Bad Player" until=${Math.floor(expiresAt.getTime() / 1000)} one hour`);
+});
+
+test('banPlayer stays permanent without an expiry, with a past one and with Takaro\'s far-future permanent date', async () => {
+  const tshock = new PluginBanTShock();
+  const adapter = new TerrariaAdapter(tshock, { commandAllowlistExact: ['help'], commandAllowlistPrefixes: ['say'], enableShutdown: false });
+
+  for (const expiresAt of [undefined, null, '2001-01-01T00:00:00.000Z', '3021-01-01T00:00:00.000Z', 'not a date']) {
+    await adapter.handleAction('banPlayer', { player: { name: 'BadPlayer' }, reason: 'forever', expiresAt });
+    assert.equal(tshock.rawCommands.at(-1), '/takaroban "BadPlayer" forever');
+  }
+});
+
+const TICKS_AT_UNIX_EPOCH = 621355968000000000n;
+const ticks = (date: Date) => (TICKS_AT_UNIX_EPOCH + BigInt(date.getTime()) * 10000n).toString();
+
+test('listBans answers one Takaro ban per player, named from the Takaro tag or a name ban', async () => {
+  const tshock = new FakeTShock();
+  const inAnHour = new Date(Math.floor((Date.now() + 3_600_000) / 1000) * 1000);
+  const anHourAgo = new Date(Date.now() - 3_600_000);
+  tshock.bans = [
+    { identifier: 'uuid:ABC', reason: 'griefing [takaro:Bob J. Test]', end_date_ticks: ticks(inAnHour) },
+    { identifier: 'ip:10.0.0.9', reason: 'griefing [takaro:Bob J. Test]', end_date_ticks: ticks(inAnHour) },
+    { identifier: 'name:Spammer', reason: 'spam', end_date_ticks: 3155378975999999999 },
+    { identifier: 'uuid:DEF', reason: 'old [takaro:Gone]', end_date_ticks: ticks(anHourAgo) },
+    { identifier: 'ip:10.0.0.7', reason: 'no player named', end_date_ticks: 3155378975999999999 },
+  ];
+  const adapter = new TerrariaAdapter(tshock, { commandAllowlistExact: ['help'], commandAllowlistPrefixes: ['say'], enableShutdown: false });
+
+  assert.deepEqual(await adapter.handleAction('listBans', {}), [
+    {
+      player: { gameId: 'Bob J. Test', name: 'Bob J. Test', platformId: 'terraria:Bob_J__Test-6c2b12d5' },
+      reason: 'griefing',
+      expiresAt: inAnHour.toISOString(),
+    },
+    {
+      player: { gameId: 'Spammer', name: 'Spammer', platformId: 'terraria:Spammer' },
+      reason: 'spam',
+      expiresAt: null,
+    },
+  ]);
 });

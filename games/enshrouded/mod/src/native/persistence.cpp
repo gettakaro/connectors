@@ -18,6 +18,7 @@ StatePaths ResolveStatePaths(const std::string& baseDir, const EnvFn& env) {
     std::string online = env("TAKARO_ONLINE_FILE");
     p.online = online.empty() ? JoinPath(p.dir, "online-players.json") : ResolvePath(baseDir, online);
     p.known = JoinPath(p.dir, "known-players.json");
+    p.positions = JoinPath(p.dir, "last-positions.json");
     p.timedBans = JoinPath(p.dir, "timed-bans.json");
     p.banIntent = JoinPath(p.dir, "ban-intent.json");
     std::string cursor = env("TAKARO_CURSOR_FILE");
@@ -205,6 +206,26 @@ LoadReport Store::Load() {
                 if (p.get("gameId") && p.get("gameId")->type == JsonValue::String) known_.push_back(p);
     }
 
+    {
+        bool exists = false;
+        std::string e;
+        JsonValue v;
+        if (ReadWholeFile(paths_.positions, text, exists, e) && exists) {
+            if (ParseJson(text, v) && v.type == JsonValue::Object) {
+                for (auto& kv : v.obj) {
+                    const JsonValue* x = kv.second.get("x");
+                    const JsonValue* y = kv.second.get("y");
+                    const JsonValue* z = kv.second.get("z");
+                    if (x && y && z && x->type == JsonValue::Number && y->type == JsonValue::Number &&
+                        z->type == JsonValue::Number)
+                        positions_[kv.first] = kv.second;
+                }
+            } else {
+                rep.notes.push_back("ignored unreadable " + paths_.positions);
+            }
+        }
+    }
+
     if (read("timedBans", paths_.timedBans, text)) {
         JsonValue v;
         bool ok = ParseJson(text, v) && v.type == JsonValue::Array;
@@ -281,6 +302,11 @@ size_t Store::ConfirmThrough(uint64_t outboxId) {
 bool Store::SaveOutbox() { return Write("outbox", paths_.outbox, OutboxJson(outbox_)); }
 bool Store::SaveOnline() { return Write("online", paths_.online, PlayersJson(online_)); }
 bool Store::SaveKnown() { return Write("known", paths_.known, PlayersJson(known_)); }
+bool Store::SavePositions() {
+    JsonValue v = JObj();
+    for (auto& kv : positions_) Put(v, kv.first, kv.second);
+    return Write("positions", paths_.positions, JsonDump(v));
+}
 
 bool Store::Remember(const JsonValue& player, int64_t nowMs) {
     const JsonValue* g = player.get("gameId");

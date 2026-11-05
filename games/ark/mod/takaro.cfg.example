@@ -10,6 +10,11 @@ TAKARO_REGISTRATION_TOKEN=
 # Optional. Empty: "ARK (<first characters of the identity>)". Unique per Takaro domain.
 # TAKARO_SERVER_NAME=
 
+# Optional. The sender name players see on messages from Takaro, used when Takaro sends
+# none (Takaro releases before the per-server "serverChatName" setting). Takaro's setting
+# wins when it is sent. Empty: messages show as ARK's "(SERVER)" line. Read at server start.
+# TAKARO_SERVER_CHAT_NAME=
+
 # Optional. Default wss://connect.takaro.io/
 # TAKARO_WS_URL=wss://connect.takaro.io/
 

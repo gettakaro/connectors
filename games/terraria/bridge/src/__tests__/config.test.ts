@@ -107,8 +107,16 @@ tshockBaseUrl=http://127.0.0.1:7878
 test('an empty serverName registers under a name unique to the identity', () => {
   const config = buildConfig({ identityToken: '0123abcd-1111-4111-8111-111111111111' }, {});
   assert.equal(config.serverName, 'Terraria Server (0123abcd)');
-  assert.equal(config.serverChatName, 'Terraria Server (0123abcd)');
   assert.equal(buildConfig({ identityToken: 'id', serverName: 'Mine' }, {}).serverName, 'Mine');
+});
+
+test('serverChatName is trimmed, empty means no name, and TAKARO_SERVER_CHAT_NAME wins', () => {
+  assert.equal(buildConfig({ identityToken: 'id' }, {}).serverChatName, '');
+  assert.equal(buildConfig({ identityToken: 'id', serverChatName: '   ' }, {}).serverChatName, '');
+  assert.equal(buildConfig({ identityToken: 'id', serverChatName: ' Limon ' }, {}).serverChatName, 'Limon');
+  assert.equal(buildConfig({ identityToken: 'id', serverChatName: 'Limon' }, { TAKARO_SERVER_CHAT_NAME: 'Env' }).serverChatName, 'Env');
+  assert.equal(buildConfig({ identityToken: 'id', serverChatName: 'Limon' }, { TAKARO_SERVER_CHAT_NAME: '' }).serverChatName, 'Limon');
+  assert.equal(buildConfig({ identityToken: 'id', serverChatName: 'Limon' }, { TAKARO_SERVER_CHAT_NAME: '  ' }).serverChatName, 'Limon');
 });
 
 /** Minimal valid config; each exclude-pattern case varies only the one line it tests. */

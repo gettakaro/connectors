@@ -16,6 +16,21 @@ std::string Trim(const std::string& s) {
 
 }  // namespace
 
+std::string ResolveSender(const std::string& senderNameOverride, const std::string& configured, std::string* from) {
+    std::string name = Trim(senderNameOverride);
+    const char* source = "override";
+    if (name.empty()) {
+        name = Trim(configured);
+        source = "config";
+    }
+    if (name.empty()) {
+        name = kDefaultSender;
+        source = "default";
+    }
+    if (from) *from = source;
+    return name;
+}
+
 std::string NormalizeRecipient(const std::string& recipient) {
     std::string r = Trim(recipient);
     size_t colon = r.rfind(':');

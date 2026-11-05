@@ -253,6 +253,17 @@ std::string RenderMessage(const std::string& senderName, const std::string& text
     return "[" + s + "] " + text;
 }
 
+std::string ResolveSenderName(const std::string& override, const std::string& configured,
+                              const std::string& serverName) {
+    for (const std::string* candidate : {&override, &configured, &serverName}) {
+        std::string s = *candidate;
+        while (!s.empty() && isspace((unsigned char)s.front())) s.erase(s.begin());
+        while (!s.empty() && isspace((unsigned char)s.back())) s.pop_back();
+        if (!s.empty()) return s;
+    }
+    return "Server";
+}
+
 }  // namespace ActionsUtil
 
 // ---- lane L3e -------------------------------------------------------------------------------
@@ -327,5 +338,14 @@ std::string ActionsUtil::KillWeaponName(const std::string& causerClass, const st
                                     "arrow",        "blade",  "throwable",  "explosive"};
     for (const char* n : kWeapon)
         if (lower.find(n) != std::string::npos) return HumaniseCode(causerClass);
+    return "";
+}
+
+std::string ActionsUtil::LocationRefusal(bool hasPawn, bool spawned, bool hasLoc, const std::string& pawnClass) {
+    if (!hasPawn) return "player has no pawn yet";
+    if (!spawned)
+        return "player is on the character screen (pawn is " + (pawnClass.empty() ? "unknown" : pawnClass) +
+               "), so there is no position in the world";
+    if (!hasLoc) return "pawn has no readable root component";
     return "";
 }

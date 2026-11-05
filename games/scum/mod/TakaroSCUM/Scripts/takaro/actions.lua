@@ -4,6 +4,7 @@
 local json = require("takaro.json")
 local util = require("takaro.util")
 local players = require("takaro.players")
+local chatname = require("takaro.chatname")
 
 local M = {}
 
@@ -267,7 +268,7 @@ function H.sendMessage(self, args, reply)
   local opts = util.opt_table(args.opts) or {}
   local recipient = util.opt_table(opts.recipient)
   local recipientId = recipient and players.game_id_from_args(recipient) or nil
-  local sender = util.opt_string(opts.senderNameOverride)
+  local sender = chatname.resolve(opts.senderNameOverride, self.config.serverChatName)
   self:call("send_message", { message = message, recipientGameId = recipientId, senderName = sender },
     simple_reply(reply))
 end

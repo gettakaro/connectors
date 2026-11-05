@@ -43,7 +43,7 @@ from ... import output
 from ...verify import checks, checks_lifecycle, runner
 from ...verify.hooks import GameHooks
 
-CHECK_IDS = ("handshake", "items", "entities", "action", "references", "reconnect")
+CHECK_IDS = ("handshake", "items", "entities", "action", "cooperation", "references", "reconnect")
 
 #: Base checks this connector cannot satisfy, and the Terraria check that stands in for each.
 #: A run that names no ``--checks`` would otherwise spend four timeouts failing on them.
@@ -278,6 +278,7 @@ async def after_protocol(run: Any, fake: Any, alive: Any) -> None:
         ("items", lambda: _check_items(run, fake)),
         ("entities", lambda: _check_entities(run, fake)),
         ("action", lambda: _check_action(run, fake, alive)),
+        ("cooperation", lambda: _check_cooperation(run, fake)),
         ("references", lambda: _check_references(run)),
         ("reconnect", lambda: _check_reconnect(run, fake, alive)),
     ):
@@ -388,6 +389,41 @@ async def _check_action(run: Any, fake: Any, alive: Any) -> checks.CheckResult:
         timer.elapsed_ms,
         {"action": "sendMessage", "message": marker, "result": result, "problems": problems},
         {"file": run.server_log.name, "line": found[0]} if found else {"file": run.server_log.name},
+    )
+
+
+async def _check_cooperation(run: Any, fake: Any) -> checks.CheckResult:
+    """The bridge drives the plugin: an unban goes through ``/takarounban`` and its marker.
+
+    No player is needed: unbanning a name that was never banned still runs the plugin's
+    command over REST and comes back as the plugin's ``TAKARO_UNBAN`` answer. A bridge that
+    no longer understands this plugin's marker, or a plugin that is not loaded, falls back to
+    a REST ticket unban, which answers something else and fails this check.
+    """
+    player = f"takaro-verify-{run.options.run_id}-nobody"
+    expected = f"No active ban for {player}"
+    with checks._Timer() as timer:
+        problems: list[str] = []
+        result: Any = None
+        try:
+            result = await fake.request("unbanPlayer", {"gameId": player})
+        except Exception as exc:  # noqa: BLE001 - reported as a check failure
+            problems.append(f"unbanPlayer failed: {exc}")
+        if not isinstance(result, dict) or result.get("success") is not True:
+            problems.append(f"unbanPlayer returned {result!r}, expected success true")
+        elif result.get("rawResult") != expected:
+            problems.append(f"unbanPlayer answered {result.get('rawResult')!r}, not the plugin's {expected!r}")
+    return checks.CheckResult(
+        "cooperation",
+        "pass" if not problems else "fail",
+        timer.elapsed_ms,
+        {
+            "action": "unbanPlayer",
+            "player": player,
+            "result": result,
+            "note": "answered by the plugin's /takarounban marker, not the bridge's REST fallback",
+            "problems": problems,
+        },
     )
 
 

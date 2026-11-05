@@ -112,7 +112,7 @@ holds a copy of the Steam app, the depot manifest, the image tag, a dependency U
 
 ```
 maintenance/bin/takaro-maint targets list --game dune --format table
-maintenance/bin/takaro-maint build --game dune --target linux-26051014 --version 0.1.0 --out dist
+maintenance/bin/takaro-maint build --game dune --target linux-26223037 --version 0.1.0 --out dist
 scripts/build-release.sh <version> <out-dir> [--target <id>]     # the same build, directly
 ```
 
@@ -129,6 +129,20 @@ Two things this connector does **not** get from the shared machinery yet, both r
 no `docker load` seam), and `takaro-maint verify` (a world is only joinable with an operator's own Funcom token, and
 no hosted runner holds 15 GB of images) — which is why the workflow passes `runtime: false` and the target declares
 `verification.required: contract`. Runtime proof is produced on the dev-servers rig against this exact pin.
+
+## Game profile
+
+Identify always carries `game: "dune"` and `connector: { name: "takaro-dune", version }`; the version is
+`sidecar/src/version.ts`, which release-please keeps equal to `version.txt` (a unit test checks it). On protocol 1
+the manifest adds `game.profile` with the display name, the icon (`assets/icon-256.png`, revision = first 12 hex of
+its sha256) and the game build when known, and the sidecar answers `getGameIcon` with the whole PNG.
+
+- The icon is embedded as `sidecar/src/takaro/gameIcon.generated.ts` because `Dockerfile.dev` only sees `sidecar/`.
+  After changing the PNG run `npm run icon` (a test fails while the two differ).
+- The game build is the `LogNetVersion: … DuneSandbox <build>, NetCL: …` line the map server logs at boot. The
+  sidecar reads the head of `DUNE_LOG_FILE` at start and follows the tail, so a map restart on a new build sends a
+  `capabilities` replacement. Without `DUNE_LOG_FILE` the version is omitted. The Postgres database name
+  is not the build: it carries a content version that lags it (build 1.5.3.7 ran on `dune_sb_1_5_3_0`).
 
 ## The item catalogue
 
@@ -150,7 +164,9 @@ tested; the tests use fixtures under `src/testing/fixtures/` and never read the 
 - **Presence is three-state** (`Offline` / `LoggingOut` / `Online`), and a map transfer must not look like a
   disconnect — hence `DUNE_TRANSFER_GRACE_SECONDS`.
 - **The chat sender is not ours to choose.** Dune renders it from the AMQP `user_id` of a real player account, so a
-  server-sent chat line always shows `[]`. The named path is the on-screen `ServiceBroadcast` panel.
+  server-sent chat line always shows `[]`. So the sender name goes in the text (`[] Name: message`, global and
+  whisper), resolved in `src/dune/chatSender.ts`: `senderNameOverride` → `TAKARO_SENDER_NAME` /
+  `TAKARO_SERVER_CHAT_NAME` → no name. The on-screen `ServiceBroadcast` panel is titled with the same name.
 - **Takaro modules send explicit JSON `null`** for optional arguments; every handler must tolerate it (`null-args`
   matrix test).
 - **Nothing halts the map process** from inside the battlegroup, so `shutdown` needs an operator hook.

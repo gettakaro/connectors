@@ -529,6 +529,12 @@ static void ReadGameBuild() {
         }
     }
     if (g_gameBuild.empty()) g_gameBuild = "unknown";
+#ifdef TAKARO_DEBUG_GAME_BUILD
+    // Debug builds only (build.sh DEBUG_GAME_BUILD=<n>): pretend the server runs another game build, to show the
+    // unsupported-build degrade path on a real server.
+    PluginLog("DEBUG: game build %s replaced by %s", g_gameBuild.c_str(), TAKARO_DEBUG_GAME_BUILD);
+    g_gameBuild = TAKARO_DEBUG_GAME_BUILD;
+#endif
 }
 
 void HooksInit() {
@@ -666,6 +672,10 @@ void HooksInit() {
 
     // --- world / items / chat / combat (world.cpp) ---
     WorldHooksInit();
+
+    st.SetGameSupport(g_gameBuild, profile::Active(), ItemTablesUsable(), profile::KnownBuilds());
+    std::string notice = st.GameSupportNotice();
+    if (!notice.empty()) PluginLog("DEGRADED: %s", notice.c_str());
 }
 
 bool RunOnGameThread(std::function<std::string()> fn, std::string& result, DWORD timeoutMs) {

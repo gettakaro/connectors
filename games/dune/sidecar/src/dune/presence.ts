@@ -63,6 +63,8 @@ export class PresencePoller {
   private readonly online = new Map<string, Tracked>();
   /** Players missing from the roster but still inside their transfer grace, by gameId → deadline. */
   private readonly leaving = new Map<string, { player: TakaroPlayer; row: DunePlayerRow; deadline: number }>();
+  /** When this connector kicked each player; a roster read that started before the kick is stale for them. */
+  private readonly kickedAt = new Map<string, number>();
   /** Last `life_state` seen per gameId, so only the *edge* into a dead state produces player-death. */
   private readonly lifeStates = new Map<string, string>();
   private lastError: string | null = null;
@@ -115,6 +117,7 @@ export class PresencePoller {
   /** One diff. Exposed so tests drive it deterministically instead of waiting on a timer. */
   async pollOnce(): Promise<void> {
     const now = this.options.now?.() ?? Date.now();
+    const readAt = now;
     // `online_status` is the three-state `PlayerConnectionStatus`. A `LoggingOut` row is dropped here rather than
     // treated as online: the player is on their way out, so they leave the online set exactly once, at this poll,
     // and the `Offline` row that follows a second later finds nothing left to remove — no duplicate disconnect.
@@ -125,6 +128,7 @@ export class PresencePoller {
     );
     const seen = new Map<string, Tracked>();
     for (const row of rows) {
+      if (row.flsId && (this.kickedAt.get(row.flsId) ?? -Infinity) >= readAt) continue;
       let player: TakaroPlayer;
       try {
         player = mapPlayer(row);
@@ -203,6 +207,8 @@ export class PresencePoller {
       if (!seen.has(gameId) && !this.leaving.has(gameId)) this.lifeStates.delete(gameId);
     }
 
+    for (const [gameId, at] of [...this.kickedAt]) if (at < readAt) this.kickedAt.delete(gameId);
+
     this.options.save?.(this.onlinePlayers());
   }
 
@@ -214,6 +220,21 @@ export class PresencePoller {
   /** How long this row's disappearance is held before it counts as a leave. Exposed for the presence tests. */
   graceMsFor(row: DunePlayerRow, now = Date.now()): number {
     return graceFor(row, this.options.transferGraceMs ?? 45_000, now);
+  }
+
+  /**
+   * A kick this connector published and read back: the player is reported gone now instead of being held for a map
+   * transfer. Otherwise a banned player kicked on sight who rejoins after an unban inside the grace window is never
+   * reported as having left, nor as having come back (live rig, 2026-10-22).
+   */
+  kickedOut(gameId: string): void {
+    const tracked = this.online.get(gameId) ?? this.leaving.get(gameId);
+    if (!tracked) return;
+    this.kickedAt.set(gameId, this.options.now?.() ?? Date.now());
+    this.online.delete(gameId);
+    this.leaving.delete(gameId);
+    this.lifeStates.delete(gameId);
+    this.emitDisconnect(tracked.player);
   }
 
   /** Marks a player online without emitting anything (used when another source already announced them). */

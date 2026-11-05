@@ -5,6 +5,7 @@ import { dimensionForMap, HAGGA_BASIN, MAP_DIMENSIONS } from '../dune/mapDimensi
 import { mockPlayer } from '../testing/mockBattlegroup.js';
 import { ACTION_CAPABILITY, buildManifest } from '../takaro/capabilities.js';
 import { TakaroWsClient } from '../takaro/client.js';
+import { CONNECTOR_IDENTITY } from '../takaro/gameProfile.js';
 import { GAME_EVENT_TYPES, GAME_SERVER_ACTIONS, type WsMessage } from '../takaro/protocol.js';
 import { harness } from './helpers.js';
 
@@ -189,6 +190,12 @@ describe('TakaroWsClient protocol negotiation', () => {
     cleanups.push(() => client.shutdown());
     client.connect();
     await waitFor(() => client.identified());
-    expect(state.frames[0].payload).toEqual({ identityToken: 'id', registrationToken: 'reg', name: 'Dune' });
+    expect(state.frames[0].payload).toEqual({
+      identityToken: 'id',
+      registrationToken: 'reg',
+      name: 'Dune',
+      game: 'dune',
+      connector: CONNECTOR_IDENTITY,
+    });
   });
 });

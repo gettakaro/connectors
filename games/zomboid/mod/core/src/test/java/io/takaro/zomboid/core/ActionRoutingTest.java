@@ -16,13 +16,14 @@ import static org.junit.jupiter.api.Assertions.*;
 class ActionRoutingTest {
 
     private RecordingAdapter adapter;
+    private TakaroConfig config;
     private TakaroWebSocketClient client;
     private List<String> sentMessages;
 
     @BeforeEach
     void setUp() throws Exception {
         adapter = new RecordingAdapter();
-        TakaroConfig config = new TakaroConfig();
+        config = new TakaroConfig();
         config.setDebugEnabled(false);
         // The protocol 0 wire shapes (ProtocolV1Test covers protocol 1).
         config.setProtocolV1Enabled(false);
@@ -109,7 +110,8 @@ class ActionRoutingTest {
         sendRequest("sendMessage", "req-6", "{\"message\":\"hello world\"}");
         waitForResponse();
 
-        assertEquals("Server: hello world", adapter.lastMessage);
+        assertEquals("hello world", adapter.lastMessage);
+        assertNull(adapter.lastSenderName);
         assertNull(adapter.lastRecipient);
     }
 
@@ -118,7 +120,8 @@ class ActionRoutingTest {
         sendRequest("sendMessage", "req-7", "{\"message\":\"hi\",\"opts\":{\"recipient\":{\"gameId\":\"player-1\"}}}");
         waitForResponse();
 
-        assertEquals("Server: hi", adapter.lastMessage);
+        assertEquals("hi", adapter.lastMessage);
+        assertNull(adapter.lastSenderName);
         assertEquals("player-1", adapter.lastRecipient);
     }
 
@@ -127,7 +130,37 @@ class ActionRoutingTest {
         sendRequest("sendMessage", "req-7b", "{\"message\":\"yo\",\"opts\":{\"senderNameOverride\":\"Admin\"}}");
         waitForResponse();
 
-        assertEquals("Admin: yo", adapter.lastMessage);
+        assertEquals("yo", adapter.lastMessage);
+        assertEquals("Admin", adapter.lastSenderName);
+    }
+
+    @Test
+    void sendMessageFallsBackToConfiguredServerChatName() {
+        config.setServerChatName("Config Name");
+        sendRequest("sendMessage", "req-7c", "{\"message\":\"yo\",\"opts\":{\"recipient\":{\"gameId\":\"player-1\"}}}");
+        waitForResponse();
+
+        assertEquals("Config Name", adapter.lastSenderName);
+        assertEquals("player-1", adapter.lastRecipient);
+    }
+
+    @Test
+    void sendMessageOverrideWinsOverConfiguredServerChatName() {
+        config.setServerChatName("Config Name");
+        sendRequest("sendMessage", "req-7d", "{\"message\":\"yo\",\"opts\":{\"senderNameOverride\":\"  Takaro  \"}}");
+        waitForResponse();
+
+        assertEquals("Takaro", adapter.lastSenderName);
+    }
+
+    @Test
+    void sendMessageTreatsBlankNamesAsUnset() {
+        config.setServerChatName("   ");
+        sendRequest("sendMessage", "req-7e", "{\"message\":\"yo\",\"opts\":{\"senderNameOverride\":\" \"}}");
+        waitForResponse();
+
+        assertNull(adapter.lastSenderName);
+        assertEquals("yo", adapter.lastMessage);
     }
 
     @Test
@@ -227,7 +260,8 @@ class ActionRoutingTest {
 
         JsonObject response = parseResponse(sentMessages.get(0));
         assertFalse(response.has("error"));
-        assertEquals("Server: hi", adapter.lastMessage);
+        assertEquals("hi", adapter.lastMessage);
+        assertNull(adapter.lastSenderName);
         assertNull(adapter.lastRecipient);
     }
 
@@ -499,6 +533,7 @@ class ActionRoutingTest {
         PlayerInfo knownPlayer = null;
         String lastCommand = null;
         String lastMessage = null;
+        String lastSenderName = null;
         String lastRecipient = null;
         String lastKickedId = null;
         String lastKickReason = null;
@@ -542,8 +577,9 @@ class ActionRoutingTest {
         }
 
         @Override
-        public void sendMessage(String message, String recipientGameId) {
+        public void sendMessage(String message, String senderName, String recipientGameId) {
             lastMessage = message;
+            lastSenderName = senderName;
             lastRecipient = recipientGameId;
         }
 

@@ -45,8 +45,8 @@ public static class ProtocolHandshake
 
     /// <summary>
     /// The live-supported actions of capabilities.json and their capability names.
-    /// getPlayer is unsupported, listLocations and the version 0 map are schema-fallback, so a
-    /// version 1 Takaro never asks for them; testReachability is always allowed.
+    /// getPlayer is unsupported and the version 0 map is schema-fallback, so a version 1 Takaro
+    /// never asks for them; testReachability is always allowed.
     /// </summary>
     public static IReadOnlyDictionary<string, string> ActionCapabilities { get; } = new Dictionary<string, string>
     {
@@ -66,10 +66,20 @@ public static class ProtocolHandshake
         [TakaroActionNames.Shutdown] = "server.shutdown",
     };
 
+    /// <summary>
+    /// Actions that only version 1 can request, declared although capabilities.json keeps them
+    /// schema-fallback until hosted takaro.io is checked (like the map): a version 0 Takaro
+    /// has no route that asks for them.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> VersionOneActionCapabilities { get; } = new Dictionary<string, string>
+    {
+        [TakaroActionNames.ListLocations] = "locations.list",
+    };
+
     public static JsonArray BuildCapabilityManifest(GameProfile? profile = null, bool includeMap = false)
     {
         var manifest = new JsonArray();
-        foreach (var capability in ActionCapabilities.Values)
+        foreach (var capability in ActionCapabilities.Values.Concat(VersionOneActionCapabilities.Values))
         {
             manifest.Add(new JsonObject { ["name"] = capability });
         }
@@ -96,6 +106,7 @@ public static class ProtocolHandshake
     public static bool IsDeclared(string action, GameProfile? profile = null, bool mapDeclared = false) =>
         action == TakaroActionNames.TestReachability
         || ActionCapabilities.ContainsKey(action)
+        || VersionOneActionCapabilities.ContainsKey(action)
         || (action == TakaroActionNames.GetGameIcon && profile?.IconRevision is not null)
         || (action == TakaroActionNames.GetMapTile && mapDeclared);
 

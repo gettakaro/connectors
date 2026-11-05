@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.6.0](https://github.com/gettakaro/connectors/compare/dune-v0.5.0...dune-v0.6.0) (2026-10-30)
+
+
+### Features
+
+* **dune:** show the configured server chat name on messages from Takaro ([#694](https://github.com/gettakaro/connectors/issues/694)) ([049e7f4](https://github.com/gettakaro/connectors/commit/049e7f464b9e1727f3637aef79fc8472af622e8c))
+* **dune:** support Steam build 26223037 ([#670](https://github.com/gettakaro/connectors/issues/670)) ([8d2817a](https://github.com/gettakaro/connectors/commit/8d2817a897e9ac248088d4857132cd207ba19a04))
+
+## [0.5.0](https://github.com/gettakaro/connectors/compare/dune-v0.4.0...dune-v0.5.0) (2026-10-26)
+
+
+### Features
+
+* **dune:** report game profile, connector identity and game icon ([#552](https://github.com/gettakaro/connectors/issues/552)) ([794761d](https://github.com/gettakaro/connectors/commit/794761d25b5af6551eac4f43b60c7cb025e7f42b))
+* **dune:** support Steam build 26051014 and report one death per life ([#565](https://github.com/gettakaro/connectors/issues/565)) ([3859fd8](https://github.com/gettakaro/connectors/commit/3859fd8aaabdd0c391153671f8bb2f0c0e10d1ba))
+* **dune:** support Steam build 26081962 and report a kick that is followed by a quick rejoin ([#592](https://github.com/gettakaro/connectors/issues/592)) ([d13d5a5](https://github.com/gettakaro/connectors/commit/d13d5a5e5639feb86c280cc5e0ceb70569c35856))
+
+
+### Bug Fixes
+
+* **dune:** support Steam build 25936522 and its renamed database ([#563](https://github.com/gettakaro/connectors/issues/563)) ([fd47600](https://github.com/gettakaro/connectors/commit/fd47600f52607a608428427ef152f166c59c6c05))
+
 ## [0.4.0](https://github.com/gettakaro/connectors/compare/dune-v0.3.0...dune-v0.4.0) (2026-10-18)
 
 

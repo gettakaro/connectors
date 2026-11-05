@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.8.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.7.0...7d2d-v0.8.0) (2026-11-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **7d2d:** name every asset after its game build and fail loudly on the wrong build ([#757](https://github.com/gettakaro/connectors/issues/757))
+
+### Features
+
+* **7d2d:** support V 3.4.0 b10 (Steam build 26310339) ([#763](https://github.com/gettakaro/connectors/issues/763)) ([ca0fa16](https://github.com/gettakaro/connectors/commit/ca0fa1605cebcb4ce32afaae581d20f58e5cb5f8))
+
+
+### Bug Fixes
+
+* **7d2d:** name every asset after its game build and fail loudly on the wrong build ([#757](https://github.com/gettakaro/connectors/issues/757)) ([a19350f](https://github.com/gettakaro/connectors/commit/a19350f07a3267351c4837ec06edf9a66397e7b8))
+* **7d2d:** send the POI centre as the location position ([#758](https://github.com/gettakaro/connectors/issues/758)) ([30a2ace](https://github.com/gettakaro/connectors/commit/30a2ace1665b16e582af11613a24aa462453c69d))
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+
+## [0.7.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.6.0...7d2d-v0.7.0) (2026-10-30)
+
+
+### Features
+
+* **7d2d:** show the configured server chat name instead of "Server" ([#671](https://github.com/gettakaro/connectors/issues/671)) ([ed75c42](https://github.com/gettakaro/connectors/commit/ed75c425385a211071775398ea3cf124fb37fba9))
+* **7d2d:** support V 3.4.0 b6 (Steam build 26167630) ([#662](https://github.com/gettakaro/connectors/issues/662)) ([10e7078](https://github.com/gettakaro/connectors/commit/10e70786d67f9c5751ae4ebf2300b7a5e61ed0e5))
+* **7d2d:** support V 3.4.0 b9 (Steam build 26237934) ([#676](https://github.com/gettakaro/connectors/issues/676)) ([f8517a2](https://github.com/gettakaro/connectors/commit/f8517a22f52e2a49de1897d68bc71e1b4cbf633e))
+
+## [0.6.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.5.0...7d2d-v0.6.0) (2026-10-26)
+
+
+### Features
+
+* **7d2d:** declare the world map on protocol v1 ([#591](https://github.com/gettakaro/connectors/issues/591)) ([e126a7b](https://github.com/gettakaro/connectors/commit/e126a7b1fc83911678368b1061d44448e89d7f39))
+* **7d2d:** PrismaCore-compatible command foundation with rl, rs and isbloodmoon ([#604](https://github.com/gettakaro/connectors/issues/604)) ([cbb77eb](https://github.com/gettakaro/connectors/commit/cbb77ebb438622514aa9cf6e57fcf986b15d5b4e))
+* **7d2d:** report Game Profile and connector identity ([#549](https://github.com/gettakaro/connectors/issues/549)) ([dae5520](https://github.com/gettakaro/connectors/commit/dae55201308cb8a9bfe5a92a38835c6c6a7b0b2d))
+
+
+### Bug Fixes
+
+* **7d2d:** include the attacker on player-vs-player deaths ([#630](https://github.com/gettakaro/connectors/issues/630)) ([6f466b0](https://github.com/gettakaro/connectors/commit/6f466b00ef8b5f6bdb1a92df90f7623b03b7a0ed))
+* **7d2d:** stop shipping assemblies the game already provides ([#601](https://github.com/gettakaro/connectors/issues/601)) ([73fd69f](https://github.com/gettakaro/connectors/commit/73fd69fd626190bc70c497202f0dabbb116c2c1b))
+
+
+### Documentation
+
+* **7d2d:** bring the README to the published-docs contract ([#586](https://github.com/gettakaro/connectors/issues/586)) ([0eed6c8](https://github.com/gettakaro/connectors/commit/0eed6c839e15a7e622c177a0ed5f5e78bd59de2c))
+
 ## [0.5.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.4.0...7d2d-v0.5.0) (2026-10-18)
 
 

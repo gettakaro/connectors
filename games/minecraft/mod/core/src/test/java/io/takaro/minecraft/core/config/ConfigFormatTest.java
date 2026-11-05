@@ -69,4 +69,18 @@ class ConfigFormatTest {
         assertFalse(props.parse(props.defaultText()).isMapEnabled());
         assertTrue(props.parse(props.defaultText().replace("takaro.map=false", "takaro.map=true")).isMapEnabled());
     }
+
+    @Test
+    void everyFormatReadsTheServerChatName() throws Exception {
+        JsonConfigFormat json = new JsonConfigFormat();
+        assertTrue(json.defaultText().contains("\"server_chat_name\": \"\""));
+        assertEquals("", json.parse(json.defaultText()).getServerChatName());
+        assertEquals("Herald", json.parse(json.defaultText()
+                .replace("\"server_chat_name\": \"\"", "\"server_chat_name\": \"Herald\"")).getServerChatName());
+        PropertiesConfigFormat props = new PropertiesConfigFormat();
+        assertTrue(props.defaultText().contains("\ntakaro.server_chat_name=\n"));
+        assertEquals("", props.parse(props.defaultText()).getServerChatName());
+        assertEquals("My Server", props.parse(props.defaultText()
+                .replace("takaro.server_chat_name=", "takaro.server_chat_name=My Server")).getServerChatName());
+    }
 }

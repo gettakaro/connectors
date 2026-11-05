@@ -11,6 +11,12 @@ namespace conan {
 constexpr const char* kDefaultSender = "Takaro";
 constexpr size_t kMaxMessageChars = 1024;
 
+// The chat user name of a Takaro line: Takaro's senderNameOverride (newer Takaro fills it from the
+// server's serverChatName setting), then takaro.json `serverChatName`, then kDefaultSender. Both
+// are trimmed; empty or whitespace counts as unset. `from` gets "override", "config" or "default".
+std::string ResolveSender(const std::string& senderNameOverride, const std::string& configured,
+                          std::string* from = nullptr);
+
 // `steam:7656...` / `platform:steam:7656...` -> `7656...`; anything else is returned trimmed.
 std::string NormalizeRecipient(const std::string& recipient);
 bool IsSteam64(const std::string& s);

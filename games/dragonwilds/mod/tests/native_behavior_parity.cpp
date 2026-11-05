@@ -71,7 +71,9 @@ Json PlayersJson() {
     return Json::array({Json{{"gameId", A}, {"name", "Hendrik"}, {"characterName", "Limon"}, {"steamId", STEAM},
                              {"epicOnlineServicesId", A}, {"platformId", "epic:" + A}, {"ping", 24}, {"online", true}},
                         Json{{"gameId", B}, {"name", "Guest"}, {"online", true}},
-                        Json{{"gameId", "ffffffffffffffffffffffffffffffff"}, {"name", "Offline"}, {"online", false}}});
+                        Json{{"gameId", "ffffffffffffffffffffffffffffffff"}, {"name", "Offline"}, {"online", false}},
+                        // Still loading: placeholder name and inventory until the join is announced.
+                        Json{{"gameId", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}, {"name", "Loading"}, {"online", true}, {"inWorld", false}}});
 }
 Actions::Result Ok(const char* key, const JsonValue& body) {
     last[key] = ToJson(body);
@@ -248,7 +250,11 @@ int main() {
         Check(sender(nullptr, nullptr, "ServerName", nullptr) == "ServerName", "server name fallback");
         Check(sender(nullptr, nullptr, nullptr, nullptr) == "Dragonwilds", "default server name");
         Check(sender("", nullptr, nullptr, {{"senderNameOverride", ""}}) == "Dragonwilds", "empty values fall through");
+        Check(sender("Sender", nullptr, "ServerName", {{"senderNameOverride", " \t "}}) == "Sender",
+              "whitespace override falls through");
+        Check(sender("  ", "Alias", "ServerName", nullptr) == "Alias", "whitespace sender name falls through to the alias");
         unsetenv("TAKARO_SENDER_NAME");
+        unsetenv("TAKARO_SERVER_CHAT_NAME");
         unsetenv("TAKARO_SERVER_NAME");
         h.Open();
 
@@ -310,9 +316,13 @@ int main() {
         Check(!h.Event({{"seq", 7}, {"type", "player-death"}, {"data", {{"player", pluginPlayer}}}}).contains("msg"), "no msg without killer");
         Json attacker = {{"gameId", B}, {"characterName", "Bob"}};
         Check(h.Event({{"seq", 8}, {"type", "player-death"}, {"data", {{"player", pluginPlayer}, {"position", {{"x", 1}, {"y", 2}, {"z", 3}}}, {"attacker", attacker}}}}) ==
-                  Json({{"player", takaroPlayer}, {"position", {{"x", 1}, {"y", 2}, {"z", 3}}},
+                  Json({{"player", takaroPlayer}, {"position", {{"x", 1}, {"y", 2}, {"z", 3}, {"dimension", "overworld"}}},
                         {"attacker", {{"gameId", B}, {"name", "Bob"}, {"epicOnlineServicesId", B}, {"platformId", "epic:" + B}}}}),
               "player-death with attacker and position");
+        Json self = {{"gameId", A}, {"characterName", "Limon"}};
+        Json envDeath = h.Event({{"seq", 81}, {"type", "player-death"}, {"data", {{"player", pluginPlayer}, {"attacker", self}, {"killerEntity", "Heat"}}}});
+        Check(!envDeath.contains("attacker"), "self attacker dropped from player-death");
+        Check(envDeath.value("msg", "") == "Limon was killed by Heat", "self death keeps the environment cause in msg");
         Check(h.Event({{"seq", 9}, {"type", "log"}, {"data", {{"line", "LogDominion: saved"}, {"level", "info"}}}}) == Json({{"msg", "LogDominion: saved"}}),
               "log line key");
         Check(!h.engine->MapEvent(Json{{"seq", 10}, {"type", "player-sync"}, {"data", Json::object()}}.dump()).valid, "unknown type dropped");
@@ -320,7 +330,7 @@ int main() {
         // ---- actions (actions.test.ts) ---------------------------------------------------------------
         Json reach = h.Ok("testReachability");
         Check(reach["connectable"] == true, "testReachability connectable");
-        Check(h.Ok("getPlayers") == Json::array({LIMON, GUEST}), "getPlayers online only: " + h.Ok("getPlayers").dump());
+        Check(h.Ok("getPlayers") == Json::array({LIMON, GUEST}), "getPlayers online and in world only: " + h.Ok("getPlayers").dump());
         for (const Json& args : {Json{{"gameId", A}}, Json{{"player", {{"gameId", A}}}}, Json{{"gameId", "epic:" + A}},
                                  Json{{"steamId", STEAM}},
                                  Json{{"player", {{"gameId", A}, {"id", "pog-row"}, {"inventory", Json::array()}, {"dimension", nullptr}}}}})
@@ -340,12 +350,13 @@ int main() {
         Check(h.Ok("getPlayer", {{"gameId", A}}) == wantOffline, "last-known record survives a restart");
         playersOnline = true;
 
-        Check(h.Ok("getPlayerLocation", {{"player", {{"gameId", A}}}}) == Json({{"x", 10.5}, {"y", 20}, {"z", -3}}), "location DTO");
+        Check(h.Ok("getPlayerLocation", {{"player", {{"gameId", A}}}}) == Json({{"x", 10.5}, {"y", 20}, {"z", -3}, {"dimension", "overworld"}}),
+              "location DTO in the map Dimension");
         locationDown = true;
         h.Err("getPlayerLocation", {{"gameId", A}});
         auto joinEvent = h.engine->MapEvent(Json{{"seq", 0}, {"type", "player-connected"}, {"data", {{"player", {{"gameId", A}}}}}}.dump());
         Check(static_cast<bool>(h.store->AdmitSynthetic(joinEvent.frame)) && static_cast<bool>(h.engine->ObserveAdmitted(joinEvent)), "admit join");
-        Check(h.Ok("getPlayerLocation", {{"gameId", A}}) == Json({{"x", 10.5}, {"y", 20}, {"z", -3}}),
+        Check(h.Ok("getPlayerLocation", {{"gameId", A}}) == Json({{"x", 10.5}, {"y", 20}, {"z", -3}, {"dimension", "overworld"}}),
               "last real position answered inside the connect window");
         h.Err("getPlayerLocation", {{"gameId", B}});
         locationDown = false;
@@ -359,7 +370,7 @@ int main() {
                                                    Json{{"code", "AI_Merchant"}, {"name", "Merchant"}, {"type", "friendly"}}}),
               "listEntities");
         Check(h.Ok("listLocations") == Json::array({Json{{"code", "lodestone_ashenfall"}, {"name", "Ashenfall Lodestone"},
-                                                         {"position", {{"x", 0}, {"y", 100}, {"z", 0}}}, {"radius", 50}}}),
+                                                         {"position", {{"x", 0}, {"y", 100}, {"z", 0}, {"dimension", "overworld"}}}, {"radius", 50}}}),
               "listLocations");
 
         // ---- executeConsoleCommand: CommandOutput, never an error frame for a refused command (F1) ----
@@ -512,9 +523,30 @@ int main() {
             Check(static_cast<bool>(h.store->AdmitSynthetic(gone[0].frame)) && static_cast<bool>(h.engine->ObserveAdmitted(gone[0])), "admit");
             Check(Parse(h.engine->Snapshot()->onlinePlayersJson).empty(), "online set empty after reconcile");
             locationDown = true;
-            Check(h.Ok("getPlayerLocation", {{"gameId", A}}) == Json({{"x", 0}, {"y", 0}, {"z", 0}}),
+            Check(h.Ok("getPlayerLocation", {{"gameId", A}}) == Json({{"x", 0}, {"y", 0}, {"z", 0}, {"dimension", "overworld"}}),
                   "location lookup for the just-disconnected player answers the origin");
             locationDown = false;
+        }
+
+        // ---- a live leave is the hooks' to report: reconcile waits one pass for their event -------------
+        {
+            auto join = h.engine->MapEvent(Json{{"seq", 0}, {"type", "player-connected"}, {"data", {{"player", {{"gameId", A}, {"name", "Limon"}}}}}}.dump());
+            Check(static_cast<bool>(h.store->AdmitSynthetic(join.frame)) && static_cast<bool>(h.engine->ObserveAdmitted(join)), "join admitted");
+            h.Open();  // past the 30 s join grace, which would otherwise hide what this block checks
+            Check(h.engine->ReconcileOnline(PlayersJson().dump(), "boot").empty(), "live: nothing sent");
+            Check(h.engine->ReconcileOnline("[]", "boot").empty(), "left since the last pass: the hook's event is still due");
+            auto leave = h.engine->MapEvent(Json{{"seq", 0}, {"type", "player-disconnected"}, {"data", {{"player", {{"gameId", A}, {"name", "Limon"}}}}}}.dump());
+            Check(static_cast<bool>(h.store->AdmitSynthetic(leave.frame)) && static_cast<bool>(h.engine->ObserveAdmitted(leave)), "hook leave admitted");
+            Check(h.engine->ReconcileOnline("[]", "boot").empty(), "hook reported the leave: no second player-disconnected");
+
+            Check(static_cast<bool>(h.store->AdmitSynthetic(join.frame)) && static_cast<bool>(h.engine->ObserveAdmitted(join)), "rejoin admitted");
+            h.Open();
+            Check(h.engine->ReconcileOnline(PlayersJson().dump(), "boot").empty(), "live again");
+            Check(h.engine->ReconcileOnline("[]", "boot").empty(), "first pass after the leave waits");
+            auto missed = h.engine->ReconcileOnline("[]", "boot");
+            Check(missed.size() == 1 && missed[0].type == "player-disconnected" && missed[0].playerId == A,
+                  "a leave the hooks never reported is reconciled on the next pass");
+            Check(static_cast<bool>(h.store->AdmitSynthetic(missed[0].frame)) && static_cast<bool>(h.engine->ObserveAdmitted(missed[0])), "admit");
         }
 
         // ---- log redaction, noise and grammar (log-noise-ue.test.ts, logTail.test.ts) -------------
@@ -621,7 +653,18 @@ int main() {
                                      "server.shutdown", "events.chat-message", "events.entity-killed", "events.log"})
                 Check(std::find(names.begin(), names.end(), name) != names.end(), std::string("manifest declares ") + name);
             Check(std::find(names.begin(), names.end(), "testReachability") == names.end(), "testReachability is not a capability");
-            Check(std::find(names.begin(), names.end(), "map") == names.end(), "no map capability without map tiles");
+            // The map: one Dimension, an operator-uploaded picture, the survey calibration.
+            Check(std::count(names.begin(), names.end(), "map") == 1, "map capability declared once");
+            const Json map = *std::find_if(manifest.begin(), manifest.end(), [](const Json& c) { return c["name"] == "map"; });
+            const Json dims = map["parameters"]["dimensions"];
+            Check(dims.is_array() && dims.size() == 1, "one map Dimension");
+            Check(dims[0]["id"] == "overworld" && dims[0]["source"] == Json({{"type", "none"}}), "Dimension id and none source");
+            Check(dims[0]["axes"] == Json({{"horizontal", {{"field", "x"}, {"direction", "right"}}},
+                                           {"vertical", {{"field", "y"}, {"direction", "down"}}}}),
+                  "axes: x right, y down (north up)");
+            Check(dims[0]["bounds"] == Json({{"horizontal", {{"min", -20000}, {"max", 600100}}},
+                                             {"vertical", {{"min", -160000}, {"max", 480050}}}}),
+                  "bounds: the full-world survey");
             // Game Profile: display name, the running version only when it is valid, and the compiled-in icon.
             Check(manifest.back()["name"] == "game.profile", "game.profile is declared");
             const Json profile = manifest.back()["parameters"];

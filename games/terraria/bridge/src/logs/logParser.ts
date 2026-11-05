@@ -1,5 +1,6 @@
 import { ALL_GAME_EVENT_TYPES, type GameEvent, type GameEventType } from '../takaro/protocol.js';
 import { terrariaIdentity } from '../terraria/identity.js';
+import { TAKARO_CHAT_MARKER } from '../terraria/serverChat.js';
 
 /** TShock writes `<timestamp> - <source>: <LEVEL>: <message>`; the prefix is optional on relayed lines. */
 const TSHOCK_PREFIX = /^(?:(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - )?[^\s:][^:]*: (?:INFO|WARN|ERROR|DEBUG|FATAL): (.+)$/i;
@@ -9,6 +10,17 @@ const CHAT = /^Broadcast: <([^>]+)> (.+)$/;
 const JOINED = /^(?:\[Server API] )?(.+?) has joined\.(?:\s.*)?$/i;
 /** TShock emits both `Name left.` and `Name has left.` depending on the disconnect path. */
 const LEFT = /^(?:\[Server API] )?(.+?) (?:has )?left\.(?:\s.*)?$/i;
+/**
+ * TShock 6.2 logs a leave only as `Broadcast: Name has left.` (skipped below, like the join echo)
+ * plus `Name disconnected.`, so the second line is the one that reports a leave at once.
+ */
+const DISCONNECTED = /^(.+?) disconnected\.$/;
+/**
+ * Lines that repeat chat Takaro sent: TShock's `<user> executed: /takarosay …` record of the
+ * bridge's own command and the plugin's `TAKARO_CHAT …` line. Their text is Takaro's message,
+ * so one that reads `Bob has joined.` must not become a join.
+ */
+const TAKARO_CHAT_ECHO = new RegExp(`^(?:${TAKARO_CHAT_MARKER} |\\S.* executed: [/.])`);
 
 interface PrefixedLine {
   message: string;
@@ -56,6 +68,8 @@ function parsePlayerEvent({ message, timestamp }: PrefixedLine): GameEvent | nul
     };
   }
 
+  if (TAKARO_CHAT_ECHO.test(message)) return null;
+
   // `Broadcast: Name (N/A) has joined.` is a chat-channel echo of the authoritative
   // `Name has joined.` line; treating both as joins would emit the event twice.
   if (message.startsWith('Broadcast: ')) return null;
@@ -65,7 +79,7 @@ function parsePlayerEvent({ message, timestamp }: PrefixedLine): GameEvent | nul
     return { type: 'player-connected', data: { player: logPlayer(joined[1]) } };
   }
 
-  const left = message.match(LEFT);
+  const left = message.match(LEFT) ?? message.match(DISCONNECTED);
   if (left) {
     return { type: 'player-disconnected', data: { player: logPlayer(left[1]) } };
   }
@@ -73,12 +87,17 @@ function parsePlayerEvent({ message, timestamp }: PrefixedLine): GameEvent | nul
   return null;
 }
 
+/**
+ * The plugin's `TAKARO_EVENT {json}` line. The marker must open the logged message: chat text
+ * (a player's, or Takaro's own as TShock logs the command that sent it) is logged too, and
+ * a marker inside it must not become an event.
+ */
 function parseTakaroEventMarker(line: string): GameEvent | null {
   const marker = 'TAKARO_EVENT ';
-  const markerIndex = line.indexOf(marker);
-  if (markerIndex < 0) return null;
+  const message = stripTshockPrefix(line).message.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[[^\]]+] /, '');
+  if (!message.startsWith(marker)) return null;
 
-  const payload = line.slice(markerIndex + marker.length).trim();
+  const payload = message.slice(marker.length).trim();
   try {
     const parsed = JSON.parse(payload) as { type?: unknown; data?: unknown };
     if (!isGameEventType(parsed.type)) return null;

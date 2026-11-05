@@ -15,6 +15,8 @@ import type { DuneInventoryRow, DunePlayerRow } from '../dune/types.js';
  */
 export interface MockPlayer extends DunePlayerRow {
   inventory?: DuneInventoryRow[];
+  /** `inventories.max_item_count` of the backpack; absent = no row, as on a schema without the column. */
+  backpackSlots?: number;
 }
 
 export interface RecordedPublish {
@@ -108,6 +110,10 @@ export class MockBattlegroup {
           position_index: i.positionIndex ?? null,
           inventory_type: i.inventoryType ?? 0,
         }));
+    }
+    if (sql.includes('max_item_count')) {
+      const player = this.players.find((p) => p.accountId === Number(params[0]));
+      return player?.backpackSlots === undefined ? [] : [{ max_item_count: player.backpackSlots }];
     }
     if (sql.includes('FROM "dune"."world_partition" wp')) {
       return [{ partition_id: 1, name: 'Hagga Basin', map: 'survival_1' }];

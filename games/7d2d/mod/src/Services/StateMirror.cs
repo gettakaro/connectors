@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using Takaro.Interfaces;
 using Takaro.Persistence;
+using Takaro.WebSocket;
 
 namespace Takaro.Services
 {
@@ -18,7 +19,26 @@ namespace Takaro.Services
         private static StateMirror _instance;
         private static readonly object _lock = new object();
         private volatile bool _isGameReady;
-        private volatile bool _inventoryCaptureUnsupported;
+        private volatile string _inventoryUnsupportedReason;
+
+        /// <summary>
+        /// Why getPlayerInventory cannot answer on this server, or null. Set at startup when the
+        /// mod is a build for the other game API (BuildTarget), or when capture first fails to
+        /// bind. getPlayerInventory then fails with this text instead of returning an empty
+        /// inventory, which Takaro would store as every item removed.
+        /// </summary>
+        public string InventoryUnsupportedReason
+        {
+            get
+            {
+                if (
+                    _inventoryUnsupportedReason == null
+                    && BuildTarget.Result == BuildTarget.Match.WrongApi
+                )
+                    _inventoryUnsupportedReason = BuildTarget.WrongBuildMessage();
+                return _inventoryUnsupportedReason;
+            }
+        }
 
         public bool IsGameReady => _isGameReady;
 
@@ -29,11 +49,22 @@ namespace Takaro.Services
         private int _mapSizeX;
         private int _mapSizeY;
         private int _mapSizeZ;
+        private int _mapHalfExtent;
+        private volatile bool _mapRenderingEnabled;
+        private volatile string _worldName;
 
         public string MapRoot => _mapRoot;
         public int MapSizeX => _mapSizeX;
         public int MapSizeY => _mapSizeY;
         public int MapSizeZ => _mapSizeZ;
+
+        /// <summary>Largest |x| or |z| of the world in blocks; 0 when unknown.</summary>
+        public int MapHalfExtent => _mapHalfExtent;
+
+        /// <summary>The server renders map tiles (serverconfig EnableMapRendering).</summary>
+        public bool MapRenderingEnabled => _mapRenderingEnabled;
+
+        public string WorldName => _worldName;
 
         public static StateMirror Instance
         {
@@ -85,6 +116,22 @@ namespace Takaro.Services
                 record = Database.Instance.Players.FindById(gameId);
             }
             return record != null && record.Online ? record : null;
+        }
+
+        /// <summary>
+        /// The whole player registry, online and offline, as the DbWriter last published it.
+        /// Console commands read it on the main thread to resolve offline players, so it is a
+        /// snapshot rather than a database read: the main thread never waits for the lock the
+        /// DbWriter holds through seeding and checkpoints.
+        /// </summary>
+        public IReadOnlyList<PlayerRecord> GetRegisteredPlayers() => _registry;
+
+        private volatile IReadOnlyList<PlayerRecord> _registry = new PlayerRecord[0];
+
+        // DbWriter thread only: after every write that adds, renames or re-ids a player.
+        private void PublishRegistry()
+        {
+            _registry = new List<PlayerRecord>(Database.Instance.Players.FindAll()).AsReadOnly();
         }
 
         public PlayerRecord GetPlayerLocationRecord(string gameId)
@@ -258,8 +305,9 @@ namespace Takaro.Services
             SeedLocations();
             SeedWorldMap();
             RefreshBans();
+            SeedRegistryFromGame();
             LogService.Instance.Info(
-                "State mirror seeding enqueued (items, entities, locations, bans)"
+                "State mirror seeding enqueued (items, entities, locations, bans, player registry)"
             );
         }
 
@@ -289,6 +337,10 @@ namespace Takaro.Services
                     _mapSizeX = Math.Abs(max.x - min.x);
                     _mapSizeY = Math.Abs(max.y - min.y);
                     _mapSizeZ = Math.Abs(max.z - min.z);
+                    _mapHalfExtent = Math.Max(
+                        Math.Max(Math.Abs(min.x), Math.Abs(max.x)),
+                        Math.Max(Math.Abs(min.z), Math.Abs(max.z))
+                    );
                 }
             }
             catch (Exception ex)
@@ -296,9 +348,78 @@ namespace Takaro.Services
                 LogService.Instance.Warn($"Could not resolve world extent: {ex.Message}");
             }
 
+            try
+            {
+                _mapRenderingEnabled = GamePrefs.GetBool(EnumGamePrefs.EnableMapRendering);
+                _worldName = GamePrefs.GetString(EnumGamePrefs.GameWorld);
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Warn($"Could not read map rendering settings: {ex.Message}");
+            }
+
             LogService.Instance.Info(
-                $"World map captured (extent {_mapSizeX}x{_mapSizeY}x{_mapSizeZ}, tiles '{_mapRoot}')"
+                $"World map captured (extent {_mapSizeX}x{_mapSizeY}x{_mapSizeZ}, tiles '{_mapRoot}', "
+                    + $"rendering {(_mapRenderingEnabled ? "on" : "off")})"
             );
+        }
+
+        /// <summary>
+        /// Adds the players the game itself remembers (players.xml) to the registry when the
+        /// registry does not know them yet: players from before the registry existed, or
+        /// from a database that had to be started over. Registered players are never
+        /// overwritten; join, leave, spawn and the sampler keep them current.
+        /// </summary>
+        private void SeedRegistryFromGame()
+        {
+            PersistentPlayerList playerList = GameManager.Instance.GetPersistentPlayerList();
+            if (playerList?.Players == null)
+                return;
+
+            var candidates = new List<PlayerRecord>();
+            foreach (PersistentPlayerData data in playerList.Players.Values)
+            {
+                string primaryId = data?.PrimaryId?.CombinedString;
+                if (primaryId == null || !primaryId.StartsWith("EOS_"))
+                    continue;
+
+                string gameId = primaryId.Substring("EOS_".Length);
+                string nativeId = data.NativeId?.CombinedString;
+                var record = new PlayerRecord
+                {
+                    GameId = gameId,
+                    EpicOnlineServicesId = gameId,
+                    Name = data.PlayerName?.playerName?.Text,
+                    PlatformId = nativeId,
+                    EntityId = data.EntityId,
+                    X = data.Position.x,
+                    Y = data.Position.y,
+                    Z = data.Position.z,
+                    LastSeenUtc = data.LastLogin.ToUniversalTime(),
+                };
+                if (nativeId != null && nativeId.StartsWith("Steam_"))
+                    record.SteamId = nativeId.Substring("Steam_".Length);
+                else if (nativeId != null && nativeId.StartsWith("XBL_"))
+                    record.XboxLiveId = nativeId.Substring("XBL_".Length);
+                candidates.Add(record);
+            }
+
+            DbWriter.Instance.Enqueue(() =>
+            {
+                int added = 0;
+                foreach (PlayerRecord record in candidates)
+                {
+                    if (Database.Instance.Players.FindById(record.GameId) != null)
+                        continue;
+                    Database.Instance.Players.Insert(record);
+                    added++;
+                }
+                if (added > 0)
+                    LogService.Instance.Info(
+                        $"Player registry: added {added} player(s) the game remembers from players.xml"
+                    );
+                PublishRegistry();
+            });
         }
 
         public void UpsertPlayerOnline(ClientInfo cInfo)
@@ -322,7 +443,11 @@ namespace Takaro.Services
                 record.Z = position.z;
             }
 
-            DbWriter.Instance.Enqueue(() => Database.Instance.Players.Upsert(record));
+            DbWriter.Instance.Enqueue(() =>
+            {
+                Database.Instance.Players.Upsert(record);
+                PublishRegistry();
+            });
         }
 
         public void MarkOffline(ClientInfo cInfo)
@@ -363,7 +488,7 @@ namespace Takaro.Services
 
         public void UpsertInventory(ClientInfo cInfo)
         {
-            if (_inventoryCaptureUnsupported)
+            if (InventoryUnsupportedReason != null)
                 return;
 
             // A game build that reshapes PlayerDataFile (V3.3.0 serialises the
@@ -379,9 +504,13 @@ namespace Takaro.Services
                     || ex is TypeLoadException
                 )
             {
-                _inventoryCaptureUnsupported = true;
-                LogService.Instance.Warn(
-                    $"Inventory capture is not supported on this game build ({ex.Message}); getPlayerInventory will be empty"
+                _inventoryUnsupportedReason =
+                    $"Inventory capture is not supported on this game build ({ex.Message}). This mod was built for "
+                    + $"7 Days to Die {BuildTarget.Display(BuildTarget.Built)} and the server runs "
+                    + $"{BuildTarget.Display(BuildTarget.Running)}; install the zip for your build from {BuildTarget.DownloadPage}.";
+                LogService.Instance.Error(
+                    _inventoryUnsupportedReason
+                        + " getPlayerInventory now fails until that is fixed."
                 );
             }
         }
@@ -481,7 +610,8 @@ namespace Takaro.Services
         /// <summary>
         /// Player-facing name for an entity class ("zombieBoe" -> "Boe"), falling
         /// back to the class name when the game has no localisation for it.
-        /// Shared by the entity catalogue and entity-killed so they agree.
+        /// Used by the entity catalogue only: entity-killed keeps the class name
+        /// for parity with the legacy integration (see Shared.EntityKillName).
         /// </summary>
         public static string EntityDisplayName(string entityClassName)
         {
@@ -584,15 +714,17 @@ namespace Takaro.Services
                         {
                             Code = code,
                             Name = localizedName,
-                            X = instance.boundingBoxPosition.x,
-                            Y = instance.boundingBoxPosition.y,
-                            Z = instance.boundingBoxPosition.z,
+                            // Takaro reads position as the centre of the area; the
+                            // code above keeps the min corner so codes stay stable.
+                            X = instance.boundingBoxPosition.x + instance.boundingBoxSize.x / 2,
+                            Y = instance.boundingBoxPosition.y + instance.boundingBoxSize.y / 2,
+                            Z = instance.boundingBoxPosition.z + instance.boundingBoxSize.z / 2,
                             SizeX = instance.boundingBoxSize.x,
                             SizeY = instance.boundingBoxSize.y,
                             SizeZ = instance.boundingBoxSize.z,
                             PrefabName = prefabName,
                             Rotation = instance.rotation,
-                            PositionAnchor = "min-corner",
+                            PositionAnchor = "centre",
                         }
                     );
                 }

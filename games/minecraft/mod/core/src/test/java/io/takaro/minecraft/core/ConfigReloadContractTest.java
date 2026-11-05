@@ -59,12 +59,22 @@ class ConfigReloadContractTest {
                         + "\"request\":{\"headers\":{\"x-takaro-token\":\"SECRET-JWT\"}}}}}");
                 return;
             }
+            if ("flaky".equals(token) && identifies.size() == 1) {
+                // Takaro failing on its side closes 1008 with the error code as reason (the
+                // identifyResponse before it is left out so the close is what the client sees).
+                conn.close(1008, "internal");
+                return;
+            }
+            if ("refused".equals(token)) {
+                conn.close(1008, "invalid_args");
+                return;
+            }
             if ("conflict".equals(token)) {
                 conn.send("{\"type\":\"identifyResponse\",\"payload\":{\"error\":{\"name\":\"ConflictError\","
                         + "\"message\":\"Unique constraint violation\",\"http\":409}}}");
                 return;
             }
-            boolean ok = "good".equals(token);
+            boolean ok = "good".equals(token) || "flaky".equals(token);
             conn.send(ok
                     ? "{\"type\":\"identifyResponse\",\"payload\":{\"server\":{\"id\":\"gs-1\"}}}"
                     : "{\"type\":\"identifyResponse\",\"payload\":{\"error\":{\"message\":\"Invalid registrationToken provided\"}}}");
@@ -95,7 +105,8 @@ class ConfigReloadContractTest {
         file = dir.resolve("takaro.properties");
         Files.writeString(file, "takaro.websocket.url=ws://127.0.0.1:" + port + "/\n"
                 + "takaro.authentication.identity_token=\n"
-                + "takaro.authentication.registration_token=" + token + "\n");
+                + "takaro.authentication.registration_token=" + token + "\n"
+                + "takaro.reconnect.delay=200\n");
         adapter = new TakaroConnectorTestSupport.LogAdapter();
         ConfigFile cf = new ConfigFile(file, new PropertiesConfigFormat(), adapter, Map.<String, String>of()::get,
                 () -> "uuid-1");
@@ -162,13 +173,30 @@ class ConfigReloadContractTest {
     void switchingTheMapOnReconnectsOfferingProtocolV1() throws Exception {
         startConnector("good");
         await("identified", () -> takaro.identifies.size() == 1);
-        assertFalse(takaro.identifies.get(0).has("protocolVersions"), "map off: plain protocol 0 identify");
+        assertTrue(takaro.identifies.get(0).has("protocolVersions"), "map off: identify still offers protocol v1");
 
         Files.writeString(file, Files.readString(file) + "takaro.map=true\n");
         connector.checkConfig();
 
         await("reconnected", () -> takaro.identifies.size() == 2);
         assertTrue(takaro.identifies.get(1).has("protocolVersions"), "map on: identify offers protocol v1");
+    }
+
+    @Test
+    void anInternalTakaroErrorKeepsRetryingUntilIdentified() throws Exception {
+        startConnector("flaky");
+        await("identified after the retry", () -> adapter.infos.stream().anyMatch(l -> l.contains("Identified successfully")));
+        assertEquals(2, takaro.identifies.size());
+    }
+
+    @Test
+    void aRejectedTokenStopsRetryingUntilTheFileChanges() throws Exception {
+        startConnector("refused");
+        await("refused", () -> adapter.infos.stream().anyMatch(l -> l.contains("code=1008")));
+        Thread.sleep(800);
+        assertEquals(1, takaro.identifies.size(), "no retry with a rejected token");
+        saveToken("good");
+        await("identified", () -> adapter.infos.stream().anyMatch(l -> l.contains("Identified successfully")));
     }
 
     @Test

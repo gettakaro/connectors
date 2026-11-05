@@ -7,6 +7,10 @@ operator's own game client:
 
     python3 render_tiles.py <raw dir> --image embervale.jpg     # 8192 x 8192, north up, edge to edge
 
+The image is drawn light, like the explored in-game map: parchment shaded by height and relief, with
+contour lines every 25 m. `--style ramp` uses the game's own height ramp instead, which is the dark
+look the in-game map gives land not yet explored.
+
 Upload it on the game server's map page and leave the bounds empty. `<raw dir>` comes from step 1 below.
 
 Protocol 0 (older Takaro): the native connector answers `getMapInfo` / `getMapTile` from a tile pack
@@ -33,5 +37,5 @@ Both commands keep the live pack and the one before it, and delete older `pack-â
 World frame (build 1024233 server / 1076226 client): origin (0,0), 10240 x 10240 m (x east, z north),
 1 m per pixel at zoom 4, 128 px tiles; tile y grows north. This matches takaro-player-map's tiling.
 
-The pack is derived from Keen Games' client assets (height data and colour ramp). Use it on servers
+The pack is derived from Keen Games' client assets (height data, and the colour ramp with `--style ramp`). Use it on servers
 you run; do not publish or redistribute it without permission.

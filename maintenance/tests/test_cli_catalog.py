@@ -300,37 +300,49 @@ def test_the_wired_fixture_serves_exactly_the_targets_it_says(wired: Any) -> Non
         "carbon-25773132": "no repinner for platform 'carbon'",
         "carbon-25823813": "no repinner for platform 'carbon'",
         "carbon-25902425": "no repinner for platform 'carbon'",
+        "carbon-26139947": "no repinner for platform 'carbon'",
         "fabric-26.3": "the repinner has no fixture for this target",
-        "linux-1.0.20": "no repinner for platform 'linux'",
+        "linux-1.0.21": "no repinner for platform 'linux'",
         "linux-25689360": "no repinner for platform 'linux'",
         "linux-25789279": "no repinner for platform 'linux'",
         "linux-25936522": "no repinner for platform 'linux'",
         "linux-26051014": "no repinner for platform 'linux'",
+        "linux-26081962": "no repinner for platform 'linux'",
+        "linux-26223037": "no repinner for platform 'linux'",
         "linux-25465077": "no repinner for platform 'linux'",
         "linux-25501739": "no repinner for platform 'linux'",
         "linux-25630937": "no repinner for platform 'linux'",
         "linux-25639945": "no repinner for platform 'linux'",
         "linux-25708939": "no repinner for platform 'linux'",
+        "linux-25969514": "no repinner for platform 'linux'",
         "linux-25738716": "no repinner for platform 'linux'",
         "linux-25792439": "no repinner for platform 'linux'",
         "linux-25808123": "no repinner for platform 'linux'",
         "linux-25991736": "no repinner for platform 'linux'",
+        "linux-26087591": "no repinner for platform 'linux'",
+        "linux-26161880": "no repinner for platform 'linux'",
         "linux-25995664": "no repinner for platform 'linux'",
         "linux-21241282": "no repinner for platform 'linux'",
         "linux-3.2.0.b10": "no repinner for platform 'linux'",
         "linux-3.3.0.b18": "no repinner for platform 'linux'",
+        "linux-3.4.0.b6": "no repinner for platform 'linux'",
+        "linux-3.4.0.b9": "no repinner for platform 'linux'",
+        "linux-3.4.0.b10": "no repinner for platform 'linux'",
         "linux-42.20.4": "no repinner for platform 'linux'",
         "linux-42.21.0": "no repinner for platform 'linux'",
         "neoforge-1.21.11": "no repinner for platform 'neoforge'",
         "paper-1.21.11": "no repinner for platform 'paper'",
         "proton-1267041": "no repinner for platform 'proton'",
+        "proton-1273043": "no repinner for platform 'proton'",
         "proton-1024233": "no repinner for platform 'proton'",
         "tshock-v6.2.1": "no repinner for platform 'tshock'",
         "windows-25639945": "no repinner for platform 'windows'",
         "windows-25738716": "no repinner for platform 'windows'",
         "windows-25792439": "no repinner for platform 'windows'",
         "windows-25803875": "no repinner for platform 'windows'",
+        "windows-26280049": "no repinner for platform 'windows'",
         "windows-25995664": "no repinner for platform 'windows'",
+        "windows-25490402": "no repinner for platform 'windows'",
     }
     remaining = sorted(
         json.loads(path.read_text(encoding="utf-8"))["id"] for path in (wired.root / "catalog").glob("*/targets/*.json")
@@ -462,3 +474,38 @@ def test_record_hash_rejects_a_field_it_cannot_download(run: Any, catalog_copy: 
     )
 
     assert code == 2
+
+
+def _set_aliases(root: Path, game: str, aliases: dict[str, str]) -> None:
+    path = root / "catalog" / game / "game.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["legacyAssetAliases"] = aliases
+    path.write_text(json.dumps(record), encoding="utf-8")
+
+
+def test_an_alias_is_refused_when_its_platform_has_several_live_builds(run: Any, catalog_copy: Path) -> None:
+    """gettakaro/connectors#756: the generic 7D2D zip was the V 3.2 build while V 3.3 and V 3.4 shipped."""
+    _set_aliases(catalog_copy, "7d2d", {"takaro-7d2d-mod.zip": "linux-3.2.0.b10/server-mod"})
+
+    code, payload, _ = run("catalog", "validate", repo=catalog_copy)
+
+    assert code == 2
+    assert "legacy-alias-single-build" in failures(payload)
+    assert any("remove the alias" in check["detail"] for check in payload["failures"])
+
+
+def test_an_alias_to_a_role_the_target_does_not_build_is_refused(run: Any, catalog_copy: Path) -> None:
+    _set_aliases(catalog_copy, "vein", {"takaro-vein-sidecar.zip": "linux-25969514/sidecar"})
+
+    code, payload, _ = run("catalog", "validate", repo=catalog_copy)
+
+    assert code == 2
+    assert "legacy-alias-single-build" in failures(payload)
+
+
+def test_an_alias_to_the_only_live_build_is_allowed(run: Any, catalog_copy: Path) -> None:
+    _set_aliases(catalog_copy, "vein", {"takaro-vein-plugin.tar.gz": "linux-25969514/plugin"})
+
+    code, payload, _ = run("catalog", "validate", repo=catalog_copy)
+
+    assert code == 0, payload["failures"]

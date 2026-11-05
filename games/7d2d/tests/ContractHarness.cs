@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -10,7 +11,7 @@ using Takaro.Config;
 using Takaro.Services;
 using Takaro.WebSocket;
 
-public static class ContractHarness
+public static partial class ContractHarness
 {
     private static int _assertions;
 
@@ -18,13 +19,16 @@ public static class ContractHarness
     {
         try
         {
-            if (args.Length != 2)
+            if (args.Length != 3)
                 throw new ArgumentException(
-                    "Expected the Generic Connector fixture path and the legacy parity fixture path"
+                    "Expected the Generic Connector fixture path, the legacy parity fixture path "
+                        + "and the 7d2d project directory"
                 );
 
             JObject fixture = JObject.Parse(File.ReadAllText(args[0]));
             JObject legacy = JObject.Parse(File.ReadAllText(args[1]));
+            string projectDir = args[2];
+            ConfigureFixtureGameProfile(fixture);
             AssertBanExpiryConversion();
             AssertConsoleCommandOutcomeClassification();
             AssertResponseSerialization(fixture);
@@ -41,6 +45,8 @@ public static class ContractHarness
             AssertLegacyParityEntityKilled(legacy);
             AssertLegacyParityChatChannels(legacy);
             AssertProductionNotFoundReadSemantics();
+            AssertBuildTargetMatching();
+            AssertWrongBuildInventoryFailsLoudly();
             AssertNestedArgumentParsing();
             AssertRouterParsingAndCardinality(fixture);
             AssertControlFramesDoNotEnterRequestDispatch();
@@ -67,7 +73,14 @@ public static class ContractHarness
             AssertRawRequestsAreNotLogged();
             AssertMapCatalog();
             AssertMapRouting();
+            AssertMapFrameV1();
+            AssertMapCapabilityDeclaration();
+            AssertMapTileV1Routing();
             AssertConfigFiles();
+            AssertShippedGameProfile(fixture, projectDir);
+            AssertGameProfileLimits(fixture);
+            AssertGetGameIcon(fixture, projectDir);
+            RunFamilies();
             Console.WriteLine("Contract harness passed: " + _assertions + " assertions");
             return 0;
         }
@@ -490,7 +503,7 @@ public static class ContractHarness
         JObject payload = (JObject)frame["payload"];
         var keys = payload.Properties().Select(p => p.Name).OrderBy(n => n).ToArray();
         Equal(
-            "capabilities,game,identityToken,protocolVersions,registrationToken",
+            "capabilities,connector,game,identityToken,protocolVersions,registrationToken",
             string.Join(",", keys),
             "identify payload carries exactly the contract keys"
         );
@@ -522,7 +535,7 @@ public static class ContractHarness
                 "capability name " + name + " satisfies Takaro's pattern"
             );
             True(names.Add(name), "capability " + name + " is declared once");
-            if (name != "migration.native")
+            if (name != "migration.native" && name != GameProfile.Capability)
                 True(capability["parameters"] == null, name + " declares no parameters");
         }
 
@@ -547,6 +560,249 @@ public static class ContractHarness
         );
     }
 
+    // A header-only PNG: enough for the declaration, which never decodes the image.
+    private static byte[] FixtureIcon()
+    {
+        var png = new List<byte> { 137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13 };
+        var chunk = new List<byte>(Encoding.ASCII.GetBytes("IHDR"));
+        chunk.AddRange(new byte[] { 0, 0, 1, 0, 0, 0, 1, 0, 8, 2, 0, 0, 0 });
+        png.AddRange(chunk);
+        png.AddRange(BigEndian(Crc32(chunk.ToArray())));
+        return png.ToArray();
+    }
+
+    private static void ConfigureFixtureGameProfile(JObject fixture)
+    {
+        JObject profile = (JObject)ProtocolV1(fixture)["gameProfile"];
+        GameProfile.Configure(
+            (string)profile["connectorVersion"],
+            (string)profile["gameVersion"],
+            FixtureIcon()
+        );
+    }
+
+    private static JObject IdentifyPayload()
+    {
+        return (JObject)
+            SerializeFrame(WebSocketMessage.CreateIdentify("registration", "identity"))["payload"];
+    }
+
+    private static JObject ProfileParameters(JObject identifyPayload)
+    {
+        return (JObject)
+            ((JArray)identifyPayload["capabilities"]).Single(c =>
+                (string)c["name"] == GameProfile.Capability
+            )["parameters"];
+    }
+
+    // The shipped sources: the version release-please stamps into ModInfo.xml is the one
+    // the connector reports, and the committed icon is one Takaro accepts.
+    private static void AssertShippedGameProfile(JObject fixture, string projectDir)
+    {
+        JObject limits = (JObject)ProtocolV1(fixture)["gameProfile"];
+        string releaseVersion = File.ReadAllText(Path.Combine(projectDir, "version.txt")).Trim();
+        string modInfoVersion = GameProfile.ReadModInfoVersion(
+            File.ReadAllText(Path.Combine(projectDir, "mod", "ModInfo.xml"))
+        );
+        Equal(releaseVersion, modInfoVersion, "ModInfo.xml carries the release version");
+        True(GameProfile.IsStrictSemver(releaseVersion), "the release version is strict semver");
+
+        byte[] icon = File.ReadAllBytes(Path.Combine(projectDir, "assets", "icon-256.png"));
+        True(icon.Length <= (int)limits["iconMaxBytes"], "the icon is at most 128 KiB");
+        True(GameProfile.IsServableIcon(icon), "the icon is a 256 x 256 PNG");
+        AssertWellFormedPng(icon);
+
+        GameProfile.Configure(modInfoVersion, "V 3.3.0 (b18)", icon);
+        JObject payload = IdentifyPayload();
+        TokenEqual(
+            new JObject
+            {
+                ["name"] = (string)limits["connectorName"],
+                ["version"] = releaseVersion,
+            },
+            payload["connector"],
+            "identify reports takaro-7d2d at the release version"
+        );
+        JObject parameters = ProfileParameters(payload);
+        Equal((string)limits["displayName"], (string)parameters["name"], "profile name");
+        Equal("V 3.3.0 (b18)", (string)parameters["version"], "profile game build");
+        Equal(icon.Length, (int)parameters["icon"]["size"], "icon size is the shipped byte count");
+        string sha;
+        using (var hash = System.Security.Cryptography.SHA256.Create())
+            sha = string.Concat(hash.ComputeHash(icon).Select(b => b.ToString("x2")));
+        Equal(
+            sha.Substring(0, 12),
+            (string)parameters["icon"]["revision"],
+            "icon revision is the first 12 hex characters of the shipped icon's sha256"
+        );
+        ConfigureFixtureGameProfile(fixture);
+    }
+
+    private static void AssertWellFormedPng(byte[] png)
+    {
+        int offset = 8;
+        bool sawData = false;
+        string last = null;
+        while (offset + 12 <= png.Length)
+        {
+            int length = ReadBigEndian(png, offset);
+            True(length >= 0 && offset + 12 + length <= png.Length, "PNG chunk fits the file");
+            string type = Encoding.ASCII.GetString(png, offset + 4, 4);
+            byte[] body = png.Skip(offset + 4).Take(4 + length).ToArray();
+            Equal(
+                ReadBigEndian(png, offset + 8 + length),
+                ReadBigEndian(BigEndian(Crc32(body)), 0),
+                "PNG chunk " + type + " CRC"
+            );
+            sawData |= type == "IDAT";
+            last = type;
+            offset += 12 + length;
+        }
+        True(sawData, "PNG carries image data");
+        Equal("IEND", last, "PNG ends with IEND");
+        Equal(png.Length, offset, "PNG has no trailing bytes");
+    }
+
+    private static void AssertGameProfileLimits(JObject fixture)
+    {
+        JObject limits = (JObject)ProtocolV1(fixture)["gameProfile"];
+        byte[] icon = FixtureIcon();
+
+        foreach (string version in new[] { "1.4.0", "2.0.0-beta.1", "0.8.1+abc1234", "10.20.30" })
+            True(GameProfile.IsStrictSemver(version), version + " is strict semver");
+        foreach (
+            string version in new[] { null, "", "1.4", "v1.4.0", "01.4.0", "1.4.0-", "1.4.0 " }
+        )
+            True(!GameProfile.IsStrictSemver(version), "'" + version + "' is not strict semver");
+        True(
+            !GameProfile.IsStrictSemver("1.0.0-" + new string('a', 60)),
+            "a version over 64 characters is refused"
+        );
+
+        GameProfile.Configure("0.5", "V 3.3.0 (b18)", icon);
+        True(
+            IdentifyPayload()["connector"] == null,
+            "a non-semver mod version leaves the connector identity out"
+        );
+
+        Equal(
+            "V 3.3.0 (b18)",
+            GameProfile.NormalizeGameVersion("  V 3.3.0 (b18)\n"),
+            "game build is trimmed"
+        );
+        Equal("Vab", GameProfile.NormalizeGameVersion("V\u0007a\u200Eb"), "non-printables dropped");
+        string longBuild = GameProfile.NormalizeGameVersion(new string('9', 40));
+        Equal((int)limits["versionMaxLength"], longBuild.Length, "game build is cut to 32");
+        GameProfile.Configure("1.2.3", " \t ", icon);
+        True(
+            ProfileParameters(IdentifyPayload())["version"] == null,
+            "an unknown game build is omitted"
+        );
+
+        byte[] small = FixtureIcon();
+        small[19] = 128;
+        small[23] = 128;
+        GameProfile.Configure("1.2.3", "V 3.3.0 (b18)", small);
+        True(GameProfile.Icon == null, "a 128 x 128 PNG is not declared");
+        True(
+            ProfileParameters(IdentifyPayload())["icon"] == null,
+            "the profile declares no icon it cannot serve"
+        );
+        byte[] notPng = (byte[])icon.Clone();
+        notPng[1] = (byte)'X';
+        GameProfile.Configure("1.2.3", null, notPng);
+        True(GameProfile.Icon == null, "a file without the PNG signature is not declared");
+        byte[] huge = new byte[(int)limits["iconMaxBytes"] + 1];
+        Array.Copy(icon, huge, icon.Length);
+        GameProfile.Configure("1.2.3", null, huge);
+        True(GameProfile.Icon == null, "an icon over 128 KiB is not declared");
+
+        GameProfile.Configure("1.2.3", null, icon);
+        JObject parameters = ProfileParameters(IdentifyPayload());
+        Equal(
+            "name,icon",
+            string.Join(",", parameters.Properties().Select(p => p.Name)),
+            "profile carries exactly name and icon when the build is unknown"
+        );
+        True(
+            ((string)parameters["name"]).Length <= (int)limits["nameMaxLength"],
+            "display name fits Takaro's limit"
+        );
+        ConfigureFixtureGameProfile(fixture);
+    }
+
+    private static void AssertGetGameIcon(JObject fixture, string projectDir)
+    {
+        byte[] icon = File.ReadAllBytes(Path.Combine(projectDir, "assets", "icon-256.png"));
+        GameProfile.Configure("1.2.3", "V 3.3.0 (b18)", icon);
+        JObject declared = (JObject)ProfileParameters(IdentifyPayload())["icon"];
+
+        WebSocketTransport.Instance.ProtocolVersion = 1;
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        WebSocketTransport.Instance.ErrorCodes.Clear();
+        RequestRouter.Route(
+            "{\"type\":\"request\",\"requestId\":\"icon-1\","
+                + "\"payload\":{\"action\":\"getGameIcon\",\"args\":\"{}\"}}"
+        );
+        JObject response = SerializeFrame(WebSocketTransport.Instance.TerminalMessages.Single());
+        Equal("response", (string)response["type"], "getGameIcon answers with a response");
+        Equal("icon-1", (string)response["requestId"], "getGameIcon keeps the request id");
+        JObject payload = (JObject)response["payload"];
+        Equal(
+            "data,revision",
+            string.Join(",", payload.Properties().Select(p => p.Name).OrderBy(n => n)),
+            "getGameIcon carries exactly revision and data"
+        );
+        Equal(
+            (string)declared["revision"],
+            (string)payload["revision"],
+            "getGameIcon serves the declared revision"
+        );
+        byte[] served = Convert.FromBase64String((string)payload["data"]);
+        Equal((int)declared["size"], served.Length, "served bytes are exactly the declared size");
+        True(served.SequenceEqual(icon), "getGameIcon serves the whole shipped PNG");
+
+        GameProfile.Configure("1.2.3", "V 3.3.0 (b18)", null);
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        WebSocketTransport.Instance.ErrorCodes.Clear();
+        RequestRouter.Route(
+            "{\"type\":\"request\",\"requestId\":\"icon-2\","
+                + "\"payload\":{\"action\":\"getGameIcon\",\"args\":\"{}\"}}"
+        );
+        Equal(
+            ProtocolErrorCodes.GameError,
+            WebSocketTransport.Instance.ErrorCodes.SingleOrDefault(),
+            "an unreadable icon answers game_error"
+        );
+        WebSocketTransport.Instance.ProtocolVersion = 0;
+        ConfigureFixtureGameProfile(fixture);
+    }
+
+    private static int ReadBigEndian(byte[] bytes, int offset)
+    {
+        return (bytes[offset] << 24)
+            | (bytes[offset + 1] << 16)
+            | (bytes[offset + 2] << 8)
+            | bytes[offset + 3];
+    }
+
+    private static byte[] BigEndian(uint value)
+    {
+        return new[] { (byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value };
+    }
+
+    private static uint Crc32(byte[] data)
+    {
+        uint crc = 0xFFFFFFFF;
+        foreach (byte b in data)
+        {
+            crc ^= b;
+            for (int k = 0; k < 8; k++)
+                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320 : crc >> 1;
+        }
+        return ~crc;
+    }
+
     private static void AssertManifestMatchesAnsweredActions(JObject fixture)
     {
         JObject table = (JObject)ProtocolV1(fixture)["actionCapabilities"];
@@ -563,7 +819,11 @@ public static class ContractHarness
             ProtocolHandshake
                 .BuildCapabilityManifest(RequestRouter.SupportedActions)
                 .Select(c => (string)c["name"])
-                .Where(n => !n.StartsWith("events.") && n != "migration.native")
+                .Where(n =>
+                    !n.StartsWith("events.")
+                    && n != "migration.native"
+                    && n != GameProfile.Capability
+                )
         );
         True(
             declared.SetEquals(expectedCapabilities),
@@ -836,9 +1096,9 @@ public static class ContractHarness
             Code = "army_camp_01@100,50,200:r1",
             Position = new Takaro.TakaroPosition
             {
-                X = 100,
-                Y = 50,
-                Z = 200,
+                X = 130,
+                Y = 64,
+                Z = 226,
             },
             SizeX = 61,
             SizeY = 28,
@@ -2124,6 +2384,103 @@ public static class ContractHarness
         );
     }
 
+    // gettakaro/connectors#756: a V 3.2 zip on a V 3.4 server answered getPlayerInventory
+    // with [] forever, and Takaro recorded every item of every player as removed.
+    private static void AssertBuildTargetMatching()
+    {
+        Equal("3.4.0.b9", BuildTarget.ParseRuntime("V 3.4.0 (b9)"), "runtime build parses");
+        Equal("3.2.0.b10", BuildTarget.ParseRuntime("V 3.2.0 (b10)"), "runtime build parses b10");
+        Equal(null, BuildTarget.ParseRuntime("Alpha 21"), "an unknown build string is null");
+        Equal(1, BuildTarget.ApiGeneration("3.2.0.b10"), "V 3.2 is the old player-data API");
+        Equal(2, BuildTarget.ApiGeneration("3.3.0.b18"), "V 3.3 is the new player-data API");
+        Equal(2, BuildTarget.ApiGeneration("4.0.0.b1"), "V 4 is the new player-data API");
+        Equal(BuildTarget.Match.Exact, BuildTarget.Compare("3.4.0.b9", "3.4.0.b9"), "same build");
+        Equal(
+            BuildTarget.Match.SameApi,
+            BuildTarget.Compare("3.4.0.b6", "3.4.0.b9"),
+            "other build, same API"
+        );
+        Equal(
+            BuildTarget.Match.WrongApi,
+            BuildTarget.Compare("3.2.0.b10", "3.4.0.b9"),
+            "V 3.2 build on V 3.4"
+        );
+        Equal(
+            BuildTarget.Match.WrongApi,
+            BuildTarget.Compare("3.3.0.b18", "3.2.0.b10"),
+            "V 3.3 build on V 3.2"
+        );
+        Equal(BuildTarget.Match.Unknown, BuildTarget.Compare(null, "3.4.0.b9"), "unstamped build");
+
+        BuildTarget.Configure("3.2.0.b10", "V 3.4.0 (b9)");
+        Equal(BuildTarget.Match.WrongApi, BuildTarget.Result, "configured mismatch");
+        Equal(
+            "0.7.1+3.2.0.b10",
+            BuildTarget.VersionWithBuild("0.7.1"),
+            "version carries the build"
+        );
+        True(
+            GameProfile.IsStrictSemver(BuildTarget.VersionWithBuild("0.7.1")),
+            "version with build is semver"
+        );
+        Equal(
+            "0.7.1+x",
+            BuildTarget.VersionWithBuild("0.7.1+x"),
+            "existing build metadata is kept"
+        );
+        string problem = BuildTarget.StartupProblem();
+        True(
+            problem.Contains("V 3.2.0 b10")
+                && problem.Contains("V 3.4.0 b9")
+                && problem.Contains("takaro-7d2d-mod-3.4.0.b9-"),
+            "the startup error names both builds and the zip to install"
+        );
+
+        BuildTarget.Configure("3.4.0.b6", "V 3.4.0 (b9)");
+        True(BuildTarget.StartupProblem().Contains("not checked"), "a same-API build only warns");
+        BuildTarget.Configure("3.4.0.b9", "V 3.4.0 (b9)");
+        Equal(null, BuildTarget.StartupProblem(), "the exact build is quiet");
+        BuildTarget.Configure(null, "V 3.4.0 (b9)");
+        Equal(
+            "0.7.1",
+            BuildTarget.VersionWithBuild("0.7.1"),
+            "an unstamped build keeps the plain version"
+        );
+        Equal(
+            null,
+            BuildTarget.ReadStamp(typeof(BuildTarget).Assembly),
+            "the harness assembly carries no stamp"
+        );
+    }
+
+    private static void AssertWrongBuildInventoryFailsLoudly()
+    {
+        StateMirror.Instance.InventoryUnsupportedReason = "Wrong Takaro mod build: test";
+        try
+        {
+            AssertSingleTerminalError(
+                () =>
+                    ReadHandlers.GetPlayerInventory(
+                        "fixture-wrong-build-inventory",
+                        "fixture-player"
+                    ),
+                "getPlayerInventory on the wrong build"
+            );
+            JObject serialized = JObject.Parse(
+                JsonConvert.SerializeObject(WebSocketTransport.Instance.TerminalMessages[0])
+            );
+            Equal(
+                "Wrong Takaro mod build: test",
+                (string)serialized["payload"]["error"],
+                "the inventory error carries the reason"
+            );
+        }
+        finally
+        {
+            StateMirror.Instance.InventoryUnsupportedReason = null;
+        }
+    }
+
     private static void AssertSingleTerminalError(Action invoke, string description)
     {
         HandlerProbe.Configure(JValue.CreateNull());
@@ -2192,9 +2549,9 @@ public static class ContractHarness
             Name = "Fort Camo",
             Position = new Takaro.TakaroPosition
             {
-                X = 100,
-                Y = 50,
-                Z = 200,
+                X = 130,
+                Y = 64,
+                Z = 226,
             },
             SizeX = 61,
             SizeY = 28,
@@ -2203,7 +2560,7 @@ public static class ContractHarness
             {
                 { "prefab", "army_camp_01" },
                 { "rotation", 1 },
-                { "positionAnchor", "min-corner" },
+                { "positionAnchor", "centre" },
             },
         };
         JToken locationResponse = JToken.Parse(
@@ -2679,6 +3036,440 @@ public static class ContractHarness
         WebSocketTransport.Instance.TerminalMessages.Clear();
     }
 
+    /// <summary>
+    /// The v1 frame must put every Takaro tile exactly on one game tile. The
+    /// expected rectangles come from a port of Takaro's mapTileGameRect
+    /// (lib-gameserver generic/map.ts); the game rectangle from the renderer's
+    /// layout (tile (x, y) at game zoom g covers [x*s, (x+1)*s) on x and z).
+    /// </summary>
+    private static void AssertMapFrameV1()
+    {
+        MapFrame navezgane = MapFrame.ForWorld(128, 4, 3072);
+        Equal(4096L, navezgane.HalfSize, "Navezgane (+-3072) fits the +-4096 frame");
+        Equal(2, navezgane.MinZoom, "game zoom 0 is Takaro zoom 2 on a +-4096 frame");
+        Equal(6, navezgane.MaxZoom, "game zoom 4 is Takaro zoom 6 on a +-4096 frame");
+
+        MapFrame small = MapFrame.ForWorld(128, 4, 2000);
+        Equal(2048L, small.HalfSize, "a small world uses the smallest frame");
+        Equal(1, small.MinZoom, "the smallest frame still centres on a tile edge");
+        Equal(
+            8192L,
+            MapFrame.ForWorld(128, 4, 0).HalfSize,
+            "an unknown extent assumes the largest world, so nothing is cropped"
+        );
+        MapFrame rwg10k = MapFrame.ForWorld(128, 4, 5120);
+        Equal(8192L, rwg10k.HalfSize, "a 10240 world fits the +-8192 frame");
+        Equal(3, rwg10k.MinZoom, "a +-8192 frame starts at Takaro zoom 3");
+        MapFrame exact = MapFrame.ForWorld(128, 4, 4096);
+        Equal(4096L, exact.HalfSize, "a world edge on the frame edge needs no larger frame");
+
+        foreach (MapFrame frame in new[] { navezgane, small, rwg10k })
+        {
+            for (int zoom = frame.MinZoom; zoom <= frame.MaxZoom; zoom++)
+            {
+                int perSide = 1 << zoom;
+                int step = Math.Max(1, perSide / 16);
+                bool allMatch = true;
+                for (int x = 0; x < perSide; x += step)
+                {
+                    for (int y = 0; y < perSide; y += step)
+                    {
+                        int gz;
+                        int gx;
+                        int gy;
+                        if (!frame.TryToGameTile(zoom, x, y, out gz, out gx, out gy))
+                        {
+                            allMatch = false;
+                            continue;
+                        }
+                        double half = frame.HalfSize;
+                        double side = 2 * half / perSide;
+                        double takaroMinX = -half + x * side;
+                        double takaroMinZ = half - (y + 1) * side;
+                        long gameSide = (long)frame.TilePixels << (frame.GameMaxZoom - gz);
+                        if (
+                            gz != zoom - frame.MinZoom
+                            || side != gameSide
+                            || takaroMinX != (double)gx * gameSide
+                            || takaroMinZ != (double)gy * gameSide
+                        )
+                            allMatch = false;
+                    }
+                }
+                True(
+                    allMatch,
+                    $"every Takaro tile at zoom {zoom} of the +-{frame.HalfSize} frame is one game tile"
+                );
+            }
+        }
+
+        int gameZoom;
+        int gameX;
+        int gameY;
+        True(
+            navezgane.TryToGameTile(6, 32, 31, out gameZoom, out gameX, out gameY)
+                && gameZoom == 4
+                && gameX == 0
+                && gameY == 0,
+            "the tile north-east of the origin is game tile 4/0/0"
+        );
+        True(
+            navezgane.TryToGameTile(6, 31, 32, out gameZoom, out gameX, out gameY)
+                && gameZoom == 4
+                && gameX == -1
+                && gameY == -1,
+            "the tile south-west of the origin is game tile 4/-1/-1 (signed, y flipped)"
+        );
+        True(
+            navezgane.TryToGameTile(2, 0, 0, out gameZoom, out gameX, out gameY)
+                && gameZoom == 0
+                && gameX == -2
+                && gameY == 1,
+            "the north-west corner at the lowest zoom is game tile 0/-2/1"
+        );
+        True(
+            !navezgane.TryToGameTile(1, 0, 0, out gameZoom, out gameX, out gameY),
+            "a zoom below the declared minZoom is refused"
+        );
+        True(
+            !navezgane.TryToGameTile(7, 0, 0, out gameZoom, out gameX, out gameY),
+            "a zoom above the declared maxZoom is refused"
+        );
+        True(
+            !navezgane.TryToGameTile(6, 64, 0, out gameZoom, out gameX, out gameY)
+                && !navezgane.TryToGameTile(6, 0, 64, out gameZoom, out gameX, out gameY)
+                && !navezgane.TryToGameTile(6, -1, 0, out gameZoom, out gameX, out gameY),
+            "tile indices outside 0..2^zoom-1 are refused"
+        );
+
+        // A player at x -179, z 415 (the rig's spawn) is on game tile 4/-2/3.
+        int takaroX = (int)Math.Floor((-179 + navezgane.HalfSize) / 128.0);
+        int takaroY = (int)Math.Floor((navezgane.HalfSize - 415) / 128.0);
+        True(
+            navezgane.TryToGameTile(6, takaroX, takaroY, out gameZoom, out gameX, out gameY)
+                && gameX == -2
+                && gameY == 3,
+            "a world position lands on the game tile the renderer draws it in"
+        );
+    }
+
+    /// <summary>
+    /// The map Capability must pass Takaro's parseMapParameters and be declared
+    /// only when the server has a map.
+    /// </summary>
+    private static void AssertMapCapabilityDeclaration()
+    {
+        JObject capability = JObject.FromObject(
+            MapFrame.ForWorld(128, 4, 3072).BuildCapability("Navezgane")
+        );
+        Equal("map", (string)capability["name"], "the capability is named map");
+        JArray dimensions = (JArray)capability["parameters"]["dimensions"];
+        Equal(1, dimensions.Count, "the map declares one Dimension");
+        JObject dimension = (JObject)dimensions[0];
+        Equal(MapFrame.DimensionId, (string)dimension["id"], "the Dimension id is stable");
+        True(
+            System.Text.RegularExpressions.Regex.IsMatch(
+                (string)dimension["id"],
+                "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            ),
+            "the Dimension id matches Takaro's pattern"
+        );
+        Equal("Navezgane", (string)dimension["name"], "the Dimension is named after the world");
+        Equal("x", (string)dimension["axes"]["horizontal"]["field"], "x runs horizontally");
+        Equal("right", (string)dimension["axes"]["horizontal"]["direction"], "+x is to the right");
+        Equal("z", (string)dimension["axes"]["vertical"]["field"], "z runs vertically");
+        Equal("up", (string)dimension["axes"]["vertical"]["direction"], "+z (north) is up");
+        foreach (string axis in new[] { "horizontal", "vertical" })
+        {
+            Equal(
+                -4096,
+                dimension["bounds"][axis]["min"].Value<int>(),
+                axis + " bounds start at -4096"
+            );
+            Equal(
+                4096,
+                dimension["bounds"][axis]["max"].Value<int>(),
+                axis + " bounds end at 4096"
+            );
+        }
+        JObject source = (JObject)dimension["source"];
+        Equal("tiled", (string)source["type"], "the source is tiled");
+        Equal(128, (int)source["tileSize"], "tiles are the game's 128 px tiles");
+        Equal(2, (int)source["minZoom"], "minZoom is the frame's game zoom 0");
+        Equal(6, (int)source["maxZoom"], "maxZoom is the frame's game zoom 4");
+        Equal(
+            "World",
+            (string)
+                JObject.FromObject(MapFrame.ForWorld(128, 4, 0).BuildCapability(" "))["parameters"][
+                    "dimensions"
+                ][0]["name"],
+            "a blank world name falls back to World"
+        );
+
+        var withMap = ProtocolHandshake.BuildCapabilityManifest(
+            RequestRouter.SupportedActions,
+            MapFrame.ForWorld(128, 4, 3072).BuildCapability("Navezgane")
+        );
+        Equal(
+            1,
+            withMap.Count(c => (string)c["name"] == "map"),
+            "a passed map Capability is declared once"
+        );
+        Equal(
+            0,
+            ProtocolHandshake
+                .BuildCapabilityManifest(RequestRouter.SupportedActions)
+                .Count(c => (string)c["name"] == "map"),
+            "no map Capability is declared without one"
+        );
+
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            "takaro-mapcap-" + Guid.NewGuid().ToString("N")
+        );
+        var mirror = Takaro.Services.StateMirror.Instance;
+        try
+        {
+            mirror.MapRoot = Path.Combine(root, "map");
+            mirror.MapHalfExtent = 3072;
+            mirror.WorldName = "Navezgane";
+
+            mirror.MapRenderingEnabled = false;
+            True(
+                ReadHandlers.CurrentMapCapability() == null,
+                "no map is declared when rendering is off and no tiles exist"
+            );
+            True(!IdentifyDeclaresMap(), "identify carries no map when the server has none");
+
+            mirror.MapRenderingEnabled = true;
+            True(
+                ReadHandlers.CurrentMapCapability() != null,
+                "a map is declared when rendering is on, before the first tile exists"
+            );
+            True(IdentifyDeclaresMap(), "identify declares the map when rendering is on");
+
+            mirror.MapRenderingEnabled = false;
+            Directory.CreateDirectory(Path.Combine(mirror.MapRoot, "4", "0"));
+            File.WriteAllText(
+                Path.Combine(mirror.MapRoot, "mapinfo.json"),
+                "{\"blockSize\":256,\"maxZoom\":3}"
+            );
+            JObject cached = JObject.FromObject(ReadHandlers.CurrentMapCapability());
+            JObject cachedSource = (JObject)cached["parameters"]["dimensions"][0]["source"];
+            Equal(256, (int)cachedSource["tileSize"], "tileSize follows mapinfo.json");
+            Equal(
+                (int)cachedSource["minZoom"] + 3,
+                (int)cachedSource["maxZoom"],
+                "the zoom range follows mapinfo.json's maxZoom"
+            );
+            True(IdentifyDeclaresMap(), "an existing tile cache is declared with rendering off");
+
+            File.WriteAllText(
+                Path.Combine(mirror.MapRoot, "mapinfo.json"),
+                "{\"blockSize\":32,\"maxZoom\":4}"
+            );
+            True(
+                ReadHandlers.CurrentMapCapability() == null,
+                "a tile size Takaro would refuse is never declared"
+            );
+
+            File.WriteAllText(
+                Path.Combine(mirror.MapRoot, "mapinfo.json"),
+                "{\"blockSize\":256,\"maxZoom\":99999999999}"
+            );
+            int halfPixels;
+            int halfZoom;
+            MapCatalog.ReadTileLayout(mirror.MapRoot, out halfPixels, out halfZoom);
+            True(
+                halfPixels == 128 && halfZoom == 4,
+                "a mapinfo.json with one unreadable field keeps both defaults"
+            );
+
+            File.WriteAllText(Path.Combine(mirror.MapRoot, "mapinfo.json"), "not json");
+            int tilePixels;
+            int gameMaxZoom;
+            MapCatalog.ReadTileLayout(mirror.MapRoot, out tilePixels, out gameMaxZoom);
+            True(
+                tilePixels == 128 && gameMaxZoom == 4,
+                "a damaged mapinfo.json falls back to the game defaults"
+            );
+        }
+        finally
+        {
+            mirror.MapRoot = null;
+            mirror.MapRenderingEnabled = false;
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch (Exception) { }
+        }
+    }
+
+    private static bool IdentifyDeclaresMap()
+    {
+        var payload = ProtocolHandshake.BuildIdentifyPayload("registration", "identity");
+        return ((List<Dictionary<string, object>>)payload["capabilities"]).Any(c =>
+            (string)c["name"] == "map"
+        );
+    }
+
+    /// <summary>
+    /// On protocol v1 getMapTile is {dimension, zoom, x, y} -> {mimeType, data};
+    /// the v0 {x, y, z} -> base64 string reply stays for v0 connections.
+    /// </summary>
+    private static void AssertMapTileV1Routing()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            "takaro-mapv1-" + Guid.NewGuid().ToString("N")
+        );
+        var mirror = Takaro.Services.StateMirror.Instance;
+        byte[] png = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x07 };
+        byte[] southWest = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x09 };
+        try
+        {
+            mirror.MapRoot = Path.Combine(root, "map");
+            mirror.MapHalfExtent = 3072;
+            mirror.MapRenderingEnabled = true;
+            Directory.CreateDirectory(Path.Combine(mirror.MapRoot, "4", "0"));
+            Directory.CreateDirectory(Path.Combine(mirror.MapRoot, "4", "-1"));
+            File.WriteAllText(
+                Path.Combine(mirror.MapRoot, "mapinfo.json"),
+                "{\"blockSize\":128,\"maxZoom\":4}"
+            );
+            File.WriteAllBytes(Path.Combine(mirror.MapRoot, "4", "0", "0.png"), png);
+            File.WriteAllBytes(Path.Combine(mirror.MapRoot, "4", "-1", "-1.png"), southWest);
+
+            WebSocketTransport.Instance.ProtocolVersion = 1;
+            True(ReadHandlers.CurrentMapCapability() != null, "identify declares the map");
+
+            // Tile requests stay in the declared frame even if mapinfo.json changes later.
+            File.WriteAllText(
+                Path.Combine(mirror.MapRoot, "mapinfo.json"),
+                "{\"blockSize\":256,\"maxZoom\":2}"
+            );
+
+            JObject reply = RouteV1Tile("world", 6, 32, 31);
+            Equal("image/png", (string)reply?["mimeType"], "a v1 tile reply names its mime type");
+            Equal(
+                Convert.ToBase64String(png),
+                (string)reply?["data"],
+                "a v1 tile reply carries the game tile's PNG as base64"
+            );
+            Equal(
+                Convert.ToBase64String(southWest),
+                (string)RouteV1Tile("world", 6, 31, 32)?["data"],
+                "the v1 tile south-west of the origin is the game's negative tile"
+            );
+
+            RouteV1Tile("world", 6, 0, 0);
+            Equal(
+                ProtocolErrorCodes.NotFound,
+                WebSocketTransport.Instance.ErrorCodes.SingleOrDefault(),
+                "an unrendered tile is not_found, shown transparent by Takaro"
+            );
+            RouteV1Tile("nether", 6, 32, 31);
+            Equal(
+                ProtocolErrorCodes.NotFound,
+                WebSocketTransport.Instance.ErrorCodes.SingleOrDefault(),
+                "an undeclared dimension is not_found"
+            );
+            RouteV1Tile("world", 9, 0, 0);
+            Equal(
+                ProtocolErrorCodes.InvalidArgs,
+                WebSocketTransport.Instance.ErrorCodes.SingleOrDefault(),
+                "a tile outside the declared pyramid is invalid_args"
+            );
+            WebSocketTransport.Instance.ErrorCodes.Clear();
+            WebSocketTransport.Instance.TerminalMessages.Clear();
+            RouteMapRequest(
+                "getMapTile",
+                "map-v1-bad",
+                new JObject
+                {
+                    ["x"] = 1,
+                    ["y"] = 2,
+                    ["z"] = 3,
+                }
+            );
+            Equal(
+                ProtocolErrorCodes.InvalidArgs,
+                WebSocketTransport.Instance.ErrorCodes.SingleOrDefault(),
+                "v0-shaped args on a v1 connection are invalid_args"
+            );
+
+            mirror.MapRenderingEnabled = false;
+            Directory.Delete(mirror.MapRoot, true);
+            True(ReadHandlers.CurrentMapCapability() == null, "identify declares no map");
+            RouteV1Tile("world", 6, 32, 31);
+            Equal(
+                ProtocolErrorCodes.Unsupported,
+                WebSocketTransport.Instance.ErrorCodes.SingleOrDefault(),
+                "a v1 tile request on a server without a map is unsupported"
+            );
+
+            // v0 keeps its own shape on the same tile cache.
+            mirror.MapRenderingEnabled = true;
+            Directory.CreateDirectory(Path.Combine(mirror.MapRoot, "4", "0"));
+            File.WriteAllBytes(Path.Combine(mirror.MapRoot, "4", "0", "0.png"), png);
+            WebSocketTransport.Instance.ProtocolVersion = 0;
+            WebSocketTransport.Instance.TerminalMessages.Clear();
+            RouteMapRequest(
+                "getMapTile",
+                "map-v0",
+                new JObject
+                {
+                    ["x"] = 0,
+                    ["y"] = 0,
+                    ["z"] = 4,
+                }
+            );
+            JToken v0 = JObject.Parse(
+                JsonConvert.SerializeObject(WebSocketTransport.Instance.TerminalMessages.Single())
+            )["payload"];
+            Equal(
+                Convert.ToBase64String(png),
+                v0.Type == JTokenType.String ? (string)v0 : null,
+                "a v0 tile reply stays a bare base64 string at the game's own index"
+            );
+        }
+        finally
+        {
+            WebSocketTransport.Instance.ProtocolVersion = 0;
+            WebSocketTransport.Instance.ErrorCodes.Clear();
+            WebSocketTransport.Instance.TerminalMessages.Clear();
+            mirror.MapRoot = null;
+            mirror.MapRenderingEnabled = false;
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch (Exception) { }
+        }
+    }
+
+    private static JObject RouteV1Tile(string dimension, int zoom, int x, int y)
+    {
+        WebSocketTransport.Instance.ErrorCodes.Clear();
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        RouteMapRequest(
+            "getMapTile",
+            "map-v1",
+            new JObject
+            {
+                ["dimension"] = dimension,
+                ["zoom"] = zoom,
+                ["x"] = x,
+                ["y"] = y,
+            }
+        );
+        WebSocketMessage message = WebSocketTransport.Instance.TerminalMessages.Single();
+        if (message.Type != WebSocketMessage.MessageTypes.Response)
+            return null;
+        return JObject.Parse(JsonConvert.SerializeObject(message))["payload"] as JObject;
+    }
+
     private static void RouteMapRequest(string action, string requestId, JToken args)
     {
         var payload = new JObject { ["action"] = action };
@@ -2830,6 +3621,32 @@ public static class ContractHarness
             string output = process.StandardOutput.ReadToEnd().Trim();
             process.WaitForExit();
             return output;
+        }
+    }
+
+    // Each tests/ContractHarness.<Family>.cs adds one `private static void Family<Name>()`;
+    // they run in name order, so a new command family adds a file instead of editing this one.
+    private static void RunFamilies()
+    {
+        foreach (
+            System.Reflection.MethodInfo family in typeof(ContractHarness)
+                .GetMethods(
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
+                )
+                .Where(method => method.Name.StartsWith("Family", StringComparison.Ordinal))
+                .OrderBy(method => method.Name, StringComparer.Ordinal)
+        )
+        {
+            try
+            {
+                family.Invoke(null, null);
+            }
+            catch (System.Reflection.TargetInvocationException ex)
+            {
+                System
+                    .Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException)
+                    .Throw();
+            }
         }
     }
 
@@ -2987,10 +3804,15 @@ namespace Takaro.Services
 
         public bool IsGameReady => true;
 
+        public string InventoryUnsupportedReason;
+
         public string MapRoot;
         public int MapSizeX;
         public int MapSizeY;
         public int MapSizeZ;
+        public int MapHalfExtent;
+        public bool MapRenderingEnabled;
+        public string WorldName;
 
         public List<Takaro.TakaroPlayer> GetOnlinePlayers()
         {
@@ -3099,6 +3921,7 @@ namespace Takaro.Persistence
         public string SteamId { get; set; }
         public string XboxLiveId { get; set; }
         public string EpicOnlineServicesId { get; set; }
+        public string PlatformId { get; set; }
         public float X { get; set; }
         public float Y { get; set; }
         public float Z { get; set; }

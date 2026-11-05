@@ -1,6 +1,7 @@
 // Native connector configuration: per field the environment, then the one config file
 // ConanSandbox/Saved/Config/Takaro/takaro.json (TAKARO_CONAN_CONFIG moves it), then the default.
-// URL, registration token, identity, name and protocol apply without a restart (core/takaro/config_watch.h);
+// URL, registration token, identity, name, protocol and serverChatName apply without a restart
+// (core/takaro/config_watch.h);
 // everything else is read at startup.
 //
 // Holding vs inert: a missing token, an unreadable or unparseable file or a non-wss URL leaves the
@@ -49,6 +50,7 @@ struct Config {
     std::string url = kDefaultUrl;
     std::string identityToken, registrationToken;
     std::string serverName = kDefaultServerName;
+    std::string serverChatName;  // chat sender of Takaro lines when Takaro sends none; applies without a reconnect
     Source urlSource = Source::Default, identitySource = Source::Default, registrationSource = Source::Default,
            nameSource = Source::Default;
     std::string caFile;    // empty = the platform default (Linux: next to the library, then the system)

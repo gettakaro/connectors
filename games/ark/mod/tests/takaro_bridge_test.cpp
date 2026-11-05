@@ -4,6 +4,7 @@
 // for offline players, ban metadata/expiry, event replay after an outage and
 // the shutdown response-before-exit ordering.
 #include "../src/takaro_bridge.hpp"
+#include "../src/config_file.hpp"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -16,6 +17,9 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <functional>
 #include <iostream>
 #include <mutex>
@@ -207,7 +211,11 @@ class FakeGame {
   std::mutex mutex;
   std::shared_ptr<gate::Action> last_shutdown;
   std::u32string last_message;
+  std::u32string last_message_sender;
+  std::string last_message_recipient;
   std::u32string last_text() { std::lock_guard<std::mutex> lock(mutex); return last_message; }
+  std::u32string last_sender() { std::lock_guard<std::mutex> lock(mutex); return last_message_sender; }
+  std::string last_recipient() { std::lock_guard<std::mutex> lock(mutex); return last_message_recipient; }
   std::atomic<int> executed{0};
   std::atomic<bool> stall{false};
 
@@ -245,7 +253,13 @@ class FakeGame {
           }
           case gate::Action::Kind::shutdown: { std::lock_guard<std::mutex> lock(mutex); last_shutdown = action; break; }
           case gate::Action::Kind::console: action->output = "handled"; break;
-          case gate::Action::Kind::message: { std::lock_guard<std::mutex> lock(mutex); last_message = action->text; break; }
+          case gate::Action::Kind::message: {
+            std::lock_guard<std::mutex> lock(mutex);
+            last_message = action->text;
+            last_message_sender = action->sender;
+            last_message_recipient = action->player_id;
+            break;
+          }
           default: break;
         }
         gate::Server::complete(action, success);
@@ -356,10 +370,11 @@ void test_identify_and_wire() {
   auto broadcast = takaro.request("msg-all", "sendMessage", json::obj({{"message", json::str("hello")},
       {"opts", json::obj({{"recipient", json::Value::null()}})}}));
   CHECK(broadcast && broadcast->get("payload")->is_object());
+  CHECK(game.last_text() == U"hello" && game.last_sender().empty());
   auto named = takaro.request("msg-named", "sendMessage", json::obj({{"message", json::str("hi all")},
       {"opts", json::obj({{"senderNameOverride", json::str("Bot")}})}}));
   CHECK(named);
-  CHECK(game.last_text() == U"Bot: hi all");
+  CHECK(game.last_text() == U"hi all" && game.last_sender() == U"Bot");
 
   // Explicit JSON nulls from modules are absent values.
   gate.record_login(kId, "Limon");
@@ -473,6 +488,7 @@ void test_events_cursor_and_outage_replay() {
   });
   CHECK(death && death->get("payload")->get("data")->get("position") &&
         death->get("payload")->get("data")->get("position")->get("x")->as_number() == 5);
+  CHECK(death && !death->get("payload")->get("data")->get("position")->get("dimension"));  // v0
 
   // entity-killed carries the held weapon's display name; unarmed stays empty.
   CHECK(eventually([&] { return gate.entities().has_value(); }));
@@ -499,6 +515,7 @@ void test_events_cursor_and_outage_replay() {
   }));
   auto location = takaro.request("loc", "getPlayerLocation", json::obj({{"gameId", json::str(kId)}}));
   CHECK(location && location->get("payload")->get("x")->as_number() == 11);
+  CHECK(location && !location->get("payload")->get("dimension"));  // v0: x, y, z only
   bridge.stop();
 }
 
@@ -720,13 +737,254 @@ void test_protocol_v1() {
         connected->get("payload")->get("seq")->as_number() == 1);
   CHECK(connected && connected->get("payload")->get("data")->get("player")->get("ip")->as_string() == "198.51.100.7" &&
         connected->get("payload")->get("data")->get("player")->get("ping")->as_number() == 35);
+  // Positions name the declared Dimension; teleports accept it and refuse any other.
+  gate.record_position(kId, -113926.75f, 234912.75f, -14334.5f);
+  auto location = takaro.request("v1-loc", "getPlayerLocation", json::obj({{"gameId", json::str(kId)}}), 2000ms);
+  CHECK(location && location->get("payload")->get("dimension")->as_string() == "TheIsland" &&
+        location->get("payload")->get("y")->as_number() == 234912.75);
+  auto tp = takaro.request("v1-tp", "teleportPlayer", json::obj({{"gameId", json::str(kId)}, {"x", json::num(1)},
+      {"y", json::num(2)}, {"z", json::num(3)}, {"dimension", json::str("TheIsland")}}), 2000ms);
+  CHECK(tp && tp->get("payload") && tp->get("payload")->is_object());
+  auto tp_other = takaro.request("v1-tp-other", "teleportPlayer", json::obj({{"gameId", json::str(kId)}, {"x", json::num(1)},
+      {"y", json::num(2)}, {"z", json::num(3)}, {"dimension", json::str("Ragnarok")}}), 2000ms);
+  CHECK(tp_other && tp_other->get("error")->get("code")->as_string() == "unsupported");
   std::this_thread::sleep_for(1500ms);
   CHECK(bridge.persisted_cursor() == 0);
   takaro.acks = true;
   gate.record_chat(kId, "Limon", "acked");
   CHECK(eventually([&] { return bridge.persisted_cursor() == 2; }));
   CHECK(takaro::load_cursor(state + "/event-cursor.json").seq == 2);
+  // A death position names the Dimension too, so Takaro files that sample under it.
+  gate.record_death_position(kId, 5, 6, 7, 1, 1);
+  gate.record_player_death(kId, "Limon", "");
+  auto death = takaro.wait_for([](const json::Value& m) {
+    return is_type(m, "gameEvent") && m.get("payload")->get("type")->as_string() == "player-death";
+  });
+  CHECK(death && death->get("payload")->get("data")->get("position")->get("dimension")->as_string() == "TheIsland");
   bridge.stop();
+}
+
+// Shipped files beside this test: games/ark/{version.txt,assets/icon-256.png}.
+std::string repo_path(const std::string& relative) {
+  return (std::filesystem::path(__FILE__).parent_path() / "../.." / relative).string();
+}
+
+std::string repo_file(const std::string& relative) {
+  std::ifstream in(repo_path(relative), std::ios::binary);
+  return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+std::string base64_decode(const std::string& text) {
+  std::string out(text.size() / 4 * 3, '\0');
+  const int n = EVP_DecodeBlock(reinterpret_cast<unsigned char*>(out.data()),
+                                reinterpret_cast<const unsigned char*>(text.data()), static_cast<int>(text.size()));
+  if (n < 0) return {};
+  size_t padding = 0;
+  while (padding < 2 && padding < text.size() && text[text.size() - 1 - padding] == '=') ++padding;
+  out.resize(static_cast<size_t>(n) - padding);
+  return out;
+}
+
+void test_game_profile() {
+  // The reported connector version is the release version (release-please keeps both equal).
+  const std::string version_txt = ark_config::trim(repo_file("version.txt"));
+  CHECK(!version_txt.empty() && std::string(takaro::kConnectorVersion) == version_txt);
+
+  // The shipped icon: a 256x256 PNG of at most 128 KiB, revision = sha256[:12] of its bytes.
+  const std::string png = repo_file("assets/icon-256.png");
+  std::string error;
+  auto icon = takaro::load_game_icon(repo_path("assets/icon-256.png"), error);
+  CHECK(icon && icon->png == png && png.size() <= 131072 && icon->revision == takaro::sha256_hex(png).substr(0, 12));
+  CHECK(icon && icon->revision.find_first_not_of("0123456789abcdef") == std::string::npos);
+  std::string not_png = png;
+  not_png[1] = 'X';
+  CHECK(!takaro::parse_game_icon(not_png, error) && error == "icon is not a PNG");
+  std::string wrong_side = png;
+  wrong_side[18] = 2;  // IHDR width 256 -> 512
+  CHECK(!takaro::parse_game_icon(wrong_side, error) && error.find("not 256x256") != std::string::npos);
+  CHECK(!takaro::parse_game_icon(png + std::string(131073 - png.size(), '\0'), error));
+  CHECK(!takaro::load_game_icon("/nonexistent/icon-256.png", error));
+
+  // v1: identify carries game + connector, the manifest declares game.profile, getGameIcon serves the bytes.
+  FakeTakaro takaro;
+  takaro.v1 = true;
+  gate::Server gate("boot-profile");
+  FakeGame game(gate);
+  auto config = config_for(takaro, temp_dir());
+  config.game_version = "361.7";
+  config.game_icon = icon;
+  takaro::Bridge bridge(config, gate, [](const std::string&) {});
+  bridge.start();
+  auto identify = takaro.wait_for([](const json::Value& m) { return is_type(m, "identify"); });
+  CHECK(identify);
+  if (identify) {
+    const auto* payload = identify->get("payload");
+    CHECK(payload->get("game")->as_string() == "ark");
+    CHECK(payload->get("connector")->get("name")->as_string() == "takaro-ark");
+    CHECK(payload->get("connector")->get("version")->as_string() == version_txt);
+    int profiles = 0;
+    for (const auto& c : payload->get("capabilities")->as_array()) {
+      if (c.get("name")->as_string() != "game.profile") continue;
+      ++profiles;
+      const auto* p = c.get("parameters");
+      CHECK(p->get("name")->as_string() == "ARK: Survival Evolved");
+      CHECK(p->get("version")->as_string() == "361.7");
+      CHECK(icon && p->get("icon")->get("revision")->as_string() == icon->revision);
+      CHECK(p->get("icon")->get("size")->as_number() == static_cast<double>(png.size()));
+    }
+    CHECK(profiles == 1);
+  }
+  CHECK(eventually([&] { return bridge.identified(); }));
+  auto served = takaro.request("icon-1", "getGameIcon", json::Value::object(), 2000ms);
+  CHECK(served && !served->get("error"));
+  if (served && served->get("payload") && served->get("payload")->is_object()) {
+    CHECK(icon && served->get("payload")->get("revision")->as_string() == icon->revision);
+    const std::string bytes = base64_decode(served->get("payload")->get("data")->as_string());
+    CHECK(bytes == png && bytes.size() == png.size());
+  }
+  bridge.stop();
+
+  // No icon declared: no icon in the profile and getGameIcon is refused as unsupported;
+  // an unknown game build is omitted, never sent empty.
+  FakeTakaro bare;
+  bare.v1 = true;
+  gate::Server gate2("boot-profile-2");
+  FakeGame game2(gate2);
+  takaro::Bridge bridge2(config_for(bare, temp_dir()), gate2, [](const std::string&) {});
+  bridge2.start();
+  auto identify2 = bare.wait_for([](const json::Value& m) { return is_type(m, "identify"); });
+  CHECK(identify2);
+  if (identify2)
+    for (const auto& c : identify2->get("payload")->get("capabilities")->as_array())
+      if (c.get("name")->as_string() == "game.profile")
+        CHECK(!c.get("parameters")->get("icon") && !c.get("parameters")->get("version"));
+  CHECK(eventually([&] { return bridge2.identified(); }));
+  auto refused = bare.request("icon-2", "getGameIcon", json::Value::object(), 2000ms);
+  CHECK(refused && refused->get("error")->get("code")->as_string() == "unsupported");
+  bridge2.stop();
+
+  // v0 (no protocol 1 offered): game + connector still identify, no manifest.
+  FakeTakaro old;
+  gate::Server gate3("boot-profile-3");
+  FakeGame game3(gate3);
+  auto v0 = config_for(old, temp_dir());
+  v0.protocol_versions = {0};
+  v0.game_icon = icon;
+  takaro::Bridge bridge3(v0, gate3, [](const std::string&) {});
+  bridge3.start();
+  auto identify3 = old.wait_for([](const json::Value& m) { return is_type(m, "identify"); });
+  CHECK(identify3 && identify3->get("payload")->get("game")->as_string() == "ark" &&
+        identify3->get("payload")->get("connector")->get("version")->as_string() == version_txt &&
+        !identify3->get("payload")->get("capabilities"));
+  bridge3.stop();
+}
+
+// The first identify waits for the loaded world (so Takaro's icon fetch after identify finds the
+// server reachable), but never forever.
+void test_identify_waits_for_game() {
+  auto identifies = [](FakeTakaro& t) {
+    int n = 0;
+    for (const auto& m : t.messages()) n += is_type(m, "identify");
+    return n;
+  };
+  FakeTakaro takaro;
+  takaro.v1 = true;
+  gate::Server gate("boot-loading");
+  takaro::Bridge bridge(config_for(takaro, temp_dir()), gate, [](const std::string&) {});
+  bridge.start();
+  std::this_thread::sleep_for(800ms);
+  CHECK(identifies(takaro) == 0 && !bridge.identified());
+  gate.set_game_ready();
+  CHECK(eventually([&] { return bridge.identified(); }));
+  CHECK(identifies(takaro) == 1);
+  bridge.stop();
+
+  FakeTakaro stuck;
+  gate::Server never_ready("boot-stuck");
+  auto config = config_for(stuck, temp_dir());
+  config.identify_ready_wait = 300ms;
+  takaro::Bridge bounded(config, never_ready, [](const std::string&) {});
+  bounded.start();
+  CHECK(eventually([&] { return bounded.identified(); }));
+  bounded.stop();
+}
+
+
+// Sender name: opts.senderNameOverride, else TAKARO_SERVER_CHAT_NAME, else none (ARK's
+// server line, unchanged). The name travels as the native sender, never inside the text.
+void test_server_chat_name() {
+  using takaro::server_chat_sender;
+  const json::Value bot = json::str("  Bot  "), blank = json::str(" \t "), empty = json::str(""), number = json::num(7);
+  CHECK(server_chat_sender(&bot, "Config") == "Bot");        // override wins, trimmed
+  CHECK(server_chat_sender(nullptr, " Config ") == "Config"); // config fallback, trimmed
+  CHECK(server_chat_sender(&blank, "Config") == "Config");    // whitespace override is unset
+  CHECK(server_chat_sender(&empty, "Config") == "Config");    // empty override is unset
+  CHECK(server_chat_sender(&number, "Config") == "Config");   // non-text override is unset
+  CHECK(server_chat_sender(nullptr, "  ").empty());           // whitespace config is unset
+  CHECK(server_chat_sender(nullptr, "").empty());
+  // Long names are cut to the 128 code points the native line takes, never refused.
+  std::string long_name;
+  for (int i = 0; i < 200; ++i) long_name += "\xC3\xA9";  // U+00E9
+  const json::Value long_override = json::str(long_name);
+  const std::string cut = server_chat_sender(&long_override, "");
+  CHECK(cut.size() == 256 && long_name.rfind(cut, 0) == 0);
+
+  constexpr const char* kId = "76561198000000001";
+  FakeTakaro takaro;
+  gate::Server gate("boot-chat-name");
+  FakeGame game(gate);
+  auto config = config_for(takaro, temp_dir());
+  config.server_chat_name = " Config Name ";
+  takaro::Bridge bridge(config, gate, [](const std::string&) {});
+  bridge.start();
+  CHECK(eventually([&] { return bridge.identified(); }));
+  gate.record_login(kId, "Limon");
+  CHECK(eventually([&] { return !takaro.messages().empty(); }));
+
+  auto send = [&](const std::string& id, json::Value opts) {
+    return takaro.request(id, "sendMessage", json::obj({{"message", json::str("hi all")}, {"opts", std::move(opts)}}));
+  };
+  // Config fallback, global and directed.
+  CHECK(send("cfg-global", json::Value::object()));
+  CHECK(game.last_text() == U"hi all" && game.last_sender() == U"Config Name" && game.last_recipient().empty());
+  CHECK(send("cfg-direct", json::obj({{"recipient", json::obj({{"gameId", json::str(kId)}})}})));
+  CHECK(game.last_text() == U"hi all" && game.last_sender() == U"Config Name" && game.last_recipient() == kId);
+  // The override wins over the config value, global and directed.
+  CHECK(send("ovr-global", json::obj({{"senderNameOverride", json::str("Takaro Bot")}})));
+  CHECK(game.last_text() == U"hi all" && game.last_sender() == U"Takaro Bot");
+  CHECK(send("ovr-direct", json::obj({{"senderNameOverride", json::str("Takaro Bot")},
+                                      {"recipient", json::obj({{"gameId", json::str(kId)}})}})));
+  CHECK(game.last_sender() == U"Takaro Bot" && game.last_recipient() == kId);
+  // A blank override falls back to the config value.
+  CHECK(send("blank", json::obj({{"senderNameOverride", json::str("   ")}})));
+  CHECK(game.last_sender() == U"Config Name");
+  // A name longer than the native limit still delivers the message.
+  CHECK(send("long", json::obj({{"senderNameOverride", json::str(std::string(300, 'n'))}})));
+  CHECK(game.last_text() == U"hi all" && game.last_sender() == std::u32string(128, U'n'));
+  // Kick notices use the same sender.
+  CHECK(takaro.request("kick", "kickPlayer", json::obj({{"gameId", json::str(kId)}, {"reason", json::str("afk")}})));
+  CHECK(game.last_text() == U"Kick reason: afk" && game.last_sender() == U"Config Name");
+
+  // No name anywhere: the message renders exactly as before.
+  FakeTakaro plain;
+  gate::Server gate2("boot-chat-plain");
+  FakeGame game2(gate2);
+  takaro::Bridge bridge2(config_for(plain, temp_dir()), gate2, [](const std::string&) {});
+  bridge2.start();
+  CHECK(eventually([&] { return bridge2.identified(); }));
+  CHECK(plain.request("none", "sendMessage", json::obj({{"message", json::str("hi all")}})));
+  CHECK(game2.last_text() == U"hi all" && game2.last_sender().empty());
+
+  // Takaro's own lines never come back as chat-message events.
+  std::this_thread::sleep_for(300ms);
+  for (auto* t : {&takaro, &plain})
+    for (const auto& m : t->messages()) {
+      const json::Value* payload = m.get("payload");
+      CHECK(!(is_type(m, "gameEvent") && payload && payload->get("type") &&
+              payload->get("type")->is_string() && payload->get("type")->as_string() == "chat-message"));
+    }
+  bridge.stop();
+  bridge2.stop();
 }
 
 int main() {
@@ -738,6 +996,9 @@ int main() {
   test_game_thread_stall_withholds();
   test_identify_rejected_backs_off();
   test_protocol_v1();
+  test_game_profile();
+  test_identify_waits_for_game();
+  test_server_chat_name();
   if (failures) { std::cerr << failures << " check(s) failed\n"; return 1; }
   std::cout << "takaro_bridge_test passed\n";
   return 0;

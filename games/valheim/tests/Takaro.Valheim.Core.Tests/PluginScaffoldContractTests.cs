@@ -86,8 +86,9 @@ public sealed class PluginScaffoldContractTests
         var method = SliceMethod(source, "public Task<TakaroActionResult> ListLocationsAsync", "public Task<TakaroActionResult> TeleportPlayerAsync");
 
         StringAssert.Contains(method, "GetLocationList()");
-        StringAssert.Contains(method, "LocationFactory.Create");
-        StringAssert.Contains(method, "m_location.m_name");
+        StringAssert.Contains(method, "NotableLocations.Select");
+        StringAssert.Contains(method, "m_location.m_prefabName");
+        StringAssert.Contains(method, "LocationsGenerated");
         StringAssert.Contains(method, "m_position");
     }
 
@@ -252,7 +253,7 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(entrypoint, "Monitor.TryEnter(configCheckGate)");
         Assert.IsFalse(entrypoint.Contains("Config.Bind", StringComparison.Ordinal), "BepInEx must not rewrite the config files.");
         Assert.IsFalse(entrypoint.Contains("companionMode", StringComparison.OrdinalIgnoreCase));
-        StringAssert.Contains(entrypoint, "new InventoryCompanionBridge(playerResolver, companionInventory, Logger.LogInfo)");
+        StringAssert.Contains(entrypoint, "new InventoryCompanionBridge(playerResolver, companionInventory, Logger.LogInfo, File.Exists(commandProbeMarker) ? commandProbeMarker : null)");
         StringAssert.Contains(entrypoint, "new ValheimPlayerResolver(Logger, knownPlayerNames)");
         StringAssert.Contains(entrypoint, "TakaroChatParticipant.Initialize(config.ChatSenderName");
 

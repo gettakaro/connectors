@@ -33,9 +33,11 @@ public sealed class ConnectorConfigStore
     private readonly Action<string> warn;
     private readonly Func<string> newIdentity;
     private readonly string? hostServerName;
+    private readonly string? legacyUserFilePath;
     private IReadOnlyDictionary<string, string>? current;
     private string? stamp;
     private string? lastProblem;
+    private bool migrationPending;
 
     public ConnectorConfigStore(
         string path,
@@ -43,9 +45,11 @@ public sealed class ConnectorConfigStore
         Action<string>? warn = null,
         Func<string>? newIdentity = null,
         TimeSpan? settleDelay = null,
-        string? hostServerName = null)
+        string? hostServerName = null,
+        string? legacyUserFilePath = null)
     {
         FilePath = path;
+        this.legacyUserFilePath = legacyUserFilePath;
         this.info = info ?? (_ => { });
         this.warn = warn ?? (_ => { });
         this.newIdentity = newIdentity ?? (() => Guid.NewGuid().ToString());
@@ -105,6 +109,11 @@ public sealed class ConnectorConfigStore
     private ConfigChange? Reload(bool firstLoad, bool readable, string? text, out string error)
     {
         error = "";
+        if (readable)
+        {
+            text = MigrateLegacy(firstLoad, text);
+        }
+
         Dictionary<string, string>? file = null;
         if (text is null)
         {
@@ -193,7 +202,7 @@ public sealed class ConnectorConfigStore
         current = values;
         // The connector's own write is not a change; after a failed write no stamp is kept, so
         // the next check tries again.
-        stamp = !written ? null : file is null && text is not null ? text : TryRead(FilePath);
+        stamp = !written || migrationPending ? null : file is null && text is not null ? text : TryRead(FilePath);
         lastProblem = null;
 
         var connectionChanged = previous is not null
@@ -216,6 +225,71 @@ public sealed class ConnectorConfigStore
         }
 
         return new ConfigChange(config, connectionChanged, restartKeys);
+    }
+
+    // An older version's config (4.2.x: plugins/TakaroValheim/takaro.cfg plus a saved copy here;
+    // up to 4.1: everything here) becomes a current file holding the settings that version used.
+    // The result is used even when it cannot be written; the next check then tries again.
+    private string? MigrateLegacy(bool firstLoad, string? text)
+    {
+        migrationPending = false;
+        var legacyUserExists = legacyUserFilePath is not null && File.Exists(legacyUserFilePath);
+        if (!LegacyConfigMigration.IsLegacy(text) && !(firstLoad && text is null && legacyUserExists))
+        {
+            return text;
+        }
+
+        var legacyUser = legacyUserExists ? TryRead(legacyUserFilePath!) : null;
+        var values = LegacyConfigMigration.Resolve(text, legacyUser);
+        if (values is null)
+        {
+            return text;
+        }
+
+        if (values[ConnectorConfigFiles.IdentityTokenKey].Length == 0)
+        {
+            values[ConnectorConfigFiles.IdentityTokenKey] = current?[ConnectorConfigFiles.IdentityTokenKey] ?? newIdentity();
+        }
+
+        if (values[ConnectorConfigFiles.ServerNameKey].Length == 0)
+        {
+            values[ConnectorConfigFiles.ServerNameKey] = ConnectorConfigFiles.UniqueServerName(
+                values[ConnectorConfigFiles.IdentityTokenKey], hostServerName);
+        }
+
+        var migrated = ConnectorConfigFiles.NewFile(values);
+        // Only over the text this was built from: an edit saved meanwhile is migrated on the next check.
+        migrationPending = !(ReadText(FilePath, out var unchanged) && unchanged == text && TryWrite(() => migrated));
+        if (!migrationPending)
+        {
+            var sources = string.Join(" and ", new[] { text is null ? null : FilePath, legacyUser is null ? null : legacyUserFilePath }.Where(s => s is not null));
+            info($"Takaro Valheim carried the settings of the older connector version ({sources}) over into the current format of {FilePath}.");
+            if (legacyUser is not null)
+            {
+                RetireLegacyUserFile();
+            }
+        }
+
+        return migrated;
+    }
+
+    private void RetireLegacyUserFile()
+    {
+        var target = legacyUserFilePath + LegacyConfigMigration.MigratedSuffix;
+        try
+        {
+            if (File.Exists(target))
+            {
+                File.Delete(target);
+            }
+
+            File.Move(legacyUserFilePath!, target);
+            info($"Takaro Valheim renamed {legacyUserFilePath} to {target}; the connector no longer reads it. Edit {FilePath} instead.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            warn($"Takaro Valheim could not rename {legacyUserFilePath} ({ex.Message}); the connector no longer reads it. Edit {FilePath} instead.");
+        }
     }
 
     private bool TryWrite(Func<string> render)

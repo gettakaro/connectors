@@ -33,18 +33,21 @@ answer, and the record is the authority.
 |---|---|---|---|---|---|
 | 7 Days to Die | `linux-3.2.0.b10` | linux | 3.2.0.b10 | candidate | contract |
 | 7 Days to Die | `linux-3.3.0.b18` | linux | 3.3.0.b18 | candidate | contract |
+| 7 Days to Die | `linux-3.4.0.b6` | linux | 3.4.0.b6 | candidate | contract |
+| 7 Days to Die | `linux-3.4.0.b9` | linux | 3.4.0.b9 | candidate | contract |
+| 7 Days to Die | `linux-3.4.0.b10` | linux | 3.4.0.b10 | candidate | contract |
 | Conan Exiles | `linux-25639945` | linux | 25639945 | candidate | contract |
 | Conan Exiles | `linux-25738716` | linux | 25738716 | candidate | contract |
 | Conan Exiles | `linux-25792439` | linux | 25792439 | candidate | contract |
 | RuneScape: Dragonwilds | `linux-25465077` | linux | 25465077 | candidate | contract |
-| Enshrouded | `proton-1267041` | proton | 1267041 | candidate | contract |
+| Enshrouded | `proton-1273043` | proton | 1273043 | candidate | contract |
 | Minecraft | `fabric-26.1.2` | fabric | 26.1.2 | maintained | protocol |
 | Minecraft | `fabric-26.2` | fabric | 26.2 | maintained | protocol |
 | Minecraft | `neoforge-1.21.11` | neoforge | 1.21.11 | maintained | protocol |
 | Minecraft | `paper-1.21.11` | paper | 1.21.11 | maintained | protocol |
 | Rust | `carbon-25353106` | carbon | 25353106 | candidate | build |
 | Terraria | `tshock-v6.2.1` | tshock | v6.2.1 | maintained | contract |
-| Valheim | `linux-1.0.20` | linux | 1.0.20 | candidate | contract |
+| Valheim | `linux-1.0.21` | linux | 1.0.21 | candidate | contract |
 | Project Zomboid | `linux-42.20.4` | linux | 42.20.4 | candidate | contract |
 
 Exactly one target per (game, platform) is the default, and that is the one a command with no
@@ -70,7 +73,8 @@ worth stating plainly:
   many times the head is observed again.
 * **Release assets live only on GitHub Releases.** Stable releases stay; rolling releases are
   replaced atomically; PR builds are deleted when the pull request closes. Legacy asset aliases
-  are kept for two stable releases and then dropped by a catalog pull request.
+  are kept for two stable releases and then dropped by a catalog pull request, and sooner when a
+  second live build appears on their platform (`legacy-alias-single-build`).
 * **Workflow diagnostics are kept 14 days**, and that is the only run-level history there is.
 * **No credential is retained anywhere.** Credentials are read from the environment for the
   duration of a process and redacted from everything the command writes.
@@ -89,8 +93,8 @@ If a deployment needs an input to outlive upstream, it has to keep that copy its
 
 **Mechanics.** Set `support.status: "retired"` in a reviewed pull request. The record stays, so a
 report or compatibility record that cites it still resolves. The build project it names is removed
-later, once nothing builds it. Any `legacyAssetAliases` entry pointing at it is dropped once its
-successor has shipped in two stable releases. The full mechanics are
+later, once nothing builds it. Any `legacyAssetAliases` entry pointing at it must be dropped in the same
+pull request: `catalog validate` refuses an alias to a retired target. The full mechanics are
 [retiring a target](../../catalog/README.md#retiring-a-target).
 
 **What consumers see.** The compat record of an old release keeps its `status` as it was when that

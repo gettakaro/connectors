@@ -30,6 +30,7 @@ for connector, Takaro API and Takaro module testing with a handful of human play
 | Project Zomboid | `zomboid` | Takaro `-javaagent` inside the PZ server JVM (WebSocket) | 8 GB | 16 GB |
 | Palworld | `palworld` | Third-party bridge → Palworld REST API | 12 GB | 10 GB |
 | Conan Exiles | `conan-exiles` | `libtakaro-conan-native.so` `LD_PRELOAD` native connector → Takaro WebSocket (built and unpacked by the rig, loaded by hand) | 12 GB | 35 GB |
+| Empyrion - Galactic Survival | `empyrion` | `TakaroEmpyrion` C# mod in `Content/Mods` (WebSocket), Windows server under Wine; server and Wine prefix outside `_data` (`EMPYRION_SERVER_DIR`, `EMPYRION_WINE_DIR`) | 8 GB | 25 GB |
 
 ³ `dragonwilds` runs as `takaro-dev-dragonwilds` with its data in `_data/dragonwilds-dev`, its plugin in
 `_data/dragonwilds-dev-plugin` and its connector state in `_data/dragonwilds-dev-state`.

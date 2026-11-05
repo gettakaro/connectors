@@ -2,6 +2,7 @@ package io.takaro.minecraft.paper;
 
 import io.takaro.minecraft.core.EventEmitter;
 import io.takaro.minecraft.core.GameAdapter;
+import io.takaro.minecraft.core.PlayerNotOnlineException;
 import io.takaro.minecraft.core.config.ConfigFile;
 import io.takaro.minecraft.core.map.RegionRenderer;
 import io.takaro.minecraft.core.map.WorldMap;
@@ -10,6 +11,8 @@ import io.takaro.minecraft.core.model.*;
 import io.takaro.minecraft.core.target.RuntimeIdentity;
 import io.papermc.paper.ServerBuildInfo;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.*;
 import org.bukkit.ban.ProfileBanList;
 import org.bukkit.entity.EntityType;
@@ -45,8 +48,38 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
 
     @Override
     public void onDisable() {
+        emitDisconnectForOnlinePlayers();
         if (connector != null) {
             connector.shutdown();
+        }
+    }
+
+    /**
+     * Paper disables plugins before it kicks the players still online at shutdown, so the quit
+     * listener never reaches Takaro and Takaro would keep them marked online. Emit
+     * player-disconnected for each of them before the connector shuts down.
+     */
+    private void emitDisconnectForOnlinePlayers() {
+        EventEmitter emitter = eventEmitter;
+        if (emitter == null) return;
+        int emitted = 0;
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            try {
+                String gameId = player.getUniqueId().toString();
+                getPlayerLocation(gameId); // warm cache before player is removed from list
+                emitter.emitPlayerDisconnected(gameId, player.getName());
+                emitted++;
+            } catch (Exception e) {
+                getLogger().warning("Failed to emit player-disconnected on shutdown: " + e.getMessage());
+            }
+        }
+        if (emitted > 0) {
+            // give the frames time to reach Takaro before the socket is torn down
+            try {
+                Thread.sleep(750);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 
@@ -174,22 +207,32 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
     @Override
     public void giveItem(String gameId, String itemCode, int amount, String quality) {
         Player player = Bukkit.getPlayer(UUID.fromString(gameId));
-        if (player == null) return;
+        if (player == null) throw new PlayerNotOnlineException(gameId);
         Material mat = Material.matchMaterial(itemCode);
-        if (mat == null) return;
+        if (mat == null || !mat.isItem()) throw new IllegalArgumentException("unknown item: " + itemCode);
         player.getInventory().addItem(new ItemStack(mat, amount));
     }
 
     @Override
-    public void sendMessage(String message, String recipientGameId) {
+    public void sendMessage(ChatLine line, String recipientGameId) {
+        Component component = render(line);
         if (recipientGameId != null) {
             Player player = Bukkit.getPlayer(UUID.fromString(recipientGameId));
             if (player != null) {
-                player.sendMessage(Component.text(message));
+                player.sendMessage(component);
             }
         } else {
-            Bukkit.broadcast(Component.text(message));
+            Bukkit.broadcast(component);
         }
+    }
+
+    private static Component render(ChatLine line) {
+        if (!line.hasSender()) {
+            return Component.text(line.message());
+        }
+        Component text = Component.translatable(line.translationKey(), line.plainText(),
+                Component.text(line.sender()), Component.text(line.message()));
+        return line.whisper() ? text.color(NamedTextColor.GRAY).decorate(TextDecoration.ITALIC) : text;
     }
 
     @Override
@@ -205,7 +248,8 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
     @Override
     public void teleportPlayer(String gameId, double x, double y, double z, String dimension) {
         Player player = Bukkit.getPlayer(UUID.fromString(gameId));
-        if (player == null) return;
+        if (player == null) throw new PlayerNotOnlineException(gameId);
+        if (player.isDead()) throw new IllegalStateException("player " + gameId + " is dead");
         org.bukkit.World world = dimension != null ? getWorldForDimension(dimension) : player.getWorld();
         if (world == null) world = player.getWorld();
         player.teleport(new Location(world, x, y, z));
@@ -257,6 +301,11 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
             if (target instanceof com.destroystokyo.paper.profile.PlayerProfile profile) {
                 uuid = profile.getId() != null ? profile.getId().toString() : "";
                 name = profile.getName() != null ? profile.getName() : "";
+                // A ban placed while the player was offline stores the profile without a name.
+                if (name.isEmpty() && profile.getId() != null) {
+                    String known = Bukkit.getOfflinePlayer(profile.getId()).getName();
+                    name = known != null ? known : "";
+                }
             }
             String expiresAt = entry.getExpiration() != null ? entry.getExpiration().toInstant().toString() : null;
             bans.add(new io.takaro.minecraft.core.model.BanEntry(uuid, name, entry.getReason(), expiresAt));

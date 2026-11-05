@@ -1,5 +1,5 @@
-// The connection settings that apply without a restart: Takaro URL, registration token, identity,
-// server name and protocol. takaro\plugin.json next to enshrouded_server.exe is the one config file; a non-empty
+// The settings that apply without a restart: Takaro URL, registration token, identity, server name and
+// protocol (the connection), plus the server chat name. takaro\plugin.json next to enshrouded_server.exe is the one config file; a non-empty
 // environment variable wins per field and is never written to disk. ConfigWatcher creates the file
 // when it is missing, writes a generated identity into it when its identity is empty, and re-reads it
 // while the server runs; the caller polls it from one thread. Pure apart from fileio, so the host
@@ -31,8 +31,11 @@ struct LiveSettings {
 
 struct LiveResolution {
     LiveSettings s;
+    // The sender name on messages from Takaro when Takaro passes none ("" = none). Not a connection setting:
+    // changing it never reconnects.
+    std::string serverChatName;
     Source url = Source::Default, registration = Source::Default, identity = Source::Default,
-           name = Source::Default, protocol = Source::Default;
+           name = Source::Default, protocol = Source::Default, chatName = Source::Default;
 };
 
 // One parsed settings file. found=false when the file is absent; ok=false when it is not a JSON object.
@@ -81,7 +84,8 @@ public:
     const LiveResolution& Start(int64_t nowMs);
     // Re-reads plugin.json when due. A text that differs from the applied one is taken only when the
     // next read, settleMs later, returns the same text, and only when it parses; an unreadable,
-    // half-saved or removed file keeps the current settings. True when the live settings changed.
+    // half-saved or removed file keeps the current settings. True when the live settings or the server chat
+    // name changed.
     bool Poll(int64_t nowMs);
     const LiveResolution& Active() const { return active_; }
     // Warnings meant for the server console, each returned once.

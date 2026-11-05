@@ -24,7 +24,10 @@
     "games/ark": {
       "release-type": "simple",
       "component": "ark",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        { "type": "generic", "path": "mod/src/version.hpp" }
+      ]
     },
     "games/rust": {
       "release-type": "simple",
@@ -90,7 +93,8 @@
       "component": "dune",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "mod/src/common.h" }
+        { "type": "generic", "path": "mod/src/common.h" },
+        { "type": "generic", "path": "sidecar/src/version.ts" }
       ]
     },
     "games/vein": {
@@ -122,6 +126,15 @@
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         { "type": "generic", "path": "mod/addons/sourcemod/scripting/takaro_tf2.sp" }
+      ]
+    },
+    "games/empyrion": {
+      "release-type": "simple",
+      "component": "empyrion",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        { "type": "generic", "path": "mod/src/TakaroMod.cs" },
+        { "type": "generic", "path": "mod/TakaroEmpyrion_Info.yaml" }
       ]
     }
   }
