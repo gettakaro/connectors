@@ -145,6 +145,12 @@ public:
                 for (auto& i : items.arr) list.arr.push_back(MapInventoryItem(&i));
             return list;
         }
+        if (action == "getPlayerProgression") {
+            std::string id = PlayerId(args);
+            JsonValue found;
+            if (FindPlayer(id, found)) return MapProgression(&found);
+            return FindKnown(id, found) ? JArr() : JNull();
+        }
         if (action == "giveItem") {
             std::string pid = ResolvePluginId(PlayerId(args));
             auto code = Str(args.get("item"));
