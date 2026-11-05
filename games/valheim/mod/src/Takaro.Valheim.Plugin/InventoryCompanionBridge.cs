@@ -38,6 +38,7 @@ public sealed class InventoryCompanionBridge : IDisposable
 
     private readonly ValheimPlayerResolver playerResolver;
     private readonly CompanionInventoryCache inventory;
+    private readonly CompanionProgressionCache progression;
     private readonly CompanionSessionRegistry sessions;
     private readonly CompanionRateLimiter rateLimiter;
     private readonly CompanionRateLimiter killVerdictRateLimiter;
@@ -61,17 +62,19 @@ public sealed class InventoryCompanionBridge : IDisposable
     public InventoryCompanionBridge(
         ValheimPlayerResolver playerResolver,
         CompanionInventoryCache inventory,
+        CompanionProgressionCache progression,
         Action<string>? log = null,
         string? commandProbeMarkerPath = null)
     {
         this.playerResolver = playerResolver ?? throw new ArgumentNullException(nameof(playerResolver));
         this.inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
+        this.progression = progression ?? throw new ArgumentNullException(nameof(progression));
         this.log = log ?? (_ => { });
         clock = CreateMonotonicClock();
         sessions = new CompanionSessionRegistry(
             CompanionProtocol.MinimumVersion,
             CompanionProtocol.CurrentVersion,
-            CompanionCapability.Inventory,
+            CompanionProtocol.KnownCapabilities,
             HandshakeGrace,
             HeartbeatGrace);
         rateLimiter = new CompanionRateLimiter(capacity: 10, refillTokens: 5, refillInterval: TimeSpan.FromSeconds(1));
@@ -89,7 +92,8 @@ public sealed class InventoryCompanionBridge : IDisposable
             killVerdictRateLimiter,
             inventory,
             killVerdicts,
-            commandProbe);
+            commandProbe,
+            progression);
         CompanionKillVerdicts.Attach(sessions, killVerdicts, clock);
     }
 
@@ -124,6 +128,7 @@ public sealed class InventoryCompanionBridge : IDisposable
         killVerdictRateLimiter.Clear();
         killVerdicts.Clear();
         inventory.Clear();
+        progression.Clear();
         registeredRpc = null;
     }
 
@@ -300,6 +305,11 @@ public sealed class InventoryCompanionBridge : IDisposable
             {
                 tracked = new TrackedPeer(peer, characterId);
                 trackedPeers.Add(peer.m_uid, tracked);
+                if (playerResolver.TryResolvePeerPlayer(peer, out var player) && player is not null)
+                {
+                    progression.ObservePeer(peer.m_uid, player);
+                }
+
                 BeginSession(routedRpc, peer, tracked, now);
                 continue;
             }
@@ -338,6 +348,7 @@ public sealed class InventoryCompanionBridge : IDisposable
             var nonce = Guid.NewGuid().ToString("N");
             sessions.Begin(peer.m_uid, now, nonce);
             inventory.BeginSession(peer.m_uid, nonce);
+            progression.ForgetReading(peer.m_uid);
             var hello = CreateEnvelope(
                 CompanionProtocol.NegotiationEnvelopeVersion,
                 nonce,
@@ -347,7 +358,7 @@ public sealed class InventoryCompanionBridge : IDisposable
                 new CompanionHello(
                     CompanionProtocol.MinimumVersion,
                     CompanionProtocol.CurrentVersion,
-                    (int)CompanionCapability.Inventory));
+                    (int)CompanionProtocol.KnownCapabilities));
             routedRpc.InvokeRoutedRPC(peer.m_uid, CompanionProtocol.RpcName, CompanionEnvelopeCodec.EncodeEnvelope(hello));
             tracked.NextHelloAt = now + tracked.HelloRetry;
             tracked.HelloRetry = tracked.HelloRetry + tracked.HelloRetry > MaximumHelloRetry
@@ -412,6 +423,16 @@ public sealed class InventoryCompanionBridge : IDisposable
                 {
                     tracked.LoggedSnapshotForNonce = session.Nonce;
                     log($"Takaro Valheim inventory companion snapshot accepted from {who}: {result.InventoryStacks} stack(s), client-reported.");
+                }
+
+                break;
+            case CompanionMessageOutcome.SkillsAccepted:
+                if (trackedPeers.TryGetValue(sender, out var skillsPeer)
+                    && sessions.TryGetSnapshot(sender, out var skillsSession)
+                    && !string.Equals(skillsPeer.LoggedSkillsForNonce, skillsSession.Nonce, StringComparison.Ordinal))
+                {
+                    skillsPeer.LoggedSkillsForNonce = skillsSession.Nonce;
+                    log($"Takaro Valheim inventory companion skills accepted from {who}: {result.Skills} skill(s), client-reported.");
                 }
 
                 break;
@@ -505,6 +526,7 @@ public sealed class InventoryCompanionBridge : IDisposable
     {
         sessions.RemovePeer(peerId);
         inventory.RemovePeer(peerId);
+        progression.RemovePeer(peerId);
         rateLimiter.RemovePeer(peerId);
         killVerdictRateLimiter.RemovePeer(peerId);
         killVerdicts.RemovePeer(peerId);
@@ -565,6 +587,8 @@ public sealed class InventoryCompanionBridge : IDisposable
         public bool LoggedFirstHello { get; set; }
 
         public string? LoggedSnapshotForNonce { get; set; }
+
+        public string? LoggedSkillsForNonce { get; set; }
 
         public string? ServerSequenceNonce { get; set; }
 

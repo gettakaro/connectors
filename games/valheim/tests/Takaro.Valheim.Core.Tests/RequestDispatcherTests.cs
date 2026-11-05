@@ -470,6 +470,9 @@ public sealed class RequestDispatcherTests
         public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default) =>
             RecordCall($"inventory:{identifier}", Task.FromResult(TakaroActionResult.Ok(new[] { new { code = "Wood", name = "Wood", amount = 50, quality = "1" } })));
 
+        public Task<TakaroActionResult> GetPlayerProgressionAsync(string identifier, CancellationToken cancellationToken = default) =>
+            RecordCall($"progression:{identifier}", Task.FromResult(TakaroActionResult.Ok(Array.Empty<TakaroProgressionTrack>())));
+
         public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default) =>
             RecordCall($"give:{identifier}:{itemCode}:{amount}:{quality ?? "<quality>"}", Task.FromResult(TakaroActionResult.Ok(new { queued = true })));
 

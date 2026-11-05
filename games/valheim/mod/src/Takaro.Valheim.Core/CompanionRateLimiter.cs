@@ -117,6 +117,7 @@ public sealed class CompanionRateLimiter
         || messageType == CompanionMessageTypes.HelloNack
         || messageType == CompanionMessageTypes.Heartbeat
         || messageType == CompanionMessageTypes.InventorySnapshot
+        || messageType == CompanionMessageTypes.SkillsSnapshot
         || messageType == CompanionMessageTypes.KillVerdict
         || messageType == CompanionMessageTypes.CommandProbeInvoke;
 
