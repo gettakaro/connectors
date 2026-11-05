@@ -60,8 +60,9 @@ public final class TakaroAgent {
             MainThreadQueue queue = new MainThreadQueue();
             PlayerRegistry registry = new PlayerRegistry();
             BanStore banStore = new BanStore();
-            Reconciler reconciler = new Reconciler(registry, banStore);
-            ZomboidAdapter adapter = new ZomboidAdapter(queue, registry, reconciler, banStore,
+            Progression progression = new Progression();
+            Reconciler reconciler = new Reconciler(registry, banStore, progression);
+            ZomboidAdapter adapter = new ZomboidAdapter(queue, registry, reconciler, banStore, progression,
                     config.isDebugEnabled());
             TakaroConnector connector = new TakaroConnector(adapter, config);
 

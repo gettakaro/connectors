@@ -555,6 +555,13 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             case "getPlayerInventory":
                 handleOnMainThread(requestId, () -> handleGetPlayerInventory(args));
                 break;
+            case "getPlayerProgression":
+                if (protocolVersion >= 1) {
+                    handleGetPlayerProgression(requestId, args);
+                } else {
+                    sendError(requestId, ProtocolException.UNSUPPORTED, "Action not implemented: " + action);
+                }
+                break;
             case "giveItem":
                 handleOnMainThread(requestId, () -> { handleGiveItem(args); return null; });
                 break;
@@ -833,6 +840,26 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             arr.add(obj);
         }
         return arr;
+    }
+
+    private void handleGetPlayerProgression(String requestId, JsonObject args) {
+        String gameId = extractGameId(args);
+        List<ProgressionTrack> tracks = gameId == null ? null : adapter.getPlayerProgression(gameId);
+        if (tracks == null) {
+            sendResponse(requestId, JsonNull.INSTANCE, null);
+            return;
+        }
+        JsonArray arr = new JsonArray();
+        for (ProgressionTrack track : tracks) {
+            JsonObject obj = new JsonObject();
+            obj.addProperty("key", track.key());
+            if (track.name() != null) obj.addProperty("name", track.name());
+            obj.addProperty("level", track.level());
+            if (track.experience() != null) obj.addProperty("experience", track.experience());
+            if (track.progress() != null) obj.addProperty("progress", track.progress());
+            arr.add(obj);
+        }
+        sendResponse(requestId, arr, null);
     }
 
     private void handleGiveItem(JsonObject args) {

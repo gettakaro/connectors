@@ -13,6 +13,7 @@ import io.takaro.zomboid.core.model.MapDimension;
 import io.takaro.zomboid.core.model.MapImageChunk;
 import io.takaro.zomboid.core.model.PlayerInfo;
 import io.takaro.zomboid.core.model.PlayerLocation;
+import io.takaro.zomboid.core.model.ProgressionTrack;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -35,17 +36,19 @@ public final class ZomboidAdapter implements GameAdapter {
     private final PlayerRegistry registry;
     private final Reconciler reconciler;
     private final BanStore banStore;
+    private final Progression progression;
     private final boolean debug;
     private final MapService map = new MapService();
     private final AtomicBoolean mapStarted = new AtomicBoolean();
     private volatile EventEmitter emitter;
 
     public ZomboidAdapter(MainThreadQueue queue, PlayerRegistry registry,
-                          Reconciler reconciler, BanStore banStore, boolean debug) {
+                          Reconciler reconciler, BanStore banStore, Progression progression, boolean debug) {
         this.queue = queue;
         this.registry = registry;
         this.reconciler = reconciler;
         this.banStore = banStore;
+        this.progression = progression;
         this.debug = debug;
     }
 
@@ -172,6 +175,11 @@ public final class ZomboidAdapter implements GameAdapter {
             throw new IllegalStateException("Player not online: " + gameId);
         }
         return items;
+    }
+
+    @Override
+    public List<ProgressionTrack> getPlayerProgression(String gameId) {
+        return progression.get(gameId);
     }
 
     @Override
