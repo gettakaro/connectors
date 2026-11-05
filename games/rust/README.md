@@ -121,6 +121,7 @@ Checked on Rust build 26498655 with Carbon v2.0.264, 2026-11-07. ✅ works, ⚠�
 | Player location | ✅ | |
 | Teleport | ✅ | To the exact coordinates with no ground snapping; pick a safe height. |
 | Player inventory | ⚠️ | Main inventory, hotbar and worn items; item quality is always empty. |
+| Player levels and skills | ❌ | Rust has no player levels, experience or skills. Blueprints are unlocks, not levels. |
 | Item list | ✅ | Every item with its display name, for example "Assault Rifle". |
 | Entity list | ✅ | Animals and NPCs with display names. |
 | Locations | ⚠️ | Lists the map's monuments. Not checked. |
