@@ -7,17 +7,21 @@ import io.takaro.zomboid.core.model.GameItem;
 import io.takaro.zomboid.core.model.GameLocation;
 import io.takaro.zomboid.core.model.PlayerInfo;
 import io.takaro.zomboid.core.model.PlayerLocation;
+import io.takaro.zomboid.core.model.ProgressionTrack;
 
 import java.lang.reflect.Field;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import zombie.characters.IsoGameCharacter;
 import zombie.characters.IsoPlayer;
 import zombie.characters.Roles;
+import zombie.characters.skills.PerkFactory;
 import zombie.chat.ChatMessage;
 import zombie.chat.ChatUtility;
 import zombie.chat.defaultChats.GeneralChat;
@@ -166,6 +170,46 @@ public final class Pz {
             return null;
         }
         return new PlayerLocation(p.getX(), p.getY(), p.getZ(), null);
+    }
+
+    /**
+     * Stores a reading for every spawned player. A dead character keeps its last reading until the
+     * new one spawns, and a player on the loading or respawn screen has no character to read.
+     */
+    public static void readProgression(Progression progression) {
+        UdpEngine engine = GameServer.udpEngine;
+        if (engine == null || engine.connections == null) {
+            return;
+        }
+        for (UdpConnection c : new ArrayList<>(engine.connections)) {
+            if (c == null || !c.isFullyConnected() || c.players == null || c.players.length == 0) {
+                continue;
+            }
+            IsoPlayer p = c.players[0];
+            String username = c.getUserName();
+            if (p != null && !p.isDead() && username != null && !username.isEmpty()) {
+                progression.put(username, perkTracks(p));
+            }
+        }
+    }
+
+    private static List<ProgressionTrack> perkTracks(IsoPlayer p) {
+        IsoGameCharacter.XP xp = p.getXp();
+        List<ProgressionTrack> tracks = new ArrayList<>();
+        Set<String> keys = new HashSet<>();
+        for (PerkFactory.Perk perk : PerkFactory.PerkList) {
+            // A perk without a parent is a skill-screen category, not a skill.
+            if (perk.getParent() == null || perk.getParent() == PerkFactory.Perks.None) {
+                continue;
+            }
+            int level = p.getPerkLevel(perk);
+            ProgressionTrack track = PerkTracks.track(perk.getId(), perk.getName(), level, xp.getXP(perk),
+                    perk.getTotalXpForLevel(level), perk.getXpForLevel(level + 1));
+            if (track != null && tracks.size() < PerkTracks.MAX_TRACKS && keys.add(track.key())) {
+                tracks.add(track);
+            }
+        }
+        return tracks;
     }
 
     public static PlayerInfo toPlayerInfo(IsoPlayer p) {

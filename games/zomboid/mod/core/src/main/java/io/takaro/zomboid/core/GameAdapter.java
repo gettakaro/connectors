@@ -28,6 +28,12 @@ public interface GameAdapter {
     List<PlayerInfo> getPlayers();
     PlayerLocation getPlayerLocation(String gameId);
     List<InventoryItem> getPlayerInventory(String gameId);
+    /**
+     * The player's Progression Tracks: {@code null} for a player the game does not know, empty for
+     * a known player with no tracks. Takaro polls this on every player sync, so it is called off
+     * the game thread and answers from cached values.
+     */
+    default List<ProgressionTrack> getPlayerProgression(String gameId) { return null; }
 
     // World queries
     List<GameItem> listItems();

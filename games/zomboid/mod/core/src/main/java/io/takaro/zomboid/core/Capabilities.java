@@ -43,6 +43,7 @@ public final class Capabilities {
             "events.log");
 
     static final String GAME_PROFILE = "game.profile";
+    static final String PROGRESSION = "players.progression";
 
     private Capabilities() {
     }
@@ -59,6 +60,13 @@ public final class Capabilities {
         for (String name : EVENTS) {
             out.add(named(name));
         }
+        // Perks are the server's: it awards the experience, and a client needs an admin
+        // capability to overwrite it.
+        JsonObject progression = named(PROGRESSION);
+        JsonObject progressionParameters = new JsonObject();
+        progressionParameters.addProperty("source", "server");
+        progression.add("parameters", progressionParameters);
+        out.add(progression);
         JsonObject profile = named(GAME_PROFILE);
         profile.add("parameters", GameProfile.parameters(gameVersion));
         out.add(profile);

@@ -80,6 +80,56 @@ class ProtocolV1Test {
     }
 
     @Test
+    void manifestDeclaresProgressionAsServerOwned() {
+        JsonObject progression = null;
+        for (JsonElement e : Capabilities.manifest(List.of())) {
+            if (e.getAsJsonObject().get("name").getAsString().equals("players.progression")) {
+                progression = e.getAsJsonObject();
+            }
+        }
+        assertNotNull(progression);
+        assertEquals("server", progression.getAsJsonObject("parameters").get("source").getAsString());
+    }
+
+    private JsonObject askProgression() {
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        client.onMessage("{\"type\":\"request\",\"requestId\":\"p1\",\"payload\":{\"action\":\"getPlayerProgression\","
+                + "\"args\":\"{\\\"gameId\\\":\\\"bob\\\"}\"}}");
+        return frame(0);
+    }
+
+    @Test
+    void progressionOfAnUnknownPlayerIsNullNotAnError() {
+        JsonObject response = askProgression();
+        assertEquals("response", response.get("type").getAsString());
+        assertTrue(response.get("payload").isJsonNull());
+        assertFalse(response.has("error"));
+    }
+
+    @Test
+    void progressionOfAKnownPlayerWithoutTracksIsAnEmptyList() {
+        adapter.progression = List.of();
+        assertEquals(0, askProgression().getAsJsonArray("payload").size());
+    }
+
+    @Test
+    void progressionTrackLeavesOutFieldsItDoesNotHave() {
+        adapter.progression = List.of(
+                new ProgressionTrack("longBlade", "Long Blade", 3, 412.5, 0.25),
+                new ProgressionTrack("axe", null, 10, null, null));
+        JsonArray tracks = askProgression().getAsJsonArray("payload");
+        JsonObject full = tracks.get(0).getAsJsonObject();
+        assertEquals("longBlade", full.get("key").getAsString());
+        assertEquals("Long Blade", full.get("name").getAsString());
+        assertEquals(3, full.get("level").getAsInt());
+        assertEquals(412.5, full.get("experience").getAsDouble());
+        assertEquals(0.25, full.get("progress").getAsDouble());
+        assertEquals(Set.of("key", "level"), tracks.get(1).getAsJsonObject().keySet());
+    }
+
+    @Test
     void mapDimensionCarriesAxesBoundsAndImageSource() {
         JsonObject dim = Capabilities.dimensionJson(DIM);
         assertEquals("knox-county", dim.get("id").getAsString());
@@ -459,6 +509,7 @@ class ProtocolV1Test {
 
     private static class FakeAdapter implements GameAdapter {
         List<MapDimension> dimensions = List.of();
+        List<ProgressionTrack> progression = null;
         PlayerLocation location;
         List<GameLocation> locations = List.of();
         RuntimeException failGiveWith;
@@ -476,6 +527,7 @@ class ProtocolV1Test {
         @Override public List<PlayerInfo> getPlayers() { return List.of(); }
         @Override public PlayerLocation getPlayerLocation(String gameId) { return location; }
         @Override public List<InventoryItem> getPlayerInventory(String gameId) { return List.of(); }
+        @Override public List<ProgressionTrack> getPlayerProgression(String gameId) { return progression; }
         @Override public List<GameItem> listItems() { return List.of(); }
         @Override public List<GameEntity> listEntities() { return List.of(); }
         @Override public List<GameLocation> listLocations() { return locations; }
