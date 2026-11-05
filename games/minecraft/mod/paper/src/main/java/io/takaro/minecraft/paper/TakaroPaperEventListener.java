@@ -22,6 +22,7 @@ public class TakaroPaperEventListener implements Listener {
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
+        plugin.recordProgression(event.getPlayer());
         EventEmitter emitter = plugin.getEventEmitter();
         if (emitter == null) return;
         emitter.emitPlayerConnected(plugin.toPlayerInfo(event.getPlayer()));
@@ -29,9 +30,10 @@ public class TakaroPaperEventListener implements Listener {
 
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
+        Player player = event.getPlayer();
+        plugin.recordProgression(player);
         EventEmitter emitter = plugin.getEventEmitter();
         if (emitter == null) return;
-        Player player = event.getPlayer();
         String gameId = player.getUniqueId().toString();
         plugin.getPlayerLocation(gameId); // warm cache before player is removed from list
         emitter.emitPlayerDisconnected(gameId, player.getName());

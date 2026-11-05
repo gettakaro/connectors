@@ -34,6 +34,7 @@ class ProtocolV1Test {
     private final List<String> sent = new CopyOnWriteArrayList<>();
     private volatile boolean open = true;
     private WorldMap worldMap;
+    private final TakaroConnectorTest.TestAdapter adapter = new TakaroConnectorTest.TestAdapter();
 
     @AfterEach
     void tearDown() {
@@ -52,7 +53,7 @@ class ProtocolV1Test {
             worldMap = new WorldMap(List.of(new WorldMap.Dimension("overworld", "Overworld", dir.resolve("region"), false)),
                     TestRegions.colors(), s -> {});
         }
-        return new TakaroWebSocketClient(new URI("ws://localhost:9999"), new TakaroConnectorTest.TestAdapter(),
+        return new TakaroWebSocketClient(new URI("ws://localhost:9999"), adapter,
                 config, "config", outbox, worldMap) {
             @Override
             public void send(String text) { sent.add(text); }
@@ -119,6 +120,73 @@ class ProtocolV1Test {
         assertEquals("down", dim.getAsJsonObject("axes").getAsJsonObject("vertical").get("direction").getAsString());
         assertEquals(-512, dim.getAsJsonObject("bounds").getAsJsonObject("horizontal").get("min").getAsInt());
         assertEquals("tiled", dim.getAsJsonObject("source").get("type").getAsString());
+    }
+
+    @Test
+    void identifyDeclaresProgressionAsServerOwned() throws Exception {
+        TakaroWebSocketClient client = client(false, new EventOutbox());
+        client.onOpen(null);
+
+        JsonObject progression = sentOfType("identify").get(0).getAsJsonObject("payload")
+                .getAsJsonArray("capabilities").asList().stream().map(JsonElement::getAsJsonObject)
+                .filter(c -> c.get("name").getAsString().equals("players.progression")).findFirst().orElseThrow();
+        assertEquals("server", progression.getAsJsonObject("parameters").get("source").getAsString());
+    }
+
+    @Test
+    void progressionAnswersTheXpLevelBarAndPointsWithoutTheGameThread() throws Exception {
+        TakaroWebSocketClient client = client(false, new EventOutbox());
+        client.onMessage(identifyResponse(1));
+        adapter.progression.record("uuid-1", 13, 0.42f, 512);
+
+        client.onMessage(request("p1", "getPlayerProgression", "{\"gameId\":\"uuid-1\"}"));
+
+        assertEquals("[{\"key\":\"character\",\"name\":\"Level\",\"level\":13,\"experience\":512,\"progress\":0.42}]",
+                awaitResponse("p1").get("payload").toString());
+        assertFalse(adapter.mainThreadUsed);
+    }
+
+    @Test
+    void progressionKeepsAnUnreadablePlayerBarInsideZeroToOne() throws Exception {
+        TakaroWebSocketClient client = client(false, new EventOutbox());
+        client.onMessage(identifyResponse(1));
+
+        adapter.progression.record("over", 1, 1.5f, 0);
+        adapter.progression.record("under", 1, -0.5f, 0);
+        adapter.progression.record("nan", 1, Float.NaN, 0);
+        client.onMessage(request("over", "getPlayerProgression", "{\"gameId\":\"over\"}"));
+        client.onMessage(request("under", "getPlayerProgression", "{\"gameId\":\"under\"}"));
+        client.onMessage(request("nan", "getPlayerProgression", "{\"gameId\":\"nan\"}"));
+
+        assertEquals(1, progress(awaitResponse("over")));
+        assertEquals(0, progress(awaitResponse("under")));
+        assertEquals(0, progress(awaitResponse("nan")));
+    }
+
+    private static double progress(JsonObject response) {
+        return response.getAsJsonArray("payload").get(0).getAsJsonObject().get("progress").getAsDouble();
+    }
+
+    @Test
+    void progressionAnswersNullForAPlayerTheServerHasNotSeen() throws Exception {
+        TakaroWebSocketClient client = client(false, new EventOutbox());
+        client.onMessage(identifyResponse(1));
+
+        client.onMessage(request("p1", "getPlayerProgression", "{\"gameId\":\"nobody\"}"));
+        client.onMessage(request("p2", "getPlayerProgression", "{\"gameId\":null}"));
+
+        assertTrue(awaitResponse("p1").get("payload").isJsonNull());
+        assertTrue(awaitResponse("p2").get("payload").isJsonNull());
+    }
+
+    @Test
+    void progressionIsNotAnsweredOnVersionZero() throws Exception {
+        TakaroWebSocketClient client = client(false, new EventOutbox());
+        client.onMessage(identifyResponse(0));
+
+        client.onMessage(request("p1", "getPlayerProgression", "{\"gameId\":\"uuid-1\"}"));
+
+        assertTrue(awaitResponse("p1").has("error"));
     }
 
     @Test

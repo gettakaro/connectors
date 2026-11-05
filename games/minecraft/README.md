@@ -91,6 +91,7 @@ Checked on Fabric 26.2, Paper 1.21.11 and NeoForge 1.21.11, 2026-10-22, and Fabr
 | Player location | ✅ | |
 | Teleport | ✅ | To the exact coordinates; pick a Y on solid ground. |
 | Player inventory | ✅ | |
+| Player levels and skills | ✅ | The XP level as the `character` track, with the XP bar as progress. Dying resets it, as in game. |
 | Item list | ✅ | |
 | Entity list | ✅ | |
 | Locations | ❌ | Minecraft has no named locations. |

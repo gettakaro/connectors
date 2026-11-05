@@ -444,6 +444,7 @@ class ActionRoutingTest {
         @Override public List<PlayerInfo> getPlayers() { return Collections.emptyList(); }
         @Override public PlayerLocation getPlayerLocation(String gameId) { return null; }
         @Override public List<InventoryItem> getPlayerInventory(String gameId) { return Collections.emptyList(); }
+        @Override public PlayerProgression progression() { return new PlayerProgression(); }
         @Override public List<GameItem> listItems() { return items; }
         @Override public List<GameEntity> listEntities() { return Collections.emptyList(); }
         @Override public List<GameLocation> listLocations() { return Collections.emptyList(); }
