@@ -11,7 +11,7 @@ const char* const kActions[kActionCount] = {
     "getPlayer",     "getPlayers",   "getPlayerLocation", "getPlayerInventory", "giveItem",
     "listItems",     "listEntities", "listLocations",     "executeConsoleCommand", "sendMessage",
     "teleportPlayer", "testReachability", "kickPlayer",   "banPlayer",          "unbanPlayer",
-    "listBans",      "shutdown",     "getMapInfo",        "getMapTile"};
+    "listBans",      "shutdown",     "getMapInfo",        "getMapTile",         "getPlayerProgression"};
 const char* const kEventTypes[kEventTypeCount] = {"log",          "player-connected", "player-disconnected",
                                                   "chat-message", "player-death",     "entity-killed"};
 

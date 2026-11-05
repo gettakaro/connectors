@@ -2,12 +2,36 @@
 
 #include "conan/identity.h"
 #include "conan/text.h"
+#include "takaro/json_util.h"
 
+#include <cmath>
 #include <cstring>
 
 namespace conan {
 
 using UE::Reflection;
+
+bool PlayerLayout::ResolveProgression(const Reflection& r, std::string& missing) {
+    progression = false;
+    missing.clear();
+    auto off = [&](const char* cls, const char* name, const char* t, int32_t size) {
+        uintptr_t st = r.Type(cls);
+        int32_t o = st ? r.Offset(st, name, t, size) : -1;
+        if (o < 0) missing += std::string(missing.empty() ? "" : ", ") + cls + "." + name;
+        return o;
+    };
+    pawnStatHolder = off("ConanCharacter", "m_StatHolder", "ObjectProperty", 8);
+    int32_t holderArray = off("StatHolder", "m_IntStatArray", "StructProperty", 312);
+    int32_t nodes = off("StatArrayInt32", "IntStatArray", "ArrayProperty", 16);
+    pawnProgression = off("BasePlayerChar_C", "BP_ProgressionSystem", "ObjectProperty", 8);
+    experiencePoints = off("BP_ProgressionSystem_C", "ExperiencePoints", "DoubleProperty", 8);
+    levelStart = off("BP_ProgressionSystem_C", "LevelStart", "IntProperty", 4);
+    levelEnd = off("BP_ProgressionSystem_C", "LevelEnd", "IntProperty", 4);
+    if (!missing.empty()) return false;
+    intStatNodes = holderArray + nodes;
+    progression = true;
+    return true;
+}
 
 bool PlayerLayout::Resolve(const Reflection& r, std::string& error) {
     std::string missing;
@@ -192,6 +216,90 @@ bool PlayerReader::Stats(uintptr_t item, std::vector<std::pair<int, int32_t>>& i
         }
     }
     return true;
+}
+
+bool PlayerReader::Progression(uintptr_t pawn, ProgressionRead& out, std::string& error) const {
+    if (!l_.progression) {
+        error = "the progression layout was not found on this build";
+        return false;
+    }
+    uintptr_t holder = 0, system = 0;
+    if (!m_.Read(pawn + (uintptr_t)l_.pawnStatHolder, &holder, sizeof holder) ||
+        !m_.Read(pawn + (uintptr_t)l_.pawnProgression, &system, sizeof system) || !holder || !system ||
+        !r_.Alive(holder) || !r_.Alive(system)) {
+        error = "the character has no stats yet";
+        return false;
+    }
+    struct {
+        uintptr_t data;
+        int32_t num, max;
+    } a, b;
+    const uintptr_t at = holder + (uintptr_t)l_.intStatNodes;
+    std::vector<uint8_t> buf;
+    bool stable = false;
+    for (int attempt = 0; attempt < 3 && !stable; attempt++) {
+        if (!m_.Read(at, &a, sizeof a) || a.num < 0 || a.num > 256 || a.max < a.num || (a.num && !UE::Plausible(a.data))) {
+            error = "the character stat list is not readable";
+            return false;
+        }
+        buf.resize((size_t)a.num * PlayerLayout::kStatStride);
+        if (a.num && !m_.Read(a.data, buf.data(), buf.size())) continue;
+        stable = m_.Read(at, &b, sizeof b) && b.data == a.data && b.num == a.num;
+    }
+    if (!stable) {
+        error = "the character stat list changed during every read (torn), try again";
+        return false;
+    }
+    out = ProgressionRead();
+    for (int32_t i = 0; i < a.num; i++) {
+        const uint8_t* e = buf.data() + (size_t)i * PlayerLayout::kStatStride;
+        int32_t id, v;
+        memcpy(&id, e + PlayerLayout::kStatId, 4);
+        memcpy(&v, e + PlayerLayout::kStatValue, 4);
+        if (id < 0 || id > 255) {
+            error = "the character stat list holds an unknown stat id";
+            return false;
+        }
+        out.stats.push_back({id, v});
+        if (id == CharStat::kLevel) out.level = v;
+    }
+    if (!m_.Read(system + (uintptr_t)l_.experiencePoints, &out.experience, sizeof out.experience) ||
+        !m_.Read(system + (uintptr_t)l_.levelStart, &out.levelStart, sizeof out.levelStart) ||
+        !m_.Read(system + (uintptr_t)l_.levelEnd, &out.levelEnd, sizeof out.levelEnd)) {
+        error = "the progression component is not readable";
+        return false;
+    }
+    if (out.level < 1 || !(out.experience >= 0 && out.experience < 1e15)) {
+        error = "the character is not loaded yet";
+        return false;
+    }
+    return true;
+}
+
+std::string ProgressionTracksJson(const ProgressionRead& p) {
+    takaro::ObjBuilder c;
+    c.S("key", "character").S("name", "Level").N("level", p.level).N("experience", std::floor(p.experience));
+    if (p.levelEnd > p.levelStart && p.experience >= p.levelStart && p.experience <= p.levelEnd)
+        c.N("progress", (p.experience - p.levelStart) / (double)(p.levelEnd - p.levelStart));
+    std::string out = "[" + c.Done();
+    // The six attributes of the Attributes screen. Points are spent by the player and can be
+    // refunded, so these levels go down as well. The stat list omits an attribute nobody raised.
+    static const struct {
+        int stat;
+        const char *key, *name;
+    } kAttributes[] = {{CharStat::kMight, "attribute.strength", "Strength"},
+                       {CharStat::kAthleticism, "attribute.agility", "Agility"},
+                       {CharStat::kHealth, "attribute.vitality", "Vitality"},
+                       {CharStat::kLeadership, "attribute.authority", "Authority"},
+                       {CharStat::kStamina, "attribute.grit", "Grit"},
+                       {CharStat::kEncumbrance, "attribute.expertise", "Expertise"}};
+    for (auto& a : kAttributes) {
+        int32_t value = 0;
+        for (auto& kv : p.stats)
+            if (kv.first == a.stat) value = kv.second;
+        out += "," + takaro::ObjBuilder().S("key", a.key).S("name", a.name).N("level", value).Done();
+    }
+    return out + "]";
 }
 
 bool PlayerReader::OneInventory(uintptr_t inv, int which, std::vector<InvItem>& out, std::string& error) const {

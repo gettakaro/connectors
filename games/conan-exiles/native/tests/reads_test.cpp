@@ -293,6 +293,7 @@ static int32_t Off(World& w, const std::string& cls, const std::string& prop) {
 struct Server {
     World w;
     uintptr_t gs = 0, ps1 = 0, pc1 = 0, pawn1 = 0, root1 = 0, ps2 = 0, pc2 = 0, pawn2 = 0, root2 = 0;
+    uintptr_t statHolder1 = 0, progression1 = 0;
     uintptr_t backpack1 = 0, hotbar1 = 0, equip1 = 0;
     std::vector<uintptr_t> items;
     std::map<uintptr_t, std::pair<int32_t, std::pair<float, float>>> engineStats;  // what GetIntStat/GetFloatStat return
@@ -382,6 +383,23 @@ struct Server {
         memcpy(w.mem.At(root + 0x210), v, 24);
     }
 
+    // The StatNodeInt32 list as the server keeps it: id +0xC, value +0x14, stride 48.
+    void SetProgression(int32_t level, double xp, int32_t start, int32_t end) {
+        const int32_t nodes = Off(w, "StatHolder", "m_IntStatArray") + Off(w, "StatArrayInt32", "IntStatArray");
+        const std::vector<std::pair<int32_t, int32_t>> stats = {{1, 200}, {4, level}, {11, 1}, {17, 7}, {27, 2}};
+        uintptr_t data = w.Alloc(48 * stats.size());
+        for (size_t i = 0; i < stats.size(); i++) {
+            w.W<int32_t>(data + 48 * i + 0xC, stats[i].first);
+            w.W<int32_t>(data + 48 * i + 0x14, stats[i].second);
+        }
+        w.W<uintptr_t>(statHolder1 + nodes, data);
+        w.W<int32_t>(statHolder1 + nodes + 8, (int32_t)stats.size());
+        w.W<int32_t>(statHolder1 + nodes + 12, (int32_t)stats.size());
+        memcpy(w.mem.At(progression1 + Off(w, "BP_ProgressionSystem_C", "ExperiencePoints")), &xp, 8);
+        w.W<int32_t>(progression1 + Off(w, "BP_ProgressionSystem_C", "LevelStart"), start);
+        w.W<int32_t>(progression1 + Off(w, "BP_ProgressionSystem_C", "LevelEnd"), end);
+    }
+
     std::string Build() {
         std::string err = w.LoadFixture("tests/fixtures/reads-layout-25639945.json");
         if (!err.empty()) return err;
@@ -445,6 +463,13 @@ struct Server {
         w.W<uintptr_t>(pawn1 + Off(w, "BasePlayerChar_C", "BackpackInventory"), backpack1);
         w.W<uintptr_t>(pawn1 + Off(w, "BasePlayerChar_C", "ShortcutBarInventory"), hotbar1);
         w.W<uintptr_t>(pawn1 + Off(w, "BaseBPChar_C", "EquipmentInventory"), equip1);
+
+        // ---- character stats and progression (player 1 only)
+        statHolder1 = w.Obj(w.classes["StatHolder"], "StatHolder0", 0, 1216);
+        progression1 = w.Obj(w.classes["BP_ProgressionSystem_C"], "BP_ProgressionSystem0", 0, 600);
+        w.W<uintptr_t>(pawn1 + Off(w, "ConanCharacter", "m_StatHolder"), statHolder1);
+        w.W<uintptr_t>(pawn1 + Off(w, "BasePlayerChar_C", "BP_ProgressionSystem"), progression1);
+        SetProgression(15, 12345.5, 12000, 13000);
 
         // ---- tables
         int32_t nameOff = Off(w, "ItemTableRow", "Name"), descOff = Off(w, "ItemTableRow", "ShortDesc");
@@ -786,9 +811,40 @@ static void TestReads() {
     r = rs->Execute("getPlayerInventory", J("{\"gameId\":\"76561198000000002\"}"));
     CHECK(Dump(r) == "[]", "player 2 has no inventories: %s", Dump(r).c_str());
 
+    // ---- progression
+    const char* kP1 = "{\"gameId\":\"76561198000735875\"}";
+    const std::string kAttributes =
+        ",{\"key\":\"attribute.strength\",\"name\":\"Strength\",\"level\":7},"
+        "{\"key\":\"attribute.agility\",\"name\":\"Agility\",\"level\":0},"
+        "{\"key\":\"attribute.vitality\",\"name\":\"Vitality\",\"level\":0},"
+        "{\"key\":\"attribute.authority\",\"name\":\"Authority\",\"level\":2},"
+        "{\"key\":\"attribute.grit\",\"name\":\"Grit\",\"level\":0},"
+        "{\"key\":\"attribute.expertise\",\"name\":\"Expertise\",\"level\":0}]";
+    const std::string reading15 =
+        "[{\"key\":\"character\",\"name\":\"Level\",\"level\":15,\"experience\":12345,\"progress\":0.3455}" + kAttributes;
+    r = rs->Execute("getPlayerProgression", J(kP1));
+    EQ(Dump(r), reading15);
+    r = rs->Execute("getPlayerProgression", J("{\"gameId\":\"76561198000000099\"}"));
+    CHECK(r.ok && Dump(r) == "null", "an unknown player is null, not an error: %s", Dump(r).c_str());
+    r = rs->Execute("getPlayerProgression", J("{\"gameId\":\"76561198000000002\"}"));
+    CHECK(r.ok && Dump(r) == "[]", "a known player without a readable character has no tracks: %s", Dump(r).c_str());
+    // A character with no level stat yet: the last reading stands, so Takaro sees no change.
+    s.SetProgression(0, 0, 0, 0);
+    r = rs->Execute("getPlayerProgression", J(kP1));
+    EQ(Dump(r), reading15);
+    // Outside the level's XP range there is no fraction to report.
+    s.SetProgression(60, 500000, 0, 0);
+    r = rs->Execute("getPlayerProgression", J(kP1));
+    EQ(Dump(r), "[{\"key\":\"character\",\"name\":\"Level\",\"level\":60,\"experience\":500000}" + kAttributes);
+    s.SetProgression(15, 12345.5, 12000, 13000);
+    r = rs->Execute("getPlayerProgression", J(kP1));
+    EQ(Dump(r), reading15);
+
     // ---- player 1 dies: no pawn. Location answers the last known position, inventory refuses.
     uintptr_t pawn = s.pawn1;
     s.w.W<uintptr_t>(s.pc1 + 816, 0);
+    r = rs->Execute("getPlayerProgression", J(kP1));
+    EQ(Dump(r), reading15);
     r = rs->Execute("getPlayerLocation", J("{\"gameId\":\"76561198000735875\"}"));
     EQ(Dump(r), "{\"x\":101746.72,\"y\":319894.28,\"z\":-21582.48}");
     r = rs->Execute("getPlayerInventory", J("{\"gameId\":\"76561198000735875\"}"));

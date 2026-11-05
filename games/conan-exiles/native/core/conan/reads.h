@@ -139,6 +139,7 @@ private:
         std::string json;
         bool haveLocation = false;
         double loc[3] = {0, 0, 0};
+        std::string progression;  // the last track array answered
     };
     std::map<std::string, Known> known_;  // Steam64 -> last seen
     std::atomic<uint64_t> calls_{0}, errors_{0};

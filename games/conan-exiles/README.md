@@ -81,6 +81,7 @@ Checked on server build 26672347 (Linux and Windows), 2026-11-23. ✅ works, ⚠
 | Player location | ✅ | |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
+| Player levels and skills | ✅ | Character level, experience and the six attributes, read from the server. |
 | Item list | ✅ | |
 | Entity list | ⚠️ | Not compared against the game. |
 | Locations | ✅ | Named places of the Exiled Lands. |

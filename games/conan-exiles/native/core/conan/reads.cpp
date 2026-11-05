@@ -25,7 +25,8 @@ const std::vector<std::string> kScanNames = {
     "GameStateBase", "PlayerState", "Actor", "Controller", "SceneComponent", "ConanPlayerController",
     "BasePlayerChar_C", "BaseBPChar_C", "ItemInventory", "GameItem", "ShortcutRefItem", "DataTable", "KismetTextLibrary",
     "Default__KismetTextLibrary", "ItemTable", "ItemNameToTemplateID", "SpawnDataTable", "MapMarkers_ConanSandbox",
-    "KismetSystemLibrary", "Default__KismetSystemLibrary",
+    "KismetSystemLibrary", "Default__KismetSystemLibrary", "ConanCharacter", "StatHolder", "StatArrayInt32",
+    "BP_ProgressionSystem_C",
 };
 const char* const kMarkerTablePath = "/Game/Systems/Map/MapMarkers_ConanSandbox.MapMarkers_ConanSandbox";
 // Own loads of the marker table: at most 3 that the engine answered, 30 s apart; a load the game
@@ -87,7 +88,7 @@ ReadService::~ReadService() {
 
 bool ReadService::Handles(const std::string& a) {
     return a == "getPlayers" || a == "getPlayer" || a == "getPlayerLocation" || a == "getPlayerInventory" ||
-           a == "listItems" || a == "listEntities" || a == "listLocations";
+           a == "getPlayerProgression" || a == "listItems" || a == "listEntities" || a == "listLocations";
 }
 
 // ---------------------------------------------------------------- index and layout
@@ -111,6 +112,9 @@ bool ReadService::EnsureIndex(std::string& error) {
         indexError_ = error;
         return false;
     }
+    std::string noProgression;
+    if (!l.ResolveProgression(*r_, noProgression))
+        NativeLog("reads: no progression on this build, missing: %s", noProgression.c_str());
     layout_ = l;
     UE::Reflection& r = *r_;
     uintptr_t ps = r.Type("PlayerState"), actor = r.Type("Actor"), item = r.Type("GameItem"),
@@ -890,6 +894,26 @@ ActionResult ReadService::ExecuteImpl(const std::string& action, const JsonValue
             o += (i ? "," : "") + b.Done();
         }
         return Raw(o + "]");
+    }
+    if (action == "getPlayerProgression") {
+        // Takaro polls this for every online player on every sync: one short worker read, no game
+        // thread. A character without readable stats (dead, joining) keeps its last reading, so
+        // Takaro never sees a level change that did not happen.
+        if (p && p->pawn) {
+            ProgressionRead read;
+            PlayerReader reader(*r_, layout_);
+            if (reader.Progression(p->pawn, read, error)) {
+                std::string tracks = ProgressionTracksJson(read);
+                known_[p->steam64].progression = tracks;
+                return Raw(tracks);
+            }
+            NativeLog("reads: getPlayerProgression %s: %s", p->steam64.c_str(), error.c_str());
+        }
+        for (auto& id : ids) {
+            auto it = known_.find(id);
+            if (it != known_.end() && !it->second.progression.empty()) return Raw(it->second.progression);
+        }
+        return Raw(p ? "[]" : "null");
     }
     return Fail(action + " is not a read action");
 }
