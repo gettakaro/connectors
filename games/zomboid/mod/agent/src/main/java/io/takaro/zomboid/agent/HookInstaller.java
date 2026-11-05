@@ -10,9 +10,11 @@ import io.takaro.zomboid.agent.hooks.ChatAdvice;
 import io.takaro.zomboid.agent.hooks.PlayerConnectAdvice;
 import io.takaro.zomboid.agent.hooks.PlayerDeathAdvice;
 import io.takaro.zomboid.agent.hooks.PlayerDisconnectAdvice;
+import io.takaro.zomboid.agent.hooks.ReceiveCommandAdvice;
 import io.takaro.zomboid.agent.hooks.TickAdvice;
 import io.takaro.zomboid.agent.hooks.ZLoggerAdvice;
 import io.takaro.zomboid.agent.hooks.ZombieKilledAdvice;
+import io.takaro.zomboid.agent.research.CommandProbeRuntime;
 
 import java.lang.instrument.Instrumentation;
 import java.util.List;
@@ -99,9 +101,17 @@ public final class HookInstaller {
                     ElementMatcher.Junction<MethodDescription> disconnect =
                             named("disconnectPlayer").and(isStatic()).and(takesArguments(2));
                     recordUnbound(type, Map.of("connect", connect, "disconnect", disconnect));
-                    return builder
+                    DynamicType.Builder<?> b = builder
                             .visit(Advice.to(PlayerConnectAdvice.class).on(connect))
                             .visit(Advice.to(PlayerDisconnectAdvice.class).on(disconnect));
+                    if (!CommandProbeRuntime.enabled()) {
+                        return b;
+                    }
+                    // #201 research probe only; off unless TAKARO_COMMAND_PROBE_URL is set.
+                    ElementMatcher.Junction<MethodDescription> command = named("receiveReceiveCommand")
+                            .and(isStatic()).and(takesArguments(3));
+                    recordUnbound(type, Map.of("command-probe", command));
+                    return b.visit(Advice.to(ReceiveCommandAdvice.class).on(command));
                 })
                 // chat
                 .type(named("zombie.network.chat.ChatServer"))
