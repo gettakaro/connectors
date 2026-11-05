@@ -154,6 +154,7 @@ namespace Takaro.WebSocket
             "getPlayer",
             "getPlayerLocation",
             "getPlayerInventory",
+            "getPlayerProgression",
             "listItems",
             "listEntities",
             "listLocations",
@@ -297,6 +298,13 @@ namespace Takaro.WebSocket
                         if (!TryGetPlayerGameId(requestId, args, out string gameId))
                             return;
                         ReadHandlers.GetPlayerInventory(requestId, gameId);
+                        break;
+                    }
+                    case "getPlayerProgression":
+                    {
+                        if (!TryGetPlayerGameId(requestId, args, out string gameId))
+                            return;
+                        ReadHandlers.GetPlayerProgression(requestId, gameId);
                         break;
                     }
                     case "listItems":

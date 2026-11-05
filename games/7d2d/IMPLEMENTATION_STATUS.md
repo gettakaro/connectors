@@ -176,6 +176,7 @@ mod/src/
 │   ├── ConsoleCommandOutcome.cs # native console failure classification
 │   ├── ProtocolDiagnostics.cs   # bounded Takaro error diagnostics
 │   ├── PlayerLocationReadWindow.cs # bounded post-disconnect location access
+│   ├── PlayerProgression.cs    # getPlayerProgression track rules (game-free)
 │   ├── ServerMessageEchoGuard.cs # bounded one-shot native chat echo guard
 │   ├── ServerChatName.cs       # game-free chat sender name resolution and rendering
 │   ├── ServerChat.cs           # sends server chat (global, whisper) with that name
@@ -230,6 +231,15 @@ mod/src/
   v1 `getMapTile {dimension, zoom, x, y}` answers `{mimeType: "image/png", data}`; an unrendered
   tile is `not_found` (Takaro shows it transparent). v0 `getMapTile {x, y, z}` still answers the
   bare base64 tile at the game's own index.
+- `players.progression` is declared with `source: client-reported`: the client earns the XP and
+  sends its level, perks and crafting skills in `NetPackagePlayerStats`, and the server keeps what
+  it is told. `PositionSampler` hands each player to `StateMirror.SampleProgression`, which rebuilds
+  the cached tracks only when the level, the XP or the Progression object changed.
+  `getPlayerProgression` answers from that cache on the WebSocket thread: `character` (`experience`
+  is lifetime XP, derived from the level costs), then attributes, perks and crafting skills, also at
+  level 0, with the game's own names as keys. Skills are left out (the game reports them at their
+  maximum) and so are books (collected, not levelled). Keys Takaro would refuse, from a modded
+  `progression.xml`, are left out so one bad name cannot fail the reading.
 - `game` is `7d2d`. `migration.native { from: "7d2d" }` is the promise that the mod meets the
   parity contract of Takaro's built-in integration (gettakaro/connectors#419,
   gettakaro/takaro#4349); do not declare it for a change that weakens that parity.

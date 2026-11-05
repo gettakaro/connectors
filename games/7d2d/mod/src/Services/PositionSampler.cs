@@ -7,8 +7,8 @@ namespace Takaro.Services
 {
     /// <summary>
     /// Periodic main-thread sampler for data that is not event-driven: player
-    /// positions and ping every few seconds, plus a slower ban resync to catch
-    /// bans issued from the server console.
+    /// positions, ping and progression every few seconds, plus a slower ban resync
+    /// to catch bans issued from the server console.
     /// </summary>
     public class PositionSampler : IService
     {
@@ -78,11 +78,14 @@ namespace Takaro.Services
                 if (cInfo?.CrossplatformId == null)
                     continue;
 
+                string gameId = Shared.GameIdFromClientInfo(cInfo);
+                StateMirror.Instance.SampleProgression(gameId, player);
+
                 UnityEngine.Vector3 position = player.GetPosition();
                 batch.Add(
                     new PositionSample
                     {
-                        GameId = Shared.GameIdFromClientInfo(cInfo),
+                        GameId = gameId,
                         X = position.x,
                         Y = position.y,
                         Z = position.z,

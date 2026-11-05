@@ -71,6 +71,12 @@ namespace Takaro.WebSocket
 
         public const string MigrationCapability = "migration.native";
 
+        public const string ProgressionCapability = "players.progression";
+
+        // The client owns a player's progression: it earns the XP and sends the server its
+        // level, perks and crafting skills, and the server keeps what it is told.
+        public const string ProgressionSource = "client-reported";
+
         public static readonly int[] OfferedProtocolVersions = { 0, 1 };
 
         // testReachability is always allowed. getMapInfo is v0 only; getMapTile is
@@ -84,6 +90,7 @@ namespace Takaro.WebSocket
             { "getPlayer", "players.get" },
             { "getPlayerLocation", "players.location" },
             { "getPlayerInventory", "players.inventory" },
+            { "getPlayerProgression", ProgressionCapability },
             { "teleportPlayer", "players.teleport" },
             { "listItems", "items.list" },
             { "giveItem", "items.give" },
@@ -111,7 +118,17 @@ namespace Takaro.WebSocket
                     ActionCapabilities.TryGetValue(action, out string capability)
                     && declared.Add(capability)
                 )
-                    manifest.Add(new Dictionary<string, object> { { "name", capability } });
+                {
+                    var entry = new Dictionary<string, object> { { "name", capability } };
+                    if (capability == ProgressionCapability)
+                    {
+                        entry["parameters"] = new Dictionary<string, object>
+                        {
+                            { "source", ProgressionSource },
+                        };
+                    }
+                    manifest.Add(entry);
+                }
             }
 
             foreach (string eventType in GameEventTypes.All)

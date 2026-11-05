@@ -104,6 +104,18 @@ namespace Takaro.WebSocket
             );
         }
 
+        public static void GetPlayerProgression(string requestId, string gameId)
+        {
+            // Null for a player the game does not know, never an error: Takaro polls this
+            // for every online player on each player sync.
+            Send(
+                WebSocketMessage.CreateResponse(
+                    requestId,
+                    StateMirror.Instance.GetPlayerProgression(gameId)
+                )
+            );
+        }
+
         public static void ListItems(string requestId)
         {
             List<TakaroItem> items = StateMirror.Instance.GetItems();

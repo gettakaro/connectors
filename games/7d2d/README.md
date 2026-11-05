@@ -166,6 +166,7 @@ Checked on V 3.4.0 b10 (Steam build 26310339), 2026-11-02. ✅ works, ⚠️ wor
 | Player location | ✅ | Updated about every 30 seconds. |
 | Teleport | ⚠️ | The height is snapped to the ground, so the player lands on solid ground, not at the exact height asked for. |
 | Player inventory | ✅ | |
+| Player levels and skills | ⚠️ | Character level with experience, plus every attribute, perk and crafting skill as its own track. The game client owns these values and reports them to the server, so Takaro marks them client-reported. |
 | Item list | ✅ | Player-facing names; internal entries without a name are left out but can still be given by code. A server set up with an older version keeps those old rows. |
 | Entity list | ✅ | With in-game names. |
 | Locations | ⚠️ | The connector collects the points of interest; not checked in Takaro yet. |
