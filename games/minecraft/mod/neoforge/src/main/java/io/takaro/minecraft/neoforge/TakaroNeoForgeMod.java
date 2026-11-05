@@ -90,19 +90,20 @@ public class TakaroNeoForgeMod {
     @SubscribeEvent
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (adapter == null) return;
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        adapter.recordProgression(player);
         EventEmitter emitter = adapter.getEventEmitter();
         if (emitter == null) return;
-        if (event.getEntity() instanceof ServerPlayer player) {
-            emitter.emitPlayerConnected(adapter.toPlayerInfo(player));
-        }
+        emitter.emitPlayerConnected(adapter.toPlayerInfo(player));
     }
 
     @SubscribeEvent
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         if (adapter == null) return;
+        ServerPlayer player = (ServerPlayer) event.getEntity();
+        adapter.recordProgression(player);
         EventEmitter emitter = adapter.getEventEmitter();
         if (emitter == null) return;
-        ServerPlayer player = (ServerPlayer) event.getEntity();
         String gameId = player.getUUID().toString();
         adapter.getPlayerLocation(gameId); // warm cache before player is removed from list
         emitter.emitPlayerDisconnected(gameId, player.getName().getString());
@@ -164,6 +165,9 @@ public class TakaroNeoForgeMod {
 
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
-        if (adapter != null && ++ticks % 20 == 0) adapter.liftExpiredBans();
+        if (adapter != null && ++ticks % 20 == 0) {
+            adapter.liftExpiredBans();
+            adapter.recordProgression();
+        }
     }
 }

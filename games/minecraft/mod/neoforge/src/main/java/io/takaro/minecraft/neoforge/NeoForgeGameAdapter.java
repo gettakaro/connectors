@@ -3,6 +3,7 @@ package io.takaro.minecraft.neoforge;
 import io.takaro.minecraft.core.EventEmitter;
 import io.takaro.minecraft.core.GameAdapter;
 import io.takaro.minecraft.core.PlayerNotOnlineException;
+import io.takaro.minecraft.core.PlayerProgression;
 import io.takaro.minecraft.core.map.RegionRenderer;
 import io.takaro.minecraft.core.map.WorldMap;
 import io.takaro.minecraft.core.model.*;
@@ -31,6 +32,7 @@ public class NeoForgeGameAdapter implements GameAdapter {
     private final MinecraftServer server;
     private volatile EventEmitter eventEmitter;
     private final ConcurrentHashMap<String, PlayerLocation> lastKnownLocations = new ConcurrentHashMap<>();
+    private final PlayerProgression progression = new PlayerProgression();
 
     public NeoForgeGameAdapter(Logger logger, MinecraftServer server) {
         this.logger = logger;
@@ -116,6 +118,18 @@ public class NeoForgeGameAdapter implements GameAdapter {
             }
         }
         return items;
+    }
+
+    @Override
+    public PlayerProgression progression() { return progression; }
+
+    public void recordProgression() {
+        server.getPlayerList().getPlayers().forEach(this::recordProgression);
+    }
+
+    public void recordProgression(ServerPlayer player) {
+        progression.record(player.getUUID().toString(),
+                player.experienceLevel, player.experienceProgress, player.totalExperience);
     }
 
     @Override

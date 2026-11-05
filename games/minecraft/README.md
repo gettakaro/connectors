@@ -193,6 +193,7 @@ Checked on Fabric 26.2, Paper 1.21.11 and NeoForge 1.21.11, 2026-10-22, and Fabr
 | Player location | ✅ | Rounded to whole blocks. |
 | Teleport | ✅ | To the exact coordinates; pick a Y on solid ground or the player falls. |
 | Player inventory | ✅ | Changes are reported as they happen. |
+| Player levels and skills | ⚠️ | The XP level above the hotbar as the `character` track, with the XP bar as progress and the game's total points as experience. Dying resets it, as in game. Checked on Fabric only. |
 | Item list | ✅ | About 1,500 items with their in-game names. |
 | Entity list | ✅ | Paper lists the mob types; Fabric and NeoForge list every entity type, including things like Primed TNT. |
 | Locations | ❌ | Minecraft has no list of named locations. |
