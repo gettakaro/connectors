@@ -1,6 +1,15 @@
 import { logger } from '../logger.js';
 import { num, str } from './identity.js';
-import type { DuneInventoryRow, DunePlayerRow, DuneReachability, Position, TakaroLocation } from './types.js';
+import type {
+  DuneCharacterLevelRow,
+  DuneInventoryRow,
+  DunePlayerRow,
+  DuneProgressionRows,
+  DuneReachability,
+  DuneSpecializationRow,
+  Position,
+  TakaroLocation,
+} from './types.js';
 
 /**
  * The only thing `pg.ts` needs from a driver. Tests inject `testing/mockBattlegroup`'s fake instead of `pg.Pool`, and
@@ -34,6 +43,8 @@ export const OPTIONAL_COLUMNS = {
     'last_avatar_activity',
     'last_login_time',
     'player_pawn_id',
+    'player_controller_id',
+    'character_state',
     'account_id',
     'reconnect_grace_period_end',
     'transfer_count',
@@ -45,6 +56,9 @@ export const OPTIONAL_COLUMNS = {
   farm_state: ['server_id', 'alive', 'ready', 'connected_players', 'map'],
   inventories: ['inventory_type', 'actor_id', 'max_item_count'],
   items: ['template_id', 'stack_size', 'quality_level', 'position_index', 'inventory_id'],
+  actor_fgl_entities: ['actor_id', 'entity_id', 'slot_name'],
+  fgl_entities: ['entity_id', 'components'],
+  specialization_tracks: ['player_id', 'track_type', 'xp_amount', 'level'],
   /**
    * The shipped `markers` table is `(marker_hash_id, dimension_index, marker_type, position Vector, payload jsonb,
    * map_name_id)` — it has **no name and no transform**, only a dev-style `marker_type` and a numeric hash id. The
@@ -402,6 +416,80 @@ export class DunePg {
     );
     const slots = num(rows[0]?.max_item_count);
     return slots !== null && slots > 0 ? slots : null;
+  }
+
+  /**
+   * What the character has reached, as the map process last saved it. `null` for `character` when this build lacks
+   * the tables or the character has no level component yet; a player with no specializations has no rows at all.
+   */
+  async progression(player: DunePlayerRow): Promise<DuneProgressionRows> {
+    const actors = player.accountId == null ? null : await this.currentCharacter(player.accountId);
+    if (!actors) return { character: null, specializations: [] };
+    return {
+      character: await this.characterLevel(actors.pawnId),
+      specializations: await this.specializations(actors.controllerId),
+    };
+  }
+
+  /**
+   * The actors of the account's most recently played character. An account can hold several, and a deleted one's row
+   * can outlive it, so reads keyed on the account alone would mix characters. Ids stay text: they are BIGINT.
+   */
+  private async currentCharacter(accountId: number): Promise<{ pawnId: string; controllerId: string } | null> {
+    const pawnCol = this.options.pawnColumn ?? 'player_pawn_id';
+    if (!this.has('player_state', pawnCol) || !this.has('player_state', 'player_controller_id')) return null;
+    const { rows } = await this.db.query<Record<string, unknown>>(
+      `SELECT ps.${quoteIdent(pawnCol)}::text AS pawn_id, ps.player_controller_id::text AS controller_id
+         FROM ${this.t('player_state')} ps
+        WHERE ps.account_id = $1::int8
+          ${this.has('player_state', 'character_state') ? `AND ps.character_state::text <> 'Deleted'` : ''}
+        ${this.has('player_state', 'last_avatar_activity') ? 'ORDER BY ps.last_avatar_activity DESC NULLS LAST' : ''}
+        LIMIT 1`,
+      [accountId],
+    );
+    const pawnId = str(rows[0]?.pawn_id);
+    const controllerId = str(rows[0]?.controller_id);
+    return pawnId && controllerId ? { pawnId, controllerId } : null;
+  }
+
+  private hasAll(table: TableName, columns: string[]): boolean {
+    return columns.every((column) => this.has(table, column));
+  }
+
+  private async characterLevel(pawnId: string): Promise<DuneCharacterLevelRow | null> {
+    if (!this.hasAll('fgl_entities', ['entity_id', 'components'])) return null;
+    if (!this.hasAll('actor_fgl_entities', ['actor_id', 'entity_id', 'slot_name'])) return null;
+    const { rows } = await this.db.query<Record<string, unknown>>(
+      `SELECT fe.components#>>'{FLevelComponent,1,TotalXPEarned}' AS total_xp_earned,
+              fe.components#>>'{FLevelComponent,1,TotalSkillPoints}' AS total_skill_points,
+              fe.components#>>'{FLevelComponent,1,KeystoneBonusSkillPoints}' AS keystone_bonus_skill_points
+         FROM ${this.t('actor_fgl_entities')} afe
+         JOIN ${this.t('fgl_entities')} fe ON fe.entity_id = afe.entity_id
+        WHERE afe.actor_id = $1::int8
+          AND afe.slot_name = 'DuneCharacter'
+          AND fe.components ? 'FLevelComponent'
+        LIMIT 1`,
+      [pawnId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      totalXpEarned: num(row.total_xp_earned),
+      totalSkillPoints: num(row.total_skill_points),
+      keystoneBonusSkillPoints: num(row.keystone_bonus_skill_points),
+    };
+  }
+
+  private async specializations(controllerId: string): Promise<DuneSpecializationRow[]> {
+    if (!this.hasAll('specialization_tracks', ['player_id', 'track_type', 'xp_amount', 'level'])) return [];
+    const { rows } = await this.db.query<Record<string, unknown>>(
+      `SELECT st.track_type::text AS track_type, st.level::float8 AS level, st.xp_amount::int8 AS xp_amount
+         FROM ${this.t('specialization_tracks')} st
+        WHERE st.player_id = $1::int8
+        ORDER BY st.track_type`,
+      [controllerId],
+    );
+    return rows.map((r) => ({ track: String(r.track_type ?? ''), level: num(r.level), xp: num(r.xp_amount) }));
   }
 
   /**

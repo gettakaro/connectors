@@ -3,6 +3,7 @@ import { asRecord, isGameEventType, type GameEventType } from '../takaro/protoco
 import { mapPlayer, num, str } from './identity.js';
 import type {
   DuneInventoryRow,
+  DuneProgressionRows,
   Position,
   TakaroBan,
   TakaroEntity,
@@ -10,6 +11,7 @@ import type {
   TakaroItem,
   TakaroLocation,
   TakaroPlayer,
+  TakaroProgressionTrack,
 } from './types.js';
 
 export { mapPlayer, num, str } from './identity.js';
@@ -512,4 +514,48 @@ export function aggregateInventory(items: TakaroItem[]): TakaroItem[] {
     out.push(copy);
   }
   return out;
+}
+
+const SPECIALIZATION_TRACKS: Record<string, { key: string; name: string }> = {
+  Crafting: { key: 'specialization.crafting', name: 'Crafting Specialization' },
+  Gathering: { key: 'specialization.gathering', name: 'Gathering Specialization' },
+  Exploration: { key: 'specialization.exploration', name: 'Exploration Specialization' },
+  Combat: { key: 'specialization.combat', name: 'Combat Specialization' },
+  Sabotage: { key: 'specialization.sabotage', name: 'Sabotage Specialization' },
+};
+
+/**
+ * The game stores no level, it derives one from XP through a curve in its cooked content. Every level past the first
+ * grants one skill point and keystones add theirs on top, both in `TotalSkillPoints`, so the level is that total minus
+ * the keystone bonus, plus the first level. `progress` is left out for the character because it needs that curve.
+ *
+ * A row that cannot make a valid track is dropped rather than answered: one invalid track fails the whole reading, and
+ * a track missing from a reading is merely unknown to Takaro.
+ */
+export function mapProgression(rows: DuneProgressionRows): TakaroProgressionTrack[] {
+  const tracks: TakaroProgressionTrack[] = [];
+  const character = rows.character;
+  if (character && Number.isInteger(character.totalSkillPoints)) {
+    const level = character.totalSkillPoints! - (character.keystoneBonusSkillPoints ?? 0) + 1;
+    if (Number.isInteger(level) && level >= 1) {
+      tracks.push({
+        key: 'character',
+        name: 'Level',
+        level,
+        ...(Number.isFinite(character.totalXpEarned) ? { experience: character.totalXpEarned! } : {}),
+      });
+    }
+  }
+  for (const row of rows.specializations) {
+    const track = SPECIALIZATION_TRACKS[row.track];
+    if (!track || !Number.isFinite(row.level) || row.level! < 0) continue;
+    const level = Math.floor(row.level!);
+    tracks.push({
+      ...track,
+      level,
+      ...(Number.isFinite(row.xp) ? { experience: row.xp! } : {}),
+      progress: row.level! - level,
+    });
+  }
+  return tracks;
 }
