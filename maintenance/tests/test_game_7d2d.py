@@ -32,6 +32,20 @@ MANAGED = "7DaysToDieServer_Data/Managed"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_handshake_passes_when_the_early_mod_load_line_missed_the_log_capture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = FakeRun(tmp_path)
+    fake = CannedSocket({}, identify_count=1)
+    monkeypatch.setattr(hooks.checks, "wait_for_line", lambda *args, **kwargs: (1, "line"))
+    monkeypatch.setattr(hooks.checks, "find_line", lambda *args, **kwargs: None)
+
+    result = asyncio.run(hooks._check_handshake(run, fake, lambda: True))
+
+    assert result.status == "pass"
+    assert result.detail["modVersion"] is None
+
+
 def test_every_7d2d_verification_body_has_pass_and_failure_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -688,7 +702,8 @@ def test_verify_hooks_render_config_and_use_the_7d2d_ready_line(tmp_path: Path) 
     assert "<Url>ws://host.docker.internal:34567/</Url>" in body
     assert "<ReconnectIntervalSeconds>30</ReconnectIntervalSeconds>" in body
 
-    assert hooks.READY_LINE.search("2026-09-21T10:00:00 12.345 INF StartGame done")
+    assert hooks.READY_LINE is hooks.HANDSHAKE_LINE
+    assert not hooks.READY_LINE.search("2026-09-21T10:00:00 12.345 INF StartGame done")
     assert hooks.HANDSHAKE_LINE.search(
         "2026-09-21T10:00:05 17.1 [Takaro] *INFO* WebSocket connection confirmed (inbound 'identifyResponse' frame)"
     )

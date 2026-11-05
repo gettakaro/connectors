@@ -95,8 +95,8 @@ pinned server image against a local fake Takaro. No host port is published.
 | Check | What has to happen |
 |---|---|
 | `build` | The manifest's artifact carries this target's fingerprint. |
-| `startup` | The server logs `StartGame done` and the pinned files are still byte-identical. |
-| `handshake` | The mod is loaded (`Loaded Mod: Takaro (<version>)`), sends `identify`, and logs Takaro's `identifyResponse`. |
+| `startup` | The server finishes booting, the mod connects to Takaro, and the pinned files are still byte-identical. |
+| `handshake` | The mod sends `identify` and logs Takaro's `identifyResponse`. `Loaded Mod: Takaro (<version>)` gives the reported version when the log capture caught it. |
 | `heartbeat`, `players` | Websocket ping/pong and `testReachability` answer; `getPlayers` on the empty server is `[]`. |
 | `console` | `executeConsoleCommand` runs on the server and is echoed in its log. |
 | `action` | `sendMessage` reaches the server's chat log. |
@@ -109,7 +109,7 @@ on every push to `main`, on release and recovery runs, and on pull requests that
 connector's build inputs (`scripts/pr-build-scope.sh`). `publish` needs every one of them to
 pass.
 
-Runner requirements: `ubuntu-latest` (x86_64, 4 vCPU, 16 GB RAM, about 86 GB free disk)
+Runner requirements: `ubuntu-24.04` (x86_64, 4 vCPU, 16 GB RAM, about 86 GB free disk)
 with docker. The server container is capped at 6 GB. The depot set is 17.7 GB and is on disk
 twice, once in `~/.cache/takaro-maint/steam` and once in the throwaway install. It is larger
 than the repository's whole Actions cache, so the verify leg downloads it from Steam
