@@ -41,11 +41,14 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
         }
 
         // Read by ConnectorConfigStore rather than bound through BepInEx, so BepInEx never rewrites it.
+        // The takaro.cfg 4.2.x kept in the plugin folder is carried over once, then renamed.
         configStore = new ConnectorConfigStore(
             Path.Combine(Paths.ConfigPath, ConnectorConfigFiles.FileName),
             message => Logger.LogInfo(message),
             message => Logger.LogWarning(message),
-            hostServerName: ValheimRuntimePolicy.ServerNameArgument(Environment.GetCommandLineArgs()));
+            hostServerName: ValheimRuntimePolicy.ServerNameArgument(Environment.GetCommandLineArgs()),
+            legacyUserFilePath: Path.Combine(
+                Path.GetDirectoryName(Info.Location) ?? Paths.PluginPath, LegacyConfigMigration.LegacyUserFileName));
         if (!configStore.Load(out var config, out var error) || config is null)
         {
             Logger.LogWarning($"Takaro Valheim connector disabled: {error}. Fix it in {configStore.FilePath} and restart the server.");
@@ -80,7 +83,9 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
         TakaroChatParticipant.Initialize(config.ChatSenderName, Logger.LogInfo);
         ValheimServerEventBridge.Initialize(runner, playerResolver, Logger.LogInfo);
         // Optional: only players who install the inventory companion ever answer it.
-        inventoryCompanion = new InventoryCompanionBridge(playerResolver, companionInventory, Logger.LogInfo);
+        // Research probe for native commands (#200): off unless the marker file exists at load.
+        var commandProbeMarker = Path.Combine(Paths.ConfigPath, Takaro.Valheim.Companion.Protocol.CommandProbeProtocol.MarkerFileName);
+        inventoryCompanion = new InventoryCompanionBridge(playerResolver, companionInventory, Logger.LogInfo, File.Exists(commandProbeMarker) ? commandProbeMarker : null);
         harmony = new Harmony(PluginGuid);
         harmony.PatchAll(typeof(ValheimServerEventBridge).Assembly);
         _ = runner.StartAsync();

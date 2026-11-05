@@ -27,7 +27,7 @@ from takaro_maint.publish.manifest import artifact_row, write_manifest, write_me
 TARGET = fake.TARGET_ID
 GAME = "7d2d"
 VERSION = "0.1.6-dev.abc1234"
-ZIP_NAME = f"takaro-7d2d-mod-{TARGET}-{VERSION}.zip"
+ZIP_NAME = f"takaro-7d2d-mod-{TARGET.removeprefix('linux-')}-{VERSION}.zip"
 MANAGED = "7DaysToDieServer_Data/Managed"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -75,7 +75,7 @@ def test_every_7d2d_verification_body_has_pass_and_failure_paths(
     assert asyncio.run(hooks._check_stop(failed_run, failed, [{"path": "missing"}])).status == "fail"
     asyncio.run(hooks.after_protocol(failed_run, failed, lambda: False))
     asyncio.run(hooks.after_shutdown(failed_run, failed, failed_run.ws_url, []))
-    assert {check for check, _ in failed_run.skips} == {"handshake", "action", "reconnect", "stop"}
+    assert {check for check, _ in failed_run.skips} == {"handshake", "action", "reconnect", "stop", "prismacore"}
 
 
 @pytest.fixture
@@ -117,7 +117,7 @@ def test_targets_resolve_env_for_7d2d(run: Any) -> None:
     assert env["SEVEND2D_STEAM_DEPOTS"] == "294422:1633674551820196085"
     assert env["SEVEND2D_STEAM_APP"] == "294420"
     assert env["SEVEND2D_STEAM_BRANCH"] == "public"
-    assert env["SEVEND2D_ARTIFACT"] == "takaro-7d2d-mod-linux-3.2.0.b10-{version}.zip"
+    assert env["SEVEND2D_ARTIFACT"] == "takaro-7d2d-mod-3.2.0.b10-{version}.zip"
     assert env["SEVEND2D_REFERENCES_DIR"].endswith(payload["fp16"])
     assert not any(key.endswith("_JAVA") for key in env)
     assert payload["resolvedUrls"]["server"].startswith("steam://app/294420/branch/public/")
@@ -722,7 +722,7 @@ def test_the_check_ids_add_the_7d2d_lifecycle_checks() -> None:
 
     ids = check_ids(GAME)
 
-    assert {"handshake", "action", "reconnect", "stop"} <= set(ids)
+    assert {"handshake", "action", "reconnect", "stop", "prismacore"} <= set(ids)
 
 
 # -- the release record ------------------------------------------------------------------
@@ -751,7 +751,7 @@ def test_compat_record_carries_the_steam_pin(run: Any, repo: Path, tmp_path: Pat
         target = json.loads(path.read_text(encoding="utf-8"))["id"]
         code, resolved, err = run("targets", "resolve", "--game", GAME, "--target", target, repo=repo)
         assert code == 0, err
-        zip_name = f"takaro-7d2d-mod-{target}-{VERSION}.zip"
+        zip_name = resolved["artifactFileNames"]["server-mod"].replace("{version}", VERSION)
         directory = tmp_path / "dist" / target
         _mod_zip(directory / zip_name)
         row = artifact_row("server-mod", target, resolved["fingerprint"], directory / zip_name)
@@ -802,7 +802,9 @@ def test_compat_record_carries_the_steam_pin(run: Any, repo: Path, tmp_path: Pat
     assert url.startswith("steam://app/294420/")
     assert re.search(r"manifest/[0-9]+", url)
     assert (out / ZIP_NAME).is_file()
-    assert (out / "takaro-7d2d-mod.zip").read_bytes() == (out / ZIP_NAME).read_bytes()
+    # gettakaro/connectors#756: no zip without the game build in its name.
+    assert not (out / "takaro-7d2d-mod.zip").exists()
+    assert record["aliases"] == {}
 
 
 # -- the dev-servers split ---------------------------------------------------------------

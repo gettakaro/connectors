@@ -19,6 +19,7 @@ internal sealed class CompanionClientBridge : IDisposable
     private readonly Stopwatch monotonicClock = Stopwatch.StartNew();
     private readonly CompanionInventoryReader inventoryReader = new();
     private readonly CompanionSendLimiter killVerdictLimiter = new(capacity: 4, refillPerSecond: 2);
+    private CompanionCommandProbe? commandProbe;
     private ZNet? observedNetwork;
     private ZRoutedRpc? registeredRpc;
     private ZNetPeer? activeServerPeer;
@@ -58,6 +59,7 @@ internal sealed class CompanionClientBridge : IDisposable
         try
         {
             UpdateCore();
+            commandProbe?.Update();
         }
         catch (Exception ex)
         {
@@ -108,6 +110,18 @@ internal sealed class CompanionClientBridge : IDisposable
 
         PollInventory(routedRpc, network, serverPeer);
     }
+
+    internal void AttachCommandProbe(CompanionCommandProbe probe) => commandProbe = probe;
+
+    /// <summary>The negotiated session's nonce, or null while there is none.</summary>
+    internal string? ActiveSessionNonce =>
+        initialized && !disposed && hasActiveContext && state.CanReport ? state.SessionNonce : null;
+
+    /// <summary>Research probe (#200): one invocation on the session it was created for.</summary>
+    internal bool TrySendCommandProbeInvocation(CommandProbeInvocation invocation, string nonce) =>
+        invocation is not null
+        && string.Equals(ActiveSessionNonce, nonce, StringComparison.Ordinal)
+        && TrySendReport(CompanionMessageTypes.CommandProbeInvoke, invocation);
 
     /// <summary>
     /// Sends one kill verdict for a creature this client owned, rate-limited. Fire and forget:
@@ -299,6 +313,12 @@ internal sealed class CompanionClientBridge : IDisposable
             return;
         }
 
+        if (CompanionMessageTypes.IsCommandProbe(envelope.Type))
+        {
+            commandProbe?.OnServerEnvelope(envelope, ActiveSessionNonce);
+            return;
+        }
+
         if (!state.TryPrepareHelloAck(
                 envelope,
                 TakaroCompanionBuildVersion.ProductVersion,
@@ -315,6 +335,7 @@ internal sealed class CompanionClientBridge : IDisposable
             return;
         }
 
+        commandProbe?.OnSessionReset("new session offered");
         if (prepared.Envelope.Type == CompanionMessageTypes.HelloNack)
         {
             state.Reset();
@@ -425,6 +446,7 @@ internal sealed class CompanionClientBridge : IDisposable
 
     private void ResetConnectionState()
     {
+        commandProbe?.OnSessionReset("connection changed");
         state.ResetConnection();
         inventoryReader.Reset();
         nextInventoryPollAt = TimeSpan.Zero;

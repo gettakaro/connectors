@@ -118,13 +118,32 @@ class ProtocolV1Test {
     }
 
     @Test
-    void withoutTheMapSettingIdentifyStaysV0() throws Exception {
+    void withoutTheMapSettingIdentifyStillOffersV1WithoutTheMap() throws Exception {
         TakaroWebSocketClient client = client(false, new EventOutbox());
         client.onOpen(null);
 
         JsonObject identify = sentOfType("identify").get(0).getAsJsonObject("payload");
-        assertFalse(identify.has("protocolVersions"));
-        assertFalse(identify.has("capabilities"));
+        assertEquals("[0,1]", identify.get("protocolVersions").toString());
+        List<String> names = new ArrayList<>();
+        identify.getAsJsonArray("capabilities").forEach(c -> names.add(c.getAsJsonObject().get("name").getAsString()));
+        assertTrue(names.contains("game.profile"));
+        assertTrue(names.contains("players.list"));
+        assertFalse(names.contains("map"));
+    }
+
+    @Test
+    void v0EventsRaisedBeforeIdentifyAreSentPlainAfterIt() throws Exception {
+        EventOutbox outbox = new EventOutbox("stream-c");
+        TakaroWebSocketClient client = client(false, outbox);
+        client.onOpen(null);
+        client.emitChatMessage("u1", "Steve", "global", "early");
+        assertTrue(sentOfType("gameEvent").isEmpty());
+
+        client.onMessage(identifyResponse(0));
+        JsonObject payload = sentOfType("gameEvent").get(0).getAsJsonObject("payload");
+        assertEquals("early", payload.getAsJsonObject("data").get("msg").getAsString());
+        assertFalse(payload.has("seq"));
+        assertEquals(0, outbox.size());
     }
 
     @Test
@@ -208,6 +227,44 @@ class ProtocolV1Test {
         assertTrue(r.has("payload"));
         assertTrue(r.get("payload").isJsonNull());
         assertFalse(r.has("error"));
+    }
+
+    @Test
+    void aGiveOrTeleportThatChangedNothingIsAnError() throws Exception {
+        TakaroConnectorTest.TestAdapter adapter = new TakaroConnectorTest.TestAdapter() {
+            @Override
+            public void giveItem(String gameId, String itemCode, int amount, String quality) {
+                if (!"online".equals(gameId)) throw new PlayerNotOnlineException(gameId);
+                throw new IllegalArgumentException("unknown item: " + itemCode);
+            }
+
+            @Override
+            public void teleportPlayer(String gameId, double x, double y, double z, String dimension) {
+                throw new PlayerNotOnlineException(gameId);
+            }
+        };
+        TakaroConfig config = new TakaroConfig();
+        TakaroWebSocketClient client = new TakaroWebSocketClient(new URI("ws://localhost:9999"), adapter, config) {
+            @Override
+            public void send(String text) { sent.add(text); }
+
+            @Override
+            public boolean isOpen() { return open; }
+        };
+        client.onOpen(null);
+        client.onMessage(identifyResponse(1));
+
+        client.onMessage(request("g1", "giveItem", "{\"player\":{\"gameId\":\"online\"},\"item\":\"minecraft:nope\",\"amount\":1}"));
+        assertEquals("invalid_args", awaitResponse("g1").getAsJsonObject("error").get("code").getAsString());
+
+        client.onMessage(request("g2", "giveItem", "{\"player\":{\"gameId\":\"gone\"},\"item\":\"minecraft:stone\",\"amount\":1}"));
+        assertEquals("not_found", awaitResponse("g2").getAsJsonObject("error").get("code").getAsString());
+
+        client.onMessage(request("g3", "giveItem", "{\"item\":\"minecraft:stone\",\"amount\":1}"));
+        assertEquals("invalid_args", awaitResponse("g3").getAsJsonObject("error").get("code").getAsString());
+
+        client.onMessage(request("t1", "teleportPlayer", "{\"player\":{\"gameId\":\"gone\"},\"x\":1,\"y\":2,\"z\":3}"));
+        assertEquals("not_found", awaitResponse("t1").getAsJsonObject("error").get("code").getAsString());
     }
 
     @Test

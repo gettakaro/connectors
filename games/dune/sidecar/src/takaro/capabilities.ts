@@ -1,4 +1,5 @@
 import type { MapDimension } from '../dune/mapDimensions.js';
+import { gameProfileCapability } from './gameProfile.js';
 import { GAME_EVENT_TYPES, type GameServerAction } from './protocol.js';
 
 export interface Capability {
@@ -30,10 +31,14 @@ export const ACTION_CAPABILITY: Record<Exclude<GameServerAction, 'testReachabili
   shutdown: 'server.shutdown',
 };
 
-/** The Capability Manifest sent with a version 1 identify. */
-export function buildManifest(dimensions: readonly MapDimension[]): Capability[] {
+/**
+ * The Capability Manifest sent with a version 1 identify (and as a `capabilities` replacement when the game build
+ * changes). `gameVersion` is the running game build, null while unknown.
+ */
+export function buildManifest(dimensions: readonly MapDimension[], gameVersion: string | null = null): Capability[] {
   const manifest: Capability[] = Object.values(ACTION_CAPABILITY).map((name) => ({ name }));
   for (const type of GAME_EVENT_TYPES) manifest.push({ name: `events.${type}` });
   if (dimensions.length) manifest.push({ name: 'map', parameters: { dimensions: dimensions.map((d) => ({ ...d })) } });
+  manifest.push(gameProfileCapability(gameVersion));
   return manifest;
 }

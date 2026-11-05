@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "id": "windows-25490402",
+  "game": "empyrion",
+  "platform": "windows",
+  "revision": "25490402",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-11-03",
+    "evidence": [
+      "games/empyrion/README.md (What works, what doesn't)",
+      "games/empyrion/capabilities.json (status and game API per action and event, kept equal to mod/src/Core/Coverage.cs by the contract tests)",
+      "live-verified 2026-11-03 against build 25490402 with a real game client on a staging Takaro domain"
+    ],
+    "notes": "Empyrion - Galactic Survival dedicated server v1.19.6 build 5188, Steam build 25490402 on the public branch. The connector is the C# mod TakaroEmpyrion.dll, loaded by the game's own mod loader (ModTargets: Dedi, PfServer): the dedicated server holds the Takaro WebSocket, and a small agent in every playfield server forwards game events to it. It compiles against the server's own ModApi.dll, Mif.dll and Newtonsoft.Json.dll, fetched from the pinned depot manifest and checked by sha256."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 530870,
+      "branch": "public",
+      "buildid": 25490402,
+      "os": "windows",
+      "arch": "64",
+      "depots": {
+        "1004": {
+          "manifest": "7604377918839582995",
+          "size": 67863136,
+          "files": 8
+        },
+        "530871": {
+          "manifest": "8329430202076268665",
+          "size": 18901758018,
+          "files": 18406
+        }
+      },
+      "files": {
+        "DedicatedServer/EmpyrionDedicated.exe": {
+          "sha256": "648e633f2fafedf91e4c4aef5af3e397c3e90dab3696078705aaf1cd2b027931",
+          "size": 666624
+        },
+        "DedicatedServer/EmpyrionDedicated_Data/Managed/Mif.dll": {
+          "sha256": "4423b35d832fef54e744a7dd3ba931fd346089412ad643cc4e29f319662396f3",
+          "size": 20992
+        },
+        "DedicatedServer/EmpyrionDedicated_Data/Managed/ModApi.dll": {
+          "sha256": "7c5f24e25d0b1792ee59e9ae312f7f04bbd3540115b7890b394e835eda86bd45",
+          "size": 72704
+        },
+        "DedicatedServer/EmpyrionDedicated_Data/Managed/Newtonsoft.Json.dll": {
+          "sha256": "a56146202232958f46bd6a28b5a7da166aea123ee0d646735a46e5c341dfbf1f",
+          "size": 691712
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "mono",
+      "tag": "6.12.0.182",
+      "digest": "sha256:34d816779b1248b5cfd095770b64ecbaf1798e2aca693a91c11a018dce9c7ad5"
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/empyrion/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "mono",
+      "tag": "6.12.0.182",
+      "digest": "sha256:34d816779b1248b5cfd095770b64ecbaf1798e2aca693a91c11a018dce9c7ad5"
+    },
+    "references": [
+      "DedicatedServer/EmpyrionDedicated_Data/Managed/Mif.dll",
+      "DedicatedServer/EmpyrionDedicated_Data/Managed/ModApi.dll",
+      "DedicatedServer/EmpyrionDedicated_Data/Managed/Newtonsoft.Json.dll"
+    ],
+    "deps": {
+      "netstandard.dll": {
+        "coordinate": "image-file:6.12.0.182:/usr/lib/mono/4.5/Facades/netstandard.dll",
+        "sha256": "c184b0af39a91c7048a504bf41daf7693498be4cc96489e4a9ecda2fa9183fb8",
+        "resolvedCoordinate": "docker.io/library/mono@sha256:34d816779b1248b5cfd095770b64ecbaf1798e2aca693a91c11a018dce9c7ad5#/usr/lib/mono/4.5/Facades/netstandard.dll"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "mod",
+      "artifact": "takaro-empyrion-windows-25490402-{version}.zip",
+      "installDir": "Content/Mods"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": []
+  },
+  "preserve": [
+    "Saves/",
+    "Content/Mods/TakaroEmpyrion/TakaroConfig.txt",
+    "Content/Mods/TakaroEmpyrion/players.json",
+    "Content/Mods/TakaroEmpyrion/bans.json",
+    "Content/Mods/TakaroEmpyrion/Logs/"
+  ],
+  "notes": "The Windows server is not run in a container by this repository's release pipeline: the runtime image is recorded only because the schema requires one, and runtime verification is off for this connector. The dev-servers rig (dev-servers/compose/empyrion.yml) runs the same Windows server under Wine for live tests. TakaroEmpyrion.dll is compiled with the Mono C# compiler (csc -langversion:7.3 -deterministic) from the pinned mono image, against the three pinned server assemblies and the image's netstandard facade, whose sha256 the build checks. Depot 1004 is Valve's redistributable depot, pinned because the proven install carried it."
+}

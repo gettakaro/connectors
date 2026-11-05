@@ -2,11 +2,13 @@ package io.takaro.minecraft.fabric;
 
 import io.takaro.minecraft.core.EventEmitter;
 import io.takaro.minecraft.core.GameAdapter;
+import io.takaro.minecraft.core.PlayerNotOnlineException;
 import io.takaro.minecraft.core.map.RegionRenderer;
 import io.takaro.minecraft.core.map.WorldMap;
 import io.takaro.minecraft.core.model.*;
 import io.takaro.minecraft.core.target.RuntimeIdentity;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
@@ -153,16 +155,17 @@ public class FabricGameAdapter implements GameAdapter {
     @Override
     public void giveItem(String gameId, String itemCode, int amount, String quality) {
         ServerPlayer player = server.getPlayerList().getPlayer(UUID.fromString(gameId));
-        if (player == null) return;
-        var itemHolder = BuiltInRegistries.ITEM.get(Identifier.parse(itemCode));
-        if (itemHolder.isEmpty() || itemHolder.get().value() == Items.AIR) return;
-        ItemStack stack = new ItemStack(itemHolder.get(), amount);
+        if (player == null) throw new PlayerNotOnlineException(gameId);
+        Identifier id = Identifier.tryParse(itemCode);
+        var item = id == null ? Items.AIR : BuiltInRegistries.ITEM.getValue(id);
+        if (item == Items.AIR) throw new IllegalArgumentException("unknown item: " + itemCode);
+        ItemStack stack = new ItemStack(item, amount);
         player.getInventory().add(stack);
     }
 
     @Override
-    public void sendMessage(String message, String recipientGameId) {
-        var component = net.minecraft.network.chat.Component.literal(message);
+    public void sendMessage(ChatLine line, String recipientGameId) {
+        var component = render(line);
         if (recipientGameId != null) {
             ServerPlayer player = server.getPlayerList().getPlayer(UUID.fromString(recipientGameId));
             if (player != null) {
@@ -171,6 +174,15 @@ public class FabricGameAdapter implements GameAdapter {
         } else {
             server.getPlayerList().broadcastSystemMessage(component, false);
         }
+    }
+
+    private static net.minecraft.network.chat.Component render(ChatLine line) {
+        if (!line.hasSender()) {
+            return net.minecraft.network.chat.Component.literal(line.message());
+        }
+        var text = net.minecraft.network.chat.Component.translatableWithFallback(line.translationKey(),
+                line.plainText(), line.sender(), line.message());
+        return line.whisper() ? text.withStyle(ChatFormatting.GRAY, ChatFormatting.ITALIC) : text;
     }
 
     @Override
@@ -187,7 +199,8 @@ public class FabricGameAdapter implements GameAdapter {
     @Override
     public void teleportPlayer(String gameId, double x, double y, double z, String dimension) {
         ServerPlayer player = server.getPlayerList().getPlayer(UUID.fromString(gameId));
-        if (player == null) return;
+        if (player == null) throw new PlayerNotOnlineException(gameId);
+        if (player.isDeadOrDying()) throw new IllegalStateException("player " + gameId + " is dead");
         ServerLevel level = dimension != null ? getLevelForDimension(dimension) : (ServerLevel) player.level();
         if (level == null) level = (ServerLevel) player.level();
         player.teleportTo(level, x, y, z, Set.of(), player.getYRot(), player.getXRot(), false);
@@ -205,7 +218,10 @@ public class FabricGameAdapter implements GameAdapter {
     public void banPlayer(String gameId, String reason, String expiresAt) {
         UUID uuid = UUID.fromString(gameId);
         ServerPlayer onlinePlayer = server.getPlayerList().getPlayer(uuid);
-        String playerName = onlinePlayer != null ? onlinePlayer.getGameProfile().name() : "";
+        // An offline player's name comes from the server's user cache, so the ban list names them.
+        String playerName = onlinePlayer != null
+                ? onlinePlayer.getGameProfile().name()
+                : server.services().nameToIdCache().get(uuid).map(NameAndId::name).orElse("");
         var nameAndId = new NameAndId(uuid, playerName);
         Date expiry = null;
         if (expiresAt != null) {
@@ -223,6 +239,21 @@ public class FabricGameAdapter implements GameAdapter {
         UUID uuid = UUID.fromString(gameId);
         var nameAndId = new NameAndId(uuid, "");
         server.getPlayerList().getBans().remove(nameAndId);
+    }
+
+    /**
+     * Vanilla keeps an expired ban in the list until something reads that one entry, and its
+     * login check trips over it: the first join after a timed ban ends is dropped with
+     * "Internal server error". Lift timed bans ourselves as soon as they run out.
+     */
+    public void liftExpiredBans() {
+        if (server.getPlayerList() == null) return;
+        var bans = server.getPlayerList().getBans();
+        if (bans.isEmpty()) return;
+        Date now = new Date();
+        for (var entry : List.copyOf(bans.getEntries())) {
+            if (entry.getExpires() != null && entry.getExpires().before(now)) bans.remove(entry);
+        }
     }
 
     @Override

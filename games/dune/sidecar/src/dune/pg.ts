@@ -43,7 +43,7 @@ export const OPTIONAL_COLUMNS = {
   actors: ['transform', 'map', 'partition_id', 'dimension_index', 'class'],
   world_partition: ['partition_id', 'server_id', 'map', 'label', 'blocked', 'dimension_index'],
   farm_state: ['server_id', 'alive', 'ready', 'connected_players', 'map'],
-  inventories: ['inventory_type', 'actor_id'],
+  inventories: ['inventory_type', 'actor_id', 'max_item_count'],
   items: ['template_id', 'stack_size', 'quality_level', 'position_index', 'inventory_id'],
   /**
    * The shipped `markers` table is `(marker_hash_id, dimension_index, marker_type, position Vector, payload jsonb,
@@ -380,6 +380,28 @@ export class DunePg {
       positionIndex: num(r.position_index),
       inventoryType: num(r.inventory_type),
     })).filter((r) => r.templateId);
+  }
+
+  /**
+   * The backpack's slot count (`inventories.max_item_count` of `inventory_type = 0`), or null when the column or the
+   * row is missing. A grant into a full backpack is dropped by the game without any error, so `giveItem` checks this
+   * before it publishes.
+   */
+  async backpackSlots(flsId: string): Promise<number | null> {
+    const player = await this.findPlayer(flsId);
+    if (!player || player.accountId == null) return null;
+    if (!this.has('inventories', 'max_item_count') || !this.has('inventories', 'inventory_type')) return null;
+    const pawnCol = this.options.pawnColumn ?? 'player_pawn_id';
+    const { rows } = await this.db.query<Record<string, unknown>>(
+      `SELECT inv.max_item_count::int8 AS max_item_count
+         FROM ${this.t('player_state')} ps
+         JOIN ${this.t('inventories')} inv ON inv.actor_id = ps.${quoteIdent(pawnCol)}
+        WHERE ps.account_id = $1::int8 AND inv.inventory_type = 0
+        LIMIT 1`,
+      [player.accountId],
+    );
+    const slots = num(rows[0]?.max_item_count);
+    return slots !== null && slots > 0 ? slots : null;
   }
 
   /**

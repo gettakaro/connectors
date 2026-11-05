@@ -211,3 +211,24 @@ bool JsonParse(const std::string& text, JsonValue& out) {
     p.ws();
     return p.i == text.size();
 }
+
+bool ParseItemLevel(const std::string& text, uint8_t& level) {
+    size_t b = text.find_first_not_of(" \t\r\n"), e = text.find_last_not_of(" \t\r\n");
+    level = 0;
+    if (b == std::string::npos) return true;
+    std::string t = text.substr(b, e - b + 1);
+    char* end = nullptr;
+    double d = strtod(t.c_str(), &end);
+    if (!end || *end != 0 || !(d >= 1 && d <= 255) || d != (double)(int)d) return false;
+    level = (uint8_t)d;
+    return true;
+}
+
+bool ParseItemLevel(const JsonValue* v, uint8_t& level) {
+    level = 0;
+    if (!v || v->type == JsonValue::Null) return true;
+    if (v->type == JsonValue::String) return ParseItemLevel(v->str, level);
+    if (v->type != JsonValue::Number || !(v->num >= 1 && v->num <= 255) || v->num != (double)(int)v->num) return false;
+    level = (uint8_t)v->num;
+    return true;
+}

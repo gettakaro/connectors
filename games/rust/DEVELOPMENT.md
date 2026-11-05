@@ -153,12 +153,11 @@ never installs, updates or downloads anything; if `/rust` is empty it says so an
 `dev-servers/compose/rust.yml` uses the same image (`${RUST_IMAGE}`, resolved into
 `dev-servers/_data/.targets/rust.env` by `install.sh`) and the same two mounts.
 
-**Memory.** The `verify` runner boots every game with the same 3 GB limit and offers no per-game
-hook, so the adapter ships none. A verification world (size 1000, ten slots) does pass inside it —
-twice, measured — but it does so sitting *at* the ceiling: sampled peak 2.999 GiB of 3, surviving on
-page-cache reclaim. Verifying a bigger world here needs a per-game memory limit in the runner first.
-A server anybody plays on wants considerably more, which is why the rig's compose file sets no limit
-at all.
+**Memory.** The `verify` runner boots every game with 3 GB; the adapter's `container_options` raises
+Rust's to 8 GB. A verification world (size 1000, ten slots) sat *at* the 3 GB ceiling through world
+generation (2.97-2.999 GiB sampled), living off page-cache reclaim, and on a busy host docker
+OOM-killed it (exit 137) during `Processing World`, before the server came up. A server anybody
+plays on wants considerably more, which is why the rig's compose file sets no limit at all.
 
 ## Dev environment
 
@@ -210,7 +209,7 @@ The plugin owns `<framework config dir>/TakaroConnector.json` (`Interface.Oxide.
 `carbon/configs/` on Carbon, `oxide/config/` on Oxide) and does its own reads and writes instead of
 the framework's `Config` object, because it needs the file's text to watch it:
 
-- **First load** (file absent, empty, or a JSON object with none of the four keys, e.g. `{}`; a file
+- **First load** (file absent, empty, or a JSON object with none of the five keys, e.g. `{}`; a file
   that exists but cannot be read is never recreated): the plugin writes it with an empty
   `RegistrationToken` and a new UUID `IdentityToken`. A file whose `IdentityToken` is empty or
   absent gets a UUID written into it (other keys untouched); an identity removed while running is
@@ -220,8 +219,18 @@ the framework's `Config` object, because it needs the file's text to watch it:
 - **While running**: a 1 s main-thread tick re-reads the file every 5 s and compares the whole text.
   A change to the URL, the registration token or the identity drops the socket and connects at once
   (backoff reset, auth-close `_shouldReconnect = false` cleared). `Debug` applies without a
-  reconnect. A missing, empty or unparseable file keeps the current settings; an absent token key
-  keeps the token in use, an absent `WebSocketUrl` / `Debug` falls back to the default.
+  reconnect, and so does `ServerChatName`. A missing, empty or unparseable file keeps the current
+  settings; an absent token key keeps the token in use, an absent `WebSocketUrl` / `Debug` /
+  `ServerChatName` falls back to the default.
+- **Server chat name**: `sendMessage` takes the sender from `opts.senderNameOverride`, else
+  `ServerChatName` (`TAKARO_SERVER_CHAT_NAME` wins over the file), else none; blank counts as unset.
+  `ResolveServerChatName` and `ServerChatCommand` in the config region do both, for broadcast and
+  whisper alike; `tests/config` covers them. With a name it sends the client command
+  `chat.add2 2 0 <text> <name> #eee 1`, which the client draws as `Name: text` on the Server channel
+  (the name escaped like Rust's own `EscapeRichText`); without one it sends `chat.add 2 0 <text>`
+  exactly as before. On the Global channel the client colours the name like a player's, so the
+  plugin does not use it. Neither command runs `OnPlayerChat`, so a sent message never comes back
+  as a `chat-message` event.
 - **Threads**: connections are only started on the main thread. Each connection carries a generation;
   a stale socket task, auth close or reconnect request (reconnects are queued for the tick, not started
   from the socket task) changes nothing. Identify and responses go out on the socket the request came
@@ -248,6 +257,48 @@ the world edge. Errors start with `invalid_args`, `map_not_ready` or `tile_out_o
 part lives between `takaro:map-begin` / `takaro:map-end`; `tests/map/run.sh` runs it the same way
 as the config harness.
 
+On protocol v1 the same raster is declared as the `map` capability: one Dimension `world`, x to the
+right and z up, bounds = the world square plus the 512 m ocean pad, a `tiled` source of 128 px tiles
+from zoom 0 (the whole square) to the first zoom with at most one metre per pixel. `getMapTile`
+takes `{dimension, zoom, x, y}` and answers `{mimeType: "image/png", data}`; a map that is not
+rendered yet answers `not_found`. `getPlayerLocation` names the same Dimension
+(`dimension: "world"`), so Takaro files player positions under the id the map and the locations use.
+A player who is not on the server and has no cached position answers `null` on v1, so Takaro keeps
+the last real position; v0 keeps answering `0, 0, 0`.
+The capability goes out in a `capabilities` replacement as soon as
+the raster is ready, so a boot or reload declares it a few seconds after identify.
+
+### Protocol (v0 and v1)
+
+Identify offers `protocolVersions: [0, 1]` with a Capability Manifest (the 16 actions, the six
+`events.*` and, once the map is ready, `map`) and speaks whatever `identifyResponse` picks, per
+connection; a Takaro that names no version is v0. On v1, failures are
+`{ "type": "response", "error": { "code", "message" } }` (`not_found` for an unknown player or item,
+`invalid_args` for bad arguments, `game_error` for anything the game threw, `unsupported` for an
+unknown action and for `getMapInfo`), void actions answer `payload: null`, and every `gameEvent` carries
+the process's `streamId` and a `seq` from 1. Events wait in a buffer of 2000 (oldest dropped) until an
+`eventAck` covers them and are resent in order after every v1 identify; on v0 they are sent once
+without `streamId`/`seq`, as before, and what was raised while disconnected goes out after identify.
+Every frame leaves through one queue in order, so events never overtake each other. The pure part
+lives between `takaro:protocol-begin` / `takaro:protocol-end`; `tests/protocol/run.sh` runs it.
+
+### Game profile
+
+Identify also sends `game: "rust"`, `connector: { name: "takaro-rust", version }` and the server's
+hostname as `name` (Takaro follows it until an operator renames the server). `version` is the
+plugin's own `[Info]` version (Oxide's `Version`), which release-please keeps equal to `version.txt`;
+it is left out if it is ever not strict semver, because Takaro refuses the whole identify over it.
+The manifest declares `game.profile` with `name: "Rust"`, `version` = `Rust.Protocol.printable`
+(the build the server's `version` command prints, for example `2634.289.1`) and the icon's
+`revision` and `size`. `getGameIcon` is answered off the game thread with the whole PNG as base64.
+
+The icon is `assets/icon-256.png` (Steam library art of app 252490, 256 x 256). The plugin ships as
+one `.cs`, so `scripts/embed-icon.sh` writes the PNG into it as the base64 constant between
+`takaro:icon-begin` / `takaro:icon-end`; the plugin computes the revision (first 12 hex of the
+sha256) and size from those bytes when it loads. Changing the icon is: replace the PNG, run
+`scripts/embed-icon.sh`. `tests/protocol/run.sh` fails when the constant and the PNG differ, when
+the PNG is not 256 x 256 or over 128 KiB, and when the `[Info]` version is not `version.txt`.
+
 ### Environment variables
 
 | Variable | Description | Default |
@@ -256,6 +307,7 @@ as the config harness.
 | `TAKARO_REGISTRATION_TOKEN` | Server registration token | (required) |
 | `TAKARO_IDENTITY_TOKEN` | Unique server identity | `takaro-dev-rust` |
 | `TAKARO_DEBUG` | Enable debug logging | `false` |
+| `TAKARO_SERVER_CHAT_NAME` | Sender shown on messages from Takaro when Takaro sends none | (none) |
 | `RCON_PASSWORD` | RCON password (dev only) | (required, set in `dev-servers/.env`) |
 
 ### Edit loop
@@ -275,8 +327,13 @@ protocol harness — **no Rust client is involved**. What it proves:
 compile/load (`carbon-compile`: Carbon compiled the deployed source, loaded the version the build
 manifest names, wrote no compile error and did not self-update), `startup` (including input
 integrity across the boot), `identify`, `heartbeat` (`testReachability`), `players` on an empty
-server, `items` and `entities` (both catalogues, human display names spot-checked), `console`,
-`action` (a broadcast), `reconnect` and `stop`.
+server, `items` and `entities` (both catalogues, human display names spot-checked), `console-command`,
+`action` (a broadcast), `reconnect` and `stop`. With `--negative` it also runs
+`negative-broken-compile`: the same data directory boots again with `#error` prepended to the
+deployed plugin, and the row passes only when Carbon logs the failed compile, never logs the plugin as
+loaded, and no identify frame arrives. The real plugin is put back byte-for-byte afterwards. Rust has
+no sibling target whose artifact a server would refuse, so a compile failure is this game's
+"wrong artifact".
 
 `stop` replaces the base `shutdown` check, which gates on the container's exit code. **Rust's exit
 code is not a shutdown signal**: the Unity player segfaults inside its own teardown on some runs
@@ -285,11 +342,14 @@ others with the same lines in the same order. So `stop` asserts the sequence the
 writes — saved, connector unloaded, quit — and that the process is gone afterwards, and records the
 exit code without judging it.
 
-Rust's console echoes neither a command it was handed nor a chat broadcast, so `console` and
-`action` are observable only because the connector logs both (`console: <command>`,
-`broadcast: <message>`) — lines worth having anyway, since they are an operator's only record of
-what Takaro did on their server. What they prove is that the instruction reached the server and the
-connector carried it out, not that a player saw it.
+Rust's console echoes neither a command it was handed nor a chat broadcast, and the connector logs a
+console command by verb and argument count only (`console: say (1 args)`), never its text, because an
+operator can type a password or a player's details into one. So the base `console` check, which greps
+the server log for the command text, is replaced by `console-command`: the request succeeded, the
+connector logged `console: say (1 args)`, and the server's own output of that `say` (the marker) came
+back to Takaro as a `log` game event. Only a command the server really ran prints it. `action` is
+observable because the connector logs the broadcast (`broadcast: <message>`). What they prove is
+that the instruction reached the server and the connector carried it out, not that a player saw it.
 
 What it does **not** prove, and what therefore stays ⚠️ in the README: every player hook
 (connect/disconnect/chat/death/kill), `giveItem`, `teleportPlayer`, `kickPlayer`, `banPlayer`,
@@ -298,7 +358,7 @@ but only Carbon is booted), and hosted Takaro over TLS. Those need a client sess
 
 `connector-load`, `catalog-items` and `catalog-entities` are Minecraft-specific check ids — they
 look for lines and spot values only that connector writes — and, with the base `shutdown` that
-`stop` replaces, are never selected for Rust. A bare `verify --game rust` runs exactly the set
+`stop` replaces and the base `console` that `console-command` replaces, are never selected for Rust. A bare `verify --game rust` runs exactly the set
 the target record's `verification.separate` names (plus `build`); an explicit `--checks` is left
 as written, including one that names a check this game cannot pass.
 
@@ -335,15 +395,55 @@ before the game head is reconciled.
 - The release ships `takaro-rust-plugin-carbon-25454815-<version>.cs`, a byte-identical
   `TakaroConnector.cs` alias (so an existing install path keeps working), `SHA256SUMS` and
   `takaro-rust-<version>.compat.json`. The compat record names the Steam pseudo-URL and the Carbon
-  asset URL for each target and claims `verification: {required: "build", executed: null}` —
-  the runtime leg is off for this connector, because a 5.9 GB depot set with an 8 GB RAM footprint
-  does not fit a hosted runner. Runtime CI is tracked separately.
+  asset URL for each target and records the verification report the runtime leg produced
+  (`required: "startup"`; see **Runtime CI** below).
+
+### Runtime CI
+
+The release workflow's `verify` leg runs, on a hosted runner, exactly the command a maintainer runs
+locally, with `--negative`:
+
+```bash
+maintenance/bin/takaro-maint build  --game rust --version 0.0.0-local --out dist --toolchain container
+maintenance/bin/takaro-maint verify --game rust --artifacts dist --out reports \
+  --negative --startup-timeout 1200 --cleanup-orphans
+```
+
+- **Required check:** `Rust Connector / release / verify (carbon-26139947, …)`, one leg per
+  candidate or maintained target. `publish` needs every leg to pass, so nothing is released (stable,
+  rolling `rust-dev` or a PR build) that did not boot.
+- **Trigger policy:** every push to `main`, every release or recovery run, and every pull request that
+  changes Rust's build inputs (`scripts/pr-build-scope.sh`: `games/rust/**`, `catalog/rust/**`, the
+  Rust adapter, shared maintenance code and scripts, `rust.yml` and `connector-release.yml`).
+- **What fails it:** any selected check. Proven both ways on a hosted run: a plugin that compiles
+  but sends a wrong identify frame fails `identify`, and the `negative-broken-compile` row fails if
+  a plugin Carbon cannot compile is ever reported as loaded or connects.
+- **Runner:** `ubuntu-latest` (x86_64 Linux, 4 vCPU, 16 GB RAM). The server container is limited to
+  8 GB. The depot set is 6.1 GB, held twice during a run (the cache and the throwaway install), so
+  about 13 GB of disk; the hosted image has far more free. Measured on a hosted run: the cold depot
+  download, both boots and every check took under 4 minutes.
+  The leg's timeout is 40 minutes.
+- **Caching:** the leg restores and saves `~/.cache/takaro-maint/steam` under
+  `rust-depots-<fp16>`, so the depots are downloaded once per target fingerprint. Saving happens even
+  when a check failed; every depot is re-verified against its pinned manifest when it is used. The
+  build leg does not install the server at all (`runtime_depot_cache: true`).
+- **Isolation:** throwaway data directory, no published ports, a per-run registration token, a
+  local fake Takaro, `tm.run`/`tm.ttl` container labels and removal on success, failure, cancel or
+  signal (see `maintenance/docs/verify.md`). Nothing outside the runner is touched.
+- **Licenses and credentials:** none. App 258550 is downloaded anonymously from Steam and Carbon is a
+  public GitHub release asset; no Steam account, Takaro account or secret is involved.
+- **Report:** `reports/carbon-<build>/report.json` (uploaded as `verify-rust-<target>`) ties every
+  row to the source revision, the target fingerprint and its pinned inputs, the artifact sha256 and
+  the runtime identity the server printed (Rust protocol and Carbon version), with the server, the
+  negative boot, the fake Takaro and docker logs beside it.
+- **Still manual** (needs a real game client): every player hook, `giveItem`, `teleportPlayer`,
+  `kickPlayer`, `banPlayer`, `unbanPlayer`, `listBans`, `getPlayer*`, `listLocations`, Oxide, and a
+  hosted Takaro over TLS.
 - Versioning is release-please driven; the `// x-release-please-version` marker on the `[Info(...)]`
   line in `mod/TakaroConnector.cs` and `version.txt` are the version sources.
 
 ## Testing status
 
-The rows the README marks ✅ were proven by `takaro-maint verify` on Rust build 25353106 with Carbon
-2.0.259 and no client. The current target, build 25454815, is compile-checked against those same
-Carbon bytes; its runtime re-verification is tracked separately. Everything a client is needed for
-is still ⚠️ and unproven; see **Verification coverage** above.
+The rows the README marks ✅ are proven by `takaro-maint verify` with no client, on every CI run of
+the current target (build 26139947 with Carbon 2.0.262; see **Runtime CI**). Everything a client is
+needed for is still ⚠️ and unproven; see **Verification coverage** above.

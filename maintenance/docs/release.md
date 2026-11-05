@@ -66,7 +66,7 @@ that produced a differently named file does not assemble.
 **Legacy aliases.** `game.json`'s `legacyAssetAliases` maps an old asset name (with
 `{version}`) to `"<target-id>/<role>"`, and the publisher ships a byte-identical copy under
 that old name so existing download links keep working. Aliases are kept for two stable releases
-and then removed in a catalog PR. An alias that points at a retired or absent target is skipped
+and then removed in a catalog PR. An alias may only point at the one live (not retired) target on its platform: `catalog validate` fails (`legacy-alias-single-build`) as soon as a second build appears, because a name without the game build then hides which build it is (gettakaro/connectors#756). An alias that points at a retired or absent target is skipped
 and listed in `aliasesSkipped`. An alias key is one file name, never a path, and no two assets in
 a set may want the same name — including `SHA256SUMS` and the record itself.
 

@@ -1,7 +1,9 @@
 #include "native_behavior.h"
 #include "game_profile.h"
+#include "native_map.h"
 #include "native_log.h"
 #include "actions.h"
+#include "chat_sender.h"
 #include "common.h"
 #include "gamethread.h"
 #include "reflect.h"
@@ -164,7 +166,8 @@ Json Position(const Json& raw) {
     Json p = Object(raw);
     if (!HasNum(p, "x") || !HasNum(p, "y") || !HasNum(p, "z")) throw std::runtime_error("invalid position");
     Json o = {{"x", Num(p, "x")}, {"y", Num(p, "y")}, {"z", Num(p, "z")}};
-    if (!Str(p, "dimension").empty()) o["dimension"] = Str(p, "dimension");
+    // Dragonwilds has one world; Takaro matches positions to the map Dimension by this id.
+    o["dimension"] = Str(p, "dimension").empty() ? std::string(NativeMap::kDimensionId) : Str(p, "dimension");
     return o;
 }
 // Flat {gameId}/{steamId}/{platformId}/{epicOnlineServicesId}, or nested {player:{...}} /
@@ -350,6 +353,9 @@ Json MapEventData(const std::string& type, const Json& raw) {
         if (!a.empty()) {
             try { out["attacker"] = Player(a); } catch (...) {}
         }
+        // A player is never their own killer: environment deaths name the victim as instigator.
+        if (out.contains("attacker") && Str(out["attacker"], "gameId") == Str(out["player"], "gameId"))
+            out.erase("attacker");
         if (d.contains("position") && d["position"].is_object()) out["position"] = Position(d["position"]);
         // EventPlayerDeath only has a player `attacker`; a creature killer goes into the base `msg`.
         std::string killer = Str(d, "killerEntity");
@@ -475,7 +481,7 @@ NativePersistence::Result Engine::Load() {
     auto timed = store_.ReadLegacy("timedBans", x);
     if (!timed) return timed;
     v->timedBansJson = x;
-    v->senderName = Trim(ConfigValue("TAKARO_SENDER_NAME", ConfigValue("TAKARO_SERVER_CHAT_NAME", "")));
+    v->senderName = ChatSender::Configured();
     v->serverName = ConfigValue("TAKARO_SERVER_NAME", "Dragonwilds");
     v->banRevision = state::BanRevision();
     std::string key, detail;
@@ -680,6 +686,8 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p) {
             Json mapped = Json::array();
             for (auto& r : rows) {
                 if (Object(r).value("online", true) == false) continue;
+                // Still loading: the name and inventory are placeholders until the join is announced.
+                if (Object(r).value("inWorld", true) == false) continue;
                 Json x;
                 try { x = Player(r); } catch (...) { continue; }
                 mapped.push_back(x);
@@ -726,7 +734,8 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p) {
                 auto it = p.view->locationWindowUntilMs.find(Lower(id));
                 if (it == p.view->locationWindowUntilMs.end() || it->second < WallMs()) call(raw);
                 auto pos = p.view->lastLocationsJson.find(Lower(id));
-                out.payloadJson = pos == p.view->lastLocationsJson.end() ? R"({"x":0,"y":0,"z":0})" : pos->second;
+                out.payloadJson = pos == p.view->lastLocationsJson.end() ? Position(Json{{"x", 0}, {"y", 0}, {"z", 0}}).dump()
+                                                                         : Position(Parse(pos->second)).dump();
             }
         } else if (action == "getPlayerInventory") {
             Json mapped = Json::array();
@@ -801,11 +810,8 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p) {
             std::string msg = Str(a, "message");
             if (msg.empty()) throw std::runtime_error("sendMessage requires 'message'");
             Json opts = Object(a.value("opts", Json::object())), recipient = Object(opts.value("recipient", Json::object()));
-            // Sender: per-message override, then TAKARO_SENDER_NAME, then the server name.
-            std::string sender = Str(opts, "senderNameOverride");
-            if (sender.empty()) sender = p.view->senderName;
-            if (sender.empty()) sender = p.view->serverName;
-            if (sender.empty()) sender = "Server";
+            std::string sender =
+                ChatSender::Resolve(Str(opts, "senderNameOverride"), p.view->senderName, p.view->serverName);
             std::string to;
             for (const char* k : {"gameId", "epicOnlineServicesId", "steamId", "platformId"})
                 if (to.empty()) to = Str(recipient, k);
@@ -1323,9 +1329,13 @@ std::vector<MappedEvent> Engine::ReconcileOnline(const std::string& liveJson, co
         // anything admitted in the last 30 s waits for the next pass.
         auto recent = view_->locationWindowUntilMs.find(id);
         if (recent != view_->locationWindowUntilMs.end() && recent->second - 60000 + 30000 > WallMs()) continue;
+        // Live on the previous pass of this process: the leave hooks own this disconnect and their
+        // event may still be on its way through the ring, so give it one more pass before reporting.
+        if (lastLiveIds_.count(id)) continue;
         Json row = {{"seq", 0}, {"bootId", bootId}, {"type", "player-disconnected"}, {"data", {{"player", p}}}, {"ts", IsoNowUtc()}};
         out.push_back(MapEvent(row.dump()));
     }
+    lastLiveIds_ = std::move(liveIds);
     return out;
 }
 
@@ -1363,6 +1373,7 @@ std::string CapabilityManifestJson(const std::string& gameVersion) {
                              "events.player-disconnected", "events.chat-message", "events.player-death",
                              "events.entity-killed", "events.log"})
         manifest.push_back(Json{{"name", name}});
+    manifest.push_back(Parse(NativeMap::CapabilityJson()));
     manifest.push_back(Parse(GameProfile::CapabilityJson(gameVersion)));
     return manifest.dump();
 }

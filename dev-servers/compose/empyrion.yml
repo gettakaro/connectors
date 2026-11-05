@@ -1,0 +1,24 @@
+name: takaro-dev-empyrion
+# Empyrion dedicated server (Windows-only, app 530870) under Wine. The server install lives on the
+# host (EMPYRION_SERVER_DIR) and is bind-mounted; the Takaro mod is a folder in Content/Mods, so nothing is injected.
+services:
+  empyrion:
+    build: ../images/empyrion
+    image: takaro-empyrion-wine:dev
+    container_name: takaro-dev-empyrion
+    restart: unless-stopped
+    stop_grace_period: 2m
+    ports:
+      - "30000-30003:30000-30003/udp"
+      - "30000-30003:30000-30003/tcp"
+      - "127.0.0.1:30004:30004/tcp" # telnet console, loopback only
+    environment:
+      EMPYRION_DEDICATED_YAML: dedicated-takaro.yaml
+    volumes:
+      - "${EMPYRION_SERVER_DIR:-/srv/servers/empyrion/server}:/empyrion"
+      - "${EMPYRION_WINE_DIR:-/srv/servers/empyrion/wine}:/wine"
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

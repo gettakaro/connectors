@@ -6,7 +6,7 @@ need [README.md](README.md).
 ## The catalog target
 
 Everything here is built against one catalog target,
-[`catalog/valheim/targets/linux-1.0.20.json`](../../catalog/valheim/targets/linux-1.0.20.json).
+[`catalog/valheim/targets/linux-1.0.21.json`](../../catalog/valheim/targets/linux-1.0.21.json).
 Unlike the other games in this catalog, a Valheim target pins **two** inputs:
 
 - `inputs.server` — the Steam app, branch, build id and depot manifest that identify the
@@ -67,8 +67,8 @@ dotnet test mod/Takaro.Valheim.sln
 Fetch the target's inputs and build the release archive, in the pinned .NET SDK image:
 
 ```bash
-./scripts/setup-environment.sh --target linux-1.0.20
-./scripts/build-release.sh <version> dist --target linux-1.0.20
+./scripts/setup-environment.sh --target linux-1.0.21
+./scripts/build-release.sh <version> dist --target linux-1.0.21
 ```
 
 `--target` may be left out; the game's default target is resolved instead.
@@ -172,11 +172,55 @@ same names are used for `giveItem` resolution and for the entity and weapon fiel
 ## Verification evidence policy
 
 `takaro-maint verify --game valheim` boots a **dedicated server** with no game client attached.
-What a run covers is startup, identify, the catalogue, an allowlisted console action, reconnect
-after a dropped socket, and a clean stop. Chat, death, kill and item-delivery rows need a real
-game client and are claimed only from a recorded run with one attached. When such a row moves,
-say which run moved it and on which artifact — "the harness passed" is not an answer, because
-the harness does not look.
+What a run covers is startup, identify, `testReachability` and `getPlayers`, the catalogue, an
+allowlisted console action, the refusal of an action the connector does not offer
+(`unsupported`), reconnect after a dropped socket, and a clean stop. Chat, death, kill and
+item-delivery rows need a real game client and are claimed only from a recorded run with one
+attached. When such a row moves, say which run moved it and on which artifact — "the harness
+passed" is not an answer, because the harness does not look.
+
+### Runtime CI
+
+Every PR that changes Valheim's build inputs, every push to `main` and every release run the
+`verify` leg of `connector-release.yml`; `publish` needs it to pass. The required check is
+`Valheim Connector / release / verify (linux-1.0.21)`, one per catalog target. It runs the same
+command a maintainer runs locally:
+
+```sh
+maintenance/bin/takaro-maint build  --game valheim --target linux-1.0.21 --version 0.0.0-local \
+  --out dist --toolchain container
+maintenance/bin/takaro-maint verify --game valheim --target linux-1.0.21 --artifacts dist \
+  --out reports --startup-timeout 600 --negative --cleanup-orphans
+```
+
+- **Runner:** `ubuntu-latest` (Linux x86_64) with Docker. The server runs in the pinned
+  `mbround18/valheim` image with a 3 GB memory limit; a run needs about 6 GB of free disk (the
+  2 GB depot set, its install copy and the image). The verify job takes about 3 minutes with
+  the depot cache warm; a cold cache adds about a minute and a half of Steam download.
+  The image's launcher always runs the server as its own `steam` user (uid 1000). On a host
+  whose user has another uid (a hosted runner is 1001), that user joins the caller's group and
+  the run makes its own data directory group-writable.
+- **Inputs:** the Valheim dedicated server (Steam app 896660) is free and downloads anonymously,
+  so no Steam account or secret is involved. The depots are cached under
+  `valheim-depots-<fp16>`, so a run downloads them at most once per target fingerprint. The
+  BepInEx pack comes from Thunderstore by its pinned version and hash.
+- **Isolation:** every run generates a new world in a temporary data directory, publishes no
+  host ports, and talks to a local fake Takaro on `host.docker.internal` with a throwaway
+  token. Containers carry the run's `tm.run` label and are removed on success, failure
+  or cancellation; tokens are redacted from the uploaded `verify-valheim-<target>` report.
+- **Report:** `reports/<target>/report.json` names the source revision, the target fingerprint,
+  the artifact hashes, the image digest and the Valheim and BepInEx versions that actually
+  booted, with one row per check and the server, Docker and fake-Takaro logs.
+- **Negative boot** (`--negative`, check `negative-wrong-package`): the same server boots again
+  with the client companion unpacked where the plugin belongs. It passes only when the companion
+  disables itself on the dedicated server and nothing identifies to Takaro.
+- **Not covered, still manual:** the fake Takaro speaks protocol version 0, so the version 1
+  handshake, its Capability Manifest and Game Profile are covered by unit tests and the staging
+  live runs. Everything a connected player drives stays manual and needs a real vanilla client:
+  `player-connected`/`player-disconnected`, `chat-message`, `player-death`, `entity-killed`,
+  `sendMessage` reaching a player, `giveItem`, `teleportPlayer`, `getPlayerLocation`,
+  `kickPlayer`, `banPlayer`/`unbanPlayer`/`listBans` with a player, the map, and the optional
+  inventory companion in a graphical client (`getPlayerInventory` and its kill verdicts).
 
 ## Architecture
 
@@ -296,9 +340,9 @@ through a bounded `Update()`-drained action scheduler (`QueuedMainThreadActionSc
 names, per connection (missing means 0, so an older Takaro keeps working unchanged).
 
 - The manifest declares exactly the `live-supported` actions of `capabilities.json`
-  (testReachability is always allowed) and an `events.<type>` entry per event. getPlayer and
-  listLocations are not declared, so a version 1 Takaro never sends them; on version 0 they
-  work as before.
+  (testReachability is always allowed) and an `events.<type>` entry per event. getPlayer is not
+  declared, so a version 1 Takaro never sends it. listLocations is declared as `locations.list`
+  although the registry keeps it `schema-fallback` until hosted takaro.io is checked, like the map.
 - The world map is declared as the `map` capability (`WorldMapFrame`): one tiled Dimension
   `valheim` (the `dimension` every position reports), bounds = the world square ±10,500 m, +X
   right and +Z (north) up, 256 px tiles, zoom 0 to 4 (about 5 m per pixel at zoom 4). Version 1
@@ -360,6 +404,14 @@ reads it; the plugin does not bind settings through `Config.Bind`, so BepInEx ne
   to a second game server with a name the domain already has. A 409 rejection gets its own banner.
 - A file that cannot be written: the identity stays in memory for this run and the write is
   retried on the next check.
+- Upgrade from an older version (`LegacyConfigMigration`): a file that starts with the 4.2.x
+  header (`## Written by the Takaro Valheim connector: ...`) or BepInEx's 4.1 header is rewritten
+  once into the current format with the settings that version used. For 4.2.x that is
+  `BepInEx/plugins/TakaroValheim/takaro.cfg` over the saved file over the default, as 4.2.x
+  resolved them (the saved file holds only the two tokens; its other keys are written-out
+  defaults); `takaro.cfg` is then renamed to `takaro.cfg.migrated`. `serverName = Valheim Server`
+  becomes the unique name 4.2.x announced. A 4.1 file with a token but no `identityToken` keeps
+  `serverName` as its identity, as 4.1 identified. A file in the current format is never migrated.
 
 Keys and defaults: `registrationToken`, `serverName` (see above), `identityToken`,
 `takaroWsUrl` (`wss://connect.takaro.io/`), `logLevel` (`Information`), `enableLogEvents`
@@ -408,7 +460,7 @@ Ownership values are `server-owned`, `upstream-blocked` or `unsupported`.
 | `executeConsoleCommand` | `live-supported` | Runs only exact or prefix-allowlisted commands. |
 | `listItems` | `live-supported` | Lists item prefabs visible to the server, with English display names. |
 | `listEntities` | `live-supported` | Lists non-player character prefabs visible to the server, with English display names. |
-| `listLocations` | `schema-fallback` | The official raw Generic Connector action/schema live-returned 11,293 nested `ILocationDTO` objects, but the standard Takaro route at `0c63cf1c` throws `NotImplementedError` before requesting them. |
+| `listLocations` | `schema-fallback` | The notable places only (`NotableLocations`): Sacrificial Stones, the boss altars and The Queen's Infested Citadel, Haldor, Hildir's Camp and the Bog Witch's Camp, one entry per placed `ZoneSystem` instance with its English name, ground position, dimension `valheim` and code `<prefab>@<x>_<z>`; the other ~11,000 instances (runestones, camps, ruins) are left out. `[]` only after `LocationsGenerated`. Declared on protocol version 1 as `locations.list` and proven there on Takaro staging (dashboard Resync Locations); version 0 Takaro throws `NotImplementedError` before asking, and hosted takaro.io is not yet verified. |
 | `getMapInfo` | `schema-fallback` | `enabled:true` once the world-map raster is ready, with `maxZoom` 4, `mapBlockSize` 128 (metres per tile at `maxZoom`) and a 21,000 m extent on every `mapSize*` axis. Answered off the Unity main thread. |
 | `getMapTile` | `schema-fallback` | Base64 128 px PNG for `{x, y, z}` (`zoom` accepted), rendered off the main thread from the raster that `ValheimWorldMap` samples from `WorldGenerator` on the main thread (4 ms per frame, cached in `BepInEx/cache` per seed). Tiles outside the world answer `tile_out_of_range`; before the raster is ready, `map_not_ready`. |
 | `teleportPlayer` | `live-supported` | Routes Valheim's built-in `RPC_TeleportTo` to the server-known character ZDO, and returns `character_unavailable` when that identity is missing. |
@@ -477,8 +529,9 @@ error.
 Historical dedicated-server evidence from 2026-06-21/22 and the 2026-07-10 turn runs covers
 vanilla-client player location, built-in teleport, moderation, delayed shutdown, player
 connect/disconnect persistence, and an official raw `listLocations` response containing
-11,293 nested locations; the standard Takaro `listLocations` route remained unavailable, so
-that action is `schema-fallback`, not `live-supported`. `getMapInfo` and `getMapTile` were
+11,293 nested locations (since narrowed to the notable places). The standard Takaro route works
+only on protocol version 1, proven on Takaro staging, so that action is `schema-fallback`, not
+`live-supported`. `getMapInfo` and `getMapTile` were
 live-proven on 2026-10-11 on Takaro staging only; hosted takaro.io has not been checked and has
 shown no map tiles for Generic servers, so both are `schema-fallback` too.
 
@@ -504,8 +557,8 @@ alias and a compatibility record naming the exact inputs.
 Locally, from `games/valheim/`:
 
 ```bash
-./scripts/setup-environment.sh --target linux-1.0.20
-./scripts/build-release.sh 0.1.0 dist --target linux-1.0.20
+./scripts/setup-environment.sh --target linux-1.0.21
+./scripts/build-release.sh 0.1.0 dist --target linux-1.0.21
 ```
 
 `setup-environment.sh` writes game compile references only to
@@ -521,8 +574,8 @@ installation. BepInEx comes from the pinned Thunderstore
 failed download or a hash mismatch leaves the previous pack exactly as it was.
 
 The release produces two zips per target, named after the target
-(`takaro-valheim-plugin-linux-1.0.20-<version>.zip` and
-`takaro-valheim-inventory-companion-linux-1.0.20-<version>.zip`), each with a `.meta.json`
+(`takaro-valheim-plugin-linux-1.0.21-<version>.zip` and
+`takaro-valheim-inventory-companion-linux-1.0.21-<version>.zip`), each with a `.meta.json`
 sidecar recording the target, the fingerprint and the role (`server-plugin` or
 `client-companion`). The unsuffixed names `takaro-valheim-plugin.zip` and
 `takaro-valheim-inventory-companion.zip` are published alongside as byte-identical aliases of

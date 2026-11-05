@@ -81,6 +81,12 @@ public static class CompanionEnvelopeCodec
         "lastHitAttackerKind"
     ];
 
+    private static readonly string[] CommandProbeCatalogFields = ["revision", "commands"];
+
+    private static readonly string[] CommandProbeInvocationFields = ["invocationId", "command", "arguments"];
+
+    private static readonly string[] CommandProbeReceiptFields = ["invocationId", "status"];
+
     public static string EncodeEnvelope(CompanionEnvelope envelope)
     {
         if (envelope is null)
@@ -277,6 +283,12 @@ public static class CompanionEnvelopeCodec
                 return TryNormalizePayload<CompanionInventoryReport>(envelope, out normalizedPayload, out errorCode);
             case CompanionMessageTypes.KillVerdict:
                 return TryNormalizePayload<CompanionKillVerdict>(envelope, out normalizedPayload, out errorCode);
+            case CompanionMessageTypes.CommandProbeCatalog:
+                return TryNormalizePayload<CommandProbeCatalog>(envelope, out normalizedPayload, out errorCode);
+            case CompanionMessageTypes.CommandProbeInvoke:
+                return TryNormalizePayload<CommandProbeInvocation>(envelope, out normalizedPayload, out errorCode);
+            case CompanionMessageTypes.CommandProbeReceipt:
+                return TryNormalizePayload<CommandProbeReceipt>(envelope, out normalizedPayload, out errorCode);
             default:
                 errorCode = UnknownMessageTypeError;
                 return false;
@@ -334,6 +346,15 @@ public static class CompanionEnvelopeCodec
                 break;
             case CompanionMessageTypes.KillVerdict:
                 validFields = HasStrictFields(payload, KillVerdictFields);
+                break;
+            case CompanionMessageTypes.CommandProbeCatalog:
+                validFields = HasStrictFields(payload, CommandProbeCatalogFields);
+                break;
+            case CompanionMessageTypes.CommandProbeInvoke:
+                validFields = HasStrictFields(payload, CommandProbeInvocationFields);
+                break;
+            case CompanionMessageTypes.CommandProbeReceipt:
+                validFields = HasStrictFields(payload, CommandProbeReceiptFields);
                 break;
             default:
                 errorCode = PayloadTypeMismatchError;
@@ -403,7 +424,10 @@ public static class CompanionEnvelopeCodec
             || (payloadType == typeof(CompanionHelloNack) && messageType == CompanionMessageTypes.HelloNack)
             || (payloadType == typeof(CompanionHeartbeat) && messageType == CompanionMessageTypes.Heartbeat)
             || (payloadType == typeof(CompanionInventoryReport) && messageType == CompanionMessageTypes.InventorySnapshot)
-            || (payloadType == typeof(CompanionKillVerdict) && messageType == CompanionMessageTypes.KillVerdict);
+            || (payloadType == typeof(CompanionKillVerdict) && messageType == CompanionMessageTypes.KillVerdict)
+            || (payloadType == typeof(CommandProbeCatalog) && messageType == CompanionMessageTypes.CommandProbeCatalog)
+            || (payloadType == typeof(CommandProbeInvocation) && messageType == CompanionMessageTypes.CommandProbeInvoke)
+            || (payloadType == typeof(CommandProbeReceipt) && messageType == CompanionMessageTypes.CommandProbeReceipt);
     }
 
     private static bool IsSemanticallyValidPayload(object payload)
@@ -437,6 +461,21 @@ public static class CompanionEnvelopeCodec
                     && IsRequiredString(verdict.EnemyToken, CompanionProtocol.MaximumCodeCharacters)
                     && CompanionAttackerKind.IsKnown(verdict.LastHitAttackerKind)
                     && verdict.LastHitByLocalPlayer == (verdict.LastHitAttackerKind == CompanionAttackerKind.LocalPlayer);
+            case CommandProbeCatalog catalog:
+                return catalog.Revision > 0
+                    && catalog.Commands is not null
+                    && catalog.Commands.Count <= CommandProbeProtocol.MaximumCatalogCommands
+                    && catalog.Commands.All(CommandProbeProtocol.IsCommandName)
+                    && catalog.Commands.Distinct(StringComparer.Ordinal).Count() == catalog.Commands.Count;
+            case CommandProbeInvocation invocation:
+                return CommandProbeProtocol.IsInvocationId(invocation.InvocationId)
+                    && CommandProbeProtocol.IsCommandName(invocation.Command)
+                    && invocation.Arguments is not null
+                    && invocation.Arguments.Count <= CommandProbeProtocol.MaximumArguments
+                    && invocation.Arguments.All(CommandProbeProtocol.IsArgument);
+            case CommandProbeReceipt receipt:
+                return CommandProbeProtocol.IsInvocationId(receipt.InvocationId)
+                    && receipt.Status == CommandProbeProtocol.SubmittedStatus;
             default:
                 return false;
         }
@@ -500,7 +539,8 @@ public static class CompanionEnvelopeCodec
             || messageType == CompanionMessageTypes.HelloNack
             || messageType == CompanionMessageTypes.Heartbeat
             || messageType == CompanionMessageTypes.InventorySnapshot
-            || messageType == CompanionMessageTypes.KillVerdict;
+            || messageType == CompanionMessageTypes.KillVerdict
+            || CompanionMessageTypes.IsCommandProbe(messageType);
     }
 
     private static bool IsRequiredString(string? value, int maximumCharacters)

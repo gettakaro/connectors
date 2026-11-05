@@ -1,5 +1,6 @@
 #include "native/capabilities.h"
 
+#include "native/game_profile.h"
 #include "native/json_util.h"
 
 namespace native {
@@ -35,7 +36,7 @@ std::string MapDimensionJson() {
 
 }  // namespace
 
-std::string CapabilityManifestJson() {
+std::string CapabilityManifestJson(const std::string& gameVersion) {
     std::string out = "[";
     for (const char* name : kActionCapabilities) out += ObjBuilder().S("name", name).Done() + ",";
     for (const char* name : kEventCapabilities) out += ObjBuilder().S("name", name).Done() + ",";
@@ -43,6 +44,7 @@ std::string CapabilityManifestJson() {
                .S("name", "map")
                .Raw("parameters", ObjBuilder().Raw("dimensions", "[" + MapDimensionJson() + "]").Done())
                .Done();
+    out += "," + GameProfileCapability(gameVersion);
     return out + "]";
 }
 

@@ -32,7 +32,7 @@ public class TakaroConfig {
     public String getRegistrationToken() { return registrationToken; }
     public void setRegistrationToken(String registrationToken) { this.registrationToken = registrationToken; }
 
-    /** Chat sender name for connector-sent messages (falls back to the game server name, then "Server"). */
+    /** Chat sender name for connector-sent messages; Takaro's senderNameOverride wins over it ({@link ServerChatName}). */
     public String getServerChatName() { return serverChatName; }
     public void setServerChatName(String serverChatName) { this.serverChatName = serverChatName; }
 

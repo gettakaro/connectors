@@ -49,6 +49,8 @@ export interface HarnessOptions {
   sleep?: (ms: number) => Promise<void>;
   execRunner?: ExecRunner;
   globalMessageMode?: 'chat' | 'broadcast' | 'both';
+  /** Configured chat sender name (`TAKARO_SENDER_NAME`); unset by default, as in production. */
+  senderName?: string;
   /**
    * Exchanges the fake broker has declared. Pass a set without `chat.map` to reproduce a battlegroup whose map
    * process has not joined the broker (the state the rig was in at first boot) — `chat.map` is declared by the map
@@ -63,6 +65,7 @@ export interface HarnessOptions {
   takaroRequestTimeoutMs?: number;
   takaroRequestMarginMs?: number;
   gmAuthToken?: string;
+  onKicked?: (gameId: string) => void;
 }
 
 /** A whole connector wired to the in-memory battlegroup: no Postgres, no broker, no game. */
@@ -133,7 +136,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
         })
       : null,
     knownStore: new MemoryKnownPlayerStore(),
-    senderName: 'Takaro',
+    senderName: options.senderName ?? '',
     serverName: 'Takaro Dev Dune',
     gmPlayerIdKind: 'fls',
     globalMessageMode: options.globalMessageMode ?? 'chat',
@@ -148,6 +151,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     // Tests never burn real seconds on the shutdown countdown; the wait is asserted through this hook instead.
     sleep: options.sleep ?? (async () => {}),
     execRunner: options.execRunner,
+    onKicked: options.onKicked,
   });
 
   return {

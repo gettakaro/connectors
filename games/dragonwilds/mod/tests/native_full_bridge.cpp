@@ -254,6 +254,13 @@ int main(int argc, char** argv) {
                 "\"name\":\"Hendrik\",\"characterName\":\"Limon\"}}");
             std::cout << "EMITTED" << std::endl;
         }
+        else if (command.rfind("emit-death:", 0) == 0) {
+            // emit-death:<attacker gameId>; the victim is always 0123...cdef.
+            PluginState::Get().EmitEvent("player-death", "{\"player\":{\"gameId\":\"0123456789abcdef0123456789abcdef\","
+                "\"name\":\"Hendrik\",\"characterName\":\"Limon\"},\"attacker\":{\"gameId\":" + JsonStr(command.substr(11)) +
+                ",\"name\":\"Hendrik\",\"characterName\":\"Limon\"},\"source\":\"telemetry\"}");
+            std::cout << "EMITTED" << std::endl;
+        }
         else if (command.rfind("emit:", 0) == 0) {
             PluginState::Get().EmitEvent("chat-message", "{\"msg\":" + JsonStr(command.substr(5)) + ",\"channel\":\"global\"}");
             std::cout << "EMITTED" << std::endl;

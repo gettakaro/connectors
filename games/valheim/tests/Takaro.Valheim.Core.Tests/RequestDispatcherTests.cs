@@ -510,7 +510,7 @@ public sealed class RequestDispatcherTests
             Task.FromResult(TakaroActionResult.Ok(new[] { new { code = "Boar", name = "Boar" } }));
 
         public Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(TakaroActionResult.Ok(new[] { LocationFactory.Create("StartTemple", "Start Temple", 0, 0, 0) }));
+            Task.FromResult(TakaroActionResult.Ok(new[] { NotableLocations.Select([new ValheimLocationInstance("StartTemple", 0, 0, 0)]).Single() }));
 
         public Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(new WorldMapService().GetMapInfo());

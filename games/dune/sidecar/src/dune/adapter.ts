@@ -2,6 +2,7 @@ import { logger } from '../logger.js';
 import { asRecord } from '../takaro/protocol.js';
 import { BanManager, expiryOf } from './bans.js';
 import { Catalogue, NON_CARRYABLE_CODE_RE } from './catalogue.js';
+import { broadcastTitle, renderChatText, resolveSenderName } from './chatSender.js';
 import { runConsoleCommand, type CommandContext, type CommandResult } from './commands.js';
 import type { GlobalMessageMode } from './config.js';
 import * as gmCommands from './gm.js';
@@ -59,6 +60,8 @@ export interface AdapterOptions {
   sleep?: (ms: number) => Promise<void>;
   execRunner?: ExecRunner;
   execTimeoutMs?: number;
+  /** Told about every kick read back from Postgres, so presence reports that leave at once instead of holding it. */
+  onKicked?: (gameId: string) => void;
   now?: () => number;
 }
 
@@ -90,8 +93,9 @@ export class DuneAdapter {
     return this.options.now?.() ?? Date.now();
   }
 
-  senderName(override?: string | null): string {
-    return override || this.options.senderName || this.options.serverName || 'Server';
+  /** The resolved chat sender name, or null for none (see `chatSender.ts`). */
+  senderName(override?: unknown): string | null {
+    return resolveSenderName(override, this.options.senderName);
   }
 
   /** What this deployment can actually do right now; mirrored onto `/health` and used by `testReachability`. */
@@ -331,10 +335,10 @@ export class DuneAdapter {
   /**
    * `AddItemToInventory`, then read the inventory back.
    *
-   * The read-back has a real caveat: `dune.items` is written by the server's periodic `SavePlayer`, not synchronously
-   * on the grant, so a successful grant can be invisible in the DB for a while. `verified:false` here therefore means
-   * "not observed within DUNE_VERIFY_WINDOW_MS" — not "did not happen" — and the payload says so instead of claiming
-   * either outcome.
+   * The game drops a grant into a full backpack without any error, so a grant that needs a new backpack slot is
+   * refused up front when every slot is taken. When the item still does not appear in the database within
+   * DUNE_VERIFY_WINDOW_MS the action fails, so Takaro (a shop order, a module) never records a give that did not
+   * happen. The error says the item may still arrive if the save was slow.
    */
   async giveItem(args: Args): Promise<Record<string, unknown>> {
     const id = playerId(args);
@@ -347,6 +351,7 @@ export class DuneAdapter {
     // `quality` arrives as a string, a number or an explicit JSON null. Dune's grant command has no quality field at
     // all, so it is accepted and ignored rather than rejected.
     const before = await this.countItemEverywhere(row.flsId, item);
+    await this.refuseIfBackpackFull(row.flsId, item);
     await this.options.gm.send(
       gmCommands.addItemToInventory({ playerId: this.gmId(row, id), itemName: item, quantity: Math.trunc(amount) }),
       this.now(),
@@ -356,18 +361,32 @@ export class DuneAdapter {
       after = await this.countItemEverywhere(row.flsId, item);
       return after.total > before.total;
     });
-    return {
-      verified,
-      item,
-      amount: Math.trunc(amount),
-      ...(verified ? { inventoryTypes: after.types, count: after.total } : {}),
-      ...(verified
-        ? {}
-        : {
-            reason:
-              'the grant was published and accepted by the broker, but the item did not appear in the database within the verify window; Dune persists inventories periodically, so re-check with getPlayerInventory',
-          }),
-    };
+    if (!verified) {
+      fail(
+        `giveItem not confirmed: ${item} x${Math.trunc(amount)} was sent to the game but did not appear in the player's `
+          + 'inventory. The backpack may be full, or the save may be slow; check getPlayerInventory before giving again',
+      );
+    }
+    return { verified, item, amount: Math.trunc(amount), inventoryTypes: after.types, count: after.total };
+  }
+
+  /**
+   * Refuses a grant that needs a new backpack slot when every slot is taken. Only backpack positions inside the slot
+   * count are counted: quest items sit at positions past it and do not take a slot. A grant of an item the backpack
+   * already holds may still stack, so it is sent and the read-back decides.
+   */
+  private async refuseIfBackpackFull(flsId: string, item: string): Promise<void> {
+    const slots = await this.options.pg.backpackSlots(flsId).catch(() => null);
+    if (slots === null) return;
+    const rows = await this.options.pg.inventory(flsId, { allTypes: true }).catch(() => null);
+    if (!rows) return;
+    const backpack = rows.filter(
+      (r) => r.inventoryType === 0 && typeof r.positionIndex === 'number' && r.positionIndex >= 0 && r.positionIndex < slots,
+    );
+    const stacks = backpack.some((r) => r.templateId.toLowerCase() === item.toLowerCase());
+    if (backpack.length >= slots && !stacks) {
+      fail(`giveItem refused: the player's backpack is full (${backpack.length}/${slots} slots) and holds no ${item} to stack onto`);
+    }
   }
 
   /** `TeleportToExact`. `dimension` is always null/absent for a single-map battlegroup and is accepted and ignored. */
@@ -471,10 +490,19 @@ export class DuneAdapter {
   private async kickRow(row: DunePlayerRow, id: string, reason?: string): Promise<Record<string, unknown>> {
     if (reason) logger.info(`Kicking ${row.characterName ?? row.flsId}: ${reason}`);
     await this.options.gm.send(gmCommands.kickPlayer(this.gmId(row, id)), this.now());
+    // Only a row actually read as gone tells presence; a failed read still verifies the kick, as before.
+    let readGone = false;
     const verified = await this.pollUntil(async () => {
-      const fresh = await this.options.pg.findPlayer(row.flsId).catch(() => undefined);
-      return !fresh || !isOnline(fresh);
+      let fresh: DunePlayerRow | undefined;
+      try {
+        fresh = await this.options.pg.findPlayer(row.flsId);
+      } catch {
+        return true;
+      }
+      readGone = !fresh || !isOnline(fresh);
+      return readGone;
     });
+    if (verified && readGone) this.options.onKicked?.(row.flsId);
     return verified
       ? { verified: true }
       : { verified: false, reason: 'kick published but the player was still online at the end of the verify window' };
@@ -527,12 +555,14 @@ export class DuneAdapter {
     const opts = asRecord(args.opts);
     const recipient = asRecord(opts.recipient);
     const recipientId = str(recipient.gameId) ?? str(recipient.steamId) ?? str(recipient.platformId) ?? str(args.recipientGameId);
-    const sender = this.senderName(str(opts.senderNameOverride));
+    const sender = this.senderName(opts.senderNameOverride);
+    const text = renderChatText(sender, message);
+    const spoofName = sender ?? undefined;
 
     if (recipientId) {
       const row = await this.requireRow(recipientId);
       if (!this.options.rmq) fail('sendMessage needs the game RabbitMQ connection (DUNE_RMQ_URL)');
-      const result = await this.options.rmq.whisper(whisperKey(row), message, row.characterName ?? undefined);
+      const result = await this.options.rmq.whisper(whisperKey(row), text, row.characterName ?? undefined, spoofName);
       return { delivered: result.ok, channel: 'whisper', routingKey: result.routingKey, sender };
     }
 
@@ -541,7 +571,7 @@ export class DuneAdapter {
     let delivered = false;
     if (mode === 'chat' || mode === 'both') {
       if (!this.options.rmq) fail('sendMessage needs the game RabbitMQ connection (DUNE_RMQ_URL)');
-      const result = await this.options.rmq.broadcastChat(message);
+      const result = await this.options.rmq.broadcastChat(text, undefined, spoofName);
       out.chat = result.ok;
       // The routing keys are the whole story for `chat.map`: it is a DIRECT exchange, so a publish on a key nobody
       // bound is discarded in silence. Reporting them makes `delivered:true` checkable instead of a claim.
@@ -553,13 +583,13 @@ export class DuneAdapter {
         // reporting a success nobody saw, fan the line out as a whisper to each online player, and — in `both`
         // mode — let the `ServiceBroadcast` below carry it too.
         out.chatRefused = result.reason ?? 'broadcast exchange unavailable';
-        const fanout = await this.whisperFanout(message);
+        const fanout = await this.whisperFanout(text, spoofName);
         out.fanout = fanout;
         delivered ||= fanout.delivered > 0;
       }
     }
     if (mode === 'broadcast' || mode === 'both') {
-      await this.options.gm.send(gmCommands.serviceBroadcast({ title: sender, body: message }), this.now());
+      await this.options.gm.send(gmCommands.serviceBroadcast({ title: broadcastTitle(sender), body: message }), this.now());
       out.broadcast = true;
       delivered = true;
     }
@@ -573,7 +603,7 @@ export class DuneAdapter {
    * delivery, which a discarded `chat.map` publish is not. Failures are counted, not thrown: one unreachable player
    * must not sink the announcement for everyone else.
    */
-  private async whisperFanout(message: string): Promise<{ delivered: number; attempted: number; failed: number }> {
+  private async whisperFanout(message: string, senderName?: string): Promise<{ delivered: number; attempted: number; failed: number }> {
     const rmq = this.options.rmq;
     if (!rmq) return { delivered: 0, attempted: 0, failed: 0 };
     let rows: DunePlayerRow[] = [];
@@ -588,7 +618,7 @@ export class DuneAdapter {
     for (const row of rows) {
       if (!row.flsId) continue;
       try {
-        const result = await rmq.whisper(whisperKey(row), message, row.characterName ?? undefined);
+        const result = await rmq.whisper(whisperKey(row), message, row.characterName ?? undefined, senderName);
         if (result.ok) delivered += 1;
         else failed += 1;
       } catch (err) {

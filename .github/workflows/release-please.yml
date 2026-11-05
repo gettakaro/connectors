@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   release-please:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       ark_released: ${{ steps.rp.outputs['games/ark--release_created'] }}
       ark_tag: ${{ steps.rp.outputs['games/ark--tag_name'] }}
@@ -61,6 +61,9 @@ jobs:
       tf2_released: ${{ steps.rp.outputs['games/tf2--release_created'] }}
       tf2_tag: ${{ steps.rp.outputs['games/tf2--tag_name'] }}
       tf2_version: ${{ steps.rp.outputs['games/tf2--version'] }}
+      empyrion_released: ${{ steps.rp.outputs['games/empyrion--release_created'] }}
+      empyrion_tag: ${{ steps.rp.outputs['games/empyrion--tag_name'] }}
+      empyrion_version: ${{ steps.rp.outputs['games/empyrion--version'] }}
     steps:
       # Author Release PRs as takaro-ci-bot[bot] instead of GITHUB_TOKEN. PRs/commits made
       # with GITHUB_TOKEN don't fire downstream events, so the required `conventional-title`
@@ -249,6 +252,18 @@ jobs:
       version: ${{ needs.release-please.outputs.tf2_version }}
       tag: ${{ needs.release-please.outputs.tf2_tag }}
 
+  release-empyrion:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.empyrion_released == 'true' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/empyrion.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.release-please.outputs.empyrion_version }}
+      tag: ${{ needs.release-please.outputs.empyrion_tag }}
+
   # takaro.io/connectors serves downloads from a committed snapshot of this repo's
   # releases, so the website only learns about a release when we tell it. This dispatch
   # opens a refresh PR there (gettakaro/static-sites, .github/workflows/connectors-refresh.yml).
@@ -271,6 +286,7 @@ jobs:
       - release-vein
       - release-scum
       - release-tf2
+      - release-empyrion
     if: |
       always() && (
         (needs.release-ark.result == 'success' && needs.release-please.outputs.ark_released == 'true') ||
@@ -285,9 +301,10 @@ jobs:
         (needs.release-dragonwilds.result == 'success' && needs.release-please.outputs.dragonwilds_released == 'true') ||
         (needs.release-vein.result == 'success' && needs.release-please.outputs.vein_released == 'true') ||
         (needs.release-scum.result == 'success' && needs.release-please.outputs.scum_released == 'true') ||
-        (needs.release-tf2.result == 'success' && needs.release-please.outputs.tf2_released == 'true')
+        (needs.release-tf2.result == 'success' && needs.release-please.outputs.tf2_released == 'true') ||
+        (needs.release-empyrion.result == 'success' && needs.release-please.outputs.empyrion_released == 'true')
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Generate token
         id: app-token
@@ -316,7 +333,8 @@ jobs:
              || needs.release-please.outputs.dragonwilds_tag
              || needs.release-please.outputs.vein_tag
              || needs.release-please.outputs.scum_tag
-             || needs.release-please.outputs.tf2_tag }}
+             || needs.release-please.outputs.tf2_tag
+             || needs.release-please.outputs.empyrion_tag }}
         run: |
           gh api repos/gettakaro/static-sites/dispatches \
             -f event_type=connector-released \

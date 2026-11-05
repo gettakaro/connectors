@@ -91,6 +91,7 @@ LiveResolution ResolveLive(const SettingsFile& file, const std::string& hostName
     pick({"TAKARO_REGISTRATION_TOKEN"}, "registrationToken", r.s.registrationToken, r.registration);
     pick({"TAKARO_IDENTITY_TOKEN"}, "identityToken", r.s.identityToken, r.identity);
     pick({"TAKARO_SERVER_NAME", "TAKARO_NAME"}, "name", r.s.serverName, r.name);
+    pick({"TAKARO_SERVER_CHAT_NAME"}, "serverChatName", r.serverChatName, r.chatName);
     if (r.s.serverName.empty() && !r.s.identityToken.empty())
         r.s.serverName = DefaultServerName(hostName, r.s.identityToken);
     r.s.protocolV1 = ProtocolText(file, env, r.protocol) != "0";
@@ -117,6 +118,7 @@ std::string FreshPluginJson(const std::string& identity, const std::string& name
     Put(obj, "name", JStr(name));
     Put(obj, "url", JStr(kDefaultUrl));
     Put(obj, "protocol", JNum(1));
+    Put(obj, "serverChatName", JStr(""));
     Put(obj, "token", JStr(""));
     Put(obj, "mapDir", JStr(""));
     Put(obj, "caFile", JStr(""));
@@ -234,11 +236,13 @@ bool ConfigWatcher::Poll(int64_t nowMs) {
         return false;
     }
     LiveSettings before = active_.s;
+    std::string chatBefore = active_.serverChatName;
     Apply(true, text);
-    if (active_.s == before) return false;
+    if (active_.s == before && active_.serverChatName == chatBefore) return false;
     Log(std::string("config: ") + o_.path + " changed (identity from " + SourceName(active_.identity) +
         ", registration token from " + SourceName(active_.registration) + ", url from " + SourceName(active_.url) +
-        ", name from " + SourceName(active_.name) + ", protocol from " + SourceName(active_.protocol) + ")");
+        ", name from " + SourceName(active_.name) + ", protocol from " + SourceName(active_.protocol) +
+        ", server chat name from " + SourceName(active_.chatName) + ")");
     return true;
 }
 

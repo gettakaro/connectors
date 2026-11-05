@@ -326,6 +326,16 @@ def wired(catalog_copy: Path) -> Any:
                 unserved[str(record["id"])] = "the repinner has no fixture for this target"
             target_file.unlink()
 
+        # An alias must name a live target (legacy-alias-single-build), so drop the ones whose
+        # target this copy no longer has.
+        for game_file in (catalog_copy / "catalog").glob("*/game.json"):
+            game = json.loads(game_file.read_text())
+            aliases = game.get("legacyAssetAliases") or {}
+            kept = {name: ref for name, ref in aliases.items() if str(ref).partition("/")[0] in served}
+            if kept != aliases:
+                game["legacyAssetAliases"] = kept
+                game_file.write_text(json.dumps(game))
+
         assert served, "no target could be re-pinned at the fake upstream"
         point_at(catalog_copy, upstream.base_url)
         yield Wired(catalog_copy, upstream, served=tuple(sorted(served)), unserved=dict(sorted(unserved.items())))

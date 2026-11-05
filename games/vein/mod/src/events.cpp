@@ -34,6 +34,7 @@
 #include "actions.h"
 #include "admin.h"
 #include "actions_util.h"
+#include "chat_probe.h"
 #include "events_parse.h"
 #include "gamethread.h"
 #include "perf.h"
@@ -411,6 +412,8 @@ struct Conn {
     bool left = false;
     // A banned player is kicked on sight and never reported: no join, and no leave for the kick.
     bool refused = false;
+    // Consecutive safety-net passes that did not find this connection's player state.
+    int reapMisses = 0;
 };
 
 Mutex g_connLock;
@@ -803,11 +806,43 @@ void ReapGoneConnections() {
     if (announced.empty() || !g_clsPlayerState) return;
     std::vector<void*> states;
     if (!Reflect::GetObjectsOfClass(g_clsPlayerState, states, true)) return;
+    auto isLiveState = [&states](void* s) { return std::find(states.begin(), states.end(), s) != states.end(); };
+    std::vector<void*> controllers;
+    bool haveControllers = false;
     for (auto& a : announced) {
-        bool alive = false;
-        for (void* s : states)
-            if (s == a.second) { alive = true; break; }
-        if (!alive) OnLeave(a.first, "player state gone");
+        if (isLiveState(a.second)) {
+            Guard g(g_connLock);
+            if (Conn* c = FindConn(a.first)) c->reapMisses = 0;
+            continue;
+        }
+        // Once (2026-10-26) the state captured at join was missing from the live array while the
+        // player was still in the world: they had just picked a character on the first join after
+        // a restart. If the controller is still live and still carries a player state with the same
+        // SteamID64, keep the connection and follow that state. The controller is only read when it
+        // is in the live object array.
+        if (!haveControllers && g_clsPlayerController)
+            haveControllers = Reflect::GetObjectsOfClass(g_clsPlayerController, controllers, true);
+        if (haveControllers && std::find(controllers.begin(), controllers.end(), a.first) != controllers.end()) {
+            void* now = PlayerStateOf(a.first);
+            std::string gameId = now ? SteamIdFromPlayerState(now) : std::string();
+            Guard g(g_connLock);
+            Conn* c = FindConn(a.first);
+            if (c && !c->left && !gameId.empty() && gameId == c->id.gameId) {
+                if (now != c->playerState)
+                    PluginLog("events: %s has a new player state; still connected", gameId.c_str());
+                c->playerState = now;
+                c->reapMisses = 0;
+                continue;
+            }
+        }
+        // Anything else needs two passes in a row before it counts as a leave; the Logout and
+        // OnNetCleanup hooks report real disconnects first, this is only the safety net.
+        {
+            Guard g(g_connLock);
+            Conn* c = FindConn(a.first);
+            if (c && ++c->reapMisses < 2) continue;
+        }
+        OnLeave(a.first, "player state gone");
     }
 }
 
@@ -1073,6 +1108,54 @@ void HandleChat(void* self, void* func, void* params) {
     // `chatSegment`.
     EmitChat(id, cp.msg, ChatChannelName(cp.haveSegment ? cp.segment : -1), "processevent",
              cp.haveSegment ? cp.segment : -1);
+}
+
+// #204 research probe (TAKARO_CHAT_PROBE=1 only; see chat_probe.h). Traces the call and, for an
+// inbound Server_Say whose first word is an owned trigger, consumes it: returns true and the detour
+// skips the original, so VEIN neither logs nor broadcasts it. Bounded work only: one reflection
+// walk, a whole-word compare, the identity read the chat path already does, and a queue push.
+std::string CommandClassOf(void* func, void* params) {
+    std::vector<void*> props;
+    WalkProps(func, props, 24);
+    for (void* prop : props) {
+        std::string type = Reflect::PropertyTypeName(prop);
+        if (type != "ClassProperty" && FieldName(prop).find("Command") == std::string::npos) continue;
+        int32_t off = Reflect::PropertyOffset(prop);
+        void* cls = nullptr;
+        if (off < 0 || !ReadAt(params, off, cls)) return "unreadable";
+        if (!cls) return "null";
+        return ValidObject(cls) ? Reflect::ObjName(cls) : "unreadable";
+    }
+    return "absent";
+}
+
+bool ProbeChat(void* self, void* func, void* params, const char* fnName) {
+    ChatParams cp = ReadChatParams(func, params);
+    void* st = cp.sender ? PlayerStateOf(cp.sender) : PlayerStateOf(self);
+    Ident id;
+    if (st) IdentFromPlayerState(st, id);
+    ChatProbe::Trace t;
+    t.function = fnName;
+    t.receiverClass = SafeClassName(self);
+    t.message = cp.msg;
+    t.segment = cp.haveSegment ? cp.segment : -1;
+    t.commandClass = CommandClassOf(func, params);
+    t.senderGameId = id.gameId;
+    t.senderName = id.name.empty() ? id.platformName : id.name;
+    std::string trigger, args;
+    ChatProbe::Decision d = ChatProbe::Decide(fnName, id.valid(), cp.msg, trigger, args);
+    t.consumed = d != ChatProbe::Decision::kPassThrough;
+    ChatProbe::RecordTrace(t);
+    if (!t.consumed) return false;
+    if (d == ChatProbe::Decision::kConsumeNoIdentity) {
+        ChatProbe::ConsumeWithoutIdentity();
+        PluginLog("chat-probe: consumed %s from an unidentified sender (no envelope)", trigger.c_str());
+        return true;
+    }
+    std::string outcome = ChatProbe::Consume(id.gameId, t.senderName, t.segment, trigger, args);
+    PluginLog("chat-probe: consumed %s from %s before the original (%s)", trigger.c_str(), id.gameId.c_str(),
+              outcome.c_str());
+    return true;
 }
 
 // Reads a location out of an actor: RootComponent -> RelativeLocation (FVector of doubles in UE5).
@@ -1496,6 +1579,7 @@ void DetourProcessEvent(void* self, void* func, void* params) {
 
     // Read what we need *before* the call: RPC parameter buffers do not survive it.
     Kind what = kNone;
+    bool consumed = false;  // #204 research probe only: an owned trigger skips the original
     FnCandidate* hit = nullptr;
     bool cacheHit = false;
     try {
@@ -1542,7 +1626,11 @@ void DetourProcessEvent(void* self, void* func, void* params) {
         uint64_t tHandler0 = what != kNone ? Perf::NowNs() : 0;
         if (what == kChat) {
             g_chat.fired++;
-            HandleChat(self, func, params);
+            if (ChatProbe::Enabled() && ProbeChat(self, func, params, hit ? hit->name : "chat")) {
+                consumed = true;
+            } else {
+                HandleChat(self, func, params);
+            }
         } else if (what == kDeath) {
             g_death.fired++;
             g_kill.fired++;  // one event feeds both capabilities; the dispatch decides which emits
@@ -1553,6 +1641,7 @@ void DetourProcessEvent(void* self, void* func, void* params) {
     } catch (...) {
         PluginLog("events: ProcessEvent handler threw (kind=%d)", (int)what);
     }
+    if (consumed) return;
     if (orig) orig(self, func, params);
 }
 
@@ -2520,6 +2609,20 @@ void Events::SetRawLogSink(std::function<void(std::string)> sink, bool customJoi
 
 void Events::Init() {
     auto& st = PluginState::Get();
+    ChatProbe::Init();  // #204 research probe; a no-op unless TAKARO_CHAT_PROBE=1
+    ChatProbe::SetPrivateNotifier([](const std::string& gameId, const std::string& text) -> bool {
+        JsonValue body;
+        body.type = JsonValue::Object;
+        JsonValue v;
+        v.type = JsonValue::String;
+        v.str = text;
+        body.obj.push_back({"text", v});
+        v.str = gameId;
+        body.obj.push_back({"recipientGameId", v});
+        v.str = "Takaro";
+        body.obj.push_back({"senderName", v});
+        return Actions::Message(body).status == 200;
+    });
     for (const char* cap : {"logEvents", "joinLeaveEvents", "connectEvents", "chatEvents", "deathEvents",
                             "killEvents", "playerConnected", "playerDisconnected", "chatMessage",
                             "playerDeath", "entityKilled", "log"})

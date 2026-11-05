@@ -31,7 +31,7 @@ LUA_PATH="mod/TakaroSCUM/Scripts/?.lua;;" lua5.4 scripts/gen-capabilities.lua > 
 ## Release build
 
 ```
-maintenance/bin/takaro-maint build --game scum --target windows-25803875 --version 0.1.0-dev --out dist --toolchain container
+maintenance/bin/takaro-maint build --game scum --target windows-26280049 --version 0.1.0-dev --out dist --toolchain container
 ```
 
 `build-release.sh` runs the Lua tests and compiles `main.dll` with clang-cl and lld-link in the pinned
@@ -45,8 +45,9 @@ Two builds of the same commit produce identical bytes.
 With UE4SS's stock hook set, SCUMServer 1.3.4.2 crashes as soon as a player joins. The connector needs
 only `HookEngineTick` (its game-thread loop) and `HookUObjectProcessEvent` (its function hooks on
 SCUM's chat and attack RPCs), so the release turns every other hook off
-(`native/ue4ss/UE4SS-settings.required.txt`). The UE4SS build is pinned and bundled because its
-`experimental-latest` release is replaced in place.
+(`native/ue4ss/UE4SS-settings.required.txt`). The UE4SS build is pinned by sha256 and bundled. It is
+downloaded from UE4SS's `experimental` release, which keeps every experimental build; the
+`experimental-latest` release replaces its assets on each new build, so a URL there stops working.
 
 ## Protocol 1 and the map
 

@@ -96,6 +96,12 @@ export const ACTION_COVERAGE: Record<GameServerAction, ActionCoverage> = {
     liveVerification: 'protocol v1 map capability; Takaro staging fetched the plugin-rendered world image and cut its tile pyramid',
     reason: 'The plugin renders the loaded world with the game\'s own map colours into tshock/takaro/map-<revision>.png; the bridge declares it as the v1 map image and serves it in chunks.',
   },
+  getGameIcon: {
+    status: 'live-supported',
+    responseShape: '{ revision: string, data: base64 }',
+    liveVerification: 'protocol v1 game.profile capability; Takaro staging stored the icon and serves it on GET /gameserver/:id/icon',
+    reason: 'The bridge embeds games/terraria/assets/icon-256.png at build time and serves the whole PNG of the revision it declared.',
+  },
   giveItem: {
     status: 'live-supported',
     responseShape: '{ success: boolean, rawResult: string }',
@@ -105,8 +111,8 @@ export const ACTION_COVERAGE: Record<GameServerAction, ActionCoverage> = {
   sendMessage: {
     status: 'live-supported',
     responseShape: '{ success: boolean, rawResult: string }',
-    liveVerification: 'fake and real /v2/server/broadcast smoke',
-    reason: 'TShock exposes a broadcast REST endpoint.',
+    liveVerification: 'fake TShock rawcmd in unit tests; live TShock 6.2.1 with a Terraria network client showed the sender name globally and in a whisper',
+    reason: 'Plugin commands /takarosay and /takarotell show the sender name in the text; TShock /broadcast and /w without one.',
   },
   teleportPlayer: {
     status: 'live-supported',

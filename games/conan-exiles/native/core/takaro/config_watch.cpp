@@ -99,7 +99,7 @@ Config ConfigWatcher::Load() {
             createError = "the file is missing and could not be created: " + createError;
         }
     }
-    active_ = Resolve(text, exists, readError, "", createError);
+    SetActive(Resolve(text, exists, readError, "", createError));
     if (exists) appliedText_ = text;
     if (!readError.empty()) lastReadError_ = readError;
     NativeLog("config: %s (%s); identity from %s, registration token from %s, url from %s, name from %s",
@@ -189,11 +189,25 @@ bool ConfigWatcher::Poll(int64_t nowMs, Config& out) {
     const bool changed =
         next.Connection() != active_.Connection() || next.protocol != active_.protocol ||
         next.enabled != active_.enabled || next.hold != active_.hold;
-    active_ = next;
+    SetActive(next);
     if (!changed) return false;
     reloads_++;
     out = next;
     return true;
+}
+
+void ConfigWatcher::SetActive(Config c) {
+    active_ = std::move(c);
+    std::lock_guard<std::mutex> g(chatNameMu_);
+    if (active_.serverChatName == chatName_) return;
+    chatName_ = active_.serverChatName;
+    if (chatName_.empty()) NativeLog("config: serverChatName not set; Takaro lines without a sender show as Takaro");
+    else NativeLog("config: serverChatName \"%s\"", chatName_.c_str());
+}
+
+std::string ConfigWatcher::ServerChatName() const {
+    std::lock_guard<std::mutex> g(chatNameMu_);
+    return chatName_;
 }
 
 void ConfigWatcher::Banner(const std::string& key, const std::vector<std::string>& lines) {

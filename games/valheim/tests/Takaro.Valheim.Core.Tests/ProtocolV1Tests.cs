@@ -34,6 +34,11 @@ public sealed class ProtocolV1Tests
         CollectionAssert.AreEqual(
             liveActions,
             ProtocolHandshake.ActionCapabilities.Keys.OrderBy(a => a, StringComparer.Ordinal).ToArray());
+        foreach (var action in ProtocolHandshake.VersionOneActionCapabilities.Keys)
+        {
+            // Declared on version 1, schema-fallback until hosted takaro.io is checked (like the map).
+            Assert.AreEqual("schema-fallback", registry.RootElement.GetProperty("actions").GetProperty(action).GetString(), action);
+        }
 
         var names = ProtocolHandshake.BuildCapabilityManifest().Select(c => c!["name"]!.GetValue<string>()).ToArray();
         CollectionAssert.AllItemsAreUnique(names);
@@ -43,6 +48,7 @@ public sealed class ProtocolV1Tests
         }
 
         CollectionAssert.DoesNotContain(names, "players.get", "getPlayer is unsupported");
+        CollectionAssert.Contains(names, "locations.list", "the notable places");
         CollectionAssert.DoesNotContain(names, "map", "declared only when the runner has the world map");
         CollectionAssert.Contains(
             ProtocolHandshake.BuildCapabilityManifest(includeMap: true).Select(c => c!["name"]!.GetValue<string>()).ToArray(),
@@ -59,6 +65,7 @@ public sealed class ProtocolV1Tests
         Assert.IsTrue(ProtocolHandshake.IsDeclared(TakaroActionNames.TestReachability));
         Assert.IsTrue(ProtocolHandshake.IsDeclared(TakaroActionNames.SendMessage));
         Assert.IsFalse(ProtocolHandshake.IsDeclared(TakaroActionNames.GetPlayer));
+        Assert.IsTrue(ProtocolHandshake.IsDeclared(TakaroActionNames.ListLocations));
         Assert.IsFalse(ProtocolHandshake.IsDeclared(TakaroActionNames.GetMapInfo));
         Assert.IsFalse(ProtocolHandshake.IsDeclared(TakaroActionNames.GetMapInfo, mapDeclared: true), "version 1 refuses getMapInfo");
         Assert.IsTrue(ProtocolHandshake.IsDeclared(TakaroActionNames.GetMapTile, mapDeclared: true));

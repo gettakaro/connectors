@@ -97,6 +97,13 @@ const char* BroadcastPathSymbol(BroadcastPath p);
 // sender at all.
 std::string RenderMessage(const std::string& senderName, const std::string& text);
 
+// The sender name of a message from Takaro, the same for every send path: `override`
+// (opts.senderNameOverride, which Takaro fills from the server's chat name), else `configured`
+// (TAKARO_SENDER_NAME, else TAKARO_SERVER_CHAT_NAME), else `serverName` (TAKARO_SERVER_NAME), else
+// "Server". Each is trimmed; one that is empty or only whitespace counts as unset.
+std::string ResolveSenderName(const std::string& override, const std::string& configured,
+                              const std::string& serverName);
+
 // ---- lane L3b: admin grant list -------------------------------------------------------------
 // Parses TAKARO_ADMIN_STEAMIDS / TAKARO_SUPERADMIN_STEAMIDS: a list of SteamID64s separated by
 // commas, semicolons or whitespace. `steam:<id>` is accepted and stripped, surrounding quotes and
@@ -188,5 +195,10 @@ bool IsPlayerInventoryClass(const std::string& className);
 // is exactly the form VEIN's own `127.0.0.1:8080/status` prints for `characterId` and the form the
 // `selected character <id>` log line carries. An all-zero GUID is "no character" and returns "".
 std::string GuidDigits(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
+
+// Why `getPlayerLocation` has no position to report, or "" when it has one. Only a spawned
+// character stands in the world: the character-creation pawn sits in a lobby scene far outside
+// the map, and reporting it puts the player off the map and draws a false path on it.
+std::string LocationRefusal(bool hasPawn, bool spawned, bool hasLoc, const std::string& pawnClass);
 
 }  // namespace ActionsUtil

@@ -96,7 +96,8 @@ M.actions = {
     responseShape = "{ success }",
     liveVerification = live("directed and global lines seen in the client chat as 'Takaro: ...'"),
     reason = "MiscStatics:BroadcastChatLine (global) and MiscStatics:SendChatLineToPlayer (directed), EChatType "
-      .. "ServerMessage; senderNameOverride becomes a 'Name: ' prefix.",
+      .. "ServerMessage. These lines have no sender field, so the sender name (senderNameOverride, else "
+      .. "SERVER_CHAT_NAME) becomes a 'Name: ' prefix; no name = the plain line.",
   },
   teleportPlayer = {
     status = "live-supported",

@@ -2047,8 +2047,8 @@ Actions::Result Actions::PlayerLocation(const std::string& gameId) {
     if (!PlayerRows(rows, age)) return Fail(503, "game thread unavailable");
     const PlayerRow* r = FindRow(rows, gameId);
     if (!r) return Fail(404, "player not online");
-    if (!r->hasPawn) return Fail(503, "player has no pawn yet");
-    if (!r->hasLoc) return Fail(503, "pawn has no readable root component");
+    const std::string refusal = ActionsUtil::LocationRefusal(r->hasPawn, r->spawned, r->hasLoc, r->pawnClass);
+    if (!refusal.empty()) return Fail(503, refusal);
     return {200, "{\"x\":" + JsonNum(r->loc[0]) + ",\"y\":" + JsonNum(r->loc[1]) + ",\"z\":" +
                      JsonNum(r->loc[2]) + ",\"yaw\":" + JsonNum(r->rot[1]) + ",\"pitch\":" +
                      JsonNum(r->rot[0]) + ",\"ageMs\":" + std::to_string(age) + "}"};
@@ -2384,7 +2384,11 @@ Actions::Result Actions::Message(const JsonValue& body) {
     std::string text = textV->str;
     std::string recipient = BodyString(body, "recipientGameId");
     const JsonValue* snd = body.get("senderName");
-    std::string sender = snd && snd->isStr() ? snd->str : ConfigValue("TAKARO_SENDER_NAME", "Server");
+    std::string sender = snd && snd->isStr()
+                             ? snd->str
+                             : ActionsUtil::ResolveSenderName(
+                                   "", ConfigValue("TAKARO_SENDER_NAME", ConfigValue("TAKARO_SERVER_CHAT_NAME", "")),
+                                   ConfigValue("TAKARO_SERVER_NAME", ""));
 
     return OnGameThread("POST /message", [text, recipient, sender]() -> JobOut {
         if (recipient.empty()) {

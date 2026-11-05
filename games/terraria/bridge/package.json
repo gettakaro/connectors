@@ -4,9 +4,12 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
+    "prebuild": "node scripts/generate-build-info.mjs",
     "build": "tsc",
     "start": "node dist/index.js",
+    "predev": "node scripts/generate-build-info.mjs",
     "dev": "tsx src/index.ts",
+    "pretest": "node scripts/generate-build-info.mjs",
     "test": "tsx --test \"src/**/*.test.ts\""
   },
   "license": "ISC",

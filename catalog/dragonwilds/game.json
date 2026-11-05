@@ -37,8 +37,6 @@
       "artifactPattern": "takaro-dragonwilds-plugin-{target}-{version}.tar.gz"
     }
   },
-  "legacyAssetAliases": {
-    "takaro-dragonwilds-plugin.tar.gz": "linux-25991736/plugin"
-  },
+  "legacyAssetAliases": {},
   "devServers": {"composeFile": "dragonwilds.yml"}
 }

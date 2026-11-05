@@ -87,20 +87,26 @@ def render_table(record: dict[str, Any]) -> str:
     tag = str(record["tag"])
     lines: list[str] = []
     if record["mode"] == "catalog" and record["targets"]:
-        lines.append("| target | platform / game version | artifact | sha256 | verified |")
+        # Admins read this as "my server build -> this file", so the build leads (#756).
+        lines.append("Download the file for your server build:")
+        lines.append("")
+        lines.append("| your server build | download | sha256 | target | verified |")
         lines.append("|---|---|---|---|---|")
         for target_id, entry in sorted(record["targets"].items()):
             verified = _verified_cell(entry["verification"])
             for artifact in entry["artifacts"]:
                 lines.append(
-                    f"| {target_id} | {entry['platform']} {entry['revision']} | "
-                    f"[{artifact['name']}]({artifact['url']}) | `{artifact['sha256'][:12]}` | {verified} |"
+                    f"| {entry['platform']} {entry['revision']} | "
+                    f"[{artifact['name']}]({artifact['url']}) | `{artifact['sha256'][:12]}` | "
+                    f"{target_id} | {verified} |"
                 )
         for name, alias in sorted(record["aliases"].items()):
             url = compat_record.download_url(repo, tag, name)
+            target = record["targets"].get(alias["target"]) or {}
+            build = f"{target.get('platform', '')} {target.get('revision', '')}".strip() or alias["target"]
             lines.append(
-                f"| {alias['target']} | (legacy name) | [{name}]({url}) | "
-                f"`{alias['sha256'][:12]}` | copy of {alias['of']} |"
+                f"| {build} (old name) | [{name}]({url}) | "
+                f"`{alias['sha256'][:12]}` | {alias['target']} | copy of {alias['of']} |"
             )
     else:
         for asset in sorted(record["assets"], key=lambda a: str(a["name"])):
@@ -135,8 +141,10 @@ def merge_body(existing: str, block: str) -> str:
         head, _, rest = existing.partition(ASSETS_BEGIN)
         _, _, tail = rest.partition(ASSETS_END)
         return head + wrapped + tail
-    prefix = existing.rstrip() + "\n\n" if existing.strip() else ""
-    return prefix + wrapped + "\n"
+    # The download table goes first: which file fits which server build matters more to an
+    # admin than the changelog below it (gettakaro/connectors#756).
+    suffix = "\n\n" + existing.strip() + "\n" if existing.strip() else "\n"
+    return wrapped + suffix
 
 
 # -- verification from GitHub ------------------------------------------------------------

@@ -1,3 +1,5 @@
+import { CONNECTOR_IDENTITY, GAME_SLUG } from './gameProfile.js';
+
 export const GAME_SERVER_ACTIONS = [
   'getPlayer',
   'getPlayers',
@@ -82,10 +84,13 @@ export interface TakaroRequest {
   args: Record<string, unknown>;
 }
 
+/** `game` and `connector` go out on both versions; Takaro accepts them on version 0 too. */
 export function createIdentify(config: IdentifyConfig, v1?: IdentifyV1): WsMessage {
   const payload: Record<string, unknown> = { identityToken: config.identityToken };
   if (config.registrationToken) payload.registrationToken = config.registrationToken;
   if (config.serverName) payload.name = config.serverName;
+  payload.game = GAME_SLUG;
+  payload.connector = { ...CONNECTOR_IDENTITY };
   if (v1) {
     payload.protocolVersions = v1.protocolVersions;
     payload.capabilities = v1.capabilities;

@@ -1,6 +1,6 @@
 // The protocol 1 Capability Manifest of the Enshrouded connector: the actions it really answers (every
 // live-supported row of games/enshrouded/capabilities.json), the events it emits, and the `map`
-// capability with one Dimension for the world.
+// capability with one Dimension for the world, and `game.profile` (native/game_profile.h).
 //
 // Map: the dedicated server ships no map art (its .dat/.kfc hold none of the client's map textures), so
 // the Dimension's source is `none`. Takaro draws a grid until the operator uploads a map image, which
@@ -16,6 +16,7 @@ constexpr const char* kMapDimensionId = "embervale";
 constexpr const char* kMapDimensionName = "Embervale";
 constexpr double kWorldMin = 0, kWorldMax = 10240;
 
-std::string CapabilityManifestJson();  // the JSON array for identify / capabilities
+// The JSON array for identify / capabilities. gameVersion: the running game build, "" when unknown.
+std::string CapabilityManifestJson(const std::string& gameVersion);
 
 }  // namespace native

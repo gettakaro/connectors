@@ -229,6 +229,11 @@ every release, and a leg fails on any failed row, gameplay rows included. A leg 
 that ships a headless player also restores and saves `~/.cache/takaro-maint/<game>-client`,
 keyed on the files under `maintenance/src/takaro_maint/games/<game>/client/`.
 
+Three opt-in inputs of the reusable workflow change the leg for a game that needs it, and default to
+the behaviour above: `runtime_depot_cache` (the verify leg caches the pinned Steam depots itself
+under `<connector>-depots-<fp16>`, and the build leg skips its server install), `runtime_negative`
+(adds `--negative`) and `startup_timeout` (default 600). Rust uses all three.
+
 ## Gameplay: a headless player on every target
 
 For Minecraft the run does not stop at an empty server. After `console`, and before
@@ -275,8 +280,7 @@ add about a minute per target.
 
 ```
 maintenance/bin/takaro-maint build  --game minecraft --target fabric-26.2 --version 0.0.0-local --out dist --toolchain container
-maintenance/bin/takaro-maint verify --game minecraft --target fabric-26.2 --artifacts dist --out reports \
-    --checks build,startup,connector-load,identify,gameplay-join,gameplay-chat,gameplay-give-item,gameplay-inventory,gameplay-teleport,gameplay-leave
+maintenance/bin/takaro-maint verify --game minecraft --target fabric-26.2 --artifacts dist --out reports
 ```
 
 **What a real client still has to show.** Every report lists it under `manual:` in
