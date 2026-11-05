@@ -265,7 +265,7 @@ def test_targets_resolve_env_for_rust(run: Any) -> None:
     assert env["RUST_ARTIFACT"] == "takaro-rust-plugin-carbon-26139947-{version}.cs"
     assert env["RUST_CARBON_ASSET"] == "Carbon.Linux.Release.tar.gz"
     assert env["RUST_CARBON_TAG"] == "production_build"
-    assert env["RUST_CARBON_SHA256"] == "ff0e1bb8c81edd2a4a31df39776f231004840af4c2f71ba9acbbe465b9479037"
+    assert env["RUST_CARBON_SHA256"] == "5c9c5f80904516732b15324badba921622f3c8f5b77e3cfe120d8c16489aa795"
     assert env["RUST_CARBON_DOWNLOAD_URL"] == (
         "https://github.com/CarbonCommunity/Carbon/releases/download/production_build/Carbon.Linux.Release.tar.gz"
     )

@@ -9,7 +9,7 @@
     "status": "candidate",
     "since": "2026-10-22",
     "evidence": [],
-    "notes": "Rust Dedicated Server public build 26139947 (2026-10-22 17:59 UTC update) with Carbon production build v2.0.262 (commit 8a81d70, GitHub release asset id 605229080, uploaded 2026-10-02 09:09 UTC; Carbon published no newer build for this update; the asset was re-checked on 2026-10-24). Carbon's production_build tag is re-uploaded in place, so what pins these bytes is the recorded sha256/size, not the tag."
+    "notes": "Rust Dedicated Server public build 26139947 (2026-10-22 17:59 UTC update) with Carbon production build v2.0.264 (commit 7cd15a2, GitHub release asset id 714398650, uploaded 2026-11-05 18:34 UTC). Carbon replaced v2.0.262 in place on that date and no longer serves its bytes, so this target moved to v2.0.264; the live checks in the README were made on v2.0.262. Carbon's production_build tag is re-uploaded in place, so what pins these bytes is the recorded sha256/size, not the tag."
   },
   "inputs": {
     "server": {
@@ -72,9 +72,9 @@
       "repo": "CarbonCommunity/Carbon",
       "tag": "production_build",
       "asset": "Carbon.Linux.Release.tar.gz",
-      "sha256": "ff0e1bb8c81edd2a4a31df39776f231004840af4c2f71ba9acbbe465b9479037",
-      "size": 21390371,
-      "updatedAt": "2026-10-02T09:09:58Z",
+      "sha256": "5c9c5f80904516732b15324badba921622f3c8f5b77e3cfe120d8c16489aa795",
+      "size": 21472790,
+      "updatedAt": "2026-11-05T18:34:42Z",
       "installPath": "takaro/Carbon.Linux.Release.tar.gz"
     }
   },
