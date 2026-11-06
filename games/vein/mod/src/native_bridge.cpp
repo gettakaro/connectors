@@ -1,4 +1,5 @@
 #include "native_bridge.h"
+#include "actions_util.h"
 #include "config_file.h"
 #include "native_transport.h"
 #include "game_profile.h"
@@ -167,16 +168,17 @@ bool BannerMissing() {
 }
 
 void BannerRefused(const std::string& why) {
-    if (active.registration == ConfigFile::Source::Env)
-        ConsoleProblemBanner("refused", {
-            "Takaro refused this server: " + RedactTokens(why) + ".",
-            "Check the TAKARO_REGISTRATION_TOKEN environment variable; it wins over " + configPath,
-            "and a changed environment variable needs a server restart."});
-    else
-        ConsoleProblemBanner("refused", {
-            "Takaro refused this server: " + RedactTokens(why) + ".",
-            "Check TAKARO_REGISTRATION_TOKEN in " + configPath,
-            "and save it. The connector reconnects within a few seconds, no restart needed."});
+    std::vector<std::string> lines{"Takaro refused this server: " + RedactTokens(why) + "."};
+    const std::string hint = ActionsUtil::RefusalHint(why, serverName);
+    if (!hint.empty()) lines.push_back(hint);
+    if (active.registration == ConfigFile::Source::Env) {
+        lines.push_back("Check the TAKARO_REGISTRATION_TOKEN environment variable; it wins over " + configPath);
+        lines.push_back("and a changed environment variable needs a server restart.");
+    } else {
+        lines.push_back("Check TAKARO_REGISTRATION_TOKEN in " + configPath);
+        lines.push_back("and save it. The connector reconnects within a few seconds, no restart needed.");
+    }
+    ConsoleProblemBanner("refused", lines);
 }
 
 void ApplyUserConfig(const std::optional<std::string>& userText) {

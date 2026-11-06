@@ -393,3 +393,9 @@ std::string ActionsUtil::ProgressionTracksJson(const std::vector<ProgressionStat
     }
     return out + "]";
 }
+
+std::string ActionsUtil::RefusalHint(const std::string& why, const std::string& serverName) {
+    if (why.find("Internal error identifying") == std::string::npos) return "";
+    return "If this is a new server: Takaro answers this when the name \"" + serverName +
+           "\" is already used in your domain, even by a deleted server. Set another TAKARO_SERVER_NAME.";
+}
