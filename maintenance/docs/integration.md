@@ -177,6 +177,7 @@ A deployment therefore:
 | 7 | artifact, ledger or asset conflict (wrong target, stale fingerprint, incomplete set) |
 | 8 | verification failed, or its evidence is missing |
 | 9 | tracker/GitHub failure, or missing authentication |
+| 10 | icon bucket read or upload failed |
 | 130 | interrupted |
 
 ## The sequence

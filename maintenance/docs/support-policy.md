@@ -60,7 +60,9 @@ worth stating plainly:
 
 * **No upstream bytes are kept here.** No game binaries, no depot manifests, no installer jars,
   no framework packages, no container images. A record names an input and its sha256; every
-  install fetches from upstream and verifies by hash.
+  install fetches from upstream and verifies by hash. Derived item icons (small WebP images built
+  by `takaro-maint icons build`, see [icons.md](icons.md)) are not kept in git either; they live
+  only in the icon buckets.
 * **When upstream withdraws an input, the target becomes uninstallable.** A purged Steam manifest,
   a deleted release asset or a removed image tag makes `install` exit 4, and it **never** falls
   back to a branch head or a "latest" of anything. The response is a new, reviewed target and the

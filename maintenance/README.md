@@ -49,6 +49,8 @@ frozen, managed Python 3.12 environment. Docker is needed for `verify` and for
 | `release assemble --connector C --version V --channel stable\|rolling\|pr --tag TAG --dist DIR --out DIR [--reports DIR]` | Turn the per-target builds and verification reports into one complete release directory: artifacts, legacy aliases, reports, `SHA256SUMS` and the compatibility record. |
 | `release publish --connector C --channel … --tag TAG --assembled DIR` | Upload that directory, read it back from GitHub, and finalise the release. Never clobbers: identical bytes are skipped, conflicting bytes stop the run. |
 | `release verify --tag TAG [--connector C] [--expect DIR] [--out DIR]` | Download every asset of a release and prove it is the set its compatibility record describes. |
+| `icons build --recipes FILE --out DIR` | Render a recipe document into an Icon Pack (WebP objects and `index.json`), a coverage report, a contact sheet and a build record. |
+| `icons publish --env staging --pack DIR [--dry-run]` | Merge the pack into the live index and upload it to the staging icon bucket: missing objects first, `index.json` last. Refuses production and any `_store/` key. |
 
 Selection is the same everywhere: `--target` wins; without it the single `default: true` record
 for the game (and `--platform`, when given) is used. Zero or two defaults is an error rather than
@@ -73,6 +75,7 @@ credential is replaced with `<redacted>` in everything the command writes.
 | 7 | artifact, ledger or asset conflict (wrong target, stale fingerprint, incomplete set) |
 | 8 | verification failed, or its evidence is missing |
 | 9 | tracker/GitHub failure, or missing authentication |
+| 10 | icon bucket read or upload failed |
 | 130 | interrupted |
 
 ## Configuration
@@ -91,6 +94,8 @@ line behaves the same from anywhere.
 | `TAKARO_MAINT_REPO` | Repository for GitHub operations. Also `--repo`. |
 | `TAKARO_MAINT_GITHUB_API_URL` | GitHub API base. Also `--api-url`. |
 | `GH_TOKEN` | GitHub token; otherwise `gh auth token` is tried. |
+| `STG_R2_ACCESS_KEY_ID`, `STG_R2_SECRET_ACCESS_KEY`, `STG_R2_ENDPOINT`, `STG_R2_BUCKET` | The staging icon bucket (Cloudflare R2) for `icons publish`. Read only from the environment and redacted from all output. |
+| `STG_ICON_HOST` | The public staging icon host. Used only for the curl verification in [icons.md](docs/icons.md); no command reads it. |
 
 `--repo-root PATH` points the command at another checkout.
 
@@ -121,5 +126,6 @@ fakes for upstream, GitHub and docker. Dependencies are pinned by `uv.lock` and 
 - [Operations](docs/operations.md) — running the one-shot maintenance command on a host, in the tool container and from CI; credentials, dashboard health, the schedule gate.
 - [Private integration](docs/integration.md) — the contract a private deployment follows: resolve, exact install, artifact validation, deployment and verification, with no floating pins of its own.
 - [Recovery](docs/recovery.md) — the operator runbook: what a red run, a degraded dashboard or a half-published release means and the one command that fixes each.
+- [Icon Packs](docs/icons.md) — building and publishing derived item icons: the pack contract, the recipe document, the publish protocol and the staging runbook.
 - [Support policy](docs/support-policy.md) — candidate, maintained and retired; what the repository retains and what only upstream holds; when and how a target is retired.
 - [Source to release](docs/example-source-to-release.md) — one upstream release followed from observation to a closed issue, with every command on the way.

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import sys
 import zipfile
@@ -31,6 +32,9 @@ def _isolated_environment(tmp_path_factory: pytest.TempPathFactory, monkeypatch:
     """No test may touch the developer's cache, repo root or credentials."""
     monkeypatch.setenv("TAKARO_MAINT_CACHE", str(tmp_path_factory.mktemp("cache")))
     monkeypatch.delenv("GH_TOKEN", raising=False)
+    for name in list(os.environ):
+        if name.startswith(("STG_R2_", "PROD_")) or name == "STG_ICON_HOST":
+            monkeypatch.delenv(name)
     paths.set_repo_root(None)
     redact.forget()
     yield
