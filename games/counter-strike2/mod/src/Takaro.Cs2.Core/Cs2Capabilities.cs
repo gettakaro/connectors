@@ -14,6 +14,7 @@ public static class Cs2Capabilities
     public static IReadOnlyList<object> Build(bool allowShutdown, object? mapDimension, bool hasLocations, string? gameVersion)
     {
         var manifest = Always.Select(name => (object)new { name }).ToList();
+        manifest.Add(new { name = "players.progression", parameters = new { source = "client-reported" } });
         if (allowShutdown) manifest.Add(new { name = "server.shutdown" });
         if (hasLocations) manifest.Add(new { name = "locations.list" });
         if (mapDimension is not null)

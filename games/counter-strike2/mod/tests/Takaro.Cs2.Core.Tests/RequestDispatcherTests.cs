@@ -103,6 +103,19 @@ public sealed class RequestDispatcherTests
     }
 
     [TestMethod]
+    public async Task ProgressionAnswersNullForUnknownAndEmptyForKnownPlayers()
+    {
+        var dispatcher = new TakaroRequestDispatcher(new FakeAdapter());
+        var unknown = await dispatcher.DispatchAsync(Request("getPlayerProgression", """{"gameId":"nobody"}"""));
+        Assert.IsTrue(unknown.Success);
+        Assert.IsNull(unknown.Payload);
+
+        var known = await dispatcher.DispatchAsync(Request("getPlayerProgression", """{"gameId":"known"}"""));
+        Assert.IsTrue(known.Success);
+        Assert.AreEqual(0, JsonSerializer.SerializeToElement(known.Payload).GetArrayLength());
+    }
+
+    [TestMethod]
     public async Task MapInfoIsNotAVersionOneAction()
     {
         var dispatcher = new TakaroRequestDispatcher(new FakeAdapter());
@@ -168,6 +181,8 @@ public sealed class RequestDispatcherTests
 
     private sealed class FakeAdapter : ICs2TakaroAdapter
     {
+        public Task<object?> GetPlayerProgressionAsync(string identifier, CancellationToken cancellationToken = default) =>
+            Task.FromResult<object?>(identifier == "known" ? Array.Empty<object>() : null);
         public IReadOnlyList<object> GetCapabilities() => [];
         public string? LastMessage { get; private set; }
         public string? LastRecipient { get; private set; }

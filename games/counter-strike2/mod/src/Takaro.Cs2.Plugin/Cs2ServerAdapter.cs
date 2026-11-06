@@ -10,6 +10,7 @@ public sealed partial class Cs2ServerAdapter : ICs2TakaroAdapter
     private readonly ConnectorConfig config;
     private readonly CommandAllowlist commandAllowlist;
     private Cs2MapAssets? mapAssets;
+    private readonly Cs2Progression progression = new();
     private volatile string currentMap = string.Empty;
     private volatile string? gameVersion;
 
@@ -64,9 +65,19 @@ public sealed partial class Cs2ServerAdapter : ICs2TakaroAdapter
     public async Task<IReadOnlyList<TakaroPlayer>> GetPlayersAsync(CancellationToken cancellationToken = default)
     {
         var players = await RunOnServerAsync<IReadOnlyList<TakaroPlayer>>(() =>
-            PlayerMapper.ToTakaroPlayers(Utilities.GetPlayers().Select(ToCs2Player).OfType<Cs2Player>(), config.IncludeBots), cancellationToken);
+        {
+            var online = Utilities.GetPlayers().Select(ToCs2Player).OfType<Cs2Player>().ToList();
+            online.ForEach(progression.Observe);
+            return PlayerMapper.ToTakaroPlayers(online, config.IncludeBots);
+        }, cancellationToken);
 
         return players;
+    }
+
+    public Task<object?> GetPlayerProgressionAsync(string identifier, CancellationToken cancellationToken = default)
+    {
+        var known = playerStore?.Find(identifier);
+        return Task.FromResult(progression.Read(known?.GameId ?? identifier, known is not null));
     }
 
     public async Task<TakaroPlayer?> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default)
@@ -133,7 +144,8 @@ public sealed partial class Cs2ServerAdapter : ICs2TakaroAdapter
             SteamId64: steamId,
             Ip: controller.IpAddress,
             Ping: ping,
-            IsBot: controller.IsBot);
+            IsBot: controller.IsBot,
+            ProfileRank: controller.InventoryServices?.PersonaDataPublicLevel ?? 0);
     }
 
     private static Task RunOnServerAsync(Action action, CancellationToken cancellationToken)

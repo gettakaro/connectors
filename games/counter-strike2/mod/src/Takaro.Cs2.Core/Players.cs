@@ -7,7 +7,8 @@ public sealed record Cs2Player(
     ulong SteamId64,
     string? Ip,
     int? Ping,
-    bool IsBot);
+    bool IsBot,
+    int ProfileRank = 0);
 
 public sealed record TakaroPlayer(
     [property: JsonPropertyName("gameId")] string GameId,
