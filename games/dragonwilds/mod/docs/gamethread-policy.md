@@ -17,7 +17,9 @@ resource: the plugin uses it only where UE gives it no choice, and it measures w
    reader (`PluginState::EmitEventDeferred`).
 2. **Small state copies, on demand.** Live player state (identity, ping, pawn, position, inventory)
    can only be read on the game thread. A job reads it only when a Takaro request needs it, and
-   returns plain data; the calling worker builds the response.
+   returns plain data; the calling worker builds the response. Skills are the exception: Takaro
+   asks for them on every player sync, so the housekeeping job copies them and requests never enter
+   the game thread.
 3. **Queued mutations, under a per-tick budget.** Teleport, give, kick, ban, chat must call engine
    code. Jobs are drained from the engine `Tick` detour under `TAKARO_TICK_BUDGET_US` (default
    500 µs). Leftovers wait for the next tick; one job always runs so a slow job cannot starve the
@@ -53,6 +55,7 @@ lives on the caller's stack.
 | Class sweep (`GetObjectsOfClass`) + live PreLogin retry | on a join/leave edge, else every 5 s with players online, 30 s without | `events.cpp` |
 | Health-edge poll (death fallback), connection reaper | every 5 s, only while a player is connected | `events.cpp` |
 | Pending-join resolver | only while a join is pending | `events.cpp` |
+| Skill copy for `getPlayerProgression` | every 5 s, only while a player is connected; requests read the copy | `events.cpp`, `actions.cpp` |
 | Item catalogue | built once | `actions.cpp` |
 | `ProcessEvent` filter | O(1) vtable→original table; `UFunction*` → decision cache; raw `FName` compare on a miss only | `events.cpp` |
 | Memory-range checks | lock-free `/proc/self/maps` snapshot; no mutex, no re-read on the hot path | `sym.cpp` |

@@ -216,6 +216,12 @@ std::string ResolveKnownId(const PreparedAction& p, const std::string& raw) {
         if (MatchesPlayer(Object(row), needle)) return Lower(StripPlatform(Str(Object(row), "gameId")));
     return bare;
 }
+bool KnownPlayer(const PreparedAction& p, const std::string& id) {
+    const std::string needle = Lower(id);
+    for (auto& row : Rows(Parse(p.view->knownPlayersJson), "players"))
+        if (MatchesPlayer(Object(row), needle)) return true;
+    return false;
+}
 std::string ResolveId(const PreparedAction& p, const Json& args) {
     const std::string raw = PlayerId(args), known = ResolveKnownId(p, raw), needle = Lower(StripPlatform(raw));
     if (Puid(known)) return known;
@@ -741,6 +747,13 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p) {
             Json mapped = Json::array();
             for (auto& row : Rows(call(Actions::PlayerInventory(ResolveId(p, a))), "items")) mapped.push_back(InventoryItem(row));
             out.payloadJson = mapped.dump();
+        } else if (action == "getPlayerProgression") {
+            // Takaro polls this on every player sync, so it answers from the cached reading and
+            // never reaches the game thread. A player we know without a reading has no tracks yet.
+            id = ResolveKnownId(p, PlayerId(a));
+            Actions::Result raw = Actions::PlayerProgression(id);
+            if (raw.status < 400) out.payloadJson = Parse(raw.body).dump();
+            else out.payloadJson = KnownPlayer(p, id) ? "[]" : "null";
         } else if (action == "giveItem") {
             id = ResolveId(p, a);
             Json item = Object(a.value("item", Json::object()));
@@ -1373,6 +1386,8 @@ std::string CapabilityManifestJson(const std::string& gameVersion) {
                              "events.player-disconnected", "events.chat-message", "events.player-death",
                              "events.entity-killed", "events.log"})
         manifest.push_back(Json{{"name", name}});
+    // Characters are kept by the client and uploaded on join, so a client can claim any level.
+    manifest.push_back(Json{{"name", "players.progression"}, {"parameters", {{"source", "client-reported"}}}});
     manifest.push_back(Parse(NativeMap::CapabilityJson()));
     manifest.push_back(Parse(GameProfile::CapabilityJson(gameVersion)));
     return manifest.dump();

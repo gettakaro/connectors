@@ -63,6 +63,7 @@ Json ToJson(const JsonValue& v) {
 std::map<std::string, Json> last;  // "POST /x" -> body
 bool playersOnline = true;
 bool locationDown = false;
+std::string progressionId;
 bool unbanFails = false;
 std::set<std::string> gameBans;    // the game's KnownPlayerList flags
 std::string commandMode = "ok";
@@ -91,6 +92,10 @@ Result PlayerLocation(const std::string&) {
 }
 Result PlayerInventory(const std::string&) {
     return {200, R"([{"code":"Item_Log_Oak","name":"Oak Logs","amount":4,"inventory":"Inv","slot":0},{"code":"Item_Rune_Air","name":"Air Rune","amount":12,"inventory":"Inv","slot":1}])"};
+}
+Result PlayerProgression(const std::string& id) {
+    if (id != progressionId) return {404, R"({"error":"no reading for this player"})"};
+    return {200, R"([{"key":"mining","name":"Mining","level":12,"experience":310,"progress":0.25}])"};
 }
 Result Items(const std::string&) { return {200, R"([{"code":"Item_Log_Oak","name":"Oak Logs","description":"wood","category":"x"}])"}; }
 Result Entities() { return {200, R"([{"code":"AI_Goblin_Melee","name":"Goblin","type":"hostile","description":"AI"},{"code":"AI_Merchant","name":"Merchant","type":"friendly"}])"}; }
@@ -365,6 +370,15 @@ int main() {
                   Json::array({Json{{"code", "Item_Log_Oak"}, {"name", "Oak Logs"}, {"amount", 4}},
                                Json{{"code", "Item_Rune_Air"}, {"name", "Air Rune"}, {"amount", 12}}}),
               "inventory IItemDTO[]");
+        // Unknown: null, never an error. Known without a reading: no tracks. With one: the reading.
+        Check(h.Ok("getPlayerProgression", {{"gameId", U}}).is_null(), "progression: unknown player is null");
+        Check(h.Ok("getPlayerProgression", {{"gameId", A}}) == Json::array(), "progression: known player without a reading");
+        progressionId = A;
+        Check(h.Ok("getPlayerProgression", {{"gameId", A}}) ==
+                  Json::array({Json{{"key", "mining"}, {"name", "Mining"}, {"level", 12}, {"experience", 310}, {"progress", 0.25}}}),
+              "progression: tracks from the cached reading");
+        Check(h.Ok("getPlayerProgression", {{"gameId", "epic:" + A}}).size() == 1, "progression: platform prefix");
+        h.Err("getPlayerProgression", Json::object());
         Check(h.Ok("listItems") == Json::array({Json{{"code", "Item_Log_Oak"}, {"name", "Oak Logs"}, {"description", "wood"}}}), "listItems");
         Check(h.Ok("listEntities") == Json::array({Json{{"code", "AI_Goblin_Melee"}, {"name", "Goblin"}, {"type", "hostile"}, {"description", "AI"}},
                                                    Json{{"code", "AI_Merchant"}, {"name", "Merchant"}, {"type", "friendly"}}}),
@@ -653,6 +667,8 @@ int main() {
                                      "server.shutdown", "events.chat-message", "events.entity-killed", "events.log"})
                 Check(std::find(names.begin(), names.end(), name) != names.end(), std::string("manifest declares ") + name);
             Check(std::find(names.begin(), names.end(), "testReachability") == names.end(), "testReachability is not a capability");
+            const Json progression = *std::find_if(manifest.begin(), manifest.end(), [](const Json& c) { return c["name"] == "players.progression"; });
+            Check(progression["parameters"] == Json{{"source", "client-reported"}}, "progression is declared client-reported");
             // The map: one Dimension, an operator-uploaded picture, the survey calibration.
             Check(std::count(names.begin(), names.end(), "map") == 1, "map capability declared once");
             const Json map = *std::find_if(manifest.begin(), manifest.end(), [](const Json& c) { return c["name"] == "map"; });
