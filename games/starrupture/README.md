@@ -86,7 +86,7 @@ Checked on StarRupture 0.3.5 (Steam build 25642172), 2026-11-06. ✅ works, ⚠�
 | Player joined / left | ✅ | |
 | Chat messages | ✅ | Player chat is reported as global. |
 | Player death | ⚠️ | With position. The killer is not reported. |
-| Entity killed | ⚠️ | Only with a weapon the plugin can name. |
+| Entity killed | ❌ | Not reported. |
 | Server log lines | ❌ | Not sent. |
 | Discord chat bridge | ✅ | Both ways; use `chatBridgeNoEcho` to avoid echoes. |
 | Modules | ✅ | Chat commands, hooks and scheduled jobs work. |

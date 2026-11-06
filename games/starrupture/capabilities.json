@@ -59,7 +59,7 @@
     },
     "getPlayerInventory": {
       "status": "live-supported",
-      "liveVerification": "not live-tested yet",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: matches the client inventory; Takaro recorded player-inventory-changed",
       "reason": "Player inventory component on the game thread.",
       "responseShape": "IItemDTO[] (bare array)"
     },
@@ -83,13 +83,13 @@
     },
     "giveItem": {
       "status": "live-supported",
-      "liveVerification": "not live-tested yet",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: stacks seen in the client inventory, also through a shop claim",
       "reason": "Exact code from the catalogue; quality is ignored, the game has none.",
       "responseShape": "{ success }"
     },
     "kickPlayer": {
       "status": "live-supported",
-      "liveVerification": "not live-tested yet",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: player back at the main menu, one disconnect event",
       "reason": "ClientReturnToMainMenuWithTextReason.",
       "responseShape": "{ success }"
     },
@@ -107,7 +107,7 @@
     },
     "listItems": {
       "status": "live-supported",
-      "liveVerification": "not live-tested yet",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: 92 items with in-game names and descriptions",
       "reason": "Item database; names from the game text, a readable name from the code when the game has none.",
       "responseShape": "IItemDTO[] (bare array)"
     },
@@ -156,10 +156,10 @@
       "payloadShape": "{ player, channel, msg }"
     },
     "entity-killed": {
-      "status": "live-supported",
-      "liveVerification": "not live-tested yet",
-      "reason": "ProcessEvent observer on gameplay cues.",
-      "payloadShape": "{ player, entity, weapon }"
+      "status": "unsupported",
+      "liveVerification": "not declared",
+      "reason": "Not offered: a kill with a named weapon could not be proven.",
+      "payloadShape": "none"
     },
     "log": {
       "status": "unsupported",
@@ -181,7 +181,7 @@
     },
     "player-disconnected": {
       "status": "live-supported",
-      "liveVerification": "not live-tested yet",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: one event on kick and at server shutdown",
       "reason": "ModLoader player events.",
       "payloadShape": "{ player }"
     }

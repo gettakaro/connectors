@@ -190,10 +190,6 @@ public:
         {
             TAKARO_LOG_ERROR("Pinned ModLoader ProcessEvent observer could not capture accepted player chat; inbound chat events are unavailable.");
         }
-        if (!InstallTakaroCombatHooks(hooks->Hooks))
-        {
-            TAKARO_LOG_ERROR("Pinned ModLoader ProcessEvent observer could not capture combat callbacks; combat events are unavailable.");
-        }
     }
 
     void SetUnready() override { TakaroState().SetReady(false); }
@@ -203,7 +199,6 @@ public:
     {
         auto* hooks = GetHooks();
         if (!hooks) return;
-        RemoveTakaroCombatHooks(hooks->Hooks);
         RemoveTakaroChatHook(hooks->Hooks);
         if (hooks->Engine)
         {

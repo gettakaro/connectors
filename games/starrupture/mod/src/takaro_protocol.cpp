@@ -16,8 +16,8 @@ constexpr std::array<const char*, 17> PlainCapabilities = {
     "items.list", "items.give", "entities.list", "locations.list", "chat.send",
     "moderation.kick", "moderation.ban", "moderation.unban", "moderation.listBans", "server.shutdown",
     "events.player-connected", "events.player-disconnected"};
-constexpr std::array<const char*, 3> PlainEvents = {
-    "events.chat-message", "events.player-death", "events.entity-killed"};
+constexpr std::array<const char*, 2> PlainEvents = {
+    "events.chat-message", "events.player-death"};
 constexpr std::array<const char*, 12> GameThreadActions = {
     "getPlayerInventory", "giveItem", "listItems", "listEntities", "listLocations", "sendMessage",
     "teleportPlayer", "kickPlayer", "banPlayer", "unbanPlayer", "listBans", "shutdown"};
