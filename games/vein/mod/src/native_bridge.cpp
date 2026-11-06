@@ -618,7 +618,7 @@ void PollEvents() {
         for (const Json& e : ring["events"]) {
             uint64_t seq = e.value("seq", uint64_t{0});
             if (seq <= scanSeq) continue;
-            if (behavior->SuppressRingConnection(Str(e, "type"))) {
+            if (behavior->SuppressRingEvent(Str(e, "type"))) {
                 if (!admitBatch()) return;
                 NativePersistence::Result skipped;
                 {

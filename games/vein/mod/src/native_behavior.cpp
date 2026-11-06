@@ -522,7 +522,9 @@ ApplyResult Engine::ApplyOutcome(const PreparedAction& p,ActionOutcome out){
 MappedEvent Engine::MapEvent(const std::string& json) const{
     MappedEvent m;Json e=Parse(json);try{if(!e.is_object())throw std::runtime_error("malformed ring event");m.source={Str(e,"bootId"),e.value("seq",uint64_t{0})};m.type=Str(e,"type");Json data=MapEventData(m.type,e.value("data",Json::object()));if(e.contains("ts")){int64_t ms=DateMs(e["ts"]);if(ms>0)data["timestamp"]=IsoMs(ms);}m.frame=std::make_shared<const std::string>(Json{{"type","gameEvent"},{"payload",{{"type",m.type},{"data",data}}}}.dump());if(data.contains("player"))m.playerId=Str(data["player"],"gameId");m.valid=true;}catch(const std::exception& ex){m.error=ex.what();}return m;
 }
-bool Engine::SuppressRingConnection(const std::string& type) const{
+bool Engine::SuppressRingEvent(const std::string& type) const{
+    // The ring only holds log lines from before the bridge took over the paced raw log.
+    if(type=="log")return true;
     return (type=="player-connected"||type=="player-disconnected")&&log_->parser.TailConnections();
 }
 NativePersistence::Result Engine::ObserveAdmitted(const MappedEvent& e){

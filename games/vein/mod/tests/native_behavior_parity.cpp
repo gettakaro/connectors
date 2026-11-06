@@ -109,10 +109,11 @@ int main(){
     checkConfiguredSender(ConfigFile::DefaultServerName(ConfigFile::Get("TAKARO_IDENTITY_TOKEN")));
     setenv("TAKARO_SENDER_NAME","Bot",1);
     Check(Parse(engine.Snapshot()->knownPlayersJson).size()==1&&Parse(engine.Snapshot()->onlinePlayersJson).empty()&&Parse(engine.Snapshot()->timedBansJson).empty(),"missing legacy files do not inherit preceding contents");
-    Check(!engine.SuppressRingConnection("player-connected")&&!engine.SuppressRingConnection("chat-message"),"healthy auto mode keeps ring ownership");
+    Check(!engine.SuppressRingEvent("player-connected")&&!engine.SuppressRingEvent("chat-message"),"healthy auto mode keeps ring ownership");
+    Check(engine.SuppressRingEvent("log"),"boot log lines in the ring are not flushed at Takaro");
     playersCapability="degraded";
-    Check(engine.SuppressRingConnection("player-connected")&&engine.SuppressRingConnection("player-disconnected")&&
-          !engine.SuppressRingConnection("chat-message"),"auto mode tails only connections on player capability degradation");
+    Check(engine.SuppressRingEvent("player-connected")&&engine.SuppressRingEvent("player-disconnected")&&
+          !engine.SuppressRingEvent("chat-message"),"auto mode tails only connections on player capability degradation");
     playersCapability="ok";
     const std::string id="76561198000000001";
     auto run=[&](const std::string& name,const Json& args){auto p=engine.PrepareAction("r",name,args.dump(),1);auto o=NativeBehavior::Engine::ExecuteAction(p);auto a=engine.ApplyOutcome(p,std::move(o));Check(a.errorText.empty(),name+": "+a.errorText);return Parse(a.payloadJson);};

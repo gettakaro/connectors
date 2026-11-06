@@ -1,4 +1,5 @@
 // Pure parsing helpers for the VEIN server log (lane L2). See events_parse.h.
+#include <algorithm>
 #include "events_parse.h"
 
 #include <cctype>
@@ -286,4 +287,21 @@ const char* EventsParse::ChatChannelName(int v) {
         case 3: return "radio";
         default: return "global";
     }
+}
+
+bool EventsParse::LogPacer::Take(uint64_t nowMs) {
+    if (lastMs_ && nowMs > lastMs_) tokens_ = std::min(kBurst, tokens_ + (nowMs - lastMs_) * kPerSecond / 1000);
+    lastMs_ = nowMs;
+    if (tokens_ < 1) {
+        ++skipped_;
+        return false;
+    }
+    tokens_ -= 1;
+    return true;
+}
+
+uint64_t EventsParse::LogPacer::TakeSkipped() {
+    const uint64_t n = skipped_;
+    skipped_ = 0;
+    return n;
 }
