@@ -974,6 +974,20 @@ static void TestStackSplit() {
     CHECK(withinLimit, "no instance ever exceeds the item's own stack limit");
 }
 
+static void TestLogPacer() {
+    EventsParse::LogPacer pacer;
+    uint64_t sent = 0;
+    for (int i = 0; i < 4000; i++) sent += pacer.Take(1000);
+    CHECK(sent == 20, "a boot burst stops at the budget");
+    CHECK(pacer.TakeSkipped() == 3980, "skipped lines are counted");
+    CHECK(pacer.TakeSkipped() == 0, "the count is taken once");
+    CHECK(!pacer.Take(1010), "no credit after 10 ms");
+    CHECK(pacer.Take(2000), "the budget refills");
+    sent = 0;
+    for (uint64_t ms = 60000; ms < 65000; ms += 10) sent += pacer.Take(ms);
+    CHECK(sent < 100, "any 5 s stays under Takaro's limit");
+}
+
 static void TestRefusalHint() {
     const std::string hint = ActionsUtil::RefusalHint("Internal error identifying game server", "My Server");
     CHECK(hint.find("\"My Server\"") != std::string::npos, "names the server");
@@ -1492,6 +1506,7 @@ int main() {
     TestStackSplit();
     TestPlayerInventoryClassGuard();
     TestProgression();
+    TestLogPacer();
     TestRefusalHint();
     TestCharacterIdFormatting();
     TestKillWeaponName();
