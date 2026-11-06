@@ -137,7 +137,7 @@ stays inactive.
 
 ## What works, what doesn't
 
-Checked on Project Zomboid 42.21.0 (4a0e9546ec), 2026-10-01. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on Project Zomboid 42.21.0 (4a0e9546ec), 2026-11-06. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
@@ -155,18 +155,18 @@ Checked on Project Zomboid 42.21.0 (4a0e9546ec), 2026-10-01. ✅ works, ⚠️ w
 | Send a message | ✅ | Broadcasts reach everyone, whispers reach one player, with the server chat name as sender. |
 | Console commands | ✅ | Output and success or failure are returned, including errors for unknown commands. |
 | Kick | ✅ | The player can rejoin afterwards. |
-| Ban and unban | ⚠️ | Permanent ban and unban work; automatic expiry of timed bans is not checked on this build. |
+| Ban and unban | ✅ | Permanent and timed bans, and unban; a timed ban lifts itself at its expiry. |
 | Ban list | ✅ | With expiry, including bans made outside Takaro. |
 | Give an item | ✅ | Appears in the inventory without a relog. |
-| Shop | ⚠️ | Not checked. |
-| Shut down the server | ⚠️ | Saves and quits on request; not checked on this build. |
+| Shop | ✅ | Pay, claim with delivery to the inventory, and cancel with a refund. |
+| Shut down the server | ✅ | Saves and quits on request. |
 | Player joined / left | ✅ | Left also arrives on a kick. |
 | Chat messages | ✅ | With the player and channel. |
 | Player death | ✅ | With the position. |
-| Entity killed | ⚠️ | Zombie kills with the weapon (none for bare hands), at most about 20 per second; not checked on this build. |
+| Entity killed | ✅ | Zombie kills with the weapon (none for bare hands), at most about 20 per second. |
 | Server log lines | ⚠️ | Off by default; set `logEvents=true` (or `TAKARO_LOG_EVENTS=true`). |
 | Discord chat bridge | ⚠️ | Not checked. |
-| Modules | ⚠️ | Not checked. |
+| Modules | ✅ | Commands, hooks and replies, including teleports and economy. |
 | Game name, version and icon | ⚠️ | Not checked on takaro.io yet. |
 | Restarts and outages | ✅ | Re-identifies on its own after a server restart. |
 
