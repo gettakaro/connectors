@@ -317,12 +317,17 @@ end)
 
 t.test("every declared action capability is live-supported in the coverage registry", function()
   for _, c in ipairs(v1.manifest()) do
-    if c.name ~= "map" and not c.name:find("^events%.") then
+    if c.name ~= "map" and c.name ~= "players.characters" and not c.name:find("^events%.") then
       local action
       for a, n in pairs(v1.CAPABILITY_OF) do if n == c.name then action = a end end
       t.eq(coverage.actions[action].status, "live-supported", c.name)
     end
   end
+end)
+
+t.test("the manifest declares server-held characters that death does not end", function()
+  local found = names(v1.manifest()) ["players.characters"]
+  t.deep(found, { name = "players.characters", parameters = { held = "server" } })
 end)
 
 t.run("v1")
