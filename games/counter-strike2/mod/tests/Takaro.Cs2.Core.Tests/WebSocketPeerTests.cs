@@ -30,7 +30,7 @@ public sealed class WebSocketPeerTests
 
         using var first = (await (await listener.GetContextAsync().WaitAsync(TimeSpan.FromSeconds(10))).AcceptWebSocketAsync(null)).WebSocket;
         Assert.AreEqual("identify", Type(await Receive(first)));
-        await Send(first, """{"type":"identifyResponse","payload":{"gameServerId":"test"}}""");
+        await Send(first, """{"type":"identifyResponse","payload":{"gameServerId":"test","protocolVersion":1}}""");
         await Send(first, """{"type":"ping"}""");
         Assert.AreEqual("pong", Type(await Receive(first)));
         await Send(first, """{"type":"request","requestId":"one","payload":{"action":"getPlayers","args":[]}}""");
@@ -42,10 +42,28 @@ public sealed class WebSocketPeerTests
         using var second = (await (await listener.GetContextAsync().WaitAsync(TimeSpan.FromSeconds(10))).AcceptWebSocketAsync(null)).WebSocket;
         Assert.AreEqual("identify", Type(await Receive(second)));
         await runner.SendGameEventAsync("log", new { level = "info", msg = "queued" });
-        await Send(second, """{"type":"identifyResponse","payload":{"gameServerId":"test"}}""");
+        await Send(second, """{"type":"identifyResponse","payload":{"gameServerId":"test","protocolVersion":1}}""");
         var delivered = JsonDocument.Parse(await Receive(second)).RootElement;
         Assert.AreEqual("gameEvent", delivered.GetProperty("type").GetString());
-        Assert.AreEqual("queued", delivered.GetProperty("payload").GetProperty("data").GetProperty("msg").GetString());
+        var payload = delivered.GetProperty("payload");
+        Assert.AreEqual("queued", payload.GetProperty("data").GetProperty("msg").GetString());
+        Assert.AreEqual(1, payload.GetProperty("seq").GetInt64());
+        var stream = payload.GetProperty("streamId").GetString();
+
+        // Unacknowledged events are resent in order after the next identify; acknowledged ones are not.
+        await runner.SendGameEventAsync("log", new { level = "info", msg = "second" });
+        Assert.AreEqual(2, JsonDocument.Parse(await Receive(second)).RootElement.GetProperty("payload").GetProperty("seq").GetInt64());
+        await Send(second, JsonSerializer.Serialize(new { type = "eventAck", payload = new { streamId = stream, upTo = 1 } }));
+        await Send(second, """{"type":"ping"}""");
+        Assert.AreEqual("pong", Type(await Receive(second)));
+        await second.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "test", CancellationToken.None);
+
+        using var third = (await (await listener.GetContextAsync().WaitAsync(TimeSpan.FromSeconds(10))).AcceptWebSocketAsync(null)).WebSocket;
+        Assert.AreEqual("identify", Type(await Receive(third)));
+        await Send(third, """{"type":"identifyResponse","payload":{"gameServerId":"test","protocolVersion":1}}""");
+        var resent = JsonDocument.Parse(await Receive(third)).RootElement.GetProperty("payload");
+        Assert.AreEqual(2, resent.GetProperty("seq").GetInt64());
+        Assert.AreEqual(stream, resent.GetProperty("streamId").GetString());
     }
 
     private static string Type(string json) => JsonDocument.Parse(json).RootElement.GetProperty("type").GetString()!;
@@ -62,6 +80,7 @@ public sealed class WebSocketPeerTests
 
     private sealed class PeerAdapter : ICs2TakaroAdapter
     {
+        public IReadOnlyList<object> GetCapabilities() => [new { name = "players.list" }];
         public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) => Ok();
         public Task<IReadOnlyList<TakaroPlayer>> GetPlayersAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<TakaroPlayer>>([]);
         public Task<TakaroPlayer?> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default) => Task.FromResult<TakaroPlayer?>(null);
@@ -72,7 +91,6 @@ public sealed class WebSocketPeerTests
         public Task<TakaroActionResult> GiveItemAsync(string identifier, string code, int amount, CancellationToken cancellationToken = default) => Ok();
         public Task<TakaroActionResult> ListItemsAsync(CancellationToken cancellationToken = default) => Ok();
         public Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default) => Ok();
-        public Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default) => Ok();
         public Task<TakaroActionResult> GetMapTileAsync(int x, int y, int zoom, CancellationToken cancellationToken = default) => Ok();
         public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default) => Ok();
         public Task<TakaroActionResult> KickPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) => Ok();

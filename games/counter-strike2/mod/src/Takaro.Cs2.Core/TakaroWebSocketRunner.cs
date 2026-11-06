@@ -1,6 +1,5 @@
 using System.Net.WebSockets;
 using System.Text;
-using System.Collections.Concurrent;
 using System.Text.Json;
 using Takaro.Cs2.Core;
 
@@ -14,7 +13,13 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private readonly CancellationTokenSource shutdown = new();
     private readonly SemaphoreSlim sendLock = new(1, 1);
     private readonly SemaphoreSlim eventLock = new(1, 1);
-    private readonly ConcurrentQueue<(string Type, string Frame)> pendingEvents = new();
+    private const int MaxBufferedEvents = 10000;
+    private readonly string streamId = Guid.NewGuid().ToString();
+    private readonly object eventGate = new();
+    private readonly Queue<(long Seq, string Type, string Frame)> bufferedEvents = new();
+    private readonly ICs2TakaroAdapter adapter;
+    private long nextSeq = 1;
+    private long lastSentSeq;
     private volatile bool identified;
     private ClientWebSocket? socket;
     private Task? runLoop;
@@ -22,6 +27,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
     public TakaroWebSocketRunner(ConnectorConfig config, ICs2TakaroAdapter adapter, Action<string>? log = null)
     {
         this.config = config;
+        this.adapter = adapter;
         dispatcher = new TakaroRequestDispatcher(adapter);
         this.log = log ?? (_ => { });
     }
@@ -36,13 +42,25 @@ public sealed class TakaroWebSocketRunner : IDisposable
 
     public async Task SendGameEventAsync(string eventType, object data, CancellationToken cancellationToken = default)
     {
-        if (pendingEvents.Count >= 10000)
+        lock (eventGate)
         {
-            log("Takaro CS2 event queue is full; event rejected.");
-            return;
+            if (bufferedEvents.Count >= MaxBufferedEvents)
+            {
+                bufferedEvents.Dequeue();
+                log("Takaro CS2 event buffer is full; oldest event dropped.");
+            }
+            var seq = nextSeq++;
+            bufferedEvents.Enqueue((seq, eventType, TakaroProtocol.CreateGameEvent(eventType, data, streamId, seq)));
         }
-        pendingEvents.Enqueue((eventType, TakaroProtocol.CreateGameEvent(eventType, data)));
         await FlushEventsAsync(cancellationToken);
+    }
+
+    /// <summary>Replaces the manifest on the live connection, for example after a map change.</summary>
+    public async Task UpdateCapabilitiesAsync(CancellationToken cancellationToken = default)
+    {
+        var activeSocket = socket;
+        if (!identified || activeSocket is null) return;
+        await SendAsync(activeSocket, TakaroProtocol.CreateCapabilities(Guid.NewGuid().ToString(), adapter.GetCapabilities()), cancellationToken);
     }
 
     public void Dispose()
@@ -56,16 +74,16 @@ public sealed class TakaroWebSocketRunner : IDisposable
         var attempt = 0;
         while (!cancellationToken.IsCancellationRequested)
         {
+            var wasIdentified = false;
             try
             {
                 using var client = new ClientWebSocket();
                 socket = client;
                 identified = false;
                 await client.ConnectAsync(new Uri(config.TakaroWsUrl), cancellationToken);
-                await SendAsync(client, TakaroProtocol.CreateIdentify(config), cancellationToken);
+                await SendAsync(client, TakaroProtocol.CreateIdentify(config, adapter.GetCapabilities()), cancellationToken);
                 log("Takaro CS2 identify sent.");
-                attempt = 0;
-                await ReceiveLoopAsync(client, cancellationToken);
+                wasIdentified = await ReceiveLoopAsync(client, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -74,27 +92,35 @@ public sealed class TakaroWebSocketRunner : IDisposable
             catch (Exception ex)
             {
                 if (cancellationToken.IsCancellationRequested) return;
-                attempt++;
-                var delay = TimeSpan.FromMilliseconds(Math.Min(60000, 1000 * Math.Pow(2, attempt)));
                 log($"Takaro CS2 WebSocket reconnect after error: {ex.Message}");
-                await Task.Delay(delay, cancellationToken);
             }
             finally
             {
                 socket = null;
                 identified = false;
             }
+
+            attempt = wasIdentified ? 1 : attempt + 1;
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(Math.Min(60000, 1000 * Math.Pow(2, attempt))), cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
         }
     }
 
-    private async Task ReceiveLoopAsync(ClientWebSocket activeSocket, CancellationToken cancellationToken)
+    private async Task<bool> ReceiveLoopAsync(ClientWebSocket activeSocket, CancellationToken cancellationToken)
     {
+        var wasIdentified = false;
         while (activeSocket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
         {
             var message = await ReceiveMessageAsync(activeSocket, cancellationToken);
             if (message is null)
             {
-                return;
+                return wasIdentified;
             }
 
             string? type;
@@ -125,9 +151,23 @@ public sealed class TakaroWebSocketRunner : IDisposable
             {
                 if (LogIdentifyResponse(message))
                 {
+                    wasIdentified = true;
+                    lock (eventGate) lastSentSeq = 0;
                     identified = true;
                     await FlushEventsAsync(cancellationToken);
                 }
+                continue;
+            }
+
+            if (type == "eventAck")
+            {
+                HandleEventAck(message);
+                continue;
+            }
+
+            if (type is "eventError" or "capabilitiesResponse")
+            {
+                LogFrameError(type, message);
                 continue;
             }
 
@@ -155,6 +195,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 log($"Takaro CS2 could not handle request message: {ex.Message}");
             }
         }
+        return wasIdentified;
     }
 
     private async Task<string?> ReceiveMessageAsync(ClientWebSocket activeSocket, CancellationToken cancellationToken)
@@ -200,36 +241,76 @@ public sealed class TakaroWebSocketRunner : IDisposable
     {
         try
         {
-            using var doc = System.Text.Json.JsonDocument.Parse(message);
-            var payload = doc.RootElement.TryGetProperty("payload", out var payloadElement)
-                ? payloadElement
-                : default;
+            using var doc = JsonDocument.Parse(message);
+            var root = doc.RootElement;
+            var payload = root.TryGetProperty("payload", out var payloadElement) ? payloadElement : default;
 
-            if (payload.ValueKind == System.Text.Json.JsonValueKind.Object
-                && payload.TryGetProperty("error", out var error)
-                && error.ValueKind != System.Text.Json.JsonValueKind.Null
-                && error.ValueKind != System.Text.Json.JsonValueKind.Undefined)
+            if (HasError(root) || (payload.ValueKind == JsonValueKind.Object && HasError(payload)))
             {
-                log("Takaro CS2 identification failed; inspect Takaro server diagnostics.");
+                log($"Takaro CS2 identification failed: {Redact(ErrorText(HasError(root) ? root : payload))}");
                 return false;
             }
 
-            if (payload.ValueKind == System.Text.Json.JsonValueKind.Object
-                && payload.TryGetProperty("gameServerId", out var gameServerId)
-                && gameServerId.ValueKind == System.Text.Json.JsonValueKind.String)
+            if (payload.ValueKind != JsonValueKind.Object
+                || !payload.TryGetProperty("gameServerId", out var gameServerId)
+                || gameServerId.ValueKind != JsonValueKind.String)
             {
-                log($"Takaro CS2 identified as gameServerId={gameServerId.GetString()}.");
-                return true;
+                log("Takaro CS2 identifyResponse received without gameServerId.");
+                return false;
             }
 
-            log("Takaro CS2 identifyResponse received without gameServerId.");
-            return false;
+            if (!payload.TryGetProperty("protocolVersion", out var version) || !version.TryGetInt32(out var negotiated) || negotiated != 1)
+            {
+                throw new InvalidOperationException("This Takaro server does not support protocol version 1.");
+            }
+
+            log($"Takaro CS2 identified as gameServerId={gameServerId.GetString()}.");
+            return true;
         }
-        catch (Exception ex)
+        catch (JsonException ex)
         {
             log($"Takaro CS2 could not parse identifyResponse: {ex.Message}");
             return false;
         }
+    }
+
+    private static bool HasError(JsonElement element) =>
+        element.TryGetProperty("error", out var error) && error.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined or JsonValueKind.False);
+
+    private static string ErrorText(JsonElement element)
+    {
+        var error = element.GetProperty("error");
+        if (error.ValueKind != JsonValueKind.Object) return error.ToString();
+        var code = error.TryGetProperty("code", out var codeValue) ? codeValue.ToString() : "unknown";
+        var detail = error.TryGetProperty("message", out var messageValue) ? messageValue.ToString() : "No message supplied.";
+        return $"code={code}, message={detail}";
+    }
+
+    private string Redact(string text)
+    {
+        foreach (var secret in new[] { config.RegistrationToken, config.IdentityToken })
+        {
+            if (!string.IsNullOrEmpty(secret)) text = text.Replace(secret, "[redacted]", StringComparison.Ordinal);
+        }
+        return text[..Math.Min(text.Length, 300)];
+    }
+
+    private void HandleEventAck(string message)
+    {
+        using var doc = JsonDocument.Parse(message);
+        if (!doc.RootElement.TryGetProperty("payload", out var payload) || payload.ValueKind != JsonValueKind.Object) return;
+        if (!payload.TryGetProperty("streamId", out var stream) || stream.GetString() != streamId) return;
+        if (!payload.TryGetProperty("upTo", out var upTo) || !upTo.TryGetInt64(out var acknowledged)) return;
+        lock (eventGate)
+        {
+            while (bufferedEvents.TryPeek(out var oldest) && oldest.Seq <= acknowledged) bufferedEvents.Dequeue();
+        }
+    }
+
+    private void LogFrameError(string type, string message)
+    {
+        using var doc = JsonDocument.Parse(message);
+        if (HasError(doc.RootElement)) log($"Takaro CS2 {type}: {Redact(ErrorText(doc.RootElement))}");
     }
 
     private async Task FlushEventsAsync(CancellationToken cancellationToken)
@@ -239,11 +320,16 @@ public sealed class TakaroWebSocketRunner : IDisposable
         await eventLock.WaitAsync(cancellationToken);
         try
         {
-            while (identified && activeSocket.State == WebSocketState.Open && pendingEvents.TryPeek(out var pending))
+            while (identified && activeSocket.State == WebSocketState.Open)
             {
-                if (!await SendAsync(activeSocket, pending.Frame, cancellationToken)) break;
-                pendingEvents.TryDequeue(out _);
-                log($"Takaro CS2 event sent: {pending.Type}.");
+                (long Seq, string Type, string Frame) next;
+                lock (eventGate)
+                {
+                    next = bufferedEvents.FirstOrDefault(pending => pending.Seq > lastSentSeq);
+                }
+                if (next.Frame is null || !await SendAsync(activeSocket, next.Frame, cancellationToken)) break;
+                lock (eventGate) lastSentSeq = next.Seq;
+                log($"Takaro CS2 event sent: {next.Type}.");
             }
         }
         finally { eventLock.Release(); }
@@ -259,11 +345,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 ? codeValue.ToString() : "unknown";
             var detail = payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("message", out var messageValue)
                 ? messageValue.ToString() : "No message supplied.";
-            foreach (var secret in new[] { config.RegistrationToken, config.IdentityToken })
-            {
-                if (!string.IsNullOrEmpty(secret)) detail = detail.Replace(secret, "[redacted]", StringComparison.Ordinal);
-            }
-            log($"Takaro CS2 WebSocket error: code={code}, message={detail[..Math.Min(detail.Length, 300)]}");
+            log($"Takaro CS2 WebSocket error: code={code}, message={Redact(detail)}");
         }
         catch (JsonException)
         {

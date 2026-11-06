@@ -6,6 +6,7 @@ public sealed class ConnectorConfig
     public string ServerName { get; init; } = "Counter-Strike 2";
     public string? IdentityToken { get; init; }
     public string? RegistrationToken { get; init; }
+    public string ConnectorVersion { get; init; } = "0.0.0";
     public bool IncludeBots { get; init; }
     public bool AllowShutdown { get; init; }
     public IReadOnlyList<string> CommandAllowlistExact { get; init; } = ["sv_cheats"];

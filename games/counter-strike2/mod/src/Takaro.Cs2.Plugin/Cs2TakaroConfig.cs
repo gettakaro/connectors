@@ -17,8 +17,9 @@ public sealed class Cs2TakaroConfig : BasePluginConfig
     public List<string> CommandAllowlistExact { get; set; } = ["sv_cheats"];
     public List<string> CommandAllowlistPrefixes { get; set; } = [];
 
-    public Takaro.Cs2.Core.ConnectorConfig ToCoreConfig() => new()
+    public Takaro.Cs2.Core.ConnectorConfig ToCoreConfig(string connectorVersion) => new()
     {
+        ConnectorVersion = connectorVersion,
         TakaroWsUrl = TakaroWsUrl,
         ServerName = ServerName,
         IdentityToken = IdentityToken,
