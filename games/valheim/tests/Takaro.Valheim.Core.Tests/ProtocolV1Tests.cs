@@ -47,7 +47,7 @@ public sealed class ProtocolV1Tests
             CollectionAssert.Contains(names, "events." + eventName);
         }
 
-        CollectionAssert.DoesNotContain(names, "players.get", "getPlayer is unsupported");
+        CollectionAssert.Contains(names, "players.get", "whisper recipients and command triggers need it");
         CollectionAssert.Contains(names, "locations.list", "the notable places");
         CollectionAssert.DoesNotContain(names, "map", "declared only when the runner has the world map");
         CollectionAssert.Contains(
@@ -64,7 +64,7 @@ public sealed class ProtocolV1Tests
     {
         Assert.IsTrue(ProtocolHandshake.IsDeclared(TakaroActionNames.TestReachability));
         Assert.IsTrue(ProtocolHandshake.IsDeclared(TakaroActionNames.SendMessage));
-        Assert.IsFalse(ProtocolHandshake.IsDeclared(TakaroActionNames.GetPlayer));
+        Assert.IsTrue(ProtocolHandshake.IsDeclared(TakaroActionNames.GetPlayer));
         Assert.IsTrue(ProtocolHandshake.IsDeclared(TakaroActionNames.ListLocations));
         Assert.IsFalse(ProtocolHandshake.IsDeclared(TakaroActionNames.GetMapInfo));
         Assert.IsFalse(ProtocolHandshake.IsDeclared(TakaroActionNames.GetMapInfo, mapDeclared: true), "version 1 refuses getMapInfo");
