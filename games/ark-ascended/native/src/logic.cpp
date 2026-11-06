@@ -257,4 +257,8 @@ std::string KnownPlayers::Name(const std::string& id) const {
     return it == names_.end() ? std::string() : it->second;
 }
 
+bool IsRealPosition(double x, double y, double z) {
+    return x != 0 || y != 0 || z != 0;
+}
+
 }  // namespace takaro
