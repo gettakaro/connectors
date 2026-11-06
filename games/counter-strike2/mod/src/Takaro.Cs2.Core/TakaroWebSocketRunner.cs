@@ -20,13 +20,23 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private readonly ICs2TakaroAdapter adapter;
     private long nextSeq = 1;
     private long lastSentSeq;
+    private long highestSentSeq;
+    private long connectionGeneration;
+    private DateTimeOffset? unackedSince;
+    private readonly TimeSpan ackTimeout;
+    private readonly TimeSpan requestTimeout;
+    private readonly SemaphoreSlim manifestLock = new(1, 1);
     private string identifiedManifest = "[]";
     private volatile bool identified;
     private ClientWebSocket? socket;
     private Task? runLoop;
 
-    public TakaroWebSocketRunner(ConnectorConfig config, ICs2TakaroAdapter adapter, Action<string>? log = null)
+    public TakaroWebSocketRunner(ConnectorConfig config, ICs2TakaroAdapter adapter, Action<string>? log = null,
+        TimeSpan? ackTimeout = null, TimeSpan? requestTimeout = null)
     {
+        this.ackTimeout = ackTimeout ?? TimeSpan.FromSeconds(30);
+        // Below Takaro's 10 second request timeout, so a stalled game thread cannot block pings for long.
+        this.requestTimeout = requestTimeout ?? TimeSpan.FromSeconds(9);
         this.config = config;
         this.adapter = adapter;
         dispatcher = new TakaroRequestDispatcher(adapter);
@@ -61,6 +71,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
     {
         var activeSocket = socket;
         if (!identified || activeSocket is null) return;
+        await manifestLock.WaitAsync(cancellationToken);
         try
         {
             var capabilities = adapter.GetCapabilities();
@@ -71,6 +82,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
         {
             log($"Takaro CS2 could not replace capabilities: {ex.Message}");
         }
+        finally { manifestLock.Release(); }
     }
 
     public void Dispose()
@@ -95,7 +107,10 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 identifiedManifest = JsonSerializer.Serialize(capabilities, TakaroProtocol.JsonOptions);
                 await SendAsync(client, TakaroProtocol.CreateIdentify(config, capabilities), cancellationToken);
                 log("Takaro CS2 identify sent.");
+                using var connection = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                _ = WatchAcknowledgementsAsync(client, connection.Token);
                 wasIdentified = await ReceiveLoopAsync(client, cancellationToken);
+                connection.Cancel();
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -164,7 +179,12 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 if (LogIdentifyResponse(message))
                 {
                     wasIdentified = true;
-                    lock (eventGate) lastSentSeq = 0;
+                    lock (eventGate)
+                    {
+                        connectionGeneration++;
+                        lastSentSeq = 0;
+                        unackedSince = null;
+                    }
                     identified = true;
                     // A map that started while identify was in flight is not in the manifest we sent.
                     if (JsonSerializer.Serialize(adapter.GetCapabilities(), TakaroProtocol.JsonOptions) != identifiedManifest)
@@ -201,7 +221,15 @@ public sealed class TakaroWebSocketRunner : IDisposable
             {
                 var request = TakaroProtocol.ParseRequest(message);
                 log($"Takaro CS2 request received: action={request.Action}, requestId={request.RequestId}.");
-                var response = await dispatcher.DispatchAsync(request, cancellationToken);
+                TakaroActionResult response;
+                try
+                {
+                    response = await dispatcher.DispatchAsync(request, cancellationToken).WaitAsync(requestTimeout, cancellationToken);
+                }
+                catch (TimeoutException)
+                {
+                    response = TakaroActionResult.Fail("action_failed", "The game server did not answer in time.");
+                }
                 await SendAsync(activeSocket, TakaroProtocol.CreateActionResponse(request.RequestId, request.Action, response), cancellationToken);
                 log($"Takaro CS2 response sent: action={request.Action}, success={response.Success}.");
             }
@@ -318,7 +346,31 @@ public sealed class TakaroWebSocketRunner : IDisposable
         if (!payload.TryGetProperty("upTo", out var upTo) || !upTo.TryGetInt64(out var acknowledged)) return;
         lock (eventGate)
         {
-            while (bufferedEvents.TryPeek(out var oldest) && oldest.Seq <= acknowledged) bufferedEvents.Dequeue();
+            var upToSent = Math.Min(acknowledged, highestSentSeq);
+            while (bufferedEvents.TryPeek(out var oldest) && oldest.Seq <= upToSent) bufferedEvents.Dequeue();
+            unackedSince = bufferedEvents.Any(pending => pending.Seq <= lastSentSeq) ? DateTimeOffset.UtcNow : null;
+        }
+    }
+
+    // Replay only happens after identify, so an open socket that stopped acknowledging must be dropped.
+    private async Task WatchAcknowledgementsAsync(ClientWebSocket activeSocket, CancellationToken cancellationToken)
+    {
+        var interval = ackTimeout / 4;
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(interval, cancellationToken);
+                DateTimeOffset? since;
+                lock (eventGate) since = unackedSince;
+                if (since is null || DateTimeOffset.UtcNow - since < ackTimeout) continue;
+                log("Takaro CS2 events were not acknowledged in time; reconnecting.");
+                activeSocket.Abort();
+                return;
+            }
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -338,12 +390,20 @@ public sealed class TakaroWebSocketRunner : IDisposable
             while (identified && activeSocket.State == WebSocketState.Open)
             {
                 (long Seq, string Type, string Frame) next;
+                long generation;
                 lock (eventGate)
                 {
+                    generation = connectionGeneration;
                     next = bufferedEvents.FirstOrDefault(pending => pending.Seq > lastSentSeq);
                 }
                 if (next.Frame is null || !await SendAsync(activeSocket, next.Frame, cancellationToken)) break;
-                lock (eventGate) lastSentSeq = next.Seq;
+                lock (eventGate)
+                {
+                    if (generation != connectionGeneration) break;
+                    lastSentSeq = next.Seq;
+                    highestSentSeq = Math.Max(highestSentSeq, next.Seq);
+                    unackedSince ??= DateTimeOffset.UtcNow;
+                }
                 log($"Takaro CS2 event sent: {next.Type}.");
             }
         }
