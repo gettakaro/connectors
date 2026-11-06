@@ -988,6 +988,14 @@ static void TestLogPacer() {
     CHECK(sent < 100, "any 5 s stays under Takaro's limit");
 }
 
+static void TestCharacterJson() {
+    EQ(ActionsUtil::CharacterJson("ABC", "Hector", "Limon"), "{\"id\":\"ABC\",\"name\":\"Hector\"}");
+    EQ(ActionsUtil::CharacterJson("ABC", "", "Limon"), "{\"id\":\"ABC\",\"name\":\"Limon\"}");
+    EQ(ActionsUtil::CharacterJson("", "Hector", "Limon"), "");
+    EQ(ActionsUtil::CharacterJson("ABC", "", ""), "");
+    CHECK(ActionsUtil::CharacterJson("ABC", std::string(300, 'x'), "").size() < 290, "name capped for Takaro");
+}
+
 static void TestRefusalHint() {
     const std::string hint = ActionsUtil::RefusalHint("Internal error identifying game server", "My Server");
     CHECK(hint.find("\"My Server\"") != std::string::npos, "names the server");
@@ -1508,6 +1516,7 @@ int main() {
     TestProgression();
     TestLogPacer();
     TestRefusalHint();
+    TestCharacterJson();
     TestCharacterIdFormatting();
     TestKillWeaponName();
     TestLocationRefusal();

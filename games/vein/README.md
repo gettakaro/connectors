@@ -117,7 +117,7 @@ Checked on VEIN 0.025h3 (server build 25969514), 2026-10-22. ✅ works, ⚠️ w
 | Player location | ✅ | Live position, following walking and teleports; none while the player is on the character screen. |
 | Teleport | ✅ | |
 | Player inventory | ✅ | Matches the in-game bag; unavailable until the player has a spawned character. |
-| Player levels and skills | ✅ | All 20 skills with level, XP and progress, read by the server. A player's skills follow the character they play, so joining with another character shows as level changes. |
+| Player levels and skills | ✅ | All 20 skills with level, XP and progress, read by the server. Each character keeps its own skills in Takaro, which needs a Takaro version with Characters support. |
 | Item list | ⚠️ | Every item, with in-game display names; items renamed or removed by a game update stay in Takaro. |
 | Entity list | ⚠️ | Creature types sync; types renamed or removed by a game update stay in Takaro. |
 | Locations | ✅ | The game's named places, with their in-game names. |

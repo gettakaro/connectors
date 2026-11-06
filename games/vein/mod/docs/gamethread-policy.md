@@ -71,3 +71,10 @@ starts a fresh window.
 
 A change to anything in the table above is expected to come with a before/after from that endpoint,
 measured on the live rig. See `context/games/vein/evidence/2026-09-17-l9-performance.md`.
+
+## Character watch
+
+While a player sits on the character screen, `player-connected` waits for them to pick a character,
+for at most five minutes, so the existing join pass stays on its 2 s housekeeping cadence for that
+player. Once a player is announced, the reap pass also compares `LoadedCharacterID`: two pointer
+reads per player, with no game-thread entry of its own.

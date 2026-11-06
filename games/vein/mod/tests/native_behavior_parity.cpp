@@ -62,12 +62,14 @@ namespace NativeTransport {std::optional<std::string> FetchGamePlayers(){return 
 PluginState& PluginState::Get(){static PluginState x;return x;}
 std::string PluginState::Capability(const std::string& name)const{return name=="players"?playersCapability:name=="kick"?kickCapability:"ok";}
 std::string PluginState::CapabilitiesJson()const{return Json{{"players",playersCapability},{"kick",kickCapability},{"chatEvents","unimplemented"},{"reflection",reflectionValidated?"ok":"degraded"}}.dump();}
+std::string lastReportedCharacter;
 namespace Actions {
 Result Players(){return playersDown?Result{503,R"({"error":"reflected player getter unavailable"})"}:
-    Result{200,R"([{"gameId":"76561198000000001","name":"A","characterName":"UnseenCharacter","online":true},{"gameId":"76561198000000002","name":"B","online":false}])"};}
+    Result{200,R"([{"gameId":"76561198000000001","name":"A","characterName":"UnseenCharacter","character":{"id":"ABC123","name":"Hector","extra":1},"online":true},{"gameId":"76561198000000002","name":"B","online":false}])"};}
 Result Player(const std::string&){return {404,R"({"error":"player not online"})"};}
 Result PlayerLocation(const std::string&){return noPawn?Result{503,R"({"error":"player has no pawn yet"})"}:Result{200,R"({"x":1,"y":2,"z":3,"yaw":90,"ageMs":10})"};}
 Result PlayerInventory(const std::string&){return {200,R"([{"code":"MRE","name":"Meal","amount":1},{"code":"MRE","name":"Meal2","amount":1},{"code":"wood","name":"Wood","amount":3}])"};}
+void NoteReportedCharacter(const std::string& id,const std::string& character){if(id=="76561198000000001")lastReportedCharacter=character;}
 Result PlayerProgression(const std::string& id){
     if(id=="76561198000000001")return {200,R"([{"key":"strength","name":"Strength","level":3,"experience":120.5,"progress":0.25}])"};
     if(id=="76561198000000002")return {200,"[]"};
@@ -129,6 +131,15 @@ int main(){
           "degraded plugin remains connectable with explicit reason");
     reflectionValidated=true;
     Check(run("getPlayers",Json::object()).size()==1,"online players only");
+    {
+        const Json row=run("getPlayers",Json::object())[0];
+        Check(row["character"]==Json{{"id","ABC123"},{"name","Hector"}},"getPlayers names the character, nothing else");
+        Check(lastReportedCharacter=="ABC123","the answer records the character progression must match");
+        auto charEvent=engine.MapEvent(Json{{"seq",9},{"type","chat-message"},{"data",{{"msg","x"},{"player",{{"gameId","76561198000000001"},{"name","A"},{"character",{{"id","ABC123"},{"name","Hector"}}}}}}}}.dump());
+        Check(charEvent.valid&&Parse(*charEvent.frame)["payload"]["data"]["player"]["character"]["id"]=="ABC123","an event keeps its character");
+        auto noName=engine.MapEvent(Json{{"seq",10},{"type","chat-message"},{"data",{{"msg","x"},{"player",{{"gameId","76561198000000001"},{"name","A"},{"character",{{"id","ABC123"}}}}}}}}.dump());
+        Check(noName.valid&&!Parse(*noName.frame)["payload"]["data"]["player"].contains("character"),"a character without a name is left out");
+    }
     playersDown=true;
     gameHttpPlayers=Json{{"Players",Json::array({Json{{"steamID64","76561198000000001"},{"playerName","HttpAlias"},{"ping",42}}})}}.dump();
     Check(run("getPlayers",Json::object())[0]["name"]=="HttpAlias","built-in game HTTP player fallback maps alternate JSON keys");
@@ -197,6 +208,8 @@ int main(){
         Check(std::find(names.begin(),names.end(),"testReachability")==names.end(),"testReachability is not a capability");
         const Json progression=manifest[std::find(names.begin(),names.end(),"players.progression")-names.begin()];
         Check(progression["parameters"]["source"]=="server","progression is server-owned");
+        const Json characters=manifest[std::find(names.begin(),names.end(),"players.characters")-names.begin()];
+        Check(characters["parameters"]["held"]=="server"&&!characters["parameters"].contains("ends"),"characters are server-held and death ends none");
         const Json map=manifest[std::find(names.begin(),names.end(),"map")-names.begin()];
         Check(map["name"]=="map"&&map["parameters"]["dimensions"].size()==1,"one map Dimension");
         const Json dim=map["parameters"]["dimensions"][0];
