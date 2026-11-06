@@ -1,5 +1,6 @@
 package io.takaro.minecraft.paper;
 
+import io.takaro.minecraft.core.ConsoleChat;
 import io.takaro.minecraft.core.EventEmitter;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
@@ -9,8 +10,10 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.server.ServerCommandEvent;
 
 public class TakaroPaperEventListener implements Listener {
 
@@ -51,6 +54,24 @@ public class TakaroPaperEventListener implements Listener {
                 "global",
                 message
         );
+    }
+
+    /** Also fires for RCON: RemoteServerCommandEvent extends this one. */
+    @EventHandler(ignoreCancelled = true)
+    public void onConsoleCommand(ServerCommandEvent event) {
+        EventEmitter emitter = plugin.getEventEmitter();
+        String text = ConsoleChat.sayText(event.getCommand());
+        if (emitter == null || text == null) return;
+        emitter.emitChatMessage(null, null, "global", text);
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onPlayerCommand(PlayerCommandPreprocessEvent event) {
+        EventEmitter emitter = plugin.getEventEmitter();
+        String text = ConsoleChat.sayText(event.getMessage());
+        if (emitter == null || text == null) return;
+        Player player = event.getPlayer();
+        emitter.emitChatMessage(player.getUniqueId().toString(), player.getName(), "global", text);
     }
 
     @EventHandler
