@@ -189,21 +189,26 @@ BanStore::BanStore(std::filesystem::path file) : file_(std::move(file)) {
     }
 }
 
-void BanStore::Save() const {
-    if (file_.empty()) return;
+bool BanStore::Save() const {
+    if (file_.empty()) return true;
     tj::Value out = tj::Value::object();
     for (const auto& [id, ban] : rows_) {
         tj::Value row = tj::obj({{"reason", tj::str(ban.reason)}});
         if (!ban.expiresAt.empty()) row.set("expiresAt", tj::str(ban.expiresAt));
         out.set(id, std::move(row));
     }
-    WriteFileAtomic(file_, tj::dump(out));
+    return WriteFileAtomic(file_, tj::dump(out));
 }
 
-void BanStore::Set(const std::string& id, Ban ban) {
+bool BanStore::Set(const std::string& id, Ban ban) {
     std::lock_guard<std::mutex> lock(mu_);
+    const auto old = rows_.find(id);
+    const std::optional<Ban> previous = old != rows_.end() ? std::optional<Ban>(old->second) : std::nullopt;
     rows_[id] = std::move(ban);
-    Save();
+    if (Save()) return true;
+    if (previous) rows_[id] = *previous;
+    else rows_.erase(id);
+    return false;
 }
 
 void BanStore::Erase(const std::string& id) {

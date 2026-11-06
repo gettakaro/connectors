@@ -119,6 +119,15 @@ static void test_persistence(const fs::path& dir) {
     CHECK(!fs::exists(fs::path(bans) += ".tmp"));
 }
 
+static void test_unwritable_ban_store(const fs::path& dir) {
+    // A directory where the file belongs: the temporary file writes but cannot replace it.
+    const fs::path blocked = dir / "blocked.json";
+    fs::create_directories(blocked / "child");
+    BanStore store(blocked);
+    CHECK(!store.Set("a", Ban{"x", "", 0}));
+    CHECK(store.Rows().empty());
+}
+
 static void test_corrupt_files(const fs::path& dir) {
     const fs::path file = dir / "broken.json";
     WriteFileAtomic(file, "{not json");
@@ -136,6 +145,7 @@ int main() {
     test_cosmetics();
     test_ban_list();
     test_persistence(dir);
+    test_unwritable_ban_store(dir);
     test_corrupt_files(dir);
     fs::remove_all(dir);
     if (failures) { std::printf("%d check(s) failed\n", failures); return 1; }
