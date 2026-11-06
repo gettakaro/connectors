@@ -124,4 +124,12 @@ describe('getPlayerProgression', () => {
     await h.pg.probe();
     await expect(h.adapter.handleAction('getPlayerProgression', { gameId: h.battlegroup.players[0]!.flsId })).resolves.toEqual([]);
   });
+
+  it('a deleted character never answers for the player, and one player reads their most recent character', async () => {
+    const h = await harness();
+    await h.adapter.handleAction('getPlayer', { gameId: h.battlegroup.players[0]!.flsId });
+    const roster = h.battlegroup.queries.find((q) => q.sql.includes('AS fls_id'));
+    expect(roster?.sql).toContain(`ps.character_state::text <> 'Deleted'`);
+    expect(roster?.sql).toMatch(/ORDER BY ps\.last_avatar_activity DESC/);
+  });
 });

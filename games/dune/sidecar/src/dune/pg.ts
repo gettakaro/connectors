@@ -308,6 +308,7 @@ export class DunePg {
 
     const where: string[] = [];
     const params: unknown[] = [];
+    if (this.has('player_state', 'character_state')) where.push(`ps.character_state::text <> 'Deleted'`);
     // `PlayerConnectionStatus` has three values; only `Online` counts. `LoggingOut` is a player on the way out and is
     // deliberately excluded here so that presence sees them disappear exactly once.
     if (options.onlineOnly && this.has('player_state', 'online_status')) where.push(`ps.online_status::text = 'Online'`);
@@ -325,12 +326,16 @@ export class DunePg {
     }
     params.push(Math.max(1, Math.min(options.limit ?? 500, 5000)));
 
+    // One player's lookup answers their most recently played character, the same one `currentCharacter` reads.
+    const recent = options.flsId && seenCol ? `${seenCol} DESC NULLS LAST, ` : '';
+    const order = `${recent}${this.has('player_state', 'character_name') ? 'ps.character_name NULLS LAST, ' : ''}ps.account_id`;
+
     const sql =
       `SELECT ${select.join(',\n       ')}\n` +
       `  FROM ${this.t('player_state')} ps\n` +
       (joins.length ? `  ${joins.join('\n  ')}\n` : '') +
       (where.length ? ` WHERE ${where.join(' AND ')}\n` : '') +
-      ` ORDER BY ${this.has('player_state', 'character_name') ? 'ps.character_name NULLS LAST, ' : ''}ps.account_id\n` +
+      ` ORDER BY ${order}\n` +
       ` LIMIT $${params.length}`;
 
     const { rows } = await this.db.query<Record<string, unknown>>(sql, params);
