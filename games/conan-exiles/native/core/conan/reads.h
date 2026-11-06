@@ -63,6 +63,7 @@ public:
     // One warm-up step (index scan, layout, catalogues, text self-check). True once everything
     // is built. The background thread calls it until it returns true; tests call it directly.
     bool WarmupStep(std::string& status);
+    bool CataloguesReady();  // every list action can be answered at once
 
     // giveItem (lane L2b) can resolve item codes once the item catalogue is built.
     int32_t ResolveItemCode(const std::string& code);

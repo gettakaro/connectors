@@ -261,6 +261,11 @@ void Adapter::DrainEvents(std::vector<GameEvent>& out) {
     }
 }
 
+bool Adapter::ReadyToConnect() {
+    ReadService* rs = ProductionReads();
+    return !rs || rs->CataloguesReady();
+}
+
 std::string Adapter::HealthJson() {
     std::lock_guard<std::mutex> g(mu_);
     return ObjBuilder()

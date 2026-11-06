@@ -174,7 +174,7 @@ __attribute__((constructor)) void Init() {
     lc.caFile = cfg.caFile;
     lc.reconnectBaseMs = cfg.reconnectBaseMs;
     lc.reconnectMaxMs = cfg.reconnectMaxMs;
-    lc.connect = cfg.enabled;
+    lc.connect = cfg.enabled && !ao.ready;  // a working build dials once the bridge's hold ends
     rt->transport = new takaro::LwsTransport(lc);
     takaro::BridgeOptions bo;
     bo.config = cfg;
@@ -183,6 +183,7 @@ __attribute__((constructor)) void Init() {
     bo.store = rt->store;
     bo.healthFile = takaro::JoinPath(cfg.stateDir, "health.json");
     bo.watcher = watcher;
+    if (ao.ready) bo.holdConnectMs = conan::kCatalogueHoldMs;
     rt->bridge = new takaro::Bridge(bo);
     StartLogThread(rt);
     rt->bridge->Start();
