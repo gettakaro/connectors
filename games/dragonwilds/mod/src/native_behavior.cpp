@@ -160,6 +160,11 @@ Json Player(const Json& raw) {
         out["xboxLiveId"] = xbox;
     if (!Str(p, "ip").empty()) out["ip"] = Str(p, "ip");
     if (p.contains("ping") && p["ping"].is_number() && std::isfinite(p["ping"].get<double>())) out["ping"] = p["ping"];
+    // Takaro's limits on a character: a bad one is left out, since it would refuse the whole player.
+    Json character = Object(p.value("character", Json::object()));
+    std::string characterId = Str(character, "id"), characterName = Str(character, "name");
+    if (!characterId.empty() && characterId.size() <= 255 && !characterName.empty() && characterName.size() <= 255)
+        out["character"] = {{"id", characterId}, {"name", characterName}};
     return out;
 }
 Json Position(const Json& raw) {
@@ -1388,6 +1393,8 @@ std::string CapabilityManifestJson(const std::string& gameVersion) {
         manifest.push_back(Json{{"name", name}});
     // Characters are kept by the client and uploaded on join, so a client can claim any level.
     manifest.push_back(Json{{"name", "players.progression"}, {"parameters", {{"source", "client-reported"}}}});
+    // Characters live on the player's PC and survive both death and a world wipe.
+    manifest.push_back(Json{{"name", "players.characters"}, {"parameters", {{"held", "client"}}}});
     manifest.push_back(Parse(NativeMap::CapabilityJson()));
     manifest.push_back(Parse(GameProfile::CapabilityJson(gameVersion)));
     return manifest.dump();

@@ -269,11 +269,11 @@ character name or the platform name for convenience.
 
 | endpoint | body (required in bold) | response |
 |---|---|---|
-| `GET /players` | — | `[{gameId,name,characterName,platformName,epicOnlineServicesId,platformId:"epic:<puid>",steamId?,xboxLiveId?,ping,spawned,online:true,connectedAt}]` (raw plugin rows; the bridge maps them to IGamePlayer as in Identity) |
+| `GET /players` | — | `[{gameId,name,characterName,platformName,epicOnlineServicesId,platformId:"epic:<puid>",steamId?,xboxLiveId?,character?:{id,name},ping,spawned,online:true,connectedAt}]` (raw plugin rows; the bridge maps them to IGamePlayer as in Identity) |
 | `GET /players/{id}` | — | one player object, else `404 {"error":"player not online"}` |
 | `GET /players/{id}/location` | — | `{x,y,z,yaw,pitch}` (UE cm, doubles); `503` when the player has no pawn yet |
 | `GET /players/{id}/inventory` | — | `[{code,name,amount,inventory,slot}]` — one entry per item across every `UInventoryComponent` under the pawn and the controller (`inventory` is the component name, e.g. `BP_Components_Inventory`, `BP_Components_Loadout`) |
-| `GET /players/{id}/progression` | — | `[{key,name,level,experience,progress?}]` — the last reading of the player's skills, copied on the housekeeping job every 5 s once their character has loaded; no game-thread call. `progress` is absent at the top level. `404` when there is no reading yet |
+| `GET /players/{id}/progression` | — | `[{key,name,level,experience,progress?}]` — the last reading of the player's skills, copied on the housekeeping job every 5 s once their character has loaded; no game-thread call. `progress` is absent at the top level. `404` when there is no reading of the player's current character yet |
 | `GET /items[?search=]` | — | `[{code,name,description,category}]`, 1536 entries on this build; `search` matches code or name, case-insensitive |
 | `GET /entities` | — | `[{code,name,type:"hostile",description}]` — the AI character classes and `UAIDataAsset` assets currently loaded (AI content streams in on demand, so this is not the full bestiary) |
 | `GET /locations` | — | `[{code,name,position:{x,y,z}}]` — lodestone actors currently streamed in |

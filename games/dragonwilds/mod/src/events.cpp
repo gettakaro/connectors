@@ -61,6 +61,7 @@ struct Ident {
     std::string name;          // character display name, else the platform name
     std::string platformName;  // APlayerState::PlayerNamePrivate ("Limon")
     std::string characterGuid;
+    ::state::SessionCharacter character;
     std::string steamId;
     std::string xboxLiveId;
     bool linkedPending = false;  // the EOS linked-account lookup has not answered yet
@@ -72,6 +73,8 @@ std::string PlayerJson(const Ident& id) {
     if (!id.name.empty()) o += ",\"characterName\":" + JsonStr(id.name);
     if (!id.platformName.empty()) o += ",\"platformName\":" + JsonStr(id.platformName);
     if (!id.characterGuid.empty()) o += ",\"characterGuid\":" + JsonStr(id.characterGuid);
+    if (!id.character.id.empty())
+        o += ",\"character\":{\"id\":" + JsonStr(id.character.id) + ",\"name\":" + JsonStr(id.character.name) + "}";
     if (!id.steamId.empty()) o += ",\"steamId\":" + JsonStr(id.steamId);
     if (!id.xboxLiveId.empty()) o += ",\"xboxLiveId\":" + JsonStr(id.xboxLiveId);
     if (!id.gameId.empty()) o += ",\"platformId\":" + JsonStr("epic:" + id.gameId);
@@ -309,8 +312,9 @@ bool IdentFromPlayerState(void* state, Ident& out) {
     if (!ValidObject(state)) return false;
     out.gameId = PuidFromPlayerState(state);
     out.platformName = ReadFStringAt(state, PropOffOf(state, "PlayerNamePrivate"));
-    out.name = ReadFStringAt(state, PropOffOf(state, "CharacterName"));
-    if (out.name.empty()) out.name = ::state::CharacterName(out.gameId);
+    out.character = ::state::CurrentCharacter(out.gameId);
+    out.name = out.character.name;
+    if (out.name.empty()) out.name = ReadFStringAt(state, PropOffOf(state, "CharacterName"));
     out.characterGuid = GuidFromStruct(state, PropOffOf(state, "OwnerGuid"));
     Eos::Linked linked;
     out.linkedPending = Eos::LinkedAccounts(out.gameId, linked) == Eos::Lookup::Pending;
