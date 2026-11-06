@@ -336,6 +336,9 @@ class Bridge {
       payload.set("protocolVersions", std::move(versions));
       json::Value manifest = json::Value::array();
       for (const auto& name : capability_manifest()) manifest.push(json::obj({{"name", json::str(name)}}));
+      // ARK keeps the character on the server: the client cannot report its own level.
+      manifest.push(json::obj({{"name", json::str("players.progression")},
+                               {"parameters", json::obj({{"source", json::str("server")}})}}));
       manifest.push(game_profile_capability(config_.game_version, config_.game_icon.get()));
       if (auto dimension = map_dimension(config_.map_name)) {
         json::Value dimensions = json::Value::array();
