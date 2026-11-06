@@ -45,6 +45,7 @@ docker compose --project-directory "${PROJECT_ROOT}" run --rm --no-deps \
       /app/mod/src/Services/ServerMessageEchoGuard.cs \
       /app/mod/src/Services/ServerChatName.cs \
       /app/mod/src/Services/MapCatalog.cs \
+      /app/mod/src/Services/PlayerCharacter.cs \
       /app/mod/src/Services/PlayerProgression.cs \
       /app/mod/src/Services/PlayerProximateItemDelivery.cs \
       /app/mod/src/Shared.cs \

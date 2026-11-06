@@ -261,6 +261,9 @@ namespace Takaro.WebSocket
             return frame?.BuildCapability(StateMirror.Instance.WorldName);
         }
 
+        public static Dictionary<string, object> CurrentCharactersCapability() =>
+            StateMirror.Instance.PermanentDeath ? PlayerCharacter.BuildCapability() : null;
+
         /// <summary>
         /// Protocol v1 <c>getMapTile {dimension, zoom, x, y}</c>: the game tile
         /// under the Takaro tile, as <c>{mimeType, data}</c>. A tile the game has

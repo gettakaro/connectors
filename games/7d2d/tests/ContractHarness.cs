@@ -3826,6 +3826,13 @@ namespace Takaro.Services
 
         public bool IsGameReady => true;
 
+        public bool PermanentDeath { get; set; }
+
+        public TakaroCharacter CurrentCharacter(string gameId, string name) =>
+            PermanentDeath
+                ? new TakaroCharacter { Id = PlayerCharacter.Id(gameId, 0), Name = name }
+                : null;
+
         public string InventoryUnsupportedReason;
 
         public string MapRoot;

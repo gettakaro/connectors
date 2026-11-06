@@ -107,7 +107,8 @@ namespace Takaro.WebSocket
 
         public static List<Dictionary<string, object>> BuildCapabilityManifest(
             IEnumerable<string> handledActions,
-            Dictionary<string, object> mapCapability = null
+            Dictionary<string, object> mapCapability = null,
+            Dictionary<string, object> charactersCapability = null
         )
         {
             var manifest = new List<Dictionary<string, object>>();
@@ -137,6 +138,9 @@ namespace Takaro.WebSocket
             if (mapCapability != null)
                 manifest.Add(mapCapability);
 
+            if (charactersCapability != null)
+                manifest.Add(charactersCapability);
+
             manifest.Add(
                 new Dictionary<string, object>
                 {
@@ -165,7 +169,8 @@ namespace Takaro.WebSocket
                     "capabilities",
                     BuildCapabilityManifest(
                         RequestRouter.SupportedActions,
-                        ReadHandlers.CurrentMapCapability()
+                        ReadHandlers.CurrentMapCapability(),
+                        ReadHandlers.CurrentCharactersCapability()
                     )
                 },
                 { "game", GameIdentifier },

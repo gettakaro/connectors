@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 using Takaro.Persistence;
+using Takaro.Services;
 
 namespace Takaro
 {
@@ -33,6 +34,9 @@ namespace Takaro
 
         [JsonProperty("ping", NullValueHandling = NullValueHandling.Ignore)]
         public int? Ping { get; set; }
+
+        [JsonProperty("character", NullValueHandling = NullValueHandling.Ignore)]
+        public TakaroCharacter Character { get; set; }
     }
 
     public class TakaroItem
@@ -167,17 +171,19 @@ namespace Takaro
 
         public static TakaroPlayer TransformPlayerRecordToTakaroPlayer(PlayerRecord record)
         {
-            return WithIdentifiers(
-                new TakaroPlayer
-                {
-                    GameId = record.GameId,
-                    Name = record.Name,
-                    Ip = record.Ip,
-                    Ping = record.Ping,
-                },
-                record.SteamId,
-                record.XboxLiveId,
-                record.EpicOnlineServicesId
+            return WithCharacter(
+                WithIdentifiers(
+                    new TakaroPlayer
+                    {
+                        GameId = record.GameId,
+                        Name = record.Name,
+                        Ip = record.Ip,
+                        Ping = record.Ping,
+                    },
+                    record.SteamId,
+                    record.XboxLiveId,
+                    record.EpicOnlineServicesId
+                )
             );
         }
 
@@ -237,7 +243,9 @@ namespace Takaro
                 }
             }
 
-            return WithIdentifiers(player, steamId, xboxLiveId, epicOnlineServicesId);
+            return WithCharacter(
+                WithIdentifiers(player, steamId, xboxLiveId, epicOnlineServicesId)
+            );
         }
 
         public static TakaroPlayer TransformClientInfoToTakaroPlayerIdentity(ClientInfo clientInfo)
@@ -261,12 +269,24 @@ namespace Takaro
             }
 
             string epicOnlineServicesId = crossplatformId.Replace("EOS_", "");
-            return WithIdentifiers(
-                new TakaroPlayer { GameId = epicOnlineServicesId, Name = clientInfo.playerName },
-                steamId,
-                xboxLiveId,
-                epicOnlineServicesId
+            return WithCharacter(
+                WithIdentifiers(
+                    new TakaroPlayer
+                    {
+                        GameId = epicOnlineServicesId,
+                        Name = clientInfo.playerName,
+                    },
+                    steamId,
+                    xboxLiveId,
+                    epicOnlineServicesId
+                )
             );
+        }
+
+        private static TakaroPlayer WithCharacter(TakaroPlayer player)
+        {
+            player.Character = StateMirror.Instance.CurrentCharacter(player.GameId, player.Name);
+            return player;
         }
 
         /// <summary>

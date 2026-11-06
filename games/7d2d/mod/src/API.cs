@@ -283,8 +283,10 @@ namespace Takaro
             GameEventPublisher.SendPlayerDeath(
                 victim,
                 DeathAttacker(data.SecondaryName, victimEntity),
-                deathPosition
+                deathPosition,
+                StateMirror.Instance.PermanentDeath
             );
+            StateMirror.Instance.EndCharacter(victim.GameId);
             return ModEvents.EModEventResult.Continue;
         }
 
@@ -336,6 +338,9 @@ namespace Takaro
 
             // Refresh the mirror on every spawn type (join, respawn, teleport)
             StateMirror.Instance.UpsertPlayerOnline(data.ClientInfo);
+
+            if (data.RespawnType == RespawnType.Died)
+                StateMirror.Instance.CharacterRespawned(data.ClientInfo);
 
             if (
                 data.RespawnType == RespawnType.JoinMultiplayer
