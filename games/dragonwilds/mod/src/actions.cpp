@@ -408,17 +408,6 @@ struct SkillInfo {
 // are read once.
 std::map<void*, SkillInfo> g_skillInfo;
 
-void* SkillComponentOf(const PlayerInfo& p, void* cls) {
-    for (void* owner : {p.controller, p.pawn, p.playerState}) {
-        if (!owner) continue;
-        std::vector<void*> objs;
-        if (!Reflect::GetObjectsWithOuter(owner, objs, true)) continue;
-        for (void* o : objs)
-            if (Reflect::IsA(o, cls)) return o;
-    }
-    return nullptr;
-}
-
 const SkillInfo& SkillInfoOf(void* data) {
     auto it = g_skillInfo.find(data);
     if (it != g_skillInfo.end()) return it->second;
@@ -1172,7 +1161,7 @@ void Actions::Init() {
     SetCap("playerLocation", "ok");
     SetCap("playerInventory", Sym::Addr("UInventoryComponent::GetAllItems") ? "ok" : "degraded",
            Sym::Addr("UInventoryComponent::GetAllItems") ? "" : "UInventoryComponent::GetAllItems unresolved");
-    const bool skillsResolved = Sym::Addr("USkillComponent::StaticClass") && Sym::Addr("USkillComponent::GetSkillLevel") &&
+    const bool skillsResolved = Sym::Addr("USkillComponent::GetSkillLevel") &&
                                 Sym::Addr("USkillComponent::GetTotalXPNeededForLevel") &&
                                 Sym::Addr("USkillComponent::GetTotalXPNeededForNextLevel");
     SetCap("playerProgression", skillsResolved ? "ok" : "degraded", skillsResolved ? "" : "USkillComponent functions unresolved");
@@ -1309,13 +1298,11 @@ Actions::Result Actions::PlayerProgression(const std::string& gameId) {
 }
 
 void Actions::RefreshProgression() {
-    void* cls = Reflect::StaticClass("USkillComponent::StaticClass");
-    if (!cls) return;
     for (const auto& p : ReadPlayers()) {
-        // Before the join is announced the character is still arriving from the client, and a
-        // reading from then would be a false baseline.
-        if (p.gameId.empty() || !Events::InWorld(p.gameId)) continue;
-        void* skills = SkillComponentOf(p, cls);
+        // The character arrives from the client and loads inside the first SetPawn, up to a minute
+        // after the join is announced. A reading before that would be a false level change.
+        if (p.gameId.empty() || !p.pawn || !p.controller) continue;
+        void* skills = ReadPtrAt(p.controller, Off(p.controller, "SkillComponent"));
         if (!skills) continue;
         std::vector<Progression::Track> tracks;
         if (ReadSkills(skills, tracks)) g_progression.Put(NormalizeGameId(p.gameId), std::move(tracks));
