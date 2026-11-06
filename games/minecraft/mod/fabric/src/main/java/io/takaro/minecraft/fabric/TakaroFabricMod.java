@@ -83,13 +83,9 @@ public class TakaroFabricMod implements DedicatedServerModInitializer {
             if (adapter == null) return;
             EventEmitter emitter = adapter.getEventEmitter();
             if (emitter == null) return;
-            ServerPlayer player = source.getPlayer();
-            emitter.emitChatMessage(
-                    player != null ? player.getUUID().toString() : null,
-                    player != null ? player.getGameProfile().name() : null,
-                    "global",
-                    message.signedContent()
-            );
+            // A player's /say already arrives through CHAT_MESSAGE.
+            if (source.getPlayer() != null) return;
+            emitter.emitChatMessage(null, null, "global", message.signedContent());
         });
 
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
