@@ -84,3 +84,6 @@ seaturtle
 scientist2
 scientist2.heavy
 scientist2.shotgun
+crowflock
+seagullflock
+seagullgroup
