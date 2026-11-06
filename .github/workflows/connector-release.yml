@@ -37,6 +37,13 @@ on:
         required: false
         default: true
         type: boolean
+      runtime_platform:
+        description: >-
+          Verify only the targets of this catalog platform (e.g. linux); empty verifies every target.
+          The others ship with the contract verification their catalog record requires
+        required: false
+        default: ''
+        type: string
       runtime_depot_cache:
         description: >-
           The verify leg caches the pinned Steam depots itself, and the build leg does not install
@@ -69,6 +76,7 @@ jobs:
       contents: read
     outputs:
       targets: ${{ steps.targets.outputs.targets }}
+      runtime_targets: ${{ steps.runtime_targets.outputs.targets }}
       build: ${{ steps.scope.outputs.build }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -126,6 +134,20 @@ jobs:
           maintenance/bin/takaro-maint targets list \
             --game "$IN_CONNECTOR" \
             --status candidate,maintained \
+            --format gha >> "$GITHUB_OUTPUT"
+
+      # The targets the verify leg boots: all of them, or one platform's when the runner cannot
+      # host the others' server (a Windows dedicated server on a Linux runner).
+      - name: Resolve the runtime matrix
+        id: runtime_targets
+        env:
+          IN_CONNECTOR: ${{ inputs.connector }}
+          IN_PLATFORM: ${{ inputs.runtime_platform }}
+        run: |
+          maintenance/bin/takaro-maint targets list \
+            --game "$IN_CONNECTOR" \
+            --status candidate,maintained \
+            ${IN_PLATFORM:+--platform "$IN_PLATFORM"} \
             --format gha >> "$GITHUB_OUTPUT"
 
   build:
@@ -278,7 +300,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: ${{ fromJson(needs.plan.outputs.targets) }}
+        target: ${{ fromJson(needs.plan.outputs.runtime_targets) }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:

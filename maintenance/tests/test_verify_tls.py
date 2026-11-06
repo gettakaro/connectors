@@ -58,3 +58,46 @@ def test_a_tls_fake_is_trusted_through_its_own_ca_only(tmp_path: Path) -> None:
 
 def test_a_plain_fake_stays_plain() -> None:
     assert FakeTakaro(host="127.0.0.1", port=1).url == "ws://127.0.0.1:1/"
+
+
+def test_a_protocol_1_fake_negotiates_acks_and_raises_a_response_error() -> None:
+    """What a protocol 1 connector needs from the fake: the version, eventAck, the manifest answer."""
+
+    async def scenario() -> None:
+        fake = FakeTakaro(host="127.0.0.1", protocol=1)
+        port = await fake.start()
+        try:
+            async with connect(f"ws://127.0.0.1:{port}/") as ws:
+                await ws.send(
+                    json.dumps({"type": "identify", "payload": {"identityToken": "t", "protocolVersions": [0, 1]}})
+                )
+                answer = json.loads(await ws.recv())
+                assert answer["payload"]["protocolVersion"] == 1 and fake.negotiated_protocol == 1
+
+                await ws.send(json.dumps({"type": "gameEvent", "payload": {"type": "log", "streamId": "s", "seq": 3}}))
+                assert json.loads(await ws.recv()) == {"type": "eventAck", "payload": {"streamId": "s", "upTo": 3}}
+
+                await ws.send(json.dumps({"type": "capabilities", "requestId": "r1", "payload": {"capabilities": []}}))
+                assert json.loads(await ws.recv()) == {
+                    "type": "capabilitiesResponse",
+                    "payload": None,
+                    "requestId": "r1",
+                }
+                assert fake.capability_updates == [{"capabilities": []}]
+
+                pending = asyncio.ensure_future(fake.request("getPlayers"))
+                request = json.loads(await ws.recv())
+                error = {"code": "game_error", "message": "not loaded"}
+                await ws.send(json.dumps({"type": "response", "requestId": request["requestId"], "error": error}))
+                with pytest.raises(RuntimeError, match="not loaded"):
+                    await pending
+
+            # A connector that offers no protocol list is answered the protocol 0 way.
+            async with connect(f"ws://127.0.0.1:{port}/") as ws:
+                await ws.send(json.dumps({"type": "identify", "payload": {"identityToken": "t"}}))
+                assert "protocolVersion" not in json.loads(await ws.recv())["payload"]
+                assert fake.negotiated_protocol == 0
+        finally:
+            await fake.stop()
+
+    asyncio.run(scenario())

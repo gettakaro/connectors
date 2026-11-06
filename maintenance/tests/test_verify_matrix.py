@@ -39,7 +39,13 @@ def test_the_release_workflow_verifies_between_build_and_publish() -> None:
 
     assert "needs: [plan, build]" in verify
     assert "fail-fast: false" in verify
-    assert "target: ${{ fromJson(needs.plan.outputs.targets) }}" in verify
+    # The runtime matrix: every target, or one platform's when the runner cannot host the others.
+    assert "target: ${{ fromJson(needs.plan.outputs.runtime_targets) }}" in verify
+    plan = job("plan")
+    assert "runtime_targets: ${{ steps.runtime_targets.outputs.targets }}" in plan
+    runtime = step(plan, "Resolve the runtime matrix")
+    assert '${IN_PLATFORM:+--platform "$IN_PLATFORM"}' in runtime
+    assert "--status candidate,maintained" in runtime
 
     publish = job("publish")
     assert "needs: [build, legacy, verify]" in publish

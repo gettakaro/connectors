@@ -632,7 +632,12 @@ class TargetRun:
             pki = make_test_pki(self._tls_dir, "host.docker.internal")
             ssl_context = pki.context
             self.takaro_ca_file = pki.ca_pem
-        fake = FakeTakaro(host=bridge_gateway(), log_path=self.fake_log, ssl_context=ssl_context)
+        fake = FakeTakaro(
+            host=bridge_gateway(),
+            log_path=self.fake_log,
+            ssl_context=ssl_context,
+            protocol=self.hooks.takaro_protocol,
+        )
         port = await fake.start()
         scheme = "wss" if ssl_context is not None else "ws"
         ws_url = f"{scheme}://host.docker.internal:{port}/"
@@ -749,6 +754,7 @@ class TargetRun:
             logs=[self.server_log, self.fake_log, self.docker_log, *self.extra_logs],
             repo_root=paths.repo_root(),
             takaro=self.options.takaro,
+            manual_coverage=self.hooks.manual_coverage,
         )
         write_report(self.out, report)
         return report

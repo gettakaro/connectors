@@ -119,9 +119,12 @@ def build_report(
     logs: list[Path],
     repo_root: Path,
     takaro: str = "local",
+    manual_coverage: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     repo, revision, dirty = repo_identity(repo_root, watched_paths(target.game))
     coverage: dict[str, Any] = {"gameplay": "not covered - recorded client evidence pending (#174)"}
+    if manual_coverage:
+        coverage["manual"] = list(manual_coverage)
     if target.game == "ark":
         # The ARK runner can be repaired without rebuilding the already shipped native
         # and sidecar bytes. Keep their build-manifest source distinct from this tool.
