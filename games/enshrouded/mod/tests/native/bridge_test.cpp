@@ -907,11 +907,12 @@ void ProtocolV1Identify() {
     const JsonValue& p = AsRecord(id.get("payload"));
     CHECK_EQ(JsonDump(*p.get("protocolVersions")), std::string("[0,1]"));
     const JsonValue* caps = p.get("capabilities");
-    CHECK(caps && caps->type == JsonValue::Array && caps->arr.size() == 25);
+    CHECK(caps && caps->type == JsonValue::Array && caps->arr.size() == 26);
     std::set<std::string> names;
     const JsonValue* map = nullptr;
     const JsonValue* profile = nullptr;
     const JsonValue* progression = nullptr;
+    const JsonValue* characters = nullptr;
     for (auto& c : caps->arr) {
         std::string n = c.get("name")->str;
         CHECK_MSG(std::regex_match(n, std::regex("^[a-z][a-zA-Z0-9]*(\\.[a-z][a-zA-Z0-9-]*)*$")), n);
@@ -919,7 +920,9 @@ void ProtocolV1Identify() {
         if (n == "map") map = &c;
         if (n == "game.profile") profile = &c;
         if (n == "players.progression") progression = &c;
+        if (n == "players.characters") characters = &c;
     }
+    CHECK(characters && t::JsonTextEq(JsonDump(*characters->get("parameters")), R"({"held":"client"})"));
     CHECK(progression && t::JsonTextEq(JsonDump(*progression->get("parameters")), R"({"source":"client-reported"})"));
     for (const char* need : {"players.list", "players.location", "items.give", "moderation.listBans", "server.shutdown",
                              "locations.list", "events.chat-message", "events.entity-killed"})
@@ -998,6 +1001,71 @@ void PlayerProgression() {
     CHECK_EQ(payload(limon), std::string("[]"));
     // unknown player: null, not an error
     CHECK_EQ(payload(R"({"gameId":"76561198000009999"})"), std::string("null"));
+}
+
+const char* const kCharacterField = R"("character":{"id":"8471ed03199476459871b310d8735318","name":"Character 1"})";
+
+std::string PlayerWithCharacter() {
+    return std::string(R"({"gameId":")") + LIMON + R"(","steamId":")" + LIMON + R"(","name":"Character 1",)" + kCharacterField + "}";
+}
+
+void PlayerCharacters() {
+    t::Group("bridge-player-characters");
+    Rig r("v1-characters");
+    r.Start();
+    OpenForIdentify(r);
+    IdentifyV1(r);
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.players = t::J("[" + PlayerWithCharacter() + "]");
+    }
+    std::string limon = std::string("{\"gameId\":\"") + LIMON + "\"}";
+    // getPlayers and getPlayer carry it
+    JsonValue resp = r.Call("getPlayers", "{}");
+    CHECK_MSG(JsonDump(resp).find(kCharacterField) != std::string::npos, JsonDump(resp));
+    resp = r.Call("getPlayer", limon);
+    CHECK_MSG(JsonDump(resp).find(kCharacterField) != std::string::npos, JsonDump(resp));
+    // every pushed event names the character of its player
+    r.fake.PushEvent("player-connected", "{\"player\":" + PlayerWithCharacter() + "}");
+    r.fake.PushEvent("chat-message", "{\"msg\":\"hi\",\"channel\":\"global\",\"player\":" + PlayerWithCharacter() + "}");
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return r.Events("player-connected").size() == 1 && r.Events("chat-message").size() == 1;
+    }));
+    CHECK_MSG(JsonDump(r.Events("player-connected")[0]).find(kCharacterField) != std::string::npos,
+              JsonDump(r.Events("player-connected")[0]));
+    CHECK_MSG(JsonDump(r.Events("chat-message")[0]).find(kCharacterField) != std::string::npos,
+              JsonDump(r.Events("chat-message")[0]));
+    // no id read yet, or no name: the player goes without one
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.players = t::J(std::string(R"([{"gameId":")") + LIMON + R"(","name":"Limon","character":{"name":"x"}}])");
+    }
+    resp = r.Call("getPlayers", "{}");
+    CHECK_MSG(JsonDump(resp).find("character") == std::string::npos, JsonDump(resp));
+}
+
+void PlayerCharactersProtocol0() {
+    t::Group("bridge-player-characters-protocol-0");
+    Rig r("v0-characters");
+    r.fake.PushEvent("player-connected", "{\"player\":" + PlayerWithCharacter() + "}");
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.players = t::J("[" + PlayerWithCharacter() + "]");
+    }
+    r.Start();
+    r.Connect();
+    CHECK_EQ(r.HealthNum(nullptr, "protocol"), 0.0);
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return r.Events("player-connected").size() == 1;
+    }));
+    CHECK_MSG(JsonDump(r.Events("player-connected")[0]).find("character") == std::string::npos,
+              JsonDump(r.Events("player-connected")[0]));
+    JsonValue resp = r.Call("getPlayers", "{}");
+    CHECK_MSG(JsonDump(resp).find("\"character\"") == std::string::npos, JsonDump(resp));
+    resp = r.Call("getPlayer", std::string("{\"gameId\":\"") + LIMON + "\"}");
+    CHECK_MSG(JsonDump(resp).find("\"character\"") == std::string::npos, JsonDump(resp));
 }
 
 void PlayerProgressionOffline() {
@@ -1338,6 +1406,8 @@ void RunBridgeTests() {
     ProtocolV1UnknownBuild();
     PlayerProgression();
     PlayerProgressionOffline();
+    PlayerCharacters();
+    PlayerCharactersProtocol0();
     UnsupportedGameBuildReason();
     IdentifyWaitsForGameWorld();
     ProtocolV1Responses();

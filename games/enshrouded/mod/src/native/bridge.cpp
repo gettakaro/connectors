@@ -566,7 +566,10 @@ void Bridge::HandleRequest(uint64_t epoch, const JsonValue& msg) {
 }
 
 std::string Bridge::OkFrame(const std::string& requestId, const std::string& action, JsonValue payload) const {
-    if (protocol_ == 0) return CreateResponse(requestId, payload);
+    if (protocol_ == 0) {
+        if (action == "getPlayers" || action == "getPlayer") StripCharacter(payload);
+        return CreateResponse(requestId, payload);
+    }
     if (IsVoidAction(action)) payload = JNull();
     if (action == "getPlayerLocation" && payload.type == JsonValue::Object) Put(payload, "dimension", JStr(kMapDimensionId));
     return CreateResponseV1(requestId, payload);
@@ -991,7 +994,7 @@ void Bridge::DeliverEvents(int64_t now) {
     const std::string& stream = o_.store->Outbox().streamId;
     for (; it != pending.end() && queued < kNoticeBatch; ++it) {
         // protocol 1: the same event with (streamId, seq = outbox id), so a resend after a reconnect dedups
-        std::string frame = protocol_ >= 1 ? GameEventFrameV1(it->frame, stream, it->id) : it->frame;
+        std::string frame = protocol_ >= 1 ? GameEventFrameV1(it->frame, stream, it->id) : EventFrameV0(it->frame);
         if (frame.empty()) {
             PluginLog("native: dropping an unreadable outbox event (id %llu)", (unsigned long long)it->id);
             lastQueuedId_ = it->id;

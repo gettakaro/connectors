@@ -34,6 +34,9 @@ bool IsGameEventType(const std::string& type);
 
 // ---- mapping.ts ----
 JsonValue MapPlayer(const JsonValue* raw);
+// `character` is protocol 1 only: these remove it from a player (or a list of players) and from a stored event frame.
+void StripCharacter(JsonValue& payload);
+std::string EventFrameV0(const std::string& eventFrame);
 JsonValue MapPosition(const JsonValue* raw);
 JsonValue MapInventoryItem(const JsonValue* raw);
 // The Progression Tracks of a plugin player: the `character` track once the plugin has read a level, else none.
