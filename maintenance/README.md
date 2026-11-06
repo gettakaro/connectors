@@ -51,6 +51,9 @@ frozen, managed Python 3.12 environment. Docker is needed for `verify` and for
 | `release verify --tag TAG [--connector C] [--expect DIR] [--out DIR]` | Download every asset of a release and prove it is the set its compatibility record describes. |
 | `icons build --recipes FILE --out DIR` | Render a recipe document into an Icon Pack (WebP objects and `index.json`), a coverage report, a contact sheet and a build record. |
 | `icons publish --env staging --pack DIR [--dry-run]` | Merge the pack into the live index and upload it to the staging icon bucket: missing objects first, `index.json` last. Refuses production and any `_store/` key. |
+| `icons promote --game G [--dry-run]` | Copy a game's pack from the staging bucket to the production bucket: rolling merge into the production index, missing objects first, `index.json` last. Local command; needs both `STG_R2_*` and `PROD_R2_*`. |
+| `icons set-enabled --env staging\|production --game G --enabled true\|false [--dry-run]` | Rewrite only the index's `enabled` flag; no object is touched. |
+| `icons takedown --env staging\|production --game G (--code C… \| --object O…) [--dry-run]` | Remove exactly the named codes or objects: the index is republished first, then the objects are deleted. |
 
 Selection is the same everywhere: `--target` wins; without it the single `default: true` record
 for the game (and `--platform`, when given) is used. Zero or two defaults is an error rather than
@@ -96,6 +99,8 @@ line behaves the same from anywhere.
 | `GH_TOKEN` | GitHub token; otherwise `gh auth token` is tried. |
 | `STG_R2_ACCESS_KEY_ID`, `STG_R2_SECRET_ACCESS_KEY`, `STG_R2_ENDPOINT`, `STG_R2_BUCKET` | The staging icon bucket (Cloudflare R2) for `icons publish`. Read only from the environment and redacted from all output. |
 | `STG_ICON_HOST` | The public staging icon host. Used only for the curl verification in [icons.md](docs/icons.md); no command reads it. |
+| `PROD_R2_ACCESS_KEY_ID`, `PROD_R2_SECRET_ACCESS_KEY`, `PROD_R2_ENDPOINT`, `PROD_R2_BUCKET` | The production icon bucket for `icons promote` and `--env production`. Read only from the environment and redacted from all output. |
+| `PROD_ICON_HOST` | The public production icon host. Used only for curl verification; no command reads it. |
 
 `--repo-root PATH` points the command at another checkout.
 

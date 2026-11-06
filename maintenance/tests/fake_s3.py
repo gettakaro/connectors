@@ -57,6 +57,9 @@ class FakeS3:
     def puts(self) -> list[Request]:
         return [request for request in self.requests if request.method == "PUT"]
 
+    def deletes(self) -> list[Request]:
+        return [request for request in self.requests if request.method == "DELETE"]
+
     def heads(self) -> list[Request]:
         return [request for request in self.requests if request.method == "HEAD"]
 
@@ -111,6 +114,9 @@ class FakeS3:
                 for method, pattern, status, code in fake._failures:
                     if method == self.command and pattern.search(key):
                         return self._error(status, code)
+                if self.command == "DELETE":
+                    fake.objects.pop(key, None)
+                    return self._reply(204)
                 if self.command == "PUT":
                     fake.objects[key] = (
                         payload,
@@ -132,7 +138,7 @@ class FakeS3:
                     return
                 self._reply(200, body, headers)
 
-            do_GET = do_HEAD = do_PUT = _handle  # noqa: N815
+            do_GET = do_HEAD = do_PUT = do_DELETE = _handle  # noqa: N815
 
         self._server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
@@ -147,11 +153,27 @@ class FakeS3:
 
 
 @contextlib.contextmanager
-def serving(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeS3]:
-    """A running fake with the staging variables pointed at it, as the maintainer's shell would have them."""
-    with FakeS3() as server:
-        monkeypatch.setenv("STG_R2_ENDPOINT", server.endpoint)
-        monkeypatch.setenv("STG_R2_BUCKET", server.bucket)
-        monkeypatch.setenv("STG_R2_ACCESS_KEY_ID", KEY_ID)
-        monkeypatch.setenv("STG_R2_SECRET_ACCESS_KEY", SECRET)
+def serving(
+    monkeypatch: pytest.MonkeyPatch,
+    prefix: str = "STG_",
+    key_id: str = KEY_ID,
+    bucket: str = BUCKET,
+    secret: str = SECRET,
+) -> Iterator[FakeS3]:
+    """A running fake with one environment's variables pointed at it, as the maintainer's shell would have them."""
+    with FakeS3(bucket=bucket, key_id=key_id) as server:
+        monkeypatch.setenv(f"{prefix}R2_ENDPOINT", server.endpoint)
+        monkeypatch.setenv(f"{prefix}R2_BUCKET", bucket)
+        monkeypatch.setenv(f"{prefix}R2_ACCESS_KEY_ID", key_id)
+        monkeypatch.setenv(f"{prefix}R2_SECRET_ACCESS_KEY", secret)
         yield server
+
+
+PROD_BUCKET = "fixture-prod-bucket-name"
+PROD_KEY_ID = "AKIAFIXTUREPRODKEY01"
+PROD_SECRET = "fixture-prod-secret-access-key-value"
+
+
+def serving_production(monkeypatch: pytest.MonkeyPatch) -> contextlib.AbstractContextManager[FakeS3]:
+    """A second fake wired to the ``PROD_R2_*`` variables, with credentials of its own."""
+    return serving(monkeypatch, "PROD_", PROD_KEY_ID, PROD_BUCKET, PROD_SECRET)

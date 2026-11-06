@@ -1,8 +1,9 @@
 """The icon bucket: environment resolution and a small S3 wrapper (Cloudflare R2, path-style).
 
 Credentials come from the environment only and are registered with the redactor the moment they
-are read, because only ``*SECRET*`` names are hidden automatically. The environments table has no
-production entry on purpose: production is written by ``icons promote``, not by ``icons publish``.
+are read, because only ``*SECRET*`` names are hidden automatically. ``icons publish`` refuses every
+environment but staging before it resolves a bucket; production is written by ``icons promote``,
+``icons set-enabled`` and ``icons takedown``.
 """
 
 from __future__ import annotations
@@ -19,16 +20,22 @@ from .. import redact
 from ..exit_codes import PublishFailed, UsageError
 from . import contract
 
-ENVIRONMENT_PREFIXES = {"staging": "STG_"}
+ENVIRONMENT_PREFIXES = {"staging": "STG_", "production": "PROD_"}
 _VARIABLES = ("R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT", "R2_BUCKET")
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _ABSENT_CODES = {"404", "NoSuchKey", "NotFound"}
 
 
 class Bucket:
-    def __init__(self, client: Any, bucket: str) -> None:
+    def __init__(self, client: Any, bucket: str, identity: tuple[str, str]) -> None:
         self._client = client
         self._bucket = bucket
+        self._identity = identity
+
+    @property
+    def identity(self) -> tuple[str, str]:
+        """Normalized (endpoint, bucket); compared, never printed."""
+        return self._identity
 
     @classmethod
     def for_env(cls, env: str) -> Bucket:
@@ -43,7 +50,7 @@ class Bucket:
         key_id, secret, endpoint, bucket = (values[name] for name in names)
         redact.remember(key_id, secret, endpoint, bucket)
         _require_safe_endpoint(endpoint, names[2])
-        return cls(_client(endpoint, key_id, secret), bucket)
+        return cls(_client(endpoint, key_id, secret), bucket, (_normalize_endpoint(endpoint), bucket))
 
     def get(self, key: str) -> bytes | None:
         contract.guard_keys([key])
@@ -76,6 +83,21 @@ class Bucket:
             )
         except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as exc:
             raise _failure("PUT", key, exc) from None
+
+    def delete(self, key: str) -> None:
+        """Delete one ``<game>/<sha256>.webp`` object; never an index and never anything under ``_store/``."""
+        contract.guard_keys([key])
+        if not contract.OBJECT_PATTERN.fullmatch(key.rpartition("/")[2]):
+            raise UsageError(f"refusing to delete {key!r}: only <game>/<sha256>.webp objects can be deleted")
+        try:
+            self._client.delete_object(Bucket=self._bucket, Key=key)
+        except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as exc:
+            raise _failure("DELETE", key, exc) from None
+
+
+def _normalize_endpoint(endpoint: str) -> str:
+    parts = urlsplit(endpoint)
+    return f"{parts.scheme}://{(parts.netloc or '').lower()}".rstrip("/")
 
 
 def _client(endpoint: str, key_id: str, secret: str) -> Any:
