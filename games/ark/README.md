@@ -67,6 +67,7 @@ Checked on server build 21241282 (game version 361.7). ✅ works, ⚠️ works w
 | Player location | ✅ | |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
+| Player levels and skills | ✅ | Character level, experience and progress. ARK has no separate skill levels. |
 | Item list | ✅ | |
 | Entity list | ✅ | |
 | Locations | ⚠️ | Spawn points. Not checked yet. |
