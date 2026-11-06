@@ -125,8 +125,10 @@ jobs:
       tag: ${{ needs.params.outputs.tag }}
       publish: ${{ needs.params.outputs.publish }}
       pr_number: ${{ github.event.pull_request.number }}
-      # A Linux Project Zomboid install is three depots / 7.2 GB that must be copied once
-      # more into staging on the runner; the hosted runner cannot hold it, so the release
-      # claims contract verification. Runtime proof is the local isolated
-      # `takaro-maint verify` run, and runtime CI onboarding is tracked separately.
-      runtime: false
+      # The pinned server boots on the hosted runner with the built agent attached, against
+      # the local fake Takaro (`takaro-maint verify --game zomboid`, see
+      # games/zomboid/DEVELOPMENT.md). The three depots (7.2 GB on disk, 2 GB compressed)
+      # are cached by the verify leg alone, never installed twice.
+      runtime: true
+      runtime_depot_cache: true
+      startup_timeout: 900
