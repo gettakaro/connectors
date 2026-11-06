@@ -1,5 +1,7 @@
 #include "conan/reads.h"
 
+#include "conan/shutdown.h"
+
 #include "common.h"
 #include "conan/layout_probe.h"
 #include "conan/text.h"
@@ -25,7 +27,8 @@ const std::vector<std::string> kScanNames = {
     "GameStateBase", "PlayerState", "Actor", "Controller", "SceneComponent", "ConanPlayerController",
     "BasePlayerChar_C", "BaseBPChar_C", "ItemInventory", "GameItem", "ShortcutRefItem", "DataTable", "KismetTextLibrary",
     "Default__KismetTextLibrary", "ItemTable", "ItemNameToTemplateID", "SpawnDataTable", "MapMarkers_ConanSandbox",
-    "KismetSystemLibrary", "Default__KismetSystemLibrary",
+    "KismetSystemLibrary", "Default__KismetSystemLibrary", "ConanCharacter", "StatHolder", "StatArrayInt32",
+    "BP_ProgressionSystem_C",
 };
 const char* const kMarkerTablePath = "/Game/Systems/Map/MapMarkers_ConanSandbox.MapMarkers_ConanSandbox";
 // Own loads of the marker table: at most 3 that the engine answered, 30 s apart; a load the game
@@ -87,7 +90,7 @@ ReadService::~ReadService() {
 
 bool ReadService::Handles(const std::string& a) {
     return a == "getPlayers" || a == "getPlayer" || a == "getPlayerLocation" || a == "getPlayerInventory" ||
-           a == "listItems" || a == "listEntities" || a == "listLocations";
+           a == "getPlayerProgression" || a == "listItems" || a == "listEntities" || a == "listLocations";
 }
 
 // ---------------------------------------------------------------- index and layout
@@ -111,6 +114,9 @@ bool ReadService::EnsureIndex(std::string& error) {
         indexError_ = error;
         return false;
     }
+    std::string noProgression;
+    if (!l.ResolveProgression(*r_, noProgression))
+        NativeLog("reads: no progression on this build, missing: %s", noProgression.c_str());
     layout_ = l;
     UE::Reflection& r = *r_;
     uintptr_t ps = r.Type("PlayerState"), actor = r.Type("Actor"), item = r.Type("GameItem"),
@@ -616,6 +622,7 @@ bool ReadService::WarmupStep(std::string& status) {
     }
     bool done = cat->HaveItems() && cat->HaveEntities() && cat->HaveLocations() && textCheck_ != Check::Pending &&
                 !refreshAfterJoin_;
+    if (cat->HaveItems() && textCheck_ != Check::Pending) cataloguesChecked_ = true;
     status = std::string("items ") + (cat->HaveItems() ? "ok" : itemsErr) + ", entities " +
              (cat->HaveEntities() ? "ok" : entErr) + ", locations " +
              (cat->HaveLocations() ? (markersForced_ ? "ok (table loaded without a player)" : "ok") : locErr) +
@@ -681,6 +688,12 @@ std::string ReadService::PlayerJson(const PlayerRecord& p) {
     if (!p.ip.empty()) b.S("ip", p.ip);
     // Only once the ExactPing offset is proven (or through the engine getter after a failure).
     if (p.ping >= 0 && pingCheck_ != Check::Pending) b.N("ping", (double)std::lround(p.ping));
+    if (p.characterId > 0) {
+        b.Raw("character", ObjBuilder()
+                               .S("id", std::to_string(p.characterId))
+                               .S("name", !p.characterName.empty() ? p.characterName : name)
+                               .Done());
+    }
     return b.Done();
 }
 
@@ -704,6 +717,12 @@ const PlayerRecord* ReadService::Match(const std::vector<PlayerRecord>& players,
 }
 
 // ---------------------------------------------------------------- lists
+bool ReadService::CataloguesReady() {
+    if (!cataloguesChecked_) return false;  // a failed text check still rebuilds the names
+    std::lock_guard<std::mutex> l(catMu_);
+    return !itemsJson_.empty() && !entitiesJson_.empty() && !locationsJson_.empty();
+}
+
 ActionResult ReadService::ListResult(const std::string& action) {
     std::unique_lock<std::mutex> l(catMu_);
     auto have = [&] {
@@ -729,6 +748,7 @@ ActionResult ReadService::Execute(const std::string& action, const JsonValue& ar
 }
 
 ActionResult ReadService::ExecuteImpl(const std::string& action, const JsonValue& args) {
+    if (action == "getPlayers" && EngineExiting()) return Raw("[]");
     if (action == "listItems" || action == "listEntities" || action == "listLocations") {
         // No mu_ here: a list action must not wait behind a catalogue build in progress.
         calls_++;
@@ -890,6 +910,26 @@ ActionResult ReadService::ExecuteImpl(const std::string& action, const JsonValue
             o += (i ? "," : "") + b.Done();
         }
         return Raw(o + "]");
+    }
+    if (action == "getPlayerProgression") {
+        // Takaro polls this for every online player on every sync: one short worker read, no game
+        // thread. A character without readable stats (dead, joining) keeps its last reading, so
+        // Takaro never sees a level change that did not happen.
+        if (p && p->pawn) {
+            ProgressionRead read;
+            PlayerReader reader(*r_, layout_);
+            if (reader.Progression(p->pawn, read, error)) {
+                std::string tracks = ProgressionTracksJson(read);
+                known_[p->steam64].progression = tracks;
+                return Raw(tracks);
+            }
+            NativeLog("reads: getPlayerProgression %s: %s", p->steam64.c_str(), error.c_str());
+        }
+        for (auto& id : ids) {
+            auto it = known_.find(id);
+            if (it != known_.end() && !it->second.progression.empty()) return Raw(it->second.progression);
+        }
+        return Raw(p ? "[]" : "null");
     }
     return Fail(action + " is not a read action");
 }

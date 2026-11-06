@@ -78,6 +78,13 @@
       "verification": "Live 2026-10-03 on rig 349 (bridge stopped): MCP gameserverSendMessage global and directed (opts.recipient.gameId + senderNameOverride) -> native log delivered=1 each, both lines in the client chat (El-Limon evidence native-stage2/L1)",
       "reason": "ClientReceiveChatMessage on each online ConanPlayerController through ProcessEvent on the game thread; global, or directed by Steam64 / character name. The chat user name is opts.senderNameOverride, then takaro.json serverChatName, then Takaro."
     },
+    "getPlayerProgression": {
+      "status": "live-supported",
+      "implementation": "native",
+      "responseShape": "Takaro progression track array, null for an unknown player",
+      "verification": "Live 2026-11-05 on build 25792439 with a real client: level, experience and progress equal the character screen (Level 15, 14,187/25,825); a level earned by a kill gave one player-level-changed 15 -> 16; a Potion of Bestial Memory gave one level down per attribute",
+      "reason": "Worker read: ConanCharacter.m_StatHolder int stat list (ECharIntStatID Level and the six attributes) and BP_ProgressionSystem_C ExperiencePoints, LevelStart, LevelEnd. No game thread. The last reading while the character has no readable stats."
+    },
     "teleportPlayer": {
       "status": "live-supported",
       "implementation": "native",

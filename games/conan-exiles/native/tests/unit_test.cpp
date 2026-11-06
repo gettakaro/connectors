@@ -13,6 +13,7 @@
 #include "conan/text.h"
 #include "elfscan.h"
 #include "pins/pins.h"
+#include "takaro/bridge.h"
 #include "takaro/config.h"
 #include "takaro/config_watch.h"
 #include "takaro/fileio.h"
@@ -21,13 +22,17 @@
 #include "takaro/protocol.h"
 #include "takaro/transport.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
+#include <functional>
 #include <map>
 #include <string>
 #include <sys/stat.h>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 
@@ -887,8 +892,8 @@ static void TestProtocolV1() {
     for (auto& n : names) joined += n + " ";
     EQ(joined,
        "game.profile players.get players.list players.location players.inventory items.give items.list entities.list "
-       "locations.list console.execute chat.send players.teleport moderation.kick moderation.ban moderation.unban "
-       "moderation.listBans server.shutdown events.player-connected events.player-disconnected events.chat-message "
+       "locations.list console.execute chat.send players.progression players.teleport moderation.kick moderation.ban moderation.unban "
+       "moderation.listBans server.shutdown players.characters events.player-connected events.player-disconnected events.chat-message "
        "events.player-death events.entity-killed events.log ");
     region = "ExiledLands";
     m = ad.CapabilityManifest();
@@ -1107,6 +1112,60 @@ static void TestServerChatName() {
     EQ(w.ServerChatName(), "");
 }
 
+// The bridge dials only when the game can answer Takaro's one-off catalogue sync, or after the limit.
+struct HoldGame : takaro::Game {
+    std::atomic<bool> ready{false};
+    takaro::ActionResult Execute(const std::string&, const JsonValue&) override { return {}; }
+    bool ReadyToConnect() override { return ready; }
+    void DrainEvents(std::vector<takaro::GameEvent>&) override {}
+    std::string HealthJson() override { return "{}"; }
+};
+struct HoldTransport : takaro::ITransport {
+    std::atomic<int> dials{0}, idle{0};
+    bool Start(takaro::NoticeSink) override { return true; }
+    void Stop() override {}
+    takaro::QueueStatus Queue(takaro::OutFrame) override { return takaro::QueueStatus::Accepted; }
+    void RequestClose(uint64_t, const std::string&) override {}
+    void MarkIdentified(uint64_t) override {}
+    void Retarget(const std::string&, bool connect) override { (connect ? dials : idle)++; }
+    std::string StatsJson() override { return "{}"; }
+};
+static bool WaitDial(HoldTransport& t) {
+    for (int i = 0; i < 200 && t.dials == 0; i++) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    return t.dials == 1;
+}
+static void TestConnectHold() {
+    std::atomic<int64_t> clock{1000};
+    auto run = [&](const char* name, const std::function<void(HoldGame&, HoldTransport&)>& body) {
+        char dir[] = "/tmp/hold-test-XXXXXX";
+        CHECK(mkdtemp(dir) != nullptr, "mkdtemp");
+        HoldGame game;
+        HoldTransport transport;
+        takaro::Store store(dir, "hold");
+        takaro::BridgeOptions bo;
+        bo.config.enabled = true;
+        bo.game = &game;
+        bo.transport = &transport;
+        bo.store = &store;
+        bo.steadyMs = [&] { return clock.load(); };
+        bo.holdConnectMs = 5000;
+        takaro::Bridge bridge(bo);
+        bridge.Start();
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        CHECK(transport.dials == 0, "%s: dialled while the catalogues were not ready", name);
+        body(game, transport);
+        bridge.Stop();
+    };
+    run("ready", [&](HoldGame& g, HoldTransport& t) {
+        g.ready = true;
+        CHECK(WaitDial(t), "no single dial once ready");
+    });
+    run("limit", [&](HoldGame&, HoldTransport& t) {
+        clock += 5001;
+        CHECK(WaitDial(t), "no single dial at the limit");
+    });
+}
+
 int main() {
     TestProtocol();
     TestProtocolV1();
@@ -1119,6 +1178,7 @@ int main() {
     TestPins();
     TestMaps();
     TestAdapter();
+    TestConnectHold();
     TestServerChatName();
     TestCoverage();
     TestRecipient();

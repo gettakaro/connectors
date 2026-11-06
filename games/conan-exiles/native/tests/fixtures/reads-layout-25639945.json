@@ -210,6 +210,12 @@
      "type": "ObjectProperty",
      "offset": 10392,
      "size": 8
+    },
+    {
+     "name": "BP_ProgressionSystem",
+     "type": "ObjectProperty",
+     "offset": 10328,
+     "size": 8
     }
    ],
    "functions": []
@@ -569,6 +575,109 @@
      ]
     }
    ]
+  },
+  {
+   "name": "ConanCharacter",
+   "kind": "Class",
+   "super": "Character",
+   "superChain": [
+    "Character",
+    "Pawn",
+    "Actor",
+    "Object"
+   ],
+   "size": 6608,
+   "path": "/Script/ConanSandbox.ConanCharacter",
+   "properties": [
+    {
+     "name": "m_StatHolder",
+     "type": "ObjectProperty",
+     "offset": 5608,
+     "size": 8
+    },
+    {
+     "name": "CharacterStableId",
+     "type": "StructProperty",
+     "offset": 2208,
+     "size": 8
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "StatHolder",
+   "kind": "Class",
+   "super": "PersistenceComponent",
+   "superChain": [
+    "PersistenceComponent",
+    "ActorComponent",
+    "Object"
+   ],
+   "size": 1216,
+   "path": "/Script/ConanSandbox.StatHolder",
+   "properties": [
+    {
+     "name": "m_IntStatArray",
+     "type": "StructProperty",
+     "offset": 344,
+     "size": 312
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "StatArrayInt32",
+   "kind": "ScriptStruct",
+   "super": "IrisFastArraySerializer",
+   "superChain": [
+    "IrisFastArraySerializer",
+    "FastArraySerializer"
+   ],
+   "size": 312,
+   "path": "/Script/ConanSandbox.StatArrayInt32",
+   "properties": [
+    {
+     "name": "IntStatArray",
+     "type": "ArrayProperty",
+     "offset": 296,
+     "size": 16
+    }
+   ],
+   "functions": []
+  },
+  {
+   "name": "BP_ProgressionSystem_C",
+   "kind": "BlueprintGeneratedClass",
+   "super": "ProgressionSystem",
+   "superChain": [
+    "ProgressionSystem",
+    "ConanCharacterComponent",
+    "ActorComponent",
+    "Object"
+   ],
+   "size": 600,
+   "path": "/Game/Systems/Progression/BP_ProgressionSystem.BP_ProgressionSystem_C",
+   "properties": [
+    {
+     "name": "ExperiencePoints",
+     "type": "DoubleProperty",
+     "offset": 392,
+     "size": 8
+    },
+    {
+     "name": "LevelEnd",
+     "type": "IntProperty",
+     "offset": 456,
+     "size": 4
+    },
+    {
+     "name": "LevelStart",
+     "type": "IntProperty",
+     "offset": 460,
+     "size": 4
+    }
+   ],
+   "functions": []
   }
  ]
 }
