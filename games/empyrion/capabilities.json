@@ -38,6 +38,12 @@
       "reason": "Request_Player_GetInventory toolbelt + bag",
       "liveVerified": false
     },
+    "getPlayerProgression": {
+      "status": "live-supported",
+      "responseShape": "ProgressionTrack[]|null",
+      "reason": "PlayerInfo.exp; level from the game's own rule; last reading kept for offline players",
+      "liveVerified": false
+    },
     "giveItem": {
       "status": "live-supported",
       "responseShape": "null",

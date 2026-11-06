@@ -28,6 +28,7 @@ namespace TakaroEmpyrion.Core
             new Entry("getPlayer", "action", Live, "IGamePlayer|null", "online via Request_Player_Info, offline from players.json"),
             new Entry("getPlayerLocation", "action", Live, "{x,y,z,dimension}|null", "PlayerInfo.pos; dimension = playfield as map Dimension id"),
             new Entry("getPlayerInventory", "action", Live, "IItemDTO[]", "Request_Player_GetInventory toolbelt + bag"),
+            new Entry("getPlayerProgression", "action", Live, "ProgressionTrack[]|null", "PlayerInfo.exp; level from the game's own rule; last reading kept for offline players"),
             new Entry("giveItem", "action", Live, "null", "Request_Player_AddItem by config name, id or display name"),
             new Entry("listItems", "action", Live, "IItemDTO[]", "GetBlockAndItemMapping + Localization.csv display names"),
             new Entry("listEntities", "action", Live, "IEntityDTO[]", "EClassConfig.ecf creatures with a faction, localized names"),
