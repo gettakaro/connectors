@@ -29,13 +29,15 @@ public class TakaroConnector {
     // Guards wsClient, watcher and stopped: start, the config watcher and shutdown run on
     // different threads, and a config change replaces the client while shutdown may be closing it.
     private final Object lock = new Object();
-    private TakaroWebSocketClient wsClient;
+    // Volatile as well: the log forwarder reads it from any thread and must never wait for the lock.
+    private volatile TakaroWebSocketClient wsClient;
     private ScheduledExecutorService watcher;
     private boolean stopped;
     // Both outlive a reconnect: the event stream must keep its id and sequence, and the map its caches.
     private final EventOutbox outbox = new EventOutbox();
     private WorldMap worldMap;
     private boolean mapUnavailableLogged;
+    private ServerLogForwarder logForwarder;
 
     public TakaroConnector(GameAdapter adapter, TakaroConfig config) {
         this(adapter, config, TargetInfo.load());
@@ -70,6 +72,7 @@ public class TakaroConnector {
             }
             config.copyFrom(configFile.load());
             connectLocked();
+            forwardServerLog();
             watcher = Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "takaro-config-watch");
                 t.setDaemon(true);
@@ -79,6 +82,22 @@ public class TakaroConnector {
                     CONFIG_POLL_SECONDS, CONFIG_POLL_SECONDS, TimeUnit.SECONDS);
             watcher.scheduleWithFixedDelay(this::refreshMap,
                     MAP_REFRESH_SECONDS, MAP_REFRESH_SECONDS, TimeUnit.SECONDS);
+        }
+    }
+
+    private void forwardServerLog() {
+        try {
+            logForwarder = ServerLogForwarder.attach(this::sendLogLine);
+        } catch (LinkageError | ClassCastException e) {
+            adapter.logWarning("This server's logging cannot be read, so log lines are not sent to Takaro: " + e);
+        }
+    }
+
+    /** Lines from before the connection stay out: replaying a whole startup would only hit Takaro's rate limit. */
+    private void sendLogLine(String line) {
+        TakaroWebSocketClient client = wsClient;
+        if (client != null && client.isIdentified()) {
+            client.emitLog(line);
         }
     }
 
@@ -234,6 +253,10 @@ public class TakaroConnector {
     public void shutdown() {
         synchronized (lock) {
             stopped = true;
+            if (logForwarder != null) {
+                logForwarder.detach();
+                logForwarder = null;
+            }
             if (watcher != null) {
                 watcher.shutdownNow();
                 watcher = null;
