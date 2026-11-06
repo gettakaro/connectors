@@ -34,6 +34,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     // Per connection: set by a successful identifyResponse, cleared when the socket opens or closes.
     private volatile boolean identified = false;
     private volatile int protocolVersion = 0;
+    private volatile int identifiedMapDimensions;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "takaro-reconnect");
         t.setDaemon(true);
@@ -424,6 +425,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             payload.add("protocolVersions", versions);
             List<io.takaro.zomboid.core.model.MapDimension> dims = mapDimensions();
             mapDimensions = dims.size();
+            identifiedMapDimensions = mapDimensions;
             payload.add("capabilities", Capabilities.manifest(dims, gameVersion()));
         }
 
@@ -505,6 +507,11 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         String serverId = optString(payload, "gameServerId", optString(optObject(payload, "server"), "id", null));
         adapter.logInfo("Identified successfully" + (serverId != null ? ", server ID: " + serverId : "")
                 + ", protocol " + protocolVersion);
+        // The map can finish loading between identify and this answer, when capabilitiesChanged
+        // still has to stay quiet.
+        if (protocolVersion >= 1 && mapDimensions().size() != identifiedMapDimensions) {
+            sendCapabilities();
+        }
         flushOutbox();
     }
 
