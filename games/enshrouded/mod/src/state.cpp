@@ -509,20 +509,30 @@ void PluginState::SetCharacterName(const std::string& persona, const std::string
         }
 }
 
+// Steam names are not unique: with two online players on one name the read can't be tied to either, and nothing is
+// better than one player's character on the other's record.
+PlayerRecord* PluginState::OnlyOnlineNamedLocked(const std::string& persona) {
+    PlayerRecord* hit = nullptr;
+    for (auto& p : players_)
+        if (p.online && p.name == persona) {
+            if (hit) return nullptr;
+            hit = &p;
+        }
+    return hit;
+}
+
 void PluginState::SetCharacterId(const std::string& persona, const std::string& id) {
     Guard g(lock_);
-    for (auto& p : players_)
-        if (p.online && p.name == persona) p.characterId = id;
+    if (PlayerRecord* p = OnlyOnlineNamedLocked(persona)) p->characterId = id;
 }
 
 void PluginState::SetLevel(const std::string& persona, int level, int experience, int experienceRequired) {
     Guard g(lock_);
-    for (auto& p : players_)
-        if (p.online && p.name == persona) {
-            p.level = level;
-            p.experience = experience;
-            p.experienceRequired = experienceRequired;
-        }
+    if (PlayerRecord* p = OnlyOnlineNamedLocked(persona)) {
+        p->level = level;
+        p->experience = experience;
+        p->experienceRequired = experienceRequired;
+    }
 }
 
 void PluginState::SetMachineIsPeerIndexPlusOne(bool on) {
