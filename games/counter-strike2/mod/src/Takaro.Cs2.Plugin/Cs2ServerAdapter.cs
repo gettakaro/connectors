@@ -12,6 +12,7 @@ public sealed partial class Cs2ServerAdapter : ICs2TakaroAdapter
     private Cs2MapAssets? mapAssets;
     private readonly Cs2Progression progression = new();
     private volatile string currentMap = string.Empty;
+    private volatile int currentMaxPlayers;
     private volatile string? gameVersion;
 
     public Cs2ServerAdapter(ConnectorConfig config)
@@ -23,7 +24,11 @@ public sealed partial class Cs2ServerAdapter : ICs2TakaroAdapter
     public void SetMapAssets(Cs2MapAssets assets) => mapAssets = assets;
 
     /// <summary>Records the running map. The manifest reads this so it never needs the game thread.</summary>
-    public void SetCurrentMap(string map) => currentMap = map;
+    public void SetCurrentMap(string map, int maxPlayers)
+    {
+        currentMap = map;
+        currentMaxPlayers = maxPlayers;
+    }
 
     public void SetGameVersion(string? version) => gameVersion = version;
 
@@ -49,22 +54,10 @@ public sealed partial class Cs2ServerAdapter : ICs2TakaroAdapter
             TakaroActionResult.Fail("map_unavailable", "Map assets have not been configured."), cancellationToken);
     }
 
-    public async Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default)
-    {
-        // World updates only run once a map is up, so waiting on the game thread here would time out.
-        if (string.IsNullOrEmpty(currentMap))
-            return TakaroActionResult.Ok(new { connectable = false, reason = "The server is still loading a map." });
-
-        var payload = await RunOnServerAsync(() => new
-        {
-            connectable = true,
-            reason = (string?)null,
-            map = Server.MapName,
-            maxPlayers = Server.MaxPlayers
-        }, cancellationToken);
-
-        return TakaroActionResult.Ok(payload);
-    }
+    // The connector answering is what makes the server reachable. World updates stop while a map
+    // loads or the server hibernates, so this must not wait for one.
+    public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(TakaroActionResult.Ok(new { connectable = true, reason = (string?)null, map = currentMap, maxPlayers = currentMaxPlayers }));
 
     public async Task<IReadOnlyList<TakaroPlayer>> GetPlayersAsync(CancellationToken cancellationToken = default)
     {
