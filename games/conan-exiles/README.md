@@ -117,7 +117,7 @@ Checked on server build 25792439 (Linux and Windows), 2026-10-09. ✅ works, ⚠
 | Player location | ✅ | |
 | Teleport | ✅ | Module teleports included. |
 | Player inventory | ✅ | Backpack, hotbar and equipment with durability. |
-| Player levels and skills | ✅ | Character level, experience and progress, and the six attributes, read from the server. On Windows only level and experience were checked against the game. |
+| Player levels and skills | ✅ | Character level, experience and progress, and the six attributes, read from the server. |
 | Item list | ✅ | In-game names. |
 | Entity list | ⚠️ | In-game names; not compared against the game, which shows none. |
 | Locations | ✅ | The named places of the Exiled Lands as map markers, also when nobody is online. |
