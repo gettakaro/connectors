@@ -21,6 +21,10 @@ public final class Progression {
         readings.put(gameId, List.copyOf(tracks));
     }
 
+    public void remove(String gameId) {
+        readings.remove(gameId);
+    }
+
     /** Forgets every player not in {@code gameIds}. */
     public void retain(Set<String> gameIds) {
         readings.keySet().retainAll(gameIds);

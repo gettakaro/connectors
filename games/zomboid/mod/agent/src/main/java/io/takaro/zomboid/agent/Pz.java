@@ -10,6 +10,7 @@ import io.takaro.zomboid.core.model.PlayerLocation;
 import io.takaro.zomboid.core.model.ProgressionTrack;
 
 import java.lang.reflect.Field;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
@@ -18,6 +19,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import zombie.ZomboidFileSystem;
 import zombie.characters.IsoGameCharacter;
 import zombie.characters.IsoPlayer;
 import zombie.characters.Roles;
@@ -176,7 +178,7 @@ public final class Pz {
      * Stores a reading for every spawned player. A dead character keeps its last reading until the
      * new one spawns, and a player on the loading or respawn screen has no character to read.
      */
-    public static void readProgression(Progression progression) {
+    public static void readProgression(Progression progression, Characters characters) {
         UdpEngine engine = GameServer.udpEngine;
         if (engine == null || engine.connections == null) {
             return;
@@ -189,7 +191,7 @@ public final class Pz {
             }
             connected.add(username);
             IsoPlayer p = c.players != null && c.players.length > 0 ? c.players[0] : null;
-            if (p == null || p.isDead()) {
+            if (p == null || p.isDead() || characters.current(username) == null) {
                 continue;
             }
             try {
@@ -199,6 +201,46 @@ public final class Pz {
             }
         }
         progression.retain(connected);
+    }
+
+    /**
+     * Gives each living survivor without an id its id. The reading goes in first: Takaro asks for
+     * the character and then the levels, so a new id must never be answered with the last
+     * survivor's levels.
+     */
+    public static void observeCharacters(Characters characters, Progression progression) {
+        UdpEngine engine = GameServer.udpEngine;
+        if (engine == null || engine.connections == null) {
+            return;
+        }
+        for (UdpConnection c : new ArrayList<>(engine.connections)) {
+            String username = c == null ? null : c.getUserName();
+            if (username == null || username.isEmpty() || !c.isFullyConnected()) {
+                continue;
+            }
+            IsoPlayer p = c.players != null && c.players.length > 0 ? c.players[0] : null;
+            if (p == null || p.isDead() || !characters.needsNew(username, p)) {
+                continue;
+            }
+            try {
+                progression.put(username, perkTracks(p));
+            } catch (RuntimeException e) {
+                progression.remove(username);
+                AgentLog.error("progression read failed for " + username, e);
+            }
+            AgentLog.log("character: " + characters.begin(username, survivorName(p, username)).id()
+                    + " for " + username);
+        }
+    }
+
+    private static String survivorName(IsoPlayer p, String username) {
+        String name = p.getDescriptor() != null ? p.getDescriptor().getFullname() : null;
+        return name == null || name.isBlank() ? username : name.trim();
+    }
+
+    /** Where {@link Characters} keeps its file: the current world's save folder. */
+    public static Path characterFile() {
+        return ZomboidFileSystem.instance.getFileInCurrentSave(Characters.FILE_NAME).toPath();
     }
 
     private static List<ProgressionTrack> perkTracks(IsoPlayer p) {
