@@ -9,6 +9,7 @@ local util = require("takaro.util")
 local json = require("takaro.json")
 local scumlog = require("takaro.scumlog")
 local chatname = require("takaro.chatname")
+local progression = require("takaro.progression")
 
 local M = {}
 
@@ -39,6 +40,9 @@ M.MAX_GIVE = 50
 M.HANDS_DELAY_MS = 1500
 M.DEATH_POLL_MS = 1000
 M.DEATH_HOLD_MS = 3000 -- wait for a kill-log line (it names the attacker) before reporting a plain death
+M.PROGRESSION_SCAN_MS = 5000     -- how often the skill cache looks for players to read
+M.PROGRESSION_REFRESH_MS = 15000 -- a player's cached skills are read again after this long
+M.PROGRESSION_BUDGET_US = 1000   -- game-thread time per scan; players left over wait for the next scan
 M.CATALOG_SCHEMA = 2 -- bump when catalogue entries change, so caches rebuild
 M.ABSTRACT = { BP_BTBaseAnimal = true } -- base classes listed as primary assets, never spawned
 M.KICK_MESSAGE_DELAY_MS = 2000 -- the reason is shown in chat first; KickPlayer's own screen has no reason text
@@ -89,7 +93,8 @@ Game.__index = Game
 function M.new(env, log, opts)
   opts = opts or {}
   local g = setmetatable({ env = env or {}, log = log, hooks = {}, online = {}, ips = {}, bans = {},
-    recentChat = {}, perf = { ticks = 0, totalUs = 0, maxUs = 0, catalogUs = 0, loads = 0 },
+    recentChat = {}, perf = { ticks = 0, totalUs = 0, maxUs = 0, catalogUs = 0, loads = 0, progressionUs = 0 },
+    progression = {}, lastProgressionScan = 0,
     catalogs = {}, lastTail = 0, lastBanCheck = 0, kickQueue = {}, handQueue = {}, alive = {}, lastPos = {},
     pendingDeaths = {}, recentKills = {}, lastDeathPoll = 0, banned = {}, gameLoadedBans = {}, pendingUnbans = {},
     npcs = {}, lastNpcScan = -1e9, attacks = {}, delayedKicks = {} }, Game)
@@ -239,6 +244,45 @@ function Game:pawn(pc)
 end
 
 -- Actions ---------------------------------------------------------------------------------------------------
+
+-- The skill records of one prisoner, or nil when the prisoner or its skill component is not there yet.
+function Game:read_skill_records(pc)
+  local prisoner = self:pawn(pc)
+  if not prisoner then return nil end
+  local okC, comp = pcall(function() return prisoner.SkillComponent end)
+  if not okC or not valid(comp) then return nil end
+  local records = {}
+  comp._replicatedSkills:ForEach(function(_, element)
+    local r = element:get()
+    records[#records + 1] = { id = r.ID, level = r.Level, experience = r.ExperiencePoints }
+  end)
+  return records
+end
+
+-- Takaro polls getPlayerProgression on every player sync, so the game is read here, on a slow timer under a budget,
+-- and the request only looks at this cache. A failed read keeps the last value.
+function Game:refresh_progression(nowMs)
+  local t0 = self:now_us()
+  for _, c in ipairs(self:controllers()) do
+    local cached = self.progression[c.id]
+    if not cached or nowMs - cached.at >= M.PROGRESSION_REFRESH_MS then
+      local ok, records = pcall(self.read_skill_records, self, c.pc)
+      if ok and records and #records > 0 then
+        self.progression[c.id] = { at = nowMs, tracks = progression.skill_tracks(records) }
+      elseif not ok then
+        self.log:warn("progression read for %s: %s", c.id, tostring(records))
+      end
+      if self:now_us() - t0 >= M.PROGRESSION_BUDGET_US then break end
+    end
+  end
+  self.perf.progressionUs = self.perf.progressionUs + (self:now_us() - t0)
+end
+
+function Game:get_player_progression(params)
+  local cached = self.progression[tostring(params.gameId)]
+  if cached then return { ok = true, value = cached.tracks } end
+  return { ok = false, reason = "no reading yet" }
+end
 
 function Game:reachability()
   local gm = self:game_mode()
@@ -1338,6 +1382,11 @@ function Game:tick(nowMs)
     local okD, errD = pcall(self.poll_deaths, self, nowMs)
     if not okD then self.log:warn("death poll: %s", tostring(errD)) end
   end
+  if nowMs - self.lastProgressionScan >= M.PROGRESSION_SCAN_MS then
+    self.lastProgressionScan = nowMs
+    local okP, errP = pcall(self.refresh_progression, self, nowMs)
+    if not okP then self.log:warn("progression scan: %s", tostring(errP)) end
+  end
   if #self.kickQueue > 0 then
     local keep = {}
     for _, k in ipairs(self.kickQueue) do
@@ -1399,8 +1448,8 @@ end
 function Game:perf_summary()
   local p = self.perf
   local avg = p.ticks > 0 and math.floor(p.totalUs / p.ticks) or 0
-  return string.format("gameThread ticks=%d avgUs=%d maxUs=%d catalogMs=%d classLoads=%d", p.ticks, avg, p.maxUs,
-    math.floor(p.catalogUs / 1000), p.loads)
+  return string.format("gameThread ticks=%d avgUs=%d maxUs=%d catalogMs=%d classLoads=%d progressionMs=%d", p.ticks, avg,
+    p.maxUs, math.floor(p.catalogUs / 1000), p.loads, math.floor(p.progressionUs / 1000))
 end
 
 M.ACTION_FUNCTIONS = {

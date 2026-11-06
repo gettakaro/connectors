@@ -84,6 +84,7 @@ end
 function Router:fallback(action, why, rawArgs)
   why = why or "unavailable"
   if action == "getPlayerInventory" then return { error = "inventory unavailable: " .. why } end
+  if action == "getPlayerProgression" then return json.null end
   if M.LIST_ACTIONS[action] then return {} end
   if action == "getPlayer" then
     return self.known:resolve(players.game_id_from_args(M.normalize_args(rawArgs)) or "")
@@ -196,6 +197,17 @@ function H.getPlayerInventory(self, args, reply)
     if M.INVENTORY_EMPTY_REASONS[why] then return reply({}) end
     self.log:warn("getPlayerInventory: %s; answering an error so Takaro keeps the last inventory", why)
     reply({ error = "inventory unavailable: " .. why })
+  end)
+end
+
+-- Takaro polls this on every player sync, so the adapter answers from its cached reading. null = the game does not
+-- know the player, [] = a known player without a reading yet; an unknown player is never an error.
+function H.getPlayerProgression(self, args, reply)
+  local id = players.game_id_from_args(args)
+  if not id then return reply(json.null) end
+  self:call("get_player_progression", { gameId = id }, function(res)
+    if res.ok and type(res.value) == "table" then return reply(res.value) end
+    reply(self.known:get(id) and {} or json.null)
   end)
 end
 

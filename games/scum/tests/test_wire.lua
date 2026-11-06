@@ -89,8 +89,8 @@ t.test("WIRE-3: every action answers identically for [], {}, JSON-string, null a
       local rid = action .. "-" .. i
       request_raw_args(tk, action, shape.raw, rid)
       tk.pump()
-      local payload = tk.response(rid)
-      t.ok(payload ~= nil, action .. " answered for " .. shape.name)
+      local payload, frame = tk.response(rid)
+      t.ok(frame ~= nil, action .. " answered for " .. shape.name)
       if first == nil then first = payload else t.deep(payload, first, action .. " same result for " .. shape.name) end
     end
   end
@@ -238,8 +238,10 @@ t.test("always respond: every action answers with a stub adapter, in the shape T
   tk.pump()
   for _, action in ipairs(coverage.ACTIONS) do
     local p, frame = tk.response("all-" .. action)
-    t.ok(p ~= nil, action .. " answered")
-    if action == "getPlayerInventory" then
+    t.ok(frame ~= nil, action .. " answered")
+    if action == "getPlayerProgression" then
+      t.eq(frame.text:match('"payload":(....)'), "null", "an unknown player is null, never an error")
+    elseif action == "getPlayerInventory" then
       t.ok(type(p.error) == "string", "getPlayerInventory: a failing adapter answers { error }, Takaro keeps the last inventory")
     elseif actions.LIST_ACTIONS[action] then
       t.eq(frame.text:match('"payload":(.)'), "[", action .. " is a bare array")

@@ -4,7 +4,7 @@
 local M = {}
 
 M.ACTIONS = {
-  "getPlayer", "getPlayers", "getPlayerLocation", "getPlayerInventory", "giveItem", "listItems", "listEntities",
+  "getPlayer", "getPlayers", "getPlayerLocation", "getPlayerInventory", "getPlayerProgression", "giveItem", "listItems", "listEntities",
   "listLocations", "executeConsoleCommand", "sendMessage", "teleportPlayer", "kickPlayer", "banPlayer",
   "unbanPlayer", "listBans", "testReachability", "shutdown", "getMapInfo", "getMapTile",
 }
@@ -45,6 +45,15 @@ M.actions = {
       .. "hands, container contents, nested). amount = UStackableItemComponent._repQuantity for stacks, quality = "
       .. "GetHealth/GetMaxHealth in whole percent. A failed read answers an error, never [] (Takaro would record "
       .. "removals). Rounds loaded in a weapon or magazine are not items and are not listed.",
+  },
+  getPlayerProgression = {
+    status = "live-supported",
+    responseShape = "null | ProgressionTrack[] { key, name, level, experience } (one skill.<name> track per skill)",
+    liveVerification = "live 2026-11-06 on SCUM 1.3.5.2 through Takaro: tracks stored on the player after a join",
+    reason = "UPrisonerSkillComponent._replicatedSkills holds level (0 no skill .. 4 above advanced) and experience. "
+      .. "A slow timer reads it under a game-thread budget and the request answers from that cache. SCUM has no single "
+      .. "character level, so there is no character track. Attributes are not reported: the server only exposes them "
+      .. "packed into undocumented replication fields.",
   },
   giveItem = {
     status = "live-supported",
