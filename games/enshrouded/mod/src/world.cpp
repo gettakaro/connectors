@@ -110,6 +110,8 @@ using TmplFn = uint8_t*(__fastcall*)(uint64_t sys, uint8_t* outGuid, uint64_t ei
 using CharNameFn = uint8_t*(__fastcall*)(uint8_t* out, uint64_t table, uint64_t key);
 CharNameFn g_charName = nullptr;
 uint32_t g_charComp = 0, g_charTable = 0;
+// 1.0: the player slot holds the keen::CharacterId the client sent at login
+uint32_t g_slotCharId = 0;
 uint64_t g_charLastMs = 0;
 // 1.0: ecs::NetworkPlayerAttributes of a player entity holds level / experience / experienceRequired as u16
 uint32_t g_attrComp = 0, g_attrLevel = 0, g_attrXp = 0, g_attrXpReq = 0;
@@ -269,6 +271,19 @@ std::string CharacterNameOf(uint64_t server, uint32_t eid) {
     return std::string(p, (size_t)n);
 }
 
+// 32 lowercase hex digits, or "" for an all-zero id.
+std::string HexGuid(const uint8_t* b) {
+    static const char kDigits[] = "0123456789abcdef";
+    std::string out;
+    bool any = false;
+    for (int i = 0; i < 16; i++) {
+        any |= b[i] != 0;
+        out += kDigits[b[i] >> 4];
+        out += kDigits[b[i] & 15];
+    }
+    return any ? out : "";
+}
+
 void RefreshCharacterNames(uint64_t server) {
     for (int i = 0; i < 16; i++) {
         uint64_t s = Slot(server, i);
@@ -276,6 +291,10 @@ void RefreshCharacterNames(uint64_t server) {
         if (!*(uint32_t*)s || !eid) continue;
         std::string persona = SlotName(s);
         if (persona.empty()) continue;
+        if (g_slotCharId) {
+            std::string id = HexGuid((const uint8_t*)(s + g_slotCharId));
+            if (!id.empty()) PluginState::Get().SetCharacterId(persona, id);
+        }
         std::string ch = CharacterNameOf(server, eid);
         if (!ch.empty()) PluginState::Get().SetCharacterName(persona, ch);
         if (g_attrComp) {  // one component read per player; values only, no logging here (game thread)
@@ -1041,6 +1060,8 @@ void WorldHooksInit() {
         uint32_t cn = profile::Fn("characterName", h3);
         g_charComp = (uint32_t)profile::L("characterComponent", 0);
         g_charTable = (uint32_t)profile::L("characterTable", 0);
+        g_slotCharId = (uint32_t)profile::L("slotCharacterId", 0);
+        if (g_slotCharId + 16 > L.slotStride) g_slotCharId = 0;
         if (cn && g_charComp && g_charTable) {
             g_charName = (CharNameFn)scan::Ptr(cn);
             st.SetCharacterNamesAvailable(true);

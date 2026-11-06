@@ -19,6 +19,7 @@ const std::vector<Shipped> kShipped = {
     {"1283531", "2097a7760ff28743"},  // game build 1283531 support (Steam 26319703)
     {"1285601", "ff69f63a5cbf8f03"},  // game build 1285601 support (Steam 26404334)
     {"1287369", "fe123fb1cc017aec"},  // game build 1287369 support (Steam 26430253)
+    {"1287369", "6d1b47b8e6887085"},  // layout.slotCharacterId (players.characters)
 };
 
 void Canonical(const JsonValue& v, std::string& out) {
