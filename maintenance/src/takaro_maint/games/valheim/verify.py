@@ -237,11 +237,12 @@ async def _check_handshake(run: Any, fake: Any, alive: Any) -> checks.CheckResul
     """The plugin loaded, started, identified, and Takaro accepted the identify frame."""
     with checks._Timer() as timer:
         problems: list[str] = []
-        if fake.identify_count < 1:
-            problems.append("the connector never sent an identify frame")
+        # The connector dials Takaro only once the world has loaded, so the frame follows the ready line.
         confirmed = await asyncio.to_thread(
             checks.wait_for_line, run.server_log, HANDSHAKE_LINE, checks_lifecycle.IDENTIFY_BUDGET, alive
         )
+        if fake.identify_count < 1:
+            problems.append("the connector never sent an identify frame")
         if not confirmed:
             problems.append("the server log never confirmed the identify with 'identified as gameServerId='")
         loaded = await asyncio.to_thread(checks.find_line, run.server_log, LOADED_LINE)
@@ -646,7 +647,8 @@ def _rehash(data_dir: Path, ledger_inputs: list[dict[str, Any]]) -> tuple[list[s
 
 #: What this game contributes to a verification run; the runner reads nothing else.
 HOOKS = GameHooks(
-    ready_line=READY_LINE,
+    # The connector dials Takaro only once the world has loaded, so identify is the last boot step.
+    ready_line=HANDSHAKE_LINE,
     check_ids=CHECK_IDS,
     negative_check_ids=(NEGATIVE_CHECK,),
     unsupported_checks=UNSUPPORTED_CHECKS,

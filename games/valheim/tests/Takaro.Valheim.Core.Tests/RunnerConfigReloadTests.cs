@@ -66,6 +66,24 @@ public sealed class RunnerConfigReloadTests
     }
 
     [TestMethod]
+    public async Task ABootingServerStaysAwayFromTakaroUntilTheWorldHasLoaded()
+    {
+        using var takaro = new FakeTakaro();
+        var logs = new Log();
+        var ready = false;
+        using var runner = new TakaroWebSocketRunner(Config(takaro, "good", "id-1"), new IdleAdapter(), logs.Infos.Enqueue, null, logs.Warnings.Enqueue, ConfigPath, gameReady: () => Volatile.Read(ref ready));
+        await runner.StartAsync();
+
+        await Until(() => logs.Infos.Any(l => l.Contains("once the world has loaded", StringComparison.Ordinal)));
+        await Task.Delay(1500);
+        Assert.AreEqual(0, takaro.Identifies.Count);
+
+        Volatile.Write(ref ready, true);
+
+        await Until(() => logs.Infos.Any(l => l.Contains("identified as gameServerId=gs-id-1", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
     public async Task TakarosConnectedMessageDoesNotSendASecondIdentify()
     {
         // This fake answers a second identify on one socket with a 409, as Takaro does for the
