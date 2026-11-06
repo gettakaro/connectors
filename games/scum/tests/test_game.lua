@@ -209,6 +209,15 @@ t.test("getPlayers lists controllers with a SteamID64, name, ping and the login-
   t.deep(r.value, { { steamId = ID1, name = "Alice", ping = 28, ip = "10.0.0.5" } })
 end)
 
+t.test("the catalogues count as ready when items and entities are both built", function()
+  local W = world()
+  t.eq(W.g:catalogs_done(), false)
+  W.g.catalogs = { items = { done = true }, entities = { done = false } }
+  t.eq(W.g:catalogs_done(), false)
+  W.g.catalogs.entities.done = true
+  t.eq(W.g:catalogs_done(), true)
+end)
+
 t.test("sendMessage: global via BroadcastChatLine(ServerMessage), directed via SendChatLineToPlayer, sender prefix", function()
   local W = world()
   W.add_pc(ID1, "Alice")
