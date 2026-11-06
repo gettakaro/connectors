@@ -230,6 +230,8 @@ std::string Adapter::CapabilityManifest() {
         if (name == "players.progression") entry.Raw("parameters", ObjBuilder().S("source", "server").Done());
         add(entry.Done());
     }
+    // One character per account, but deleting it and making a new one gives a new stable id.
+    add(ObjBuilder().S("name", "players.characters").Raw("parameters", ObjBuilder().S("held", "server").Done()).Done());
     for (const Coverage* c : EventCoverages())
         if (std::string(c->status) == "live-supported") add(ObjBuilder().S("name", std::string("events.") + c->name).Done());
     if (const MapCalibration* map = MapForRegion(o_.region()))

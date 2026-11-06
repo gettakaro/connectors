@@ -63,6 +63,30 @@ static void TestPayloads() {
     EQ(D(PlayerJson(noName)), "{\"gameId\":\"76561198000735875\",\"name\":\"76561198000735875\",\"steamId\":"
                               "\"76561198000735875\",\"platformId\":\"steam:76561198000735875\"}");
 
+    PlayerId playing = noName;
+    playing.characterId = "154";
+    playing.characterName = "werwerwer";
+    EQ(D(ConnectedPayload(playing)), "{\"player\":{\"gameId\":\"76561198000735875\",\"name\":\"76561198000735875\",\"steamId\":"
+                                     "\"76561198000735875\",\"platformId\":\"steam:76561198000735875\",\"character\":{\"id\":"
+                                     "\"154\",\"name\":\"werwerwer\"}}}");
+    playing.characterName = "";  // Takaro needs a name: the platform name stands in until the game has one
+    CHECK(D(PlayerJson(playing)).find("\"character\":{\"id\":\"154\",\"name\":\"76561198000735875\"}") != std::string::npos,
+          "character name falls back: %s", D(PlayerJson(playing)).c_str());
+    JsonValue sent = takaro::JObj();
+    sent.obj.push_back({"player", PlayerJson(playing)});
+    CHECK(D(events::Sanitize("player-connected", sent)).find("\"character\"") != std::string::npos, "the whitelist keeps character");
+
+    PlayerId oldC = me, newC = me;
+    oldC.characterId = "154";
+    newC.characterId = "191";
+    CHECK(NeedsRelog(oldC, newC), "a new id is a relog");
+    CHECK(!NeedsRelog(oldC, oldC), "the same id is not");
+    PlayerId none = me;
+    CHECK(!NeedsRelog(oldC, none), "no pawn right now (dead, creating) is not");
+    CHECK(!NeedsRelog(none, newC), "the first id before any connect is not: the connect carries it");
+    none.connectedWithoutCharacter = true;
+    CHECK(NeedsRelog(none, newC), "the first id after a connect without one is");
+
     EQ(MapChannel("Global"), "global");
     EQ(MapChannel("Local"), "global");
     EQ(MapChannel("Clan"), "team");

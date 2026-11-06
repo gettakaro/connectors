@@ -594,6 +594,12 @@
      "type": "ObjectProperty",
      "offset": 5608,
      "size": 8
+    },
+    {
+     "name": "CharacterStableId",
+     "type": "StructProperty",
+     "offset": 2208,
+     "size": 8
     }
    ],
    "functions": []

@@ -378,6 +378,7 @@ struct Server {
         w.W<uintptr_t>(pc + Off(w, "Controller", "Pawn"), pawn);
         w.W<uintptr_t>(pawn + Off(w, "Actor", "RootComponent"), root);
         w.FString(pawn + Off(w, "BaseBPChar_C", "CharacterName"), character);
+        if (steam == std::string("76561198000735875")) w.W<int64_t>(pawn + Off(w, "ConanCharacter", "CharacterStableId"), 154);
         double v[3] = {x, y, z};
         memcpy(w.mem.At(root + Off(w, "SceneComponent", "RelativeLocation")), v, 24);
         memcpy(w.mem.At(root + 0x210), v, 24);
@@ -756,7 +757,7 @@ static void TestReads() {
     r = rs->Execute("getPlayers", J("{}"));
     EQ(Dump(r),
        "[{\"gameId\":\"76561198000735875\",\"name\":\"Limon#67642\",\"steamId\":\"76561198000735875\",\"platformId\":"
-       "\"steam:76561198000735875\",\"ip\":\"192.168.129.15\",\"ping\":56},{\"gameId\":\"76561198000000002\",\"name\":"
+       "\"steam:76561198000735875\",\"ip\":\"192.168.129.15\",\"ping\":56,\"character\":{\"id\":\"154\",\"name\":\"werwerwer\"}},{\"gameId\":\"76561198000000002\",\"name\":"
        "\"Second\",\"steamId\":\"76561198000000002\",\"platformId\":\"steam:76561198000000002\",\"ip\":\"10.0.0.2\","
        "\"ping\":120}]");
     std::string h = rs->HealthJson();

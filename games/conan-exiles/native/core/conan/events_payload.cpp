@@ -31,7 +31,7 @@ std::string TrimWs(const std::string& s) {
 }
 
 const char* const kPlayerKeys[] = {"gameId", "name", "steamId", "epicOnlineServicesId", "xboxLiveId",
-                                   "platformId", "ip", "ping"};
+                                   "platformId", "ip", "ping", "character"};
 const char* const kPositionKeys[] = {"x", "y", "z"};
 
 struct EventKeys {
@@ -72,7 +72,19 @@ JsonValue PlayerJson(const PlayerId& p) {
     Put(o, "steamId", JStr(p.steam64));
     Put(o, "platformId", JStr("steam:" + p.steam64));
     if (!TrimWs(p.ip).empty()) Put(o, "ip", JStr(TrimWs(p.ip)));
+    if (!p.characterId.empty()) {
+        JsonValue c = JObj();
+        Put(c, "id", JStr(p.characterId));
+        std::string character = TrimWs(p.characterName);
+        Put(c, "name", JStr(character.empty() ? (name.empty() ? p.steam64 : name) : character));
+        Put(o, "character", c);
+    }
     return o;
+}
+
+bool NeedsRelog(const PlayerId& before, const PlayerId& now) {
+    if (now.characterId.empty() || before.characterId == now.characterId) return false;
+    return !before.characterId.empty() || before.connectedWithoutCharacter;
 }
 
 std::string MapChannel(const std::string& ch) {
