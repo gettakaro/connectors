@@ -55,7 +55,9 @@ struct Roster {
     int ping = -1;
     double x = 0, y = 0, z = 0;
     bool hasPosition = false, online = false;
-    std::optional<takaro::ProgressReading> progress;  // the last reading stays while the player has no body
+    // The last readings stay while the player has no body, so a death shows up at respawn and not as an error.
+    std::optional<takaro::ProgressReading> progress;
+    std::optional<tj::Value> inventory;
 };
 
 struct Icon {
@@ -462,7 +464,11 @@ takaro::Outcome Inventory(const tj::Value& args) {
     if (pc == nullptr) return takaro::Outcome::Fail("not_found", "player is not online");
     auto* character = pc->GetPlayerCharacter();
     UPrimalInventoryComponent* inventory = character != nullptr ? character->MyInventoryComponentField() : nullptr;
-    if (inventory == nullptr) return takaro::Outcome::Fail("game_error", "the player has no inventory right now");
+    if (inventory == nullptr) {
+        const auto it = g_players.find(id);
+        if (it != g_players.end() && it->second.inventory) return takaro::Outcome::Ok(*it->second.inventory);
+        return takaro::Outcome::Fail("game_error", "the player has no inventory right now");
+    }
     tj::Value out = tj::Value::array();
     std::set<UPrimalItem*> seen;
     const auto add = [&](UPrimalItem* item) {
@@ -484,6 +490,7 @@ takaro::Outcome Inventory(const tj::Value& args) {
     };
     for (UPrimalItem* item : inventory->InventoryItemsField()) add(item);
     for (UPrimalItem* item : inventory->EquippedItemsField()) add(item);
+    g_players[id].inventory = out;
     return takaro::Outcome::Ok(std::move(out));
 }
 
