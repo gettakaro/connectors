@@ -59,7 +59,7 @@ One to two minutes after start, `ue4ss\Mods\TakaroSCUM\takaro.log` shows
 
 ## What works, what doesn't
 
-Checked on SCUM 1.3.5.1.172191 (Steam build 26280049), 2026-10-29. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on SCUM 1.3.5.1.172191 (Steam build 26280049), 2026-10-29; player levels and skills on 1.3.5.2.172724 (Steam build 26320224), 2026-11-06. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
@@ -68,6 +68,7 @@ Checked on SCUM 1.3.5.1.172191 (Steam build 26280049), 2026-10-29. ✅ works, �
 | Player location | ✅ | |
 | Teleport | ✅ | |
 | Player inventory | ✅ | Rounds in a weapon are not listed. |
+| Player levels and skills | ⚠️ | Skills as `skill.<name>` (level 0 to 4) with experience. No overall character level. |
 | Item list | ✅ | |
 | Entity list | ⚠️ | Zombie and NPC names are built from codes. |
 | Locations | ❌ | SCUM has no named places. |
