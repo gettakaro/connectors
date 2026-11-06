@@ -94,6 +94,7 @@ def protocol_v1(cert, key, state):
         assert len(names) == len(set(names)) and 'testReachability' not in names, names
         assert {'players.location', 'moderation.ban', 'events.player-connected', 'events.chat-message'} <= set(names), names
         assert offered['capabilities'][names.index('players.progression')]['parameters'] == {'source': 'client-reported'}, offered
+        assert offered['capabilities'][names.index('players.characters')]['parameters'] == {'held': 'client'}, offered
         dims = offered['capabilities'][names.index('map')]['parameters']['dimensions']
         assert [d['id'] for d in dims] == ['overworld'] and dims[0]['source'] == {'type': 'none'}, dims
         # Game Profile: the game and connector identity, game.profile with the running version and icon.
