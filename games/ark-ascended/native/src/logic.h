@@ -35,6 +35,33 @@ std::string ItemCodeOf(const tj::Value& args);
 // the Cosmetics tab, not as something the player carries.
 bool IsCosmeticCode(const std::string& code);
 
+// False for the origin, which is what the game answers once the pawn is being torn down on a disconnect.
+bool IsRealPosition(double x, double y, double z);
+
+// The survivor's level as the game shows it. XP can pass the next threshold without changing it: the level rises when
+// the player spends the point.
+struct ProgressReading {
+    int level = 0;
+    double experience = 0;
+    std::optional<double> progress;
+};
+// Empty when the game gave values that cannot be a real reading.
+std::optional<ProgressReading> MakeProgressReading(int level, double experience, double previous, double next);
+// Fraction of the way between the thresholds. Empty at the level cap, where they are equal.
+std::optional<double> ProgressBetween(double experience, double previous, double next);
+// Null for a player the game does not know, [] for a known player with no reading yet.
+tj::Value ProgressionJson(bool knownPlayer, const std::optional<ProgressReading>& reading);
+
+// One survivor. PlayerDataID stays through deaths and restarts; Create New Survivor replaces it.
+struct Survivor {
+    std::string id, name;
+};
+// Empty when the game has no id for the player yet. The name falls back on the account name.
+std::optional<Survivor> MakeSurvivor(uint64_t playerDataId, const std::string& name, const std::string& accountName);
+tj::Value SurvivorJson(const Survivor& survivor);
+// True when the player was already playing another survivor.
+bool IsSurvivorSwitch(const std::optional<Survivor>& known, const Survivor& seen);
+
 // The game's BanList.txt: one "id,name,minutes" line per ban.
 struct NativeBan {
     std::string id, name;
