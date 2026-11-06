@@ -81,7 +81,7 @@ not crop it or add borders; a smaller copy of the same full image works too.
 
 ### 5. Check that it works
 
-After the world has loaded (one to two minutes), `ue4ss\Mods\TakaroSCUM\takaro.log` shows:
+After the world has loaded (one to two minutes; the first time, also until the item catalogue is built, up to 15 minutes), `ue4ss\Mods\TakaroSCUM\takaro.log` shows:
 
 ```
 identified with Takaro as game server …
@@ -98,7 +98,7 @@ update, wait for a connector release that names the new game build.
 
 ## What works, what doesn't
 
-Checked on SCUM 1.3.5.1.172191 (Steam build 26280049), 2026-10-29. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on SCUM 1.3.5.1.172191 (Steam build 26280049), 2026-10-29; player levels and skills on 1.3.5.2.172724 (Steam build 26320224), 2026-11-06. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
@@ -107,6 +107,7 @@ Checked on SCUM 1.3.5.1.172191 (Steam build 26280049), 2026-10-29. ✅ works, �
 | Player location | ✅ | Live position; offline players give their last position. |
 | Teleport | ✅ | The player is moved at once. |
 | Player inventory | ✅ | Clothes, item in hands, holster and backpack/pocket contents, with stack sizes and durability. Rounds loaded in a weapon or magazine are not listed. |
+| Player levels and skills | ⚠️ | Every skill the game shows as a track named `skill.<name>`, e.g. `skill.running`, at level 0 (no skill) to 4 (above advanced), with experience and progress. The four attributes as `attribute.<name>`, e.g. `attribute.strength`, at their nearest whole value. SCUM has no overall character level. Each character keeps its own levels; New Character starts a new one, a death does not. Requires a Takaro version with Characters support. |
 | Item list | ✅ | All items, with their in-game names. |
 | Entity list | ⚠️ | Animals have in-game names; zombie and NPC names are built from codes (e.g. "Zombie Civilian Skinny Male"). |
 | Locations | ❌ | SCUM has no list of named places. |
