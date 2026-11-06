@@ -416,6 +416,26 @@ class ProtocolV1Test {
     }
 
     @Test
+    void aMapThatLoadsDuringIdentifyIsDeclaredOnceIdentified() {
+        client.onOpen(null);
+        sent.clear();
+        adapter.dimensions = List.of(DIM);
+        identify(1);
+        JsonObject msg = frame(0);
+        assertEquals("capabilities", msg.get("type").getAsString());
+        assertTrue(names(msg.getAsJsonObject("payload").getAsJsonArray("capabilities")).contains("map"));
+    }
+
+    @Test
+    void anUnchangedMapSendsNoSecondManifest() {
+        adapter.dimensions = List.of(DIM);
+        client.onOpen(null);
+        sent.clear();
+        identify(1);
+        assertTrue(sent.stream().noneMatch(raw -> raw.contains("\"type\":\"capabilities\"")));
+    }
+
+    @Test
     void capabilitiesChangedBeforeIdentifyOrOnVersion0SendsNothing() {
         client.onOpen(null);
         sent.clear();
