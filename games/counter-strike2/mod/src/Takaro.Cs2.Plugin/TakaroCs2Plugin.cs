@@ -234,6 +234,10 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
         {
             _ = EmitAsync("chat-message", EventFactory.ChatMessage(player, message, teamOnly));
         }
+        else if (controller is null && !string.IsNullOrWhiteSpace(message))
+        {
+            _ = EmitAsync("chat-message", EventFactory.ServerChat(message));
+        }
 
         return HookResult.Continue;
     }

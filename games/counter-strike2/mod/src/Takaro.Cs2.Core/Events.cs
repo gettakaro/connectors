@@ -12,6 +12,10 @@ public static class EventFactory
     public static object ChatMessage(TakaroPlayer player, string message, bool teamOnly) =>
         new ChatMessageEvent(player, teamOnly ? "team" : "global", DateTimeOffset.UtcNow, message);
 
+    /// <summary>Chat typed on the server console has no player; Takaro stores it but never treats it as a command.</summary>
+    public static object ServerChat(string message) =>
+        new ServerChatEvent("global", DateTimeOffset.UtcNow, message);
+
     public static object PlayerDeath(TakaroPlayer player, TakaroPlayer? attacker, string? weapon, bool headshot, TakaroPosition? position = null)
     {
         var data = new Dictionary<string, object?>
@@ -37,6 +41,11 @@ public static class EventFactory
 
     private sealed record ChatMessageEvent(
         [property: JsonPropertyName("player")] TakaroPlayer Player,
+        [property: JsonPropertyName("channel")] string Channel,
+        [property: JsonPropertyName("timestamp")] DateTimeOffset Timestamp,
+        [property: JsonPropertyName("msg")] string Msg);
+
+    private sealed record ServerChatEvent(
         [property: JsonPropertyName("channel")] string Channel,
         [property: JsonPropertyName("timestamp")] DateTimeOffset Timestamp,
         [property: JsonPropertyName("msg")] string Msg);

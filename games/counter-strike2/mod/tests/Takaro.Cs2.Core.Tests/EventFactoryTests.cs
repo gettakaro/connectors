@@ -43,4 +43,14 @@ public sealed class EventFactoryTests
         Assert.AreEqual("killed with ak47 (headshot)", data.GetProperty("msg").GetString());
         Assert.IsFalse(data.TryGetProperty("headshot", out _));
     }
+
+    [TestMethod]
+    public void ServerChatHasNoPlayer()
+    {
+        var chat = System.Text.Json.JsonSerializer.SerializeToElement(EventFactory.ServerChat("hello"), TakaroProtocol.JsonOptions);
+        Assert.AreEqual("hello", chat.GetProperty("msg").GetString());
+        Assert.AreEqual("global", chat.GetProperty("channel").GetString());
+        Assert.IsFalse(chat.TryGetProperty("player", out _));
+    }
+
 }
