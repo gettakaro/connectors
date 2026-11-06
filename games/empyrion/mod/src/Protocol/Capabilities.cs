@@ -44,7 +44,7 @@ namespace TakaroEmpyrion.Protocol
 
         public static readonly string[] EventTypes = { "player-connected", "player-disconnected", "chat-message", "player-death", "entity-killed", "log" };
 
-        public static JArray Build(IEnumerable<string> actions, JObject mapCapability)
+        public static JArray Build(IEnumerable<string> actions, JObject mapCapability, GameProfile profile = null)
         {
             var manifest = new JArray();
             var seen = new HashSet<string>();
@@ -57,6 +57,7 @@ namespace TakaroEmpyrion.Protocol
                 }
             foreach (string type in EventTypes) manifest.Add(new JObject { ["name"] = "events." + type });
             if (mapCapability != null) manifest.Add(mapCapability);
+            if (profile != null) manifest.Add(profile.ToCapability());
             return manifest;
         }
     }

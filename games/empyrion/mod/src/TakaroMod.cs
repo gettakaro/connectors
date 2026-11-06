@@ -80,13 +80,16 @@ namespace TakaroEmpyrion
                 _log);
             _actions = new Actions(_game, v2, _players, catalog, telnet, _cfg, _log, new BanReasons(Path.Combine(dir, "bans.json")),
                 cmd => Task.Delay(1500).ContinueWith(_ => RunShutdownCommand(cmd)), _map);
+            var profile = new GameProfile(Version, GameProfile.ReadGameVersion(dir), GameProfile.LoadEmbeddedIcon());
+            _actions.Profile = profile;
             _client = new TakaroClient(() => new ClientWsConnection(), new ClientOptions
             {
                 Url = _cfg.WsUrl,
                 IdentityToken = _cfg.IdentityToken,
                 RegistrationToken = _cfg.RegistrationToken,
                 ServerName = _cfg.ServerName,
-                Manifest = _cfg.ProtocolVersion >= 1 ? () => Capabilities.Build(Actions.Declared, _map.Capability()) : (Func<JArray>)null,
+                Manifest = _cfg.ProtocolVersion >= 1 ? () => Capabilities.Build(Actions.Declared, _map.Capability(), profile) : (Func<JArray>)null,
+                Profile = profile,
             }, _log, OnRequest);
             _events = new Events(_actions, _players, catalog, _log, (type, data) => _client.SendGameEvent(type, data));
             _game.UnsolicitedEvent += _events.OnLegacyEvent;
@@ -125,6 +128,7 @@ namespace TakaroEmpyrion
         {
             _agent?.Stop();
             if (!_started) return;
+            _started = false;
             _mapTimer?.Dispose();
             _log.Info("Takaro connector stopping");
             try { _players.SaveSoon(force: true); } catch (Exception) { }

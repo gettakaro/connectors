@@ -43,6 +43,7 @@ namespace TakaroEmpyrion.Core
             new Entry("shutdown", "action", Live, "null", "console saveandexit 0, gated by ENABLE_DESTRUCTIVE_COMMANDS"),
             new Entry("getMapInfo", "action", Unsupported, "-", "protocol v0 only; the v1 map capability replaces it"),
             new Entry("getMapTile", "action", Live, "{mimeType,data}", "protocol v1: one Dimension per generated planet, tiles rendered from terrain.raw + biomes.dat"),
+            new Entry("getGameIcon", "action", Live, "{revision,data}", "protocol v1: the shipped icon, declared in game.profile"),
             new Entry("player-connected", "event", Live, "EventPlayerConnected", "Event_Player_Connected"),
             new Entry("player-disconnected", "event", Live, "EventPlayerDisconnected", "Event_Player_Disconnected"),
             new Entry("chat-message", "event", Live, "EventChatMessage", "IApplication.ChatMessageSent (Event_ChatMessage fallback)"),
