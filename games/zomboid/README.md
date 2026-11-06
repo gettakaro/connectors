@@ -146,7 +146,7 @@ Checked on Project Zomboid 42.22.2 (3d39148846), 2026-11-11. ✅ works, ⚠️ w
 | Player location | ✅ | Live X/Y/Z, following teleports. |
 | Teleport | ⚠️ | The move is immediate, but the new position can take about 15 seconds to show in Takaro. |
 | Player inventory | ✅ | Matches what the player carries, including item condition. |
-| Player levels and skills | ⚠️ | Every skill as its own track with level, experience and progress. Project Zomboid has no overall character level. Not checked yet. |
+| Player levels and skills | ✅ | Every skill as its own track with level, experience and progress, on the player profile and in level history; level changes trigger hooks. Project Zomboid has no overall character level. A death shows as a level drop once the new character spawns. |
 | Item list | ✅ | |
 | Entity list | ✅ | Zombies and vehicles, vehicles under their in-game names. |
 | Locations | ⚠️ | Build 42 has no named places, so only player-claimed safehouses are listed. |
