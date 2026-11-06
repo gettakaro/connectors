@@ -107,3 +107,8 @@ export function gmPlayerId(row: Partial<DunePlayerRow>, kind: PlayerIdKind): str
   if (kind === 'name') return str(row.characterName) ?? str(row.flsId);
   return str(row.flsId) ?? str(row.funcomId);
 }
+
+/** A player from an older online store has no character to compare, which is not a switch. */
+export function switchedCharacter(before: TakaroPlayer, after: TakaroPlayer): boolean {
+  return Boolean(before.character && after.character && before.character.id !== after.character.id);
+}

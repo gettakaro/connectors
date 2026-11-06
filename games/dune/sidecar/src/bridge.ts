@@ -1,6 +1,7 @@
 import { DuneAdapter, playerId, UnsupportedActionError } from './dune/adapter.js';
 import type { CursorStore } from './dune/cursorStore.js';
 import { EventPoller } from './dune/eventPoller.js';
+import { switchedCharacter } from './dune/identity.js';
 import { DEFAULT_DIMENSION } from './dune/mapDimensions.js';
 import type { OnlineStore } from './dune/onlineStore.js';
 import type { Position, TakaroPlayer } from './dune/types.js';
@@ -618,14 +619,17 @@ export class Bridge {
 
   /**
    * Brings Takaro's idea of who is online back in line with reality in ONE pass: a connect for everybody online that
-   * Takaro was never told about, a disconnect for everybody Takaro still believes is on. Returns how many events it
-   * emitted.
+   * Takaro was never told about or knows on another character, a disconnect for everybody Takaro still believes is on.
+   * Returns how many events it emitted.
    */
   async reconcilePresence(current: TakaroPlayer[]): Promise<number> {
     const byId = new Map(current.filter((p) => p?.gameId).map((p) => [p.gameId, p]));
     let emitted = 0;
     for (const [gameId, player] of byId) {
-      if (this.online.has(gameId)) continue;
+      const known = this.online.get(gameId);
+      if (known && !switchedCharacter(known, player)) continue;
+      // Takaro reads a character switch as a relog, so a switch made during the outage is replayed as one.
+      if (known) this.emit('player-disconnected', { player: known });
       if (this.emit('player-connected', { player }) !== false) {
         emitted += 1;
         this.reconciled.connected += 1;
