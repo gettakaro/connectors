@@ -13,6 +13,7 @@
 #include "ca_bundle.h"
 #include "chat_probe.h"
 
+#include <cmath>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -973,6 +974,34 @@ static void TestStackSplit() {
     CHECK(withinLimit, "no instance ever exceeds the item's own stack limit");
 }
 
+static void TestProgression() {
+    using ActionsUtil::ProgressionKey;
+    using ActionsUtil::ProgressionStat;
+    using ActionsUtil::ProgressionTracksJson;
+    CHECK(ProgressionKey("ST_WeaponHandling_C") == "weaponHandling", "the game's ST_ prefix is stripped");
+    CHECK(ProgressionKey("ST_Strength_C") == "strength", "and the key starts lower case");
+    CHECK(ProgressionKey("BP_First_Aid_C") == "firstAid", "underscores become camel case");
+    CHECK(ProgressionKey("BP_9Lives_C") == "", "a key may not start with a digit");
+
+    ProgressionStat a;
+    a.code = "ST_Strength_C"; a.name = "Strength"; a.level = 2; a.xp = 150; a.xpFloor = 100; a.xpNext = 200;
+    ProgressionStat same = a;
+    ProgressionStat bad = a;
+    bad.code = "ST_Bad_C"; bad.xp = std::nan("");
+    ProgressionStat top = a;
+    top.code = "ST_Cooking_C"; top.name = ""; top.xpNext = top.xpFloor;
+    std::string json = ProgressionTracksJson({a, same, bad, top});
+    CHECK(json.find("\"key\":\"strength\"") != std::string::npos, "the track is reported");
+    CHECK(json.find("\"progress\":0.5") != std::string::npos, "progress is the fraction of the current level");
+    CHECK(json.find("strength", json.find("strength") + 40) == std::string::npos, "a repeated key is sent once");
+    CHECK(json.find("\"bad\"") == std::string::npos, "a non-finite XP value leaves the track out");
+    size_t cooking = json.find("\"key\":\"cooking\"");
+    CHECK(cooking != std::string::npos, "a track at the end of the curve is reported");
+    CHECK(json.find("progress", cooking) == std::string::npos, "and carries no progress");
+    CHECK(json.find("\"name\":\"Cooking\"") != std::string::npos, "a missing display name falls back to the humanised class");
+    CHECK(ProgressionTracksJson({}) == "[]", "no stats is an empty reading");
+}
+
 static void TestPlayerInventoryClassGuard() {
     using ActionsUtil::IsPlayerInventoryClass;
     // The live character's own bag, in every spelling the game uses for it.
@@ -1456,6 +1485,7 @@ int main() {
     TestAttemptedJson();
     TestStackSplit();
     TestPlayerInventoryClassGuard();
+    TestProgression();
     TestCharacterIdFormatting();
     TestKillWeaponName();
     TestLocationRefusal();

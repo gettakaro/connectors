@@ -418,6 +418,16 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p){
                 else out.payloadJson=p.protocolVersion==1?"null":Position(Json{{"x",0},{"y",0},{"z",0}}).dump();}
         }
         else if(action=="getPlayerInventory")out.payloadJson=Inventory(call(Actions::PlayerInventory(ResolveId(p,a)))).dump();
+        else if(action=="getPlayerProgression"){
+            id=ResolveId(p,a);Actions::Result r=Actions::PlayerProgression(id);
+            if(r.status<400)out.payloadJson=call(r).dump();
+            else {
+                // Null means the game does not know the player; [] is a known player with no reading yet.
+                bool known=false;
+                for(const auto& row:Rows(Parse(p.view->knownPlayersJson),"players"))if(StripPlatform(Str(Object(row),"gameId"))==id)known=true;
+                out.payloadJson=known?"[]":"null";
+            }
+        }
         else if(action=="giveItem"){
             id=ResolveId(p,a);Json item=Object(a.value("item",Json::object()));std::string code=Str(a,"item");if(code.empty())code=Str(a,"itemCode");if(code.empty())code=Str(a,"code");if(code.empty())code=Str(item,"code");if(code.empty())throw std::runtime_error("giveItem requires 'item'");double amount=HasNum(a,"amount")?Num(a,"amount"):Num(a,"quantity",1);if(amount<=0)throw std::runtime_error("giveItem amount must be positive");call(Actions::Give(NativeBody(Json{{"gameId",id},{"code",code},{"amount",amount}})));out.payloadJson="{}";
         }else if(action=="listItems"){
@@ -744,6 +754,7 @@ std::string CapabilityManifestJson(const std::string& gameVersion){
                           "events.player-connected","events.player-disconnected","events.chat-message",
                           "events.player-death","events.entity-killed","events.log"})
         manifest.push_back(Json{{"name",name}});
+    manifest.push_back(Json{{"name","players.progression"},{"parameters",{{"source","server"}}}});
     manifest.push_back(Parse(NativeMap::CapabilityJson()));
     manifest.push_back(Parse(GameProfile::CapabilityJson(gameVersion)));
     return manifest.dump();
