@@ -55,6 +55,7 @@ struct Roster {
     int ping = -1;
     double x = 0, y = 0, z = 0;
     bool hasPosition = false, online = false;
+    std::optional<takaro::ProgressReading> progress;  // the last reading stays while the player has no body
 };
 
 struct Icon {
@@ -210,6 +211,18 @@ tj::Value PlayerJson(const std::string& eos, const Roster& r) {
     return p;
 }
 
+// Refresh runs on every getPlayers, so getPlayerProgression answers from here without touching the game.
+void ReadProgress(const std::string& eos, AShooterCharacter* character, Roster& r) {
+    UPrimalCharacterStatusComponent* status = character->MyCharacterStatusComponentField();
+    if (status == nullptr) return;
+    const auto reading = takaro::MakeProgressReading(status->GetCharacterLevel(), status->ExperiencePointsField(),
+                                                     status->GetExperienceRequiredForPreviousLevelUp(),
+                                                     status->GetExperienceRequiredForNextLevelUp());
+    if (!reading) return;
+    if (!r.progress || r.progress->level != reading->level) LogLine("level " + std::to_string(reading->level) + " eos=" + eos);
+    r.progress = reading;
+}
+
 Roster& Refresh(const std::string& eos, AShooterPlayerController* pc) {
     Roster& r = g_players[eos];
     const std::string name = DisplayName(pc);
@@ -218,10 +231,11 @@ Roster& Refresh(const std::string& eos, AShooterPlayerController* pc) {
     if (!ip.empty()) r.ip = ip;
     if (auto* state = pc->PlayerStateField().Get()) r.ping = static_cast<int>(std::lround(state->ExactPingField()));
     if (g_known) g_known->Remember(eos, r.name);
-    if (pc->GetPlayerCharacter() != nullptr) {
+    if (auto* character = pc->GetPlayerCharacter(); character != nullptr) {
         const FVector v = AsaApi::IApiUtils::GetPosition(pc);
         r.x = v.X; r.y = v.Y; r.z = v.Z;
         r.hasPosition = true;
+        ReadProgress(eos, character, r);
     }
     return r;
 }
@@ -248,6 +262,13 @@ takaro::Outcome GetPlayer(const tj::Value& args) {
     Roster offline;
     if (g_known) offline.name = g_known->Name(id);
     return takaro::Outcome::Ok(PlayerJson(id, offline));
+}
+
+takaro::Outcome GetProgression(const tj::Value& args) {
+    const std::string id = takaro::PlayerIdOf(args);
+    const auto it = g_players.find(id);
+    if (it != g_players.end()) return takaro::Outcome::Ok(takaro::ProgressionJson(true, it->second.progress));
+    return takaro::Outcome::Ok(takaro::ProgressionJson(g_known && !id.empty() && !g_known->Name(id).empty(), std::nullopt));
 }
 
 takaro::Outcome GetLocation(const tj::Value& args) {
@@ -519,6 +540,7 @@ takaro::Outcome Run(const takaro::GameCall& call) {
     if (call.action == "getPlayers") return GetPlayers();
     if (call.action == "getPlayer") return GetPlayer(call.args);
     if (call.action == "getPlayerLocation") return GetLocation(call.args);
+    if (call.action == "getPlayerProgression") return GetProgression(call.args);
     if (call.action == "sendMessage") return SendMessage(call.args);
     if (call.action == "executeConsoleCommand") return Console(call.args);
     if (call.action == "kickPlayer") return Kick(call.args);
@@ -778,6 +800,7 @@ std::vector<tj::Value> Manifest() {
                              "events.player-connected", "events.player-disconnected", "events.chat-message",
                              "events.player-death", "events.entity-killed", "events.log"})
         out.push_back(tj::obj({{"name", tj::str(name)}}));
+    out.push_back(tj::obj({{"name", tj::str("players.progression")}, {"parameters", tj::obj({{"source", tj::str("server")}})}}));
     tj::Value profile = tj::obj({{"name", tj::str(kGameName)}});
     if (!g_gameVersion.empty()) profile.set("version", tj::str(g_gameVersion));
     if (g_icon) profile.set("icon", tj::obj({{"revision", tj::str(g_icon->revision)}, {"size", tj::num(static_cast<double>(g_icon->size))}}));

@@ -3,6 +3,7 @@
 // catalogue search, and that bans and known players survive a restart.
 #include "../native/src/logic.h"
 
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 
@@ -13,6 +14,37 @@ static int failures = 0;
 #define CHECK(cond) do { if (!(cond)) { std::printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #cond); ++failures; } } while (0)
 
 static tj::Value Args(const char* text) { return *tj::parse(text); }
+
+static void test_progression() {
+    CHECK(!ProgressBetween(100, 200, 200));
+    CHECK(!ProgressBetween(100, 300, 200));
+    CHECK(!ProgressBetween(100, std::nan(""), 200));
+    CHECK(*ProgressBetween(150, 100, 200) == 0.5);
+    CHECK(*ProgressBetween(500, 100, 200) == 1.0);  // XP past the threshold until the point is spent
+    CHECK(*ProgressBetween(50, 100, 200) == 0.0);
+
+    CHECK(!MakeProgressReading(0, 10, 0, 20));
+    CHECK(!MakeProgressReading(100001, 10, 0, 20));
+    CHECK(!MakeProgressReading(5, -1, 0, 20));
+    CHECK(!MakeProgressReading(5, std::nan(""), 0, 20));
+    CHECK(!MakeProgressReading(5, INFINITY, 0, 20));
+    const auto capped = MakeProgressReading(105, 1000, 900, 900);
+    CHECK(capped && capped->level == 105 && !capped->progress);
+
+    CHECK(ProgressionJson(false, std::nullopt).is_null());
+    const tj::Value none = ProgressionJson(true, std::nullopt);
+    CHECK(none.is_array() && none.as_array().empty());
+
+    const tj::Value tracks = ProgressionJson(true, MakeProgressReading(12, 150, 100, 200));
+    CHECK(tracks.is_array() && tracks.as_array().size() == 1);
+    const tj::Value& track = tracks.as_array()[0];
+    CHECK(track.get("key")->as_string() == "character");
+    CHECK(track.get("level")->as_number() == 12);
+    CHECK(track.get("experience")->as_number() == 150);
+    CHECK(track.get("progress")->as_number() == 0.5);
+    const tj::Value atCap = ProgressionJson(true, capped);
+    CHECK(atCap.as_array()[0].get("progress") == nullptr);
+}
 
 static void test_iso() {
     int64_t t = 0;
@@ -138,6 +170,7 @@ static void test_corrupt_files(const fs::path& dir) {
 int main() {
     const fs::path dir = fs::temp_directory_path() / ("logic-test-" + std::to_string(::getpid()));
     test_iso();
+    test_progression();
     test_console();
     test_log_filter();
     test_item_code();
