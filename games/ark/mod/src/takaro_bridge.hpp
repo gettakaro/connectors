@@ -139,8 +139,8 @@ inline std::optional<json::Value> map_event(const gate::Event& e, KnownPlayers& 
     return std::nullopt;
   if (!valid_steam64(e.id)) return std::nullopt;
   data.set("player", e.type == "player-connected"
-                        ? player_json(e.id, name_of(e.id, e.name), e.ip, e.ping)
-                        : player_json(e.id, name_of(e.id, e.name)));
+                        ? player_json(e.id, name_of(e.id, e.name), e.ip, e.ping, e.character)
+                        : player_json(e.id, name_of(e.id, e.name), {}, std::nullopt, e.character));
   if (e.type == "chat-message") {
     data.set("msg", json::str(e.message));
     data.set("channel", json::str("global"));
@@ -336,6 +336,12 @@ class Bridge {
       payload.set("protocolVersions", std::move(versions));
       json::Value manifest = json::Value::array();
       for (const auto& name : capability_manifest()) manifest.push(json::obj({{"name", json::str(name)}}));
+      // ARK keeps the character on the server: the client cannot report its own level.
+      manifest.push(json::obj({{"name", json::str("players.progression")},
+                               {"parameters", json::obj({{"source", json::str("server")}})}}));
+      // Survivors live on the server. A death does not end one, so `ends` stays out.
+      manifest.push(json::obj({{"name", json::str("players.characters")},
+                               {"parameters", json::obj({{"held", json::str("server")}})}}));
       manifest.push(game_profile_capability(config_.game_version, config_.game_icon.get()));
       if (auto dimension = map_dimension(config_.map_name)) {
         json::Value dimensions = json::Value::array();
