@@ -181,16 +181,24 @@ public final class Pz {
         if (engine == null || engine.connections == null) {
             return;
         }
+        Set<String> connected = new HashSet<>();
         for (UdpConnection c : new ArrayList<>(engine.connections)) {
-            if (c == null || !c.isFullyConnected() || c.players == null || c.players.length == 0) {
+            String username = c == null ? null : c.getUserName();
+            if (username == null || username.isEmpty() || !c.isFullyConnected()) {
                 continue;
             }
-            IsoPlayer p = c.players[0];
-            String username = c.getUserName();
-            if (p != null && !p.isDead() && username != null && !username.isEmpty()) {
+            connected.add(username);
+            IsoPlayer p = c.players != null && c.players.length > 0 ? c.players[0] : null;
+            if (p == null || p.isDead()) {
+                continue;
+            }
+            try {
                 progression.put(username, perkTracks(p));
+            } catch (RuntimeException e) {
+                AgentLog.error("progression read failed for " + username, e);
             }
         }
+        progression.retain(connected);
     }
 
     private static List<ProgressionTrack> perkTracks(IsoPlayer p) {
