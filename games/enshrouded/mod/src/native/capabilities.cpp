@@ -46,6 +46,12 @@ std::string CapabilityManifestJson(const std::string& gameVersion) {
                .Raw("parameters", ObjBuilder().S("source", "client-reported").Done())
                .Done() +
            ",";
+    // Enshrouded lets a player keep several characters on their own PC and pick one at each join; death never ends one.
+    out += ObjBuilder()
+               .S("name", "players.characters")
+               .Raw("parameters", ObjBuilder().S("held", "client").Done())
+               .Done() +
+           ",";
     out += ObjBuilder()
                .S("name", "map")
                .Raw("parameters", ObjBuilder().Raw("dimensions", "[" + MapDimensionJson() + "]").Done())

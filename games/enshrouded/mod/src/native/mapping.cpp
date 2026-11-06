@@ -93,7 +93,47 @@ JsonValue MapPlayer(const JsonValue* raw) {
     if (auto ip = Str(p.get("ip"))) Put(player, "ip", JStr(*ip));
     const JsonValue* ping = p.get("ping");
     if (ping && ping->type == JsonValue::Number && std::isfinite(ping->num)) Put(player, "ping", *ping);
+    const JsonValue& character = AsRecord(p.get("character"));
+    auto characterId = Str(character.get("id")), characterName = Str(character.get("name"));
+    if (characterId && characterName) {
+        JsonValue c = JObj();
+        Put(c, "id", JStr(*characterId));
+        Put(c, "name", JStr(*characterName));
+        Put(player, "character", c);
+    }
     return player;
+}
+
+namespace {
+void DropKey(JsonValue& obj, const char* key) {
+    if (obj.type != JsonValue::Object) return;
+    for (auto it = obj.obj.begin(); it != obj.obj.end(); ++it)
+        if (it->first == key) {
+            obj.obj.erase(it);
+            return;
+        }
+}
+}  // namespace
+
+void StripCharacter(JsonValue& payload) {
+    if (payload.type == JsonValue::Array) {
+        for (auto& p : payload.arr) DropKey(p, "character");
+        return;
+    }
+    DropKey(payload, "character");
+}
+
+std::string EventFrameV0(const std::string& eventFrame) {
+    if (eventFrame.find("\"character\"") == std::string::npos) return eventFrame;
+    JsonValue frame;
+    if (!ParseJson(eventFrame, frame)) return eventFrame;
+    for (auto& top : frame.obj)
+        if (top.first == "payload" && top.second.type == JsonValue::Object)
+            for (auto& section : top.second.obj)
+                if (section.first == "data" && section.second.type == JsonValue::Object)
+                    for (auto& field : section.second.obj)
+                        if (field.first == "player" || field.first == "attacker") DropKey(field.second, "character");
+    return JsonDump(frame);
 }
 
 JsonValue MapPosition(const JsonValue* raw) {

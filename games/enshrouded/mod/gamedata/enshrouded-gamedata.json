@@ -375,6 +375,7 @@
         "slotState": "0xa",
         "slotPerms": "0x10",
         "slotEid": "0x18",
+        "slotCharacterId": "0x50",
         "slotName": "0x20",
         "accountActionAbi": "event",
         "accountEventSize": "0x18",

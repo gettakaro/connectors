@@ -466,7 +466,10 @@ std::string PluginState::PlayerJsonLocked(const PlayerRecord& p, bool online) co
     std::string level = p.level < 0 ? "" : ",\"level\":" + std::to_string(p.level) + ",\"experience\":" +
                                                std::to_string(p.experience) + ",\"experienceRequired\":" +
                                                std::to_string(p.experienceRequired);
-    return "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(shown) + ",\"steamId\":" + JsonStr(id) + level +
+    std::string character = p.characterId.empty() || p.characterName.empty()
+                                ? ""
+                                : ",\"character\":{\"id\":" + JsonStr(p.characterId) + ",\"name\":" + JsonStr(p.characterName) + "}";
+    return "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(shown) + ",\"steamId\":" + JsonStr(id) + level + character +
            ",\"peerId\":" + JsonStr(p.peerId) + ",\"group\":" + JsonStr(p.group) + ",\"permissions\":" + perms +
            ",\"connectedAt\":" + JsonStr(p.connectedAt) + ",\"online\":" + (online ? "true" : "false") + "}";
 }
@@ -504,6 +507,12 @@ void PluginState::SetCharacterName(const std::string& persona, const std::string
             p.characterName = character;
             PluginLog("character name: steam=%s persona=%s character=%s", p.steamId.c_str(), persona.c_str(), character.c_str());
         }
+}
+
+void PluginState::SetCharacterId(const std::string& persona, const std::string& id) {
+    Guard g(lock_);
+    for (auto& p : players_)
+        if (p.online && p.name == persona) p.characterId = id;
 }
 
 void PluginState::SetLevel(const std::string& persona, int level, int experience, int experienceRequired) {
