@@ -1,0 +1,199 @@
+"""``takaro-maint icons build``: recipes in, a contract pack and its reports out."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import shutil
+from pathlib import Path
+from typing import Any
+
+import pytest
+from PIL import Image
+
+from conftest import FIXTURES
+
+FIXTURE = FIXTURES / "icons" / "fixture-846"
+OBJECT = re.compile(r"^[0-9a-f]{64}\.webp$")
+
+
+def _fixture_copy(tmp_path: Path) -> Path:
+    copy = tmp_path / "fixture"
+    shutil.copytree(FIXTURE, copy)
+    return copy
+
+
+def _build(run: Any, tmp_path: Path, name: str = "out", recipes: Path | None = None) -> tuple[int, Any, str, Path]:
+    out = tmp_path / name
+    code, payload, stderr = run(
+        "icons", "build", "--recipes", str(recipes or FIXTURE / "recipes.json"), "--out", str(out)
+    )
+    return code, payload, stderr, out
+
+
+def _riff_chunks(data: bytes) -> list[str]:
+    assert data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+    chunks, offset = [], 12
+    while offset < len(data):
+        chunks.append(data[offset : offset + 4].decode("ascii"))
+        offset += 8 + int.from_bytes(data[offset + 4 : offset + 8], "little") + (offset + 8) % 2
+    return chunks
+
+
+def _tree(root: Path) -> dict[str, bytes]:
+    return {str(path.relative_to(root)): path.read_bytes() for path in sorted(root.rglob("*")) if path.is_file()}
+
+
+def test_fixture_builds_a_contract_pack(run: Any, tmp_path: Path) -> None:
+    code, payload, _, out = _build(run, tmp_path)
+    assert code == 0
+    assert payload["ok"] is True and payload["op"] == "icons build"
+    pack = out / "pack" / "fixture-846"
+    assert sorted(path.name for path in pack.iterdir() if not path.name.endswith(".webp")) == ["index.json"]
+    webps = sorted(pack.glob("*.webp"))
+    assert len(webps) == 5
+
+    index = json.loads((pack / "index.json").read_text())
+    assert set(index) == {"game", "enabled", "icons"}
+    assert index["game"] == "fixture-846" and index["enabled"] is True
+    for name in index["icons"].values():
+        assert OBJECT.match(name)
+        assert hashlib.sha256((pack / name).read_bytes()).hexdigest() + ".webp" == name
+
+    sizes = {}
+    for code_name, name in index["icons"].items():
+        with Image.open(pack / name) as image:
+            assert image.format == "WEBP" and image.mode == "RGBA"
+            sizes[code_name] = image.size
+        assert not {"EXIF", "ICCP", "XMP "} & set(_riff_chunks((pack / name).read_bytes()))
+    assert sizes["fixture-circle"] == (128, 128)
+    assert sizes["fixture-banner"] == (128, 64)
+    assert sizes["fixture-pillar"] == (32, 128)
+    assert sizes["fixture-pebble"] == (32, 32)
+    assert sizes["fixture-crate"] == (64, 64)
+
+
+def test_build_is_deterministic(run: Any, tmp_path: Path) -> None:
+    assert _build(run, tmp_path, "one")[0] == 0
+    assert _build(run, tmp_path, "two")[0] == 0
+    assert _tree(tmp_path / "one" / "pack") == _tree(tmp_path / "two" / "pack")
+
+
+def test_identical_art_is_stored_once(run: Any, tmp_path: Path) -> None:
+    _, payload, _, out = _build(run, tmp_path)
+    index = json.loads((out / "pack/fixture-846/index.json").read_text())
+    assert index["icons"]["fixture-circle"] == index["icons"]["fixture-circle-alias"]
+    assert (payload["codes"], payload["objects"]) == (6, 5)
+
+
+def test_coverage_report_lists_unmatched_codes_with_reasons(run: Any, tmp_path: Path) -> None:
+    _, payload, _, out = _build(run, tmp_path)
+    coverage = json.loads((out / "coverage.json").read_text())
+    assert coverage["game"] == "fixture-846"
+    assert (coverage["total"], coverage["matched"], coverage["unmatched"], coverage["coverage"]) == (8, 6, 2, 0.75)
+    assert coverage["objects"] == 5
+    assert coverage["measuredAgainst"] == "game-data"
+    assert coverage["byKind"] == {
+        "block": {"total": 2, "matched": 1, "unmatched": 1},
+        "item": {"total": 6, "matched": 5, "unmatched": 1},
+    }
+    assert coverage["unmatchedByReason"] == {"missing-texture": 1, "no-icon-in-game": 1}
+    assert coverage["unmatchedCodes"] == [
+        {"code": "fixture-broken", "kind": "block", "reason": "missing-texture"},
+        {"code": "fixture-ghost", "kind": "item", "reason": "no-icon-in-game"},
+    ]
+    assert payload["coverage"] == {"total": 8, "matched": 6, "unmatched": 2, "coverage": 0.75}
+    assert not (out / "pack/fixture-846/coverage.json").exists()
+    assert not (out / "pack/fixture-846/contact-sheet.png").exists()
+    assert sorted(path.name for path in (out / "pack").iterdir()) == ["fixture-846"]
+
+
+def test_coverage_without_kinds_has_no_by_kind(run: Any, tmp_path: Path) -> None:
+    copy = _fixture_copy(tmp_path)
+    document = json.loads((copy / "recipes.json").read_text())
+    for entry in [*document["recipes"], *document["unmatched"]]:
+        del entry["kind"]
+    (copy / "recipes.json").write_text(json.dumps(document))
+    _, _, _, out = _build(run, tmp_path, recipes=copy / "recipes.json")
+    assert "byKind" not in json.loads((out / "coverage.json").read_text())
+
+
+def test_contact_sheet_is_a_png(run: Any, tmp_path: Path) -> None:
+    _, _, _, out = _build(run, tmp_path)
+    sheet = out / "contact-sheet.png"
+    with Image.open(sheet) as image:
+        assert image.format == "PNG"
+        assert image.size == (8 * 144, 164)
+    assert sheet.stat().st_size > 2000
+
+
+def test_build_record_names_the_recipes_and_the_encoder(run: Any, tmp_path: Path) -> None:
+    _, _, _, out = _build(run, tmp_path)
+    record = json.loads((out / "build-record.json").read_text())
+    assert record["recipesSha256"] == hashlib.sha256((FIXTURE / "recipes.json").read_bytes()).hexdigest()
+    assert record["encoder"]["pillow"] == "13.0.0"
+    assert (record["codes"], record["objects"]) == (6, 5)
+
+
+def _edit(tmp_path: Path, change: Any) -> Path:
+    copy = _fixture_copy(tmp_path)
+    document = json.loads((copy / "recipes.json").read_text())
+    change(document)
+    (copy / "recipes.json").write_text(json.dumps(document))
+    return copy / "recipes.json"
+
+
+def _set_game(game: str) -> Any:
+    return lambda document: document.update(game=game)
+
+
+def _duplicate_code(document: dict[str, Any]) -> None:
+    document["unmatched"][0]["code"] = document["recipes"][0]["code"]
+
+
+def _two_layers(document: dict[str, Any]) -> None:
+    layer = document["recipes"][0]["layers"][0]
+    document["recipes"][0]["layers"] = [layer, layer]
+
+
+def _with_ops(document: dict[str, Any]) -> None:
+    document["recipes"][0]["layers"][0]["ops"] = [{"op": "tint"}]
+
+
+def _escaping_image(document: dict[str, Any]) -> None:
+    document["recipes"][0]["layers"][0]["image"] = "../x.png"
+
+
+def _missing_image(document: dict[str, Any]) -> None:
+    document["recipes"][0]["layers"][0]["image"] = "images/nope.png"
+
+
+@pytest.mark.parametrize(
+    ("change", "exit_code"),
+    [
+        (_set_game("_store"), 2),
+        (_set_game("Bad_Game"), 2),
+        (_duplicate_code, 2),
+        (_two_layers, 2),
+        (_with_ops, 2),
+        (_escaping_image, 2),
+        (_missing_image, 4),
+    ],
+    ids=["store", "bad-game", "duplicate-code", "two-layers", "ops", "escaping-path", "missing-image"],
+)
+def test_refusals(run: Any, tmp_path: Path, change: Any, exit_code: int) -> None:
+    recipes = _edit(tmp_path, change)
+    code, payload, _, _ = _build(run, tmp_path, recipes=recipes)
+    assert code == exit_code
+    assert payload["ok"] is False
+
+
+def test_out_directory_must_be_empty(run: Any, tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "stale").write_text("x")
+    code, payload, _ = run("icons", "build", "--recipes", str(FIXTURE / "recipes.json"), "--out", str(out))
+    assert code == 2
+    assert payload["ok"] is False
+    assert (out / "stale").read_text() == "x"

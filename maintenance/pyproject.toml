@@ -4,7 +4,12 @@ version = "0.1.0"
 description = "Catalog-driven maintenance command for the Takaro game connectors"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "boto3>=1.43,<1.44",
     "jsonschema>=4.23,<5",
+    # Exact pin: lossless WebP bytes depend on the Pillow wheel and the libwebp bundled in it. Bumping
+    # it changes object hashes (objects are content-addressed, so the rolling merge repoints codes);
+    # do that deliberately, never as a drive-by dependency update.
+    "pillow==13.0.0",
     "referencing>=0.35,<1",
     "websockets>=15,<16",
 ]

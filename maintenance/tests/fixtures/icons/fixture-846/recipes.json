@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "game": "fixture-846",
+  "measuredAgainst": "game-data",
+  "recipes": [
+    {"code": "fixture-circle", "kind": "item", "layers": [{"image": "images/circle-512.png", "ops": []}], "composite": "over"},
+    {"code": "fixture-circle-alias", "kind": "item", "layers": [{"image": "images/circle-512-copy.png", "ops": []}], "composite": "over"},
+    {"code": "fixture-banner", "kind": "item", "layers": [{"image": "images/banner-300x150.png", "ops": []}], "composite": "over"},
+    {"code": "fixture-pillar", "kind": "item", "layers": [{"image": "images/pillar-100x400.png", "ops": []}], "composite": "over"},
+    {"code": "fixture-pebble", "kind": "item", "layers": [{"image": "images/pebble-32.png", "ops": []}], "composite": "over"},
+    {"code": "fixture-crate", "kind": "block", "layers": [{"image": "images/crate-64.png", "ops": []}], "composite": "over"}
+  ],
+  "unmatched": [
+    {"code": "fixture-ghost", "kind": "item", "reason": "no-icon-in-game"},
+    {"code": "fixture-broken", "kind": "block", "reason": "missing-texture"}
+  ]
+}
