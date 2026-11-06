@@ -15,5 +15,9 @@ namespace conan {
 std::vector<int> CountdownMarks(int total);
 // "The server shuts down in 2 minutes." / "... in 30 seconds." / "... in 1 second."
 std::string CountdownText(int secondsLeft);
+// Set once the engine exit is requested. Teardown takes minutes on a loaded host, and the player
+// objects stay readable long after the players were dropped.
+void NoteEngineExit();
+bool EngineExiting();
 
 }  // namespace conan
