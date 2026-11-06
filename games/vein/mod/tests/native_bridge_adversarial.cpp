@@ -34,6 +34,7 @@ Actions::Result Actions::PlayerLocation(const std::string& id) {
 Actions::Result Actions::Player(const std::string&) { return {404,"{}"}; }
 Actions::Result Actions::PlayerInventory(const std::string&) { return {200,"[]"}; }
 Actions::Result Actions::PlayerProgression(const std::string&) { return {200,"[]"}; }
+void Actions::NoteReportedCharacter(const std::string&, const std::string&) {}
 Actions::Result Actions::Items(const std::string&) { return {200,"[]"}; }
 Actions::Result Actions::Entities() { return {200,"[]"}; }
 Actions::Result Actions::Locations() { return {200,"[]"}; }

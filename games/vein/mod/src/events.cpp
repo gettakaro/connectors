@@ -278,16 +278,26 @@ FnNetIdToString g_steamIdToString = nullptr;
 
 struct Ident {
     std::string gameId;         // SteamID64
-    std::string name;           // what Takaro shows: the character name, else the Steam persona
+    std::string name;           // the character name, else the Steam persona
     std::string platformName;   // Steam persona ("Limon")
     std::string characterName;  // VEIN character ("Takaro Tester"), may be empty
+    std::string characterJson;  // Takaro's `character` object, empty when none is in play
     bool valid() const { return !gameId.empty(); }
 };
 
+// Names the player's active character on an event. Applied when the event is raised, so a queued
+// event keeps the character it happened to.
+Ident Stamped(Ident id) {
+    const ::state::ActiveCharacter c = ::state::GetActiveCharacter(id.gameId);
+    id.characterJson = ActionsUtil::CharacterJson(c.id, c.name, id.name.empty() ? id.platformName : id.name);
+    return id;
+}
+
 std::string PlayerJson(const Ident& id) {
     std::string o = "{\"gameId\":" + JsonStr(id.gameId) +
-                    ",\"name\":" + JsonStr(id.name.empty() ? id.platformName : id.name);
+                    ",\"name\":" + JsonStr(id.platformName.empty() ? id.name : id.platformName);
     if (!id.characterName.empty()) o += ",\"characterName\":" + JsonStr(id.characterName);
+    if (!id.characterJson.empty()) o += ",\"character\":" + id.characterJson;
     if (!id.platformName.empty()) o += ",\"platformName\":" + JsonStr(id.platformName);
     if (!id.gameId.empty()) {
         o += ",\"steamId\":" + JsonStr(id.gameId);
@@ -408,6 +418,8 @@ struct Conn {
     void* playerState = nullptr;
     Ident id;
     uint64_t firstSeenMs = 0;
+    uint64_t characterSeenMs = 0;  // when the character came into play
+    std::string characterId;       // the one the last player-connected named
     bool announced = false;
     bool left = false;
     // A banned player is kicked on sight and never reported: no join, and no leave for the kick.
@@ -427,6 +439,10 @@ const uint64_t kLeaveDedupeMs = 30000;
 // land in the name cache, not for a property that is never going to appear.
 const uint64_t kNameGraceMs = 3000;
 const uint64_t kJoinGiveUpMs = 120000;
+// Takaro switches Character on player-connected, so the join waits for the character screen to end.
+// A bound keeps a player who never picks one, or a game update that hides the id, from staying
+// unannounced.
+const uint64_t kCharacterWaitMs = 300000;
 
 Conn* FindConn(void* c) {
     for (auto& k : g_conns)
@@ -461,7 +477,8 @@ bool AlreadyAnnounced(const std::string& gameId) {
     return g_announced.count(gameId) > 0;
 }
 
-void EmitJoin(const Ident& id) {
+void EmitJoin(const Ident& raw) {
+    const Ident id = Stamped(raw);
     g_worldDirty = true;
     Admin::NoteJoin();  // L9: the admin grant pass runs on this edge, not on a 2 s timer
     ClearLeaveMarker(id.gameId);
@@ -474,7 +491,12 @@ void EmitJoin(const Ident& id) {
     PluginLog("events: player-connected %s (%s)", id.gameId.c_str(), id.name.c_str());
 }
 
-void EmitLeave(const Ident& id) {
+void ForgetLogJoin(const std::string& gameId);
+
+void EmitLeave(const Ident& raw) {
+    const Ident id = Stamped(raw);
+    ::state::ClearActiveCharacter(id.gameId);
+    ForgetLogJoin(id.gameId);
     g_worldDirty = true;
     {
         Guard g(g_connLock);
@@ -762,11 +784,21 @@ void ResolvePendingJoins() {
                 if (age > kJoinGiveUpMs) drop.push_back(c.controller);
                 continue;
             }
-            if (id.characterName.empty() && age < kNameGraceMs) continue;
             c.id = id;
             c.playerState = PlayerStateOf(c.controller);
+            const bool isBanned = ::state::IsBanned(id.gameId);
+            const std::string character = Actions::InWorldCharacterId(c.playerState, c.controller);
+            if (!character.empty() && c.characterSeenMs == 0) c.characterSeenMs = NowMs();
+            const std::string characterName = ::state::CharacterNameById(character);
+            if (!isBanned) {
+                if (character.empty() && age < kCharacterWaitMs) continue;
+                if (!character.empty() && characterName.empty() && NowMs() - c.characterSeenMs < kNameGraceMs) continue;
+            }
+            c.characterSeenMs = 0;
+            c.characterId = character;
+            if (!character.empty() && !isBanned) ::state::SetActiveCharacter(id.gameId, {character, characterName});
             c.announced = true;
-            if (::state::IsBanned(id.gameId)) {
+            if (isBanned) {
                 c.refused = true;
                 banned.push_back(id.gameId);
             } else if (g_announced.count(id.gameId)) {
@@ -774,6 +806,9 @@ void ResolvePendingJoins() {
                 // window between `Login request` and PostLogin. A real rejoin is unaffected, since
                 // EmitLeave clears the mark.
                 PluginLog("events: join for %s already reported from the server log", id.gameId.c_str());
+                // That join named no character, so the watch reports this one as a switch.
+                c.characterId.clear();
+                ::state::ClearActiveCharacter(id.gameId);
             } else {
                 toAnnounce.push_back(id);
             }
@@ -796,6 +831,42 @@ void ResolvePendingJoins() {
 
 // Safety net: if the APlayerState we saw at join is gone from the live object array, the connection
 // is gone even when no hook fired (hard drop, or a subclass we did not bind).
+// A player who moves to another character without a new login, or who picks one after the join wait
+// ran out, reads to Takaro as a relog. Game thread; runs right after the reap has checked the states.
+void WatchCharacterSwitches() {
+    struct Switch { Ident id; ::state::ActiveCharacter next; };
+    std::vector<Switch> switches;
+    {
+        Guard g(g_connLock);
+        for (auto& c : g_conns) {
+            if (!c.announced || c.left || c.refused) continue;
+            if (!ValidObject(c.controller) || !ValidObject(c.playerState)) continue;
+            const std::string now = Actions::InWorldCharacterId(c.playerState, c.controller);
+            if (now.empty() || now == c.characterId) continue;
+            if (c.characterSeenMs == 0) c.characterSeenMs = NowMs();
+            const std::string name = ::state::CharacterNameById(now);
+            if (name.empty() && NowMs() - c.characterSeenMs < kNameGraceMs) continue;
+            c.characterSeenMs = 0;
+            c.characterId = now;
+            switches.push_back({c.id, {now, name}});
+            if (!name.empty()) {
+                c.id.characterName = name;
+                c.id.name = name;
+            }
+        }
+    }
+    for (auto& s : switches) {
+        PluginLog("events: %s is now on character %s", s.id.gameId.c_str(), s.next.id.c_str());
+        EmitLeave(s.id);
+        ::state::SetActiveCharacter(s.id.gameId, s.next);
+        if (!s.next.name.empty()) {
+            s.id.characterName = s.next.name;
+            s.id.name = s.next.name;
+        }
+        EmitJoin(s.id);
+    }
+}
+
 void ReapGoneConnections() {
     std::vector<std::pair<void*, void*>> announced;
     {
@@ -973,8 +1044,9 @@ bool ChatAllowed(const std::string& gameId, const std::string& msg) {
     return true;
 }
 
-void EmitChat(const Ident& id, const std::string& msg, const std::string& channel, const char* source,
+void EmitChat(const Ident& raw, const std::string& msg, const std::string& channel, const char* source,
               int segment = -1) {
+    const Ident id = Stamped(raw);
     if (msg.empty()) return;
     if (::state::ConsumeInjectedMessage(msg)) {
         if (DebugEnabled()) PluginLog("events: ignoring our own injected chat message (%s)", source);
@@ -995,8 +1067,9 @@ void EmitChat(const Ident& id, const std::string& msg, const std::string& channe
     PluginLog("events: chat-message from %s via %s: %s", id.gameId.c_str(), source, msg.c_str());
 }
 
-void EmitDeath(const Ident& id, bool havePos, double x, double y, double z, const Ident& attacker,
+void EmitDeath(const Ident& rawId, bool havePos, double x, double y, double z, const Ident& rawAttacker,
                const std::string& killerEntity, const std::string& cause, const char* source) {
+    const Ident id = Stamped(rawId), attacker = Stamped(rawAttacker);
     if (!id.valid() || !DeathAllowed(id.gameId)) return;
     PluginState::Get().EmitEventDeferred("player-death", [id, havePos, x, y, z, attacker, killerEntity, cause,
                                                          source = std::string(source)] {
@@ -1456,7 +1529,7 @@ void HandleAiDeath(void* actor, const DeathParams& dp, const char* via) {
     // kill traceable back to one spawned actor in plugin.log and /events.
     std::string instance = SafeObjName(actor);
     PluginState::Get().EmitEventDeferred("entity-killed", [entity, instance, cls, how, weapon, havePos, x, y, z,
-                                                          killer, via = std::string(via)] {
+                                                          killer = Stamped(killer), via = std::string(via)] {
     std::string o = "{\"entity\":" + JsonStr(entity) + ",\"entityInstance\":" + JsonStr(instance) +
                     ",\"entityCode\":" + JsonStr(cls) +
                     ",\"entityClass\":" + JsonStr(cls) +
@@ -1902,8 +1975,24 @@ struct LogJoin {
 };
 Mutex g_logJoinLock;
 std::map<std::string, LogJoin> g_logJoins;
-const uint64_t kLogJoinGraceMs = 25000;
+// Longer than a cold client takes from `Login request` to PostLogin (measured 45 s on a busy PC), so
+// a working hook always wins and its join can wait for the character.
+const uint64_t kLogJoinGraceMs = 180000;
 std::atomic<uint64_t> g_logJoinsEmitted{0};
+
+// A player who left has nothing left for the fallback to report.
+void ForgetLogJoin(const std::string& gameId) {
+    Guard g(g_logJoinLock);
+    g_logJoins.erase(gameId);
+}
+
+// A tracked connection reports its own join, which waits for the character screen.
+bool HasConnection(const std::string& gameId) {
+    Guard g(g_connLock);
+    for (auto& c : g_conns)
+        if (c.id.gameId == gameId) return true;
+    return false;
+}
 
 // Runs on the housekeeping thread. Touches no UObject, so it needs no game thread.
 void FlushLogJoins() {
@@ -1913,7 +2002,7 @@ void FlushLogJoins() {
         uint64_t now = NowMs();
         for (auto it = g_logJoins.begin(); it != g_logJoins.end();) {
             if (now - it->second.seenMs < kLogJoinGraceMs) { ++it; continue; }
-            if (!AlreadyAnnounced(it->first) && !::state::IsBanned(it->first)) {
+            if (!AlreadyAnnounced(it->first) && !::state::IsBanned(it->first) && !HasConnection(it->first)) {
                 Ident id;
                 id.gameId = it->first;
                 id.platformName = it->second.name;
@@ -1965,6 +2054,7 @@ void NoteLogLine(const std::string& line, bool customJoin, bool customChat) {
     }
     EventsParse::CharacterSelectLine s = EventsParse::ParseCharacterSelectLine(line);
     if (s.ok && !s.characterName.empty()) {
+        ::state::NoteCharacterNameById(s.characterId, s.characterName);
         // The line names the persona, not the id; match it to a tracked connection.
         Guard g(g_connLock);
         for (auto& k : g_conns)
@@ -2784,7 +2874,7 @@ void Events::Housekeep() {
                 }
                 if (wantGameMode) { Phase("gamemode"); Perf::Scope sc("housekeep.gamemode"); HookLiveGameMode(); }
                 if (wantJoins) { Phase("joins"); Perf::Scope sc("housekeep.joins"); ResolvePendingJoins(); }
-                if (wantReap) { Phase("reap"); Perf::Scope sc("housekeep.reap"); ReapGoneConnections(); }
+                if (wantReap) { Phase("reap"); Perf::Scope sc("housekeep.reap"); ReapGoneConnections(); WatchCharacterSwitches(); }
                 if (wantHealth) { Phase("health"); Perf::Scope sc("housekeep.health"); PollHealthEdges(); }
                 Phase("idle");
             } catch (...) {

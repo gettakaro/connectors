@@ -223,6 +223,10 @@ std::string GuidDigits(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
 // the map, and reporting it puts the player off the map and draws a false path on it.
 std::string LocationRefusal(bool hasPawn, bool spawned, bool hasLoc, const std::string& pawnClass);
 
+// Takaro's `character` object, or "" when the id is unknown. Takaro needs a name, so the persona
+// stands in for the seconds before the server log names the character.
+std::string CharacterJson(const std::string& id, const std::string& name, const std::string& fallbackName);
+
 // What to tell an operator whose identify was refused, beyond Takaro's own words. Takaro gives its
 // generic internal error when the server name is already taken in the domain, and a deleted server
 // keeps its name. Returns "" when the refusal is something else.

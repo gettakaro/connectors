@@ -61,6 +61,13 @@ void ForgetConnection(const std::string& gameId);
 // the killer swung instead of printing the DamageCauser actor's class.
 std::string EquippedItemName(void* actor);
 
+// The GUID of the character this player is in the world as, or "" on the character screen. Reads
+// UObjects, so it must be called on the game thread.
+std::string InWorldCharacterId(void* playerState, void* controller);
+
+// Records the character the latest getPlayers or getPlayer answer named for this player, or "".
+void NoteReportedCharacter(const std::string& gameId, const std::string& characterId);
+
 // Debug only (TAKARO_PLUGIN_DEBUG=1): kills the nearest AI character to a player through the game's
 // own damage pipeline, with that player as the instigator. It exists so that entity-killed can be
 // proven without a human swinging a sword.

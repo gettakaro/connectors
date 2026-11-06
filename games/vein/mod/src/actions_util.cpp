@@ -399,3 +399,10 @@ std::string ActionsUtil::RefusalHint(const std::string& why, const std::string& 
     return "If this is a new server: Takaro answers this when the name \"" + serverName +
            "\" is already used in your domain, even by a deleted server. Set another TAKARO_SERVER_NAME.";
 }
+
+std::string ActionsUtil::CharacterJson(const std::string& id, const std::string& name,
+                                       const std::string& fallbackName) {
+    const std::string shown = (name.empty() ? fallbackName : name).substr(0, 255);
+    if (id.empty() || shown.empty()) return "";
+    return "{\"id\":" + JsonStr(id) + ",\"name\":" + JsonStr(shown) + "}";
+}

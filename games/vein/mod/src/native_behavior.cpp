@@ -51,8 +51,14 @@ Json Player(const Json& raw){
     Json out={{"gameId",id},{"name",Str(p,"name").empty()?(Str(p,"characterName").empty()?id:Str(p,"characterName")):Str(p,"name")}};
     if(!steam.empty()){out["steamId"]=steam;out["platformId"]="steam:"+steam;}
     if(!Str(p,"ip").empty())out["ip"]=Str(p,"ip");if(p.contains("ping")&&p["ping"].is_number())out["ping"]=p["ping"];
+    Json character=Object(p.value("character",Json::object()));
+    if(!Str(character,"id").empty()&&!Str(character,"name").empty())out["character"]=Json{{"id",Str(character,"id")},{"name",Str(character,"name")}};
     return out;
 }
+// What survives the player going offline: a stored character would be stale on the next getPlayer.
+std::string RememberedPlayer(Json player){player.erase("character");return player.dump();}
+// Takaro files the next progression answer under the character this answer names.
+void NoteCharacterOf(const Json& player){Actions::NoteReportedCharacter(Str(player,"gameId"),Str(Object(player.value("character",Json::object())),"id"));}
 Json Position(const Json& raw){Json p=Object(raw);if(!HasNum(p,"x")||!HasNum(p,"y")||!HasNum(p,"z"))throw std::runtime_error("invalid position");Json o={{"x",Num(p,"x")},{"y",Num(p,"y")},{"z",Num(p,"z")}};o["dimension"]=Str(p,"dimension").empty()?std::string(NativeMap::kDimensionId):Str(p,"dimension");return o;}
 std::string PlayerId(const Json& args){for(const Json& s:{Object(args),Object(args.value("player",Json::object())),Object(args.value("playerRef",Json::object()))})for(const char* k:{"gameId","steamId","platformId"})if(!Str(s,k).empty())return Str(s,k);throw std::runtime_error("Expected player identifier (gameId, or player.gameId)");}
 Json Body(const Json& j){JsonValue v; if(!JsonParse(j.dump(),v))throw std::runtime_error("invalid action body");return j;}
@@ -384,7 +390,7 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p){
                 if(fallback){auto normalized=NormalizeGamePlayers(*fallback);if(normalized)rows=Parse(*normalized);}
             }
             if(!rows.is_array())rows=raw.status<400?Json::array():Rows(call(raw),"players");
-            Json mapped=Json::array();for(auto& r:rows){if(Object(r).value("online",true)!=false){Json x=Player(r);mapped.push_back(x);out.effects.push_back({Effect::Kind::RememberPlayer,x.dump()});}}out.payloadJson=mapped.dump();
+            Json mapped=Json::array();for(auto& r:rows){if(Object(r).value("online",true)!=false){Json x=Player(r);mapped.push_back(x);NoteCharacterOf(x);out.effects.push_back({Effect::Kind::RememberPlayer,RememberedPlayer(x)});}}out.payloadJson=mapped.dump();
         }else if(action=="getPlayer"){
             id=PlayerId(a);Json found;
             Actions::Result online=Actions::Players();
@@ -399,10 +405,10 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p){
                        Lower(StripPlatform(Str(candidate,key)))==Lower(StripPlatform(id))){found=candidate;break;}
                 if(!found.is_null())break;
             }
-            if(!found.is_null())out.effects.push_back({Effect::Kind::RememberPlayer,found.dump()});
+            if(!found.is_null()){NoteCharacterOf(found);out.effects.push_back({Effect::Kind::RememberPlayer,RememberedPlayer(found)});}
             else {
                 auto r=Actions::Player(ResolveKnownId(p,id));
-                if(r.status<400){found=Player(Parse(r.body));out.effects.push_back({Effect::Kind::RememberPlayer,found.dump()});}
+                if(r.status<400){found=Player(Parse(r.body));NoteCharacterOf(found);out.effects.push_back({Effect::Kind::RememberPlayer,RememberedPlayer(found)});}
                 else if(r.status==404){for(auto& x:Array(Parse(p.view->knownPlayersJson))) {Json row=Object(x);for(const char* k:{"gameId","steamId","platformId","name","characterName"})if(Lower(Str(row,k))==Lower(id)||Lower(Str(row,k))==Lower(StripPlatform(id))){found=row;break;}if(!found.is_null())break;}if(found.is_null())found=Player(Json{{"gameId",StripPlatform(id)}});found["online"]=false;}
                 else found=call(r);
             }
@@ -757,6 +763,7 @@ std::string CapabilityManifestJson(const std::string& gameVersion){
                           "events.player-death","events.entity-killed","events.log"})
         manifest.push_back(Json{{"name",name}});
     manifest.push_back(Json{{"name","players.progression"},{"parameters",{{"source","server"}}}});
+    manifest.push_back(Json{{"name","players.characters"},{"parameters",{{"held","server"}}}});
     manifest.push_back(Parse(NativeMap::CapabilityJson()));
     manifest.push_back(Parse(GameProfile::CapabilityJson(gameVersion)));
     return manifest.dump();

@@ -315,6 +315,40 @@ std::string state::CharacterName(const std::string& gameId) {
     return it == g_charNames.end() ? std::string() : it->second;
 }
 
+namespace {
+std::map<std::string, std::string> g_namesByCharacterId;
+std::map<std::string, state::ActiveCharacter> g_activeCharacters;  // by lower-case gameId
+}  // namespace
+
+void state::NoteCharacterNameById(const std::string& characterId, const std::string& name) {
+    if (characterId.empty() || name.empty()) return;
+    Guard g(g_nameLock);
+    if (g_namesByCharacterId.size() > 1024) g_namesByCharacterId.clear();
+    g_namesByCharacterId[characterId] = name;
+}
+
+std::string state::CharacterNameById(const std::string& characterId) {
+    Guard g(g_nameLock);
+    auto it = g_namesByCharacterId.find(characterId);
+    return it == g_namesByCharacterId.end() ? std::string() : it->second;
+}
+
+void state::SetActiveCharacter(const std::string& gameId, const ActiveCharacter& character) {
+    Guard g(g_nameLock);
+    g_activeCharacters[LowerId(gameId)] = character;
+}
+
+void state::ClearActiveCharacter(const std::string& gameId) {
+    Guard g(g_nameLock);
+    g_activeCharacters.erase(LowerId(gameId));
+}
+
+state::ActiveCharacter state::GetActiveCharacter(const std::string& gameId) {
+    Guard g(g_nameLock);
+    auto it = g_activeCharacters.find(LowerId(gameId));
+    return it == g_activeCharacters.end() ? ActiveCharacter{} : it->second;
+}
+
 // ---- readable creature names (lane L3c) --------------------------------------------------------
 
 namespace {
