@@ -253,7 +253,7 @@ namespace TakaroEmpyrion.Game
         /// </summary>
         public async Task<PlayerRecord> RefreshConnectingPlayer(int entityId, int attempts = 3, int gapMs = 1000)
         {
-            PlayerRecord r = await RefreshPlayer(entityId);
+            PlayerRecord r = await FirstReading(entityId);
             r.Ip = null;
             for (int i = 0; i < attempts && r.Ip == null && CanReadPlys; i++)
             {
@@ -265,6 +265,27 @@ namespace TakaroEmpyrion.Game
                 try { r = await RefreshPlayer(entityId); } catch (Exception) { }
             }
             return r;
+        }
+
+        /// <summary>Test seam: pause between attempts to read a player who is still joining.</summary>
+        public int JoinRetryGapMs = 5000;
+
+        /// <summary>
+        /// The first player read of a join. The joining client answers it and can stay silent past the request
+        /// timeout while it loads, which would lose the player-connected event, so silence is retried. A game error
+        /// means the player is gone and fails at once: a retry must not announce someone who already left.
+        /// </summary>
+        async Task<PlayerRecord> FirstReading(int entityId, int attempts = 4)
+        {
+            for (int i = 1; ; i++)
+            {
+                try { return await RefreshPlayer(entityId); }
+                catch (GameRequestException e) when (i < attempts && e.ErrorType == ErrorType.None)
+                {
+                    _log.Warn("player " + entityId + " not readable yet (" + e.Message + "), retrying");
+                    await Task.Delay(JoinRetryGapMs);
+                }
+            }
         }
 
         public static Dictionary<int, string> ParsePlysIps(string plys)
