@@ -53,12 +53,14 @@ t.test("skill_tracks omits an experience that is not a finite number", function(
   end
 end)
 
-t.test("progress follows the level's experience scale and stops at 1; unknown levels carry none", function()
+t.test("progress follows the level's experience scale and stops at 1", function()
   local function track(level, xp) return progression.skill_tracks({ { id = 3, level = level, experience = xp } })[1] end
   t.eq(track(0, 101).progress, 0.0101)
   t.eq(track(1, 14200).progress, 0.142)
   t.eq(track(0, 20000).progress, 1)
-  t.eq(track(3, 500).progress, nil)
+  t.eq(track(3, 1000000).progress, 0.1)
+  t.eq(track(4, 1000000).progress, 0.1)
+  t.eq(track(4, 20000000).progress, 1)
   t.eq(track(3, 500).experience, 500)
 end)
 
@@ -158,6 +160,41 @@ t.test("the manifest declares players.progression with source server", function(
     if c.name == "players.progression" then found = c end
   end
   t.deep(found, { name = "players.progression", parameters = { source = "server" } })
+end)
+
+t.test("attribute_tracks unpacks the bytes the client showed as STR 5.3, CON 5.0, DEX 2.8, INT 7.1", function()
+  local levels = {}
+  for _, tr in ipairs(progression.attribute_tracks(0x9AFF6FDF9AFF6FDF)) do levels[tr.key] = tr.level end
+  t.deep(levels, { ["attribute.strength"] = 5, ["attribute.constitution"] = 5, ["attribute.dexterity"] = 3,
+    ["attribute.intelligence"] = 7 })
+end)
+
+t.test("a new prisoner's attributes of 3.0 read as level 3", function()
+  for _, tr in ipairs(progression.attribute_tracks(0x487F7F48)) do t.eq(tr.level, 3, tr.key) end
+end)
+
+t.test("an attribute level holds near the half-way point and moves once the value is clear of it", function()
+  local function strength(byte, level)
+    return progression.attribute_tracks(byte << 24 | 0x7F7F48, { { key = "attribute.strength", level = level } })[1].level
+  end
+  t.eq(strength(0x5B, 3), 3) -- 3.5
+  t.eq(strength(0x5D, 4), 4) -- 3.55
+  t.eq(strength(0x60, 3), 4) -- 3.64
+end)
+
+t.test("no attribute tracks without a packed value", function()
+  t.deep(progression.attribute_tracks(nil), {})
+  t.deep(progression.attribute_tracks(0), {})
+end)
+
+t.test("a failed attribute read keeps the last attribute tracks", function()
+  local g = adapter({ list = { { ID = 3, Level = 1, ExperiencePoints = 5 } } })
+  local packed = 0x487F7F48
+  g.read_attributes = function() return packed end
+  g:refresh_progression(1000)
+  packed = nil
+  g:refresh_progression(1000 + game.PROGRESSION_REFRESH_MS)
+  t.eq(#g:get_player_progression({ gameId = STEAM }).value, 5)
 end)
 
 t.run("progression")
