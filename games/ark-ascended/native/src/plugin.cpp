@@ -353,31 +353,39 @@ takaro::Outcome BanPlayer(const tj::Value& args) {
     }
     auto* mode = AsaApi::GetApiUtils().GetShooterGameMode();
     // A timed ban is lifted by the sweep below, so the game holds it as permanent and one clock decides.
-    if (!mode->BanPlayer(CalleeOwned(id), 0)) return takaro::Outcome::Fail("game_error", "the game refused the ban");
+    // The record comes first: without it a timed ban would never end.
+    if (!g_bans->Set(id, std::move(ban))) return takaro::Outcome::Fail("internal", "the ban could not be saved");
+    if (!mode->BanPlayer(CalleeOwned(id), 0)) {
+        g_bans->Erase(id);
+        return takaro::Outcome::Fail("game_error", "the game refused the ban");
+    }
     mode->SaveBannedList();
-    g_bans->Set(id, std::move(ban));
     if (auto* pc = FindOnline(id)) mode->KickPlayerController(pc, FString(L"Banned"));
-    return takaro::Outcome::Ok(tj::Value::object());
-}
-
-bool LiftBan(const std::string& id) {
-    auto* mode = AsaApi::GetApiUtils().GetShooterGameMode();
-    const bool lifted = mode->UnbanPlayer(CalleeOwned(id));
-    mode->SaveBannedList();
-    g_bans->Erase(id);
-    return lifted;
-}
-
-takaro::Outcome UnbanPlayer(const tj::Value& args) {
-    const std::string id = takaro::PlayerIdOf(args);
-    if (id.empty()) return takaro::Outcome::Fail("invalid_args", "gameId is required");
-    LiftBan(id);
     return takaro::Outcome::Ok(tj::Value::object());
 }
 
 std::vector<takaro::NativeBan> NativeBans() {
     std::ifstream in(g_banListFile, std::ios::binary);
     return takaro::ParseBanList(std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>()));
+}
+
+// True once the game no longer holds the ban. Its own return value says false for a player it never had banned,
+// so the saved list decides. The record stays until then, so a timed ban is tried again on the next sweep.
+bool LiftBan(const std::string& id) {
+    auto* mode = AsaApi::GetApiUtils().GetShooterGameMode();
+    mode->UnbanPlayer(CalleeOwned(id));
+    mode->SaveBannedList();
+    for (const auto& ban : NativeBans())
+        if (ban.id == id) return false;
+    g_bans->Erase(id);
+    return true;
+}
+
+takaro::Outcome UnbanPlayer(const tj::Value& args) {
+    const std::string id = takaro::PlayerIdOf(args);
+    if (id.empty()) return takaro::Outcome::Fail("invalid_args", "gameId is required");
+    if (!LiftBan(id)) return takaro::Outcome::Fail("game_error", "the game still lists this ban");
+    return takaro::Outcome::Ok(tj::Value::object());
 }
 
 bool IsBanned(const std::string& id) {
@@ -594,8 +602,7 @@ void SweepBans() {
     if (now < g_nextBanSweep) return;
     g_nextBanSweep = now + kBanSweep;
     for (const std::string& id : g_bans->Expired(std::time(nullptr))) {
-        LiftBan(id);
-        LogLine("timed ban expired: " + id);
+        LogLine(std::string(LiftBan(id) ? "timed ban expired: " : "timed ban could not be lifted yet: ") + id);
     }
 }
 
@@ -878,6 +885,11 @@ void TailLog(fs::path file) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
         std::ifstream in(file, std::ios::binary);
         if (!in) continue;
+        in.seekg(0, std::ios::end);
+        if (in.tellg() < offset) {  // a new file took its place
+            offset = 0;
+            partial.clear();
+        }
         in.seekg(offset);
         std::string chunk(65536, '\0');
         in.read(chunk.data(), static_cast<std::streamsize>(chunk.size()));

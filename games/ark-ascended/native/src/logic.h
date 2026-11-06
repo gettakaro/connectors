@@ -52,13 +52,14 @@ struct Ban {
 class BanStore {
 public:
     explicit BanStore(std::filesystem::path file = {});
-    void Set(const std::string& id, Ban ban);
+    // False when the ban could not be written; the store is then unchanged.
+    bool Set(const std::string& id, Ban ban);
     void Erase(const std::string& id);
     std::map<std::string, Ban> Rows() const;
     std::vector<std::string> Expired(int64_t now) const;
 
 private:
-    void Save() const;
+    bool Save() const;
     std::filesystem::path file_;
     mutable std::mutex mu_;
     std::map<std::string, Ban> rows_;

@@ -3,10 +3,31 @@
 #include "version.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <ctime>
 
 namespace takaro {
 
 namespace {
+
+// UTC with milliseconds, as Takaro stores event times.
+std::string NowIso() {
+    using namespace std::chrono;
+    const auto now = system_clock::now();
+    const std::time_t seconds = system_clock::to_time_t(now);
+    const int millis = static_cast<int>(duration_cast<milliseconds>(now.time_since_epoch()).count() % 1000);
+    std::tm utc{};
+#ifdef _WIN32
+    gmtime_s(&utc, &seconds);
+#else
+    gmtime_r(&seconds, &utc);
+#endif
+    char text[64];
+    std::snprintf(text, sizeof text, "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ", utc.tm_year + 1900, utc.tm_mon + 1, utc.tm_mday,
+                  utc.tm_hour, utc.tm_min, utc.tm_sec, millis);
+    return text;
+}
 const char* kGameSlug = "ark-ascended";
 const char* kConnectorName = "takaro-ark-ascended";
 
@@ -128,6 +149,10 @@ void Client::HandleNotice(native::Notice& n) {
             protocol_ = 0;
             std::lock_guard<std::mutex> lock(mu_);
             eventsSent_ = 0;  // unacked events go out again; Takaro dedupes by (streamId, seq)
+            // Nobody is left to hear the answer, and Takaro may send the request again after reconnecting,
+            // so a queued action must not run behind its back.
+            calls_.clear();
+            pending_.clear();
             break;
         }
     }
@@ -302,6 +327,8 @@ void Client::Complete(const GameCall& call, Outcome outcome) {
 }
 
 void Client::Emit(const std::string& type, tj::Value data) {
+    // When it happened: an event held through an outage must not take the time it finally arrived.
+    data.set("timestamp", tj::str(NowIso()));
     QueuedEvent e;
     {
         std::lock_guard<std::mutex> lock(mu_);

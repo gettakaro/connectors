@@ -161,6 +161,24 @@ static void test_deadline_blocks_late_run() {
     CHECK(!r.c->NextCall(c));
 }
 
+static void test_reconnect_drops_queued_calls() {
+    Harness r;
+    r.Open(1);
+    r.Request(1, "a", "giveItem", "{}");
+    r.Request(1, "b", "giveItem", "{}");
+    GameCall taken;
+    CHECK(r.c->NextCall(taken));  // already on the game thread when the connection drops
+    r.Notify(NoticeType::Closed, 1, "");
+    r.c->PumpOnce();
+    GameCall c;
+    CHECK(!r.c->NextCall(c));
+    const size_t before = r.t.sent.size();
+    r.Open(2);
+    r.c->Complete(taken, Outcome::Ok(tj::Value::object()));
+    r.c->PumpOnce();
+    for (size_t i = before; i < r.t.sent.size(); ++i) CHECK(r.t.sent[i].text->find("\"requestId\":\"a\"") == std::string::npos);
+}
+
 static void test_late_complete_dropped() {
     Config cfg;
     cfg.callDeadline = std::chrono::milliseconds(30);
@@ -186,6 +204,8 @@ static void test_events_ack_and_replay() {
     CHECK(r.CountEvents() == 2);
     auto ev = r.Last();
     CHECK(ev.get("type")->as_string() == "gameEvent");
+    const tj::Value* stamp = ev.get("payload")->get("data")->get("timestamp");
+    CHECK(stamp != nullptr && stamp->as_string().size() == 24 && stamp->as_string().back() == 'Z');
     CHECK(ev.get("payload")->get("streamId")->as_string() == "boot-1");
     CHECK(ev.get("payload")->get("seq")->as_number() == 2);
     r.Notify(NoticeType::Frame, 1, "{\"type\":\"eventAck\",\"payload\":{\"streamId\":\"other\",\"upTo\":2}}");
@@ -283,6 +303,7 @@ int main() {
     test_no_action_answered();
     test_reachability_off_game_thread();
     test_deadline_blocks_late_run();
+    test_reconnect_drops_queued_calls();
     test_late_complete_dropped();
     test_events_ack_and_replay();
     test_events_wait_for_identify();

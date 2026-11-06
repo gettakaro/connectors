@@ -141,6 +141,8 @@ Checked on game 96.9 (Steam build 26334129), 2026-11-06. ✅ works, ⚠️ works
   server ships no debug files to make one from, so the connector stays down until the community
   has published the cache for the new build. Takaro cannot speed this up. If you want no gap, hold
   back server updates until the cache is out.
+- A teleport far above the map can remove the character without a death, and Takaro still reports
+  success. Keep teleport heights close to the ground.
 - Only `-NoBattlEye` is known to work. BattlEye on is unchecked.
 - Players are known by their Epic (EOS) id. There is no Steam id, so anything in Takaro keyed on
   Steam ids does not match ARK players.
