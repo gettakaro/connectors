@@ -1,6 +1,7 @@
 -- Player progression: turns what the game adapter read from a prisoner into Takaro Progression Tracks. No game or
 -- transport symbols here. SCUM has no single character level, so there is no `character` track: every skill is a
 -- track (`skill.<name>`), with the game's own level (0 = no skill .. 4 = above advanced), experience and progress.
+-- The four attributes are tracks too (`attribute.<name>`), at the attribute's value.
 local M = {}
 
 -- ESkillReplicationID, the id in UPrisonerSkillComponent._replicatedSkills records, with the name the game shows.
@@ -32,8 +33,20 @@ M.SKILLS = {
 M.MAX_SKILL_LEVEL = 4
 
 -- Experience for a full level, read off the percentages on the client's stats screen. Experience starts again at 0
--- on every level. Higher levels are not known, so their tracks carry no progress.
-M.LEVEL_EXPERIENCE = { [0] = 10000, [1] = 100000, [2] = 1000000 }
+-- on every level; level 4 is the last and fills at the same 10,000,000 as level 3.
+M.LEVEL_EXPERIENCE = { [0] = 10000, [1] = 100000, [2] = 1000000, [3] = 10000000, [4] = 10000000 }
+
+-- UPrisonerBodySimulationComponent._repState1 packs one byte per attribute, scaled from 1 to the attribute's maximum
+-- (the same 32 bits are repeated in the high half).
+M.ATTRIBUTES = {
+  { key = "attribute.strength", name = "Strength", shift = 24, max = 8 },
+  { key = "attribute.constitution", name = "Constitution", shift = 16, max = 5 },
+  { key = "attribute.dexterity", name = "Dexterity", shift = 8, max = 5 },
+  { key = "attribute.intelligence", name = "Intelligence", shift = 0, max = 8 },
+}
+
+-- A level only moves once the value is this far from it, so a value drifting around x.5 fires no level events.
+M.ATTRIBUTE_MARGIN = 0.6
 
 local function whole(v)
   return type(v) == "number" and v == v and v >= 0 and v <= M.MAX_SKILL_LEVEL and math.floor(v) == v
@@ -58,6 +71,22 @@ function M.skill_tracks(records)
     end
   end
   table.sort(out, function(a, b) return a.key < b.key end)
+  return out
+end
+
+-- packed: the _repState1 value. previous: the attribute tracks of the last reading of this character, if any.
+-- The level is the nearest whole value: a new prisoner's 3.0 reads 2.98 and drifts, so rounding down would drop it.
+function M.attribute_tracks(packed, previous)
+  if math.type(packed) ~= "integer" or packed & 0xFFFFFFFF == 0 then return {} end
+  local last = {}
+  for _, t in ipairs(previous or {}) do last[t.key] = t.level end
+  local out = {}
+  for _, a in ipairs(M.ATTRIBUTES) do
+    local value = 1 + ((packed >> a.shift) & 0xFF) / 255 * (a.max - 1)
+    local level = math.floor(value + 0.5)
+    if last[a.key] and math.abs(value - last[a.key]) <= M.ATTRIBUTE_MARGIN then level = last[a.key] end
+    out[#out + 1] = { key = a.key, name = a.name, level = level }
+  end
   return out
 end
 

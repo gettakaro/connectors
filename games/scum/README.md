@@ -107,7 +107,7 @@ Checked on SCUM 1.3.5.1.172191 (Steam build 26280049), 2026-10-29; player levels
 | Player location | ✅ | Live position; offline players give their last position. |
 | Teleport | ✅ | The player is moved at once. |
 | Player inventory | ✅ | Clothes, item in hands, holster and backpack/pocket contents, with stack sizes and durability. Rounds loaded in a weapon or magazine are not listed. |
-| Player levels and skills | ⚠️ | Every skill the game shows as a track named `skill.<name>`, e.g. `skill.running`, at level 0 (no skill) to 4 (above advanced), with experience. Progress is reported up to level 2. SCUM has no overall character level. The four attributes are not reported. |
+| Player levels and skills | ⚠️ | Every skill the game shows as a track named `skill.<name>`, e.g. `skill.running`, at level 0 (no skill) to 4 (above advanced), with experience and progress. The four attributes as `attribute.<name>`, e.g. `attribute.strength`, at their nearest whole value. SCUM has no overall character level. |
 | Item list | ✅ | All items, with their in-game names. |
 | Entity list | ⚠️ | Animals have in-game names; zombie and NPC names are built from codes (e.g. "Zombie Civilian Skinny Male"). |
 | Locations | ❌ | SCUM has no list of named places. |
