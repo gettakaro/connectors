@@ -45,12 +45,13 @@ public static class ProtocolHandshake
 
     /// <summary>
     /// The live-supported actions of capabilities.json and their capability names.
-    /// getPlayer is unsupported and the version 0 map is schema-fallback, so a version 1 Takaro
-    /// never asks for them; testReachability is always allowed.
+    /// The version 0 map is schema-fallback, so a version 1 Takaro never asks for it;
+    /// testReachability is always allowed.
     /// </summary>
     public static IReadOnlyDictionary<string, string> ActionCapabilities { get; } = new Dictionary<string, string>
     {
         [TakaroActionNames.GetPlayers] = "players.list",
+        [TakaroActionNames.GetPlayer] = "players.get",
         [TakaroActionNames.GetPlayerLocation] = "players.location",
         [TakaroActionNames.GetPlayerInventory] = "players.inventory",
         [TakaroActionNames.TeleportPlayer] = "players.teleport",

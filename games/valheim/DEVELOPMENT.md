@@ -352,8 +352,7 @@ through a bounded `Update()`-drained action scheduler (`QueuedMainThreadActionSc
 names, per connection (missing means 0, so an older Takaro keeps working unchanged).
 
 - The manifest declares exactly the `live-supported` actions of `capabilities.json`
-  (testReachability is always allowed) and an `events.<type>` entry per event. getPlayer is not
-  declared, so a version 1 Takaro never sends it. listLocations is declared as `locations.list`
+  (testReachability is always allowed) and an `events.<type>` entry per event. listLocations is declared as `locations.list`
   although the registry keeps it `schema-fallback` until hosted takaro.io is checked, like the map.
 - The world map is declared as the `map` capability (`WorldMapFrame`): one tiled Dimension
   `valheim` (the `dimension` every position reports), bounds = the world square ±10,500 m, +X
@@ -464,7 +463,7 @@ Ownership values are `server-owned`, `upstream-blocked` or `unsupported`.
 | --- | --- | --- |
 | `testReachability` | `live-supported` | Reports connector reachability. |
 | `getPlayers` | `live-supported` | Reads the Valheim dedicated-server player list. The `Takaro` chat entry is never included. |
-| `getPlayer` | `unsupported` | Filtering exists, but Takaro exposes no single-player route to prove the final response shape. |
+| `getPlayer` | `live-supported` | Filters the server player list; `null` for a player who is not online. Takaro uses it for whisper recipients and for triggering a command by API. |
 | `getPlayerLocation` | `live-supported` | Uses only a real peer/public position or a fresh 30-second server-observed last-known position; an unavailable lookup is rejected through a schema-valid payload error. |
 | `getPlayerInventory` | `live-supported` | Ownership `client-reported`: needs the optional inventory companion on that player's game (live-proven 2026-10-02). Valheim keeps inventories in the client profile and the server only sees equipped visuals, so without a fresh companion snapshot it returns an error instead of a fabricated `[]`. |
 | `giveItem` | `live-supported` | Drops the items at the player's server-known position; the vanilla client's auto-pickup puts them in the bag (2026-10-01: 5 Raspberries and a Club landed in the inventory). |
@@ -534,8 +533,8 @@ runtime source. `getPlayers`, `listItems`, `listEntities`, `listLocations` and `
 return `[]` only when their required server singleton and collection exist. During world
 startup or reload, `runtime_unavailable` is suppressed for these array DTOs and lifecycle
 polling preserves its prior snapshot instead of fabricating an empty server or a false
-disconnect. A missing `getPlayer` match returns an immediate `player_not_found` payload
-error.
+disconnect. A missing `getPlayer` match returns `null` on version 1 and an immediate
+`player_not_found` payload error on version 0.
 
 ## Evidence boundary
 
