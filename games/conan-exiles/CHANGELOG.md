@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.6.1](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.6.0...conan-exiles-v3.6.1) (2026-11-06)
+
+
+### Build System
+
+* **conan-exiles:** retry apt fetches from the pinned Debian snapshot ([#785](https://github.com/gettakaro/connectors/issues/785)) ([bad843b](https://github.com/gettakaro/connectors/commit/bad843bdca5ead783b3c6f629466ed3b9e48ef32))
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+
 ## [3.6.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.5.1...conan-exiles-v3.6.0) (2026-10-30)
 
 
