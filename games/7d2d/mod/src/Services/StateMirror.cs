@@ -558,7 +558,11 @@ namespace Takaro.Services
             }
 
             return known
-                .OrderBy(p => p.Key.IsAttribute ? 0 : p.Key.IsPerk ? 1 : 2)
+                .OrderBy(p =>
+                    p.Key.IsAttribute ? 0
+                    : p.Key.IsPerk ? 1
+                    : 2
+                )
                 .ThenBy(p => p.Key.Name, StringComparer.Ordinal)
                 .Select(p => new TakaroProgressionTrack
                 {

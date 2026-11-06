@@ -31,7 +31,12 @@ public static partial class ContractHarness
             13,
             48210,
             0.42,
-            new[] { Track("attperception", 3), Track("perkminer69r", 0), Track("craftingarmor", 12) }
+            new[]
+            {
+                Track("attperception", 3),
+                Track("perkminer69r", 0),
+                Track("craftingarmor", 12),
+            }
         );
         Equal("character", tracks[0].Key, "the character level comes first");
         Equal(13, tracks[0].Level, "character level");
