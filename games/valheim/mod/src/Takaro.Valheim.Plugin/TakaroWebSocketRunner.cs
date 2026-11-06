@@ -540,7 +540,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
                     var location = await RunAdapterActionAsync(
                         () => adapter.GetPlayerLocationAsync(player.GameId, cancellationToken),
                         cancellationToken);
-                    if (location.Success)
+                    if (PlayerLifecyclePresenceFilter.IsObserved(player, location.Success))
                     {
                         playersWithObservedPositions.Add(player.GameId);
                     }

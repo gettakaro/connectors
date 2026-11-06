@@ -13,6 +13,7 @@ public sealed class CompanionProgressionTests
     private const string Nonce = "nonce-a";
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-11-05T10:00:00+00:00");
     private static readonly TakaroPlayer Player = new("Steam_76561190000000001", "Alice", "76561190000000001", "Steam_76561190000000001", null, null);
+    private static readonly TakaroPlayer Listed = Player with { Character = new TakaroCharacter("7", "Alice") };
     private static readonly Regex TrackKey = new("^[a-z][a-zA-Z0-9]*(\\.[a-z][a-zA-Z0-9-]*)*$");
 
     [TestMethod]
@@ -33,6 +34,7 @@ public sealed class CompanionProgressionTests
     {
         var cache = new CompanionProgressionCache();
         cache.Remember(Peer, Player, [new CompanionSkill("Jump", 3f, 0.5f, 0.2f)]);
+        cache.ObservePlayerList([Listed]);
         Assert.AreEqual(1, cache.Read(Player.SteamId!)!.Count);
 
         cache.RemovePeer(Peer);
@@ -48,6 +50,7 @@ public sealed class CompanionProgressionTests
 
         cache.ObservePeer(Peer, Player);
 
+        cache.ObservePlayerList([Listed]);
         Assert.AreEqual(1, cache.Read(Player.GameId)!.Count);
     }
 
@@ -59,6 +62,7 @@ public sealed class CompanionProgressionTests
 
         cache.ForgetReading(Peer);
 
+        cache.ObservePlayerList([Listed]);
         var tracks = cache.Read(Player.GameId);
         Assert.IsNotNull(tracks);
         Assert.AreEqual(0, tracks.Count);
@@ -147,6 +151,7 @@ public sealed class CompanionProgressionTests
         var result = server.Handle(Skills(2, """{"code":"Jump","level":2.5,"accumulator":0.25,"progress":0.1}"""));
 
         Assert.AreEqual(CompanionMessageOutcome.SkillsAccepted, result.Outcome);
+        server.Progression.ObservePlayerList([Listed]);
         Assert.AreEqual(2, server.Progression.Read(Player.GameId)!.Single().Level);
     }
 
@@ -179,6 +184,7 @@ public sealed class CompanionProgressionTests
         var result = server.Handle(Skills(3, skills));
 
         Assert.AreEqual(CompanionMessageOutcome.Ignored, result.Outcome);
+        server.Progression.ObservePlayerList([Listed]);
         Assert.AreEqual("swim", server.Progression.Read(Player.GameId)!.Single().Key);
     }
 
@@ -237,6 +243,86 @@ public sealed class CompanionProgressionTests
 
         Assert.AreEqual("client-reported", capability["parameters"]!["source"]!.GetValue<string>());
         Assert.IsTrue(ProtocolHandshake.IsDeclared(TakaroActionNames.GetPlayerProgression));
+    }
+
+    [TestMethod]
+    public void TheManifestDeclaresClientHeldCharactersThatDeathNeverEnds()
+    {
+        var capability = ProtocolHandshake.BuildCapabilityManifest()
+            .Single(c => c!["name"]!.GetValue<string>() == "players.characters")!;
+
+        Assert.AreEqual("client", capability["parameters"]!["held"]!.GetValue<string>());
+        Assert.IsNull(capability["parameters"]!["ends"]);
+    }
+
+    [TestMethod]
+    public void TheCharacterIsTheGamesIdAndNeverTheName()
+    {
+        var character = PlayerMapper.ToCharacter(-4242, "Bjorn", "Fallback")!;
+
+        Assert.AreEqual("-4242", character.Id);
+        Assert.AreEqual("Bjorn", character.Name);
+        Assert.IsNull(PlayerMapper.ToCharacter(0, "Bjorn", "Fallback"));
+        Assert.AreEqual("Fallback", PlayerMapper.ToCharacter(1, "", "Fallback")!.Name);
+        Assert.AreEqual(255, PlayerMapper.ToCharacter(1, new string('x', 300), "Fallback")!.Name.Length);
+    }
+
+    [TestMethod]
+    public void PlayerPayloadsAndEventsNameTheCharacterOnlyWhenKnown()
+    {
+        var withCharacter = Player with { Character = new TakaroCharacter("7", "Bjorn") };
+
+        var known = JsonDocument.Parse(JsonSerializer.Serialize(EventFactory.PlayerConnected(withCharacter, Now))).RootElement;
+        var unknown = JsonDocument.Parse(JsonSerializer.Serialize(EventFactory.PlayerConnected(Player, Now))).RootElement;
+
+        Assert.AreEqual("7", known.GetProperty("player").GetProperty("character").GetProperty("id").GetString());
+        Assert.IsFalse(unknown.GetProperty("player").TryGetProperty("character", out _));
+    }
+
+    [TestMethod]
+    public void PlayerConnectedWaitsForTheCharacter()
+    {
+        var withCharacter = Player with { Character = new TakaroCharacter("7", "Bjorn") };
+
+        Assert.IsFalse(PlayerLifecyclePresenceFilter.IsObserved(Player, hasPosition: true));
+        Assert.IsFalse(PlayerLifecyclePresenceFilter.IsObserved(withCharacter, hasPosition: false));
+        Assert.IsTrue(PlayerLifecyclePresenceFilter.IsObserved(withCharacter, hasPosition: true));
+    }
+
+    [TestMethod]
+    public void ARelogOntoAnotherCharacterBetweenPollsStillReadsAsLeavingAndJoining()
+    {
+        var first = Player with { Character = new TakaroCharacter("7", "Bjorn") };
+        var second = Player with { Character = new TakaroCharacter("8", "Astrid") };
+        var tracker = new PlayerLifecycleEventTracker();
+        tracker.Update([first], Now);
+
+        var unreadable = tracker.Update([Player], Now);
+        var switched = tracker.Update([second], Now);
+        var settled = tracker.Update([second], Now);
+
+        Assert.AreEqual(0, unreadable.Count);
+        CollectionAssert.AreEqual(new[] { "player-disconnected", "player-connected" }, switched.Select(e => e.Type).ToArray());
+        Assert.AreEqual("7", switched[0].Player.Character!.Id);
+        Assert.AreEqual("8", switched[1].Player.Character!.Id);
+        Assert.AreEqual(0, settled.Count);
+    }
+
+    [TestMethod]
+    public void TracksStayBackUntilThePlayerListNamesTheCharacter()
+    {
+        var cache = new CompanionProgressionCache();
+        cache.ObservePeer(Peer, Player);
+        cache.Remember(Peer, Player, [new CompanionSkill("Jump", 3f, 0.5f, 0.2f)]);
+
+        cache.ObservePlayerList([Player]);
+        Assert.AreEqual(0, cache.Read(Player.GameId)!.Count);
+
+        cache.ObservePlayerList([Player with { Character = new TakaroCharacter("7", "Bjorn") }]);
+        Assert.AreEqual(1, cache.Read(Player.GameId)!.Count);
+
+        cache.Remember(Peer, Player, [new CompanionSkill("Run", 3f, 0.5f, 0.2f)]);
+        Assert.AreEqual("run", cache.Read(Player.GameId)!.Single().Key);
     }
 
     [TestMethod]

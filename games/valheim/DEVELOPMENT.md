@@ -280,6 +280,13 @@ channel (`TakaroCompanionV1`). Everything it sends is client-reported and untrus
   fractional part of `m_level` is not progress: only a death leaves one, and level-ups come from
   the accumulator alone. Skills never leave the client in vanilla: they are not on the player
   ZDO and no RPC carries them, so without the mod Takaro simply gets no tracks.
+- **Characters.** Not a mod feature: the game writes the character's id (generated once and saved
+  in the character file) and name onto the player ZDO, so the server reads both for vanilla clients.
+  Version 1 declares `players.characters` with `held: client`, and every player payload carries
+  `character { id, name }` once the ZDO has arrived. It needs a Takaro version with Characters
+  support. Takaro takes a switch from `player-connected`, so that event waits until the character
+  is readable. `getPlayerProgression` holds tracks back until the player list names the character,
+  so a reading can never land on the previous one. No `ends`: a death never ends a character.
 - **Kill verdicts.** When a non-player creature the local client owns dies and the local
   player's name is marked on it (`ZDOVars.s_attackers + name`), the companion sends one
   `kill-verdict` {`creatureZdo`, `prefab`, `enemyToken`, `lastHitByLocalPlayer`,
