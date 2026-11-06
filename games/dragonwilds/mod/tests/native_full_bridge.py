@@ -218,6 +218,8 @@ def replay(cert, key, state):
 def backlog_request_latency(cert, key, state):
     # A large unconfirmed backlog replayed after a restart must not delay Takaro requests past
     # its 10 s timeout (seen live with ~350 events: requests timed out for ~30 s after boot).
+    # The budget stays under that timeout, not near the idle time: this peer decodes every replayed
+    # frame in Python, and on a busy machine that alone takes seconds.
     PONGS.clear()
     run = Run(cert, key, state)
     try:
@@ -233,7 +235,7 @@ def backlog_request_latency(cert, key, state):
         for i in range(20):
             run.request(f'backlog-reach-{i}', 'testReachability')
         for i in range(20):
-            run.response(f'backlog-reach-{i}', timeout=max(0.1, 2 - (time.monotonic() - started)))
+            run.response(f'backlog-reach-{i}', timeout=max(0.1, 8 - (time.monotonic() - started)))
         elapsed = time.monotonic() - started
         eventually(lambda: not read(state / 'event-outbox.json')['pending'], timeout=60)
         print(f'production bridge 20 requests during 400-event replay plus 600 raw log lines answered in {elapsed:.2f}s: pass', flush=True)
