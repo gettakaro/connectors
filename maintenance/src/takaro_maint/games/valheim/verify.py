@@ -93,7 +93,7 @@ QUIT_BUDGET = 120.0
 STOP_TIMEOUT = 120
 #: How long the wrong-package boot is still watched after its ready line, for a late identify.
 NEGATIVE_GRACE = 20.0
-#: An action no connector declares, and one Valheim's capabilities.json marks unsupported.
+#: An action no connector declares, and a getPlayer for nobody: both answer without a player.
 UNKNOWN_ACTION = "takaroVerifyUndeclaredAction"
 UNSUPPORTED_ACTION = ("getPlayer", {"gameId": "takaro-verify-nobody"})
 PLUGIN_DIR = Path("BepInEx") / "plugins" / "TakaroValheim"
@@ -237,11 +237,12 @@ async def _check_handshake(run: Any, fake: Any, alive: Any) -> checks.CheckResul
     """The plugin loaded, started, identified, and Takaro accepted the identify frame."""
     with checks._Timer() as timer:
         problems: list[str] = []
-        if fake.identify_count < 1:
-            problems.append("the connector never sent an identify frame")
+        # The connector dials Takaro only once the world has loaded, so the frame follows the ready line.
         confirmed = await asyncio.to_thread(
             checks.wait_for_line, run.server_log, HANDSHAKE_LINE, checks_lifecycle.IDENTIFY_BUDGET, alive
         )
+        if fake.identify_count < 1:
+            problems.append("the connector never sent an identify frame")
         if not confirmed:
             problems.append("the server log never confirmed the identify with 'identified as gameServerId='")
         loaded = await asyncio.to_thread(checks.find_line, run.server_log, LOADED_LINE)
@@ -365,9 +366,9 @@ async def _check_action(run: Any, fake: Any) -> checks.CheckResult:
 async def _check_unsupported(run: Any, fake: Any) -> checks.CheckResult:
     """An action the connector does not offer is refused with an error, and the socket stays usable.
 
-    Two cases: an action no connector declares, and ``getPlayer``, which capabilities.json
-    marks unsupported. On protocol version 0 both answer with a top-level ``error`` that
-    Takaro rejects at once; a ``getPlayer`` answer must also not name a player.
+    Two cases: an action no connector declares, and ``getPlayer`` for a player who is not
+    online. On protocol version 0 both answer with a top-level ``error`` that Takaro rejects
+    at once; a ``getPlayer`` answer must also not name a player.
     """
     with checks._Timer() as timer:
         problems: list[str] = []
@@ -646,7 +647,8 @@ def _rehash(data_dir: Path, ledger_inputs: list[dict[str, Any]]) -> tuple[list[s
 
 #: What this game contributes to a verification run; the runner reads nothing else.
 HOOKS = GameHooks(
-    ready_line=READY_LINE,
+    # The connector dials Takaro only once the world has loaded, so identify is the last boot step.
+    ready_line=HANDSHAKE_LINE,
     check_ids=CHECK_IDS,
     negative_check_ids=(NEGATIVE_CHECK,),
     unsupported_checks=UNSUPPORTED_CHECKS,

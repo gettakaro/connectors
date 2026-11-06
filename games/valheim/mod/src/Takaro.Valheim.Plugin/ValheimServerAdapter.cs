@@ -13,6 +13,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     private readonly Action requestShutdown;
     private readonly ValheimPlayerResolver playerResolver;
     private readonly CompanionInventoryCache companionInventory;
+    private readonly CompanionProgressionCache companionProgression;
     private readonly string chatSenderName;
     private readonly PlayerPositionCache playerPositions = new(TimeSpan.FromSeconds(30));
     private readonly Dictionary<string, HashSet<string>> banAliases = new(StringComparer.OrdinalIgnoreCase);
@@ -25,6 +26,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         Action requestShutdown,
         ValheimPlayerResolver playerResolver,
         CompanionInventoryCache companionInventory,
+        CompanionProgressionCache companionProgression,
         WorldMapService worldMap)
     {
         this.logger = logger;
@@ -33,6 +35,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         this.requestShutdown = requestShutdown;
         this.playerResolver = playerResolver ?? throw new ArgumentNullException(nameof(playerResolver));
         this.companionInventory = companionInventory ?? throw new ArgumentNullException(nameof(companionInventory));
+        this.companionProgression = companionProgression ?? throw new ArgumentNullException(nameof(companionProgression));
         chatSenderName = config.ChatSenderName;
     }
 
@@ -53,6 +56,8 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
                 ? "Valheim world is still loading; players cannot join yet."
                 : null;
     }
+
+    public static bool WorldReady => notReadyReason is null;
 
     // Answered off the main thread from the readiness the game loop last published.
     public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default)
@@ -79,6 +84,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         }
 
         var players = network.GetPlayerList().Select(playerResolver.ToTakaroPlayer).ToArray();
+        companionProgression.ObservePlayerList(players);
 
         logger.LogInfo($"Takaro Valheim getPlayers returned {players.Length} player(s).");
         return Task.FromResult(RuntimeArrayActionPolicy.FromSource(
@@ -157,6 +163,12 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
         return Task.FromResult(result);
     }
+
+    // Skills live in the character file on the client and no skill value reaches the server, so
+    // the only source is the optional client mod. A player without it reads as a known player
+    // with no tracks, which leaves what Takaro stored untouched.
+    public Task<TakaroActionResult> GetPlayerProgressionAsync(string identifier, CancellationToken cancellationToken = default) =>
+        Task.FromResult(TakaroActionResult.Ok(companionProgression.Read(identifier)));
 
     public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default)
     {
@@ -731,6 +743,9 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         Task.FromResult(TakaroActionResult.Error(
             "player_component_unavailable",
             "Reference-free scaffold has no server-owned Player inventory component."));
+
+    public Task<TakaroActionResult> GetPlayerProgressionAsync(string identifier, CancellationToken cancellationToken = default) =>
+        Task.FromResult(TakaroActionResult.Ok());
 
     public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default) =>
         Task.FromResult(TakaroActionResult.Error("scaffold_mode", "Build with Valheim references to enable item giving."));

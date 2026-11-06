@@ -25,6 +25,7 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
     private readonly object configCheckGate = new();
     private InventoryCompanionBridge? inventoryCompanion;
     private CompanionInventoryCache? companionInventory;
+    private CompanionProgressionCache? companionProgression;
     private ValheimWorldMap? worldMap;
     private QueuedMainThreadActionScheduler? mainThreadActions;
     private Harmony? harmony;
@@ -68,9 +69,10 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
 
         var playerResolver = new ValheimPlayerResolver(Logger, knownPlayerNames);
         companionInventory = new CompanionInventoryCache();
+        companionProgression = new CompanionProgressionCache();
         var worldMapService = new WorldMapService();
         worldMap = new ValheimWorldMap(worldMapService, Paths.CachePath, message => Logger.LogInfo(message));
-        var adapter = new ValheimServerAdapter(Logger, config, RequestShutdown, playerResolver, companionInventory, worldMapService);
+        var adapter = new ValheimServerAdapter(Logger, config, RequestShutdown, playerResolver, companionInventory, companionProgression, worldMapService);
         runner = new TakaroWebSocketRunner(
             config,
             adapter,
@@ -79,13 +81,14 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             message => Logger.LogWarning(message),
             configStore.FilePath,
             profile: CreateGameProfile(),
-            worldMap: worldMapService);
+            worldMap: worldMapService,
+            gameReady: () => ValheimServerAdapter.WorldReady);
         TakaroChatParticipant.Initialize(config.ChatSenderName, Logger.LogInfo);
         ValheimServerEventBridge.Initialize(runner, playerResolver, Logger.LogInfo);
         // Optional: only players who install the inventory companion ever answer it.
         // Research probe for native commands (#200): off unless the marker file exists at load.
         var commandProbeMarker = Path.Combine(Paths.ConfigPath, Takaro.Valheim.Companion.Protocol.CommandProbeProtocol.MarkerFileName);
-        inventoryCompanion = new InventoryCompanionBridge(playerResolver, companionInventory, Logger.LogInfo, File.Exists(commandProbeMarker) ? commandProbeMarker : null);
+        inventoryCompanion = new InventoryCompanionBridge(playerResolver, companionInventory, companionProgression, Logger.LogInfo, File.Exists(commandProbeMarker) ? commandProbeMarker : null);
         harmony = new Harmony(PluginGuid);
         harmony.PatchAll(typeof(ValheimServerEventBridge).Assembly);
         _ = runner.StartAsync();
@@ -120,6 +123,7 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
         inventoryCompanion = null;
         runner?.Dispose();
         companionInventory?.Clear();
+        companionProgression?.Clear();
         mainThreadActions?.Dispose();
     }
 

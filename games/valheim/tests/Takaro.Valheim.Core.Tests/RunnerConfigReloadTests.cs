@@ -66,6 +66,24 @@ public sealed class RunnerConfigReloadTests
     }
 
     [TestMethod]
+    public async Task ABootingServerStaysAwayFromTakaroUntilTheWorldHasLoaded()
+    {
+        using var takaro = new FakeTakaro();
+        var logs = new Log();
+        var ready = false;
+        using var runner = new TakaroWebSocketRunner(Config(takaro, "good", "id-1"), new IdleAdapter(), logs.Infos.Enqueue, null, logs.Warnings.Enqueue, ConfigPath, gameReady: () => Volatile.Read(ref ready));
+        await runner.StartAsync();
+
+        await Until(() => logs.Infos.Any(l => l.Contains("once the world has loaded", StringComparison.Ordinal)));
+        await Task.Delay(1500);
+        Assert.AreEqual(0, takaro.Identifies.Count);
+
+        Volatile.Write(ref ready, true);
+
+        await Until(() => logs.Infos.Any(l => l.Contains("identified as gameServerId=gs-id-1", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
     public async Task TakarosConnectedMessageDoesNotSendASecondIdentify()
     {
         // This fake answers a second identify on one socket with a 409, as Takaro does for the
@@ -296,6 +314,7 @@ public sealed class RunnerConfigReloadTests
         public Task<TakaroActionResult> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default) => Unused();
         public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default) => Unused();
         public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default) => Unused();
+        public Task<TakaroActionResult> GetPlayerProgressionAsync(string identifier, CancellationToken cancellationToken = default) => Unused();
         public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default) => Unused();
         public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, string? senderNameOverride, CancellationToken cancellationToken = default) => Unused();
         public Task<TakaroActionResult> ExecuteConsoleCommandAsync(string command, CancellationToken cancellationToken = default) => Unused();
