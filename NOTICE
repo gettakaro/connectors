@@ -1,0 +1,61 @@
+Takaro Game Server Connectors
+Copyright (C) 2026 Takaro (https://takaro.io) and contributors
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, version 3 of the License (AGPL-3.0-only),
+together with the additional permission set out below.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details. A copy of the license is in the
+LICENSE file at the root of this repository.
+
+
+Additional permission under GNU AGPL version 3 section 7
+--------------------------------------------------------
+
+If you modify this program, or any covered work, by linking or combining
+it with a game server, game client, or game runtime that a connector in
+this repository is built to run inside or alongside (for example, the
+Dune: Awakening dedicated server), or with that software's own mod loader
+or plugin framework (or a modified version of any of these), containing
+parts covered by the terms of that software's own license, the licensors
+of this program grant you additional permission to convey the resulting
+work. Corresponding Source for a non-source form of such a combination
+does not need to include the source code for the parts of that game
+software that are used, but must include the source code of the covered
+work.
+
+You may remove this additional permission from your own modified
+versions of this program.
+
+
+Attribution
+-----------
+
+If you distribute this program or a modified version of it, keep this
+NOTICE file and the LICENSE file, and credit "Takaro (https://takaro.io)"
+in your documentation or about page. You must not use the Takaro name or
+logo in a way that suggests that Takaro endorses or supports your
+version.
+
+
+No rights to game software
+--------------------------
+
+This license covers the code in this repository only. It does not grant
+any rights to the games or game servers that the connectors work with.
+Those remain the property of their owners, and their own license terms
+(for example, end user license agreements, server hosting terms and mod
+policies) still apply to you.
+
+
+Third-party components
+----------------------
+
+Some connectors include or link third-party components (for example,
+OpenSSL, libwebsockets, PCRE2 and MinHook). Those components stay under
+their own licenses. See the third_party/licenses folder of each connector
+for the license texts.

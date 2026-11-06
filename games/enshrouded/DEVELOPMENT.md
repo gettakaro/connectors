@@ -192,7 +192,7 @@ and `world.cpp` (written for 1024233).
    `{name*, len, type*, offset}` give most values) and its hash to `kShipped` in
    `src/gamedata_file.cpp`, and regenerate the static tables above. When the
    new build's `tkeen::ItemInfo` and TemplateResource exports still match the compiled tables, set
-   `layout.itemTables` to the build they were exported on (`"1267041"`): that switches the catalogue and
+   `layout.itemTables` to the build they were exported on (`"1283531"`): that switches the catalogue and
    `giveItem` back on without a plugin release.
 1. `takaro-maint steam pin --game enshrouded --metadata` to see what moved, then
    `--record-files … --write` to re-pin the record (id and `revision` follow the new game
