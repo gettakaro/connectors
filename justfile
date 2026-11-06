@@ -65,6 +65,10 @@ build-release-tf2 version out-dir='dist' target='linux-25995664':
 build-release-empyrion version out-dir='dist' target='windows-25490402':
     ./games/empyrion/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
 
+# Package the ARK: Survival Ascended release zip around an MSVC-built TakaroAsa.dll (TAKARO_ASA_DLL)
+build-release-ark-ascended version out-dir='dist' target='windows-26334129':
+    ./games/ark-ascended/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
+
 # === Terraria Plugin ===
 
 # Prepare TShock reference assemblies

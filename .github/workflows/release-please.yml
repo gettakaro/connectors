@@ -64,6 +64,9 @@ jobs:
       empyrion_released: ${{ steps.rp.outputs['games/empyrion--release_created'] }}
       empyrion_tag: ${{ steps.rp.outputs['games/empyrion--tag_name'] }}
       empyrion_version: ${{ steps.rp.outputs['games/empyrion--version'] }}
+      ark_ascended_released: ${{ steps.rp.outputs['games/ark-ascended--release_created'] }}
+      ark_ascended_tag: ${{ steps.rp.outputs['games/ark-ascended--tag_name'] }}
+      ark_ascended_version: ${{ steps.rp.outputs['games/ark-ascended--version'] }}
     steps:
       # Author Release PRs as takaro-ci-bot[bot] instead of GITHUB_TOKEN. PRs/commits made
       # with GITHUB_TOKEN don't fire downstream events, so the required `conventional-title`
@@ -264,6 +267,18 @@ jobs:
       version: ${{ needs.release-please.outputs.empyrion_version }}
       tag: ${{ needs.release-please.outputs.empyrion_tag }}
 
+  release-ark-ascended:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.ark_ascended_released == 'true' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/ark-ascended.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.release-please.outputs.ark_ascended_version }}
+      tag: ${{ needs.release-please.outputs.ark_ascended_tag }}
+
   # takaro.io/connectors serves downloads from a committed snapshot of this repo's
   # releases, so the website only learns about a release when we tell it. This dispatch
   # opens a refresh PR there (gettakaro/static-sites, .github/workflows/connectors-refresh.yml).
@@ -287,6 +302,7 @@ jobs:
       - release-scum
       - release-tf2
       - release-empyrion
+      - release-ark-ascended
     if: |
       always() && (
         (needs.release-ark.result == 'success' && needs.release-please.outputs.ark_released == 'true') ||
@@ -302,7 +318,8 @@ jobs:
         (needs.release-vein.result == 'success' && needs.release-please.outputs.vein_released == 'true') ||
         (needs.release-scum.result == 'success' && needs.release-please.outputs.scum_released == 'true') ||
         (needs.release-tf2.result == 'success' && needs.release-please.outputs.tf2_released == 'true') ||
-        (needs.release-empyrion.result == 'success' && needs.release-please.outputs.empyrion_released == 'true')
+        (needs.release-empyrion.result == 'success' && needs.release-please.outputs.empyrion_released == 'true') ||
+        (needs.release-ark-ascended.result == 'success' && needs.release-please.outputs.ark_ascended_released == 'true')
       )
     runs-on: ubuntu-24.04
     steps:
@@ -334,7 +351,8 @@ jobs:
              || needs.release-please.outputs.vein_tag
              || needs.release-please.outputs.scum_tag
              || needs.release-please.outputs.tf2_tag
-             || needs.release-please.outputs.empyrion_tag }}
+             || needs.release-please.outputs.empyrion_tag
+             || needs.release-please.outputs.ark_ascended_tag }}
         run: |
           gh api repos/gettakaro/static-sites/dispatches \
             -f event_type=connector-released \
