@@ -64,6 +64,8 @@ export function mapPlayer(source: PlayerLike): TakaroPlayer {
   if (!gameId) throw new Error(`Dune player row has no usable identifier: ${JSON.stringify(row)}`);
 
   const player: TakaroPlayer = { gameId, name: characterName ?? str(row.name) ?? gameId };
+  const characterId = str(row.characterId);
+  if (characterId) player.character = { id: characterId, name: player.name };
   const platformName = (str(row.platformName) ?? '').toLowerCase();
   const steamId = platformIdRaw && (platformName.includes('steam') || isSteamId64(platformIdRaw)) ? platformIdRaw : null;
   if (steamId) {

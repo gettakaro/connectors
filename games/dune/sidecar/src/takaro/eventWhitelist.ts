@@ -25,8 +25,11 @@ import type { GameEventType } from './protocol.js';
 /** `BaseEvent` + `BaseGameEvent`: every event may carry these. `type` is added by the frame builder, not the payload. */
 export const BASE_EVENT_FIELDS = ['timestamp', 'msg'] as const;
 
-/** `IGamePlayer`. `platformId` additionally has to match `^[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+$`. */
-export const PLAYER_FIELDS = ['gameId', 'name', 'steamId', 'epicOnlineServicesId', 'xboxLiveId', 'platformId', 'ip', 'ping'] as const;
+/**
+ * `IGamePlayer`. `platformId` additionally has to match `^[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+$`. `character` needs a Takaro
+ * version with Characters support: earlier versions reject the whole event for it.
+ */
+export const PLAYER_FIELDS = ['gameId', 'name', 'steamId', 'epicOnlineServicesId', 'xboxLiveId', 'platformId', 'ip', 'ping', 'character'] as const;
 
 /** `IPosition`. */
 export const POSITION_FIELDS = ['x', 'y', 'z', 'dimension'] as const;

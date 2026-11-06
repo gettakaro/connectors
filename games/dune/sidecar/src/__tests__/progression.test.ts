@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { mapProgression } from '../dune/mapping.js';
+import { mapPlayer, mapProgression } from '../dune/mapping.js';
 import type { DuneProgressionRows } from '../dune/types.js';
 import { MAP_DIMENSIONS } from '../dune/mapDimensions.js';
 import { buildManifest } from '../takaro/capabilities.js';
+import { sanitizeGameEvent } from '../takaro/eventWhitelist.js';
 import { mockPlayer } from '../testing/mockBattlegroup.js';
 import { harness } from './helpers.js';
 
@@ -132,4 +133,40 @@ describe('getPlayerProgression', () => {
     expect(roster?.sql).toContain(`ps.character_state::text <> 'Deleted'`);
     expect(roster?.sql).toMatch(/ORDER BY ps\.last_avatar_activity DESC/);
   });
+});
+
+describe('characters', () => {
+  const player = { characterId: '2', characterName: 'Ariste' };
+
+  it('declares server-held characters that death does not end', () => {
+    expect(buildManifest(MAP_DIMENSIONS).filter((c) => c.name === 'players.characters')).toEqual([
+      { name: 'players.characters', parameters: { held: 'server' } },
+    ]);
+  });
+
+  it('getPlayers and getPlayer carry the character from its row id, not its name', async () => {
+    const h = await harness({ players: [mockPlayer(player)] });
+    const flsId = h.battlegroup.players[0]!.flsId;
+    const expected = { id: '2', name: 'Ariste' };
+    expect(((await h.adapter.handleAction('getPlayers', {})) as { character?: unknown }[])[0]?.character).toEqual(expected);
+    expect(((await h.adapter.handleAction('getPlayer', { gameId: flsId })) as { character?: unknown }).character).toEqual(expected);
+  });
+
+  it('a renamed character keeps its id', () => {
+    expect(mapPlayer({ flsId: 'A', characterId: '2', characterName: 'New name' }).character).toEqual({ id: '2', name: 'New name' });
+  });
+
+  it('a build without the row id reports no character', () => {
+    expect(mapPlayer({ flsId: 'A', characterName: 'Ariste' }).character).toBeUndefined();
+  });
+
+  it('stays on the player in every pushed event', () => {
+    const p = mapPlayer({ flsId: 'A', characterId: '2', characterName: 'Ariste' });
+    for (const type of ['player-connected', 'player-disconnected', 'player-death', 'chat-message', 'entity-killed'] as const) {
+      const { data, removed } = sanitizeGameEvent(type, { player: p, msg: 'x' });
+      expect((data as { player: Record<string, unknown> }).player.character).toEqual({ id: '2', name: 'Ariste' });
+      expect(removed).toEqual([]);
+    }
+  });
+
 });

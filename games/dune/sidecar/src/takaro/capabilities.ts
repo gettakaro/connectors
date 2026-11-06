@@ -48,6 +48,8 @@ export function buildManifest(dimensions: readonly MapDimension[], gameVersion: 
   }));
   for (const type of GAME_EVENT_TYPES) manifest.push({ name: `events.${type}` });
   if (dimensions.length) manifest.push({ name: 'map', parameters: { dimensions: dimensions.map((d) => ({ ...d })) } });
+  // Death does not end a Dune character, so `ends` stays out.
+  manifest.push({ name: 'players.characters', parameters: { held: 'server' } });
   manifest.push(gameProfileCapability(gameVersion));
   return manifest;
 }

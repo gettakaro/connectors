@@ -35,6 +35,7 @@ export interface DunePgOptions {
  */
 export const OPTIONAL_COLUMNS = {
   player_state: [
+    'id',
     'life_state',
     'death_location',
     'character_name',
@@ -252,6 +253,7 @@ export class DunePg {
     select.push(this.has('accounts', 'platform_id') ? `COALESCE(acct.platform_id::text, '') AS platform_id` : `'' AS platform_id`);
     select.push(this.has('accounts', 'platform_name') ? `COALESCE(acct.platform_name::text, '') AS platform_name` : `'' AS platform_name`);
     select.push(this.has('player_state', 'account_id') ? `ps.account_id::int8 AS account_id` : `NULL::int8 AS account_id`);
+    select.push(this.has('player_state', 'id') ? `ps.id::text AS character_id` : `NULL::text AS character_id`);
     select.push(this.has('player_state', 'character_name') ? `COALESCE(ps.character_name, '') AS character_name` : `'' AS character_name`);
     select.push(this.has('player_state', 'online_status') ? `COALESCE(ps.online_status::text, '') AS online_status` : `'' AS online_status`);
     select.push(this.has('player_state', 'life_state') ? `COALESCE(ps.life_state::text, '') AS life_state` : `'' AS life_state`);
@@ -554,6 +556,7 @@ function toPlayerRow(r: Record<string, unknown>): DunePlayerRow {
     platformId: str(r.platform_id),
     platformName: str(r.platform_name),
     accountId: num(r.account_id),
+    characterId: str(r.character_id),
     characterName: str(r.character_name),
     onlineStatus: str(r.online_status),
     lifeState: str(r.life_state),
