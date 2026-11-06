@@ -85,7 +85,16 @@ std::string BanPersistenceError();
 
 // Character names observed in the server log (`PlayerChar entered world [Account[XP:<puid>]
 // Character Name[<name>]`), used when the reflected/native getters come back empty.
+// The character of a player's current session, else of their last one. A new session clears it, so
+// nothing can mistake the previous character for the one that is loading.
+struct SessionCharacter {
+    std::string id;    // the game's character GUID
+    std::string name;
+};
 void NoteCharacterName(const std::string& gameId, const std::string& name);
+void NoteCharacter(const std::string& gameId, const std::string& characterId, const std::string& name);
+void ForgetCharacter(const std::string& gameId);
+SessionCharacter CurrentCharacter(const std::string& gameId);
 std::string CharacterName(const std::string& gameId);
 
 // Readable creature names (lane L3c). `ADominionAICharacter::AIName` is an FText that only exists on

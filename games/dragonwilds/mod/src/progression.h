@@ -6,6 +6,7 @@
 #pragma once
 #include "common.h"
 #include <cctype>
+#include <cstring>
 #include <map>
 #include <mutex>
 #include <set>
@@ -71,25 +72,76 @@ inline std::string TracksJson(const std::vector<Track>& tracks) {
     return o + "]";
 }
 
-// The last reading per player. It outlives a disconnect, so a player who just left still answers
-// their last known tracks.
+// The last reading per player, tagged with the character it was read from. It outlives a
+// disconnect, so a player who just left still answers their last known tracks, but it is never
+// answered for any other character: that would be one character's levels on another.
 class Store {
 public:
-    void Put(const std::string& gameId, std::vector<Track> tracks) {
+    void Put(const std::string& gameId, const std::string& characterId, std::vector<Track> tracks) {
         std::lock_guard<std::mutex> g(lock_);
-        rows_[gameId] = std::move(tracks);
+        rows_[gameId] = {characterId, std::move(tracks)};
     }
-    bool Find(const std::string& gameId, std::vector<Track>& out) const {
+    bool Find(const std::string& gameId, const std::string& characterId, std::vector<Track>& out) const {
         std::lock_guard<std::mutex> g(lock_);
         auto it = rows_.find(gameId);
-        if (it == rows_.end()) return false;
-        out = it->second;
+        if (it == rows_.end() || characterId.empty() || it->second.first != characterId) return false;
+        out = it->second.second;
         return true;
     }
 
 private:
     mutable std::mutex lock_;
-    std::map<std::string, std::vector<Track>> rows_;
+    std::map<std::string, std::pair<std::string, std::vector<Track>>> rows_;
 };
+
+// The two server log lines that bound a character's session.
+struct EnteredWorld {
+    std::string gameId;
+    std::string name;
+    std::string characterId;  // the game's character GUID; empty if the line carries none
+};
+
+inline std::string Between(const std::string& line, const char* open, size_t from = 0) {
+    size_t a = line.find(open, from);
+    if (a == std::string::npos) return "";
+    a += strlen(open);
+    size_t end = line.find(']', a);
+    return end == std::string::npos ? "" : line.substr(a, end - a);
+}
+
+inline bool IsHex(const std::string& s) {
+    if (s.empty()) return false;
+    for (unsigned char c : s)
+        if (!isxdigit(c)) return false;
+    return true;
+}
+
+inline std::string LowerCopy(std::string s) {
+    for (auto& c : s) c = (char)tolower((unsigned char)c);
+    return s;
+}
+
+// `PlayerChar entered world [Account[XP:<puid>] Character Name[<name>] Guid[DCG:<guid>] Type[0]]`:
+// the character has loaded. The only place the server prints its name and GUID.
+inline bool ParseEnteredWorld(const std::string& line, EnteredWorld& out) {
+    size_t mark = line.find("PlayerChar entered world");
+    if (mark == std::string::npos) return false;
+    std::string id = Between(line, "Account[XP:", mark), name = Between(line, "Character Name[", mark);
+    if (id.size() != 32 || !IsHex(id) || name.empty() || name.size() > 64) return false;
+    std::string guid = Between(line, "Guid[DCG:", mark);
+    out = {LowerCopy(id), name, IsHex(guid) ? guid : ""};
+    return true;
+}
+
+// `LogNet: Login request: ... userId: RedpointEOS:<puid> platform: ...`: a new session starts, and
+// which character it brings is unknown until it enters the world. Returns the puid, or "".
+inline std::string ParseLoginRequest(const std::string& line) {
+    if (line.find("Login request:") == std::string::npos) return "";
+    static const char* kMark = "userId: RedpointEOS:";
+    size_t a = line.find(kMark);
+    if (a == std::string::npos) return "";
+    std::string id = line.substr(a + strlen(kMark), 32);
+    return id.size() == 32 && IsHex(id) ? LowerCopy(id) : "";
+}
 
 }  // namespace Progression

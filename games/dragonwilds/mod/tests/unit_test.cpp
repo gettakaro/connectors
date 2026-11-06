@@ -612,11 +612,37 @@ static void TestProgression() {
 
     Store store;
     std::vector<Track> found;
-    CHECK(!store.Find("a", found), "no reading yet");
-    store.Put("a", tracks);
-    CHECK(store.Find("a", found) && found.size() == 2, "reading kept");
-    store.Put("a", {tracks[1]});
-    CHECK(store.Find("a", found) && found.size() == 1 && found[0].key == "cooking", "a new reading replaces the old one");
+    CHECK(!store.Find("a", "c1", found), "no reading yet");
+    store.Put("a", "c1", tracks);
+    CHECK(store.Find("a", "c1", found) && found.size() == 2, "reading kept");
+    store.Put("a", "c1", {tracks[1]});
+    CHECK(store.Find("a", "c1", found) && found.size() == 1 && found[0].key == "cooking", "a new reading replaces the old one");
+    CHECK(!store.Find("a", "c2", found), "a reading is never answered for another character");
+    CHECK(!store.Find("a", "", found), "nor while the character is unknown");
+    store.Put("a", "c2", tracks);
+    CHECK(store.Find("a", "c2", found) && found.size() == 2 && !store.Find("a", "c1", found), "the newest character owns the row");
+
+    const std::string puid = "000204f6f3a444a99a44c995d80ff2a7", guid = "41C4B04F4C9C038FEB767888BADD003F";
+    state::NoteCharacter(puid, guid, "Limon");
+    CHECK(state::CurrentCharacter(puid).id == guid && state::CharacterName(puid) == "Limon", "the session's character");
+    state::NoteCharacterName(puid, "Other");
+    CHECK(state::CurrentCharacter(puid).id == guid, "a name alone never changes the id");
+    state::ForgetCharacter(puid);
+    CHECK(state::CurrentCharacter(puid).id.empty() && state::CharacterName(puid).empty(), "a new session starts with no character");
+    EnteredWorld e;
+    CHECK(ParseEnteredWorld("[2026.11.06-04.13.42:519][740]LogDominionPlayerControllerBase: PlayerChar entered world [Account[XP:" + puid +
+                                "] Character Name[Sir Reginald III] Guid[DCG:" + guid + "] Type[0]]", e) &&
+              e.gameId == puid && e.name == "Sir Reginald III" && e.characterId == guid, "entered-world line");
+    CHECK(ParseEnteredWorld("PlayerChar entered world [Account[XP:" + puid + "] Character Name[Limon] Type[0]]", e) && e.characterId.empty(),
+          "a line without a GUID names the character but gives no id");
+    CHECK(ParseEnteredWorld("PlayerChar entered world [Account[XP:" + puid + "] Character Name[Limon] Guid[DCG:not-hex] Type[0]]", e) && e.characterId.empty(),
+          "a malformed GUID is no id");
+    CHECK(!ParseEnteredWorld("PlayerChar entered world [Account[XP:short] Character Name[Limon] Guid[DCG:" + guid + "]]", e), "bad account");
+    CHECK(!ParseEnteredWorld("ClientRequestDisconnect Account[XP:" + puid + "] Character Name[Limon] Guid[DCG:" + guid + "]", e),
+          "the save line on leaving is not an entry");
+    CHECK(ParseLoginRequest("LogNet: Login request: ?p=x?pf=PC?cpx=1?Name=Limon userId: RedpointEOS:" + puid + " platform: RedpointEOS") == puid, "login line");
+    CHECK(ParseLoginRequest("LogNet: Join request: /Game/Maps/Server/L_ServerStartup?Name=Limon").empty(), "a join line is not a login");
+    CHECK(ParseLoginRequest("LogNet: Login request: userId: RedpointEOS:xyz").empty(), "bad login id");
 }
 
 int main(int argc, char** argv) {
