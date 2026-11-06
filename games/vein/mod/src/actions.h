@@ -26,6 +26,9 @@ Result Players();
 Result Player(const std::string& gameId);
 Result PlayerLocation(const std::string& gameId);
 Result PlayerInventory(const std::string& gameId);
+// Skill levels from the cache the player snapshot keeps; never enters the game thread. 404 when the plugin
+// has neither a reading nor an online row for the player.
+Result PlayerProgression(const std::string& gameId);
 Result Items(const std::string& search);
 Result Entities();
 Result Locations();
