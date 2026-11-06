@@ -5,6 +5,7 @@ export const GAME_SERVER_ACTIONS = [
   'getPlayers',
   'getPlayerLocation',
   'getPlayerInventory',
+  'getPlayerProgression',
   'giveItem',
   'listItems',
   'listEntities',

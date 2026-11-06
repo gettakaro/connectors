@@ -64,6 +64,8 @@ export function mapPlayer(source: PlayerLike): TakaroPlayer {
   if (!gameId) throw new Error(`Dune player row has no usable identifier: ${JSON.stringify(row)}`);
 
   const player: TakaroPlayer = { gameId, name: characterName ?? str(row.name) ?? gameId };
+  const characterId = str(row.characterId);
+  if (characterId) player.character = { id: characterId, name: player.name };
   const platformName = (str(row.platformName) ?? '').toLowerCase();
   const steamId = platformIdRaw && (platformName.includes('steam') || isSteamId64(platformIdRaw)) ? platformIdRaw : null;
   if (steamId) {
@@ -104,4 +106,9 @@ export function gmPlayerId(row: Partial<DunePlayerRow>, kind: PlayerIdKind): str
   if (kind === 'funcom') return str(row.funcomId) ?? str(row.flsId);
   if (kind === 'name') return str(row.characterName) ?? str(row.flsId);
   return str(row.flsId) ?? str(row.funcomId);
+}
+
+/** A player from an older online store has no character to compare, which is not a switch. */
+export function switchedCharacter(before: TakaroPlayer, after: TakaroPlayer): boolean {
+  return Boolean(before.character && after.character && before.character.id !== after.character.id);
 }

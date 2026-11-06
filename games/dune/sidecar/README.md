@@ -43,6 +43,7 @@ be filled in from the hard-test run, not from unit tests.
 | getPlayer | untested | answers a real IGamePlayer for online, offline and never-seen players |
 | getPlayerLocation | untested | plugin (live) → last chat `m_OriginLocation` (live) → last **saved** pawn transform |
 | getPlayerInventory | untested | `inventories` type 0 + gear types ⋈ `items`, stacks aggregated |
+| getPlayerProgression | untested | the character's `FLevelComponent` (level from skill points, total XP) + `specialization_tracks` |
 | giveItem | untested | GM `AddItemToInventory`, read back from the DB; `verified:false` when not observed in time |
 | listItems | untested | placeholder catalogue only; the generator has not run yet |
 | listEntities | untested | placeholder catalogue only |

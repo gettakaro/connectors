@@ -1,6 +1,15 @@
 import { logger } from '../logger.js';
 import { num, str } from './identity.js';
-import type { DuneInventoryRow, DunePlayerRow, DuneReachability, Position, TakaroLocation } from './types.js';
+import type {
+  DuneCharacterLevelRow,
+  DuneInventoryRow,
+  DunePlayerRow,
+  DuneProgressionRows,
+  DuneReachability,
+  DuneSpecializationRow,
+  Position,
+  TakaroLocation,
+} from './types.js';
 
 /**
  * The only thing `pg.ts` needs from a driver. Tests inject `testing/mockBattlegroup`'s fake instead of `pg.Pool`, and
@@ -26,6 +35,7 @@ export interface DunePgOptions {
  */
 export const OPTIONAL_COLUMNS = {
   player_state: [
+    'id',
     'life_state',
     'death_location',
     'character_name',
@@ -34,6 +44,8 @@ export const OPTIONAL_COLUMNS = {
     'last_avatar_activity',
     'last_login_time',
     'player_pawn_id',
+    'player_controller_id',
+    'character_state',
     'account_id',
     'reconnect_grace_period_end',
     'transfer_count',
@@ -45,6 +57,9 @@ export const OPTIONAL_COLUMNS = {
   farm_state: ['server_id', 'alive', 'ready', 'connected_players', 'map'],
   inventories: ['inventory_type', 'actor_id', 'max_item_count'],
   items: ['template_id', 'stack_size', 'quality_level', 'position_index', 'inventory_id'],
+  actor_fgl_entities: ['actor_id', 'entity_id', 'slot_name'],
+  fgl_entities: ['entity_id', 'components'],
+  specialization_tracks: ['player_id', 'track_type', 'xp_amount', 'level'],
   /**
    * The shipped `markers` table is `(marker_hash_id, dimension_index, marker_type, position Vector, payload jsonb,
    * map_name_id)` — it has **no name and no transform**, only a dev-style `marker_type` and a numeric hash id. The
@@ -238,6 +253,7 @@ export class DunePg {
     select.push(this.has('accounts', 'platform_id') ? `COALESCE(acct.platform_id::text, '') AS platform_id` : `'' AS platform_id`);
     select.push(this.has('accounts', 'platform_name') ? `COALESCE(acct.platform_name::text, '') AS platform_name` : `'' AS platform_name`);
     select.push(this.has('player_state', 'account_id') ? `ps.account_id::int8 AS account_id` : `NULL::int8 AS account_id`);
+    select.push(this.has('player_state', 'id') ? `ps.id::text AS character_id` : `NULL::text AS character_id`);
     select.push(this.has('player_state', 'character_name') ? `COALESCE(ps.character_name, '') AS character_name` : `'' AS character_name`);
     select.push(this.has('player_state', 'online_status') ? `COALESCE(ps.online_status::text, '') AS online_status` : `'' AS online_status`);
     select.push(this.has('player_state', 'life_state') ? `COALESCE(ps.life_state::text, '') AS life_state` : `'' AS life_state`);
@@ -294,6 +310,7 @@ export class DunePg {
 
     const where: string[] = [];
     const params: unknown[] = [];
+    if (this.has('player_state', 'character_state')) where.push(`ps.character_state::text <> 'Deleted'`);
     // `PlayerConnectionStatus` has three values; only `Online` counts. `LoggingOut` is a player on the way out and is
     // deliberately excluded here so that presence sees them disappear exactly once.
     if (options.onlineOnly && this.has('player_state', 'online_status')) where.push(`ps.online_status::text = 'Online'`);
@@ -311,12 +328,16 @@ export class DunePg {
     }
     params.push(Math.max(1, Math.min(options.limit ?? 500, 5000)));
 
+    // One player's lookup answers their most recently played character, the same one `currentCharacter` reads.
+    const recent = options.flsId && seenCol ? `${seenCol} DESC NULLS LAST, ` : '';
+    const order = `${recent}${this.has('player_state', 'character_name') ? 'ps.character_name NULLS LAST, ' : ''}ps.account_id`;
+
     const sql =
       `SELECT ${select.join(',\n       ')}\n` +
       `  FROM ${this.t('player_state')} ps\n` +
       (joins.length ? `  ${joins.join('\n  ')}\n` : '') +
       (where.length ? ` WHERE ${where.join(' AND ')}\n` : '') +
-      ` ORDER BY ${this.has('player_state', 'character_name') ? 'ps.character_name NULLS LAST, ' : ''}ps.account_id\n` +
+      ` ORDER BY ${order}\n` +
       ` LIMIT $${params.length}`;
 
     const { rows } = await this.db.query<Record<string, unknown>>(sql, params);
@@ -405,6 +426,80 @@ export class DunePg {
   }
 
   /**
+   * What the character has reached, as the map process last saved it. `null` for `character` when this build lacks
+   * the tables or the character has no level component yet; a player with no specializations has no rows at all.
+   */
+  async progression(player: DunePlayerRow): Promise<DuneProgressionRows> {
+    const actors = player.accountId == null ? null : await this.currentCharacter(player.accountId);
+    if (!actors) return { character: null, specializations: [] };
+    return {
+      character: await this.characterLevel(actors.pawnId),
+      specializations: await this.specializations(actors.controllerId),
+    };
+  }
+
+  /**
+   * The actors of the account's most recently played character. An account can hold several, and a deleted one's row
+   * can outlive it, so reads keyed on the account alone would mix characters. Ids stay text: they are BIGINT.
+   */
+  private async currentCharacter(accountId: number): Promise<{ pawnId: string; controllerId: string } | null> {
+    const pawnCol = this.options.pawnColumn ?? 'player_pawn_id';
+    if (!this.has('player_state', pawnCol) || !this.has('player_state', 'player_controller_id')) return null;
+    const { rows } = await this.db.query<Record<string, unknown>>(
+      `SELECT ps.${quoteIdent(pawnCol)}::text AS pawn_id, ps.player_controller_id::text AS controller_id
+         FROM ${this.t('player_state')} ps
+        WHERE ps.account_id = $1::int8
+          ${this.has('player_state', 'character_state') ? `AND ps.character_state::text <> 'Deleted'` : ''}
+        ${this.has('player_state', 'last_avatar_activity') ? 'ORDER BY ps.last_avatar_activity DESC NULLS LAST' : ''}
+        LIMIT 1`,
+      [accountId],
+    );
+    const pawnId = str(rows[0]?.pawn_id);
+    const controllerId = str(rows[0]?.controller_id);
+    return pawnId && controllerId ? { pawnId, controllerId } : null;
+  }
+
+  private hasAll(table: TableName, columns: string[]): boolean {
+    return columns.every((column) => this.has(table, column));
+  }
+
+  private async characterLevel(pawnId: string): Promise<DuneCharacterLevelRow | null> {
+    if (!this.hasAll('fgl_entities', ['entity_id', 'components'])) return null;
+    if (!this.hasAll('actor_fgl_entities', ['actor_id', 'entity_id', 'slot_name'])) return null;
+    const { rows } = await this.db.query<Record<string, unknown>>(
+      `SELECT fe.components#>>'{FLevelComponent,1,TotalXPEarned}' AS total_xp_earned,
+              fe.components#>>'{FLevelComponent,1,TotalSkillPoints}' AS total_skill_points,
+              fe.components#>>'{FLevelComponent,1,KeystoneBonusSkillPoints}' AS keystone_bonus_skill_points
+         FROM ${this.t('actor_fgl_entities')} afe
+         JOIN ${this.t('fgl_entities')} fe ON fe.entity_id = afe.entity_id
+        WHERE afe.actor_id = $1::int8
+          AND afe.slot_name = 'DuneCharacter'
+          AND fe.components ? 'FLevelComponent'
+        LIMIT 1`,
+      [pawnId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      totalXpEarned: num(row.total_xp_earned),
+      totalSkillPoints: num(row.total_skill_points),
+      keystoneBonusSkillPoints: num(row.keystone_bonus_skill_points),
+    };
+  }
+
+  private async specializations(controllerId: string): Promise<DuneSpecializationRow[]> {
+    if (!this.hasAll('specialization_tracks', ['player_id', 'track_type', 'xp_amount', 'level'])) return [];
+    const { rows } = await this.db.query<Record<string, unknown>>(
+      `SELECT st.track_type::text AS track_type, st.level::float8 AS level, st.xp_amount::int8 AS xp_amount
+         FROM ${this.t('specialization_tracks')} st
+        WHERE st.player_id = $1::int8
+        ORDER BY st.track_type`,
+      [controllerId],
+    );
+    return rows.map((r) => ({ track: String(r.track_type ?? ''), level: num(r.level), xp: num(r.xp_amount) }));
+  }
+
+  /**
    * `listLocations`: the running map partitions plus the world's static markers. Takaro never calls this action in
    * practice, so it is a best-effort read that answers `[]` rather than failing when neither table is present.
    */
@@ -461,6 +556,7 @@ function toPlayerRow(r: Record<string, unknown>): DunePlayerRow {
     platformId: str(r.platform_id),
     platformName: str(r.platform_name),
     accountId: num(r.account_id),
+    characterId: str(r.character_id),
     characterName: str(r.character_name),
     onlineStatus: str(r.online_status),
     lifeState: str(r.life_state),

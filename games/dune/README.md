@@ -150,6 +150,7 @@ Checked on server build 26081962, 2026-10-22. ✅ works, ⚠️ works with a lim
 | Player location | ✅ | Live with the plugin; the last saved position without it. |
 | Teleport | ✅ | The position is re-read after moving. |
 | Player inventory | ✅ | Backpack and equipped gear. |
+| Player levels and skills | ⚠️ | Character level and XP. The five specializations are reported too, but have not been checked on a live server. |
 | Item list | ✅ | Built during installation, with display names. |
 | Entity list | ✅ | The full creature list needs the plugin. |
 | Locations | ⚠️ | Available, but Takaro does not ask Generic servers for them. |
