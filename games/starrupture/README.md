@@ -89,7 +89,7 @@ Checked on StarRupture 0.3.5 (Steam build 25642172), 2026-11-06. ✅ works, ⚠�
 | Entity killed | ❌ | Not reported. |
 | Server log lines | ❌ | Not sent. |
 | Discord chat bridge | ✅ | Both ways; use `chatBridgeNoEcho` to avoid echoes. |
-| Modules | ✅ | Chat commands, hooks and scheduled jobs work. |
+| Modules | ✅ | Chat commands and hooks work. |
 | Game name, version and icon | ✅ | |
 | Restarts and outages | ✅ | Takaro keeps the same server entry after a restart. |
 | Game updates | ⚠️ | ModLoader only runs on its own game build, so after a StarRupture update wait for a connector release that names the new server build. |
