@@ -58,7 +58,7 @@ while [ $# -gt 0 ]; do
     *) break ;;
   esac
 done
-[ -n "$IN" ] && [ -n "$OUT" ] || usage
+if [ -z "$IN" ] || [ -z "$OUT" ]; then usage; fi
 refuse_inside_worktree "$IN"
 refuse_inside_worktree "$OUT"
 IN="$(realpath "$IN")"
