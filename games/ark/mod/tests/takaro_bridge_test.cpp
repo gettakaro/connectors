@@ -655,6 +655,26 @@ void test_identify_rejected_backs_off() {
   bridge.stop();
 }
 
+void test_character_payloads() {
+  takaro::KnownPlayers known;
+  gate::Event event{};
+  event.seq = 1;
+  event.type = "chat-message";
+  event.id = kId;
+  event.name = "Limon";
+  event.message = "hi";
+  auto plain = takaro::map_event(event, known);
+  CHECK(plain && !plain->get("player")->get("character"));  // never invented
+  event.character = {"92463960", "Human"};
+  auto chat = takaro::map_event(event, known);
+  CHECK(chat && chat->get("player")->get("character")->get("id")->as_string() == "92463960");
+  CHECK(chat && chat->get("player")->get("character")->get("name")->as_string() == "Human");
+  event.type = "player-connected";
+  event.character = {"92463960", ""};  // an unreadable survivor name falls back to the player's
+  auto connected = takaro::map_event(event, known);
+  CHECK(connected && connected->get("player")->get("character")->get("name")->as_string() == "Limon");
+}
+
 void test_redaction_and_codec() {
   const std::string frame = R"({"type":"identify","payload":{"identityToken":"abc","registrationToken":"sekret"}})";
   const std::string redacted = takaro::redact_frame(frame);
@@ -706,12 +726,14 @@ void test_protocol_v1() {
   bridge.start();
   auto identify = takaro.wait_for([](const json::Value& m) { return is_type(m, "identify"); });
   CHECK(identify && identify->get("payload")->get("protocolVersions"));
-  bool locations = false, map = false, progression = false;
+  bool locations = false, map = false, progression = false, characters = false;
   if (identify)
     for (const auto& c : identify->get("payload")->get("capabilities")->as_array()) {
       locations |= c.get("name")->as_string() == "locations.list";
       if (c.get("name")->as_string() == "players.progression")
         progression = c.get("parameters")->get("source")->as_string() == "server";
+      if (c.get("name")->as_string() == "players.characters")
+        characters = c.get("parameters")->get("held")->as_string() == "server" && !c.get("parameters")->get("ends");
       if (c.get("name")->as_string() != "map") continue;
       const auto& dim = c.get("parameters")->get("dimensions")->as_array()[0];
       map = dim.get("id")->as_string() == "TheIsland" &&
@@ -720,7 +742,7 @@ void test_protocol_v1() {
             dim.get("axes")->get("vertical")->get("direction")->as_string() == "down" &&
             dim.get("source")->get("type")->as_string() == "none";
     }
-  CHECK(locations && map && progression);
+  CHECK(locations && map && progression && characters);
   CHECK(!takaro::map_dimension("Ragnarok"));  // no declared map without a verified calibration
   CHECK(eventually([&] { return bridge.identified(); }));
   // Structured errors instead of silence.
@@ -1021,6 +1043,7 @@ void test_server_chat_name() {
 
 int main() {
   test_redaction_and_codec();
+  test_character_payloads();
   test_identify_and_wire();
   test_events_cursor_and_outage_replay();
   test_bans_and_expiry();
