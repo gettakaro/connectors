@@ -19,6 +19,8 @@ namespace TakaroEmpyrion.Game
         public bool HasPosition;
         public int Ping;
         public string Ip;
+        public int Experience;      // PlayerInfo.exp at the last reading, kept for offline players
+        public bool HasExperience;
         public DateTime LastSeenUtc;
     }
 
