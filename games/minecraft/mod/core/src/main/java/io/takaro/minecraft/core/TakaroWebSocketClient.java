@@ -285,10 +285,13 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     @Override
     public void emitChatMessage(String gameId, String playerName, String channel, String message) {
         JsonObject data = new JsonObject();
-        JsonObject player = new JsonObject();
-        player.addProperty("gameId", gameId);
-        player.addProperty("name", playerName);
-        data.add("player", player);
+        // The server console has no player; Takaro takes a chat message without one.
+        if (gameId != null) {
+            JsonObject player = new JsonObject();
+            player.addProperty("gameId", gameId);
+            player.addProperty("name", playerName);
+            data.add("player", player);
+        }
         data.addProperty("channel", channel);
         data.addProperty("msg", message);
         sendGameEvent("chat-message", data);

@@ -215,6 +215,17 @@ class ProtocolV1Test {
     }
 
     @Test
+    void consoleChatIsSentWithoutAPlayer() throws Exception {
+        TakaroWebSocketClient client = client(true, new EventOutbox("stream-d"));
+        client.onOpen(null);
+        client.onMessage(identifyResponse(1));
+        client.emitChatMessage(null, null, "global", "server restart soon");
+        JsonObject data = sentOfType("gameEvent").get(0).getAsJsonObject("payload").getAsJsonObject("data");
+        assertEquals("server restart soon", data.get("msg").getAsString());
+        assertFalse(data.has("player"));
+    }
+
+    @Test
     void eventsCarryStreamAndSeqAndAreResentUntilAcked() throws Exception {
         EventOutbox outbox = new EventOutbox("stream-a");
         TakaroWebSocketClient client = client(true, outbox);
