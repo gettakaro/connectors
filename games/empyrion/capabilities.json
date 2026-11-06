@@ -127,6 +127,12 @@
       "responseShape": "{mimeType,data}",
       "reason": "protocol v1: one Dimension per generated planet, tiles rendered from terrain.raw + biomes.dat",
       "liveVerified": false
+    },
+    "getGameIcon": {
+      "status": "live-supported",
+      "responseShape": "{revision,data}",
+      "reason": "protocol v1: the shipped icon, declared in game.profile",
+      "liveVerified": false
     }
   },
   "events": {

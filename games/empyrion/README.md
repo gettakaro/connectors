@@ -112,5 +112,6 @@ Checked on Empyrion v1.19.6 build 5188 (Steam build 25490402), 2026-11-03. ✅ w
 | Server log lines | ⚠️ | Playfield load and unload lines are sent; Takaro does not store them, but module hooks can react to them. |
 | Discord chat bridge | ✅ | Both ways; use `chatBridgeNoEcho` to avoid echoes. |
 | Modules | ✅ | Chat commands, teleports, scheduled jobs and hooks work. |
+| Game name, version and icon | ✅ | The icon can take up to about two hours to appear on a fresh install. |
 
 Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).

@@ -39,6 +39,7 @@ public static partial class ContractTests
         Run("map real data", MapRealData);
         Run("wire v1", WireV1);
         Run("progression", ProgressionTests);
+        Run("game profile", GameProfileTests);
         Console.WriteLine("\n" + _pass + " passed, " + _fail + " failed");
         Console.Out.Flush();
         // Background protocol threads are still alive; exit hard so Mono's teardown cannot mask the result.
@@ -167,7 +168,7 @@ public static partial class ContractTests
         Check(same, "capabilities.json == Coverage registry",
             string.Join(", ", fromCode.Where(kv => !fromJson.TryGetValue(kv.Key, out string s) || s != kv.Value).Select(kv => kv.Key)));
         Check(Actions.Supported.All(a => fromCode.ContainsKey(a)), "every handled action has a coverage entry");
-        Check(Coverage.All.Count(e => e.Kind == "action") == 20 && Coverage.All.Count(e => e.Kind == "event") == 6, "20 actions + 6 events classified");
+        Check(Coverage.All.Count(e => e.Kind == "action") == 21 && Coverage.All.Count(e => e.Kind == "event") == 6, "21 actions + 6 events classified");
     }
 
     // ------------------------------------------------------------------ wire (fake Takaro + fake game)
@@ -351,6 +352,51 @@ public static partial class ContractTests
         JToken progression = manifest.FirstOrDefault(c => (string)c["name"] == "players.progression");
         Check(progression != null && (string)progression["parameters"]["source"] == "client-reported", "manifest declares players.progression as client-reported");
         Check(manifest.Count(c => c["parameters"] != null) == 1, "no other capability gains parameters");
+    }
+
+    static void GameProfileTests()
+    {
+        Check(GameProfile.ParseBuildNumber("5188 \r\nv1.19.6\r\n") == "1.19.6 b5188", "BuildNumber.txt becomes the game version");
+        Check(GameProfile.ParseBuildNumber("5188") == null && GameProfile.ParseBuildNumber("") == null, "an incomplete BuildNumber.txt gives no version");
+
+        byte[] icon = GameProfile.LoadEmbeddedIcon();
+        Check(icon != null && icon.Length <= 128 * 1024 && icon[1] == (byte)'P' && icon[2] == (byte)'N' && icon[3] == (byte)'G', "the icon is embedded, a PNG, within Takaro's limit");
+        var profile = new GameProfile("1.2.3", "1.19.6 b5188", icon);
+
+        var identify = new JObject();
+        profile.AddToIdentify(identify);
+        Check((string)identify["game"] == "empyrion", "identify names the game");
+        Check((string)identify["connector"]["name"] == "takaro-empyrion" && (string)identify["connector"]["version"] == "1.2.3", "identify names the connector");
+
+        JObject parameters = (JObject)Capabilities.Build(Actions.Declared, null, profile).First(c => (string)c["name"] == "game.profile")["parameters"];
+        Check((string)parameters["name"] == "Empyrion - Galactic Survival" && (string)parameters["version"] == "1.19.6 b5188", "game.profile carries name and version");
+        JObject answer = profile.IconAnswer();
+        Check((string)answer["revision"] == (string)parameters["icon"]["revision"], "getGameIcon answers the declared revision");
+        Check(Convert.FromBase64String((string)answer["data"]).Length == (int)parameters["icon"]["size"], "getGameIcon answers the declared size");
+
+        var noVersion = new JObject();
+        new GameProfile("1.2", null, null).AddToIdentify(noVersion);
+        Check(noVersion["connector"] == null && (string)noVersion["game"] == "empyrion", "a connector version that is not semver is left out");
+
+        string root = Path.Combine(Path.GetTempPath(), "takaro-profile-" + Guid.NewGuid().ToString("N"));
+        string mod = Path.Combine(root, "Content", "Mods", "TakaroEmpyrion");
+        Directory.CreateDirectory(mod);
+        Check(GameProfile.ReadGameVersion(mod) == null, "a server without BuildNumber.txt gives no version");
+        File.WriteAllText(Path.Combine(root, "BuildNumber.txt"), "5188 \r\nv1.19.6\r\n");
+        Check(GameProfile.ReadGameVersion(mod) == "1.19.6 b5188", "the version is read from the server root above the mod folder");
+        Directory.Delete(root, true);
+
+        var actions = new Actions(new GameBridge(new ConsoleLog()), new FakeV2(), new PlayerRegistry(null), new Catalog(), null, new Config(), new ConsoleLog(), new BanReasons(null), _ => { });
+        bool refused = false;
+        try { actions.Run("getGameIcon", Args.Parse(new JObject())).GetAwaiter().GetResult(); }
+        catch (UnknownActionException) { refused = true; }
+        Check(refused, "getGameIcon without a profile is unsupported");
+        actions.Profile = profile;
+        JToken served = actions.Run("getGameIcon", Args.Parse(new JObject())).GetAwaiter().GetResult();
+        Check((string)served["revision"] == (string)parameters["icon"]["revision"], "getGameIcon is served through the action handler");
+
+        JObject bare = new GameProfile("1.2.3", new string('x', 33), null).ToCapability();
+        Check(bare["parameters"]["version"] == null && bare["parameters"]["icon"] == null, "an unusable version or icon is left out");
     }
 
     static void Wire()

@@ -55,11 +55,14 @@ namespace TakaroEmpyrion.Game
             _banReasons = banReasons; _onShutdown = onShutdown; _map = map;
         }
 
+        /// <summary>Set once at start-up; serves getGameIcon.</summary>
+        public GameProfile Profile;
+
         public static readonly string[] Supported =
         {
             "testReachability", "getPlayers", "getPlayer", "getPlayerLocation", "getPlayerInventory", "getPlayerProgression", "giveItem", "listItems",
             "listEntities", "listLocations", "executeConsoleCommand", "sendMessage", "teleportPlayer", "kickPlayer", "banPlayer",
-            "unbanPlayer", "listBans", "shutdown", "getMapTile",
+            "unbanPlayer", "listBans", "shutdown", "getMapTile", "getGameIcon",
         };
 
         /// <summary>
@@ -104,6 +107,7 @@ namespace TakaroEmpyrion.Game
                 case "listBans": return await ListBans();
                 case "shutdown": return await Shutdown();
                 case "getMapTile": return await Task.Run(() => GetMapTile(a));
+                case "getGameIcon": return Profile?.IconAnswer() ?? throw new UnknownActionException(action);
                 default: throw new UnknownActionException(action);
             }
         }
