@@ -1,6 +1,6 @@
 -- Player progression: turns what the game adapter read from a prisoner into Takaro Progression Tracks. No game or
 -- transport symbols here. SCUM has no single character level, so there is no `character` track: every skill is a
--- track (`skill.<name>`), with the game's own level (0 = no skill .. 4 = above advanced) and experience points.
+-- track (`skill.<name>`), with the game's own level (0 = no skill .. 4 = above advanced), experience and progress.
 local M = {}
 
 -- ESkillReplicationID, the id in UPrisonerSkillComponent._replicatedSkills records, with the name the game shows.
@@ -31,6 +31,10 @@ M.SKILLS = {
 
 M.MAX_SKILL_LEVEL = 4
 
+-- Experience for a full level, read off the percentages on the client's stats screen. Experience starts again at 0
+-- on every level. Higher levels are not known, so their tracks carry no progress.
+M.LEVEL_EXPERIENCE = { [0] = 10000, [1] = 100000, [2] = 1000000 }
+
 local function whole(v)
   return type(v) == "number" and v == v and v >= 0 and v <= M.MAX_SKILL_LEVEL and math.floor(v) == v
 end
@@ -47,6 +51,8 @@ function M.skill_tracks(records)
       if type(r.experience) == "number" and r.experience == r.experience and r.experience >= 0
         and r.experience < math.huge then
         t.experience = r.experience
+        local full = M.LEVEL_EXPERIENCE[t.level]
+        if full then t.progress = math.min(r.experience / full, 1) end
       end
       out[#out + 1] = t
     end
