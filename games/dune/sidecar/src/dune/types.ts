@@ -21,6 +21,8 @@ export interface DunePlayerRow {
   platformId?: string | null;
   platformName?: string | null;
   accountId?: number | null;
+  /** `player_state.id`: the character's row, kept for its whole life and independent of its name. */
+  characterId?: string | null;
   characterName?: string | null;
   /**
    * `player_state.online_status::text`. The real enum is `PlayerConnectionStatus = Offline | LoggingOut | Online`
@@ -94,6 +96,12 @@ export interface DuneReachability {
   expectedPartitions?: number;
 }
 
+/** The player's current character, on `getPlayers`, `getPlayer` and every player in a pushed event. */
+export interface TakaroCharacter {
+  id: string;
+  name: string;
+}
+
 /** One Progression Track, as `getPlayerProgression` answers it. */
 export interface TakaroProgressionTrack {
   key: string;
@@ -107,6 +115,7 @@ export interface TakaroProgressionTrack {
 export interface TakaroPlayer {
   gameId: string;
   name: string;
+  character?: TakaroCharacter;
   /** Only set on a last-known record answered for a player who is not online (see adapter.getPlayer). */
   online?: boolean;
   steamId?: string;
