@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/gettakaro/connectors/compare/terraria-v0.8.0...terraria-v0.8.1) (2026-11-06)
+
+
+### Miscellaneous Chores
+
+* license connectors under AGPL-3.0 ([#820](https://github.com/gettakaro/connectors/issues/820)) ([2da9b8e](https://github.com/gettakaro/connectors/commit/2da9b8e10709398871f1bdf7310fc7ab0d8d543c))
+
 ## [0.8.0](https://github.com/gettakaro/connectors/compare/terraria-v0.7.0...terraria-v0.8.0) (2026-10-31)
 
 
