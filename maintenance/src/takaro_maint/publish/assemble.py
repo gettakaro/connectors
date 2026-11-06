@@ -22,8 +22,8 @@ from . import compat_record
 from .checksums import write_checksums
 from .manifest import read_manifest
 
-#: The verification ladder, lowest first. ``gameplay`` is a level a target may demand and this
-#: harness never produces, which is exactly why it has to be ranked rather than ignored.
+#: The verification ladder, lowest first. ``gameplay`` is reached only by a game whose harness
+#: drives a player (Minecraft); a target of any other game that demands it can never be met.
 RANKS: tuple[str, ...] = ("none", *LEVELS, "gameplay")
 
 #: Files a legacy ``--dist`` directory holds that are descriptions of a build, not assets of it.
@@ -249,11 +249,6 @@ def evidence_for(
 ) -> tuple[dict[str, Any], Path | None, bool]:
     """What this target's verification proves, or the reason it does not prove enough."""
     required = str(target.record["verification"]["required"])
-    if required == "gameplay":
-        raise VerificationFailed(
-            f"{target.id} requires gameplay evidence, which this harness does not produce",
-            target=target.id,
-        )
     found = reports.get(target.id)
     if found is None:
         if rank(required) >= rank("startup"):
