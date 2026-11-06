@@ -28,8 +28,8 @@ t.test("skill_tracks keeps level and experience and leaves out hidden skills", f
     { id = 12, level = 0, experience = 0 },
   })
   t.deep(tracks, {
-    { key = "skill.brawling", name = "Brawling", level = 0, experience = 0 },
-    { key = "skill.running", name = "Running", level = 2, experience = 36.5 },
+    { key = "skill.brawling", name = "Brawling", level = 0, experience = 0, progress = 0 },
+    { key = "skill.running", name = "Running", level = 2, experience = 36.5, progress = 36.5 / 1000000 },
   })
 end)
 
@@ -51,6 +51,15 @@ t.test("skill_tracks omits an experience that is not a finite number", function(
   for _, xp in ipairs({ 0 / 0, math.huge, -1, "x" }) do
     t.eq(progression.skill_tracks({ { id = 3, level = 1, experience = xp } })[1].experience, nil)
   end
+end)
+
+t.test("progress follows the level's experience scale and stops at 1; unknown levels carry none", function()
+  local function track(level, xp) return progression.skill_tracks({ { id = 3, level = level, experience = xp } })[1] end
+  t.eq(track(0, 101).progress, 0.0101)
+  t.eq(track(1, 14200).progress, 0.142)
+  t.eq(track(0, 20000).progress, 1)
+  t.eq(track(3, 500).progress, nil)
+  t.eq(track(3, 500).experience, 500)
 end)
 
 local function adapter(records)
