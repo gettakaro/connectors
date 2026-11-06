@@ -13,6 +13,7 @@ import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.server.RemoteServerCommandEvent;
 import org.bukkit.event.server.ServerCommandEvent;
 
 public class TakaroPaperEventListener implements Listener {
@@ -56,11 +57,20 @@ public class TakaroPaperEventListener implements Listener {
         );
     }
 
-    /** Also fires for RCON: RemoteServerCommandEvent extends this one. */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onConsoleCommand(ServerCommandEvent event) {
+        emitConsoleSay(event.getCommand());
+    }
+
+    /** RCON has its own handler list, so the listener above does not see it. */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onRconCommand(RemoteServerCommandEvent event) {
+        emitConsoleSay(event.getCommand());
+    }
+
+    private void emitConsoleSay(String command) {
         EventEmitter emitter = plugin.getEventEmitter();
-        String text = ConsoleChat.sayText(event.getCommand());
+        String text = ConsoleChat.sayText(command);
         if (emitter == null || text == null) return;
         emitter.emitChatMessage(null, null, "global", text);
     }
