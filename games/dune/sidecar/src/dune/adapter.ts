@@ -81,6 +81,7 @@ export class DuneAdapter {
   private readonly known = new Map<string, TakaroPlayer>();
   private readonly options: AdapterOptions;
 
+  private lastReachability: { connectable: boolean; reason: string | null; at: string } | null = null;
   private lastLocation: Record<string, unknown> | null = null;
   private readonly locationSourceCounts: Record<string, number> = {};
 
@@ -118,6 +119,8 @@ export class DuneAdapter {
       bans: 'connector-enforced',
       catalogue: this.options.catalogue.status(),
       shutdownHook: Boolean(this.options.shutdownCmd),
+      // `/health` `ok` only covers Postgres, so a stopped map shows up here. Takaro asks about once a minute; `at` dates it.
+      gameReachability: this.lastReachability,
     };
   }
 
@@ -176,6 +179,12 @@ export class DuneAdapter {
   // --- reads ---------------------------------------------------------------
 
   async testReachability(): Promise<{ connectable: boolean; reason: string | null }> {
+    const result = await this.checkReachability();
+    this.lastReachability = { ...result, at: new Date().toISOString() };
+    return result;
+  }
+
+  private async checkReachability(): Promise<{ connectable: boolean; reason: string | null }> {
     try {
       const pg = await this.options.pg.reachability();
       const problems: string[] = [];
