@@ -44,6 +44,10 @@ struct BridgeOptions {
     std::string healthFile;  // when set, the health snapshot is also written here every few seconds
     // When set, takaro.json is re-read while running (bridge thread) and the console banners shown.
     ConfigWatcher* watcher = nullptr;
+    // Above 0 the transport starts with connect=false and the bridge dials only once
+    // Game::ReadyToConnect() is true, or after this long. Takaro syncs a new server's catalogues
+    // once, within about 30 s of its first identify, and then only hourly.
+    int64_t holdConnectMs = 0;
 };
 
 class Bridge {
@@ -82,6 +86,7 @@ private:
     void HandleRequest(uint64_t epoch, const JsonValue& msg);
     void Complete(const std::shared_ptr<Job>& job);
     void CheckDeadlines(int64_t now);
+    void CheckConnectHold(int64_t now);
     void SendResponse(uint64_t epoch, FrameKind kind, const std::string& frame);
     void PollEvents();
     void DeliverEvents();
@@ -124,6 +129,7 @@ private:
     uint64_t nextJobId_ = 1;
     bool outboxDirty_ = false;
     int64_t lastOutboxSave_ = 0, nextPoll_ = 0, nextPublish_ = 0, nextHealthFile_ = 0;
+    int64_t connectHoldUntil_ = 0;  // 0: not holding
     std::string storeNotes_;
 
     uint64_t requests_ = 0, responses_ = 0, errorResponses_ = 0, duplicates_ = 0, malformed_ = 0, overloads_ = 0,

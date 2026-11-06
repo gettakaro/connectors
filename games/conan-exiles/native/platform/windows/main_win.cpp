@@ -250,7 +250,7 @@ void StartConnector() {
     wc.caFile = cfg.caFile;
     wc.reconnectBaseMs = cfg.reconnectBaseMs;
     wc.reconnectMaxMs = cfg.reconnectMaxMs;
-    wc.connect = cfg.enabled;
+    wc.connect = cfg.enabled && !ao.ready;  // a working build dials once the bridge's hold ends
     auto* transport = new takaro::WinHttpTransport(wc);
     takaro::BridgeOptions bo;
     bo.config = cfg;
@@ -259,6 +259,7 @@ void StartConnector() {
     bo.store = store;
     bo.healthFile = takaro::JoinPath(cfg.stateDir, "health.json");
     bo.watcher = watcher;
+    if (ao.ready) bo.holdConnectMs = conan::kCatalogueHoldMs;
     auto* bridge = new takaro::Bridge(bo);
     bridge->Start();
     // Game events: hook subscriptions (verified builds only) and the server log tail, as on Linux.

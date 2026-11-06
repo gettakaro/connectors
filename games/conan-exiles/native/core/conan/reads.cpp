@@ -708,6 +708,11 @@ const PlayerRecord* ReadService::Match(const std::vector<PlayerRecord>& players,
 }
 
 // ---------------------------------------------------------------- lists
+bool ReadService::CataloguesReady() {
+    std::lock_guard<std::mutex> l(catMu_);
+    return !itemsJson_.empty() && !entitiesJson_.empty() && !locationsJson_.empty();
+}
+
 ActionResult ReadService::ListResult(const std::string& action) {
     std::unique_lock<std::mutex> l(catMu_);
     auto have = [&] {

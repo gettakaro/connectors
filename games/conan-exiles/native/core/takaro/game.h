@@ -36,6 +36,9 @@ public:
     virtual std::string CapabilityManifest() { return ""; }
     // Bridge thread, cheap. The game and connector identity sent in identify.
     virtual ConnectorIdentity Identity() { return {}; }
+    // Bridge thread, cheap. False while the connector could not yet answer the catalogue requests a
+    // new registration triggers; the bridge then holds its first connection (see BridgeOptions).
+    virtual bool ReadyToConnect() { return true; }
     // Bridge thread. Moves the events produced since the last call into `out`; never blocks.
     virtual void DrainEvents(std::vector<GameEvent>& out) = 0;
     // Any thread. A small JSON object for the health snapshot (pins, readiness, perf).
