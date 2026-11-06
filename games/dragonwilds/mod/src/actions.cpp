@@ -247,6 +247,7 @@ struct PlayerInfo {
     std::string gameId;
     std::string name;          // platform / account name
     std::string characterName; // in-game display name
+    std::string characterId;   // the game's character GUID, once the character has loaded
     std::string steamId;
     std::string xboxLiveId;
     int ping = 0;
@@ -312,9 +313,13 @@ bool ReadPlayer(void* ps, PlayerInfo& out) {
     out.playerState = ps;
     out.gameId = PlayerStateGameId(ps);
     out.name = ReadFStringAt(ps, Off(ps, "PlayerNamePrivate"));
-    out.characterName = CharacterNameOf(ps);
-    if (out.characterName.empty()) out.characterName = state::CharacterName(out.gameId);
-    else if (!out.gameId.empty()) state::NoteCharacterName(out.gameId, out.characterName);
+    state::SessionCharacter character = state::CurrentCharacter(out.gameId);
+    out.characterId = character.id;
+    out.characterName = character.name;
+    if (out.characterName.empty()) {
+        out.characterName = CharacterNameOf(ps);
+        if (!out.gameId.empty()) state::NoteCharacterName(out.gameId, out.characterName);
+    }
     Eos::Linked linked;
     Eos::LinkedAccounts(out.gameId, linked);
     out.steamId = linked.steamId;
@@ -363,6 +368,8 @@ std::string PlayerJson(const PlayerInfo& p) {
                     ",\"epicOnlineServicesId\":" + JsonStr(p.gameId) + ",\"platformId\":" + JsonStr("epic:" + p.gameId);
     if (!p.steamId.empty()) o += ",\"steamId\":" + JsonStr(p.steamId);
     if (!p.xboxLiveId.empty()) o += ",\"xboxLiveId\":" + JsonStr(p.xboxLiveId);
+    if (!p.characterId.empty())
+        o += ",\"character\":{\"id\":" + JsonStr(p.characterId) + ",\"name\":" + JsonStr(p.characterName) + "}";
     o += ",\"ping\":" + std::to_string(p.ping) + ",\"spawned\":" + (p.spawned ? "true" : "false") +
          ",\"online\":true,\"inWorld\":" + (Events::InWorld(p.gameId) ? "true" : "false") +
          ",\"connectedAt\":" + JsonStr(FirstSeen(p.gameId)) + "}";

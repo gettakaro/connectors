@@ -270,6 +270,15 @@ int main() {
         Check(connected({{"gameId", A}, {"name", "Hendrik"}, {"characterName", "Limon"}}) ==
                   Json({{"gameId", A}, {"name", "Limon"}, {"epicOnlineServicesId", A}, {"platformId", "epic:" + A}}),
               "gameId = PUID, platformId epic:<puid>, name = character name");
+        const Json reported = {{"id", "41C4B04F"}, {"name", "Limon"}};
+        Check(connected({{"gameId", A}, {"characterName", "Limon"}, {"character", reported}})["character"] == reported,
+              "the character travels with the player");
+        Check(!connected({{"gameId", A}, {"character", {{"id", "41C4B04F"}}}}).contains("character") &&
+                  !connected({{"gameId", A}, {"character", {{"id", ""}, {"name", "Limon"}}}}).contains("character") &&
+                  !connected({{"gameId", A}, {"character", {{"id", std::string(256, 'a')}, {"name", "Limon"}}}}).contains("character") &&
+                  !connected({{"gameId", A}, {"character", "41C4B04F"}}).contains("character") &&
+                  !connected({{"gameId", A}, {"character", nullptr}}).contains("character"),
+              "a character Takaro would refuse is left out, the player still goes through");
         Check(connected({{"gameId", A}, {"name", "Hendrik"}})["name"] == "Hendrik", "name falls back to platform name");
         Check(connected({{"gameId", A}})["name"] == A, "then to the id");
         Check(connected({{"gameId", A}, {"steamId", STEAM}})["steamId"] == STEAM &&
@@ -619,12 +628,22 @@ int main() {
             for (auto& l : join)
                 for (auto& e : log.Feed(l)) events.push_back(e);
             Check(events.size() == 1 && events[0].type == "player-connected" &&
-                      Parse(events[0].dataJson) == Json({{"player", {{"gameId", A}, {"name", "takarotester"}}}}),
-                  "join only from `PlayerChar entered world`");
+                      Parse(events[0].dataJson) == Json({{"player", {{"gameId", A}, {"name", "takarotester"},
+                                                                     {"character", {{"id", DCG}, {"name", "takarotester"}}}}}}),
+                  "join only from `PlayerChar entered world`, with the character");
             Check(log.Feed(join[3]).empty(), "duplicate entered-world line ignored");
+            {
+                const std::string other = "76DD6D2045B36BA186F00896CB753AD7";
+                auto swap = log.Feed("LogDominionPlayerControllerBase: PlayerChar entered world [Account[XP:" + A + "] Character Name[Limon] Guid[DCG:" + other + "] Type[0]]");
+                Check(swap.size() == 1 && swap[0].type == "player-connected" && Parse(swap[0].dataJson)["player"]["character"]["id"] == other,
+                      "another character with no leave seen is reported as a new session");
+                auto back = log.Feed(join[3]);
+                Check(back.size() == 1 && Parse(back[0].dataJson)["player"]["character"]["id"] == DCG, "and so is switching back");
+            }
             auto leave = log.Feed("LogDominionPlayerController: ClientRequestDisconnect : DisconnectMe : PlayerStateSave result[true] - state saved for Account[XP:" +
                                   A + "] Character Name[takarotester] Guid[DCG:" + DCG + "] Type[0]");
             Check(leave.size() == 1 && leave[0].type == "player-disconnected", "clean leave");
+            Check(Parse(leave[0].dataJson)["player"]["character"]["id"] == DCG, "a leave names the character");
             Check(log.Feed("LogNet: UChannel::CleanUp: ChIndex == 0. Closing connection. UniqueId: RedpointEOS:" + A).empty(),
                   "CleanUp after a leave is no duplicate");
             log.Feed(join[3]);
@@ -669,6 +688,8 @@ int main() {
             Check(std::find(names.begin(), names.end(), "testReachability") == names.end(), "testReachability is not a capability");
             const Json progression = *std::find_if(manifest.begin(), manifest.end(), [](const Json& c) { return c["name"] == "players.progression"; });
             Check(progression["parameters"] == Json{{"source", "client-reported"}}, "progression is declared client-reported");
+            const Json characters = *std::find_if(manifest.begin(), manifest.end(), [](const Json& c) { return c["name"] == "players.characters"; });
+            Check(characters["parameters"] == Json{{"held", "client"}}, "characters are declared client-held, with no ending");
             // The map: one Dimension, an operator-uploaded picture, the survey calibration.
             Check(std::count(names.begin(), names.end(), "map") == 1, "map capability declared once");
             const Json map = *std::find_if(manifest.begin(), manifest.end(), [](const Json& c) { return c["name"] == "map"; });

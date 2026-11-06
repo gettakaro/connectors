@@ -128,6 +128,7 @@ struct Parser::Impl {
     Re login, urlName, entered, disconnect, disconnectName, cleanup;
     Re urlPassword, passwordKeys, passwordAssignment, secretAssignment, noise;
     std::map<std::string, std::string> present;   // in-world puid -> character name
+    std::map<std::string, std::string> characterIds;  // puid -> character GUID, last entered world
     std::map<std::string, std::string> loginIds;  // platform name -> puid (Login request:)
     std::map<std::string, std::string> known;     // character name -> puid, for a name-only leave
     std::string mode = "auto", events = "filtered";
@@ -254,10 +255,12 @@ std::vector<Parsed> Parser::Feed(const std::string& raw) {
     }
 
     const bool tail = TailConnections();
-    auto player = [](const std::string& id, const std::string& name) {
+    auto player = [&s](const std::string& id, const std::string& name) {
         Json p = Json::object();
         if (!id.empty()) p["gameId"] = id;
         if (!name.empty()) p["name"] = name;
+        auto guid = s.characterIds.find(id);
+        if (guid != s.characterIds.end() && !name.empty()) p["character"] = {{"id", guid->second}, {"name", name}};
         return Json{{"player", p}}.dump();
     };
     auto bound = [](std::map<std::string, std::string>& m) { while (m.size() > 500) m.erase(m.begin()); };
@@ -272,9 +275,16 @@ std::vector<Parsed> Parser::Feed(const std::string& raw) {
     }
     if (auto h = match(s.entered); h.matched) {
         std::string id = Lower(h.groups[0]), name = Trim(h.groups[1]);
-        if (s.present.count(id)) return out;  // character swap / duplicate line: already connected
+        // The same line again is a duplicate. Another character on a player we never saw leave is a
+        // new session, and Takaro learns of a switch from player-connected.
+        const std::string guid = h.groups.size() > 2 ? h.groups[2] : "";
+        auto seen = s.characterIds.find(id);
+        const bool otherCharacter = !guid.empty() && seen != s.characterIds.end() && seen->second != guid;
+        if (s.present.count(id) && !otherCharacter) return out;
         s.present[id] = name;
         bound(s.present);
+        if (!guid.empty()) { s.characterIds[id] = guid; bound(s.characterIds); }
+        else s.characterIds.erase(id);
         if (!name.empty()) { s.known[name] = id; bound(s.known); }
         if (tail) out.push_back({"player-connected", player(id, name)});
         return out;
