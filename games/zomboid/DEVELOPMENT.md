@@ -99,7 +99,7 @@ release is published from a run whose verification failed.
 | | |
 |---|---|
 | Trigger | push to `main` and pull requests touching `games/zomboid/**`, `catalog/zomboid/**`, `maintenance/**`, `scripts/**` or the two workflows; release-please's `workflow_call`. A pull request that changes none of the connector's build inputs (`scripts/pr-build-scope.sh`) skips the build and so the verify leg. |
-| Runner | `ubuntu-latest` (x86_64, 4 vCPU, 16 GB RAM), Docker from the image. No secrets, no Steam account: the depots are anonymous. |
+| Runner | `ubuntu-24.04` (x86_64, 4 vCPU, 16 GB RAM), Docker from the image. No secrets, no Steam account: the depots are anonymous. |
 | Disk | ~15 GB: the depot cache (7.2 GB) and its installed copy (7.2 GB), plus the server image. |
 | Memory | the server container is capped at 3 GB (`MAX_RAM=2048m` heap). |
 | Time | 40 min job budget; the leg took 5 min with a cold cache and 3½ min with the depot cache warm, of which the boot to `*** SERVER STARTED ***` is about 100 s. `runtime_depot_cache: true` keeps the three depots under the `zomboid-depots-<fp16>` cache key (2.1 GB compressed), saved even when a check failed, so only a re-pinned target downloads again. |
