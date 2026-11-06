@@ -152,8 +152,7 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
             {
                 Console.WriteLine($"[Takaro CS2] Authenticated player remembered: {player.GameId}.");
                 knownPlayers[player.GameId] = player;
-                var store = playerStore;
-                _ = Task.Run(() => store?.Remember(player));
+                playerStore?.Remember(player);
             }
             if (controller is not null) knownBySlot[controller.Slot] = player;
             // The player is connected once fully in game, even while still choosing a team.
