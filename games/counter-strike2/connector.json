@@ -5,7 +5,7 @@
   "requirements": [
     "Linux x86-64 Counter-Strike 2 dedicated server build listed in the catalog",
     "Metamod:Source 2.0.0.1483",
-    "CounterStrikeSharp 1.0.377 with .NET 10 runtime",
+    "CounterStrikeSharp 1.0.379 with .NET 10 runtime",
     "Source 2 Viewer CLI 20.1 for local map asset extraction during installation",
     "Takaro registration token"
   ],
