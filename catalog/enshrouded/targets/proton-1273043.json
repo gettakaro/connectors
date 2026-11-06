@@ -4,12 +4,14 @@
   "game": "enshrouded",
   "platform": "proton",
   "revision": "1273043",
-  "default": true,
+  "default": false,
   "support": {
-    "status": "candidate",
-    "since": "2026-10-21",
-    "evidence": [],
-    "notes": "Enshrouded 1.0 public Steam build 26083076 (game build 1273043, 2026-10-20); per-build plugin data re-derived against this exe, real game and client verification recorded in the PR."
+    "status": "retired",
+    "since": "2026-11-02",
+    "evidence": [
+      "games/enshrouded/README.md (verified 2026-10-21 on game build 1273043 with a real client)"
+    ],
+    "notes": "Superseded by proton-1283531: Steam public moved on (build 26319703 on 2026-10-30), so this build is no longer on the public branch. Its plugin data section stays in mod/gamedata/enshrouded-gamedata.json; the compiled item table now follows the 1283531 export (7 items added, one removed), so the catalogue and giveItem report degraded on this build."
   },
   "inputs": {
     "server": {
