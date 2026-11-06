@@ -13,12 +13,22 @@ public sealed class Cs2MapAssets
     private readonly Dictionary<string, MapData> loaded = new(StringComparer.Ordinal);
     private readonly object gate = new();
 
-    public Cs2MapAssets(string directory) => this.directory = directory;
+    private readonly Action<string> log;
+
+    public Cs2MapAssets(string directory, Action<string>? log = null)
+    {
+        this.directory = directory;
+        this.log = log ?? (_ => { });
+    }
 
     /// <summary>The protocol v1 map Dimension for a prepared map, or null when its assets are missing.</summary>
     public object? DescribeDimension(string map)
     {
-        if (!TryLoad(map, out var data, out _)) return null;
+        if (!TryLoad(map, out var data, out var reason))
+        {
+            log($"Map is not available to Takaro: {reason}");
+            return null;
+        }
         return new
         {
             id = map,

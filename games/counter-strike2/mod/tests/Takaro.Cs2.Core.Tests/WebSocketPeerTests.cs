@@ -66,6 +66,29 @@ public sealed class WebSocketPeerTests
         Assert.AreEqual(stream, resent.GetProperty("streamId").GetString());
     }
 
+    [TestMethod]
+    public async Task ResendsTheManifestWhenItChangedDuringIdentify()
+    {
+        var portSocket = new TcpListener(IPAddress.Loopback, 0);
+        portSocket.Start();
+        var port = ((IPEndPoint)portSocket.LocalEndpoint).Port;
+        portSocket.Stop();
+        using var listener = new HttpListener();
+        listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+        listener.Start();
+        var adapter = new PeerAdapter();
+        using var runner = new TakaroWebSocketRunner(new ConnectorConfig { TakaroWsUrl = $"ws://127.0.0.1:{port}/", IdentityToken = "test-identity" }, adapter);
+        await runner.StartAsync();
+
+        using var peer = (await (await listener.GetContextAsync().WaitAsync(TimeSpan.FromSeconds(10))).AcceptWebSocketAsync(null)).WebSocket;
+        Assert.AreEqual("identify", Type(await Receive(peer)));
+        adapter.Capabilities = [new { name = "players.list" }, new { name = "map" }];
+        await Send(peer, """{"type":"identifyResponse","payload":{"gameServerId":"test","protocolVersion":1}}""");
+        var replaced = JsonDocument.Parse(await Receive(peer)).RootElement;
+        Assert.AreEqual("capabilities", replaced.GetProperty("type").GetString());
+        Assert.AreEqual(2, replaced.GetProperty("payload").GetProperty("capabilities").GetArrayLength());
+    }
+
     private static string Type(string json) => JsonDocument.Parse(json).RootElement.GetProperty("type").GetString()!;
 
     private static async Task Send(WebSocket socket, string json) =>
@@ -81,7 +104,8 @@ public sealed class WebSocketPeerTests
     private sealed class PeerAdapter : ICs2TakaroAdapter
     {
         public Task<object?> GetPlayerProgressionAsync(string identifier, CancellationToken cancellationToken = default) => Task.FromResult<object?>(null);
-        public IReadOnlyList<object> GetCapabilities() => [new { name = "players.list" }];
+        public IReadOnlyList<object> Capabilities { get; set; } = [new { name = "players.list" }];
+        public IReadOnlyList<object> GetCapabilities() => Capabilities;
         public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) => Ok();
         public Task<IReadOnlyList<TakaroPlayer>> GetPlayersAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<TakaroPlayer>>([]);
         public Task<TakaroPlayer?> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default) => Task.FromResult<TakaroPlayer?>(null);
