@@ -45,6 +45,28 @@ std::string HumaniseCode(const std::string& code);
 // An empty or path-only input comes back empty.
 std::string ItemCodeFromSoftPath(const std::string& raw);
 
+// ---- player progression ---------------------------------------------------------------------
+// One skill as UStatComponent holds it. `xpFloor`/`xpNext` are the XP totals at the start of this
+// level and of the next one; `xpNext <= xpFloor` means the curve ends here and progress is omitted.
+struct ProgressionStat {
+    std::string code;  // the UStat class short name
+    std::string name;  // the game's display text; may be empty
+    int level = 0;
+    double xp = 0;
+    double xpFloor = 0;
+    double xpNext = 0;
+};
+
+// Turns a UStat class name into a Takaro track key: the `ST_` and Blueprint decorations stripped,
+// the rest in lower camel case. Empty when nothing valid remains.
+//     ST_WeaponHandling_C -> weaponHandling
+//     ST_Strength_C       -> strength
+std::string ProgressionKey(const std::string& code);
+
+// The `getPlayerProgression` payload. Takaro rejects a whole reading over one bad track, so a stat
+// with no valid key, a repeated key or a non-finite XP value is left out instead of sent.
+std::string ProgressionTracksJson(const std::vector<ProgressionStat>& stats);
+
 // Splits on whitespace.
 std::vector<std::string> Words(const std::string& s);
 // Everything after the first `skipWords` whitespace-separated words, leading space stripped.
@@ -200,5 +222,14 @@ std::string GuidDigits(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
 // character stands in the world: the character-creation pawn sits in a lobby scene far outside
 // the map, and reporting it puts the player off the map and draws a false path on it.
 std::string LocationRefusal(bool hasPawn, bool spawned, bool hasLoc, const std::string& pawnClass);
+
+// Takaro's `character` object, or "" when the id is unknown. Takaro needs a name, so the persona
+// stands in for the seconds before the server log names the character.
+std::string CharacterJson(const std::string& id, const std::string& name, const std::string& fallbackName);
+
+// What to tell an operator whose identify was refused, beyond Takaro's own words. Takaro gives its
+// generic internal error when the server name is already taken in the domain, and a deleted server
+// keeps its name. Returns "" when the refusal is something else.
+std::string RefusalHint(const std::string& why, const std::string& serverName);
 
 }  // namespace ActionsUtil

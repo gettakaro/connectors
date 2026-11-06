@@ -1,6 +1,8 @@
 #include "actions_util.h"
 
 #include <cmath>
+#include <cstring>
+#include <set>
 #include <cstdint>
 #include <cstdio>
 #include <cctype>
@@ -348,4 +350,59 @@ std::string ActionsUtil::LocationRefusal(bool hasPawn, bool spawned, bool hasLoc
                "), so there is no position in the world";
     if (!hasLoc) return "pawn has no readable root component";
     return "";
+}
+
+std::string ActionsUtil::ProgressionKey(const std::string& code) {
+    std::string s = code;
+    if (s.size() > 2 && s.compare(s.size() - 2, 2, "_C") == 0) s = s.substr(0, s.size() - 2);
+    for (const char* prefix : {"BP_", "ST_"})
+        if (s.rfind(prefix, 0) == 0) s = s.substr(strlen(prefix));
+    std::string key;
+    bool upperNext = false;
+    for (char c : s) {
+        if (!isalnum((unsigned char)c)) {
+            upperNext = !key.empty();
+            continue;
+        }
+        if (key.empty()) key += (char)tolower((unsigned char)c);
+        else key += upperNext ? (char)toupper((unsigned char)c) : c;
+        upperNext = false;
+    }
+    if (key.empty() || !islower((unsigned char)key[0]) || key.size() > 128) return "";
+    return key;
+}
+
+std::string ActionsUtil::ProgressionTracksJson(const std::vector<ProgressionStat>& stats) {
+    std::set<std::string> seen;
+    std::string out = "[";
+    for (const ProgressionStat& s : stats) {
+        if (seen.size() >= 200) break;
+        const std::string key = ProgressionKey(s.code);
+        if (key.empty() || key == "character" || !std::isfinite(s.xp) || !seen.insert(key).second) continue;
+        const std::string fallback = HumaniseCode(s.code.rfind("ST_", 0) == 0 ? s.code.substr(3) : s.code);
+        const std::string name = (s.name.empty() ? fallback : s.name).substr(0, 128);
+        if (out.size() > 1) out += ",";
+        out += "{\"key\":" + JsonStr(key) + ",\"name\":" + JsonStr(name) + ",\"level\":" +
+               std::to_string(s.level) + ",\"experience\":" + JsonNum(s.xp);
+        if (s.xpNext > s.xpFloor) {
+            double progress = (s.xp - s.xpFloor) / (s.xpNext - s.xpFloor);
+            progress = progress < 0 ? 0 : progress > 1 ? 1 : progress;
+            out += ",\"progress\":" + JsonNum(progress);
+        }
+        out += "}";
+    }
+    return out + "]";
+}
+
+std::string ActionsUtil::RefusalHint(const std::string& why, const std::string& serverName) {
+    if (why.find("Internal error identifying") == std::string::npos) return "";
+    return "If this is a new server: Takaro answers this when the name \"" + serverName +
+           "\" is already used in your domain, even by a deleted server. Set another TAKARO_SERVER_NAME.";
+}
+
+std::string ActionsUtil::CharacterJson(const std::string& id, const std::string& name,
+                                       const std::string& fallbackName) {
+    const std::string shown = (name.empty() ? fallbackName : name).substr(0, 255);
+    if (id.empty() || shown.empty()) return "";
+    return "{\"id\":" + JsonStr(id) + ",\"name\":" + JsonStr(shown) + "}";
 }
