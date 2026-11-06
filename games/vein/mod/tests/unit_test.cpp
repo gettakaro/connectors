@@ -976,6 +976,12 @@ static void TestStackSplit() {
     CHECK(withinLimit, "no instance ever exceeds the item's own stack limit");
 }
 
+static void TestRefusalHint() {
+    const std::string hint = ActionsUtil::RefusalHint("Internal error identifying game server", "My Server");
+    CHECK(hint.find("\"My Server\"") != std::string::npos, "names the server");
+    CHECK(ActionsUtil::RefusalHint("Invalid registrationToken provided", "My Server").empty(), "other refusals get no hint");
+}
+
 static void TestProgression() {
     using ActionsUtil::ProgressionKey;
     using ActionsUtil::ProgressionStat;
@@ -1544,6 +1550,7 @@ int main() {
     TestStackSplit();
     TestPlayerInventoryClassGuard();
     TestProgression();
+    TestRefusalHint();
     TestCharacterIdFormatting();
     TestKillWeaponName();
     TestLocationRefusal();
