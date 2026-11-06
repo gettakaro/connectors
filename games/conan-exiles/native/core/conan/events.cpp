@@ -50,13 +50,13 @@ enum N {
     N_UserIDFromURLOptions, N_PlayerState, N_PlayerNamePrivate, N_SavedNetworkAddress, N_Controller,
     N_m_CharacterName, N_SourceSpawnTable, N_OwnerItem, N_TemplateId, N_ConanPlayerController,
     N_ConanCharacter, N_InventoryItemBase, N_GameItem, N_Conv_TextToString, N_GetItemName,
-    N_K2_GetActorLocation, N_InText, N_ReturnValue, N_Pawn, N_UniqueID, N_Count
+    N_K2_GetActorLocation, N_InText, N_ReturnValue, N_Pawn, N_UniqueID, N_CharacterStableId, N_CharacterName, N_Count
 };
 const char* const kNames[N_Count] = {
     "UserIDFromURLOptions", "PlayerState", "PlayerNamePrivate", "SavedNetworkAddress", "Controller",
     "m_CharacterName", "SourceSpawnTable", "OwnerItem", "TemplateId", "ConanPlayerController",
     "ConanCharacter", "InventoryItemBase", "GameItem", "Conv_TextToString", "GetItemName",
-    "K2_GetActorLocation", "InText", "ReturnValue", "Pawn", "UniqueID",
+    "K2_GetActorLocation", "InText", "ReturnValue", "Pawn", "UniqueID", "CharacterStableId", "CharacterName",
 };
 uint32_t g_n[N_Count];
 std::atomic<bool> g_namesReady{false};
@@ -71,6 +71,8 @@ struct LazyOff {
 };
 
 // ------------------------------------------------------------------------- captured (to worker)
+constexpr uint64_t kConnectAfterPossessMs = 500, kConnectTimeoutMs = 120000, kConnectNameWaitMs = 500;
+constexpr int kConnectNameWaits = 30;
 enum class Kind { Connected, Disconnected, Chat, Death, Killed, DeferredLogin };
 struct Captured {
     Kind kind;
@@ -85,7 +87,7 @@ struct Captured {
 struct Stats {
     std::atomic<uint64_t> connected{0}, disconnected{0}, chat{0}, deaths{0}, kills{0}, logs{0};
     std::atomic<uint64_t> deferredLogins{0}, unknownLogout{0}, unknownChat{0}, deathNoIdentity{0}, killsNotByPlayer{0},
-        dedupedDeaths{0}, pendingDeaths{0}, notReady{0}, dropped{0}, textConversions{0}, connectWaitedForPawn{0},
+        dedupedDeaths{0}, pendingDeaths{0}, notReady{0}, dropped{0}, textConversions{0}, connectWaitedForPawn{0}, connectWithoutCharacter{0}, charactersReplaced{0},
         connectTimedOut{0}, leftBeforeSpawn{0}, refusedLogins{0};
     std::atomic<uint64_t> deathHandlerMaxNs{0};
 };
@@ -119,7 +121,7 @@ struct GT {
     std::unordered_map<uint32_t, std::string> entityBySpawnRow;  // SourceSpawnTable FName -> name
     std::unordered_map<int32_t, std::string> weaponByTemplate;
     LazyOff offUserId, offPlayerState, offPlayerName, offIp, offPawnController, offCharName, offSpawnRow,
-        offOwnerItem, offTemplateId, offControllerPawn, offUniqueId;
+        offOwnerItem, offTemplateId, offControllerPawn, offUniqueId, offCharacterId, offPlayerCharName;
     bool loggedIdSource = false;
     UER::TextConv conv;
     bool convTried = false;
@@ -143,8 +145,15 @@ struct Shared {
         uintptr_t pc = 0;
         PlayerId id;
         uint64_t tLogin = 0, emitAt = 0;  // emitAt 0: no character yet
+        int nameWaits = 0;  // CharacterName arrives a little after the stable id
+        // Set on a relog: Takaro already has this player online, as `left` while hasLeft.
+        bool relog = false, hasLeft = false;
+        PlayerId left;
     };
     std::vector<PendingLogin> pendingLogins;
+    // A possession by a player already online: a respawn, or the new character after Recreate
+    // Character, which happens inside the session without a logout.
+    std::vector<std::pair<uintptr_t, uint64_t>> pendingPossessions;  // controller, check at
     std::atomic<int> pendingLoginCount{0};
     bool stopping = false;
     std::thread worker;
@@ -205,15 +214,58 @@ bool ReadIdentity(uintptr_t pc, PlayerId& out) {
     return out.Valid();
 }
 
+// The character this controller plays now. Keeps what `id` holds when no character is loaded: a
+// player's last events (death, logout) can come after the pawn has gone.
+void ReadCharacter(uintptr_t pc, PlayerId& id) {
+    GT& g = G();
+    int32_t po = g.offControllerPawn.Get(pc, N_Pawn);
+    uintptr_t pawn = po >= 0 ? rd<uintptr_t>(pc + (uintptr_t)po) : 0;
+    if (!UER::Live(pawn) || !UER::IsA(pawn, g_n[N_ConanCharacter])) return;
+    int32_t co = g.offCharacterId.Get(pawn, N_CharacterStableId);
+    const int64_t character = co >= 0 ? rd<int64_t>(pawn + (uintptr_t)co) : 0;
+    if (character <= 0) return;
+    id.characterId = std::to_string(character);
+    int32_t no = g.offPlayerCharName.Get(pawn, N_CharacterName);
+    if (no >= 0) id.characterName = UER::ReadFString(pawn + (uintptr_t)no, 256);
+}
+
+// Takaro switches a Character only on a connect, so a character replaced inside the session is
+// sent as a relog: the old one leaves, the new one connects once its name is readable.
+void QueueRelog(uintptr_t pc, const PlayerId& before, const PlayerId& now) {
+    std::lock_guard<std::mutex> lk(Sh().mu);
+    for (auto& pending : Sh().pendingLogins)
+        if (pending.pc == pc) {  // one entry per controller: its connect now names the newest character
+            pending.id = now;
+            return;
+        }
+    Shared::PendingLogin pl;
+    pl.pc = pc;
+    pl.id = now;
+    pl.tLogin = NowMs();
+    pl.emitAt = pl.tLogin + kConnectAfterPossessMs;
+    pl.relog = pl.hasLeft = true;
+    pl.left = before;
+    Sh().pendingLogins.push_back(pl);
+    Sh().pendingLoginCount = (int)Sh().pendingLogins.size();
+}
+
 // Identity of a controller: the login cache first, then a live read.
 bool IdentityOf(uintptr_t pc, PlayerId& out) {
     GT& g = G();
     auto it = g.byController.find(pc);
     if (it != g.byController.end()) {
+        const PlayerId before = it->second;
+        ReadCharacter(pc, it->second);
+        if (events::NeedsRelog(before, it->second)) {
+            Sh().st.charactersReplaced++;
+            it->second.connectedWithoutCharacter = false;
+            QueueRelog(pc, before, it->second);
+        }
         out = it->second;
         return true;
     }
     if (!ReadIdentity(pc, out)) return false;
+    ReadCharacter(pc, out);
     if (out.name.empty()) {
         auto s = g.bySteam.find(out.steam64);
         if (s != g.bySteam.end()) out.name = s->second.name;
@@ -414,7 +466,6 @@ void FinishDeath(const PendingDeath& pd, const Killer& k) {
 
 // ------------------------------------------------------------------------------------- handlers
 
-constexpr uint64_t kConnectAfterPossessMs = 500, kConnectTimeoutMs = 120000;
 
 // Game thread. Queues player-connected; it is sent once the controller has a pawn.
 void QueueConnect(uintptr_t pc, const PlayerId& id) {
@@ -487,8 +538,8 @@ bool OnLogout(const Call& c, void*) {
             auto& pl = Sh().pendingLogins;
             for (size_t i = 0; i < pl.size(); i++)
                 if (pl[i].pc == pc) {
+                    wasPending = !pl[i].relog;  // a relog's player is online in Takaro: the logout counts
                     pl.erase(pl.begin() + (long)i);
-                    wasPending = true;
                     break;
                 }
             Sh().pendingLoginCount = (int)pl.size();
@@ -552,6 +603,10 @@ bool OnPossessed(const Call& c, void*) {
                 pl.emitAt = NowMs() + kConnectAfterPossessMs;
                 Sh().st.connectWaitedForPawn++;
             }
+    }
+    if (pc && g.byController.count(pc)) {
+        std::lock_guard<std::mutex> lk(Sh().mu);
+        Sh().pendingPossessions.push_back({pc, NowMs() + kConnectAfterPossessMs});
     }
     return true;
 }
@@ -744,10 +799,76 @@ void WorkerLoop() {
             Sh().pendingLoginCount = (int)pl.size();
         }
         for (auto& l : dueLogins) {
+            if (l.hasLeft) {  // always ahead of the connect: Takaro must see the old character go first
+                Captured left;
+                left.kind = Kind::Disconnected;
+                left.a = l.left;
+                Deliver(left);
+                l.hasLeft = false;
+            }
             Captured e;
             e.kind = Kind::Connected;
             e.a = l.id;
+            bool gone = false;
+            GameThread::Run(
+                [&] {
+                    gone = !IsPlayerController(l.pc);
+                    if (gone) return;
+                    PlayerId id;
+                    IdentityOf(l.pc, id);
+                    e.a.characterId = id.characterId;
+                    e.a.characterName = id.characterName;
+                },
+                1000);
+            if (gone && l.relog) continue;  // logged out in between: its disconnect is already out
+            // Takaro keeps the name it gets on the connect, so wait for it, for at most 15 s. A
+            // connect that timed out has no pawn yet (the player is on the creation screen).
+            if (l.emitAt && e.a.characterName.empty() && l.nameWaits < kConnectNameWaits) {
+                Shared::PendingLogin again = l;
+                again.nameWaits++;
+                again.emitAt = NowMs() + kConnectNameWaitMs;
+                std::lock_guard<std::mutex> lk(Sh().mu);
+                bool taken = false;  // a replacement queued while this one was out of the list
+                for (auto& pending : Sh().pendingLogins) taken = taken || pending.pc == l.pc;
+                if (!taken) Sh().pendingLogins.push_back(again);
+                Sh().pendingLoginCount = (int)Sh().pendingLogins.size();
+                continue;
+            }
+            if (e.a.characterId.empty()) {
+                Sh().st.connectWithoutCharacter++;
+                // The character arrives later: its first sighting is then sent as a relog.
+                GameThread::Run(
+                    [&] {
+                        auto it = G().byController.find(l.pc);
+                        if (it != G().byController.end() && it->second.characterId.empty())
+                            it->second.connectedWithoutCharacter = true;
+                    },
+                    1000);
+            }
+            if (l.nameWaits) NativeLog("events: connect waited %d ms for the character name (%s)", l.nameWaits * (int)kConnectNameWaitMs, e.a.characterName.empty() ? "not read" : "read");
             Deliver(e);
+        }
+        std::vector<uintptr_t> possessions;
+        {
+            std::lock_guard<std::mutex> lk(Sh().mu);
+            auto& pp = Sh().pendingPossessions;
+            const uint64_t now = NowMs();
+            for (size_t i = 0; i < pp.size();) {
+                if (now >= pp[i].second) {
+                    possessions.push_back(pp[i].first);
+                    pp.erase(pp.begin() + (long)i);
+                } else {
+                    i++;
+                }
+            }
+        }
+        for (uintptr_t pc : possessions) {
+            GameThread::Run(
+                [&] {
+                    PlayerId id;
+                    if (IsPlayerController(pc) && G().byController.count(pc)) IdentityOf(pc, id);
+                },
+                1000);
         }
         if (!g_namesReady.load() && UE::HaveGlobals()) {
             std::vector<std::string> list(kNames, kNames + N_Count);
@@ -902,6 +1023,8 @@ std::string EventsHealthJson() {
                             .Done())
         .N("deferredLogins", n(st.deferredLogins))
         .N("connectWaitedForPawn", n(st.connectWaitedForPawn))
+        .N("connectWithoutCharacter", n(st.connectWithoutCharacter))
+        .N("charactersReplaced", n(st.charactersReplaced))
         .N("connectTimedOut", n(st.connectTimedOut))
         .N("leftBeforeSpawn", n(st.leftBeforeSpawn))
         .N("refusedLogins", n(st.refusedLogins))

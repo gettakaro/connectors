@@ -14,6 +14,8 @@ using UE::Reflection;
 bool PlayerLayout::ResolveProgression(const Reflection& r, std::string& missing) {
     progression = false;
     missing.clear();
+    uintptr_t conanCharacter = r.Type("ConanCharacter");
+    characterId = conanCharacter ? r.Offset(conanCharacter, "CharacterStableId", "StructProperty", 8) : -1;
     auto off = [&](const char* cls, const char* name, const char* t, int32_t size) {
         uintptr_t st = r.Type(cls);
         int32_t o = st ? r.Offset(st, name, t, size) : -1;
@@ -138,6 +140,7 @@ bool PlayerReader::Players(const std::vector<uintptr_t>& gameStates, std::vector
             uintptr_t pawn = m_.Rd<uintptr_t>(p.pc + (uintptr_t)l_.pcPawn);
             if (pawn && r_.Alive(pawn)) {
                 p.pawn = pawn;
+                if (l_.characterId >= 0 && r_.InstanceOf(pawn, l_.baseBPChar)) m_.Get(pawn + (uintptr_t)l_.characterId, p.characterId);
                 if (r_.InstanceOf(pawn, l_.baseBPChar)) m_.ReadFString(pawn + (uintptr_t)l_.characterName, p.characterName, 256);
             }
             out.push_back(std::move(p));

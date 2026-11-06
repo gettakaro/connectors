@@ -620,6 +620,7 @@ bool ReadService::WarmupStep(std::string& status) {
     }
     bool done = cat->HaveItems() && cat->HaveEntities() && cat->HaveLocations() && textCheck_ != Check::Pending &&
                 !refreshAfterJoin_;
+    if (cat->HaveItems() && textCheck_ != Check::Pending) cataloguesChecked_ = true;
     status = std::string("items ") + (cat->HaveItems() ? "ok" : itemsErr) + ", entities " +
              (cat->HaveEntities() ? "ok" : entErr) + ", locations " +
              (cat->HaveLocations() ? (markersForced_ ? "ok (table loaded without a player)" : "ok") : locErr) +
@@ -685,6 +686,12 @@ std::string ReadService::PlayerJson(const PlayerRecord& p) {
     if (!p.ip.empty()) b.S("ip", p.ip);
     // Only once the ExactPing offset is proven (or through the engine getter after a failure).
     if (p.ping >= 0 && pingCheck_ != Check::Pending) b.N("ping", (double)std::lround(p.ping));
+    if (p.characterId > 0) {
+        b.Raw("character", ObjBuilder()
+                               .S("id", std::to_string(p.characterId))
+                               .S("name", !p.characterName.empty() ? p.characterName : name)
+                               .Done());
+    }
     return b.Done();
 }
 
@@ -709,6 +716,7 @@ const PlayerRecord* ReadService::Match(const std::vector<PlayerRecord>& players,
 
 // ---------------------------------------------------------------- lists
 bool ReadService::CataloguesReady() {
+    if (!cataloguesChecked_) return false;  // a failed text check still rebuilds the names
     std::lock_guard<std::mutex> l(catMu_);
     return !itemsJson_.empty() && !entitiesJson_.empty() && !locationsJson_.empty();
 }
