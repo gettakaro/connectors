@@ -194,6 +194,7 @@ public static partial class ContractTests
         public readonly List<KeyValuePair<CmdId, object>> Requests = new List<KeyValuePair<CmdId, object>>();
         public readonly Dictionary<int, PlayerInfo> Players = new Dictionary<int, PlayerInfo>();
         public Inventory Inv;
+        public int SilentPlayerInfo;
         public void Console_Write(string txt) { }
         public ulong Game_GetTickTime() { return 0; }
         public bool Game_Request(CmdId reqId, ushort seqNr, object data)
@@ -205,6 +206,7 @@ public static partial class ContractTests
                 case CmdId.Request_Player_List: Bridge.OnGameEvent(CmdId.Event_Player_List, seqNr, new IdList { list = Players.Keys.ToList() }); break;
                 case CmdId.Request_Player_Info:
                     int id = ((Id)data).id;
+                    if (SilentPlayerInfo > 0) { SilentPlayerInfo--; return false; }
                     if (Players.TryGetValue(id, out PlayerInfo pi)) Bridge.OnGameEvent(CmdId.Event_Player_Info, seqNr, pi);
                     else Bridge.OnGameEvent(CmdId.Event_Error, seqNr, new ErrorInfo(ErrorType.PlayerIdNotFound));
                     break;
@@ -323,6 +325,27 @@ public static partial class ContractTests
             Check(loaded.HasExperience && loaded.Experience == 814, "the reading survives a server restart");
         }
         finally { File.Delete(path); }
+
+        // A joining client can stay silent on the first read; the join must survive it.
+        actions.JoinRetryGapMs = 1;
+        game.Players[101] = new PlayerInfo { entityId = 101, steamId = "76561198000000001", playerName = "Tester", playfield = "Akua", pos = new PVector3(1, 2, 3), exp = 900 };
+        var emitted = new BlockingCollection<KeyValuePair<string, JObject>>();
+        var events = new Events(actions, players, new Catalog(), log, (type, data) => emitted.Add(new KeyValuePair<string, JObject>(type, data)));
+        game.SilentPlayerInfo = 2;
+        events.OnLegacyEvent(CmdId.Event_Player_Connected, new Id(101));
+        Check(emitted.TryTake(out KeyValuePair<string, JObject> join, 4000) && join.Key == "player-connected" && (string)join.Value["player"]["gameId"] == "76561198000000001" && game.SilentPlayerInfo == 0,
+            "player-connected survives a client that stays silent on the first reads");
+
+        game.SilentPlayerInfo = 99;
+        events.OnLegacyEvent(CmdId.Event_Player_Connected, new Id(101));
+        Check(!emitted.TryTake(out KeyValuePair<string, JObject> _, 300), "a join that never answers emits nothing, never a guessed identity");
+        game.SilentPlayerInfo = 0;
+
+        int asked;
+        lock (game.Requests) asked = game.Requests.Count;
+        events.OnLegacyEvent(CmdId.Event_Player_Connected, new Id(555));
+        Check(!emitted.TryTake(out KeyValuePair<string, JObject> _, 300), "a player the game reports gone emits nothing");
+        lock (game.Requests) Check(game.Requests.Count == asked + 1, "a game error is not retried");
 
         JArray manifest = Capabilities.Build(Actions.Declared, null);
         JToken progression = manifest.FirstOrDefault(c => (string)c["name"] == "players.progression");
