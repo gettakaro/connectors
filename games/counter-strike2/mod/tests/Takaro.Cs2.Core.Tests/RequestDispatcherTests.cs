@@ -103,30 +103,22 @@ public sealed class RequestDispatcherTests
     }
 
     [TestMethod]
-    public async Task ReportsUnavailableMapAsDisabled()
+    public async Task MapInfoIsNotAVersionOneAction()
     {
         var dispatcher = new TakaroRequestDispatcher(new FakeAdapter());
         var result = await dispatcher.DispatchAsync(Request("getMapInfo", """{}"""));
-
-        Assert.IsTrue(result.Success);
-        var map = JsonSerializer.SerializeToElement(result.Payload);
-        Assert.IsFalse(map.GetProperty("enabled").GetBoolean());
-        Assert.AreEqual(0, map.GetProperty("mapSizeX").GetInt32());
+        Assert.AreEqual("unsupported_action", result.Error?.Code);
     }
 
     [TestMethod]
-    public async Task MapTileAcceptsTakaroStringIndicesAndZoomAlias()
+    public async Task MapTileReadsTheVersionOneArguments()
     {
         var adapter = new FakeAdapter();
         var dispatcher = new TakaroRequestDispatcher(adapter);
-        var result = await dispatcher.DispatchAsync(Request("getMapTile", """{"x":"-2","y":"3","z":"4"}"""));
-        Assert.AreEqual("unsupported", result.Error?.Code);
-        Assert.AreEqual((-2, 3, 4), adapter.LastTile);
+        await dispatcher.DispatchAsync(Request("getMapTile", """{"dimension":"de_dust2","zoom":3,"x":1,"y":2}"""));
+        Assert.AreEqual((1, 2, 3), adapter.LastTile);
 
-        result = await dispatcher.DispatchAsync(Request("getMapTile", """{"x":1,"y":2,"zoom":0}"""));
-        Assert.AreEqual((1, 2, 0), adapter.LastTile);
-
-        result = await dispatcher.DispatchAsync(Request("getMapTile", """{"x":1.5,"y":2,"z":0}"""));
+        var result = await dispatcher.DispatchAsync(Request("getMapTile", """{"dimension":"de_dust2","zoom":0,"x":1.5,"y":2}"""));
         Assert.AreEqual("invalid_args", result.Error?.Code);
     }
 
@@ -176,6 +168,7 @@ public sealed class RequestDispatcherTests
 
     private sealed class FakeAdapter : ICs2TakaroAdapter
     {
+        public IReadOnlyList<object> GetCapabilities() => [];
         public string? LastMessage { get; private set; }
         public string? LastRecipient { get; private set; }
         public string? LastSender { get; private set; }
@@ -216,8 +209,6 @@ public sealed class RequestDispatcherTests
         }
         public Task<TakaroActionResult> ListItemsAsync(CancellationToken cancellationToken = default) => Unsupported();
         public Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default) => Unsupported();
-        public Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(TakaroActionResult.Ok(new { enabled = false, mapBlockSize = 0, maxZoom = 0, mapSizeX = 0, mapSizeY = 0, mapSizeZ = 0 }));
         public Task<TakaroActionResult> GetMapTileAsync(int x, int y, int zoom, CancellationToken cancellationToken = default)
         {
             LastTile = (x, y, zoom);

@@ -6,22 +6,38 @@ namespace Takaro.Cs2.Core;
 
 public sealed class Cs2MapAssets
 {
-    private const int TilePixels = 128;
-    private const int MaxZoom = 4;
+    private const int TilePixels = 256;
+    private const int MaxZoom = 3;
+    private const int SpawnRadius = 256;
     private readonly string directory;
     private readonly Dictionary<string, MapData> loaded = new(StringComparer.Ordinal);
     private readonly object gate = new();
 
     public Cs2MapAssets(string directory) => this.directory = directory;
 
-    public TakaroActionResult GetInfo(string map)
+    /// <summary>The protocol v1 map Dimension for a prepared map, or null when its assets are missing.</summary>
+    public object? DescribeDimension(string map)
     {
-        if (!TryLoad(map, out var data, out _))
-            return TakaroActionResult.Ok(new { enabled = false, mapBlockSize = 0, maxZoom = 0, mapSizeX = 0, mapSizeY = 0, mapSizeZ = 0 });
-        var extent = (int)Math.Ceiling(Math.Max(data.Width, data.Height) * data.Scale);
-        return TakaroActionResult.Ok(new { enabled = true, mapBlockSize = TilePixels, maxZoom = MaxZoom,
-            mapSizeX = extent, mapSizeY = extent, mapSizeZ = extent });
+        if (!TryLoad(map, out var data, out _)) return null;
+        return new
+        {
+            id = map,
+            name = map,
+            axes = new
+            {
+                horizontal = new { field = "x", direction = "right" },
+                vertical = new { field = "y", direction = "up" }
+            },
+            bounds = new
+            {
+                horizontal = new { min = data.MinX, max = data.MaxX },
+                vertical = new { min = data.MinY, max = data.MaxY }
+            },
+            source = new { type = "tiled", tileSize = TilePixels, minZoom = 0, maxZoom = MaxZoom }
+        };
     }
+
+    public bool HasLocations(string map) => TryLoad(map, out var data, out _) && data.Locations.Length > 0;
 
     public TakaroActionResult ListLocations(string map)
     {
@@ -38,22 +54,22 @@ public sealed class Cs2MapAssets
             return TakaroActionResult.Fail("invalid_args", $"Map zoom must be between 0 and {MaxZoom}.");
         if (!TryLoad(map, out var data, out var reason))
             return TakaroActionResult.Fail("map_unavailable", reason);
-        var worldSize = TilePixels * (1 << (MaxZoom - zoom));
-        var left = (long)x * worldSize;
-        var bottom = (long)y * worldSize;
-        if (left >= data.MaxX || left + worldSize <= data.MinX ||
-            bottom >= data.MaxY || bottom + worldSize <= data.MinY)
-            return TakaroActionResult.Fail("tile_out_of_range", "The requested tile does not overlap this map.");
+        if (x < 0 || y < 0 || x >= 1 << zoom || y >= 1 << zoom)
+            return TakaroActionResult.Fail("tile_out_of_range", "The requested tile is outside this zoom level.");
+        var frame = Math.Max(data.MaxX - data.MinX, data.MaxY - data.MinY);
+        var worldSize = frame / (1 << zoom);
+        var left = data.MinX + x * worldSize;
+        var top = data.MaxY - y * worldSize;
         lock (data.Tiles)
             if (data.Tiles.TryGetValue((x, y, zoom), out var cached))
-                return TakaroActionResult.Ok(cached);
+                return TakaroActionResult.Ok(new { mimeType = "image/png", data = cached });
 
         var rgba = new byte[TilePixels * TilePixels * 4];
         for (var row = 0; row < TilePixels; row++)
         for (var column = 0; column < TilePixels; column++)
         {
             var worldX = left + (column + .5) * worldSize / TilePixels;
-            var worldY = bottom + worldSize - (row + .5) * worldSize / TilePixels;
+            var worldY = top - (row + .5) * worldSize / TilePixels;
             var px = (int)Math.Floor((worldX - data.MinX) / data.Scale);
             var py = (int)Math.Floor((data.MaxY - worldY) / data.Scale);
             if (px < 0 || px >= data.Width || py < 0 || py >= data.Height) continue;
@@ -72,7 +88,7 @@ public sealed class Cs2MapAssets
             data.Tiles[(x, y, zoom)] = encoded;
             data.TileOrder.Enqueue((x, y, zoom));
         }
-        return TakaroActionResult.Ok(encoded);
+        return TakaroActionResult.Ok(new { mimeType = "image/png", data = encoded });
     }
 
     private bool TryLoad(string map, out MapData data, out string reason)
@@ -105,7 +121,7 @@ public sealed class Cs2MapAssets
                 var posY = ReadOverviewNumber(text, "pos_y");
                 var scale = ReadOverviewNumber(text, "scale");
                 if (scale is <= 0 or > 100) throw new InvalidDataException("Radar scale is invalid.");
-                var locations = ReadSpawnLocations(File.ReadAllText(entities));
+                var locations = ReadSpawnLocations(File.ReadAllText(entities), map);
                 data = new MapData(source.Width, source.Height, source.Data, posX, posY, scale, locations);
                 loaded[map] = data;
                 return true;
@@ -127,7 +143,7 @@ public sealed class Cs2MapAssets
         return value;
     }
 
-    private static object[] ReadSpawnLocations(string text)
+    private static object[] ReadSpawnLocations(string text, string map)
     {
         var locations = new List<object>();
         foreach (var (entity, code, name) in new[] {
@@ -154,10 +170,11 @@ public sealed class Cs2MapAssets
                 var centerZ = points.Average(point => point.Z);
                 var representative = points.MinBy(point =>
                     Math.Pow(point.X - centerX, 2) + Math.Pow(point.Y - centerY, 2) + Math.Pow(point.Z - centerZ, 2));
-                locations.Add(new { code, name, position = new {
+                locations.Add(new { code, name, category = "spawn", radius = SpawnRadius, position = new {
                     x = representative.X,
                     y = representative.Y,
-                    z = representative.Z } });
+                    z = representative.Z,
+                    dimension = map } });
             }
         }
         return locations.ToArray();

@@ -34,26 +34,33 @@ public sealed class Cs2MapAssetsTests
                 "====3====\nclassname \"info_player_counterterrorist\"\norigin [ 100, 90, -10 ]\n");
 
             var assets = new Cs2MapAssets(directory);
-            var info = JsonSerializer.SerializeToElement(assets.GetInfo("de_test").Payload);
-            Assert.IsTrue(info.GetProperty("enabled").GetBoolean());
-            Assert.AreEqual(128, info.GetProperty("mapBlockSize").GetInt32());
-            Assert.AreEqual(512, info.GetProperty("mapSizeX").GetInt32());
+            var dimension = JsonSerializer.SerializeToElement(assets.DescribeDimension("de_test"));
+            Assert.AreEqual("de_test", dimension.GetProperty("id").GetString());
+            Assert.AreEqual(-256d, dimension.GetProperty("bounds").GetProperty("horizontal").GetProperty("min").GetDouble());
+            Assert.AreEqual(256d, dimension.GetProperty("bounds").GetProperty("vertical").GetProperty("max").GetDouble());
+            Assert.AreEqual("up", dimension.GetProperty("axes").GetProperty("vertical").GetProperty("direction").GetString());
+            Assert.AreEqual(256, dimension.GetProperty("source").GetProperty("tileSize").GetInt32());
+            Assert.IsTrue(assets.HasLocations("de_test"));
             var locations = JsonSerializer.SerializeToElement(assets.ListLocations("de_test").Payload);
             Assert.AreEqual(2, locations.GetArrayLength());
             Assert.AreEqual("t_spawn", locations[0].GetProperty("code").GetString());
             Assert.AreEqual(-100d, locations[0].GetProperty("position").GetProperty("x").GetDouble());
             Assert.AreEqual(20d, locations[0].GetProperty("position").GetProperty("z").GetDouble());
+            Assert.AreEqual("de_test", locations[0].GetProperty("position").GetProperty("dimension").GetString());
+            Assert.AreEqual("spawn", locations[0].GetProperty("category").GetString());
 
-            var tile = assets.GetTile("de_test", -1, 0, 4);
+            var tile = assets.GetTile("de_test", 0, 0, 3);
             Assert.IsTrue(tile.Success);
-            var png = Convert.FromBase64String((string)tile.Payload!);
+            var payload = JsonSerializer.SerializeToElement(tile.Payload);
+            Assert.AreEqual("image/png", payload.GetProperty("mimeType").GetString());
+            var png = Convert.FromBase64String(payload.GetProperty("data").GetString()!);
             var image = ImageResult.FromMemory(png, StbImageSharp.ColorComponents.RedGreenBlueAlpha);
-            Assert.AreEqual(128, image.Width);
-            Assert.AreEqual(128, image.Height);
+            Assert.AreEqual(256, image.Width);
+            Assert.AreEqual(256, image.Height);
             Assert.AreEqual(70, image.Data[1]);
             Assert.AreEqual(255, image.Data[3]);
-            Assert.AreEqual("tile_out_of_range", assets.GetTile("de_test", 50, 50, 4).Error?.Code);
-            Assert.AreEqual("invalid_args", assets.GetTile("de_test", 0, 0, 5).Error?.Code);
+            Assert.AreEqual("tile_out_of_range", assets.GetTile("de_test", 8, 0, 3).Error?.Code);
+            Assert.AreEqual("invalid_args", assets.GetTile("de_test", 0, 0, 4).Error?.Code);
         }
         finally
         {
@@ -65,8 +72,7 @@ public sealed class Cs2MapAssetsTests
     public void MissingOrInvalidMapNeverClaimsSuccess()
     {
         var assets = new Cs2MapAssets(Path.GetTempPath());
-        Assert.IsFalse(JsonSerializer.SerializeToElement(assets.GetInfo("not_installed").Payload)
-            .GetProperty("enabled").GetBoolean());
+        Assert.IsNull(assets.DescribeDimension("not_installed"));
         Assert.AreEqual("map_unavailable", assets.ListLocations("not_installed").Error?.Code);
         Assert.AreEqual("map_unavailable", assets.GetTile("../secret", 0, 0, 0).Error?.Code);
     }

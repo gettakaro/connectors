@@ -15,7 +15,7 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
     private readonly HashSet<string> connectedEmitted = new(StringComparer.OrdinalIgnoreCase);
 
     public override string ModuleName => "Takaro CS2 Bridge";
-    public override string ModuleVersion => "0.1.0";
+    public override string ModuleVersion => "0.1.0"; // x-release-please-version
     public override string ModuleAuthor => "Takaro community";
 
     public Cs2TakaroConfig Config { get; set; } = new();
@@ -27,7 +27,7 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
 
     public override void Load(bool hotReload)
     {
-        var coreConfig = Config.ToCoreConfig();
+        var coreConfig = Config.ToCoreConfig(ModuleVersion);
         var errors = coreConfig.Validate();
         if (errors.Count > 0)
         {
@@ -54,9 +54,12 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
         adapter.SetMapAssets(new Cs2MapAssets(Path.Combine(dataDir, "maps")));
         adapter.SetBanStore(bans);
         adapter.SetPlayerStore(playerStore);
+        adapter.SetCurrentMap(CounterStrikeSharp.API.Server.MapName ?? string.Empty);
+        adapter.SetGameVersion(ReadPatchVersion());
         runner = new TakaroWebSocketRunner(coreConfig, adapter, message => Console.WriteLine($"[Takaro CS2] {message}"));
         _ = runner.StartAsync();
 
+        RegisterListener<Listeners.OnMapStart>(OnMapStart);
         RegisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFull);
         RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
         RegisterListener<Listeners.OnClientAuthorized>(OnClientAuthorized);
@@ -80,6 +83,27 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
         connectedEmitted.Clear();
         bans = null;
         playerStore = null;
+    }
+
+    private void OnMapStart(string map)
+    {
+        adapter?.SetCurrentMap(map);
+        var active = runner;
+        if (active is not null) _ = Task.Run(() => active.UpdateCapabilitiesAsync());
+    }
+
+    private static string? ReadPatchVersion()
+    {
+        try
+        {
+            var path = Path.Combine(CounterStrikeSharp.API.Server.GameDirectory, "csgo", "steam.inf");
+            var line = File.ReadLines(path).FirstOrDefault(value => value.StartsWith("PatchVersion=", StringComparison.Ordinal));
+            return line?["PatchVersion=".Length..].Trim();
+        }
+        catch (IOException)
+        {
+            return null;
+        }
     }
 
     private HookResult OnPlayerConnectFull(EventPlayerConnectFull ev, GameEventInfo info)

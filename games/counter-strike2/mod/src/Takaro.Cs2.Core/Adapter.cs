@@ -5,6 +5,7 @@ namespace Takaro.Cs2.Core;
 
 public interface ICs2TakaroAdapter
 {
+    IReadOnlyList<object> GetCapabilities();
     Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TakaroPlayer>> GetPlayersAsync(CancellationToken cancellationToken = default);
     Task<TakaroPlayer?> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default);
@@ -15,7 +16,6 @@ public interface ICs2TakaroAdapter
     Task<TakaroActionResult> GiveItemAsync(string identifier, string code, int amount, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ListItemsAsync(CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default);
-    Task<TakaroActionResult> GetMapInfoAsync(CancellationToken cancellationToken = default);
     Task<TakaroActionResult> GetMapTileAsync(int x, int y, int zoom, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> KickPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default);
@@ -66,8 +66,7 @@ public sealed class TakaroRequestDispatcher
                 "listItems" => await adapter.ListItemsAsync(cancellationToken),
                 "listEntities" => TakaroActionResult.Ok(new[] { new { code = "chicken", name = "Chicken", type = "neutral" } }),
                 "listLocations" => await adapter.ListLocationsAsync(cancellationToken),
-                "getMapInfo" => await adapter.GetMapInfoAsync(cancellationToken),
-                "getMapTile" => await adapter.GetMapTileAsync(RequiredMapInt(request.Args, "x"), RequiredMapInt(request.Args, "y"), RequiredMapZoom(request.Args), cancellationToken),
+                "getMapTile" => await adapter.GetMapTileAsync(RequiredMapInt(request.Args, "x"), RequiredMapInt(request.Args, "y"), RequiredMapInt(request.Args, "zoom"), cancellationToken),
                 "sendMessage" => await adapter.SendMessageAsync(RequiredString(request.Args, "message"), OptionalRecipient(request.Args), OptionalSender(request.Args), cancellationToken),
                 "executeConsoleCommand" => await adapter.ExecuteConsoleCommandAsync(RequiredString(request.Args, "command"), cancellationToken),
                 "teleportPlayer" => await adapter.TeleportPlayerAsync(RequiredIdentifier(request.Args), RequiredPosition(request.Args), cancellationToken),
@@ -128,10 +127,6 @@ public sealed class TakaroRequestDispatcher
             throw new ArgumentException($"Expected {key} from 1 to 10.");
         return amount;
     }
-
-    private static int RequiredMapZoom(JsonElement args) =>
-        args.ValueKind == JsonValueKind.Object && args.TryGetProperty("z", out _)
-            ? RequiredMapInt(args, "z") : RequiredMapInt(args, "zoom");
 
     private static int RequiredMapInt(JsonElement args, string key)
     {

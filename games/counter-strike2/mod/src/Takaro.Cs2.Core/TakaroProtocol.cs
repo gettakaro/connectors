@@ -8,7 +8,10 @@ public static class TakaroProtocol
 {
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public static string CreateIdentify(ConnectorConfig config)
+    public const string GameId = "counter-strike2";
+    public const string ConnectorName = "takaro-counter-strike2";
+
+    public static string CreateIdentify(ConnectorConfig config, IReadOnlyList<object> capabilities)
     {
         return JsonSerializer.Serialize(new
         {
@@ -17,10 +20,17 @@ public static class TakaroProtocol
             {
                 identityToken = NullIfWhiteSpace(config.IdentityToken),
                 registrationToken = NullIfWhiteSpace(config.RegistrationToken),
-                name = config.ServerName
+                name = config.ServerName,
+                game = GameId,
+                connector = new { name = ConnectorName, version = config.ConnectorVersion },
+                protocolVersions = new[] { 1 },
+                capabilities
             }
         }, JsonOptions);
     }
+
+    public static string CreateCapabilities(string requestId, IReadOnlyList<object> capabilities) =>
+        JsonSerializer.Serialize(new { type = "capabilities", requestId, payload = new { capabilities } }, JsonOptions);
 
     public static TakaroRequest ParseRequest(string json)
     {
@@ -55,18 +65,28 @@ public static class TakaroProtocol
     {
         if (result.Success) return CreateResponse(requestId, result.Payload);
 
-        var error = $"{result.Error?.Code ?? "action_failed"}: {result.Error?.Message ?? "CS2 action failed."}";
+        var code = result.Error?.Code ?? "action_failed";
+        var message = result.Error?.Message ?? "CS2 action failed.";
         return action switch
         {
-            "testReachability" => CreateResponse(requestId, new { connectable = false, reason = error, error }),
-            "getPlayer" => CreateResponse(requestId, new { gameId = string.Empty, name = string.Empty, error }),
-            "getPlayerLocation" => CreateResponse(requestId, new { x = 0d, y = 0d, z = 0d, error }),
-            "executeConsoleCommand" => CreateResponse(requestId, new { success = false, rawResult = string.Empty, errorMessage = error, error }),
-            _ => CreateResponse(requestId, new { error })
+            "testReachability" => CreateResponse(requestId, new { connectable = false, reason = $"{code}: {message}" }),
+            "getPlayerLocation" when code is "player_not_found" or "position_unavailable" => CreateResponse(requestId, null),
+            "executeConsoleCommand" => CreateResponse(requestId, new { success = false, rawResult = string.Empty, errorMessage = $"{code}: {message}" }),
+            _ => JsonSerializer.Serialize(new { type = "response", requestId, error = new { code = ToProtocolErrorCode(code), message = $"{code}: {message}" } }, JsonOptions)
         };
     }
 
-    public static string CreateGameEvent(string eventType, object data)
+    public static string ToProtocolErrorCode(string code) => code switch
+    {
+        "invalid_args" or "invalid_amount" or "invalid_expiry" or "invalid_player" or "unknown_item" => "invalid_args",
+        "unsupported_action" or "shutdown_disabled" => "unsupported",
+        "player_not_found" or "ban_not_found" or "no_recipients" or "tile_out_of_range"
+            or "map_unavailable" or "locations_unavailable" => "not_found",
+        "action_failed" => "internal",
+        _ => "game_error"
+    };
+
+    public static string CreateGameEvent(string eventType, object data, string streamId, long seq)
     {
         return JsonSerializer.Serialize(new
         {
@@ -74,7 +94,9 @@ public static class TakaroProtocol
             payload = new
             {
                 type = eventType,
-                data
+                data,
+                streamId,
+                seq
             }
         }, JsonOptions);
     }
@@ -116,18 +138,6 @@ public static class TakaroProtocol
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;
 
-    private static object? NormalizeResponsePayload(object? payload)
-    {
-        if (payload is not TakaroActionResult actionResult)
-        {
-            return payload;
-        }
-
-        if (actionResult.Success)
-        {
-            return actionResult.Payload;
-        }
-
-        return new { error = $"{actionResult.Error?.Code ?? "action_failed"}: {actionResult.Error?.Message ?? "CS2 action failed."}" };
-    }
+    private static object? NormalizeResponsePayload(object? payload) =>
+        payload is TakaroActionResult { Success: true } actionResult ? actionResult.Payload : payload;
 }
