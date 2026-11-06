@@ -531,7 +531,8 @@ def test_every_catalog_game_registers_sources_roles_targets_and_declared_rigs() 
 
     # Phase-2 follow-up F6 owns the missing Enshrouded dispatch. The ARK: Survival Ascended and
     # SCUM dedicated servers are Windows-only, so no Linux dev-servers rig can run them. TF2's 32-bit
-    # srcds needs a runtime image with i386 libraries plus MetaMod:Source and SourceMod, which no catalog input pins yet;
+    # srcds needs a runtime image with i386 libraries plus MetaMod:Source and SourceMod, which no catalog
+    # input pins yet;
     # games/tf2/scripts/run-live-smoke.sh covers a local server meanwhile. Keep those gaps visible
     # and make any other missing rig fail instead of silently weakening the rollout audit.
     assert missing_rigs == ["ark-ascended", "enshrouded", "scum", "tf2"]
