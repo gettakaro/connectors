@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-26445667",
+  "game": "counter-strike2",
+  "platform": "linux",
+  "revision": "26445667",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-11-06",
+    "evidence": [
+      "SteamCMD app_update 730 on 2026-11-06 recorded public build 26445667 and the listed depot manifests",
+      "CounterStrikeSharp v1.0.379 and Metamod:Source 2.0.0.1483 were the current upstream releases on 2026-11-06",
+      "SteamCMD validation on 2026-11-06 completed with StateFlags 4 and installed buildid 26445667"
+    ],
+    "notes": "Candidate until build 26445667 gameplay, map and integration checks pass."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 730,
+      "branch": "public",
+      "buildid": 26445667,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "731": {
+          "manifest": "4368490491959295332",
+          "size": 8
+        },
+        "2347770": {
+          "manifest": "6679288287140932208",
+          "size": 65068271825
+        },
+        "2347773": {
+          "manifest": "8513165868182791792",
+          "size": 7224511782
+        },
+        "2347774": {
+          "manifest": "6845003340509320862",
+          "size": 1142065743
+        }
+      },
+      "files": {
+        "game/csgo/gameinfo.gi": {
+          "sha256": "bfcb4f966b63cd19bfc22bc6d5e82a0e31d69e2631f7a8bd0355db16b8c0d930",
+          "size": 26056
+        }
+      },
+      "credentials": null
+    },
+    "metamod": {
+      "kind": "http-file",
+      "source": "metamod",
+      "hashOrigin": "upstream",
+      "path": "/alliedmodders/metamod-source/releases/download/2.0.0.1483/mmsource-2.0.0-git1483-linux.tar.gz",
+      "sha256": "0fdcccaa369937ed7f521c78462314b5266f39c1d65a84e4c2d3847324cd7776",
+      "size": 20396540,
+      "installPath": "deps/mmsource-2.0.0-git1483-linux.tar.gz"
+    },
+    "counterstrikesharp": {
+      "kind": "http-file",
+      "source": "counterstrikesharp",
+      "hashOrigin": "upstream",
+      "path": "/roflmuffin/CounterStrikeSharp/releases/download/v1.0.379/counterstrikesharp-with-runtime-linux-1.0.379.zip",
+      "sha256": "bd7e52265346a66a3106934c1f1085b642ec5560b7f070a9b10be510341d583a",
+      "size": 52647292,
+      "installPath": "deps/counterstrikesharp-with-runtime-linux-1.0.379.zip"
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "mcr.microsoft.com/dotnet/sdk",
+      "tag": "10.0",
+      "digest": "sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa"
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/counter-strike2/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "mcr.microsoft.com/dotnet/sdk",
+      "tag": "10.0",
+      "digest": "sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa"
+    },
+    "deps": {
+      "CounterStrikeSharp.API": {
+        "coordinate": "nuget:CounterStrikeSharp.API:1.0.379",
+        "sha256": "7e32c7d474cc57a79e6a22a4d8def05762c82cddc9eaf4ebef1c04dee1243b89",
+        "resolvedCoordinate": "https://api.nuget.org/v3-flatcontainer/counterstrikesharp.api/1.0.379/counterstrikesharp.api.1.0.379.nupkg"
+      },
+      "StbImageSharp": {
+        "coordinate": "nuget:StbImageSharp:2.30.16",
+        "sha256": "7bc69c8fe8a2c764d07de320aa2009bb15603928ae004cde45686c0106ca849b",
+        "resolvedCoordinate": "https://api.nuget.org/v3-flatcontainer/stbimagesharp/2.30.16/stbimagesharp.2.30.16.nupkg"
+      },
+      "StbImageWriteSharp": {
+        "coordinate": "nuget:StbImageWriteSharp:1.16.7",
+        "sha256": "13d0103bab5c5e7783a38af0712696fdc361a850eff3cd68ef8c2a0767d31b46",
+        "resolvedCoordinate": "https://api.nuget.org/v3-flatcontainer/stbimagewritesharp/1.16.7/stbimagewritesharp.1.16.7.nupkg"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "plugin",
+      "artifact": "takaro-counter-strike2-linux-26445667-{version}.zip",
+      "installDir": "game/csgo/addons/counterstrikesharp/plugins"
+    }
+  ],
+  "verification": {
+    "required": "gameplay",
+    "separate": []
+  },
+  "preserve": [
+    "game/csgo/addons/counterstrikesharp/configs/plugins/TakaroCs2/TakaroCs2.json",
+    "game/csgo/addons/counterstrikesharp/data/TakaroCs2/bans.json",
+    "game/csgo/addons/counterstrikesharp/data/TakaroCs2/players.json",
+    "game/csgo/cfg/",
+    "game/csgo/addons/counterstrikesharp/data/TakaroCs2/maps/"
+  ],
+  "notes": "Map support reads game-owned raster and entity assets prepared locally; never bundle Valve assets. Gameplay verification and publication approval block release assembly."
+}
