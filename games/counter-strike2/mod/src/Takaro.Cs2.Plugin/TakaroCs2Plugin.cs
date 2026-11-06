@@ -51,7 +51,7 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
             return;
         }
         adapter = new Cs2ServerAdapter(coreConfig);
-        adapter.SetMapAssets(new Cs2MapAssets(Path.Combine(dataDir, "maps")));
+        adapter.SetMapAssets(new Cs2MapAssets(Path.Combine(dataDir, "maps"), message => Console.WriteLine($"[Takaro CS2] {message}")));
         adapter.SetBanStore(bans);
         adapter.SetPlayerStore(playerStore);
         adapter.SetCurrentMap(CounterStrikeSharp.API.Server.MapName ?? string.Empty);
@@ -87,6 +87,7 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
 
     private void OnMapStart(string map)
     {
+        Console.WriteLine($"[Takaro CS2] Map started: {map}.");
         adapter?.SetCurrentMap(map);
         var active = runner;
         if (active is not null) _ = Task.Run(() => active.UpdateCapabilitiesAsync());

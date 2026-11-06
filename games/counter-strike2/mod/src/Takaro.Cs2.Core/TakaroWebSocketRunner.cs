@@ -20,6 +20,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private readonly ICs2TakaroAdapter adapter;
     private long nextSeq = 1;
     private long lastSentSeq;
+    private string identifiedManifest = "[]";
     private volatile bool identified;
     private ClientWebSocket? socket;
     private Task? runLoop;
@@ -60,7 +61,16 @@ public sealed class TakaroWebSocketRunner : IDisposable
     {
         var activeSocket = socket;
         if (!identified || activeSocket is null) return;
-        await SendAsync(activeSocket, TakaroProtocol.CreateCapabilities(Guid.NewGuid().ToString(), adapter.GetCapabilities()), cancellationToken);
+        try
+        {
+            var capabilities = adapter.GetCapabilities();
+            await SendAsync(activeSocket, TakaroProtocol.CreateCapabilities(Guid.NewGuid().ToString(), capabilities), cancellationToken);
+            log($"Takaro CS2 capabilities replaced: {capabilities.Count} entries.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            log($"Takaro CS2 could not replace capabilities: {ex.Message}");
+        }
     }
 
     public void Dispose()
@@ -81,7 +91,9 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 socket = client;
                 identified = false;
                 await client.ConnectAsync(new Uri(config.TakaroWsUrl), cancellationToken);
-                await SendAsync(client, TakaroProtocol.CreateIdentify(config, adapter.GetCapabilities()), cancellationToken);
+                var capabilities = adapter.GetCapabilities();
+                identifiedManifest = JsonSerializer.Serialize(capabilities, TakaroProtocol.JsonOptions);
+                await SendAsync(client, TakaroProtocol.CreateIdentify(config, capabilities), cancellationToken);
                 log("Takaro CS2 identify sent.");
                 wasIdentified = await ReceiveLoopAsync(client, cancellationToken);
             }
@@ -154,6 +166,9 @@ public sealed class TakaroWebSocketRunner : IDisposable
                     wasIdentified = true;
                     lock (eventGate) lastSentSeq = 0;
                     identified = true;
+                    // A map that started while identify was in flight is not in the manifest we sent.
+                    if (JsonSerializer.Serialize(adapter.GetCapabilities(), TakaroProtocol.JsonOptions) != identifiedManifest)
+                        await UpdateCapabilitiesAsync(cancellationToken);
                     await FlushEventsAsync(cancellationToken);
                 }
                 continue;
