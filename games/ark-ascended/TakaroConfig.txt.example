@@ -1,0 +1,24 @@
+# Takaro connector for ARK: Survival Ascended.
+# Copy this file to TakaroConfig.txt in the same folder and fill in TAKARO_REGISTRATION_TOKEN.
+
+# Your Takaro registration token (Takaro dashboard -> Game servers -> Add -> Generic).
+TAKARO_REGISTRATION_TOKEN=
+
+# Name shown in Takaro for this server.
+TAKARO_SERVER_NAME=My ARK Server
+
+# Sender name in chat for Takaro messages that do not set their own (default: Server).
+TAKARO_SERVER_CHAT_NAME=
+
+# Takaro connection URL. Leave as is unless Takaro tells you otherwise.
+TAKARO_WS_URL=wss://connect.takaro.io/
+
+# Leave empty: the connector makes one and keeps it in state\identity-token. It names this server
+# to Takaro, so keep that file when you move or reinstall the server.
+TAKARO_IDENTITY_TOKEN=
+
+# A PEM file with the only certificate authority to trust. Leave empty to use the Windows store.
+TAKARO_CA_FILE=
+
+# 1 writes all Takaro traffic and the connector's game-thread cost to takaro.log.
+TAKARO_WIRE_DEBUG=0
