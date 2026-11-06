@@ -185,6 +185,12 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
             return HookResult.Continue;
         }
 
+        // CS2 kills the pawn of a player who leaves; that is not a death in the game.
+        if (ev.Userid?.Connected != PlayerConnectedState.Connected || !connectedEmitted.Contains(victim.GameId))
+        {
+            return HookResult.Continue;
+        }
+
         var attacker = MapPlayer(ev.Attacker);
         if (attacker?.GameId == victim.GameId)
         {
