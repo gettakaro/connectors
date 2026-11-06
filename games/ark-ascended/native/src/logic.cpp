@@ -295,4 +295,8 @@ bool IsSurvivorSwitch(const std::optional<Survivor>& known, const Survivor& seen
     return known && known->id != seen.id;
 }
 
+bool IsRealPosition(double x, double y, double z) {
+    return x != 0 || y != 0 || z != 0;
+}
+
 }  // namespace takaro

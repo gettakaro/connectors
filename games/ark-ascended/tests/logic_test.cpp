@@ -46,6 +46,12 @@ static void test_progression() {
     CHECK(atCap.as_array()[0].get("progress") == nullptr);
 }
 
+static void test_position() {
+    CHECK(!IsRealPosition(0, 0, 0));
+    CHECK(IsRealPosition(-104786.5, 225978.5, -14316.1));
+    CHECK(IsRealPosition(0, 0, 1));
+}
+
 static void test_survivor() {
     CHECK(!MakeSurvivor(0, "tester", "Limon"));
     const auto tester = MakeSurvivor(298275735, "tester", "Limon");
@@ -191,6 +197,7 @@ int main() {
     test_iso();
     test_progression();
     test_survivor();
+    test_position();
     test_console();
     test_log_filter();
     test_item_code();

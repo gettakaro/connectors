@@ -274,8 +274,10 @@ Roster& Refresh(const std::string& eos, AShooterPlayerController* pc) {
     if (g_known) g_known->Remember(eos, r.name);
     if (auto* character = pc->GetPlayerCharacter(); character != nullptr) {
         const FVector v = AsaApi::IApiUtils::GetPosition(pc);
-        r.x = v.X; r.y = v.Y; r.z = v.Z;
-        r.hasPosition = true;
+        if (takaro::IsRealPosition(v.X, v.Y, v.Z)) {
+            r.x = v.X; r.y = v.Y; r.z = v.Z;
+            r.hasPosition = true;
+        }
         if (SurvivorAnnounced(pc, r)) ReadProgress(eos, character, r);
     }
     return r;

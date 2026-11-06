@@ -35,6 +35,9 @@ std::string ItemCodeOf(const tj::Value& args);
 // the Cosmetics tab, not as something the player carries.
 bool IsCosmeticCode(const std::string& code);
 
+// False for the origin, which is what the game answers once the pawn is being torn down on a disconnect.
+bool IsRealPosition(double x, double y, double z);
+
 // The survivor's level as the game shows it. XP can pass the next threshold without changing it: the level rises when
 // the player spends the point.
 struct ProgressReading {
