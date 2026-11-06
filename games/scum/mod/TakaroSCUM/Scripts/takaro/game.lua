@@ -259,6 +259,13 @@ function Game:read_skill_records(pc)
   return records
 end
 
+function Game:read_attributes(pc)
+  local prisoner = self:pawn(pc)
+  if not prisoner then return nil end
+  local ok, packed = pcall(function() return prisoner._bodySimulationComponent._repState1 end)
+  return ok and packed or nil
+end
+
 -- Takaro polls getPlayerProgression on every player sync, so the game is read here, on a slow timer under a budget,
 -- and the request only looks at this cache. A failed read keeps the last value.
 function Game:refresh_progression(nowMs)
@@ -268,7 +275,11 @@ function Game:refresh_progression(nowMs)
     if not cached or nowMs - cached.at >= M.PROGRESSION_REFRESH_MS then
       local ok, records = pcall(self.read_skill_records, self, c.pc)
       if ok and records and #records > 0 then
-        self.progression[c.id] = { at = nowMs, tracks = progression.skill_tracks(records) }
+        local tracks = progression.skill_tracks(records)
+        local attributes = progression.attribute_tracks(self:read_attributes(c.pc), cached and cached.attributes)
+        if #attributes == 0 and cached then attributes = cached.attributes or {} end
+        for _, track in ipairs(attributes) do tracks[#tracks + 1] = track end
+        self.progression[c.id] = { at = nowMs, tracks = tracks, attributes = attributes }
       elseif not ok then
         self.log:warn("progression read for %s: %s", c.id, tostring(records))
       end

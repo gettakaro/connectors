@@ -68,7 +68,7 @@ Checked on SCUM 1.3.5.1.172191 (Steam build 26280049), 2026-10-29; player levels
 | Player location | ✅ | |
 | Teleport | ✅ | |
 | Player inventory | ✅ | Rounds in a weapon are not listed. |
-| Player levels and skills | ⚠️ | Skills as `skill.<name>` (level 0 to 4) with experience. No overall character level. |
+| Player levels and skills | ⚠️ | Skills as `skill.<name>` (level 0 to 4) and attributes as `attribute.<name>`, with experience. No overall character level. Each character keeps its own levels. |
 | Item list | ✅ | |
 | Entity list | ⚠️ | Zombie and NPC names are built from codes. |
 | Locations | ❌ | SCUM has no named places. |
