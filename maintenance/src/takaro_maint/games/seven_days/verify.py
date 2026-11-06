@@ -35,8 +35,6 @@ CHECK_IDS = ("handshake", "action", "reconnect", "stop") + tuple(
     check_id for family in FAMILIES for check_id in family.CHECK_IDS
 )
 
-READY_LINE = re.compile(r"INF StartGame done")
-
 #: Base checks this connector cannot satisfy, and the check that stands in for each.
 #: A run that names no ``--checks`` excludes these rather than failing them.
 UNSUPPORTED_CHECKS = {
@@ -48,6 +46,9 @@ UNSUPPORTED_CHECKS = {
 }
 
 HANDSHAKE_LINE = re.compile(r"\[Takaro\] \*INFO\* WebSocket connection confirmed")
+#: The mod dials out only after ``StartGame done``, and the protocol checks that follow the
+#: ready line need it connected, so the boot counts as finished once Takaro has it.
+READY_LINE = HANDSHAKE_LINE
 LOADED_LINE = re.compile(r"\[MODS\]\s+Loaded Mod: Takaro \((?P<version>[^)]+)\)")
 QUIT_LINE = re.compile(r"INF Preparing quit|\[NET\] ServerShutdown")
 BANNER_MARKERS = ("Last played version:", "GamePref.GameVersion")
@@ -143,13 +144,11 @@ async def _check_handshake(run: Any, fake: Any, alive: Any) -> checks.CheckResul
         )
         if not confirmed:
             problems.append("the server log never confirmed the inbound identifyResponse frame")
+        # Only informational: LinuxGSM starts tailing the game log late, so this early line
+        # can miss the capture. The identify frame already proves the mod loaded.
         loaded = await asyncio.to_thread(checks.find_line, run.server_log, LOADED_LINE)
-        version = None
-        if loaded is None:
-            problems.append("the server never logged 'Loaded Mod: Takaro'")
-        else:
-            found = LOADED_LINE.search(loaded[1])
-            version = found.group("version") if found else None
+        found = LOADED_LINE.search(loaded[1]) if loaded else None
+        version = found.group("version") if found else None
     return checks.CheckResult(
         "handshake",
         "pass" if not problems else "fail",
