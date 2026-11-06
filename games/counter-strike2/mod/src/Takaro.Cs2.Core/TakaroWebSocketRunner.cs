@@ -102,6 +102,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 using var client = new ClientWebSocket();
                 socket = client;
                 identified = false;
+                lock (eventGate) unackedSince = null;
                 await client.ConnectAsync(new Uri(config.TakaroWsUrl), cancellationToken);
                 var capabilities = adapter.GetCapabilities();
                 identifiedManifest = JsonSerializer.Serialize(capabilities, TakaroProtocol.JsonOptions);
@@ -221,15 +222,10 @@ public sealed class TakaroWebSocketRunner : IDisposable
             {
                 var request = TakaroProtocol.ParseRequest(message);
                 log($"Takaro CS2 request received: action={request.Action}, requestId={request.RequestId}.");
-                TakaroActionResult response;
-                try
-                {
-                    response = await dispatcher.DispatchAsync(request, cancellationToken).WaitAsync(requestTimeout, cancellationToken);
-                }
-                catch (TimeoutException)
-                {
-                    response = TakaroActionResult.Fail("action_failed", "The game server did not answer in time.");
-                }
+                // Cancelling also stops a queued game action, so a late effect cannot follow a reported failure.
+                using var requestWindow = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                requestWindow.CancelAfter(requestTimeout);
+                var response = await dispatcher.DispatchAsync(request, requestWindow.Token);
                 await SendAsync(activeSocket, TakaroProtocol.CreateActionResponse(request.RequestId, request.Action, response), cancellationToken);
                 log($"Takaro CS2 response sent: action={request.Action}, success={response.Success}.");
             }
@@ -347,8 +343,14 @@ public sealed class TakaroWebSocketRunner : IDisposable
         lock (eventGate)
         {
             var upToSent = Math.Min(acknowledged, highestSentSeq);
-            while (bufferedEvents.TryPeek(out var oldest) && oldest.Seq <= upToSent) bufferedEvents.Dequeue();
-            unackedSince = bufferedEvents.Any(pending => pending.Seq <= lastSentSeq) ? DateTimeOffset.UtcNow : null;
+            var advanced = false;
+            while (bufferedEvents.TryPeek(out var oldest) && oldest.Seq <= upToSent)
+            {
+                bufferedEvents.Dequeue();
+                advanced = true;
+            }
+            if (!bufferedEvents.Any(pending => pending.Seq <= lastSentSeq)) unackedSince = null;
+            else if (advanced) unackedSince = DateTimeOffset.UtcNow;
         }
     }
 

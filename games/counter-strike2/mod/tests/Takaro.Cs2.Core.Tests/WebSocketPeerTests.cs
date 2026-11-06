@@ -166,6 +166,29 @@ public sealed class WebSocketPeerTests
         Assert.AreEqual("internal", response.GetProperty("error").GetProperty("code").GetString());
     }
 
+    [TestMethod]
+    public async Task AStaleAckDoesNotKeepADeadConnectionAlive()
+    {
+        var (listener, port) = Listen();
+        using var _ = listener;
+        using var runner = new TakaroWebSocketRunner(new ConnectorConfig { TakaroWsUrl = $"ws://127.0.0.1:{port}/", IdentityToken = "test-identity" }, new PeerAdapter(), ackTimeout: TimeSpan.FromMilliseconds(600));
+        await runner.StartAsync();
+        using var first = await Accept(listener);
+        await Receive(first);
+        await Send(first, Identified);
+        await runner.SendGameEventAsync("log", new { msg = "one" });
+        var stream = JsonDocument.Parse(await Receive(first)).RootElement.GetProperty("payload").GetProperty("streamId").GetString();
+        var stale = JsonSerializer.Serialize(new { type = "eventAck", payload = new { streamId = stream, upTo = 0 } });
+        var nextConnection = listener.GetContextAsync();
+        for (var round = 0; round < 12 && !nextConnection.IsCompleted; round++)
+        {
+            try { await Send(first, stale); } catch (WebSocketException) { break; }
+            await Task.Delay(100);
+        }
+        using var second = (await (await nextConnection.WaitAsync(TimeSpan.FromSeconds(5))).AcceptWebSocketAsync(null)).WebSocket;
+        Assert.AreEqual("identify", Type(await Receive(second)));
+    }
+
     private static string Type(string json) => JsonDocument.Parse(json).RootElement.GetProperty("type").GetString()!;
 
     private static async Task Send(WebSocket socket, string json) =>
