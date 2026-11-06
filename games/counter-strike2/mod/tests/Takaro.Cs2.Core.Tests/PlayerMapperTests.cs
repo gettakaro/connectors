@@ -39,4 +39,13 @@ public sealed class PlayerMapperTests
         Assert.AreEqual("Bravo", PlayerMapper.Find(players, "steam:76561198000000002")?.Name);
         Assert.AreEqual("Bravo", PlayerMapper.Find(players, "bravo")?.Name);
     }
+
+    [TestMethod]
+    public void RemovesThePortFromTheClientAddress()
+    {
+        Assert.AreEqual("192.0.2.15", PlayerMapper.ToTakaroPlayer(new Cs2Player("Alice", 76561198000000001UL, "192.0.2.15:50705", 2, false)).Ip);
+        Assert.AreEqual("192.0.2.15", PlayerMapper.ToTakaroPlayer(new Cs2Player("Alice", 76561198000000001UL, "192.0.2.15", 2, false)).Ip);
+        Assert.IsNull(PlayerMapper.ToTakaroPlayer(new Cs2Player("Alice", 76561198000000001UL, null, 2, false)).Ip);
+    }
+
 }
