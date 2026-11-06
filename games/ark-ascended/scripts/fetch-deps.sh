@@ -21,7 +21,7 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
-[ -n "$target" ] && [ -n "$dest" ] || { echo "usage: fetch-deps.sh --target <id> --dest <dir>" >&2; exit 2; }
+if [ -z "$target" ] || [ -z "$dest" ]; then echo "usage: fetch-deps.sh --target <id> --dest <dir>" >&2; exit 2; fi
 
 record="$repo_root/catalog/ark-ascended/targets/$target.json"
 [ -f "$record" ] || { echo "no catalog target $target" >&2; exit 2; }
