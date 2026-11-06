@@ -1,0 +1,299 @@
+[
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Resources/PrimalItemResource_Wood.PrimalItemResource_Wood_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Resources/Icons/Wood_Icon",
+  "source": "client",
+  "pngSha256": "b905a10afb21495211e5ec6f4b313902fd39295c7ce38e8b1db8e0f4e3061b6c",
+  "width": 256,
+  "height": 256,
+  "notes": "resource"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Resources/PrimalItemResource_Stone.PrimalItemResource_Stone_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Resources/Icons/Stone_Icon",
+  "source": "client",
+  "pngSha256": "32777ccdbf09402688241490bcd490d47ce420bf455963c314e41fbea533044a",
+  "width": 256,
+  "height": 256,
+  "notes": "resource"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Resources/PrimalItemResource_Flint.PrimalItemResource_Flint_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Resources/Icons/Flint_Icon",
+  "source": "client",
+  "pngSha256": "6f3a1d75b164beadf02bd3601b6bee4c49fb532c0b9b333d1e3ed6a006a66c07",
+  "width": 256,
+  "height": 256,
+  "notes": "resource"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Resources/PrimalItemResource_Hide.PrimalItemResource_Hide_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Resources/Icons/Hide_Icon",
+  "source": "client",
+  "pngSha256": "eec6b92534f5bfe79dcb4ca125c9ad1442a33dbf1b1f2b534a6985d7d8717e1a",
+  "width": 256,
+  "height": 256,
+  "notes": "resource"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/Consumables/PrimalItemConsumable_Narcotic.PrimalItemConsumable_Narcotic_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Items/Consumables/Icons/Narcotic_Icon",
+  "source": "client",
+  "pngSha256": "3c5d7548c7bf6a6d5ac93b33a4ff164aec80369fb07c6a389681f7093c540641",
+  "width": 256,
+  "height": 256,
+  "notes": "consumable"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/Consumables/PrimalItemConsumable_Stimulant.PrimalItemConsumable_Stimulant_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Items/Consumables/Icons/Stimulant_Icon",
+  "source": "client",
+  "pngSha256": "4f6ed2d92caeabf8270f39f986b02b60e2944fd52a0458d03c9bd634cb88e074",
+  "width": 256,
+  "height": 256,
+  "notes": "consumable"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/Consumables/PrimalItemConsumable_CookedMeat.PrimalItemConsumable_CookedMeat_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Items/Consumables/Icons/CookedMeat_Icon",
+  "source": "client",
+  "pngSha256": "1c1df189638fcf0c90fbac52ca72bc192c985faef48df69b2833b6d459a8bf44",
+  "width": 256,
+  "height": 256,
+  "notes": "food"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/Consumables/PrimalItemConsumable_Berry_Mejoberry.PrimalItemConsumable_Berry_Mejoberry_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Items/Consumables/Icons/MejoBerry_Icon",
+  "source": "client",
+  "pngSha256": "dfbd9c1daa3797dcbed4d807fa863da0f631ac40cfc4efb90faa03b449ad5462",
+  "width": 256,
+  "height": 256,
+  "notes": "food"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItem_WeaponRifle.PrimalItem_WeaponRifle_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Weapons/Icons/AssaultRifle_Icon",
+  "source": "client",
+  "pngSha256": "9cd93e8567e47af0ff8d87c68977fc87d6418a2a77daf9748d562ee7451fdc97",
+  "width": 256,
+  "height": 256,
+  "notes": "weapon; has ItemIconMaterialParent HUD_Rifle_Colorize_MIC; bUseItemColors"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItem_WeaponBow.PrimalItem_WeaponBow_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Weapons/Icons/Bow_Icon",
+  "source": "client",
+  "pngSha256": "839e4d2303c8d57a69959cd6036a7e5eb42cd28f8d9ffcd41f0c53b72f6f360f",
+  "width": 256,
+  "height": 256,
+  "notes": "weapon; has ItemIconMaterialParent HUD_Bow_Colorize_MIC; bUseItemColors"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItem_WeaponStoneHatchet.PrimalItem_WeaponStoneHatchet_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Weapons/Icons/StoneHatchet_Icon",
+  "source": "client",
+  "pngSha256": "00b28281c41fae554a13c168a36b7e40d018685d2e2127fc828c479f316fbbbf",
+  "width": 256,
+  "height": 256,
+  "notes": "weapon/tool; has ItemIconMaterialParent HUD_Hatchet_Colorize_MIC"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItem_WeaponMetalPick.PrimalItem_WeaponMetalPick_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Weapons/Icons/MetalPick_Icon",
+  "source": "client",
+  "pngSha256": "b2d6d00346be50a4e7dd9d5c757771febcbbb2757da427ff4bd4b16dd53c4394",
+  "width": 256,
+  "height": 256,
+  "notes": "tool; has ItemIconMaterialParent HUD_MetalPick_Colorize_MIC"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItem_WeaponTorch.PrimalItem_WeaponTorch_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Weapons/Icons/Torch_Icon",
+  "source": "client",
+  "pngSha256": "6301d95c3a4e77dcf25b1763191c90b80ed5e9371c83af9b1da97af70376c95f",
+  "width": 256,
+  "height": 256,
+  "notes": "tool; has ItemIconMaterialParent HUD_Torch_Colorize_MIC; bUseItemColors"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItemAmmo_SimpleBullet.PrimalItemAmmo_SimpleBullet_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Weapons/Icons/Bullet4_Icon",
+  "source": "client",
+  "pngSha256": "a47b4bfe19805686f9cc2b6b69c00c885cc4c332c3fda06c24f5623f40eaa5d9",
+  "width": 256,
+  "height": 256,
+  "notes": "ammo"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItemAmmo_ArrowStone.PrimalItemAmmo_ArrowStone_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Weapons/Icons/Arrow_Icon",
+  "source": "client",
+  "pngSha256": "6a533a1ddbbd0b66b970b4240e28a6a2d0b211fd38f4002e5e0a6cf2dc4cae64",
+  "width": 256,
+  "height": 256,
+  "notes": "ammo"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/Armor/Cloth/PrimalItemArmor_ClothShirt.PrimalItemArmor_ClothShirt_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Items/Armor/Icons/BurlapShirt_Icon",
+  "source": "client",
+  "pngSha256": "00c698a020c1e3fa46eb28873dea5a82af5017d532f74acec4ad5b794fb4b99c",
+  "width": 256,
+  "height": 256,
+  "notes": "armour; has ItemIconMaterialParent HUD_Burlap_Shirt_Colorized; bUseItemColors"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/Armor/Leather/PrimalItemArmor_HideBoots.PrimalItemArmor_HideBoots_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Items/Armor/Leather/Icons/HideBoots_Icon",
+  "source": "client",
+  "pngSha256": "b722b98e534006ecf9cf0682b79d4808d0943ec82410d4af277803c3848d8465",
+  "width": 256,
+  "height": 256,
+  "notes": "armour; has ItemIconMaterialParent HUD_Leather_Boots_Colorized; bUseItemColors"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/Armor/Saddles/PrimalItemArmor_RexSaddle.PrimalItemArmor_RexSaddle_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Items/Armor/Saddles/RexSaddle_Icon",
+  "source": "client",
+  "pngSha256": "f22dddb3453bb1fae5ac9bcc47443cae52c1386a5077a39119499592f8a7543a",
+  "width": 256,
+  "height": 256,
+  "notes": "saddle; has ItemIconMaterialParent HUD_RexSaddle_Colorize_MIC; bUseItemColors"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/Armor/Saddles/PrimalItemArmor_ParaSaddle.PrimalItemArmor_ParaSaddle_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Items/Armor/Saddles/Icons/ParasaurSaddle_Icon",
+  "source": "client",
+  "pngSha256": "dba08589eb1a5ea23106f28f501fc4a5366f7c249b7feb081606f9aada8def8c",
+  "width": 256,
+  "height": 256,
+  "notes": "saddle; has ItemIconMaterialParent HUD_ParaSaddle_Colorize_MIC; bUseItemColors"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/Structures/Misc/PrimalItemStructure_Campfire.PrimalItemStructure_Campfire_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Items/Structures/Icons/Campfire_Icon",
+  "source": "client",
+  "pngSha256": "173b7923bd074ea91e15bb23b5507ecbf73f53bb958fe42a04a5299b641c8b5c",
+  "width": 256,
+  "height": 256,
+  "notes": "structure"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/Structures/Thatch/PrimalItemStructure_ThatchDoor.PrimalItemStructure_ThatchDoor_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Items/Structures/Icons/Thatch/ThatchDoor_Icon",
+  "source": "client",
+  "pngSha256": "91dbf8bb62ff00dc9f135198c4fbab4284bcae8685ecf8e9cf0070524e62e7c1",
+  "width": 256,
+  "height": 256,
+  "notes": "structure"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/PrimalItemDye_Red.PrimalItemDye_Red_C",
+  "iconTexture": null,
+  "source": null,
+  "pngSha256": null,
+  "width": null,
+  "height": null,
+  "notes": "dye; icon inherited from PrimalItemDyeGeneric_C; has ItemIconMaterialParent DyeIconColorized; no ItemIcon in game data, needs a material composite"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/PrimalItemDye_Blue.PrimalItemDye_Blue_C",
+  "iconTexture": null,
+  "source": null,
+  "pngSha256": null,
+  "width": null,
+  "height": null,
+  "notes": "dye; icon inherited from PrimalItemDyeGeneric_C; has ItemIconMaterialParent DyeIconColorized; no ItemIcon in game data, needs a material composite"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/Consumables/PrimalItemConsumable_WaterskinRefill.PrimalItemConsumable_WaterskinRefill_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Items/Consumables/Icons/FilledWaterskin_Icon",
+  "source": "client",
+  "pngSha256": "8b2a10379d079ff61b98d0343b74dc5e6266d42ef9a7595b43aa236993af0006",
+  "width": 256,
+  "height": 256,
+  "notes": "inherits icon; icon inherited from PrimalItemConsumable_WaterskinCraftable_C"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/Consumables/Seeds/PrimalItemConsumable_Seed_Amarberry_SpeedHack.PrimalItemConsumable_Seed_Amarberry_SpeedHack_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Items/Consumables/Icons/AmarberrySeed_Icon",
+  "source": "client",
+  "pngSha256": "1a8f683be7bce5be6e7a405781cb8a0b8fc40b7fd79bf430218fba476681415d",
+  "width": 256,
+  "height": 256,
+  "notes": "inherits icon; icon inherited from PrimalItemConsumable_Seed_Amarberry_C"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/Notes/PrimalItem_RecipeNote_Measurements.PrimalItem_RecipeNote_Measurements_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Items/Notes/Icons/Recipe_Icon",
+  "source": "client",
+  "pngSha256": "acde5114827f008952e64fc7536e1aa0f2a89bf68666f9082cadada36cab116c",
+  "width": 256,
+  "height": 256,
+  "notes": "inherits icon; icon inherited from PrimalItem_RecipeNote_Base_C"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Items/Structures/Wooden/PrimalItemStructure_WoodFenceFoundation.PrimalItemStructure_WoodFenceFoundation_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Items/Structures/Icons/FenceFoundation",
+  "source": "client",
+  "pngSha256": "06a50facceb797ade32023074a611cae778f8dfeadf61d19d6440115e3cef5ea",
+  "width": 256,
+  "height": 256,
+  "notes": "inherits icon; icon inherited from PrimalItemStructure_BaseFenceFoundation_C"
+ },
+ {
+  "code": "/Game/Genesis/Items/Armor/PrimalItemArmor_ShoulderCannon.PrimalItemArmor_ShoulderCannon_C",
+  "iconTexture": "/Game/Genesis/UI/Icons/HUD_TEKShoulderCannon_Icon",
+  "source": "client",
+  "pngSha256": "c757c72fd4c4fe99448031b84eac02c4c0ad61626331d0b29fb1a0e22002c1c8",
+  "width": 256,
+  "height": 256,
+  "notes": "DLC (Genesis); has ItemIconMaterialParent HUD_ShoulderCannon_Icon; bUseItemColors"
+ },
+ {
+  "code": "/Game/Genesis/Dinos/SpaceWhale/PrimalItemArmor_SpaceWhaleSaddle_Tek.PrimalItemArmor_SpaceWhaleSaddle_Tek_C",
+  "iconTexture": "/Game/Genesis/UI/Icons/HUD_SpaceWhaleSaddle_Icon",
+  "source": "client",
+  "pngSha256": "d28f3464afb0424c81adc3c7216b05086494505eb451dbfb866fb3a12ab8957e",
+  "width": 256,
+  "height": 256,
+  "notes": "DLC (Genesis)/saddle; has ItemIconMaterialParent HUD_Spacewhale_Icon"
+ },
+ {
+  "code": "/Game/Abyss/CoreBlueprints/Items/Consumables/PrimalItemConsumable_CookedMeat_Fish_Jerky.PrimalItemConsumable_CookedMeat_Fish_Jerky_C",
+  "iconTexture": "/Game/Abyss/Icons/Items/Resources/Fish_Jerky_Icon",
+  "source": "client",
+  "pngSha256": "b07b618933c6fe92be3f516d502a804411834f1655cdff42d6bb496942f3807b",
+  "width": 256,
+  "height": 256,
+  "notes": "food"
+ },
+ {
+  "code": "/Game/Abyss/CoreBlueprints/Items/Consumables/PrimalItemConsumable_Soup_BrothofAtlan.PrimalItemConsumable_Soup_BrothofAtlan_C",
+  "iconTexture": "/Game/Abyss/Icons/Items/Resources/Broth_of_Atlan_Recipe_Icon",
+  "source": "client",
+  "pngSha256": "a8e6d8c7c95f49696371008eed045643c2ff7d52babca6b5121da0ad31afe3f4",
+  "width": 256,
+  "height": 256,
+  "notes": "DLC (Abyss)/food"
+ },
+ {
+  "code": "/Game/PrimalEarth/Test/PrimalItemConsumable_Egg_Stego.PrimalItemConsumable_Egg_Stego_C",
+  "iconTexture": null,
+  "source": null,
+  "pngSha256": null,
+  "width": null,
+  "height": null,
+  "notes": "material icon; has ItemIconMaterialParent HUD_DinoEgg_MIC_Inst_Stego; no ItemIcon in game data, needs a material composite"
+ },
+ {
+  "code": "/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItem_WeaponGun.PrimalItem_WeaponGun_C",
+  "iconTexture": "/Game/PrimalEarth/CoreBlueprints/Weapons/Icons/Pistol_Icon",
+  "source": "client",
+  "pngSha256": "7e0747fab4651c0834bedff27d6de61cd9454349d2188fba49a06b4b9d885a68",
+  "width": 256,
+  "height": 256,
+  "notes": "weapon; has ItemIconMaterialParent HUD_Pistol_Colorize_MIC; bUseItemColors"
+ }
+]
