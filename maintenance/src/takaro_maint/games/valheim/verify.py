@@ -93,7 +93,7 @@ QUIT_BUDGET = 120.0
 STOP_TIMEOUT = 120
 #: How long the wrong-package boot is still watched after its ready line, for a late identify.
 NEGATIVE_GRACE = 20.0
-#: An action no connector declares, and one Valheim's capabilities.json marks unsupported.
+#: An action no connector declares, and a getPlayer for nobody: both answer without a player.
 UNKNOWN_ACTION = "takaroVerifyUndeclaredAction"
 UNSUPPORTED_ACTION = ("getPlayer", {"gameId": "takaro-verify-nobody"})
 PLUGIN_DIR = Path("BepInEx") / "plugins" / "TakaroValheim"
@@ -366,9 +366,9 @@ async def _check_action(run: Any, fake: Any) -> checks.CheckResult:
 async def _check_unsupported(run: Any, fake: Any) -> checks.CheckResult:
     """An action the connector does not offer is refused with an error, and the socket stays usable.
 
-    Two cases: an action no connector declares, and ``getPlayer``, which capabilities.json
-    marks unsupported. On protocol version 0 both answer with a top-level ``error`` that
-    Takaro rejects at once; a ``getPlayer`` answer must also not name a player.
+    Two cases: an action no connector declares, and ``getPlayer`` for a player who is not
+    online. On protocol version 0 both answer with a top-level ``error`` that Takaro rejects
+    at once; a ``getPlayer`` answer must also not name a player.
     """
     with checks._Timer() as timer:
         problems: list[str] = []
