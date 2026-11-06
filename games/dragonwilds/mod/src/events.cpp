@@ -27,6 +27,7 @@
 #include "gamethread.h"
 #include "hooks.h"
 #include "perf.h"
+#include "progression.h"
 #include "reflect.h"
 #include "state.h"
 #include "sym.h"
@@ -58,6 +59,7 @@ struct Ident {
     std::string name;          // character display name, else the platform name
     std::string platformName;  // APlayerState::PlayerNamePrivate ("Limon")
     std::string characterGuid;
+    ::state::SessionCharacter character;
     std::string steamId;
     std::string xboxLiveId;
     bool linkedPending = false;  // the EOS linked-account lookup has not answered yet
@@ -69,6 +71,8 @@ std::string PlayerJson(const Ident& id) {
     if (!id.name.empty()) o += ",\"characterName\":" + JsonStr(id.name);
     if (!id.platformName.empty()) o += ",\"platformName\":" + JsonStr(id.platformName);
     if (!id.characterGuid.empty()) o += ",\"characterGuid\":" + JsonStr(id.characterGuid);
+    if (!id.character.id.empty())
+        o += ",\"character\":{\"id\":" + JsonStr(id.character.id) + ",\"name\":" + JsonStr(id.character.name) + "}";
     if (!id.steamId.empty()) o += ",\"steamId\":" + JsonStr(id.steamId);
     if (!id.xboxLiveId.empty()) o += ",\"xboxLiveId\":" + JsonStr(id.xboxLiveId);
     if (!id.gameId.empty()) o += ",\"platformId\":" + JsonStr("epic:" + id.gameId);
@@ -306,8 +310,9 @@ bool IdentFromPlayerState(void* state, Ident& out) {
     if (!ValidObject(state)) return false;
     out.gameId = PuidFromPlayerState(state);
     out.platformName = ReadFStringAt(state, PropOffOf(state, "PlayerNamePrivate"));
-    out.name = ReadFStringAt(state, PropOffOf(state, "CharacterName"));
-    if (out.name.empty()) out.name = ::state::CharacterName(out.gameId);
+    out.character = ::state::CurrentCharacter(out.gameId);
+    out.name = out.character.name;
+    if (out.name.empty()) out.name = ReadFStringAt(state, PropOffOf(state, "CharacterName"));
     out.characterGuid = GuidFromStruct(state, PropOffOf(state, "OwnerGuid"));
     Eos::Linked linked;
     out.linkedPending = Eos::LinkedAccounts(out.gameId, linked) == Eos::Lookup::Pending;
@@ -666,8 +671,10 @@ void HookLivePreLogin() {
 }
 
 // Resolves pending joins: the PUID is only valid once the client finished login, and the character
-// name arrives a few seconds later still (see research/log-grammar.md).
-const uint64_t kNameGraceMs = 12000;
+// arrives later still, up to a minute on a slow client (see research/log-grammar.md). The join waits
+// for it, because a player is reported as the character they play. A client that never gets there
+// is announced anyway, under its platform name.
+const uint64_t kCharacterGraceMs = 60000;
 // The Steam/Xbox ids come from an EOS backend query; a join announced without them would let Takaro
 // match the player on the EOS id alone.
 const uint64_t kLinkedGraceMs = 15000;
@@ -687,9 +694,7 @@ void ResolvePendingJoins() {
                 if (age > kJoinGiveUpMs) drop.push_back(c.controller);
                 continue;
             }
-            // Wait a little for the character name, but never block the event on it.
-            if (id.name.empty() && age < kNameGraceMs) continue;
-            if (id.name == id.platformName && !id.platformName.empty() && age < kNameGraceMs) continue;
+            if (::state::CurrentCharacter(id.gameId).id.empty() && age < kCharacterGraceMs) continue;
             if (id.linkedPending && age < kLinkedGraceMs) continue;
             c.id = id;
             c.playerState = PlayerStateOf(c.controller);
@@ -1551,25 +1556,17 @@ const size_t kMaxReadPerCycle = 512 * 1024;
 
 // Additional redaction on top of common.cpp's Redact(): the join/login URL carries the world
 // password base64-encoded as ?p=<...>.
-// `PlayerChar entered world [Account[XP:<puid>] Character Name[<name>] Guid[DCG:<guid>] Type[0]]`
-// is the only place the server prints the character name, and it arrives before the replicated
-// property is readable - so the log tail doubles as a name source.
+// The log tail is what tells one character's session from the next, see Progression::ParseEnteredWorld.
 void NoteJoinLine(const std::string& line) {
-    static const char* kMark = "PlayerChar entered world";
-    if (line.find(kMark) == std::string::npos) return;
-    size_t a = line.find("Account[XP:");
-    size_t n = line.find("Character Name[");
-    if (a == std::string::npos || n == std::string::npos) return;
-    a += strlen("Account[XP:");
-    size_t aEnd = line.find(']', a);
-    n += strlen("Character Name[");
-    size_t nEnd = line.find(']', n);
-    if (aEnd == std::string::npos || nEnd == std::string::npos) return;
-    std::string id = line.substr(a, aEnd - a);
-    std::string name = line.substr(n, nEnd - n);
-    if (!LooksLikePuid(id) || name.empty() || name.size() > 64) return;
-    for (auto& c : id) c = (char)tolower((unsigned char)c);
-    ::state::NoteCharacterName(id, name);
+    std::string login = Progression::ParseLoginRequest(line);
+    if (!login.empty()) {
+        ::state::ForgetCharacter(login);
+        return;
+    }
+    Progression::EnteredWorld entered;
+    if (!Progression::ParseEnteredWorld(line, entered)) return;
+    if (entered.characterId.empty()) PluginLog("events: join line for %s has no character GUID", entered.gameId.c_str());
+    ::state::NoteCharacter(entered.gameId, entered.characterId, entered.name);
 }
 
 std::string RedactLogLine(const std::string& in) {
@@ -1906,6 +1903,7 @@ void Events::Housekeep() {
                     if (wantJoins) { Phase("joins"); Perf::Scope sc("housekeep.joins"); ResolvePendingJoins(); }
                     if (wantReap) { Phase("reap"); Perf::Scope sc("housekeep.reap"); ReapGoneConnections(); }
                     if (wantHealth) { Phase("health"); Perf::Scope sc("housekeep.health"); PollHealthEdges(); }
+                    if (wantHealth) { Phase("progression"); Perf::Scope sc("housekeep.progression"); Actions::RefreshProgression(); }
                     Phase("idle");
                 } catch (...) {
                     PluginLog("events: housekeeping job threw");

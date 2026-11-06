@@ -144,6 +144,7 @@ Checked on server build 25991736, 2026-10-17. ✅ works, ⚠️ works with a lim
 | Player location | ✅ | |
 | Teleport | ✅ | Module teleports included. |
 | Player inventory | ✅ | |
+| Player levels and skills | ⚠️ | All 12 skills with level, XP and progress, tracked per character. Characters are kept by the player's game, so Takaro marks them as client-reported. Requires a Takaro version with Characters support. |
 | Item list | ✅ | In-game names. |
 | Entity list | ⚠️ | Only creatures the server has loaded so far. |
 | Locations | ⚠️ | Lodestones only; Takaro does not use this list. |

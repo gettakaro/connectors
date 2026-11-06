@@ -93,6 +93,8 @@ def protocol_v1(cert, key, state):
         names = [c['name'] for c in offered['capabilities']]
         assert len(names) == len(set(names)) and 'testReachability' not in names, names
         assert {'players.location', 'moderation.ban', 'events.player-connected', 'events.chat-message'} <= set(names), names
+        assert offered['capabilities'][names.index('players.progression')]['parameters'] == {'source': 'client-reported'}, offered
+        assert offered['capabilities'][names.index('players.characters')]['parameters'] == {'held': 'client'}, offered
         dims = offered['capabilities'][names.index('map')]['parameters']['dimensions']
         assert [d['id'] for d in dims] == ['overworld'] and dims[0]['source'] == {'type': 'none'}, dims
         # Game Profile: the game and connector identity, game.profile with the running version and icon.
@@ -105,6 +107,9 @@ def protocol_v1(cert, key, state):
         icon = profile['icon']
         assert re.fullmatch(r'[0-9a-f]{12}', icon['revision']) and 0 < icon['size'] <= 128 * 1024, icon
         eventually(lambda: run.health()['protocolVersion'] == 1)
+        run.request('v1-progression', 'getPlayerProgression', json.dumps({'gameId': 'f' * 32}))
+        answer = run.response('v1-progression')
+        assert answer.get('error') is None and answer['payload'] is None, answer
         run.request('v1-icon', 'getGameIcon', '{}')
         answer = run.response('v1-icon')
         assert 'error' not in answer or answer['error'] is None, answer
@@ -214,6 +219,8 @@ def replay(cert, key, state):
 def backlog_request_latency(cert, key, state):
     # A large unconfirmed backlog replayed after a restart must not delay Takaro requests past
     # its 10 s timeout (seen live with ~350 events: requests timed out for ~30 s after boot).
+    # The budget stays under that timeout, not near the idle time: this peer decodes every replayed
+    # frame in Python, and on a busy machine that alone takes seconds.
     PONGS.clear()
     run = Run(cert, key, state)
     try:
@@ -229,7 +236,7 @@ def backlog_request_latency(cert, key, state):
         for i in range(20):
             run.request(f'backlog-reach-{i}', 'testReachability')
         for i in range(20):
-            run.response(f'backlog-reach-{i}', timeout=max(0.1, 2 - (time.monotonic() - started)))
+            run.response(f'backlog-reach-{i}', timeout=max(0.1, 8 - (time.monotonic() - started)))
         elapsed = time.monotonic() - started
         eventually(lambda: not read(state / 'event-outbox.json')['pending'], timeout=60)
         print(f'production bridge 20 requests during 400-event replay plus 600 raw log lines answered in {elapsed:.2f}s: pass', flush=True)

@@ -13,6 +13,7 @@
 #include "events.h"
 #include "gamethread.h"
 #include "perf.h"
+#include "progression.h"
 #include "reflect.h"
 #include "state.h"
 #include "sym.h"
@@ -67,6 +68,8 @@ using FnCanSave = bool (*)(const void* gm, bool a, bool* out);
 using FnProcessEvent = void (*)(void* obj, void* func, void* params);
 using FnEngineExec = bool (*)(void* engine, void* world, const char16_t* cmd, void* device);
 using FnGetChatComponent = void* (*)(const void* pc);
+using FnSkillLevel = int (*)(const void* skills, const void* skillData);
+using FnXpForLevel = int (*)(const void* skills, int level);
 using FnConstructSender = void (*)(const void* pc, void* senderDataOut);
 using FnMalloc = void* (*)(size_t, uint32_t);
 
@@ -244,6 +247,7 @@ struct PlayerInfo {
     std::string gameId;
     std::string name;          // platform / account name
     std::string characterName; // in-game display name
+    std::string characterId;   // the game's character GUID, once the character has loaded
     std::string steamId;
     std::string xboxLiveId;
     int ping = 0;
@@ -309,9 +313,13 @@ bool ReadPlayer(void* ps, PlayerInfo& out) {
     out.playerState = ps;
     out.gameId = PlayerStateGameId(ps);
     out.name = ReadFStringAt(ps, Off(ps, "PlayerNamePrivate"));
-    out.characterName = CharacterNameOf(ps);
-    if (out.characterName.empty()) out.characterName = state::CharacterName(out.gameId);
-    else if (!out.gameId.empty()) state::NoteCharacterName(out.gameId, out.characterName);
+    state::SessionCharacter character = state::CurrentCharacter(out.gameId);
+    out.characterId = character.id;
+    out.characterName = character.name;
+    if (out.characterName.empty()) {
+        out.characterName = CharacterNameOf(ps);
+        if (!out.gameId.empty()) state::NoteCharacterName(out.gameId, out.characterName);
+    }
     Eos::Linked linked;
     Eos::LinkedAccounts(out.gameId, linked);
     out.steamId = linked.steamId;
@@ -360,6 +368,8 @@ std::string PlayerJson(const PlayerInfo& p) {
                     ",\"epicOnlineServicesId\":" + JsonStr(p.gameId) + ",\"platformId\":" + JsonStr("epic:" + p.gameId);
     if (!p.steamId.empty()) o += ",\"steamId\":" + JsonStr(p.steamId);
     if (!p.xboxLiveId.empty()) o += ",\"xboxLiveId\":" + JsonStr(p.xboxLiveId);
+    if (!p.characterId.empty())
+        o += ",\"character\":{\"id\":" + JsonStr(p.characterId) + ",\"name\":" + JsonStr(p.characterName) + "}";
     o += ",\"ping\":" + std::to_string(p.ping) + ",\"spawned\":" + (p.spawned ? "true" : "false") +
          ",\"online\":true,\"inWorld\":" + (Events::InWorld(p.gameId) ? "true" : "false") +
          ",\"connectedAt\":" + JsonStr(FirstSeen(p.gameId)) + "}";
@@ -389,6 +399,69 @@ bool PawnLocation(void* pawn, double loc[3], double rot[3]) {
     memcpy(loc, (const char*)root + lo, 24);
     if (ro >= 0 && MemReadable((const char*)root + ro, 24)) memcpy(rot, (const char*)root + ro, 24);
     return true;
+}
+
+// ---------------------------------------------------------------------------------------------
+// player progression
+
+Progression::Store g_progression;
+
+struct SkillInfo {
+    std::string key;
+    std::string name;
+    int maxLevel = 0;
+};
+// Game thread only. USkillData assets stay loaded for the life of the server, so a skill's names
+// are read once.
+std::map<void*, SkillInfo> g_skillInfo;
+
+const SkillInfo& SkillInfoOf(void* data) {
+    auto it = g_skillInfo.find(data);
+    if (it != g_skillInfo.end()) return it->second;
+    SkillInfo info;
+    info.key = Progression::TrackKey(ReadFStringAt(data, Off(data, "InternalName")));
+    info.name = TextToString(data, Off(data, "Name"));
+    int32_t maxOff = Off(data, "MaxLevel");
+    if (maxOff >= 0 && MemReadable((const char*)data + maxOff, 4)) info.maxLevel = *(const int32_t*)((const char*)data + maxOff);
+    return g_skillInfo.emplace(data, std::move(info)).first->second;
+}
+
+// Game thread. The FSkill array is the server's live copy; levels come from the game's own curve.
+// False when any row cannot be read: a partial reading is never published.
+bool ReadSkills(void* skills, std::vector<Progression::Track>& out) {
+    static void* skillStruct = Reflect::FindObjectByPath("/Script/Dominion", "Skill");
+    auto level = Fn<FnSkillLevel>("USkillComponent::GetSkillLevel");
+    auto xpForLevel = Fn<FnXpForLevel>("USkillComponent::GetTotalXPNeededForLevel");
+    auto xpForNext = Fn<FnSkillLevel>("USkillComponent::GetTotalXPNeededForNextLevel");
+    if (!skillStruct || !level || !xpForLevel || !xpForNext) return false;
+    int32_t arrOff = Off(skills, "Skills");
+    int32_t xpOff = OffOf(skillStruct, "CurrentXP"), dataOff = OffOf(skillStruct, "SkillData");
+    const char* sizeAt = (const char*)skillStruct + Reflect::Lay().structPropertiesSize;
+    if (arrOff < 0 || xpOff < 0 || dataOff < 0 || !MemReadable(sizeAt, 4) || !MemReadable((const char*)skills + arrOff, 16))
+        return false;
+    const int32_t stride = *(const int32_t*)sizeAt;
+    if (xpOff + 4 > stride || dataOff + 8 > stride) return false;
+    TArray<char> arr;
+    memcpy(&arr, (const char*)skills + arrOff, sizeof arr);
+    if (arr.Num == 0) return true;
+    if (!arr.Data || arr.Num < 0 || arr.Num > 200 || !MemReadable(arr.Data, (size_t)arr.Num * stride)) return false;
+    for (int32_t i = 0; i < arr.Num; i++) {
+        const char* row = arr.Data + (size_t)i * stride;
+        void* data = *(void* const*)(row + dataOff);
+        if (!data || !MemReadable(data, 0x40)) return false;
+        const SkillInfo& info = SkillInfoOf(data);
+        if (info.key.empty()) return false;
+        Progression::Track t;
+        t.key = info.key;
+        t.name = info.name;
+        t.level = level(skills, data);
+        // A character file is the client's, so its XP can be anything.
+        t.experience = std::max(0, *(const int32_t*)(row + xpOff));
+        if (info.maxLevel <= 0 || t.level < info.maxLevel)
+            t.hasProgress = Progression::Progress(t.experience, xpForLevel(skills, t.level), xpForNext(skills, data), t.progress);
+        out.push_back(std::move(t));
+    }
+    return Progression::UniqueKeys(out);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1085,6 +1158,10 @@ void Actions::Init() {
     SetCap("playerLocation", "ok");
     SetCap("playerInventory", Sym::Addr("UInventoryComponent::GetAllItems") ? "ok" : "degraded",
            Sym::Addr("UInventoryComponent::GetAllItems") ? "" : "UInventoryComponent::GetAllItems unresolved");
+    const bool skillsResolved = Sym::Addr("USkillComponent::GetSkillLevel") &&
+                                Sym::Addr("USkillComponent::GetTotalXPNeededForLevel") &&
+                                Sym::Addr("USkillComponent::GetTotalXPNeededForNextLevel");
+    SetCap("playerProgression", skillsResolved ? "ok" : "degraded", skillsResolved ? "" : "USkillComponent functions unresolved");
     SetCap("listItems", "degraded", "item catalogue not built yet (built on the first world tick)");
     SetCap("listEntities", "degraded",
            "AI data assets are streamed in on demand: the list is the AI character classes and data assets "
@@ -1209,6 +1286,28 @@ Actions::Result Actions::PlayerInventory(const std::string& gameId) {
             return o + "]";
         }};
     });
+}
+
+Actions::Result Actions::PlayerProgression(const std::string& gameId) {
+    std::vector<Progression::Track> tracks;
+    std::string id = NormalizeGameId(gameId);
+    if (!g_progression.Find(id, state::CurrentCharacter(id).id, tracks))
+        return {404, ErrJson("no reading for this player's character")};
+    return {200, Progression::TracksJson(tracks)};
+}
+
+void Actions::RefreshProgression() {
+    for (const auto& p : ReadPlayers()) {
+        // The character arrives from the client and loads inside the first SetPawn. Until then the
+        // skills are defaults, and a reading would be a false level change.
+        if (p.gameId.empty() || !p.pawn || !p.controller) continue;
+        std::string id = NormalizeGameId(p.gameId), characterId = state::CurrentCharacter(id).id;
+        if (characterId.empty()) continue;
+        void* skills = ReadPtrAt(p.controller, Off(p.controller, "SkillComponent"));
+        if (!skills) continue;
+        std::vector<Progression::Track> tracks;
+        if (ReadSkills(skills, tracks)) g_progression.Put(id, characterId, std::move(tracks));
+    }
 }
 
 Actions::Result Actions::Items(const std::string& search) {
