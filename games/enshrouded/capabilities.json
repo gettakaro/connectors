@@ -88,7 +88,11 @@
     },
     "getPlayerProgression": {
       "status": "proven",
-      "note": "protocol 1 only, players.progression with source client-reported: the character is stored on the player's PC (character0.ksd), the server only holds it while the player is online. One track `character` (level, experience, progress = experience / experienceRequired; experience restarts at each level) from the cached ecs::NetworkPlayerAttributes read; [] until a level is read or for a known offline player, null for an unknown player. Needs the attributes* layout in gamedata. Live on staging 2026-11-05 (game build 1287369): progression filled on its own after a join and survived going offline, player-level-changed fired once per change, experience gains fired nothing, history and profile card matched the game. A player switching to another character reads as a level change"
+      "note": "protocol 1 only, players.progression with source client-reported: the character is stored on the player's PC (character0.ksd), the server only holds it while the player is online. One track `character` (level, experience, progress = experience / experienceRequired; experience restarts at each level) from the cached ecs::NetworkPlayerAttributes read; [] until a level is read or for a known offline player, null for an unknown player. Needs the attributes* layout in gamedata. Live on staging 2026-11-05 (game build 1287369): progression filled on its own after a join and survived going offline, player-level-changed fired once per change, experience gains fired nothing, history and profile card matched the game. Progression follows the character the player joined with (see playersCharacters)"
+    },
+    "playersCharacters": {
+      "status": "pending",
+      "note": "protocol 1 only, players.characters with held client and no ends: Enshrouded keeps several characters on the player's PC and a player picks one at each join; death never ends one. character {id, name} on getPlayers, getPlayer and player events. id = the keen::CharacterId the client sends at login, read from the player slot (layout.slotCharacterId, only proven on 1287369), 32 hex digits, stable across saves and not derived from the name. A build without the key sends no character and Takaro keeps its implicit one. A protocol 0 connection never sees it"
     },
     "getGameIcon": {
       "status": "proven",
