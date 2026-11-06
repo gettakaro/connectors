@@ -280,4 +280,19 @@ tj::Value ProgressionJson(bool knownPlayer, const std::optional<ProgressReading>
     return tracks;
 }
 
+std::optional<Survivor> MakeSurvivor(uint64_t playerDataId, const std::string& name, const std::string& accountName) {
+    if (playerDataId == 0) return std::nullopt;
+    std::string shown = name.empty() ? accountName : name;
+    if (shown.empty()) shown = "Survivor";
+    return Survivor{std::to_string(playerDataId), shown.substr(0, 255)};
+}
+
+tj::Value SurvivorJson(const Survivor& survivor) {
+    return tj::obj({{"id", tj::str(survivor.id)}, {"name", tj::str(survivor.name)}});
+}
+
+bool IsSurvivorSwitch(const std::optional<Survivor>& known, const Survivor& seen) {
+    return known && known->id != seen.id;
+}
+
 }  // namespace takaro

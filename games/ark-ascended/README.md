@@ -114,6 +114,7 @@ Checked on game 96.9 (Steam build 26334129), 2026-11-06. ✅ works, ⚠️ works
 | Teleport | ✅ | Online players. |
 | Player inventory | ⚠️ | Carried and equipped items of an online player. Account cosmetics are left out. |
 | Player levels and skills | ⚠️ | Character level, experience and progress to the next level. The level rises when the player spends the point, as in the game. ARK has no separate skill levels. |
+| Characters | ⚠️ | Each survivor is its own character, with its own level. Create New Survivor starts a new one. Requires a Takaro version with Characters support. |
 | Item list | ✅ | All items, with their in-game names. |
 | Entity list | ✅ | Creatures, with their in-game names. |
 | Locations | ✅ | The map's player spawn points, as "Spawn point 1" and so on. |

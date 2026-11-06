@@ -46,6 +46,25 @@ static void test_progression() {
     CHECK(atCap.as_array()[0].get("progress") == nullptr);
 }
 
+static void test_survivor() {
+    CHECK(!MakeSurvivor(0, "tester", "Limon"));
+    const auto tester = MakeSurvivor(298275735, "tester", "Limon");
+    CHECK(tester && tester->id == "298275735" && tester->name == "tester");
+    CHECK(MakeSurvivor(1, "", "Limon")->name == "Limon");
+    CHECK(MakeSurvivor(1, "", "")->name == "Survivor");
+    CHECK(MakeSurvivor(1, std::string(300, 'x'), "")->name.size() == 255);
+
+    const tj::Value json = SurvivorJson(*tester);
+    CHECK(json.get("id")->as_string() == "298275735");
+    CHECK(json.get("name")->as_string() == "tester");
+
+    const auto second = MakeSurvivor(524693371, "second", "Limon");
+    CHECK(!IsSurvivorSwitch(std::nullopt, *tester));
+    CHECK(!IsSurvivorSwitch(tester, *tester));
+    CHECK(!IsSurvivorSwitch(tester, *MakeSurvivor(298275735, "renamed", "Limon")));
+    CHECK(IsSurvivorSwitch(tester, *second));
+}
+
 static void test_iso() {
     int64_t t = 0;
     CHECK(ParseIso8601("1970-01-01T00:00:00Z", t) && t == 0);
@@ -171,6 +190,7 @@ int main() {
     const fs::path dir = fs::temp_directory_path() / ("logic-test-" + std::to_string(::getpid()));
     test_iso();
     test_progression();
+    test_survivor();
     test_console();
     test_log_filter();
     test_item_code();

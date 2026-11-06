@@ -49,6 +49,16 @@ std::optional<double> ProgressBetween(double experience, double previous, double
 // Null for a player the game does not know, [] for a known player with no reading yet.
 tj::Value ProgressionJson(bool knownPlayer, const std::optional<ProgressReading>& reading);
 
+// One survivor. PlayerDataID stays through deaths and restarts; Create New Survivor replaces it.
+struct Survivor {
+    std::string id, name;
+};
+// Empty when the game has no id for the player yet. The name falls back on the account name.
+std::optional<Survivor> MakeSurvivor(uint64_t playerDataId, const std::string& name, const std::string& accountName);
+tj::Value SurvivorJson(const Survivor& survivor);
+// True when the player was already playing another survivor.
+bool IsSurvivorSwitch(const std::optional<Survivor>& known, const Survivor& seen);
+
 // The game's BanList.txt: one "id,name,minutes" line per ban.
 struct NativeBan {
     std::string id, name;
