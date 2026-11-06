@@ -419,6 +419,7 @@ class Adapter {
       }
       return out;
     }
+    if (action == "getPlayerProgression") return player_progression(args);
     if (action == "giveItem") return give_item(args);
     if (action == "teleportPlayer") return teleport(args);
     if (action == "listItems" || action == "listEntities") return catalog(action == "listEntities", args);
@@ -567,6 +568,29 @@ class Adapter {
       out.push(json::obj({{"code", json::str(code)}, {"name", json::str(name)}}));
     }
     return out;
+  }
+
+  // Answers from the game-thread sample. A known player without a reading yet
+  // (no body so far) has no tracks; null is only for a player the game never saw.
+  json::Value player_progression(const json::Value& args) {
+    if (protocol_version_.load() < 1) withhold("getPlayerProgression is unavailable on this build (protocol v1 only)");
+    std::string id;
+    try {
+      id = player_id(args);
+    } catch (const Withhold&) {
+      return json::Value::null();
+    }
+    json::Value out = json::Value::array();
+    if (const auto reading = gate_.progression(id)) {
+      json::Value track = json::obj({{"key", json::str("character")}, {"name", json::str("Level")},
+                                     {"level", json::num(reading->level)},
+                                     {"experience", json::num(reading->experience)}});
+      if (reading->progress) track.set("progress", json::num(*reading->progress));
+      out.push(std::move(track));
+      return out;
+    }
+    if (gate_.player(id) || !known_.name(id).empty()) return out;
+    return json::Value::null();
   }
 
   json::Value list_locations(const json::Value& args) {

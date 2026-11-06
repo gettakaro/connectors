@@ -75,6 +75,13 @@ struct Position {
   int32_t actor_serial = 0;
 };
 
+// One verified game-thread reading of a player's character level.
+struct Progression {
+  int32_t level = 0;
+  double experience = 0;
+  std::optional<double> progress;
+};
+
 struct InventoryItem {
   std::string code;
   std::string name;
@@ -408,6 +415,19 @@ class Server {
     if (ping && *ping >= 0) it->second.ping = ping;
   }
 
+  // Kept after logout: Takaro may still ask, and the level does not change offline.
+  void record_progression(const std::string& id, const Progression& reading) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (players_.contains(id)) progressions_[id] = reading;
+  }
+
+  std::optional<Progression> progression(const std::string& id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = progressions_.find(id);
+    if (it == progressions_.end()) return std::nullopt;
+    return it->second;
+  }
+
   void clear_position(const std::string& id) {
     std::lock_guard<std::mutex> lock(mutex_);
     positions_.erase(id);
@@ -691,6 +711,7 @@ class Server {
   std::map<std::string, Position> positions_;
   std::map<std::string, Position> departed_positions_;
   std::map<std::string, Position> death_positions_;
+  std::map<std::string, Progression> progressions_;
   std::map<std::string, uint64_t> death_event_seq_;
   std::map<std::string, InventorySnapshot> inventories_;
   std::vector<CatalogItem> catalog_items_;
