@@ -1,5 +1,7 @@
 #include "conan/reads.h"
 
+#include "conan/shutdown.h"
+
 #include "common.h"
 #include "conan/layout_probe.h"
 #include "conan/text.h"
@@ -746,6 +748,7 @@ ActionResult ReadService::Execute(const std::string& action, const JsonValue& ar
 }
 
 ActionResult ReadService::ExecuteImpl(const std::string& action, const JsonValue& args) {
+    if (action == "getPlayers" && EngineExiting()) return Raw("[]");
     if (action == "listItems" || action == "listEntities" || action == "listLocations") {
         // No mu_ here: a list action must not wait behind a catalogue build in progress.
         calls_++;
