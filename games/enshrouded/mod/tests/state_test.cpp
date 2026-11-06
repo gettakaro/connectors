@@ -88,5 +88,14 @@ int main(){
  assert(st.PlayersJson().find("\"character\":{\"id\":\"8471ed03199476459871b310d8735318\",\"name\":\"Character 1\"}")!=std::string::npos);
  st.SetCharacterId("Nobody","00");
  assert(count2(st.PlayersJson(),"\"character\":")==1);
+ // two online players on one Steam name: the read can't be tied to either, so neither gets it
+ login("8(9)","76561190000000008","9","Twin");
+ login("9(10)","76561190000000009","10","Twin");
+ st.Housekeep();
+ st.SetCharacterId("Twin","aa");
+ st.SetCharacterName("Twin","Same");
+ st.SetLevel("Twin",7,1,2);
+ assert(st.PlayersJson().find("\"id\":\"aa\"")==std::string::npos);
+ assert(st.PlayersJson().find("\"level\":7")==std::string::npos);
  std::cout<<"PASS\n";
 }

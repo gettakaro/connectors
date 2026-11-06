@@ -97,6 +97,7 @@ private:
     void FinalizeLoginLocked();
     void EmitConnectedLocked(PlayerRecord& p);
     void BindMachineLocked(size_t idx, const std::string& machine);
+    PlayerRecord* OnlyOnlineNamedLocked(const std::string& persona);
     std::string PlayerJsonLocked(const PlayerRecord& p, bool online = true) const;
     void LoadGroupsLocked();
 
