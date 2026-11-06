@@ -69,6 +69,8 @@ namespace TakaroEmpyrion.Protocol
         public int OutboxCapacity = 500;
         /// <summary>When set, identify offers protocol versions [0, 1] with this Capability Manifest.</summary>
         public Func<JArray> Manifest;
+        /// <summary>When set, identify names the game and the connector.</summary>
+        public GameProfile Profile;
     }
 
     public sealed class InboundRequest
@@ -315,6 +317,7 @@ namespace TakaroEmpyrion.Protocol
         {
             var p = new JObject { ["identityToken"] = _opt.IdentityToken, ["name"] = _opt.ServerName };
             if (!string.IsNullOrEmpty(_opt.RegistrationToken)) p["registrationToken"] = _opt.RegistrationToken;
+            _opt.Profile?.AddToIdentify(p);
             if (_opt.Manifest != null)
             {
                 p["protocolVersions"] = new JArray(Capabilities.OfferedVersions);

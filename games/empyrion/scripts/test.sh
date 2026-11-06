@@ -31,5 +31,5 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$here:/src" -v "$managed
   csc -nologo -langversion:7.3 -target:exe -out:bin/tests/contract-tests.exe \
     -r:/managed/Mif.dll -r:/managed/ModApi.dll -r:/managed/Newtonsoft.Json.dll \
     -r:/usr/lib/mono/4.5/Facades/netstandard.dll -r:System.Net.Http.dll -r:System.IO.Compression.dll \
-    "${sources[@]}"
+    -resource:assets/icon-256.png,TakaroEmpyrion.icon-256.png "${sources[@]}"
   mono bin/tests/contract-tests.exe capabilities.json'
