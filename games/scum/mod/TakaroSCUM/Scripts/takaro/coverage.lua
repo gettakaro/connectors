@@ -155,7 +155,7 @@ M.actions = {
     responseShape = "{ success, errorMessage? }",
     liveVerification = live("refused by default; with ENABLE_DESTRUCTIVE_COMMANDS=true answered success and the "
       .. "server exited cleanly 15 s later"),
-    reason = "Gated by ENABLE_DESTRUCTIVE_COMMANDS; KismetSystemLibrary:QuitGame after the response is sent.",
+    reason = "Gated by ENABLE_DESTRUCTIVE_COMMANDS; KismetSystemLibrary:ExecuteConsoleCommand quit after the response is sent.",
   },
   getMapInfo = {
     status = "schema-fallback",

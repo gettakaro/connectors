@@ -1081,7 +1081,8 @@ function Game:shutdown()
   local ksl = self:static("_ksl", M.UE.KismetSystem)
   local gm = self:game_mode()
   if not (ksl and gm) then return { ok = false, reason = "world not loaded" } end
-  ksl:QuitGame(gm, nil, 0, false)
+  -- QuitGame needs a player controller and silently does nothing on an empty server.
+  ksl:ExecuteConsoleCommand(gm, "quit", nil)
   return { ok = true }
 end
 

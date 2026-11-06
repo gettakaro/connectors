@@ -117,7 +117,7 @@ local function world(opts)
       end
       return obj({ IsValid = function() return false end })
     end,
-    QuitGame = function() rec("QuitGame") end,
+    ExecuteConsoleCommand = function(_, _, command) rec("ExecuteConsoleCommand", command) end,
   })
   W.gps = obj({
     BeginDeferredActorSpawnFromClass = function(_, _ctx, cls)
@@ -209,6 +209,11 @@ t.test("getPlayers lists controllers with a SteamID64, name, ping and the login-
   t.deep(r.value, { { steamId = ID1, name = "Alice", ping = 28, ip = "10.0.0.5" } })
 end)
 
+t.test("shutdown quits through the console, which also works with nobody online", function()
+  local W = world()
+  t.ok(W.g:shutdown().ok)
+  t.eq(W.find("ExecuteConsoleCommand")[1][1], "quit")
+end)
 t.test("the catalogues count as ready when items and entities are both built", function()
   local W = world()
   t.eq(W.g:catalogs_done(), false)
