@@ -39,6 +39,7 @@ TARGETED_BASELINE = (
     "minecraft",
     "rust",
     "scum",
+    "starrupture",
     "terraria",
     "tf2",
     "valheim",
@@ -538,7 +539,7 @@ def test_every_catalog_game_registers_sources_roles_targets_and_declared_rigs() 
     # image with i386 libraries plus MetaMod:Source and SourceMod, which no catalog input pins yet;
     # games/tf2/scripts/run-live-smoke.sh covers a local server meanwhile. Keep those gaps visible
     # and make any other missing rig fail instead of silently weakening the rollout audit.
-    assert missing_rigs == ["enshrouded", "scum", "tf2"]
+    assert missing_rigs == ["enshrouded", "scum", "starrupture", "tf2"]
 
 
 def test_every_catalog_connector_releases_through_the_shared_workflow() -> None:

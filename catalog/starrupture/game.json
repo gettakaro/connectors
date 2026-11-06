@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "starrupture",
+  "name": "StarRupture",
+  "connector": "starrupture",
+  "platforms": [
+    "windows"
+  ],
+  "sources": {
+    "steam": {
+      "provider": "steam",
+      "baseUrl": "https://store.steampowered.com",
+      "watch": {
+        "kind": "game",
+        "component": "starrupture",
+        "app": 3809400,
+        "os": "windows",
+        "depots": [
+          "3809401"
+        ],
+        "channels": {
+          "public": {
+            "branch": "public"
+          }
+        },
+        "knownBranches": [],
+        "readinessNote": "The connector is a ModLoader plugin (TakaroStarRupture.dll). ModLoader refuses any game build but its own, and the plugin is compiled against the Game SDK for that build, so every new game build waits for a matching ModLoader release, a re-pin and a live retest."
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "projectDir": "games/starrupture"
+  },
+  "componentRoles": {
+    "mod": {
+      "description": "The release zip unpacked into StarRupture/Binaries/Win64: the pinned ModLoader and the plugin ModLoader/Plugins/TakaroStarRupture.dll with its config template. The plugin holds the Takaro connection itself; no sidecar",
+      "artifactPattern": "takaro-starrupture-{target}-{version}.zip"
+    }
+  },
+  "legacyAssetAliases": {}
+}
