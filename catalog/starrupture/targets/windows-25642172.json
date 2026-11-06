@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "id": "windows-25642172",
+  "game": "starrupture",
+  "platform": "windows",
+  "revision": "25642172",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-11-06",
+    "evidence": [
+      "games/starrupture/README.md (What works, what doesn't)",
+      "games/starrupture/capabilities.json"
+    ],
+    "notes": "Steam pin of the public branch: app 3809400, Windows depot 3809401 manifest 3659990775896995763, build 25642172, game 0.3.5.127004. ModLoader v1.22.1 requires game version suffix CL-127004. The plugin is cross-compiled with clang-cl against the pinned MSVC CRT and Windows SDK and against the Plugin SDK and Game SDK at the commits below."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 3809400,
+      "branch": "public",
+      "buildid": 25642172,
+      "os": "windows",
+      "arch": "64",
+      "depots": {
+        "3809401": {
+          "manifest": "3659990775896995763",
+          "size": 21349240119,
+          "files": 128
+        }
+      },
+      "files": {
+        "StarRupture/Binaries/Win64/StarRuptureServerEOS-Win64-Shipping.exe": {
+          "sha256": "3a0f160767b24a621a73b75dd6d43ae262ceef56127b340fef30860ef8041757",
+          "size": 233178112
+        },
+        "StarRuptureServerEOS.exe": {
+          "sha256": "77644617d5cffcd967c60ed2d1a92acf31560d65d2fb5eb861db8c6c0ae08e9f",
+          "size": 273920
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "debian",
+      "tag": "13.7",
+      "digest": "sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5"
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/starrupture/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "debian",
+      "tag": "13.7",
+      "digest": "sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5"
+    },
+    "deps": {
+      "xwin": {
+        "coordinate": "Jake-Shadle:xwin:0.10.0",
+        "sha256": "d870eb4b2f390878af6da1ccd3cf321d22fcb72720984853b4be732ae597fc88",
+        "resolvedCoordinate": "https://github.com/Jake-Shadle/xwin/releases/download/0.10.0/xwin-0.10.0-x86_64-unknown-linux-musl.tar.gz"
+      },
+      "msvc-sysroot": {
+        "coordinate": "microsoft:msvc-crt-14.44.17.14+winsdk:10.0.26100",
+        "sha256": "1c93dbe4516d5062c4d7c28558dc941daab202eae70a73382be0383c7d3746bd"
+      },
+      "modloader": {
+        "coordinate": "AlienXAXS:StarRupture-ModLoader:v1.22.1",
+        "sha256": "0361294ecacd31361fecdc672f05ffe15ead6ae4ffd27f40135c03e1f47218df",
+        "resolvedCoordinate": "https://github.com/AlienXAXS/StarRupture-ModLoader/releases/download/v1.22.1/StarRupture-ModLoader-Server-v1.22.1.zip"
+      },
+      "plugin-sdk": {
+        "coordinate": "AlienXAXS:StarRupture-Plugin-SDK:da686928d2d322ca266054b1ba088b438e5ee728",
+        "sha256": "a55ef994dcc8b5cecc0803d79ccfe24a8feed91eea8ab9ecec65137ccd9f7c67"
+      },
+      "game-sdk": {
+        "coordinate": "AlienXAXS:StarRupture-Game-SDK:659656c002e883312db46433c7b388a1184d6ad9",
+        "sha256": "67de85710e8099b9d438d52cccb6600011b44546d684f95c50183e6edfaae0a5"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "mod",
+      "artifact": "takaro-starrupture-windows-25642172-{version}.zip",
+      "installDir": "StarRupture/Binaries/Win64"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": []
+  },
+  "preserve": [
+    "StarRupture/Saved/",
+    "DSSettings.txt",
+    "Password.json",
+    "StarRupture/Binaries/Win64/ModLoader/Plugins/config/TakaroStarRupture.ini",
+    "StarRupture/Binaries/Win64/ModLoader/Plugins/config/TakaroStarRupture.bans"
+  ],
+  "notes": "The Windows server is not run in a container anywhere in this repository: the runtime image is recorded only because the schema requires one, and runtime verification is off for this connector. The plugin is cross-compiled on Linux (clang-cl and lld-link 1:19.1.7-3+b1 from the pinned Debian 13.7 image; MSVC CRT 14.44.17.14 and Windows SDK 10.0.26100 fetched by the pinned xwin and checked against a tree digest). The Plugin SDK and Game SDK are fetched at the pinned commit, checked against a tree digest of include/ and Server/, and never packaged."
+}

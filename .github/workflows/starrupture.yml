@@ -1,0 +1,106 @@
+name: StarRupture Connector
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'games/starrupture/**'
+      - 'catalog/starrupture/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/starrupture.yml'
+      - '.github/workflows/connector-release.yml'
+  pull_request:
+    paths:
+      - 'games/starrupture/**'
+      - 'catalog/starrupture/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/starrupture.yml'
+      - '.github/workflows/connector-release.yml'
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+  # Manual re-run to (re)attach assets to an existing release tag, for recovering a
+  # release that release-please published without them.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to embed in the built artifact (e.g. 0.1.0)
+        required: true
+        type: string
+      tag:
+        description: Existing release tag to upload the assets to (e.g. starrupture-v0.1.0)
+        required: true
+        type: string
+
+concurrency:
+  group: starrupture-${{ github.ref }}-${{ inputs.tag || 'ci' }}
+  # A push during a release run queues behind it; only ordinary CI runs are cancelled.
+  cancel-in-progress: ${{ inputs.tag == '' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The same commit the release job builds: a recovery run for an older tag is
+          # gated on that tag's sources, never on whatever main has become.
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
+      # The plugin's portable logic and protocol layer against fakes, on Linux.
+      - name: Native tests
+        run: |
+          docker run --rm -v "$PWD/games/starrupture/mod:/mod:ro" \
+            gcc:14@sha256:a257536c9b7a0ee193c1880f2d691358d2c9760ef0ede3ee741aa243789743c7 \
+            bash -c 'set -euo pipefail
+              cp -r /mod /tmp/mod
+              cd /tmp/mod && bash scripts/run-native-tests.sh'
+
+  params:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.params.outputs.version }}
+      tag: ${{ steps.params.outputs.tag }}
+      publish: ${{ steps.params.outputs.publish }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve release params
+        id: params
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          IN_TAG: ${{ inputs.tag }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEV_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/release-params.sh starrupture >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: [test, params]
+    uses: ./.github/workflows/connector-release.yml
+    secrets: inherit
+    with:
+      connector: starrupture
+      version: ${{ needs.params.outputs.version }}
+      tag: ${{ needs.params.outputs.tag }}
+      publish: ${{ needs.params.outputs.publish }}
+      pr_number: ${{ github.event.pull_request.number }}
+      # The StarRupture dedicated server is Windows-only and no runtime image runs it here, so the
+      # release claims contract verification: the native tests above, the DLL export check and the
+      # clang-cl build. Live proof comes from the runbook against a real Windows server.
+      runtime: false

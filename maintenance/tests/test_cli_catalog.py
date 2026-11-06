@@ -341,6 +341,7 @@ def test_the_wired_fixture_serves_exactly_the_targets_it_says(wired: Any) -> Non
         "proton-1024233": "no repinner for platform 'proton'",
         "tshock-v6.2.1": "no repinner for platform 'tshock'",
         "windows-25639945": "no repinner for platform 'windows'",
+        "windows-25642172": "no repinner for platform 'windows'",
         "windows-25738716": "no repinner for platform 'windows'",
         "windows-25792439": "no repinner for platform 'windows'",
         "windows-25803875": "no repinner for platform 'windows'",

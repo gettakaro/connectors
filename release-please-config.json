@@ -120,6 +120,14 @@
         { "type": "generic", "path": "mod/TakaroSCUM/Scripts/takaro/app.lua" }
       ]
     },
+    "games/starrupture": {
+      "release-type": "simple",
+      "component": "starrupture",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        { "type": "generic", "path": "mod/src/version.h" }
+      ]
+    },
     "games/tf2": {
       "release-type": "simple",
       "component": "tf2",

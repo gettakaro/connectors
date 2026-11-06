@@ -65,6 +65,9 @@ build-release-tf2 version out-dir='dist' target='linux-25995664':
 build-release-empyrion version out-dir='dist' target='windows-25490402':
     ./games/empyrion/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
 
+build-release-starrupture version out-dir='dist' target='windows-25642172':
+    ./games/starrupture/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
+
 # === Terraria Plugin ===
 
 # Prepare TShock reference assemblies
