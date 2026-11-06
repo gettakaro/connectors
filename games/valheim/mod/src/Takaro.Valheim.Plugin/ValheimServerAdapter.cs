@@ -57,6 +57,8 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
                 : null;
     }
 
+    public static bool WorldReady => notReadyReason is null;
+
     // Answered off the main thread from the readiness the game loop last published.
     public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default)
     {
