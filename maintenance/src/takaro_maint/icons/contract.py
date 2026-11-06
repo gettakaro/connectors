@@ -9,6 +9,7 @@ stricter ones, at build time and again at publish time.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
 from collections.abc import Iterable
@@ -122,16 +123,24 @@ def check_pack_dir(path: Path) -> list[str]:
     for name in sorted(objects - referenced):
         problems.append(f"{name}: not referenced by the index")
     for name in sorted(objects):
-        problems.extend(_check_object(path / name, name))
+        problems.extend(check_object(name, (path / name).read_bytes()))
     return problems
 
 
-def _check_object(file: Path, name: str) -> list[str]:
-    data = file.read_bytes()
+def validate_game(game: str) -> None:
+    """Refuse a game that is not a plain identifier; ``_store`` is named explicitly because it is Takaro's."""
+    if game.startswith("_"):
+        raise UsageError(f"refusing game {game!r}: {STORE_PREFIX} belongs to Takaro's Icon Store and is never written")
+    if not is_game_identifier(game):
+        raise UsageError(f"{game!r} is not a valid game identifier (lowercase letters, digits and '-', at most 64)")
+
+
+def check_object(name: str, data: bytes) -> list[str]:
+    """Contract problems of one object's bytes: its name is its sha256 and it is a WebP of at most 128px."""
     if object_name(data) != name:
         return [f"{name}: sha256 of the bytes does not match the name"]
     try:
-        with Image.open(file, formats=["WEBP"]) as image:
+        with Image.open(io.BytesIO(data), formats=["WEBP"]) as image:
             width, height = image.size
     except (UnidentifiedImageError, OSError) as exc:
         return [f"{name}: not a readable WebP ({exc})"]

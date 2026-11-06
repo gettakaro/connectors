@@ -11,9 +11,11 @@ go to the icon buckets, and they are not kept in git (see [support-policy.md](su
 |---|---|
 | `icons build --recipes FILE --out DIR` | Render a recipe document into `DIR/pack/<game>/`, plus a coverage report, a contact sheet and a build record outside the pack. `DIR` must be absent or empty. |
 | `icons publish --env staging --pack DIR [--dry-run]` | Merge the pack into the live index and upload it to the staging bucket. `DIR` is `…/pack/<game>`. |
+| `icons promote --game G [--dry-run]` | Copy a game's pack from staging to production with a rolling merge. |
+| `icons set-enabled --env E --game G --enabled true\|false [--dry-run]` | Rewrite only the index's `enabled` flag. |
+| `icons takedown --env E --game G (--code C… \| --object O…) [--dry-run]` | Remove exactly the named codes or objects. |
 
-Not built yet: `icons promote`, `icons set-enabled` and `icons takedown` (#810, the only commands
-that write production or delete), catalog-derived recipes with `--game/--target/--client` (#744) and
+Not built yet: catalog-derived recipes with `--game/--target/--client` (#744) and
 the live item-code list with `--codes` (#811, skipped for now, so coverage is measured against codes
 derived from game data and the report says so).
 
@@ -114,24 +116,89 @@ stdout is one JSON document with `objects` (`uploaded` or `wouldUpload`, and `sk
 (`action`, `codes`, `enabled`, `added`, `repointed`, `kept`, `unchanged`). The endpoint, bucket and
 keys are never printed.
 
+## Promote
+
+`icons promote --game G [--dry-run]` reads staging and writes production; it has no `--env`. It
+never writes staging.
+
+1. Validate the game (`_store` and malformed names exit 2), resolve both buckets, and refuse when
+   staging and production resolve to the same endpoint and bucket. No request is made before this.
+2. `GET` the staging index (404 is exit 4: publish it to staging first) and the production index
+   (404 means none yet). An invalid index of either exits 7.
+3. Merge with the same rolling merge as `publish`: the production index keeps every code it has,
+   staging codes are added, a code in both points at the staging object, and production's `enabled`
+   is kept (a pack new to production takes staging's flag). A disabled result prints a warning.
+4. `HEAD` every object staging references in production. Production-only codes' objects are not
+   touched.
+5. A dry run checks those objects exist in staging and stops.
+6. `GET` every missing object from staging and check it (hash equals its name, a WebP of at most
+   128px) before any production write.
+7. `PUT` the missing objects, then the index last, then `GET` it back. An index that merges to the
+   live bytes is not uploaded.
+
+stdout: `from`, `to`, `game`, `dryRun`, `objects` (`copied` or `toCopy`, and `skipped`) and `index`
+(as for `publish`).
+
+## Set-enabled
+
+`icons set-enabled --env staging|production --game G --enabled true|false [--dry-run]` rewrites the
+index with the same `game` and `icons` and the requested flag, then reads it back. A real flip makes
+exactly three requests: `GET` index, `PUT` index, `GET` index. No object is read, written or
+deleted. Setting the current value is `unchanged`. stdout: `env`, `game`, `dryRun`,
+`enabled: {from, to}` and `index: {action, codes}`.
+
+## Takedown
+
+`icons takedown --env staging|production --game G (--code C… | --object O…) [--dry-run]`, both
+flags repeatable. Exactly one of the two kinds must be given; each `--object` is a bare
+`<sha256>.webp` name as it appears in the index.
+
+- `--code`: exactly those codes leave the index. Their objects are deleted unless another remaining
+  code still points at them; those are retained and reported. An unknown code is exit 2.
+- `--object`: those objects are deleted and every code pointing at them leaves the index. An object
+  that is not indexed is still deleted when it exists in the bucket (art orphaned by a repointed
+  code); one that is neither indexed nor in the bucket is exit 2.
+
+The index (`enabled` kept, `icons` may become empty) is republished and read back first, then each
+object is deleted and checked with a `HEAD`. If a delete fails, the exit is 10 with
+`pendingObjects`; the index is already republished, so rerun with `--object <pending…>`. stdout:
+`env`, `game`, `dryRun`, `removedCodes`, `objects` (`deleted` or `toDelete`, and `retained`) and
+`index`.
+
+Deleted objects were served with `immutable, max-age=31536000` and can stay in the Cloudflare edge
+cache; the command prints the keys to purge. Purging is manual (no Cloudflare API credentials are
+used).
+
+`promote` merges staging into production, so a code taken down only in production comes back on the
+next promote while staging still has it. Take down in staging first, then production. `publish` and
+`promote` both preserve a live `enabled: false`.
+
+## Production promotion
+
+The CI workflow and the GitHub Environments (`icons-staging`, `icons-production`) for promotion were
+not built: the maintainer decided against holding production secrets in a public repository.
+`promote` is a local command for whoever holds the production credentials, and it has been exercised
+only against the S3 fake, never against production.
+
 ## Environment
 
 | Variable | Use |
 |---|---|
 | `STG_R2_ACCESS_KEY_ID`, `STG_R2_SECRET_ACCESS_KEY`, `STG_R2_ENDPOINT`, `STG_R2_BUCKET` | The staging bucket (Cloudflare R2, S3-compatible, path-style). All four are redacted. The endpoint must be `https://` (loopback `http://` is allowed for the test fake). |
 | `STG_ICON_HOST` | Public staging host, for curl verification only. No command reads it. |
-| `PROD_*` | Reserved for `icons promote`; `icons publish` never reads them. |
+| `PROD_R2_ACCESS_KEY_ID`, `PROD_R2_SECRET_ACCESS_KEY`, `PROD_R2_ENDPOINT`, `PROD_R2_BUCKET` | The production bucket, read by `promote` (destination) and by `set-enabled` / `takedown` with `--env production`. Same rules as the staging variables; all four are redacted. `icons publish` never reads them. |
+| `PROD_ICON_HOST` | Public production host, for curl verification only. No command reads it. |
 
 ## Exit codes
 
 | Code | When |
 |---|---|
 | 0 | ok, including a dry run and a republish where nothing changed |
-| 2 | usage or configuration: a bad flag or recipe document, `--env` other than `staging`, a `_store/` or otherwise invalid key, a missing `STG_R2_*` variable, a non-https endpoint, a non-empty `--out`, an unsupported op or multi-layer recipe |
-| 4 | a recipe image file is missing |
-| 5 | the index read back after upload differs from what was sent |
-| 7 | contract violation in the built pack, the local pack, the live index or the merged index |
-| 10 | a bucket read or upload failed (S3 error, unreachable endpoint, access denied) |
+| 2 | usage or configuration: a bad flag or recipe document, `--env` other than `staging` (`publish`) or other than `staging`/`production` (the others), a `_store/` or otherwise invalid game or key, a missing `STG_R2_*` / `PROD_R2_*` variable, a non-https endpoint, staging and production resolving to the same bucket, a non-empty `--out`, an unsupported op or multi-layer recipe, an unknown code or object, a malformed `--object`, `--code` and `--object` both or neither, `--enabled` other than `true`/`false` |
+| 4 | a recipe image file is missing, or there is no index for the game in the environment being read |
+| 5 | the index read back after upload differs from what was sent; a copied object does not hash to its name; an object is still present after a delete |
+| 7 | contract violation in the built pack, the local pack, the live index or the merged index; a staging object that is missing or is not a valid WebP of at most 128px |
+| 10 | a bucket read, upload or delete failed (S3 error, unreachable endpoint, access denied) |
 
 ## Runbook: publish fixture-846 to staging
 

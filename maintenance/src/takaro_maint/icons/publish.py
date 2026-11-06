@@ -6,14 +6,15 @@ network. ``merge`` is pure so that a later promotion step can reuse it.
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from typing import Any
 
 from .. import output
-from ..exit_codes import ConflictError, IntegrityError, UsageError
+from ..exit_codes import ConflictError, UsageError
 from . import contract
 from .bucket import Bucket
+from .indexio import parse_raw as _parse_raw
+from .indexio import write_if_changed
 
 PUBLISH_ENV = "staging"
 
@@ -88,15 +89,5 @@ def publish_pack(env: str, pack: Path, *, dry_run: bool) -> dict[str, Any]:
         )
     if index_action == "uploaded":
         output.info(f"upload {index_key}")
-        bucket.put(index_key, merged_raw, contract.CONTENT_TYPES["index"], contract.CACHE_CONTROL["index"])
-        read_back = bucket.get(index_key)
-        if read_back is None or hashlib.sha256(read_back).digest() != hashlib.sha256(merged_raw).digest():
-            raise IntegrityError(f"{index_key} read back after upload differs from what was sent")
+        write_if_changed(bucket, game, merged_raw, live_raw)
     return report
-
-
-def _parse_raw(raw: bytes, game: str, what: str) -> contract.Index:
-    parsed = contract.parse_index(raw, game)
-    if isinstance(parsed, list):
-        raise ConflictError(f"{what} violates the pack contract", problems=parsed)
-    return parsed
