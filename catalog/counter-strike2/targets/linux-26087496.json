@@ -11,7 +11,7 @@
     "evidence": [
       "SteamCMD app_info_print 730 on 2026-10-22 recorded public build 26087496 and the listed depot manifests",
       "CounterStrikeSharp v1.0.377 and Metamod:Source 2.0.0.1483 remained the current compatible upstream release candidates",
-      "SteamCMD app_update 730 validate on 2026-10-22 completed with StateFlags 4 and installed buildid 26087496"
+      "SteamCMD validation on 2026-10-22 completed with StateFlags 4 and installed buildid 26087496"
     ],
     "notes": "Candidate until build 26087496 gameplay, map and integration checks pass."
   },
