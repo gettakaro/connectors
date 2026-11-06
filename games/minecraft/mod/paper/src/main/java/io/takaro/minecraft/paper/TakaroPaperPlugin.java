@@ -263,7 +263,9 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
             boolean success = Bukkit.dispatchCommand(sender, command);
             return new CommandResult(success, output.toString().stripTrailing(), null);
         } catch (Exception e) {
-            return new CommandResult(false, "", e.getMessage());
+            // Bukkit wraps the real failure in a CommandException that only names the command.
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            return new CommandResult(false, "", cause.getMessage());
         }
     }
 
