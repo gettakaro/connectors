@@ -87,8 +87,9 @@ public sealed class CompanionProgressionCache
 
         lock (syncRoot)
         {
-            var tracks = peers.TryGetValue(peerId, out var current) ? current.Tracks : NoTracks;
-            peers[peerId] = new PeerEntry(Aliases(player), tracks);
+            peers[peerId] = peers.TryGetValue(peerId, out var current)
+                ? current with { Aliases = Aliases(player) }
+                : new PeerEntry(Aliases(player), NoTracks, CharacterListed: false);
         }
     }
 
@@ -102,19 +103,41 @@ public sealed class CompanionProgressionCache
         var tracks = ValheimSkillTracks.ToTracks(skills);
         lock (syncRoot)
         {
-            peers[peerId] = new PeerEntry(Aliases(player), tracks);
+            var listed = peers.TryGetValue(peerId, out var current) && current.CharacterListed;
+            peers[peerId] = new PeerEntry(Aliases(player), tracks, listed);
         }
     }
 
     /// <summary>
-    /// The player's tracks, an empty list for a connected player without a reading, or null for
-    /// a player who is not connected.
+    /// Notes which players the player list names a character for. A reading without a character
+    /// beside it would land on whichever character Takaro last had active, so until then the
+    /// tracks stay back.
+    /// </summary>
+    public void ObservePlayerList(IEnumerable<TakaroPlayer> players)
+    {
+        var listed = new HashSet<string>(
+            players.Where(player => player.Character is not null).Select(player => player.GameId),
+            StringComparer.OrdinalIgnoreCase);
+        lock (syncRoot)
+        {
+            foreach (var peerId in peers.Keys.ToArray())
+            {
+                var current = peers[peerId];
+                peers[peerId] = current with { CharacterListed = current.Aliases.Overlaps(listed) };
+            }
+        }
+    }
+
+    /// <summary>
+    /// The tracks of the player's current character, an empty list for a connected player without
+    /// a reading, or null for a player who is not connected.
     /// </summary>
     public IReadOnlyList<TakaroProgressionTrack>? Read(string identifier)
     {
         lock (syncRoot)
         {
-            return peers.Values.FirstOrDefault(peer => peer.Aliases.Contains(identifier))?.Tracks;
+            var peer = peers.Values.FirstOrDefault(candidate => candidate.Aliases.Contains(identifier));
+            return peer is null ? null : peer.CharacterListed ? peer.Tracks : NoTracks;
         }
     }
 
@@ -156,5 +179,5 @@ public sealed class CompanionProgressionCache
                 .Select(alias => alias!),
             StringComparer.OrdinalIgnoreCase);
 
-    private sealed record PeerEntry(HashSet<string> Aliases, IReadOnlyList<TakaroProgressionTrack> Tracks);
+    private sealed record PeerEntry(HashSet<string> Aliases, IReadOnlyList<TakaroProgressionTrack> Tracks, bool CharacterListed);
 }

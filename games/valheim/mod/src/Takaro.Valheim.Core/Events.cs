@@ -84,6 +84,13 @@ public sealed class PlayerLifecyclePresenceFilter
 {
     private readonly HashSet<string> admittedGameIds = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// A player counts as present once the server has a position and can read the character.
+    /// Takaro picks up a character switch from player-connected, so that event has to name it.
+    /// </summary>
+    public static bool IsObserved(TakaroPlayer player, bool hasPosition) =>
+        hasPosition && player.Character is not null;
+
     public IReadOnlyList<TakaroPlayer> SelectTrackable(
         IReadOnlyCollection<TakaroPlayer> onlinePlayers,
         IReadOnlyCollection<string> playersWithObservedPositions)
@@ -147,6 +154,19 @@ public sealed class PlayerLifecycleEventTracker
         var events = new List<TakaroPlayerLifecycleEvent>();
         foreach (var player in currentByGameId.Values.OrderBy(player => player.GameId, StringComparer.OrdinalIgnoreCase))
         {
+            // A relog onto another character between two polls still has to reach Takaro as one.
+            if (previousPlayers.TryGetValue(player.GameId, out var previous) && SwitchedCharacter(previous, player))
+            {
+                events.Add(new TakaroPlayerLifecycleEvent(
+                    "player-disconnected",
+                    previous,
+                    EventFactory.PlayerDisconnected(previous, timestamp)));
+                events.Add(new TakaroPlayerLifecycleEvent(
+                    "player-connected",
+                    player,
+                    EventFactory.PlayerConnected(player, timestamp)));
+            }
+
             if (!previousPlayers.ContainsKey(player.GameId))
             {
                 events.Add(new TakaroPlayerLifecycleEvent(
@@ -171,10 +191,22 @@ public sealed class PlayerLifecycleEventTracker
         return events;
     }
 
+    private static bool SwitchedCharacter(TakaroPlayer previous, TakaroPlayer current) =>
+        previous.Character is not null
+        && current.Character is not null
+        && !string.Equals(previous.Character.Id, current.Character.Id, StringComparison.Ordinal);
+
+    // The character is unreadable for a moment around a respawn; the last known one still holds.
     private void ReplaceSnapshot(Dictionary<string, TakaroPlayer> players)
     {
+        var carried = players.ToDictionary(
+            entry => entry.Key,
+            entry => entry.Value.Character is null && previousPlayers.TryGetValue(entry.Key, out var previous)
+                ? entry.Value with { Character = previous.Character }
+                : entry.Value,
+            StringComparer.OrdinalIgnoreCase);
         previousPlayers.Clear();
-        foreach (var entry in players)
+        foreach (var entry in carried)
         {
             previousPlayers[entry.Key] = entry.Value;
         }
