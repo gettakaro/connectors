@@ -11,6 +11,7 @@
 #include "weapon_bindings.hpp"
 #include "net_bindings.hpp"
 #include "progression_bindings.hpp"
+#include "character_bindings.hpp"
 #include "engine_exec_capture.hpp"
 #include "general_console_bindings.hpp"
 #include "config_file.hpp"
@@ -430,6 +431,30 @@ void sample_progression(const std::string& id, void* controller) {
   }
 }
 
+// Game thread only. An empty id: no survivor yet, or the read failed.
+gate::Character read_character(void* controller) {
+  static ark_character::Layout layout;
+  static bool reported = false;
+  ark_net::Api api{};
+  api.game_thread_tid = g_game_thread_tid.load(std::memory_order_acquire);
+  ark_character::Reading reading;
+  const char* step = "";
+  const auto status = ark_character::read(controller, reading, layout, api, &step);
+  if (status == ark_character::Status::no_data) return {};
+  if (!reported) {
+    reported = true;
+    enqueue(status == ark_character::Status::ok
+                ? "native-player-character-verified"
+                : (std::string("native-player-character-unverified step=") + step).c_str());
+  }
+  if (status != ark_character::Status::ok) return {};
+  return {std::move(reading.id), std::move(reading.name)};
+}
+
+void sample_character(const std::string& id, void* controller) {
+  if (g_gate->record_character(id, read_character(controller))) enqueue("native-player-character-switched");
+}
+
 void postlogin_hook(void* game_mode, void* controller) {
   g_original_postlogin(game_mode, controller);
   if (!controller || !g_hooks_ready.load(std::memory_order_acquire) ||
@@ -447,7 +472,9 @@ void postlogin_hook(void* game_mode, void* controller) {
     const NetworkSample network = sample_network(controller);
     // No round trip is measured yet at PostLogin: 0 there means "unknown".
     const auto ping = network.ping && *network.ping > 0 ? network.ping : std::nullopt;
-    g_gate->record_login(id, name, network.ip.value_or(std::string{}), ping);
+    const gate::Character character = read_character(controller);
+    enqueue(character.id.empty() ? "native-postlogin-no-character" : "native-postlogin-character");
+    g_gate->record_login(id, name, network.ip.value_or(std::string{}), ping, character);
   }
   enqueue("native-postlogin-player-registered");
 }
@@ -696,6 +723,7 @@ void tick_hook(void* loop) {
         if (controller && network_due) {
           const NetworkSample network = sample_network(controller);
           g_gate->record_network(id, network.ip, network.ping);
+          sample_character(id, controller);  // first: a new survivor drops the old level
           sample_progression(id, controller);
         }
         void* pawn = controller

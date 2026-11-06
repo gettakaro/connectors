@@ -187,12 +187,17 @@ inline bool no_options(const json::Value& args) {
 }
 
 inline json::Value player_json(const std::string& id, const std::string& name,
-                               const std::string& ip = {}, std::optional<int32_t> ping = std::nullopt) {
+                               const std::string& ip = {}, std::optional<int32_t> ping = std::nullopt,
+                               const gate::Character& character = {}) {
   json::Value out = json::obj({{"gameId", json::str(id)}, {"name", json::str(name.empty() ? id : name)},
                                {"steamId", json::str(id)}, {"platformId", json::str("steam:" + id)}});
   // Only a live connection's verified values; never a placeholder.
   if (!ip.empty()) out.set("ip", json::str(ip));
   if (ping && *ping >= 0) out.set("ping", json::num(*ping));
+  if (!character.id.empty())
+    out.set("character", json::obj({{"id", json::str(character.id)},
+                                    {"name", json::str(character.name.empty() ? (name.empty() ? id : name)
+                                                                              : character.name)}}));
   return out;
 }
 
@@ -387,7 +392,7 @@ class Adapter {
       json::Value out = json::Value::array();
       for (const auto& p : gate_.players()) {
         known_.remember(p.id, p.name);
-        out.push(player_json(p.id, p.name, p.ip, p.ping));
+        out.push(player_json(p.id, p.name, p.ip, p.ping, gate_.character(p.id)));
       }
       return out;
     }
@@ -395,8 +400,9 @@ class Adapter {
       // Takaro calls getPlayer for offline players too and rejects null, {}
       // and error frames alike: always answer with a real IGamePlayer.
       const std::string id = player_id(args);
-      if (auto online = gate_.player(id)) return player_json(id, online->name, online->ip, online->ping);
-      return player_json(id, known_.name(id));
+      if (auto online = gate_.player(id))
+        return player_json(id, online->name, online->ip, online->ping, gate_.character(id));
+      return player_json(id, known_.name(id), {}, std::nullopt, gate_.character(id));
     }
     if (action == "getPlayerLocation") {
       const auto position = gate_.location(player_id(args));
