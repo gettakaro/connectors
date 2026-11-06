@@ -17,6 +17,7 @@ M.CAPABILITY_OF = {
   getPlayer = "players.get",
   getPlayerLocation = "players.location",
   getPlayerInventory = "players.inventory",
+  getPlayerProgression = "players.progression",
   teleportPlayer = "players.teleport",
   listItems = "items.list",
   giveItem = "items.give",
@@ -31,6 +32,11 @@ M.CAPABILITY_OF = {
   shutdown = "server.shutdown",
 }
 
+-- Capability parameters. SCUM keeps skills and attributes on the server, so progression is server-owned.
+M.CAPABILITY_PARAMETERS = {
+  ["players.progression"] = { source = "server" },
+}
+
 -- The Capability Manifest: every live-supported action and event of the coverage registry, the map Dimension and
 -- the game.profile entry (profileCap, from profile.lua). Placeholder answers (schema-fallback) are not declared, so
 -- Takaro does not rely on them.
@@ -38,7 +44,9 @@ function M.manifest(bounds, profileCap)
   local out = {}
   for _, action in ipairs(coverage.ACTIONS) do
     local name, c = M.CAPABILITY_OF[action], coverage.actions[action]
-    if name and c and c.status == "live-supported" then out[#out + 1] = { name = name } end
+    if name and c and c.status == "live-supported" then
+      out[#out + 1] = { name = name, parameters = M.CAPABILITY_PARAMETERS[name] }
+    end
   end
   for _, ev in ipairs(coverage.EVENTS) do
     local c = coverage.events[ev]
