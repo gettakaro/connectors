@@ -1952,6 +1952,7 @@ void Events::Housekeep() {
                     if (wantJoins) { Phase("joins"); Perf::Scope sc("housekeep.joins"); ResolvePendingJoins(); }
                     if (wantReap) { Phase("reap"); Perf::Scope sc("housekeep.reap"); ReapGoneConnections(); }
                     if (wantHealth) { Phase("health"); Perf::Scope sc("housekeep.health"); PollHealthEdges(); }
+                    if (wantHealth) { Phase("progression"); Perf::Scope sc("housekeep.progression"); Actions::RefreshProgression(); }
                     Phase("idle");
                 } catch (...) {
                     PluginLog("events: housekeeping job threw");

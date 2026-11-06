@@ -87,6 +87,11 @@ constexpr Want kWanted[] = {
     // --- items / inventory / teleport ---
     {"UDominionRuntimeBlueprintLibrary::TryGiveItemToPlayer", "UDominionRuntimeBlueprintLibrary::TryGiveItemToPlayer(APlayerController const*, UItemData const*, int)"},
     {"UInventoryComponent::GetAllItems", nullptr},
+    // --- player progression ---
+    {"USkillComponent::StaticClass", nullptr},
+    {"USkillComponent::GetSkillLevel", "USkillComponent::GetSkillLevel(USkillData const*) const"},
+    {"USkillComponent::GetTotalXPNeededForLevel", "USkillComponent::GetTotalXPNeededForLevel(int) const"},
+    {"USkillComponent::GetTotalXPNeededForNextLevel", "USkillComponent::GetTotalXPNeededForNextLevel(USkillData const*) const"},
     {"UInventoryComponent::GetNumItems", nullptr},
     {"UInventoryComponent::GetItemFromSlot", nullptr},
     {"AActor::TeleportTo", nullptr},

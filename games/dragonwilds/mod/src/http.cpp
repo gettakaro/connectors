@@ -387,6 +387,7 @@ Response Route(const Request& r) {
         if (p.size() == 2) return FromAction(Actions::Player(p[1]));
         if (p.size() == 3 && p[2] == "location") return FromAction(Actions::PlayerLocation(p[1]));
         if (p.size() == 3 && p[2] == "inventory") return FromAction(Actions::PlayerInventory(p[1]));
+        if (p.size() == 3 && p[2] == "progression") return FromAction(Actions::PlayerProgression(p[1]));
         return Err(404, "not found");
     }
     if (GET && p.size() == 1) {
