@@ -1,5 +1,6 @@
 import { Bridge, type EventSource } from './bridge.js';
 import { DuneAdapter } from './dune/adapter.js';
+import type { TakaroPlayer } from './dune/types.js';
 import { FileBanStore } from './dune/banStore.js';
 import { BanManager } from './dune/bans.js';
 import { Catalogue } from './dune/catalogue.js';
@@ -276,7 +277,7 @@ async function main(): Promise<void> {
           // so the edge is deduped against it: the first source through wins and tells presence, the second is
           // dropped.
           if (type === 'player-connected' || type === 'player-disconnected') {
-            const player = (data as { player?: { gameId?: string; name?: string } }).player;
+            const player = (data as { player?: Partial<TakaroPlayer> }).player;
             const gameId = player?.gameId;
             if (gameId) {
               const known = presence.onlinePlayers().some((p) => p.gameId === gameId);
@@ -285,7 +286,9 @@ async function main(): Promise<void> {
                 return true;
               }
               if (type === 'player-connected') {
-                presence.note({ gameId, name: player?.name ?? gameId }, { flsId: gameId, characterName: player?.name ?? null });
+                // The character goes along: the plugin's cached player can name the one just left, and the next
+                // roster read has to be able to see that and correct it.
+                presence.note({ ...player, gameId, name: player?.name ?? gameId }, { flsId: gameId, characterName: player?.name ?? null });
               } else {
                 presence.forget(gameId);
               }
