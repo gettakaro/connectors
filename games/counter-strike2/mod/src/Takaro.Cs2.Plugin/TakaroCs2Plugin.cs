@@ -109,7 +109,7 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
 
     private HookResult OnPlayerConnectFull(EventPlayerConnectFull ev, GameEventInfo info)
     {
-        RememberAuthenticatedPlayer(ev.Userid);
+        RememberAuthenticatedPlayer(ev.Userid, emitConnected: true);
         return HookResult.Continue;
     }
 
@@ -119,7 +119,7 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
         {
             var slot = controller.Slot;
             CounterStrikeSharp.API.Server.NextWorldUpdate(() =>
-                RememberAuthenticatedPlayer(CounterStrikeSharp.API.Utilities.GetPlayerFromSlot(slot)));
+                RememberAuthenticatedPlayer(CounterStrikeSharp.API.Utilities.GetPlayerFromSlot(slot), emitConnected: true));
         }
         return HookResult.Continue;
     }
@@ -136,7 +136,7 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
             RememberAuthenticatedPlayer(controller);
         });
 
-    private void RememberAuthenticatedPlayer(CCSPlayerController? controller)
+    private void RememberAuthenticatedPlayer(CCSPlayerController? controller, bool emitConnected = false)
     {
         var player = MapPlayer(controller);
         if (player is not null)
@@ -153,7 +153,8 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
                 if (controller is not null) knownBySlot[controller.Slot] = player;
                 playerStore?.Remember(player);
             }
-            if (controller is { PawnIsAlive: true } && connectedEmitted.Add(player.GameId))
+            // The player is connected once fully in game, even while still choosing a team.
+            if (emitConnected && connectedEmitted.Add(player.GameId))
             {
                 adapter?.RememberPosition(player, controller);
                 _ = EmitAsync("player-connected", EventFactory.PlayerConnected(player));
