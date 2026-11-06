@@ -1,6 +1,15 @@
 #include "conan/shutdown.h"
 
+#include <atomic>
+
 namespace conan {
+
+namespace {
+std::atomic<bool> g_engineExiting{false};
+}
+
+void NoteEngineExit() { g_engineExiting = true; }
+bool EngineExiting() { return g_engineExiting; }
 
 std::vector<int> CountdownMarks(int total) {
     std::vector<int> out;
