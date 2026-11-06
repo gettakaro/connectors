@@ -1,0 +1,164 @@
+name: ARK Survival Ascended Connector
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'games/ark-ascended/**'
+      - 'catalog/ark-ascended/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/ark-ascended.yml'
+      - '.github/workflows/connector-release.yml'
+  pull_request:
+    paths:
+      - 'games/ark-ascended/**'
+      - 'catalog/ark-ascended/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/ark-ascended.yml'
+      - '.github/workflows/connector-release.yml'
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+  # Manual re-run to (re)attach assets to an existing release tag, for recovering a
+  # release that release-please published without them.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to embed in the built artifact (e.g. 0.1.0)
+        required: true
+        type: string
+      tag:
+        description: Existing release tag to upload the assets to (e.g. ark-ascended-v0.1.0)
+        required: true
+        type: string
+
+concurrency:
+  group: ark-ascended-${{ github.ref }}-${{ inputs.tag || 'ci' }}
+  # A push during a release run queues behind it; only ordinary CI runs are cancelled.
+  cancel-in-progress: ${{ inputs.tag == '' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The same commit the release job builds: a recovery run for an older tag is
+          # gated on that tag's sources, never on whatever main has become.
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
+      # The Takaro client and the game-free rules against fake transports, with ASan and UBSan,
+      # in the pinned image. plugin.cpp needs the game and is covered by a live run.
+      - name: Unit tests (g++ 14)
+        run: |
+          docker run --rm -v "$PWD/games/ark-ascended:/asa:ro" \
+            debian:13.7@sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5 \
+            bash -c 'set -euo pipefail
+              apt-get update -qq >/dev/null
+              apt-get install -y -qq --no-install-recommends g++=4:14.2.0-1 libc6-dev >/dev/null
+              bash /asa/tests/run.sh'
+      - name: capabilities.json matches plugin.cpp
+        run: python3 games/ark-ascended/tests/check_capabilities.py
+
+  params:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.params.outputs.version }}
+      tag: ${{ steps.params.outputs.tag }}
+      publish: ${{ steps.params.outputs.publish }}
+      targets: ${{ steps.targets.outputs.targets }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve release params
+        id: params
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          IN_TAG: ${{ inputs.tag }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEV_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/release-params.sh ark-ascended >> "$GITHUB_OUTPUT"
+
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.15"
+
+      - run: uv python install
+      - run: uv sync --frozen --project maintenance
+
+      - name: Resolve the build matrix from the catalog
+        id: targets
+        run: |
+          maintenance/bin/takaro-maint targets list \
+            --game ark-ascended \
+            --status candidate,maintained \
+            --format gha >> "$GITHUB_OUTPUT"
+
+  # AsaApi's headers and AsaApi.lib target MSVC, so TakaroAsa.dll compiles here and the release
+  # job on Linux only packages it.
+  native:
+    needs: params
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(needs.params.outputs.targets) }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+          fetch-tags: true
+
+      - name: Fetch the pinned AsaApi and fmt
+        shell: bash
+        env:
+          TARGET_ID: ${{ matrix.target.id }}
+        run: games/ark-ascended/scripts/fetch-deps.sh --target "$TARGET_ID" --dest "$RUNNER_TEMP/asa-deps"
+
+      - name: Compile TakaroAsa.dll (MSVC 14.44)
+        shell: cmd
+        env:
+          TAKARO_VERSION: ${{ needs.params.outputs.version }}
+        run: |
+          set "ASA_DEPS=%RUNNER_TEMP%\asa-deps"
+          call games\ark-ascended\native\build.bat
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ark-ascended-native-${{ matrix.target.id }}
+          path: games/ark-ascended/native/build/TakaroAsa.dll
+          if-no-files-found: error
+
+  release:
+    needs: [test, params, native]
+    uses: ./.github/workflows/connector-release.yml
+    secrets: inherit
+    with:
+      connector: ark-ascended
+      version: ${{ needs.params.outputs.version }}
+      tag: ${{ needs.params.outputs.tag }}
+      publish: ${{ needs.params.outputs.publish }}
+      pr_number: ${{ github.event.pull_request.number }}
+      prebuilt_artifact: ark-ascended-native
+      # The ARK dedicated server is Windows-only (a 12 GB Steam depot) and no runtime image runs
+      # it here, so the release claims contract verification: the unit tests above and the MSVC
+      # build against the pinned AsaApi. Live proof comes from a real Windows server.
+      runtime: false

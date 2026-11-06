@@ -1,0 +1,20 @@
+{
+  "name": "ARK: Survival Ascended",
+  "tagline": "Native connector for ARK: Survival Ascended dedicated servers: one AsaApi plugin inside ArkAscendedServer.exe that connects to Takaro itself, no sidecar.",
+  "assetMode": "all",
+  "requirements": [
+    "ARK: Survival Ascended Windows dedicated server (Steam app 2430930) build named in the release",
+    "File access to the server's ShooterGame\\Binaries\\Win64 folder and to its start command",
+    "RCONEnabled=True in GameUserSettings.ini for console commands and shutdown",
+    "Takaro registration token"
+  ],
+  "assets": [
+    {
+      "pattern": "takaro-ark-ascended-*.zip",
+      "label": "Server plugin (AsaApi included)",
+      "requires": "ARK: Survival Ascended dedicated server on Windows",
+      "hint": "Stop the server, unzip into ShooterGame\\Binaries\\Win64, copy ArkApi\\Plugins\\TakaroAsa\\TakaroConfig.txt.example to TakaroConfig.txt, paste the registration token and start the server with AsaApiLoader.exe.",
+      "required": true
+    }
+  ]
+}
