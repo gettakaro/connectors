@@ -37,18 +37,21 @@ public final class ZomboidAdapter implements GameAdapter {
     private final Reconciler reconciler;
     private final BanStore banStore;
     private final Progression progression;
+    private final Characters characters;
     private final boolean debug;
     private final MapService map = new MapService();
     private final AtomicBoolean mapStarted = new AtomicBoolean();
     private volatile EventEmitter emitter;
 
     public ZomboidAdapter(MainThreadQueue queue, PlayerRegistry registry,
-                          Reconciler reconciler, BanStore banStore, Progression progression, boolean debug) {
+                          Reconciler reconciler, BanStore banStore, Progression progression,
+                          Characters characters, boolean debug) {
         this.queue = queue;
         this.registry = registry;
         this.reconciler = reconciler;
         this.banStore = banStore;
         this.progression = progression;
+        this.characters = characters;
         this.debug = debug;
     }
 
@@ -138,12 +141,13 @@ public final class ZomboidAdapter implements GameAdapter {
 
     @Override
     public PlayerInfo getPlayer(String gameId) {
-        return Pz.getPlayer(gameId);
+        PlayerInfo player = Pz.getPlayer(gameId);
+        return player != null ? player.withCharacter(characters.current(player.gameId())) : null;
     }
 
     @Override
     public List<PlayerInfo> getPlayers() {
-        return Pz.getPlayers();
+        return Pz.getPlayers().stream().map(p -> p.withCharacter(characters.current(p.gameId()))).toList();
     }
 
     @Override

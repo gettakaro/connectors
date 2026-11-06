@@ -25,6 +25,7 @@ public final class Reconciler {
     private final PlayerRegistry registry;
     private final BanStore banStore;
     private final Progression progression;
+    private final Characters characters;
     private volatile EventEmitter emitter;
     private long lastProgressionMs;
 
@@ -32,10 +33,12 @@ public final class Reconciler {
     private volatile boolean dirty;
     private boolean seeded;
 
-    public Reconciler(PlayerRegistry registry, BanStore banStore, Progression progression) {
+    public Reconciler(PlayerRegistry registry, BanStore banStore, Progression progression,
+                      Characters characters) {
         this.registry = registry;
         this.banStore = banStore;
         this.progression = progression;
+        this.characters = characters;
     }
 
     public void setEmitter(EventEmitter emitter) {
@@ -102,16 +105,17 @@ public final class Reconciler {
         }
         lastProgressionMs = now;
         try {
-            Pz.readProgression(progression);
+            Pz.readProgression(progression, characters);
         } catch (Throwable t) {
             AgentLog.error("reconciler: progression read failed", t);
         }
     }
 
     private Map<String, PlayerInfo> snapshotByGameId() {
+        Pz.observeCharacters(characters, progression);
         Map<String, PlayerInfo> map = new LinkedHashMap<>();
         for (PlayerInfo p : Pz.getPlayers()) {
-            map.put(p.gameId(), p);
+            map.put(p.gameId(), p.withCharacter(characters.current(p.gameId())));
         }
         return map;
     }

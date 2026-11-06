@@ -12,10 +12,20 @@ public record PlayerInfo(
         String xboxLiveId,
         String platformId,
         String ip,
-        int ping
+        int ping,
+        GameCharacter character
 ) {
     public static final String PLATFORM_PREFIX = "steam:";
     public static final String LOCAL_ACCOUNT_PREFIX = "zomboid:";
+
+    public PlayerInfo(String gameId, String name, String steamId, String epicOnlineServicesId, String xboxLiveId,
+                      String platformId, String ip, int ping) {
+        this(gameId, name, steamId, epicOnlineServicesId, xboxLiveId, platformId, ip, ping, null);
+    }
+
+    public PlayerInfo withCharacter(GameCharacter next) {
+        return new PlayerInfo(gameId, name, steamId, epicOnlineServicesId, xboxLiveId, platformId, ip, ping, next);
+    }
 
     public static String buildPlatformId(String steamId) {
         return PLATFORM_PREFIX + steamId;

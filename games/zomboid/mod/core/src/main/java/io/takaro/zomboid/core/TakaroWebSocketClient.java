@@ -242,6 +242,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             position.addProperty("dimension", dim);
         }
         data.add("position", position);
+        if (protocolVersion >= 1) {
+            data.addProperty("characterEnded", true);
+        }
         sendGameEvent("player-death", data);
     }
 
@@ -1027,7 +1030,18 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         obj.addProperty("epicOnlineServicesId", p.epicOnlineServicesId());
         obj.addProperty("xboxLiveId", p.xboxLiveId());
         obj.addProperty("platformId", p.platformId());
+        addCharacter(obj, p);
         return obj;
+    }
+
+    private void addCharacter(JsonObject obj, PlayerInfo p) {
+        if (p.character() == null || protocolVersion < 1) {
+            return;
+        }
+        JsonObject character = new JsonObject();
+        character.addProperty("id", p.character().id());
+        character.addProperty("name", p.character().name());
+        obj.add("character", character);
     }
 
     private JsonObject playerInfoToJson(PlayerInfo p) {
@@ -1040,6 +1054,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         obj.addProperty("platformId", p.platformId());
         obj.addProperty("ip", p.ip());
         obj.addProperty("ping", p.ping());
+        addCharacter(obj, p);
         return obj;
     }
 

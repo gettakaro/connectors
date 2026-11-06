@@ -270,6 +270,68 @@ class ProtocolV1Test {
     }
 
     @Test
+    void charactersAreDeclaredAsServerHeldAndEndedByDeath() {
+        JsonObject parameters = null;
+        for (JsonElement e : Capabilities.manifest(List.of())) {
+            if (e.getAsJsonObject().get("name").getAsString().equals("players.characters")) {
+                parameters = e.getAsJsonObject().getAsJsonObject("parameters");
+            }
+        }
+        assertNotNull(parameters);
+        assertEquals("server", parameters.get("held").getAsString());
+        assertEquals("death", parameters.getAsJsonArray("ends").get(0).getAsString());
+    }
+
+    @Test
+    void version1PlayersAndEventsCarryTheCharacter() throws Exception {
+        PlayerInfo player = new PlayerInfo("p", "P", null, null, null, "steam:1", null, 0)
+                .withCharacter(new GameCharacter("id-1", "Valencia Gregory"));
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        client.emitPlayerConnected(player);
+        client.emitChatMessage(player, "global", "hi");
+        client.emitEntityKilled(player, "Zombie", null);
+        client.emitPlayerDeath(player, null, 1, 2, 0, null);
+        Thread.sleep(200);
+        List<JsonObject> events = events();
+        assertEquals(4, events.size());
+        for (JsonObject event : events) {
+            JsonObject character = event.getAsJsonObject("payload").getAsJsonObject("data")
+                    .getAsJsonObject("player").getAsJsonObject("character");
+            assertEquals("id-1", character.get("id").getAsString());
+            assertEquals("Valencia Gregory", character.get("name").getAsString());
+        }
+        JsonObject death = events.get(3).getAsJsonObject("payload").getAsJsonObject("data");
+        assertTrue(death.get("characterEnded").getAsBoolean());
+    }
+
+    @Test
+    void aPlayerWithoutACharacterSendsNoCharacterField() throws Exception {
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        client.emitChatMessage(new PlayerInfo("p", "P", null, null, null, "steam:1", null, 0), "global", "hi");
+        Thread.sleep(200);
+        assertFalse(events().get(0).getAsJsonObject("payload").getAsJsonObject("data")
+                .getAsJsonObject("player").has("character"));
+    }
+
+    @Test
+    void version0CarriesNoCharacterData() throws Exception {
+        PlayerInfo player = new PlayerInfo("p", "P", null, null, null, "steam:1", null, 0)
+                .withCharacter(new GameCharacter("id-1", "Valencia Gregory"));
+        client.onOpen(null);
+        identify(0);
+        sent.clear();
+        client.emitPlayerDeath(player, null, 1, 2, 0, null);
+        Thread.sleep(200);
+        JsonObject death = events().get(0).getAsJsonObject("payload").getAsJsonObject("data");
+        assertFalse(death.has("characterEnded"));
+        assertFalse(death.getAsJsonObject("player").has("character"));
+    }
+
+    @Test
     void positionsStayWithoutDimensionOnVersion0OrWithoutAMap() throws Exception {
         adapter.location = new PlayerLocation(1, 2, 0, null);
         client.onOpen(null);

@@ -24,6 +24,14 @@ class ProgressionTest {
     }
 
     @Test
+    void removeForgetsOnePlayer() {
+        Progression progression = new Progression();
+        progression.put("bob", List.of());
+        progression.remove("bob");
+        assertNull(progression.get("bob"));
+    }
+
+    @Test
     void retainForgetsPlayersWhoLeft() {
         Progression progression = new Progression();
         progression.put("bob", List.of());
