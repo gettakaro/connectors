@@ -93,6 +93,7 @@ def protocol_v1(cert, key, state):
         names = [c['name'] for c in offered['capabilities']]
         assert len(names) == len(set(names)) and 'testReachability' not in names, names
         assert {'players.location', 'moderation.ban', 'events.player-connected', 'events.chat-message'} <= set(names), names
+        assert offered['capabilities'][names.index('players.progression')]['parameters'] == {'source': 'client-reported'}, offered
         dims = offered['capabilities'][names.index('map')]['parameters']['dimensions']
         assert [d['id'] for d in dims] == ['overworld'] and dims[0]['source'] == {'type': 'none'}, dims
         # Game Profile: the game and connector identity, game.profile with the running version and icon.
@@ -105,6 +106,9 @@ def protocol_v1(cert, key, state):
         icon = profile['icon']
         assert re.fullmatch(r'[0-9a-f]{12}', icon['revision']) and 0 < icon['size'] <= 128 * 1024, icon
         eventually(lambda: run.health()['protocolVersion'] == 1)
+        run.request('v1-progression', 'getPlayerProgression', json.dumps({'gameId': 'f' * 32}))
+        answer = run.response('v1-progression')
+        assert answer.get('error') is None and answer['payload'] is None, answer
         run.request('v1-icon', 'getGameIcon', '{}')
         answer = run.response('v1-icon')
         assert 'error' not in answer or answer['error'] is None, answer

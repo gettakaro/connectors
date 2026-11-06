@@ -5,6 +5,7 @@
 #include "common.h"
 #include "config_file.h"
 #include "perf.h"
+#include "progression.h"
 #include "state.h"
 
 #include <dirent.h>
@@ -574,9 +575,54 @@ static void TestChatSender() {
     EQ(ChatSender::Render("", "Welcome back"), "Welcome back");
 }
 
+static void TestProgression() {
+    using namespace Progression;
+    EQ(TrackKey("SkillWoodcutting"), "woodcutting");
+    EQ(TrackKey("Skill_Woodcutting"), "woodcutting");
+    EQ(TrackKey("skill woodcutting"), "woodcutting");
+    EQ(TrackKey("Skill"), "skill");
+    EQ(TrackKey("Woodcutting"), "woodcutting");
+    EQ(TrackKey("Fire Making"), "fireMaking");
+    EQ(TrackKey("Skill_Rune-crafting"), "runeCrafting");
+    EQ(TrackKey("7Attack"), "attack");
+    EQ(TrackKey("___"), "");
+    EQ(TrackKey("Character"), "skillCharacter");
+    CHECK(TrackKey(std::string(300, 'a')).size() == 128, "keys stop at 128 characters");
+
+    double share = -1;
+    CHECK(Progress(2000000000, -2000000000, 2100000000, share) && share > 0.97 && share < 0.98, "no overflow at the int limits: %f", share);
+    CHECK(Progress(150, 100, 200, share) && share == 0.5, "halfway: %f", share);
+    CHECK(Progress(100, 100, 200, share) && share == 0, "start of the level: %f", share);
+    CHECK(Progress(250, 100, 200, share) && share == 1, "never above 1: %f", share);
+    CHECK(Progress(50, 100, 200, share) && share == 0, "never below 0: %f", share);
+    CHECK(!Progress(500, 500, 500, share), "no next level at the top of the curve");
+    CHECK(!Progress(500, 500, 0, share), "no next level when the game answers 0");
+
+    std::vector<Track> tracks(2);
+    tracks[0].key = "mining"; tracks[0].name = "Mining"; tracks[0].level = 12; tracks[0].experience = 310;
+    tracks[0].hasProgress = true; tracks[0].progress = 0.25;
+    tracks[1].key = "cooking"; tracks[1].name = "Coo\"king"; tracks[1].level = 50; tracks[1].experience = 9000;
+    EQ(TracksJson(tracks), "[{\"key\":\"mining\",\"name\":\"Mining\",\"level\":12,\"experience\":310,\"progress\":0.25},"
+                           "{\"key\":\"cooking\",\"name\":\"Coo\\\"king\",\"level\":50,\"experience\":9000}]");
+    EQ(TracksJson({}), "[]");
+    CHECK(UniqueKeys(tracks), "two different keys");
+    tracks.push_back(tracks[0]);
+    CHECK(!UniqueKeys(tracks), "a repeated key fails the reading");
+    tracks.pop_back();
+
+    Store store;
+    std::vector<Track> found;
+    CHECK(!store.Find("a", found), "no reading yet");
+    store.Put("a", tracks);
+    CHECK(store.Find("a", found) && found.size() == 2, "reading kept");
+    store.Put("a", {tracks[1]});
+    CHECK(store.Find("a", found) && found.size() == 1 && found[0].key == "cooking", "a new reading replaces the old one");
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && strcmp(argv[1], "--exit-flush-child") == 0) return ExitFlushChild(argv[2]);
     TestSymParser();
+    TestProgression();
     TestJson();
     TestRedaction();
     TestRingBuffer();
