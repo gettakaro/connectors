@@ -138,7 +138,7 @@ build). Coming from 0.5.0 (plugin + sidecar): follow "Upgrade from 0.5.0" in
 
 ## What works, what doesn't
 
-Checked on game build 1287369 (Enshrouded 1.0), 2026-11-04. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on game build 1287369 (Enshrouded 1.0), 2026-11-06. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
