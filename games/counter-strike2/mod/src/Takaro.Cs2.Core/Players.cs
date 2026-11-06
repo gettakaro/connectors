@@ -29,8 +29,16 @@ public static class PlayerMapper
             Name: player.Name,
             SteamId: steamId,
             PlatformId: $"steam:{steamId}",
-            Ip: player.Ip,
+            Ip: WithoutPort(player.Ip),
             Ping: player.Ping);
+    }
+
+    // CounterStrikeSharp reports the client address as host:port; Takaro expects the bare IP.
+    private static string? WithoutPort(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address)) return null;
+        var separator = address.LastIndexOf(':');
+        return separator > 0 && address.IndexOf(':') == separator ? address[..separator] : address;
     }
 
     public static IReadOnlyList<TakaroPlayer> ToTakaroPlayers(IEnumerable<Cs2Player> players, bool includeBots) =>
