@@ -16,6 +16,9 @@ const std::vector<Shipped> kShipped = {
     {"1273043", "24cb5fc9eb58c422"},  // game build 1273043 support, before character levels
     {"1273043", "5259f30449a8e2ee"},  // character levels (attributes* layout)
     {"1273043", "0e676982522998ab"},  // layout.itemTables (catalogue on a new build)
+    {"1283531", "2097a7760ff28743"},  // game build 1283531 support (Steam 26319703)
+    {"1285601", "ff69f63a5cbf8f03"},  // game build 1285601 support (Steam 26404334)
+    {"1287369", "fe123fb1cc017aec"},  // game build 1287369 support (Steam 26430253)
 };
 
 void Canonical(const JsonValue& v, std::string& out) {

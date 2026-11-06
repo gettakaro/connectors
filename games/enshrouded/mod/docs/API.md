@@ -170,7 +170,7 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
   and `whisper` may hold one). Replies name a player by character name (the persona until it is known). Unknown commands return `success:false` with a hint. There is no
   time-of-day command (not reverse engineered).
 
-### GET lists (static data from the server's kfc: items and entities from build 1267041, locations from 1273043; regenerate with `tools/gen_gamedata.py`)
+### GET lists (static data from the server's kfc: items from build 1283531, entities from 1267041, locations from 1273043; regenerate with `tools/gen_gamedata.py`)
 - `GET /bans`: see Moderation.
 - `GET /items` returns 3609 `[{code, name, description:"<category>, <rarity>", itemId, maxStackSize}]`. Localized names
   do not ship with the dedicated server, so `name` is the code with spaces.

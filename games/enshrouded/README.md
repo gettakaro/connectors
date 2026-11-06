@@ -8,8 +8,9 @@ Connects an Enshrouded dedicated server (Windows, or Linux under Proton) to Taka
 ### 1. Before you start
 
 - An Enshrouded dedicated server you can stop, start and copy files to, on a supported game build:
-  **1273043** (Enshrouded 1.0, Steam build 26083076) or **1267041** (hotfix 1.0.0.1). Build 1024233
-  is no longer supported.
+  **1287369** (Enshrouded 1.0, Steam build 26430253), **1285601** (Steam build 26404334) or **1283531** (Steam build 26319703). On the earlier 1.0 builds 1273043 and 1267041
+  everything except the item and creature lists and giving items still works. Build 1024233 is no
+  longer supported.
 - Windows, or Linux under Proton. With Docker, use `mornedhels/enshrouded-server:dev-proton`
   (GE-Proton11-9); the older GE-Proton10-30 image cannot start Enshrouded 1.0 (`No SteamUtils011`).
 - The game files already in place. The connector does not install or update the game, and SteamCMD
@@ -20,7 +21,7 @@ Connects an Enshrouded dedicated server (Windows, or Linux under Proton) to Taka
 
 Download the latest release from https://takaro.io/connectors/enshrouded (or the latest
 `enshrouded-v<version>` release on https://github.com/gettakaro/connectors/releases):
-`takaro-enshrouded-plugin-proton-1273043-<version>.zip`. The same `dbghelp.dll` runs on every
+`takaro-enshrouded-plugin-proton-1287369-<version>.zip`. The same `dbghelp.dll` runs on every
 supported build, on Windows and under Proton. `takaro-enshrouded-plugin.zip` is the same file under
 its old name. Do not use the `enshrouded-dev` or `pr-<number>-enshrouded` pre-releases.
 
@@ -137,7 +138,7 @@ build). Coming from 0.5.0 (plugin + sidecar): follow "Upgrade from 0.5.0" in
 
 ## What works, what doesn't
 
-Checked on game build 1273043 (Enshrouded 1.0), 2026-10-21. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on game build 1287369 (Enshrouded 1.0), 2026-11-04. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
@@ -171,8 +172,8 @@ Checked on game build 1273043 (Enshrouded 1.0), 2026-10-21. ✅ works, ⚠️ wo
 
 ## Known issues
 
-- Only builds 1273043 and 1267041 are supported. On any other build the item and creature lists and
-  giving items switch off, and other features may too.
+- Only builds 1287369, 1285601 and 1283531 are fully supported. On 1273043 and 1267041 the item and creature lists and giving
+  items switch off; on any other build they do too, and other features may as well.
 - Teleport lands exactly on the coordinates, so a spot in the ground or the air is unsafe.
 
 Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).
