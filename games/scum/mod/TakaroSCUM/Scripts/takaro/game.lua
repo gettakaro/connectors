@@ -804,6 +804,11 @@ function Game:catalog_step(kind, budgetUs)
   end
 end
 
+function Game:catalogs_done()
+  local items, entities = self.catalogs.items, self.catalogs.entities
+  return items ~= nil and items.done == true and entities ~= nil and entities.done == true
+end
+
 function Game:list_items()
   local c = self:catalog_start("items")
   if not c.done then self.log:warn("listItems: catalogue still building (%d/%d)", #c.entries, c.total or 0) end

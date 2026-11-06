@@ -81,7 +81,7 @@ not crop it or add borders; a smaller copy of the same full image works too.
 
 ### 5. Check that it works
 
-After the world has loaded (one to two minutes), `ue4ss\Mods\TakaroSCUM\takaro.log` shows:
+After the world has loaded (one to two minutes; the first time, also until the item catalogue is built, up to 15 minutes), `ue4ss\Mods\TakaroSCUM\takaro.log` shows:
 
 ```
 identified with Takaro as game server …
