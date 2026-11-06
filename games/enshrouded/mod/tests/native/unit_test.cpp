@@ -25,6 +25,28 @@ EnvFn Env(std::map<std::string, std::string> m) {
     };
 }
 
+void LogNoiseTests() {
+    t::Group("log-noise");
+    auto forwarded = [](const std::string& msg) {
+        JsonValue d = JObj();
+        Put(d, "msg", JStr(msg));
+        return ShouldForwardLog(LogEventsMode::Filtered, d);
+    };
+    for (const char* noise :
+         {"MovingSphere ( Radius 1.000000 ) took too long (8.46 ms) for 'Enemy_Fogger_Depleted_Spear' (from (1, 2, 3)",
+          "[server] Bad Performance 47,657 us (peak: 234,867 us)", ">=         2,688:           0     0.0%  |",
+          "[session]                                       17           17           0", "[session] -------------",
+          "[session] Total      0     0", "[task]      3:  Task-Default03", "[app] start creation step Init_Knowledge_Start",
+          "[os] Started thread 0x29d8d78 id:260 (Task-Default03)", "ValueCount: 17", "ValueSum:   3,333", "AvgValue:   5",
+          "\"value\": 5", "},", "=========", "m#0(128): up 0 (0), down 0 (0), remote 0 (0), limit 256", "12   5    7",
+          "Could not prune enough replication states for player 0!"})
+        CHECK_MSG(!forwarded(noise), noise);
+    for (const char* kept : {"[server] Player 'Limon' logged in with Permissions:", "[online] Added peer 0(1) (steamid:7656)",
+                             "Player EntityId 1 teleported From (1, 2, 3) to (4, 5, 6)", "[server_save] Clear Chunk Persistent Data",
+                             "[session] Unable to find machine for peer 0(1)."})
+        CHECK_MSG(forwarded(kept), kept);
+}
+
 void JsonUtilTests() {
     t::Group("json-util");
     CHECK_EQ(NumText(1), std::string("1"));
@@ -527,6 +549,7 @@ void ServerChatTests() {
 }
 
 void RunUnitTests() {
+    LogNoiseTests();
     ServerChatTests();
     GameProfileTests();
     ProtocolV1Tests();
