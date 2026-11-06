@@ -1,5 +1,6 @@
 package io.takaro.minecraft.neoforge;
 
+import io.takaro.minecraft.core.ConsoleChat;
 import io.takaro.minecraft.core.EventEmitter;
 import io.takaro.minecraft.core.config.ConfigFile;
 import io.takaro.minecraft.core.config.PropertiesConfigFormat;
@@ -12,6 +13,7 @@ import net.minecraft.world.entity.player.Player;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.CommandEvent;
 import net.neoforged.neoforge.event.ServerChatEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
@@ -120,6 +122,21 @@ public class TakaroNeoForgeMod {
                 player.getGameProfile().name(),
                 "global",
                 event.getRawText()
+        );
+    }
+
+    @SubscribeEvent
+    public void onCommand(CommandEvent event) {
+        if (adapter == null || event.isCanceled()) return;
+        EventEmitter emitter = adapter.getEventEmitter();
+        String text = ConsoleChat.sayText(event.getParseResults().getReader().getString());
+        if (emitter == null || text == null) return;
+        ServerPlayer player = event.getParseResults().getContext().getSource().getPlayer();
+        emitter.emitChatMessage(
+                player != null ? player.getUUID().toString() : null,
+                player != null ? player.getGameProfile().name() : null,
+                "global",
+                text
         );
     }
 
