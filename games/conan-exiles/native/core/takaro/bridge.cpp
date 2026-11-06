@@ -31,6 +31,11 @@ bool Bridge::Start() {
     NativeLog("takaro: state dir %s: %s", o_.store->Dir().c_str(), storeNotes_.c_str());
     int64_t now = o_.steadyMs();
     if (o_.watcher) o_.watcher->Announce(o_.config, now);
+    if (o_.holdConnectMs > 0) {
+        connectHoldUntil_ = now + o_.holdConnectMs;
+        NativeLog("takaro: holding the connection until the catalogues are ready (at most %lld s)",
+                  (long long)(o_.holdConnectMs / 1000));
+    }
     Publish(now);
     thread_ = std::thread(&Bridge::Loop, this);
     for (unsigned i = 0; i < std::max(1u, o_.config.actionWorkers); i++) workers_.emplace_back(&Bridge::WorkerLoop, this);
@@ -98,6 +103,7 @@ void Bridge::Loop() {
         for (auto& j : done) Complete(j);
         int64_t now = o_.steadyMs();
         CheckDeadlines(now);
+        CheckConnectHold(now);
         if (now >= nextPoll_) {
             PollEvents();
             nextPoll_ = now + o_.eventPollMs;
@@ -163,6 +169,16 @@ void Bridge::ApplyConfig(Config next, int64_t now) {
     o_.watcher->Announce(o_.config, now);
     // The old connection's Closed notice and any late frame of it carry its epoch; the identify of
     // the next connection uses the settings set here.
+    if (o_.transport) o_.transport->Retarget(o_.config.url, o_.config.enabled && connectHoldUntil_ == 0);
+}
+
+void Bridge::CheckConnectHold(int64_t now) {
+    if (connectHoldUntil_ == 0) return;
+    const bool ready = o_.game->ReadyToConnect();
+    if (!ready && now < connectHoldUntil_) return;
+    connectHoldUntil_ = 0;
+    if (ready) NativeLog("takaro: catalogues ready, connecting");
+    else NativeLog("takaro: catalogues still not ready, connecting anyway");
     if (o_.transport) o_.transport->Retarget(o_.config.url, o_.config.enabled);
 }
 
