@@ -128,6 +128,8 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
         CounterStrikeSharp.API.Server.NextWorldUpdate(() =>
         {
             var controller = CounterStrikeSharp.API.Utilities.GetPlayerFromSlot(slot);
+            // The slot may have been reused since the callback was queued.
+            if (controller?.AuthorizedSteamID?.SteamId64 != steamId.SteamId64) return;
             if (bans?.IsBanned(steamId.SteamId64.ToString()) == true)
             {
                 controller?.Disconnect(CounterStrikeSharp.API.ValveConstants.Protobuf.NetworkDisconnectionReason.NETWORK_DISCONNECT_KICKBANADDED);
@@ -150,9 +152,10 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
             {
                 Console.WriteLine($"[Takaro CS2] Authenticated player remembered: {player.GameId}.");
                 knownPlayers[player.GameId] = player;
-                if (controller is not null) knownBySlot[controller.Slot] = player;
-                playerStore?.Remember(player);
+                var store = playerStore;
+                _ = Task.Run(() => store?.Remember(player));
             }
+            if (controller is not null) knownBySlot[controller.Slot] = player;
             // The player is connected once fully in game, even while still choosing a team.
             if (emitConnected && connectedEmitted.Add(player.GameId))
             {
@@ -171,8 +174,8 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
             knownPlayers.Remove(player.GameId);
             if (connectedEmitted.Remove(player.GameId))
                 _ = EmitAsync("player-disconnected", EventFactory.PlayerDisconnected(player, ev.Reason.ToString()));
-            if (ev.Userid is not null) knownBySlot.Remove(ev.Userid.Slot);
         }
+        if (ev.Userid is not null) knownBySlot.Remove(ev.Userid.Slot);
 
         return HookResult.Continue;
     }
@@ -199,7 +202,14 @@ public sealed class TakaroCs2Plugin : BasePlugin, IPluginConfig<Cs2TakaroConfig>
 
         var origin = ev.Userid?.PlayerPawn.Value?.AbsOrigin;
         var position = origin is null ? null : new TakaroPosition(origin.X, origin.Y, origin.Z);
-        _ = EmitAsync("player-death", EventFactory.PlayerDeath(victim, attacker, ev.Weapon, ev.Headshot, position));
+        var weapon = ev.Weapon;
+        var headshot = ev.Headshot;
+        // A leaving player's pawn can die just before the disconnect event, so decide one update later.
+        CounterStrikeSharp.API.Server.NextWorldUpdate(() =>
+        {
+            if (connectedEmitted.Contains(victim.GameId))
+                _ = EmitAsync("player-death", EventFactory.PlayerDeath(victim, attacker, weapon, headshot, position));
+        });
         return HookResult.Continue;
     }
 
