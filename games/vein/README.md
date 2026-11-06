@@ -64,6 +64,7 @@ Checked on VEIN 0.025h3 (server build 25969514), 2026-10-22. ✅ works, ⚠️ w
 | Player location | ✅ | None while on the character screen. |
 | Teleport | ✅ | |
 | Player inventory | ✅ | Once the player has spawned. |
+| Player levels and skills | ✅ | All 20 skills, read by the server. Skills follow the character played. |
 | Item list | ⚠️ | Items removed by a game update stay in Takaro. |
 | Entity list | ⚠️ | Types removed by a game update stay in Takaro. |
 | Locations | ✅ | |

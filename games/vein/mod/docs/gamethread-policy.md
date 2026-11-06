@@ -55,6 +55,7 @@ reference is unsafe even when an outer completion object uses shared ownership.
 | Health-edge poll (death fallback) | every 5 s, and only while a player is connected | `events.cpp` |
 | Connection reaper | every 5 s, and only while a player is connected | `events.cpp` |
 | Admin grant pass | on the join edge, else every 60 s | `admin.cpp` |
+| Skill reading | inside the player snapshot, at most every 10 s; requests read the cached copy | `actions.cpp` |
 | Item catalogue | built once at boot | `actions.cpp` |
 | Entity catalogue | cached 5 min | `actions.cpp` |
 | `ProcessEvent` filter | `UFunction*` → decision cache; raw `FName` compare on a miss only | `events.cpp` |

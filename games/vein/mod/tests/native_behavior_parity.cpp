@@ -43,6 +43,7 @@ Actions::Result BadBody(const char* field){return {400,Json{{"error",std::string
 std::string ConfigValue(const char* env,const std::string& def){const char* v=ConfigFile::Get(env);return v&&*v?v:def;}
 std::string Redact(const std::string& s){return s;} // URL fields are masked by real EventsParse::RedactLogLine.
 std::string JsonEscape(const std::string& s){auto quoted=Json(s).dump();return quoted.substr(1,quoted.size()-2);}
+std::string JsonNum(double v){return Json(v).dump();}
 const std::string& PluginDataDir(){static std::string d="/tmp/vein-native-test";return d;}
 std::string IsoNowUtc(){return "2026-09-24T12:00:00.000Z";}
 bool JsonParse(const std::string& s,JsonValue& out){Json j=Json::parse(s,nullptr,false);if(j.is_discarded())return false;std::function<JsonValue(const Json&)> cv=[&](const Json& x){JsonValue v;if(x.is_object()){v.type=JsonValue::Object;for(auto it=x.begin();it!=x.end();++it)v.obj.push_back({it.key(),cv(it.value())});}else if(x.is_array()){v.type=JsonValue::Array;for(auto& y:x)v.arr.push_back(cv(y));}else if(x.is_string()){v.type=JsonValue::String;v.str=x.get<std::string>();}else if(x.is_number()){v.type=JsonValue::Number;v.num=x.get<double>();v.str=x.dump();}else if(x.is_boolean()){v.type=JsonValue::Bool;v.b=x.get<bool>();}return v;};out=cv(j);return true;}
@@ -67,6 +68,10 @@ Result Players(){return playersDown?Result{503,R"({"error":"reflected player get
 Result Player(const std::string&){return {404,R"({"error":"player not online"})"};}
 Result PlayerLocation(const std::string&){return noPawn?Result{503,R"({"error":"player has no pawn yet"})"}:Result{200,R"({"x":1,"y":2,"z":3,"yaw":90,"ageMs":10})"};}
 Result PlayerInventory(const std::string&){return {200,R"([{"code":"MRE","name":"Meal","amount":1},{"code":"MRE","name":"Meal2","amount":1},{"code":"wood","name":"Wood","amount":3}])"};}
+Result PlayerProgression(const std::string& id){
+    if(id=="76561198000000001")return {200,R"([{"key":"strength","name":"Strength","level":3,"experience":120.5,"progress":0.25}])"};
+    if(id=="76561198000000002")return {200,"[]"};
+    return {404,R"({"error":"player not known"})"};}
 Result Items(const std::string&){return {200,R"([{"code":"MRE","name":"Meal","description":"food"}])"};}
 Result Entities(){return {200,R"([{"code":"zombie","name":"Zombie","type":"enemy"}])"};}
 Result Locations(){return {200,R"([{"code":"spawn","name":"Spawn","position":{"x":1,"y":2,"z":3}}])"};}
@@ -172,6 +177,12 @@ int main(){
           "give maps Takaro item to plugin code and ignores null quality");
     Check(run("giveItem",Json{{"gameId",id},{"item",{{"code","wood"}}},{"quantity",3}}).empty()&&lastGiveCode=="wood"&&lastGiveAmount==3,
           "give object code and quantity map to plugin body");
+    {
+        const Json tracks=run("getPlayerProgression",Json{{"gameId","76561198000000001"}});
+        Check(tracks.size()==1&&tracks[0]["key"]=="strength"&&tracks[0]["level"]==3,"progression answers the cached tracks");
+        Check(run("getPlayerProgression",Json{{"gameId","76561198000000002"}})==Json::array(),"a known player with no tracks is []");
+        Check(run("getPlayerProgression",Json{{"gameId","76561198999999999"}}).is_null(),"an unknown player is null, not an error");
+    }
     Check(run("listItems",Json::object())[0]["code"]=="MRE","items");
     Check(run("listEntities",Json::object())[0]["type"]=="hostile","entity mapping");
     Check(run("listLocations",Json::object())[0]["position"]["z"]==3,"locations");
@@ -183,6 +194,8 @@ int main(){
         for(const char* name:{"players.list","players.location","moderation.listBans","server.shutdown","events.chat-message","events.log","map"})
             Check(std::find(names.begin(),names.end(),name)!=names.end(),std::string("manifest declares ")+name);
         Check(std::find(names.begin(),names.end(),"testReachability")==names.end(),"testReachability is not a capability");
+        const Json progression=manifest[std::find(names.begin(),names.end(),"players.progression")-names.begin()];
+        Check(progression["parameters"]["source"]=="server","progression is server-owned");
         const Json map=manifest[std::find(names.begin(),names.end(),"map")-names.begin()];
         Check(map["name"]=="map"&&map["parameters"]["dimensions"].size()==1,"one map Dimension");
         const Json dim=map["parameters"]["dimensions"][0];

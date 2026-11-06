@@ -532,11 +532,15 @@ uint64_t SnapshotTtlMs() {
 
 bool ActorLocation(void* actor, double loc[3], double rot[3]);
 
+void RefreshProgression(const std::vector<PlayerInfo>& players);
+
 // Runs on the game thread. Pointer reads only - no JSON, no allocation beyond the strings the
 // engine hands us.
 void BuildPlayerSnapshotOnGameThread() {
     std::vector<PlayerRow> rows;
-    for (auto& p : ReadPlayers()) {
+    const std::vector<PlayerInfo> players = ReadPlayers();
+    RefreshProgression(players);
+    for (auto& p : players) {
         PlayerRow r;
         r.gameId = p.gameId;
         r.name = p.name;
@@ -1883,6 +1887,7 @@ void Actions::Init() {
                        "AVeinPlayerState::GetPlayerUniqueID().") +
                kUnverified);
     SetCap("playerLocation", "ok", std::string("the pawn's root component transform.") + kUnverified);
+    SetCap("playerProgression", "ok", std::string("skill levels from the character's UStatComponent.") + kUnverified);
     SetCap("playerInventory", "ok",
            std::string("the UItem objects outered to each UBaseInventoryComponent under the pawn and the "
                        "controller. Reflection only - no call into the game - but whether VEIN outers its items "
@@ -1984,6 +1989,207 @@ void Actions::Init() {
               give ? "admin component available" : "admin component give path unresolved");
 }
 
+// ---------------------------------------------------------------------------------------------
+// player progression
+//
+// A character's skills live in UStatComponent::Stats, an FStatManagerData fast array of
+// {TSubclassOf<UStat> Key, FStatData Value{double XP}}. The skill list comes from the loaded UStat
+// classes, so a skill with no entry in the array is still reported, at 0 XP.
+//
+// Takaro polls getPlayerProgression on every player sync. The player snapshot refreshes a cache at
+// a low rate and the request is answered from it, so the poll itself never enters the game thread.
+
+namespace {
+
+constexpr uint64_t kProgressionRefreshMs = 10000;
+
+Mutex g_progressionLock;
+std::map<std::string, std::vector<ActionsUtil::ProgressionStat>> g_progression;  // by gameId
+
+// Game thread only.
+std::vector<void*> g_statClasses;
+std::map<int, double> g_xpForLevel;
+
+struct StatArrayLayout {
+    int32_t items = -1;  // TArray offset inside FStatManagerData
+    int32_t key = -1;
+    int32_t xp = -1;  // FStatManagerDataItem::Value + FStatData::XP
+    uint32_t stride = 0;
+    bool ok() const {
+        return items >= 0 && key >= 0 && xp >= 0 && (uint32_t)key + sizeof(void*) <= stride &&
+               (uint32_t)xp + sizeof(double) <= stride;
+    }
+};
+
+StatArrayLayout ReadStatArrayLayout() {
+    StatArrayLayout l;
+    void* data = Reflect::FindObjectByPath("/Script/Vein", "StatManagerData");
+    void* item = Reflect::FindObjectByPath("/Script/Vein", "StatManagerDataItem");
+    void* value = Reflect::FindObjectByPath("/Script/Vein", "StatData");
+    if (!data || !item || !value) return l;
+    auto off = [](void* st, const char* name) -> int32_t {
+        void* p = Reflect::FindProperty(st, name);
+        return p ? Reflect::PropertyOffset(p) : -1;
+    };
+    l.items = off(data, "Items");
+    l.key = off(item, "Key");
+    const int32_t valueOff = off(item, "Value"), xpOff = off(value, "XP");
+    if (valueOff >= 0 && xpOff >= 0) l.xp = valueOff + xpOff;
+    const char* size = (const char*)item + Reflect::Lay().structPropertiesSize;
+    if (MemReadable(size, 4)) l.stride = (*(const uint32_t*)size + 7) & ~7u;
+    if (l.stride > 256) l.stride = 0;
+    return l;
+}
+
+void* PawnStatComponent(void* pawn, void* compCls) {
+    std::vector<void*> objs;
+    if (!Reflect::GetObjectsWithOuter(pawn, objs, false)) return nullptr;
+    for (void* o : objs)
+        if (o && MemReadable(o, 0x40) && Reflect::IsA(o, compCls)) return o;
+    return nullptr;
+}
+
+// Calls a reflected one-argument getter through ProcessEvent. The argument is the first parameter
+// and so sits at offset 0; the return value is found by name, because FField::Next differs between
+// builds and a hand walk of the parameter list cannot be trusted.
+template <typename Ret, typename Arg>
+bool CallStatGetter(void* comp, void* func, Arg arg, Ret& out) {
+    auto pe = Fn<FnProcessEvent>("UObject::ProcessEvent");
+    if (!pe || !func) return false;
+    const int32_t size = FuncParmsSize(func);
+    void* ret = Reflect::FindProperty(func, "ReturnValue");
+    const int32_t retOff = ret ? Reflect::PropertyOffset(ret) : -1;
+    if (size < 1 || retOff < (int32_t)sizeof(Arg) || retOff + (int32_t)sizeof(Ret) > size) return false;
+    std::vector<char> parms((size_t)size + 16, 0);
+    memcpy(parms.data(), &arg, sizeof(Arg));
+    pe(comp, func, parms.data());
+    memcpy(&out, parms.data() + retOff, sizeof(Ret));
+    return true;
+}
+
+// Every loaded skill. UStat classes load with the character, so an empty result is retried.
+void LoadStatClasses(void* statCls) {
+    if (!g_statClasses.empty()) return;
+    void* classCls = Reflect::StaticClass("UClass::StaticClass");
+    if (!classCls) classCls = Reflect::FindObjectByPath("/Script/CoreUObject", "Class");
+    std::vector<void*> classes;
+    if (!classCls || !Reflect::GetObjectsOfClass(classCls, classes, true)) return;
+    for (void* c : classes)
+        if (c && c != statCls && MemReadable(c, 0x40) && DerivesFrom(c, statCls) && !ClassIsAbstract(c) &&
+            !IsGeneratedArtefact(Reflect::ObjName(c)))
+            g_statClasses.push_back(c);
+    PluginLog("actions: %zu skill classes loaded", g_statClasses.size());
+}
+
+bool ReadCharacterStats(void* pawn, std::vector<ActionsUtil::ProgressionStat>& out, std::string& why) {
+    void* compCls = VeinClass(nullptr, "StatComponent");
+    void* statCls = VeinClass(nullptr, "Stat");
+    if (!compCls || !statCls) {
+        why = "UStatComponent or UStat class not found";
+        return false;
+    }
+    void* comp = PawnStatComponent(pawn, compCls);
+    if (!comp) {
+        why = "the character has no UStatComponent";
+        return false;
+    }
+    static StatArrayLayout lay;
+    if (!lay.ok()) lay = ReadStatArrayLayout();
+    const int32_t statsOff = OffOf(compCls, "Stats");
+    if (!lay.ok() || statsOff < 0) {
+        why = "FStatManagerData is not reflectable";
+        return false;
+    }
+    void* levelFn = Reflect::FindFunction(comp, "GetStatLevel");
+    void* xpForLevelFn = Reflect::FindFunction(comp, "GetXPForLevel");
+    if (!levelFn || !xpForLevelFn) {
+        why = "GetStatLevel or GetXPForLevel is not a UFunction on this build";
+        return false;
+    }
+    std::map<void*, double> xpByClass;
+    const char* arr = (const char*)comp + statsOff + lay.items;
+    if (!MemReadable(arr, sizeof(TArray<char>))) {
+        why = "the stat array is unreadable";
+        return false;
+    }
+    const auto* items = (const TArray<char>*)arr;
+    if (items->Num < 0 || items->Num > 1024 ||
+        (items->Num && !MemReadable(items->Data, (size_t)items->Num * lay.stride))) {
+        why = "the stat array has an implausible size";
+        return false;
+    }
+    for (int32_t i = 0; i < items->Num; i++) {
+        const char* row = items->Data + (size_t)i * lay.stride;
+        void* cls = nullptr;
+        double xp = 0;
+        memcpy(&cls, row + lay.key, sizeof cls);
+        memcpy(&xp, row + lay.xp, sizeof xp);
+        if (cls && MemReadable(cls, 0x40) && DerivesFrom(cls, statCls)) xpByClass[cls] = xp;
+    }
+    LoadStatClasses(statCls);
+    std::vector<void*> classes = g_statClasses;
+    for (auto& kv : xpByClass)
+        if (std::find(classes.begin(), classes.end(), kv.first) == classes.end()) classes.push_back(kv.first);
+
+    auto xpForLevel = [&](int level, double& xp) {
+        auto it = g_xpForLevel.find(level);
+        if (it != g_xpForLevel.end()) {
+            xp = it->second;
+            return true;
+        }
+        if (!CallStatGetter(comp, xpForLevelFn, (int32_t)level, xp)) return false;
+        g_xpForLevel[level] = xp;
+        return true;
+    };
+    const int32_t nameOff = OffOf(statCls, "Name");
+    for (void* cls : classes) {
+        ActionsUtil::ProgressionStat s;
+        s.code = Reflect::ObjName(cls);
+        void* cdo = Reflect::ClassDefaultObject(cls);
+        if (cdo && MemReadable(cdo, 0x40)) s.name = TextToString(cdo, nameOff);
+        auto xp = xpByClass.find(cls);
+        s.xp = xp == xpByClass.end() ? 0 : xp->second;
+        int32_t level = 0;
+        if (!CallStatGetter(comp, levelFn, cls, level)) {
+            why = "GetStatLevel could not be called";
+            return false;
+        }
+        s.level = level;
+        if (!xpForLevel(level, s.xpFloor) || !xpForLevel(level + 1, s.xpNext)) s.xpFloor = s.xpNext = 0;
+        out.push_back(std::move(s));
+    }
+    return true;
+}
+
+// Called from the player snapshot, which already holds the player rows and which every Takaro sync
+// triggers, so a reading adds no game-thread entry of its own.
+void RefreshProgression(const std::vector<PlayerInfo>& players) {
+    static uint64_t last = 0;
+    const uint64_t now = NowMs();
+    if (now - last < kProgressionRefreshMs) return;
+    Perf::Scope sc("progression");
+    for (const PlayerInfo& p : players) {
+        // A player without a character has no skills, whatever the last character had.
+        if (!p.spawned || !PawnIsPlayerCharacter(p.pawn)) {
+            Guard g(g_progressionLock);
+            g_progression.erase(p.gameId);
+            continue;
+        }
+        last = now;
+        std::vector<ActionsUtil::ProgressionStat> stats;
+        std::string why;
+        if (!ReadCharacterStats(p.pawn, stats, why)) {
+            SetCap("playerProgression", "degraded", why);
+            continue;
+        }
+        SetCap("playerProgression", "ok", "");
+        Guard g(g_progressionLock);
+        g_progression[p.gameId] = std::move(stats);
+    }
+}
+
+}  // namespace
+
 void Actions::Housekeep() {
     // Also flush mutations that finished after a caller timed out.
     state::FlushBans();
@@ -2052,6 +2258,18 @@ Actions::Result Actions::PlayerLocation(const std::string& gameId) {
     return {200, "{\"x\":" + JsonNum(r->loc[0]) + ",\"y\":" + JsonNum(r->loc[1]) + ",\"z\":" +
                      JsonNum(r->loc[2]) + ",\"yaw\":" + JsonNum(r->rot[1]) + ",\"pitch\":" +
                      JsonNum(r->rot[0]) + ",\"ageMs\":" + std::to_string(age) + "}"};
+}
+
+Actions::Result Actions::PlayerProgression(const std::string& gameId) {
+    const std::string id = NormalizeGameId(gameId);
+    {
+        Guard g(g_progressionLock);
+        auto it = g_progression.find(id);
+        if (it != g_progression.end()) return {200, ActionsUtil::ProgressionTracksJson(it->second)};
+    }
+    Guard g(g_snapLock);
+    if (FindRow(g_snapRows, id)) return {200, "[]"};
+    return {404, ErrJson("player not known")};
 }
 
 Actions::Result Actions::PlayerInventory(const std::string& gameId) {
