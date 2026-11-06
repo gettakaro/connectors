@@ -1,0 +1,7 @@
+module Base
+{
+    item OutsideScripts
+    {
+        Icon = Axe,
+    }
+}

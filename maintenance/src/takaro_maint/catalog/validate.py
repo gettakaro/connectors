@@ -9,6 +9,8 @@ from typing import Any
 
 from .. import net, output, paths
 from ..exit_codes import INTEGRITY, USAGE, MaintError, UsageError
+from ..icons import contract as icon_contract
+from ..icons import mappers as icon_mappers
 from . import ids, schema
 from .loader import Catalog, Target
 
@@ -505,6 +507,58 @@ def _check_separate_names(result: ValidationResult, target: Target) -> None:
     )
 
 
+def _check_icons(result: ValidationResult, catalog: Catalog) -> None:
+    """The optional ``icons`` block: what it names must exist, without asking the network."""
+    for game in sorted(catalog.games.values(), key=lambda game: game.id):
+        block = game.record.get("icons")
+        if block is None:
+            continue
+        file = _relative(game.path)
+        pack_game = block.get("game")
+        result.add(
+            "icons-game-identifier",
+            icon_contract.is_game_identifier(pack_game) and pack_game != "_store",
+            f"icons.game {pack_game!r} must be a pack game identifier and not _store",
+            file,
+        )
+        known = icon_mappers.names()
+        result.add(
+            "icons-mapper-known",
+            block.get("mapper") in known,
+            f"icons.mapper {block.get('mapper')!r}; registered mappers: {known}",
+            file,
+        )
+        if not game.targets:
+            # Trimmed test catalogs keep a game record and drop its targets; there is nothing to check against.
+            continue
+        data = block.get("data") or {}
+        problems = []
+        for target in game.targets:
+            if not target.is_default:
+                continue
+            spec = target.record["inputs"].get(data.get("input"))
+            if spec is None or spec.get("kind") != "steam-depots":
+                problems.append(f"{target.id} has no steam-depots input named {data.get('input')!r}")
+                continue
+            absent = sorted(set(data.get("depots") or []) - set(spec["depots"]))
+            if absent:
+                problems.append(f"{target.id}: icons.data.depots {absent} are not depots of input {data['input']!r}")
+        result.add(
+            "icons-data-input",
+            not problems,
+            "; ".join(problems) or f"every default target has the steam-depots input {data.get('input')!r}",
+            file,
+        )
+        revisions = {target.revision for target in game.targets}
+        stray = sorted(set((block.get("pixels") or {}).get("clientBuilds") or {}) - revisions)
+        result.add(
+            "icons-client-builds-revisions",
+            not stray,
+            f"icons.pixels.clientBuilds names revisions no target has: {stray}" if stray else "every revision exists",
+            file,
+        )
+
+
 def _guarded(result: ValidationResult, check_id: str, file: str, run: Any) -> None:
     """A malformed record must fail its check, not crash the validator."""
     try:
@@ -520,6 +574,7 @@ def validate_catalog(catalog: Catalog, *, online: bool = False, cache: Path | No
     _guarded(result, "single-default", "catalog", lambda: _check_single_default(result, catalog))
     _guarded(result, "default-platform", "catalog", lambda: _check_default_platform(result, catalog))
     _guarded(result, "legacy-alias-single-build", "catalog", lambda: _check_legacy_aliases(result, catalog))
+    _guarded(result, "icons-block", "catalog", lambda: _check_icons(result, catalog))
     per_target = (
         ("target-schema", _check_target_schema),
         ("id-matches-stem", _check_ids),

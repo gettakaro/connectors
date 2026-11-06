@@ -6,16 +6,23 @@ import argparse
 from pathlib import Path
 
 from .. import output
-from ..exit_codes import OK
-from ..icons import build, controls, promote, publish
+from ..catalog import load as load_catalog
+from ..exit_codes import OK, UsageError
+from ..icons import build, catalog_route, controls, pipeline, promote, publish
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("icons", help="build and publish Icon Packs")
     inner = parser.add_subparsers(dest="icons_command", metavar="<subcommand>")
 
-    build_parser = inner.add_parser("build", help="render a recipe document into a pack and its reports")
-    build_parser.add_argument("--recipes", required=True, help="recipe document (JSON)")
+    inputs_parser = inner.add_parser("inputs", help="list the inputs a game's catalog-driven build needs (no network)")
+    _add_route_selection(inputs_parser)
+    inputs_parser.set_defaults(handler=_inputs, op="icons inputs")
+
+    build_parser = inner.add_parser("build", help="build a pack and its reports from a recipe document or the catalog")
+    build_parser.add_argument("--recipes", help="recipe document (JSON); excludes --game")
+    _add_route_selection(build_parser, required=False)
+    build_parser.add_argument("--client", help="installed game client (or a mirror of its files); needs --game")
     build_parser.add_argument("--out", required=True, help="output directory; must be absent or empty")
     build_parser.set_defaults(handler=_build, op="icons build")
 
@@ -45,26 +52,47 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     parser.set_defaults(handler=None, op="icons")
 
 
+def _add_route_selection(parser: argparse.ArgumentParser, *, required: bool = True) -> None:
+    parser.add_argument("--game", required=required, help="catalog game id, e.g. zomboid")
+    parser.add_argument("--target", default=None, help="target id; beats the declared default")
+    parser.add_argument("--platform", default=None, help="restrict the default lookup to one platform")
+
+
 def _add_target(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--env", required=True, help="'staging' or 'production'")
     parser.add_argument("--game", required=True, help="game identifier")
     parser.add_argument("--dry-run", action="store_true", help="plan the change without writing anything")
 
 
+def _inputs(args: argparse.Namespace) -> int:
+    route = catalog_route.route_for(load_catalog(), args.game, args.target, args.platform)
+    output.emit("icons inputs", True, **catalog_route.inputs_document(route))
+    return OK
+
+
 def _build(args: argparse.Namespace) -> int:
-    result = build.build_from_file(Path(args.recipes), Path(args.out))
-    output.emit(
-        "icons build",
-        True,
-        game=result.game,
-        pack=str(result.pack_dir.resolve()),
-        index=str(result.index_path.resolve()),
-        codes=result.codes,
-        objects=result.objects,
-        coverage=result.coverage,
-        reports={name: str(path.resolve()) for name, path in result.reports.items()},
-        encoder=result.encoder,
-    )
+    if (args.recipes is None) == (args.game is None):
+        raise UsageError("icons build takes exactly one of --recipes FILE or --game GAME")
+    if args.recipes is not None:
+        if args.client or args.target or args.platform:
+            raise UsageError("--client, --target and --platform go with --game, not --recipes")
+        result = build.build_from_file(Path(args.recipes), Path(args.out))
+        output.emit(
+            "icons build",
+            True,
+            game=result.game,
+            pack=str(result.pack_dir.resolve()),
+            index=str(result.index_path.resolve()),
+            codes=result.codes,
+            objects=result.objects,
+            coverage=result.coverage,
+            reports={name: str(path.resolve()) for name, path in result.reports.items()},
+            encoder=result.encoder,
+        )
+        return OK
+    client = Path(args.client) if args.client else None
+    report = pipeline.build_from_catalog(args.game, args.target, args.platform, client, Path(args.out))
+    output.emit("icons build", True, **report)
     return OK
 
 

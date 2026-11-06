@@ -1,0 +1,145 @@
+module Base
+{
+    item Axe
+    {
+        DisplayCategory = ToolWeapon,
+        ItemType = base:weapon,
+        Weight = 3.0,
+        Icon = Axe,
+        AttachmentType = BigWeapon,
+        BaseSpeed = 1.0,
+        BreakSound = AxeBreak,
+        Categories = base:axe,
+        ConditionLowerChanceOneIn = 35,
+        ConditionMax = 13,
+        CritDmgMultiplier = 5.0,
+        CriticalChance = 20.0,
+        DamageCategory = Slash,
+        DamageMakeHole = true,
+        DoorDamage = 35,
+        DoorHitSound = AxeHit,
+        DropSound = AxeDrop,
+        HitAngleMod = -30.0,
+        HitFloorSound = AxeHit,
+        HitSound = AxeHit,
+        IdleAnim = Idle_Weapon2,
+        KnockBackOnNoDeath = true,
+        KnockdownMod = 2.0,
+        MaxDamage = 2.0,
+        MaxHitcount = 2,
+        MaxRange = 1.2,
+        MetalValue = 120.0,
+        MinAngle = 0.72,
+        MinDamage = 0.8,
+        MinRange = 0.61,
+        MinimumSwingtime = 3.0,
+        PushBackMod = 0.3,
+        RunAnim = Run_Weapon2,
+        SplatBloodOnNoDeath = true,
+        SplatNumber = 3,
+        SplatSize = 5,
+        SubCategory = Swinging,
+        SwingAmountBeforeImpact = 0.002,
+        SwingAnim = Bat,
+        SwingSound = AxeSwing,
+        Swingtime = 3.0,
+        TreeDamage = 35,
+        TwoHandWeapon = true,
+        WeaponLength = 0.38,
+        WeaponSprite = FireAxe,
+        Tags = base:choptree;base:cutplant;base:removebarricade;base:sharpenable;base:killanimal;base:repairwithtape;base:repairwithglue;base:hasmetal,
+        Sharpness = 1.0,
+        HeadCondition = 13,
+        HeadConditionLowerChanceMultiplier = 1.5,
+        OnBreak = OnBreak.FireAxe,
+        Researchablerecipes = MakeLargeStoneAxeHead;Forge_Old_Axe_Head,
+    }
+
+    item Bandage
+    {
+        DisplayCategory = FirstAid,
+        ItemType = base:normal,
+        Weight = 0.1,
+        Icon = Bandage,
+        AlwaysWelcomeGift = true,
+        BandagePower = 4.0,
+        CanBandage = true,
+        count = 1,
+        Medical = true,
+        ReplaceOnUse = Base.BandageDirty,
+        Tooltip = Tooltip_UseOnHealthPanel,
+        WorldStaticModel = Bandage,
+        Tags = base:isfirefuel;base:isfiretinder;base:nopour,
+        FireFuelRatio = 0.25,
+    }
+
+    item Glasses_Normal
+    {
+        DisplayCategory = Accessory,
+        ItemType = base:clothing,
+        Weight = 0.1,
+        IconsForTexture = GlassesBlack;GlassesBlue;GlassesRed,
+        BodyLocation = base:eyes,
+        ChanceToFall = 50,
+        ClothingItem = Glasses_Normal,
+        Cosmetic = true,
+        VisualAid = true,
+    }
+
+    item Wound_Chest_Bite_Male
+    {
+        DisplayCategory = Wound,
+        ItemType = base:clothing,
+        Weight = 0.0,
+        BodyLocation = base:wound,
+        ClothingItem = Wound_Chest_Bite_Male,
+        WorldRender = false,
+        hidden = true,
+    }
+
+    item Bag_LeatherWaterBag
+    {
+        DisplayCategory = WaterContainer,
+        ItemType = base:clothing,
+        Weight = 0.3,
+        ClothingItem = Bag_LeatherWaterBag,
+        BodyLocation = base:satchel,
+        Icon = Wineskin,
+        StaticModel = CanteenCowboy_Ground,
+        WorldStaticModel = LeatherWaterBag_Ground,
+        EatType = Bourbon,
+        CanHaveHoles = false,
+        WaterResistance = 1.0,
+        ReplaceInPrimaryHand = Bag_LeatherWaterBag_RHand holdingbagright,
+        ReplaceInSecondHand = Bag_LeatherWaterBag_LHand holdingbagleft,
+        component FluidContainer
+        {
+            ContainerName = LeatherWaterBag,
+            Capacity = 1.0,
+            InitialPercentMin = 0.0,
+            InitialPercentMax = 1.0,
+            Fluids
+            {
+                fluid = Water:1.0,
+            }
+        }
+    }
+
+    item Hematite
+    {
+        DisplayCategory = Material,
+        ItemType = base:moveable,
+        Icon = default,
+        Weight = 2.5,
+        WorldObjectSprite = crafting_ore_01_9,
+    }
+
+    item Mov_SodaMachine
+    {
+        DisplayCategory = Furniture,
+        ItemType = base:moveable,
+        Icon = default,
+        Weight = 0.5,
+        WorldObjectSprite = location_shop_accessories_01_8,
+    }
+}

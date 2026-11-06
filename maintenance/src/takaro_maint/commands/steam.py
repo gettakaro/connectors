@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
-import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -22,25 +21,10 @@ from ..exit_codes import OK, ConflictError, IntegrityError, UpstreamUnavailable,
 from ..steam import depotdownloader as dd
 from ..steam import steamcmd
 from ..steam.install import SteamInput
+from ..steam.selectors import selects
 from . import add_selection_arguments, load_catalog, select_one
 
 REFERENCES_MARKER = Path(".takaro") / "references.json"
-
-
-def selects(relative: str, selectors: list[str]) -> bool:
-    """Whether a selector names this file by exact path or case-insensitive regex.
-
-    DepotDownloader writes its own bookkeeping (the depot manifest and its checksum) into
-    the download directory alongside the files it fetched, so what came out of it is
-    filtered by the same selectors that went in rather than taken wholesale.
-    """
-    for selector in selectors:
-        if selector.startswith("regex:"):
-            if re.search(selector[len("regex:") :], relative, re.IGNORECASE):
-                return True
-        elif relative.casefold() == selector.casefold():
-            return True
-    return False
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
