@@ -9,7 +9,9 @@ import io.takaro.minecraft.core.map.WorldMap;
 import io.takaro.minecraft.core.model.*;
 import io.takaro.minecraft.core.target.RuntimeIdentity;
 import net.minecraft.ChatFormatting;
+import net.minecraft.commands.CommandSource;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -205,9 +207,31 @@ public class NeoForgeGameAdapter implements GameAdapter {
     @Override
     public CommandResult executeConsoleCommand(String command) {
         try {
-            var source = server.createCommandSourceStack();
+            StringBuilder output = new StringBuilder();
+            var source = server.createCommandSourceStack().withSource(new CommandSource() {
+                @Override
+                public void sendSystemMessage(Component message) {
+                    output.append(message.getString()).append('\n');
+                    server.sendSystemMessage(message); // keep the line in the server log
+                }
+
+                @Override
+                public boolean acceptsSuccess() {
+                    return true;
+                }
+
+                @Override
+                public boolean acceptsFailure() {
+                    return true;
+                }
+
+                @Override
+                public boolean shouldInformAdmins() {
+                    return server.shouldInformAdmins();
+                }
+            });
             server.getCommands().performPrefixedCommand(source, command);
-            return new CommandResult(true, "", null);
+            return new CommandResult(true, output.toString().stripTrailing(), null);
         } catch (Exception e) {
             return new CommandResult(false, "", e.getMessage());
         }
