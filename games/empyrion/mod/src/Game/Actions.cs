@@ -57,7 +57,7 @@ namespace TakaroEmpyrion.Game
 
         public static readonly string[] Supported =
         {
-            "testReachability", "getPlayers", "getPlayer", "getPlayerLocation", "getPlayerInventory", "giveItem", "listItems",
+            "testReachability", "getPlayers", "getPlayer", "getPlayerLocation", "getPlayerInventory", "getPlayerProgression", "giveItem", "listItems",
             "listEntities", "listLocations", "executeConsoleCommand", "sendMessage", "teleportPlayer", "kickPlayer", "banPlayer",
             "unbanPlayer", "listBans", "shutdown", "getMapTile",
         };
@@ -90,6 +90,7 @@ namespace TakaroEmpyrion.Game
                 case "getPlayer": return await GetPlayer(a.RequirePlayerGameId());
                 case "getPlayerLocation": return await GetPlayerLocation(a.RequirePlayerGameId());
                 case "getPlayerInventory": return await GetPlayerInventory(a.RequirePlayerGameId());
+                case "getPlayerProgression": return GetPlayerProgression(a.RequirePlayerGameId());
                 case "giveItem": return await GiveItem(a);
                 case "listItems": await EnsureCatalogFresh(); return _catalog.ItemsJson();
                 case "listEntities": await EnsureCatalogFresh(); return _catalog.EntitiesJson();
@@ -193,6 +194,8 @@ namespace TakaroEmpyrion.Game
             PlayerRecord r = _players.Upsert(info.steamId, info.entityId, info.playerName);
             if (r == null) throw new ActionFailure("player " + entityId + " has no SteamID");
             r.Ping = info.ping;
+            r.Experience = info.exp;
+            r.HasExperience = true;
             _players.SetPosition(r, info.playfield, info.pos.x, info.pos.y, info.pos.z);
             return r;
         }
@@ -270,6 +273,16 @@ namespace TakaroEmpyrion.Game
             foreach (Match m in Regex.Matches(plys ?? "", @"^\s*\d+:\s*(\d+),.*,\s*([0-9a-fA-F:.]+)\|\d+\s*$", RegexOptions.Multiline))
                 map[int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)] = m.Groups[2].Value;
             return map;
+        }
+
+        /// <summary>
+        /// Answers from the last reading and never touches the game thread: Takaro asks on every player sync, right
+        /// after getPlayers and getPlayerLocation have refreshed the player. null for a player the server never saw.
+        /// </summary>
+        JToken GetPlayerProgression(string gameId)
+        {
+            PlayerRecord r = _players.Resolve(gameId);
+            return r == null ? JValue.CreateNull() : (JToken)Progression.Tracks(r);
         }
 
         async Task<JToken> GetPlayers()

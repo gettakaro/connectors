@@ -38,6 +38,7 @@ public static partial class ContractTests
         Run("map tiles", MapTiles);
         Run("map real data", MapRealData);
         Run("wire v1", WireV1);
+        Run("progression", ProgressionTests);
         Console.WriteLine("\n" + _pass + " passed, " + _fail + " failed");
         Console.Out.Flush();
         // Background protocol threads are still alive; exit hard so Mono's teardown cannot mask the result.
@@ -166,7 +167,7 @@ public static partial class ContractTests
         Check(same, "capabilities.json == Coverage registry",
             string.Join(", ", fromCode.Where(kv => !fromJson.TryGetValue(kv.Key, out string s) || s != kv.Value).Select(kv => kv.Key)));
         Check(Actions.Supported.All(a => fromCode.ContainsKey(a)), "every handled action has a coverage entry");
-        Check(Coverage.All.Count(e => e.Kind == "action") == 19 && Coverage.All.Count(e => e.Kind == "event") == 6, "19 actions + 6 events classified");
+        Check(Coverage.All.Count(e => e.Kind == "action") == 20 && Coverage.All.Count(e => e.Kind == "event") == 6, "20 actions + 6 events classified");
     }
 
     // ------------------------------------------------------------------ wire (fake Takaro + fake game)
@@ -251,6 +252,82 @@ public static partial class ContractTests
             if (match(o)) return o;
         }
         return null;
+    }
+
+    static void ProgressionTests()
+    {
+        Check(Progression.NativeLevel(0) == 1f, "0 experience is level 1");
+        Check(Progression.NativeLevel(-5) == 1f && Progression.Progress(-5, 1) == 0d, "negative client-reported experience stays level 1");
+        Check((int)Progression.NativeLevel(799) == 1 && (int)Progression.NativeLevel(801) == 2, "level 2 starts at 800 experience");
+        // Live save row: the game logged its level-up to 2 at 814 experience.
+        Check((int)Progression.NativeLevel(814) == 2, "game's own level-up row: 814 experience is level 2");
+        Check((int)Progression.NativeLevel(460799) == 24 && (int)Progression.NativeLevel(460801) == 25, "level 25 starts at 460800 experience");
+        Check(Progression.NativeLevel(500000) == 25f && Progression.NativeLevel(int.MaxValue) == 25f, "level stops at 25");
+
+        Check(Progression.LevelStart(1) == 0 && Progression.LevelStart(2) == 800 && Progression.LevelStart(3) == 3200 && Progression.LevelStart(25) == 460800, "level starts");
+        // Live Stats panel at 1464 experience: "Level 2, XP: 664 / 2400 27%".
+        Check(Progression.Progress(1464, 2) == 0.2767, "progress matches the Stats panel, not the fractional level");
+
+        var log = new ConsoleLog();
+        var bridge = new GameBridge(log);
+        var game = new FakeGame { Bridge = bridge };
+        game.Players[101] = new PlayerInfo { entityId = 101, steamId = "76561198000000001", playerName = "Tester", playfield = "Akua", pos = new PVector3(1, 2, 3), exp = 3200 };
+        bridge.Attach(game);
+        var ticker = new Thread(() => { while (true) { bridge.Tick(); Thread.Sleep(2); } }) { IsBackground = true };
+        ticker.Start();
+        var players = new PlayerRegistry(null);
+        var actions = new Actions(bridge, new FakeV2(), players, new Catalog(), null, new Config { ServerName = "Dev", IdentityToken = "id" }, log, new BanReasons(null), _ => { });
+        Func<string, JToken> ask = id => actions.Run("getPlayerProgression", Args.Parse(new JValue("{\"gameId\":\"" + id + "\"}"))).Result;
+
+        Check(ask("76561198000000001").Type == JTokenType.Null, "unknown player -> null, not an error");
+        players.Upsert("76561198000000001", 101, "Tester");
+        JToken known = ask("76561198000000001");
+        Check(known is JArray noTracks && noTracks.Count == 0, "known player before the first reading -> []");
+
+        int before;
+        lock (game.Requests) before = game.Requests.Count;
+        actions.OnlinePlayers().Wait();
+        int afterRefresh;
+        lock (game.Requests) afterRefresh = game.Requests.Count;
+        JArray tracks = (JArray)ask("76561198000000001");
+        int afterAsk;
+        lock (game.Requests) afterAsk = game.Requests.Count;
+        Check(afterRefresh > before && afterAsk == afterRefresh, "the answer comes from the last reading, no game request");
+        JToken t = tracks.Single();
+        Check((string)t["key"] == "character" && (string)t["name"] == "Level" && t["level"].Type == JTokenType.Integer && (int)t["level"] == 3
+              && (int)t["experience"] == 3200 && (double)t["progress"] == 0d, "track: 3200 experience is exactly level 3", t.ToString());
+        game.Players[101].exp = 3900;
+        actions.OnlinePlayers().Wait();
+        JToken gain = ask("76561198000000001")[0];
+        Check((int)gain["level"] == 3 && (double)gain["progress"] > 0d && (double)gain["progress"] < 1d, "experience-only gain moves progress, not level");
+        game.Players[101].exp = 900;
+        actions.OnlinePlayers().Wait();
+        Check((int)ask("76561198000000001")[0]["level"] == 2, "level follows experience down");
+        game.Players[101].exp = 1000000;
+        actions.OnlinePlayers().Wait();
+        JToken cap = ask("76561198000000001")[0];
+        Check((int)cap["level"] == 25 && (double)cap["progress"] == 1d, "capped level is full");
+
+        game.Players.Clear();
+        actions.OnlinePlayers().Wait();
+        Check(players.BySteam("76561198000000001").Online == false && (int)ask("76561198000000001")[0]["level"] == 25, "offline player keeps the last reading");
+
+        string path = Path.GetTempFileName();
+        try
+        {
+            var saved = new PlayerRegistry(path);
+            PlayerRecord r = saved.Upsert("76561198000000001", 101, "Tester");
+            r.Experience = 814; r.HasExperience = true;
+            saved.SaveSoon(force: true);
+            PlayerRecord loaded = new PlayerRegistry(path).BySteam("76561198000000001");
+            Check(loaded.HasExperience && loaded.Experience == 814, "the reading survives a server restart");
+        }
+        finally { File.Delete(path); }
+
+        JArray manifest = Capabilities.Build(Actions.Declared, null);
+        JToken progression = manifest.FirstOrDefault(c => (string)c["name"] == "players.progression");
+        Check(progression != null && (string)progression["parameters"]["source"] == "client-reported", "manifest declares players.progression as client-reported");
+        Check(manifest.Count(c => c["parameters"] != null) == 1, "no other capability gains parameters");
     }
 
     static void Wire()
