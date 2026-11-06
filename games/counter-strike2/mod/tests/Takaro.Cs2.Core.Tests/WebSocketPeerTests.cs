@@ -80,6 +80,7 @@ public sealed class WebSocketPeerTests
 
     private sealed class PeerAdapter : ICs2TakaroAdapter
     {
+        public Task<object?> GetPlayerProgressionAsync(string identifier, CancellationToken cancellationToken = default) => Task.FromResult<object?>(null);
         public IReadOnlyList<object> GetCapabilities() => [new { name = "players.list" }];
         public Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default) => Ok();
         public Task<IReadOnlyList<TakaroPlayer>> GetPlayersAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<TakaroPlayer>>([]);

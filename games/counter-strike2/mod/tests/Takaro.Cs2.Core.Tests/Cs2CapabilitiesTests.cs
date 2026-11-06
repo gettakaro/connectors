@@ -23,6 +23,14 @@ public sealed class Cs2CapabilitiesTests
     }
 
     [TestMethod]
+    public void DeclaresProgressionAsClientReported()
+    {
+        var progression = Cs2Capabilities.Build(false, null, false, null).Select(entry => JsonSerializer.SerializeToElement(entry))
+            .Single(entry => entry.GetProperty("name").GetString() == "players.progression");
+        Assert.AreEqual("client-reported", progression.GetProperty("parameters").GetProperty("source").GetString());
+    }
+
+    [TestMethod]
     public void AddsOptionalCapabilitiesWhenAvailable()
     {
         var manifest = Cs2Capabilities.Build(true, new { id = "de_dust2" }, true, "1.41.9.6");

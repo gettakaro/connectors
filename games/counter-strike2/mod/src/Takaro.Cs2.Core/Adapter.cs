@@ -13,6 +13,7 @@ public interface ICs2TakaroAdapter
     Task<TakaroActionResult> ExecuteConsoleCommandAsync(string command, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default);
+    Task<object?> GetPlayerProgressionAsync(string identifier, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> GiveItemAsync(string identifier, string code, int amount, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ListItemsAsync(CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ListLocationsAsync(CancellationToken cancellationToken = default);
@@ -62,6 +63,7 @@ public sealed class TakaroRequestDispatcher
                 "getPlayer" => TakaroActionResult.Ok(await adapter.GetPlayerAsync(RequiredIdentifier(request.Args), cancellationToken)),
                 "getPlayerLocation" => await adapter.GetPlayerLocationAsync(RequiredIdentifier(request.Args), cancellationToken),
                 "getPlayerInventory" => await adapter.GetPlayerInventoryAsync(RequiredIdentifier(request.Args), cancellationToken),
+                "getPlayerProgression" => TakaroActionResult.Ok(await adapter.GetPlayerProgressionAsync(RequiredIdentifier(request.Args), cancellationToken)),
                 "giveItem" => await adapter.GiveItemAsync(RequiredIdentifier(request.Args), RequiredItemCode(request.Args), OptionalPositiveInt(request.Args, "amount") ?? OptionalPositiveInt(request.Args, "quantity") ?? 1, cancellationToken),
                 "listItems" => await adapter.ListItemsAsync(cancellationToken),
                 "listEntities" => TakaroActionResult.Ok(new[] { new { code = "chicken", name = "Chicken", type = "neutral" } }),
