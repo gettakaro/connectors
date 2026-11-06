@@ -52,6 +52,7 @@ function M.manifest(bounds, profileCap)
     local c = coverage.events[ev]
     if c and c.status == "live-supported" then out[#out + 1] = { name = "events." .. ev } end
   end
+  out[#out + 1] = { name = "players.characters", parameters = { held = "server" } }
   out[#out + 1] = map.capability(bounds)
   if profileCap then out[#out + 1] = profileCap end
   return out

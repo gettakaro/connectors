@@ -212,6 +212,16 @@ function Game:controllers()
   return out
 end
 
+-- SCUM's character is its user profile: New Character makes a new profile and prisoner for the same Steam account,
+-- and the old profile's database id is never reused. The login log prints the same id as Name(id).
+function Game:character_of(pc, name)
+  local prisoner = self:pawn(pc)
+  if not prisoner or not name then return nil end
+  local ok, id = pcall(function() return prisoner._serverUserProfileId.Value end)
+  if ok and math.type(id) == "integer" and id > 0 then return { id = tostring(id), name = name } end
+  return nil
+end
+
 function Game:player_of(pc, id)
   local name = str(pc:GetUserProfileName())
   if not name or name == "" then
@@ -225,7 +235,7 @@ function Game:player_of(pc, id)
     local okp, p = pcall(function() return ps.Ping end)
     if okp and type(p) == "number" and p > 0 then ping = math.floor(p * 4) end
   end
-  return { steamId = id, name = name, ip = self.ips[id], ping = ping }
+  return { steamId = id, name = name, ip = self.ips[id], ping = ping, character = self:character_of(pc, name) }
 end
 
 function Game:find_pc(id)
@@ -1103,25 +1113,27 @@ function Game:reconcile_online(list)
 end
 
 function Game:on_login(e)
+  local character = e.profileId and { id = e.profileId, name = e.name } or nil
   self.ips[e.steamId] = e.ip
   if e.position then self.lastPos[e.steamId] = e.position end
   self.names = self.names or {}
   self.names[e.steamId] = e.name
   if e.kind == "login" then
+    self.progression[e.steamId] = nil -- it may be another character now
     if self:is_banned(e.steamId) then
       self.log:info("banned player %s logged in; kicking", e.steamId)
       self.kickQueue[#self.kickQueue + 1] = { id = e.steamId, tries = 0 }
       return -- a refused login is not a session: no player-connected
     end
     if self:mark_online({ steamId = e.steamId }) then
-      self.events:player_connected({ steamId = e.steamId, name = e.name, ip = e.ip })
+      self.events:player_connected({ steamId = e.steamId, name = e.name, ip = e.ip, character = character })
     end
   else
     self.pendingDeaths[e.steamId] = nil
     self.alive[e.steamId] = nil
     if self.online[e.steamId] then
       self.online[e.steamId] = nil
-      self.events:player_disconnected({ steamId = e.steamId, name = e.name, ip = e.ip })
+      self.events:player_disconnected({ steamId = e.steamId, name = e.name, ip = e.ip, character = character })
     end
   end
 end

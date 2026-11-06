@@ -5,7 +5,15 @@ local util = require("takaro.util")
 
 local M = {}
 
-M.FIELDS = { "gameId", "name", "steamId", "epicOnlineServicesId", "xboxLiveId", "platformId", "ip", "ping" }
+M.FIELDS = { "gameId", "name", "steamId", "epicOnlineServicesId", "xboxLiveId", "platformId", "ip", "ping", "character" }
+
+-- IGameCharacter: an id and a name of 1 to 255 characters. nil when the game gave no usable character.
+local function to_character(raw)
+  if type(raw) ~= "table" then return nil end
+  local id, name = util.opt_string(raw.id), util.opt_string(raw.name)
+  if not id or id == "" or #id > 255 or not name or util.trim(name) == "" or #name > 255 then return nil end
+  return { id = id, name = name }
+end
 
 function M.is_steam64(id)
   return type(id) == "string" and id:match("^7656%d%d%d%d%d%d%d%d%d%d%d%d%d$") ~= nil
@@ -24,6 +32,7 @@ function M.to_player(raw)
   if ip and ip ~= "" then p.ip = ip end
   local ping = util.opt_number(raw.ping)
   if ping and ping >= 0 then p.ping = math.floor(ping) end
+  p.character = to_character(raw.character)
   return p
 end
 
@@ -59,7 +68,10 @@ function Known:remember(player)
     copy.name = old.name
   end
   if old and copy.ip == nil then copy.ip = old.ip end
-  if not old or old.name ~= copy.name or old.ip ~= copy.ip then self.dirty = true end
+  if old and copy.character == nil then copy.character = old.character end
+  local oldCharacter = old and old.character and old.character.id
+  local newCharacter = copy.character and copy.character.id
+  if not old or old.name ~= copy.name or old.ip ~= copy.ip or oldCharacter ~= newCharacter then self.dirty = true end
   copy.ping = nil -- ping is a live value; a stale one is worse than none
   self.byId[player.gameId] = copy
 end
