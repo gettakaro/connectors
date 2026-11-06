@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 
@@ -10,6 +11,15 @@ public sealed record ValheimPlayer(
     string? Ip,
     int? Ping);
 
+/// <summary>
+/// The character a player is on. The id is the one the game generates when the character is
+/// created and saves in the character file, so it lasts for the character's whole life, across
+/// respawns; the name is only a label.
+/// </summary>
+public sealed record TakaroCharacter(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("name")] string Name);
+
 public sealed record TakaroPlayer(
     [property: JsonPropertyName("gameId")] string GameId,
     [property: JsonPropertyName("name")] string Name,
@@ -17,7 +27,8 @@ public sealed record TakaroPlayer(
     [property: JsonPropertyName("platformId")] string? PlatformId,
     [property: JsonPropertyName("ip")] string? Ip,
     [property: JsonPropertyName("ping")] int? Ping,
-    [property: JsonPropertyName("xboxLiveId")] string? XboxLiveId = null);
+    [property: JsonPropertyName("xboxLiveId")] string? XboxLiveId = null,
+    [property: JsonPropertyName("character"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TakaroCharacter? Character = null);
 
 /// <summary>
 /// The Takaro identity fields derived from a Valheim <c>PlatformUserID</c> string
@@ -34,6 +45,7 @@ public sealed record PlatformIdentity(string? SteamId, string? XboxLiveId, strin
 
 public static class PlayerMapper
 {
+    private const int MaximumCharacterNameLength = 255;
     private static readonly Regex SteamIdPattern = new(@"(?<steamId>7656119\d{10})", RegexOptions.Compiled);
     private static readonly Regex BareSteamIdPattern = new(@"^7656119\d{10}$", RegexOptions.Compiled);
     private static readonly Regex XuidPattern = new(@"^\d{1,20}$", RegexOptions.Compiled);
@@ -51,6 +63,23 @@ public static class PlayerMapper
             Ip: player.Ip,
             Ping: player.Ping,
             XboxLiveId: identity.XboxLiveId);
+    }
+
+    /// <summary>
+    /// The character behind a player ZDO, or null until the ZDO has reached the server. The game
+    /// writes the id and name onto the ZDO when it spawns the character, for vanilla clients too.
+    /// </summary>
+    public static TakaroCharacter? ToCharacter(long characterId, string? characterName, string fallbackName)
+    {
+        if (characterId == 0)
+        {
+            return null;
+        }
+
+        var name = FirstNonEmpty(characterName, fallbackName) ?? characterId.ToString(CultureInfo.InvariantCulture);
+        return new TakaroCharacter(
+            characterId.ToString(CultureInfo.InvariantCulture),
+            name.Length > MaximumCharacterNameLength ? name.Substring(0, MaximumCharacterNameLength) : name);
     }
 
     public static PlatformIdentity ToIdentity(string platformUserId, string? knownSteamId = null)

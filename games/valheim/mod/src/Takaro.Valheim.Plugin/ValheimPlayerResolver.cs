@@ -26,7 +26,10 @@ public sealed class ValheimPlayerResolver
             playerId,
             null,
             null,
-            null));
+            null)) with
+        {
+            Character = ReadCharacter(player.m_characterID, player.m_name)
+        };
 
         logger.LogDebug($"Takaro Valheim player mapped: name={takaroPlayer.Name}, gameId={takaroPlayer.GameId}, platformId={takaroPlayer.PlatformId ?? "<none>"}.");
         try
@@ -51,7 +54,21 @@ public sealed class ValheimPlayerResolver
             platformId,
             null,
             null,
-            null));
+            null)) with
+        {
+            Character = ReadCharacter(peer.m_characterID, peer.m_playerName)
+        };
+    }
+
+    private static TakaroCharacter? ReadCharacter(ZDOID characterZdoId, string? fallbackName)
+    {
+        var zdo = characterZdoId.IsNone() ? null : ZDOMan.instance?.GetZDO(characterZdoId);
+        return zdo is null
+            ? null
+            : PlayerMapper.ToCharacter(
+                zdo.GetLong(ZDOVars.s_playerID, 0L),
+                zdo.GetString(ZDOVars.s_playerName, string.Empty),
+                fallbackName ?? string.Empty);
     }
 
     public bool TryResolvePlayer(

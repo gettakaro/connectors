@@ -87,6 +87,17 @@ public static class ProtocolHandshake
         ["parameters"] = new JsonObject { ["source"] = "client-reported" }
     };
 
+    /// <summary>
+    /// A player picks a character on their own PC and can switch at every join, so the characters
+    /// are client-held. A death never ends one: even on the harshest world modifiers the
+    /// character lives on, so <c>ends</c> is not declared.
+    /// </summary>
+    public static JsonObject CreateCharactersCapability() => new()
+    {
+        ["name"] = "players.characters",
+        ["parameters"] = new JsonObject { ["held"] = "client" }
+    };
+
     public static JsonArray BuildCapabilityManifest(GameProfile? profile = null, bool includeMap = false)
     {
         var manifest = new JsonArray();
@@ -96,6 +107,7 @@ public static class ProtocolHandshake
         }
 
         manifest.Add(CreateProgressionCapability());
+        manifest.Add(CreateCharactersCapability());
 
         foreach (var eventType in GameEventTypes.All)
         {

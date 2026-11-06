@@ -84,6 +84,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         }
 
         var players = network.GetPlayerList().Select(playerResolver.ToTakaroPlayer).ToArray();
+        companionProgression.ObservePlayerList(players);
 
         logger.LogInfo($"Takaro Valheim getPlayers returned {players.Length} player(s).");
         return Task.FromResult(RuntimeArrayActionPolicy.FromSource(
