@@ -1516,6 +1516,18 @@
     {
       "kind": "property",
       "owner": "ConanCharacter",
+      "name": "CharacterStableId",
+      "layout": "runtime",
+      "usedBy": "player_snapshot, events",
+      "baseline": {
+        "type": "StructProperty",
+        "size": 8,
+        "offset": 2208
+      }
+    },
+    {
+      "kind": "property",
+      "owner": "ConanCharacter",
       "name": "m_StatHolder",
       "layout": "runtime",
       "usedBy": "player_snapshot progression",

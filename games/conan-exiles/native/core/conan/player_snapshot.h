@@ -44,6 +44,9 @@ struct PlayerLayout {
     int32_t pawnProgression = -1;    // BasePlayerChar_C.BP_ProgressionSystem
     int32_t experiencePoints = -1;   // BP_ProgressionSystem_C.ExperiencePoints (double)
     int32_t levelStart = -1, levelEnd = -1;  // BP_ProgressionSystem_C.LevelStart/LevelEnd: XP bounds of the level
+    // ConanCharacter.CharacterStableId (FStableId, one int64): optional like the progression, a
+    // build that renames it reports no character and Takaro keeps the implicit one.
+    int32_t characterId = -1;
     // pinned to build 25639945, not reflected
     // PlayerState float (GetPingInMilliseconds), 8 bytes before SavedNetworkAddress on both servers:
     // 824 under clang (Linux), 840 under MSVC (Windows, SavedNetworkAddress at 848; live 2026-10-03).
@@ -75,6 +78,7 @@ struct PlayerRecord {
     std::string steam64;  // the Takaro gameId: Steam64 from PlayerState.UniqueID (else the best id we have)
     std::string uniqueId, urlId;  // PlayerState.UniqueID string, UserIDFromURLOptions (may be "A-...")
     std::string name, characterName, ip;
+    int64_t characterId = 0;  // 0: no character loaded
     float ping = -1;  // ExactPing (ms); < 0 = unknown
 };
 
