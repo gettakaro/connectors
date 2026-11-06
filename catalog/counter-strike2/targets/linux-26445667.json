@@ -9,7 +9,7 @@
     "status": "candidate",
     "since": "2026-11-06",
     "evidence": [
-      "SteamCMD app_update 730 on 2026-11-06 recorded public build 26445667 and the listed depot manifests",
+      "SteamCMD on 2026-11-06 recorded public build 26445667 and the listed depot manifests",
       "CounterStrikeSharp v1.0.379 and Metamod:Source 2.0.0.1483 were the current upstream releases on 2026-11-06",
       "SteamCMD validation on 2026-11-06 completed with StateFlags 4 and installed buildid 26445667"
     ],
