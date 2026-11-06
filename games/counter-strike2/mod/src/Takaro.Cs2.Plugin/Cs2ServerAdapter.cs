@@ -51,6 +51,10 @@ public sealed partial class Cs2ServerAdapter : ICs2TakaroAdapter
 
     public async Task<TakaroActionResult> TestReachabilityAsync(CancellationToken cancellationToken = default)
     {
+        // World updates only run once a map is up, so waiting on the game thread here would time out.
+        if (string.IsNullOrEmpty(currentMap))
+            return TakaroActionResult.Ok(new { connectable = false, reason = "The server is still loading a map." });
+
         var payload = await RunOnServerAsync(() => new
         {
             connectable = true,
