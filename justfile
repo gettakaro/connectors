@@ -69,6 +69,10 @@ build-release-empyrion version out-dir='dist' target='windows-25490402':
 build-release-ark-ascended version out-dir='dist' target='windows-26334129':
     ./games/ark-ascended/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
 
+# Package the StarRupture release zip
+build-release-starrupture version out-dir='dist' target='windows-25642172':
+    ./games/starrupture/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
+
 # === Terraria Plugin ===
 
 # Prepare TShock reference assemblies

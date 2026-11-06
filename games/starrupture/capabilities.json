@@ -1,0 +1,189 @@
+{
+  "game": "StarRupture",
+  "connector": "Takaro StarRupture connector (ModLoader plugin TakaroStarRupture)",
+  "architecture": "in-process ModLoader plugin inside the dedicated server: C++ game logic and a WinHTTP WebSocket transport; outbound WSS only, no sidecar, no inbound port",
+  "runtime": "StarRuptureServerEOS-Win64-Shipping.exe (Steam app 3809400) with ModLoader v1.22.1",
+  "takaroConnection": "outbound_websocket",
+  "protocolVersions": [
+    1
+  ],
+  "gameProfile": {
+    "actions": [
+      "getGameIcon"
+    ],
+    "connector": "starrupture-connector",
+    "game": "starrupture",
+    "icon": "assets/icon-256.png, embedded in the plugin"
+  },
+  "statusDefinitions": {
+    "live-supported": "proven end to end through Takaro on a real server",
+    "schema-fallback": "answers a valid empty or placeholder value",
+    "unsupported": "not offered by this connector"
+  },
+  "actions": {
+    "banPlayer": {
+      "status": "live-supported",
+      "liveVerification": "not live-tested yet",
+      "reason": "Plugin ban list keyed by SteamID64, enforced at join.",
+      "responseShape": "{ success }"
+    },
+    "executeConsoleCommand": {
+      "status": "unsupported",
+      "liveVerification": "not declared",
+      "reason": "The dedicated server has no console surface the plugin can drive and read back.",
+      "responseShape": "error unsupported"
+    },
+    "getGameIcon": {
+      "status": "live-supported",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: Takaro stored the icon revision on a fresh server",
+      "reason": "Embedded 256x256 PNG.",
+      "responseShape": "{ revision, data }"
+    },
+    "getMapInfo": {
+      "status": "unsupported",
+      "liveVerification": "not declared",
+      "reason": "No map art on the server.",
+      "responseShape": "error unsupported"
+    },
+    "getMapTile": {
+      "status": "unsupported",
+      "liveVerification": "not declared",
+      "reason": "No map art on the server.",
+      "responseShape": "error unsupported"
+    },
+    "getPlayer": {
+      "status": "live-supported",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: answered from the same snapshot",
+      "reason": "Snapshot, last known data for offline players.",
+      "responseShape": "IGamePlayer"
+    },
+    "getPlayerInventory": {
+      "status": "live-supported",
+      "liveVerification": "not live-tested yet",
+      "reason": "Player inventory component on the game thread.",
+      "responseShape": "IItemDTO[] (bare array)"
+    },
+    "getPlayerLocation": {
+      "status": "live-supported",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: position moved with the player and after teleport",
+      "reason": "Snapshot; remembered 60 s after leaving so Takaro can record a disconnect.",
+      "responseShape": "{ x, y, z }"
+    },
+    "getPlayerProgression": {
+      "status": "live-supported",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: Movement earned from 0 to 3.5, then level 1 to 2; values stay across a convict switch",
+      "reason": "ACrPlayerControllerBase::PlayerSkills: Movement, Combat, Survival. null until the skills are loaded.",
+      "responseShape": "{ tracks: [{ key, name, level, experience }] } or null"
+    },
+    "getPlayers": {
+      "status": "live-supported",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: test player listed with gameId, steamId, platformId steam:<id>, EOS id, ping",
+      "reason": "Snapshot refreshed every 2 s on the game thread.",
+      "responseShape": "IGamePlayer[] (bare array)"
+    },
+    "giveItem": {
+      "status": "live-supported",
+      "liveVerification": "not live-tested yet",
+      "reason": "Exact code from the catalogue; quality is ignored, the game has none.",
+      "responseShape": "{ success }"
+    },
+    "kickPlayer": {
+      "status": "live-supported",
+      "liveVerification": "not live-tested yet",
+      "reason": "ClientReturnToMainMenuWithTextReason.",
+      "responseShape": "{ success }"
+    },
+    "listBans": {
+      "status": "live-supported",
+      "liveVerification": "not live-tested yet",
+      "reason": "The plugin ban list.",
+      "responseShape": "IBanDTO[] (bare array)"
+    },
+    "listEntities": {
+      "status": "live-supported",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: 9 enemy types with readable names on a fresh server",
+      "reason": "Enemy definitions loaded in the world; they have no game text, so names come from the code.",
+      "responseShape": "IEntityDTO[] (bare array)"
+    },
+    "listItems": {
+      "status": "live-supported",
+      "liveVerification": "not live-tested yet",
+      "reason": "Item database; names from the game text, a readable name from the code when the game has none.",
+      "responseShape": "IItemDTO[] (bare array)"
+    },
+    "listLocations": {
+      "status": "live-supported",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: 241 points of interest on a fresh server",
+      "reason": "Point of interest markers in the world.",
+      "responseShape": "ILocationDTO[] (bare array)"
+    },
+    "sendMessage": {
+      "status": "live-supported",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: global and directed lines seen in the client",
+      "reason": "The game has no per-player chat call, so a directed message is visible to everyone and names the recipient.",
+      "responseShape": "{ success }"
+    },
+    "shutdown": {
+      "status": "live-supported",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: saved the world and exited with nobody online",
+      "reason": "Saves, answers Takaro, then runs quit on the game thread.",
+      "responseShape": "{ success }"
+    },
+    "teleportPlayer": {
+      "status": "live-supported",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: player moved to the requested position",
+      "reason": "Pawn teleport on the game thread.",
+      "responseShape": "{ success }"
+    },
+    "testReachability": {
+      "status": "live-supported",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: connectable false with reason while parked, true once the world began play",
+      "reason": "Reads the plugin's world phase.",
+      "responseShape": "{ connectable, reason? }"
+    },
+    "unbanPlayer": {
+      "status": "live-supported",
+      "liveVerification": "not live-tested yet",
+      "reason": "Removes the entry from the plugin ban list.",
+      "responseShape": "{ success }"
+    }
+  },
+  "events": {
+    "chat-message": {
+      "status": "live-supported",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: player line arrived as global",
+      "reason": "ProcessEvent observer on MulticastClientChatCommit.",
+      "payloadShape": "{ player, channel, msg }"
+    },
+    "entity-killed": {
+      "status": "live-supported",
+      "liveVerification": "not live-tested yet",
+      "reason": "ProcessEvent observer on gameplay cues.",
+      "payloadShape": "{ player, entity, weapon }"
+    },
+    "log": {
+      "status": "unsupported",
+      "liveVerification": "not declared",
+      "reason": "Takaro rate-limits log lines and stores none, so they are not sent.",
+      "payloadShape": "none"
+    },
+    "player-connected": {
+      "status": "live-supported",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: one event per join with identity fields",
+      "reason": "ModLoader player events.",
+      "payloadShape": "{ player }"
+    },
+    "player-death": {
+      "status": "live-supported",
+      "liveVerification": "live 2026-11-06 on StarRupture 0.3.5 CL-127004 through Takaro: fall and starvation deaths with position",
+      "reason": "Pawn state in the snapshot.",
+      "payloadShape": "{ player, position? }"
+    },
+    "player-disconnected": {
+      "status": "live-supported",
+      "liveVerification": "not live-tested yet",
+      "reason": "ModLoader player events.",
+      "payloadShape": "{ player }"
+    }
+  }
+}

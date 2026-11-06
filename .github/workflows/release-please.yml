@@ -58,6 +58,9 @@ jobs:
       scum_released: ${{ steps.rp.outputs['games/scum--release_created'] }}
       scum_tag: ${{ steps.rp.outputs['games/scum--tag_name'] }}
       scum_version: ${{ steps.rp.outputs['games/scum--version'] }}
+      starrupture_released: ${{ steps.rp.outputs['games/starrupture--release_created'] }}
+      starrupture_tag: ${{ steps.rp.outputs['games/starrupture--tag_name'] }}
+      starrupture_version: ${{ steps.rp.outputs['games/starrupture--version'] }}
       tf2_released: ${{ steps.rp.outputs['games/tf2--release_created'] }}
       tf2_tag: ${{ steps.rp.outputs['games/tf2--tag_name'] }}
       tf2_version: ${{ steps.rp.outputs['games/tf2--version'] }}
@@ -243,6 +246,18 @@ jobs:
       version: ${{ needs.release-please.outputs.scum_version }}
       tag: ${{ needs.release-please.outputs.scum_tag }}
 
+  release-starrupture:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.starrupture_released == 'true' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/starrupture.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.release-please.outputs.starrupture_version }}
+      tag: ${{ needs.release-please.outputs.starrupture_tag }}
+
   release-tf2:
     needs: release-please
     if: ${{ needs.release-please.outputs.tf2_released == 'true' }}
@@ -300,6 +315,7 @@ jobs:
       - release-dragonwilds
       - release-vein
       - release-scum
+      - release-starrupture
       - release-tf2
       - release-empyrion
       - release-ark-ascended
@@ -317,6 +333,7 @@ jobs:
         (needs.release-dragonwilds.result == 'success' && needs.release-please.outputs.dragonwilds_released == 'true') ||
         (needs.release-vein.result == 'success' && needs.release-please.outputs.vein_released == 'true') ||
         (needs.release-scum.result == 'success' && needs.release-please.outputs.scum_released == 'true') ||
+        (needs.release-starrupture.result == 'success' && needs.release-please.outputs.starrupture_released == 'true') ||
         (needs.release-tf2.result == 'success' && needs.release-please.outputs.tf2_released == 'true') ||
         (needs.release-empyrion.result == 'success' && needs.release-please.outputs.empyrion_released == 'true') ||
         (needs.release-ark-ascended.result == 'success' && needs.release-please.outputs.ark_ascended_released == 'true')
@@ -350,6 +367,7 @@ jobs:
              || needs.release-please.outputs.dragonwilds_tag
              || needs.release-please.outputs.vein_tag
              || needs.release-please.outputs.scum_tag
+             || needs.release-please.outputs.starrupture_tag
              || needs.release-please.outputs.tf2_tag
              || needs.release-please.outputs.empyrion_tag
              || needs.release-please.outputs.ark_ascended_tag }}

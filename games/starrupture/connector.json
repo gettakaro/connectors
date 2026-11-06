@@ -1,0 +1,19 @@
+{
+  "name": "StarRupture",
+  "tagline": "Native connector for StarRupture dedicated servers: one ModLoader plugin inside the server that connects to Takaro itself, no sidecar.",
+  "assetMode": "all",
+  "requirements": [
+    "StarRupture Windows dedicated server (Steam app 3809400) build named in the release",
+    "File access to the server's StarRupture\\Binaries\\Win64 folder",
+    "Takaro registration token"
+  ],
+  "assets": [
+    {
+      "pattern": "takaro-starrupture-*.zip",
+      "label": "Server plugin (ModLoader included)",
+      "requires": "StarRupture dedicated server on Windows",
+      "hint": "Stop the server, unzip into StarRupture\\Binaries\\Win64 (next to StarRuptureServerEOS-Win64-Shipping.exe), copy ModLoader\\Plugins\\config\\TakaroStarRupture.example.ini to TakaroStarRupture.ini, paste the registration token and start the server.",
+      "required": true
+    }
+  ]
+}
