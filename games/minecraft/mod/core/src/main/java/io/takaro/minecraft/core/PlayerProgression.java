@@ -30,7 +30,7 @@ public final class PlayerProgression {
 
     /** The player's tracks, or null for a player this server has not seen since it started. */
     JsonArray tracks(String gameId) {
-        Reading reading = readings.get(gameId);
+        Reading reading = gameId != null ? readings.get(gameId) : null;
         if (reading == null) return null;
         JsonObject character = new JsonObject();
         character.addProperty("key", "character");

@@ -14,6 +14,7 @@ import io.papermc.paper.ServerBuildInfo;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.*;
 import org.bukkit.ban.ProfileBanList;
 import org.bukkit.entity.EntityType;
@@ -254,8 +255,13 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
     @Override
     public CommandResult executeConsoleCommand(String command) {
         try {
-            boolean success = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
-            return new CommandResult(success, "", null);
+            StringBuilder output = new StringBuilder();
+            var sender = Bukkit.createCommandSender(message -> {
+                output.append(PlainTextComponentSerializer.plainText().serialize(message)).append('\n');
+                Bukkit.getConsoleSender().sendMessage(message); // keep the line in the server log
+            });
+            boolean success = Bukkit.dispatchCommand(sender, command);
+            return new CommandResult(success, output.toString().stripTrailing(), null);
         } catch (Exception e) {
             return new CommandResult(false, "", e.getMessage());
         }

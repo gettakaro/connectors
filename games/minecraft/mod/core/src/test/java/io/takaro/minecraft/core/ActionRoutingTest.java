@@ -400,6 +400,51 @@ class ActionRoutingTest {
         client.onMessage(request.toString());
     }
 
+    private void sendRawRequest(String requestId, com.google.gson.JsonElement args) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("action", "getPlayers");
+        payload.add("args", args);
+        JsonObject request = new JsonObject();
+        request.addProperty("type", "request");
+        request.addProperty("requestId", requestId);
+        request.add("payload", payload);
+        client.onMessage(request.toString());
+    }
+
+    @Test
+    void emptyArgsAreAcceptedInEveryEncoding() {
+        sendRawRequest("a", new com.google.gson.JsonArray());
+        sendRawRequest("b", new JsonObject());
+        sendRawRequest("c", new com.google.gson.JsonPrimitive("[]"));
+        sendRawRequest("d", new com.google.gson.JsonPrimitive("{}"));
+        sendRawRequest("e", new com.google.gson.JsonPrimitive(""));
+        waitForResponse();
+
+        assertEquals(5, sentMessages.size());
+    }
+
+    @Test
+    void unreadableArgsAreAnsweredNotDropped() {
+        sendRawRequest("bad", new com.google.gson.JsonPrimitive("{not json"));
+        waitForResponse();
+
+        assertEquals(1, sentMessages.size());
+        assertEquals("bad", parseResponse(sentMessages.get(0)).get("requestId").getAsString());
+    }
+
+    @Test
+    void playerActionsTakeAFlatOrNestedGameId() {
+        sendRequest("kickPlayer", "flat", "{\"gameId\":\"player-1\",\"reason\":\"x\"}");
+        waitForResponse();
+        assertEquals("player-1", adapter.lastKickedId);
+
+        adapter.knownPlayer = new PlayerInfo("abc-123", "Steve", null, null, null, "minecraft:abc-123", "127.0.0.1", 42);
+        sendRequest("getPlayer", "nested", "{\"player\":{\"gameId\":\"abc-123\"}}");
+        waitForResponse();
+        assertEquals("abc-123", parseResponse(sentMessages.get(sentMessages.size() - 1))
+                .getAsJsonObject("payload").get("gameId").getAsString());
+    }
+
     private void waitForResponse() {
         // runOnMainThread executes synchronously in tests, but whenCompleteAsync
         // runs on ForkJoinPool. Give it a moment.
