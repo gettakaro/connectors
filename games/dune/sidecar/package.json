@@ -12,7 +12,7 @@
     "catalogue": "node scripts/gen-catalogue.mjs",
     "icon": "node scripts/gen-game-icon.mjs"
   },
-  "license": "ISC",
+  "license": "AGPL-3.0-only",
   "dependencies": {
     "amqplib": "^0.10.9",
     "pg": "^8.16.3",
