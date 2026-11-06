@@ -46,7 +46,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -70,7 +70,7 @@ jobs:
         run: python3 -m unittest discover -s games/dragonwilds/scripts -p 'test_*.py' -v
 
   params:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:

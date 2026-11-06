@@ -18,7 +18,9 @@ struct Vec3 {
 bool WorldGetLocation(const std::string& playerName, Vec3& out, std::string& err);
 bool WorldTeleport(const std::string& playerName, const Vec3& to, std::string& err);
 bool WorldInventoryJson(const std::string& playerName, std::string& json, std::string& err);
-bool WorldGiveItem(const std::string& playerName, const ItemDef& item, uint32_t amount, std::string& err, std::string& detail);
+// level: AdminInventoryCreateAction.level (1-255); 0 = the game's default level for the item.
+bool WorldGiveItem(const std::string& playerName, const ItemDef& item, uint32_t amount, std::string& err, std::string& detail,
+                   uint8_t level = 0);
 // recipientMachine: "" broadcasts; otherwise the machine index printed in "[server] Machine 'M'" of the recipient.
 bool WorldSendMessage(const std::string& text, const std::string& recipientMachine, uint8_t type, uint32_t senderHandle,
                       std::string& err);
@@ -28,7 +30,7 @@ bool WorldNearbyJson(const std::string& playerName, double radius, std::string& 
 bool WorldAccountForMachine(uint32_t machine, uint64_t& account, std::string& err);
 bool WorldSlotsJson(std::string& json, std::string& err);  // diagnostic dump of the 16 player slots
 
-// The compiled item and entity tables are the Enshrouded 1.0 tables (game build 1267041). On another game
+// The compiled item and entity tables match game build 1283531 (items exported there, entities on 1267041). On another game
 // build without a gamedata section their ids and names can be wrong, so lookups are refused.
 void SetItemTablesBuild(const std::string& gameBuild, bool haveGamedataSection);
 bool ItemTablesUsable();

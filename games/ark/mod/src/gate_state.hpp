@@ -30,6 +30,7 @@ namespace gate {
 struct Action {
   enum class Kind { message, give_item, teleport, console, kick, ban, unban, shutdown } kind = Kind::message;
   std::u32string text;
+  std::u32string sender;  // message: the chat sender name; empty = ARK's server line
   std::string player_id;
   std::string item_code;
   std::string output;

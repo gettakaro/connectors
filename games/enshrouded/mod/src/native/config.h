@@ -19,6 +19,7 @@ struct NativeConfig {
     std::string url = kDefaultUrl;
     std::string identityToken, registrationToken;
     std::string serverName;
+    std::string serverChatName;  // sender name on messages from Takaro when Takaro passes none; "" = none
     std::string caFile;  // resolved against the exe dir; empty = system trust
     std::string mapDir;  // getMapInfo/getMapTile tile pack (maptiles.h); default <exe dir>\takaro\map
     unsigned reconnectBaseMs = 2000, reconnectMaxMs = 60000;

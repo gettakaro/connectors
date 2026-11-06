@@ -33,6 +33,7 @@ public final class PropertiesConfigFormat implements ConfigFormat {
         config.setBackoffMultiplier(Double.parseDouble(props.getProperty("takaro.reconnect.backoff_multiplier", "1.5").trim()));
         config.setDebugEnabled(Boolean.parseBoolean(props.getProperty("takaro.debug", "false").trim()));
         config.setMapEnabled(Boolean.parseBoolean(props.getProperty("takaro.map", "false").trim()));
+        config.setServerChatName(props.getProperty("takaro.server_chat_name", ""));
         return config;
     }
 
@@ -50,8 +51,10 @@ public final class PropertiesConfigFormat implements ConfigFormat {
                 + "takaro.reconnect.max_delay=300000\n"
                 + "takaro.reconnect.backoff_multiplier=1.5\n"
                 + "takaro.debug=false\n"
-                + "# World map in Takaro. Needs Takaro protocol v1, not yet on takaro.io.\n"
-                + "takaro.map=false\n";
+                + "# World map in Takaro. Needs a Takaro that speaks protocol v1.\n"
+                + "takaro.map=false\n"
+                + "# Sender name on Takaro's messages when Takaro sends none. Empty = no sender name.\n"
+                + "takaro.server_chat_name=\n";
     }
 
     @Override

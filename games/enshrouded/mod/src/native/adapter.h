@@ -28,7 +28,10 @@ struct ActionView {
     std::vector<JsonValue> knownPlayers;  // Takaro-shaped players this connector has seen
     std::map<std::string, TimedBan> timedBans;
     std::string mapDir;         // map tile pack directory (maptiles.h)
+    std::string serverChatName;  // plugin.json "serverChatName" / TAKARO_SERVER_CHAT_NAME; "" = none
     std::string banStoreError;  // non-empty: the timed-ban store is unreadable; timed bans and listBans refuse
+    bool tailOwnsPlayers = false;         // log-tail fallback active: the plugin's player list is not trustworthy
+    std::vector<JsonValue> tailOnline;    // the players the log tail reported online (Takaro-shaped)
 };
 
 struct BanChange {
@@ -42,6 +45,7 @@ struct ActionOutcome {
     std::string error;  // response error text when !ok
     std::string errorCode = "internal";  // protocol 1 error code when !ok (ProtocolErrorCode)
     std::vector<JsonValue> seenPlayers;
+    std::map<std::string, JsonValue> positions;  // gameId -> {x, y, z} read during the action (shutdown)
     BanChange ban;
 };
 

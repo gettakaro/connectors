@@ -198,6 +198,7 @@ void StartConnector() {
     conan::AdapterOptions ao;
     ao.version = TAKARO_CONAN_NATIVE_VERSION;
     ao.savedDir = saved;
+    ao.serverChatName = [watcher] { return watcher->ServerChatName(); };
     const std::string shutdownSeconds = Env("TAKARO_CONAN_SHUTDOWN_SECONDS");
     ao.mutationOptions.shutdownSeconds = atoi(shutdownSeconds.empty() ? "60" : shutdownSeconds.c_str());
     // Takaro and the clients' Discord notices see a logout for everyone the exit drops; 2 s for the

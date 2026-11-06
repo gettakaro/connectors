@@ -15,6 +15,8 @@ struct PreparedAction {
     std::string requestId, action, argsJson;
     uint64_t epoch = 0;
     uint64_t revision = 0;
+    // Protocol Version Takaro chose for the connection the request arrived on (0 or 1).
+    int protocolVersion = 0;
     bool internalExpiry = false;
     std::string expiryPlayer;
     // Resolved by the action worker before the bridge durably journals a ban.
@@ -78,6 +80,8 @@ public:
     bool NeedsBanVerification(); // bridge timer; true only with a durable intent
     static std::string VerifyBanState(); // action worker; read both game ban lists
     NativePersistence::Result ReconcileBanIntents(const std::string& verificationJson);
+    // player-disconnected for a player the online view holds but two reconciliations in a row did
+    // not find live; one miss alone is not a leave.
     std::vector<MappedEvent> ReconcileOnline(const std::string& livePlayersJson,
                                              const std::string& bootId);
     std::vector<MappedEvent> OnRawLogLine(const std::string& line);
@@ -92,6 +96,7 @@ private:
     uint64_t revision_ = 0;
     std::string lastError_;
     std::unique_ptr<class LogState> log_;
+    std::map<std::string, int> onlineMisses_;  // ReconcileOnline: consecutive misses per gameId
 };
 
 // Protocol version 1 Capability Manifest: every action ExecuteAction answers with real game data,

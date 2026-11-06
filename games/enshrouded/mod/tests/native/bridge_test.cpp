@@ -5,6 +5,7 @@
 #include "fake_transport.h"
 #include "native/bridge.h"
 #include "native/fileio.h"
+#include "native/game_profile.h"
 #include "native/mapping.h"
 #include "testlib.h"
 
@@ -128,7 +129,9 @@ void IdentifyAndHeartbeat() {
         return !w.empty();
     }));
     CHECK(!w.empty() && w[0].kind == FrameKind::Control &&
-          t::JsonTextEq(w[0].text, R"({"type":"identify","payload":{"identityToken":"identity-secret-1","registrationToken":"registration-secret-2","name":"Rig"}})"));
+          t::JsonTextEq(w[0].text, R"({"type":"identify","payload":{"identityToken":"identity-secret-1","registrationToken":"registration-secret-2","name":"Rig",)"
+                                      R"("game":"enshrouded","connector":{"name":"takaro-enshrouded","version":")" +
+                                      std::string(kConnectorVersion) + R"("}}})"));
     r.tr.Inject(R"({"type":"identifyResponse","payload":{"gameServerId":"gs-1"}})");
     CHECK(t::WaitFor([&] { return r.tr.identifiedEpoch == e; }));
     r.tr.Inject(R"({"type":"ping"})");
@@ -570,9 +573,10 @@ void ReconcileAndLocationFallback() {
     auto ev = r.Events("player-disconnected");
     CHECK(!ev.empty() && t::JsonTextEq(JsonDump(*ev[0].get("payload")->get("data")), "{\"player\":" + limon + "}"));
     CHECK(t::WaitFor([&] { return File(r.StateDir() + "/online-players.json") == "[]"; }));
-    // Takaro asks for the location right after the event: answered from the fallback window
+    // Takaro asks for the location right after the event: no position is known, so none is invented (protocol 0
+    // passes the plugin's error on; Takaro stores the event either way)
     JsonValue resp = r.Call("getPlayerLocation", std::string("{\"gameId\":\"") + LIMON + "\"}");
-    CHECK(resp.get("payload") && t::JsonTextEq(JsonDump(*resp.get("payload")), R"({"x":0,"y":0,"z":0})"));
+    CHECK_MSG(resp.get("error") && !resp.get("payload"), JsonDump(resp));
     // other players have no window
     resp = r.Call("getPlayerLocation", "{\"gameId\":\"nobody\"}");
     CHECK(resp.get("error") && resp.get("error")->str == "Enshrouded plugin HTTP 404 for /players/nobody/location: player not found");
@@ -611,10 +615,95 @@ void WindowRules() {
     b.NoteConnectionEvent("chat-message", player, 0);
     CHECK(!b.EventLocationFallback(args, 0, fb));
     b.NoteConnectionEvent("player-disconnected", player, 1000);
-    CHECK(b.EventLocationFallback(args, 1000 + Bridge::kLocationFallbackMs, fb) && t::JsonTextEq(JsonDump(fb), R"({"x":0,"y":0,"z":0})"));
+    CHECK(!b.EventLocationFallback(args, 1000, fb));  // a window, but no real position: never 0,0,0
+    r.store->Positions()[LIMON] = t::J(R"({"x":1.5,"y":2,"z":-3,"at":1})");
+    CHECK(b.EventLocationFallback(args, 1000 + Bridge::kLocationFallbackMs, fb) && t::JsonTextEq(JsonDump(fb), R"({"x":1.5,"y":2,"z":-3})"));
     CHECK(!b.EventLocationFallback(args, 2000 + Bridge::kLocationFallbackMs, fb));
     CHECK(!b.EventLocationFallback(t::J("{\"gameId\":\"someone-else\"}"), 0, fb));
     CHECK(!b.EventLocationFallback(t::J("{}"), 0, fb));
+}
+
+// A crash with Limon online: the position sampled before it, persisted, places the reconciled disconnect.
+void CrashKeepsLastPosition() {
+    t::Group("bridge-crash-last-position");
+    Rig r("crash-position");
+    std::string err;
+    EnsureDirectory(r.StateDir(), err);
+    std::string limon = std::string("{\"gameId\":\"") + LIMON + "\",\"name\":\"Limon\",\"steamId\":\"" + LIMON +
+                        "\",\"platformId\":\"steam:" + LIMON + "\"}";
+    t::WriteFile(r.StateDir() + "/online-players.json", "[" + limon + "]");
+    t::WriteFile(r.StateDir() + "/last-positions.json",
+                 std::string("{\"") + LIMON + "\":{\"x\":3607.96,\"y\":867.27,\"z\":1336.6,\"at\":1}}");
+    r.fake.players = t::J("[]");
+    r.Start();
+    r.Connect();
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return r.Events("player-disconnected").size() == 1;
+    }));
+    // the event itself stays exactly the DTO fields: Takaro drops events with keys it does not know
+    auto ev = r.Events("player-disconnected");
+    CHECK(!ev.empty() && t::JsonTextEq(JsonDump(*ev[0].get("payload")->get("data")), "{\"player\":" + limon + "}"));
+    JsonValue resp = r.Call("getPlayerLocation", std::string("{\"gameId\":\"") + LIMON + "\"}");
+    CHECK_MSG(resp.get("payload") && t::JsonTextEq(JsonDump(*resp.get("payload")), R"({"x":3607.96,"y":867.27,"z":1336.6})"),
+              JsonDump(resp));
+}
+
+// While Limon is online the bridge reads his position itself (Takaro never asks here), keeps it on disk, and
+// answers Takaro's location request after the disconnect with it. A new session forgets the old position.
+void SampledPositionPlacesDisconnect() {
+    t::Group("bridge-sampled-position");
+    Rig r("sampled-position");
+    r.o.positionSampleMs = 100;
+    r.Start();
+    r.Connect();
+    std::string who = std::string("{\"player\":{\"gameId\":\"") + LIMON + "\",\"name\":\"Limon\",\"steamId\":\"" + LIMON + "\"}}";
+    r.fake.PushEvent("player-connected", who);
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/last-positions.json").find("10.5") != std::string::npos; }, 8000));
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);  // he walks on
+        r.fake.locations = t::J(std::string("{\"") + LIMON + "\":{\"x\":44,\"y\":5,\"z\":6}}");
+    }
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/last-positions.json").find("44") != std::string::npos; }, 8000));
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);  // ... and leaves: the game no longer knows him
+        r.fake.players.arr.erase(r.fake.players.arr.begin());
+    }
+    r.fake.PushEvent("player-disconnected", who);
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return r.Events("player-disconnected").size() == 1;
+    }));
+    JsonValue resp = r.Call("getPlayerLocation", std::string("{\"gameId\":\"") + LIMON + "\"}");
+    CHECK_MSG(resp.get("payload") && t::JsonTextEq(JsonDump(*resp.get("payload")), R"({"x":44,"y":5,"z":6})"), JsonDump(resp));
+    r.fake.PushEvent("player-connected", who);
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/last-positions.json").find("44") == std::string::npos; }, 8000));
+}
+
+// Takaro's shutdown reads everyone's position first, so the disconnects of the shutdown are placed exactly.
+void ShutdownReadsPositions() {
+    t::Group("bridge-shutdown-positions");
+    Rig r("shutdown-positions");
+    r.o.positionSampleMs = 0;  // only the shutdown read
+    r.Start();
+    r.Connect();
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.locations = t::J(std::string("{\"") + LIMON + "\":{\"x\":7,\"y\":8,\"z\":9}}");
+    }
+    r.Call("shutdown", "{}");
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/last-positions.json").find("\"x\":7") != std::string::npos; }));
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.players = t::J("[]");
+    }
+    r.fake.PushEvent("player-disconnected", std::string("{\"player\":{\"gameId\":\"") + LIMON + "\",\"name\":\"Limon\",\"steamId\":\"" + LIMON + "\"}}");
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return r.Events("player-disconnected").size() == 1;
+    }));
+    JsonValue resp = r.Call("getPlayerLocation", std::string("{\"gameId\":\"") + LIMON + "\"}");
+    CHECK_MSG(resp.get("payload") && t::JsonTextEq(JsonDump(*resp.get("payload")), R"({"x":7,"y":8,"z":9})"), JsonDump(resp));
 }
 
 void LogTailFallback() {
@@ -642,6 +731,19 @@ void LogTailFallback() {
     auto ev = r.Events("player-connected");
     CHECK_EQ(ev.size(), (size_t)1);  // the ring's connect was suppressed while the tail owns joins
     CHECK(!ev.empty() && ev[0].get("payload")->get("data")->get("player")->get("name")->str == "Limon");
+    // the plugin's player list is empty while degraded; reconciliation must not drop the tail's join
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.players = t::J("[]");
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+    r.tr.Drain();
+    CHECK(r.Events("player-disconnected").empty());
+    // getPlayers answers from the tail's list, not the plugin's empty one
+    JsonValue players = r.Call("getPlayers", "{}");
+    const JsonValue* list = players.get("payload");
+    CHECK(list && list->type == JsonValue::Array && list->arr.size() == 1 &&
+          list->arr[0].get("gameId")->str == LIMON && list->arr[0].get("name")->str == "Limon");
     // the hook recovers: the tail switches off
     {
         std::lock_guard<std::mutex> g(r.fake.mu);
@@ -799,19 +901,22 @@ uint64_t IdentifyV1(Rig& r) {
 void ProtocolV1Identify() {
     t::Group("bridge-v1-identify");
     Rig r("v1-identify");
+    r.o.gameVersion = "1269579";
     r.Start();
     JsonValue id = OpenForIdentify(r);
     const JsonValue& p = AsRecord(id.get("payload"));
     CHECK_EQ(JsonDump(*p.get("protocolVersions")), std::string("[0,1]"));
     const JsonValue* caps = p.get("capabilities");
-    CHECK(caps && caps->type == JsonValue::Array && caps->arr.size() == 23);
+    CHECK(caps && caps->type == JsonValue::Array && caps->arr.size() == 24);
     std::set<std::string> names;
     const JsonValue* map = nullptr;
+    const JsonValue* profile = nullptr;
     for (auto& c : caps->arr) {
         std::string n = c.get("name")->str;
         CHECK_MSG(std::regex_match(n, std::regex("^[a-z][a-zA-Z0-9]*(\\.[a-z][a-zA-Z0-9-]*)*$")), n);
         CHECK_MSG(names.insert(n).second, "duplicate " + n);
         if (n == "map") map = &c;
+        if (n == "game.profile") profile = &c;
     }
     for (const char* need : {"players.list", "players.location", "items.give", "moderation.listBans", "server.shutdown",
                              "locations.list", "events.chat-message", "events.entity-killed"})
@@ -825,8 +930,161 @@ void ProtocolV1Identify() {
                             R"("bounds":{"horizontal":{"min":0,"max":10240},"vertical":{"min":0,"max":10240}},)"
                             R"("source":{"type":"none"}}]})"));
     }
+    CHECK(profile != nullptr);
+    if (profile) {
+        CHECK(t::JsonTextEq(JsonDump(*profile->get("parameters")),
+                            R"({"name":"Enshrouded","version":"1269579","icon":{"revision":")" + GameIconRevision() +
+                                R"(","size":)" + std::to_string(GameIconPng().size()) + "}}"));
+    }
+    CHECK_EQ(Str(p.get("game")).value_or(""), std::string("enshrouded"));
+    CHECK_EQ(Str(AsRecord(p.get("connector")).get("version")).value_or(""), std::string(kConnectorVersion));
     CHECK(JsonDump(id).find("identity-secret-1") != std::string::npos);  // the identify itself carries the token
     IdentifyV1(r);
+    // getGameIcon: the declared revision and the whole PNG in one response, args "{}"
+    JsonValue resp = r.Call("getGameIcon", "{}");
+    const JsonValue& icon = AsRecord(resp.get("payload"));
+    CHECK(!resp.get("error"));
+    CHECK_EQ(Str(icon.get("revision")).value_or(""), GameIconRevision());
+    CHECK_EQ(Str(icon.get("data")).value_or("").size(), (GameIconPng().size() + 2) / 3 * 4);
+}
+
+void ProtocolV1UnknownBuild() {
+    t::Group("bridge-v1-unknown-build");
+    Rig r("v1-unknown-build");  // gameVersion "": the profile has no version, the rest is unchanged
+    r.Start();
+    JsonValue id = OpenForIdentify(r);
+    const JsonValue* profile = nullptr;
+    for (auto& c : AsRecord(id.get("payload")).get("capabilities")->arr)
+        if (c.get("name")->str == "game.profile") profile = &c;
+    CHECK(profile && !profile->get("parameters")->get("version") && profile->get("parameters")->get("icon"));
+}
+
+void UnsupportedGameBuildReason() {
+    t::Group("bridge-unsupported-game-build");
+    Rig r("unsupported-build");
+    r.Start();
+    r.Connect();
+    const std::string notice =
+        "game build 9999999 is not supported by plugin 0.8.1: no gamedata section for this build (this plugin has 1267041, "
+        "1273043); the item and entity tables are for another build; capabilities off: giveItem, listItems; update the "
+        "plugin to a release that supports this game build";
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.health = t::J(R"({"status":"ok","gameBuild":"9999999","capabilities":{"giveItem":"degraded","listItems":"degraded","players":"ok"},"gameSupport":")" +
+                             notice + "\"}");
+    }
+    JsonValue resp = r.Call("testReachability", "{}");
+    const JsonValue* p = resp.get("payload");
+    CHECK_MSG(p && p->get("connectable") && p->get("connectable")->b && p->get("reason") && p->get("reason")->str == notice,
+              JsonDump(resp));
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);  // a supported build sends "" and keeps the capability list
+        r.fake.health = t::J(R"({"status":"ok","capabilities":{"kick":"degraded"},"gameSupport":""})");
+    }
+    resp = r.Call("testReachability", "{}");
+    p = resp.get("payload");
+    CHECK_MSG(p && p->get("reason") && p->get("reason")->str == "capabilities not ok: kick=degraded", JsonDump(resp));
+}
+
+// Boot: the hooks are installed but the game world does not run yet. Identify waits, so Takaro's first
+// reachability answer (the one it records as the server's status) is the real one, not the start-up state.
+void IdentifyWaitsForGameWorld() {
+    t::Group("bridge-identify-waits-for-game");
+    const char* starting =
+        R"({"status":"ok","capabilities":{"players":"ok","gameThread":"degraded","kick":"degraded","teleport":"degraded"},)"
+        R"("starting":["gameThread","kick","teleport"],"gameSupport":""})";
+    const char* running =
+        R"({"status":"ok","capabilities":{"players":"ok","gameThread":"ok","kick":"ok","teleport":"ok"},"starting":[],"gameSupport":""})";
+    auto identifies = [](Rig& r) {
+        r.tr.Drain();
+        return r.tr.WireFrames("identify").size();
+    };
+    {
+        Rig r("identify-waits");
+        {
+            std::lock_guard<std::mutex> g(r.fake.mu);
+            r.fake.health = t::J(starting);
+        }
+        r.Start();
+        uint64_t e = r.tr.Open();
+        CHECK(t::WaitFor([&] { return r.Health().get("state")->str == "waiting-for-game"; }));
+        CHECK_EQ(r.Health().get("starting")->str, std::string("gameThread, kick, teleport"));
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+        CHECK_EQ(identifies(r), (size_t)0);
+        {
+            std::lock_guard<std::mutex> g(r.fake.mu);
+            r.fake.health = t::J(running);
+        }
+        CHECK(t::WaitFor([&] { return identifies(r) == 1; }, 3000));
+        r.tr.Inject(R"({"type":"identifyResponse","payload":{"gameServerId":"gs-1"}})");
+        CHECK(t::WaitFor([&] { return r.tr.identifiedEpoch == e; }));
+        JsonValue resp = r.Call("testReachability", "{}");
+        const JsonValue* p = resp.get("payload");
+        CHECK_MSG(p && p->get("connectable")->b && p->get("reason") && p->get("reason")->type == JsonValue::Null, JsonDump(resp));
+        // a reconnect once the world runs identifies at once
+        r.tr.Close();
+        r.tr.Open();
+        CHECK(t::WaitFor([&] { return identifies(r) == 2; }, 1000));
+    }
+    {
+        // a hook that never runs is a real problem: after the hold, identify anyway and say so in the reason
+        Rig r("identify-hold-expires");
+        r.o.startupHoldMs = 300;
+        {
+            std::lock_guard<std::mutex> g(r.fake.mu);
+            r.fake.health = t::J(starting);
+        }
+        r.Start();
+        uint64_t e = r.tr.Open();
+        CHECK(t::WaitFor([&] { return identifies(r) == 1; }, 3000));
+        r.tr.Inject(R"({"type":"identifyResponse","payload":{"gameServerId":"gs-1"}})");
+        CHECK(t::WaitFor([&] { return r.tr.identifiedEpoch == e; }));
+        JsonValue resp = r.Call("testReachability", "{}");
+        const JsonValue* p = resp.get("payload");
+        CHECK_MSG(p && p->get("reason") &&
+                      p->get("reason")->str == "capabilities not ok: gameThread=degraded, kick=degraded, teleport=degraded",
+                  JsonDump(resp));
+    }
+}
+
+// sendMessage sender name: Takaro's senderNameOverride, else plugin.json serverChatName, else the plain text;
+// a new chat name applies to the next message without a reconnect.
+void ServerChatName() {
+    t::Group("bridge-server-chat-name");
+    Rig r("server-chat-name");
+    r.o.config.serverChatName = "Embervale";
+    r.Start();
+    r.Connect();
+    auto sent = [&](const std::string& args, std::string* recipient = nullptr) {
+        JsonValue resp = r.Call("sendMessage", args);
+        CHECK_MSG(!resp.get("error"), JsonDump(resp));
+        t::RecordedRequest req;
+        if (!r.fake.LastRequest("POST", "/message", req)) return std::string("<none>");
+        if (recipient) *recipient = Str(req.body.get("recipientGameId")).value_or("");
+        return Str(req.body.get("text")).value_or("");
+    };
+    CHECK_EQ(sent(R"({"message":"hello"})"), std::string("Embervale: hello"));
+    CHECK_EQ(sent(R"({"message":"hello","opts":{"senderNameOverride":"Takaro Bot"}})"), std::string("Takaro Bot: hello"));
+    CHECK_EQ(sent(R"({"message":"hello","opts":{"senderNameOverride":"  "}})"), std::string("Embervale: hello"));
+    std::string to;
+    CHECK_EQ(sent(std::string(R"({"message":"psst","opts":{"recipient":{"gameId":")") + LIMON + "\"}}}", &to),
+             std::string("Embervale: psst"));
+    CHECK(!to.empty());
+    to.clear();
+    CHECK_EQ(sent(std::string(R"({"message":"psst","opts":{"senderNameOverride":"Ward","recipient":{"gameId":")") + LIMON +
+                      "\"}}}",
+                  &to),
+             std::string("Ward: psst"));
+    CHECK(!to.empty());
+    r.bridge->SetServerChatName("Shroud");
+    CHECK_EQ(sent(R"({"message":"next"})"), std::string("Shroud: next"));
+    CHECK(t::WaitFor([&] {  // /health shows the live name, not the startup one
+        const JsonValue* c = r.Health().get("config");
+        return c && c->get("serverChatName") && c->get("serverChatName")->str == "Shroud";
+    }));
+    r.bridge->SetServerChatName("");
+    CHECK_EQ(sent(R"({"message":"plain"})"), std::string("plain"));
+    CHECK(r.tr.Retargets().empty());  // a chat name is not a connection setting
 }
 
 void ProtocolV1Responses() {
@@ -1007,6 +1265,9 @@ void RunBridgeTests() {
     CorruptBanStore();
     BanIntentRecovery();
     ReconcileAndLocationFallback();
+    CrashKeepsLastPosition();
+    SampledPositionPlacesDisconnect();
+    ShutdownReadsPositions();
     LocationAfterLeave();
     WindowRules();
     LogTailFallback();
@@ -1017,7 +1278,11 @@ void RunBridgeTests() {
     OfflineGetPlayer();
     CorruptOutbox();
     ProtocolV1Identify();
+    ProtocolV1UnknownBuild();
+    UnsupportedGameBuildReason();
+    IdentifyWaitsForGameWorld();
     ProtocolV1Responses();
+    ServerChatName();
     ProtocolV1Events();
     ProtocolV1Fallbacks();
 }

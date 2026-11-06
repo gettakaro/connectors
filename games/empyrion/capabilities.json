@@ -1,0 +1,164 @@
+{
+  "game": "empyrion",
+  "connector": "takaro-empyrion",
+  "statusVocabulary": [
+    "live-supported",
+    "schema-fallback",
+    "unsupported"
+  ],
+  "note": "Generated from mod/src/Core/Coverage.cs; liveVerified is set only by a committed live run.",
+  "actions": {
+    "testReachability": {
+      "status": "live-supported",
+      "responseShape": "{connectable,reason}",
+      "reason": "Request_Dedi_Stats round-trip through the mod API",
+      "liveVerified": false
+    },
+    "getPlayers": {
+      "status": "live-supported",
+      "responseShape": "IGamePlayer[]",
+      "reason": "Request_Player_List + Request_Player_Info; gameId = SteamID64",
+      "liveVerified": false
+    },
+    "getPlayer": {
+      "status": "live-supported",
+      "responseShape": "IGamePlayer|null",
+      "reason": "online via Request_Player_Info, offline from players.json",
+      "liveVerified": false
+    },
+    "getPlayerLocation": {
+      "status": "live-supported",
+      "responseShape": "{x,y,z,dimension}|null",
+      "reason": "PlayerInfo.pos; dimension = playfield as map Dimension id",
+      "liveVerified": false
+    },
+    "getPlayerInventory": {
+      "status": "live-supported",
+      "responseShape": "IItemDTO[]",
+      "reason": "Request_Player_GetInventory toolbelt + bag",
+      "liveVerified": false
+    },
+    "giveItem": {
+      "status": "live-supported",
+      "responseShape": "null",
+      "reason": "Request_Player_AddItem by config name, id or display name",
+      "liveVerified": false
+    },
+    "listItems": {
+      "status": "live-supported",
+      "responseShape": "IItemDTO[]",
+      "reason": "GetBlockAndItemMapping + Localization.csv display names",
+      "liveVerified": false
+    },
+    "listEntities": {
+      "status": "live-supported",
+      "responseShape": "IEntityDTO[]",
+      "reason": "EClassConfig.ecf creatures with a faction, localized names",
+      "liveVerified": false
+    },
+    "listLocations": {
+      "status": "schema-fallback",
+      "responseShape": "[]",
+      "reason": "no named world locations a server mod can list; not declared on protocol v1",
+      "liveVerified": false
+    },
+    "executeConsoleCommand": {
+      "status": "live-supported",
+      "responseShape": "{success,rawResult,errorMessage}",
+      "reason": "loopback telnet console (real output), allowlisted",
+      "liveVerified": false
+    },
+    "sendMessage": {
+      "status": "live-supported",
+      "responseShape": "null",
+      "reason": "IApplication.SendChatMessage: global or SinglePlayer, SenderNameOverride",
+      "liveVerified": false
+    },
+    "teleportPlayer": {
+      "status": "live-supported",
+      "responseShape": "null",
+      "reason": "Request_Entity_Teleport; Request_Player_ChangePlayerfield for another dimension",
+      "liveVerified": false
+    },
+    "kickPlayer": {
+      "status": "live-supported",
+      "responseShape": "null",
+      "reason": "console kick <steamid> 'reason'",
+      "liveVerified": false
+    },
+    "banPlayer": {
+      "status": "live-supported",
+      "responseShape": "null",
+      "reason": "console ban <steamid> <h|d>; reason kept in bans.json",
+      "liveVerified": false
+    },
+    "unbanPlayer": {
+      "status": "live-supported",
+      "responseShape": "null",
+      "reason": "console unban <steamid>, works offline",
+      "liveVerified": false
+    },
+    "listBans": {
+      "status": "live-supported",
+      "responseShape": "IBanDTO[]",
+      "reason": "Request_GetBannedPlayers (SteamID + end time)",
+      "liveVerified": false
+    },
+    "shutdown": {
+      "status": "live-supported",
+      "responseShape": "null",
+      "reason": "console saveandexit 0, gated by ENABLE_DESTRUCTIVE_COMMANDS",
+      "liveVerified": false
+    },
+    "getMapInfo": {
+      "status": "unsupported",
+      "responseShape": "-",
+      "reason": "protocol v0 only; the v1 map capability replaces it",
+      "liveVerified": false
+    },
+    "getMapTile": {
+      "status": "live-supported",
+      "responseShape": "{mimeType,data}",
+      "reason": "protocol v1: one Dimension per generated planet, tiles rendered from terrain.raw + biomes.dat",
+      "liveVerified": false
+    }
+  },
+  "events": {
+    "player-connected": {
+      "status": "live-supported",
+      "responseShape": "EventPlayerConnected",
+      "reason": "Event_Player_Connected",
+      "liveVerified": false
+    },
+    "player-disconnected": {
+      "status": "live-supported",
+      "responseShape": "EventPlayerDisconnected",
+      "reason": "Event_Player_Disconnected",
+      "liveVerified": false
+    },
+    "chat-message": {
+      "status": "live-supported",
+      "responseShape": "EventChatMessage",
+      "reason": "IApplication.ChatMessageSent (Event_ChatMessage fallback)",
+      "liveVerified": false
+    },
+    "player-death": {
+      "status": "live-supported",
+      "responseShape": "EventPlayerDeath",
+      "reason": "Event_Statistics PlayerDied",
+      "liveVerified": false
+    },
+    "entity-killed": {
+      "status": "live-supported",
+      "responseShape": "EventEntityKilled",
+      "reason": "Event_GameEvent KilledEntity",
+      "liveVerified": false
+    },
+    "log": {
+      "status": "live-supported",
+      "responseShape": "EventLogLine",
+      "reason": "playfield load/unload, budgeted",
+      "liveVerified": false
+    }
+  }
+}

@@ -222,7 +222,8 @@ public sealed class CompanionPluginContractTests
     [TestMethod]
     public void CompanionHasNoConfigChatOrItemHandling()
     {
-        var combined = ReadAllCompanionText();
+        // The #200 command probe is the one research exception; see CommandProbeIsOffWithoutItsMarker.
+        var combined = ReadAllCompanionText(exclude: CommandProbeSourceFile);
         foreach (var forbidden in new[]
                  {
                      "Config.Bind",
@@ -240,10 +241,35 @@ public sealed class CompanionPluginContractTests
         }
     }
 
-    private static string ReadAllCompanionText() =>
+    private const string CommandProbeSourceFile = "CompanionCommandProbe.cs";
+
+    [TestMethod]
+    public void CommandProbeIsOffWithoutItsMarker()
+    {
+        var probe = ReadCompanionSource(CommandProbeSourceFile);
+        var plugin = ReadCompanionSource("ValheimCompanionPlugin.cs");
+
+        // Armed only when the marker file exists; the audit patches are applied by hand, never PatchAll.
+        Assert.IsTrue(probe.IndexOf("if (!File.Exists(markerPath))", StringComparison.Ordinal)
+            < probe.IndexOf("CommandProbeAuditPatches.Apply(harmony)", StringComparison.Ordinal));
+        Assert.IsFalse(probe.Contains("[HarmonyPatch", StringComparison.Ordinal));
+        StringAssert.Contains(plugin, "CompanionCommandProbe.TryCreate(");
+        StringAssert.Contains(plugin, "CommandProbeProtocol.MarkerFileName");
+        // It observes chat calls but never makes one, and never replaces a terminal command.
+        foreach (var forbidden in new[] { ".Say(", ".SendText(", "Config.Bind", "commands[" })
+        {
+            Assert.IsFalse(probe.Contains(forbidden, StringComparison.Ordinal), forbidden);
+        }
+
+        StringAssert.Contains(probe, "CommandProbeRegistrationPolicy.CanRegister(commands, settings.RootCommand)");
+        StringAssert.Contains(probe, "CommandProbeRegistrationPolicy.TryRemoveOwned(commands, settings.RootCommand, owned)");
+    }
+
+    private static string ReadAllCompanionText(string? exclude = null) =>
         string.Join(
             '\n',
             Directory.GetFiles(CompanionPath(), "*", SearchOption.AllDirectories)
+                .Where(path => exclude is null || Path.GetFileName(path) != exclude)
                 .Where(path => path.EndsWith(".cs", StringComparison.Ordinal)
                     || path.EndsWith(".csproj", StringComparison.Ordinal))
                 .Where(path => !path.Contains(

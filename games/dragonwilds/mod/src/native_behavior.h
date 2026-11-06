@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -92,6 +93,7 @@ private:
     std::shared_ptr<const View> view_;
     uint64_t revision_ = 0;
     std::string lastError_;
+    std::set<std::string> lastLiveIds_; // ReconcileOnline: live on the previous pass of this process
     std::unique_ptr<class LogState> log_;
 };
 

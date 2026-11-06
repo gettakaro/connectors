@@ -1,24 +1,22 @@
 # Takaro Minecraft Connector
 
-A server-side-only connector (version **0.1.0**) that connects a Minecraft dedicated server to
-Takaro. It ships for **Fabric**, **Paper** and **NeoForge**; players do not install anything.
-The results below were proven on **Fabric / Minecraft 26.2 / Java 25**.
+Connects a Minecraft dedicated server to Takaro with one server-side file for **Fabric**,
+**Paper** or **NeoForge**. Players do not install anything and join with the normal Minecraft
+client.
 
 ## Install
 
-Download the latest release: https://takaro.io/connectors/minecraft
-
 ### 1. Before you start
 
-You need:
+- A Minecraft dedicated server you can stop, start and copy files to, running one of:
+  - **Fabric** on Minecraft 26.2, 26.1.2 or 26.3 with Java 25, the Fabric API mod and Fabric Loader
+    0.19.5 or newer (0.19.3 on 26.1.2).
+  - **Paper** on Minecraft 1.21.11 with Java 21.
+  - **NeoForge** 21.11.45 or newer on Minecraft 1.21.11 with Java 21.
+- A Takaro game server of type **Generic** and its registration token.
 
-- A **Minecraft dedicated server** you can stop, start and copy files to, running one of:
-  - **Fabric** on **Minecraft 26.2** with **Java 25** and the **Fabric API** mod installed
-    (the connector requires Fabric Loader 0.19.5 or newer).
-  - **Paper** on **Minecraft 1.21.11** with **Java 21**.
-  - **NeoForge** on **Minecraft 1.21.11** with **Java 21**.
-- A **Takaro account** with a game server created of type **Generic**, and its **registration
-  token** (Takaro shows it when you create the game server).
+Players' clients must match the server's Minecraft version (a 26.2 client cannot join a 1.21.11
+server, and the other way round).
 
 The exact server builds this connector is maintained for:
 
@@ -32,50 +30,39 @@ The exact server builds this connector is maintained for:
 | `paper-1.21.11` | 1.21.11 | paper | loader 132 | 21 | maintained | protocol |
 <!-- takaro-maint:targets:end -->
 
-Players' clients must match the server's Minecraft version. A 26.2 client cannot join a 1.21.11
-server, and a 1.21.11 client cannot join a 26.2 server.
+### 2. Download
 
-### 2. Download the connector
-
-Download the jar for your platform from the latest `minecraft-vX.Y.Z` release:
-
-> https://github.com/gettakaro/connectors/releases
+Download the latest release from https://takaro.io/connectors/minecraft (or the latest
+`minecraft-v<version>` release on https://github.com/gettakaro/connectors/releases). Take the
+**one** file that matches your server:
 
 | Your server | File to download |
 |---|---|
-| Fabric | `takaro-minecraft-mod-fabric-26.2-<version>.jar` |
-| Paper | `takaro-minecraft-mod-paper-1.21.11-<version>.jar` |
-| NeoForge | `takaro-minecraft-mod-neoforge-1.21.11-<version>.jar` |
+| Fabric 26.2 | `takaro-minecraft-mod-fabric-26.2-<version>.jar` |
+| Fabric 26.1.2 | `takaro-minecraft-mod-fabric-26.1.2-<version>.jar` |
+| Fabric 26.3 | `takaro-minecraft-mod-fabric-26.3-<version>.jar` |
+| Paper 1.21.11 | `takaro-minecraft-mod-paper-1.21.11-<version>.jar` |
+| NeoForge 1.21.11 | `takaro-minecraft-mod-neoforge-1.21.11-<version>.jar` |
 
-Every jar is named after the server build it was made for. Releases before the next
-`minecraft-v*` used `takaro-fabric-<version>.jar`, `takaro-paper-<version>.jar` and
-`takaro-neoforge-<version>.jar`. Those names keep working: for two stable releases each one
-also ships as a byte-identical copy of that platform's default target (Fabric 26.2,
-Paper 1.21.11, NeoForge 1.21.11), so existing links and scripts do not have to change yet.
+Check it against `SHA256SUMS`. Do not use the `minecraft-dev` pre-release. Older releases used
+other file names; see [UPGRADING.md](UPGRADING.md).
 
-Direct link pattern:
-`https://github.com/gettakaro/connectors/releases/download/minecraft-v<version>/<file>`
+### 3. Install
 
-Use `minecraft-v0.1.0` or newer. Do not use the `minecraft-dev` pre-release; that is an untested
-rolling build.
+Stop the server and put the jar in the folder for your platform:
 
-### 3. Copy it into place
-
-Stop the server, then put the single jar into the right folder for your platform:
-
-```
+```text
 Fabric     <server>/mods/takaro-minecraft-mod-fabric-26.2-<version>.jar
 NeoForge   <server>/mods/takaro-minecraft-mod-neoforge-1.21.11-<version>.jar
 Paper      <server>/plugins/takaro-minecraft-mod-paper-1.21.11-<version>.jar
 ```
 
-That is the whole install — one file, no extra libraries. On Fabric, keep the Fabric API jar in
-`mods/` next to it.
+No extra libraries are needed. On Fabric, keep the Fabric API jar in `mods/` next to it.
 
 ### 4. Configure
 
-Start the server. On its first start the connector writes its config file (you can also create
-it yourself before the first start, with the content below):
+Start the server. The connector writes its config file on the first start (or create it yourself
+beforehand with the content below):
 
 | Your server | Config file |
 |---|---|
@@ -83,10 +70,9 @@ it yourself before the first start, with the content below):
 | NeoForge | `<server>/config/takaro.properties` |
 | Paper | `<server>/plugins/TakaroMinecraft/config.yml` |
 
-Open it, paste your Takaro **registration token** between the quotes (or after the `=`), and save.
-Saving is enough: the connector checks the file every few seconds and connects as soon as the token
-is saved, no restart needed. Leave `identity_token` empty; the connector fills it in itself and it
-is how Takaro knows this server, so keep it when you move or copy the server.
+Paste your registration token into `registration_token` and save. The connector checks the file
+every few seconds and connects, no restart needed. It fills in `identity_token` itself; keep it
+when you move or copy the server, it is how Takaro knows this server.
 
 **Fabric** (`config/takaro.json`):
 
@@ -107,7 +93,8 @@ is how Takaro knows this server, so keep it when you move or copy the server.
   },
   "settings": {
     "debug": false,
-    "map": false
+    "map": false,
+    "server_chat_name": ""
   }
 }
 ```
@@ -123,8 +110,10 @@ takaro.reconnect.delay=5000
 takaro.reconnect.max_delay=300000
 takaro.reconnect.backoff_multiplier=1.5
 takaro.debug=false
-# World map in Takaro. Needs Takaro protocol v1, not yet on takaro.io.
+# World map in Takaro. Needs a Takaro that speaks protocol v1.
 takaro.map=false
+# Sender name on Takaro's messages when Takaro sends none. Empty = no sender name.
+takaro.server_chat_name=
 ```
 
 **Paper** (`plugins/TakaroMinecraft/config.yml`):
@@ -142,28 +131,23 @@ takaro:
     max_delay: 300000
     backoff_multiplier: 1.5
   debug: false
-  # World map in Takaro. Needs Takaro protocol v1, not yet on takaro.io.
+  # World map in Takaro. Needs a Takaro that speaks protocol v1.
   map: false
+  # Sender name on Takaro's messages when Takaro sends none. Empty = no sender name.
+  server_chat_name: ""
 ```
 
-`map` (in the Fabric file: `settings.map`; or `TAKARO_MAP=true`) turns on the world map in Takaro.
-It needs Takaro protocol v1, which takaro.io does not have yet, so leave it `false` there. Changing
-it reconnects to Takaro, no restart needed.
+`map` (Fabric: `settings.map`; or `TAKARO_MAP=true`) turns on the world map in Takaro. It needs a
+Takaro with map support. Changing it reconnects, no restart needed.
 
-### 5. Check that it worked
+**Server chat name (optional).** Messages from Takaro show as `[Name] text` in global chat and `Name whispers to you: text` in a whisper. The sender is the chat name set for this server in Takaro; a change there applies to the next message, no restart needed. On a Takaro version that does not send that name, set `server_chat_name` (Fabric: `settings.server_chat_name`; or `TAKARO_SERVER_CHAT_NAME`) instead; the name set in Takaro wins over it. With no name, the message is the bare text.
 
-In the server console / `logs/latest.log`, under the `Takaro` logger:
+### 5. Check that it works
 
-```
-Connecting to Takaro at wss://connect.takaro.io/
-Identified successfully, server ID: <your server id>
-```
+Before a token is set, the server console (and `logs/latest.log`) shows a banner naming the file to
+edit:
 
-And in Takaro, the game server shows as **online**.
-
-If no token is set yet, the log shows a banner instead, naming the exact file to edit:
-
-```
+```text
 *************************************************************************
   registration_token not set, the server is not connected to Takaro.
   Paste the registration token from Takaro into /srv/mc/config/takaro.json
@@ -171,81 +155,69 @@ If no token is set yet, the log shows a banner instead, naming the exact file to
 *************************************************************************
 ```
 
-If the token is wrong, the banner starts with `Identify failed:` instead. Fix the token in the
-config file and save; the connector reconnects within a few seconds.
+A few seconds after you save the token (Paper prefixes these lines with `[TakaroMinecraft]`,
+NeoForge with `[Takaro/]`):
 
-**Version check.** Just before connecting, the connector logs one `Takaro target-check:` line
-saying which server build it was made for and which one it found. If they do not match it refuses
-to connect and says why, rather than half-working on a server it was never tested on:
-
+```text
+Takaro target-check: {"target":"fabric-26.2", ... "result":"ok","reasons":[]}
+Connecting to Takaro at wss://connect.takaro.io/
+Identified successfully, server ID: <your server id>, protocol v1
 ```
+
+The game server now shows as online in Takaro. A wrong token shows a banner starting with
+`Identify failed:`; fix it and save.
+
+If the jar does not match the server, the connector refuses to connect:
+
+```text
 Takaro refuses to connect: target fabric-26.2 does not match this server
 (built for game version 26.2, this server runs 26.1.2).
-Set TAKARO_TARGET_POLICY=warn to override.
 ```
 
-Download the jar for your server's version instead. `TAKARO_TARGET_POLICY=warn` connects anyway
-and `off` skips the check entirely, but neither makes an untested combination work.
+Download the jar for your server's version instead (see [UPGRADING.md](UPGRADING.md)).
 
-### 6. Upgrading
+### 6. Upgrade
 
-**Stop the server first.** Delete the old Takaro jar from `mods/` (or `plugins/`) and drop the new
-jar in its place, then start the server again. Leave the config file alone: it is not part of the
-jar, so your token and identity survive the upgrade and the server keeps its place in Takaro.
-Never swap the jar under a running server.
+Stop the server, delete the old Takaro jar from `mods/` (or `plugins/`), put the new jar in its
+place, and start the server. Keep the config file: your token and identity stay. Never swap the jar
+under a running server.
 
 ## What works, what doesn't
 
-Verified end to end on **2026-09-14** against a real **Fabric** server (Minecraft **26.2**,
-Java 25) with a real game client connected. **Paper and NeoForge have not been tested at this
-level — treat every row below as unverified on those two platforms.**
-✅ = works, ⚠️ = works with a caveat, ❌ = does not work.
+Checked on Fabric 26.2, Paper 1.21.11 and NeoForge 1.21.11, 2026-10-22, and Fabric 26.3, 2026-10-26. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
-| Connection & heartbeat | ✅ | Connects, identifies and stays up; reconnects by itself with backoff after outages. |
-| Server restart / reconnect | ✅ | Comes back on its own after a restart, and players online at shutdown are correctly reported as offline. |
-| Player list | ⚠️ | The connector answers the player-list request, but the live test never exercised it on its own — player state in Takaro was proven through join/leave events instead. |
-| Single player lookup | ✅ | Name, platform id and online state match the game. |
-| Player location | ✅ | Matches the server's own position readout (rounded to whole blocks). |
-| Player inventory | ✅ | Matches what the player is carrying in game, and changes are reported as they happen. |
-| Item catalogue | ✅ | 1,536 items synced. |
-| Entity catalogue | ✅ | 158 entities synced. |
-| Locations / points of interest | ❌ | Not implemented — the connector always answers with an empty list. Minecraft has no fixed list of named locations. |
-| Chat messages from players | ✅ | Real player chat reaches Takaro with the player attached. |
-| Broadcast a message | ✅ | Shown to everyone in the server chat. |
-| Whisper a player | ✅ | Reaches the intended player. Only one client was connected, so "nobody else sees it" has not been confirmed. |
-| Give an item | ⚠️ | The item lands straight in the player's inventory. Item quality / durability is ignored — every item arrives in default condition. |
-| Teleport a player | ⚠️ | Works; the height (Y) is snapped to the ground, so the player lands on solid ground rather than at the exact Y you asked for. |
-| Run a console command | ⚠️ | The command runs and success/failure comes back, but the command's own output text is not returned — it is always empty. |
-| Kick a player | ✅ | The player is dropped from the server with the reason shown. |
-| Ban a player (timed and permanent) | ✅ | The ban lands on the game server and the player is refused on rejoin. |
-| Unban a player | ✅ | Clears the ban on the game server. |
-| Ban list | ✅ | Matches the server's own ban list. |
-| Shut the server down | ✅ | The server stops cleanly on request (all chunks saved). Your host has to start it again. |
-| Player joined event | ✅ | Arrives in Takaro within a second of the join. |
-| Player left event | ✅ | Also fired for everyone still online when the server itself shuts down. |
-| Player chat event | ✅ | See "Chat messages from players". |
-| Player death event | ✅ | Reaches Takaro and can drive modules. |
-| Entity kill event | ✅ | Proven with a real kill (zombie, diamond sword); the entity type and the weapon used are included. |
-| Log events | ❌ | The connector never sends server log lines to Takaro. |
-| Map | ⚠️ | Off by default. Set `map` to `true` (or `TAKARO_MAP=true`) for a world map with player dots in Takaro. Needs Takaro protocol v1, not yet on takaro.io; on takaro.io leave it off. |
-| Discord chat bridge | ⚠️ | Game → Discord works: chat, deaths and cron messages were all delivered to the Discord channel. Discord → game was **not** confirmed with a post from a real Discord account. Use the `chatBridgeNoEcho` module; the plain chat bridge echoes Takaro's own messages back into the game. |
-| Shop & economy | ✅ | Buying in chat (`@shop`), ordering through the Takaro API, currency grants and balance checks all work, and purchases arrive in the inventory. Buying without enough currency is correctly refused. |
+| Connection | ✅ | Reconnects on its own after a restart. |
+| Player list | ✅ | Name, id and ping. |
+| Player location | ✅ | Rounded to whole blocks. |
+| Teleport | ✅ | To the exact coordinates; pick a Y on solid ground or the player falls. |
+| Player inventory | ✅ | Changes are reported as they happen. |
+| Item list | ✅ | About 1,500 items with their in-game names. |
+| Entity list | ✅ | Paper lists the mob types; Fabric and NeoForge list every entity type, including things like Primed TNT. |
+| Locations | ❌ | Minecraft has no list of named locations. |
+| World map | ⚠️ | Off by default (`map` setting). Tiled map of all three dimensions. Not checked on takaro.io yet. Checked on Fabric only. |
+| Send a message | ✅ | Broadcasts and whispers, as `[Name] text` and `Name whispers to you: text` when a server chat name is set. |
+| Console commands | ⚠️ | The command runs, but its output text is not returned. |
+| Kick | ✅ | The reason is shown to the player. |
+| Ban and unban | ✅ | Timed and permanent, on the server's own ban list. |
+| Ban list | ✅ | Includes bans placed while the player was offline. |
+| Give an item | ⚠️ | Straight into the inventory, but always in default condition (quality/durability is ignored). |
+| Shop | ✅ | Orders deliver into the inventory; not enough currency is refused. Checked on Fabric. |
+| Shut down the server | ✅ | Saves and stops; your host has to start it again. |
+| Player joined / left | ✅ | Everyone still online is reported as left at shutdown. |
+| Chat messages | ✅ | |
+| Player death | ✅ | With the position. |
+| Entity killed | ✅ | Entity and weapon as game ids, for example `minecraft:husk`. |
+| Server log lines | ❌ | Not sent to Takaro. |
+| Discord chat bridge | ✅ | Both ways. Use the `chatBridgeNoEcho` module; the plain chat bridge echoes Takaro's own messages. Checked on Fabric. |
+| Modules | ✅ | Chat commands such as `@settp home` and `@tp home`. Checked on Fabric. |
+| Game name, version and icon | ✅ | Takaro shows Minecraft with its icon and the running game version. |
 
-### Known issues
+## Known issues
 
-- **Discord → game is unconfirmed.** Messages from Discord reaching in-game chat were never
-  proven with a post from a real Discord account.
-- **Item quality is ignored.** Everything the shop or Takaro hands out arrives in default
-  condition; there is no durability or quality control.
-- **Teleport snaps to the ground.** The Y you ask for is replaced by ground level at that spot.
-- **Map is opt-in and needs protocol v1.** `map=true` only works with a Takaro that speaks
-  protocol v1, which takaro.io does not yet. Minecraft has no named-location list for the
-  connector to report.
-- **Paper and NeoForge are untested.** They build and ship, but no end-to-end run has been done
-  on either; only Fabric on Minecraft 26.2 has been proven.
-
----
+- The Fabric 26.1.2 file is built and checked the same way as the others, but not played on.
+- Items given by Takaro or the shop always arrive in default condition.
+- Console command output is not returned; check the effect in game.
 
 Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).

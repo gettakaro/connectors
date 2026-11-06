@@ -34,6 +34,7 @@ TARGETED_BASELINE = (
     "conan-exiles",
     "dragonwilds",
     "dune",
+    "empyrion",
     "enshrouded",
     "minecraft",
     "rust",
@@ -181,6 +182,16 @@ ALLOWLIST: tuple[Allow, ...] = (
     ),
     Allow(
         "catalog/rust/targets/carbon-25902425.json",
+        r"production_build",
+        "the input pins sha256 and size; the tag is an address, not an identity (games/rust/DEVELOPMENT.md)",
+    ),
+    Allow(
+        "catalog/rust/targets/carbon-26139947.json",
+        r"production_build",
+        "the input pins sha256 and size; the tag is an address, not an identity (games/rust/DEVELOPMENT.md)",
+    ),
+    Allow(
+        "catalog/rust/targets/carbon-26431843.json",
         r"production_build",
         "the input pins sha256 and size; the tag is an address, not an identity (games/rust/DEVELOPMENT.md)",
     ),
@@ -476,10 +487,9 @@ def test_the_catalog_rigs_take_their_images_from_the_resolved_target() -> None:
 
 #: Aliases kept on purpose for a component role a connector no longer ships, so the old
 #: asset name stays on record for a release. Anything else pointing at an unknown role is a typo.
-RETIRED_ALIASES = {
-    # The sidecar was dropped in enshrouded 0.6.0: the plugin connects to Takaro itself.
-    ("enshrouded", "takaro-enshrouded-sidecar.zip"): "proton-1267041/sidecar",
-}
+#: Empty since the catalog refuses an alias to a role its target does not build
+#: (legacy-alias-single-build, gettakaro/connectors#756).
+RETIRED_ALIASES: dict[tuple[str, str], str] = {}
 
 
 def test_every_catalog_game_registers_sources_roles_targets_and_declared_rigs() -> None:

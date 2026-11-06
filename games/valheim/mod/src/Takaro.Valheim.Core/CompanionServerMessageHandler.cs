@@ -9,7 +9,10 @@ public enum CompanionMessageOutcome
     VersionRejected,
     Heartbeat,
     InventoryAccepted,
-    KillVerdictAccepted
+    KillVerdictAccepted,
+    CommandProbeSubmitted,
+    CommandProbeDuplicate,
+    CommandProbeRejected
 }
 
 public sealed record CompanionMessageHandlingResult(
@@ -19,7 +22,9 @@ public sealed record CompanionMessageHandlingResult(
     int? RemoteMaximumVersion = null,
     string? RemoteProductVersion = null,
     int? InventoryStacks = null,
-    CompanionKillVerdict? KillVerdict = null)
+    CompanionKillVerdict? KillVerdict = null,
+    CommandProbeInvocation? CommandProbeInvocation = null,
+    string? SessionNonce = null)
 {
     public static readonly CompanionMessageHandlingResult Ignored = new(CompanionMessageOutcome.Ignored);
 }
@@ -37,14 +42,17 @@ public sealed class CompanionServerMessageHandler
     private readonly CompanionRateLimiter killVerdictRateLimiter;
     private readonly CompanionInventoryCache inventory;
     private readonly CompanionKillVerdictStore killVerdicts;
+    private readonly CommandProbeServer? commandProbe;
 
     public CompanionServerMessageHandler(
         CompanionSessionRegistry sessions,
         CompanionRateLimiter rateLimiter,
         CompanionRateLimiter killVerdictRateLimiter,
         CompanionInventoryCache inventory,
-        CompanionKillVerdictStore killVerdicts)
+        CompanionKillVerdictStore killVerdicts,
+        CommandProbeServer? commandProbe = null)
     {
+        this.commandProbe = commandProbe;
         this.sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         this.rateLimiter = rateLimiter ?? throw new ArgumentNullException(nameof(rateLimiter));
         this.killVerdictRateLimiter = killVerdictRateLimiter ?? throw new ArgumentNullException(nameof(killVerdictRateLimiter));
@@ -86,6 +94,8 @@ public sealed class CompanionServerMessageHandler
                 return ProcessInventory(peerId, player, envelope, now, receivedAt);
             case CompanionMessageTypes.KillVerdict:
                 return ProcessKillVerdict(peerId, envelope, now, receivedAt);
+            case CompanionMessageTypes.CommandProbeInvoke when commandProbe is { Enabled: true }:
+                return ProcessCommandProbe(peerId, envelope, now, commandProbe);
             default:
                 return CompanionMessageHandlingResult.Ignored;
         }
@@ -240,6 +250,36 @@ public sealed class CompanionServerMessageHandler
             CompanionMessageOutcome.KillVerdictAccepted,
             decision,
             KillVerdict: verdict);
+    }
+
+    private CompanionMessageHandlingResult ProcessCommandProbe(
+        long peerId,
+        CompanionEnvelope envelope,
+        DateTimeOffset now,
+        CommandProbeServer probe)
+    {
+        if (!TryValidateReport(peerId, envelope, now, rateLimiter, CompanionCapability.None, out var decision))
+        {
+            return new CompanionMessageHandlingResult(CompanionMessageOutcome.Ignored, decision);
+        }
+
+        if (!CompanionEnvelopeCodec.TryDecodePayload<CommandProbeInvocation>(envelope, out var invocation, out _)
+            || invocation is null)
+        {
+            return new CompanionMessageHandlingResult(CompanionMessageOutcome.Ignored, decision);
+        }
+
+        var outcome = probe.Accept(peerId, envelope.SessionNonce, invocation) switch
+        {
+            CommandProbeAcceptance.Accepted => CompanionMessageOutcome.CommandProbeSubmitted,
+            CommandProbeAcceptance.Duplicate => CompanionMessageOutcome.CommandProbeDuplicate,
+            _ => CompanionMessageOutcome.CommandProbeRejected
+        };
+        return new CompanionMessageHandlingResult(
+            outcome,
+            decision,
+            CommandProbeInvocation: invocation,
+            SessionNonce: envelope.SessionNonce);
     }
 
     // Session validation advances the sequence before the rate and payload checks, so an

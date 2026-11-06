@@ -64,3 +64,7 @@ games/ark/scripts/start-native-gate.sh
 # SCUM: local MSVC build output (native/build.bat) and a DLL dropped in for a manual test
 games/scum/native/build/
 games/scum/mod/TakaroSCUM/dlls/
+
+# Empyrion: local build output and the fetched reference assemblies
+games/empyrion/bin/
+games/empyrion/_data/

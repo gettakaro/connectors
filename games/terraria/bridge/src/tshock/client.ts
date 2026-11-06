@@ -3,6 +3,8 @@ import { terrariaIdentity } from '../terraria/identity.js';
 
 export interface TShockStatus {
   name?: string;
+  /** The Terraria build, for example "v1.4.5.8". */
+  serverversion?: string;
   port?: number;
   playercount?: number;
   players?: unknown;
@@ -25,6 +27,8 @@ export interface TShockBan {
   name?: string;
   ip?: string;
   reason?: string;
+  /** .NET ticks; DateTime.MaxValue (3155378975999999999) for a permanent ban. */
+  end_date_ticks?: number | string;
 }
 
 export interface CommandResult {

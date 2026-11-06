@@ -99,14 +99,14 @@ CARBON_CONFIG_SEED: dict[str, Any] = {
 }
 
 #: The runtime container is a plain base image; the game is the mounted tree and this script.
-#:
-#: No memory hook goes with it, because the runner has none to offer: it boots every game
-#: with the same 3 GB limit. A verification world (size 1000, ten slots) does pass inside
-#: it -- twice, measured -- but it does so sitting *at* the ceiling (2.999 GiB of 3), living
-#: off page-cache reclaim. That is worth knowing before anyone verifies a bigger world here.
-#: A server anybody plays on wants considerably more, which is why the rig's compose file
-#: sets no limit at all.
 CONTAINER_COMMAND = ("/bin/bash", "/takaro/start.sh")
+
+#: The runner boots every game with 3 GB. A verification world (size 1000, ten slots) does
+#: pass inside that, but it sits *at* the ceiling (2.97-2.999 GiB of 3) through world
+#: generation, living off page-cache reclaim, and on a busy host docker OOM-killed it (exit 137)
+#: during ``Processing World``. 8 GB is the footprint a played server is sized
+#: for and leaves half of a 16 GB hosted runner free; the rig's compose file sets no limit.
+CONTAINER_MEMORY = "8g"
 
 _PROTOCOL = re.compile(r"^Protocol:\s*(?P<protocol>[0-9][0-9.]*)")
 _CARBON_BANNER = re.compile(r"Initialized Carbon\.Startup (?P<version>[0-9]+(?:\.[0-9]+)+)")
@@ -431,6 +431,11 @@ class RustAdapter(BaseAdapter):
             f"{data_dir}:/rust",
             f"{paths.repo_root() / LAUNCHER}:/takaro/start.sh:ro",
         ]
+
+    def container_options(self, resolved: dict[str, Any], data_dir: Path) -> list[str]:
+        """Rust's own memory limit, which wins over the runner's because it comes last."""
+        del resolved, data_dir
+        return ["--memory", CONTAINER_MEMORY]
 
     def container_command(self, resolved: dict[str, Any], data_dir: Path) -> list[str]:
         """The base image has no entrypoint of its own; the tracked launcher is the server."""

@@ -2,6 +2,7 @@
 
 #include "entity.h"
 #include "hooks.h"
+#include "location.h"
 #include "names.h"
 #include "profile.h"
 #include "scan.h"
@@ -19,6 +20,17 @@
 #include <cstring>
 #include <deque>
 #include <memory>
+
+#ifdef TAKARO_COMMAND_PROBE
+#include "probe_core.h"
+
+#include <fstream>
+#include <mutex>
+#include <sstream>
+#include <thread>
+
+bool ProbeCachedAccount(const std::string& steamId, uint64_t& hash);  // http.cpp: SteamID64 -> accountIdHash cache
+#endif
 
 // ------------------------------------------------------------------------------------------------
 // Constants that are reflection type hashes (keen qualifiedHash of the type name); they only change if the type is
@@ -58,6 +70,7 @@ struct Layout {
     // which slot field the chat handle is (1024233: the player handle @0; 1.0: the machine handle @4), and where the
     // session manager keeps the sender's account (1.0 passes it to queueMessage; 0 = not needed)
     uint32_t chatHandleSlotField = 0;
+    uint32_t chatNoticeType = 0;
     // Teleport.searchBestSpawnPosition: 1024233 placed with it; 1.0 resolves the search to the current spot (the
     // player snaps back), and the game's own teleports leave it off
     uint32_t teleportSearchBest = 1;
@@ -98,6 +111,8 @@ using CharNameFn = uint8_t*(__fastcall*)(uint8_t* out, uint64_t table, uint64_t 
 CharNameFn g_charName = nullptr;
 uint32_t g_charComp = 0, g_charTable = 0;
 uint64_t g_charLastMs = 0;
+// 1.0: ecs::NetworkPlayerAttributes of a player entity holds level / experience / experienceRequired as u16
+uint32_t g_attrComp = 0, g_attrLevel = 0, g_attrXp = 0, g_attrXpReq = 0;
 
 GetCompFn g_getRead = nullptr;
 AddCompFn g_addComp = nullptr;
@@ -152,7 +167,7 @@ uint64_t __fastcall UpdDetour(uint64_t server, uint64_t b, uint64_t c, uint64_t 
     PerfScope perf(kPerfUpdatePlayers);
     InterlockedIncrement64(&g_updTicks);
     InterlockedExchange64(&g_server, (LONG64)server);
-    if (g_charName && NowMs() - g_charLastMs >= 2000) {
+    if ((g_charName || g_attrComp) && NowMs() - g_charLastMs >= 2000) {
         g_charLastMs = NowMs();
         RefreshCharacterNames(server);
     }
@@ -263,6 +278,18 @@ void RefreshCharacterNames(uint64_t server) {
         if (persona.empty()) continue;
         std::string ch = CharacterNameOf(server, eid);
         if (!ch.empty()) PluginState::Get().SetCharacterName(persona, ch);
+        if (g_attrComp) {  // one component read per player; values only, no logging here (game thread)
+            CompRef a = Read(World(server), g_attrComp, eid);
+            uint32_t need = g_attrLevel;
+            if (g_attrXp > need) need = g_attrXp;
+            if (g_attrXpReq > need) need = g_attrXpReq;
+            need += 2;
+            if (a.ptr && a.size >= need) {
+                const uint8_t* b = (const uint8_t*)a.ptr;
+                PluginState::Get().SetLevel(persona, *(const uint16_t*)(b + g_attrLevel), *(const uint16_t*)(b + g_attrXp),
+                                            *(const uint16_t*)(b + g_attrXpReq));
+            }
+        }
     }
 }
 
@@ -290,6 +317,7 @@ struct Give {
     uint32_t eid = 0, itemId = 0, version = 0, consumedAtDone = 0;
     uint16_t count = 0;  // informational: the game ignores AdminInventoryCreateAction.count
     bool fullStack = false;
+    uint8_t level = 0;  // AdminInventoryCreateAction.level; 0 = the item's default level
     int injections = 0;
 };
 SrwLock g_giveLock;
@@ -320,6 +348,7 @@ void GiveTryInject() {
     memcpy(a + 4, &g_give.version, 4);
     memcpy(a + 8, &g_give.count, 2);
     memset(a + 10, 0, 10);  // hasItemRarity, rarity, level, createForAllPlayers, createFullStack, fill..., cleanup, flame
+    a[12] = g_give.level;              // level
     a[14] = g_give.fullStack ? 1 : 0;  // createFullStack: AdminInventoryCreate (0x153ef0) creates maxStackSize, else 1
     g_give.injections++;
     InterlockedExchange(&g_bypassEid, (LONG)g_give.eid);
@@ -355,9 +384,22 @@ uint64_t __fastcall IsAdminDetour(uint64_t eid, uint64_t table) {
     return g_origIsAdmin(eid, table);
 }
 
+#ifdef TAKARO_COMMAND_PROBE
+#include "probe_glue.inc"  // research/command-probe (#202); not in release builds
+#endif
+
 // ---- chat receive ----
 uint8_t* __fastcall AddMsgDetour(uint8_t* err, uint64_t chat, uint64_t type, StringView* text, uint64_t l1, uint64_t l2,
                                  uint64_t handle, uint64_t o1, Opt64* o2) {
+#ifdef TAKARO_COMMAND_PROBE
+    // a suppressed message leaves exactly what addMessage's success path leaves: err {u8 0; u32 0 @4}, returns err
+    if ((uintptr_t)__builtin_return_address(0) == g_recvRet && text && text->ptr && text->len > 0 && text->len <= 0x400 &&
+        cprobe::OnPlayerChat((uint8_t)type, text, (uint32_t)handle, o1)) {
+        err[0] = 0;
+        *(uint32_t*)(err + 4) = 0;
+        return err;
+    }
+#endif
     if ((uintptr_t)__builtin_return_address(0) == g_recvRet && text && text->ptr && text->len > 0 && text->len <= 0x400) {
         InterlockedIncrement64(&g_chatSeen);
         std::string msg(text->ptr, (size_t)text->len);
@@ -540,10 +582,9 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                             if (kItems[q].itemId == itemId) wd = &kItems[q];
                     KillWeapon kw = ResolveKillWeapon(itemId, wd ? wd->code : nullptr, category);
                     const char* catName = WeaponCategoryName(category);
-                    // `entity` is what Takaro shows: the client's name, else the code-derived one;
-                    // the template code stays in `entityCode`.
-                    EntityName en = victimDef ? ResolveEntityName(victimDef->guid, victimDef->code)
-                                              : ResolveEntityName(nullptr, nullptr, code);
+                    // `entity` is what Takaro shows: the in-game name (entity.h); the template code
+                    // stays in `entityCode`.
+                    EntityName en = ResolveEntityName(victimDef);
                     std::string dataJson = "{\"entity\":" + JsonStr(en.name) + ",\"entityCode\":" + JsonStr(code) +
                                            ",\"entityNameSource\":" + JsonStr(en.source) + ",\"weapon\":" + JsonStr(kw.name) +
                                            ",\"weaponSource\":" + JsonStr(kw.source) + ",\"weaponItemId\":" +
@@ -604,7 +645,7 @@ uint64_t __fastcall CombatDetour(uint64_t sys, uint64_t b, uint64_t c, uint64_t 
                             const char* f = "none";
                             const EntityDef* ed = EntityByGuid(guid, &f);
                             std::string raw = ed ? ed->code : "entity#" + std::to_string(killer);
-                            EntityName en = ed ? ResolveEntityName(ed->guid, ed->code) : ResolveEntityName(nullptr, nullptr, raw);
+                            EntityName en = ResolveEntityName(ed);
                             // killerEntity stays the template code; the death message uses the name
                             dataJson += ",\"killerEntity\":" + JsonStr(raw) + ",\"killerEntityName\":" + JsonStr(en.name);
                         }
@@ -677,6 +718,9 @@ void LoadProfileLayout() {
     L.chatRecMask = u("chatRecMask", L.chatRecMask);
     L.chatRecSizeAdd = u("chatRecSizeAdd", L.chatRecSizeAdd);
     L.chatHandleSlotField = u("chatHandleSlotField", L.chatHandleSlotField);
+    // Existing installs can keep an on-disk gamedata section without this key after upgrading.
+    const std::string build = GameBuild();
+    L.chatNoticeType = u("chatNoticeType", (build == "1267041" || build == "1273043" || build == "1283531" || build == "1285601" || build == "1287369") ? 4 : 0);
     L.teleportSearchBest = u("teleportSearchBest", L.teleportSearchBest);
     L.sessMgr = u("sessionMgr", L.sessMgr);
     L.sessVer = u("sessionVersion", L.sessVer);
@@ -793,7 +837,7 @@ void WorldInitCapabilities() {
         st.SetCapability(c, "degraded", "initializing");
     st.SetCapability("listItems", "ok", "static items table (" + std::to_string(kItemCount) + " ItemInfo)");
     st.SetCapability("listEntities", "ok", "static actor templates (" + std::to_string(kEntityCount) + ")");
-    st.SetCapability("listLocations", "ok", "static map markers/spawn points (" + std::to_string(kLocationCount) + ")");
+    st.SetCapability("listLocations", "ok", "in-game map places (" + std::to_string(LocationRows(kLocations, kLocationCount).size()) + " of " + std::to_string(kLocationCount) + " placements)");
     st.SetCapability("executeCommand", "ok", "plugin-defined command set (see /command help)");
 }
 
@@ -912,6 +956,9 @@ void WorldHooksInit() {
             char b[128];
             snprintf(b, sizeof b, "gamedata; hook installed; receive ret=0x%x chat=+0x%x", ret, L.chatOff);
             RecordResolve("chatAddMessage", addMsg, b, true);
+#ifdef TAKARO_COMMAND_PROBE
+            cprobe::Start();
+#endif
         }
     } else if (addMsg) {
         // receive call site: `mov byte [rbp+50h],0; mov byte [rbp+40h],0; call addMessage` inside processIncomingMessages,
@@ -996,10 +1043,24 @@ void WorldHooksInit() {
         g_charTable = (uint32_t)profile::L("characterTable", 0);
         if (cn && g_charComp && g_charTable) {
             g_charName = (CharNameFn)scan::Ptr(cn);
+            st.SetCharacterNamesAvailable(true);
             RecordResolve("characterName", cn, "gamedata; component 0x" + std::string(Hx(g_charComp)).substr(2) + " table +" + Hx(g_charTable), false);
         } else {
             RecordResolve("characterName", cn, "unresolved: " + h3, false);
         }
+        // --- character level (gamedata attributes*): optional, the 'levels' commands say "not read" without it ---
+        g_attrComp = (uint32_t)profile::L("attributesComponent", 0);
+        g_attrLevel = (uint32_t)profile::L("attributesLevel", 0);
+        g_attrXp = (uint32_t)profile::L("attributesExperience", 0);
+        g_attrXpReq = (uint32_t)profile::L("attributesExperienceRequired", 0);
+        if (!g_attrLevel || !g_attrXp || !g_attrXpReq || g_attrLevel > 0x1000 || g_attrXp > 0x1000 || g_attrXpReq > 0x1000)
+            g_attrComp = 0;
+        auto hx = [](uint32_t v) { return std::string(Hx(v)); };  // Hx shares one buffer: copy each value
+        RecordResolve("characterLevel", 0,
+                      g_attrComp ? "gamedata; component " + hx(g_attrComp) + " level +" + hx(g_attrLevel) +
+                                       " experience +" + hx(g_attrXp) + " required +" + hx(g_attrXpReq)
+                                 : std::string("unresolved: gamedata has no attributes* layout"),
+                      false);
     }
     st.SetCapability("killEvents", g_combatOk ? "ok" : "degraded",
                      g_combatOk ? std::string("combat_experience_source detour (killing-blow HitEvent)") +
@@ -1176,7 +1237,8 @@ bool WorldInventoryJson(const std::string& name, std::string& json, std::string&
     return true;
 }
 
-bool WorldGiveItem(const std::string& name, const ItemDef& item, uint32_t amount, std::string& err, std::string& detail) {
+bool WorldGiveItem(const std::string& name, const ItemDef& item, uint32_t amount, std::string& err, std::string& detail,
+                   uint8_t level) {
     if (!g_giveOk) {
         err = "giveItem unavailable (inventory_actions/isAdminEntity unresolved)";
         return false;
@@ -1222,6 +1284,7 @@ bool WorldGiveItem(const std::string& name, const ItemDef& item, uint32_t amount
             g_give.itemId = item.itemId;
             g_give.count = count;
             g_give.fullStack = full;
+            g_give.level = level;
             InterlockedExchange(&g_giveState, kGiveActive);
         }
         uint64_t t0 = NowMs();
@@ -1284,9 +1347,9 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                 if (target >= (int)L.chatMachines) return "!recipient machine index out of range";
                 if (target >= 0 && !*(uint8_t*)(chat + L.chatActive + (uint64_t)target * L.chatMStride))
                     return "!recipient machine is not an active chat recipient";
-                // The client only renders free text for chat type 0 with a valid player handle, shown as
-                // "<character name>: text" (live-tested: handle 0 and types 1-3 are dropped or become canned notices).
-                // So the message is carried by the recipient's own handle (whisper) or the first logged-in player.
+                // Enshrouded 1.0 renders type 4 as a plain notice. A valid player handle is still required
+                // for delivery, but a Takaro announcement must not appear to be spoken by that player.
+                uint8_t msgType = type == 0 && senderHandle == 0 && L.chatNoticeType ? (uint8_t)L.chatNoticeType : type;
                 uint32_t handle = senderHandle;
                 for (int i = 0; i < 16 && !handle; i++) {
                     uint64_t s = Slot(server, i);
@@ -1302,7 +1365,7 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                 StringView sv{text.data(), text.size()};
                 Opt64 o1{}, o2{};
                 uint8_t e[16] = {0};
-                g_origAddMsg(e, chat, type, &sv, 0, 0, handle, L.chatArg8Value ? account : (uint64_t)&o1, &o2);
+                g_origAddMsg(e, chat, msgType, &sv, 0, 0, handle, L.chatArg8Value ? account : (uint64_t)&o1, &o2);
                 if (e[0]) return "!addMessage error " + std::to_string(e[0]);
                 uint64_t rec = *(uint64_t*)(chat + L.chatTail);
                 if (*(uint64_t*)(chat + L.chatCount) != countBefore + 1 || !rec) return "!message was not queued";
@@ -1321,7 +1384,7 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                         excluded++;
                     }
                 }
-                PluginLog("message: queued type=%u handle=0x%x account=%s len=%zu target=%d excluded=%d", type, handle,
+                PluginLog("message: queued type=%u handle=0x%x account=%s len=%zu target=%d excluded=%d", msgType, handle,
                           account ? "set" : "none", text.size(), target, excluded);
                 return "ok";
             },
@@ -1455,13 +1518,18 @@ bool WorldNearbyJson(const std::string& name, double radius, std::string& json, 
 }
 
 // ------------------------------------------------------------------------------------------------
-static const char kTablesGameBuild[] = "1267041";
+// 1283531 (Steam 26319703) is the build the item table was exported on: its ItemInfo export is the 1267041 table
+// with 7 items added and Consumable_Potion_Flask_Fog_Survival_Flask_T5 removed, every other id, code and stack size
+// unchanged; its TemplateResource changes touch no template in the entity table. A later build whose exports still
+// match declares it in its gamedata section with "itemTables": "1283531" (checked offline against the build's
+// enshrouded_server.kfc), so the catalogue needs no plugin release; valid hooks alone never vouch for item ids.
+static const char kTablesGameBuild[] = "1283531";
 static std::atomic<bool> g_tablesUsable{true};
 static std::string g_tablesReason;
 
 void SetItemTablesBuild(const std::string& gameBuild, bool haveGamedataSection) {
-    (void)haveGamedataSection;  // a valid hook profile does not validate item ids
-    bool ok = gameBuild == kTablesGameBuild;
+    bool ok = gameBuild == kTablesGameBuild ||
+              (haveGamedataSection && profile::LStr("itemTables", "") == kTablesGameBuild);
     if (!ok) {
         g_tablesReason = std::string("item and entity tables are for game build ") + kTablesGameBuild + ", this server is build " +
                          gameBuild + "; use the plugin release for that build";
@@ -1494,7 +1562,8 @@ const std::string& ItemsJson() {
     if (s.empty()) {
         // Only what the game client names: an item without an En_Us name is never shown to a
         // player (character-creator parts, placement tools, cut content), and an Ability_ row
-        // is a skill, not an item. giveItem still takes any code (FindItemByCode).
+        // is a skill and an Icon_ row a character-creator swatch, not items. giveItem still takes
+        // any code (FindItemByCode).
         s = "[";
         bool first = true;
         for (size_t i = 0; i < kItemCount; i++) {
@@ -1533,19 +1602,16 @@ const std::string& LocationsJson() {
     static SrwLock l;
     Guard g(l);
     if (s.empty()) {
-        std::vector<const char*> codes;
-        codes.reserve(kLocationCount);
-        for (size_t i = 0; i < kLocationCount; i++) codes.push_back(kLocations[i].code);
-        std::vector<std::string> names;
-        DistinctNames(NameKind::Location, codes.data(), codes.size(), names);
         s = "[";
         char b[160];
-        for (size_t i = 0; i < kLocationCount; i++) {
-            auto& x = kLocations[i];
+        bool first = true;
+        for (const LocationRow& row : LocationRows(kLocations, kLocationCount)) {
+            auto& x = *row.def;
             snprintf(b, sizeof b, "\"position\":{\"x\":%.2f,\"y\":%.2f,\"z\":%.2f}", x.x, x.y, x.z);
-            s += std::string(i ? "," : "") + "{\"code\":" + JsonStr(x.code) + ",\"name\":" + JsonStr(names[i]) +
-                 ",\"kind\":" +
-                 JsonStr(x.kind) + (x.spawnType[0] ? ",\"spawnType\":" + JsonStr(x.spawnType) : std::string()) + "," + b + "}";
+            s += std::string(first ? "" : ",") + "{\"code\":" + JsonStr(row.code) + ",\"name\":" + JsonStr(row.name) +
+                 ",\"kind\":" + JsonStr(x.kind) + (x.spawnType[0] ? ",\"spawnType\":" + JsonStr(x.spawnType) : std::string()) +
+                 "," + b + "}";
+            first = false;
         }
         s += "]";
     }

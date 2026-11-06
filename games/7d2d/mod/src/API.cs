@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using HarmonyLib;
 using Takaro.Config;
+using Takaro.Persistence;
 using Takaro.Services;
 using Takaro.WebSocket;
 using UnityEngine;
@@ -25,6 +26,7 @@ namespace Takaro
             LogService.Instance.Info("Initializing mod");
 
             ConfigManager.Instance.LoadConfig();
+            ConfigureGameProfile(mod);
 
             // Register event handlers
             ModEvents.GameStartDone.RegisterHandler(GameStartDone);
@@ -42,10 +44,83 @@ namespace Takaro
             LogService.Instance.Info("Mod initialized successfully");
         }
 
+        /// <summary>
+        /// The connector version is the deployed ModInfo.xml's, which the release build
+        /// stamps; the icon ships inside this assembly so it cannot drift from the
+        /// revision computed here.
+        /// </summary>
+        private static void ConfigureGameProfile(Mod mod)
+        {
+            string connectorVersion = null;
+            try
+            {
+                connectorVersion = GameProfile.ReadModInfoVersion(
+                    File.ReadAllText(Path.Combine(mod.Path, "ModInfo.xml"))
+                );
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Warn($"Could not read ModInfo.xml: {ex.Message}");
+            }
+            if (connectorVersion == null)
+                connectorVersion = mod.VersionString;
+
+            byte[] icon = null;
+            try
+            {
+                using (
+                    Stream stream = typeof(API).Assembly.GetManifestResourceStream(
+                        GameProfile.IconResourceName
+                    )
+                )
+                {
+                    if (stream != null)
+                    {
+                        var buffer = new MemoryStream();
+                        stream.CopyTo(buffer);
+                        icon = buffer.ToArray();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Warn($"Could not load the game icon: {ex.Message}");
+            }
+
+            string runningBuild = Constants.cVersionInformation?.LongString;
+            BuildTarget.Configure(BuildTarget.ReadStamp(typeof(API).Assembly), runningBuild);
+            GameProfile.Configure(
+                BuildTarget.VersionWithBuild(connectorVersion),
+                runningBuild,
+                icon
+            );
+            string buildProblem = BuildTarget.StartupProblem();
+            if (BuildTarget.Result == BuildTarget.Match.WrongApi)
+                LogService.Instance.Error(buildProblem);
+            else if (buildProblem != null)
+                LogService.Instance.Warn(buildProblem);
+            LogService.Instance.Info(
+                $"Game profile: connector {GameProfile.ConnectorName} "
+                    + $"{GameProfile.ConnectorVersion ?? "(version not semver: " + connectorVersion + ")"}, "
+                    + $"game build {GameProfile.GameVersion ?? "unknown"} "
+                    + $"(mod built for {BuildTarget.Display(BuildTarget.Built)}: {BuildTarget.Result}), "
+                    + $"icon {GameProfile.IconRevision ?? "unavailable"}"
+            );
+        }
+
         private static void GameStartDone(ref ModEvents.SGameStartDoneData data)
         {
             var harmony = new Harmony("com.takaro.patch");
             harmony.PatchAll();
+
+            PrismaCoreConflict.WarnIfLoaded();
+
+            // The database lives in the world's save directory, which is known from here on.
+            // Opening it is the first DbWriter operation, so every write queued after this
+            // line (seeding, the sampler, player events) finds it open.
+            string saveDirectory = GameIO.GetSaveGameDir();
+            DbWriter.Instance.Enqueue(() => Database.Instance.Open(saveDirectory));
+            PositionSampler.Instance.Start();
 
             // Seed the mirror from game truth before the WebSocket connects, so
             // requests can never observe a cold mirror. The game thread does not
@@ -169,26 +244,12 @@ namespace Takaro
             }
             else
             {
-                foreach (EntityPlayer candidate in GameManager.Instance.World.Players.dict.Values)
+                if (!TryFindPlayerByName(data.MainName, out victimEntity))
                 {
-                    if (
-                        candidate == null
-                        || !string.Equals(
-                            candidate.PlayerDisplayName,
-                            data.MainName,
-                            StringComparison.Ordinal
-                        )
-                    )
-                        continue;
-
-                    if (victimEntity != null)
-                    {
-                        LogService.Instance.Warn(
-                            $"Skipped ambiguous player-death event for '{data.MainName}'"
-                        );
-                        return ModEvents.EModEventResult.Continue;
-                    }
-                    victimEntity = candidate;
+                    LogService.Instance.Warn(
+                        $"Skipped ambiguous player-death event for '{data.MainName}'"
+                    );
+                    return ModEvents.EModEventResult.Continue;
                 }
 
                 if (victimEntity != null)
@@ -219,8 +280,53 @@ namespace Takaro
                 return ModEvents.EModEventResult.Continue;
             }
 
-            GameEventPublisher.SendPlayerDeath(victim, null, deathPosition);
+            GameEventPublisher.SendPlayerDeath(
+                victim,
+                DeathAttacker(data.SecondaryName, victimEntity),
+                deathPosition
+            );
             return ModEvents.EModEventResult.Continue;
+        }
+
+        // The game fills SecondaryName only when the killer is a player (from the persistent
+        // player list), so zombie, animal and fall deaths keep no attacker. Takaro's attacker
+        // is a player as well; an ambiguous name or a self-kill sends none rather than a guess.
+        private static TakaroPlayer DeathAttacker(string killerName, EntityPlayer victimEntity)
+        {
+            if (string.IsNullOrEmpty(killerName))
+                return null;
+            if (
+                !TryFindPlayerByName(killerName, out EntityPlayer killerEntity)
+                || killerEntity == null
+            )
+                return null;
+            if (victimEntity != null && killerEntity.entityId == victimEntity.entityId)
+                return null;
+            return Shared.TransformClientInfoToTakaroPlayerIdentity(
+                ConnectionManager.Instance.Clients.ForEntityId(killerEntity.entityId)
+            );
+        }
+
+        // False when two online players share the display name; true with null when none has it.
+        private static bool TryFindPlayerByName(string name, out EntityPlayer player)
+        {
+            player = null;
+            foreach (EntityPlayer candidate in GameManager.Instance.World.Players.dict.Values)
+            {
+                if (
+                    candidate == null
+                    || !string.Equals(candidate.PlayerDisplayName, name, StringComparison.Ordinal)
+                )
+                    continue;
+
+                if (player != null)
+                {
+                    player = null;
+                    return false;
+                }
+                player = candidate;
+            }
+            return true;
         }
 
         private static void PlayerSpawnedInWorld(ref ModEvents.SPlayerSpawnedInWorldData data)

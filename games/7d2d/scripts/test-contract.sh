@@ -29,6 +29,8 @@ docker compose --project-directory "${PROJECT_ROOT}" run --rm --no-deps \
       -r:/usr/lib/mono/msbuild/Current/bin/Newtonsoft.Json.dll \
       /app/mod/src/WebSocket/WebSocketMessage.cs \
       /app/mod/src/WebSocket/ProtocolHandshake.cs \
+      /app/mod/src/WebSocket/BuildTarget.cs \
+      /app/mod/src/WebSocket/GameProfile.cs \
       /app/mod/src/WebSocket/GameEventPublisher.cs \
       /app/mod/src/WebSocket/RequestRouter.cs \
       /app/mod/src/WebSocket/ReadHandlers.cs \
@@ -41,11 +43,26 @@ docker compose --project-directory "${PROJECT_ROOT}" run --rm --no-deps \
       /app/mod/src/Services/OutboundLedger.cs \
       /app/mod/src/Services/PlayerLocationReadWindow.cs \
       /app/mod/src/Services/ServerMessageEchoGuard.cs \
+      /app/mod/src/Services/ServerChatName.cs \
       /app/mod/src/Services/MapCatalog.cs \
       /app/mod/src/Services/PlayerProximateItemDelivery.cs \
       /app/mod/src/Shared.cs \
+      /app/mod/src/Services/PlayerIdResolver.cs \
       /app/mod/src/Config/ConfigFiles.cs \
-      /app/tests/ContractHarness.cs
+      /app/mod/src/Commands/Contract/*.cs \
+      /app/tests/ContractHarness*.cs
     MONO_PATH=/usr/lib/mono/msbuild/Current/bin \
-      mono "$test_dir/contract-harness.exe" /tmp/generic-protocol.json /tmp/legacy-parity.json
+      mono "$test_dir/contract-harness.exe" /tmp/generic-protocol.json /tmp/legacy-parity.json /app
+
+    # The database against the LiteDB build the mod ships, under Mono.
+    mcs -langversion:latest \
+      -out:"$test_dir/storage-harness.exe" \
+      -r:/app/_data/7dtd-binaries/LiteDB.dll \
+      /app/mod/src/Persistence/Records.cs \
+      /app/mod/src/Persistence/StorageLifecycle.cs \
+      /app/mod/src/Persistence/WriteThroughFileStream.cs \
+      /app/mod/src/Persistence/DatabaseFiles.cs \
+      /app/tests/StorageHarness.cs
+    cp /app/_data/7dtd-binaries/LiteDB.dll /app/_data/7dtd-binaries/System.Buffers.dll "$test_dir/"
+    mono "$test_dir/storage-harness.exe"
   '

@@ -54,7 +54,7 @@ jobs:
   # Steam build watch pass on synthetic binaries. The real-binary anchor fixtures are server
   # machine code and are not in this repo; the maintainers' runner runs those checks.
   native:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -69,7 +69,7 @@ jobs:
   # target pins (same URL and SHA-256). The build checks the vendored MinHook hashes and the DLL's
   # exports, and zeroes the link timestamps so the bytes are reproducible.
   native-windows:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -107,7 +107,7 @@ jobs:
           wine "$RUNNER_TEMP/abortive_close_test.exe"
 
   params:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:

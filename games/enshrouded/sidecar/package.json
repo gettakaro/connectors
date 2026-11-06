@@ -12,7 +12,7 @@
     "test": "vitest run",
     "parity-fixtures": "tsx src/testing/writeParityFixtures.ts"
   },
-  "license": "ISC",
+  "license": "AGPL-3.0-only",
   "dependencies": {
     "ws": "^8.18.3"
   },

@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.7.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.6.0...dragonwilds-v0.7.0) (2026-10-30)
+
+
+### Features
+
+* **dragonwilds:** resolve the server chat name in one helper ([#693](https://github.com/gettakaro/connectors/issues/693)) ([399fce2](https://github.com/gettakaro/connectors/commit/399fce260f5a49e14a6fa3f0650b10eabba60c48))
+
+
+### Documentation
+
+* **dragonwilds:** list builds 26161880 and 26087591 from the 0.6.0 release ([#664](https://github.com/gettakaro/connectors/issues/664)) ([8f0f9e4](https://github.com/gettakaro/connectors/commit/8f0f9e44afa8036693c61c5437b44a44630c7ef8))
+
+## [0.6.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.5.0...dragonwilds-v0.6.0) (2026-10-26)
+
+
+### Features
+
+* **dragonwilds:** speak protocol v1 and report the game profile, connector identity and game icon ([#562](https://github.com/gettakaro/connectors/issues/562)) ([f14f237](https://github.com/gettakaro/connectors/commit/f14f237884786c89f7756190f99646e4e4d90d6e))
+* **dragonwilds:** support Steam build 26161880 ([#618](https://github.com/gettakaro/connectors/issues/618)) ([0b4c757](https://github.com/gettakaro/connectors/commit/0b4c757fb615e52d125e0f6b7264762542df8798))
+
+
+### Bug Fixes
+
+* **dragonwilds:** declare the world map Dimension and tag positions with it ([#624](https://github.com/gettakaro/connectors/issues/624)) ([d833657](https://github.com/gettakaro/connectors/commit/d833657a5e925437df538c0c24f5a4cbfca2a07a))
+* **dragonwilds:** list players only once they are in world ([#640](https://github.com/gettakaro/connectors/issues/640)) ([ebd771d](https://github.com/gettakaro/connectors/commit/ebd771d6bc7845598a9fb01ebdeac6cf815046b6))
+
+
+### Documentation
+
+* **dragonwilds:** date the works table and name the per-build plugin archives ([#584](https://github.com/gettakaro/connectors/issues/584)) ([2ff22b9](https://github.com/gettakaro/connectors/commit/2ff22b9a31049e58f4dcdccf80cae0ab49bdd42f))
+
 ## [0.5.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.4.0...dragonwilds-v0.5.0) (2026-10-18)
 
 

@@ -40,7 +40,7 @@ unsigned ParseUnsigned(const std::string& text, unsigned fallback, unsigned lo, 
 }
 
 const char* const kKnownKeys[] = {"url", "takaroWsUrl", "identityToken", "registrationToken", "name",
-                                  "serverName", "caFile", "stateDir", "protocol"};
+                                  "serverName", "serverChatName", "caFile", "stateDir", "protocol"};
 
 // A parsed JSON object, or the reason it is not one.
 JsonValue ParseObject(const std::string& text, std::string& error) {
@@ -154,6 +154,10 @@ Config ResolveConfig(const ConfigInput& in) {
     if (!pick("name", {"TAKARO_SERVER_NAME", "TAKARO_NAME"}, {"name", "serverName"}, "default", c.serverName,
               c.nameSource))
         c.serverName = DefaultServerName(c.identityToken);
+    Source chatNameSource;
+    if (!pick("serverChatName", {"TAKARO_SERVER_CHAT_NAME"}, {"serverChatName"}, "not set", c.serverChatName,
+              chatNameSource))
+        c.serverChatName.clear();
 
     std::string from;
     std::string ca = envValue({"TAKARO_CA_FILE"}, from);
@@ -350,6 +354,7 @@ std::string ConfigSummaryJson(const Config& c) {
         .S("disabledReason", c.disabledReason)
         .S("url", c.Redact(c.url))
         .S("serverName", c.serverName)
+        .S("serverChatName", c.serverChatName)
         .S("caFile", c.caFile)
         .S("stateDir", c.stateDir)
         .S("configFile", c.configFile)

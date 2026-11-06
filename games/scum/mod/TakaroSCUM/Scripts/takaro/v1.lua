@@ -93,4 +93,14 @@ function M.translate(action, result, known)
   return nil, { code = M.code_for(text), message = text }
 end
 
+-- The version 1 event data: a position names the map dimension, like getPlayerLocation, so Takaro can place the
+-- event on the map. The version 0 data stays as the event adapter built it.
+function M.event_data(data)
+  if type(data) ~= "table" or type(data.position) ~= "table" or data.position.dimension ~= nil then return data end
+  local out = util.shallow_copy(data)
+  out.position = util.shallow_copy(data.position)
+  out.position.dimension = map.DIMENSION_ID
+  return out
+end
+
 return M

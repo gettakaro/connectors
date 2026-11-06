@@ -186,7 +186,10 @@ operator upload (`PUT /gameserver/{id}/map/{dimension}/upload`, which cuts the t
 3. `scripts/render-map.py <serverdir>/takaro/map out.png --sea-level -3400` (numpy + Pillow)
    writes the PNG and `out.settings.json` with the axes (x right, y down: north up, matching the
    in-game map) and the bounds in raw Unreal units, which is what Takaro positions use.
-4. Upload both as `image` and `settings`, then restore `Engine.ini` and restart.
+4. Upload the PNG as the `image` of Dimension `overworld`, then restore `Engine.ini` and restart.
+   On protocol version 1 the connector declares that Dimension itself (`mod/src/native_map.h`,
+   the same axes and bounds), so the upload needs no `settings`. Every player position carries
+   `dimension: "overworld"`. If you survey other bounds, update `native_map.h` to match.
 
 ## Gotchas
 

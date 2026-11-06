@@ -53,7 +53,7 @@ class TakaroConnectorTest {
         public void giveItem(String gameId, String itemCode, int amount, String quality) {}
 
         @Override
-        public void sendMessage(String message, String recipientGameId) {}
+        public void sendMessage(String message, String senderName, String recipientGameId) {}
 
         @Override
         public CommandResult executeConsoleCommand(String command) {

@@ -1,0 +1,19 @@
+{
+  "name": "Empyrion - Galactic Survival",
+  "tagline": "Native connector for Empyrion dedicated servers: one C# mod, loaded by the game's own mod loader, that connects to Takaro itself, no sidecar.",
+  "assetMode": "all",
+  "requirements": [
+    "Empyrion - Galactic Survival Windows dedicated server (Steam app 530870) build named in the release; it also runs under Wine",
+    "File access to the server's Content\\Mods folder",
+    "Takaro registration token"
+  ],
+  "assets": [
+    {
+      "pattern": "takaro-empyrion-*.zip",
+      "label": "Server mod",
+      "requires": "Empyrion dedicated server on Windows (or under Wine)",
+      "hint": "Stop the server, unzip into the server's Content\\Mods\\ folder, copy Content\\Mods\\TakaroEmpyrion\\TakaroConfig.txt.example to TakaroConfig.txt, set REGISTRATION_TOKEN and SERVER_NAME and start the server.",
+      "required": true
+    }
+  ]
+}

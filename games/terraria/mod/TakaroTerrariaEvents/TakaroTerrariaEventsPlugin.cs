@@ -62,6 +62,14 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         {
             HelpText = "Renders the world map image Takaro shows, in the background."
         });
+        Commands.ChatCommands.Add(new Command(AdminPermission, TakaroSay, "takarosay")
+        {
+            HelpText = "Shows Takaro's chat text to every player, without a sender label of its own."
+        });
+        Commands.ChatCommands.Add(new Command(AdminPermission, TakaroTell, "takarotell")
+        {
+            HelpText = "Shows Takaro's chat text to one player, without a sender label of its own."
+        });
         ServerApi.Hooks.GamePostInitialize.Register(this, OnWorldLoaded);
         // The leading text is the line `takaro-maint verify` waits for; the version
         // behind it is what build-mod.sh stamped in, so a log says which build loaded.
@@ -84,6 +92,8 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaroban"));
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takarounban"));
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaromap"));
+            Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takarosay"));
+            Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takarotell"));
             ServerApi.Hooks.GamePostInitialize.Deregister(this, OnWorldLoaded);
             _mapTimer?.Dispose();
         }
@@ -119,6 +129,50 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         args.Player.SendInfoMessage(MapRenderer.Start("command")
             ? "TAKARO_MAP render started"
             : "TAKARO_MAP render already running");
+    }
+
+    // The bridge renders the sender name into the text. TShock's /broadcast and /w would put
+    // "(Server Broadcast)" or "<From <REST user>>" in front of it, so these send the text as is,
+    // in the colours of a broadcast and a whisper. TShock.Utils.Broadcast is not used: it logs
+    // "Broadcast: <text>", the line the bridge reads player chat from.
+    private static void TakaroSay(CommandArgs args)
+    {
+        if (args.Parameters.Count != 1)
+        {
+            args.Player.SendErrorMessage("Usage: /takarosay <text>");
+            return;
+        }
+
+        var text = args.Parameters[0];
+        var rgb = TShock.Config.Settings.BroadcastRGB;
+        TSPlayer.All.SendMessage(text, (byte)rgb[0], (byte)rgb[1], (byte)rgb[2]);
+        TShock.Log.ConsoleInfo($"TAKARO_CHAT to all: {text}");
+        args.Player.SendSuccessMessage("TAKARO_CHAT sent");
+    }
+
+    private static void TakaroTell(CommandArgs args)
+    {
+        if (args.Parameters.Count != 2)
+        {
+            args.Player.SendErrorMessage("Usage: /takarotell <player> <text>");
+            return;
+        }
+
+        var matches = TSPlayer.FindByNameOrID(args.Parameters[0]);
+        if (matches.Count != 1)
+        {
+            args.Player.SendErrorMessage(matches.Count == 0
+                ? $"No player found matching '{args.Parameters[0]}'."
+                : $"Multiple players found matching '{args.Parameters[0]}'.");
+            return;
+        }
+
+        var target = matches[0];
+        var text = args.Parameters[1];
+        // Color.MediumPurple, the colour of TShock's /w.
+        target.SendMessage(text, 147, 112, 219);
+        TShock.Log.ConsoleInfo($"TAKARO_CHAT to {target.Name}: {text}");
+        args.Player.SendSuccessMessage("TAKARO_CHAT sent");
     }
 
     private static void TakaroTeleport(CommandArgs args)
@@ -197,7 +251,7 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
     {
         if (args.Parameters.Count < 1)
         {
-            args.Player.SendErrorMessage("Usage: /takaroban <player> [reason]");
+            args.Player.SendErrorMessage("Usage: /takaroban <player> [until=<unix seconds>] [reason]");
             return;
         }
 
@@ -216,8 +270,31 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         }
 
         var target = matches[0];
-        var reason = args.Parameters.Count > 1
-            ? string.Join(" ", args.Parameters.GetRange(1, args.Parameters.Count - 1))
+
+        // An optional `until=<unix seconds>` before the reason makes the ban timed; TShock then
+        // lets the player back in once it has passed. Without it the ban is permanent.
+        var reasonStart = 1;
+        var expires = DateTime.MaxValue;
+        if (args.Parameters.Count > 1 && args.Parameters[1].StartsWith("until=", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!long.TryParse(args.Parameters[1].Substring("until=".Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out var unixSeconds)
+                || unixSeconds < 0 || unixSeconds > 253402300799)
+            {
+                var failure = JsonSerializer.Serialize(new
+                {
+                    success = false,
+                    reason = $"'{args.Parameters[1]}' is not until=<unix seconds>."
+                });
+                args.Player.SendInfoMessage($"TAKARO_BAN {failure}");
+                return;
+            }
+
+            expires = DateTimeOffset.FromUnixTimeSeconds(unixSeconds).UtcDateTime;
+            reasonStart = 2;
+        }
+
+        var reason = args.Parameters.Count > reasonStart
+            ? string.Join(" ", args.Parameters.GetRange(reasonStart, args.Parameters.Count - reasonStart))
             : "Banned by Takaro";
 
         var identifiers = BanIdentifiersFor(target);
@@ -240,7 +317,7 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
                 // Tag the ban with the player name so TakaroUnban can find it later: a
                 // banned player is offline by definition, so the UUID cannot be re-derived
                 // from a live TSPlayer at unban time.
-                TShock.Bans.InsertBan(identifier, $"{reason} {BanNameTag(target.Name)}", "takaro", DateTime.UtcNow, DateTime.MaxValue);
+                TShock.Bans.InsertBan(identifier, $"{reason} {BanNameTag(target.Name)}", "takaro", DateTime.UtcNow, expires);
                 applied.Add(identifier);
             }
             catch (Exception ex)
@@ -431,10 +508,20 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
     ///      then drops the remainder, so a request for 50 into room for 20 places 20 and
     ///      drops 30. That is a partially lost order.
     ///
-    /// So we do the placement ourselves: compute exact capacity, refuse unless the entire
-    /// amount fits, and only then write into the inventory and sync each touched slot.
-    /// Takaro turns a reported failure into a shop-order-delivery-failed event, which a
-    /// module can surface to the player, so refusing is visible and actionable.
+    /// So we plan the placement ourselves: compute exact capacity and refuse unless the
+    /// entire amount fits. Takaro turns a reported failure into a
+    /// shop-order-delivery-failed event, which a module can surface to the player, so
+    /// refusing is visible and actionable.
+    ///
+    /// How the planned stacks reach the player depends on who owns the inventory. With
+    /// server-side characters (SSC) the server does, so we write the slots and sync them.
+    /// Without SSC (TShock's default) the client owns its inventory and ignores PlayerSlot
+    /// packets for its own player (MessageBuffer case 5), so a slot write only changes the
+    /// server's copy: the player never sees the item and the next client sync erases it.
+    /// There we spawn each planned stack on the player, reserved for them, exactly like
+    /// TSPlayer.GiveItemByDrop; the client picks it up at once. The capacity check still
+    /// holds, so the whole order fits and nothing is left on the ground. A dead player
+    /// cannot pick anything up, so the give is refused until they respawn.
     /// </summary>
     private static void TakaroGive(CommandArgs args)
     {
@@ -493,6 +580,13 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
 
         var itemName = NonEmpty(template.Name) ?? itemId.ToString(CultureInfo.InvariantCulture);
 
+        var serverOwnsInventory = Main.ServerSideCharacter && !target.IsDisabledForSSC;
+        if (!serverOwnsInventory && (target.TPlayer?.dead ?? true))
+        {
+            EmitGiveFailure(args, $"{target.Name} is dead. Try again after they respawn.");
+            return;
+        }
+
         // Plan the entire placement before touching anything. BuildPlacementPlan returns
         // null when the full amount does not fit, so we either apply a complete plan or
         // mutate nothing at all.
@@ -517,7 +611,14 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
 
         try
         {
-            ApplyPlacementPlan(target, template, plan);
+            if (serverOwnsInventory)
+            {
+                ApplyPlacementPlan(target, template, plan);
+            }
+            else
+            {
+                HandPlacementPlanToClient(target, template, plan);
+            }
         }
         catch (Exception ex)
         {
@@ -529,7 +630,7 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         {
             success = true,
             delivered = amount,
-            method = "inventory",
+            method = serverOwnsInventory ? "inventory" : "pickup",
             item = itemName
         });
         args.Player.SendInfoMessage($"TAKARO_GIVE {json}");
@@ -708,6 +809,26 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         }
     }
 
+    // Without SSC: one item per planned stack (each within max stack), spawned on the
+    // player and reserved for them, as TSPlayer.GiveItemByDrop does. Their client picks
+    // each up into the room the plan counted.
+    private static void HandPlacementPlanToClient(TSPlayer target, Item template, List<PlannedPlacement> plan)
+    {
+        foreach (var placement in plan)
+        {
+            var index = Item.NewItem(
+                new Terraria.DataStructures.EntitySource_DebugCommand(),
+                target.TPlayer.Center,
+                template.type,
+                placement.Amount,
+                template.prefix,
+                noBroadcast: true);
+            Main.item[index].playerIndexTheItemIsReservedFor = target.Index;
+            target.SendData(PacketTypes.ItemDrop, "", index, 1f);
+            target.SendData(PacketTypes.ItemOwner, null, index);
+        }
+    }
+
     private static void EmitGiveFailure(CommandArgs args, string reason)
     {
         var json = JsonSerializer.Serialize(new
@@ -796,11 +917,17 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             return;
         }
 
+        // A critter or monster that died to a town NPC, a trap, lava or a despawn has no killer,
+        // and Takaro can only file an entity kill under a player.
         var killer = ResolveKiller(npc);
+        if (killer is null)
+        {
+            return;
+        }
 
         Emit("entity-killed", new
         {
-            player = killer is null ? null : PlayerDto(killer, killer.Name),
+            player = PlayerDto(killer, killer.Name),
             entity = new
             {
                 gameId = $"npc:{npc.whoAmI}",
@@ -830,18 +957,15 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
     //     NOT -1 when unset: Terraria initialises it to 255 (Main.maxPlayers), a
     //     sentinel that is still inside TShock.Players' bounds, so a naive index
     //     check treats the "nobody" value as a real slot.
-    //  3. npc.target / npc.oldTarget - who the NPC was aggroed on. Weaker still,
-    //     since aggro can point at a player who dealt no damage at all, but it is
-    //     better than nothing for AI types that never set an interaction.
     //
-    // Returns null when nothing resolves, which surfaces as no player on the event.
+    // Who the NPC was aggroed on (npc.target) and "the only player online" are not
+    // used: both credited players with kills made by town NPCs, traps and lava.
+    //
+    // Returns null when no player damaged the NPC.
     private static TSPlayer? ResolveKiller(NPC npc)
     {
         return SoleInteractingPlayer(npc)
-            ?? ActivePlayerByIndex(npc.lastInteraction)
-            ?? ActivePlayerByIndex(npc.target)
-            ?? ActivePlayerByIndex(npc.oldTarget)
-            ?? SoleActiveTSPlayer();
+            ?? ActivePlayerByIndex(npc.lastInteraction);
     }
 
     // Returns the only player flagged in npc.playerInteraction, or null when zero
@@ -948,32 +1072,6 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
 
         var player = TShock.Players[index];
         return player is not null && player.Active ? player : null;
-    }
-
-    // Last-resort killer guess. Only answers when exactly one player is online, in
-    // which case the kill must be theirs. With two or more connected, picking the
-    // first active slot is just a guess that is usually wrong on a busy server, and
-    // attributing a kill to the wrong player is worse than attributing it to nobody
-    // - so we return null and let the event report no killer.
-    private static TSPlayer? SoleActiveTSPlayer()
-    {
-        TSPlayer? found = null;
-        foreach (var player in TShock.Players)
-        {
-            if (player is null || !player.Active)
-            {
-                continue;
-            }
-
-            if (found is not null)
-            {
-                return null;
-            }
-
-            found = player;
-        }
-
-        return found;
     }
 
     private static object PlayerDto(TSPlayer? player, string fallbackName)

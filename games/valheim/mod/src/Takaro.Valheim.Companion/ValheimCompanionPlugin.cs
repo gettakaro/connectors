@@ -2,6 +2,7 @@
 using BepInEx;
 using HarmonyLib;
 using System.Diagnostics;
+using Takaro.Valheim.Companion.Protocol;
 using UnityEngine;
 
 namespace Takaro.Valheim.Companion;
@@ -16,6 +17,7 @@ public sealed class ValheimCompanionPlugin : BaseUnityPlugin
     public const int ProtocolVersion = TakaroCompanionBuildVersion.ProtocolVersion;
 
     private CompanionClientBridge? clientBridge;
+    private CompanionCommandProbe? commandProbe;
     private Harmony? harmony;
 
     private void Awake()
@@ -34,6 +36,12 @@ public sealed class ValheimCompanionPlugin : BaseUnityPlugin
             clientBridge.Initialize();
             CompanionClientHooks.Initialize(clientBridge, Logger.LogInfo);
             harmony.PatchAll(typeof(ValheimCompanionPlugin).Assembly);
+            // Research probe for native commands (#200): off unless the marker file exists.
+            commandProbe = CompanionCommandProbe.TryCreate(
+                Path.Combine(Paths.ConfigPath, CommandProbeProtocol.MarkerFileName),
+                clientBridge,
+                harmony,
+                Logger.LogInfo);
             Logger.LogInfo($"Takaro Valheim Inventory Companion {ProductVersion} started with protocol {ProtocolVersion}. Optional: it only reports this character's inventory (and kill verdicts) to a Takaro server; it holds no Takaro credentials.");
         }
         catch (Exception ex)
@@ -55,6 +63,8 @@ public sealed class ValheimCompanionPlugin : BaseUnityPlugin
 
     private void OnDestroy()
     {
+        commandProbe?.Dispose();
+        commandProbe = null;
         CompanionClientHooks.Shutdown();
         clientBridge?.Dispose();
         clientBridge = null;

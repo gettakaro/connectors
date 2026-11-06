@@ -198,6 +198,48 @@ class ProtocolV1Test {
     }
 
     @Test
+    void v1PositionsCarryTheSingleMapDimension() throws Exception {
+        adapter.dimensions = List.of(DIM);
+        adapter.location = new PlayerLocation(10893.5, 9938.2, 0.0, null);
+        adapter.locations = List.of(new GameLocation("Home", "Home", 100, 200, 0, null, null, 10.0, 10.0, 0.0));
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        request("getPlayerLocation", "r1", "{\"gameId\":\"p\"}");
+        request("listLocations", "r2", "{}");
+        client.emitPlayerDeath(new PlayerInfo("p", "P", null, null, null, "steam:1", null, 0),
+                null, 1, 2, 0, null);
+        Thread.sleep(200);
+        JsonObject location = response("r1").getAsJsonObject("payload");
+        assertEquals("knox-county", location.get("dimension").getAsString());
+        assertEquals(10893.5, location.get("x").getAsDouble());
+        JsonObject home = response("r2").getAsJsonArray("payload").get(0).getAsJsonObject();
+        assertEquals("knox-county", home.getAsJsonObject("position").get("dimension").getAsString());
+        JsonObject death = events().get(0).getAsJsonObject("payload").getAsJsonObject("data");
+        assertEquals("knox-county", death.getAsJsonObject("position").get("dimension").getAsString());
+    }
+
+    @Test
+    void positionsStayWithoutDimensionOnVersion0OrWithoutAMap() throws Exception {
+        adapter.location = new PlayerLocation(1, 2, 0, null);
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        request("getPlayerLocation", "r1", "{\"gameId\":\"p\"}");
+        Thread.sleep(200);
+        assertFalse(response("r1").getAsJsonObject("payload").has("dimension"));
+
+        adapter.dimensions = List.of(DIM);
+        client = newClient();
+        client.onOpen(null);
+        identify(0);
+        sent.clear();
+        request("getPlayerLocation", "r2", "{\"gameId\":\"p\"}");
+        Thread.sleep(200);
+        assertFalse(response("r2").getAsJsonObject("payload").has("dimension"));
+    }
+
+    @Test
     void v1ActionFailureMapsToAnErrorCode() throws Exception {
         client.onOpen(null);
         identify(1);
@@ -339,6 +381,39 @@ class ProtocolV1Test {
         throw new AssertionError("no " + name + " in the manifest");
     }
 
+    @Test
+    void takaroSideRefusalsAreTransient() {
+        for (String reason : List.of("internal", "timeout", "unavailable", "rate_limited", " Internal ")) {
+            assertTrue(TakaroWebSocketClient.isTransientRefusal(reason), reason);
+        }
+        for (String reason : Arrays.asList("invalid_args", "unauthorized", "", null)) {
+            assertFalse(TakaroWebSocketClient.isTransientRefusal(reason), String.valueOf(reason));
+        }
+    }
+
+    @Test
+    void anInternalIdentifyErrorKeepsTheBackoff() {
+        config.setReconnectDelay(60_000);
+        client.onOpen(null);
+        client.onMessage("{\"type\":\"identifyResponse\",\"error\":{\"code\":\"internal\","
+                + "\"message\":\"Internal error identifying game server.\"},\"requestId\":\"i\"}");
+        client.onClose(1008, "internal", true);
+        assertTrue(adapter.logs.stream().anyMatch(l -> l.startsWith("Reconnecting in")), adapter.logs.toString());
+        assertTrue(adapter.logs.stream().noneMatch(l -> l.contains("registrationToken")), adapter.logs.toString());
+        client.retire();
+    }
+
+    @Test
+    void aRejectedTokenWaitsForAConfigEdit() {
+        config.setReconnectDelay(60_000);
+        client.onOpen(null);
+        client.onMessage("{\"type\":\"identifyResponse\",\"error\":{\"code\":\"invalid_args\","
+                + "\"message\":\"Invalid registrationToken provided.\"},\"requestId\":\"i\"}");
+        client.onClose(1008, "invalid_args", true);
+        assertTrue(adapter.logs.stream().noneMatch(l -> l.startsWith("Reconnecting in")), adapter.logs.toString());
+        assertTrue(adapter.logs.stream().anyMatch(l -> l.contains("registrationToken")), adapter.logs.toString());
+    }
+
     private void identify(int version) {
         client.onMessage("{\"type\":\"identifyResponse\",\"payload\":{\"gameServerId\":\"gs\",\"protocolVersion\":"
                 + version + "},\"requestId\":\"i\"}");
@@ -359,6 +434,14 @@ class ProtocolV1Test {
         return JsonParser.parseString(sent.get(i)).getAsJsonObject();
     }
 
+    private JsonObject response(String requestId) {
+        for (String raw : sent) {
+            JsonObject f = JsonParser.parseString(raw).getAsJsonObject();
+            if (f.has("requestId") && requestId.equals(f.get("requestId").getAsString())) return f;
+        }
+        throw new AssertionError("no response to " + requestId + " in " + sent);
+    }
+
     private List<JsonObject> events() {
         List<JsonObject> out = new ArrayList<>();
         for (String raw : sent) {
@@ -376,26 +459,30 @@ class ProtocolV1Test {
 
     private static class FakeAdapter implements GameAdapter {
         List<MapDimension> dimensions = List.of();
+        PlayerLocation location;
+        List<GameLocation> locations = List.of();
         RuntimeException failGiveWith;
         String gameVersion = "42.20.4";
 
         @Override public String getGameVersion() { return gameVersion; }
 
-        @Override public void logInfo(String msg) { }
-        @Override public void logWarning(String msg) { }
+        final List<String> logs = new CopyOnWriteArrayList<>();
+
+        @Override public void logInfo(String msg) { logs.add(msg); }
+        @Override public void logWarning(String msg) { logs.add(msg); }
         @Override public void runOnMainThread(Runnable task) { task.run(); }
         @Override public void setEventEmitter(EventEmitter emitter) { }
         @Override public PlayerInfo getPlayer(String gameId) { return null; }
         @Override public List<PlayerInfo> getPlayers() { return List.of(); }
-        @Override public PlayerLocation getPlayerLocation(String gameId) { return null; }
+        @Override public PlayerLocation getPlayerLocation(String gameId) { return location; }
         @Override public List<InventoryItem> getPlayerInventory(String gameId) { return List.of(); }
         @Override public List<GameItem> listItems() { return List.of(); }
         @Override public List<GameEntity> listEntities() { return List.of(); }
-        @Override public List<GameLocation> listLocations() { return List.of(); }
+        @Override public List<GameLocation> listLocations() { return locations; }
         @Override public void giveItem(String gameId, String itemCode, int amount, String quality) {
             if (failGiveWith != null) throw failGiveWith;
         }
-        @Override public void sendMessage(String message, String recipientGameId) { }
+        @Override public void sendMessage(String message, String senderName, String recipientGameId) { }
         @Override public CommandResult executeConsoleCommand(String command) { return new CommandResult(true, "", null); }
         @Override public void teleportPlayer(String gameId, double x, double y, double z, String dimension) { }
         @Override public void kickPlayer(String gameId, String reason) { }
