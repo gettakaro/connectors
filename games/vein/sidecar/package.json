@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
-  "license": "ISC",
+  "license": "AGPL-3.0-only",
   "dependencies": {
     "ws": "^8.18.3"
   },
