@@ -1,0 +1,37 @@
+# UModel (UEViewer) built from a pinned source commit, for the ARK icon spike (#813).
+# Evidence tooling only: the image is built locally, never pushed.
+#
+#   base image   debian:bookworm@sha256:268fb24c39bca92d326dd83ea3abebe4a3f7751c804ffef23bb6d857dd343ff8
+#   packages     dated Debian snapshot (apt retries: snapshot.debian.org sometimes answers 504)
+#   source       gildor2/UEViewer commit a0bfb468d42be831b126632fd8a0ae6b3614f981 (2024-02-23, MIT licence)
+#                tarball sha256 3980aca68ffa11ac787910bed87be355e94613172bdf53cbde37863777899edd
+# Network is needed at build time only; run.sh runs every decode step with --network none.
+FROM debian:bookworm@sha256:268fb24c39bca92d326dd83ea3abebe4a3f7751c804ffef23bb6d857dd343ff8
+RUN printf '%s\n' \
+      'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20261104T212339Z bookworm main' \
+      'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20261104T212339Z bookworm-security main' \
+      > /etc/apt/sources.list \
+ && rm -f /etc/apt/sources.list.d/* \
+ && for attempt in 1 2 3 4 5; do \
+      apt-get -o Acquire::Retries=5 -o Acquire::Check-Valid-Until=false update \
+      && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+           g++ make perl libsdl2-dev libpng-dev zlib1g-dev ca-certificates curl \
+      && break; \
+      [ "$attempt" = 5 ] && exit 1; \
+      echo "apt attempt $attempt failed, retrying in $((attempt * 30)) s" >&2; sleep $((attempt * 30)); \
+    done \
+ && rm -rf /var/lib/apt/lists/*
+ARG UEVIEWER_COMMIT=a0bfb468d42be831b126632fd8a0ae6b3614f981
+ARG UEVIEWER_SHA256=3980aca68ffa11ac787910bed87be355e94613172bdf53cbde37863777899edd
+WORKDIR /tmp/src
+# The archive ships a prebuilt `umodel` binary; it is removed so only the source build can be used.
+RUN curl -fsSL --retry 3 -o ue.tar.gz "https://github.com/gildor2/UEViewer/archive/${UEVIEWER_COMMIT}.tar.gz" \
+ && echo "${UEVIEWER_SHA256}  ue.tar.gz" | sha256sum -c - \
+ && tar xf ue.tar.gz \
+ && cd "UEViewer-${UEVIEWER_COMMIT}" \
+ && rm -f umodel umodel.exe \
+ && ./build.sh \
+ && install -m 0755 umodel /usr/local/bin/umodel \
+ && cp LICENSE.txt /usr/local/share/UEViewer-LICENSE.txt \
+ && cd / && rm -rf /tmp/src
+WORKDIR /
