@@ -47,7 +47,8 @@ def test_catalog_validate_accepts_the_target(run: Any) -> None:
 def test_the_steam_pin_is_exact_and_anonymous() -> None:
     server = record()["inputs"]["server"]
 
-    assert (server["app"], server["branch"], server["buildid"], server["os"]) == (3809400, "public", 25642172, "windows")
+    assert (server["app"], server["branch"]) == (3809400, "public")
+    assert (server["buildid"], server["os"]) == (25642172, "windows")
     assert server["depots"]["3809401"]["manifest"] == "3659990775896995763"
     assert server["credentials"] is None
 
