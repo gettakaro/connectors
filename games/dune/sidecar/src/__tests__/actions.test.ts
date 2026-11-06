@@ -41,6 +41,7 @@ describe('reads', () => {
 
     h.battlegroup.partitions = { expected: 2, readyAlive: 0 };
     const down = await h.adapter.testReachability();
+    expect(h.adapter.capabilities().gameReachability).toMatchObject(down);
     expect(down.connectable).toBe(false);
     expect(down.reason).toMatch(/no battlegroup partition is alive and ready \(0\/2\)/);
 
