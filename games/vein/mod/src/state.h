@@ -88,6 +88,18 @@ std::string BanPersistenceError();
 void NoteCharacterName(const std::string& gameId, const std::string& name);
 std::string CharacterName(const std::string& gameId);
 
+// Takaro's Character identity. The id is the game's own GUID; a player's active character is the
+// one their pushed events name, set when they enter the world and cleared when they leave.
+struct ActiveCharacter {
+    std::string id;
+    std::string name;
+};
+void NoteCharacterNameById(const std::string& characterId, const std::string& name);
+std::string CharacterNameById(const std::string& characterId);
+void SetActiveCharacter(const std::string& gameId, const ActiveCharacter& character);
+void ClearActiveCharacter(const std::string& gameId);
+ActiveCharacter GetActiveCharacter(const std::string& gameId);
+
 // Readable creature names (lane L3c). `AVeinAICharacter::AIName` is an FText that only exists on
 // a spawned AI (the cooked UAIDataAsset it comes from is streamed in on demand), so the name is
 // cached the first time an AI of that Blueprint class is seen or killed. GET /entities and the

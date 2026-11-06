@@ -450,6 +450,11 @@ std::string PlayerStateCharacterId(void* ps) {
     return ActionsUtil::GuidDigits(g[0], g[1], g[2], g[3]);
 }
 
+// Empty until the player is in the world as a character.
+std::string SpawnedCharacterId(void* playerState, void* controller) {
+    return PawnIsPlayerCharacter(ControllerPawn(controller)) ? PlayerStateCharacterId(playerState) : "";
+}
+
 bool ReadPlayer(void* ps, PlayerInfo& out) {
     if (!ps || !MemReadable(ps, 0x40)) return false;
     out.playerState = ps;
@@ -508,7 +513,7 @@ std::string FirstSeen(const std::string& gameId) {
 // is built on the HTTP thread from a cache that is at most TAKARO_SNAPSHOT_TTL_MS old, and the
 // refresh is LAZY - no request, no game-thread entry at all.
 struct PlayerRow {
-    std::string gameId, name, characterId, pawnClass;
+    std::string gameId, name, characterId, characterName, pawnClass;
     int ping = 0;
     bool spawned = false, hasPawn = false, hasLoc = false;
     double loc[3] = {0, 0, 0}, rot[3] = {0, 0, 0};
@@ -545,6 +550,7 @@ void BuildPlayerSnapshotOnGameThread() {
         r.gameId = p.gameId;
         r.name = p.name;
         r.characterId = p.characterId;
+        r.characterName = state::CharacterNameById(p.characterId);
         r.ping = p.ping;
         r.spawned = p.spawned;
         r.hasPawn = p.pawn != nullptr;
@@ -582,13 +588,20 @@ bool PlayerRows(std::vector<PlayerRow>& out, uint64_t& ageMs) {
 
 std::string PlayerRowJson(const PlayerRow& r);
 
+// The character screen has no character in play, whatever LoadedCharacterID still holds.
+std::string CharacterField(const PlayerRow& r) {
+    if (!r.spawned) return "";
+    const std::string json = ActionsUtil::CharacterJson(r.characterId, r.characterName, r.name);
+    return json.empty() ? "" : ",\"character\":" + json;
+}
+
 std::string PlayerRowJson(const PlayerRow& r) {
     return "{\"gameId\":" + JsonStr(r.gameId) + ",\"name\":" + JsonStr(r.name) + ",\"steamId\":" +
            JsonStr(r.gameId) + ",\"platformId\":" + JsonStr("steam:" + r.gameId) + ",\"ping\":" +
            std::to_string(r.ping) + ",\"spawned\":" + (r.spawned ? "true" : "false") + ",\"pawn\":" +
            JsonStr(r.pawnClass) + ",\"characterId\":" +
            (r.characterId.empty() ? "null" : JsonStr(r.characterId)) + ",\"online\":true,\"connectedAt\":" +
-           JsonStr(FirstSeen(r.gameId)) + "}";
+           JsonStr(FirstSeen(r.gameId)) + CharacterField(r) + "}";
 }
 
 bool FindPlayerById(const std::string& id, PlayerInfo& out) {
@@ -2003,8 +2016,14 @@ namespace {
 
 constexpr uint64_t kProgressionRefreshMs = 10000;
 
+struct ProgressionReading {
+    std::string characterId;
+    uint64_t readAtMs = 0;
+    std::vector<ActionsUtil::ProgressionStat> stats;
+};
 Mutex g_progressionLock;
-std::map<std::string, std::vector<ActionsUtil::ProgressionStat>> g_progression;  // by gameId
+std::map<std::string, ProgressionReading> g_progression;    // by gameId
+std::map<std::string, std::string> g_reportedCharacter;     // by gameId: last named to Takaro
 
 // Game thread only.
 std::vector<void*> g_statClasses;
@@ -2164,9 +2183,7 @@ bool ReadCharacterStats(void* pawn, std::vector<ActionsUtil::ProgressionStat>& o
 // Called from the player snapshot, which already holds the player rows and which every Takaro sync
 // triggers, so a reading adds no game-thread entry of its own.
 void RefreshProgression(const std::vector<PlayerInfo>& players) {
-    static uint64_t last = 0;
     const uint64_t now = NowMs();
-    if (now - last < kProgressionRefreshMs) return;
     Perf::Scope sc("progression");
     for (const PlayerInfo& p : players) {
         // A player without a character has no skills, whatever the last character had.
@@ -2175,7 +2192,14 @@ void RefreshProgression(const std::vector<PlayerInfo>& players) {
             g_progression.erase(p.gameId);
             continue;
         }
-        last = now;
+        {
+            // A new character is read at once: Takaro must not wait on the old one's reading.
+            Guard g(g_progressionLock);
+            auto it = g_progression.find(p.gameId);
+            if (it != g_progression.end() && it->second.characterId == p.characterId &&
+                now - it->second.readAtMs < kProgressionRefreshMs)
+                continue;
+        }
         std::vector<ActionsUtil::ProgressionStat> stats;
         std::string why;
         if (!ReadCharacterStats(p.pawn, stats, why)) {
@@ -2184,7 +2208,7 @@ void RefreshProgression(const std::vector<PlayerInfo>& players) {
         }
         SetCap("playerProgression", "ok", "");
         Guard g(g_progressionLock);
-        g_progression[p.gameId] = std::move(stats);
+        g_progression[p.gameId] = {p.characterId, now, std::move(stats)};
     }
 }
 
@@ -2260,12 +2284,22 @@ Actions::Result Actions::PlayerLocation(const std::string& gameId) {
                      JsonNum(r->rot[0]) + ",\"ageMs\":" + std::to_string(age) + "}"};
 }
 
+void Actions::NoteReportedCharacter(const std::string& gameId, const std::string& characterId) {
+    Guard g(g_progressionLock);
+    g_reportedCharacter[NormalizeGameId(gameId)] = characterId;
+}
+
 Actions::Result Actions::PlayerProgression(const std::string& gameId) {
     const std::string id = NormalizeGameId(gameId);
     {
+        // Takaro files this answer under the character its last getPlayers named, so a reading of
+        // any other character is withheld.
         Guard g(g_progressionLock);
         auto it = g_progression.find(id);
-        if (it != g_progression.end()) return {200, ActionsUtil::ProgressionTracksJson(it->second)};
+        auto reported = g_reportedCharacter.find(id);
+        if (it != g_progression.end() &&
+            (reported == g_reportedCharacter.end() || reported->second == it->second.characterId))
+            return {200, ActionsUtil::ProgressionTracksJson(it->second.stats)};
     }
     Guard g(g_snapLock);
     if (FindRow(g_snapRows, id)) return {200, "[]"};
@@ -3057,6 +3091,10 @@ Actions::Result Actions::Give(const JsonValue& body) {
 // Called from lane L2's join resolver, ALREADY ON THE GAME THREAD - so it must not poll (that
 // would enqueue a job behind itself and deadlock). It fires every mechanism in turn and reports
 // only that a call was made; the PreLogin refusal is what actually enforces the ban.
+std::string Actions::InWorldCharacterId(void* playerState, void* controller) {
+    return SpawnedCharacterId(playerState, controller);
+}
+
 void Actions::ForgetConnection(const std::string& gameId) {
     Guard g(g_seenLock);
     g_firstSeen.erase(gameId);
