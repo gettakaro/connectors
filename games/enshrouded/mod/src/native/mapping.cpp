@@ -411,15 +411,26 @@ bool ParseLogTailMode(const std::string& text, LogTailMode& out) {
 bool ShouldForwardLog(LogEventsMode mode, const JsonValue& data) {
     if (mode == LogEventsMode::None) return false;
     if (mode == LogEventsMode::All) return true;
-    // Periodic/spammy server lines. Takaro rate-limits `log` per server (sustained 50 per 30 s), and the server
-    // prints a multi-line stats block every 30 s plus bursts like "Could not prune enough replication states".
+    // Periodic/spammy server lines. Takaro rate-limits `log` per server, and the server prints stats blocks and
+    // histograms every 30 s, boot and shutdown step lists, and bursts of per-frame performance warnings.
     static const std::regex kNoisy[] = {
         std::regex("^-{5,}"),
+        std::regex("^={5,}"),
         std::regex("^Machines:$"),
-        std::regex("^\\s+m#\\d+"),
+        std::regex("^\\s*m#\\d+"),
         std::regex("^\\[ecss\\] Stats:"),
         std::regex("^\\[Water\\] "),
         std::regex("^Could not prune enough replication states"),
+        std::regex("^MovingSphere "),
+        std::regex("^\\[server\\] Bad Performance"),
+        std::regex("^\\s*>=\\s"),
+        std::regex("^\\[session\\](\\s{2,}| -{5,}| Total |$)"),
+        std::regex("^\\[task\\]\\s"),
+        std::regex("^\\[app\\] start (creation|destruction) step"),
+        std::regex("^\\[os\\] Started thread"),
+        std::regex("^(ValueCount|ValueSum|AvgValue|MinValue|MaxValue):"),
+        std::regex("^\\s*(\"value\":|\\},?$)"),
+        std::regex("^[\\s.,%|-]*\\d[\\d\\s.,%|-]*$"),
         std::regex("^\\s*$"),
     };
     const JsonValue* m = data.get("msg");
