@@ -1293,19 +1293,23 @@ Actions::Result Actions::PlayerInventory(const std::string& gameId) {
 
 Actions::Result Actions::PlayerProgression(const std::string& gameId) {
     std::vector<Progression::Track> tracks;
-    if (!g_progression.Find(NormalizeGameId(gameId), tracks)) return {404, ErrJson("no reading for this player")};
+    std::string id = NormalizeGameId(gameId);
+    if (!g_progression.Find(id, state::CurrentCharacter(id).id, tracks))
+        return {404, ErrJson("no reading for this player's character")};
     return {200, Progression::TracksJson(tracks)};
 }
 
 void Actions::RefreshProgression() {
     for (const auto& p : ReadPlayers()) {
-        // The character arrives from the client and loads inside the first SetPawn, up to a minute
-        // after the join is announced. A reading before that would be a false level change.
+        // The character arrives from the client and loads inside the first SetPawn. Until then the
+        // skills are defaults, and a reading would be a false level change.
         if (p.gameId.empty() || !p.pawn || !p.controller) continue;
+        std::string id = NormalizeGameId(p.gameId), characterId = state::CurrentCharacter(id).id;
+        if (characterId.empty()) continue;
         void* skills = ReadPtrAt(p.controller, Off(p.controller, "SkillComponent"));
         if (!skills) continue;
         std::vector<Progression::Track> tracks;
-        if (ReadSkills(skills, tracks)) g_progression.Put(NormalizeGameId(p.gameId), std::move(tracks));
+        if (ReadSkills(skills, tracks)) g_progression.Put(id, characterId, std::move(tracks));
     }
 }
 

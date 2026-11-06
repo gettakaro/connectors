@@ -295,25 +295,39 @@ state::BanSnapshot state::ReadBans() {
 
 namespace {
 Mutex g_nameLock;
-std::map<std::string, std::string> g_charNames;  // gameId -> character name
+std::map<std::string, state::SessionCharacter> g_characters;  // gameId -> current character
 }  // namespace
 
 void state::NoteCharacterName(const std::string& gameId, const std::string& name) {
     if (gameId.empty() || name.empty()) return;
     Guard g(g_nameLock);
-    std::string key = LowerId(gameId);
-    auto it = g_charNames.find(key);
-    if (it != g_charNames.end() && it->second == name) return;
-    if (g_charNames.size() > 256) g_charNames.clear();
-    g_charNames[key] = name;
-    PluginLog("state: character name for %s is %s (from the server log)", key.c_str(), name.c_str());
+    if (g_characters.size() > 256) g_characters.clear();
+    SessionCharacter& c = g_characters[LowerId(gameId)];
+    if (c.name == name) return;
+    c.name = name;
+    PluginLog("state: character name for %s is %s", LowerId(gameId).c_str(), name.c_str());
 }
 
-std::string state::CharacterName(const std::string& gameId) {
+void state::NoteCharacter(const std::string& gameId, const std::string& characterId, const std::string& name) {
+    if (gameId.empty() || name.empty()) return;
     Guard g(g_nameLock);
-    auto it = g_charNames.find(LowerId(gameId));
-    return it == g_charNames.end() ? std::string() : it->second;
+    if (g_characters.size() > 256) g_characters.clear();
+    g_characters[LowerId(gameId)] = {characterId, name};
+    PluginLog("state: character for %s is %s (%s)", LowerId(gameId).c_str(), characterId.c_str(), name.c_str());
 }
+
+void state::ForgetCharacter(const std::string& gameId) {
+    Guard g(g_nameLock);
+    g_characters.erase(LowerId(gameId));
+}
+
+state::SessionCharacter state::CurrentCharacter(const std::string& gameId) {
+    Guard g(g_nameLock);
+    auto it = g_characters.find(LowerId(gameId));
+    return it == g_characters.end() ? SessionCharacter{} : it->second;
+}
+
+std::string state::CharacterName(const std::string& gameId) { return CurrentCharacter(gameId).name; }
 
 // ---- readable creature names (lane L3c) --------------------------------------------------------
 
