@@ -10,6 +10,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
@@ -125,19 +126,15 @@ public class TakaroNeoForgeMod {
         );
     }
 
-    @SubscribeEvent
+    /** Runs last, so a command another mod cancels is not reported. */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public void onCommand(CommandEvent event) {
         if (adapter == null || event.isCanceled()) return;
+        if (event.getParseResults().getContext().getSource().getPlayer() != null) return;
         EventEmitter emitter = adapter.getEventEmitter();
         String text = ConsoleChat.sayText(event.getParseResults().getReader().getString());
         if (emitter == null || text == null) return;
-        ServerPlayer player = event.getParseResults().getContext().getSource().getPlayer();
-        emitter.emitChatMessage(
-                player != null ? player.getUUID().toString() : null,
-                player != null ? player.getGameProfile().name() : null,
-                "global",
-                text
-        );
+        emitter.emitChatMessage(null, null, "global", text);
     }
 
     @SubscribeEvent
