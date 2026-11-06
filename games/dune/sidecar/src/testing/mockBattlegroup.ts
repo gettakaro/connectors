@@ -356,6 +356,7 @@ function toRow(p: MockPlayer, actorColumns: Set<string>, playerStateColumns: Set
     platform_id: p.platformId ?? '',
     platform_name: p.platformName ?? '',
     account_id: p.accountId ?? null,
+    character_id: p.characterId ?? null,
     character_name: p.characterName ?? '',
     online_status: p.onlineStatus ?? '',
     server_id: p.serverId ?? '',
