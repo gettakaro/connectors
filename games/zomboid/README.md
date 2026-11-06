@@ -157,7 +157,7 @@ Checked on Project Zomboid 42.21.0 (4a0e9546ec), 2026-11-06. ✅ works, ⚠️ w
 | Kick | ✅ | The player can rejoin afterwards. |
 | Ban and unban | ✅ | Permanent and timed bans, and unban; a timed ban lifts itself at its expiry. |
 | Ban list | ✅ | With expiry, including bans made outside Takaro. |
-| Give an item | ✅ | Appears in the inventory without a relog. |
+| Give an item | ✅ | Appears in the inventory without a relog. Items the game bundles count per bundle, as with its own `additem`: 5 nails give 25. |
 | Shop | ✅ | Pay, claim with delivery to the inventory, and cancel with a refund. |
 | Shut down the server | ✅ | Saves and quits on request. |
 | Player joined / left | ✅ | Left also arrives on a kick. |
