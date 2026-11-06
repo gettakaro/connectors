@@ -1,9 +1,11 @@
 package io.takaro.zomboid.agent.hooks;
 
 import io.takaro.zomboid.agent.AgentLog;
+import io.takaro.zomboid.agent.Characters;
 import io.takaro.zomboid.agent.EventManagerCallback;
 import io.takaro.zomboid.agent.MainThreadQueue;
 import io.takaro.zomboid.agent.PlayerRegistry;
+import io.takaro.zomboid.agent.Progression;
 import io.takaro.zomboid.agent.Pz;
 import io.takaro.zomboid.agent.Reconciler;
 import io.takaro.zomboid.agent.TokenBucket;
@@ -60,6 +62,8 @@ public final class Bridge {
     private static volatile MainThreadQueue queue;
     private static volatile Reconciler reconciler;
     private static volatile PlayerRegistry registry;
+    private static volatile Progression progression;
+    private static volatile Characters characters;
     private static volatile EventEmitter emitter;
     private static volatile Runnable connectorStarter;
     private static volatile boolean logEvents;
@@ -71,11 +75,13 @@ public final class Bridge {
     }
 
     /** Wired up by {@code TakaroAgent.premain} before any hook can fire. */
-    public static void configure(MainThreadQueue q, Reconciler r, PlayerRegistry reg,
-                                 Runnable starter, boolean logEventsEnabled, boolean debugCatalogEnabled) {
+    public static void configure(MainThreadQueue q, Reconciler r, PlayerRegistry reg, Progression prog,
+                                 Characters chars, Runnable starter, boolean logEventsEnabled, boolean debugCatalogEnabled) {
         queue = q;
         reconciler = r;
         registry = reg;
+        progression = prog;
+        characters = chars;
         connectorStarter = starter;
         logEvents = logEventsEnabled;
         debugCatalog = debugCatalogEnabled;
@@ -213,10 +219,9 @@ public final class Bridge {
     private static PlayerInfo eventPlayer(String gameId, String name) {
         PlayerRegistry reg = registry;
         PlayerInfo known = reg != null ? reg.get(gameId) : null;
-        if (known != null) {
-            return known;
-        }
-        return new PlayerInfo(gameId, name, null, null, null, null, null, 0);
+        PlayerInfo player = known != null ? known : new PlayerInfo(gameId, name, null, null, null, null, null, 0);
+        Characters chars = characters;
+        return player.withCharacter(chars != null ? chars.current(gameId) : null);
     }
 
     /** {@code zombie.network.chat.ChatServer.sendMessage(ChatMessage)} — chat-message event. */
@@ -294,13 +299,22 @@ public final class Bridge {
             if (FIRED_DEATH.compareAndSet(false, true)) {
                 AgentLog.log("HOOK CONFIRMED: death (IsoPlayer.onKilled)");
             }
-            EventEmitter e = emitter;
-            if (e == null || victim == null || !Pz.isIsoPlayer(victim)) {
+            if (victim == null || !Pz.isIsoPlayer(victim)) {
                 return;
             }
             String gameId = Pz.playerUsername(victim);
             String name = Pz.playerDisplayName(victim);
             double[] pos = Pz.playerPos(victim);
+            PlayerInfo dying = eventPlayer(gameId, name);
+            // Kept up even with no connection to Takaro: the next survivor needs a new id either way.
+            if (gameId != null) {
+                characters.end(gameId, victim);
+                progression.remove(gameId);
+            }
+            EventEmitter e = emitter;
+            if (e == null) {
+                return;
+            }
 
             PlayerInfo attacker = null;
             if (killer != null && Pz.isIsoPlayer(killer)) {
@@ -308,7 +322,7 @@ public final class Bridge {
             }
             AgentLog.log("event: player-death " + gameId
                     + (attacker != null ? " (killed by " + attacker.gameId() + ")" : ""));
-            e.emitPlayerDeath(eventPlayer(gameId, name), attacker, pos[0], pos[1], pos[2], null);
+            e.emitPlayerDeath(dying, attacker, pos[0], pos[1], pos[2], null);
         } catch (Throwable t) {
             // never propagate into the death path
         }

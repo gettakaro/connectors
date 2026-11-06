@@ -44,6 +44,7 @@ public final class Capabilities {
 
     static final String GAME_PROFILE = "game.profile";
     static final String PROGRESSION = "players.progression";
+    static final String CHARACTERS = "players.characters";
 
     private Capabilities() {
     }
@@ -67,6 +68,15 @@ public final class Capabilities {
         progressionParameters.addProperty("source", "server");
         progression.add("parameters", progressionParameters);
         out.add(progression);
+        // The server keeps the survivor, and a dead survivor never comes back.
+        JsonObject characters = named(CHARACTERS);
+        JsonObject characterParameters = new JsonObject();
+        characterParameters.addProperty("held", "server");
+        JsonArray ends = new JsonArray();
+        ends.add("death");
+        characterParameters.add("ends", ends);
+        characters.add("parameters", characterParameters);
+        out.add(characters);
         JsonObject profile = named(GAME_PROFILE);
         profile.add("parameters", GameProfile.parameters(gameVersion));
         out.add(profile);
