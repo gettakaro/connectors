@@ -14,6 +14,12 @@ static int failures = 0;
 
 static tj::Value Args(const char* text) { return *tj::parse(text); }
 
+static void test_position() {
+    CHECK(!IsRealPosition(0, 0, 0));
+    CHECK(IsRealPosition(-104786.5, 225978.5, -14316.1));
+    CHECK(IsRealPosition(0, 0, 1));
+}
+
 static void test_iso() {
     int64_t t = 0;
     CHECK(ParseIso8601("1970-01-01T00:00:00Z", t) && t == 0);
@@ -138,6 +144,7 @@ static void test_corrupt_files(const fs::path& dir) {
 int main() {
     const fs::path dir = fs::temp_directory_path() / ("logic-test-" + std::to_string(::getpid()));
     test_iso();
+    test_position();
     test_console();
     test_log_filter();
     test_item_code();
