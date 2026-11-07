@@ -18,6 +18,8 @@ public interface GameAdapter {
     List<PlayerInfo> getPlayers();
     PlayerLocation getPlayerLocation(String gameId);
     List<InventoryItem> getPlayerInventory(String gameId);
+    /** Each player's XP, recorded by the platform on the game thread; safe to read from any thread. */
+    PlayerProgression progression();
 
     // World queries
     List<GameItem> listItems();

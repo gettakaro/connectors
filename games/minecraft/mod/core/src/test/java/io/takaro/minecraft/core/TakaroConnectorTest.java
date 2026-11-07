@@ -21,9 +21,14 @@ class TakaroConnectorTest {
         final List<String> warnings = new ArrayList<>();
         final List<String> debugs = new ArrayList<>();
         RuntimeIdentity identity;
+        final PlayerProgression progression = new PlayerProgression();
+        boolean mainThreadUsed;
 
         @Override
         public RuntimeIdentity getRuntimeIdentity() { return identity; }
+
+        @Override
+        public PlayerProgression progression() { return progression; }
 
         @Override
         public void logInfo(String msg) { infos.add(msg); }
@@ -35,7 +40,10 @@ class TakaroConnectorTest {
         public void logDebug(String msg) { debugs.add(msg); }
 
         @Override
-        public void runOnMainThread(Runnable task) { task.run(); }
+        public void runOnMainThread(Runnable task) {
+            mainThreadUsed = true;
+            task.run();
+        }
 
         @Override
         public PlayerInfo getPlayer(String gameId) { return null; }
