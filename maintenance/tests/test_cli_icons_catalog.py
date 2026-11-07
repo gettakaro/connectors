@@ -201,8 +201,8 @@ def test_inputs_lists_both_roles_without_any_network(run: Any, dd_log: Path) -> 
 
 
 def test_inputs_refusals(run: Any) -> None:
-    code, _, stderr = run("icons", "inputs", "--game", "minecraft")
-    assert code == 2 and "game 'minecraft' has no icons block" in stderr
+    code, _, stderr = run("icons", "inputs", "--game", "rust")
+    assert code == 2 and "game 'rust' has no icons block" in stderr
     assert run("icons", "inputs", "--game", "zomboid", "--target", "nope")[0] == 3
 
 

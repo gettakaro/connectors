@@ -66,6 +66,10 @@ against codes derived from game data and the report says so).
   `h = fh - gap` the visible height; the result is `crop((0, frame * fh, W, frame * fh + h))`, the full width, never
   resampled. It is XNA's `Texture2D.Frame(1, frames, 0, frame, 0, -gap)`. `fh < 1`, `h < 1` or `frame >= frames` is
   exit 6 naming the recipe. `measuredAgainst` can only be `game-data`.
+- A layer is `{"image": ..., "ops": [...]}` or `{"model": "<path to a block-model document>", "ops": [...]}`. A `model`
+  layer is rendered by the block-model renderer (see "The block-model renderer" below) to a 128x128 RGBA image and its
+  `ops` apply to that image like any other layer's. A model file or a texture file it names that is missing is exit 4; an
+  invalid model document is exit 2 naming the recipe.
 - Optional: `rule` on a recipe or unmatched entry (`^[a-z][a-z0-9-]*$`, how it was mapped), `detail` on
   an unmatched entry (at most 256 characters, no control characters) and `codesFrom` on the document
   (where the codes come from, at most 1000 characters).
@@ -141,6 +145,15 @@ target fingerprint.
   a regex matches nothing (exit 4, naming it); a regex only considers regular files and does not follow symlinks (exact paths are taken as they are).
 - `xnb` (`{"alpha": "straight"}`) holds the settings of the `xnb` decoder and is required exactly when
   `pixels.decoder` is `xnb` (`icons-xnb-settings`).
+- `data` has a third shape, `{"source": "public-download", "input": "game", "artifact": "server", "decoder":
+  "minecraft-datagen", "reports": ["registries.json"]}`, and `pixels` a matching one, `{"source": "public-download",
+  "artifact": "client", "downloads": {"<revision>": {"source", "path", "sha1", "size"}}}`. `input` names the target's
+  `mojang-version` input, whose version manifest and server jar pins are the data pins; `downloads` pins the client jar per
+  target revision (it is not part of the target, so the target fingerprint does not move). The checks
+  `icons-public-download-roles` (data and pixels are `public-download` together), `icons-public-download-revisions` (each
+  key is a revision of some target), `icons-public-download-pins` (each `source` is a source of the game record and each
+  `path` is `/v1/objects/<sha1>/client.jar` for its own sha1) and `icons-data-input` (every pinned target has the
+  `mojang-version` input) need no network. A target whose revision has no pin does not build (exit 2).
 
 ### Acquisition and its cache
 
@@ -679,6 +692,165 @@ selector is exit 4; a missing `--client` or missing Docker is exit 2 (before any
 - The real containers are not built in CI. They are proven by the bring-up and the live run; CI proves the adapters,
   sessions and mapper against `fake_icons_decoder.py` and synthetic fixtures.
 
+## Minecraft: public downloads, data reports and the block-model renderer
+
+The `minecraft` pack needs no Steam account and no game machine. Everything is a public Mojang download pinned by hash,
+and the pack id is the Takaro game id, `minecraft`.
+
+### Inputs and pins
+
+- **Data:** the item registry in the data reports (`--reports`, `registries.json`) of the dedicated `server.jar`. The
+  server jar and the version manifest that names it are the target's own pins (`inputs.game`, kind `mojang-version`).
+- **Pixels:** `client.jar`, which holds the item definitions (`assets/minecraft/items/*.json`), the models and the
+  textures. It is pinned in the `icons` block per target revision (`icons.pixels.downloads`, `source`, `path`, `sha1`,
+  `size`), not in the target, so the target fingerprint does not move.
+- `icons build --game minecraft --target fabric-26.3` builds the latest public release (26.3). Without `--target` the
+  default target is `fabric-26.2`, which has no client pin, and the build is exit 2 before any download.
+- **Adding a revision:** take `downloads.client.{sha1,size}` from the pinned version JSON of the new target, add
+  `"<revision>": {"source": "mojang-data", "path": "/v1/objects/<sha1>/client.jar", "sha1", "size"}` and run
+  `catalog validate`. The build fetches the manifest by its sha1 and requires its `id`, `downloads.server` and
+  `downloads.client` to equal the pins (exit 5 otherwise).
+- Downloads are cached by sha1 under `<cache>/icons/downloads/sha1/<sha1>/` with a completion marker; a hit is re-hashed,
+  and a mismatch warns and downloads once more. The `server.jar` directory holds only that jar and its marker, and it is
+  what the decoder container mounts read-only.
+
+### The `minecraft-datagen` container
+
+Reading the item registry means running Mojang's server jar, so the jar runs in a pinned decoder container
+(`maintenance/decoders/minecraft-datagen/`) and nowhere else: `--network none`, a read-only root file system, `/tmp`
+as the only scratch space, the jar mounted read-only at `/game`, `-Xmx2g`. The image is the Python base of the Unity
+decoder plus the JDK copied from the Temurin 25 image of the Minecraft targets, both digests already pinned in the
+repository, and nothing is downloaded at build time. It runs the bundler's data generator once per jar and returns the
+requested reports as `/out/json/<id>.json` (request `kind: "datagen-report"`, `file: "server.jar"`, `report:
+"registries.json"`). Mojang's jar is run locally for its registry facts and is never redistributed. The real image is
+not built in CI; the tests use `fake_icons_decoder.py` (`datagen-report:<report>`).
+
+### Mapping rules
+
+Codes are the sorted item keys of the registry minus `minecraft:air`, which the connector's `listItems` skips; `kind` is
+`block` when the key is also a block key. Everything is read from the jar by exact entry name, each entry capped at
+8 MiB (over is exit 6); a resource location must match `^([a-z0-9_.-]+:)?[a-z0-9_./-]+$` without a `..` segment.
+
+1. **The default model of `items/<name>.json`.** `model`: its model and `tints`. `condition`: `on_false`. `select`:
+   when the property is `display_context` and a case's `when` holds `gui`, that case (flag `gui-case`), else
+   `fallback` (none is unmatched `no-default-model`). `range_dispatch`: `fallback`, or with none the entry with the lowest
+   `threshold` (flag `lowest-threshold`). `composite`: its first model. `special`: unmatched `entity-rendered`.
+   `empty`: unmatched `no-icon-in-game`. Other top-level keys (`swap_animation_scale`, ...) are ignored and counted.
+2. **The parent chain** is flattened (depth at most 32; a cycle is `model-cycle`, an absent model `missing-model`):
+   `textures` and `display` per key with the child winning, `elements` from the nearest model that has them,
+   `gui_light` from the child (default `side`). A chain rooted at `builtin/generated` is **flat**; `builtin/entity` is
+   `entity-rendered`. A texture is `#key` (through the textures, at most 32 hops), a location, or an object whose
+   `sprite` is the location. An unresolved one or an absent PNG is `missing-texture`. A face texture that is a bare
+   key without `#` is read as a location, as the game reads it, and so is missing too.
+3. **Animated textures.** `<texture>.png.mcmeta` with an `animation` object makes the texture a vertical strip of
+   `W x W` frames (`frames = H // W`, 1 to 64, `H % W` must be 0) and the first listed `frames` entry (else 0) is used:
+   `{"op": "frame-crop", "frames": n, "frame": i, "gap": 0}`. A declared `width` or `height` is
+   unmatched `unsupported-animation`.
+4. **Tints** (`tints[i]` colours tint index `i`; values are signed ARGB, `value & 0xFFFFFF`): `constant` uses `value`;
+   `dye`, `potion`, `firework`, `map_color`, `team` and `custom_model_data` use `default`; `grass` reads
+   `textures/colormap/grass.png` at `x = int((1 - t) * 255)`, `y = int((1 - d * t) * 255)` for the clamped temperature `t`
+   and downfall `d`. Any other type is unmatched `unsupported-tint`. White emits no op; a non-opaque alpha is counted.
+5. **Flat items** stack `layer0..layer7` (consecutive from 0): each is `{"image", "ops": [frame-crop?, tint-multiply?]}`
+   (rule `flat`, or `flat-tinted`). A `display.gui` on a generated model is ignored and counted. The leather overlay
+   (`layer1`, untinted) therefore comes out. Flat icons keep their native size (usually 16 px) because the builder
+   never upscales.
+6. **Box models** are written as block-model documents (`models/<ns>/<item>.json`, canonical JSON) and drawn by the
+   renderer (rule `rendered` or `rendered-tinted`). `cullface` is dropped, because an inventory slot draws every quad;
+   with default UVs this is what makes walls complete. Element keys `name`, `__comment` and `light_emission` are
+   ignored; `shade_direction_override` becomes `shadeDirection`; any other element or face key, the `{origin, x, y, z}`
+   rotation form and a `rescale` of 90 degrees or more are unmatched `unsupported-model`. A model that reaches beyond the
+   canvas is shrunk and centred to fit (`fit_to_canvas`, flag `render-fitted`), because a slot lets it overflow and an icon
+   cannot.
+
+The build record's `mapper` block carries the evidence: `gameVersion`, `registry`, `definitions`, `models`, `tints`,
+`animated`, `textures`, `renderFitted`, `ignoredKeys` and `itemDefinitionsWithoutCode`.
+
+### The block-model renderer
+
+`icons/block_model.py` draws a model document in pure Python and Pillow (no numpy). The document
+(`schemaVersion` 1; every object closed) is `{"textures": {key: {"image", "ops"?}}, "elements": [...], "gui": {"rotation",
+"translation", "scale"}?, "light": "side" | "front"?}`. An element is `{"from", "to", "rotation": {"origin", "axis",
+"angle", "rescale"?}?, "shade"?, "shadeDirection"?, "faces": {<face>: {"texture", "uv"?, "rotation"?, "tint"?}}}`.
+Limits: 1 to 512 elements, 1 to 64 textures, coordinates in [-80, 96], `uv` in [0, 16], an angle in [-180, 180], a face
+rotation in {0, 90, 180, 270}, `rescale` only below 90 degrees. Units are 1/16 block.
+
+1. **Face geometry.** For a box `from = (x1, y1, z1)`, `to = (x2, y2, z2)` each face has a corner `O` (the texture's top
+   left seen from outside), an edge `U` (u increasing) and an edge `V` (v increasing); the outward normal is `V x U`:
+
+   | Face | O | U | V |
+   |---|---|---|---|
+   | north | (x2, y2, z1) | (x1-x2, 0, 0) | (0, y1-y2, 0) |
+   | south | (x1, y2, z2) | (x2-x1, 0, 0) | (0, y1-y2, 0) |
+   | west | (x1, y2, z1) | (0, 0, z2-z1) | (0, y1-y2, 0) |
+   | east | (x2, y2, z2) | (0, 0, z1-z2) | (0, y1-y2, 0) |
+   | up | (x1, y2, z1) | (x2-x1, 0, 0) | (0, 0, z2-z1) |
+   | down | (x1, y1, z2) | (x2-x1, 0, 0) | (0, 0, z1-z2) |
+
+2. **Default `uv`:** down `[x1, 16-z2, x2, 16-z1]`, up `[x1, z1, x2, z2]`, north `[16-x2, 16-y2, 16-x1, 16-y1]`,
+   south `[x1, 16-y2, x2, 16-y1]`, west `[z1, 16-y2, z2, 16-y1]`, east `[16-z2, 16-y2, 16-z1, 16-y1]`.
+3. **Face rotation** (clockwise), face parameters `(s, t)` in [0, 1)^2 to `(s', t')`: 0 `(s, t)`; 90 `(t, 1-s)`;
+   180 `(1-s, 1-t)`; 270 `(1-t, s)`. Then `u = u1 + s'(u2-u1)`, `v = v1 + t'(v2-v1)` and the texel is
+   `(floor(u*W/16), floor(v*H/16))` clamped, where `W x H` is the texture after its ops.
+4. **Element rotation** about `origin` and `axis` by `angle` degrees (right-handed): `p = o + k * R(p - o)`, with `k` 1
+   on the axis and, on the other two axes, `1/cos(angle)` when `rescale` and 1 otherwise.
+5. **GUI transform.** With `b = p/16`: `q = T + Rx(rx) Ry(ry) Rz(rz) (S * (b - 0.5))`, `T = clamp(translation, -80, 80)/16`,
+   `S = clamp(scale, -4, 4)`; this is the game's item transform followed by its `translate(-0.5)`. The identity
+   transform shows a block from the south; the inventory transform `[30, 225, 0]` at scale 0.625 shows the top, east on
+   the left and north on the right.
+6. **Screen:** the canvas is 128 px, `X = 64 + 128 q.x`, `Y = 64 - 128 q.y`, `depth = q.z` (larger is nearer).
+7. **Culling:** a face is drawn only if `(V' x U').z > 0` for the transformed edges.
+8. **Rasterization:** every pixel centre `(i + 0.5, j + 0.5)` in the face's bounds solves `O' + s U' + t V'` in 2D and is
+   accepted for `0 <= s < 1` and `0 <= t < 1` (a face with `|det| < 1e-9` is skipped); a texel with alpha 0 is discarded.
+9. **Colour per fragment:** a tint multiplies `c * t // 255` per channel; with `light: "side"` and the element's `shade`
+   true, the colour is scaled by the factor of the face (or of `shadeDirection`): up 1.0, down 0.5, north and south 0.8,
+   east and west 0.6, as `int(c * f + 0.5)`; `light: "front"` is unshaded. Alpha is unchanged.
+10. **Compositing:** the fragments of a pixel are sorted by `(depth, element index, face order)` ascending (face order
+    down, up, north, south, west, east, so a later coplanar element, like a grass overlay, lands on top) and combined with
+    Porter-Duff "over" in straight alpha with floats, rounded half up.
+11. **Fit:** `screen_bounds(model)` projects the element corners; `fit_to_canvas` scales the gui scale by the factor that
+    leaves a one pixel margin and moves the bounds' centre to the canvas centre.
+
+### Known limitations
+
+- Items drawn by an entity renderer (`minecraft:special`: chests, banners, shulker boxes, heads, shields, ...) stay
+  unmatched, as the game draws them from code, not from a model.
+- A `composite` definition (beds) takes only its first model, as the mapping rule says, so a bed icon is its head part.
+- Shading uses fixed per-direction constants; it approximates the game's GUI lighting (checked visually).
+- Flat icons are 16 px; whether Takaro scales pixel art with nearest-neighbour is a question for Takaro, not the pack.
+- Only revisions with a client pin build. Coverage is measured against codes derived from game data (#811 is skipped).
+
+### Minecraft bring-up findings (release 26.3, 2026-11-07)
+
+- `latest.release` of the version manifest was 26.3; the pinned manifest is served and names the pinned jars: `client.jar`
+  sha1 `e877b6a07acd633fb3bb475002175cec036e7b87` (41,483,720 bytes), `server.jar` sha1
+  `33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c` (62,294,556 bytes), Java 25.
+- The data-generator container runs Java 25.0.4 (Temurin) on the Python base. `--reports` succeeds under the hardened run
+  (no network, read-only root, the default `/tmp` tmpfs) in about 9 s. `registries.json` is 536,272 bytes with sha256
+  `51f62d56f8bd0e9134ee88dd9226b64e9e56cf6a32377540d44291bf47ecdac6` and is byte-identical across every fresh run
+  (two by hand and the live builds). It has 1,658 item entries (including `minecraft:air`) and 1,286 block entries.
+- 1,658 item definitions, one per registry item, none missing. Top-level types: `model`, `select` (71), `special` (51),
+  `composite` (17), `condition` (7) and `range_dispatch` (2); tint types: `constant`, `dye`, `firework`, `grass`,
+  `potion`. Nothing beyond what the mapping covers.
+- Things the plan's census did not show and the mapper handles: a model texture may be an object
+  (`{"sprite": ..., "force_translucent": true}`, 17 glass items); `minecraft:heavy_core` names a face texture without
+  `#`, which the game reads as a location (`minecraft:all`) and so lacks, so it is the one unmatched `missing-texture`.
+- Under the default resolution only one flat layer is animated (`sculk_vein`); 24 box models use animated textures
+  (one frame each).
+- Coverage: 1,594 of 1,657 codes (96.2%): 761 flat (744 plain, 17 tinted), 833 rendered (825 plain, 8 tinted). The 63
+  unmatched are 62 `entity-rendered` and 1 `missing-texture`. The ticket's 63 `special` items become 62 because the
+  trident takes its `gui` case (a flat inventory icon); 26 `select` definitions take a `gui` case; `compass`,
+  `recovery_compass` and `clock` take their lowest threshold. 4 models reach beyond the canvas and are fitted
+  (`calibrated_sculk_sensor`, `lectern`, `spore_blossom`, `straw_bed`). The coverage is measured against codes derived
+  from game data (#811 is skipped).
+- The inventory transform in the order `Rx Ry Rz` needed no swap: the furnace front is on the right (north), the east
+  face on the left, the side brightness order is top, north and south, then east and west. Walls show the post and the
+  arm; leather armour shows its overlay; the potion, grass block, leaves and vines are tinted; glass is transparent;
+  compass and clock show their default frame; sea lantern and magma block show one frame. The renders were checked on
+  the contact sheet and enlarged review sheets, not against the wiki's inventory images.
+- Timings on the maintainer machine: the data generator takes about 9 s; the render of 1,594 icons takes most of a build, which is 1 minute 40 seconds with the
+  downloads and the decode cached and 2 minutes 20 seconds from an empty cache (about 104 MB of downloads); the build's own peak memory is about 190 MB and the generator is capped at
+  `-Xmx2g`. A fresh build from an empty cache produces a byte-identical `pack/` and `build-record.json`.
+
 ## Keeping packs current
 
 `takaro-maint scan` adds an Icon Pack rebuild line to the acceptance checklist of every new-build maintenance
@@ -851,11 +1023,11 @@ only against the S3 fake, never against production.
 | Code | When |
 |---|---|
 | 0 | ok, including a dry run and a republish where nothing changed |
-| 2 | usage or configuration: a bad flag or recipe document, `--env` other than `staging` (`publish`) or other than `staging`/`production` (the others), a `_store/` or otherwise invalid game or key, a missing `STG_R2_*` / `PROD_R2_*` variable, a non-https endpoint, staging and production resolving to the same bucket, a non-empty `--out`, an unsupported op or multi-layer recipe, a game without an `icons` block, `--recipes` and `--game` both or neither, `--client` without `--game`, a missing `--client` for a client-sourced build, `--client` on a route whose pixels come from the server depot, an unknown code or object, a malformed `--object`, `--code` and `--object` both or neither, `--enabled` other than `true`/`false` |
+| 2 | usage or configuration: a bad flag or recipe document, `--env` other than `staging` (`publish`) or other than `staging`/`production` (the others), a `_store/` or otherwise invalid game or key, a missing `STG_R2_*` / `PROD_R2_*` variable, a non-https endpoint, staging and production resolving to the same bucket, a non-empty `--out`, an unsupported op or multi-layer recipe, a game without an `icons` block, `--recipes` and `--game` both or neither, `--client` without `--game`, a missing `--client` for a client-sourced build, `--client` on a route whose pixels come from the server depot or a public download, a target revision without a client jar pin, an invalid block-model document, an unknown code or object, a malformed `--object`, `--code` and `--object` both or neither, `--enabled` other than `true`/`false` |
 | 3 | a catalog build or `inputs` for a target that does not exist |
-| 4 | a recipe image file is missing, or there is no index for the game in the environment being read; a catalog build whose `--client` is not a directory or lacks a listed pack, or whose pinned server manifest Steam will not serve; a data file a mapper requires that the depot did not serve (7d2d: the XML and localization files, named in the error); Valheim: no asset bundle under `SoftRef/Bundles/` |
-| 5 | a filtered depot cache that still does not match its marker after one fresh download; the index read back after upload differs from what was sent; a copied object does not hash to its name; an object is still present after a delete |
-| 6 | a malformed texture pack, a `trim` of a fully transparent image; 7d2d: an XML file with a DOCTYPE or ENTITY, malformed XML, or a localization file without a `Key` or `english` column; Valheim: no or conflicting `ZNetScene`, one serialized file in two bundles, a Unity decoder failure, an `atlas-cut` outside its atlas or canvas |
+| 4 | a recipe image file is missing, or there is no index for the game in the environment being read; a catalog build whose `--client` is not a directory or lacks a listed pack, or whose pinned server manifest Steam will not serve; a data file a mapper requires that the depot did not serve (7d2d: the XML and localization files, named in the error); Valheim: no asset bundle under `SoftRef/Bundles/`; Minecraft: a Mojang download that is unreachable or 404, a model or texture file a model layer names that is missing |
+| 5 | a filtered depot cache that still does not match its marker after one fresh download; Minecraft: a download that does not match its pin, or a version manifest that names another version, server jar or client jar than the catalog pins; the index read back after upload differs from what was sent; a copied object does not hash to its name; an object is still present after a delete |
+| 6 | a malformed texture pack, a `trim` of a fully transparent image; 7d2d: an XML file with a DOCTYPE or ENTITY, malformed XML, or a localization file without a `Key` or `english` column; Valheim: no or conflicting `ZNetScene`, one serialized file in two bundles, a Unity decoder failure, an `atlas-cut` outside its atlas or canvas; Minecraft: a data-generator failure, a registry report of another shape, a jar entry over 8 MiB, a texture that is not a PNG |
 | 7 | contract violation in the built pack, the local pack, the live index or the merged index; a staging object that is missing or is not a valid WebP of at most 128px |
 | 10 | a bucket read, upload or delete failed (S3 error, unreachable endpoint, access denied) |
 

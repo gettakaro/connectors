@@ -307,6 +307,17 @@ def _repin_fabric(record: dict[str, Any], upstream: Any) -> bool:
 _REPINNERS: dict[str, Any] = {"fabric": _repin_fabric}
 
 
+def drop_unbuildable_icons(root: Path) -> None:
+    """Drop the icons block of a public-download route whose pinned target revisions are no longer in the copy."""
+    revisions = {json.loads(path.read_text())["revision"] for path in (root / "catalog").glob("*/targets/*.json")}
+    for game_file in (root / "catalog").glob("*/game.json"):
+        game = json.loads(game_file.read_text())
+        downloads = (game.get("icons") or {}).get("pixels", {}).get("downloads")
+        if downloads is not None and not revisions & set(downloads):
+            del game["icons"]
+            game_file.write_text(json.dumps(game))
+
+
 @pytest.fixture
 def wired(catalog_copy: Path) -> Any:
     """Serve and re-pin targets with a fake upstream, declaring the unsupported boundary.
@@ -345,6 +356,8 @@ def wired(catalog_copy: Path) -> Any:
             if kept != aliases:
                 game["legacyAssetAliases"] = kept
                 game_file.write_text(json.dumps(game))
+
+        drop_unbuildable_icons(catalog_copy)
 
         assert served, "no target could be re-pinned at the fake upstream"
         point_at(catalog_copy, upstream.base_url)

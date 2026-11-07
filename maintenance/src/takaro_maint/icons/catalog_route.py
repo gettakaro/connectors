@@ -19,6 +19,7 @@ from ..catalog.loader import Catalog, Target
 from ..exit_codes import UsageError
 from ..steam.install import COMPLETE_MARKER, SteamInput
 from . import mappers
+from .public_download import PublicInputs
 
 APPMANIFEST = "appmanifest_{app}.acf"
 
@@ -29,6 +30,20 @@ class IconsRoute:
     target: Target
     block: dict[str, Any]
     steam_input: SteamInput | None
+    public_input: PublicInputs | None = None
+
+    @property
+    def public(self) -> PublicInputs:
+        """The pins of a public-download route; only such a route has them."""
+        if self.public_input is None:
+            raise UsageError(
+                f"game '{self.catalog_game}' takes its data from {self.data_source}, not a public download"
+            )
+        return self.public_input
+
+    @property
+    def public_reports(self) -> list[str]:
+        return [str(name) for name in self.block["data"].get("reports") or []]
 
     @property
     def steam(self) -> SteamInput:
@@ -47,7 +62,7 @@ class IconsRoute:
 
     @property
     def data_source(self) -> str:
-        """``server-depot`` or ``connector`` (files of this repository)."""
+        """``server-depot``, ``connector`` (files of this repository) or ``public-download``."""
         return str(self.block["data"]["source"])
 
     @property
@@ -75,7 +90,7 @@ class IconsRoute:
     def decoders(self) -> set[str]:
         """The decoder containers this route runs."""
         names = {str(self.block["pixels"].get("decoder")), str(self.block["data"].get("decoder")), self.code_decoder}
-        return {name for name in names if name in ("unreal", "unity", "xnb", "clr")}
+        return {name for name in names if name in ("unreal", "unity", "xnb", "clr", "minecraft-datagen")}
 
     @property
     def data_selectors(self) -> list[str]:
@@ -176,6 +191,9 @@ def route_for(catalog: Catalog, game: str, target_id: str | None, platform: str 
         if missing:
             raise UsageError(f"game '{game}' reads connector files that do not exist: {', '.join(missing)}")
         return IconsRoute(catalog_game=game, target=target, block=block, steam_input=None)
+    if block["data"]["source"] == "public-download":
+        public = PublicInputs.of(catalog.game(game).record, target, block)
+        return IconsRoute(catalog_game=game, target=target, block=block, steam_input=None, public_input=public)
     steam = SteamInput.of(target.record)
     if steam.name != block["data"]["input"]:
         raise UsageError(f"target '{target.id}' has no steam-depots input named '{block['data']['input']}'")
@@ -255,10 +273,55 @@ def _connector_inputs_document(route: IconsRoute) -> dict[str, Any]:
     }
 
 
+def _public_inputs_document(route: IconsRoute) -> dict[str, Any]:
+    """The ``icons inputs`` answer of a route whose data and pixels are public downloads pinned by hash."""
+    from .decoders import container
+
+    cache = paths.cache_dir()
+    public = route.public
+    return {
+        "game": route.catalog_game,
+        "packGame": route.pack_game,
+        "target": route.target.id,
+        "fingerprint": route.target.fingerprint,
+        "revision": route.target.revision,
+        "mapper": route.mapper,
+        "inputs": [
+            {
+                "role": "data",
+                "source": "public-download",
+                "input": public.input,
+                "artifact": "server",
+                "version": public.version,
+                "manifest": {"url": public.manifest.url, "sha1": public.manifest.sha1},
+                "url": public.server.url,
+                "sha1": public.server.sha1,
+                "size": public.server.size,
+                "decoder": route.decoder,
+                "reports": route.public_reports,
+                "cached": public.server.cached(cache) and public.manifest.cached(cache),
+            },
+            {
+                "role": "pixels",
+                "source": "public-download",
+                "artifact": "client",
+                "url": public.client.url,
+                "sha1": public.client.sha1,
+                "size": public.client.size,
+                "cached": public.client.cached(cache),
+            },
+        ],
+        "decoders": {name: container.inspect_state(name) for name in sorted(route.decoders)},
+        "env": [{"name": name, "set": bool(os.environ.get(name))} for name in route.secrets],
+    }
+
+
 def inputs_document(route: IconsRoute) -> dict[str, Any]:
     """The ``icons inputs`` answer: no network, no DepotDownloader."""
     if route.data_source == "connector":
         return _connector_inputs_document(route)
+    if route.data_source == "public-download":
+        return _public_inputs_document(route)
     cache = paths.cache_dir()
     caches = {depot: route.data_cache(cache, depot) for depot in route.depots}
     cached = all(filtered_cache_complete(path) for path in caches.values())
