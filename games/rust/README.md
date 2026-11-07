@@ -18,7 +18,7 @@ Connects a Rust dedicated server (Linux or Windows) to Takaro with one plugin fi
 Download the latest release from https://takaro.io/connectors/rust (or the latest `rust-v<version>`
 release on https://github.com/gettakaro/connectors/releases): **`TakaroConnector.cs`**. The same
 file is also published under its target name, for example
-`takaro-rust-plugin-carbon-26431843-<version>.cs`, which names the Rust build it was made for. Check
+`takaro-rust-plugin-carbon-26498655-<version>.cs`, which names the Rust build it was made for. Check
 it against `SHA256SUMS`. Do not use the `rust-dev` pre-release.
 
 There is nothing to compile: Carbon and Oxide compile `.cs` plugins at runtime.
@@ -112,7 +112,7 @@ upgrade to get working timed bans.
 
 ## What works, what doesn't
 
-Checked on Rust build 26431843 with Carbon v2.0.264, 2026-11-06. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on Rust build 26498655 with Carbon v2.0.264, 2026-11-07. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
@@ -149,7 +149,7 @@ Checked on Rust build 26431843 with Carbon v2.0.264, 2026-11-06. ✅ works, ⚠�
   small map, longer on big ones). Later starts reuse the drawing.
 - Inventory items always come back with an empty quality.
 - Unknown console commands look successful; Rust gives no error for them.
-- Only Rust build 26431843 with Carbon v2.0.264 is checked; other builds will likely load but are
+- Only Rust build 26498655 with Carbon v2.0.264 is checked; other builds will likely load but are
   not checked.
 
 Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).
