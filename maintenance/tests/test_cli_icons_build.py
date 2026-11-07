@@ -197,3 +197,109 @@ def test_out_directory_must_be_empty(run: Any, tmp_path: Path) -> None:
     assert code == 2
     assert payload["ok"] is False
     assert (out / "stale").read_text() == "x"
+
+
+def _margin_png(path: Path, *, opaque: bool = True) -> None:
+    """A 40x30 image whose only opaque pixels are the 10x6 rectangle at (12, 9)."""
+    image = Image.new("RGBA", (40, 30), (0, 0, 0, 0))
+    if opaque:
+        image.paste((200, 20, 20, 255), (12, 9, 22, 15))
+    image.save(path, format="PNG")
+
+
+def _trim_document(tmp_path: Path, *, opaque: bool = True) -> Path:
+    copy = _fixture_copy(tmp_path)
+    _margin_png(copy / "images" / "margin.png", opaque=opaque)
+    document = json.loads((copy / "recipes.json").read_text())
+    document["recipes"][0]["layers"][0] = {"image": "images/margin.png", "ops": [{"op": "trim"}]}
+    (copy / "recipes.json").write_text(json.dumps(document))
+    return copy / "recipes.json"
+
+
+def test_trim_crops_to_the_alpha_bounding_box(run: Any, tmp_path: Path) -> None:
+    code, _, _, out = _build(run, tmp_path, recipes=_trim_document(tmp_path))
+    assert code == 0
+    index = json.loads((out / "pack/fixture-846/index.json").read_text())
+    with Image.open(out / "pack/fixture-846" / index["icons"]["fixture-circle"]) as image:
+        assert image.size == (10, 6)
+        assert image.convert("RGBA").getchannel("A").getextrema() == (255, 255)
+
+
+def test_a_fully_transparent_image_cannot_be_trimmed(run: Any, tmp_path: Path) -> None:
+    code, payload, _, out = _build(run, tmp_path, recipes=_trim_document(tmp_path, opaque=False))
+    assert code == 6
+    assert "fixture-circle" in payload["error"]
+    assert not (out / "pack").exists() or not list((out / "pack").rglob("index.json"))
+
+
+def test_rule_detail_and_codes_from_reach_the_coverage_report(run: Any, tmp_path: Path) -> None:
+    def annotate(document: dict[str, Any]) -> None:
+        document["codesFrom"] = "derived from test data"
+        for recipe in document["recipes"]:
+            recipe["rule"] = "icon"
+        document["unmatched"][1]["rule"] = "icon"
+        document["unmatched"][1]["detail"] = "Item_Broken"
+
+    _, _, _, out = _build(run, tmp_path, recipes=_edit(tmp_path, annotate))
+    coverage = json.loads((out / "coverage.json").read_text())
+    assert coverage["codesFrom"] == "derived from test data"
+    assert coverage["byRule"] == {"icon": {"total": 7, "matched": 6, "unmatched": 1}}
+    assert coverage["measuredAgainst"] == "game-data" and "live code list" in coverage["note"]
+    broken = {"code": "fixture-broken", "kind": "block", "reason": "missing-texture", "detail": "Item_Broken"}
+    assert broken in coverage["unmatchedCodes"]
+    assert all("detail" not in row for row in coverage["unmatchedCodes"] if row["code"] == "fixture-ghost")
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [{"rule": "Bad Rule"}, {"detail": "x" * 257}, {"detail": "line\nbreak"}],
+    ids=["rule-pattern", "detail-length", "detail-control-character"],
+)
+def test_unmatched_entries_validate_their_rule_and_detail(run: Any, tmp_path: Path, entry: dict[str, Any]) -> None:
+    recipes = _edit(tmp_path, lambda document: document["unmatched"][0].update(entry))
+    assert _build(run, tmp_path, recipes=recipes)[0] == 2
+
+
+def _sheet_document(tmp_path: Path) -> Path:
+    """200 icons: 150 of rule "icon", 40 of "bulk" and 10 of "rare"."""
+    copy = _fixture_copy(tmp_path)
+    recipes = []
+    for number in range(200):
+        rule = "rare" if number < 10 else "bulk" if number < 50 else "icon"
+        recipes.append(
+            {
+                "code": f"item-{number:03}",
+                "kind": "item",
+                "rule": rule,
+                "layers": [{"image": "images/pebble-32.png", "ops": []}],
+            }
+        )
+    (copy / "recipes.json").write_text(json.dumps({"schemaVersion": 1, "game": "fixture-846", "recipes": recipes}))
+    return copy / "recipes.json"
+
+
+def test_the_contact_sheet_samples_every_rule(run: Any, tmp_path: Path) -> None:
+    from takaro_maint.icons import build
+
+    by_rule = {
+        "rare": [f"item-{n:03}" for n in range(10)],
+        "bulk": [f"item-{n:03}" for n in range(10, 50)],
+        "icon": [f"item-{n:03}" for n in range(50, 200)],
+    }
+    sample = build._stratified_sample(by_rule)
+    assert len(sample) == 64 and len(set(sample)) == 64
+    counts = {rule: len([code for code in sample if code in codes]) for rule, codes in by_rule.items()}
+    assert min(counts.values()) >= 8 and sum(counts.values()) == 64
+    # grouped by rule (alphabetical), each group in code order
+    assert sample == sorted(
+        sample, key=lambda code: next((rule, code) for rule, codes in by_rule.items() if code in codes)
+    )
+    _, _, _, out = _build(run, tmp_path, recipes=_sheet_document(tmp_path))
+    with Image.open(out / "contact-sheet.png") as sheet:
+        assert sheet.size == (8 * 144, 8 * 164)
+
+
+def test_a_small_ruled_build_keeps_every_icon_on_the_sheet() -> None:
+    from takaro_maint.icons import build
+
+    assert build._stratified_sample({"moveable": ["b", "a"], "icon": ["c"]}) == ["c", "a", "b"]

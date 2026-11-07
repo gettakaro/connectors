@@ -1,7 +1,7 @@
 # Icon Packs
 
 An **Icon Pack** is the set of small item icons for one game, served to Takaro from an icon bucket.
-`takaro-maint icons` builds a pack from a recipe document and publishes it. Game binaries and raw
+`takaro-maint icons` builds a pack from a recipe document, or from the catalog, and publishes it. Game binaries and raw
 game files are still never uploaded or committed; only the small derived icons (WebP, at most 128px)
 go to the icon buckets, and they are not kept in git (see [support-policy.md](support-policy.md)).
 
@@ -9,15 +9,16 @@ go to the icon buckets, and they are not kept in git (see [support-policy.md](su
 
 | Command | What it does |
 |---|---|
+| `icons inputs --game G [--target ID] [--platform P]` | List every input a catalog-driven build needs. No network. |
 | `icons build --recipes FILE --out DIR` | Render a recipe document into `DIR/pack/<game>/`, plus a coverage report, a contact sheet and a build record outside the pack. `DIR` must be absent or empty. |
+| `icons build --game G [--target ID] [--platform P] [--client DIR] --out DIR` | The same, from the catalog: fetch the game data, read the client files, map them to recipes and render. Excludes `--recipes`. See [Catalog-driven builds](#catalog-driven-builds). |
 | `icons publish --env staging --pack DIR [--dry-run]` | Merge the pack into the live index and upload it to the staging bucket. `DIR` is `…/pack/<game>`. |
 | `icons promote --game G [--dry-run]` | Copy a game's pack from staging to production with a rolling merge. |
 | `icons set-enabled --env E --game G --enabled true\|false [--dry-run]` | Rewrite only the index's `enabled` flag. |
 | `icons takedown --env E --game G (--code C… \| --object O…) [--dry-run]` | Remove exactly the named codes or objects. |
 
-Not built yet: catalog-derived recipes with `--game/--target/--client` (#744) and
-the live item-code list with `--codes` (#811, skipped for now, so coverage is measured against codes
-derived from game data and the report says so).
+Not built: the live item-code list with `--codes` (#811, skipped for now, so coverage is measured
+against codes derived from game data and the report says so).
 
 ## The recipe document
 
@@ -40,10 +41,178 @@ derived from game data and the report says so).
 - `kind` is optional: `item` or `block`. `reason` matches `^[a-z][a-z0-9-]*$` and is an open set.
 - `image` is a PNG path relative to the recipe file, checked by `paths.safe_relative`. A missing
   file is exit 4.
-- This tracer accepts exactly one layer and no `ops`; image operations and layer compositing arrive
-  with the games that need them. `measuredAgainst` can only be `game-data`.
+- A recipe takes exactly one layer. `ops` may hold `{"op": "trim"}` (crop to the alpha bounding box;
+  a fully transparent image is exit 6); other image operations and layer compositing arrive with the
+  games that need them. `measuredAgainst` can only be `game-data`.
+- Optional: `rule` on a recipe or unmatched entry (`^[a-z][a-z0-9-]*$`, how it was mapped), `detail` on
+  an unmatched entry (at most 256 characters, no control characters) and `codesFrom` on the document
+  (where the codes come from, at most 1000 characters).
 
 The synthetic fixture is `maintenance/tests/fixtures/icons/fixture-846/`.
+
+## Catalog-driven builds
+
+`icons build --game G` builds a game's pack from the catalog, so a maintainer does not write recipes
+by hand: the item data comes from the game's server depot, the pixels from an installed game client,
+and a per-game mapping module joins them into the recipe document the builder already takes. Project
+Zomboid (`zomboid`) is the first game on this route.
+
+```bash
+maintenance/bin/takaro-maint icons inputs --game zomboid           # what the build needs; no network
+maintenance/bin/takaro-maint icons build --game zomboid --client DIR --out OUT
+```
+
+`--game` (with `--target`, `--platform` and `--client`) and `--recipes` are mutually exclusive. `--target`
+and `--platform` select the target as everywhere else; the default target is used when neither is given.
+
+### The `icons` block
+
+An optional block of `catalog/<game>/game.json`, validated by `catalog/schema/v1/icons.schema.json` and
+by the `icons-*` checks of `catalog validate` (none of them needs the network). It is not part of the
+target fingerprint.
+
+```json
+"icons": {
+  "game": "zomboid",
+  "mapper": "zomboid",
+  "data": {"source": "server-depot", "input": "server", "depots": ["380871"], "files": ["regex:^media/scripts/.*\\.txt$"]},
+  "pixels": {
+    "source": "client", "app": 108600, "depot": 108604, "decoder": "pz-texturepack",
+    "files": ["media/texturepacks/UI2.pack", "media/texturepacks/UI.pack", "..."],
+    "clientBuilds": {"42.21.0": [25485521]}
+  },
+  "secrets": []
+}
+```
+
+- `game` is the pack directory and the identifier Takaro looks the pack up by. It is what the connector
+  reports as `payload.game`, not necessarily the catalog id. It must be a valid game identifier and not
+  `_store`.
+- `mapper` names a registered mapping module (`icons/mappers.py`).
+- `data` is the server-side input. `input` is the target's `steam-depots` input, `depots` an optional
+  subset of its depots, `files` DepotDownloader file-list selectors (an exact path, or `regex:` with a
+  case-insensitive pattern: the semantics of `steam/selectors.py`).
+- `pixels` is the client-side input. `app` and `depot` are the Steam client app and depot, used for the
+  appmanifest lookup. `files` are exact client-relative paths in **precedence order**: a texture name
+  held by several packs comes from the first one listed. Globs are not allowed, so a backup or
+  temporary pack next to the real ones can never be picked up. `clientBuilds` maps a target revision to
+  the client build ids of the same release.
+- `secrets` names environment variables the build reads, never their values. `icons inputs` reports
+  whether each is set.
+
+### Acquisition and its cache
+
+The server data is fetched through the pinned DepotDownloader at the target's pinned manifests with a
+file list, so a build downloads megabytes, not the 7 GB depot. The filtered files live in a cache of
+their own:
+
+```
+$TAKARO_MAINT_CACHE/icons/steam/<app>/<depot>/<manifest>/<sha256(selectors)[:16]>/   # files + .takaro/complete.json
+$TAKARO_MAINT_CACHE/icons/work/build-*/                                              # removed after every run
+$TAKARO_MAINT_CACHE/icons/clients/<game>/<app>/                                       # suggested client mirror
+```
+
+It is deliberately not `steam/<app>/<depot>/<manifest>`: that directory means "the whole depot" and the
+installer trusts its marker. The marker records every file's sha256. A hit is re-hashed; a mismatch is
+a warning and one fresh download, and a mismatch after that is exit 5. A manifest Steam no longer
+serves (anonymous access is refused about two weeks after a build is superseded) is exit 4 with the
+instruction to re-pin the target to the current public build
+(`takaro-maint steam pin --game G --target ID --write`) and rebuild. There is no fallback to the branch
+head. Decoded textures are written under `icons/work`, never into `--out`.
+
+### Client mirror runbook (Project Zomboid)
+
+The client is not downloaded. Point `--client` at a directory that holds the listed pack files (and,
+for the drift warning below, the client's `appmanifest_<app>.acf`, either in that directory or two
+levels up as in a Steam library: `steamapps/common/<install>`). From a Windows machine that has the
+game, over ssh (Windows' bundled `tar` streams through the default shell):
+
+```bash
+CACHE="$(maintenance/bin/takaro-maint icons inputs --game zomboid | jq -r '.inputs[]|select(.role=="pixels").suggestedMirror')"
+FILES="$(maintenance/bin/takaro-maint icons inputs --game zomboid | jq -r '.inputs[]|select(.role=="pixels").files[]' | tr '\n' ' ')"
+mkdir -p "$CACHE"
+ssh HOST "tar -cf - -C \"D:\\Program Files (x86)\\Steam\\steamapps\\common\\ProjectZomboid\" $FILES" | tar -xf - -C "$CACHE"
+ssh HOST 'tar -cf - -C "D:\Program Files (x86)\Steam\steamapps" appmanifest_108600.acf' | tar -xf - -C "$CACHE"
+```
+
+Compare `sha256sum` of each file with `Get-FileHash -Algorithm SHA256` on the machine. Keep the mirror
+outside the repository; never commit game files. Only `buildid` and `InstalledDepots/<depot>/manifest`
+are read from the appmanifest; the file also names the Steam account that owns the install.
+
+### Project Zomboid: the texture packs
+
+`pz-texturepack` (`icons/decoders/pz_texturepack.py`, in-process, no container) reads v1 and v2 packs:
+
+```
+v2 ("PZPK"):  magic "PZPK", int32 version (=1), int32 numPages, then per page:
+              name, int32 numEntries, int32 mask, entries, int32 pngLength, PNG bytes
+v1:           int32 numPages, then per page the same header and entries,
+              then the PNG up to and including IEND, then 0xDEADBEEF
+entry:        name, x, y, w, h, ox, oy, fw, fh   (int32 x 8)
+```
+
+Integers are little-endian int32; a string is an int32 length and then that many latin-1 bytes. A v1
+PNG is found by walking its chunks to `IEND` (the terminator is not searched for, because its bytes
+can occur inside compressed data). An entry is the rectangle `(x, y, w, h)` of the page, cut from an
+original `fw x fh` frame at `(ox, oy)`; a texture is rebuilt as a transparent `fw x fh` canvas with
+the crop pasted at that offset. A malformed pack (truncated, an unknown version, a missing
+terminator, a rectangle or offset that does not fit, an entry name with a path separator) is exit 6.
+Pages are decoded only when an entry of theirs is needed. The first occurrence of a name inside a pack
+wins, and across packs the order of `pixels.files` decides; the build record counts `shadowedNames`
+per pack.
+
+### Project Zomboid: the mapping
+
+The mapper (`games/zomboid/icons.py`) is a ScriptManager equivalent. It reads every `*.txt` under
+`media/scripts` (sorted, `utf-8-sig` with a `cp1252` fallback), strips nested `/* */` comments and
+finds `item <Name> { ... }` blocks inside `module <Name> { ... }`. Other blocks (`craftRecipe`,
+`entity`, `model`, ...) are skipped, which keeps lines such as `item 1 [Base.Plank]` out of the code
+list. An item's properties are its own `key = value` pieces split on `,`; nested blocks such as
+`component FluidContainer` are skipped, keys are case-insensitive and the last one wins. A code is
+`<module>.<item>`; a repeated full name counts once (the repeats in build 25485538 are identical
+redefinitions).
+
+An item is left out of the code list when the game would not register it. Read from the game jar
+(`ScriptBucket`, build 25485538): `OBSOLETE = true`, `enabled` given as anything but `true`, and
+`debugOnly = true` (a dedicated server is not in debug mode). `ScriptManager.getAllItems()` applies no
+other filter: items marked `hidden` (for example the wound overlays) are registered, so they stay in
+the code list and show up as `no-icon-in-game`.
+
+Each item is mapped by the first rule that applies; `rule` is recorded on every recipe and unmatched
+entry, and `detail` names the texture or sprite that was missing:
+
+| Rule | When | Recipe |
+|---|---|---|
+| `moveable` | `Icon = default` | the `WorldObjectSprite` texture, trimmed to its alpha bounding box (`trim`), then downscaled to 128px. No sprite is `no-world-sprite`, an absent one `missing-sprite`. |
+| `icon` | a non-empty `Icon` | texture `Item_<Icon>` at its full frame. Absent is `missing-texture`. |
+| `icons-for-texture` | no usable `Icon`, but `IconsForTexture = A;B;C` | texture `Item_<first piece>`. |
+| `none` | none of these | unmatched, `no-icon-in-game` (expected for wound, damage and make-up overlays). |
+
+Nothing is guessed from names. Only a texture an item's own properties name is used.
+
+### The build record and client drift
+
+`build-record.json` of a catalog build adds, to the recipe hash and encoder: `source`, `catalogGame`,
+`target`, `revision`, `fingerprint`; `data` (app, branch, buildid, os, depot manifests, selectors, file
+count and `treeSha256`, a sha256 over the sorted `<path>\t<sha256>` lines); `pixels` (the decoder and,
+per pack, `sha256`, `size`, `layout`, `pages`, `entries`, `codesSupplied`, `shadowedNames`); `client`
+(app, depot, `buildid`, `manifest`, `status`, `expected`); `mapper` (name, version, notes); `tools`;
+and `warnings`. It holds no timestamp, so two identical builds write identical records.
+
+Server and client build ids differ for the same release (25485538 and 25485521 for 42.21.0), so
+`pixels.clientBuilds` lists the client builds of each revision. `client.status` is `match` (the build is
+listed for the target's revision), `older` or `newer` (it is not, and it is lower or higher than the
+listed ones; the warning names another revision that lists it), or `unknown` (no appmanifest, or the
+revision lists no client builds). Anything but `match` is a warning in stderr, `warnings` of the
+output and the build record, and the exit code stays 0. A new game release needs a `clientBuilds` entry.
+
+### Known limitations
+
+- Coverage is measured against codes derived from game data, not against a live code list from a
+  server (#811). `coverage.json` says so in `measuredAgainst`, `note` and `codesFrom`.
+- Tinted overlays (`IconColorMask`, `IconFluidMask`) are ignored: the base icon is published.
+- An item that names another item's art through anything but `Icon`, `IconsForTexture` or
+  `WorldObjectSprite` has no icon here.
 
 ## The pack contract
 
@@ -87,11 +256,17 @@ logs both versions.
 ## Reports
 
 - `coverage.json`: total, matched, unmatched, `coverage` (matched over total), object count,
-  `byKind` (only when entries carry a kind), `unmatchedByReason`, and the sorted `unmatchedCodes`
-  with their reasons. `measuredAgainst` is `game-data`, with a note saying so.
-- `contact-sheet.png`: up to 64 matched icons (an evenly spaced sample beyond that), eight columns,
-  on a checkerboard with the code underneath.
-- `build-record.json`: the recipe file's sha256, the encoder versions and settings, and the counts.
+  `byKind` (only when entries carry a kind), `byRule` (only when they carry a rule),
+  `unmatchedByReason`, and the sorted `unmatchedCodes` with their reasons (and `detail`).
+  `measuredAgainst` is `game-data`, with a note saying so and, when the document has it, `codesFrom`.
+- `contact-sheet.png`: up to 64 matched icons, eight columns, on a checkerboard with the code
+  underneath. Beyond 64 it is an evenly spaced sample, or, when recipes carry a `rule`, a stratified
+  one: slots are shared out in proportion, at least 8 per rule where it has them, and the sheet is
+  sorted by rule and then code, so a rare rule such as moveables is always on it.
+- `build-record.json`: the recipe file's sha256, the encoder versions and settings, and the counts;
+  a catalog build adds what it was built from (see above).
+- `recipes.json` (catalog builds only): the recipe document the mapper produced, for review. Its
+  sha256 is the build record's `recipesSha256`.
 
 None of them is inside `pack/`, so none is published.
 
@@ -194,9 +369,11 @@ only against the S3 fake, never against production.
 | Code | When |
 |---|---|
 | 0 | ok, including a dry run and a republish where nothing changed |
-| 2 | usage or configuration: a bad flag or recipe document, `--env` other than `staging` (`publish`) or other than `staging`/`production` (the others), a `_store/` or otherwise invalid game or key, a missing `STG_R2_*` / `PROD_R2_*` variable, a non-https endpoint, staging and production resolving to the same bucket, a non-empty `--out`, an unsupported op or multi-layer recipe, an unknown code or object, a malformed `--object`, `--code` and `--object` both or neither, `--enabled` other than `true`/`false` |
-| 4 | a recipe image file is missing, or there is no index for the game in the environment being read |
-| 5 | the index read back after upload differs from what was sent; a copied object does not hash to its name; an object is still present after a delete |
+| 2 | usage or configuration: a bad flag or recipe document, `--env` other than `staging` (`publish`) or other than `staging`/`production` (the others), a `_store/` or otherwise invalid game or key, a missing `STG_R2_*` / `PROD_R2_*` variable, a non-https endpoint, staging and production resolving to the same bucket, a non-empty `--out`, an unsupported op or multi-layer recipe, a game without an `icons` block, `--recipes` and `--game` both or neither, `--client` without `--game`, a missing `--client` for a client-sourced build, an unknown code or object, a malformed `--object`, `--code` and `--object` both or neither, `--enabled` other than `true`/`false` |
+| 3 | a catalog build or `inputs` for a target that does not exist |
+| 4 | a recipe image file is missing, or there is no index for the game in the environment being read; a catalog build whose `--client` is not a directory or lacks a listed pack, or whose pinned server manifest Steam will not serve |
+| 5 | a filtered depot cache that still does not match its marker after one fresh download; the index read back after upload differs from what was sent; a copied object does not hash to its name; an object is still present after a delete |
+| 6 | a malformed texture pack, a `trim` of a fully transparent image |
 | 7 | contract violation in the built pack, the local pack, the live index or the merged index; a staging object that is missing or is not a valid WebP of at most 128px |
 | 10 | a bucket read, upload or delete failed (S3 error, unreachable endpoint, access denied) |
 

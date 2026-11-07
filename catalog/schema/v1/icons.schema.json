@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gettakaro/connectors/catalog/schema/v1/icons.schema.json",
+  "title": "Icon route",
+  "description": "How a game's Icon Pack is built: where the item data comes from, where the pixels come from and which mapping module joins them. Optional in a game record.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["game", "mapper", "data", "pixels"],
+  "properties": {
+    "game": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "The pack directory and the game identifier Takaro looks the pack up by."
+    },
+    "mapper": {"type": "string", "minLength": 1, "description": "A registered mapping module."},
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "input", "files"],
+      "properties": {
+        "source": {"enum": ["server-depot"]},
+        "input": {"type": "string", "minLength": 1, "description": "The target's steam-depots input the data files come from."},
+        "depots": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[0-9]+$"},
+          "description": "A subset of that input's depots; every depot of the input when absent."
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1},
+          "description": "DepotDownloader file-list selectors: an exact path, or regex: with a case-insensitive pattern."
+        }
+      }
+    },
+    "pixels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "app", "depot", "decoder", "files"],
+      "properties": {
+        "source": {"enum": ["client"]},
+        "app": {"type": "integer", "minimum": 1},
+        "depot": {"type": "integer", "minimum": 1},
+        "decoder": {"enum": ["pz-texturepack"]},
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*(/[A-Za-z0-9][A-Za-z0-9._+-]*)*$"},
+          "description": "Exact client-relative paths in precedence order: a name held by several is taken from the first listed."
+        },
+        "clientBuilds": {
+          "type": "object",
+          "description": "Target revision to the client build ids of the same release.",
+          "additionalProperties": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 1}}
+        }
+      }
+    },
+    "secrets": {
+      "type": "array",
+      "default": [],
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+      "description": "Names of environment variables the build reads; never their values."
+    }
+  }
+}
