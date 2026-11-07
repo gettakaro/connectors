@@ -13,15 +13,13 @@ import json
 import os
 import shutil
 import sys
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .. import net, output
 from ..exit_codes import IntegrityError, UpstreamUnavailable
-from ..steam.install import COMPLETE_MARKER
-from . import iostore
+from . import cache_entry, iostore
 
 READ_CHUNK = 8 * 1024 * 1024
 WHOLE_CONTAINER = "global"
@@ -111,17 +109,6 @@ def _plan_name(utoc_hashes: dict[str, str], ranges: list[dict[str, Any]]) -> tup
     return digest, digest[:PLAN_NAME_LENGTH]
 
 
-def _read_marker(root: Path) -> dict[str, Any] | None:
-    marker = root / COMPLETE_MARKER
-    if not marker.is_file():
-        return None
-    try:
-        document = json.loads(marker.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return None
-    return document if isinstance(document, dict) and "ranges" in document else None
-
-
 def _mirror_problems(root: Path, marker: dict[str, Any]) -> list[str]:
     problems = []
     for entry in marker["ranges"]:
@@ -203,15 +190,16 @@ def mirror(client: Path, utoc_files: list[str], stems: list[str], *, mirror_base
     plan_sha, plan_name = _plan_name(utoc_hashes, entries)
     root = mirror_base / plan_name
 
-    marker = _read_marker(root)
+    marker = cache_entry.read_marker(root, "ranges")
     if marker is not None:
         problems = _mirror_problems(root, marker)
         if not problems:
             output.info(f"client ranges {plan_name} are already mirrored ({_megabytes(entries)})")
             return _result(root, plan_sha, marker, tocs, utoc_files, missing)
         output.warn(f"corrupt client mirror {root} ({problems[0]}); reading the ranges again once")
-        shutil.rmtree(root)
-    marker = _build_mirror(client, root, utoc_files, entries)
+    elif root.exists():
+        output.warn(f"corrupt client mirror {root} (no usable marker); reading the ranges again once")
+    marker = cache_entry.store(root, lambda staging: _build_mirror(client, staging, utoc_files, entries))
     problems = _mirror_problems(root, marker)
     if problems:
         raise IntegrityError(
@@ -224,20 +212,9 @@ def _megabytes(entries: list[dict[str, Any]]) -> str:
     return f"{sum(entry['length'] for entry in entries) / 1e6:.1f} MB"
 
 
-def _build_mirror(client: Path, root: Path, utoc_files: list[str], entries: list[dict[str, Any]]) -> dict[str, Any]:
-    staging = root.parent / f"tmp-{uuid.uuid4().hex}"
-    try:
-        staging.mkdir(parents=True)
-        marker = _fill(client, staging, utoc_files, [dict(entry) for entry in entries])
-        (staging / COMPLETE_MARKER).parent.mkdir(parents=True, exist_ok=True)
-        # The marker is replaced atomically: written beside its final name, then renamed over it.
-        sibling = staging / f"{COMPLETE_MARKER.as_posix()}.new"
-        sibling.write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
-        os.replace(sibling, staging / COMPLETE_MARKER)
-        os.replace(staging, root)
-        return marker
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
+def _build_mirror(client: Path, staging: Path, utoc_files: list[str], entries: list[dict[str, Any]]) -> dict[str, Any]:
+    staging.mkdir(parents=True)
+    return _fill(client, staging, utoc_files, [dict(entry) for entry in entries])
 
 
 def _result(

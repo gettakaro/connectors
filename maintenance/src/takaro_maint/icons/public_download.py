@@ -11,9 +11,6 @@ Downloads are cached by sha1 (``net.download`` only caches by sha256, which a Mo
 from __future__ import annotations
 
 import json
-import os
-import shutil
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,8 +19,7 @@ from .. import net, output
 from ..catalog import ids
 from ..catalog.loader import Target
 from ..exit_codes import IntegrityError, UsageError
-
-MARKER = Path(".takaro") / "complete.json"
+from . import cache_entry
 
 
 @dataclass(frozen=True)
@@ -37,7 +33,7 @@ class PinnedDownload:
         return cache / "icons" / "downloads" / "sha1" / self.sha1
 
     def cached(self, cache: Path) -> bool:
-        return (self.directory(cache) / MARKER).is_file()
+        return (self.directory(cache) / cache_entry.MARKER).is_file()
 
 
 @dataclass(frozen=True)
@@ -59,14 +55,14 @@ def _expectation(pin: PinnedDownload) -> net.Expectation:
 def _cached_file(pin: PinnedDownload, directory: Path) -> DownloadedFile | None:
     """The file of a complete cache entry when its bytes still match the pin, else ``None`` (after a warning)."""
     path = directory / pin.name
-    if not (directory / MARKER).is_file():
+    if not directory.exists():
         return None
-    digests = net.hash_file(path) if path.is_file() else None
+    marker = cache_entry.read_marker(directory, "sha1")
+    digests = net.hash_file(path) if marker is not None and path.is_file() else None
     if digests is not None and _expectation(pin).satisfied_by(digests)[0]:
         output.debug(f"cache hit {pin.url}")
         return DownloadedFile(path, pin.url, pin.sha1, digests["sha256"], digests["size"])
     output.warn(f"corrupt cached download {pin.name} ({pin.sha1[:12]}); downloading again once")
-    shutil.rmtree(directory)
     return None
 
 
@@ -76,22 +72,13 @@ def fetch(pin: PinnedDownload, cache: Path) -> DownloadedFile:
     hit = _cached_file(pin, directory)
     if hit is not None:
         return hit
-    staging = directory.parent / f"tmp-{uuid.uuid4().hex}"
-    try:
-        digests = net.fetch(pin.url, staging / pin.name, _expectation(pin))
-        marker = staging / MARKER
-        marker.parent.mkdir(parents=True)
-        marker.write_text(
-            json.dumps(
-                {"url": pin.url, "sha1": pin.sha1, "sha256": digests["sha256"], "size": digests["size"]}, indent=2
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        os.replace(staging, directory)
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
-    return DownloadedFile(directory / pin.name, pin.url, pin.sha1, digests["sha256"], digests["size"])
+    marker = cache_entry.store(directory, lambda staging: _download(pin, staging))
+    return DownloadedFile(directory / pin.name, pin.url, pin.sha1, marker["sha256"], marker["size"])
+
+
+def _download(pin: PinnedDownload, staging: Path) -> dict[str, Any]:
+    digests = net.fetch(pin.url, staging / pin.name, _expectation(pin))
+    return {"url": pin.url, "sha1": pin.sha1, "sha256": digests["sha256"], "size": digests["size"]}
 
 
 @dataclass(frozen=True)

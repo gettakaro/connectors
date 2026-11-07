@@ -396,6 +396,18 @@ def test_the_filtered_download_has_a_cache_of_its_own(
     assert tree(tmp_path / "three") == tree(tmp_path / "one")
 
 
+def test_an_unparsable_filtered_cache_marker_is_downloaded_again(
+    run: Any, repo: Path, client: Path, dd_log: Path, tmp_path: Path
+) -> None:
+    assert build(run, repo, client, tmp_path / "one")[0] == 0
+    [filtered] = (paths.cache_dir() / "icons" / "steam" / "380870" / "380871" / MANIFEST).iterdir()
+    (filtered / ".takaro" / "complete.json").write_text("not json", encoding="utf-8")
+    code, _, stderr = build(run, repo, client, tmp_path / "two")
+    assert code == 0 and "corrupt filtered cache" in stderr
+    assert len(downloads(dd_log)) == 2
+    assert tree(tmp_path / "two") == tree(tmp_path / "one")
+
+
 # ------------------------------------------------------------------ the client build
 
 

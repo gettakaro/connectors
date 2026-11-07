@@ -376,6 +376,31 @@ def test_a_tampered_mirror_is_copied_again_once(run: Any, env: Env, tmp_path: Pa
     assert victim.read_bytes() == (env.client / "Terraria.exe").read_bytes()
 
 
+@pytest.mark.parametrize(
+    ("markers", "warning"),
+    [
+        (lambda env: [mirror_of(env) / ".takaro/complete.json"], "corrupt client files mirror"),
+        (
+            lambda env: sorted((paths.cache_dir() / "icons" / "decoded").glob("*/.takaro/complete.json")),
+            "corrupt decode cache",
+        ),
+    ],
+    ids=["client-files-mirror", "decode-cache"],
+)
+def test_an_unparsable_cache_marker_is_rebuilt_not_a_crash(
+    run: Any, env: Env, tmp_path: Path, markers: Any, warning: str
+) -> None:
+    first = tmp_path / "first"
+    assert build(run, env, first)[0] == 0
+    held = markers(env)
+    assert held
+    for marker in held:
+        marker.write_text("not json", encoding="utf-8")
+    code, _, stderr = build(run, env, tmp_path / "second")
+    assert code == 0 and warning in stderr
+    assert tree(first / "pack") == tree(tmp_path / "second" / "pack")
+
+
 def test_a_client_of_another_build_warns_and_still_builds(run: Any, env: Env, tmp_path: Path) -> None:
     manifest = env.steamapps / "appmanifest_105600.acf"
     manifest.write_text(manifest.read_text().replace(str(maker.BUILD_ID), str(maker.BUILD_ID + 100)))
