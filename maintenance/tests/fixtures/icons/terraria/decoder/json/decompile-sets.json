@@ -1,0 +1,4 @@
+{
+  "type": "Terraria.ID.ItemID+Sets",
+  "source": "namespace Synth.ID;\n\npublic class ItemID\n{\n\tpublic static class Sets\n\t{\n\t\tpublic static bool[] IsFood = Factory.CreateBoolSet(3);\n\t}\n}\n"
+}

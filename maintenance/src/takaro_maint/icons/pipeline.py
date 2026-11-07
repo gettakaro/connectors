@@ -62,6 +62,11 @@ def _client_side(route: IconsRoute, client: Path | None) -> ClientSide | None:
         directory = client_ranges.check(client, route.pixel_files)
     else:
         directory = acquire.check_client(client, route.pixel_files)
+    return client_build_side(route, directory)
+
+
+def client_build_side(route: IconsRoute, directory: Path) -> ClientSide:
+    """How the installed client's build compares with the target's release; warns when they differ."""
     buildid, manifest = acquire.read_client_build(
         directory, route.block["pixels"]["app"], route.block["pixels"]["depot"]
     )
@@ -79,6 +84,10 @@ def build_from_catalog(
         raise UsageError(f"--out {out} exists and is not an empty directory")
     route = route_for(load_catalog(), game, target_id, platform)
     mapper = mappers.registry()[route.mapper]
+    if route.data_source == "connector":
+        from .connector_pipeline import build_from_connector
+
+        return build_from_connector(route, mapper, client, out)
     settings: unreal_decoder.UnrealSettings | None = None
     if route.uses_unreal:
         settings = unreal_decoder.UnrealSettings.of(route.block)

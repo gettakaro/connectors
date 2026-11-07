@@ -39,7 +39,7 @@ from ...paths import safe_relative
 DECODERS_DIR = Path("maintenance") / "decoders"
 CONTEXT_LABEL = "org.takaro.icons.decoder.context"
 TAG_PREFIX = "takaro-icons-decoder-"
-EXCLUDED_DIRECTORIES = {"bin", "obj", "__pycache__"}
+EXCLUDED_DIRECTORIES = {"bin", "obj", "__pycache__", "node_modules"}
 MAX_EDGE = 4096
 MAX_JSON_BYTES = 256 * 1024 * 1024
 STDERR_TAIL_LINES = 40
@@ -127,7 +127,8 @@ def require_docker() -> list[str]:
     argv = docker_argv()
     if shutil.which(argv[0]) is None and not Path(argv[0]).is_file():
         raise UsageError(
-            f"docker is required for games whose icons are decoded from Unreal or Unity files, but {argv[0]!r} "
+            f"docker is required for games whose icons are decoded from Unreal, Unity, XNB or .NET files, but "
+            f"{argv[0]!r} "
             "was not found (set TAKARO_MAINT_DOCKER to another docker CLI)",
             docker=argv[0],
         )

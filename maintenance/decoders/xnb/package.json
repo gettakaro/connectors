@@ -1,0 +1,9 @@
+{
+  "name": "takaro-icons-decoder-xnb",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "xnb": "1.3.0-a"
+  }
+}

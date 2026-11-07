@@ -15,27 +15,28 @@
     },
     "mapper": {"type": "string", "minLength": 1, "description": "A registered mapping module."},
     "data": {
+      "oneOf": [
+        {"$ref": "#/$defs/serverDepotData"},
+        {"$ref": "#/$defs/connectorData"}
+      ],
+      "description": "Where the item codes come from: the pinned server depot, or files of this repository (the connector's own item list)."
+    },
+    "code": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["source", "input", "files"],
+      "required": ["source", "decoder", "files"],
       "properties": {
-        "source": {"enum": ["server-depot"]},
-        "decoder": {"enum": ["unreal", "unity"], "description": "A decoder container that reads the data files. Absent means an in-process parser."},
-        "input": {"type": "string", "minLength": 1, "description": "The target's steam-depots input the data files come from."},
-        "depots": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {"type": "string", "pattern": "^[0-9]+$"},
-          "description": "A subset of that input's depots; every depot of the input when absent."
-        },
+        "source": {"const": "client"},
+        "decoder": {"enum": ["clr"], "description": "The decoder container that reads the code files."},
         "files": {
           "type": "array",
           "minItems": 1,
-          "items": {"type": "string", "minLength": 1},
-          "description": "DepotDownloader file-list selectors: an exact path, or regex: with a case-insensitive pattern."
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*(/[A-Za-z0-9][A-Za-z0-9._+-]*)*$"},
+          "description": "Exact client-relative paths of the game code a mapper reads facts from (for example the game assembly)."
         }
-      }
+      },
+      "description": "Game code read from the installed client; it is mounted in the same read-only tree as the pixel files."
     },
     "pixels": {
       "oneOf": [
@@ -57,6 +58,18 @@
       },
       "description": "Settings of the unreal decoder; required exactly when a role uses it."
     },
+    "xnb": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alpha"],
+      "properties": {
+        "alpha": {
+          "enum": ["straight"],
+          "description": "How the decoded RGBA relates to alpha. straight: the colour channels are independent of alpha (a translucent pixel with a colour channel above its alpha cannot be premultiplied; the build reports the count)."
+        }
+      },
+      "description": "Settings of the xnb decoder; required exactly when pixels.decoder is 'xnb'."
+    },
     "secrets": {
       "type": "array",
       "default": [],
@@ -66,6 +79,44 @@
     }
   },
   "$defs": {
+    "serverDepotData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "input", "files"],
+      "properties": {
+        "source": {"const": "server-depot"},
+        "decoder": {"enum": ["unreal", "unity"], "description": "A decoder container that reads the data files. Absent means an in-process parser."},
+        "input": {"type": "string", "minLength": 1, "description": "The target's steam-depots input the data files come from."},
+        "depots": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[0-9]+$"},
+          "description": "A subset of that input's depots; every depot of the input when absent."
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1},
+          "description": "DepotDownloader file-list selectors: an exact path, or regex: with a case-insensitive pattern."
+        }
+      }
+    },
+    "connectorData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "files"],
+      "properties": {
+        "source": {"const": "connector"},
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^games/[a-z0-9-]+/[A-Za-z0-9._/-]+$"},
+          "description": "Repo-relative paths of connector source files the item codes are read from; they are hashed and copied, nothing is downloaded."
+        }
+      }
+    },
     "clientPixels": {
       "type": "object",
       "additionalProperties": false,
@@ -74,7 +125,7 @@
         "source": {"enum": ["client"]},
         "app": {"type": "integer", "minimum": 1},
         "depot": {"type": "integer", "minimum": 1},
-        "decoder": {"enum": ["pz-texturepack", "unreal"]},
+        "decoder": {"enum": ["pz-texturepack", "unreal", "xnb"]},
         "access": {
           "enum": ["files", "iostore-ranges"],
           "default": "files",
@@ -84,8 +135,13 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*(/[A-Za-z0-9][A-Za-z0-9._+-]*)*$"},
-          "description": "Exact client-relative paths in precedence order: a name held by several is taken from the first listed. With access iostore-ranges only .utoc paths; their .ucas files are derived."
+          "items": {
+            "anyOf": [
+              {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*(/[A-Za-z0-9][A-Za-z0-9._+-]*)*$"},
+              {"type": "string", "pattern": "^regex:.+"}
+            ]
+          },
+          "description": "Exact client-relative paths in precedence order (a name held by several is taken from the first listed), or regex: entries with a case-insensitive pattern matched against client-relative paths. With access iostore-ranges only .utoc paths; their .ucas files are derived."
         },
         "clientBuilds": {
           "type": "object",

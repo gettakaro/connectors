@@ -96,7 +96,35 @@ def atlas_cut(
     return framed
 
 
-OPS: dict[str, Callable[..., Image.Image]] = {"trim": trim, "tint-multiply": tint_multiply, "atlas-cut": atlas_cut}
+def frame_crop(image: Image.Image, *, code: str, frames: int, frame: int = 0, gap: int = 0) -> Image.Image:
+    """Crop one frame out of a vertical animation strip.
+
+    For a ``W x H`` image of ``frames`` equal frames stacked top to bottom, ``fh = H // frames`` is the frame pitch and
+    ``h = fh - gap`` the visible height (the last ``gap`` rows of each frame are padding). The result is
+    ``image.crop((0, frame * fh, W, frame * fh + h))``: the full width, nothing resampled.
+
+    This is XNA's ``Texture2D.Frame(1, frames, 0, frame, 0, -gap)``, which is what Terraria's
+    ``DrawAnimationVertical.GetFrame`` draws with ``gap`` 2. A strip with fewer than ``frames`` rows, a frame that
+    is not taller than the gap and a ``frame`` outside ``0..frames-1`` are failed builds.
+    """
+    _, height = image.size
+    pitch = height // frames
+    visible = pitch - gap
+    if frame >= frames or pitch < 1 or visible < 1:
+        raise BuildFailed(
+            f"recipe {code!r}: frame-crop of frame {frame} out of {frames} with gap {gap} does not fit a "
+            f"{image.width}x{height} image",
+            recipe=code,
+        )
+    return image.crop((0, frame * pitch, image.width, frame * pitch + visible))
+
+
+OPS: dict[str, Callable[..., Image.Image]] = {
+    "trim": trim,
+    "tint-multiply": tint_multiply,
+    "atlas-cut": atlas_cut,
+    "frame-crop": frame_crop,
+}
 
 
 def apply(operation: dict[str, Any], image: Image.Image, *, code: str) -> Image.Image:

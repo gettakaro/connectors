@@ -60,7 +60,12 @@ against codes derived from game data and the report says so).
   `textureRectOffset`, origin bottom-left) come together or not at all: the cut is pasted on a transparent canvas of
   `(round(cw), round(ch))` at `left = round(ox)`, `top = round(ch) - round(oy) - cut height`, the frame the game
   draws a trimmed sprite in (a cut that does not fit is exit 6). The op never resamples.
-  `measuredAgainst` can only be `game-data`.
+  `{"op": "frame-crop", "frames": n, "frame": 0, "gap": 2}` takes one frame of a vertical animation strip.
+  `frames` is an integer from 1 to 64, `frame` an integer >= 0 (default 0) and `gap` an integer from 0 to 16 (default
+  0); any other key, type or range is exit 2. For an image `W x H`, `fh = H // frames` is the frame pitch and
+  `h = fh - gap` the visible height; the result is `crop((0, frame * fh, W, frame * fh + h))`, the full width, never
+  resampled. It is XNA's `Texture2D.Frame(1, frames, 0, frame, 0, -gap)`. `fh < 1`, `h < 1` or `frame >= frames` is
+  exit 6 naming the recipe. `measuredAgainst` can only be `game-data`.
 - Optional: `rule` on a recipe or unmatched entry (`^[a-z][a-z0-9-]*$`, how it was mapped), `detail` on
   an unmatched entry (at most 256 characters, no control characters) and `codesFrom` on the document
   (where the codes come from, at most 1000 characters).
@@ -124,6 +129,18 @@ target fingerprint.
   the client build ids of the same release.
 - `secrets` names environment variables the build reads, never their values. `icons inputs` reports
   whether each is set.
+- `data` has a second shape, `{"source": "connector", "files": ["games/<game>/..."]}`: the item codes come from
+  files of this repository (the connector's own item list), which are hashed and copied; nothing is downloaded and
+  no `input` is allowed. The `icons-data-input` check requires every file to exist in the repository.
+- `code` (optional) is `{"source": "client", "decoder": "clr", "files": ["Terraria.exe"]}`: game code the mapper reads
+  facts from, taken from the same installed client as the pixels. It requires `pixels.source: "client"`
+  (`icons-code-role`).
+- Client `pixels.files` entries may also be `regex:<pattern>` (case-insensitive, matched against client-relative
+  paths, like `data.files`) as well as exact paths; each must compile and a regex is not allowed with
+  `access: "iostore-ranges"` (`icons-client-regex`). `icons build` refuses a client where an exact path is missing or
+  a regex matches nothing (exit 4, naming it); a regex only considers regular files and does not follow symlinks (exact paths are taken as they are).
+- `xnb` (`{"alpha": "straight"}`) holds the settings of the `xnb` decoder and is required exactly when
+  `pixels.decoder` is `xnb` (`icons-xnb-settings`).
 
 ### Acquisition and its cache
 
@@ -517,6 +534,150 @@ Observed with the real decoder image (UnityPy 1.25.2) against server build 26266
 - No sprite in the current build is rotated, so the rotation table is proven by synthetic tests and by UnityPy's own
   `SpriteHelper` source, not by live data.
 - Tight-packed sprites and sprites with a separate alpha texture are not supported (none exist in this build).
+
+## Terraria: XNB textures and game-code frame counts
+
+The `terraria` pack (mapper `terraria`, `games/terraria/icons.py`) has three inputs and no server depot at all:
+
+- **data**: the item codes are the 6,147 numeric codes of the connector's own static catalogue,
+  `games/terraria/bridge/src/terraria/itemCatalog.ts` (`data.source: "connector"`). `listItems` returns that array
+  unchanged, so the codes in the file are the codes the connector reports. The file is parsed as the JSON between
+  `TERRARIA_ITEM_CATALOG: readonly TerrariaItemCatalogEntry[] = ` and `] as const;`; a missing array, a non-numeric
+  code, an empty name or a repeated code is exit 6 ("connector catalogue format changed"). `codesFrom` names the file
+  and its sha256 and says the codes were not measured against a live code list (#811 skipped).
+- **code**: `Terraria.exe` from the Windows client, read by the `clr` container.
+- **pixels**: `Content/Images/Item_<N>.xnb` from the same client (Steam app 105600, depot 105601), decoded by the
+  `xnb` container. The TShock server zip has no `Content` folder and there is no anonymous server depot for it.
+
+### The client mirror
+
+Both containers read one read-only mirror of the selected client files (`Terraria.exe` and every file matching
+`regex:^Content/Images/Item_[0-9]+\.xnb$`), never `--client` itself. `icons build` copies them once to
+`<cache>/icons/client-files/<pack>/<app>/<buildid|unknown>/<key16>/`, where `key16` is the first 16 characters of the
+sha256 over the sorted `path<TAB>sha256` lines, and writes `.takaro/complete.json` last through an atomic rename. A
+second build hashes the source again, finds the directory, re-hashes the mirror, and copies nothing; a mirror that no
+longer matches is warned about, removed and copied again once (a second mismatch is exit 5). Decoys next to the
+selected files (`Item_7.png`, `Projectile_1.xnb`, `sub/Item_3.xnb`, `Item_x.xnb`) are not selected and not mirrored.
+
+The gamer machine has no Docker, so the maintainer copies only what a build needs. The mirror is about 29 MB and stays
+outside the repository:
+
+```bash
+M=~/.cache/takaro-maint/icons/clients/terraria/105600; mkdir -p "$M"
+# on gamer (PowerShell, via -EncodedCommand): list Content\Images\Item_*.xnb plus Terraria.exe into a file, then
+#   tar -cf - -C "D:\Program Files (x86)\Steam\steamapps\common\Terraria" -T <list>
+# and unpack it here with tar -xf - -C "$M". The appmanifest goes next to it:
+#   tar -cf - -C "D:\Program Files (x86)\Steam\steamapps" appmanifest_105600.acf | tar -xf - -C "$M"
+```
+
+Check 6,134 `Item_*.xnb` files totalling 2,546,532 bytes and that `sha256sum Terraria.exe` equals `Get-FileHash` on gamer.
+`--client "$M"` is then the directory that holds `Terraria.exe`, `Content/` and the appmanifest.
+
+### The XNB decoder
+
+`maintenance/decoders/xnb/` (`Dockerfile`, `package.json`, `package-lock.json`, `export.mjs`, `png.mjs`).
+
+- **Pins.** `FROM node:22.23.2-bookworm-slim@sha256:48e4b67d...`, the digest the catalog already pins for the Terraria
+  bridge runtime. `package.json` has one dependency, `"xnb": "1.3.0-a"` (exact; npm `latest`, published 2024-03-26, no
+  runtime dependencies), and `package-lock.json` is lockfile version 3 generated once with `npm install
+  --package-lock-only --ignore-scripts` inside the pinned image. The image installs with `npm ci --omit=dev
+  --ignore-scripts --no-audit --no-fund`, which enforces the lock's `sha512` integrity value
+  (`sha512-N6oz2xqk...OSU5og==`). `1.3.0-a` imports and runs under Node 22, so the plain `1.3.0` is not needed.
+- **Licence.** `xnb` is LGPL-3.0-or-later, used unmodified and installed only into a locally built image that is
+  never pushed. It bundles png.js and LZ4-js (MIT). Nothing forbids local use.
+- **Request.** `{"schemaVersion": 1, "decoder": "xnb", "settings": {}, "root": "/game", "exports": [{"id": "it5644",
+  "kind": "texture", "file": "Content/Images/Item_5644.xnb"}]}`. A `file` that is absolute, has a `..` part, resolves
+  outside `/game` or is not a regular file (`lstat`) is `failed`. The bytes are passed to the library as an exact
+  `ArrayBuffer` slice, never as a pooled Node `Buffer` (its backing store is shared). Content other than `Texture2D` or a
+  surface format other than `Color` is `unsupported-format`; an edge above 4096 is `failed`.
+- **Output.** `png/<id>.png`, RGBA8, written by the container's own encoder (colour type 6, one IDAT from
+  `zlib.deflateSync(level 9)`, filter 0, no ancillary chunks), so the bytes only depend on the pixels and the pinned
+  Node. Pixels are written as decoded; alpha is the recipe's job. `meta` is `width`, `height`, `format`, `xnbVersion`,
+  `platform` and `compressed`. Files are read one at a time and the library's progress chatter goes to stderr.
+
+### The CLR decoder
+
+`maintenance/decoders/clr/` (`Dockerfile`, `TakaroClrExport.csproj`, `nuget.config`, `packages.lock.json`,
+`Program.cs`). It exists because "read the frame counts from the game code" needs an assembly reader, and
+`Terraria.exe` is untrusted game data, which spec #809 says only runs in pinned, network-less containers.
+
+- **Pins.** The same two .NET 10 digests as the Unreal image, `dotnet restore --locked-mode`, and one package,
+  `ICSharpCode.Decompiler` 11.2.0.10050 (MIT, netstandard2.0, the current stable release when this was written,
+  2026-11-07). The assembly is only read, never loaded or executed.
+- **Export kinds** (generic, no game logic): `assembly-info {file}` gives `name`, `version` and `mvid`; `callers {file,
+  member: "Ns.Type::Method"}` walks every method body's IL and lists `{type, method, count}` for each `call`, `callvirt`,
+  `newobj` and `ldftn` that targets the member; `decompile-type {file, type}` gives `{type, source}` (C#) for `Ns.Type`
+  or `Ns.Outer+Inner`. An unknown type or member is `not-found`. Decompiled text lives only in the decode cache.
+
+### Mapping rules
+
+1. Item `N` is drawn from `Content/Images/Item_N.xnb`, rule `item`.
+2. **Frame counts come from the game code.** The `callers` of `Terraria.Main::RegisterItemAnimation` and
+   `Terraria.ID.ItemID+Sets` are decompiled and read with bounded regular expressions:
+   - `RegisterItemAnimation(<id>, new DrawAnimationVertical(<ticks>, <frames>[, <pingpong>]))` gives that item
+     `frames` frames (rule `animation-frame`);
+   - the loop `if (ItemID.Sets.IsFood[j]) { RegisterItemAnimation(j, new DrawAnimationVertical(int.MaxValue, 3)); }`
+     gives every id of `IsFood = Factory.CreateBoolSet(...)` 3 frames (rule `food-frame`);
+   - every other call of `RegisterItemAnimation` is `unparsed`, and an id with two different counts is a
+     `conflict`. Either is exit 6, so a new game build that registers animations differently stops the build instead
+     of mis-cropping items.
+3. **The Scrying Orb (5644).** The game registers it as `new DrawAnimationScryingOrb { TicksPerFrame = 7, FrameCount = 9 }`,
+   a state machine that picks its frame, whose `GetFrame` is `texture.Frame(1, FrameCount, 0, frameY, 0, -2)`: a
+   vertical strip of 9 frames less two rows, and `frameY` 0 for its centred state. The mapper therefore has one
+   documented override, `FRAME_OVERRIDES = {"5644": 9}` (rule `frame-override`), applied when the registration table
+   has no entry for the id and only when the `DrawAnimationScryingOrb` registration with that `FrameCount` is found in
+   the game code (otherwise exit 6); it is recorded in `details.animations.overrides`.
+4. **The gap is 2.** `DrawAnimationVertical.GetFrame` is `texture.Frame(1, FrameCount, 0, frame)` followed by
+   `Height -= 2`; the recipe is `{"op": "frame-crop", "frames": n, "frame": 0, "gap": 2}`. Nothing is trimmed, so the
+   game's own framing is kept.
+5. **Alpha is straight.** XNA content is often stored premultiplied, so the plan allowed for an `unpremultiply` op. The
+   decoded textures refute it: 25,771 pixels are translucent and 18,036 of them (in 96 of the 125 textures that have
+   translucent pixels) have a colour channel above their alpha, which a premultiplied pixel cannot have, and every
+   fully transparent pixel is `(0, 0, 0, 0)`. The block therefore says `"xnb": {"alpha": "straight"}` and there is no
+   `unpremultiply` op. A future build that breaks this shows up in `details.alpha`.
+6. **Fake chests.** `Fake <X> Chest` items with no `Item_N.xnb` take the art of the one catalogue entry named
+   `<X> Chest` when that entry has a texture (rule `fake-chest-fallback`, flag `fallback-art` naming the code); the
+   fallback applies only when the file is missing. A fake chest with its own file keeps it.
+7. Otherwise unmatched: `missing-texture` (no file), `unsupported-texture` (a surface format the container cannot
+   decode) or `fallback-unresolved`.
+
+`details` in the build record carries the evidence: the catalogue size and sha256, the assembly, the animation table
+(`registered`, `food`, `overrides`, `unparsed`, `conflicts`, `callers`), `frames.nonDivisible`, `gapNotTransparent`
+(frame-0 gap rows that are not fully transparent), `alpha`, `clientOnlyIds` and `fallbacks`.
+
+### Exit codes of this route
+
+Catalogue format changes, unparsed or conflicting registrations, a missing food loop or no callers, a decoder failure
+and an out-of-bounds `frame-crop` are exit 6; a client missing `Terraria.exe` or with no file matching the `Item_*.xnb`
+selector is exit 4; a missing `--client` or missing Docker is exit 2 (before any image is built or file copied).
+
+### Terraria bring-up findings (client build 24893155, Terraria 1.4.5.8, 2026-11-07)
+
+- The installed client of the maintainer's gamer machine is Steam's current public build 24893155 (depot 105601
+  manifest 2046220459945595868), which is also what the only target, `tshock-v6.2.1` ("TShock 6.2.1 for Terraria
+  1.4.5.8"), records in `clientBuilds`. `Terraria.exe` is 26,597,888 bytes, assembly version 1.4.5.8.
+- 6,134 `Item_*.xnb` files, 2,546,532 bytes, ids 0 to 6195. All are XNB v5 for the Windows target, LZX-compressed,
+  `Texture2D` with surface format `Color`; the largest edge is 234 px. The container decodes all of them with 0
+  failures in about 13 s, peaking at about 81 MiB.
+- `callers` finds one registering method, `Terraria.Main::InitializeItemAnimations` (17 calls): 15 constant
+  `DrawAnimationVertical` registrations, the `IsFood` loop (86 ids) and the Scrying Orb: 102 items, `unparsed` 0,
+  `conflicts` 0. Decompiling `Terraria.Main` takes about 25 s and peaks at about 270 MiB in the container.
+- 6,085 of the 6,147 catalogue codes have a texture; 62 do not: 59 `Fake X Chest` items (all of which fall back), `3665`
+  (`Fake Chest`), `3705` and `3706` (`Fake newchest1` and `2`).
+
+### Known limitations
+
+- Coverage is measured against codes derived from game data, not against a live code list from a staging server (#811
+  skipped); a human review of the pack stays open.
+- 49 client textures are not in the connector catalogue: `Item_0` (the "no item" placeholder) and `Item_6148` to
+  `Item_6195`, which the connector's catalogue does not list. They are reported (`clientOnlyIds`), not added; whether
+  the catalogue lags 1.4.5.8 is a connector question.
+- `3665` ("Fake Chest") stays unmatched, as specified. It is the trapped plain Chest and could take the art of item
+  48; that is a reviewer decision, not implemented.
+- The fake-chest fallback is name matching, which spec #809 discourages; the ticket prescribes it.
+- tModLoader items are out of scope.
+- The real containers are not built in CI. They are proven by the bring-up and the live run; CI proves the adapters,
+  sessions and mapper against `fake_icons_decoder.py` and synthetic fixtures.
 
 ## Keeping packs current
 

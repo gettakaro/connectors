@@ -1,0 +1,4 @@
+{
+  "type": "Synth.World",
+  "source": "namespace Synth;\n\npublic class World\n{\n\tpublic static void RegisterItemAnimation(int index, DrawAnimation animation)\n\t{\n\t\titemAnimations[index] = animation;\n\t}\n\n\tpublic static void InitializeItemAnimations()\n\t{\n\t\tRegisterItemAnimation(2, new DrawAnimationVertical(6, 4));\n\t\tfor (int j = 0; j < ItemID.Sets.IsFood.Length; j++)\n\t\t{\n\t\t\tif (ItemID.Sets.IsFood[j])\n\t\t\t{\n\t\t\t\tRegisterItemAnimation(j, new DrawAnimationVertical(int.MaxValue, 3));\n\t\t\t}\n\t\t}\n\t\tRegisterItemAnimation(5644, new DrawAnimationScryingOrb\n\t\t{\n\t\t\tTicksPerFrame = 7,\n\t\t\tFrameCount = 9\n\t\t});\n\t}\n}\n"
+}

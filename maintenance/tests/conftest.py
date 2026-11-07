@@ -112,6 +112,12 @@ def catalog_copy(tmp_path: Path) -> Path:
             destination = root / lockfile
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
+    for game_file in (root / "catalog").glob("*/game.json"):
+        data = json.loads(game_file.read_text(encoding="utf-8")).get("icons", {}).get("data", {})
+        for name in data.get("files", []) if data.get("source") == "connector" else []:
+            destination = root / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(REPO_ROOT / name, destination)
     mod = root / "games" / "minecraft" / "mod"
     (mod / "gradle").mkdir(parents=True)
     shutil.copy2(REPO_ROOT / "games/minecraft/mod/gradle/libs.versions.toml", mod / "gradle")

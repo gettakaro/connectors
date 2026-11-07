@@ -1,0 +1,7 @@
+[
+  {
+    "type": "Synth.World",
+    "method": "InitializeItemAnimations",
+    "count": 3
+  }
+]

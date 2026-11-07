@@ -608,3 +608,98 @@ def test_an_atlas_cut_that_does_not_fit_fails_the_build_naming_the_recipe(
     code, payload, _, out = _build(run, tmp_path, recipes=recipes)
     assert code == 6 and payload["recipe"] == "fixture-circle"
     assert not out.exists() or not list(out.rglob("index.json"))
+
+
+# ------------------------------------------------------------------------------------------ frame-crop
+
+
+def _strip_document(tmp_path: Path, operation: dict[str, Any], image: Image.Image) -> Path:
+    copy = _fixture_copy(tmp_path)
+    image.save(copy / "images" / "strip.png", format="PNG")
+    document = json.loads((copy / "recipes.json").read_text())
+    document["recipes"][0]["layers"][0] = {"image": "images/strip.png", "ops": [operation]}
+    (copy / "recipes.json").write_text(json.dumps(document))
+    return copy / "recipes.json"
+
+
+def _strip(frames: int, body: int, gap: int, width: int = 4) -> Image.Image:
+    """``frames`` frames of ``body`` rows of one colour each, followed by ``gap`` transparent rows."""
+    image = Image.new("RGBA", (width, frames * (body + gap)))
+    for frame in range(frames):
+        top = frame * (body + gap)
+        image.paste((10 + 20 * frame, 200 - 15 * frame, 30 + 5 * frame, 255), (0, top, width, top + body))
+    return image
+
+
+def _cropped(run: Any, tmp_path: Path, operation: dict[str, Any], image: Image.Image) -> Image.Image:
+    code, payload, _, out = _build(run, tmp_path, recipes=_strip_document(tmp_path, operation, image))
+    assert code == 0, payload
+    index = json.loads((out / "pack/fixture-846/index.json").read_text())
+    with Image.open(out / "pack/fixture-846" / index["icons"]["fixture-circle"]) as result:
+        return result.convert("RGBA")
+
+
+@pytest.mark.parametrize(
+    ("frames", "frame", "gap"),
+    [(1, 0, 0), (3, 0, 2), (3, 2, 2), (4, 0, 2), (4, 1, 2), (4, 3, 0), (9, 0, 2), (9, 8, 2)],
+)
+def test_frame_crop_takes_one_frame_without_its_gap(
+    run: Any, tmp_path: Path, frames: int, frame: int, gap: int
+) -> None:
+    body = 5
+    operation = {"op": "frame-crop", "frames": frames, "frame": frame, "gap": gap}
+    result = _cropped(run, tmp_path, operation, _strip(frames, body, gap))
+    expected = _strip(frames, body, gap).crop((0, frame * (body + gap), 4, frame * (body + gap) + body))
+    assert result.size == (4, body)
+    assert result.tobytes() == expected.tobytes()
+
+
+def test_frame_crop_defaults_to_the_first_frame_and_no_gap(run: Any, tmp_path: Path) -> None:
+    result = _cropped(run, tmp_path, {"op": "frame-crop", "frames": 3}, _strip(3, 6, 0))
+    assert result.size == (4, 6) and result.getpixel((0, 0)) == (10, 200, 30, 255)
+
+
+def test_frame_crop_uses_the_floor_of_the_frame_pitch(run: Any, tmp_path: Path) -> None:
+    """A strip whose height does not divide by the frame count is cut with ``H // frames`` rows per frame."""
+    operation = {"op": "frame-crop", "frames": 3, "frame": 1, "gap": 1}
+    result = _cropped(run, tmp_path, operation, Image.new("RGBA", (4, 11), (9, 9, 9, 255)))
+    assert result.size == (4, 2)
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        {"op": "frame-crop"},
+        {"op": "frame-crop", "frames": 0},
+        {"op": "frame-crop", "frames": 65},
+        {"op": "frame-crop", "frames": 3, "gap": -1},
+        {"op": "frame-crop", "frames": 3, "gap": 17},
+        {"op": "frame-crop", "frames": 3, "frame": -1},
+        {"op": "frame-crop", "frames": 3, "extra": 1},
+        {"op": "frame-crop", "frames": 3.5},
+        {"op": "frame-crop", "frames": "3"},
+    ],
+    ids=["no-frames", "zero", "too-many", "negative-gap", "huge-gap", "negative-frame", "extra-key", "float", "string"],
+)
+def test_a_malformed_frame_crop_is_refused(run: Any, tmp_path: Path, operation: dict[str, Any]) -> None:
+    code, payload, _, out = _build(run, tmp_path, recipes=_strip_document(tmp_path, operation, _strip(3, 5, 2)))
+    assert code == 2 and "invalid" in payload["error"]
+    assert not out.exists() or not list(out.rglob("index.json"))
+
+
+@pytest.mark.parametrize(
+    ("operation", "height"),
+    [
+        ({"op": "frame-crop", "frames": 4, "frame": 0, "gap": 0}, 3),
+        ({"op": "frame-crop", "frames": 4, "frame": 0, "gap": 2}, 8),
+        ({"op": "frame-crop", "frames": 3, "frame": 3, "gap": 0}, 9),
+    ],
+    ids=["fewer-rows-than-frames", "frame-not-taller-than-gap", "frame-index-past-the-strip"],
+)
+def test_a_frame_crop_that_does_not_fit_fails_the_build_naming_the_recipe(
+    run: Any, tmp_path: Path, operation: dict[str, Any], height: int
+) -> None:
+    recipes = _strip_document(tmp_path, operation, Image.new("RGBA", (4, height), (1, 2, 3, 255)))
+    code, payload, _, out = _build(run, tmp_path, recipes=recipes)
+    assert code == 6 and payload["recipe"] == "fixture-circle"
+    assert not out.exists() or not list(out.rglob("index.json"))

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .. import paths
+from .. import net, paths
 from ..catalog import schema
 from ..catalog.loader import Catalog, Target
 from ..exit_codes import UsageError
@@ -28,7 +28,14 @@ class IconsRoute:
     catalog_game: str
     target: Target
     block: dict[str, Any]
-    steam: SteamInput
+    steam_input: SteamInput | None
+
+    @property
+    def steam(self) -> SteamInput:
+        """The target's steam-depots input; only a server-depot route has one."""
+        if self.steam_input is None:
+            raise UsageError(f"game '{self.catalog_game}' takes its data from {self.data_source}, not a server depot")
+        return self.steam_input
 
     @property
     def pack_game(self) -> str:
@@ -39,7 +46,41 @@ class IconsRoute:
         return str(self.block["mapper"])
 
     @property
+    def data_source(self) -> str:
+        """``server-depot`` or ``connector`` (files of this repository)."""
+        return str(self.block["data"]["source"])
+
+    @property
+    def connector_files(self) -> list[str]:
+        """Repo-relative connector files of a connector route; empty for a server-depot route."""
+        if self.data_source != "connector":
+            return []
+        return [str(name) for name in self.block["data"]["files"]]
+
+    @property
+    def code_files(self) -> list[str]:
+        return [str(name) for name in (self.block.get("code") or {}).get("files") or []]
+
+    @property
+    def code_decoder(self) -> str | None:
+        decoder = (self.block.get("code") or {}).get("decoder")
+        return str(decoder) if decoder is not None else None
+
+    @property
+    def client_selectors(self) -> list[str]:
+        """The exact files and ``regex:`` entries of the pixel and code roles, which share one client mirror."""
+        return list(dict.fromkeys([*self.pixel_files, *self.code_files]))
+
+    @property
+    def decoders(self) -> set[str]:
+        """The decoder containers this route runs."""
+        names = {str(self.block["pixels"].get("decoder")), str(self.block["data"].get("decoder")), self.code_decoder}
+        return {name for name in names if name in ("unreal", "unity", "xnb", "clr")}
+
+    @property
     def data_selectors(self) -> list[str]:
+        if self.data_source != "server-depot":
+            return []
         return [str(selector) for selector in self.block["data"]["files"]]
 
     @property
@@ -57,7 +98,9 @@ class IconsRoute:
 
     @property
     def depots(self) -> dict[str, str]:
-        """Depot id to the pinned manifest, for the depots the data comes from."""
+        """Depot id to the pinned manifest, for the depots the data comes from; empty for a connector route."""
+        if self.steam_input is None:
+            return {}
         wanted = self.block["data"].get("depots") or sorted(self.steam.depots)
         return {str(depot): str(self.steam.depots[str(depot)]["manifest"]) for depot in wanted}
 
@@ -124,10 +167,19 @@ def route_for(catalog: Catalog, game: str, target_id: str | None, platform: str 
         raise UsageError(f"game '{game}' has an invalid icons block", problems=errors)
     if block["mapper"] not in mappers.names():
         raise UsageError(f"game '{game}' names mapper '{block['mapper']}'; known mappers: {', '.join(mappers.names())}")
+    if block["data"]["source"] == "connector":
+        missing = [
+            name
+            for name in block["data"]["files"]
+            if not (paths.repo_root() / paths.safe_relative(name, field="icons.data.files")).is_file()
+        ]
+        if missing:
+            raise UsageError(f"game '{game}' reads connector files that do not exist: {', '.join(missing)}")
+        return IconsRoute(catalog_game=game, target=target, block=block, steam_input=None)
     steam = SteamInput.of(target.record)
     if steam.name != block["data"]["input"]:
         raise UsageError(f"target '{target.id}' has no steam-depots input named '{block['data']['input']}'")
-    return IconsRoute(catalog_game=game, target=target, block=block, steam=steam)
+    return IconsRoute(catalog_game=game, target=target, block=block, steam_input=steam)
 
 
 def _unreal_inputs(route: IconsRoute, cache: Path) -> dict[str, Any]:
@@ -174,8 +226,39 @@ def _pixels_input(route: IconsRoute, cache: Path, cache_paths: dict[str, Path], 
     }
 
 
+def _connector_inputs_document(route: IconsRoute) -> dict[str, Any]:
+    """The ``icons inputs`` answer of a route whose item codes are files of this repository."""
+    from .decoders import container
+
+    cache = paths.cache_dir()
+    pixels_input = _pixels_input(route, cache, {}, False)
+    inputs: list[dict[str, Any]] = [
+        {
+            "role": "data",
+            "source": "connector",
+            "files": {name: net.hash_file(paths.repo_root() / name)["sha256"] for name in route.connector_files},
+        }
+    ]
+    if route.code_files:
+        inputs.append({"role": "code", "source": "client", "decoder": route.code_decoder, "files": route.code_files})
+    inputs.append(pixels_input)
+    return {
+        "game": route.catalog_game,
+        "packGame": route.pack_game,
+        "target": route.target.id,
+        "fingerprint": route.target.fingerprint,
+        "revision": route.target.revision,
+        "mapper": route.mapper,
+        "inputs": inputs,
+        "decoders": {name: container.inspect_state(name) for name in sorted(route.decoders)},
+        "env": [{"name": name, "set": bool(os.environ.get(name))} for name in route.secrets],
+    }
+
+
 def inputs_document(route: IconsRoute) -> dict[str, Any]:
     """The ``icons inputs`` answer: no network, no DepotDownloader."""
+    if route.data_source == "connector":
+        return _connector_inputs_document(route)
     cache = paths.cache_dir()
     caches = {depot: route.data_cache(cache, depot) for depot in route.depots}
     cached = all(filtered_cache_complete(path) for path in caches.values())

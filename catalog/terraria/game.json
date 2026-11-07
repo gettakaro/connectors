@@ -68,5 +68,21 @@
     "takaro-terraria-plugin.zip": "tshock-v6.2.1/plugin",
     "takaro-terraria-bridge.zip": "tshock-v6.2.1/bridge"
   },
-  "devServers": {"composeFile": "terraria.yml"}
+  "devServers": {"composeFile": "terraria.yml"},
+  "icons": {
+    "game": "terraria",
+    "mapper": "terraria",
+    "data": {"source": "connector", "files": ["games/terraria/bridge/src/terraria/itemCatalog.ts"]},
+    "code": {"source": "client", "decoder": "clr", "files": ["Terraria.exe"]},
+    "pixels": {
+      "source": "client",
+      "app": 105600,
+      "depot": 105601,
+      "decoder": "xnb",
+      "files": ["regex:^Content/Images/Item_[0-9]+\\.xnb$"],
+      "clientBuilds": {"v6.2.1": [24893155]}
+    },
+    "xnb": {"alpha": "straight"},
+    "secrets": []
+  }
 }
