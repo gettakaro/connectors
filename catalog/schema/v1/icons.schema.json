@@ -20,7 +20,7 @@
       "required": ["source", "input", "files"],
       "properties": {
         "source": {"enum": ["server-depot"]},
-        "decoder": {"enum": ["unreal"], "description": "A decoder container that reads the data files. Absent means an in-process parser."},
+        "decoder": {"enum": ["unreal", "unity"], "description": "A decoder container that reads the data files. Absent means an in-process parser."},
         "input": {"type": "string", "minLength": 1, "description": "The target's steam-depots input the data files come from."},
         "depots": {
           "type": "array",
@@ -100,6 +100,7 @@
       "required": ["source", "files"],
       "properties": {
         "source": {"const": "server-depot"},
+        "decoder": {"enum": ["unity"], "description": "A decoder container that reads the pixel files; it must equal data.decoder, because both roles are decoded from the same mounted tree."},
         "files": {
           "type": "array",
           "minItems": 1,

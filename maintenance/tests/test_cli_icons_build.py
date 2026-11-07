@@ -475,3 +475,136 @@ def test_tint_multiply_floors_each_channel(run: Any, tmp_path: Path) -> None:
     index = json.loads((out / "pack/fixture-846/index.json").read_text())
     with Image.open(out / "pack/fixture-846" / index["icons"]["fixture-circle"]) as image:
         assert image.convert("RGBA").getpixel((4, 4)) == (156, 128, 0, 255)  # rounding would give 157, 128, 1
+
+
+# ------------------------------------------------------------------------------------------- atlas-cut
+
+
+def _atlas_pixel(x: int, y: int) -> tuple[int, int, int, int]:
+    return (x * 30, y * 40, 100, 255)
+
+
+def _atlas_document(tmp_path: Path, operation: dict[str, Any]) -> Path:
+    """The first recipe's layer is an 8x6 atlas (top row first) whose pixel (x, y) is ``_atlas_pixel(x, y)``."""
+    copy = _fixture_copy(tmp_path)
+    atlas = Image.new("RGBA", (8, 6))
+    for y in range(6):
+        for x in range(8):
+            atlas.putpixel((x, y), _atlas_pixel(x, y))
+    atlas.save(copy / "images" / "atlas.png", format="PNG")
+    document = json.loads((copy / "recipes.json").read_text())
+    document["recipes"][0]["layers"][0] = {"image": "images/atlas.png", "ops": [operation]}
+    (copy / "recipes.json").write_text(json.dumps(document))
+    return copy / "recipes.json"
+
+
+def _atlas_cut_result(run: Any, tmp_path: Path, **parameters: Any) -> Image.Image:
+    recipes = _atlas_document(tmp_path, {"op": "atlas-cut", **parameters})
+    code, payload, _, out = _build(run, tmp_path, recipes=recipes)
+    assert code == 0, payload
+    index = json.loads((out / "pack/fixture-846/index.json").read_text())
+    with Image.open(out / "pack/fixture-846" / index["icons"]["fixture-circle"]) as image:
+        return image.convert("RGBA")
+
+
+def _pixels(image: Image.Image) -> list[list[Any]]:
+    return [[image.getpixel((x, y)) for x in range(image.width)] for y in range(image.height)]
+
+
+def test_atlas_cut_reads_the_rect_from_the_bottom_left(run: Any, tmp_path: Path) -> None:
+    image = _atlas_cut_result(run, tmp_path, rect=[2, 1, 3, 2], rotation="none")
+    # y 1..3 from the bottom of a 6-row atlas is rows 3 and 4 from the top.
+    assert _pixels(image) == [[_atlas_pixel(x, y) for x in (2, 3, 4)] for y in (3, 4)]
+
+
+def test_atlas_cut_rounds_half_to_even_in_both_directions(run: Any, tmp_path: Path) -> None:
+    image = _atlas_cut_result(run, tmp_path, rect=[1.5, 0.5, 2, 2], rotation="none")
+    # l=round(1.5)=2, r=round(3.5)=4, b=round(0.5)=0, t=round(2.5)=2: columns 2..3, rows 4..5 from the top.
+    assert _pixels(image) == [[_atlas_pixel(x, y) for x in (2, 3)] for y in (4, 5)]
+    image = _atlas_cut_result(run, tmp_path / "second", rect=[1.4, 0.6, 2, 2], rotation="none")
+    # l=1, r=round(3.4)=3, b=1, t=round(2.6)=3: columns 1..2, rows 3..4.
+    assert _pixels(image) == [[_atlas_pixel(x, y) for x in (1, 2)] for y in (3, 4)]
+
+
+@pytest.mark.parametrize(
+    ("rotation", "source"),
+    [
+        ("none", lambda w, h, x, y: (x, y)),
+        ("flip-horizontal", lambda w, h, x, y: (w - 1 - x, y)),
+        ("flip-vertical", lambda w, h, x, y: (x, h - 1 - y)),
+        ("rotate-180", lambda w, h, x, y: (w - 1 - x, h - 1 - y)),
+        ("rotate-90", lambda w, h, x, y: (w - 1 - y, x)),
+    ],
+    ids=["none", "flip-horizontal", "flip-vertical", "rotate-180", "rotate-90"],
+)
+def test_atlas_cut_undoes_each_packing_rotation(run: Any, tmp_path: Path, rotation: str, source: Any) -> None:
+    # The cut is 3x2 at atlas columns 1..3 and rows 3..4 from the top.
+    image = _atlas_cut_result(run, tmp_path, rect=[1, 1, 3, 2], rotation=rotation)
+    width, height = (2, 3) if rotation == "rotate-90" else (3, 2)
+    assert image.size == (width, height)
+    for y in range(height):
+        for x in range(width):
+            cut_x, cut_y = source(3, 2, x, y)
+            assert image.getpixel((x, y)) == _atlas_pixel(1 + cut_x, 3 + cut_y)
+
+
+def test_atlas_cut_places_a_trimmed_sprite_in_its_frame(run: Any, tmp_path: Path) -> None:
+    image = _atlas_cut_result(run, tmp_path, rect=[0, 0, 2, 2], rotation="none", canvas=[4, 5], offset=[1, 1])
+    assert image.size == (4, 5)
+    # paste_left=1, paste_top=5-1-2=2; the cut is columns 0..1 of atlas rows 4..5.
+    for y in range(5):
+        for x in range(4):
+            inside = 1 <= x < 3 and 2 <= y < 4
+            expected = _atlas_pixel(x - 1, 4 + y - 2) if inside else (0, 0, 0, 0)
+            assert image.getpixel((x, y)) == expected
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        {"op": "atlas-cut", "rotation": "none"},
+        {"op": "atlas-cut", "rect": [0, 0, 2, 2]},
+        {"op": "atlas-cut", "rect": [0, 0, 2], "rotation": "none"},
+        {"op": "atlas-cut", "rect": [0, 0, 2, 2, 1], "rotation": "none"},
+        {"op": "atlas-cut", "rect": [-1, 0, 2, 2], "rotation": "none"},
+        {"op": "atlas-cut", "rect": [0, 0, 0, 2], "rotation": "none"},
+        {"op": "atlas-cut", "rect": [0, 0, 2, 2], "rotation": "rotate-270"},
+        {"op": "atlas-cut", "rect": [0, 0, 2, 2], "rotation": "none", "canvas": [4, 4]},
+        {"op": "atlas-cut", "rect": [0, 0, 2, 2], "rotation": "none", "offset": [1, 1]},
+        {"op": "atlas-cut", "rect": [0, 0, 2, 2], "rotation": "none", "extra": 1},
+    ],
+    ids=[
+        "no-rect",
+        "no-rotation",
+        "short-rect",
+        "long-rect",
+        "negative",
+        "zero-width",
+        "unknown-rotation",
+        "canvas-only",
+        "offset-only",
+        "extra-key",
+    ],
+)
+def test_a_malformed_atlas_cut_is_refused(run: Any, tmp_path: Path, operation: dict[str, Any]) -> None:
+    code, payload, _, out = _build(run, tmp_path, recipes=_atlas_document(tmp_path, operation))
+    assert code == 2 and "invalid" in payload["error"]
+    assert not out.exists() or not list(out.rglob("index.json"))
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [
+        {"rect": [6, 0, 4, 2], "rotation": "none"},
+        {"rect": [0, 5, 2, 2], "rotation": "none"},
+        {"rect": [0, 0, 2, 2], "rotation": "none", "canvas": [3, 3], "offset": [2, 2]},
+    ],
+    ids=["past-the-right-edge", "past-the-top-edge", "does-not-fit-the-canvas"],
+)
+def test_an_atlas_cut_that_does_not_fit_fails_the_build_naming_the_recipe(
+    run: Any, tmp_path: Path, parameters: dict[str, Any]
+) -> None:
+    recipes = _atlas_document(tmp_path, {"op": "atlas-cut", **parameters})
+    code, payload, _, out = _build(run, tmp_path, recipes=recipes)
+    assert code == 6 and payload["recipe"] == "fixture-circle"
+    assert not out.exists() or not list(out.rglob("index.json"))

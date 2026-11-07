@@ -48,6 +48,18 @@ against codes derived from game data and the report says so).
   coloured by a tint, texture times colour with a colour alpha of 1 (grey 128 under `#80ff40` is
   64, 128, 32). Mappers normalize game tint syntaxes into this form; the op never parses game text. A
   missing or malformed `color`, an extra key on either op, or any other op name is exit 2.
+  `{"op": "atlas-cut", "rect": [x, y, w, h], "rotation": "none", "canvas": [cw, ch], "offset": [ox, oy]}` cuts
+  one Unity sprite from its atlas (the layer image, `W x H`, top row first). `rect` is the sprite's `textureRect` in
+  Unity texels with the **origin at the bottom-left** (four numbers >= 0, `w` and `h` > 0); edges are
+  `l = round(x)`, `r = round(x + w)`, `b = round(y)`, `t = round(y + h)` with Python's `round` (half to even, which is
+  what Pillow's float crop does inside UnityPy), a rect outside the atlas is exit 6, and the cut is
+  `crop((l, H - t, r, H - b))`. `rotation` (required) undoes the sprite's packing rotation with a transpose table
+  that is UnityPy's `SpriteHelper` conjugated by its final vertical flip: `none` nothing, `flip-horizontal`
+  `FLIP_LEFT_RIGHT`, `flip-vertical` `FLIP_TOP_BOTTOM`, `rotate-180` `ROTATE_180`, `rotate-90` `ROTATE_90` (UnityPy's
+  `ROTATE_270`, taken in bottom-up space). `canvas` (the sprite's full `rect` size) and `offset` (its
+  `textureRectOffset`, origin bottom-left) come together or not at all: the cut is pasted on a transparent canvas of
+  `(round(cw), round(ch))` at `left = round(ox)`, `top = round(ch) - round(oy) - cut height`, the frame the game
+  draws a trimmed sprite in (a cut that does not fit is exit 6). The op never resamples.
   `measuredAgainst` can only be `game-data`.
 - Optional: `rule` on a recipe or unmatched entry (`^[a-z][a-z0-9-]*$`, how it was mapped), `detail` on
   an unmatched entry (at most 256 characters, no control characters) and `codesFrom` on the document
@@ -100,7 +112,9 @@ target fingerprint.
 - `pixels` comes in two shapes. With `source: "server-depot"` the pixels are files of the same server
   depot as the data: `files` are DepotDownloader selectors with the semantics of `data.files`, fetched in
   the one filtered download together with the data files (the cache key hashes both lists), and the
-  shape takes nothing else (`app`, `depot`, `decoder`, `access` and `clientBuilds` are schema errors). A
+  shape takes nothing else (`app`, `depot`, `access` and `clientBuilds` are schema errors; an optional
+  `decoder: "unity"` names the container that decodes the pixel files, and the `icons-server-pixels-decoder` check
+  requires it to equal `data.decoder`, because both roles are decoded from the one mounted tree). A
   route of this shape builds without a client: `icons build` refuses `--client` (exit 2, before any
   download), runs no client check, and records no `client` block, no client build and no client warning.
   With `source: "client"`, `app` and `depot` are the Steam client app and depot, used for the
@@ -410,6 +424,100 @@ Observed with the real decoder image against server build 25792439 (depot 443032
 - Layer tints are not supported (no tint field was observed in the data; an item with one would be unmatched).
 - Encrypted containers (VEIN) need the planner to read encrypted directory indexes (#747).
 
+## Unity games: the Unity decoder and Valheim
+
+### The Unity decoder
+
+`maintenance/decoders/unity/` (`Dockerfile`, `requirements.in`, `requirements.lock`, `export.py`) follows the
+decoder-container contract above unchanged. The context hash now also leaves out `__pycache__`.
+
+- **Pins.** `FROM python:3.12-slim-bookworm@sha256:...` (digest resolved 2026-11-07). `requirements.in` is exactly
+  `UnityPy==1.25.2`; `requirements.lock` is `uv pip compile requirements.in --generate-hashes --python-version 3.12
+  --python-platform x86_64-manylinux_2_28 --only-binary :all:` and the image installs it with `pip install
+  --no-deps --require-hashes --only-binary=:all:`, so no sdist and no build step ever runs. UnityPy 1.25.3 and later
+  depend on `tpk-ar`, which PyPI ships only as an sdist, so 1.25.2 (2026-07-09) is the newest release that installs
+  from wheels alone; it reads the Unity 6000.0.75f1 bundles of the current Valheim build (see the findings).
+  `python -m compileall` runs at build time and the container sets `PYTHONDONTWRITEBYTECODE=1`, so nothing is written
+  under `--read-only`. The user is `10001:10001`. The `ttgen` extra (a type-tree generator) is not installed: it
+  would be a new unpinned tool and Valheim's bundles carry their type trees.
+- **Licences** (from each wheel's metadata): UnityPy, texture2ddecoder, etcpak, astc-encoder-py, fmod_toolkit,
+  pyfmodex and brotli are MIT; attrs MIT; Pillow MIT-CMU (HPND); lz4 BSD; fsspec BSD-3-Clause; archspec Apache-2.0 or
+  MIT. Nothing forbids local use. `fmod_toolkit` and `pyfmodex` are only imported (the FMOD library is not
+  downloaded and audio is never decoded), and the container has no network.
+- **Request.** `{"schemaVersion": 1, "decoder": "unity", "settings": {"cabIndex": {<cab>: <bundle path>}} | {},
+  "root": "/game", "exports": [...]}`. Every `files` entry must stay inside `/game` (absolute, `..` and links out are
+  `failed`). An object reference is `{"cab": <lower-cased serialized-file name>, "pathId": <int>}` or `null`
+  (`fileID 0` is the object's own file, `fileID n` is `externals[n-1]`, `fileID 0` with `pathID 0` is `null`).
+- **Export kinds** (generic Unity facts, no game logic; output is sorted by `(bundle, pathId)`):
+  `bundle-index {files}` lists each bundle's Unity version and serialized files; `monobehaviours {files, script
+  {class, namespace, assembly}, fields}` dumps the listed dotted field paths of every MonoBehaviour whose script
+  matches (a missing path is `failed`, naming the path); `sprite {ref}` gives name, `rect`, `textureRect`,
+  `textureRectOffset`, packing, texture, alpha texture and atlas references, reading the render data from the
+  SpriteAtlas entry when the sprite has one, like UnityPy's `SpriteHelper`; `texture {ref}` is a PNG of mip 0 in image
+  orientation (a format UnityPy cannot decode is `unsupported-format`, a picture over 4096 px is `failed`);
+  `sprite-image {ref}` is UnityPy's own cut, the reference the `atlas-cut` op is checked against.
+- **Memory.** Bundles are walked one at a time in sorted order, the environment dropped and collected before the next;
+  scans take two passes (MonoScripts, then the matching MonoBehaviours) because the scripts live in a shared bundle.
+  Reference kinds keep at most four bundles open. No worker pool. Progress goes to stderr only; the manifest holds no
+  timings or memory figures, so the build record stays deterministic.
+- **Not covered by CI.** The real image is built and run by the bring-up and the live run, not in CI; CI proves the
+  adapter, the session and the mapper against `fake_icons_decoder.py` and synthetic fixtures.
+
+### Valheim
+
+`games/valheim/icons.py` (mapper `valheim`, pack `valheim`). The pack is built from the anonymous server depot
+(app 896660, depot 896661) alone: the item data and the art are in the roughly 800 asset bundles under
+`valheim_server_Data/StreamingAssets/SoftRef/Bundles/`, selected by one regex that serves both the data and the
+pixels roles. No game client is used.
+
+- **Codes** follow the connector's `ListItemsAsync`: the `prefab.name` of every `ZNetScene.m_prefabs` entry whose root
+  GameObject carries an `ItemDrop`, the first of a repeated name winning. A prefab reference is matched to an
+  `ItemDrop` by the GameObject reference (the root component, as `GetComponent` does), never by name; `ItemDrop`
+  copies in other bundles that no `m_prefabs` entry points at are ignored.
+- **Icon** is `m_itemData.m_shared.m_icons[0]`. An empty list or a `null` first entry is `no-icon-in-game` (rule
+  `none`); more than one entry is rule `first-of-variants`, otherwise `icon`. The sprite and its atlas texture are
+  described by the decoder; each atlas PNG is copied once into the build's textures root and every recipe is one
+  `atlas-cut` layer (with `canvas` and `offset` only for a sprite whose `textureRect` differs from its `rect`, or has
+  an offset). A tight-packed sprite, one with a separate alpha texture, or an undecodable atlas format is unmatched
+  (`unsupported-sprite`, `unsupported-texture`); a reference into no bundle is `unresolved-reference`.
+- **Reference check on every build.** For every sprite with a packing rotation, the first 16 codes by sorted code and
+  every trimmed sprite (capped at 64 sprites) the op's plain cut (no canvas) is compared pixel for pixel with
+  UnityPy's own `sprite-image`. A difference adds the recipe flag `cut-differs-from-reference` and a note;
+  `details.referenceCheck` is `{sampled, equal, rotated}`. The canvas and offset placement is not covered by it
+  (UnityPy ignores the offset); it is checked on the contact sheet.
+- **Exit codes.** No bundles in the depot is 4; no `ZNetScene`, `ZNetScene`s with different `m_prefabs`, one
+  serialized file in two bundles, a decoder failure or an `atlas-cut` outside its atlas or canvas is 6; a missing
+  docker CLI is 2, before any download; `--client` is 2.
+
+### Valheim bring-up findings
+
+Observed with the real decoder image (UnityPy 1.25.2) against server build 26266951 (depot 896661, manifest
+6965848522742639928), 2026-11-07.
+
+- **Bundles.** 798 files under `SoftRef/Bundles/`, all Unity 6000.0.75f1, 801 serialized files, none in two bundles.
+- **Scripts.** Every MonoScript (454) is in one shared bundle, so the scan needs both passes. `ZNetScene` and
+  `ItemDrop` are `assembly_valheim` with an empty namespace. Three bundles hold a `ZNetScene` MonoBehaviour; all three
+  list the same 4,644 prefabs (after normalizing their external file ids) in one serialized file, none null, none
+  outside the bundles. 1,710 `ItemDrop` components, one per GameObject.
+- **Type trees.** Present for both behaviours; `m_itemData.m_shared.m_icons` resolves; no type-tree generator needed.
+- **Codes.** 1,164 item codes, 3,480 prefabs without an `ItemDrop`, no repeated names, 17 prefabs with several icons.
+  994 codes have an icon, 170 have none (creature attacks, boss weapons, `Charred_*`, hair), which is what the earlier
+  spike found.
+- **Sprites.** 911 distinct first-icon sprites, all in the one atlas serialized file, all through a SpriteAtlas
+  render-data entry, all rectangle-packed, none with a separate alpha texture. Every packing rotation is `none`: the
+  rotation table is verified synthetically only. 59 sprites have a non-zero `textureRectOffset` and 64 have a
+  `textureRect` size that differs from `rect`; their rects and offsets are fractional.
+- **Atlas.** One texture, 4096x4096, format BC7, decoded by UnityPy (exactly the 4096 px limit).
+- **Hardening.** The container ran with `--network none --read-only` and no write outside `/tmp` and `/out`.
+
+### Known limitations
+
+- Coverage is measured against codes derived from game data, not against a live code list from a staging Valheim
+  server (#811 skipped); a human review of the pack stays open.
+- No sprite in the current build is rotated, so the rotation table is proven by synthetic tests and by UnityPy's own
+  `SpriteHelper` source, not by live data.
+- Tight-packed sprites and sprites with a separate alpha texture are not supported (none exist in this build).
+
 ## Keeping packs current
 
 `takaro-maint scan` adds an Icon Pack rebuild line to the acceptance checklist of every new-build maintenance
@@ -584,9 +692,9 @@ only against the S3 fake, never against production.
 | 0 | ok, including a dry run and a republish where nothing changed |
 | 2 | usage or configuration: a bad flag or recipe document, `--env` other than `staging` (`publish`) or other than `staging`/`production` (the others), a `_store/` or otherwise invalid game or key, a missing `STG_R2_*` / `PROD_R2_*` variable, a non-https endpoint, staging and production resolving to the same bucket, a non-empty `--out`, an unsupported op or multi-layer recipe, a game without an `icons` block, `--recipes` and `--game` both or neither, `--client` without `--game`, a missing `--client` for a client-sourced build, `--client` on a route whose pixels come from the server depot, an unknown code or object, a malformed `--object`, `--code` and `--object` both or neither, `--enabled` other than `true`/`false` |
 | 3 | a catalog build or `inputs` for a target that does not exist |
-| 4 | a recipe image file is missing, or there is no index for the game in the environment being read; a catalog build whose `--client` is not a directory or lacks a listed pack, or whose pinned server manifest Steam will not serve; a data file a mapper requires that the depot did not serve (7d2d: the XML and localization files, named in the error) |
+| 4 | a recipe image file is missing, or there is no index for the game in the environment being read; a catalog build whose `--client` is not a directory or lacks a listed pack, or whose pinned server manifest Steam will not serve; a data file a mapper requires that the depot did not serve (7d2d: the XML and localization files, named in the error); Valheim: no asset bundle under `SoftRef/Bundles/` |
 | 5 | a filtered depot cache that still does not match its marker after one fresh download; the index read back after upload differs from what was sent; a copied object does not hash to its name; an object is still present after a delete |
-| 6 | a malformed texture pack, a `trim` of a fully transparent image; 7d2d: an XML file with a DOCTYPE or ENTITY, malformed XML, or a localization file without a `Key` or `english` column |
+| 6 | a malformed texture pack, a `trim` of a fully transparent image; 7d2d: an XML file with a DOCTYPE or ENTITY, malformed XML, or a localization file without a `Key` or `english` column; Valheim: no or conflicting `ZNetScene`, one serialized file in two bundles, a Unity decoder failure, an `atlas-cut` outside its atlas or canvas |
 | 7 | contract violation in the built pack, the local pack, the live index or the merged index; a staging object that is missing or is not a valid WebP of at most 128px |
 | 10 | a bucket read, upload or delete failed (S3 error, unreachable endpoint, access denied) |
 

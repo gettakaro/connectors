@@ -1,0 +1,28 @@
+{
+  "name": "bad-format",
+  "rect": [
+    0,
+    0,
+    8,
+    8
+  ],
+  "textureRect": [
+    16,
+    0,
+    8,
+    8
+  ],
+  "textureRectOffset": [
+    0,
+    0
+  ],
+  "packed": true,
+  "packingMode": "rectangle",
+  "packingRotation": "none",
+  "texture": {
+    "cab": "cab-d",
+    "pathId": 402
+  },
+  "alphaTexture": null,
+  "atlas": null
+}

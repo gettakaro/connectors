@@ -19,7 +19,9 @@ from ..exit_codes import UsageError
 from . import acquire, build, client_ranges, mappers, provenance
 from .catalog_route import IconsRoute, route_for
 from .decoders import container
+from .decoders import unity as unity_decoder
 from .decoders import unreal as unreal_decoder
+from .unity_session import UnitySession
 from .unreal_session import UnrealSession
 
 CODES_FROM = (
@@ -84,11 +86,14 @@ def build_from_catalog(
         container.require_docker()
     client_side = _client_side(route, client)
     warnings = client_side.warnings if client_side else []
+    if route.uses_unity:
+        container.require_docker()
 
     cache = paths.cache_dir()
     work_root = cache / "icons" / "work"
     work_root.mkdir(parents=True, exist_ok=True)
     session: UnrealSession | None = None
+    unity_session: UnitySession | None = None
     image: container.DecoderImage | None = None
     oodle_sha256 = ""
     with tempfile.TemporaryDirectory(dir=work_root, prefix="build-") as scratch:
@@ -97,6 +102,8 @@ def build_from_catalog(
             oodle_path = unreal_decoder.ensure_oodle(cache)
             oodle_sha256 = unreal_decoder.read_oodle_lock().sha256
             image = container.ensure_image(unreal_decoder.DECODER_NAME)
+        if route.uses_unity:
+            image = container.ensure_image(unity_decoder.DECODER_NAME)
         data = acquire.fetch_data(route, cache=cache, work=work)
         codes_from = CODES_FROM.format(
             description=mapper.codes_description,
@@ -123,6 +130,10 @@ def build_from_catalog(
                 utoc_files=route.pixel_files,
                 mirror_base=mirror_base,
             )
+        elif image is not None and route.uses_unity:
+            unity_session = UnitySession(
+                unity_decoder.UnityDecoder(image, cache), data_root=data.root, data_tree_sha256=data.tree_sha256
+            )
         elif client_side is not None:
             pixels = mappers.open_pixels(client_side.directory, route.pixel_files)
         context = mappers.MapContext(
@@ -133,12 +144,15 @@ def build_from_catalog(
             codes_from_inputs={"app": route.steam.app, "buildid": route.steam.buildid},
             unreal=session,
             warn=output.warn,
+            unity=unity_session,
         )
         mapped = mapper.run(context)
         document = {**mapped.document, "game": route.pack_game}
         build.validate_recipes(document)
         recipes_bytes = (json.dumps(document, indent=2) + "\n").encode("utf-8")
         record = _provenance(route, data, mapped, mapper, client_side, session, image, oodle_sha256, settings)
+        if unity_session is not None and image is not None:
+            _add_unity_pixels(record, route, unity_session, image, mapped)
         record["warnings"] = warnings
         result = build.build_pack(
             document,
@@ -183,6 +197,12 @@ def build_from_catalog(
             "status": client_side.status,
             "expected": client_side.expected,
         }
+    if unity_session is not None and image is not None:
+        report["decoder"] = {
+            "name": unity_decoder.DECODER_NAME,
+            "imageId": image.id,
+            "contextSha256": image.context_sha256,
+        }
     if session is not None and session.mirror is not None and image is not None:
         report["decoder"] = {
             "name": unreal_decoder.DECODER_NAME,
@@ -194,6 +214,12 @@ def build_from_catalog(
 
 
 def _pixels_report(route: IconsRoute, mapped: mappers.MapResult) -> dict[str, Any]:
+    if route.uses_unity:
+        return {
+            "source": "server-depot",
+            "decoder": unity_decoder.DECODER_NAME,
+            "atlases": len(mapped.details["atlasFiles"]),
+        }
     if route.pixel_source == "server-depot":
         return {"source": "server-depot", "files": mapped.details["icons"]["files"]}
     return {"files": len(route.pixel_files)}
@@ -227,8 +253,15 @@ def _provenance(
             "files": data.files,
             "treeSha256": data.tree_sha256,
         },
-        "mapper": {"name": mapper.name, "version": mapper.version, "notes": mapped.notes, **mapped.details},
+        "mapper": {
+            "name": mapper.name,
+            "version": mapper.version,
+            "notes": mapped.notes,
+            **{key: value for key, value in mapped.details.items() if key != "atlasFiles"},
+        },
     }
+    if route.uses_unity:
+        return record
     if client_side is None:
         record["pixels"] = _server_pixels_record(route, mapped)
         record["tools"] = provenance.tools_record("none (PNG and XML read in-process)")
@@ -245,6 +278,30 @@ def _provenance(
         }
         record["tools"] = provenance.tools_record()
     return record
+
+
+def _add_unity_pixels(
+    record: dict[str, Any],
+    route: IconsRoute,
+    session: UnitySession,
+    image: container.DecoderImage,
+    mapped: mappers.MapResult,
+) -> None:
+    """Atlas PNGs come out of the decoder; the bundles they were cut from are already in ``data.treeSha256``."""
+    record["decoder"] = {
+        "name": unity_decoder.DECODER_NAME,
+        "imageId": image.id,
+        "contextSha256": image.context_sha256,
+        "tool": session.tool,
+    }
+    record["pixels"] = {
+        "source": "server-depot",
+        "decoder": unity_decoder.DECODER_NAME,
+        "selectors": route.pixel_selectors,
+        "atlases": mapped.details["atlasFiles"],
+        "sprites": mapped.details["sprites"],
+    }
+    record["tools"] = provenance.tools_record(f"{unity_decoder.DECODER_NAME} container ({image.tag})")
 
 
 def _server_pixels_record(route: IconsRoute, mapped: mappers.MapResult) -> dict[str, Any]:

@@ -14,7 +14,10 @@ from typing import Any
 from ..exit_codes import BuildFailed
 from . import client_ranges
 from .decoders import container
+from .decoders.outcomes import Missing, Outcome, Texture, Unsupported
 from .decoders.unreal import UnrealDecoder
+
+__all__ = ["Missing", "Outcome", "Texture", "TextureRef", "UnrealSession", "Unsupported"]
 
 MAX_LISTED_FAILURES = 20
 
@@ -26,27 +29,6 @@ class TextureRef:
     package: str
     object: str
     stem: str
-
-
-@dataclass(frozen=True)
-class Texture:
-    path: Path
-    width: int
-    height: int
-    format: str
-
-
-@dataclass(frozen=True)
-class Missing:
-    detail: str
-
-
-@dataclass(frozen=True)
-class Unsupported:
-    detail: str
-
-
-Outcome = Texture | Missing | Unsupported
 
 
 class UnrealSession:

@@ -537,6 +537,20 @@ def _check_icons_unreal(result: ValidationResult, block: dict[str, Any], file: s
     )
 
 
+def _check_icons_server_pixels_decoder(result: ValidationResult, block: dict[str, Any], file: str) -> None:
+    """Server-depot pixels and data are decoded from one mounted tree, so a pixels decoder must be the data decoder."""
+    pixels = block.get("pixels") or {}
+    decoder = pixels.get("decoder")
+    applies = pixels.get("source") == "server-depot" and decoder is not None
+    data_decoder = (block.get("data") or {}).get("decoder")
+    result.add(
+        "icons-server-pixels-decoder",
+        not applies or decoder == data_decoder,
+        f"icons.pixels.decoder {decoder!r} must equal icons.data.decoder {data_decoder!r} for server-depot pixels",
+        file,
+    )
+
+
 def _check_icons(result: ValidationResult, catalog: Catalog) -> None:
     """The optional ``icons`` block: what it names must exist, without asking the network."""
     for game in sorted(catalog.games.values(), key=lambda game: game.id):
@@ -559,6 +573,7 @@ def _check_icons(result: ValidationResult, catalog: Catalog) -> None:
             file,
         )
         _check_icons_unreal(result, block, file)
+        _check_icons_server_pixels_decoder(result, block, file)
         if not game.targets:
             # Trimmed test catalogs keep a game record and drop its targets; there is nothing to check against.
             continue

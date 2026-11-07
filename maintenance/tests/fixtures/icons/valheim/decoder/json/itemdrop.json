@@ -1,0 +1,462 @@
+[
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 510
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 10,
+      "name": "SynthPlain"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 101
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 511
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 11,
+      "name": "SynthTri"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 102
+        },
+        {
+          "cab": "cab-c",
+          "pathId": 103
+        },
+        {
+          "cab": "cab-c",
+          "pathId": 104
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 512
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 12,
+      "name": "SynthDup"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 105
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 514
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 14,
+      "name": "SynthTwinA"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 108
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 515
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 15,
+      "name": "SynthTwinB"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 108
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 516
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 16,
+      "name": "SynthRoundDown"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 109
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 517
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 17,
+      "name": "SynthRoundUp"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 110
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 518
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 18,
+      "name": "SynthHalfEvenLow"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 111
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 519
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 19,
+      "name": "SynthHalfEvenHigh"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 112
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 520
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 20,
+      "name": "SynthFlipH"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 113
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 521
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 21,
+      "name": "SynthFlipV"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 114
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 522
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 22,
+      "name": "SynthTurn180"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 115
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 523
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 23,
+      "name": "SynthTurn90"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 116
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 524
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 24,
+      "name": "SynthTrimmed"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 117
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 525
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 25,
+      "name": "SynthViaAtlas"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 118
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 526
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 26,
+      "name": "SynthTight"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 119
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 527
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 27,
+      "name": "SynthAlpha"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 120
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 528
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 28,
+      "name": "SynthBadFormat"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 121
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 529
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 29,
+      "name": "SynthLost"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-x",
+          "pathId": 1
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 530
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 30,
+      "name": "SynthBlank"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": []
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "object": {
+      "cab": "cab-b",
+      "pathId": 531
+    },
+    "gameObject": {
+      "cab": "cab-b",
+      "pathId": 31,
+      "name": "SynthHollow"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        null
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0003",
+    "object": {
+      "cab": "cab-c",
+      "pathId": 901
+    },
+    "gameObject": {
+      "cab": "cab-c",
+      "pathId": 900,
+      "name": "SynthDup"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 106
+        }
+      ]
+    }
+  },
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0004",
+    "object": {
+      "cab": "cab-d",
+      "pathId": 301
+    },
+    "gameObject": {
+      "cab": "cab-d",
+      "pathId": 300,
+      "name": "SynthPlain"
+    },
+    "fields": {
+      "m_itemData.m_shared.m_icons": [
+        {
+          "cab": "cab-c",
+          "pathId": 107
+        }
+      ]
+    }
+  }
+]

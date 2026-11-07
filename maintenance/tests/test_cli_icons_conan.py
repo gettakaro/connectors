@@ -173,7 +173,7 @@ def test_the_real_catalog_validates(run: Any) -> None:
         (lambda block: block["pixels"]["files"].append("ConanSandbox/Content/Paks/x.ucas"), "icons-iostore-files"),
         (lambda block: block["pixels"].update(access="mirror"), "game-schema"),
         (lambda block: block["pixels"].update(decoder="unity"), "game-schema"),
-        (lambda block: block["data"].update(decoder="unity"), "game-schema"),
+        (lambda block: block["data"].update(decoder="bogus"), "game-schema"),
     ],
     ids=["unreal-missing", "key-undeclared", "not-utoc", "unknown-access", "unknown-decoder", "unknown-data-decoder"],
 )
