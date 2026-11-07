@@ -17,6 +17,7 @@ Environment it reads:
   FAKE_DECODER_FAIL   comma-separated export ids answered with ``errorKind: failed``
   FAKE_DECODER_DROP   an export id left out of the manifest
   FAKE_DECODER_ESCAPE an export id whose file is named ``../escape.png``
+  FAKE_DECODER_PLANT  ``symlink`` or ``hardlink``: plant that kind of entry in /out, as a hostile decoder could
 """
 
 from __future__ import annotations
@@ -165,6 +166,11 @@ def _run(argv: list[str]) -> int:
         "results": results,
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    plant = os.environ.get("FAKE_DECODER_PLANT")
+    if plant == "symlink":
+        (out / "json" / "planted.json").symlink_to("/etc/hostname")
+    elif plant == "hardlink":
+        os.link(next(path for path in game.rglob("*.utoc")), out / "json" / "planted.json")
     return 0
 
 

@@ -564,3 +564,15 @@ def test_the_generated_fixture_files_are_what_is_committed(tmp_path: Path) -> No
         committed = tree(FIXTURE / sub)
         assert generated == committed, sub
     assert (tmp_path / "decoder" / "index.json").read_bytes() == (FIXTURE / "decoder" / "index.json").read_bytes()
+
+
+@pytest.mark.parametrize("plant", ["symlink", "hardlink"])
+def test_a_link_planted_in_the_decoder_output_fails_the_build(
+    run: Any, env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plant: str
+) -> None:
+    monkeypatch.setenv("FAKE_DECODER_PLANT", plant)
+    out = tmp_path / "out"
+    code, payload, _ = build(run, env, out)
+    assert code == 6 and plant in payload["error"]
+    assert not (out / "pack").exists()
+    assert not list((paths.cache_dir() / "icons" / "decoded").glob("*/.takaro/complete.json"))

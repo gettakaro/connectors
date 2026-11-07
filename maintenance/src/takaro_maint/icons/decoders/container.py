@@ -20,6 +20,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import tempfile
 import uuid
@@ -268,8 +269,38 @@ def _validate_request(request: dict[str, Any]) -> None:
         raise UsageError("decoder export ids must be unique and match " + REQUEST_ID.pattern, ids=bad[:20])
 
 
+def check_tree(root: Path) -> None:
+    """Refuse an output tree holding anything but plain files and directories.
+
+    ``/out`` is writable by the decoder, which reads attacker-controlled game files. A symlink or a hardlinked
+    file planted there would make this tool follow it outside the tree when it hashes, reads or marks the output.
+    Nothing is followed: every entry is examined with ``lstat``.
+    """
+    pending = [root]
+    while pending:
+        with os.scandir(pending.pop()) as entries:
+            for entry in entries:
+                info = entry.stat(follow_symlinks=False)
+                if stat.S_ISLNK(info.st_mode):
+                    raise BuildFailed(f"the decoder output holds a symlink: {entry.path}", path=entry.path)
+                if stat.S_ISDIR(info.st_mode):
+                    pending.append(Path(entry.path))
+                elif not stat.S_ISREG(info.st_mode):
+                    raise BuildFailed(f"the decoder output holds a special file: {entry.path}", path=entry.path)
+                elif info.st_nlink > 1:
+                    raise BuildFailed(f"the decoder output holds a hardlinked file: {entry.path}", path=entry.path)
+
+
+def write_new(path: Path, text: str) -> None:
+    """Create ``path`` exclusively and without following a link planted at it."""
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
 def read_manifest(out: Path, expected_ids: list[str]) -> Manifest:
     """The manifest under ``out``, checked against the contract; any violation is a failed build."""
+    check_tree(out)
     manifest_path = out / "manifest.json"
     if not manifest_path.is_file():
         raise BuildFailed("the decoder wrote no manifest.json")
@@ -311,6 +342,8 @@ def _check_file(out: Path, result: dict[str, Any]) -> None:
     except UsageError as exc:
         raise BuildFailed(str(exc), export=result["id"]) from exc
     path = out / relative
+    if not path.resolve().is_relative_to(out.resolve()):
+        raise BuildFailed(f"{relative} resolves outside the decoder output", export=result["id"])
     if not path.is_file():
         raise BuildFailed(f"the decoder manifest names {relative} for {result['id']} but it was not written")
     if relative.endswith(".png"):
@@ -359,6 +392,7 @@ def run_cached(
     expected_ids = [str(export["id"]) for export in request["exports"]]
     marker = directory / DECODE_MARKER
     if marker.is_file():
+        check_tree(directory)
         recorded = json.loads(marker.read_text(encoding="utf-8"))["files"]
         if _output_hashes(directory) == recorded:
             output.info(f"decoded outputs {key[:12]} are already in the decode cache")
@@ -369,8 +403,8 @@ def run_cached(
     try:
         run(image, request, mounts, staging, env_names)
         (staging / DECODE_MARKER).parent.mkdir(parents=True, exist_ok=True)
-        (staging / DECODE_MARKER).write_text(
-            json.dumps({"image": image.id, "files": _output_hashes(staging)}, indent=2) + "\n", encoding="utf-8"
+        write_new(
+            staging / DECODE_MARKER, json.dumps({"image": image.id, "files": _output_hashes(staging)}, indent=2) + "\n"
         )
         directory.parent.mkdir(parents=True, exist_ok=True)
         os.replace(staging, directory)
