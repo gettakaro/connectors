@@ -49,8 +49,9 @@ def _promote(run: Any, *extra: str, game: str = GAME) -> tuple[int, Any, str]:
 def test_promote_into_empty_production(
     run: Any, staging: FakeS3, production: FakeS3, published: dict[str, Any]
 ) -> None:
-    code, payload, _ = _promote(run)
+    code, payload, stderr = _promote(run)
     assert code == 0 and payload["op"] == "icons promote"
+    assert "never removes" not in stderr
 
     assert [request.method for request in production.requests] == ["GET"] + ["HEAD"] * 5 + ["PUT"] * 6 + ["GET"]
     assert production.puts()[-1].key == INDEX_KEY
@@ -73,8 +74,9 @@ def test_promote_keeps_every_production_code(
     production_only, old_banner = "a" * 64 + ".webp", "b" * 64 + ".webp"
     production.seed(f"{GAME}/{production_only}", b"production art", "image/webp")
     seed_index(production, {"prod-only": production_only, "fixture-banner": old_banner})
-    code, payload, _ = _promote(run)
+    code, payload, stderr = _promote(run)
     assert code == 0, payload
+    assert "warning" in stderr and "prod-only" in stderr and "never removes" in stderr
 
     live = stored_index(production)["icons"]
     assert live["prod-only"] == production_only
@@ -92,8 +94,9 @@ def test_promote_keeps_every_production_code(
 def test_promote_is_idempotent(run: Any, staging: FakeS3, production: FakeS3, published: dict[str, Any]) -> None:
     assert _promote(run)[0] == 0
     production.requests.clear()
-    code, payload, _ = _promote(run)
+    code, payload, stderr = _promote(run)
     assert code == 0
+    assert "never removes" not in stderr
     assert production.puts() == []
     assert payload["index"]["action"] == "unchanged"
     assert len(payload["objects"]["skipped"]) == 5 and payload["objects"]["copied"] == []
