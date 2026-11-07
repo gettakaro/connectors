@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.8.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.7.0...dragonwilds-v0.8.0) (2026-11-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **7d2d:** name every asset after its game build and fail loudly on the wrong build ([#757](https://github.com/gettakaro/connectors/issues/757))
+
+### Bug Fixes
+
+* **7d2d:** name every asset after its game build and fail loudly on the wrong build ([#757](https://github.com/gettakaro/connectors/issues/757)) ([a19350f](https://github.com/gettakaro/connectors/commit/a19350f07a3267351c4837ec06edf9a66397e7b8))
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+
 ## [0.7.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.6.0...dragonwilds-v0.7.0) (2026-10-30)
 
 
