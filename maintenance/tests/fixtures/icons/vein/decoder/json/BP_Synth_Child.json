@@ -1,0 +1,14 @@
+[
+  {
+    "Type": "BlueprintGeneratedClass",
+    "Name": "BP_Synth_Child_C",
+    "ClassFlags": "CLASS_CompiledFromBlueprint"
+  },
+  {
+    "Type": "BP_Synth_Child_C",
+    "Name": "Default__BP_Synth_Child_C",
+    "Properties": {
+      "Weight": 0.5
+    }
+  }
+]

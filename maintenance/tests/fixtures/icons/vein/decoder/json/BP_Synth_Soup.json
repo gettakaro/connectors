@@ -1,0 +1,22 @@
+[
+  {
+    "Type": "BlueprintGeneratedClass",
+    "Name": "BP_Synth_Soup_C",
+    "ClassFlags": "CLASS_CompiledFromBlueprint"
+  },
+  {
+    "Type": "BP_Synth_Soup_C",
+    "Name": "Default__BP_Synth_Soup_C",
+    "Properties": {
+      "Weight": 0.5,
+      "Type": {
+        "ObjectName": "ItemType'IT_Synth'",
+        "ObjectPath": "/Game/Vein/ItemTypes/IT_Synth"
+      },
+      "Thumbnail": {
+        "AssetPathName": "/Game/Vein/Items/T_Thumb_BP_Synth_Soup_0.T_Thumb_BP_Synth_Soup_0",
+        "SubPathString": ""
+      }
+    }
+  }
+]

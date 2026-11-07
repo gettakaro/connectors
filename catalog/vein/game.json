@@ -23,7 +23,10 @@
             "branch": "public"
           }
         },
-        "knownBranches": ["experimental", "regex:^[0-9]+(\\.[0-9]+)*(h[0-9]+)?$"]
+        "knownBranches": [
+          "experimental",
+          "regex:^[0-9]+(\\.[0-9]+)*(h[0-9]+)?$"
+        ]
       }
     }
   },
@@ -42,5 +45,46 @@
   },
   "devServers": {
     "composeFile": "vein.yml"
+  },
+  "icons": {
+    "game": "vein",
+    "mapper": "vein",
+    "unreal": {
+      "engine": "GAME_UE5_6",
+      "aesKeyEnv": null
+    },
+    "data": {
+      "source": "server-depot",
+      "input": "server",
+      "depots": [
+        "2131402"
+      ],
+      "decoder": "unreal",
+      "files": [
+        "regex:^Vein/Content/Paks/pakchunk(0|1)-LinuxServer\\.pak$"
+      ]
+    },
+    "pixels": {
+      "source": "client",
+      "app": 1857950,
+      "depot": 1857952,
+      "decoder": "unreal",
+      "access": "pak-ranges",
+      "files": [
+        "Vein/Content/Paks/pakchunk0-Windows.pak",
+        "Vein/Content/Paks/pakchunk1-Windows.pak",
+        "Vein/Content/Paks/pakchunk104-Windows.pak",
+        "Vein/Content/Paks/pakchunk105-Windows.pak",
+        "Vein/Content/Paks/pakchunk13-Windows.pak",
+        "Vein/Content/Paks/pakchunk5-Windows.pak",
+        "Vein/Content/Paks/pakchunk8-Windows.pak"
+      ],
+      "clientBuilds": {
+        "25969514": [
+          25970224
+        ]
+      }
+    },
+    "secrets": []
   }
 }

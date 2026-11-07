@@ -172,9 +172,9 @@
         "depot": {"type": "integer", "minimum": 1},
         "decoder": {"enum": ["pz-texturepack", "unreal", "xnb"]},
         "access": {
-          "enum": ["files", "iostore-ranges"],
+          "enum": ["files", "iostore-ranges", "pak-ranges"],
           "default": "files",
-          "description": "files: the listed files are read whole. iostore-ranges: the listed .utoc files are read whole and only the .ucas byte ranges that hold the needed packages are copied."
+          "description": "files: the listed files are read whole. iostore-ranges: the listed .utoc files are read whole and only the .ucas byte ranges that hold the needed packages are copied. pak-ranges: the listed .pak files are legacy Unreal paks; only their footer, indexes and the byte ranges that hold the needed packages are copied."
         },
         "files": {
           "type": "array",
@@ -186,7 +186,7 @@
               {"type": "string", "pattern": "^regex:.+"}
             ]
           },
-          "description": "Exact client-relative paths in precedence order (a name held by several is taken from the first listed), or regex: entries with a case-insensitive pattern matched against client-relative paths. With access iostore-ranges only .utoc paths; their .ucas files are derived."
+          "description": "Exact client-relative paths in precedence order (a name held by several is taken from the first listed), or regex: entries with a case-insensitive pattern matched against client-relative paths. With access iostore-ranges only .utoc paths (their .ucas files are derived); with pak-ranges only .pak paths."
         },
         "clientBuilds": {
           "type": "object",

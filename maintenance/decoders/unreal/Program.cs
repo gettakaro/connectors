@@ -25,7 +25,7 @@ namespace TakaroUeExport;
 internal static class Program
 {
     private const string ToolName = "takaro-ue-export";
-    private const string ToolVersion = "1";
+    private const string ToolVersion = "2";
     private const int MaxEdge = 4096;
     private static readonly Regex IdPattern = new("^[a-z0-9][a-z0-9-]{0,63}$", RegexOptions.Compiled);
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
@@ -97,6 +97,8 @@ internal static class Program
                 ["bcnEncoder"] = typeof(BcDecoder).Assembly.GetName().Version?.ToString(),
                 ["dotnet"] = Environment.Version.ToString(),
                 ["engine"] = settings.GetProperty("engine").GetString(),
+                ["mounted"] = provider.MountedVfs.Count,
+                ["unloaded"] = provider.UnloadedVfs.Count,
             },
             ["results"] = results,
         };
@@ -146,6 +148,9 @@ internal static class Program
     private static Dictionary<string, object?> AssetRegistry(DefaultFileProvider provider, JsonElement export, string id, string outDir)
     {
         var classes = export.GetProperty("classes").EnumerateArray().Select(c => c.GetString()!).ToHashSet(StringComparer.Ordinal);
+        var tagNames = export.TryGetProperty("tags", out var requestedTags)
+            ? requestedTags.EnumerateArray().Select(t => t.GetString()!).ToList()
+            : new List<string> { "RowStructure" };
         var assets = new SortedDictionary<string, Dictionary<string, object?>>(StringComparer.Ordinal);
         var registries = provider.Files.Keys.Where(k => k.EndsWith("assetregistry.bin", StringComparison.OrdinalIgnoreCase)).OrderBy(k => k, StringComparer.Ordinal).ToList();
         foreach (var path in registries)
@@ -165,9 +170,12 @@ internal static class Program
                 }
 
                 var tags = new Dictionary<string, object?>();
-                if (asset.TagsAndValues.TryGetValue(new CUE4Parse.UE4.Objects.UObject.FName("RowStructure"), out var rowStructure))
+                foreach (var tagName in tagNames)
                 {
-                    tags["RowStructure"] = rowStructure;
+                    if (asset.TagsAndValues.TryGetValue(new CUE4Parse.UE4.Objects.UObject.FName(tagName), out var tagValue))
+                    {
+                        tags[tagName] = tagValue;
+                    }
                 }
 
                 assets[asset.ObjectPath] = new()
@@ -201,11 +209,7 @@ internal static class Program
     private static Dictionary<string, object?> PackageJson(DefaultFileProvider provider, JsonElement export, string id, string outDir)
     {
         var package = export.GetProperty("package").GetString()!;
-        if (!provider.TryLoadPackage(package, out var loaded))
-        {
-            throw new ExportFailure("not-found", package);
-        }
-
+        var loaded = LoadPackage(provider, package);
         var json = JsonConvert.SerializeObject(loaded.GetExports(), Formatting.Indented);
         var path = $"json/{id}.json";
         File.WriteAllText(Path.Combine(outDir, path), json + "\n", new UTF8Encoding(false));
@@ -216,11 +220,7 @@ internal static class Program
     {
         var package = export.GetProperty("package").GetString()!;
         var objectName = export.GetProperty("object").GetString()!;
-        if (!provider.TryLoadPackage(package, out var loaded))
-        {
-            throw new ExportFailure("not-found", package);
-        }
-
+        var loaded = LoadPackage(provider, package);
         var texture = loaded.GetExports().OfType<UTexture2D>().FirstOrDefault(t => t.Name == objectName)
             ?? throw new ExportFailure("not-found", $"{package}.{objectName}");
         var mip = texture.GetFirstMip() ?? throw new ExportFailure("failed", "texture has no mip with data");
@@ -244,6 +244,24 @@ internal static class Program
             ["mip"] = Array.IndexOf(texture.PlatformData.Mips, mip),
             ["bulk"] = BulkKind(mip.BulkData.BulkDataFlags.ToString()),
         });
+    }
+
+    // A package that is not mounted is "not-found"; one that is mounted but cannot be read reports why.
+    private static CUE4Parse.UE4.Assets.IPackage LoadPackage(DefaultFileProvider provider, string package)
+    {
+        if (provider.TryLoadPackage(package, out var loaded))
+        {
+            return loaded;
+        }
+
+        try
+        {
+            return provider.LoadPackage(package);
+        }
+        catch (Exception exception) when (exception is KeyNotFoundException or FileNotFoundException)
+        {
+            throw new ExportFailure("not-found", package);
+        }
     }
 
     private static string BulkKind(string flags) =>

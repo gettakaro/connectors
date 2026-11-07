@@ -358,7 +358,7 @@ def inputs_document(route: IconsRoute) -> dict[str, Any]:
         document["unreal"] = _unreal_inputs(route, cache)
         pixels_input = document["inputs"][1]
         pixels_input["access"] = route.pixel_access
-        if route.pixel_access == "iostore-ranges":
+        if route.pixel_access in ("iostore-ranges", "pak-ranges"):
             pixels_input["containers"] = route.pixel_files
             pixels_input["ranges"] = "computed during build from the mapping (expected about 130 MB)"
     return document

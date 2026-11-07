@@ -1,0 +1,18 @@
+[
+  {
+    "Type": "BlueprintGeneratedClass",
+    "Name": "BP_Synth_Food_C",
+    "ClassFlags": "CLASS_CompiledFromBlueprint"
+  },
+  {
+    "Type": "BP_Synth_Food_C",
+    "Name": "Default__BP_Synth_Food_C",
+    "Properties": {
+      "Weight": 0.5,
+      "Thumbnail": {
+        "AssetPathName": "/Game/Vein/Items/T_Thumb_BP_Synth_Food_0.T_Thumb_BP_Synth_Food_0",
+        "SubPathString": ""
+      }
+    }
+  }
+]

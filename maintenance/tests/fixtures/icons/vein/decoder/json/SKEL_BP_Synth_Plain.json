@@ -1,0 +1,18 @@
+[
+  {
+    "Type": "BlueprintGeneratedClass",
+    "Name": "SKEL_BP_Synth_Plain_C",
+    "ClassFlags": "CLASS_CompiledFromBlueprint"
+  },
+  {
+    "Type": "SKEL_BP_Synth_Plain_C",
+    "Name": "Default__SKEL_BP_Synth_Plain_C",
+    "Properties": {
+      "Weight": 0.5,
+      "Thumbnail": {
+        "AssetPathName": "/Game/Vein/Items/T_Thumb_SKEL_BP_Synth_Plain_0.T_Thumb_SKEL_BP_Synth_Plain_0",
+        "SubPathString": ""
+      }
+    }
+  }
+]

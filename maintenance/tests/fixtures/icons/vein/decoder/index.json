@@ -1,0 +1,150 @@
+{
+  "asset-registry": {
+    "file": "json/registry.json",
+    "meta": {
+      "assets": 0
+    }
+  },
+  "json:/Game/Vein/Items/BP_Synth_Abstract": {
+    "file": "json/BP_Synth_Abstract.json",
+    "meta": {
+      "exports": 2
+    }
+  },
+  "json:/Game/Vein/Items/BP_Synth_BadFormat": {
+    "file": "json/BP_Synth_BadFormat.json",
+    "meta": {
+      "exports": 2
+    }
+  },
+  "json:/Game/Vein/Items/BP_Synth_Chair": {
+    "file": "json/BP_Synth_Chair.json",
+    "meta": {
+      "exports": 2
+    }
+  },
+  "json:/Game/Vein/Items/BP_Synth_Child": {
+    "file": "json/BP_Synth_Child.json",
+    "meta": {
+      "exports": 2
+    }
+  },
+  "json:/Game/Vein/Items/BP_Synth_Food": {
+    "file": "json/BP_Synth_Food.json",
+    "meta": {
+      "exports": 2
+    }
+  },
+  "json:/Game/Vein/Items/BP_Synth_MissingTex": {
+    "file": "json/BP_Synth_MissingTex.json",
+    "meta": {
+      "exports": 2
+    }
+  },
+  "json:/Game/Vein/Items/BP_Synth_NoIcon": {
+    "file": "json/BP_Synth_NoIcon.json",
+    "meta": {
+      "exports": 2
+    }
+  },
+  "json:/Game/Vein/Items/BP_Synth_Plain": {
+    "file": "json/BP_Synth_Plain.json",
+    "meta": {
+      "exports": 2
+    }
+  },
+  "json:/Game/Vein/Items/BP_Synth_Soup": {
+    "file": "json/BP_Synth_Soup.json",
+    "meta": {
+      "exports": 2
+    }
+  },
+  "json:/Game/Vein/Items/SKEL_BP_Synth_Plain": {
+    "file": "json/SKEL_BP_Synth_Plain.json",
+    "meta": {
+      "exports": 2
+    }
+  },
+  "texture:/Game/Vein/Items/T_Thumb_BP_Synth_Food_0": {
+    "file": "png/BP_Synth_Food.png",
+    "meta": {
+      "width": 16,
+      "height": 16,
+      "format": "PF_DXT5"
+    },
+    "requires": [
+      {
+        "file": "Vein/Content/Paks/pakchunk0-Windows.pak",
+        "offset": 134,
+        "length": 105,
+        "sha256": "59b54f4d3ef6f33b0e65e151c38ac08786ca39c0981abecfbd1440fb07e8c8d3"
+      },
+      {
+        "file": "Vein/Content/Paks/pakchunk0-Windows.pak",
+        "offset": 292,
+        "length": 105,
+        "sha256": "221b6e8b04efa01f13d1c16ed9a37a89d9a817ff33df5b3c92ac203df18f9540"
+      }
+    ]
+  },
+  "texture:/Game/Vein/Items/T_Thumb_BP_Synth_Plain_0": {
+    "file": "png/BP_Synth_Plain.png",
+    "meta": {
+      "width": 16,
+      "height": 16,
+      "format": "PF_DXT5"
+    },
+    "requires": [
+      {
+        "file": "Vein/Content/Paks/pakchunk1-Windows.pak",
+        "offset": 480,
+        "length": 108,
+        "sha256": "b0d8d603c26bbb2e651eea19d7142ae4733c266ec3fa330f45edc37aa4b63ddc"
+      },
+      {
+        "file": "Vein/Content/Paks/pakchunk1-Windows.pak",
+        "offset": 641,
+        "length": 108,
+        "sha256": "57355eb7687da3ff06664fd72d034169c8a1eb603b35017aff6c3975121ae8af"
+      },
+      {
+        "file": "Vein/Content/Paks/pakchunk104-Windows.pak",
+        "offset": 134,
+        "length": 108,
+        "sha256": "b0d8d603c26bbb2e651eea19d7142ae4733c266ec3fa330f45edc37aa4b63ddc"
+      },
+      {
+        "file": "Vein/Content/Paks/pakchunk104-Windows.pak",
+        "offset": 295,
+        "length": 108,
+        "sha256": "57355eb7687da3ff06664fd72d034169c8a1eb603b35017aff6c3975121ae8af"
+      }
+    ]
+  },
+  "texture:/Game/Vein/Items/T_Thumb_BP_Synth_Soup_0": {
+    "file": "png/BP_Synth_Soup.png",
+    "meta": {
+      "width": 16,
+      "height": 16,
+      "format": "PF_DXT5"
+    },
+    "requires": [
+      {
+        "file": "Vein/Content/Paks/pakchunk1-Windows.pak",
+        "offset": 802,
+        "length": 105,
+        "sha256": "46da45cf481ab041bd1640c810d9a01506c9f38d05e94e06be2f4682b34ebb3a"
+      },
+      {
+        "file": "Vein/Content/Paks/pakchunk1-Windows.pak",
+        "offset": 980,
+        "length": 105,
+        "sha256": "3d2b1027670b34f234764a1e7e02fed331a252cbbdeb4704d677be9d59ff0fa9"
+      }
+    ]
+  },
+  "texture:/Game/Vein/Items/T_Thumb_BP_Synth_BadFormat_0": {
+    "error": "PF_FloatRGBA",
+    "errorKind": "unsupported-format"
+  }
+}

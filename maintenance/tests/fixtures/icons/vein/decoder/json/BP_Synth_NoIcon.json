@@ -1,0 +1,14 @@
+[
+  {
+    "Type": "BlueprintGeneratedClass",
+    "Name": "BP_Synth_NoIcon_C",
+    "ClassFlags": "CLASS_CompiledFromBlueprint"
+  },
+  {
+    "Type": "BP_Synth_NoIcon_C",
+    "Name": "Default__BP_Synth_NoIcon_C",
+    "Properties": {
+      "Weight": 0.5
+    }
+  }
+]

@@ -851,6 +851,23 @@ rotation in {0, 90, 180, 270}, `rescale` only below 90 degrees. Units are 1/16 b
   downloads and the decode cached and 2 minutes 20 seconds from an empty cache (about 104 MB of downloads); the build's own peak memory is about 190 MB and the generator is capped at
   `-Xmx2g`. A fresh build from an empty cache produces a byte-identical `pack/` and `build-record.json`.
 
+## VEIN bring-up findings (#747, stopped at gate G3)
+
+Probed 2026-11-07 against server build 25969514 and client build 25970224. The `vein` icons block, the `pak-ranges`
+access, the pak range planner (`icons/pakfile.py`) and the `vein` mapper are in place; the build does not complete.
+
+- Engine UE 5.6 (`GAME_UE5_6`). All 50 client `pakchunk*-Windows.pak` files are version 11, with an unencrypted index,
+  an all-zero key GUID and no encrypted entry. The server `pakchunk*-LinuxServer.pak` files are the same. No AES key
+  is involved and `unreal.aesKeyEnv` stays `null`.
+- The server depot holds the item Blueprints and the AssetRegistry (`pakchunk0` and `pakchunk1`, about 275 MB) and
+  their properties decode without a mappings file: the dedicated-server cook keeps tagged properties. The server
+  has no texture bulk data (its `pakchunk1` is 88 MB, the client's 6 GB).
+- The client cook uses unversioned properties. CUE4Parse cannot read any client package, including the thumbnails,
+  without a `.usmap`: `MappingException: Package has unversioned properties but mapping file is missing`. 31 of 31
+  sampled thumbnails fail the same way, so the pixels cannot be decoded yet.
+- The pak planner needs the `.uexp` entries as well as the `.uasset` (a texture's mip data is inline in the `.uexp`):
+  the planned ranges for the 1,228 item thumbnails are 250 ranges, 128 MB in 7 paks.
+
 ## Keeping packs current
 
 `takaro-maint scan` adds an Icon Pack rebuild line to the acceptance checklist of every new-build maintenance

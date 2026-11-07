@@ -1,0 +1,103 @@
+{
+  "registries": [
+    "Vein/AssetRegistry.bin"
+  ],
+  "assets": [
+    {
+      "packageName": "/Game/Vein/Items/BP_Synth_Abstract",
+      "assetName": "BP_Synth_Abstract",
+      "assetClass": "Blueprint",
+      "tags": {
+        "ParentClass": "Class'/Script/Vein.SynthItem'"
+      }
+    },
+    {
+      "packageName": "/Game/Vein/Items/BP_Synth_BadFormat",
+      "assetName": "BP_Synth_BadFormat",
+      "assetClass": "Blueprint",
+      "tags": {
+        "ParentClass": "Class'/Script/Vein.SynthItem'"
+      }
+    },
+    {
+      "packageName": "/Game/Vein/Items/BP_Synth_Chair",
+      "assetName": "BP_Synth_Chair",
+      "assetClass": "Blueprint",
+      "tags": {
+        "ParentClass": "Class'/Script/Vein.SynthActor'"
+      }
+    },
+    {
+      "packageName": "/Game/Vein/Items/BP_Synth_Child",
+      "assetName": "BP_Synth_Child",
+      "assetClass": "Blueprint",
+      "tags": {
+        "ParentClass": "Class'/Game/Vein/Items/BP_Synth_Plain.BP_Synth_Plain_C'"
+      }
+    },
+    {
+      "packageName": "/Game/Vein/Items/BP_Synth_ClientOnly",
+      "assetName": "BP_Synth_ClientOnly",
+      "assetClass": "Blueprint",
+      "tags": {
+        "ParentClass": "Class'/Script/Vein.SynthItem'"
+      }
+    },
+    {
+      "packageName": "/Game/Vein/Items/BP_Synth_Food",
+      "assetName": "BP_Synth_Food",
+      "assetClass": "Blueprint",
+      "tags": {
+        "ParentClass": "Class'/Script/Vein.SynthFood'"
+      }
+    },
+    {
+      "packageName": "/Game/Vein/Items/BP_Synth_MissingTex",
+      "assetName": "BP_Synth_MissingTex",
+      "assetClass": "Blueprint",
+      "tags": {
+        "ParentClass": "Class'/Script/Vein.SynthItem'"
+      }
+    },
+    {
+      "packageName": "/Game/Vein/Items/BP_Synth_NoIcon",
+      "assetName": "BP_Synth_NoIcon",
+      "assetClass": "Blueprint",
+      "tags": {
+        "ParentClass": "Class'/Script/Vein.SynthItem'"
+      }
+    },
+    {
+      "packageName": "/Game/Vein/Items/BP_Synth_Plain",
+      "assetName": "BP_Synth_Plain",
+      "assetClass": "Blueprint",
+      "tags": {
+        "ParentClass": "Class'/Script/Vein.SynthItem'"
+      }
+    },
+    {
+      "packageName": "/Game/Vein/Items/BP_Synth_Soup",
+      "assetName": "BP_Synth_Soup",
+      "assetClass": "Blueprint",
+      "tags": {
+        "ParentClass": "Class'/Script/Vein.SynthFood'"
+      }
+    },
+    {
+      "packageName": "/Game/Vein/Items/DT_Synth_Table",
+      "assetName": "DT_Synth_Table",
+      "assetClass": "Blueprint",
+      "tags": {
+        "ParentClass": "Class'/Script/Engine.Actor'"
+      }
+    },
+    {
+      "packageName": "/Game/Vein/Items/SKEL_BP_Synth_Plain",
+      "assetName": "SKEL_BP_Synth_Plain",
+      "assetClass": "Blueprint",
+      "tags": {
+        "ParentClass": "Class'/Script/Vein.SynthItem'"
+      }
+    }
+  ]
+}

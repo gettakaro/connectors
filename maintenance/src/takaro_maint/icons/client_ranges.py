@@ -1,9 +1,13 @@
 """A sparse mirror of the parts of a client install that hold a build's packages.
 
-The client's ``.ucas`` containers are far too large to copy (tens of gigabytes), so a build copies the ``.utoc``
-files whole, plans which byte ranges hold the packages it needs (``iostore.plan``) and reads only those from
-``--client DIR`` -- a local install or a read-only mount of a remote one -- into sparse files of the same sizes
-under the cache. The decoder is then run against the mirror, exactly as it would be against the install.
+The client's containers are far too large to copy (tens of gigabytes), so a build plans which byte ranges hold
+the packages it needs and reads only those from ``--client DIR`` -- a local install or a read-only mount of a
+remote one -- into sparse files of the same sizes under the cache. The decoder is then run against the mirror,
+exactly as it would be against the install.
+
+Two container families share this machinery, chosen by the route's ``access``: IoStore (``iostore-ranges``:
+the ``.utoc`` files are copied whole and planned with ``iostore.plan``) and legacy paks (``pak-ranges``: the
+footer and indexes are among the planned ranges and ``pakfile.plan`` does the planning).
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ import os
 import shutil
 import sys
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -21,9 +26,12 @@ from typing import Any
 from .. import net, output
 from ..exit_codes import IntegrityError, UpstreamUnavailable
 from ..steam.install import COMPLETE_MARKER
-from . import iostore
+from . import iostore, pakfile
 
 READ_CHUNK = 8 * 1024 * 1024
+READ_WORKERS = 16
+IOSTORE_ACCESS = "iostore-ranges"
+PAK_ACCESS = "pak-ranges"
 WHOLE_CONTAINER = "global"
 PLAN_NAME_LENGTH = 16
 
@@ -38,6 +46,7 @@ class ContainerInfo:
     version: int
     entries: int
     partitions: int
+    encrypted_entries: int | None = None
 
 
 @dataclass(frozen=True)
@@ -63,11 +72,11 @@ def _ucas_files(client: Path, utoc: str, *, whole: bool) -> list[str]:
     return [(directory / name).as_posix() for name in names]
 
 
-def check(client: Path | None, utoc_files: list[str]) -> Path:
-    """Fail fast, before any network or docker: every ``.utoc`` and every ``.ucas`` it implies must be present.
+def check(client: Path | None, utoc_files: list[str], access: str = IOSTORE_ACCESS) -> Path:
+    """Fail fast, before any network or docker: every container file and every ``.ucas`` it implies must be present.
 
-    The ``.utoc`` headers are read, so a container this tool cannot plan (an unknown version, an encrypted
-    directory index, no directory index) is refused here and not after the downloads.
+    The container headers are read (``.utoc`` or pak footer and index), so a container this tool cannot plan (an
+    unknown version, an encrypted index, no directory index) is refused here and not after the downloads.
     """
     if client is None:
         raise UpstreamUnavailable(
@@ -82,6 +91,10 @@ def check(client: Path | None, utoc_files: list[str]) -> Path:
         raise UpstreamUnavailable(
             f"--client {client} lacks {len(missing)} of the needed files: {', '.join(missing)}", missing=missing
         )
+    if access == PAK_ACCESS:
+        for pak in utoc_files:
+            pakfile.read_index(client / pak, pak)
+        return client
     for utoc in utoc_files:
         missing.extend(name for name in _ucas_files(client, utoc, whole=_whole(utoc)) if not (client / name).is_file())
     if missing:
@@ -166,10 +179,12 @@ def _read_into(source: Path, target: Path, entry: dict[str, Any], progress: list
     return digest.hexdigest()
 
 
-def _fill(client: Path, staging: Path, utoc_files: list[str], ranges: list[dict[str, Any]]) -> dict[str, Any]:
+def _fill(
+    client: Path, staging: Path, utoc_files: list[str], ranges: list[dict[str, Any]], access: str
+) -> dict[str, Any]:
     sizes: dict[str, int] = {}
     utoc_hashes: dict[str, str] = {}
-    for utoc in utoc_files:
+    for utoc in utoc_files if access == IOSTORE_ACCESS else []:
         target = staging / utoc
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(client / utoc, target)
@@ -185,22 +200,40 @@ def _fill(client: Path, staging: Path, utoc_files: list[str], ranges: list[dict[
                 with destination.open("wb") as handle:
                     os.truncate(handle.fileno(), (client / ucas).stat().st_size)
             sizes[ucas] = (client / ucas).stat().st_size
+    for pak in utoc_files if access == PAK_ACCESS else []:
+        target = staging / pak
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("wb") as handle:
+            os.truncate(handle.fileno(), (client / pak).stat().st_size)
+        sizes[pak] = (client / pak).stat().st_size
     total = sum(entry["length"] for entry in ranges)
     progress = [0]
-    for entry in ranges:
-        recorded = _read_into(client / entry["file"], staging / entry["file"], entry, progress, total)
-        entry["sha256"] = recorded
+    # Many small ranges over a network mount are latency-bound; each worker opens its own handles.
+    with ThreadPoolExecutor(max_workers=READ_WORKERS) as pool:
+        recorded = pool.map(
+            lambda entry: _read_into(client / entry["file"], staging / entry["file"], entry, progress, total), ranges
+        )
+        for entry, digest in zip(ranges, recorded, strict=True):
+            entry["sha256"] = digest
     return {"utoc": utoc_hashes, "ranges": ranges, "sizes": sizes}
 
 
-def mirror(client: Path, utoc_files: list[str], stems: list[str], *, mirror_base: Path) -> Mirror:
+def mirror(
+    client: Path, utoc_files: list[str], stems: list[str], *, mirror_base: Path, access: str = IOSTORE_ACCESS
+) -> Mirror:
     """Plan, then read only the planned ranges from ``client`` into ``mirror_base/<plan>/`` (cached by plan)."""
-    planned = [utoc for utoc in utoc_files if not _whole(utoc)]
-    tocs = {utoc: iostore.read_toc(client / utoc, utoc) for utoc in planned}
-    ranges, missing = iostore.plan(list(tocs.values()), [iostore.safe_stem(stem) for stem in stems])
+    safe = [iostore.safe_stem(stem) for stem in stems]
+    tocs: dict[str, Any]
+    if access == PAK_ACCESS:
+        tocs = {pak: pakfile.read_index(client / pak, pak) for pak in utoc_files}
+        ranges, missing = pakfile.plan(list(tocs.values()), safe)
+        identities = {pak: index.identity_sha256 for pak, index in tocs.items()}
+    else:
+        tocs = {utoc: iostore.read_toc(client / utoc, utoc) for utoc in utoc_files if not _whole(utoc)}
+        ranges, missing = iostore.plan(list(tocs.values()), safe)
+        identities = {utoc: net.sha256_file(client / utoc) for utoc in utoc_files}
     entries = [{"file": r.file, "offset": r.offset, "length": r.length} for r in ranges]
-    utoc_hashes = {utoc: net.sha256_file(client / utoc) for utoc in utoc_files}
-    plan_sha, plan_name = _plan_name(utoc_hashes, entries)
+    plan_sha, plan_name = _plan_name(identities, entries)
     root = mirror_base / plan_name
 
     marker = _read_marker(root)
@@ -208,27 +241,29 @@ def mirror(client: Path, utoc_files: list[str], stems: list[str], *, mirror_base
         problems = _mirror_problems(root, marker)
         if not problems:
             output.info(f"client ranges {plan_name} are already mirrored ({_megabytes(entries)})")
-            return _result(root, plan_sha, marker, tocs, utoc_files, missing)
+            return _result(root, plan_sha, marker, tocs, utoc_files, missing, access)
         output.warn(f"corrupt client mirror {root} ({problems[0]}); reading the ranges again once")
         shutil.rmtree(root)
-    marker = _build_mirror(client, root, utoc_files, entries)
+    marker = _build_mirror(client, root, utoc_files, entries, access)
     problems = _mirror_problems(root, marker)
     if problems:
         raise IntegrityError(
             f"the client mirror {root} does not match its own marker ({problems[0]})", problems=problems
         )
-    return _result(root, plan_sha, marker, tocs, utoc_files, missing)
+    return _result(root, plan_sha, marker, tocs, utoc_files, missing, access)
 
 
 def _megabytes(entries: list[dict[str, Any]]) -> str:
     return f"{sum(entry['length'] for entry in entries) / 1e6:.1f} MB"
 
 
-def _build_mirror(client: Path, root: Path, utoc_files: list[str], entries: list[dict[str, Any]]) -> dict[str, Any]:
+def _build_mirror(
+    client: Path, root: Path, utoc_files: list[str], entries: list[dict[str, Any]], access: str
+) -> dict[str, Any]:
     staging = root.parent / f"tmp-{uuid.uuid4().hex}"
     try:
         staging.mkdir(parents=True)
-        marker = _fill(client, staging, utoc_files, [dict(entry) for entry in entries])
+        marker = _fill(client, staging, utoc_files, [dict(entry) for entry in entries], access)
         (staging / COMPLETE_MARKER).parent.mkdir(parents=True, exist_ok=True)
         # The marker is replaced atomically: written beside its final name, then renamed over it.
         sibling = staging / f"{COMPLETE_MARKER.as_posix()}.new"
@@ -244,12 +279,25 @@ def _result(
     root: Path,
     plan_sha: str,
     marker: dict[str, Any],
-    tocs: dict[str, iostore.Toc],
+    tocs: dict[str, Any],
     utoc_files: list[str],
     missing: list[str],
+    access: str,
 ) -> Mirror:
     containers = {}
     for utoc in utoc_files:
+        if access == PAK_ACCESS:
+            index: pakfile.PakIndex = tocs[utoc]
+            containers[utoc] = ContainerInfo(
+                name=utoc,
+                sha256=index.identity_sha256,
+                size=index.size,
+                version=index.version,
+                entries=len(index.files),
+                partitions=1,
+                encrypted_entries=index.encrypted_entries,
+            )
+            continue
         header = tocs[utoc].header if utoc in tocs else iostore.read_header(root / utoc, indexed=False)
         containers[utoc] = ContainerInfo(
             name=utoc,

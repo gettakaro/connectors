@@ -526,16 +526,20 @@ def _check_icons_unreal(result: ValidationResult, block: dict[str, Any], file: s
         file,
     )
     files = pixels.get("files") or []
-    problems = []
-    if pixels.get("access") == "iostore-ranges":
-        problems = [name for name in files if not str(name).endswith(".utoc")]
-        problems += [f"{name} (listed twice)" for name in sorted({n for n in files if files.count(n) > 1})]
-    result.add(
-        "icons-iostore-files",
-        not problems,
-        f"icons.pixels.files with access 'iostore-ranges' must be distinct .utoc paths: {problems}",
-        file,
-    )
+    for check, access, suffix in (
+        ("icons-iostore-files", "iostore-ranges", ".utoc"),
+        ("icons-pak-files", "pak-ranges", ".pak"),
+    ):
+        problems = []
+        if pixels.get("access") == access:
+            problems = [name for name in files if not str(name).endswith(suffix)]
+            problems += [f"{name} (listed twice)" for name in sorted({n for n in files if files.count(n) > 1})]
+        result.add(
+            check,
+            not problems,
+            f"icons.pixels.files with access '{access}' must be distinct {suffix} paths: {problems}",
+            file,
+        )
 
 
 def _check_icons_server_pixels_decoder(result: ValidationResult, block: dict[str, Any], file: str) -> None:
@@ -568,12 +572,13 @@ def _check_icons_client_files(result: ValidationResult, block: dict[str, Any], f
         except re.error as exc:
             broken.append(f"{pattern!r} ({exc})")
     pixel_patterns = any(str(name).startswith("regex:") for name in pixels.get("files") or [])
-    stray = bool(patterns) and pixels.get("access") == "iostore-ranges"
+    stray = bool(patterns) and pixels.get("access") in ("iostore-ranges", "pak-ranges")
     unresolvable = pixel_patterns and pixels.get("source") == "client" and pixels.get("decoder") != "xnb"
     result.add(
         "icons-client-regex",
         not broken and not stray and not unresolvable,
-        f"icons.pixels.files: regex entries must compile {broken}, are not allowed with access 'iostore-ranges' "
+        f"icons.pixels.files: regex entries must compile {broken}, are not allowed with "
+        "access 'iostore-ranges' or 'pak-ranges' "
         "and are only resolved for the xnb decoder",
         file,
     )

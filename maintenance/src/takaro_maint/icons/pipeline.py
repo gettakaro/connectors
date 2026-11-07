@@ -59,7 +59,7 @@ def _client_side(route: IconsRoute, client: Path | None) -> ClientSide | None:
             raise UsageError(f"game {route.catalog_game} takes its pixels from the server depot; --client is not used")
         return None
     if route.uses_unreal:
-        directory = client_ranges.check(client, route.pixel_files)
+        directory = client_ranges.check(client, route.pixel_files, route.pixel_access)
     else:
         directory = acquire.check_client(client, route.pixel_files)
     return client_build_side(route, directory)
@@ -142,6 +142,7 @@ def build_from_catalog(
                 client=client_side.directory,
                 utoc_files=route.pixel_files,
                 mirror_base=mirror_base,
+                access=route.pixel_access,
             )
         elif image is not None and route.uses_unity:
             unity_session = UnitySession(
@@ -363,6 +364,7 @@ def _add_unreal_pixels(
                 "version": info.version,
                 "entries": info.entries,
                 "partitions": info.partitions,
+                **({} if info.encrypted_entries is None else {"encryptedEntries": info.encrypted_entries}),
             }
             for name, info in mirror.containers.items()
         },

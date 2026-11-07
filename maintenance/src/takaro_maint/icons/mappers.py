@@ -80,6 +80,7 @@ def registry() -> dict[str, Mapper]:
     from ..games.seven_days import icons as seven_days
     from ..games.terraria import icons as terraria
     from ..games.valheim import icons as valheim
+    from ..games.vein import icons as vein
     from ..games.zomboid import icons as zomboid
 
     return {
@@ -92,6 +93,7 @@ def registry() -> dict[str, Mapper]:
         "valheim": Mapper(
             "valheim", valheim.MAPPER_VERSION, valheim.map_items, valheim.CODES_DESCRIPTION, valheim.EXCLUSIONS
         ),
+        "vein": Mapper("vein", vein.MAPPER_VERSION, vein.map_items),
         "zomboid": Mapper(
             "zomboid", zomboid.MAPPER_VERSION, _zomboid_run, zomboid.CODES_DESCRIPTION, zomboid.EXCLUSIONS
         ),

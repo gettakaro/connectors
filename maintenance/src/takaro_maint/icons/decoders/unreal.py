@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ... import net, paths
-from ...exit_codes import UsageError
+from ...exit_codes import BuildFailed, UsageError
 from . import container
 
 DECODER_NAME = "unreal"
@@ -99,7 +99,7 @@ class UnrealDecoder:
             container.Mount(self.oodle_path, OODLE_MOUNT),
         ]
         env = [self.settings.aes_key_env] if self.settings.aes_key_env else []
-        return container.run_cached(
+        manifest = container.run_cached(
             self.image,
             self.request(exports),
             mounts,
@@ -107,3 +107,9 @@ class UnrealDecoder:
             cache=self.cache,
             env_names=env,
         )
+        if manifest.tool.get("unloaded"):
+            raise BuildFailed(
+                f"{manifest.tool['unloaded']} containers stayed unmounted (an encrypted pak without a key?)",
+                unloaded=manifest.tool["unloaded"],
+            )
+        return manifest

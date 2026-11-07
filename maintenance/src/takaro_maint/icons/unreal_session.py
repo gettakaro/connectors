@@ -41,6 +41,7 @@ class UnrealSession:
         client: Path,
         utoc_files: list[str],
         mirror_base: Path,
+        access: str = client_ranges.IOSTORE_ACCESS,
     ) -> None:
         self.decoder = decoder
         self._data_root = data_root
@@ -48,6 +49,7 @@ class UnrealSession:
         self._client = client
         self._utoc_files = utoc_files
         self._mirror_base = mirror_base
+        self._access = access
         self.mirror: client_ranges.Mirror | None = None
         self.tool: dict[str, Any] = {}
 
@@ -63,6 +65,7 @@ class UnrealSession:
             self._utoc_files,
             [texture.stem for texture in textures],
             mirror_base=self._mirror_base,
+            access=self._access,
         )
         self.mirror = mirror
         outcomes: dict[str, Outcome] = {}
